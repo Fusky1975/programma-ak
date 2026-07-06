@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.movement import (
     NORMAL_MAP_BOUNDS,
     MapBounds,
@@ -46,18 +46,27 @@ def test_resolve_move_to_adjacent_hex():
     origin = HexCoord(5, 5)
     target = neighbors(origin, BOUNDS)[0]
 
-    result = resolve_move(origin, target, BOUNDS)
+    result = resolve_move(
+        origin, target, BOUNDS,
+        target_terrain=Terrain.PLAINS, target_explored_percent=0, explorer_skill=0,
+    )
 
     assert result.new_coord == target
-    assert result.partially_explored is True
     assert result.battle_expected is False
+    # Plains (50) x (skill 0 + 1) halved for the Move side effect = 25.
+    assert result.exploration.new_percent == 25
+    assert result.exploration.fully_explored is False
 
 
 def test_resolve_move_flags_expected_battle_when_target_is_enemy_occupied():
     origin = HexCoord(5, 5)
     target = neighbors(origin, BOUNDS)[0]
 
-    result = resolve_move(origin, target, BOUNDS, occupied_by_enemy=True)
+    result = resolve_move(
+        origin, target, BOUNDS,
+        target_terrain=Terrain.PLAINS, target_explored_percent=0, explorer_skill=0,
+        occupied_by_enemy=True,
+    )
 
     assert result.battle_expected is True
 
@@ -67,4 +76,7 @@ def test_resolve_move_to_non_adjacent_hex_raises():
     far_away = HexCoord(20, 10)
 
     with pytest.raises(NonAdjacentMoveError):
-        resolve_move(origin, far_away, BOUNDS)
+        resolve_move(
+            origin, far_away, BOUNDS,
+            target_terrain=Terrain.PLAINS, target_explored_percent=0, explorer_skill=0,
+        )
