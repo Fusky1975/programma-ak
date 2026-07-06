@@ -23,16 +23,14 @@ Explicitly out of scope for this phase (rulebook [3.1]):
 - Resolving the battle that occurs when moving into an enemy-occupied
   province (rulebook [7.0]) -- this module only flags that a battle would
   be triggered, it does not fight it.
-- The partial-exploration side effect of a Move (half the effect of an
-  Explore action) -- deferred until the Explore action itself is built,
-  since it depends on the same Basic Exploration Number formula.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.turn.exploration import ExploreResult, resolve_explore
 
 # Normal (non-Noble) map bounds, per CTBOTH.PAS `xcrange = 0..29`, `ycrange = 0..14`.
 NORMAL_MAP_BOUNDS = (30, 15)
@@ -65,7 +63,7 @@ class MapBounds:
 @dataclass(slots=True)
 class MoveResult:
     new_coord: HexCoord
-    partially_explored: bool
+    exploration: ExploreResult
     battle_expected: bool
 
 
@@ -81,11 +79,24 @@ def is_adjacent(a: HexCoord, b: HexCoord, bounds: MapBounds) -> bool:
     return b in neighbors(a, bounds)
 
 
-def resolve_move(current: HexCoord, target: HexCoord, bounds: MapBounds, *, occupied_by_enemy: bool = False) -> MoveResult:
+def resolve_move(
+    current: HexCoord,
+    target: HexCoord,
+    bounds: MapBounds,
+    *,
+    target_terrain: Terrain,
+    target_explored_percent: int,
+    explorer_skill: int,
+    occupied_by_enemy: bool = False,
+) -> MoveResult:
     """Resolve a Move order (rulebook [3.1]) to an *adjacent* target hex.
 
     Raises ``NonAdjacentMoveError`` for non-adjacent targets -- the
     multi-phase chase-towards-target algorithm isn't implemented yet.
+
+    Every Move also counts as a partial exploration of the destination
+    ("half the effect of an Explore order"), computed via
+    :func:`ak_engine.turn.exploration.resolve_explore`.
     """
 
     if not is_adjacent(current, target, bounds):
@@ -93,4 +104,5 @@ def resolve_move(current: HexCoord, target: HexCoord, bounds: MapBounds, *, occu
             f"{target} is not adjacent to {current}; chasing a non-adjacent "
             "target isn't implemented yet"
         )
-    return MoveResult(new_coord=target, partially_explored=True, battle_expected=occupied_by_enemy)
+    exploration = resolve_explore(target_explored_percent, target_terrain, explorer_skill, partial=True)
+    return MoveResult(new_coord=target, exploration=exploration, battle_expected=occupied_by_enemy)

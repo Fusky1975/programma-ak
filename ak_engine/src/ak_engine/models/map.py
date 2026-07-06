@@ -32,7 +32,7 @@ class Terrain(Enum):
 
 # "Basic Exploration Number" per terrain (CTBOTH.PAS `terexp`), used by the
 # rulebook's Explore action formula: Basic Exploration Number x (Explorer
-# skill + 1) % of the province. Not yet consumed by any code in this phase.
+# skill + 1) % of the province. See ak_engine.turn.exploration.resolve_explore.
 TERRAIN_EXPLORATION_NUMBER: dict[Terrain, int] = {
     Terrain.PLAINS: 50,
     Terrain.DESERT: 25,
@@ -55,3 +55,4 @@ class Feature:
     coord: HexCoord
     terrain: Terrain
     owner_kingdom: int | None = None
+    explored_percent: int = 0

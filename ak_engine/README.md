@@ -12,9 +12,12 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
 
 - **Phase 1**: domain model + parser for the player move-submission `.K1`
   file format.
-- **Phase 2 (current)**: hex map model (`models/map.py`) and Move-action
-  resolution (`turn/movement.py`), for *adjacent* target hexes only.
-  Combat resolution and report generation are still later phases.
+- **Phase 2**: hex map model (`models/map.py`) and Move-action resolution
+  (`turn/movement.py`), for *adjacent* target hexes only.
+- **Phase 3 (current)**: Explore-action resolution (`turn/exploration.py`):
+  the deterministic cumulative exploration-percentage formula, also now
+  wired into `resolve_move()`'s partial-exploration side effect. Combat
+  resolution and report generation are still later phases.
 
 ## Setup
 
@@ -56,11 +59,12 @@ rulebook before being turned into named, typed fields:
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
 - **Battle resolution** (rulebook [7.0]): `resolve_move()` only flags that
   a battle would be triggered (`battle_expected`), it doesn't fight it.
-- **Partial exploration from a Move** (rulebook [3.1]): moving into a
-  province is supposed to count as a partial Explore; deferred until the
-  Explore action itself is built, since both need the same Basic
-  Exploration Number formula (`TERRAIN_EXPLORATION_NUMBER` in
-  `models/map.py` is transcribed and ready for that).
+- **Feature discovery, monsters, treasures, rumors, battlefield reports**
+  (rulebook [3.2]): `resolve_explore()` only computes the deterministic
+  cumulative exploration percentage. Actually discovering *what* a
+  province contains is stochastic content generation tied to the game's
+  monster/treasure tables and prose templates (see
+  `HostAK/TP/PROSE/*.X*` in the original zip) — a much later phase.
 
 ## What's excluded from this phase
 
