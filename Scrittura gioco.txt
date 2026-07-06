@@ -1,0 +1,1413 @@
+1 INTRODUZIONE		
+   1.1 COMPONENTI DEL GIOCO	
+   1.2 REAMI			
+   1.3 AZIONI DEI PERSONAGGI	
+   1.4 RESOCONTI DEL TURNO	
+   1.5 CONDIZIONI DI VITTORIA	
+2 PERSONAGGI				
+   2.1 IL RE				
+   2.2 EROI			
+3 AZIONI E INIZIATIVA	
+   3.1 MUOVERE – Move		
+   3.2 ESPLORARE – Explore	
+   3.3 ISPEZIONARE – Search Feature     
+   3.4 RECLUTARE UNITA’ – Recruit     
+   3.5 ASSOLDARE EROI – Hire Hero     
+   3.6 SCIOGLIERE UNITA’ – Disband    
+   3.7 CONGEDARE EROI – Fire Hero     
+   3.8 LASCIARE UNITA’ – Leave	        
+   3.9 PRENDERE UNITA’ – Pick Up     
+   3.10 LANC. INCANTESIMO – Cast    
+   3.11 USARE OGGETTI – Use Item      
+   3.12 INCONTRARE – Encounter	         
+   3.13 PRATICARE ABILITA’ – Practice 
+   3.14 SPIARE – Spy	
+   3.15 DIFENDERE – Defend   
+   3.16 INSEGUIRE – Pursue	
+   3.17 PEDINARE – Trail	
+   3.18 DARE OGGETTI E SOLDI – Give 
+4 TALENTI E ABILITA’	
+   4.1 TALENTI MARZIALI	
+   4.2 TALENTI MAGICI	
+   4.3 TALENTI SPECIALI		
+5 INCONTRI		
+   5.1 LANC. INCANTESIMO	
+         USARE OGGETTI			
+   5.2 TIRO CON L’ARCO	
+   5.3 MISCHIA			
+   5.4 NEGOZIATI	
+   5.5 RUBARE		
+   5.6 FUGGIRE		
+   5.7 DARE OGGETTO	
+   5.8 PERLUSTRARE	
+   5.9 VITTORIA, MORTE ED EREDI   
+   5.10 PIANO SPECIALE D’INCONTRO
+6 UNITA’ MILITARI	
+   6.1 TIPI DI UNITA’ MILITARI	
+   6.2 MOVIMENTO E TRASPORTO  
+7 BATTAGLIE		
+   7.1 COMANDANTI SUPREMI	
+   7.2 SCHIRAMENTI DI BATTAGLIA   
+   7.3 INSEGUIMENTO	
+   7.4 RITIRATA			  
+   7.5 CONSEGUENZA BATTAGLIA    
+   7.6 PROVINCE CONTESTATE	
+   7.7 CONQUISTA		
+   7.8 CONTINGENTI MULTIPLI	
+8 DIPLOMAZIA		
+   8.1 RELAZIONI DIPLOMATICHE       
+   8.2 STRINGERE TRATTATI	
+   8.3 ROMPERE TRATTATI	     
+   8.4 TRATTATI SCIENTIFICI	
+9 FINANZE	
+   9.1 REDDITO	
+   9.2 SPESE		
+10 VITTORIA		
+   10.1 CARICHE IMPERIALI	
+   10.2 L’IMPERATORE		
+   10.3 VALHALLA	
+11 INIZIARE IL GIOCO		
+   11.1 SUGGERIMENTI		
+   11.2 ESEMPI DI MOSSE		  
+   11.3 ESEMPI PIANI D’INCONTRO    
+   11.4 SUGGERIMENTI VARI	
+
+
+
+1	INTRODUZIONE
+
+CERVO D'ORO KINGS è ambientato in un mondo medievale pieno di magia, tesori, mostri e battaglie. In ogni partita ci sono da 8 a 12 giocatori. Ciascuno controlla un Re, le sue unità militari, tesori e tutti gli Eroi da lui presi al suo servizio. A ogni turno i giocatori inviano all’arbitro (Game Master) una serie di mosse per il loro Re (o Regina) e i suoi Eroi. Tali mosse descrivono le attività dei personaggi per un intero anno nel mondo medievale di CERVO D'ORO KINGS.
+
+1.1 COMPONENTI DEL GIOCO
+La mappa è suddivisa in 162 province. All’inizio della partita alcune delle province di terra sono governate dai Re controllati dai giocatori, mentre le restanti sono difese da unità militari (in numero da 1 a 4) e in genere, da un Eroe. Questi Eroi non controllati da giocatori non possono attaccare né partire per avventure. Ciascun giocatore inizia con il possesso di una provincia che non può trovarsi a meno di due province di distanza da quella di un altro giocatore. Ogni provincia è caratterizzata da un tipo di terreno, una razza nativa, un tipo di unità militare e una rendita di tasse. Mano a mano che esplorano il mondo, i giocatori vengono a conoscenza di nuove porzioni della mappa.
+
+I tipi di terreno sono: pianura, deserto, foresta, giungla, montagna e mare. La metà circa delle province sono di mare. Molte contengono inoltre dei Luoghi Speciali, come ad esempio, dungeon, tane di draghi, castelli infestati, piramidi, torri di maghi ecc… Questi luoghi sono in genere difesi da un mostro che sta a guardia di un tesoro.
+
+Le razze native possono essere di Umani, Elfi, Nani, Orchi, Aquile, Draghi, Ent, Troll, Bestie Mannare, Tritoni e Balene. La razza di gran lunga più comune è quella umana. In ogni provincia possono trovarsi uno o due tipi di unità militari tra quelli indicati nella Tabella delle Unità (pag. X). La rendita in tasse di una provincia può variare da 0 a 10 (n.b. Solo alcune di mare possono valere 0, quelle di terra valgono almeno 1 gold).
+
+Quando un giocatore arriva a confinare con una provincia, questa gli viene descritta come Ricca (tasse: 7-10), Prospera (tasse: 3-6) o Povera (tasse: 0-2). Di solito una provincia Ricca è difesa da 3 unità militari, una Prospera da 2, una Povera da 1 soltanto. Le province di mare non popolate da alcuna razza non sono difese.
+
+1.2 REAMI
+Ciascun giocatore inizia il gioco con un Re, due Eroi ai suoi ordini, una provincia (10 gold di rendita di tasse), alcune unità militari e un tesoro di 10 pezzi d’oro. Provincia, Eroi e unità militari sono assegnati al giocatore dal computer, ma il giocatore ha la possibilità di scegliere per il proprio Re quattro livelli di abilità tra i 15 talenti disponibili, razza e temperamento. Se lo desidera, il giocatore può cambiare nome ai propri Eroi e alla propria provincia di partenza comunicandolo prima dell’elaborazione delle mosse del primo turno.
+
+1.3 AZIONI DEI PERSONAGGI
+Ogni turno è suddiviso in cinque fasi, che corrispondono alla primavera, all’inizio estate, all’estate avanzata, all’autunno e all’inverno. I giocatori possono impartire al proprio Re e a ciascuno dei loro Eroi un ordine per fase, scegliendo tra le seguenti azioni.
+
+MUOVERE (Move): il personaggio muove in una provincia adiacente, il che può dare origine a una battaglia se quest’ultimo conduce eserciti.
+
+ESPLORARE (Explore): il personaggio esplora una provincia e può trovarvi un Luogo Speciale (dungeon, castelli ecc…).
+
+ISPEZIONARE UN LUOGO SPECIALE (Search Feature): quando un personaggio ispeziona un Luogo Speciale incontra un mostro. Può allora cercare di rubare un tesoro, parlare con il mostro o attaccarlo.
+
+RECLUTARE UNITA’ MILITARI ASSOLDARE EROI (Recruit Army/Hire Hero): ogni provincia della mappa offre uno o più tipi di unità militare da reclutare. Alcune anche Eroi da assoldare (n.b. Si possono reclutare solo Eroi non al comando di una provincia libera).
+
+SCIOGLIERE UNITA’ MILITARI
+CONGEDARE EROI (Disband Army/ Fire Hero): serve a svincolare dal servizio l’unità militare o l’Eroe indesiderato, che se ne vanno alla ventura per conto loro.
+
+LASCIARE UNITA’ MILITARI (Leave Army): le unità militari specificate vengono lasciate nella provincia o affidate a un altro personaggio.
+
+PRENDERE UNITA’ MILITARI (Pick up Army): comando che associa uno o più unità militari lasciate da sole in una tua provincia che da quel momento in poi viaggeranno insieme a un eroe.
+
+LANCIARE UN INCANTESIMO (Cast Spell): il personaggio lancia un incantesimo a lui noto.
+
+USARE OGGETTI MAGICI (Use Magic Item): il personaggio lancia un incantesimo o sfrutta un potere servendosi di un oggetto magico.
+
+INCONTRARE PERSONAGGI (Encounter Character): il personaggio ne incontra un altro con cui può combattere o parlare.
+
+SPIARE (Spy): il personaggio spia nella provincia in cui si trova e viene a conoscenza di eventi, forze militari e personaggi in essa.
+
+PEDINARE (Trail): il personaggio segue e spia un altro personaggio e acquisisce informazioni su di lui e sulle sue azioni, ma non lo attacca.
+
+INSEGUIRE (Pursue): come il Trail, solo che il personaggio ne insegue un altro, ma se lo raggiunge ci potrà essere un combattimento.
+ESERCITARSI (Practice): il personaggio tenta di accrescere con l’esercizio il proprio livello di abilità in un determinato Talento.
+
+DIFENDERE (Defend): un generale (un Re o un Eroe che comanda unità militari) cerca di difendere una provincia e tutte quelle confinanti con questa. Reagendo così alle invasioni nemiche per tutta la durata del turno.
+
+DARE (Give): un personaggio dà oro o un oggetto magico a un altro personaggio.
+
+STRINGERE o ROMPERE TRATTATI
+(Treat/Break Treaty): i Re possono concludere o infrangere trattati di neutralità o alleanza (questa azione non occupa fasi di gioco).
+
+RICHIEDERE UNA VOTAZIONE (Call for Vote): viene chiamata una votazione per eleggere l’Imperatore (questa azione non occupa fasi di gioco).
+
+1.4 RESOCONTI DEL TURNO
+I resoconti del turno sono dei bollettini che, in forma descrittiva e vivace, danno ampie informazioni sull’andamento del gioco con il supporto di schemi e tabelle.
+
+Ecco quello che ciascun giocatore riceve ogni turno:
+
+Resoconto delle Azioni: le imprese del suo Re, narrate in una prosa avvincente.
+
+Rapporti: tutti gli Eroi al suo servizio inviano notizie sulle loro avventure.
+
+Relazione sullo stato del Reame: tabelle riassuntive sulla situazione di province, personaggi, unità militari e finanze.
+
+Mappa: viene inviata una mappa dettagliata di tutte le province conosciute.
+
+Resoconto delle Avventure: vengono elencati tutti i Luoghi Speciali conosciuti, con rispettivi mostri guardiani e tesori che si pensa essi racchiudano nonché i personaggi che possono essere assoldati al servizio del Reame.
+
+Rapporto informativo Generale: l’arbitro verifica le attività di tutti gli altri giocatori per vedere se il Re ne potrebbe venire a conoscenza. Ad esempio un giocatore viene informato quanto una provincia adiacente al suo Reame cambia di mano e può anche ricevere informazioni sulle attività di personaggi controllati da un altro Re quando agiscono entro i confini del suo Reame.
+
+1.5 CONDIZIONI DI VITTORIA
+Molto tempo addietro il mondo era governato da un grande imperatore che amministrava la giustizia e manteneva la pace. Ma poi l’impero fu lacerato dalle meschine dispute di nobili poco lungimiranti e il mondo profondò nelle tenebre e della barbarie. Dopo secoli e secoli di guerre, sono comparsi in varie parti del mondo dei Re forti e coraggiosi che sognano l’avvento di un secondo Impero. I giocatori sono appunto questi Re. Il loro obiettivo è quello di riunificate l’Impero e di conservarlo affidando alte cariche a quelli che le hanno maggiormente meritate, senza considerazione per il loro credo.
+
+Ci sono in tutto 8 Carche Imperiali, ciascuna delle quali, alla fine del gioco, verrà definitivamente concessa al personaggio che avrà totalizzato il maggior numero di Punti Merito per quell’incarico. La carica suprema è quella di Imperatore, assegnata al giocatore che terminerà il gioco con la più alta rendita in tasse. A ogni carica corrisponde una quota premio espressa in termini percentuali. La posizione in classifica dei giocatori è determinata dalle quote premio corrispondenti alla Cariche Imperiali da esse controllate.
+
+
+
+
+
+
+
+
+
+
+2	PERSONAGGI
+
+CERVO D'ORO KINGS è incentrato sui personaggi. Ognuno ha delle abilità, il cui livello può variare da 1 a 9, in almeno un Talento. Ai livelli più alti di abilità (dal 5 in su) i personaggi inoltre ottengono speciali facoltà e incantesimi segreti.
+
+Alcune delle facoltà speciali sono quasi irrilevanti, altre hanno un valore medio, altre ancora sono potenzialmente assai efficaci. Certe facoltà molto avanza possono permettere al giocatore di superare alcune piccole restrizioni del regolamento. Non dovete stupirvi, quindi, quando verrete a sapere che un vostro avversario ha fatto una cosa che in linea di principio non è ammessa: la ragione potrebbe essere questa. E se, invece, la facoltà speciale di cui dispone un avversario vi dovesse sembrare troppo potente, ricordate che potrebbero esserci delle limitazioni di cui solo lui è a conoscenza. Le facoltà speciali possono inoltre variare da partita a partita.
+
+Per salire di livello, il personaggio può compiere azioni correlate con il Talento il questione, oppure fare pratica (eseguendo l’ordine Practice). I personaggi inoltre hanno, per ciascun Talento, un valore di potenzialità, che indica la maggiore o minore facilità con cui progrediranno. Quando un personaggio fa pratica in un Talento, le sue probabilità di crescita sono ridotte se sta cercando di raggiungere un livello superiore a quello indicato dalla sua potenzialità naturale (per maggiori dettagli si veda la Tabella delle Esperienze, pag. X).
+
+I personaggi hanno anche una Razza (Umani, Elfi, Nani e Orchi), un Allineamento (Divino, Buono, Druidico, Neutrale, Pagano, Malvagio e Non-Morto) e un Temperamento (Berserk, Coraggioso, Cauto o Codardo). Il Temperamento condiziona molto il comportamento del personaggio nel combattimento individuale. I personaggi vanno maggiormente d’accordo con altri appartenenti alla loro razza e ogni razza normalmente predilige un tipo di unità militare e di terreno (ad esempio, gli Elfi combattono meglio come arcieri e nelle foreste). A ciascun Allineamento corrispondono benefici speciali, come indicato nella Tabella degli Allineamenti (qui sotto). L’Allineamento ha conseguenze anche sulle condizioni di vittoria (vedi punto 10.0). Infine l’Allineamento deve essere tenuto in conto anche al momento di assoldare un Eroe. I personaggi Neutrali sono avvantaggiati perché un Re raramente può assoldare un personaggio con un Allineamento distante più di due posizioni dal proprio. I re Non-Morti e Divini, sebbene potenti, sono svantaggiati dal fatto che solo il 40% circa degli Eroi accetterà di entrare al loro servizio. Riassumiamo qui di seguito le caratteristiche essenziali dei sette Allineamenti.
+
+Divino		Il santo frutto dell’unione tra
+		una divinità e un mortale.
+Buono		Spiritualità e benevolenza
+		nei confronti dei sudditi.
+Druidico	Armonia tra tutte le forme 
+di vita.
+Neutrale	Libertà di comportarsi 
+a proprio piacimento.
+Pagano	Fede nella magia 
+e nel sacrificio agli Dei pagani.
+Malvagio	Ricerca del potere e gusto 
+sadico di provocare sofferenza.
+Non-Morto	La crociata delle forze del male
+		per la conquista del mondo.
+
+I personaggi possono muoversi liberamente per mare e per terra e attraversare province nemiche o neutrali senza timore di essere catturati anche se sono senza scorta (il codice d’onore di questo mondo fantastico impedisce tale tipo di azioni). Essi possono portare con se qualsiasi numero di oggetti magici. Le unità militari possono muovere solo se sono insieme ai personaggi. Se a un personaggio è stato dato l’ordine di muovere ma il movimento non è ammesso per una qualsiasi delle unità militari sotto il suo comando, la mossa non è accettata. Ci sono due tipi di personaggi: Re ed Eroi.
+
+
+2.1 IL RE
+I personaggi contraddistinti dai numeri d’ordine più bassi sono Re. In ogni partita è consentita presenza di un solo giocatore Divino e Non-Morto. All’inizio della partita, il giocatore assegna al proprio Re, nome, razza, temperamento, allineamento e quattro livelli di abilità da distribuire sui vari Talenti. Il Re può cioè iniziare con quattro Talenti al livello 1 o due talenti al livello 2 e così via, ma non può assegnare più di 2 livelli a ciascun Talento. Se un giocatore sceglie una razza ha la garanzia di ricevere il tipo di unità militare preferito da quella razza, come elencato nella Tabella delle unità militari. (n.b. Ai Re Orchi verranno sempre dati come secondo tipo di unità militari i Warg a meno che non abbiano scelto il Talento Navale).
+
+I Re ricevono anche automaticamente un modificatore +1 alla loro abilità di Mischia, Tiro con l’Arco e Conoscenza, come conseguenza dell’educazione e dell’addestramento regali. I Re Divini ricevono un modificatore +1 alla loro abilità di Magia Bianca e partono con potenzialità 0 in Negromanzia. I Re Non-Morti, invece ricevono un modificatore +1 alla loro abilità in Negromanzia e partono con potenzialità 0 in Magia Bianca. Le potenzialità di un Re è sempre di 2 punti più alta del suo livello di abilità iniziale, con massimo di 5 per i Talenti Speciali (sono due per ogni allineamento da Buono a Malvagio).
+
+Quando due reami diventano confinanti, a ciascun giocatore vengono forniti il numero di telefono e l’indirizzo e-mail dell’avversario. Eccezione: esistono partite senza diplomazia in cui i giocatori non possono comunicare direttamente, ma solo tramite la mediazione dell’arbitro. Se un giocatore non ha il numero di telefono o l’e-mail di un avversario può sempre mandargli un messaggio tramite l’arbitro. Il giocatore che si trova adiacente a un Re di allineamento Divino o Non-Morto ne verrà informato nel resoconto del turno.
+
+
+
+
+2.2 EROI
+Gli Eroi cominciano il gioco di solito con abilità in 2 o 3 talenti (possono partire anche con 1 solo punto). Tutti i Re iniziano il gioco con un Eroe di allineamento uguale al loro e uno di allineamento adiacente, eccetto i Re Divini che hanno Eroi Buoni e i Re Non-Morti che hanno un Eroe Non-Morto e uno Malvagio. Gli Eroi non ingaggiati vagano da una provincia all’altra, fermandosi a volte nello stesso luogo per un turno o più, finché non vengono assoldati. Muovono alla fine del turno, per cui se a un giocatore viene indicata la posizione di un Eroe, può essere certo che vi rimarrà fino alla fine del turno. A un giocatore viene comunicato quando un Eroe entra in una provincia che gli appartiene, o quando può incontrarlo in altre province conosciute.
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+
+3 AZIONI E INIZIATIVA
+
+
+Ogni personaggio può effettuare fino a 5 azioni per turno. Se un giocatore salta un turno, il computer genera automaticamente una serie di azioni Defend per i suoi personaggi. Non sono ammesse mosse arrivate in ritardo. Chi lo farà salterà il turno.
+
+Va precisato il concetto di Iniziativa, che è di importanza fondamentale nella determinazione della sequenza delle azioni. Il coefficiente di iniziativa di ciascun personaggio equivale alla somma dei punteggi nei suoi vari Talenti, con Marcia contato 3 volte, più tutti gli aumenti derivanti dal possesso di oggetti magici e conoscenza speciali. Nell’elaborare le mosse, il computer esegue innanzitutto la prima azione di ciascun personaggio, poi la seconda di ciascuno e così via. Se due personaggi hanno la stessa Iniziativa, è quello con il numero d’ordine più basso ad avere la precedenza. Esempi: se un personaggio con alta Iniziativa lancia un Incantesimo di Tornado contro una provincia, e nella stessa fase un generale con Iniziativa più bassa ne sta uscendo, i Tornado potrebbero colpire le unità militari comandate da quest’ultimo. Se un personaggio con alta Iniziativa dà un oggetto a uno con punteggio minore, il secondo potrà far uso dell’oggetto nella stessa fase (perché il comando Dare viene eseguito prima di quello Usare).
+
+Un personaggio può attendere se un altro deve fare qualcosa per lui. Esempio: due personaggi sono nella stessa provincia e il personaggio A vuole uscirne mentre quello B dello stesso reame vuole, poniamo, reclutare delle unità militari per lui. In una situazione del genere il personaggio A aspetterà che il personaggio B abbia agito, anche se A ha un coefficiente d’iniziativa superiore. Questa regola vale non soltanto per Reclutare, ma anche per Abbandonare e Prendere Unità Militari, Lanciare Incantesimi favorevoli, Dare oggetti magici e per gli Incontri.
+
+Da ricordare:
+- Il personaggio che riceve l’ordine Defend è sempre l’ultimo ad agire (perché deve reagire a tutti gli attacchi).
+- Quando un personaggio ne insegue un altro nella stessa provincia, l’inseguitore muoverà subito dopo l’inseguito.
+
+Il coefficiente d’iniziativa di ogni personaggio è indicato nel Resoconto del turno insieme alle abilità e alla potenzialità nei vari Talenti.
+
+Può darsi che un personaggio non possa eseguire un ordine impartitogli, per esempio Recruit se non ci sono in quel momento nel tesoro abbastanza pezzi d’oro. In questo caso il computer genererà automaticamente un ordine alternativo, di solito un Practice riferito a qualche Talento in cui il personaggio possiede una buona potenzialità oppure un Practice in Tactics se si trova al comando di un esercito.
+Le seguenti azioni vengono ora spiegate in dettaglio (tra parentesi quadre l’abbreviazione che deve essere usata nel foglio delle mosse o che viene usata dai programmi di creazione mosse).
+
+3.1 MUOVERE – Move [MO]
+I personaggi possono muovere solo in province adiacenti. Se un personaggio ha con sé unità militari e la provincia è occupata da un esercito nemico, ha luogo una battaglia.
+
+Muovere in una provincia vale anche come parziale esplorazione e ha la metà dell’effetto di un ordine Esplorare.
+
+Quando un personaggio muove in una provincia per la prima volta, tutte le province adiacenti ancora inesplorate vengono descritte in termini generali (terreno, razza e governante). Questa descrizione vale come 1% di esplorazione.
+
+Le province di terra neutrali sono generalmente difese da 1 o 2 unità militari. Le province di mare neutrali sono indifese a meno che non siano occupate da Balene e Tritoni.
+
+Quando un comandante muove con un esercito in una provincia nemica, tutte le unità militari nemiche di stanza in quella provincia, a cui sia stato dato l’ordine di muoversi altrove, ma che non lo hanno ancora eseguito, rimangono sul posto per la battaglia.
+
+3.2 ESPLORARE – Explore [EX]
+Il personaggio può esplorare la provincia in cui si trova, il offre un’opportunità di trovare un Luogo Speciale, ad esempio un dungeon o una piramide. A volte ci può essere più di un Luogo Speciale in una provincia. Il personaggio riceve informazioni sul nome del Luogo Speciale, sul tesoro che secondo la leggenda vi è nascosto e sul mostro che vi sta a guardia. Il Quoziente di esplorazione di ciascun tipo di terreno è indicato nella Tabella dei Terreni (pag. X). 
+
+La quantità di territorio esplorato in una provincia è espressa in termini percentuali dalla formula:
+
+Quoziente esplorazione per
+(abilità nel Talento Explorer +1)
+
+Un personaggio deve esplorare il 100% di una provincia per essere sicuro di aver trovato tutto quanto vi è presente. Se l’esplorazione porta alla scoperta di antichi campi di battaglia il giocatore riceve informazioni sui soldati caduti nella provincia, il che è utile per l’incantesimo Esercito di Scheletri (pag. X). Se si vuole, si può continuare a esplorare una provincia già esplorata al 100% al fine di scoprire se c’è la possibilità di ottenere Eserciti di Scheletri. L’esplorazione non fornisce invece informazioni sulle unità militari e sui condottieri eventualmente presenti.
+
+Può capitare di raccogliere voci e riferimenti in merito a Luoghi Speciali (ciò appare regolarmente nel proprio Resoconto del turno). Una buona metà di queste voci si riveleranno vere, le altre potrebbero essere lacunose: il tesoro potrebbe non esserci, il Luogo potrebbe trovarsi in un’altra provincia, anche se di solito in una adiacente.
+
+I mostri vengono descritti nel momento in cui vengono scoperti per la prima volta, nella maniera seguente.
+
+Weak (Debole)			7-12 PF
+Nessuna indicazione			13-19 PF
+Large/Strong (Grande/Forte)	20-29 PF
+Powerful (Potente)			30-44 PF
+Very Powerful (Molto Potente)	45+ PF
+
+Un mostro che possiede qualità eccezionali, come ad esempio un Talento Mischia di livello 2 o più, viene incluso nella categoria immediatamente superiore a quella in cui sarebbe stato normalmente collocato in base ai suoi PF (Punti Ferita).
+
+I mostri possono inoltre avere qualità non descritte nel Resoconto del turno, per esempio uno Spadaccino potrebbe avere un Talento magico di livello non elevato. Ovviamente i mostri più intelligenti o magici hanno genere anche Talenti magici.
+
+3.3 ISPEZIONARE UN LUOGO SPECIALE – Search Feature [SE]
+Un personaggio può ispezionare qualsiasi Luogo Speciale che è stato scoperto nel suo Reame o di cui abbia sentito parlare da un altro Re. Quando un personaggio ispeziona un Luogo Speciale, deve prima di tutto affrontare il mostro guardiano del tesoro specificando un Piano d’Incontro. Se sconfigge il mostro, il tesoro è suo. Questo tipo di ricerca può anche innescare un “evento speciale”: ad esempio un personaggio può imbattersi in uno stagno magico, berne l’acqua ed essere premiato con un aumento nel livello di un Talento o magari, anche se questo è meno probabile, ricevere una maledizione. Si può ispezionare un Luogo Speciale anche se il mostro-guardiano è stato già ucciso.
+
+Un personaggio può ispezionare un Luogo Speciale in una provincia che non gli appartiene o uno che non ha ancora scoperto se un altro personaggio gliene ha fornito locazione e numero d’ordine. I personaggio devono effettuare l’ispezione da soli: sconfiggere un mostro in un combattimento individuale è un punto d’onore. Le unità militari non possono condurre questo tipo d’ispezione, che è invece consentita a un personaggio anche se è al comando di un esercito.
+
+3.4 RECLUTARE UNITA’ MILITARI – Recruit Army(s) [RE]
+Quando si dà questo ordine si deve specificare il tipo di unità militare e il personaggio che la comanderà. Le unità militari possono essere poste sotto il comando del personaggio che esegue l’ordine di reclutamento, oppure sotto quello di un qualsiasi personaggio presente nella provincia (anche se appartenente a un Reame alleato), oppure essere assegnate al Comando di Guarnigione. Ciascuna provincia offre 1 o 2 tipi di unità militari possibili, che possono essere reclutate tra la popolazione. Si possono reclutare anche mercenari, se presenti nella provincia. La leva può essere indetta solo in una provincia attualmente sotto il proprio controllo. I mercenari invece possono essere reclutati in qualunque provincia da qualsiasi personaggio, persino da un Re che non possiede alcuna provincia. Nel caso in cui un personaggio recluti un tipo di unità militare in una provincia in cui si trova un’unità di mercenari dello stesso tipo e di rango Medio (vedi Tabella delle Unità Militari, pag. X) sono i mercenari a essere ingaggiati. Altrimenti l’unità verrà arruolata tra il popolo e sarà della stessa razza della popolazione che vive nella provincia. Normalmente in una provincia si può arruolare solo un’unità militare di ogni tipo per turno.
+
+Eccezioni: a) nella provincia di origine di un Re si possono reclutare due unità di ogni tipo per turno; b) in qualsiasi provincia abitata da umanoidi possono essere arruolate unità di Guarnigione fine al limite di due per turno (sono considerati umanoidi gli Umani, gli Elfi, gli Orchi e i Nani). Entro questi limiti si può usare un unico ordine per reclutare qualsiasi numero di unità militari. Esempio: nella propria provincia d’origine un giocatore può reclutare fino a due unità per ciascuno dei tipi disponibili, più due Guarnigioni e tutti i mercenari presenti.
+
+Se non è possibile reclutare un certo tipo di unità militare perché non previsto per la popolazione nativa, si può comunque effettuare l’arruolamento se il comandante, o il personaggio a favore del quale viene dato l’ordine, ha già ai suoi ordini un’altra unità del tipo. La nuova unità comincerà al rango normale, ma il suo reclutamento costerà il doppio (ciò dipende dal fatto che l’equipaggiamento richiesto per quel tipo di unità è di difficile reperimento in quella zona e quindi bisogna pagare di più per averlo o addirittura per farselo appositamente spedire). Se per una provincia è previsto un solo tipo di unità militare, si può reclutare una sola unità. Se ne sono previsti due tipi, allora se ne possono reclutare due e via di seguito.
+
+Un esempio: nella sua provincia di origine un personaggio può reclutare quattro unità militari di un unico tipo, di cui due a prezzo doppio (ma comunque di rango Medio). Si possono reclutare solo unità che sono congruenti con la razza nativa della provincia (ad esempio non è possibile reclutare Draghi in una provincia abitata da umani e viceversa). Si può arruolare qualsiasi tipo di unità militare umanoide in una provincia umanoide. Un’unità militare sarà sempre costituita da soldati della razza indigena e non di quella delle unità militari che sono sotto il comando del personaggio che effettua il reclutamento.
+
+Un’unità deve essere pagata al momento in cui viene arruolata (premio di ingaggio) e per il suo mantenimento alla fine di ciascun turno. Quindi nel turno in cui viene ingaggiata va pagata due volte. Non si possono mai reclutare unità militari appartenenti a un altro reame Reame o che difendono una provincia neutrale.
+
+3.5 ASSOLDARE EROI – Hire [HI]
+Qualsiasi personaggio può provare ad assoldare un Eroe che si trovi nella sua stessa provincia. Per farlo offre all’Eroe un pagamento di 1-4 pezzi d’oro. Se il soldo richiesto dall’Eroe è pari o inferiore all’offerta, l’Eroe entrerà al servizio del Reame alla paga da lui richiesta (che può quindi anche essere inferiore all’offerta ricevuta). L’Eroe viene pagato nel momento in cui è assoldato e alla fine di ciascun turno di gioco, quindi nel turno in cui viene assoldato riceve paga doppia, esattamente come le unità militari.
+
+Il soldo richiesto varia in base al maggiore o minore gradimento che l’Eroe nutre nei confronti di un determinato Reame ed è invece indipendente dai Talenti dell’Eroe. Può tornare utile che l’Eroe abbia lo stesso Temperamento, appartenga alla stessa Razza e sia di analogo Allineamento del Re. In rare occasioni un Re può assoldare Eroi con un Allineamento distante più di due posizioni dal proprio (ad esempio un Re Buono generalmente non può assoldare un Eroe Pagano). L’Eroe può ricevere ordini a partire dalla fase (n.b. non il turno, la fase) successiva a quella nella quale è stato assoldato. Un Eroe che governa la propria provincia non può essere assoldato.
+
+3.6 SCIOGLIERE UNITA’ MILITARI – Disband Army(s) [DI]
+L’unità militare viene così sciolta e i suoi soldati si trasformano in mercenari. Un Re può sciogliere qualsiasi unità militare in qualunque momento. Un personaggio può sciogliere una unità militare solo se si trova nella stessa provincia. L’unità così disciolta continuerà a vagabondare come truppa mercenaria fino a quando non verrà assoldata da un altro personaggio. Per sciogliere tutte le unità militari che il personaggio comanda, scrivere: “[DI]sband [All]”.
+
+Se ci sono unità di mercenari in una provincia mentre il generale la attraversa, queste possono decidere di seguirlo (alla fine del turno) invece di rimanere ferme.
+
+Ciò può servire a neutralizzare il trucchetto che consiste nello sciogliere delle armate quando si deve affrontare un attacco per poi riassoldarle dopo che il generale avversario ha attraversato la provincia.
+
+3.7 CONGEDARE EROI – Fire Hero [FI]
+L’Eroe viene svincolato dal servizio. Un Re può congedare un Eroe in qualsiasi momento. Un personaggio può congedare un Eroe solo se si trova nella stessa provincia. Un Eroe può sempre congedare sé stesso. L’Eroe vaga per il mondo fino a quando non è assoldato da un altro Re.
+
+3.8 LASCIARE UNITA’ MILITARI – Leave Army(s) [LE]
+L’unità militare specificata rimane nella provincia o ad un altro generale. Un’unità lasciata a un generale o ad una provincia di un altro Reame diventa di proprietà di quest’ultimo. Per lasciare tutte le unità militari comandate, scrivere: “[LE] All” (in questa forma il comando è applicabile anche alle unità reclutate nello stesso turno). Un personaggio può lasciare le proprie unità a presidiare una provincia lasciandole al Comando di Guarnigione o ad un altro Eroe, anche di un altro Reame, basta che sia alleato.
+(Novità) Con questo comando si potranno passare unità dal Comando di Guarnigione a un Eroe. Esempio: nella provincia sono al Comando di Guarnigione 2 unità. L’Eroe #A con un “[LE] numero unità#1, numero unità#2” potrà passarle all’Eroe #B.
+
+3.9 PRENDERE UNITA’ MILITARI – Pick Up Army(s) [PI]
+Questo comando serve ad associare un personaggio a una o più unità militari, che da quel momento in poi lo seguiranno nei suoi spostamenti. Si può prendere un’unità militare comandata da un personaggio che si trova nella stessa provincia. Non è invece possibile usare questo ordine nello stesso turno in cui un’unità militare viene reclutata, perché il suo codice di identificazione non è stato ancora determinato, ad eccezione delle unità mercenarie che sono già costituite e possiedono un loro codice. Per prendere tutte le unità militari senza comandante che si trovano in una provincia, scrivere: “[PI]ck Up [All]”. Un personaggio non può utilizzare questo comando a favore di un altro personaggio, come si fa, ad esempio, con l’ordine Recruit. Per fare ciò, usare il comando Leave (vedi sopra).
+
+3.10 LANCIARE INCANTESIMO – Cast spell [CA]
+Il personaggio prova a lanciare un incantesimo tra quelli previsti dai Talenti magici nei quali ha almeno un punto. Deve trattarsi di un Incantesimo d’Azione e non di un Incantesimo di Combattimento Individuale. La probabilità di successo è del 15% più 15% per livello. Attenzione a non utilizzare questo comando per usare un oggetto magico.
+
+3.11 USARE OGGETTI MAGICI – Use magic Item [US]
+Il personaggio lancia un incantesimo servendosi di un Oggetto Magico di cui specifica il codice di identificazione. La riuscita è sempre del 100%.
+3.12 INCONTRARE PERSONAGGI – Encounter character [EN]
+Il personaggio prova a incontrarne un altro nella stessa provincia, per parlare con lui, derubarlo o sfidarlo a un combattimento individuale.
+
+Se l’incontro ha per obiettivo il combattimento di sono alcune limitazioni: gli Eroi che non hanno il comando di unità militari non possono sottrarsi all’incontro con altri Eroi, ma evitano l’incontro con un Re il 50% delle volte. Un Re accetta un incontro non pacifico unicamente se tanto lui quanto lo sfidante tentano un incontro reciproco nella stessa provincia e nella stessa fase. Gli Eroi al comando di unità militari non accettano mai gli incontri.
+
+Queste limitazioni non valgono se il Piano d’Incontro (cioè lo schema di comportamento per il personaggio da utilizzare negli incontri) non prevede tattiche di combattimento o incantesimi di combattimento individuale (incluso Charm). Se in uno di questi incontri “limitati” viene usata la tattica rubare, la probabilità di riuscita è dimezzata.
+
+3.13 ESERCITARSI IN UN TALENTO – Practice Ability [PR]
+Se due o più personaggi che si trovano nella stessa provincia si esercitano nel medesimo Talento una stessa fase e uno di essi ha un livello di abilità più alto, chi ha la minore abilità salirà di un livello (purché abbia sufficiente potenzialità). L’avanzamento avrà effetto fin dalla fase successiva. Se i personaggi hanno pari livello di abilità, per tutti c’è un 10% di probabilità di salire di un livello. Se un personaggio fa pratica da solo le sue possibilità sono del 5%. Eventuali oggetti magici posseduti dai personaggi non contano per la determinazione del livello di abilità.
+
+La probabilità che un personaggio ha di salire di un livello è ridotta della metà per ciascun livello al di là della sua potenzialità naturale. Ad esempio se un personaggio ha una potenzialità naturale di 1 non avrà nessuna difficoltà a raggiungere il livello 1 in un Talento, ma solo il 50% di probabilità di raggiungere il livello 2, il 25% il livello 3 e il 12,5% di raggiungere il livello 4.
+
+C’è anche la probabilità che la potenzialità venga accresciuta tramite l’esperienza o con la pratica, ma solo se si è raggiunto o superato il livello di potenzialità. 
+
+Differenza Livello		Probabilità
+	1			10%
+	2			25%
+	3			50%
+	4			100%
+	5			80%
+	6			60%
+	7			40%
+	8			20%
+
+3.14 SPIARE UNA PROVINCIA – Spy province [SP]
+Un personaggio che spia in una provincia otterrà informazioni sul suo sovrano e su quelli delle province adiacenti, sulla rendita in tasse della provincia, sul tipo di unità presenti e se la provincia è la capitale del Reame. Quando un personaggio spia in una provincia, avrà anche la possibilità di venire a conoscenza di tutto quello che vi avviene in quella fase. Gli avvenimenti verranno riportati nel Rapporto Informativo, che è separato dal rapporto del personaggio (si trova alla fine del turno).
+
+Esiste anche un probabilità di scoprire quali conoscenze scientifiche dispone il Reame spiato e di apprenderle per usarle anche nel proprio. La probabilità di scoprire un’invenzione tramite lo spionaggio sono non più del doppio di quelle che si hanno di scoprirle con la ricerca scientifica. In questo caso un’abilità nel Talento Conoscenza sarà utile alla spia: il livello 1 è sufficiente per comprendere tutte le invenzioni comuni, mentre sarà necessario un livello più alto per le invenzioni o conoscenze più inusuali o difficili.
+
+Una volta per turno di gioco, la spia farà anche un rapporto concernente le forze militari e i personaggi che si trovano nella provincia. Se un personaggio spia consecutivamente in più province, il Re riceverà un rapporto per ciascuna di esse.
+
+Le relazioni sugli avvenimenti che accadono in una provincia sono sempre molto accurate; i propri rapporti militari, la valutazione finanziaria e i tipi di unità militari sono invece soggetti a un margine di errore che diminuisce con l’aumentare dell’abilità nel Talento Spiare. Un personaggio può spiare unicamente nella provincia in cui si trova (vedi anche punto 4.33 e Tabella dello Spionaggio, pag. X).
+
+3.15 DIFENDERE – Defend [DE]
+Un generale che riceve questo ordine può reagire, per il resto del turno, alle invasioni nemiche di province adiacenti. Esempio: diciamo che un generale riceve l’ordine di difendere come prima azione, mentre un generale nemico invade una provincia adiacente come quinta azione. Il primo generale muoverà allora il suo esercito in questa provincia e le sue truppe combatteranno a fianco dei difensori. Questi movimenti costano Punti Movimento e quindi un’unità militare che ha speso tutti i suoi Punti Movimento non è più in grado di reagire a una invasione.
+
+Il generale difensore agirà con intelligenza: ad esempio, se il nemico invia unità militari in una provincia difesa e in due province adiacenti, egli andrà in aiuto di una provincia adiacente con parte delle sue armate se è forte a sufficienza; in caso contrario rimarrà a difendere la provincia. Se vince la battaglia, inseguirà il generale che ha invaso la provincia adiacente. Si noti che per poter muovere in una provincia e difenderla e poi tornare indietro attraverso un’altra provincia, il generale deve muovere tre volte: deve quindi avere unità militari con una velocità di almeno 3 o un buon Talento Marcia.
+
+Un generale non reagirà all’invasione se la sua unità militare non può muovere nella zona invasa perché il terreno non lo consente. Ad esempio, il generale che si trova in una provincia di terra e che comanda 1 Flotta e 3 unità di Arcieri non ha sufficienti trasporti per muovere in una provincia di mare che è stata invasa né può muovere in una provincia di terra perché la Flotta non può spostarsi direttamente da una provincia di terra all’altra.
+
+Un generale può ricevere l’ordine di difendere un’area complessiva di 7 province, il cui centro si trovi in una qualsiasi di queste fino a due province di distanza. Tuttavia egli reagirà all’invasione di una provincia solo se questa è adiacente sia alla provincia in cui egli si trova in quel momento che a quella che avuto l’ordine di difendere. Esempio: supponiamo che si ordini a un generale di difendere una provincia lontana 2 province dalla zona in cui si trova in quel momento. Egli difenderà la provincia indicata, quella dove attualmente si trova e quelle adiacenti ad ambedue le precedenti. Si può usare questa regola per limitare le province che si desidera difendere.
+
+Un generale che ha ricevuto l’ordine Defend può impiegare le rimanenti azioni per far pratica, esplorare ecc… ma se riceve un ordine di Move, Pursue o Trail, l’ordine Defend viene annullato.
+
+Se un personaggio viene sconfitto in battaglia il suo ordine Defend è annullato onde evitare ulteriori inutili sconfitte.
+
+3.16 INSEGUIRE – Pursue  [PU]
+Un personaggio può ricevere l’ordine di inseguirne un altro per il resto del turno. Ad esempio, se gli si ordina di Inseguire come prima azione, il personaggio continuerà a muovere di provincia in provincia finché non arriverà a quella occupata dal personaggio preso di mira.
+
+E’ possibile indicare altre azioni nelle fasi dalla 2 alla 5, da tentare se l’inseguimento si risolve prima della fine del turno. Se, per esempio, l’inseguimento si risolve nella fase 4, nella fase 5 il computer eseguirà l’ordine indicato per quella fase.
+
+Tutte le regole elencate sotto la voce Incontri (3.12) valgono anche per gli incontri derivanti da un inseguimento. Se i personaggi hanno entrambi il comando di unità militari, l’inseguitore cercherà di catturare l’altro e sconfiggerlo in battaglia. Se l’inseguitore non comanda alcuna unità militare allora bisogna indicare un Piano d’Incontro da attuare nel caso in cui l’incontro avvenga. Se le tracce dell’inseguito non sono recenti ci vorrà molto tempo perché l’incontro accada ed è quindi consigliabile muovere il personaggio nell’ultimo “domicilio” conosciuto del personaggio preso di mira.
+
+Se l’inseguitore è al comando di un’unità militare e l’inseguito invece no, l’ordine Pursue viene ignorato. Se il personaggio ne insegue o pedina un altro che appartiene al proprio Reame ed entrambi partono dalla stessa provincia, l’inseguitore eseguirà l’azione dopo l’inseguito.
+
+3.17 PEDINARE – Trail  [TR]
+Il personaggio ne segue e ne spia un altro, ottenendo informazioni sulle sue azioni, sulla razza a cui appartiene, sul suo Temperamento e Allineamento, sui tesori che possiede e sulle unità militari di cui è al comando. Se si tratta di un Re, possono essere acquisite informazioni relative alla situazione finanziaria, alleanze, nemici e province controllate dal suo Reame.
+
+Al pari del comando Pursue, anche Trail termina quando il personaggio raggiunge il suo bersaglio e lo spia per una fase. Per poter mantenere la capacità di spiare sono necessari ulteriori ordini Trail. Un personaggio che comanda un’unità militare non può ricevere il comando Trail.
+
+In pratica il Trail è simile al Pursue, solo che il primo non genera un Piano d’Incontro, il secondo invece sì.
+
+3.18 DARE – Give  [GI]
+Un personaggio può dare un oggetto magico ad un altro se si trovano ambedue nella stessa provincia. E’ necessario indicare il codice di identificazione dell’oggetto e il personaggio che lo riceverà.
+
+I personaggi possono anche appartenere a Reami diversi e in tal caso si può specificare che il dono sarà fatto solo se chi lo riceve darà in cambio, nella stessa fase, un determinato oggetto magico. Il computer vi chiederà in cambio di cosa volete dare un certo oggetto. Solo se l’altro personaggio riceverà un Give proprio per quell’oggetto lo scambio verrà effettuato.
+
+Un Re (ma non un altro personaggio) può dare ad altri una limitata quantità di pezzi d’oro. Per farlo usa il comando Give accompagnato dal numero di pezzi d’oro voluto e lo destina a un personaggio di un altro giocatore (Re o Eroe) purché sito nella stessa provincia. In un turno un Re non può cedere oltre il 10% del suo tesoro calcolato all’inizio del turno (può tuttavia sempre dare per lo meno 10 pezzi d’oro purché disponga effettivamente di questa somma).
+
+Attenzione a non Dare un numero di pezzi d’oro uguale al codice di identificazione di un Oggetto Magico che il Re porta con sé (vedi anche paragrafo 5.7).
+
+
+4	TALENTI
+
+I personaggi possiedono dei Talenti che possono incrementare le loro probabilità di riuscita nella realizzazione di determinate azioni. Non è tuttavia indispensabile possedere un Talento per poter tentare un’azione a esso collegata. Ad esempio si può provare a rubare anche senza avere alcun livello in Thief. Ci sono però due eccezioni: tirare con l’arco, lanciare incantesimi e conoscenza che richiedono almeno un livello. I Talenti disponibili sono:
+
+4.1 TALENTI MARZIALI
+Aiutano un personaggio nel muovere le unità militari, nelle battaglie e nel combattimento individuale.
+
+4.1.2 TATTICA – Tactics [TA]
+Accresce la forza delle unità militari di terra e di aria comandate dal personaggio del 20% per livello di abilità. Quindi se il personaggio è al livello 2, la forza delle sue truppe aumenterà del 40%.
+
+4.1.2 MARCIA – March [MA]
+Consente a un personaggio di muovere unità militari di terra di un numero di province superiore a quello indicato nella Tabella delle Unità Militari. Se un’unità comincia il suo movimento agli ordini di un generale e poi passa sotto il comando di un altro con abilità di Marcia maggiore, l’unità gode della maggiore abilità di quest’ultimo. Inoltre, quando invade una provincia nemica, il personaggio con Talento Marcia ha maggiori possibilità di unirsi con un altro personaggio che sta invadendo la stessa provincia nella battaglia contro i difensori. Per maggiori dettagli si veda la Tabella della Marcia. Il Talento Marcia si applica alle unità che muovono da una provincia di terra all’altra.
+
+4.1.3 NAVALE – Naval [NA]
+Aumenta la forza delle flotte comandate dal personaggio del 20% per livello e la velocità del movimento per mare di 1 provincia per livello. Inoltre quando invade una provincia, personaggio ha maggiori possibilità di unirsi a un altro personaggio che sta invadendo la stessa provincia nella battaglia contro i difensori. Il Talento Navale si applica ai movimenti da e verso una provincia di mare.
+
+4.1.4 TIRO CON L’ARCO – Archery [AR o FI]
+Consente di scoccare un numero di frecce pari al livello dell’arciere. Ad esempio, un personaggio con un livello di abilità di 2 ottiene 2 round di attacco con l’arco, mentre l’avversario rimane passivo. La probabilità base di colpire è 30% più 10% per livello di Archery. Ogni freccia danneggia l’avversario di 1-6 punti ferita. I mostri a volte hanno 1 o più livelli in questa abilità.
+
+4.1.5 MISCHIA – Melee [ME]
+In un combattimento corpo a corpo la probabilità di colpire è del 50%. Questo Talento accresce la probabilità di colpire e diminuisce quella di essere colpiti del 10% per differenza di livello e accresce o diminuisce il danno inferto di 1 punto ferita sempre per differenza di livello. Esempio: se il livello di un personaggio in Mischia è 3 e quella del suo avversario è 2, il primo ha il 60% di colpire e +1 al danno, mentre il secondo il 40% di colpire e -1 sul danno.
+
+
+4.2 TALENTI MAGICI
+Ogni Talento magico comprende cinque incantesimi di base, che un personaggio con abilità di 1 o più in quel Talento è in grado di utilizzare. Si può usare un Talento magico per lanciare un Incantesimo di Azione per turno di gioco (al livello 3 si passa a due per turno, al livello 4 a tre) ed entro questi limiti è possibile lanciare lo stesso Incantesimo d’Azione più volte nello stesso turno. Un personaggio con abilità di due o più Talenti magici può usarli tutti per lanciare uno o più incantesimi nello stesso turno.
+
+Un personaggio può usare un Talento Magico per lanciare un Incantesimo di Combattimento Individuale per qualsiasi numero di incontri vengano effettuati in un unico turno, ma non può lanciare due volte lo stesso incantesimo nel medesimo incontro.
+
+I limiti applicati agli Incantesimi d’Azione e quelli applicati agli Incantesimi di Combattimento Individuale non si cumulano tra di loro, ma sono gli uni indipendenti dagli altri. Si può cioè lanciare il massimo degli Incantesimi d’Azione e anche il massimo degli Incantesimi di Combattimento Individuale.
+
+Un personaggio può lanciare un incantesimo solo se ha un livello di abilità di almeno 1 nel relativo Talento. La probabilità di riuscita di un Incantesimo d’Azione è del 15% più 15% per livello. Gli Incantesimi di Combattimento Individuale hanno una probabilità di riuscita del 30% più 15% per livello. Le probabilità di successo per incantesimi non possono mai superare il 95%. Se l’incantesimo fallisce non ci sono conseguenze dirette.
+
+Gli Incantesimi di Combattimento individuale funzionano esattamente nella maniera descritta e non hanno altre conseguenze di rilievo. Ad esempio l’incantesimo Raffica Psichica non accresce le probabilità di colpire in un combattimento corpo a corpo, né permette di abbandonare il combattimento.
+
+I Reami Pagani, i cui comandanti sono particolarmente sensibili alla magia, sono coadiuvati da un Ordine di Maghi. Tutti i personaggi appartenenti a quel Reame hanno quindi un modificatore +10% nei loro tentativi di lanciare qualsiasi incantesimo fuorché quelli di Magia Bianca.
+
+4.2.1 MAGIA BIANCA – 
+White Magic  [WH]
+Si possono lanciare i seguenti incantesimi di Magia Bianca:
+
+1. RESUSCITARE
+Resurrect Character [RE] (Incantesimo d’Azione): un personaggio che si trova nella stessa provincia di uno morto può tentare con questo incantesimo di farlo rivivere. Se l’incantesimo riesce, il defunto torna in vita –  con tutti i suoi Talenti ma non con gli oggetti che possedeva – e passa al servizio del Reame che lo ha resuscitato. Un personaggio può essere resuscitato in qualsiasi momento.
+
+Un Eroe resuscitato da un Re Divino diventa automaticamente di allineamento Buono e il Re può quindi pagarlo a costo ridotto. I Re Divini possono lanciare l’incantesimo di Resurrezione anche sui propri personaggi viventi per trasformare il loro allineamento in Buono (non possono invece farlo su personaggi che non controllano). I personaggi Non-Morti possono essere riportati in vita se muoiono e in quel caso assumono l’allineamento di chi li ha resuscitati (fanno eccezione i Re Non-Morti).
+
+Se il Re muore, un giocatore può lanciare un incantesimo di Resurrezione sull’Erede al trono (o, più precisamente, sulle ossa che del defunto che l’Erede porta con sé) e riportare così in vita il Re. Se l’incantesimo riesce, il Re risorto riprende il suo posto di sovrano e l’Erede se ne torna a casa a giocare con l’orsacchiotto. Affinché funzioni però la Resurrezione, il giocatore non deve aver assegnato alcun Talento all’Erede.
+
+Per regolamento, se l’Erede muore prima che il Re sia resuscitato, i suoi Talenti non sostituiscono quelli del defunto Re e un eventuale Erede successivo farà riferimento ai Talenti del Re originario. Un Re può essere riportato in vita anche da un giocatore di un altro Reame senza per questo diventare un suo personaggio.
+
+2. SEPARARE LE ACQUE
+Part Sea [PA] (Incantesimo d’Azione): una provincia di mare viene trasformata in pianura per il resto del turno. Le Flotte e le Balene non possono più entrarvi o uscirvi, possono invece farlo le unità di terra e i Tritoni. Solo la provincia in cui si trova chi lancia l’incantesimo, o una ad essa adiacente, possono essere bersaglio della magia. Le Balene eventualmente presenti, combatteranno a forza zero.
+
+Le unità militari di terra possono entrare nel Parted Sea da una provincia terrestre adiacente o da un altro Parted Sea e possono lasciare il Parted Sea solo per spostarsi in una provincia di terra adiacente o in un altro Parted Sea. Un’unità di terra che è entrata in un Parted Sea durante un precedente turno di gioco, scoprirà che, se vuole muovere, il mare deve essere di nuovo sottoposto al medesimo incantesimo.
+
+Separare le acque neutralizza gli effetti di Inondazione (vedi 4.2.4.1) e viceversa.
+
+3. BENEDIZIONE
+Bless [BL] (Incantesimo d’Azione): la rendita in tasse di una qualsiasi provincia della mappa (indipendentemente da dove si trova chi lancia l’incantesimo) è aumentata del 60% per un turno. Ripetuti incantesimi di questo tipo non hanno un effetto cumulativo.
+
+4. SIMBOLO SACRO
+Holy Symbol [HO] (Incantesimo di Combattimento Individuale): il Simbolo Sacro serve ad invocare la protezione divina e riduce le probabilità dell’avversario di colpire nel tiro con l’arco e nel corpo a corpo del 10% per livello di abilità. Ad esempio, se un giocatore che è al livello 1 combatte contro un avversario che ha la probabilità base di colpire pari al 50%, la ridurrà del 5% (il 10% del 50% equivale al 5%).
+
+Se usato contro un personaggio o un mostro Non-Morto, come un vampiro o un fantasma, oppure contro un mostro anti-holy come un demone, questo incantesimo riduce la probabilità di colpire del 20% per livello di abilità e infligge 1-4 punti ferita di danno per livello di abilità.
+
+5. ANNIENTAMENTO SPIRITUALE
+Spiritwrack [SP] (Incantesimo di Combattimento Individuale): chi lancia l’incantesimo pronuncia parole sacre che provocano nell’avversario violenti spasimi che lo indeboliscono nello spirito e nel corpo. La vittima non può lanciare incantesimi né tirare con l’arco e il danno che procura nel corpo a corpo è ridotto di ½ punto danno per livello di abilità di chi lancia l’incantesimo, arrotondato casualmente per eccesso o per difetto. Questo incantesimo è inefficace contro mostri Non-Morti o meccanici (che non hanno anima) e i suoi effetti sono dimezzati contro mostri di intelligenza animale.
+
+4.2.2 MAGIA PSICHICA – 
+Psychic Magic [PS]
+Consente l’uso di incantesimi legati ai poteri della mente:
+
+1. SEDUZIONE
+Charm [CH] (Incantesimo d’Azione o di Combattimento Individuale): se lanciato su un Eroe che si trova nella stessa provincia e che non comanda unità militari permette a chi lo usa di assoldare l’Eroe gratuitamente (fatti salvi i costi di mantenimento che vanno comunque pagati). Altrimenti consente a chi lancia l’incantesimo di ingraziarsi il suo avversario e sfuggire incolume al combattimento. Per i personaggi Non-Morti questo incantesimo appartiene alla magia Negromantica (e non alla magia Psichica). Quando un Re Non-Morto (e non un Eroe) lancia la Seduzione su un Eroe (unicamente come Incantesimo d’Azione), lo trasforma in Non-Morto. Un Re Non-Morto può quindi sedurre i propri Eroi per tentare di trasformarli in Non-Morti. La resistenza dei personaggi alla trasformazione, però, cresce con l’aumentare dei livelli d’abilità, anche se la possibilità di riuscita dell’incantesimo in quanto tale non è ridotta. La degenerazione avviene gradualmente e l’allineamento cambierà di 1-3 posizioni per ogni incantesimo lanciato.
+
+2. ORATORIA
+Oratory [OR] (Incantesimo d’Azione): chi lancia l’incantesimo può farlo su se stesso o su un personaggio sito nella stessa provincia. Tutte le unità militari che viaggiano con lui traggono grande conforto dai suoi discorsi e sono tanto rincuorate che il loro rango aumenta di un livello per il resto del turno. Le unità militari composte di Reclute diventeranno Medie, quelle Medie invece Veterane e così via. L’uso ripetuto di questo incantesimo non ha effetto cumulativo.
+
+3. CHIAROVEGGENZA
+Clairvoyance [CL] (Incantesimo d’Azione): l’incantesimo ha per bersaglio un personaggio sito in una qualsiasi provincia del mondo e, per il resto del turno, chi lo lancia è in grado di sapere tutto quanto accade alla vittima. Ciascun personaggio può lanciare un solo incantesimo di Chiaroveggenza per turno. Se ne lancia un secondo, quello precedente viene annullato.
+
+4. RAFFICA PSICHICA
+Psychic Blast [PS] (Incantesimo di Combattimento Individuale): chi lancia l’incantesimo proietta una raffica di energia mentale con cui stordisce il nemico guadagnando da 2 a 5 round supplementari d’attacco.
+
+
+
+5. TEMPESTA TELECINETICA
+Telekinetic Storm [TE] (Incantesimo di Combattimento Individuale): chi lancia l’incantesimo provoca una tempesta telecinetica, con epicentro vicino alla vittima, che solleva in aria piccoli oggetti e li fa ruotare vorticosamente in tutte le direzioni. L’incantesimo infligge da 4 a 16 punti danno alla vittima. Alcuni oggetti colpiscono anche chi lancia l’incantesimo: se egli si trova in zona di mischia, riceve da 4 a 16 punti danno; da 2 a 8 se è a portata d’arco e da 1 a 4 se è a portata di incantesimo. La Tempesta Telecinetica è inefficace contro i mostri sottomarini.
+
+4.2.3 MAGIA ILLUSORIA – 
+Illusory Magic [IL]
+Permette di diventare invisibili o di cambiare aspetto al terreno o aumentare la forza delle proprie unità militari grazie al potere dell’ombra.
+
+1. TERRENO ILLUSORIO
+Illusory Terrain [IL] (Incantesimo d’Azione): chi lancia questo incantesimo fa sembrare la provincia in cui si trova (o una adiacente) di un diverso tipo di terreno a sua scelta. L’illusione ha il 15% per turno di dissolversi. Questo incantesimo colpisce unicamente chi esamina la provincia da una adiacente. Chi vi entra invece, scoprirà l’inganno, che però avrà in parte effetto sulle unità militari, la cui forza sarà a metà strada tra quella che avrebbero sul terreno reale e quella che hanno sul terreno illusorio. Per esempio se una pianura viene “illusoriamente” trasformata in una di mare, le unità militari potranno entrarvi, ma la loro forza corrisponderà alla media tra quella che avrebbero in pianura e quella da “imbarcate”. Chi lancia un incantesimo di Terreno Illusorio sceglie il tipo di terreno che verrà “imitato”.
+
+2. ESERCITI FANTASMA
+Phantasmal Armies [PH] (Incantesimo d’Azione): chi lo lancia evoca eserciti fantasma che viaggiano con lui (o con un personaggio situato nella stessa provincia per il resto del turno. In questo modo la forza delle unità militari che egli comanda aumenta del 15% per livello d’abilità. L’uso ripetuto di questo incantesimo non è cumulativo.
+
+3. NASCONDERE LUOGO SPECIALE
+Hide Feature [HI] (Incantesimo d’Azione): un Luogo Speciale sito nella provincia dov’è il personaggio diventa invisibile a qualsiasi esploratore. Tuttavia un Re che già lo conosce (in pratica che sa il suo numero di identificazione) non si lascerà ingannare, lo faranno i suoi Eroi. L’illusione ha il 10% di probabilità per turno di dissolversi. Se in quel momento un mostro sta razziando una delle sue province, il giocatore può usare questo incantesimo sul Luogo Speciale del mostro evitando così ulteriori razzie per l’intera durata dell’incantesimo.
+
+4. INVISIBILITA’
+Invisibility [IN] (Incantesimo di Combattimento Individuale): la probabilità di essere colpiti con l’arco o nel corpo a corpo viene dimezzata per la durata del combattimento. Usato nel Piano d’Incontro prima di rubare, questo incantesimo vale come un modificatore di +15% al tentativo di furto.
+
+5. FANTASMA DELL’IMMAGINE ALLO SPECCHIO
+Mirror Image Phantasm [MI] (Incantesimo di Combattimento Individuale): chi lancia questo incantesimo crea un’immagine riflessa del suo avversario e la manda a combattere. Per l’avversario questa immagine è reale e inizialmente ha esattamente le sue caratteristiche. I due quindi combattono, mentre chi ha lanciato l’incantesimo rimane a concentrarsi sulla magia, senza eseguire nessun altra azione. Se un altro Mirror Image è lanciato mentre il fantasma sta combattendo, entrambe le illusioni si dissolveranno. Prima di ogni round c’è una probabilità che la vittima rifiuti di credere all’incantesimo, nel qual caso l’illusione perde il suo potere. Le probabilità che ciò avvenga per ciascun livello d’intelligenza sono elencate qui di seguito. Alle percentuali va sottratto il 15% per ciascun livello di magia di chi lancia l’incantesimo.
+
+Intelligenza			Probabilità
+
+Divina o Sovrumana		120%
+Umana Alta			100%
+Umana Media			80%
+Umana Scarsa			60%
+Animale			40%
+Meccanica			20%
+
+L’intelligenza di un Eroe di solito viene considerata Media. Per quanto riguarda i mostri, invece, bisogna tirare a indovinare. Per esempio i Draghi sono furbi, mentre le Amebe giganti sono di quanto di più stupido si possa immaginare.
+
+Se il fantasma viene sconfitto, chi lancia l’incantesimo deve continuare il combattimento alla distanza corrente. Se vince, il mostro reale è mentalmente annientato e cade al suolo. Il fantasma allora si volge contro il suo evocatore, il quale si trova in uno stato di trance così profondo che il suo senso della realtà è distorto. Il fantasma deve essere smascherato (con un bonus del 25% per chi è al di sopra dell’intelligenza media) o annientato. Se il fantasma vince, svanisce, e il mostro reale torna in vita e uccide il mago sopraffatto. Se il fantasma perde, chi lancia l’incantesimo automaticamente finisce il mostro stordito e rivendica per sé il possesso del tesoro.
+
+4.2.4 MAGIA ELEMENTALE – 
+Elemental Magic [EL]
+Permette di lanciare incantesimi basati sui quattro elementi: fuoco, aria, acqua e terra.
+
+1. INONDARE UNA PROVINCIA
+Flood Province [FL] (Incantesimo d’Azione): può essere lanciato unicamente sulla provincia di terra non montuosa in cui ci si trova o su una ad essa adiacente, trasformandola in mare. Tutte le unità militari di terra che si trovano nella provincia restano bloccate per il resto del turno. Nessuna unità militare di terra può entrare in quella provincia. I movimenti e i trasporti per mare e per aria sono indenni dall’incantesimo.
+
+2. TORNADO
+Tornado [TO] (Incantesimo d’Azione): va lanciato su una provincia nemica nella quale ci si trova o su una adiacente: tutte le unità militari presenti (eventualmente anche le proprie o alleate) hanno un 10% di probabilità per livello del mago di essere distrutte.
+
+3. TERREMOTO
+Earthquake [EA] (Incantesimo d’Azione): azzera la rendita in tasse di una provincia terrestre nemica in cui ci si trova o una ad essa adiacente. La durata è un turno.
+
+4. PALLA DI FUOCO
+Fireball [FI] (Incantesimo di Combattimento Individuale): se usato in un combattimento, provoca da 1 a 8 punti danno, più 1 punto danno per livello.
+
+Questo incantesimo è inefficace contro i mostri sottomarini.
+
+5. GUSCIO DI GHIACCIO
+Ice Suspension [IC] (Incantesimo di Combattimento Individuale): chi lo lancia rinchiude la sua vittima in un guscio magico di ghiaccio che lo blocca o lo rallenta per alcuni round. Può rimanere bloccato un mostro o un Eroe a cui restano fino a 4 punti ferita per livello di magia elementare di chi lancia l’incantesimo.
+
+In questo caso, il mago elementale si impossesserà di tutti gli oggetti magici che la vittima non porta con sé al momento e potrà scegliere tra fuggire (con successo automatico) o attendere che il ghiaccio si sciolga a sufficienza da permettere alla vittima di liberarsi. In questo caso guadagnerà 3 round supplementari d’attacco (partendo da qualsiasi distanza sia più conveniente per la successiva mossa di combattimento).
+
+Se l’incantesimo non blocca il bersaglio, quest’ultimo verrà rallentato. Il mago guadagnerà così da 1 a 3 round supplementari d’attacco, a seconda di quanta parte del corpo del mostro è racchiusa nel ghiaccio. Ad esempio, se alla vittima sono rimasti 16 punti ferita e chi lancia l’incantesimo ha un’abilità di livello 1, ottiene un round supplementare (16 diviso 4, fa ovviamente 1).
+
+Questo incantesimo è inefficace contro fantasmi, demoni e simili perché queste creature esistono solo parzialmente nel mondo materiale e funziona in maniera differente contro mostri volanti. Contro questi provocherà da 5 a 10 punti danno (la creatura si schianta al suolo) e darà a chi ha lanciato l’incantesimo da 1 a 3 round supplementari d’attacco (indipendentemente dal livello nella magia).
+
+4.2.5 NEGROMANZIA –  Necromancy  [NE]
+Consente l’uso dei seguenti incantesimi di magia nera:
+
+1. ESERCITO DI SCHELETRI
+Skeletal Armies [SK] (Incantesimo d’Azione): se il personaggio si trova in una provincia in cui in precedenza è stata combattuta una battaglia e sono stati distrutti degli eserciti, può reclutare un’orda di scheletri che si levano dalle tombe e riprendono le armi che avevano in vita. Si può evocare 1 esercito per livello di Talento, purché il numero di unità cadute in battaglia nei turni precedenti sia sufficiente (il reclutamento è gratuito, ma alla fine del turno vanno pagati i costi di mantenimento). Chi lancia questo incantesimo non ha modo di decidere che tipo di unità militari risponderà alla chiamata. Il numero totale di unità militari consentito nel gioco (sia viventi che morte) è di 350, perciò dopo le prime fasi, a ogni turno un 10% circa delle unità distrutte in precedenza è destinato alla decomposizione. Quando si supera il limite di 350, le unità distrutte da più lungo tempo si decompongono automaticamente.
+
+L’Esercito di Scheletri è in tutto e per tutto identico all’esercito morto e ha tutti i suoi punti movimento. Gli Eserciti di Scheletri controllati da un Re Non-Morto hanno il 100% di probabilità di essere fanatici. All’inizio del gioco, inoltre, i Re Non-Morti hanno sempre tra le loro unità un Esercito di Scheletri.
+
+Un Esercito di Scheletri può essere evocato in una provincia controllata da un nemico e quindi, se un’unità sta difendendo la provincia, ci sarà una battaglia. Se chi lancia l’incantesimo cerca di abbandonare l’Esercito di Scheletri o di affidarlo a un altro personaggio, che non sia un Re Non-Morto, gli scheletri soldati si scaveranno da soli la tomba e riprenderanno il loro sonno interrotto. I comandanti degli Eserciti di Scheletri sono sottoposti alle consuete regole sul Druidismo, quindi se un personaggio umano vuole comandare un Esercito di Scheletri composto da ex-Orchi, lo farà meglio se possiede almeno il primo livello di Druidismo. Se un Esercito di Scheletri viene sconfitto, sarà abbassato di un rango di livello (vedi 6.1).
+
+2. UCCIDERE UN NEMICO
+Kill an Enemy [KI] (Incantesimo d’Azione o di Combattimento Individuale): perché questo incantesimo possa essere utilizzato, è necessario che il negromante e la sua vittima si trovino nella stessa provincia. Contro un mostro a guardia di un Luogo Speciale può essere lanciato solo come incantesimo di Combattimento Individuale. Il mago costruisce una statuetta dell’avversario di cui desidera la morte, quindi “uccide” la statuetta in qualche modo, ad esempio trafiggendola con degli spilli. Se l’incantesimo riesce, la vittima viene uccisa nello stesso modo in cui era stata distrutta la statuetta. Se fallisce, la vittima designata attaccherà l’autore dell’incantesimo assumendo per l’occasione un temperamento Berserk, se necessario anche aggredendolo in quella stessa fase.
+
+Se viene utilizzato come incantesimo d’Azione può succedere che, invece di morire, la vittima cada in coma profondo. In questo caso tutti i suoi Talenti sono ridotti a livello zero, ma possono essere ripristinati con un incantesimo di Resurrezione.
+
+L’incantesimo è inefficace contro Non-Morti, fantasmi, demoni e simili, perché queste creature esistono solo parzialmente nel mondo materiale. Inoltre la possibilità di riuscita è ridotta alla metà in un incontro in un Luogo Speciale o contro un Eroe che comanda unità militari perché per fare la statuetta non ci si può basare su congetture. Un negromante non può usarlo per difendere sé stesso in un piano incontro a causa del troppo tempo necessario per preparare la statuetta. I Re sono immuni a questo incantesimo.
+
+3. PESTE
+Plague [PL] (Incantesimo d’Azione): chi lancia quest’incantesimo deve indicare la provincia che deve essere colpita (deve trattarsi di quella in cui si trova in quel momento o in una ad essa adiacente). Se l’incantesimo riesce, tutte le unità militari in quella provincia hanno un 10% di probabilità di essere distrutte, più un 10% per livello dell’autore dell’incantesimo. Solo le quattro razze umanoidi possono essere contagiate. Le unità che sopravvivono sono immunizzate da successive epidemie, che al massimo potranno provocare una riduzione di 1 livello nel loro rango. Attenzione! Nella fase successiva, c’è un 15% di probabilità per la provincia adiacente che la Peste si diffonda e può continuare a farlo anche nelle fasi seguenti. L’uso di molteplici incantesimi di Peste non ha effetto cumulativo.
+
+4. MANO DELLA MORTE
+Hand of Death [HA] (Incantesimo di Combattimento Individuale): chi lancia questo incantesimo fa ripetutamente il gesto di stringere forte il pugno come se strizzasse qualcosa e, per magia, il suo avversario avrà la sensazione che il suo cuore (o un altro organo sensibile) venga ridotto in poltiglia. Chi sta usando la Mano della Morte non può lanciare altri incantesimi né attaccare a mischia e si difende nel combattimento a corpo a corpo al livello di abilità che ha in Necromancy e non a quello che ha in Melee. Ogni attacco sferrato da chi lancia l’incantesimo provoca 1 punto danno più ½ punto per livello in magia nera. La vittima non può lanciare incantesimi né tirare con l’arco e le sue probabilità di colpire nel combattimento corpo a corpo sono dimezzate. Quando chi lancia l’incantesimo viene colpito perde al concentrazione e l’incantesimo svanisce. La Mano della Morte è inefficace contro mostri meccanici, Non-Morti o anti-holy.
+
+5. CONTROLLARE NON-MORTI
+Control Undead [CO] (Incantesimo di Combattimento Individuale): chi lancia questo incantesimo può tenere sotto controllo qualunque mostro Non-Morto per il tempo necessario a piantargli un paletto nel cuore (o neutralizzarlo in un altro modo). Se però l’incantesimo fallisce, nella vittima designata si scatenerà una furia omicida che farà aumentare i suoi Punti Ferita del 50-100%.
+
+
+4.3 TALENTI SPECIALI
+
+4.3.1 CONOSCENZA – 
+Sageness [SA]
+Permette la scoperta di nuovi strumenti o conoscenze. Quando si fa pratica in questo Talento (Practice Sageness) c’è un 5% di probabilità per livello di inventare o scoprire qualcosa di utile. Si può ad esempio scoprire la bussola, di grande aiuto nel Talento Explorer, o creare una possente macchina da guerra per le battaglie. Alcuni di questi strumenti sono buffi o poco credibili dal punto di vista scientifico e sono stati inseriti solo per colorire il gioco. Se un personaggio con un livello di abilità 4 pratica il Talento Sageness tutte le fasi, in media farà una scoperta ogni turno.
+
+4.3.2 DRUIDISMO – Druidism [DR]
+I Druidi sono specializzati nel raggiungimento dell’armonia con tutte le forme di vita naturali. Ad ogni livello i Druidi accrescono l’abilità di comandare unità militari composte da razze diverse dalla loro, com’è indicato nella Tabella del Druidismo.
+
+Se un personaggio tenta di assumere il comando di unità militari quando ha insufficiente Talento Druidico, il rango dell’unità avrà un calo pari alla carenza di Talento.
+
+Ad esempio,  se un personaggio che non possiede Talento Druidico prova a comandare un esercito di Balene, per cui è necessario il livello 2, il rango dell’unità militare viene ridotta di 2 livelli (da Media scende a Demoralizzata o da Veterana a Recluta, ecc…). Il rango delle truppe non potrà comunque mai essere ridotto al di sotto di Demoralizzato.
+
+Se un’unità è sottoposta al comandante di guarnigione di una provincia e appartiene a una razza differente da quella del Re, allora è il Talento Druidico del Re ad essere usato per determinare il cambiamento di rango.
+
+Per quanto riguarda la Tattica Parlare (Talk) negli incontri, alcuni mostri possono essere interpellati verbalmente soltanto dai Druidi.
+
+Chiunque può invece parlare con mostri dotati per lo meno di intelligenza umana e di laringe umanoide e con i draghi. I Druidi acquisiscono abilità supplementari in Talk a mano a mano che salgono di livello, in base alla Tabella del Druidismo.
+
+4.3.3 SPIONAGGIO – Spying [SP]
+Una Spia è in grado di redigere rapporti sulla forza e la disposizione di unità militari e personaggi nemici e impadronirsi delle invenzioni usate da altri Reami. Il personaggio che, in una fase del turno, compie un’azione Spiare (Spy) o Pedinare (Trail), è meno soggetto ad essere notato per tutto quel turno di gioco. Questo Talento rende più probabile la riuscita dell’azione Spiare e se un personaggio possiede un livello di abilità di almeno 1 ciò può essergli di grande aiuto nella stesura del Rapporto Informativo Generale, anche se non gli è stato dato l’ordine di spiare.
+
+Questo Talento è inoltre determinante per le probabilità di riuscita del personaggio che ne pedina o ne insegue un altro. Per maggiori informazioni guardare la Tabella dello Spiare.
+
+
+
+
+4.3.4 ESPLORAZIONE – 
+Explorer [EX]
+Influenza considerevolmente la determinazione del Quoziente d’Esplorazione (vedi Tabella dei Terreni).
+
+4.3.5 RUBARE – Thief [TH]
+Aumenta del 15% per livello le probabilità di riuscita di un furto. Il ladro condivide inoltre l’abilità della spia di passare inosservato quando tenta di rubare.
+
+
+5	INCONTRI
+
+Gli incontri possono avvenire tra personaggi e mostri come conseguenza di un’azione Ispezionare (Search Feature), tra personaggi in un’azione Incontro (Encounter) o in una battaglia sotto forma di duello tra due comandanti. Un Incontro non può mai coinvolgere più di due personaggi.
+
+Entrambi i personaggi hanno un Piano d’Incontro in base al quale possono tentare di rubare, negoziare o attaccare l’avversario. In Piano d’Incontro non è altro che una lista delle tattiche che il giocatore desidera impiegare nell’incontro, elencate in ordine di esecuzione. Alcune tattiche possono avere lo stesso nome di azioni (per esempio Dare) o di Talenti (per esempio Mischia), ma hanno effetto e significato molto diversi.
+Se un personaggio risulta privo di Piano d’Incontro o ne esaurisce le tattiche, il computer provvede a generarle automaticamente, scegliendo tra le tattiche già indicate, oppure, se nessun Piano d’Incontro è stato specificato, scegliendo la tattica apparentemente migliore. Nel combattimento individuale, i due avversari si attaccano a turno in successivi round di combattimento, infliggendo punti danno a ogni round fino a quando uno dei due viene ucciso perché i punti danno subiti sono pari o superano i suoi Punti Ferita. Il vincitore può allora depredare il nemico sconfitto dei suoi tesori.
+L’oro eventualmente conquistato è immediatamente utilizzabile per qualsiasi azione successiva.
+
+Ogni volta che in un Piano d’Incontro una tattica aggressiva segue una negoziale, si intende che il primo tipo di tattica verrà adottato solo in caso di fallimento delle trattative. Il personaggio con il maggiore livello d’abilità utile per la tattica impiegata ha l’iniziativa nel round di combattimento. Ad esempio, un mago psichico di livello 3 lancia il suo incantesimo prima che un arciere di livello 1 o 2 scocchi la sua freccia. Se il livello d’abilità è lo stesso i personaggi proseguono in ordine casuale. Vale comunque la regola che a portata di incantesimo gli attacchi con incantesimi avvengono prima che si possa avvicinarsi a portata d’arco e che in zona di mischia gli attacchi corpo a corpo hanno comunque la precedenza.
+
+Ci sono tre distanze nel combattimento: portata d’incantesimo, portata d’arco e zona di mischia. La prima è la distanza maggiore e consente solo l’uso di incantesimi o attacchi con armi da lancio. In zona di mischia solo incantesimi o attacchi corpo a corpo (quest’ultimi avranno comunque sempre la precedenza). Gli Incontri solitamente iniziano a portata di incantesimo. In combattimento tutti gli Eroi hanno 10 Punti Ferita. I mostri possono averne un numero tra 7 e 50.
+
+I Re Neutrali possono contare sull’appoggio di un Ordine dei Duellanti. Tutti i personaggi sotto paga di un Re Neutrale sono esperti nel duello e combattono con un modificatore di +1 ai loro Talenti di Mischia e Tiro con l’Arco. Questo vale solo negli scontri con Eroi o mostri umanoidi, come ad esempio gli Spadaccini Rinnegati.
+
+Ecco un esempio di incontro, nei capitoli successivi tutte le tattiche di combattimento disponibili:
+l’Eroe A, Marzials (alle dipendenze di un Re Neutrale) contro l’Eroe B, Ablamor (alle dipendenze di un Re Malvagio).
+
+Ablamor scouted for Marzials in Wrangell.  Ablamor (#121) 
+encountered Marzials.  Marzials thought to cast an Ice Suspension spell, but dropped a needed material component before Marzials could make his spellcast.  Chanting his words of magic with breathless precision, Ablamor let go a Hand Of Death spell and began making squeezing motions with his hands.  Marzials's spell was disrupted by the event.  His unseen fingers pierced the eyes of Marzials and clawed at his brain and damaged Marzials, inflicting 2 damage points.
+  Marzials loped along steadily and closed to bow range.
+  Marzials charged into melee range.  The unseen hands of Ablamor grasped 
+his lungs, choking Marzials and scored 2 damage points on him.  Showing no fear, Marzials moved closer and swang at Ablamor but his aim was slightly off the mark.  Ablamor clenched his fist tightly, squeezing the intestines 
+of Marzials and scorched Marzials with 2 damage points.
+  Marzials thrust at Ablamor and scored on him, doing 8 points of damage.  
+His spell was disrupted by the event.  Marzials treacherously swang at 
+Ablamor but his aim was slightly off.  Chanting his silver words of magic 
+into a mighty Mirror-Image Phantasm spell, Ablamor gestured with his hands and a second image of Marzials flashed into existence!  Marzials swang at his vaunted nemesis and inflicted 3 damage points.  The illusion of Marzials assailed Marzials and missed.	
+  Marzials disbelieved the illusion of Marzials and it gradually faded away. 
+Hoping to exploit a weak point in Ablamor's protection, Marzials deftly 
+swang at Ablamor but Ablamor evaded the blow.  Casting a Spiritwrack spell, Ablamor channelled scintillating, writhing strands of magic, to make Marzials quake and shiver with spiritual convulsions.  Marzials acrobatically vaulted over Ablamor and thrust at him but Ablamor dodged the sword.  Ablamor audaciously swang at Marzials but his sword whiffed harmlessly through the air.  Uttering his words of magic with breathless precision, he let go an Invisibility spell, fading into invisibility.  
+Marzials then swang at Ablamor with maximum strength and damaged him, 
+inflicting 5 damage points.  Ablamor was fatally wounded.  And so it was 
+that Ablamor met his unseemly end.
+5.1 LANCIARE UN INCANTESIMO (Cast Spell), USARE UN OGGETTO MAGICO (Use Magic Item) [CA-XX, US-N]
+Un incantesimo può essere lanciato da qualsiasi distanza. Qualsiasi incantesimo di combattimento può essere usato una sola volta in combattimento.
+
+Alcuni incantesimi evitano che un personaggio sia colpito in combattimento. Quando più di uno di questi incantesimi viene lanciato su un personaggio l’effetto è cumulativo. Ad esempio, se un incantesimo riduce la probabilità di un avversario di colpire del 50% e un successivo incantesimo la riduce di un altro 50%, la probabilità di colpire è di 25% di quello che sarebbe normalmente (50% x 50% = 25%).
+
+Alcuni incantesimo stordiscono o trattengono l’avversario per alcuni round. Se l’avversario viene trattenuto sufficientemente a lungo da permettere a chi lancia l’incantesimo di uscire dal suo campo d’azione, la tattica Fuggire (Flee) funzionerà automaticamente. Questo tipo di incantesimi non agevola il furto.
+
+In combattimento, ogni volta che un personaggio che sta tentando un incantesimo subisce un danno o viene tramortito da un altro incantesimo, il computer fa un check per vedere se l’incantesimo viene dissolto. Se è effettivamente così, chi ha perso l’incantesimo perde anche il turno. Ad esempio, 3 Punti Danno faranno dissolvere un incantesimo il 50% delle volte, mentre un colpo schivato avrà questo effetto il 30% delle volte perché, per evitare il colpo, l’autore dell’incantesimo può avere perso la concentrazione.
+
+Alcuni oggetti magici possono lanciare incantesimi di combattimento. Gli effetti sono simili agli incantesimi veri e proprio, solo che riescono automaticamente e non hanno limite (se ne possono lanciare più di uno nello stesso piano di combattimento).
+
+Se un personaggio ha due armi magici, può, con l’ordine Use Magic Item, specificare quale delle due intende adoperare. Questo non implica il consumo di un round.
+
+5.2 SCOCCARE UNA FRECCIA (Fire Arrow) [FI]
+Si può ottenere un numero di attacchi supplementari pari al livello di abilità in Tiro con l’Arco. Ad esempio, un personaggio con un’abilità di 2 in questo Talento ottiene due attacchi supplementari. La probabilità base di colpire è del 30% più 10% per livello e il danno è 1-6 punti danno.
+
+Se due personaggi che hanno entrambi abilità in Tiro con l’Arco combattono tra di loro, otterranno tutti e due circa il doppio del loro normale numero di attacchi supplementari. Tuttavia entra anche in ballo la casualità e l’Arciere più esperto potrebbe anche non riuscire a scoccare alcuna freccia prima dell’inizio del combattimento corpo a corpo!
+I mostri possono possedere punti in Tiro con l’Arco.
+
+Se un personaggio riceve l’ordine di attaccare con armi da lancio a portata d’incantesimo, si avvicina  a portata d’arco, consumando così un round e tira quindi nel round successivo. Se riceve l’ordine di utilizzare armi da lancio in zona di mischia, ignorerà il comando e userà invece la successiva tattica, in base al suo Piano d’Incontro.
+
+5.3 MISCHIA (Melee) [ME]
+Si può entrare in una Mischia anche senza avere abilità nel combattimento corpo a corpo. Quando riceve l’ordine di Mischia il personaggio si fa sotto in zona di mischia e cerca di colpire il suo avversario. Un personaggio ha una probabilità di base di colpire del 50% e infligge 1-6 punti danno per colpo più 1 per differenza nel Talento Melee tra chi attacca e chi difende. Se un personaggio riceve l’ordine di sferrare un attacco di mischia a portata d’incantesimo o di arco, cercherà di ridurre la distanza, avvicinandosi, consumando così il suo round. Combatterà corpo a corpo dopo aver raggiunto la zona di mischia. Il Temperamento di un personaggio condiziona il rendimento nel corpo a corpo come indicato nella Tabella dei Temperamenti.
+
+5.4 NEGOZIATI (Negotiations) 
+[TA-lk, SA-y, FU-lfill]
+Quando un personaggio parla (Talk) con un mostro che difende un Luogo Speciale, il mostro o lo attaccherà, o lo ignorerà, o gli proporrà un accordo come ad esempio una ricerca che verrà ricompensata con il dono di un oggetto magico. Quando si parla a un personaggio non controllato da altri giocatori si riesce a valutarne Allineamento e Temperamento e quanto costerebbe assoldarlo.
+
+Quando un personaggio di allineamento Druidico riesce a parlare con un mostro, quest’ultimo può dimostrarsi maggiormente disposto ad aiutarlo di quando non lo sarebbe nei confronti di personaggi di diverso allineamento.
+
+Un personaggio può dire (Say) tutte le parole indicate dal giocatore, entro un limite di 160 caratteri. Questa azione non fa consumare tempo di combattimento. La successiva tattica del personaggio è eseguita nello stesso round di combattimento della tattica Say. E’ possibile servirsi della tattica Say per vivacizzare i resoconti del turno. Ad esempio se un giocatore sta per lanciare una Palla di Fuoco su un Diavolo del Ghiaccio, potrebbe dire “Eccoti un bell’hot dog, muso gelato!”.
+
+Quando un mostro propone un accordo, il personaggio può onorarlo (Fulfill) dopo aver accettato le sue condizioni. In genere il mostro lo ricompenserà con pezzi d’oro o tesori. Non sempre però il mostro tiene fede al suo impegno, specialmente se è un mostro Malvagio e/o se il suo Allineamento è molto differente da quello del personaggio.
+
+Ispezionando un Luogo Speciale un personaggio può a volte imbattersi in un mostro che gli chiede di risolvere un enigma. Un utile suggerimento: quando si torna nella tana del mostro per dare una soluzione, il personaggio può fare tutti i tentativi che vuole utilizzando la tattica Say.
+Non è possibile usare sia la tattica Talk che Fulfill nello stesso Piano d’Incontro.
+
+5.5 RUBARE (Steal) [ST]
+Il personaggio tenta di rubare il suo avversario, Re, Eroe o mostro che sia. Ci sono due possibilità: o ci riesce oppure viene scoperto. Se la tattica Steal riesce il personaggio può portar via oro o uno o più oggetti magici (sempre che siano presenti). La probabilità base di riuscita è del 15% più 15% per livello di abilità, ma si applicano le seguenti modifiche.
+
+1) Se il ladro prende di mira un personaggio che è alla guida di un esercito le sue probabilità di riuscita sono dimezzate.
+
+2) Se la vittima è un Re, c’è la possibilità di sottrargli una cerca quantità di oro (dipende da quanto ha nella tesoreria in quel momento).
+
+Se il ladro fallisce nei suoi tentativi di furto non verrà necessariamente arrestato: le probabilità di evitare la cattura sono in funzione del livello di abilità del ladro. In caso di cattura le possibilità sono tre: se il ladro è un Eroe che ha provato a derubare un Re o un altro Eroe che comanda unità militari, viene giustiziato; se il ladro è un personaggio che ha tentato di derubare un mostro o un Eroe che non comanda unità militari, si ha un combattimento individuale, a una distanza scelta a caso; se il ladro è un Re che ha tentato di derubare un altro Re, perde metà dell’oro della sua tesoreria come prezzo del riscatto (se non ha oro verrà giustiziato). Le tattiche Steal, Talk, Fulfill si escludono a vicenda e solo una di esse può essere usata in ciascun Piano d’Incontro.
+
+Se si tenta di derubare un mostro, questi tenterà di nascondere il suo tesoro dove non può essere trovato (ad esempio dormendoci sopra). Se il mostro è di media intelligenza, ogni suo tentativo di sventare il furto avrà il 10% di probabilità di riuscita, se è più furbo la probabilità può salire fino al 25% o al 50%.
+
+
+5.6 FUGGIRE (Flee) [FL]
+Il personaggio può dichiarare di preferire la fuga al combattimento. La probabilità di fuggire davanti ai mostri veloci è del 20%, davanti a quelli di media velocità o di altri personaggi è del 50%, mentre davanti a quelli lenti è dell’80%. Un personaggio con un Temperamento debole (Cauto o Codardo) può fuggire senza che gli venga ordinato, indipendentemente dal Piano d’Incontro. I personaggi Codardi e Cauti che non siano Re possono persino rifiutare l’ordine di Incontrare un personaggio o un mostro, a seconda della forza dell’avversario. Per maggiori dettagli vedere la Tabella dei Temperamenti.
+(NOVITA’) I personaggi Cauti hanno il 30% in più di possibilità di fuggire.
+
+5.7 DARE (Give) [GI]
+Nel Piano d’Incontro, si può dare qualsiasi numero di oggetti a chiunque si incontra. Si estende cioè l’azione Dare permettendo di cedere più di un oggetto nella stessa fase. Non è però possibile scambiare oggetti per denaro.
+
+Attenzione: non scambiare mai la tattica Dare per Onorare un accordo (Fulfill).
+
+5.8 PERLUSTARE (Scouting) [SC]
+Quando un personaggio va ad Ispezionare un Luogo Speciale può usare la tattica Scout per scoprirne le eventuali funzioni o eventi speciali (che possono avere conseguenze positive o negative) e a volte ottenere informazioni su quale tipo di tesoro vi è custodito. Se il Luogo Speciale è difeso da un mostro e la tattica Perlustrare è usata da sola, o con Rubare, o è seguita dalla tattica Fuggire, è possibile ottenere informazioni su qualsiasi evento speciale che potrebbe accadere durante la perlustrazione (non verranno però fatti tentativi per “innescarlo”). Se invece la tattica Perlustrare fa parte di un piano che prevede Parlare, Onorare un accordo oppure azioni aggressive, o se non vi sono mostri nel Luogo Speciale perlustrato, verrà fatto un tentativo di mettere in moto l’evento speciale (solitamente dopo aver concluso tutte le trattative con il mostro, il cui permesso può essere necessario per perlustrare la zona). Gli eventi speciali possono aver luogo solo una volta per fase, o per turno, e possono funzionare in maniera diversa a seconda dell’Allineamento o delle altre caratteristiche del personaggio. Se il personaggio parla al mostro che si trova nel Luogo Speciale che sta perlustrando, otterrà il permesso di esaminare il luogo abbastanza accuratamente da scoprire tutte le sue eventuali funzioni speciali. Se usa invece qualche altro tipo di piano tattico, può venire a sapere che c’è qualcosa di speciale senza però riuscire a scoprire come funziona. Se usa ad esempio Rubare insieme a Perlustrare, la probabilità di non scoprire nulla è del 33%, mentre se si usa Fuggire è del 67%.
+
+E’ assolutamente irrilevante in che punto del Piano d’Incontro si trova l’ordine relativo a questa tattica. Il computer si limiterà a prender nota della tattica Perlustrare e la gestirà dopo che tutte le altre tattiche di incontro sono state eseguite. Perlustrare non condiziona la riuscita di nessuna tattica.
+
+5.9 VITTORIA, MORTE ED EREDI
+Se un personaggio sopravvive a un combattimento, riacquista immediatamente tutti i suoi Punti Ferita eventualmente perduti. A volte, a seguito di un combattimento, si possono prendere a un nemico sconfitto alcuni oggetti magici. Gli oggetti magici svolgono una grande varietà di funzioni.
+
+Normalmente servono a lanciare incantesimi o ad aumentare il livello in un Talento. Gli oggetti magici che permettono di lanciare incantesimi si usano impartendo l’ordine Usare Oggetto Magico e possono essere utilizzati un numero limitato di volte. Quando la loro carica è esaurita si disintegrano. Gli oggetti magici che non servono a lanciare incantesimi hanno un effetto automatico e quindi non è necessario dare un ordine per utilizzarli. Quando un personaggio muore, tutti gli oggetti magici da lui usati nel combattimento vanno al vincitore. Gli oggetti non utilizzabili in combattimento si considerano in salvo e vengono trasferiti all’erede del defunto. Se il defunto comandava unità militari, quest’ultime vengono trasferite al locale Comando di Guarnigione, oppure, se la morte è avvenuta in duello, a un altro Eroe (se presente) o a un comandante anonimo e privo di Talenti che rientrerà nell’ombra appena terminata la battaglia.
+
+Se chi muore è un Re, il maggiore dei suoi figli prende il suo posto nella provincia in cui il Re morto ha finito il turno. L’Erede partirà con nuovi quattro livelli di abilità a scelta del giocatore. Come per la generazione del personaggio all’inizio del gioco, un Talento non può essere portato a un livello superiore a due. Attenzione: se si intende resuscitare non bisogna dare alcun talento all’Erede. Possono essere scelti anche un nuovo Temperamento e Sesso, ma non un nuovo Allineamento (il cambio di Temperamento potrà influire nel pagamento degli Eroi).
+
+5.10 PIANO SPECIALE D’INCONTRO
+Oltre alle azioni, i giocatori possono specificare un Piano Speciale d’Incontro per ciascun personaggio. Questo piano ha due finalità, a seconda che il personaggio abbia o meno il comando di unità militari. Se il personaggio non comanda eserciti, il Piano d’Incontro sarà usato in tutti gli Incontri sollecitati da un altro personaggio o mostro errante.
+
+In una battaglia, il Piano Speciale d’Incontro dei due comandanti supremi determina se ci sarà o meno un duello tra loro. Se uno dei due ha un Piano Speciale d’Incontro che contiene un’azione aggressiva e nessun ordine Fuggire, allora quel comandante sfiderà l’altro a duello. Per evitare di essere sfidati a duello da un comandante nemico bisogna mettere la tattica Fuggire al primo posto nel Piano Speciale d’Incontro, altrimenti il vostro leader accetterà sempre un’eventuale sfida prima di darsi alla fuga. Comunque il personaggio che ha il comando Fuggire in un punto qualsiasi del Piano Speciale d’Incontro non provocherà mai un duello volontariamente. La tattica Fuggire riesce sempre in un duello tra comandanti (a meno che non si sia incapacitati o storditi), ma se viene usata le truppe sono disgustate dalla viltà del comandante e la loro forza è ridotta del 25% (l’uso dell’incantesimo Seduzione per fuggire ha le stesse conseguenze). Altrimenti il duello finisce con la morte di uno dei due comandanti: in questo caso il morale delle truppe del perdente è a terra e la loro forza è ridotta del 25%.
+
+Attenzione: gli Eroi che sono al comando delle province neutrali non sfidano mai a duello e lo accettano sempre a meno che non siano di Temperamento Codardo.
+
+Con le azioni Muovere, Esplorare, Ispezionare, Pedinare e Inseguire c’è la possibilità di un incontro casuale con un mostro. Le percentuali di probabilità sono elencate nella Tabella dei Terreni. Per difendersi il personaggio userà il Piano Speciale d’Incontro. I rischi di incontro sono dimezzati quando il personaggio attraversa un Reame amico. Se un personaggio inizia una fase in una provincia in cui si trova il comandante di una unità militare e come l’azione Muovere, Inseguire o Pedinare dirigendosi verso la stessa provincia di quest’ultimo, si considera che stia viaggiando insieme agli eserciti e non avrà incontri casuali.
+
+Se si omette di specificare il Piano Speciale d’Incontro, il computer ne genererà automaticamente uno secondo le caratteristiche del personaggio.
+
+Le tattiche Parlare, Onorare un accordo e Rubare non sono permesse in un Piano Speciale d’Incontro. 
+
+
+6	UNITA’ MILITARI
+
+6.1 TIPI DI UNITA’ MILITARI
+Ciascuna provincia di terra dispone di uno o due tipi di unità militari e in quella provincia un Re può reclutare questi tipi oppure unità di guarnigione.
+
+Le guarnigioni costano 1 pezzo d’oro. Tutte le altre unità di fanteria ne costano 2 mentre la maggior parte degli altri tipi 3 (solo i Draghi costano 4, vedi comunque la Tabella delle Unità Militari).
+
+Le unità militari sono di diverse classi: Demoralizzata (Depleted), Reclute (Green), Media (Average), Veterani (Veteran), Crack, Elite o Super-Elite.
+
+Le unità militari appena costituite partono come Reclute, tranne quelle reclutate nella provincia natale che cominciano come Medie.
+
+Le unità militari Reclute o Demoralizzate passano sempre al livello successivo alla fine del turno (solo se pagate regolarmente però). All’inizio del gioco tutte le unità militari sono Medie (comprese quelle presenti nelle province neutrali).
+
+Quando un comandante vuole far fare alle sue truppe manovre d’addestramento per migliorarne il livello qualitativo, può far pratica in Tattica o Navale (entrambi i metodi avranno lo stesso effetto su tutti i tipi di unità militari).
+
+Le  probabilità di passare al rango successivo sono le seguenti:
+
+Demoralizzata	  Reclute		100%
+Reclute  Media			25%
+Media  Veterani			5%
+Veterani  Crack			1%
+Crack  Elite				0,2%
+
+Perché un’unità militare possa passare a un rango superiore deve essere già presente un’unità del nuovo rango per addestrarla e servirle come modello. Ad esempio, se un comandante ha sotto di sé per lo più unità Medie, ci deve essere per lo meno un’unità Veterana perché le prime possano migliorare. Non è necessario che l’unità Veterana sia dello stesso tipo di quelle Medie. Se due comandanti si esercitano insieme in Tattica, le loro unità militari sono associate nelle stesse manovre d’addestramento.
+
+6.2 MOVIMENTO E TRASPORTO
+Le unità militari non possono muovere senza personaggi, ma possono essere lasciate in una provincia per difenderla. La velocità di un’unità indica di quanto essa può muovere in un turno. Ad esempio, un’unità con una velocità di 3 può muovere fino a 3 province nello stesso turno. Se una qualsiasi unità militare muove in una provincia occupata da un esercito nemico si ha una battaglia (se unità presenti nelle province neutrali sono sempre nemiche). Ogni unità deve spendere un Punto Movimento supplementare dopo aver conquistato una provincia di terra o aver combattuto uno scontro navale. Se un’unità comincia la fase in una provincia nemica e può ancora muovere, spende un Punto Movimento per imporre lo scontro. Il movimento esteso, consentito alle unità militari grazie ai Talenti Marcia e Navale viene sempre calcolato al momento in cui esse muovono.
+
+Le unità di terra possono muovere solo via terra a meno che non siano trasportate da flotte. Possono però essere lasciate in mare, in quanto si presume che tutti i mari abbiano isole e difenderanno la provincia di mare anche contro le flotte di invasione.
+
+Balene e Flotte possono entrare e uscire da province di terra, ma non possono muovere direttamente da una provincia di terra all’altra. Una flotta può trasportare due unità di fanteria (inclusi Troll e Bestie Mannare) o un’unità montata (inclusi Elefanti e Cammelli).
+
+I Tritoni muovono come le Flotte, con l’eccezione che possono entrare ed uscire da una provincia colpita da un incantesimo Separare le Acque. Non possono trasportare altre unità, ma possono essere trasportate da unità aeree.
+
+Gli Ent non possono mai essere trasportati e possono entrare in una provincia di mare solo se questa è sotto l’effetto di un incantesimo Separare le Acque.
+
+Le unità aeree (Draghi e Aquile) possono muovere per terra e per mare e possono terminare un turno sul mare. Possono trasportare un’unità di fanteria ciascuna.
+
+Le unità militari non possono usare un punto di movimento via terra ed essere trasportate (per mare o per aria) in uno stesso turno.
+
+
+7	BATTAGLIE
+
+Quando un personaggio che comanda unità militari muove in una provincia occupata da unità nemiche si ha una battaglia. Nelle battaglie le Flotte possono essere usate per un attacco alla terraferma (sbarcano i loro fanti di marina) e le truppe di terra possono combattere in mare. Le battaglie navali sono sostanzialmente una serie di abbordaggi e sono quindi simili alle battaglie terrestri. Le battaglie si svolgono alla fine della fase, dopo che tutti i personaggi hanno effettuato le proprie azioni.
+
+7.1 I COMANDATI SUPREMI
+Si considera comandante supremo in battaglia il personaggio con il maggior numero di contingenti di truppe e, in caso di parità, quello col maggior talento Tattico. Se un personaggio che non comanda in quel momento nessuna unità militare arriva in una provincia dove è in corso una battaglia, egli potrà subentrare al comandante supremo nel caso questo dovesse morire (senza però l’obbligo di battersi a duello). Ciò non succederà invece se non c’è un comandante supremo che combatte per la sua fazione. Se gli eserciti difensori non sono guidati da alcun personaggio, vengono affidati al Comandante di Guarnigione provinciale, che non ha Talenti ed entra in gioco solo per quella battaglia.
+
+Prima della battaglia, i due comandanti supremi possono sfidarsi a duello: le unità militari del perdente si demoralizzeranno e la loro forza sarà ridotta del 25%. Per maggiori dettagli sui duello vedi le regole riguardanti il Piano Speciale d’Incontro (paragrafo 5.10).
+7.2 SCHIERAMENTI DI BATTAGLIA
+Quando ha luogo una battaglia, le unità delle due forze contendenti vengono dispiegate una di fronte all’altra. La prima linea può essere ridotta se esiste una formazione montagnosa o boscosa a fianco del difensore, cosicché le forze di difesa possono schierarsi soltanto lungo un piccolo fronte (vedi Tabella dei Terreni). La lunghezza della prima linea è determinata dal numero di unità della forza numericamente inferiore. Le due forze contrapposte schierano le loro unità migliori in prima linea. Le unità più deboli in genere si dispongono dietro la prima linea e contribuiscono con il 50% della loro forza. Se c’è un numero di unità militari sufficiente per una terza linea, queste contano solo per il 25% della forza.
+
+Se lo schieramento di battaglia è più corto di quanto consentito dal terreno, le unità ai fianchi della seconda linea della forza numericamente superiore possono aggirare le forze nemiche. In questo caso sono al 100% della loro forza anziché al 50%.
+
+Le unità non umanoidi (Aquile, Draghi, Balene e Tritoni) possono attaccare dall’alto o da sotto l’acqua e contribuiscono alla battaglia sempre con il 100% della loro forza. Se dietro la prima linea nemica ci sono altre unità, i non umanoidi attaccheranno proprio queste anziché quelle della prima linea (in questo caso sia le unità in attacco che quella in difesa saranno al 100% della forza). Tuttavia, se i non umanoidi sono sminuiti nel combattimento a causa dell’insufficiente talento Druidico del loro comandante, concentreranno la loro forza ridotta sulle unità di prima linea.
+
+Il regolamento alla base di questa regola è che le incursioni di unità aeree, o, in mare, gli attacchi subacquei di Balene e Tritoni, li porterebbero ovviamente oltre la prima linea, soprattutto se il nemico sta combattendo in formazione chiusa. Quindi, un’unità di seconda linea dovrebbe essere sempre al 100% quando un’unità aerea sta sorvolando o un’unità marina sta attaccando sott’acqua, l’unità in prima linea proprio davanti a lei.
+
+Alcune unità non umanoidi (Draghi, Aquile, Balene e Tritoni) perdono in efficacia quando attaccano in gruppo la stessa unità nemica. La seconda unità attaccherà a metà della sua forza, la terza a un quarto. Al fine del calcolo della forza, unità aeree non umanoidi, unità navali non umanoidi e unità umanoidi sono considerate come gruppo distinti.
+
+Ogni battaglia si suddivide in tanti scontri quanto è lunga la linea del fronte. Viene confrontata la forza complessiva dei combattenti. Per ottenere una vittoria certa è necessario un rapporto di almeno 4 a 1, mentre una rapporto di 1 a 1 dà una probabilità di vittoria del 50%. La parte che si comporta meglio in questi scontri vince la battaglia. In computer decide quali unità sono state eliminate confrontando la forza di quelle che hanno partecipato allo scontro. Le Flotte che combattono in una provincia terrestre sono generalmente ridotto fino al rango di Demoralizzate invece di essere eliminate.
+
+Un mostro che si trova in una provincia dove è in corso una battaglia in cui è coinvolto un Re Druidico, se il suo allineamento è più vicino a quello del Re Druidico che a quello del contendente, potrebbe aiutare il Re Druidico. Un mostro molto potente, in una battaglia in montagna su un fronte ristretto può persino avere un’efficacia maggiore del fanatismo che a volte viene dato alle unità militari dall’Allineamento del Re. Inoltre se un personaggio con allineamento Druidico riesce a parlargli, il mostro può diventare più disponibile di altri.
+
+7.3 INSEGUIMENTO
+Dopo la battaglia l’unità più veloce dell’esercito vittorioso può inseguire ed eventualmente distruggere alcune delle unità sconfitte. In tali inseguimenti il fattore determinante è la velocità delle unità.
+
+Le unità militari in ritirata combattono con il bonus del 25% dato ai difensori, ma subiscono una penalità di -1 sul rango dovuta allo sconforto morale in cui la situazione li ha precipitati.
+
+In linea di massima, circa il 25% della fanteria vittoriosa e il 75% della cavalleria tenteranno di inseguire il nemico in ritirata. Unità particolarmente veloci, come la cavalleria leggera e le unità aeree possono tentare più di un inseguimento. Se un’unità in ritirata non è in grado di combattere l’unità inseguitrice fino a ridurla all’inazione in uno scontro diretto, è distrutta.
+
+7.4 RITIRATA
+Se le unità sconfitte hanno scarse possibilità di vincere una seconda battaglia, si ritireranno in una provincia amica adiacente.
+
+Se la ritirata è impossibile le unità Reclute e Demoralizzate saranno sciolte, mentre le altre potranno gettare le armi e tornare ad essere civili o diventare mercenarie. In quest’ultimo caso, normalmente, alla fine del turno si allontaneranno di qualche provincia dai loro attaccanti. In quel turno non possono essere assoldate.
+
+Se l’attaccante ha distrutto tutti i difensori o li ha costretti a ritirarsi, la provincia viene inglobata nel suo Reame e pagherà le tasse al nuovo sovrano ad ogni turno. Se l’attaccante è stato costretto alla ritirata, le sue unità devono ritirarsi nella provincia dalla quale erano partite per effettuare l’invasione o in una ad essa adiacente. Le ritirate vengono condotte separatamente per ciascun personaggio che comanda un contingente in battaglia. Questo è importante se l’unico percorso di ritirata è verso il mare ed un solo comandante ha tutte le Flotte.
+
+Quando un generale viene ucciso in battaglia le sue truppe in ritirata porteranno via il suo corpo. Questa è la ragione per cui, nella provincia in cui è caduto, non si vedrà mai la sua tomba.
+
+7.5 CONSEGUENZE 
+DELLA BATTAGLIA
+Le unità militari della fazione vincente che si sono fatte valere nella battaglia possono aumentare di rango. Tuttavia la maggior parte non raggiungerà mai il rango Crack e pochissime passeranno ad Elite.
+
+Alcune unità della fazione perdente saranno probabilmente declassate di un livello, benché una forza sconfitta che non batte in ritirata può sia migliorare che venire declassata. Questa possibilità di salire o scendere di rango si riduce mano a mano che cresce il livello qualitativo.
+
+Un’unità ha meno della normale possibilità di migliorare il suo rango se è comandata in maniera inadeguata. Se combatte come Recluta o Demoralizzata perché il suo comandante ha Talento Druidico insufficiente, ha rispettivamente 60% e 20% della normale possibilità di migliorare.
+
+Fattori determinanti nella decisione se abbandonare il combattimento per la provincia o rimanere a difenderla sono i seguenti:
+
+-	Il fatto che la provincia sia la Capitale del Re o Eroe perdente.
+-	L’esistenza di un percorso aperto di ritirata.
+-	La ricchezza della provincia.
+-	La capacità dell’attaccante di imporre un’altra battaglia nella fase successiva.
+-	Il fatto che gli attaccanti tendono a battere in ritirata più prontamente dei difensori.
+
+7.6 PROVINCE CONTESTATE
+Se un attaccante invade una provincia ma non riesce a distruggere i difensori o a costringerli alla ritirata, la provincia continua ad appartenere al difensore e viene definita provincia “contestata”.
+
+Se l’attaccante ha ancora per lo meno 1 Punto Movimento per ciascuna unità militare, userà questi punti per imporre un’altra battaglia nella fase successiva. In caso contrario entrambi gli eserciti si accampano e attendono l’inizio del seguente turno di gioco.
+
+Se un giocatore inizia un turno in una provincia contestata e non ne esce, il suo esercito spende 1 Punto Movimento per combattere una battaglia alla fine della prima fase.
+
+Il comandante che ha invaso la provincia contestata eseguirà i propri comandi nella fase successiva, tenendo però presente che non è consentito muovere da una provincia contestata a una provincia ostile (sì invece in una provincia neutrale che non appartiene a nessun Re).
+
+Facciamo l’esempio di un’unità tutta di fanteria guidata da un Eroe con un livello 2 di Marcia. L’unità muove in una provincia (usando 1 Punto Movimento) e vince la prima battaglia distruggendo la metà degli eserciti difensori nell’inseguimento.
+
+I difensori però pensano di avere ancora una possibilità. Rimangono sul posto e, nella fase successiva, gli attaccanti spendono 1 Punto Movimento per imporre un’altra battaglia.
+
+Annientano i difensori, spendono un ulteriore Punto Movimento per occupare la provincia e restano con 0 Punti Movimento. Ora non possono più muovere. Se per muovere in una provincia un giocatore utilizza il suo ultimo Punto Movimento, in quella fase viene comunque combattuta una battaglia.
+
+Quando due personaggi invadono una provincia neutrale nella stessa fase (o uno dei due la invade mentre l’altro la sta ancora contestando) le probabilità che ciascuno di essi ha di essere il primo a combattere contro i difensori sono proporzionali al numero delle unità che possiede (chi ne ha di più combatte per primo e se vince conquista la provincia).
+
+7.7 CONQUISTA
+La conquista di una provincia nemica rallenta un’unità militare, poiché viene considerata alla stregua di un movimento.
+
+Facciamo ad esempio il caso di un’unità militare con velocità 3 che entra in una provincia nemica. Quell’unità ha consumato 2/3 del suo movimento, ma nello stesso turno può entrare in un’altra provincia, anche se nemica, perché la sottrazione del quarto punto di movimento speso per la conquista viene applicata dopo che il movimento è stato effettuato (questo è l’unico caso in cui un’unità militare può concludere con Punti Movimento “negativi”).
+
+Come avviene nelle province di terra, entrare in una di mare costa 1 Punto Movimento supplementare solo se si dà luogo a una battaglia.
+
+Se si conquista una provincia non controllata, l’Eroe che la difendeva sarà probabilmente più costoso da assoldare o addirittura non assoldabile. Soltanto se il suo Allineamento è compatibile con quello del Re, l’Eroe sarà disposto a dimenticare la sconfitta e ad offrire i propri servigi a basso costo.
+
+7.8 CONTINGENTI MULTIPLI
+Due personaggi controllati dallo stesso Re (o al servizio di due Re alleati) che attaccano la stessa provincia nella medesima fase, possono combattere insieme in battaglia.
+
+Se attaccano partendo dalla stessa provincia, le probabilità che si uniscano in battaglia sono elevate. Se invece provengono da direzioni diverse probabilmente combatteranno i difensori in scontri separati.
+
+
+8	DIPLOMAZIA
+
+Ci sono tre possibili tipi di rapporti tra Re: alleanza, neutralità o ostilità (guerra). Nel primo turno tutti i Re hanno tra loro rapporti di neutralità. Alla fine di ciascun turno c’è la possibilità di Stringere Trattati (Treat) o Rompere Trattati (Break Treat) con altri giocatori.
+
+8.1 RELAZIONI DIPLOMATICHE
+Quando due nazioni sono nemiche possono attaccarsi reciprocamente senza limitazioni. Se due Re hanno un rapporto di neutralità, le loro unità militari non attaccano quando ricevono l’ordine di muovere nelle province dell’altro e rimangono invece dove si trovano (questa regola è particolarmente utile quando due Reami progettano di prendere la stessa provincia non controllata nello stesso turno). Quando due Re sono alleati, le loro forze e quelle dei loro Eroi non si attaccheranno reciprocamente quando si trovano nella stessa provincia e cercheranno di sommare le loro forze quando saranno in un combattimento contro un esercito non-alleato. Una provincia conquistata da una forza mista viene data al Re che controlla il maggior numero di unità dopo la battaglia (due alleati hanno libero passaggio nei territori e possono reclutare unità militari nelle province dell’altro, dando però 1 pezzo d’oro in regalo).
+
+Possono verificarsi delle situazioni interessanti quando il Re X è alleato ai Re Y e Z, che sono tra loro nemici. E’ consentito a ciascuno dei due nemici di marciare attraverso il territorio del Re X per attaccare l’altro, ma nessuna battaglia può avvenire tra loro sul territorio di quest’ultimo. Oppure, quando il Re X è al comando di forze presenti alla fine di una fase in una provincia che appartiene al Re Y che è stato invaso dal Re Z, le sue forze combattono insieme al Re Y contro il Re Z. In nessuno di questi casi il Re X può dare assistenza in attacco.
+
+8.2 STRINGERE TRATTATI (Treat)
+Un ordine Treat trasforma i rapporti di ostilità in neutralità e quelli di neutralità in alleanza, ma solo se entrambi i Re danno lo stesso ordine Treat nello stesso turno. Il trattato dura finché non è infranto.
+
+Quando un Reame Druidico stringe un trattato con un altro Reame con il quale ha rapporti di neutralità, i diplomatici di questo secondo Reame si faranno influenzare dalla persuasività e dalla dottrina dell’armonia druidica. Un’alleanza verrà quindi sottoscritta anche senza un ordine Treat da parte dell’altro Re, a meno che questo non impartisca un ordine Break Treat nello stesso turno.
+
+I personaggi Druidici inoltre stringono alleanze più velocemente. Se un Re Druidico e un altro Re stringono un trattato di alleanza reciproco, diventano alleati prima dell’inizio del turno, anche se in precedenza erano nemici.
+
+8.3 ROMPERE TRATTATI 
+(Break Treaty)
+Un ordine Break Treat “declassa” di una sola posizione per volta la qualità dei rapporti diplomatici (il che concede a un alleato un turno per rischiarare le sue forze prima dell’inizio della guerra). Quando due alleati passano a un rapporto di neutralità e uno dei giocatori ha alcune unità nel territorio dell’altro, non si ha combattimento. Le unità militari possono muovere in una provincia adiacente alleata o nemica, altrimenti non hanno altra scelta che rimanere bloccate lì dove si trovano. Se i rapporti a questo punto diventano di ostilità, si avrà una battaglia a meno che uno dei Re non sposti le proprie forze fuori dalla provincia. Se due alleati danno l’ordine Breat Treat l’uno verso l’altro nello stesso turno, diventano nemici.
+
+I Re Malvagi e Non-Morti danno l’ordine Break Treat all’inizio del turno e non alla fine. Di conseguenza possono incominciare immediatamente un’invasione nello stesso turno in cui dichiarano guerra.
+
+8.4 TRATTATI SCIENTIFICI
+Per scambiarsi scoperte scientifiche, i giocatori devono essere diventati alleati in un precedente turno di gioco. Da quel momento in poi, un reciproco ordine Treat è interpretato come un Trattato Scientifico. L’unico requisito è che alla fine del turno i due Reami siano adiacenti o altrimenti che un personaggio di uno dei due Reami si trovi all’interno dell’altro Reame. Le due nazioni si scambieranno un segreto per ciascun reciproco ordine Treat (massimo uno a turno). In generale, i segreti scambiati per primi sono quelli maggiormente orientati in senso militare. Lo scambio avviene dopo il computo delle finanze, alla fine del turno. Le scoperte verranno elencate nel resoconto del turno in ordine di importanza per i Trattati Scientifici. Se una sola delle due nazioni ha un segreto conosciuto all’altra, quell’unico segreto verrà comunque scambiato.
+
+
+9	FINANZE
+
+Tutti i Re iniziano il gioco con un tesoro di 10 pezzi d’oro che possono essere impiegati per assoldare unità militari o Eroi. Alla fine del turno si incassano le rendite, quindi si paga il mantenimento degli Eroi e poi quello delle unità militari.
+
+9.1 REDDITO
+Ci sono due sistemi per guadagnare oro: le tasse e le avventure. Ciascuna provincia ha un valore in tasse. Se un Re controlla una provincia alla fine del turno, le tasse vengono aggiunte al suo tesoro. Un personaggio può ottenere pezzi d’oro anche con il furto o sconfiggendo un mostro e spogliandolo del suo tesoro.
+
+9.2 SPESE
+Unità militari ed Eroi sono pagati nel momento in cui vengono assoldati e anche alla fine di ciascun turno di gioco. Si pagano prima gli Eroi, quindi le unità militari. Un’unità non pagata può venire declassata e c’è la possibilità che diserti. Anche un Eroe che non riceve la paga può disertare, ma alcuni Eroi sono così leali che non abbandonano mai spontaneamente il loro signore.
+
+Un Re può anche perdere pezzi d’oro in un’avventura. Può essere derubato da un personaggio ostile o un mostro può avventurarsi fuori dalla sua tana e devastare una sua provincia, riducendone in tal modo le tasse per quel turno di gioco. I mostri tendono a farsi più arroganti e a devastare il territorio più frequentemente se non vengono attaccati con successo.
+
+
+
+10	 VITTORIA
+
+10.1 CARICHE IMPERIALI
+Ci sono in tutto 8 Cariche Imperiali, ciascuna delle quali, alla fine del gioco, verrà concessa al personaggio che avrà totalizzato il maggior numero di Punti Merito per quell’incarico. In caso di parità varrà il numero di pezzi d’oro contenuti nel tesoro, quindi l’ammontare della rendita in tasse. A ciascuna carica corrisponde inoltre una quota di Punti Vittoria espressa in termini percentuali. Il totale di questi punti e quindi la sua posizione nella classifica generale, viene poi modificato dalla differenza di Allineamento dall’Imperatore neo-eletto, come viene spiegato nel paragrafo successivo. Nel corso del gioco, ogni giocatore viene informato sulla sua posizione nella classifica relativa a ciascuna carica, espressa in Punti Merito e percentuale rispetto al primo in classifica (se invece è primo gli viene detto quanto è distante il secondo). Anche un Eroe può aggiudicarsi una carica e uno stesso personaggio può aggiudicarsene più di una. Se un personaggio muore, perde il 25% dei suoi Punti Merito. Per ulteriori dettagli si veda la Tabella delle Cariche Imperiali.
+
+10.2 L’IMPERATORE
+Imperatore diventa il giocatore che, alla fine della partita, ha accumulato il più alto numero di voti in base alla rendita di tasse. Per maggiore chiarezza illustriamo qui di seguito cosa si deve fare mettere fine a una partita. Alla fine di un turno qualsiasi, un singolo Re, o un’alleanza di Re, che detengano più del 55% della rendita di tasse complessiva, possono richiedere che venga eletto l’Imperatore. Nel turno successivo tutti i Re hanno la facoltà di esprimere una preferenza, tenendo presente che può essere votato qualsiasi Re e non necessariamente quello che al momento ha la rendita più alta. Ogni Re dispone di un numero di voti pari alla rendita che ha accumulato alla fine di quel turno. Se un Re ottiene più del 50% dei voti diventa Imperatore. Se nessun giocatore supera il quorum, l’Imperatore non viene eletto, il gioco continua e una nuova elezione può essere richiesta in un altro momento. Poiché la votazione avviene nel turno successivo a quello in cui viene richiesta, non è possibile tenere votazioni per due turni consecutivi. Dopo l’elezione tutti i Re mantengono il possesso delle proprie terre, ma considera che l’Imperatore abbia il dominio formale del mondo intero. Viene poi determinato l’ammontare totale dei Punti Vittoria disponibili, vengono attribuite le altre Cariche imperiali con le relative percentuali di Punti Vittoria e di conseguenza viene stilata una prima classifica finale. Infine viene calcolato quanto l’Allineamento dell’Imperatore neo-eletto influenza la posizione in classifica degli altri giocatori: a ciascuno di essi verrà infatti detratta una percentuale di Punti Vittoria corrispondente alla distanza tra il loro Allineamento e quello dell’Imperatore. Nella relativa tabella viene indicata, per ciascun Allineamento, una percentuale che, moltiplicata per il numero di posizioni di distanza dall’Allineamento dell’Imperatore, esprime la riduzione dei Punti Vittoria che ogni Re deve subire. Ad esempio, un Re Pagano perde il 45% dei suoi Punti Vittoria se viene eletto Imperatore un Re Buono 
+(15% x 3). Il più grande CERVO D'ORO KING del mondo, cioè il vincitore della partita, non è quindi necessariamente l’Imperatore bensì il giocatore che, una volta calcolati tutti gli aggiustamenti, ha ottenuto il più alto totale di Punti Vittoria.
+
+10.3 VALHALLA
+Se un giocatore ottiene in una partita un risultato particolarmente brillante il suo Re può essere ammesso nel Vahlalla. Nelle leggende scandinave, il Vahlalla è la grande aula di Odino, a cui hanno accesso solo i più valorosi tra i valorosi. Per entrare nel Vahlalla un personaggio deve o essere il Re vincitore o aver contribuito con almeno 20 Punti Vittoria al risultato del proprio Reame (dopo che sono state calcolate le riduzioni per le differenze di allineamento). Può entrare nel Vahlalla solo un personaggio per ciascun Reame (in genere è il Re). Chi entra nel Vahlalla, si troverà accanto a figure leggendarie, come ad esempio Re Artù. Queste figure e i personaggi che si sono guadagnati l’ingresso nel Vahlalla grazie alle loro imprese in una precedente partita, spesso fanno la loro comparsa nel mondo di CERVO D'ORO KINGS! Ciascun allineamento da Buono a Malvagio riceverà una visita una volta ogni cinque turni (se c’è più di un giocatore in un allineamento, la scelta verrà fatta a caso). I personaggi appariranno a fianco del Re. Il giocatore che riceve una visita dal Vahlalla, può decidere per quel turno le azioni che il personaggio effettuerà. Nei turni 1 e 2, i “visitatori” hanno diritto ad una sola azione e questa facoltà aumenta al ritmo di una azione ogni due turni. I re Non-Morti e Divini possono entrare nel Vahlalla come Buoni o Malvagi, ma non ricevono visite dal Vahlalla.
+
+Chi entra nel Vahlalla può portare con sé un proprio oggetto magico e può anche scrivere quello che il personaggio dirà quando andrà a fare visita a un Re, raccontare la sua storia, dare consigli, vantarsi delle proprie imprese e via di seguito.
+
+
+
+11	 CONSIGLI PER INIZIARE IL GIOCO
+
+Il giocatore può scegliere per il proprio Re 
+la Razza, l’Allineamento, il Temperamento 
+e quattro livelli di Talento. La scelta della Razza e dell’Allineamento è per lo più una questione di gusti personali, dal momento 
+che i poteri delle diverse Razze e dei diversi Allineamenti sono bilanciati.
+
+Per i livelli di Talento, invece, è bene spendere due parole in più. E’ molto più utile possedere qualche buon Talento marziale 
+per assicurare al proprio Reame una rapita espansione. La scelta più logica nell’optare per Tattica e Marcia, mentre Tiro con l’Arco, Mischia e i Talenti magici possono aiutarvi 
+a sconfiggere i comandanti avversari 
+in duello, il che incrementa le possibilità 
+di vittoria. Questi Talenti agevolano anche l’ispezione dei Luoghi Speciali. Una strategia molto amata da alcuni giocatori consiste nello scegliere Marcia a livello 2, il cui consente alla fanteria di attaccare una seconda provincia dopo avere conquistato la prima.
+
+Un’altra strategia spesso sottovalutata, consiste nell’attribuire alcuni punti al Talento Navale, per essere in grado di padroneggiare le vaste distese oceaniche.
+
+Il Talento Druidico vi aiuterà a comandare unità militari di razze diverse da quella 
+a cui appartenete. La metà circa del mondo 
+è occupata da Uomini, per cui chi sceglie 
+una razza diversa da quella umana, dovrebbe avere almeno un livello di Druidismo. 
+Per i Re Umani, invece, questo tipo di abilità, ancorché utile, può essere considerata facoltativa.
+
+Non dimenticare che ci sono 7 Cariche Imperiali oltre a quella di Imperatore. 
+Una buona idea è quella di concentrarsi 
+su una Carica diversa da quella di Imperatore, 
+e contemporaneamente fare tutto il possibile per le altre 6 finché non è chiaro che siate fuori dal gioco.
+Il Temperamento dovrebbe corrispondere 
+ai Talenti prescelti. I temperamenti Cauto 
+e Codardo sono ottimi per Re poco abili 
+nel combattimento corpo a corpo. Coraggioso 
+e Berserk sono perfetti per guerrieri forti. Ricordate però che gli Eroi di cui avrete 
+il controllo all’inizio del gioco probabilmente avranno un Temperamento simile a quello 
+del vostro Re.
+
+Alcune regole comprese nella variante SUPER CERVO D'ORO KINGS (da definire) sono applicabili anche alle partite regolari 
+da 8-12 giocatori. Quando un giocatore guadagna una Carica, può essergli concesso un Talento speciale che gli resterà per tutti 
+il tempo in cui manterrà questa Carica. Vengono usati anche alcuni dei Titoli che però non danno Punti Vittoria aggiuntivi. 
+Il tutto viene accuratamente segnalato nel Resoconto del giocatore.
+
+11.1 SUGGERIMENTI 
+PER CHI INIZIA
+Quando vi lanciate in una campagna di conquista ricordate che è necessario spendere un ulteriore Punto Movimento per conquistare una provincia nemica (vedi 6.2). Un’unità militare con velocità 2 sarà quindi in grado di conquistare solo una provincia in un turno; una formazione di cavalleria o un esercito guidato da un comandante con Marcia di livello 2 o più, può cercare di conquistare due province. Le Flotte devono spendere questo Punto Movimento solo quando combattono una battaglia nella provincia. Se attaccate nella fase 4 o prima, le vostre unità militari, quindi, possono combattere più di una battaglia.
+
+Sarà sicuramente utile ai principianti un esempio che illustra una tipica situazione di combattimento. Diciamo che partite con truppe composte da Uomini, 2 Legioni e un’unità di Cavalleria Pesante e state pensando di invadere una provincia di Foresta prospera difesa da Arcieri Elfi. Normalmente dovreste reclutare 4 unità con i vostri 10 pezzi d’oro cioè avreste in tutto 4 Legioni e 3 unità di Cavalleria Pesante, tutte di rango Medio.
+
+Calcoliamo ora quali sarebbero le vostre possibilità in uno scontro con i difensori 
+(gli Arcieri Elfi) esaminando la Tabella delle Unità Militari. In primo luogo, la resistenza che incontrate. Trattandosi di una provincia prospera sarà probabilmente difesa da 2 unità di Arcieri Elfi. Ciascuno avrà una forza base di 2, +1 perché la Foresta è il terreno favorevole per gli Elfi, +1 perché la foresta è il terreno favorevole per gli Arcieri e ancora +1 perché gli Elfi hanno un bonus quando combattono come Arcieri. La forza complessiva modificata di ciascuna unità è quindi 5. Moltiplicate questo risultato per 2 perché tutte le unità sono di rango Medio e otterrete 10 punti difesa. Moltiplicate quindi il tutto per 1.25 per la difesa, per 1.25 per l’esplorazione ed otterrete 15 punti per unità e quindi una forza totale di 30 (questa procedura non vi sembrerà tanto complicata una volta che ci avrete preso la mano, comunque il WinSaga possiede un simulatore di battaglie).
+
+Diciamo ora che date inizio all’invasione con tutte le vostre unità. La vostra prima linea in battaglia sarà composta da 2 Legioni Umane con forza complessiva di 16 (forza della Legione = 3; +1 concesso agli Umani quando combattono come Legione; x 2 per il rango Medio; il tutto per 2 unità). Stessa forza avrà la vostra seconda linea, sempre composta da 2 legioni che non subiranno la penalità del 50% perché in grado di aggirare il nemico (vedi punto 7.2). Penalizzata del 25% sarà invece la Cavalleria (in terza linea), la cui forza complessiva raggiungerà un valore di 2 (forza base della Cavalleria Pesante = 4 x 2 del rango Medio, x 0.50 perché combatte in foresta, suo terreno sfavorevole; x 0.25 per la penalità al punto 7.2; il tutto per 2 unità). L’ultima unità di Cavalleria non contribuirà alla battaglia e resterà in riserva.
+
+Il totale della forza degli attaccanti sarà quindi 34 (16+16+2) contro i 30 dei difensori, il che significa un rapporto attaccante-difensore di 1.25 a 1 che vi dà una probabilità di vittoria del 60-65%. Non è un granché!
+
+E’ il caso di cercare un rapporto più vicino al 2 a 1. Controllate le vostre abilità per vedere se potete aumentare la vostra forza: qualche livello di Tattica o qualche incantesimo potrebbero essere assai utili. Se il vostro comandante è tagliato per il combattimento individuale, o se siete Neutrali, e quindi membri dell’Ordine dei Duellanti, non trascurate l’ipotesi di sfidare a duello il generale avversario.
+
+Potreste anche prendere in considerazione l’ipotesi di inviare qualche personaggio in avanscoperta ad esplorare la provincia nemica, soprattutto se si tratta di pianure. Infine considerate l’ipotesi di conquistare prima una provincia più debole, cosa che potrebbe farvi guadagnare qualche facile punto di tasse con cui reclutare altre unità e rafforzare il vostro esercito, senza trascurare il fatto che, travolgendo forze nettamente inferiori, vostre unità potrebbero ottenere fondamentali avanzamenti qualitativi.
+
+All’inizio della partita cercate di prendere quante più province possibile in ciascun turno. E’ consigliabile mirare per lo meno a due province a turno o, se vi è possibile, addirittura a tre o quattro. A tal fine è consigliabile reclutare alcune unità militari già dal turno iniziale. Se avete un’abilità di meno di 2 punti nel Talento Marcia, potete suddividere le vostre forze in un esercito di cavalleria e in uno di fanteria, usando la fanteria per conquistare una provincia, mentre la cavalleria cerca di conquistarne altre. Tuttavia questa manovra è possibile anche se non avete un livello alto di Marcia: invadete la prima provincia con l’esercito al completo, poi lasciate la fanteria (Leave Army) e invadete la seconda provincia con la cavalleria. Un Re che ha una Flotta dovrebbe cercare di prendere da 1 a 3 province di mare. Potete ordinare ad una Flotta di muovere in una zona sconosciuta, il che a volte si rileva una buona mossa (anche se azzardata).
+
+Se progettate un’invasione, soppesate tutte le condizioni che possono favorire o contrastare il vostro successo battaglia. Nella Tabella delle Unità Militari sono riportati tutti i modificatori della forza degli eserciti. Ricordate anche che su un terreno di montagna il numero degli eserciti che si possiedono non conta molto dal momento che la battaglia potrebbe essere combattuta in una gola che permette lo schieramento di uno o due eserciti soltanto. Dopo aver conquistato una provincia controllata da un eroe 
+non-giocatore, si dovrebbe prendere in considerazione la possibilità di assoldarlo in quello stesso turno di gioco. Potrebbe essere saggio attendere una fase prima di provarci nel caso fossero necessarie due battaglie per conquistare la provincia.
+
+Quando ispezionate un Luogo Speciale, ricordate che la Tattica Parlare (Talk) si rivela spesso molto fruttuosa. Alcuni mostri possono arrivare a cedervi il loro tesoro in cambio 
+di un semplice favore e persino un mostro malvagio esiterà ad attaccare un Eroe, quindi le vostre probabilità di sopravvivenza sono piuttosto alte. Tuttavia non fate attacchi arrischiati contro mostri nei primi turni 
+di gioco e cercate di avere una buona scorta 
+di personaggi di riserva. Quando preparate 
+un Piano d’Incontro che inizia con una tattica 
+di negoziato, fatela seguire da un ordine Fuggire (Flee) e/o da un ordine 
+di combattimento nel caso le trattative dovessero fallire.
+
+Mettetevi in lizza per tutte le Cariche Imperiali. All’inizio del gioco decidete quale personaggio sarà il vostro candidato principale per ciascuna Carica e quali Cariche avranno la priorità. Verso la metà o la fine della partita, cercate di scoprire quali personaggi vi precedono in classifica e tentate di neutralizzarli. Il vincitore del gioco sarà probabilmente il Re che non ha lasciato nulla di intentato. Ovviamente la fortuna ha una larga parte nel gioco, quindi i giocatori dovranno affrontare un gran numero di rischi calcolati per far sì che la legge delle probabilità giochi a loro favore.
+
+Se venite invasi e perdere il vostro Reame, non è necessariamente la fine. Potete congedare gli Eroi più costosi e quindi mettervi a viaggiare per il mondo alla ricerca di mercenari e campi di battaglia da cui evocare Eserciti di Scheletri. Alcuni Luoghi speciali contengono oggetti magici di grande utilità, o incredibili quantità di oro con cui potrete finanziare un vostro ritorno sulla scena. Alcuni Re possono aiutarvi in cambio di addestramento o di un oggetti magico, mentre altri hanno nelle loro difese lacune di cui potreste approfittare chiamando mercenari o evocando Eserciti di Scheletri nel loro Reame.
+
+11.2 ESEMPI DI MOSSE
+Qui di seguito diamo un esempio di come dare ordini ai propri personaggi: il personaggio in questione è l’Eroe n.55, Rolando. Nella prima fase egli muoverà nella provincia 1601, Atkarsk. Nella seconda fase la esplorerà e nella terza ispezionerà il luogo speciale n.4, che è un altare, custodito da un Rinnegato Psichico. Il Piano d’Incontro di Rolando è molto aggressivo: non cercherà di Parlare (Talk), né di rubare (Steal), ma attaccherà direttamente. La prima azione del Piano consiste nel lanciare un incantesimo di Invisibilità (Magia Illusoria), che lo proteggerà da eventuali frecce o proiettili e ridurrà le possibilità di essere colpito in mischia. La seconda azione consiste nel lanciare una freccia, la terza prescrive di entrare in zona di mischia per il combattimento corpo a corpo. Viene indicato poi di perlustrare il Luogo Speciale, alla ricerca di tesori od Oggetti Magici, e poi si prevede la fuga se le cose dovessero volgere al peggio. Nella quarta fase Rolando, se sarà sopravvissuto all’incontro, arruolerà una Falange e un’unità di Warg Riders, e infine, nella quinta fase cercherà di assoldare l’Eroe Attla, offrendo 3 pezzi d’oro. Il Piano Speciale d’Incontro darà indicazioni di come  su come si deve comportare Rolando in caso di incontri casuali fino alla terza fase. A partire dalla quarta (in cui recluta le unità militari), le indicazioni varranno per un eventuale duello.
+
+N.B. In realtà nel Foglio ordini non è necessario scrivere il nome della provincia o del personaggio dal momento che il computer si limita a registrarne il numero d’ordine. Ma potrebbe essere un appunto utile per voi e a volte serve come controllo.
+
+Se nello scrivere un ordine finite lo spazio a disposizione, mettete un asterisco (*) e continuate a scrivere in fondo alla pagina.
+
+Se per scrivere gli ordini utilizzate il programma SAGA, fate riferimento al relativo manuale di istruzioni.
+
+Personaggio #55 Rolando
+
+Fase 1
+MO 1601 (Atkarsk)
+
+Fase 2
+EX 1601 (Atkarsk)
+
+Fase 3
+SE 4 (Altar)
+CA-IN, FI, ME, SC, FL.
+
+Fase 4
+RE PH, WG
+
+Fase 5
+HI 54 (Attla)
+for 3 gold
+
+Piano Speciale d’Incontro
+CA-MI, FI, ME.
+
+11.3 ESEMPI DI PIANI D’INCONTRO
+FI, FL.
+Significato: Tirare con l’Arco, poi fuggire.
+
+ST, CA-FI, ME, SC.
+Tentare di derubare il mostro. Quindi lanciare un incantesimo Palla di Fuoco e farsi sotto in mischia. In caso di vittoria, perlustrare il Luogo Speciale.
+
+CA-IN, ST, FL, ME.
+Lanciare l’incantesimo invisibilità e tentare di rubare. Se scoperti tentare di fuggire e, se nel caso non riuscisse, lanciarsi in mischia.
+
+N.B. Prima di Rubare si può mettere unicamente l’incantesimo Invisibilità, tutte le altre tattiche sono vietate.
+
+CA-PS, CA-FI, ME, ME, FL, CA-CH, ME
+Lanciare gli incantesimi Raffica Psichica e Palla di Fuoco. Quindi mischia per due round e se l’avversario è ancora in vita, cercare di fuggire. Nel caso il tentativo dovesse fallire, cercare di “sedurre” l’avversario con un incantesimo di Charme e, se anche questo dovesse fallire, riprendere la mischia.
+
+N.B. Per attuare un piano del genere è necessario avere almeno livello 1 in Magia degli Elementi e livello 2 in Magia Psichica.
+
+SA “Salve, Essere Supremo!”, TA, SC, ME.
+Parlare con il mostro e vedere se è disposto a scendere a patti (il primo comando, Say, è solo pittoresco). Se possibile perlustrare il luogo per vedere se contiene qualche oggetto speciale. Se il mostro attacca, lanciarsi nella mischia.
+
+US-31, US-31, US-31, US-31, US-31, US-31, US-31, US-31, US-31, US-31, US-55, ME.
+Usare l’oggetto magico 31 (in questo caso ammettiamo che sia un Bastone che lancia Palle di Fuoco) dieci volte, poi passare a usare l’oggetto magico 55 (ammettiamo che sia una spada magica) e quindi alla mischia.
+
+11.4 SUGGERIMENTI VARI
+Non abbandonate, sciogliete o prendete un’unità assoldata nello stesso turno di gioco e ogni volta impartite questi ordini ricordate di specificare il numero delle unità militari e non il loro tipo. L’unica eccezione riguarda il comando Pick-Up All, Disband All, Leave All.
+
+In un Piano d’Incontro o in un Piano Speciale d’Incontro, alcune tattiche non sono ammesse (vedi i punti 5.4 e 5.5).
+
+Esempio: le tattiche Parlare (Talk), Onorare un Accordo (Fulfill) e Rubare (Steal) non sono ammesse in un Piano Speciale d’Incontro. Non sono necessari nei duelli in battaglia e se un mostro vagante vuole parlare con voi lo farà comunque.
+Quando assoldate (Hire), seducete (Charm) o fate risorgere (Resurrect) un Eroe, non potete dare ordini nella stessa fase in cui sono assoldati, ma a partire da quella successiva.
+
+In molti ordini, compresi ad esempio Spiare (Spy) ed Esplorare (Explore), il personaggio deve trovarsi nella stessa provincia che è l’obiettivo dell’ordine stesso.
+
+Nel dare un ordine Muovere ricordate sempre di indicare la direzione, ad esempio: [MO]ve NE oppure [MO]ve 1801.
+
+Le direzioni sono sei: NE, E, SE, SW e W.
+
+
+
+
+
+
+TABELLE
+
+
+TABELLA DELLE UNITA’ MILITARI
+
+
+TIPO						Terreno favorevole	Terreno sfavorevole	Nemesi
+			For	Vel	Costo	 
+
+Garrison  	GA  	3/1	1  	1  	-	   		-			-
+Bowmen		BO	2	2	2	Foresta, Giungla	-			-
+Axemen  	AX  	2  	2  	2  	Foresta, Montagna	-			-
+Phalanx  	PH	3 	2	2	Pianura			Foresta, Giungla, Mare	LE
+Legion		LE	3	2	2	-			Mare			HC
+Lt Cavalry	LC	2	4	2	Pianura, Deserto	-			CH, Beasts
+Hvy Cavalry	HC	4	3	3	Pianura			Foresta, Giungla	CH, Beasts
+									Montagna, Mare	
+Chariots	CH	3	3	3	Pianura, Deserto	Foresta, Giungla	Beasts
+						           		Montagna, Mare
+Elephants	EL	V	2	3	Giungla			Foresta, Montagna	-
+									Mare
+Camel Corps	CC	2	3	3	Deserto			Foresta, Giungla	-
+									Mare
+Warg Riders	WR	3	3	3	Foresta			Mare			Eagles
+Dragon Wing	DR	6	5	4	-			-			BO
+Eagle Wing	EA	4	5	3	Montagna		Foresta, Giungla	BO
+Whales		WH	5	4	3	Mare			Tutti gli altri		ME
+Fleet		FL	3	2	3	Mare			Tutti gli altri		-
+Mermen		ME	2	3	2	Mare, Giungla		Deserto, Montagna	BO
+Ents		EN	6	1	3	Foresta, Giungla	Mare, Deserto		AX, DR
+Trolls		TR	5	2	3	Montagna		Mare			AX
+Werebeasts	WE	3	3	3	Foresta, Montagna	Mare			-
+
+Vel (VELOCITA’) Indica di quante province un’unità militare può muovere di ciascun turno di gioco e determina la possibilità di ritirarsi dopo una battaglia perduta.
+For (FORZA BASE) Le unità di guarnigione hanno una forza di 3 quando difendono una provincia, ma solo di 1 quando attaccano. La forza di base può essere modificata dalla razza a cui appartiene l’unità militare nel modo seguente:
+
+Elfi		+1 quando combattono come BOWMEN, +1 in foresta.
+Nani		+1 come AXEMEN, +1 in montagna.
+Orchi		+1 come PHALANX, +1 in montagna.
+Umani		+1 come LEGION (nessun bonus collegato al tipo di terreno).
+
+Se un’unità combatte su un terreno designato come Terreno favorevole, riceve un modificatore 
+di +1 alla sua forza di base. La forza di un’unità è invece dimezzata su un Terreno sfavorevole.
+
+La forza effettiva di un’unità è la forza base moltiplicata per il rango (Demoralizzata=0, Reclute=1, Medio=2, Veterana=3, Crack=4, Elite=5). Esiste anche il rango Sotto-Demoralizzata 
+e di Super-Elite.
+
+Anche se Demoralizzata e Sotto-Demoralizzata hanno un moltiplicatore uguale a zero, mantengono comunque una piccola forza intrinseca. Il rango di Super-Elite comporta un moltiplicatore di 6 o più, dal momento che le unità possono arrivare a livelli di rango molto superiori a quello di Elite.
+
+Quando un’unità combatte una battaglia nella provincia natale del proprio giocatore, il suo rango aumenta di un livello.
+
+Se un personaggio che è al comando durante una battaglia di terra possiede il Talento Tattica, le sue unità sono aumentate in forza del 20% per livello (vedi Talenti Tattica e Navale).
+
+Quando un’unità combatte contro la sua Nemesi, un tipo di formazione militare a cui è particolarmente vulnerabile, la sua forza è ridotta di 2/3. Una data unità rappresenta la Nemesi del suo avversario se si trova in prima linea davanti a essa o se si tratta di un’unità aerea che sta attaccando un’unità che si trova dietro alla prima linea. Se più di un’unità può essere considerata Nemesi, in conseguenza di manovre di aggiramento o aeree, la scelta è casuale.
+
+La forza di un’unità in difesa viene moltiplicata per 1,25. La fazione con la migliore percentuale di esplorazione della provincia avrà inoltre fino al 25% di vantaggio se ha esplorato il 100% della provincia e gli avversari non l’hanno esplorata.
+
+Gli avvenimenti riportati nel resoconto delle battaglie sono generalmente determinati a caso al momento dell’elaborazione del turno. Ciascun evento casuale arriva fino a raddoppiare la forza delle unità coinvolte (ma la maggior parte si limitano a moltiplicarla per un fattore inferiore al 1,5). Il primo evento casuale influenza l’intera battaglia, mentre i successivi coinvolgeranno una sola colonna dello schieramento.
+
+Un’unità che combatte per un Re Divino ha il 50% di probabilità di diventare fanatica, mentre se combatte per un Re Buono ha il 40% e per un Re Malvagio il 25%. Le unità fanatiche combattono al rango immediatamente superiore. Gli Eserciti di Scheletri al servizio di un Re Non-Morto sono sempre fanatici.
+
+Per Beasts si intendono Cammelli, Elefanti, Bestie Mannare, Warg, Aquile e Draghi. I cavalli ne hanno una gran paura. Cammelli ed Elefanti (la cui forza è casuale, da 2 a 5) sono considerati unità montate ai fine del movimento e possono essere trasportate dalle Flotte solo una per volta.
+
+Regole speciali:
+
+Cammelli: in una battaglia che ha luogo nel deserto dovrebbe essere presente almeno un’unità cammellata, che ha anche la funzione di convoglio di rifornimento. In caso contrario tutte le unità vengono declassate di un livello qualitativo.
+
+Bestie Mannare: sono una congerie di animali randagi (Lupi Mannari, Orsi Mannari, Ratti Mannari ecc…). Quando sconfiggono un’unità nemica, quest’ultima ha circa il 40% di probabilità di trasformarsi anch’essa, gradualmente, in un’unità mannara.
+
+La trasformazione avverrà alla fine del turno di gioco. Solo le quattro razze umanoidi possono essere morsicate e quindi diventare mannare. Questa regola non vale per le Flotte.
+
+Trolls: Se muoiono in battaglia possono rigenerarsi perché le parti smembrate dei loro corpi, strisciando, si ricongiungono. Vengono però ridotti di un rango e inoltre sono tanto delusi dal loro comandante che li ha lasciati morire che si trasformano in mercenari.
+Balene: Quando combattono su un terreno diverso dal mare hanno forza 0. Possono tuttavia ritirarsi sempre in una provincia di mare senza timore di venire distrutte in battaglia.
+
+Riassunto dei fattori che condizionano la forza delle unità militari:
+
+Determinare la forza del tipo di unità, modificata dal terreno:
+
++1 in caso di terreno favorevole per quella razza
++1 in caso di terreno favorevole per quel tipo di unità
+Dimezzata in caso di terreno sfavorevole
+
+Incantesimo di Terreno Illusorio: viene fatta una media tra gli effetti del terreno illusorio e quelli del terreno reale (vedi paragrafo 4.23.1).
+
+Modificare la qualità dell’unità e moltiplicarla per la forza precedentemente determinata:
+
+-1 se nel deserto senza Cammelli
+-? se il comandante ha Talento Druidico insufficiente (vedi Tabella del Druidismo)
++1 se si trova nella provincia natale
++1 per le unità fanatiche
++1 per l’incantesimo Oratoria
++? per gli oggetti magici
+
+Moltiplicare il risultato per i fattori speciali:
+
+I seguenti fattori vanno moltiplicati e non sommati l’uno all’altro (ad esempio se un giocatore ha dei bonus sia per la difesa che l’esplorazione, la sua forza sarà moltiplicata per 1,25 x 1,25 = 1,5625).
+
+Difesa: +25%
+Esplorazione: +25% (massimo)
+Talento Tattico (o Navale per le province di mare): +20% per livello
+Esercito Fantasma: +15% per livello di chi lancia l’incantesimo
+Incontro con la Nemesi: -33%
+
+
+
+
+
+
+TABELLA DELL’ESPERIENZA
+
+
+Azione						Probabilità di migliorare il livello di Talento
+
+Muovere (via terra, con unità)			10% Marcia
+Muovere (via mare, con flotte)			10% Navale
+Esplorare					10% Esplorazione
+Reclutare o Assoldare				5% Druidismo
+Prendere o Lasciare unità di terra		5% Marcia
+Prendere o Lasciare unità navali		5% Navale
+Lanciare Incantesimo d’Azione			10% nella relativa magia
+Spiare, Pedinare o Inseguire			10% Spiare
+Comandante Supremo in battaglia			15% Tattica o Navale
+Comandare unità in battaglia			10% Tattica o Navale
+
+Ispezionare, Incontro per Tattica tentata
+	Parlare all’avversario			10% Druidismo
+	Scoccare frecce				10% Tiro con l’Arco
+	Mischia					10% Mischia
+	Lanciare Incantesimo di combattimento	10% nella relativa magia
+	Rubare					15% Ladro
+
+
+TABELLA DEGLI ALLINEAMENTI
+
+
+Allineamento		Rid. per differenza	Tal, magico	Tal. Speciale		Capacità
+			Allineamento							Speciale
+
+Divino			20%			-		-			50% Fanatismo
+											+1 Magia Bianca
+											Resurrezione
+											modifica
+											Allineamento
+
+Buono			12%			M. Bianca	Conoscenza		40% Fanatismo
+
+Druido			15%			M. Psichica	Druidismo		Stringere trattati
+											automaticamente
+
+Neutrale		20%			M. Illusoria	Spionaggio		Ordine Duellanti
+
+Pagano			15%			M. Elemen.	Esplorazione		Ordine dei Maghi
+
+Malvagio		12%			Negromanzia	Furto			25% Fanatismo
+											Rompere trattati
+											ad inizio turno
+
+Non-Morto		20%			-		-			100% Fanatismo
+											Eserciti Scheletri
+											Charm Negromantico
+											Rompere trattati
+											ad inizio turno
+											+1 Negromanzia
+Note
+-	A prima vista la colonna Riduzione per differenza di Allineamento sembra favorire i personaggi Buoni e Malvagi, ma ciò è controbilanciato dal fatto che i personaggi Neutrali sono, mediamente, più vicini agli altri Allineamenti e possono assoldare personaggi con qualsiasi Allineamento (vedi paragrafo 10.2).
+-	Sotto le voci Talento Magico e Talento Speciale sono elencati i Talenti nei quali il Re di quel particolare Allineamento sono particolarmente versati. La loro potenzialità è raddoppiata per questi Talenti fino al livello 5.
+
+
+
+
+TABELLA DELLE SPIE
+
+
+Livello		Prob. di non essere notato	Margine errore		Probabilità per Pursue 
+abilità						nel resoconto		o Trail  (*)
+
+0			0%			70%			50%
+1			50%			55%			100%
+2			75%			40%			150%
+3			88%			28%			200%
+4			95%			15%			250%
+
+(*) La probabilità di riuscita per i comandi Pursue o Trail è raddoppiata se il personaggio preso di mira è al comando di unità militari ed è poi divisa per la distanza (in numero di province) che separa l’inseguitore dall’inseguito. Se i due appartengono allo stesso Reame allora la probabilità di riuscita è sempre del 100%.
+
+
+
+
+TABELLA DELLA MARCIA
+
+Livello		Movimenti Extra	Movimenti Extra		Prob. unificazione (Distanza dalla 2a forza)
+abilità		velocità 1-2	velocità 3+		0		1		2
+0		0		0			80%		50%		20%
+1		0		1			90%		60%		30%
+2		1		1			100%		70%		40%
+3		1		2			100%		80%		50%
+4		2		2			100%		90%		60%
+
+Velocità 1-2 o 3+ indica la velocità base dell’unità militare.
+Probabilità di unificazione indica la probabilità che due comandanti riescano ad unire le loro forze in battaglia se invadono la stessa provincia a seconda della distanza che separa le due forze al momento dell’inizio dell’invasione.
+Aquile e Draghi non sono influenzati dal Talento Marcia.
+
+
+TABELLA DEI TERRENI
+
+Tipo di terreno		Tassazione media	Quoziente		Lunghezza		Prob. di
+						di esplorazione		della prima linea	incontri
+									(n. unità militari)	casuali
+
+Pianura			6			50%			5-10			10%
+Deserto			2			25%			5-10			15%
+Giungla			4			10%			3-6			25%
+Foresta			5			15%			3-6			20%
+Montagna		5			15%			1-3			15%
+Mare			1			25% (*)			5-10			5%
+
+(*) In una provincia di mare c’è solo una minima possibilità di trovare un Luogo Speciale.
+
+La possibilità di incontrare mostri si applica alle azioni Move, Pursue, Trail, Explore e Search. Non si applica invece quando un personaggio compie l’azione Move o Pursue insieme a un’unità militare ed è ridotta della metà quando il personaggio si trova entro i confini del proprio Reame.
+
+
+
+
+TABELLA DEL DRUIDISMO
+
+Livello abilità	Impara a comandare unità militari composte da:	Può parlare con:
+
+1			Umani, Elfi, Nani, Orchi, Tritoni, Animali Mannari		Uccelli, mammiferi
+2			Balene, Trolls							Rettili, creature marine
+3			Aquile, Ent							Insettoidi
+4			Draghi								Tutti i mostri
+
+
+
+
+TABELLA DELLE CARICHE IMPERIALI
+
+
+Titolo			Premio%		Attribuzione dei Punti Merito
+
+Imperatore		20		Ammontare della rendita di tasse alla fine del gioco (v. 10.2)
+
+Gran Cancelliere	10		Per ogni livello nei Talenti Explorer, Spy e Sage		+1
+					Per ogni Luogo Speciale che ha scoperto per primo		+2
+					Per ciascuna Invenzione che ha scoperto per primo		+2
+					Per ciascuna Invenzione ottenuta con spionaggio			+1
+
+Tesoriere Imperiale	10		Il tesoro più sostanzioso alla fine del gioco
+
+Gran Maresciallo	10		Per ogni battaglia terrestre comandata:
+					se vinta, per ciascuna unità dell’esercito nemico		+1
+					se persa, per ciascuna unità nel proprio esercito		-1
+
+Grande Ammiraglio	10		Per ogni battaglia navale comandata
+					se vinta, per ciascuna unità dell’esercito nemico		+1
+					se persa, per ciascuna unità nel proprio esercito		-1
+					Per ogni livello di abilità Navale				+1
+					Per ogni provincia di mare con rendita di 2+ gold		+1
+
+Gran Difensore		10		Per ciascun mostro ucciso: totale Punti Ferita del mostro
+					(metà dei punti se neutralizzato con trattative)
+
+Gran Sacerdote		10		Per ogni incantesimo Resurrection o Bless riuscito		+1
+					Per ciascun livello nei Talenti Druidico e Magia Bianca	+2
+
+Arcimago di Palazzo	10		Per ogni livello in tutti i Talenti Magici			+1
+					Per ciascun oggetto magico 					+1
+					in grado di lanciare incantesimi posseduto
+
+
+
+
+I 10 restanti Punti Merito sono concessi ai possessori dei seguenti oggetti magici: Excalibur, Arco del Re degli Elfi, Ascia dei Signori dei Nani, Scimitarra del Dominio degli Orchi, Corona del Comando dei Draghi, Penna della Grande Aquila, Corno di Nettuno, Spada Santa, Spada Invisibile, Spada dell’Ombra. Questi punteggi non sono modificati dall’eventuale differenza di Allineamento con l’Imperatore.
+
+1) I punti attribuiti per la carica di Ammiraglio per il controllo di province di mare ricche sono dati a ciascun personaggio del Reame.
+
+2) Non viene attribuito nessun punto per la carica di Difensore Imperiale per avere ottemperato ai termini di un accordo (Fulfill). Spesso gli sforzi di un personaggio di negoziare con un mostro o di danneggiarlo persuaderanno quest’ultimo a smettere di fare scorrerie in un Reame. In questo caso verrà attribuito metà punteggio.
+
+3) Se due personaggi hanno pari punteggio per una Carica Imperiale, il primo posto viene assegnato in base prima all’ammontare del tesoro e poi alla rendita in tasse.
+
+
+
+TABELLA DEI TEMPERAMENTI
+
+
+Temperamento		Effetti Speciali		Fuga dal combattimento		Rifiuto
+
+Berserk			Furia, Intimidazione		Mai				Mai
+
+Coraggioso		Slancio				Quando la probabilità		Mai
+							sembra sfavorevole
+							e il rischio di ricevere
+							un colpo mortale alto
+
+Cauto			Schivare			Quando il rischio		1-50%
+							di ricevere un colpo mortale
+							appare significativo
+
+Codardo			Implorare pietà			Quando la morte			51-100%
+							è possibile. Può fuggire
+							anche dopo un qualsiasi
+							colpo grave
+
+
+
+FURIA: il Berserk non avverte realmente i colpi ricevuti e questa sua forza psicologica gli vale da 1 a 4 Punti Ferita supplementari.
+INTIMIDAZIONE: gli avversari sono atterriti e hanno minori probabilità di colpire nel combattimento corpo a corpo (Coraggioso -5%, Cauto -10%, Codardo -15%).
+SLANCIO: chi possiede questa caratteristica è ardito in combattimento e non esita mai a lanciarsi nel corpo a corpo non appena se ne presenta l’opportunità. Le sue probabilità di colpire aumentano del 10%.
+SCHIVARE: il personaggio Cauto è un esperto nel parare, quindi i suoi avversari hanno un -10% di probabilità di colpire.
+IMPLORARE PIETA’: oltre a fuggire, un Codardo può implorare pietà per poter sfuggire alla morte. Questa tecnica funziona meglio contro personaggi Buoni o di Allineamento simile. In generale ha un 50% di probabilità di riuscita.
+
+N.B. Un Re Codardo o Cauto non rifiuterà mai il combattimento, benché possa sempre fuggire dopo essere stato colpito.
+
+
+
+
+
+
+
+NUOVE REGOLE E MODIFICHE
+
+
+-	Aumentato il numero delle province di mare di circa il 50%
+
+-	Ora in un incontro si possono Dare (Give) anche pezzi d’oro.
+
+-	I libri ora alzano i Talenti anche sopra il livello 4.
+
+-	Adesso per la Carica di Maresciallo conta la qualità delle unità sconfitte
+	secondo questa tabella:
+
+	Reclute	0 punti
+	Medio		1 punto
+	Veterani	2 punti
+	Crack		3 punti
+	Elite		4 punti
+
+	Una Garrison che attacca ha un modificatore di -1 su questa tabella
+	(una Garrison Crack che attacca e viene distrutta dà solo 2 punti al generale
+	che l’ha vinta).
+
+-	Adesso un’unità sconfitta che si ritira in una provincia, non può aiutare a difendere 
+questa provincia nella stessa fase.
+
+-	Aggiunta la regola del Furore Diplomatico: se due re sono alleati e sono distanti più di tre
+posizioni di Allineamento (es. Divino con Pagano) il trattato si può rompere automaticamente e possono passare alla neutralità o alla guerra. Normalmente questo accade
+alla fine del turno.
+
+E’ possibile che questo accada durante il turno, ma sono eventi rari. Avviene solo quando la differenza di Allineamento è molto marcata.
+
+-	Si possono reclutare armate anche nei territori degli alleati.
+Queste si pagano 1 pezzo d’oro in più che va a finire nel tesoro dell’alleato.
+Affinché avvenga ciò il proprietario della provincia deve dare un ordine di Treat
+al Re che recluta.
+
+Se si sta reclutando nella propria provincia d’origine che ora è controllata da un alleato,
+si possono reclutare quattro unità (due per tipo) che iniziano come rango Medio.
+
+-	Un ordine Difendere (Defend) viene cancellato se si perde una battaglia. Questo per evitare
+	inutili sconfitte.
+
+-	Aggiunto il comando Pattugliare (Patrol). E’ come un ordine Difendere (Defend) solo
+	che viene fatto da un Eroe senza armate per intercettare Eroi nemici che passano 
+nella provincia o in quelle adiacenti. Per farlo dare all’Eroe un ordine Inseguire (Pursue)
+su se stesso, indicando un Piano d’Incontro.
+Un ordine Muovere (Move) cancella il Pattugliare (Patrol).
+Un Eroe che sta usando il Talento Spiare (Spy) o Rubare (Thief) può sfuggire 
+al pattugliamento.
+Verranno intercettati solo Eroi nemici in territori amici.
+Un Eroe in pattuglia cercherà di attaccare solo gli intrusi il cui miglior punteggio
+in Tiro con l’Arco, Mischia o in una Magia è uguale o minore al suo miglior punteggio
+in queste abilità.
+Se ci sono due intrusi, quello più pericoloso verrà attaccato.
+
+-	L’incantesimo Benedizione (Bless) ora rimuove le unità morte in una provincia.
+La probabilità è del 10% + 10% per livello in Magia Bianca di chi lancia l’incantesimo.
+
+-	L’incantesimo di Invisibilità (Invisibility) ora dà il 30% in più di possibilità di fuggire.
+
+-	I Cauti hanno il +20% di possibilità alla fuga.
+
+-	I Codardi possono evitare la penalità del 25% quando si rifiuta il duello in una battaglia.
+	Questo avviene nei 2/3 delle volte.
