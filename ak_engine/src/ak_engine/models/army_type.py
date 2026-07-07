@@ -148,3 +148,33 @@ def is_nemesis_of(attacker_type: ArmyType, opponent_type: ArmyType) -> bool:
     """True if ``opponent_type`` is ``attacker_type``'s nemesis (2/3 strength)."""
 
     return opponent_type in NEMESIS.get(attacker_type, frozenset())
+
+
+# Rulebook [7.2]: "Non-humanoid units (Eagles, Dragons, Whales and Mermen)
+# can attack from above or below and contribute 100% of their strength to
+# the battle" regardless of battle-line depth. This is a narrower set than
+# `MONSTROUS_ARMY_RACE` -- Ents, Trolls and Werebeasts are non-humanoid
+# *races* but fight as ordinary melee units in the line, not overflight
+# attackers, so they're excluded here.
+#
+# "Non-humanoid air units, non-humanoid sea units and humanoid units are
+# considered three separate groups when halving strength" for the
+# multiple-units-attacking-the-same-target stacking penalty -- hence two
+# groups, not one.
+OVERFLIGHT_AIR = frozenset({ArmyType.DRAGON_WING, ArmyType.EAGLE_WING})
+OVERFLIGHT_SEA = frozenset({ArmyType.WHALES, ArmyType.MERMEN})
+OVERFLIGHT_TYPES = OVERFLIGHT_AIR | OVERFLIGHT_SEA
+
+
+def is_overflight_unit(army_type: ArmyType) -> bool:
+    return army_type in OVERFLIGHT_TYPES
+
+
+def overflight_group(army_type: ArmyType) -> str | None:
+    """'air', 'sea', or None if ``army_type`` isn't an overflight unit."""
+
+    if army_type in OVERFLIGHT_AIR:
+        return "air"
+    if army_type in OVERFLIGHT_SEA:
+        return "sea"
+    return None

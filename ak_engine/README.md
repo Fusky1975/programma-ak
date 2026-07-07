@@ -19,9 +19,13 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   into `resolve_move()`'s partial-exploration side effect.
 - **Phase 4**: Army Type Table (`models/army_type.py`, rulebook [6.3]) and
   Recruit-action cost/limit resolution (`turn/recruit.py`).
-- **Phase 5 (current)**: battle math primitives (`turn/combat.py`):
-  quality multipliers, battle-line/overflight strength halving, the
-  defender bonus, the nemesis penalty, and a win-probability estimate.
+- **Phase 5**: battle math primitives (`turn/combat.py`): quality
+  multipliers, battle-line/overflight strength halving, the defender
+  bonus, the nemesis penalty, and a win-probability estimate.
+- **Phase 6 (current)**: battle line-up (`turn/battle_line.py`): dealing
+  units into battle-line columns, per-column strength totaling (line-depth
+  halving + overflight-group stacking + outflank bonus), the
+  Tactical-ability switch-chance formula, and per-column contest odds.
   Report generation is still a later phase.
 
 ## Setup
@@ -73,6 +77,13 @@ rulebook before being turned into named, typed fields:
   hits the first anchor exactly but gives 80%, not "assured", at 4:1 — an
   approximation flagged in the function's docstring, not a sourced
   formula. Revisit if a real battle result ever contradicts it.
+- **Terrain-based battle-line-length shortening** (`turn/battle_line.py`
+  `terrain_line_length_cap`) — the rulebook says terrain can shorten the
+  defender's line ("see the Terrain Table") but no such numbers exist
+  anywhere in the available rulebook text or Pascal source; the only
+  trace (`SAY.PAS`'s `_linelen`) just formats an already-computed value
+  for reports. Left as an optional externally-supplied parameter with no
+  default derivation — without it, outflanking never triggers.
 
 ## Not yet implemented (by design, this phase)
 
@@ -81,19 +92,29 @@ rulebook before being turned into named, typed fields:
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
 - **Actually fighting a battle** (rulebook [7.0]-[7.8]): `turn/combat.py`
-  only provides the isolated formulas (quality multiplier, line/overflight
-  strength halving, defender bonus, nemesis penalty, win-probability
-  estimate). Not modeled yet, and needed before a battle can be resolved
-  end-to-end:
-  - The battle line-up algorithm itself: sorting units into lines/columns,
-    terrain-based line-length shortening ("may be shortened by
-    mountainous or wooded terrain on the flanks", no exact numbers found
-    in the rulebook text), and Tactical-ability-based unit switching.
+  and `turn/battle_line.py` provide the isolated formulas and the
+  line-up/column-strength/contest-odds math, but nothing decides a
+  winner, eliminates armies, or executes a battle end-to-end. Still
+  needed:
+  - Actually picking a winner per column from `ColumnContest.
+    attacker_win_probability` (a dice roll / RNG decision — every other
+    phase so far has avoided randomness on purpose, so this needs a
+    deliberate design choice, e.g. an injectable RNG) and eliminating or
+    demoting the losing armies.
   - Race/terrain strength bonuses ([6.3] "ARMY STRENGTH NOTES": +1 for
     racial affinity with an army type, +1 for home terrain, halved in
     adverse terrain) — the stacking order with quality, defender bonus,
     and nemesis penalty isn't specified anywhere, so combining them would
     be guessing an interaction, not just a missing number.
+    `BattleUnit.effective_strength` must be supplied pre-computed by the
+    caller until this is resolved.
+    - Tactical-ability switching itself: `switch_chance()` gives the
+    probability, but nothing performs the swap between a column's front
+    and rear units yet.
+  - The non-humanoid "attack the rear unit instead of the front" targeting
+    nuance [7.2] — `battle_line.py` models overflight units as always
+    contributing 100% wherever they're placed, but doesn't model them
+    choosing to target a different depth on the opposing side.
   - Supreme Commander selection and duels [7.1].
   - Pursuit [7.3], Retreat [7.4], post-battle quality-level changes
     [7.5], Contested Provinces [7.6], Conquest movement cost [7.7], and
