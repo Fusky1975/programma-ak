@@ -138,6 +138,14 @@ class ColumnContest:
     attacker_win_probability: float
 
 
+def estimate_win_probability(attacker_strength: float, defender_strength: float) -> float:
+    """``win_probability`` with the zero-defender-strength edge case handled."""
+
+    if defender_strength <= 0:
+        return 1.0 if attacker_strength > 0 else 0.5
+    return win_probability(attacker_strength / defender_strength)
+
+
 def contest_columns(attacker_columns: list[Column], defender_columns: list[Column]) -> list[ColumnContest]:
     """Pair up columns and estimate each contest's attacker win probability.
 
@@ -154,15 +162,11 @@ def contest_columns(attacker_columns: list[Column], defender_columns: list[Colum
     for attacker_column, defender_column in zip(attacker_columns, defender_columns):
         attacker_strength = column_strength(attacker_column)
         defender_strength = column_strength(defender_column)
-        if defender_strength <= 0:
-            probability = 1.0 if attacker_strength > 0 else 0.5
-        else:
-            probability = win_probability(attacker_strength / defender_strength)
         contests.append(
             ColumnContest(
                 attacker_strength=attacker_strength,
                 defender_strength=defender_strength,
-                attacker_win_probability=probability,
+                attacker_win_probability=estimate_win_probability(attacker_strength, defender_strength),
             )
         )
     return contests

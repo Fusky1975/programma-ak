@@ -22,11 +22,16 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
 - **Phase 5**: battle math primitives (`turn/combat.py`): quality
   multipliers, battle-line/overflight strength halving, the defender
   bonus, the nemesis penalty, and a win-probability estimate.
-- **Phase 6 (current)**: battle line-up (`turn/battle_line.py`): dealing
-  units into battle-line columns, per-column strength totaling (line-depth
-  halving + overflight-group stacking + outflank bonus), the
-  Tactical-ability switch-chance formula, and per-column contest odds.
-  Report generation is still a later phase.
+- **Phase 6**: battle line-up (`turn/battle_line.py`): dealing units into
+  battle-line columns, per-column strength totaling (line-depth halving +
+  overflight-group stacking + outflank bonus), the Tactical-ability
+  switch-chance formula, and per-column contest odds.
+- **Phase 7 (current)**: who wins (`turn/battle_luck.py`,
+  `turn/battle_resolution.py`): the two random luck events (column luck on
+  front-line units, one whole-battle luck event favoring a random side)
+  and `resolve_battle()`, which lines up both sides, applies luck, and
+  rolls an actual winner per column and overall. Report generation is
+  still a later phase.
 
 ## Setup
 
@@ -84,6 +89,18 @@ rulebook before being turned into named, typed fields:
   trace (`SAY.PAS`'s `_linelen`) just formats an already-computed value
   for reports. Left as an optional externally-supplied parameter with no
   default derivation — without it, outflanking never triggers.
+- **Battle luck event percentages/ranges** (`turn/battle_luck.py`) — the
+  rulebook confirms random battle events exist and gives their *shape*
+  ("Each random event can as much as double the strength of the affected
+  force... The first random event affects the whole battle, while
+  succeeding events affect a column") but no probabilities or magnitude
+  ranges. `HostAK/TP/SAY.PAS`'s `_BLuck`/`_CLuck`/`_CLuck2` narrative
+  hooks and the matching `HostAK/TP/PROSE/BLUCK.X2`/`CLUCK.X2` templates
+  corroborate the *structure* (one whole-battle event, separate per-column
+  events, qualitative "no effect" up to "tremendous" magnitude tiers) but,
+  like the rulebook, give no numbers either. The specific values (75%/55%
+  chances, ±10-50% column luck, +1-10% single-side battle luck) are a
+  deliberate design choice made with the user, not a recovered rule.
 
 ## Not yet implemented (by design, this phase)
 
@@ -91,16 +108,14 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **Actually fighting a battle** (rulebook [7.0]-[7.8]): `turn/combat.py`
-  and `turn/battle_line.py` provide the isolated formulas and the
-  line-up/column-strength/contest-odds math, but nothing decides a
-  winner, eliminates armies, or executes a battle end-to-end. Still
-  needed:
-  - Actually picking a winner per column from `ColumnContest.
-    attacker_win_probability` (a dice roll / RNG decision — every other
-    phase so far has avoided randomness on purpose, so this needs a
-    deliberate design choice, e.g. an injectable RNG) and eliminating or
-    demoting the losing armies.
+- **Actually fighting a battle** (rulebook [7.0]-[7.8]): `resolve_battle()`
+  (`turn/battle_resolution.py`) now lines up both sides, applies both luck
+  events, and rolls an actual winner per column and overall — but it
+  still doesn't execute a battle end-to-end. Still needed:
+  - **Eliminating or demoting the losing armies.** `resolve_battle()`
+    decides *which side* wins each column but doesn't touch unit rosters,
+    quality levels, or the "Fleets fighting on land are reduced to
+    Depleted instead of eliminated" exception.
   - Race/terrain strength bonuses ([6.3] "ARMY STRENGTH NOTES": +1 for
     racial affinity with an army type, +1 for home terrain, halved in
     adverse terrain) — the stacking order with quality, defender bonus,
@@ -108,7 +123,7 @@ rulebook before being turned into named, typed fields:
     be guessing an interaction, not just a missing number.
     `BattleUnit.effective_strength` must be supplied pre-computed by the
     caller until this is resolved.
-    - Tactical-ability switching itself: `switch_chance()` gives the
+  - Tactical-ability switching itself: `switch_chance()` gives the
     probability, but nothing performs the swap between a column's front
     and rear units yet.
   - The non-humanoid "attack the rear unit instead of the front" targeting
@@ -120,7 +135,7 @@ rulebook before being turned into named, typed fields:
     [7.5], Contested Provinces [7.6], Conquest movement cost [7.7], and
     Multiple Contingents [7.8].
   - `resolve_move()` still only flags that a battle would be triggered
-    (`battle_expected`); it doesn't fight one.
+    (`battle_expected`); it doesn't call `resolve_battle()` yet.
 - **Feature discovery, monsters, treasures, rumors, battlefield reports**
   (rulebook [3.2]): `resolve_explore()` only computes the deterministic
   cumulative exploration percentage. Actually discovering *what* a
