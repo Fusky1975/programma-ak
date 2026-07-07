@@ -212,6 +212,36 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     doesn't distinguish hiring from levying on price or limit, only on
     where the army comes from. Reported via the new
     `RecruitedUnit.hired: bool` field.
+- **Phase 17 (current)**: Hire/Fire Hero (rulebook [3.5], [3.7]) --
+  a different concept from Recruit's mercenary-*army* hiring: Hire/Fire
+  operate on independent *characters* joining or leaving a kingdom's
+  service as a leader. `models/game_state.py LeaderState.kingdom_id` is
+  now nullable, same convention as Phase 16's `ArmyState.kingdom_id`:
+  `None` means an independent Hero. `turn/hire_fire_decode.py` decodes
+  both actions from `HostAK/TP/DEF2.PAS`'s `R_HPlan`/`W_HPlan`: Hire's
+  `obj`/`extra[0]` is the target Hero id and gold offer (rulebook: "1-4
+  gold"; validated exactly against all 10 real HIRE phases in the sample
+  `AK3__T*.K1` files); Fire only has `obj` (the Hero id) -- confirmed
+  from the Pascal source that Fire has no `CASE` branch in
+  `R_HPlan`/`W_HPlan` at all (no extra data), though **zero real FIRE
+  phases exist in the sample data** to independently verify this, unlike
+  every other decoded action in this project.
+  `plan_dispatch._dispatch_hire`/`_dispatch_fire` execute against
+  `GameState`: Hire requires the target Hero to be independent and
+  co-located with the acting leader, then debits the gold offer from the
+  kingdom's treasury and assigns `kingdom_id`; Fire releases a Hero back
+  to `kingdom_id = None` without enforcing co-location (same
+  Disband-style King-vs-Hero simplification, `LeaderState` still has no
+  King/Hero distinction). Several rulebook nuances are explicitly not
+  modeled here (no data/formula exists for them, same situation as other
+  entries in the TODO section below): a Hero's own "required pay" (which
+  may be lower than the offer and depends on unmodeled per-Hero
+  temper/race/alignment compatibility), recurring per-gameturn pay (only
+  the initial offer is charged, once), and "can't Hire a Hero who rules
+  his own province" (no King flag to check against).
+  **A real, confirmed parser bug was found (not fixed) while researching
+  this phase**: see the new TODO entry below on nested Hire/Charm/
+  Resurrection plans.
 
 ## Setup
 
@@ -237,6 +267,30 @@ rulebook before being turned into named, typed fields:
   15 ability pairs (30 values) based on `CTBOTH.PAS`'s `ability` enum, but
   every real sample file has exactly 31. The 31st value's meaning is
   unconfirmed; `SkillTable.pair_for_ability()` only interprets the first 30.
+- **`parser/k1_moves.py` mis-parses a nested Hire/Charm/Resurrection plan
+  (confirmed bug, not fixed).** Per `HostAK/TP/DEF2.PAS`'s `Read_HPlan`/
+  `W_HPlan`, when a Hire phase (or a Cast of the Charm/Resurrection
+  spells) isn't a segment's last phase (`m < 4`), the Pascal format
+  immediately embeds a **complete second, nested plan block**
+  (`AP:`/`SP:`/`P<n>:` — the newly-hired/charmed character's own future
+  orders) in the token stream, spliced in right after that phase's triple
+  and before the outer leader's own remaining phases continue. This
+  project's parser treats every `AP:` block as one flat `PlanSegment`
+  with phases keyed by label (`P0`-`P4`) in a `dict`, so when the outer
+  leader's own later phases reuse the same labels (`P2`/`P3`/`P4`), they
+  silently **overwrite** the nested character's phases in that dict --
+  the nested character's real orders are lost, not raised as an error.
+  Confirmed by parsing the real `AK3__T2.K1` (leader 18 "Guerin": `P1` is
+  a real Hire of hero 32, followed by a nested `AP: 2 4` block for hero
+  32's own moves, which the current parser discards in favor of Guerin's
+  own later `P2`-`P4`). Real nesting can go at least 3 levels deep (a
+  Cast-Charm/Resurrection embedding a Hire embedding another nested plan
+  — seen in `AK3__T9.K1`, leader 72 "Teleko"). Fixing this needs
+  `parser/k1_moves.py`'s leader-block tokenizer to build a recursive/
+  tree-shaped segment structure instead of one flat `list[PlanSegment]`
+  with label-keyed dicts -- not attempted yet. `turn/hire_fire_decode.py`
+  deliberately only decodes a single already-parsed `PlanPhase`'s own
+  `obj`/`extra` and does not attempt to work around this.
 - **Hex adjacency scheme** (`turn/movement.py`) — the original adjacency
   code isn't in the available source (it lived in the missing main
   program). The module implements a standard "odd-r" offset hex grid,
@@ -364,12 +418,12 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` closes the loop for 6 of 22 `ActionCode`s.** LMOVE,
-  EXPLORE, LEAVE, PICK_UP, RECRUIT (Phase 15), and DISBAND (Phase 16) all
-  now run end-to-end with real `GameState` mutation. Every other action
-  (Search, Hire, Fire, Cast, Use_MI, Challenge, Practice, ASpy, Trade,
-  Defend, Pursue, Trail, Wait, No_Action, Succ_Trail, Move_Abort) raises
-  `UnsupportedActionError`.
+- **`plan_dispatch.py` closes the loop for 8 of 22 `ActionCode`s.** LMOVE,
+  EXPLORE, LEAVE, PICK_UP, RECRUIT (Phase 15), DISBAND (Phase 16), and
+  HIRE/FIRE (Phase 17) all now run end-to-end with real `GameState`
+  mutation. Every other action (Search, Cast, Use_MI, Challenge,
+  Practice, ASpy, Trade, Defend, Pursue, Trail, Wait, No_Action,
+  Succ_Trail, Move_Abort) raises `UnsupportedActionError`.
   - **Recruit's remaining gaps**: the recruiting leader must already
     exist as a `LeaderState` at the target province (no validation that
     a *co-located* character issued the order); the rulebook's more
@@ -379,6 +433,16 @@ rulebook before being turned into named, typed fields:
     territory isn't checked -- `in_ally_territory` pricing/crediting
     applies whenever the province is simply owned by an ally, regardless
     of whether that ally issued a Treat order permitting it.
+  - **Hire's remaining gaps** (see Phase 17's note above): a Hero's own
+    "required pay" (may be less than the offer, depends on unmodeled
+    temper/race/alignment compatibility), recurring per-gameturn pay
+    (only the one-time offer is charged), alignment-based hire refusal,
+    and "can't Hire a Hero who rules his own province" (no King flag).
+    Also, any Hire (or Charm/Resurrection) phase before a segment's last
+    slot corrupts that leader's own later same-labeled phases due to the
+    nested-plan parser bug documented in the TODO section above --
+    `run_leader_plan` results for a kingdom that used Hire mid-segment
+    should be treated with caution.
   - **Disband's remaining gap**: no King/Hero distinction on `LeaderState`
     means co-location isn't enforced for anyone (see Phase 16's note
     above) -- a Hero should arguably need to be with the army to disband

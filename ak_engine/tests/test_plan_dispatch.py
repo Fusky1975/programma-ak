@@ -13,8 +13,9 @@ from ak_engine.models.race import Race
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.turn.army_list_decode import ArmyListRequest
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.hire_fire_decode import FireRequest
 from ak_engine.turn.move_execution import MoveExecutionResult
-from ak_engine.turn.plan_dispatch import UnsupportedActionError, dispatch_phase, run_leader_plan
+from ak_engine.turn.plan_dispatch import HireExecutionResult, UnsupportedActionError, dispatch_phase, run_leader_plan
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
@@ -213,6 +214,101 @@ def test_dispatch_disband_all_releases_every_commanded_army():
 
     assert state.armies[army_id].kingdom_id is None
     assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_hire_assigns_independent_hero_and_debits_treasury():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(32, None, "Wandering Hero", location))
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[3])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, HireExecutionResult)
+    assert result.hired is True
+    assert state.leaders[32].kingdom_id == 1
+    assert state.kingdoms[1].treasury == 97
+
+
+def test_dispatch_hire_fails_when_hero_not_colocated():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.add_leader(LeaderState(32, None, "Wandering Hero", HexCoord(9, 9)))
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[3])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is False
+    assert result.reason == "not co-located"
+    assert state.leaders[32].kingdom_id is None
+    assert state.kingdoms[1].treasury == 100  # untouched
+
+
+def test_dispatch_hire_fails_when_hero_already_employed():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(32, 2, "Rival's Hero", location))
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[3])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is False
+    assert result.reason == "hero already in service"
+    assert state.leaders[32].kingdom_id == 2  # untouched
+
+
+def test_dispatch_hire_fails_on_insufficient_treasury():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {}, treasury=2)
+    state.add_leader(LeaderState(32, None, "Wandering Hero", location))
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[3])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is False
+    assert result.reason == "insufficient treasury"
+    assert state.leaders[32].kingdom_id is None
+    assert state.kingdoms[1].treasury == 2  # untouched
+
+
+def test_dispatch_fire_releases_hero_to_independent():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.add_leader(LeaderState(32, 1, "Employed Hero", HexCoord(9, 9)))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, FireRequest)
+    assert result.hero_id == 32
+    assert state.leaders[32].kingdom_id is None
+
+
+def test_dispatch_fire_unknown_hero_id_is_a_noop():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=999, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hero_id == 999  # no exception, nothing to mutate
+
+
+def test_real_move_file_leader_hire_phase_dispatches():
+    # Leader 18 ("Guerin") in AK3__T2.K1 has a real Hire phase (P1):
+    # "P1 : 5 32 3" -> Hire hero 32, offer 3 gold.
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T2.K1")
+    leader = next(leader for leader in kingdom.leaders if leader.leader_id == 18)
+    hire_phase = leader.plan.segments[0].phases["P1"]
+    assert hire_phase.action == ActionCode.HIRE
+
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(18, 1, "Guerin", location))
+    state.add_leader(LeaderState(32, None, "Wandering Hero", location))
+
+    result = dispatch_phase(hire_phase, state, kingdom_id=1, leader_id=18, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, HireExecutionResult)
+    assert result.hired is True
+    assert state.leaders[32].kingdom_id == 1
 
 
 def test_run_leader_plan_records_errors_and_continues():

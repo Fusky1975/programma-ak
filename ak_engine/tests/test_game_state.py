@@ -91,3 +91,11 @@ def test_is_allied_none_kingdom_id_is_allied_with_nobody():
     assert state.is_allied(None, 1) is False
     assert state.is_allied(1, None) is False
     assert state.is_allied(None, None) is False
+
+
+def test_independent_heroes_at_returns_only_ownerless_leaders_at_that_location():
+    state = make_state()
+    state.add_leader(LeaderState(50, None, "Wandering Hero", FIELD))
+    state.add_leader(LeaderState(51, 1, "Employed Leader", FIELD))
+    assert {leader.leader_id for leader in state.independent_heroes_at(FIELD)} == {50}
+    assert state.independent_heroes_at(HOME) == []

@@ -40,6 +40,19 @@ to dispatch automatically:
   convention). Recruit, in turn, checks ``GameState.mercenaries_at()``
   before levying a fresh unit, so a disbanded army can be re-hired later
   (rulebook [3.4]).
+- **HIRE** and **FIRE** actually execute (Phase 17), operating on
+  independent *Heroes* (``LeaderState.kingdom_id is None``) rather than
+  armies -- a different concept from Recruit's mercenary-army hiring, see
+  ``turn/hire_fire_decode.py``. Hire requires the target Hero to be
+  independent and co-located with the acting leader, then debits the
+  gold offer from the kingdom's treasury and assigns the Hero to
+  ``kingdom_id`` (rulebook [3.5]). Fire releases a Hero back to
+  ``kingdom_id = None`` (rulebook [3.7]); like Disband, co-location isn't
+  enforced (same King-vs-Hero authority gap, see ``_dispatch_disband``'s
+  docstring). Neither models the rulebook's finer unsourced/undata-able
+  details: a Hero's own "required pay" (may be less than the offer),
+  recurring per-turn pay, alignment-based hire refusal, or "can't Hire a
+  Hero who rules his own province" -- see ``README.md``.
 
 Every other ``ActionCode`` raises ``UnsupportedActionError``.
 
@@ -62,6 +75,7 @@ from ak_engine.models.plan import PlanPhase
 from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
 from ak_engine.turn.exploration import resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
+from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
 from ak_engine.turn.move_execution import execute_move
 from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_recruit
@@ -74,12 +88,21 @@ SUPPORTED_ACTIONS = frozenset(
         ActionCode.DISBAND,
         ActionCode.LEAVE,
         ActionCode.PICK_UP,
+        ActionCode.HIRE,
+        ActionCode.FIRE,
     }
 )
 
 
 class UnsupportedActionError(NotImplementedError):
     """Raised for a PlanPhase whose action has no turn/* resolver wired up yet."""
+
+
+@dataclass(slots=True)
+class HireExecutionResult:
+    request: HireRequest
+    hired: bool
+    reason: str | None = None  # set when hired is False
 
 
 @dataclass(slots=True)
@@ -144,6 +167,12 @@ def dispatch_phase(
 
     if action is ActionCode.DISBAND:
         return _dispatch_disband(phase, state, leader_id)
+
+    if action is ActionCode.HIRE:
+        return _dispatch_hire(phase, state, kingdom_id, leader_id)
+
+    if action is ActionCode.FIRE:
+        return _dispatch_fire(phase, state)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 
@@ -219,6 +248,48 @@ def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
         army.kingdom_id = None
         army.commanded_by = None
 
+    return request
+
+
+def _dispatch_hire(phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int) -> HireExecutionResult:
+    request = decode_hire_phase(phase)
+    hero = state.leaders.get(request.hero_id)
+    acting_leader = state.leaders[leader_id]
+
+    if hero is None:
+        return HireExecutionResult(request, hired=False, reason="hero not found")
+    if hero.kingdom_id is not None:
+        return HireExecutionResult(request, hired=False, reason="hero already in service")
+    if hero.location != acting_leader.location:
+        # rulebook [3.5]: "Any character can attempt to Hire a Hero in the
+        # same province."
+        return HireExecutionResult(request, hired=False, reason="not co-located")
+
+    kingdom = state.kingdoms[kingdom_id]
+    if kingdom.treasury < request.gold_offer:
+        return HireExecutionResult(request, hired=False, reason="insufficient treasury")
+
+    # Simplification: the rulebook's Hero "pay required" (which may be
+    # lower than the offer, and unrelated to ability -- see module
+    # docstring) isn't modeled, so the full offer is always charged and
+    # the Hero always accepts if co-located and affordable.
+    kingdom.treasury -= request.gold_offer
+    hero.kingdom_id = kingdom_id
+
+    return HireExecutionResult(request, hired=True)
+
+
+def _dispatch_fire(phase: PlanPhase, state: GameState) -> FireRequest:
+    request = decode_fire_phase(phase)
+    hero = state.leaders.get(request.hero_id)
+    if hero is not None:
+        # "Releases the Hero into private life... will wander around
+        # until hired by another King." (rulebook [3.7]) Co-location is
+        # NOT enforced here, same simplification as Disband (see
+        # `_dispatch_disband`'s docstring): a King may Fire "at any
+        # time", and a Hero "can always fire himself", but `LeaderState`
+        # doesn't track King-vs-Hero status to distinguish the cases.
+        hero.kingdom_id = None
     return request
 
 

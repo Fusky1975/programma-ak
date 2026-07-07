@@ -23,6 +23,11 @@ into mercenary status... will wander around as unemployed mercenaries
 until hired"). ``is_allied()`` treats ``None`` as allied with nobody,
 including another mercenary army -- two masterless bands aren't each
 other's allies just because both have no owner.
+
+``LeaderState.kingdom_id`` is nullable too (Phase 17), same convention:
+``None`` means an independent Hero, not yet in anyone's service (rulebook
+[3.5] Hire, [3.7] Fire: "The Hero will wander around until hired by
+another King").
 """
 
 from __future__ import annotations
@@ -66,7 +71,7 @@ class ArmyState:
 @dataclass(slots=True)
 class LeaderState:
     leader_id: int
-    kingdom_id: int
+    kingdom_id: int | None  # None = independent Hero, not in any kingdom's service
     name: str
     location: HexCoord
 
@@ -126,6 +131,9 @@ class GameState:
 
     def mercenaries_at(self, coord: HexCoord) -> list[ArmyState]:
         return [army for army in self.armies.values() if army.location == coord and army.kingdom_id is None]
+
+    def independent_heroes_at(self, coord: HexCoord) -> list[LeaderState]:
+        return [leader for leader in self.leaders.values() if leader.location == coord and leader.kingdom_id is None]
 
     def is_allied(self, kingdom_a: int | None, kingdom_b: int | None) -> bool:
         if kingdom_a is None or kingdom_b is None:
