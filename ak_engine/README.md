@@ -17,9 +17,12 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
 - **Phase 3**: Explore-action resolution (`turn/exploration.py`): the
   deterministic cumulative exploration-percentage formula, also now wired
   into `resolve_move()`'s partial-exploration side effect.
-- **Phase 4 (current)**: Army Type Table (`models/army_type.py`, rulebook
-  [6.3]) and Recruit-action cost/limit resolution (`turn/recruit.py`).
-  Combat resolution and report generation are still later phases.
+- **Phase 4**: Army Type Table (`models/army_type.py`, rulebook [6.3]) and
+  Recruit-action cost/limit resolution (`turn/recruit.py`).
+- **Phase 5 (current)**: battle math primitives (`turn/combat.py`):
+  quality multipliers, battle-line/overflight strength halving, the
+  defender bonus, the nemesis penalty, and a win-probability estimate.
+  Report generation is still a later phase.
 
 ## Setup
 
@@ -59,6 +62,17 @@ rulebook before being turned into named, typed fields:
   says explicitly whether a *humanoid* type can be recruited in a
   *non-humanoid* (monstrous) province. This module assumes not (symmetric
   incompatibility) — a reasonable reading, not a verified rule.
+- **"Beasts" nemesis matchup** (`models/army_type.py` `NEMESIS`) — the
+  rulebook lists "Beasts" as a nemesis type for Lt/Hvy Cavalry and
+  Chariots but never defines the term. Interpreted here as `{Elephants,
+  Camel Corps}`, the table's two mounted "beast" units — a guess, not a
+  quote.
+- **`win_probability` curve** (`turn/combat.py`) — the rulebook gives only
+  two data points (1:1 ratio → 50% win chance, 4:1 ratio → "assured"
+  victory, without a number). The implemented `ratio / (ratio + 1)` curve
+  hits the first anchor exactly but gives 80%, not "assured", at 4:1 — an
+  approximation flagged in the function's docstring, not a sourced
+  formula. Revisit if a real battle result ever contradicts it.
 
 ## Not yet implemented (by design, this phase)
 
@@ -66,8 +80,26 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **Battle resolution** (rulebook [7.0]): `resolve_move()` only flags that
-  a battle would be triggered (`battle_expected`), it doesn't fight it.
+- **Actually fighting a battle** (rulebook [7.0]-[7.8]): `turn/combat.py`
+  only provides the isolated formulas (quality multiplier, line/overflight
+  strength halving, defender bonus, nemesis penalty, win-probability
+  estimate). Not modeled yet, and needed before a battle can be resolved
+  end-to-end:
+  - The battle line-up algorithm itself: sorting units into lines/columns,
+    terrain-based line-length shortening ("may be shortened by
+    mountainous or wooded terrain on the flanks", no exact numbers found
+    in the rulebook text), and Tactical-ability-based unit switching.
+  - Race/terrain strength bonuses ([6.3] "ARMY STRENGTH NOTES": +1 for
+    racial affinity with an army type, +1 for home terrain, halved in
+    adverse terrain) — the stacking order with quality, defender bonus,
+    and nemesis penalty isn't specified anywhere, so combining them would
+    be guessing an interaction, not just a missing number.
+  - Supreme Commander selection and duels [7.1].
+  - Pursuit [7.3], Retreat [7.4], post-battle quality-level changes
+    [7.5], Contested Provinces [7.6], Conquest movement cost [7.7], and
+    Multiple Contingents [7.8].
+  - `resolve_move()` still only flags that a battle would be triggered
+    (`battle_expected`); it doesn't fight one.
 - **Feature discovery, monsters, treasures, rumors, battlefield reports**
   (rulebook [3.2]): `resolve_explore()` only computes the deterministic
   cumulative exploration percentage. Actually discovering *what* a

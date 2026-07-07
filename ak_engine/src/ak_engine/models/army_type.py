@@ -1,11 +1,17 @@
 """Army Type Table, transcribed from ``RULES.AK`` [6.3].
 
-Only ``speed`` and ``pay`` (recruit/maintenance cost) are modeled here --
-what's needed for the Recruit action (``turn/recruit.py``). ``Str``
-(strength), nemesis matchups, and the quality-level system belong to the
-combat phase and are deliberately left out until that's built; Elephants'
-strength is even listed as "V" (variable) in the rulebook, i.e. not a
-plain number, another sign that table belongs with combat, not here.
+``speed`` and ``pay`` (recruit/maintenance cost) support the Recruit
+action (``turn/recruit.py``); ``BASE_STRENGTH`` and ``NEMESIS`` support
+battle math (``turn/combat.py``). The quality-level multiplier system is
+NOT army-type-specific and lives in ``turn/combat.py`` instead.
+
+Garrison's "Str" is asymmetric in the rulebook (3 defending, 1 attacking)
+and is handled as two named constants (``GARRISON_DEFENSE_STRENGTH``,
+``GARRISON_ATTACK_STRENGTH``) rather than forced into ``BASE_STRENGTH``.
+Elephants' "Str" is listed as "V" (variable) in the rulebook -- not a
+plain number -- so it's excluded from ``BASE_STRENGTH`` entirely rather
+than guessed; code that needs an Elephants base strength must handle that
+gap explicitly.
 
 ``MONSTROUS_ARMY_RACE`` encodes which army types are tied to one specific
 non-humanoid race (rulebook: "you can't recruit Dragons in a Human
@@ -90,3 +96,55 @@ MONSTROUS_ARMY_RACE: dict[ArmyType, Race] = {
     ArmyType.TROLLS: Race.TROLLISH,
     ArmyType.WEREBEASTS: Race.WEREFOLK,
 }
+
+# "Str" column of the Army Type Table. Garrison and Elephants are excluded;
+# see the module docstring.
+BASE_STRENGTH: dict[ArmyType, int] = {
+    ArmyType.BOWMEN: 2,
+    ArmyType.AXEMEN: 2,
+    ArmyType.PHALANX: 3,
+    ArmyType.LEGION: 3,
+    ArmyType.LT_CAVALRY: 2,
+    ArmyType.HVY_CAVALRY: 4,
+    ArmyType.CHARIOTS: 3,
+    ArmyType.CAMEL_CORPS: 2,
+    ArmyType.WARG_RIDERS: 3,
+    ArmyType.DRAGON_WING: 6,
+    ArmyType.EAGLE_WING: 4,
+    ArmyType.WHALES: 5,
+    ArmyType.FLEET: 3,
+    ArmyType.MERMEN: 2,
+    ArmyType.ENTS: 6,
+    ArmyType.TROLLS: 5,
+    ArmyType.WEREBEASTS: 3,
+}
+
+GARRISON_DEFENSE_STRENGTH = 3
+GARRISON_ATTACK_STRENGTH = 1
+
+# Rulebook [6.3] "Nemesis" column: each key is 2/3 strength when fighting
+# any type in its value set. "Beasts" (the rulebook doesn't define it
+# elsewhere) is interpreted here as {Elephants, Camel Corps}, the table's
+# two mounted "beast" types -- not a literal quote.
+_BEASTS = frozenset({ArmyType.ELEPHANTS, ArmyType.CAMEL_CORPS})
+
+NEMESIS: dict[ArmyType, frozenset[ArmyType]] = {
+    ArmyType.PHALANX: frozenset({ArmyType.LEGION}),
+    ArmyType.LEGION: frozenset({ArmyType.HVY_CAVALRY}),
+    ArmyType.LT_CAVALRY: frozenset({ArmyType.CHARIOTS}) | _BEASTS,
+    ArmyType.HVY_CAVALRY: frozenset({ArmyType.CHARIOTS}) | _BEASTS,
+    ArmyType.CHARIOTS: _BEASTS,
+    ArmyType.WARG_RIDERS: frozenset({ArmyType.EAGLE_WING}),
+    ArmyType.DRAGON_WING: frozenset({ArmyType.BOWMEN}),
+    ArmyType.EAGLE_WING: frozenset({ArmyType.BOWMEN}),
+    ArmyType.WHALES: frozenset({ArmyType.MERMEN}),
+    ArmyType.MERMEN: frozenset({ArmyType.BOWMEN}),
+    ArmyType.ENTS: frozenset({ArmyType.AXEMEN, ArmyType.DRAGON_WING}),
+    ArmyType.TROLLS: frozenset({ArmyType.AXEMEN}),
+}
+
+
+def is_nemesis_of(attacker_type: ArmyType, opponent_type: ArmyType) -> bool:
+    """True if ``opponent_type`` is ``attacker_type``'s nemesis (2/3 strength)."""
+
+    return opponent_type in NEMESIS.get(attacker_type, frozenset())
