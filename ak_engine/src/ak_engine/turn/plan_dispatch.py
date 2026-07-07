@@ -26,11 +26,16 @@ dispatch automatically:
   recruitable types per province" data -- a documented simplification,
   not the literal rule.
 
-Every other ``ActionCode`` raises ``UnsupportedActionError``. Leave/
-Disband/Pick_Up are structurally similar to Recruit (an army-id list in
-``PlanPhase.extra``, per ``HostAK/TP/DEF2.PAS``'s ``Read_HPlan``) but
-unstarted -- there's no leader-to-army command model yet to act on a
-list of army ids meaningfully.
+- **DISBAND, LEAVE, PICK_UP**: ``obj``/``extra`` decoded via
+  ``turn/army_list_decode.py`` into a target leader id and an army-id
+  list (or an "all armies" flag). This is decode-only, same spirit as
+  Recruit's pricing-only dispatch: nothing is applied to ``GameState``.
+  Disband would need a way to represent an unowned mercenary army
+  (``ArmyState.kingdom_id`` isn't nullable); Leave/Pick_Up would need a
+  leader-to-army command model this project doesn't have yet (see
+  ``ak_engine/README.md``).
+
+Every other ``ActionCode`` raises ``UnsupportedActionError``.
 
 This module also does not know which armies a leader commands --
 ``models.game_state.ArmyState`` has no leader-to-army link yet (same gap
@@ -48,13 +53,23 @@ from ak_engine.models.enums import ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
 from ak_engine.models.plan import PlanPhase
+from ak_engine.turn.army_list_decode import decode_army_list_phase
 from ak_engine.turn.exploration import resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.move_execution import execute_move
 from ak_engine.turn.recruit import IncompatibleRaceError, RecruitResolution, is_army_type_compatible_with_race, resolve_recruit
 from ak_engine.turn.recruit_decode import RecruitRequest, decode_recruit_phase
 
-SUPPORTED_ACTIONS = frozenset({ActionCode.LMOVE, ActionCode.EXPLORE, ActionCode.RECRUIT})
+SUPPORTED_ACTIONS = frozenset(
+    {
+        ActionCode.LMOVE,
+        ActionCode.EXPLORE,
+        ActionCode.RECRUIT,
+        ActionCode.DISBAND,
+        ActionCode.LEAVE,
+        ActionCode.PICK_UP,
+    }
+)
 
 
 @dataclass(slots=True)
@@ -112,6 +127,9 @@ def dispatch_phase(
 
     if action is ActionCode.RECRUIT:
         return _dispatch_recruit(phase, state, kingdom_id, army_ids)
+
+    if action in (ActionCode.DISBAND, ActionCode.LEAVE, ActionCode.PICK_UP):
+        return decode_army_list_phase(phase)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 

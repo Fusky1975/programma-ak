@@ -13,6 +13,7 @@ from ak_engine.models.race import Race
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.move_execution import MoveExecutionResult
+from ak_engine.turn.army_list_decode import ArmyListRequest
 from ak_engine.turn.plan_dispatch import RecruitDispatchResult, UnsupportedActionError, dispatch_phase, run_leader_plan
 from ak_engine.turn.recruit import RecruitResolution
 
@@ -162,3 +163,31 @@ def test_real_move_file_leader_recruit_phase_dispatches():
 
     assert isinstance(result, RecruitDispatchResult)
     assert result.request.army_types == [ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.WARG_RIDERS]
+
+
+def test_dispatch_leave_decodes_target_leader_and_armies():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[1, 108, 109, 110, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert isinstance(result, ArmyListRequest)
+    assert result.target_leader_id == 1
+    assert result.army_ids == [108, 109, 110]
+
+
+def test_real_move_file_leader_leave_phase_dispatches():
+    # Leader 18 ("Guerin") in AK3__T1.K1 has a real Leave phase (P3):
+    # "P3 : 7 0 1 108 109 110 -1" -> leave armies 108/109/110 to leader 1.
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T1.K1")
+    leader = next(leader for leader in kingdom.leaders if leader.leader_id == 18)
+    leave_phase = leader.plan.segments[0].phases["P3"]
+    assert leave_phase.action == ActionCode.LEAVE
+
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+
+    result = dispatch_phase(leave_phase, state, kingdom_id=1, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert isinstance(result, ArmyListRequest)
+    assert result.target_leader_id == 1
+    assert result.army_ids == [108, 109, 110]

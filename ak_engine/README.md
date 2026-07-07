@@ -89,22 +89,36 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   `run_leader_plan()` walks every phase of a real leader's plan and
   proved this works end-to-end against an actual `AK3__T1.K1` fixture
   (see `tests/test_plan_dispatch.py`'s real-file test).
-- **Phase 12 (current)**: adds Recruit to `plan_dispatch.py`, closing the
-  gap Phase 11 flagged as "next". `models/army_type.py
-  ARMY_TYPE_BY_ORDINAL` transcribes `CTBOTH.PAS`'s `army` enum ordinal
-  order directly (a *sourced* mapping, not empirical this time) and
-  `turn/recruit_decode.py` uses it to decode a Recruit `PlanPhase`: `obj`
-  is the target leader id (`NO_LEADER_SENTINEL` = `CTBOTH.PAS`'s
-  `noleader = 255`), and `extra[1:]` (up to the `-1` terminator) is a
-  list of requested `ArmyType`s -- confirmed against every real Recruit
-  phase in the `AK3__T*.K1` fixtures, all of which decode cleanly to
-  known types (e.g. `[0, 1, 1, 10, -1]` -> 2x Bowmen + 1x Warg Riders).
-  `plan_dispatch.py` then prices each requested type via
-  `resolve_recruit()` -- but only *prices* it (limits + gold cost); it
-  does not create armies or debit a treasury, since `GameState` has
-  neither yet. Every other `ActionCode` still raises
-  `UnsupportedActionError` -- see "Not yet implemented" below. Report
-  generation is still a later phase.
+- **Phase 12**: adds Recruit to `plan_dispatch.py`, closing the gap Phase
+  11 flagged as "next". `models/army_type.py ARMY_TYPE_BY_ORDINAL`
+  transcribes `CTBOTH.PAS`'s `army` enum ordinal order directly (a
+  *sourced* mapping, not empirical this time) and `turn/recruit_decode.py`
+  uses it to decode a Recruit `PlanPhase`: `obj` is the target leader id
+  (`NO_LEADER_SENTINEL` = `CTBOTH.PAS`'s `noleader = 255`), and
+  `extra[1:]` (up to the `-1` terminator) is a list of requested
+  `ArmyType`s -- confirmed against every real Recruit phase in the
+  `AK3__T*.K1` fixtures, all of which decode cleanly to known types (e.g.
+  `[0, 1, 1, 10, -1]` -> 2x Bowmen + 1x Warg Riders). `plan_dispatch.py`
+  then prices each requested type via `resolve_recruit()` -- but only
+  *prices* it (limits + gold cost); it does not create armies or debit a
+  treasury, since `GameState` has neither yet.
+- **Phase 13 (current)**: adds Disband/Leave/Pick_Up decoding.
+  `turn/army_list_decode.py` decodes all three (they share one branch in
+  `CTBOTH.PAS`/`DEF2.PAS`'s `Read_HPlan`): `extra[0]` is a target leader
+  id (`NO_LEADER_SENTINEL` for "no specific leader" -- meaningful for
+  LEAVE's "give them to another leader" per rulebook [3.8]; present but
+  unconfirmed for Disband/Pick_Up), and `extra[1:]` is either a specific
+  army-id list or a lone `255`, read as an "all armies" flag matching
+  "(LE)ave All"/"(DI)sband All"/"(PI)ck Up All". Confirmed against every
+  real LEAVE phase across all 10 `AK3__T*.K1` files; only one real
+  DISBAND example exists in the sample data and **zero** PICK_UP examples,
+  so those two ride on the shared Pascal code path, not independent
+  confirmation the way LEAVE's is. Like Recruit, this is decode-only --
+  `plan_dispatch.py` doesn't apply it to `GameState` (Disband would need
+  a nullable/mercenary `ArmyState.kingdom_id`; Leave/Pick_Up would need a
+  leader-to-army command model, neither of which exist yet). Every other
+  `ActionCode` still raises `UnsupportedActionError` -- see "Not yet
+  implemented" below. Report generation is still a later phase.
 
 ## Setup
 
@@ -257,25 +271,28 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` closes the loop for 3 of 22 `ActionCode`s.** LMOVE,
-  EXPLORE, and RECRUIT (pricing only) can now run end-to-end from a real
-  parsed move file; every other action (Search, Disband, Hire, Fire,
-  Leave, Pick_Up, Cast, Use_MI, Challenge, Practice, ASpy, Trade, Defend,
-  Pursue, Trail, Wait, No_Action, Succ_Trail, Move_Abort) raises
-  `UnsupportedActionError`. Leave/Disband/Pick_Up are structurally similar
-  to Recruit (an `AN_Bytes` army-id list in `PlanPhase.extra`, per
-  `HostAK/TP/DEF2.PAS`'s `Read_HPlan`) but unstarted -- there's no
-  leader-to-army command model yet to act on a list of army ids
-  meaningfully.
+- **`plan_dispatch.py` closes the loop for 6 of 22 `ActionCode`s.** LMOVE
+  and EXPLORE run end-to-end; RECRUIT and DISBAND/LEAVE/PICK_UP decode
+  (and, for Recruit, price) a real move file's request but stop short of
+  applying it. Every other action (Search, Hire, Fire, Cast, Use_MI,
+  Challenge, Practice, ASpy, Trade, Defend, Pursue, Trail, Wait,
+  No_Action, Succ_Trail, Move_Abort) raises `UnsupportedActionError`.
   - **Actually executing a priced Recruit request.** `plan_dispatch.py`
     tells you the cost and limit for each requested army type but
     doesn't spend gold, create `ArmyState` entries, or apply the
     per-turn recruit limit across multiple orders -- `GameState` has no
     treasury balance or "already recruited N this turn" tracking yet.
+  - **Actually applying a decoded Disband/Leave/Pick_Up request.**
+    Disband needs a way to represent an unowned mercenary army
+    (`ArmyState.kingdom_id` isn't nullable, and there's no mercenary
+    pool); Leave and Pick_Up both need a leader-to-army command model
+    (which armies a leader currently leads) that doesn't exist --
+    without it, "give this army to leader X" or "attach this army to me"
+    can't be applied to state, only decoded.
   - **Which armies a leader's Move order pulls in.** `execute_move()`/
     `dispatch_phase()` take an explicit `army_ids` list; there's no
     leader-to-army ownership/command model yet to derive that list
-    automatically.
+    automatically -- the same missing piece as the point above.
   - Pursuit, duels, and Multiple Contingents (all exist as standalone
     modules from Phase 8) aren't called from `fight_battle()` yet, nor is
     the "Fleets fighting on land are reduced to Depleted instead of
