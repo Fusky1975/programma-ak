@@ -4,7 +4,7 @@ import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
@@ -121,3 +121,21 @@ def test_raises_for_unknown_target_province():
 
     with pytest.raises(ValueError):
         execute_move(state, kingdom_id=1, army_ids=[101], target=HexCoord(20, 10))
+
+
+def test_leader_can_move_alone_and_relocates():
+    state = base_state()
+    state.add_leader(LeaderState(1, 1, "King", ORIGIN))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[], target=TARGET, leader_id=1)
+
+    assert result.moved is True
+    assert state.leaders[1].location == TARGET
+    assert state.armies[101].location == ORIGIN  # not brought along, unaffected
+
+
+def test_raises_with_no_armies_and_no_leader():
+    state = base_state()
+
+    with pytest.raises(ValueError):
+        execute_move(state, kingdom_id=1, army_ids=[], target=TARGET)

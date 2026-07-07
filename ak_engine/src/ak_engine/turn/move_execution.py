@@ -15,10 +15,17 @@ Wires together, in order:
    target) and the province's exploration-percent update.
 
 Still out of scope, same as ``turn/movement.py``: chasing a *non-adjacent*
-target (`resolve_move` still raises `NonAdjacentMoveError`). Also out of
-scope: resolving *which* armies a leader's Move order actually pulls in --
-this function takes an explicit ``army_ids`` list, it doesn't derive one
-from a parsed `.K1` action plan.
+target (`resolve_move` still raises `NonAdjacentMoveError`).
+
+**Leader-only movement** (Phase 14): pass ``leader_id`` and an empty
+``army_ids`` for a character moving without any army. Per rulebook [3.1]
+("If the character has an army with him and the province is occupied by
+a enemy army, combat occurs"), combat only triggers when the mover has
+at least one army -- a lone character can walk into an enemy-held
+province without a fight. Lone characters aren't subject to the
+movement-point check either: that's an army property (rulebook [6.2],
+"An army's speed determines how far it can move"), and this project
+doesn't track a separate per-character movement budget.
 """
 
 from __future__ import annotations
@@ -49,28 +56,35 @@ def execute_move(
     army_ids: list[int],
     target: HexCoord,
     *,
+    leader_id: int | None = None,
     explorer_skill: int = 0,
     loser_retreats: bool = True,
     rng: random.Random | None = None,
 ) -> MoveExecutionResult:
     """Move ``army_ids`` (all from the same province) to an adjacent ``target``.
 
-    Fights a battle automatically if ``target`` holds any non-allied
-    army. Raises if the armies don't share a starting province, if any
-    lacks a movement point, or if ``target`` isn't adjacent (via
-    ``resolve_move``) or has no province data.
+    ``army_ids`` may be empty if ``leader_id`` is given -- a character
+    moving alone. Fights a battle automatically if ``target`` holds a
+    non-allied army AND the mover brought at least one army of their own.
+    Raises if the armies don't share a starting province, if any lacks a
+    movement point, if neither ``army_ids`` nor ``leader_id`` is given, or
+    if ``target`` isn't adjacent (via ``resolve_move``) or has no
+    province data.
     """
 
     rng = rng if rng is not None else random.Random()
-    if not army_ids:
-        raise ValueError("no armies given")
+    if not army_ids and leader_id is None:
+        raise ValueError("no armies and no leader given -- nothing to move")
 
     armies = [state.armies[army_id] for army_id in army_ids]
-    current = armies[0].location
-    if any(army.location != current for army in armies):
-        raise ValueError("all armies must move together from the same province")
-    if any(army.movement_points < 1 for army in armies):
-        raise ValueError("an army with no movement points left this gameturn can't move")
+    if armies:
+        current = armies[0].location
+        if any(army.location != current for army in armies):
+            raise ValueError("all armies must move together from the same province")
+        if any(army.movement_points < 1 for army in armies):
+            raise ValueError("an army with no movement points left this gameturn can't move")
+    else:
+        current = state.leaders[leader_id].location
 
     target_province = state.provinces.get(target)
     if target_province is None:
@@ -80,7 +94,7 @@ def execute_move(
     defenders_present = [
         army for army in state.armies_at(target) if not state.is_allied(army.kingdom_id, kingdom_id)
     ]
-    occupied_by_enemy = bool(defenders_present)
+    occupied_by_enemy = bool(armies) and bool(defenders_present)
 
     move_result = resolve_move(
         current,
@@ -123,6 +137,11 @@ def execute_move(
         army.movement_points -= cost
         if moved and army.location == current:
             army.location = target
+
+    if leader_id is not None and moved:
+        leader = state.leaders.get(leader_id)
+        if leader is not None and leader.location == current:
+            leader.location = target
 
     return MoveExecutionResult(
         moved=moved,

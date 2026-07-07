@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
@@ -19,6 +19,26 @@ def make_state() -> GameState:
     state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD))
     state.add_army(ArmyState(201, 2, ArmyType.AXEMEN, Quality.AVERAGE, FIELD))
     return state
+
+
+def test_add_leader_and_leaders_at():
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "King", FIELD))
+    state.add_leader(LeaderState(2, 2, "Rival", HOME))
+    assert {leader.leader_id for leader in state.leaders_at(FIELD)} == {1}
+    assert state.leaders_at(HexCoord(9, 9)) == []
+
+
+def test_armies_commanded_by_filters_correctly():
+    state = make_state()
+    state.armies[101].commanded_by = 1
+    assert [army.army_id for army in state.armies_commanded_by(1)] == [101]
+    assert state.armies_commanded_by(2) == []
+
+
+def test_army_defaults_to_unled():
+    state = make_state()
+    assert state.armies[101].commanded_by is None
 
 
 def test_armies_at_returns_only_armies_in_that_province():

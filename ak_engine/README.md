@@ -102,23 +102,48 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   then prices each requested type via `resolve_recruit()` -- but only
   *prices* it (limits + gold cost); it does not create armies or debit a
   treasury, since `GameState` has neither yet.
-- **Phase 13 (current)**: adds Disband/Leave/Pick_Up decoding.
-  `turn/army_list_decode.py` decodes all three (they share one branch in
-  `CTBOTH.PAS`/`DEF2.PAS`'s `Read_HPlan`): `extra[0]` is a target leader
-  id (`NO_LEADER_SENTINEL` for "no specific leader" -- meaningful for
-  LEAVE's "give them to another leader" per rulebook [3.8]; present but
-  unconfirmed for Disband/Pick_Up), and `extra[1:]` is either a specific
-  army-id list or a lone `255`, read as an "all armies" flag matching
-  "(LE)ave All"/"(DI)sband All"/"(PI)ck Up All". Confirmed against every
-  real LEAVE phase across all 10 `AK3__T*.K1` files; only one real
-  DISBAND example exists in the sample data and **zero** PICK_UP examples,
-  so those two ride on the shared Pascal code path, not independent
-  confirmation the way LEAVE's is. Like Recruit, this is decode-only --
-  `plan_dispatch.py` doesn't apply it to `GameState` (Disband would need
-  a nullable/mercenary `ArmyState.kingdom_id`; Leave/Pick_Up would need a
-  leader-to-army command model, neither of which exist yet). Every other
-  `ActionCode` still raises `UnsupportedActionError` -- see "Not yet
-  implemented" below. Report generation is still a later phase.
+- **Phase 13**: adds Disband/Leave/Pick_Up decoding. `turn/army_list_decode.py`
+  decodes all three (they share one branch in `CTBOTH.PAS`/`DEF2.PAS`'s
+  `Read_HPlan`): `extra[0]` is a target leader id (`NO_LEADER_SENTINEL`
+  for "no specific leader" -- meaningful for LEAVE's "give them to
+  another leader" per rulebook [3.8]; present but unconfirmed for
+  Disband/Pick_Up), and `extra[1:]` is either a specific army-id list or
+  a lone `255`, read as an "all armies" flag matching "(LE)ave
+  All"/"(DI)sband All"/"(PI)ck Up All". Confirmed against every real
+  LEAVE phase across all 10 `AK3__T*.K1` files; only one real DISBAND
+  example exists in the sample data and **zero** PICK_UP examples, so
+  those two ride on the shared Pascal code path, not independent
+  confirmation the way LEAVE's is. This phase was decode-only.
+- **Phase 14 (current)**: the leader-army command model. `models/game_state.py`
+  adds `LeaderState` (a persistent leader's kingdom/name/location --
+  distinct from Phase 1's parsed `models.kingdom.Leader`, which carries
+  an `ActionPlan` and shares only the `leader_id`) and `ArmyState
+  .commanded_by` (which leader currently leads an army, `None` = unled/
+  garrison). This unlocks real execution for two of Phase 13's
+  decode-only actions:
+  - **LEAVE** now actually transfers `commanded_by` to the requested
+    leader (or clears it, for the garrison) and, per rulebook [3.8] ("If
+    you Leave an army in an ally's province, the army then belongs to
+    the ally"), reassigns `kingdom_id` too when the province is owned by
+    an ally.
+  - **PICK_UP** now attaches co-located armies (or, for "Pick Up All",
+    every *unled* co-located army -- rulebook: "(PI)ck Up All UNLED
+    armies... with Garrison Commander") to the acting leader.
+  - **DISBAND still doesn't execute** -- releasing an army "into
+    mercenary status" needs a way to represent an unowned army (nullable
+    `ArmyState.kingdom_id` or a mercenary pool), which is a separate,
+    still-open gap the command model alone doesn't close.
+  `turn/move_execution.py execute_move()` also gained `leader_id` support:
+  a character can now move *without* any army (rulebook [3.1]: combat
+  only triggers "If the character has an army with him", so a lone
+  leader walking into an enemy-held province doesn't fight), and
+  `turn/plan_dispatch.py` now derives `army_ids` from
+  `state.armies_commanded_by(leader_id)` by default instead of always
+  requiring an explicit list -- closing the "which armies does a Move
+  order pull in" gap from Phase 10/11. Every dispatch call requires an
+  explicit `leader_id` now (a signature change from Phase 11-13).
+  Every other `ActionCode` still raises `UnsupportedActionError` -- see
+  "Not yet implemented" below. Report generation is still a later phase.
 
 ## Setup
 
@@ -271,28 +296,23 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` closes the loop for 6 of 22 `ActionCode`s.** LMOVE
-  and EXPLORE run end-to-end; RECRUIT and DISBAND/LEAVE/PICK_UP decode
-  (and, for Recruit, price) a real move file's request but stop short of
-  applying it. Every other action (Search, Hire, Fire, Cast, Use_MI,
-  Challenge, Practice, ASpy, Trade, Defend, Pursue, Trail, Wait,
-  No_Action, Succ_Trail, Move_Abort) raises `UnsupportedActionError`.
+- **`plan_dispatch.py` closes the loop for 6 of 22 `ActionCode`s.** LMOVE,
+  EXPLORE, LEAVE, and PICK_UP now run end-to-end (including real
+  `GameState` mutation, as of Phase 14); RECRUIT decodes and prices a
+  real request without applying it; DISBAND still only decodes. Every
+  other action (Search, Hire, Fire, Cast, Use_MI, Challenge, Practice,
+  ASpy, Trade, Defend, Pursue, Trail, Wait, No_Action, Succ_Trail,
+  Move_Abort) raises `UnsupportedActionError`.
   - **Actually executing a priced Recruit request.** `plan_dispatch.py`
     tells you the cost and limit for each requested army type but
     doesn't spend gold, create `ArmyState` entries, or apply the
     per-turn recruit limit across multiple orders -- `GameState` has no
     treasury balance or "already recruited N this turn" tracking yet.
-  - **Actually applying a decoded Disband/Leave/Pick_Up request.**
-    Disband needs a way to represent an unowned mercenary army
+  - **Actually applying a decoded Disband request.** Releasing an army
+    "into mercenary status" needs a way to represent an unowned army
     (`ArmyState.kingdom_id` isn't nullable, and there's no mercenary
-    pool); Leave and Pick_Up both need a leader-to-army command model
-    (which armies a leader currently leads) that doesn't exist --
-    without it, "give this army to leader X" or "attach this army to me"
-    can't be applied to state, only decoded.
-  - **Which armies a leader's Move order pulls in.** `execute_move()`/
-    `dispatch_phase()` take an explicit `army_ids` list; there's no
-    leader-to-army ownership/command model yet to derive that list
-    automatically -- the same missing piece as the point above.
+    pool) -- the Phase 14 command model doesn't close this gap, since
+    Disband isn't about *who leads* an army but *who owns* it.
   - Pursuit, duels, and Multiple Contingents (all exist as standalone
     modules from Phase 8) aren't called from `fight_battle()` yet, nor is
     the "Fleets fighting on land are reduced to Depleted instead of

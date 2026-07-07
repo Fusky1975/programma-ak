@@ -6,11 +6,16 @@ of them remember anything across calls. This module is the first actual
 session state: kingdoms, armies, and provinces that persist across turns
 and battles, for ``turn/battle_orchestrator.py`` to read and mutate.
 
-Intentionally minimal -- just enough to orchestrate a battle end-to-end.
-Not a full game database: no leader/action-plan integration (Phase 1's
-``models.kingdom.Kingdom`` is a parsed *move submission*, a different
-concept from the persistent kingdom here), no diplomacy/treaty tracking
-beyond a flat alliance set, no turn-history log.
+Intentionally minimal -- just enough to orchestrate a battle end-to-end
+and (as of Phase 14) track which leader commands which army. Not a full
+game database: ``LeaderState`` here is a persistent, minimal stand-in
+for a character's position and command relationships -- it does NOT
+carry Phase 1's parsed ``ActionPlan`` (``models.kingdom.Leader`` is a
+parsed *move submission*, a different concept from the persistent
+leader here; the two are linked only by sharing a ``leader_id``). No
+diplomacy/treaty tracking beyond a flat alliance set, no turn-history
+log, no character abilities/stats yet (needed eventually for
+``turn/strength.py``'s Tactical/Naval special factor, still unwired).
 """
 
 from __future__ import annotations
@@ -45,6 +50,18 @@ class ArmyState:
     # Remaining this gameturn. Not auto-reset at turn start and not derived
     # from ARMY_TABLE speed + March/Naval ability -- the caller sets it.
     movement_points: int = 0
+    # Which leader currently leads this army, if any (rulebook: an army may
+    # also be unled, under the "garrison commander"). Set/cleared by
+    # Leave/Pick_Up (turn/plan_dispatch.py); None means unled.
+    commanded_by: int | None = None
+
+
+@dataclass(slots=True)
+class LeaderState:
+    leader_id: int
+    kingdom_id: int
+    name: str
+    location: HexCoord
 
 
 @dataclass(slots=True)
@@ -63,6 +80,7 @@ class GameState:
     kingdoms: dict[int, KingdomState] = field(default_factory=dict)
     provinces: dict[HexCoord, ProvinceState] = field(default_factory=dict)
     armies: dict[int, ArmyState] = field(default_factory=dict)
+    leaders: dict[int, LeaderState] = field(default_factory=dict)
     allied_kingdoms: set[frozenset[int]] = field(default_factory=set)
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
@@ -77,8 +95,17 @@ class GameState:
     def remove_army(self, army_id: int) -> None:
         self.armies.pop(army_id, None)
 
+    def add_leader(self, leader: LeaderState) -> None:
+        self.leaders[leader.leader_id] = leader
+
     def armies_at(self, coord: HexCoord) -> list[ArmyState]:
         return [army for army in self.armies.values() if army.location == coord]
+
+    def leaders_at(self, coord: HexCoord) -> list[LeaderState]:
+        return [leader for leader in self.leaders.values() if leader.location == coord]
+
+    def armies_commanded_by(self, leader_id: int) -> list[ArmyState]:
+        return [army for army in self.armies.values() if army.commanded_by == leader_id]
 
     def is_allied(self, kingdom_a: int, kingdom_b: int) -> bool:
         if kingdom_a == kingdom_b:

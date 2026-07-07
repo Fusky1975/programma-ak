@@ -26,21 +26,34 @@ dispatch automatically:
   recruitable types per province" data -- a documented simplification,
   not the literal rule.
 
-- **DISBAND, LEAVE, PICK_UP**: ``obj``/``extra`` decoded via
-  ``turn/army_list_decode.py`` into a target leader id and an army-id
-  list (or an "all armies" flag). This is decode-only, same spirit as
-  Recruit's pricing-only dispatch: nothing is applied to ``GameState``.
-  Disband would need a way to represent an unowned mercenary army
-  (``ArmyState.kingdom_id`` isn't nullable); Leave/Pick_Up would need a
-  leader-to-army command model this project doesn't have yet (see
-  ``ak_engine/README.md``).
+- **RECRUIT** priced via ``turn/recruit.py resolve_recruit()`` per
+  requested type -- but only *prices* it (limits and gold cost); it does
+  NOT create new armies or debit a treasury, since ``GameState`` has no
+  treasury balance or "recruit executed" bookkeeping yet (see
+  ``ak_engine/README.md``). ``is_native_to_province`` is approximated as
+  race-compatibility (``turn/recruit.py is_army_type_compatible_with_race``)
+  since ``GameState`` doesn't track the rulebook's more specific "1-2
+  recruitable types per province" data -- a documented simplification,
+  not the literal rule.
+- **LEAVE** and **PICK_UP** actually mutate ``ArmyState.commanded_by``
+  (Phase 14's leader-army command model, ``models.game_state.LeaderState``)
+  -- Leave transfers command to the requested leader (or clears it, for
+  the garrison), also transferring ``kingdom_id`` if left in an ally's
+  province ("the army then belongs to the ally", rulebook [3.8]); Pick_Up
+  attaches co-located armies (or, for "Pick Up All", every *unled*
+  co-located army) to the acting leader.
+- **DISBAND** still decode-only: releasing an army "into mercenary
+  status" (rulebook [3.6]) needs a way to represent an unowned army,
+  which needs a nullable ``ArmyState.kingdom_id`` (or a separate
+  mercenary pool) -- neither exists yet, so Disband is decoded but not
+  applied.
 
 Every other ``ActionCode`` raises ``UnsupportedActionError``.
 
-This module also does not know which armies a leader commands --
-``models.game_state.ArmyState`` has no leader-to-army link yet (same gap
-noted in Phase 10's README for ``execute_move``/``fight_battle``) -- so
-``army_ids`` is always an explicit, caller-supplied parameter.
+Every dispatch call takes an explicit ``leader_id`` -- the acting
+character -- and ``army_ids`` defaults to whatever that leader currently
+commands (``GameState.armies_commanded_by``) unless the caller overrides
+it.
 """
 
 from __future__ import annotations
@@ -53,7 +66,7 @@ from ak_engine.models.enums import ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
 from ak_engine.models.plan import PlanPhase
-from ak_engine.turn.army_list_decode import decode_army_list_phase
+from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
 from ak_engine.turn.exploration import resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.move_execution import execute_move
@@ -95,18 +108,22 @@ def dispatch_phase(
     phase: PlanPhase,
     state: GameState,
     kingdom_id: int,
-    army_ids: list[int],
+    leader_id: int,
+    army_ids: list[int] | None = None,
     *,
     board_width: int,
     explorer_skill: int = 0,
     rng: random.Random | None = None,
 ):
-    """Execute one PlanPhase's action against ``state``.
+    """Execute one PlanPhase's action against ``state``, as commanded by ``leader_id``.
+
+    ``army_ids`` defaults to whatever ``leader_id`` currently commands
+    (``state.armies_commanded_by``); pass an explicit list to override.
 
     Raises ``UnsupportedActionError`` for anything outside
     ``SUPPORTED_ACTIONS``, and propagates whatever ``execute_move``/
     ``resolve_explore`` themselves raise (e.g. ``NonAdjacentMoveError``,
-    a ``KeyError`` for an unknown province).
+    a ``KeyError`` for an unknown province or leader).
     """
 
     action = phase.action
@@ -114,35 +131,43 @@ def dispatch_phase(
         label = action.name if isinstance(action, ActionCode) else repr(action)
         raise UnsupportedActionError(f"no turn/* resolver implemented yet for action {label}")
 
+    if army_ids is None:
+        army_ids = [army.army_id for army in state.armies_commanded_by(leader_id)]
+
     if action is ActionCode.LMOVE:
         target = decode_hex_number(phase.obj, board_width)
-        return execute_move(state, kingdom_id, army_ids, target, explorer_skill=explorer_skill, rng=rng)
+        return execute_move(
+            state, kingdom_id, army_ids, target, leader_id=leader_id, explorer_skill=explorer_skill, rng=rng
+        )
 
     if action is ActionCode.EXPLORE:
-        army = state.armies[army_ids[0]]
-        province = state.provinces[army.location]
+        province = state.provinces[state.leaders[leader_id].location]
         result = resolve_explore(province.explored_percent, province.terrain, explorer_skill)
         province.explored_percent = result.new_percent
         return result
 
     if action is ActionCode.RECRUIT:
-        return _dispatch_recruit(phase, state, kingdom_id, army_ids)
+        return _dispatch_recruit(phase, state, kingdom_id, leader_id)
 
-    if action in (ActionCode.DISBAND, ActionCode.LEAVE, ActionCode.PICK_UP):
+    if action is ActionCode.LEAVE:
+        return _dispatch_leave(phase, state, leader_id)
+
+    if action is ActionCode.PICK_UP:
+        return _dispatch_pick_up(phase, state, leader_id)
+
+    if action is ActionCode.DISBAND:
         return decode_army_list_phase(phase)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 
 
-def _dispatch_recruit(
-    phase: PlanPhase, state: GameState, kingdom_id: int, army_ids: list[int]
-) -> RecruitDispatchResult:
+def _dispatch_recruit(phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int) -> RecruitDispatchResult:
     request = decode_recruit_phase(phase)
-    army = state.armies[army_ids[0]]
-    province = state.provinces[army.location]
+    location = state.leaders[leader_id].location
+    province = state.provinces[location]
     kingdom = state.kingdoms[kingdom_id]
 
-    is_home_province = army.location == kingdom.home_province
+    is_home_province = location == kingdom.home_province
     in_ally_territory = (
         province.owner_kingdom_id is not None
         and province.owner_kingdom_id != kingdom_id
@@ -167,17 +192,68 @@ def _dispatch_recruit(
     return RecruitDispatchResult(request=request, resolutions=resolutions)
 
 
+def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListRequest:
+    request = decode_army_list_phase(phase)
+    target_ids = (
+        [army.army_id for army in state.armies_commanded_by(leader_id)] if request.all_armies else request.army_ids
+    )
+
+    for army_id in target_ids:
+        army = state.armies.get(army_id)
+        if army is None:
+            continue
+        army.commanded_by = request.target_leader_id
+        province = state.provinces.get(army.location)
+        if (
+            province is not None
+            and province.owner_kingdom_id is not None
+            and province.owner_kingdom_id != army.kingdom_id
+            and state.is_allied(province.owner_kingdom_id, army.kingdom_id)
+        ):
+            # "If you Leave an army in an ally's province, the army then
+            # belongs to the ally." (rulebook [3.8])
+            army.kingdom_id = province.owner_kingdom_id
+
+    return request
+
+
+def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListRequest:
+    request = decode_army_list_phase(phase)
+    acting_leader = state.leaders[leader_id]
+
+    if request.all_armies:
+        # "Pick Up All UNLED armies (with Garrison Commander) in the province."
+        target_ids = [
+            army.army_id for army in state.armies_at(acting_leader.location) if army.commanded_by is None
+        ]
+    else:
+        target_ids = request.army_ids
+
+    for army_id in target_ids:
+        army = state.armies.get(army_id)
+        if army is None or army.location != acting_leader.location:
+            continue  # rulebook: can only pick up a co-located army
+        army.commanded_by = leader_id
+
+    return request
+
+
 def run_leader_plan(
     leader: Leader,
     state: GameState,
     kingdom_id: int,
-    army_ids: list[int],
+    army_ids: list[int] | None = None,
     *,
     board_width: int,
     explorer_skill: int = 0,
     rng: random.Random | None = None,
 ) -> list[PhaseDispatchResult]:
     """Attempt every phase (in order, across all segments) of ``leader``'s plan.
+
+    ``army_ids`` defaults to whatever ``leader.leader_id`` currently
+    commands in ``state`` (re-evaluated fresh for each phase, so a
+    Pick_Up/Leave earlier in the plan changes what a later LMOVE brings
+    along); pass an explicit list to pin it instead.
 
     Never raises: an unsupported or failing phase is recorded in the
     returned list (``error`` set, ``result`` None) so the run continues
@@ -197,6 +273,7 @@ def run_leader_plan(
                     phase,
                     state,
                     kingdom_id,
+                    leader.leader_id,
                     army_ids,
                     board_width=board_width,
                     explorer_skill=explorer_skill,
