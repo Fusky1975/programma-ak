@@ -61,6 +61,20 @@ def test_move_into_allied_territory_is_uncontested():
     assert state.armies[101].location == TARGET
 
 
+def test_move_into_province_with_only_a_mercenary_band_is_uncontested():
+    # A masterless mercenary isn't "an enemy" by default -- moving into a
+    # province it occupies shouldn't force a battle.
+    state = base_state()
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert result.battle_report is None
+    assert result.moved is True
+    assert state.armies[101].location == TARGET
+    assert state.armies[301].kingdom_id is None  # untouched
+
+
 def test_move_triggers_battle_and_conquest_relocates_the_attacker():
     state = base_state()
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))

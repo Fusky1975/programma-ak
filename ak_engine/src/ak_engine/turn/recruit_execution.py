@@ -29,12 +29,21 @@ rulebook doesn't say which happens when a request exceeds what's
 affordable/allowed.
 
 **New army defaults**: quality ``Average`` (rulebook: "an army is levied
-from among the populace"; the alternative -- hiring an existing
-mercenary army of that type, which could be higher quality -- isn't
-modeled, since there's no mercenary pool yet, rulebook [3.4]) and 0
-movement points (conservative: the rulebook doesn't say whether a
-freshly recruited army can act the same phase, so it starts unable to
-move rather than guessing it can).
+from among the populace") and 0 movement points (conservative: the
+rulebook doesn't say whether a freshly recruited army can act the same
+phase, so it starts unable to move rather than guessing it can).
+
+**Hiring an existing mercenary (Phase 16)**: rulebook [3.4], "if there is
+an Average or higher quality mercenary army of that type in the
+province, then the mercenaries are hired" -- before levying a fresh
+``Average`` army, checks ``GameState.mercenaries_at()`` for a co-located,
+matching-``army_type``, ``quality >= Average``, currently-hireable
+(``not unhireable_this_turn``) army and re-assigns it in place instead of
+creating a new one, preserving its (possibly higher) quality. Still
+costs the same ``unit_cost`` and still counts against
+``recruited_this_turn`` -- the rulebook doesn't distinguish hiring from
+levying on price or the per-province limit, only on where the army comes
+from. Reported via ``RecruitedUnit.hired``.
 """
 
 from __future__ import annotations
@@ -53,6 +62,7 @@ class RecruitedUnit:
     army_id: int
     army_type: ArmyType
     gold_paid: int
+    hired: bool = False  # True = an existing mercenary was hired, not freshly levied
 
 
 @dataclass(slots=True)
@@ -115,21 +125,38 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         if in_ally_territory and resolution.ally_fee_per_unit:
             state.kingdoms[province.owner_kingdom_id].treasury += resolution.ally_fee_per_unit
 
-        army_id = state.new_army_id()
-        state.add_army(
-            ArmyState(
-                army_id=army_id,
-                kingdom_id=kingdom_id,
-                army_type=army_type,
-                quality=Quality.AVERAGE,
-                location=location,
-                commanded_by=request.leader_id,
-                movement_points=0,
-            )
+        mercenary = next(
+            (
+                army
+                for army in state.mercenaries_at(location)
+                if army.army_type is army_type
+                and army.quality >= Quality.AVERAGE
+                and not army.unhireable_this_turn
+            ),
+            None,
         )
+        if mercenary is not None:
+            mercenary.kingdom_id = kingdom_id
+            mercenary.commanded_by = request.leader_id
+            army_id = mercenary.army_id
+            hired = True
+        else:
+            army_id = state.new_army_id()
+            state.add_army(
+                ArmyState(
+                    army_id=army_id,
+                    kingdom_id=kingdom_id,
+                    army_type=army_type,
+                    quality=Quality.AVERAGE,
+                    location=location,
+                    commanded_by=request.leader_id,
+                    movement_points=0,
+                )
+            )
+            hired = False
         province.recruited_this_turn[army_type] = already_this_turn + 1
 
-        result.recruited.append(RecruitedUnit(army_id=army_id, army_type=army_type, gold_paid=unit_cost))
+        result.recruited.append(RecruitedUnit(army_id=army_id, army_type=army_type, gold_paid=unit_cost, hired=hired))
         result.total_gold_spent += unit_cost
 
     return result

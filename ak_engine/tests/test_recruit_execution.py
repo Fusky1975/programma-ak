@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.recruit_decode import RecruitRequest
 from ak_engine.turn.recruit_execution import execute_recruit
 
@@ -125,3 +126,58 @@ def test_new_army_ids_do_not_collide_across_multiple_recruits():
 
     ids = [u.army_id for u in result.recruited]
     assert len(ids) == len(set(ids)) == 2
+
+
+def test_recruit_hires_colocated_mercenary_instead_of_levying_new_army():
+    state = build_state()
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.recruited[0].army_id == 999
+    assert result.recruited[0].hired is True
+    assert result.total_gold_spent == 2  # same price as levying fresh
+    assert state.armies[999].kingdom_id == 1
+    assert state.armies[999].commanded_by is None
+    assert state.armies[999].quality == Quality.VETERAN  # preserved, not reset to Average
+    assert len(state.armies) == 1  # no new army created
+
+
+def test_recruit_ignores_mercenary_below_average_quality():
+    state = build_state()
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.GREEN, LOCATION))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited[0].hired is False
+    assert state.armies[999].kingdom_id is None  # untouched, still a mercenary
+    assert len(state.armies) == 2  # a fresh army was levied instead
+
+
+def test_recruit_ignores_unhireable_mercenary():
+    state = build_state()
+    mercenary = ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION)
+    mercenary.unhireable_this_turn = True
+    state.add_army(mercenary)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited[0].hired is False
+    assert state.armies[999].kingdom_id is None
+
+
+def test_recruit_ignores_mercenary_of_a_different_type_or_location():
+    state = build_state()
+    state.add_army(ArmyState(998, None, ArmyType.AXEMEN, Quality.VETERAN, LOCATION))  # wrong type
+    state.add_army(ArmyState(997, None, ArmyType.BOWMEN, Quality.VETERAN, HexCoord(0, 0)))  # wrong place
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited[0].hired is False
+    assert state.armies[998].kingdom_id is None
+    assert state.armies[997].kingdom_id is None

@@ -34,11 +34,12 @@ to dispatch automatically:
   province ("the army then belongs to the ally", rulebook [3.8]); Pick_Up
   attaches co-located armies (or, for "Pick Up All", every *unled*
   co-located army) to the acting leader.
-- **DISBAND** still decode-only: releasing an army "into mercenary
-  status" (rulebook [3.6]) needs a way to represent an unowned army,
-  which needs a nullable ``ArmyState.kingdom_id`` (or a separate
-  mercenary pool) -- neither exists yet, so Disband is decoded but not
-  applied.
+- **DISBAND** actually executes (Phase 16): releases the targeted armies
+  into mercenary status by clearing ``ArmyState.kingdom_id`` and
+  ``commanded_by`` (see ``models/game_state.py``'s nullable-``kingdom_id``
+  convention). Recruit, in turn, checks ``GameState.mercenaries_at()``
+  before levying a fresh unit, so a disbanded army can be re-hired later
+  (rulebook [3.4]).
 
 Every other ``ActionCode`` raises ``UnsupportedActionError``.
 
@@ -142,7 +143,7 @@ def dispatch_phase(
         return _dispatch_pick_up(phase, state, leader_id)
 
     if action is ActionCode.DISBAND:
-        return decode_army_list_phase(phase)
+        return _dispatch_disband(phase, state, leader_id)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 
@@ -194,6 +195,29 @@ def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
         if army is None or army.location != acting_leader.location:
             continue  # rulebook: can only pick up a co-located army
         army.commanded_by = leader_id
+
+    return request
+
+
+def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListRequest:
+    request = decode_army_list_phase(phase)
+    target_ids = (
+        [army.army_id for army in state.armies_commanded_by(leader_id)] if request.all_armies else request.army_ids
+    )
+
+    for army_id in target_ids:
+        army = state.armies.get(army_id)
+        if army is None:
+            continue
+        # "Releases the army(s) into mercenary status" (rulebook [3.6]) --
+        # ownerless and unled, available to be hired later. Unlike Pick_Up,
+        # co-location with the acting leader is NOT enforced here: the
+        # rulebook grants Kings a broader disband authority than Heroes
+        # (who need to be with the army), and LeaderState doesn't yet track
+        # which is which -- a documented simplification, not a guess at
+        # which restriction applies.
+        army.kingdom_id = None
+        army.commanded_by = None
 
     return request
 

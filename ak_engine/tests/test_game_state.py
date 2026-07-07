@@ -77,3 +77,17 @@ def test_friendly_provinces_for_includes_owned_and_allied():
     assert state.friendly_provinces_for(1) == {HOME}
     state.allied_kingdoms.add(frozenset({1, 2}))
     assert state.friendly_provinces_for(1) == {HOME, FIELD}
+
+
+def test_mercenaries_at_returns_only_ownerless_armies_at_that_location():
+    state = make_state()
+    state.add_army(ArmyState(301, None, ArmyType.BOWMEN, Quality.AVERAGE, FIELD))
+    assert {a.army_id for a in state.mercenaries_at(FIELD)} == {301}
+    assert state.mercenaries_at(HOME) == []
+
+
+def test_is_allied_none_kingdom_id_is_allied_with_nobody():
+    state = make_state()
+    assert state.is_allied(None, 1) is False
+    assert state.is_allied(1, None) is False
+    assert state.is_allied(None, None) is False

@@ -92,7 +92,9 @@ def execute_move(
 
     bounds = MapBounds(*NORMAL_MAP_BOUNDS)
     defenders_present = [
-        army for army in state.armies_at(target) if not state.is_allied(army.kingdom_id, kingdom_id)
+        army
+        for army in state.armies_at(target)
+        if army.kingdom_id is not None and not state.is_allied(army.kingdom_id, kingdom_id)
     ]
     occupied_by_enemy = bool(armies) and bool(defenders_present)
 

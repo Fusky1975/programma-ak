@@ -122,6 +122,8 @@ def _retreat_or_disband(
         report.disbanded_army_ids.append(army.army_id)
         state.remove_army(army.army_id)
     else:
+        army.kingdom_id = None
+        army.commanded_by = None
         army.unhireable_this_turn = True
         report.mercenary_army_ids.append(army.army_id)
 
@@ -145,7 +147,9 @@ def fight_battle(
     defender_armies = [
         army
         for army in state.armies_at(province_coord)
-        if army.army_id not in attacker_army_ids and not state.is_allied(army.kingdom_id, attacker_kingdom_id)
+        if army.army_id not in attacker_army_ids
+        and army.kingdom_id is not None
+        and not state.is_allied(army.kingdom_id, attacker_kingdom_id)
     ]
     if not attacker_armies:
         raise ValueError("no attacking armies given")

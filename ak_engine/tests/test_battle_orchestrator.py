@@ -88,6 +88,34 @@ def test_defender_becomes_unhireable_mercenary_when_average_quality_and_no_retre
     assert 201 in report.mercenary_army_ids
     assert state.armies[201].unhireable_this_turn is True
     assert 201 in state.armies  # not removed, just marked
+    assert state.armies[201].kingdom_id is None  # ownerless -- a real mercenary now
+    assert state.armies[201].commanded_by is None
+
+
+def test_mercenaries_at_the_target_province_do_not_get_swept_in_as_defenders():
+    # A masterless mercenary band sitting in a contested-owner province
+    # isn't anyone's defender by default -- rulebook doesn't grant it that
+    # role, and `is_allied(None, x)` being False must not be read as "this
+    # is an enemy".
+    state = build_state()
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, FIELD))
+    rng = no_luck_overwhelming_attacker_rng()
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
+
+    # Untouched by the battle entirely -- not a participant, so it appears
+    # in none of the report's per-army outcome lists.
+    all_reported_ids = {
+        *report.destroyed_army_ids,
+        *report.retreated_army_ids,
+        *report.disbanded_army_ids,
+        *report.mercenary_army_ids,
+        *report.quality_changes.keys(),
+    }
+    assert 301 not in all_reported_ids
+    assert state.armies[301].kingdom_id is None
+    assert state.armies[301].quality == Quality.AVERAGE
+    assert state.armies[301].location == FIELD
 
 
 def test_allied_armies_are_not_treated_as_defenders():

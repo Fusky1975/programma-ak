@@ -192,7 +192,7 @@ def test_dispatch_pick_up_all_only_attaches_unled_armies():
     assert state.armies[2].commanded_by == 2  # already led by someone else -> untouched
 
 
-def test_dispatch_disband_is_decode_only():
+def test_dispatch_disband_releases_army_into_mercenary_status():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P0", action=ActionCode.DISBAND, obj=0, extra=[0, army_id, -1])
 
@@ -200,7 +200,19 @@ def test_dispatch_disband_is_decode_only():
 
     assert isinstance(result, ArmyListRequest)
     assert result.army_ids == [army_id]
-    assert army_id in state.armies  # not removed -- decode-only, see module docstring
+    assert army_id in state.armies  # not removed -- still exists as an unowned mercenary
+    assert state.armies[army_id].kingdom_id is None
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_disband_all_releases_every_commanded_army():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P0", action=ActionCode.DISBAND, obj=0, extra=[255, 255, -1])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[], board_width=BOARD_WIDTH)
+
+    assert state.armies[army_id].kingdom_id is None
+    assert state.armies[army_id].commanded_by is None
 
 
 def test_run_leader_plan_records_errors_and_continues():

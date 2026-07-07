@@ -142,7 +142,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   requiring an explicit list -- closing the "which armies does a Move
   order pull in" gap from Phase 10/11. Every dispatch call requires an
   explicit `leader_id` now (a signature change from Phase 11-13).
-- **Phase 15 (current)**: the kingdom treasury, and RECRUIT now actually
+- **Phase 15**: the kingdom treasury, and RECRUIT now actually
   executes instead of only pricing. Before writing this,
   `models/army_type.py ARMY_TABLE`'s 19 `pay` values were re-verified
   line by line against the rulebook's Army Type Table [6.3] (all
@@ -161,10 +161,10 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   ally for each recruited army", rulebook [3.4]), and creates a new
   `ArmyState` per successfully recruited unit -- at `Average` quality
   (rulebook: "an army is levied from among the populace"; hiring an
-  existing higher-quality mercenary instead isn't modeled, no mercenary
-  pool exists) with 0 movement points (a conservative default; the
-  rulebook doesn't say whether a freshly recruited army can act the same
-  phase). The per-type per-turn recruit limit is now enforced *across*
+  existing higher-quality mercenary instead wasn't modeled yet at this
+  phase -- see Phase 16) with 0 movement points (a conservative default;
+  the rulebook doesn't say whether a freshly recruited army can act the
+  same phase). The per-type per-turn recruit limit is now enforced *across*
   multiple Recruit orders in the same province via the new
   `ProvinceState.recruited_this_turn` counter, not just within a single
   order. Requesting more of a type than the limit allows or the treasury
@@ -173,6 +173,45 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   `turn/recruit_execution.py`'s docstring).
   Every other `ActionCode` still raises `UnsupportedActionError` -- see
   "Not yet implemented" below. Report generation is still a later phase.
+- **Phase 16 (current)**: the mercenary pool, closing the two gaps Phase
+  15 flagged. `models/game_state.py ArmyState.kingdom_id` is now nullable
+  -- `None` means an unowned mercenary army (rulebook [3.6]: Disband
+  "releases the army(s) into mercenary status... will wander around as
+  unemployed mercenaries until hired"), and a new `GameState
+  .mercenaries_at()` helper finds them by location. `is_allied()` treats
+  `None` as allied with nobody (two masterless bands aren't each other's
+  allies just because both are ownerless), which required an audit of
+  every existing `is_allied()`-based defender/occupancy check so a
+  mercenary sitting in a province wouldn't be swept in as an automatic
+  battle participant or read as "enemy-occupied" for a peaceful Move --
+  fixed in both `turn/battle_orchestrator.py fight_battle()`'s defender
+  filter and `turn/move_execution.py execute_move()`'s occupancy check
+  (both now also require `kingdom_id is not None`), with regression tests
+  covering exactly this case.
+  - **DISBAND now actually executes**: `plan_dispatch._dispatch_disband`
+    clears the targeted armies' `kingdom_id` and `commanded_by`. Unlike
+    Pick_Up, co-location with the acting leader is **not** enforced --
+    the rulebook grants Kings a broader disband authority than Heroes
+    (who need to be with the army), and `LeaderState` doesn't yet
+    distinguish the two, so this is a documented simplification rather
+    than a guess at which restriction applies.
+  - **A forced-mercenary defender from `_retreat_or_disband`** (battle
+    orchestrator, existing since Phase 8/9) now actually becomes a real
+    mercenary: it already got `unhireable_this_turn = True`, but its
+    `kingdom_id`/`commanded_by` were left pointing at the loser -- now
+    both are cleared too, so it's genuinely ownerless, not just flagged.
+  - **Recruit hires an existing mercenary instead of levying fresh**
+    (rulebook [3.4]: "if there is an Average or higher quality mercenary
+    army of that type in the province, then the mercenaries are hired"):
+    `execute_recruit()` checks `mercenaries_at()` for a co-located,
+    matching-type, `quality >= Average`, currently-hireable army before
+    creating a new one; if found, it's reassigned in place (preserving
+    its existing, possibly higher, quality) instead of a fresh `Average`
+    army being created. Costs the same as levying and counts against the
+    same per-province `recruited_this_turn` limit -- the rulebook
+    doesn't distinguish hiring from levying on price or limit, only on
+    where the army comes from. Reported via the new
+    `RecruitedUnit.hired: bool` field.
 
 ## Setup
 
@@ -326,23 +365,24 @@ rulebook before being turned into named, typed fields:
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
 - **`plan_dispatch.py` closes the loop for 6 of 22 `ActionCode`s.** LMOVE,
-  EXPLORE, LEAVE, PICK_UP, and (as of Phase 15) RECRUIT all now run
-  end-to-end with real `GameState` mutation; DISBAND still only decodes.
-  Every other action (Search, Hire, Fire, Cast, Use_MI, Challenge,
-  Practice, ASpy, Trade, Defend, Pursue, Trail, Wait, No_Action,
-  Succ_Trail, Move_Abort) raises `UnsupportedActionError`.
-  - **Recruit's remaining gaps**: the "Average-or-better mercenary
-    already present gets hired instead of a fresh levy" path isn't
-    modeled (no mercenary pool); the recruiting leader must already
+  EXPLORE, LEAVE, PICK_UP, RECRUIT (Phase 15), and DISBAND (Phase 16) all
+  now run end-to-end with real `GameState` mutation. Every other action
+  (Search, Hire, Fire, Cast, Use_MI, Challenge, Practice, ASpy, Trade,
+  Defend, Pursue, Trail, Wait, No_Action, Succ_Trail, Move_Abort) raises
+  `UnsupportedActionError`.
+  - **Recruit's remaining gaps**: the recruiting leader must already
     exist as a `LeaderState` at the target province (no validation that
-    a *co-located* character issued the order); and the rulebook's more
+    a *co-located* character issued the order); the rulebook's more
     specific "1-2 recruitable types per province" isn't tracked, only
-    approximated via race-compatibility (see Phase 12's note above).
-  - **Actually applying a decoded Disband request.** Releasing an army
-    "into mercenary status" needs a way to represent an unowned army
-    (`ArmyState.kingdom_id` isn't nullable, and there's no mercenary
-    pool) -- the Phase 14 command model doesn't close this gap, since
-    Disband isn't about *who leads* an army but *who owns* it.
+    approximated via race-compatibility (see Phase 12's note above); and
+    the ally "Treat" order precondition for recruiting in allied
+    territory isn't checked -- `in_ally_territory` pricing/crediting
+    applies whenever the province is simply owned by an ally, regardless
+    of whether that ally issued a Treat order permitting it.
+  - **Disband's remaining gap**: no King/Hero distinction on `LeaderState`
+    means co-location isn't enforced for anyone (see Phase 16's note
+    above) -- a Hero should arguably need to be with the army to disband
+    it, a King shouldn't.
   - Pursuit, duels, and Multiple Contingents (all exist as standalone
     modules from Phase 8) aren't called from `fight_battle()` yet, nor is
     the "Fleets fighting on land are reduced to Depleted instead of
@@ -359,16 +399,6 @@ rulebook before being turned into named, typed fields:
   province contains is stochastic content generation tied to the game's
   monster/treasure tables and prose templates (see
   `HostAK/TP/PROSE/*.X*` in the original zip) — a much later phase.
-- **Actually executing a Recruit order** (rulebook [3.4]): `resolve_recruit()`
-  only computes the per-turn unit limit and gold cost for one army type in
-  one province. Not modeled yet, and needed before this can run
-  end-to-end: kingdom treasury/gold balance, a kingdom's existing army
-  roster (to know if a type is already "native to province" via
-  commanded armies), the mercenary pool (whether an Average-or-better
-  mercenary of that type is already present, which hires them instead of
-  levying from the populace), and the ally "Treat" order precondition for
-  recruiting in allied territory.
-
 ## What's excluded from this phase
 
 - `SE3__T*.K1` files: same extension as the move files, but these are

@@ -16,6 +16,13 @@ leader here; the two are linked only by sharing a ``leader_id``). No
 diplomacy/treaty tracking beyond a flat alliance set, no turn-history
 log, no character abilities/stats yet (needed eventually for
 ``turn/strength.py``'s Tactical/Naval special factor, still unwired).
+
+``ArmyState.kingdom_id`` is nullable (Phase 16): ``None`` means an
+unowned mercenary army (rulebook [3.6]: Disband "releases the army(s)
+into mercenary status... will wander around as unemployed mercenaries
+until hired"). ``is_allied()`` treats ``None`` as allied with nobody,
+including another mercenary army -- two masterless bands aren't each
+other's allies just because both have no owner.
 """
 
 from __future__ import annotations
@@ -42,7 +49,7 @@ class KingdomState:
 @dataclass(slots=True)
 class ArmyState:
     army_id: int
-    kingdom_id: int
+    kingdom_id: int | None  # None = unowned mercenary
     army_type: ArmyType
     quality: Quality
     location: HexCoord
@@ -117,7 +124,12 @@ class GameState:
     def armies_commanded_by(self, leader_id: int) -> list[ArmyState]:
         return [army for army in self.armies.values() if army.commanded_by == leader_id]
 
-    def is_allied(self, kingdom_a: int, kingdom_b: int) -> bool:
+    def mercenaries_at(self, coord: HexCoord) -> list[ArmyState]:
+        return [army for army in self.armies.values() if army.location == coord and army.kingdom_id is None]
+
+    def is_allied(self, kingdom_a: int | None, kingdom_b: int | None) -> bool:
+        if kingdom_a is None or kingdom_b is None:
+            return False
         if kingdom_a == kingdom_b:
             return True
         return frozenset({kingdom_a, kingdom_b}) in self.allied_kingdoms
