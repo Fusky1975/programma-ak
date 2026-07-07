@@ -7,7 +7,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
-from ak_engine.turn.battle_orchestrator import fight_battle
+from ak_engine.turn.battle_orchestrator import _build_battle_units, fight_battle
 from ak_engine.turn.combat import Quality
 
 from _helpers import ScriptedRandom
@@ -128,3 +128,25 @@ def test_fight_battle_structural_invariants_with_real_rng():
         state.provinces[FIELD].contested_by_kingdom_id is not None,
     ]
     assert any(outcome_flags) or state.provinces[FIELD].owner_kingdom_id == 2
+
+
+def test_build_battle_units_checks_home_province_against_the_battle_province_not_army_location():
+    # Regression test: an attacking army's `.location` is still its
+    # *origin* before a Move that triggers a battle actually completes.
+    # The home-province strength bonus must be judged against the battle
+    # province (`province_coord`), not that stale `.location`.
+    origin = HexCoord(9, 9)
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=FIELD))
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=origin)
+    state.add_army(army)
+
+    units_at_home = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+    units_away = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=origin, rng=random.Random(0)
+    )
+
+    # FIELD is the kingdom's home province -> +1 quality level -> higher strength.
+    assert units_at_home[0].effective_strength > units_away[0].effective_strength

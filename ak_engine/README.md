@@ -56,16 +56,26 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     [7.7].
   - `turn/multiple_contingents.py`: grouping allied attackers into one
     battle [7.8].
-- **Phase 9 (current)**: a persistent game-state model
-  (`models/game_state.py`: `KingdomState`, `ArmyState`, `ProvinceState`,
-  `GameState`) and `turn/battle_orchestrator.py fight_battle()`, which
-  wires Phases 5-8 together end-to-end: compute strength for every
-  army at a province -> `resolve_battle()` -> quality changes
-  (`aftermath`) -> retreat/disband the clean-swept loser
-  (`retreat`) -> update province ownership/contested status. This is the
-  first module that mutates a persistent state object instead of
-  operating on caller-supplied snapshots. Report generation is still a
-  later phase.
+- **Phase 9**: a persistent game-state model (`models/game_state.py`:
+  `KingdomState`, `ArmyState`, `ProvinceState`, `GameState`) and
+  `turn/battle_orchestrator.py fight_battle()`, which wires Phases 5-8
+  together end-to-end: compute strength for every army at a province ->
+  `resolve_battle()` -> quality changes (`aftermath`) -> retreat/disband
+  the clean-swept loser (`retreat`) -> update province
+  ownership/contested status. This is the first module that mutates a
+  persistent state object instead of operating on caller-supplied
+  snapshots.
+- **Phase 10 (current)**: `turn/move_execution.py execute_move()` connects
+  a Move order to everything before it: `resolve_move()` (adjacency +
+  partial exploration) -> automatic battle trigger via `fight_battle()` if
+  the target holds a non-allied army -> `turn/conquest.py`'s
+  movement-point cost (now actually deducted from `ArmyState
+  .movement_points`, a new field) -> relocating the mover's surviving
+  armies only if the move actually succeeds. Also fixes a bug this
+  wiring surfaced: `fight_battle`'s home-province check compared against
+  an attacking army's `.location`, which is still its *origin* before a
+  triggered battle resolves -- it now correctly compares against the
+  battle's own province. Report generation is still a later phase.
 
 ## Setup
 
@@ -196,26 +206,30 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`fight_battle()` is one battle, not a full turn engine.** It resolves
-  a single battle at a single province given explicit attacker army ids
-  and mutates `GameState` accordingly, but nothing yet:
-  - Calls it *from* a Move order — `resolve_move()` (`turn/movement.py`)
-    still only flags that a battle would be triggered (`battle_expected`);
-    nothing connects that flag to `fight_battle()`.
-  - Consumes Phase 1's parsed `Kingdom`/`Leader`/`ActionPlan` (from a
-    `.K1` move file) to decide *which* armies attack *which* province in
-    the first place — there's no bridge yet between "a parsed move
-    file" and "a `fight_battle()` call".
-  - Models the "Fleets fighting on land are reduced to Depleted instead
-    of eliminated" exception, pursuit/duels/multiple-contingents (all
-    exist as standalone modules from Phase 8 but aren't called from
-    `fight_battle()` yet), or the non-humanoid "attack the rear unit
-    instead of the front" targeting nuance [7.2].
-  - Tracks movement points or calls `turn/conquest.py`'s movement-cost
-    functions -- conquest's extra movement-point deduction isn't applied
-    anywhere yet.
+- **`execute_move()`/`fight_battle()` handle one Move and one battle, not
+  a full turn engine.** Still missing:
+  - **The bridge from a parsed `.K1` move file to `execute_move()` calls.**
+    Phase 1's `Kingdom`/`Leader`/`ActionPlan` model parses a player's
+    submitted moves into `PlanPhase(action, obj, extra)` records, but
+    nothing interprets those raw action/object codes (`ActionCode.LMOVE`
+    and friends) into `execute_move(state, kingdom_id, army_ids, target)`
+    calls, or into any other `turn/*` function call for that matter. This
+    is the single largest remaining gap: every action (Move, Explore,
+    Recruit, ...) has an isolated resolver, but nothing reads an actual
+    parsed turn file and drives them.
+  - **Which armies a leader's Move order pulls in.** `execute_move()`
+    takes an explicit `army_ids` list; there's no leader-to-army
+    ownership/command model yet to derive that list automatically.
+  - Pursuit, duels, and Multiple Contingents (all exist as standalone
+    modules from Phase 8) aren't called from `fight_battle()` yet, nor is
+    the "Fleets fighting on land are reduced to Depleted instead of
+    eliminated" exception or the non-humanoid rear-targeting nuance [7.2].
   - The duel *fight itself* [7.1] — needs the separate "Special Encounter
     Plan" character-combat system [5.10], not built.
+  - Contested-province state across multiple turns
+    (`turn/contested_province.py`'s functions exist but nothing calls
+    them from `execute_move()`/`fight_battle()` -- a contested result
+    just sets `ProvinceState.contested_by_kingdom_id` and stops there).
 - **Feature discovery, monsters, treasures, rumors, battlefield reports**
   (rulebook [3.2]): `resolve_explore()` only computes the deterministic
   cumulative exploration percentage. Actually discovering *what* a

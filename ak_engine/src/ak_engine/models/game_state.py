@@ -42,6 +42,9 @@ class ArmyState:
     quality: Quality
     location: HexCoord
     unhireable_this_turn: bool = False
+    # Remaining this gameturn. Not auto-reset at turn start and not derived
+    # from ARMY_TABLE speed + March/Naval ability -- the caller sets it.
+    movement_points: int = 0
 
 
 @dataclass(slots=True)

@@ -68,12 +68,27 @@ class BattleReport:
 
 
 def _build_battle_units(
-    armies: list[ArmyState], state: GameState, *, is_defender: bool, terrain, rng: random.Random
+    armies: list[ArmyState],
+    state: GameState,
+    *,
+    is_defender: bool,
+    terrain,
+    province_coord: HexCoord,
+    rng: random.Random,
 ) -> list[BattleUnit]:
+    """Build BattleUnits for one side of a battle at ``province_coord``.
+
+    "Home province" is judged against ``province_coord`` -- the province
+    the battle is actually happening in -- not ``army.location``. Before a
+    Move that triggers a battle completes, an attacking army's
+    ``location`` is still its *origin*, not the contested province, so
+    comparing against ``army.location`` would ask the wrong question.
+    """
+
     units = []
     for army in armies:
         kingdom = state.kingdoms[army.kingdom_id]
-        is_home = army.location == kingdom.home_province
+        is_home = province_coord == kingdom.home_province
         override = roll_elephants_strength(rng) if army.army_type is ArmyType.ELEPHANTS else None
         strength = compute_effective_strength(
             army.army_type,
@@ -137,8 +152,12 @@ def fight_battle(
     if not defender_armies:
         raise ValueError("no defending armies at this province to fight")
 
-    attacker_units = _build_battle_units(attacker_armies, state, is_defender=False, terrain=province.terrain, rng=rng)
-    defender_units = _build_battle_units(defender_armies, state, is_defender=True, terrain=province.terrain, rng=rng)
+    attacker_units = _build_battle_units(
+        attacker_armies, state, is_defender=False, terrain=province.terrain, province_coord=province_coord, rng=rng
+    )
+    defender_units = _build_battle_units(
+        defender_armies, state, is_defender=True, terrain=province.terrain, province_coord=province_coord, rng=rng
+    )
 
     battle_result = resolve_battle(attacker_units, defender_units, rng=rng)
 
