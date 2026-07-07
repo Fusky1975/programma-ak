@@ -1,0 +1,47 @@
+"""Contested provinces (rulebook [7.6]).
+
+"If an attacker invades a province but fails to destroy the defenders or
+make them retreat, the province still belongs to the defender, and is
+called a 'contested' province. If the attackers still have at least 1
+movement point for each army, they will be used to force another battle
+in the next phase. If not, both armies will encamp and wait for spring of
+the next gameturn... The defending Kingdom can't force a battle in a
+contested province even if all its armies can move, nor is a battle
+caused by reinforcements sent to the defenders... The leader who invaded
+the contested province will execute his orders in the next phase, except
+that it's illegal to move from a contested province to an adjacent enemy
+province. You can, however, move from a province owned by a neutral
+player-King to an enemy province."
+
+This module answers the specific yes/no questions the rulebook poses; it
+does not track a full per-province state machine across turns (no
+persistent game state exists yet to hang that off of).
+"""
+
+from __future__ import annotations
+
+
+def attacker_can_force_rebattle(attacker_movement_points: dict[int, int]) -> bool:
+    """"the attackers still have at least 1 movement point for each army" -- keyed by army id."""
+
+    if not attacker_movement_points:
+        return False
+    return all(points >= 1 for points in attacker_movement_points.values())
+
+
+def is_illegal_move_from_contested(origin_is_contested: bool, target_owner_is_enemy: bool) -> bool:
+    """"illegal to move from a contested province to an adjacent enemy province."
+
+    Moving from a merely-neutral-owned (non-contested) province to an
+    enemy province is ordinary movement and always allowed -- this
+    function only restricts moves whose *origin* is itself contested.
+    """
+
+    return origin_is_contested and target_owner_is_enemy
+
+
+def contested_battle_movement_cost(*, conquered: bool) -> int:
+    """"your armies will use up a movement point to fight a battle... If the
+    province is conquered, the attacker uses another movement point." """
+
+    return 2 if conquered else 1
