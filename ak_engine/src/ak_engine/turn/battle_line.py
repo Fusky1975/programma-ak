@@ -5,12 +5,10 @@ forces line up, and what's each column's total strength". It does NOT
 decide who wins, eliminate armies, or handle duels/pursuit/retreat/
 aftermath -- see ``turn/combat.py`` and ``ak_engine/README.md``.
 
-Units arrive here with a pre-computed ``effective_strength`` (quality
-multiplier already applied). Race/terrain strength bonuses ([6.3] "ARMY
-STRENGTH NOTES") are NOT computed by this module -- the rulebook doesn't
-specify how they stack with quality and nemesis, so folding them in here
-would be guessing an interaction, not just filling a missing number (see
-README).
+Units arrive here with a pre-computed ``effective_strength`` -- see
+``turn/strength.py`` for the race/terrain/quality/special-factors
+calculator that produces it; this module only handles line-up and
+column aggregation.
 
 **Line-up algorithm**, from the rulebook text: "The length of the line is
 limited to the line length of the smallest force... The two opposing
@@ -23,20 +21,28 @@ the front line first, then the second line, etc. (a "snake draft").
 
 **Terrain-based line-length shortening** ("The line may be shortened by
 mountainous or wooded terrain on the flanks of the defender... see the
-Terrain Table") has no numbers anywhere in the available rulebook text or
-Pascal source -- the only trace is ``SAY.PAS``'s ``_linelen``, which is
-populated from already-computed battle data (for report formatting), not
-derived here. So ``terrain_line_length_cap`` is left as an optional,
-externally-supplied parameter with no default derivation; when omitted,
-line length is purely `min(attacker_count, defender_count)` and
-outflanking (which depends on the terrain cap) never triggers.
+Terrain Table") is now sourced: the rulebook's Terrain Table [1.6] gives a
+"Length of battle line (in #armies)" range per terrain (e.g. Mountain
+1-3, Plains 5-10) -- see ``models.map.TERRAIN_LINE_LENGTH_RANGE`` and
+``roll_terrain_line_length_cap`` below. The rulebook gives a range, not a
+formula for picking within it, so that pick is a uniform random roll --
+a documented choice, not a sourced rule.
+
+Tactical-ability switching (``switch_chance``, ``maybe_switch_front_line``)
+implements "The switch will only be made if the army strength of the
+current front-line unit is less than the strength of a rearward unit,
+after adjustments are made for all nemesis effects... the defender always
+gets the last chance to switch" -- callers control switch order between
+attacker and defender to reflect that.
 """
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 
 from ak_engine.models.army_type import ArmyType, is_overflight_unit, overflight_group
+from ak_engine.models.map import TERRAIN_LINE_LENGTH_RANGE, Terrain
 from ak_engine.turn.combat import line_contribution, win_probability
 
 
@@ -60,6 +66,20 @@ def line_length_for_battle(
     if terrain_line_length_cap is not None:
         length = min(length, terrain_line_length_cap)
     return length
+
+
+def roll_terrain_line_length_cap(terrain: Terrain, rng: random.Random) -> int | None:
+    """Roll a terrain-based battle-line-length cap (rulebook [1.6] Terrain Table).
+
+    Returns None for terrains with no entry in ``TERRAIN_LINE_LENGTH_RANGE``
+    (currently only ``NO_TERRAIN``).
+    """
+
+    bounds = TERRAIN_LINE_LENGTH_RANGE.get(terrain)
+    if bounds is None:
+        return None
+    low, high = bounds
+    return rng.randint(low, high)
 
 
 def assign_battle_lines(units: list[BattleUnit], line_length: int) -> list[Column]:
@@ -129,6 +149,38 @@ def switch_chance(tactical_ability: int, line_length: int) -> float:
     if tactical_ability < 0:
         raise ValueError(f"tactical_ability must be >= 0, got {tactical_ability}")
     return min(1.0, tactical_ability / line_length)
+
+
+def maybe_switch_front_line(
+    column: Column,
+    line_length: int,
+    tactical_ability: int,
+    rng: random.Random,
+    *,
+    strength_key=lambda unit: unit.effective_strength,
+) -> bool:
+    """Maybe swap a column's front unit with its strongest eligible rearward unit.
+
+    "The switch will only be made if the army strength of the current
+    front-line unit is less than the strength of a rearward unit, after
+    adjustments are made for all nemesis effects." Pass ``strength_key``
+    to compare nemesis-adjusted strength instead of raw
+    ``effective_strength`` when the opposing army type is known (nemesis
+    is opponent-dependent, so this module can't compute it itself).
+
+    Mutates ``column`` in place and returns True if a switch happened.
+    """
+
+    if len(column) < 2:
+        return False
+    front_strength = strength_key(column[0])
+    best_index = max(range(1, len(column)), key=lambda i: strength_key(column[i]))
+    if strength_key(column[best_index]) <= front_strength:
+        return False
+    if rng.random() >= switch_chance(tactical_ability, line_length):
+        return False
+    column[0], column[best_index] = column[best_index], column[0]
+    return True
 
 
 @dataclass(slots=True)

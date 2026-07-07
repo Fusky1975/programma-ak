@@ -178,3 +178,23 @@ def overflight_group(army_type: ArmyType) -> str | None:
     if army_type in OVERFLIGHT_SEA:
         return "sea"
     return None
+
+
+# Rulebook [6.3] "ARMY STRENGTH NOTES": race bonuses to basic strength.
+# "Elves: +1 when fighting as Bowmen, +1 in Forest. Dwarves: +1 as Axemen,
+# +1 in Mountains. Orcs: +1 as Phalanx, +1 in Mountains. Humans: +1 as
+# Legion (no bonus for any terrain.)" Two independent bonuses per race:
+# one tied to the army type being fielded, one tied to terrain (see
+# turn/strength.py for how they combine with everything else).
+RACE_TYPE_BONUS: dict[tuple[Race, ArmyType], int] = {
+    (Race.ELVEN, ArmyType.BOWMEN): 1,
+    (Race.DWARVEN, ArmyType.AXEMEN): 1,
+    (Race.ORCISH, ArmyType.PHALANX): 1,
+    (Race.HUMAN, ArmyType.LEGION): 1,
+}
+
+RACE_TERRAIN_BONUS: dict[tuple[Race, Terrain], int] = {
+    (Race.ELVEN, Terrain.FOREST): 1,
+    (Race.DWARVEN, Terrain.MTNS): 1,
+    (Race.ORCISH, Terrain.MTNS): 1,
+}

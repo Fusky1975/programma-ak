@@ -43,6 +43,21 @@ TERRAIN_EXPLORATION_NUMBER: dict[Terrain, int] = {
     Terrain.NO_TERRAIN: 0,
 }
 
+# "Length of battle line (in #armies)" column of the rulebook's Terrain
+# Table ([1.6]) -- resolves the battle-line-length-by-terrain gap flagged
+# in ak_engine/README.md. The rulebook gives a range, not a fixed number,
+# and doesn't say how the exact value is picked within it; callers should
+# roll a value in this range (see turn/battle_line.roll_terrain_line_length_cap)
+# rather than always using an endpoint.
+TERRAIN_LINE_LENGTH_RANGE: dict[Terrain, tuple[int, int]] = {
+    Terrain.PLAINS: (5, 10),
+    Terrain.DESERT: (5, 10),
+    Terrain.JUNGLE: (3, 6),
+    Terrain.FOREST: (3, 6),
+    Terrain.MTNS: (1, 3),
+    Terrain.SEA: (5, 10),
+}
+
 
 @dataclass(frozen=True, slots=True)
 class HexCoord:

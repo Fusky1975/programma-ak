@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.map import Terrain
 from ak_engine.turn.battle_line import (
+    TERRAIN_LINE_LENGTH_RANGE,
     BattleUnit,
     assign_battle_lines,
     column_strength,
     contest_columns,
     line_length_for_battle,
+    maybe_switch_front_line,
+    roll_terrain_line_length_cap,
     switch_chance,
 )
 
@@ -120,3 +126,52 @@ def test_contest_columns_handles_undefended_column():
 def test_contest_columns_requires_equal_column_counts():
     with pytest.raises(ValueError):
         contest_columns([[unit(ArmyType.BOWMEN, 10)]], [])
+
+
+def test_roll_terrain_line_length_cap_within_documented_range():
+    rng = random.Random(1)
+    for terrain, (low, high) in TERRAIN_LINE_LENGTH_RANGE.items():
+        for _ in range(50):
+            assert low <= roll_terrain_line_length_cap(terrain, rng) <= high
+
+
+def test_roll_terrain_line_length_cap_none_for_no_terrain():
+    assert roll_terrain_line_length_cap(Terrain.NO_TERRAIN, random.Random(0)) is None
+
+
+def test_maybe_switch_front_line_swaps_when_rear_is_stronger_and_roll_succeeds():
+    column = [unit(ArmyType.BOWMEN, 5), unit(ArmyType.AXEMEN, 20)]
+    rng = random.Random()
+    rng.random = lambda: 0.0  # forces the switch-chance check to succeed
+
+    switched = maybe_switch_front_line(column, line_length=1, tactical_ability=1, rng=rng)
+
+    assert switched is True
+    assert column[0].effective_strength == 20
+    assert column[1].effective_strength == 5
+
+
+def test_maybe_switch_front_line_no_switch_when_front_already_strongest():
+    column = [unit(ArmyType.BOWMEN, 20), unit(ArmyType.AXEMEN, 5)]
+    rng = random.Random()
+    rng.random = lambda: 0.0
+
+    switched = maybe_switch_front_line(column, line_length=1, tactical_ability=1, rng=rng)
+
+    assert switched is False
+    assert column[0].effective_strength == 20
+
+
+def test_maybe_switch_front_line_no_switch_when_roll_fails():
+    column = [unit(ArmyType.BOWMEN, 5), unit(ArmyType.AXEMEN, 20)]
+    rng = random.Random()
+    rng.random = lambda: 0.99  # switch chance (1/1=1.0) still triggers unless roll >= chance
+
+    switched = maybe_switch_front_line(column, line_length=1, tactical_ability=0, rng=rng)
+
+    assert switched is False
+
+
+def test_maybe_switch_front_line_single_unit_column_never_switches():
+    column = [unit(ArmyType.BOWMEN, 5)]
+    assert maybe_switch_front_line(column, line_length=1, tactical_ability=5, rng=random.Random(0)) is False
