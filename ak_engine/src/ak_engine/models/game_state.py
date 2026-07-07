@@ -72,6 +72,11 @@ class ProvinceState:
     owner_kingdom_id: int | None = None
     explored_percent: int = 0
     contested_by_kingdom_id: int | None = None
+    # How many of each ArmyType have been recruited from this province so
+    # far this gameturn (rulebook [3.4]: normally 1 per type per province
+    # per turn, 2 in a King's home province). Not auto-reset at turn start
+    # -- the caller clears it, same convention as ArmyState.movement_points.
+    recruited_this_turn: dict[ArmyType, int] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -94,6 +99,11 @@ class GameState:
 
     def remove_army(self, army_id: int) -> None:
         self.armies.pop(army_id, None)
+
+    def new_army_id(self) -> int:
+        """Next unused army id (1 above the current highest, or 1 if none exist)."""
+
+        return max((*self.armies.keys(), 0)) + 1
 
     def add_leader(self, leader: LeaderState) -> None:
         self.leaders[leader.leader_id] = leader

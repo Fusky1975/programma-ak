@@ -14,17 +14,19 @@ from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.turn.army_list_decode import ArmyListRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.move_execution import MoveExecutionResult
-from ak_engine.turn.plan_dispatch import RecruitDispatchResult, UnsupportedActionError, dispatch_phase, run_leader_plan
-from ak_engine.turn.recruit import RecruitResolution
+from ak_engine.turn.plan_dispatch import UnsupportedActionError, dispatch_phase, run_leader_plan
+from ak_engine.turn.recruit_execution import RecruitExecutionResult
 
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
 BOARD_WIDTH = 10
 LEADER_ID = 1
 
 
-def _state_with_army(location: HexCoord, target_terrains: dict[HexCoord, Terrain]) -> tuple[GameState, int]:
+def _state_with_army(
+    location: HexCoord, target_terrains: dict[HexCoord, Terrain], *, treasury: int = 100
+) -> tuple[GameState, int]:
     state = GameState()
-    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, location))
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, location, treasury=treasury))
     state.add_province(ProvinceState(location, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     for coord, terrain in target_terrains.items():
         state.add_province(ProvinceState(coord, terrain, Race.HUMAN))
@@ -93,20 +95,22 @@ def test_dispatch_explore_uses_leader_location():
     assert state.provinces[location].explored_percent == 100
 
 
-def test_dispatch_recruit_decodes_and_prices_each_requested_type():
+def test_dispatch_recruit_executes_debits_treasury_and_creates_armies():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})
     # Real example from AK3__T1.K1 leader 72: recruit under leader 1,
-    # two Bowmen and one Warg Riders.
+    # two Bowmen (pay 2 each) and one Warg Riders (pay 3) = 7 gold.
     phase = PlanPhase(label="P3", action=ActionCode.RECRUIT, obj=1, extra=[0, 1, 1, 10, -1])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
 
-    assert isinstance(result, RecruitDispatchResult)
-    assert result.request.leader_id == 1
-    assert result.request.army_types == [ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.WARG_RIDERS]
-    assert [t for t, _ in result.resolutions] == [ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.WARG_RIDERS]
-    assert all(isinstance(r, RecruitResolution) for _, r in result.resolutions)
+    assert isinstance(result, RecruitExecutionResult)
+    assert [u.army_type for u in result.recruited] == [ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.WARG_RIDERS]
+    assert result.total_gold_spent == 7
+    assert state.kingdoms[1].treasury == 93
+    assert all(state.armies[u.army_id].commanded_by == 1 for u in result.recruited)
+    assert all(state.armies[u.army_id].location == location for u in result.recruited)
+    assert all(state.armies[u.army_id].quality == Quality.AVERAGE for u in result.recruited)
 
 
 def test_dispatch_unsupported_action_raises():
@@ -279,8 +283,8 @@ def test_real_move_file_leader_recruit_phase_dispatches():
         recruit_phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH
     )
 
-    assert isinstance(result, RecruitDispatchResult)
-    assert result.request.army_types == [ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.WARG_RIDERS]
+    assert isinstance(result, RecruitExecutionResult)
+    assert [u.army_type for u in result.recruited] == [ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.WARG_RIDERS]
 
 
 def test_real_move_file_leader_leave_phase_dispatches():

@@ -98,10 +98,10 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   `extra[1:]` (up to the `-1` terminator) is a list of requested
   `ArmyType`s -- confirmed against every real Recruit phase in the
   `AK3__T*.K1` fixtures, all of which decode cleanly to known types (e.g.
-  `[0, 1, 1, 10, -1]` -> 2x Bowmen + 1x Warg Riders). `plan_dispatch.py`
-  then prices each requested type via `resolve_recruit()` -- but only
-  *prices* it (limits + gold cost); it does not create armies or debit a
-  treasury, since `GameState` has neither yet.
+  `[0, 1, 1, 10, -1]` -> 2x Bowmen + 1x Warg Riders). At this phase,
+  `plan_dispatch.py` only priced each requested type via
+  `resolve_recruit()` (limits + gold cost) without creating armies or
+  debiting a treasury -- see Phase 15, which closed that gap.
 - **Phase 13**: adds Disband/Leave/Pick_Up decoding. `turn/army_list_decode.py`
   decodes all three (they share one branch in `CTBOTH.PAS`/`DEF2.PAS`'s
   `Read_HPlan`): `extra[0]` is a target leader id (`NO_LEADER_SENTINEL`
@@ -114,7 +114,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   example exists in the sample data and **zero** PICK_UP examples, so
   those two ride on the shared Pascal code path, not independent
   confirmation the way LEAVE's is. This phase was decode-only.
-- **Phase 14 (current)**: the leader-army command model. `models/game_state.py`
+- **Phase 14**: the leader-army command model. `models/game_state.py`
   adds `LeaderState` (a persistent leader's kingdom/name/location --
   distinct from Phase 1's parsed `models.kingdom.Leader`, which carries
   an `ActionPlan` and shares only the `leader_id`) and `ArmyState
@@ -142,6 +142,35 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   requiring an explicit list -- closing the "which armies does a Move
   order pull in" gap from Phase 10/11. Every dispatch call requires an
   explicit `leader_id` now (a signature change from Phase 11-13).
+- **Phase 15 (current)**: the kingdom treasury, and RECRUIT now actually
+  executes instead of only pricing. Before writing this,
+  `models/army_type.py ARMY_TABLE`'s 19 `pay` values were re-verified
+  line by line against the rulebook's Army Type Table [6.3] (all
+  correct), and a red herring in `CTBOTH.PAS` was chased down and ruled
+  out: an `at_cost`/`atdesig` array that looks army-cost-related at a
+  glance is actually indexed by an unrelated `retainer` enum (personal
+  companions for character encounters -- Heralds, Armorers, Entertainers,
+  etc., a different subsystem, confirmed via the `retainer` type
+  declaration around `CTBOTH.PAS` line 1388) -- so `ARMY_TABLE.pay`
+  remains the correct and only cost source. (Also spotted, but out of
+  scope here: a per-ordinal nemesis table, `atnem1`/`atnemf`, that could
+  be a useful future cross-check against `models/army_type.py NEMESIS`.)
+  `turn/recruit_execution.py execute_recruit()` prices each requested
+  type (reusing `resolve_recruit()`), debits `KingdomState.treasury`
+  (crediting an ally's treasury too, "the recruiter pays 1 gold to his
+  ally for each recruited army", rulebook [3.4]), and creates a new
+  `ArmyState` per successfully recruited unit -- at `Average` quality
+  (rulebook: "an army is levied from among the populace"; hiring an
+  existing higher-quality mercenary instead isn't modeled, no mercenary
+  pool exists) with 0 movement points (a conservative default; the
+  rulebook doesn't say whether a freshly recruited army can act the same
+  phase). The per-type per-turn recruit limit is now enforced *across*
+  multiple Recruit orders in the same province via the new
+  `ProvinceState.recruited_this_turn` counter, not just within a single
+  order. Requesting more of a type than the limit allows or the treasury
+  can afford recruits as many as possible and reports the rest as
+  blocked -- a documented choice, not a sourced rule (see
+  `turn/recruit_execution.py`'s docstring).
   Every other `ActionCode` still raises `UnsupportedActionError` -- see
   "Not yet implemented" below. Report generation is still a later phase.
 
@@ -297,17 +326,18 @@ rulebook before being turned into named, typed fields:
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
 - **`plan_dispatch.py` closes the loop for 6 of 22 `ActionCode`s.** LMOVE,
-  EXPLORE, LEAVE, and PICK_UP now run end-to-end (including real
-  `GameState` mutation, as of Phase 14); RECRUIT decodes and prices a
-  real request without applying it; DISBAND still only decodes. Every
-  other action (Search, Hire, Fire, Cast, Use_MI, Challenge, Practice,
-  ASpy, Trade, Defend, Pursue, Trail, Wait, No_Action, Succ_Trail,
-  Move_Abort) raises `UnsupportedActionError`.
-  - **Actually executing a priced Recruit request.** `plan_dispatch.py`
-    tells you the cost and limit for each requested army type but
-    doesn't spend gold, create `ArmyState` entries, or apply the
-    per-turn recruit limit across multiple orders -- `GameState` has no
-    treasury balance or "already recruited N this turn" tracking yet.
+  EXPLORE, LEAVE, PICK_UP, and (as of Phase 15) RECRUIT all now run
+  end-to-end with real `GameState` mutation; DISBAND still only decodes.
+  Every other action (Search, Hire, Fire, Cast, Use_MI, Challenge,
+  Practice, ASpy, Trade, Defend, Pursue, Trail, Wait, No_Action,
+  Succ_Trail, Move_Abort) raises `UnsupportedActionError`.
+  - **Recruit's remaining gaps**: the "Average-or-better mercenary
+    already present gets hired instead of a fresh levy" path isn't
+    modeled (no mercenary pool); the recruiting leader must already
+    exist as a `LeaderState` at the target province (no validation that
+    a *co-located* character issued the order); and the rulebook's more
+    specific "1-2 recruitable types per province" isn't tracked, only
+    approximated via race-compatibility (see Phase 12's note above).
   - **Actually applying a decoded Disband request.** Releasing an army
     "into mercenary status" needs a way to represent an unowned army
     (`ArmyState.kingdom_id` isn't nullable, and there's no mercenary
