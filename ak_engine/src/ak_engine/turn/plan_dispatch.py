@@ -6,24 +6,31 @@ extra)``) to the turn-resolution functions built in later phases -- the
 integration step flagged as the single largest remaining gap after Phase
 10.
 
-Only two ``ActionCode``s have recovered enough of their target semantics
-to dispatch automatically:
+Three ``ActionCode``s have recovered enough of their target semantics to
+dispatch automatically:
 
 - **LMOVE**: ``obj`` is the move's target hex number, decoded via
   ``turn/hex_numbering.py`` (an empirical inference, not a certainty --
   see that module's docstring).
 - **EXPLORE**: no target decoding needed -- explores the mover's current
   province.
+- **RECRUIT**: ``obj``/``extra`` decoded via ``turn/recruit_decode.py``
+  into a target leader id and a list of requested ``ArmyType``s, then
+  priced per type via ``turn/recruit.py resolve_recruit()``. This only
+  *prices* the request (limits and gold cost) -- it does NOT create new
+  armies or debit a treasury, since ``GameState`` has no treasury balance
+  or "recruit executed" bookkeeping yet (see ``ak_engine/README.md``).
+  ``is_native_to_province`` is approximated as race-compatibility
+  (``turn/recruit.py is_army_type_compatible_with_race``) since
+  ``GameState`` doesn't track the rulebook's more specific "1-2
+  recruitable types per province" data -- a documented simplification,
+  not the literal rule.
 
-Every other ``ActionCode`` raises ``UnsupportedActionError``. Some are
-partially understood structurally (the rulebook plus
-``HostAK/TP/DEF2.PAS``'s ``Read_HPlan`` show Recruit's targets are a
-``-1``-terminated army-type list in ``PlanPhase.extra``, and
-Leave/Disband/Pick_Up's are an army-id list the same way) but decoding
-them needs the original army-type enum's *ordinal* order from
-``CTBOTH.PAS``, which this project's ``ArmyType`` enum (string-valued,
-reordered for readability) doesn't preserve -- fixing that is future
-work, not done here.
+Every other ``ActionCode`` raises ``UnsupportedActionError``. Leave/
+Disband/Pick_Up are structurally similar to Recruit (an army-id list in
+``PlanPhase.extra``, per ``HostAK/TP/DEF2.PAS``'s ``Read_HPlan``) but
+unstarted -- there's no leader-to-army command model yet to act on a
+list of army ids meaningfully.
 
 This module also does not know which armies a leader commands --
 ``models.game_state.ArmyState`` has no leader-to-army link yet (same gap
@@ -34,7 +41,7 @@ noted in Phase 10's README for ``execute_move``/``fight_battle``) -- so
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from ak_engine.models.enums import ActionCode
@@ -44,8 +51,16 @@ from ak_engine.models.plan import PlanPhase
 from ak_engine.turn.exploration import resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.move_execution import execute_move
+from ak_engine.turn.recruit import IncompatibleRaceError, RecruitResolution, is_army_type_compatible_with_race, resolve_recruit
+from ak_engine.turn.recruit_decode import RecruitRequest, decode_recruit_phase
 
-SUPPORTED_ACTIONS = frozenset({ActionCode.LMOVE, ActionCode.EXPLORE})
+SUPPORTED_ACTIONS = frozenset({ActionCode.LMOVE, ActionCode.EXPLORE, ActionCode.RECRUIT})
+
+
+@dataclass(slots=True)
+class RecruitDispatchResult:
+    request: RecruitRequest
+    resolutions: list[tuple[Any, RecruitResolution | IncompatibleRaceError]] = field(default_factory=list)
 
 
 class UnsupportedActionError(NotImplementedError):
@@ -95,7 +110,43 @@ def dispatch_phase(
         province.explored_percent = result.new_percent
         return result
 
+    if action is ActionCode.RECRUIT:
+        return _dispatch_recruit(phase, state, kingdom_id, army_ids)
+
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
+
+
+def _dispatch_recruit(
+    phase: PlanPhase, state: GameState, kingdom_id: int, army_ids: list[int]
+) -> RecruitDispatchResult:
+    request = decode_recruit_phase(phase)
+    army = state.armies[army_ids[0]]
+    province = state.provinces[army.location]
+    kingdom = state.kingdoms[kingdom_id]
+
+    is_home_province = army.location == kingdom.home_province
+    in_ally_territory = (
+        province.owner_kingdom_id is not None
+        and province.owner_kingdom_id != kingdom_id
+        and state.is_allied(province.owner_kingdom_id, kingdom_id)
+    )
+
+    resolutions: list[tuple[Any, RecruitResolution | IncompatibleRaceError]] = []
+    for army_type in request.army_types:
+        is_native = is_army_type_compatible_with_race(army_type, province.race)
+        try:
+            resolution = resolve_recruit(
+                army_type,
+                province.race,
+                is_home_province=is_home_province,
+                is_native_to_province=is_native,
+                in_ally_territory=in_ally_territory,
+            )
+        except IncompatibleRaceError as exc:
+            resolution = exc
+        resolutions.append((army_type, resolution))
+
+    return RecruitDispatchResult(request=request, resolutions=resolutions)
 
 
 def run_leader_plan(

@@ -75,11 +75,11 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   home-province check compared against an attacking army's `.location`,
   which is still its *origin* before a triggered battle resolves -- it now
   correctly compares against the battle's own province.
-- **Phase 11 (current)**: closes the loop from a real parsed move file to
-  actual execution. `turn/hex_numbering.py` decodes an LMOVE phase's raw
-  target integer into a `HexCoord` -- **an empirical discovery, not a
-  sourced rule**: nothing in the rulebook or source explains this
-  encoding, so every consecutive pair of real LMOVE targets across all 10
+- **Phase 11**: closes the loop from a real parsed move file to actual
+  execution. `turn/hex_numbering.py` decodes an LMOVE phase's raw target
+  integer into a `HexCoord` -- **an empirical discovery, not a sourced
+  rule**: nothing in the rulebook or source explains this encoding, so
+  every consecutive pair of real LMOVE targets across all 10
   `AK3__T*.K1` files was decoded under several `(width, offset)`
   hypotheses and checked for hex-adjacency; row-major decoding with
   **width 10** matched 78-84% of 93 real move pairs, far above the ~1-2%
@@ -88,9 +88,23 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   phases to `execute_move()` (via that decoder) and `resolve_explore()`;
   `run_leader_plan()` walks every phase of a real leader's plan and
   proved this works end-to-end against an actual `AK3__T1.K1` fixture
-  (see `tests/test_plan_dispatch.py`'s real-file test). Every other
-  `ActionCode` still raises `UnsupportedActionError` -- see "Not yet
-  implemented" below. Report generation is still a later phase.
+  (see `tests/test_plan_dispatch.py`'s real-file test).
+- **Phase 12 (current)**: adds Recruit to `plan_dispatch.py`, closing the
+  gap Phase 11 flagged as "next". `models/army_type.py
+  ARMY_TYPE_BY_ORDINAL` transcribes `CTBOTH.PAS`'s `army` enum ordinal
+  order directly (a *sourced* mapping, not empirical this time) and
+  `turn/recruit_decode.py` uses it to decode a Recruit `PlanPhase`: `obj`
+  is the target leader id (`NO_LEADER_SENTINEL` = `CTBOTH.PAS`'s
+  `noleader = 255`), and `extra[1:]` (up to the `-1` terminator) is a
+  list of requested `ArmyType`s -- confirmed against every real Recruit
+  phase in the `AK3__T*.K1` fixtures, all of which decode cleanly to
+  known types (e.g. `[0, 1, 1, 10, -1]` -> 2x Bowmen + 1x Warg Riders).
+  `plan_dispatch.py` then prices each requested type via
+  `resolve_recruit()` -- but only *prices* it (limits + gold cost); it
+  does not create armies or debit a treasury, since `GameState` has
+  neither yet. Every other `ActionCode` still raises
+  `UnsupportedActionError` -- see "Not yet implemented" below. Report
+  generation is still a later phase.
 
 ## Setup
 
@@ -226,6 +240,16 @@ rulebook before being turned into named, typed fields:
   to call), and what the ~16-22% of non-adjacent pairs represent (some
   are plausibly legitimate, e.g. a leader chasing a distant target; a few
   suspiciously round jumps might be a distinct sentinel value).
+- **`is_native_to_province` approximated as race-compatibility**
+  (`plan_dispatch._dispatch_recruit`) — the rulebook's real rule is
+  "Each province has 1 or 2 army types that can be recruited from the
+  populace", a specific per-province list `GameState`/`ProvinceState`
+  doesn't carry. Approximated instead with
+  `is_army_type_compatible_with_race()` (any humanoid type in a humanoid
+  province, or an exact race match for monstrous types) -- looser than
+  the real rule, so the double-cost path may trigger less often than it
+  should in-game. `PlanPhase.extra[0]` (always `0` in every sample) is
+  also still unconfirmed and unused.
 
 ## Not yet implemented (by design, this phase)
 
@@ -233,19 +257,21 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` closes the loop for 2 of 22 `ActionCode`s.** LMOVE
-  and EXPLORE can now run end-to-end from a real parsed move file; every
-  other action (Search, Recruit, Disband, Hire, Fire, Leave, Pick_Up,
-  Cast, Use_MI, Challenge, Practice, ASpy, Trade, Defend, Pursue, Trail,
-  Wait, No_Action, Succ_Trail, Move_Abort) raises `UnsupportedActionError`.
-  Recruit is the closest to reachable: `HostAK/TP/DEF2.PAS`'s
-  `Read_HPlan` shows its targets are a `-1`-terminated army-type list in
-  `PlanPhase.extra` (read via `AT_Bytes` mode) rather than in `obj` --
-  structurally decodable in principle, but doing so needs the original
-  `CTBOTH.PAS` army-type enum's *ordinal* order, which this project's
-  `ArmyType` (string-valued, reordered for readability) doesn't preserve.
-  Leave/Disband/Pick_Up are similarly structured (an `AN_Bytes` army-id
-  list) but unstarted.
+- **`plan_dispatch.py` closes the loop for 3 of 22 `ActionCode`s.** LMOVE,
+  EXPLORE, and RECRUIT (pricing only) can now run end-to-end from a real
+  parsed move file; every other action (Search, Disband, Hire, Fire,
+  Leave, Pick_Up, Cast, Use_MI, Challenge, Practice, ASpy, Trade, Defend,
+  Pursue, Trail, Wait, No_Action, Succ_Trail, Move_Abort) raises
+  `UnsupportedActionError`. Leave/Disband/Pick_Up are structurally similar
+  to Recruit (an `AN_Bytes` army-id list in `PlanPhase.extra`, per
+  `HostAK/TP/DEF2.PAS`'s `Read_HPlan`) but unstarted -- there's no
+  leader-to-army command model yet to act on a list of army ids
+  meaningfully.
+  - **Actually executing a priced Recruit request.** `plan_dispatch.py`
+    tells you the cost and limit for each requested army type but
+    doesn't spend gold, create `ArmyState` entries, or apply the
+    per-turn recruit limit across multiple orders -- `GameState` has no
+    treasury balance or "already recruited N this turn" tracking yet.
   - **Which armies a leader's Move order pulls in.** `execute_move()`/
     `dispatch_phase()` take an explicit `army_ids` list; there's no
     leader-to-army ownership/command model yet to derive that list

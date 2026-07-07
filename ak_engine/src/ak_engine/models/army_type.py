@@ -198,3 +198,39 @@ RACE_TERRAIN_BONUS: dict[tuple[Race, Terrain], int] = {
     (Race.DWARVEN, Terrain.MTNS): 1,
     (Race.ORCISH, Terrain.MTNS): 1,
 }
+
+# Ordinal position in CTBOTH.PAS's `army` enum declaration (line 1239):
+# "army = (garrison,bowmen,axemen,phalanx,legion,lcav,hcav,chariots,
+# elephants,camels,wargriders,dragonwing,eaglewing,whaleleague,fleet,
+# noarmy,mermen,ents,trolls,weres,dinosaurs,vampires,marauders,ea3..ea20)".
+# This is what move-file Recruit phases use to list requested army types
+# (see turn/recruit_decode.py) -- confirmed against real AK3__T*.K1 data,
+# where every observed value decodes to a plausible type with no garbage.
+# Ordinal 15 ("noarmy") is a sentinel, not a real type, and is omitted;
+# ordinals 20+ (dinosaurs, vampires, marauders, ea3-ea20) aren't in the
+# rulebook's Army Type Table [6.3] and have no ArmyType here either.
+ARMY_TYPE_BY_ORDINAL: dict[int, ArmyType] = {
+    0: ArmyType.GARRISON,
+    1: ArmyType.BOWMEN,
+    2: ArmyType.AXEMEN,
+    3: ArmyType.PHALANX,
+    4: ArmyType.LEGION,
+    5: ArmyType.LT_CAVALRY,
+    6: ArmyType.HVY_CAVALRY,
+    7: ArmyType.CHARIOTS,
+    8: ArmyType.ELEPHANTS,
+    9: ArmyType.CAMEL_CORPS,
+    10: ArmyType.WARG_RIDERS,
+    11: ArmyType.DRAGON_WING,
+    12: ArmyType.EAGLE_WING,
+    13: ArmyType.WHALES,
+    14: ArmyType.FLEET,
+    16: ArmyType.MERMEN,
+    17: ArmyType.ENTS,
+    18: ArmyType.TROLLS,
+    19: ArmyType.WEREBEASTS,
+}
+
+# CTBOTH.PAS `noleader = 255` -- used in Recruit phases' `obj` field to
+# mean "no specific leader" (e.g. assign to the garrison commander).
+NO_LEADER_SENTINEL = 255

@@ -13,7 +13,8 @@ from ak_engine.models.race import Race
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.move_execution import MoveExecutionResult
-from ak_engine.turn.plan_dispatch import UnsupportedActionError, dispatch_phase, run_leader_plan
+from ak_engine.turn.plan_dispatch import RecruitDispatchResult, UnsupportedActionError, dispatch_phase, run_leader_plan
+from ak_engine.turn.recruit import RecruitResolution
 
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
 BOARD_WIDTH = 10
@@ -52,6 +53,22 @@ def test_dispatch_explore_uses_current_province():
 
     assert result.new_percent == 100  # Plains(50) * (skill 1 + 1) = 100
     assert state.provinces[location].explored_percent == 100
+
+
+def test_dispatch_recruit_decodes_and_prices_each_requested_type():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    # Real example from AK3__T1.K1 leader 72: recruit under leader 1,
+    # two Bowmen and one Warg Riders.
+    phase = PlanPhase(label="P3", action=ActionCode.RECRUIT, obj=1, extra=[0, 1, 1, 10, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert isinstance(result, RecruitDispatchResult)
+    assert result.request.leader_id == 1
+    assert result.request.army_types == [ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.WARG_RIDERS]
+    assert [t for t, _ in result.resolutions] == [ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.WARG_RIDERS]
+    assert all(isinstance(r, RecruitResolution) for _, r in result.resolutions)
 
 
 def test_dispatch_unsupported_action_raises():
@@ -129,3 +146,19 @@ def test_real_move_file_leader_plan_dispatches_its_lmoves():
     lmove_results = [r for r in results if r.action == ActionCode.LMOVE]
     assert lmove_results
     assert all(r.error is None for r in lmove_results)
+
+
+def test_real_move_file_leader_recruit_phase_dispatches():
+    # Leader 72 ("Teleko") in AK3__T1.K1 has a real Recruit phase (P3):
+    # "P3 : 3 1 0 1 1 10 -1" -> recruit 2 Bowmen + 1 Warg Riders under leader 1.
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T1.K1")
+    leader = next(leader for leader in kingdom.leaders if leader.leader_id == 72)
+    recruit_phase = leader.plan.segments[0].phases["P3"]
+    assert recruit_phase.action == ActionCode.RECRUIT
+
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+
+    result = dispatch_phase(recruit_phase, state, kingdom_id=1, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert isinstance(result, RecruitDispatchResult)
+    assert result.request.army_types == [ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.WARG_RIDERS]
