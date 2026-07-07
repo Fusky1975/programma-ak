@@ -65,17 +65,32 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   ownership/contested status. This is the first module that mutates a
   persistent state object instead of operating on caller-supplied
   snapshots.
-- **Phase 10 (current)**: `turn/move_execution.py execute_move()` connects
-  a Move order to everything before it: `resolve_move()` (adjacency +
-  partial exploration) -> automatic battle trigger via `fight_battle()` if
-  the target holds a non-allied army -> `turn/conquest.py`'s
-  movement-point cost (now actually deducted from `ArmyState
-  .movement_points`, a new field) -> relocating the mover's surviving
-  armies only if the move actually succeeds. Also fixes a bug this
-  wiring surfaced: `fight_battle`'s home-province check compared against
-  an attacking army's `.location`, which is still its *origin* before a
-  triggered battle resolves -- it now correctly compares against the
-  battle's own province. Report generation is still a later phase.
+- **Phase 10**: `turn/move_execution.py execute_move()` connects a Move
+  order to everything before it: `resolve_move()` (adjacency + partial
+  exploration) -> automatic battle trigger via `fight_battle()` if the
+  target holds a non-allied army -> `turn/conquest.py`'s movement-point
+  cost (now actually deducted from `ArmyState.movement_points`, a new
+  field) -> relocating the mover's surviving armies only if the move
+  actually succeeds. Also fixes a bug this wiring surfaced: `fight_battle`'s
+  home-province check compared against an attacking army's `.location`,
+  which is still its *origin* before a triggered battle resolves -- it now
+  correctly compares against the battle's own province.
+- **Phase 11 (current)**: closes the loop from a real parsed move file to
+  actual execution. `turn/hex_numbering.py` decodes an LMOVE phase's raw
+  target integer into a `HexCoord` -- **an empirical discovery, not a
+  sourced rule**: nothing in the rulebook or source explains this
+  encoding, so every consecutive pair of real LMOVE targets across all 10
+  `AK3__T*.K1` files was decoded under several `(width, offset)`
+  hypotheses and checked for hex-adjacency; row-major decoding with
+  **width 10** matched 78-84% of 93 real move pairs, far above the ~1-2%
+  expected by chance (see the module docstring for the full methodology).
+  `turn/plan_dispatch.py` then dispatches a parsed `Leader`'s `ActionPlan`
+  phases to `execute_move()` (via that decoder) and `resolve_explore()`;
+  `run_leader_plan()` walks every phase of a real leader's plan and
+  proved this works end-to-end against an actual `AK3__T1.K1` fixture
+  (see `tests/test_plan_dispatch.py`'s real-file test). Every other
+  `ActionCode` still raises `UnsupportedActionError` -- see "Not yet
+  implemented" below. Report generation is still a later phase.
 
 ## Setup
 
@@ -199,6 +214,18 @@ rulebook before being turned into named, typed fields:
   omitted, falls back to the general nearest-friendly-neighbor logic
   instead, which is not what the rulebook actually specifies for a
   forced attacker retreat.
+- **The LMOVE hex-number encoding itself** (`turn/hex_numbering.py`) —
+  unlike every other assumption in this README, this one is backed by an
+  empirical test against real move-file data (78-84% adjacency match
+  across 93 real consecutive-move pairs, vs. ~1-2% expected by chance),
+  not just a "reasonable reading" of rulebook text. Still open: the exact
+  board height (real data reaches y=17, taller than `turn/movement.py`'s
+  assumed 15-row "normal" board -- this game series may simply use a
+  different board size), which row-parity convention applies (the two
+  options scored within 1 match of each other on this sample, too close
+  to call), and what the ~16-22% of non-adjacent pairs represent (some
+  are plausibly legitimate, e.g. a leader chasing a distant target; a few
+  suspiciously round jumps might be a distinct sentinel value).
 
 ## Not yet implemented (by design, this phase)
 
@@ -206,20 +233,23 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`execute_move()`/`fight_battle()` handle one Move and one battle, not
-  a full turn engine.** Still missing:
-  - **The bridge from a parsed `.K1` move file to `execute_move()` calls.**
-    Phase 1's `Kingdom`/`Leader`/`ActionPlan` model parses a player's
-    submitted moves into `PlanPhase(action, obj, extra)` records, but
-    nothing interprets those raw action/object codes (`ActionCode.LMOVE`
-    and friends) into `execute_move(state, kingdom_id, army_ids, target)`
-    calls, or into any other `turn/*` function call for that matter. This
-    is the single largest remaining gap: every action (Move, Explore,
-    Recruit, ...) has an isolated resolver, but nothing reads an actual
-    parsed turn file and drives them.
-  - **Which armies a leader's Move order pulls in.** `execute_move()`
-    takes an explicit `army_ids` list; there's no leader-to-army
-    ownership/command model yet to derive that list automatically.
+- **`plan_dispatch.py` closes the loop for 2 of 22 `ActionCode`s.** LMOVE
+  and EXPLORE can now run end-to-end from a real parsed move file; every
+  other action (Search, Recruit, Disband, Hire, Fire, Leave, Pick_Up,
+  Cast, Use_MI, Challenge, Practice, ASpy, Trade, Defend, Pursue, Trail,
+  Wait, No_Action, Succ_Trail, Move_Abort) raises `UnsupportedActionError`.
+  Recruit is the closest to reachable: `HostAK/TP/DEF2.PAS`'s
+  `Read_HPlan` shows its targets are a `-1`-terminated army-type list in
+  `PlanPhase.extra` (read via `AT_Bytes` mode) rather than in `obj` --
+  structurally decodable in principle, but doing so needs the original
+  `CTBOTH.PAS` army-type enum's *ordinal* order, which this project's
+  `ArmyType` (string-valued, reordered for readability) doesn't preserve.
+  Leave/Disband/Pick_Up are similarly structured (an `AN_Bytes` army-id
+  list) but unstarted.
+  - **Which armies a leader's Move order pulls in.** `execute_move()`/
+    `dispatch_phase()` take an explicit `army_ids` list; there's no
+    leader-to-army ownership/command model yet to derive that list
+    automatically.
   - Pursuit, duels, and Multiple Contingents (all exist as standalone
     modules from Phase 8) aren't called from `fight_battle()` yet, nor is
     the "Fleets fighting on land are reduced to Depleted instead of
