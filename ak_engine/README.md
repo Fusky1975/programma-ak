@@ -239,9 +239,37 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   temper/race/alignment compatibility), recurring per-gameturn pay (only
   the initial offer is charged, once), and "can't Hire a Hero who rules
   his own province" (no King flag to check against).
-  **A real, confirmed parser bug was found (not fixed) while researching
-  this phase**: see the new TODO entry below on nested Hire/Charm/
-  Resurrection plans.
+  **A real, confirmed parser bug was found while researching this
+  phase** (fixed in Phase 18, see below): a Hire (or Charm/Resurrection
+  Cast) phase's own nested plan for the newly-joined character was being
+  silently discarded by `parser/k1_moves.py`.
+- **Phase 18 (current)**: fixes that nested-plan parser bug.
+  `parser/k1_moves.py`'s leader-block parser is now bounded
+  recursive-descent instead of one flat token loop: each `AP: <start>
+  <end>` segment reads *exactly* the phases `P<start>` through `P<end>`,
+  in that order (`range(plan_start, plan_end + 1)`, a mismatch is now a
+  real `K1ParseError` instead of silently accepting whatever keyword came
+  next) -- and per `HostAK/TP/DEF2.PAS`'s "`IF m < 4 THEN
+  R_HPLan(...)`", if a phase at position `P0`-`P3` (never `P4`) is
+  immediately followed by another `AP:` token, that's recursively parsed
+  as a **nested plan** and attached to `PlanPhase.nested_plan`, instead
+  of being appended as a bogus sibling `PlanSegment` that clobbers the
+  outer leader's own same-labeled phases later in the stream. This same
+  `P0`-vs-`P4` position is exactly what disambiguates "nested plan" from
+  a genuine new top-level segment for the same leader (only possible
+  right after a `P4`). Verified against all 10 real `AK3__T*.K1` files:
+  every leader now parses to **exactly one** top-level segment with zero
+  leftover tokens -- the previously-claimed "multi-segment leaders"
+  (`AK3__T3.K1`, `AK3__T10.K1`, asserted by a Phase 1 test) turned out to
+  be entirely an artifact of this bug; that test was corrected
+  accordingly. New tests cover the flagship real-data case
+  (`AK3__T2.K1` leader 18's Hire of hero 32, whose own P2-P4 moves are
+  now correctly recovered instead of overwritten) and a real 3-level-deep
+  nesting (`AK3__T9.K1` leader 72: Cast embeds Hire embeds another nested
+  plan). `models/plan.py ActionPlan.leader_id` is now nullable, since a
+  Cast-triggered nested plan's owning character id can't be recovered
+  (this project doesn't decode spell ids); a Hire-triggered one always
+  has a real id (Hire's own `obj`).
 
 ## Setup
 
@@ -267,30 +295,19 @@ rulebook before being turned into named, typed fields:
   15 ability pairs (30 values) based on `CTBOTH.PAS`'s `ability` enum, but
   every real sample file has exactly 31. The 31st value's meaning is
   unconfirmed; `SkillTable.pair_for_ability()` only interprets the first 30.
-- **`parser/k1_moves.py` mis-parses a nested Hire/Charm/Resurrection plan
-  (confirmed bug, not fixed).** Per `HostAK/TP/DEF2.PAS`'s `Read_HPlan`/
-  `W_HPlan`, when a Hire phase (or a Cast of the Charm/Resurrection
-  spells) isn't a segment's last phase (`m < 4`), the Pascal format
-  immediately embeds a **complete second, nested plan block**
-  (`AP:`/`SP:`/`P<n>:` — the newly-hired/charmed character's own future
-  orders) in the token stream, spliced in right after that phase's triple
-  and before the outer leader's own remaining phases continue. This
-  project's parser treats every `AP:` block as one flat `PlanSegment`
-  with phases keyed by label (`P0`-`P4`) in a `dict`, so when the outer
-  leader's own later phases reuse the same labels (`P2`/`P3`/`P4`), they
-  silently **overwrite** the nested character's phases in that dict --
-  the nested character's real orders are lost, not raised as an error.
-  Confirmed by parsing the real `AK3__T2.K1` (leader 18 "Guerin": `P1` is
-  a real Hire of hero 32, followed by a nested `AP: 2 4` block for hero
-  32's own moves, which the current parser discards in favor of Guerin's
-  own later `P2`-`P4`). Real nesting can go at least 3 levels deep (a
-  Cast-Charm/Resurrection embedding a Hire embedding another nested plan
-  — seen in `AK3__T9.K1`, leader 72 "Teleko"). Fixing this needs
-  `parser/k1_moves.py`'s leader-block tokenizer to build a recursive/
-  tree-shaped segment structure instead of one flat `list[PlanSegment]`
-  with label-keyed dicts -- not attempted yet. `turn/hire_fire_decode.py`
-  deliberately only decodes a single already-parsed `PlanPhase`'s own
-  `obj`/`extra` and does not attempt to work around this.
+- ~~`parser/k1_moves.py` mis-parses a nested Hire/Charm/Resurrection
+  plan~~ **fixed in Phase 18** — see that phase's note above for the
+  fix; `PlanPhase.nested_plan` now holds the recovered embedded plan.
+  What's still open: **nothing decodes/executes a nested plan's own
+  contents** -- `turn/plan_dispatch.py run_leader_plan()` doesn't look at
+  `PlanPhase.nested_plan` at all, so a newly-hired hero's own orders
+  (now correctly *parsed*) still aren't automatically *dispatched*
+  against `GameState` the same turn they're hired. Also, a
+  Cast-triggered nested plan's `ActionPlan.leader_id` is always `None`
+  (this project doesn't decode spell ids, so it can't tell a
+  Charm/Resurrection cast from any other spell, let alone recover the
+  resulting character's id) -- only Hire-triggered nesting has a real
+  `leader_id`.
 - **Hex adjacency scheme** (`turn/movement.py`) — the original adjacency
   code isn't in the available source (it lived in the missing main
   program). The module implements a standard "odd-r" offset hex grid,
@@ -438,11 +455,10 @@ rulebook before being turned into named, typed fields:
     temper/race/alignment compatibility), recurring per-gameturn pay
     (only the one-time offer is charged), alignment-based hire refusal,
     and "can't Hire a Hero who rules his own province" (no King flag).
-    Also, any Hire (or Charm/Resurrection) phase before a segment's last
-    slot corrupts that leader's own later same-labeled phases due to the
-    nested-plan parser bug documented in the TODO section above --
-    `run_leader_plan` results for a kingdom that used Hire mid-segment
-    should be treated with caution.
+    Also, `run_leader_plan` doesn't dispatch a `PlanPhase.nested_plan`'s
+    own phases (see Phase 18's note above) -- a newly-hired hero's own
+    orders are now correctly *parsed*, not lost, but still aren't
+    automatically *executed* the same run.
   - **Disband's remaining gap**: no King/Hero distinction on `LeaderState`
     means co-location isn't enforced for anyone (see Phase 16's note
     above) -- a Hero should arguably need to be with the army to disband
