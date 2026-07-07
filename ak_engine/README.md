@@ -14,10 +14,12 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   file format.
 - **Phase 2**: hex map model (`models/map.py`) and Move-action resolution
   (`turn/movement.py`), for *adjacent* target hexes only.
-- **Phase 3 (current)**: Explore-action resolution (`turn/exploration.py`):
-  the deterministic cumulative exploration-percentage formula, also now
-  wired into `resolve_move()`'s partial-exploration side effect. Combat
-  resolution and report generation are still later phases.
+- **Phase 3**: Explore-action resolution (`turn/exploration.py`): the
+  deterministic cumulative exploration-percentage formula, also now wired
+  into `resolve_move()`'s partial-exploration side effect.
+- **Phase 4 (current)**: Army Type Table (`models/army_type.py`, rulebook
+  [6.3]) and Recruit-action cost/limit resolution (`turn/recruit.py`).
+  Combat resolution and report generation are still later phases.
 
 ## Setup
 
@@ -50,6 +52,13 @@ rulebook before being turned into named, typed fields:
   `CTBOTH.PAS` (`dirname`), but the exact offset convention is a guess and
   unverified. Revisit here first if movement behavior ever looks wrong
   against real game data.
+- **Humanoid-army-type compatibility** (`models/army_type.py`
+  `MONSTROUS_ARMY_RACE`) — the rulebook states plainly that monstrous army
+  types (Dragons, Eagles, etc.) require their own race's province, and
+  that any humanoid army type works in any humanoid province, but never
+  says explicitly whether a *humanoid* type can be recruited in a
+  *non-humanoid* (monstrous) province. This module assumes not (symmetric
+  incompatibility) — a reasonable reading, not a verified rule.
 
 ## Not yet implemented (by design, this phase)
 
@@ -65,6 +74,15 @@ rulebook before being turned into named, typed fields:
   province contains is stochastic content generation tied to the game's
   monster/treasure tables and prose templates (see
   `HostAK/TP/PROSE/*.X*` in the original zip) — a much later phase.
+- **Actually executing a Recruit order** (rulebook [3.4]): `resolve_recruit()`
+  only computes the per-turn unit limit and gold cost for one army type in
+  one province. Not modeled yet, and needed before this can run
+  end-to-end: kingdom treasury/gold balance, a kingdom's existing army
+  roster (to know if a type is already "native to province" via
+  commanded armies), the mercenary pool (whether an Average-or-better
+  mercenary of that type is already present, which hires them instead of
+  levying from the populace), and the ally "Treat" order precondition for
+  recruiting in allied territory.
 
 ## What's excluded from this phase
 
