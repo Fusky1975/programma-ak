@@ -31,9 +31,8 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   whole-battle luck event favoring a random side) and `resolve_battle()`,
   which lines up both sides, applies luck, and rolls an actual winner per
   column and overall.
-- **Phase 8 (current)**: the rest of the battle/combat rules [6.3],
-  [7.1]-[7.8], as isolated, tested modules (not yet wired into one
-  end-to-end turn engine — see "Not yet implemented" below):
+- **Phase 8**: the rest of the battle/combat rules [6.3], [7.1]-[7.8], as
+  isolated, tested modules:
   - `turn/strength.py`: the full effective-strength pipeline (race/terrain
     bonuses, quality-level modifiers, multiplicative special factors),
     sourced from the rulebook's exact ordered "Summary of factors"
@@ -57,7 +56,16 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     [7.7].
   - `turn/multiple_contingents.py`: grouping allied attackers into one
     battle [7.8].
-  Report generation is still a later phase.
+- **Phase 9 (current)**: a persistent game-state model
+  (`models/game_state.py`: `KingdomState`, `ArmyState`, `ProvinceState`,
+  `GameState`) and `turn/battle_orchestrator.py fight_battle()`, which
+  wires Phases 5-8 together end-to-end: compute strength for every
+  army at a province -> `resolve_battle()` -> quality changes
+  (`aftermath`) -> retreat/disband the clean-swept loser
+  (`retreat`) -> update province ownership/contested status. This is the
+  first module that mutates a persistent state object instead of
+  operating on caller-supplied snapshots. Report generation is still a
+  later phase.
 
 ## Setup
 
@@ -154,6 +162,33 @@ rulebook before being turned into named, typed fields:
   — "very good chance" (same origin) and "probably... separate battles"
   (different directions) have no numbers; implemented as 85%/30%, a
   deliberate design choice.
+- **Battle outcome judged at the side level, not per-column**
+  (`turn/battle_orchestrator.py fight_battle`) — a side that loses every
+  column is treated as fully defeated (destroyed, or retreat/disband);
+  any other losing pattern (mixed, or a tie) leaves the province
+  contested with no eliminations. The rulebook's own language ("the
+  defeated army", "contested provinces") supports this reading, but it
+  doesn't itself specify a per-column elimination rule for a *partially*
+  losing side, so this is an interpretation.
+- **What `fight_battle` leaves out of the strength calculation**: the
+  exploration-advantage and Tactical/Naval-ability special factors,
+  fanaticism, and the desert-without-camels penalty aren't wired in --
+  they need per-battle context (leader ability values, a camel-unit
+  check, alignment-based fanaticism rolls) the orchestrator doesn't
+  collect yet. More importantly, **the nemesis penalty isn't applied
+  either**: it depends on which specific unit ends up paired against
+  which in a column, and that pairing only exists *inside*
+  `resolve_battle` after line-up — by the time `fight_battle` calls
+  `compute_effective_strength`, pairings aren't known yet. Properly
+  fixing this needs `resolve_battle` to support a post-hoc,
+  pairing-aware strength adjustment pass.
+- **Attacker forced-retreat destination** (`fight_battle`
+  `attacker_origin`) — when supplied, uses the rulebook-correct "back to
+  the province invaded from, or adjacent to it" rule, but always picks
+  the first candidate rather than a "best" one (none is defined); when
+  omitted, falls back to the general nearest-friendly-neighbor logic
+  instead, which is not what the rulebook actually specifies for a
+  forced attacker retreat.
 
 ## Not yet implemented (by design, this phase)
 
@@ -161,35 +196,26 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **Wiring the battle/combat modules into one end-to-end turn engine.**
-  Every rulebook formula through [7.8] now exists as an isolated, tested
-  function or module (`turn/strength.py`, `turn/battle_line.py`,
-  `turn/battle_luck.py`, `turn/battle_resolution.py`, `turn/duel.py`,
-  `turn/pursuit.py`, `turn/retreat.py`, `turn/aftermath.py`,
-  `turn/contested_province.py`, `turn/conquest.py`,
-  `turn/multiple_contingents.py`) — but nothing calls them all together
-  in sequence yet, because there's no persistent game-state object
-  (kingdom treasuries, army rosters, per-province ownership/contest
-  status across turns) for an orchestrator to read and write. Still
-  needed, specifically:
-  - **A game-state model** to carry armies/leaders/provinces across
-    multiple turns and battles — everything so far operates on
-    caller-supplied snapshots (lists of `BattleUnit`, etc.), not a
-    mutable session.
-  - **Actually eliminating/demoting losing armies in a roster**:
-    `resolve_battle()` decides which side wins each column;
-    `aftermath.roll_quality_change()` decides a quality change per unit
-    — but nothing removes destroyed armies from a kingdom's roster, and
-    the "Fleets fighting on land are reduced to Depleted instead of
-    eliminated" exception isn't modeled.
-  - The non-humanoid "attack the rear unit instead of the front" targeting
-    nuance [7.2] — `battle_line.py` models overflight units as always
-    contributing 100% wherever they're placed, but doesn't model them
-    choosing to target a different depth on the opposing side.
+- **`fight_battle()` is one battle, not a full turn engine.** It resolves
+  a single battle at a single province given explicit attacker army ids
+  and mutates `GameState` accordingly, but nothing yet:
+  - Calls it *from* a Move order — `resolve_move()` (`turn/movement.py`)
+    still only flags that a battle would be triggered (`battle_expected`);
+    nothing connects that flag to `fight_battle()`.
+  - Consumes Phase 1's parsed `Kingdom`/`Leader`/`ActionPlan` (from a
+    `.K1` move file) to decide *which* armies attack *which* province in
+    the first place — there's no bridge yet between "a parsed move
+    file" and "a `fight_battle()` call".
+  - Models the "Fleets fighting on land are reduced to Depleted instead
+    of eliminated" exception, pursuit/duels/multiple-contingents (all
+    exist as standalone modules from Phase 8 but aren't called from
+    `fight_battle()` yet), or the non-humanoid "attack the rear unit
+    instead of the front" targeting nuance [7.2].
+  - Tracks movement points or calls `turn/conquest.py`'s movement-cost
+    functions -- conquest's extra movement-point deduction isn't applied
+    anywhere yet.
   - The duel *fight itself* [7.1] — needs the separate "Special Encounter
     Plan" character-combat system [5.10], not built.
-  - `resolve_move()` still only flags that a battle would be triggered
-    (`battle_expected`); it doesn't call `resolve_battle()` yet.
 - **Feature discovery, monsters, treasures, rumors, battlefield reports**
   (rulebook [3.2]): `resolve_explore()` only computes the deterministic
   cumulative exploration percentage. Actually discovering *what* a

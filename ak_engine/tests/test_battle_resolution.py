@@ -8,26 +8,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability
 from ak_engine.turn.battle_resolution import resolve_battle
 
-
-class ScriptedRandom(random.Random):
-    """A Random whose .random()/.choice() replay a fixed script, for deterministic tests.
-
-    random.Random.uniform() calls self.random() internally, so scripting
-    .random() also controls .uniform(); .choice() is overridden directly
-    since CPython's implementation uses _randbelow (bit generation), not
-    .random().
-    """
-
-    def __init__(self, randoms, choice_indices=()):
-        super().__init__()
-        self._randoms = list(randoms)
-        self._choice_indices = list(choice_indices)
-
-    def random(self):
-        return self._randoms.pop(0)
-
-    def choice(self, seq):
-        return seq[self._choice_indices.pop(0)]
+from _helpers import ScriptedRandom
 
 
 def unit(strength: float, army_type: ArmyType = ArmyType.BOWMEN) -> BattleUnit:
@@ -118,3 +99,13 @@ def test_resolve_battle_structural_invariants_with_real_rng_multi_column():
     for column in result.columns:
         assert column.attacker_strength >= 0
         assert column.defender_strength >= 0
+
+
+def test_resolve_battle_column_results_expose_the_actual_units_for_bookkeeping():
+    attacker = [BattleUnit(ArmyType.BOWMEN, 10, source_id=101)]
+    defender = [BattleUnit(ArmyType.AXEMEN, 5, source_id=202)]
+
+    result = resolve_battle(attacker, defender, rng=random.Random(0))
+
+    assert [u.source_id for u in result.columns[0].attacker_units] == [101]
+    assert [u.source_id for u in result.columns[0].defender_units] == [202]

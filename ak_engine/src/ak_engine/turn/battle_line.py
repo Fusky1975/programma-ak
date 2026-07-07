@@ -50,6 +50,7 @@ from ak_engine.turn.combat import line_contribution, win_probability
 class BattleUnit:
     army_type: ArmyType
     effective_strength: float
+    source_id: int | None = None  # opaque caller id (e.g. an ArmyState id), for post-battle bookkeeping
 
 
 Column = list[BattleUnit]

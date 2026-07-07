@@ -54,4 +54,7 @@ def select_supreme_commander(candidates: list[Commander]) -> Commander | None:
 def apply_duel_demoralization(units: list[BattleUnit]) -> list[BattleUnit]:
     """Return a new list with the duel loser's armies reduced 25% in strength."""
 
-    return [BattleUnit(u.army_type, u.effective_strength * DUEL_DEMORALIZATION_MULTIPLIER) for u in units]
+    return [
+        BattleUnit(u.army_type, u.effective_strength * DUEL_DEMORALIZATION_MULTIPLIER, source_id=u.source_id)
+        for u in units
+    ]

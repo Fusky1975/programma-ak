@@ -40,6 +40,8 @@ class BattleColumnResult:
     attacker_won: bool
     attacker_column_luck: ColumnLuckEvent | None
     defender_column_luck: ColumnLuckEvent | None
+    attacker_units: Column = field(default_factory=list)
+    defender_units: Column = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -57,7 +59,11 @@ def _apply_front_line_luck(column: Column, rng: random.Random) -> ColumnLuckEven
     event = roll_column_luck(rng)
     if event is not None:
         front = column[0]
-        column[0] = BattleUnit(army_type=front.army_type, effective_strength=front.effective_strength * event.multiplier)
+        column[0] = BattleUnit(
+            army_type=front.army_type,
+            effective_strength=front.effective_strength * event.multiplier,
+            source_id=front.source_id,
+        )
     return event
 
 
@@ -101,8 +107,8 @@ def resolve_battle(
     columns: list[BattleColumnResult] = []
     attacker_wins = 0
     defender_wins = 0
-    for a_strength, d_strength, a_luck, d_luck in zip(
-        attacker_strengths, defender_strengths, attacker_luck, defender_luck
+    for a_strength, d_strength, a_luck, d_luck, a_units, d_units in zip(
+        attacker_strengths, defender_strengths, attacker_luck, defender_luck, attacker_columns, defender_columns
     ):
         probability = estimate_win_probability(a_strength, d_strength)
         attacker_won = rng.random() < probability
@@ -116,6 +122,8 @@ def resolve_battle(
                 attacker_won=attacker_won,
                 attacker_column_luck=a_luck,
                 defender_column_luck=d_luck,
+                attacker_units=a_units,
+                defender_units=d_units,
             )
         )
 
