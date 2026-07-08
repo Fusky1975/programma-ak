@@ -296,6 +296,54 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   from `turn/combat.py`'s army battle math), plus the same stochastic
   treasure/monster-content generation already flagged as out of scope
   for Explore.
+- **Phase 20 (current)**: Trade decoding -- the project's
+  least-confirmed decode module so far. `ActionCode.TRADE` (`CTBOTH.PAS`
+  ordinal 14) turns out to be the Pascal engine's internal name for the
+  rulebook's **Give order** ([3.18]/[5.7]): the enum member is named
+  `Trade`, but its abbreviation (`'GI'`) and turn-report message
+  (`_LTrade: '< gave the \ to [.'`) both match "Give" exactly -- there's
+  no separate `Give` enum member at all, and the "Trade" name most
+  likely comes from Give's optional reciprocal-exchange variant ("the
+  gift will be made only if the recipient Gives you a specified magic
+  item in the same phase"). `turn/trade_decode.py` deliberately stays
+  **raw**: `TradeRequest(obj, extra)` with no interpreted field names,
+  because nothing here can be confirmed the way every earlier decode
+  module's fields could be:
+  - The rulebook's own text warns that `obj` can mean *either* a magic
+    item id *or* a gold amount ("Be careful that you don't 'Give' an
+    amount of gold that equals a magic item I.D. number") -- an
+    acknowledged overload with no discriminator found anywhere in the
+    available source.
+  - `HostAK/TP/DEF2.PAS` confirms Trade reads one extra numeric field
+    (`n1`) beyond the standard `obj`/`extra[0]` pair, but with **no
+    comment naming what it means** (unlike Hire's clearly-labeled gold
+    offer).
+  - **Zero real Trade phases exist in any of the 10 sample
+    `AK3__T*.K1` files** -- no empirical cross-check available, the
+    situation Fire (Phase 17) was already in, except Fire at least had
+    unambiguous Pascal-confirmed field semantics (no extra data at all)
+    to fall back on.
+  - **The actual turn-execution engine isn't present in the available
+    Pascal source tree** -- only plan read/write/report-text code exists
+    here, so even a Pascal-level (not just real-data) confirmation of
+    the field mapping is unavailable.
+  Given all of this, no field-position guess (e.g. "`extra[0]` is the
+  recipient id") is asserted as fact anywhere in this module or its
+  tests -- see `turn/trade_decode.py`'s docstring for the full reasoning.
+  **Separately investigated and confirmed out of scope**: the user
+  recalled a "Treat" diplomacy order for exchanging Sage discoveries
+  between Allied kingdoms -- confirmed real (rulebook [8.2] Treating,
+  [8.4] Scientific Treaties), but it is a **Kingdom-level** turnsheet
+  order ("The Kingdom will Treat with (list King numbers)",
+  `RUMORS.PAS`), structurally unrelated to `Trade`/Give and to the
+  per-leader `PlanPhase`/`ActionCode` system entirely -- not a decode
+  target for this module. It also doesn't appear anywhere in the 10
+  sample `AK3__T*.K1` files (confirmed via a direct text search), so
+  there's no real data to build against yet either. Parsing it would
+  need extending `models/kingdom.py`'s `Kingdom`/`KingdomMoveHeader`
+  model and `parser/k1_moves.py` for a new turnsheet field this project
+  doesn't read at all today -- a distinct future task, not attempted
+  here.
 
 ## Setup
 
@@ -461,13 +509,13 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` dispatches 9 of 22 `ActionCode`s without raising
+- **`plan_dispatch.py` dispatches 10 of 22 `ActionCode`s without raising
   `UnsupportedActionError`.** LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT
   (Phase 15), DISBAND (Phase 16), and HIRE/FIRE (Phase 17) run
-  end-to-end with real `GameState` mutation; SEARCH (Phase 19) decodes
-  but doesn't mutate `GameState` (see Phase 19's note above -- same
-  decode-only status Recruit had before Phase 15). Every other action
-  (Cast, Use_MI, Challenge, Practice, ASpy, Trade, Defend, Pursue, Trail,
+  end-to-end with real `GameState` mutation; SEARCH (Phase 19) and TRADE
+  (Phase 20) decode but don't mutate `GameState` (see their notes above
+  -- same decode-only status Recruit had before Phase 15). Every other
+  action (Cast, Use_MI, Challenge, Practice, ASpy, Defend, Pursue, Trail,
   Wait, No_Action, Succ_Trail, Move_Abort) raises `UnsupportedActionError`.
   - **Recruit's remaining gaps**: the recruiting leader must already
     exist as a `LeaderState` at the target province (no validation that
@@ -498,6 +546,13 @@ rulebook before being turned into named, typed fields:
     neither of which exist yet. A Cast/Use_MI/Give tactic's sub-object is
     also just a raw int -- no decoded spell-id or magic-item-id table
     exists in this project yet to resolve it further.
+  - **Trade's remaining gap** (see Phase 20's note above): the whole
+    module, not just execution -- `obj`/`extra`'s field meanings aren't
+    confirmed, so there's nothing yet to safely execute even if a
+    resolver existed. The Kingdom-level "Treat" diplomacy order
+    (scientific-discovery exchange between Allies, [8.4]) is a separate,
+    entirely unstarted system -- not parsed, not modeled, no real data
+    available yet either.
   - Pursuit, duels, and Multiple Contingents (all exist as standalone
     modules from Phase 8) aren't called from `fight_battle()` yet, nor is
     the "Fleets fighting on land are reduced to Depleted instead of

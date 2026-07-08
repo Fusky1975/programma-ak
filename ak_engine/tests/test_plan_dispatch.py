@@ -18,6 +18,7 @@ from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.plan_dispatch import HireExecutionResult, UnsupportedActionError, dispatch_phase, run_leader_plan
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
+from ak_engine.turn.trade_decode import TradeRequest
 
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
 BOARD_WIDTH = 10
@@ -122,6 +123,17 @@ def test_real_move_file_leader_search_phase_dispatches():
 
     assert isinstance(result, SearchRequest)
     assert result.feature_id == 20
+
+
+def test_dispatch_trade_is_decode_only():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=42, extra=[7, 3])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, TradeRequest)
+    assert result.obj == 42
+    assert result.extra == [7, 3]
 
 
 def test_dispatch_recruit_executes_debits_treasury_and_creates_armies():

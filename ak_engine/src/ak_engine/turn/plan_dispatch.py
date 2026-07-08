@@ -59,6 +59,16 @@ to dispatch automatically:
   is applied to ``GameState`` -- Search resolves as personal combat
   against a feature's guardian monster (rulebook [3.3], [5.0]), and this
   project has no non-army Encounter resolver yet.
+- **TRADE** is decode-only (Phase 20) and, unlike every other decoded
+  action here, the decode itself stays deliberately raw --
+  ``turn/trade_decode.py`` exposes ``obj``/``extra`` uninterpreted rather
+  than naming fields it can't confirm. ``ActionCode.TRADE`` is the
+  Pascal engine's internal name for the rulebook's Give order ([3.18],
+  [5.7]); see that module's docstring for why its field mapping is this
+  project's least-confirmed (no real Trade phases in any sample file, no
+  turn-execution engine present in the available Pascal source, and the
+  rulebook itself flags an unresolved item-id/gold-amount ambiguity in
+  ``obj``).
 
 Every other ``ActionCode`` raises ``UnsupportedActionError``.
 
@@ -86,6 +96,7 @@ from ak_engine.turn.move_execution import execute_move
 from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_recruit
 from ak_engine.turn.search_decode import decode_search_phase
+from ak_engine.turn.trade_decode import decode_trade_phase
 
 SUPPORTED_ACTIONS = frozenset(
     {
@@ -97,6 +108,7 @@ SUPPORTED_ACTIONS = frozenset(
         ActionCode.LEAVE,
         ActionCode.PICK_UP,
         ActionCode.HIRE,
+        ActionCode.TRADE,
         ActionCode.FIRE,
     }
 )
@@ -184,6 +196,9 @@ def dispatch_phase(
 
     if action is ActionCode.FIRE:
         return _dispatch_fire(phase, state)
+
+    if action is ActionCode.TRADE:
+        return decode_trade_phase(phase)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 
