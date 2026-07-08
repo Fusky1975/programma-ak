@@ -130,6 +130,16 @@ to dispatch automatically:
   ``turn/pursuit.py``'s separate automatic post-battle retreat-chasing
   mechanic ([7.3]) -- confirmed no overlap. Zero real phases exist for
   either action in the 10 sample files.
+- **ASPY** and **DEFEND** are decode-only (Phase 26):
+  ``turn/aspy_defend_decode.py`` decodes both to a raw ``target_province``
+  int -- bare triples in ``DEF2.PAS`` (no dedicated ``CASE`` branch), but
+  ``obj`` is confirmed to be a real, engine-consulted province reference
+  rather than dead data (``RUMORS.PAS``'s ``Set_Intel`` reads it for
+  ASpy; ``REPORTS.PAS``'s ``Set_Defend`` missed-deadline auto-fill
+  writes it for Defend). ``ActionCode.ASPY`` is rulebook [3.14] Spy
+  Province; ``ActionCode.DEFEND`` is [3.15] Defend -- neither has a
+  Trade/Challenge-style naming mismatch. Zero real phases exist for
+  either action in the 10 sample files.
 
 Every other ``ActionCode`` raises ``UnsupportedActionError``.
 
@@ -150,6 +160,7 @@ from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
 from ak_engine.models.plan import PlanPhase
 from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
+from ak_engine.turn.aspy_defend_decode import decode_aspy_phase, decode_defend_phase
 from ak_engine.turn.cast_decode import decode_cast_phase
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.exploration import resolve_explore
@@ -172,6 +183,8 @@ SUPPORTED_ACTIONS = frozenset(
         ActionCode.USE_MI,
         ActionCode.CHALLENGE,
         ActionCode.PURSUE,
+        ActionCode.ASPY,
+        ActionCode.DEFEND,
         ActionCode.RECRUIT,
         ActionCode.DISBAND,
         ActionCode.LEAVE,
@@ -297,6 +310,12 @@ def dispatch_phase(
 
     if action is ActionCode.PURSUE:
         return decode_pursue_phase(phase)
+
+    if action is ActionCode.ASPY:
+        return decode_aspy_phase(phase)
+
+    if action is ActionCode.DEFEND:
+        return decode_defend_phase(phase)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 

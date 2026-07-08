@@ -499,6 +499,35 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   the 10 sample files** (double-confirmed: a raw-text scan and a full
   parser walk including nested plans both agree) -- weaker evidence than
   Search's own 12 real examples, same situation as Fire/Trade/Use_MI.
+- **Phase 26 (current)**: ASpy and Defend decoding
+  (`turn/aspy_defend_decode.py`), rulebook [3.14] Spy Province and
+  [3.15] Defend. Both are bare `(action, obj, extra)` triples in
+  `DEF2.PAS` (no dedicated `CASE` branch), which would normally put them
+  in the same bucket as Wait/No_Action/Move_Abort -- except `obj` is
+  confirmed to be a real, engine-consulted province reference rather
+  than dead data: `RUMORS.PAS`'s `Set_Intel` reads `lobjects[_rphase]`
+  for ASpy against the province currently being processed for
+  intelligence purposes; `REPORTS.PAS`'s `Set_Defend` (the
+  missed-turn-deadline auto-fill, first found while researching Phase
+  22's Wait/No_Action) explicitly *writes* `lobjects[0]:=
+  lx[l2]*XMULT+ly[l2]` -- the general's own province, confirming a real
+  province-coordinate target. Neither `ActionCode` name has a
+  Trade/Challenge-style mismatch: `actab[ASpy] = 'SP'` and
+  `actab[Defend] = 'DE'` both match their own rulebook abbreviations
+  directly. `target_province` is kept as a **raw, unconverted int**,
+  deliberately not run through `turn/hex_numbering.py`'s LMOVE decoder
+  -- nothing in the available source confirms whether a player-typed
+  province number for these two actions shares that same (itself only
+  empirically inferred) numbering space, or maps onto `Set_Defend`'s
+  internal `x*XMULT+y` arithmetic instead; stacking one unconfirmed
+  mapping on another would overstate this project's actual certainty.
+  A rule found only in the **Italian** rulebook, not `RULES.AK`: a
+  Defend order always resolves last in its phase (the general must be
+  able to react to every other action first) -- noted for whenever
+  phase-ordering/initiative gets modeled, not implemented here.
+  **Zero real ASpy or Defend phases exist in any of the 10 sample
+  files** (re-verified fresh via the real parser) -- same situation as
+  Fire, Trade, Challenge, Pursue, and Use_MI.
 
 ## Setup
 
@@ -664,16 +693,18 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` dispatches 18 of 22 `ActionCode`s without raising
+- **`plan_dispatch.py` dispatches 20 of 22 `ActionCode`s without raising
   `UnsupportedActionError`.** LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT
   (Phase 15), DISBAND (Phase 16), and HIRE/FIRE (Phase 17) run
   end-to-end with real `GameState` mutation; SEARCH (Phase 19), TRADE
   (Phase 20), PRACTICE (Phase 21), CAST (Phase 23), USE_MI (Phase 24),
-  and CHALLENGE/PURSUE (Phase 25) decode but don't mutate `GameState`
-  (see their notes above -- same decode-only status Recruit had before
-  Phase 15); WAIT, NO_ACTION, and MOVE_ABORT (Phase 22) dispatch as bare
-  no-ops. Every other action (ASpy, Defend, Trail, Succ_Trail) raises
-  `UnsupportedActionError`.
+  CHALLENGE/PURSUE (Phase 25), and ASPY/DEFEND (Phase 26) decode but
+  don't mutate `GameState` (see their notes above -- same decode-only
+  status Recruit had before Phase 15); WAIT, NO_ACTION, and MOVE_ABORT
+  (Phase 22) dispatch as bare no-ops. Only **Trail** and **Succ_Trail**
+  raise `UnsupportedActionError` now -- see the Phase 25 note above:
+  Trail is Pursue's simpler, tactic-list-free sibling, and Succ_Trail is
+  plausibly an internal engine-set marker, not a player order.
   - **Recruit's remaining gaps**: the recruiting leader must already
     exist as a `LeaderState` at the target province (no validation that
     a *co-located* character issued the order); the rulebook's more
@@ -733,6 +764,12 @@ rulebook before being turned into named, typed fields:
     catch-up formula ([4.33], [3.16]) aren't modeled -- same missing
     non-army Encounter resolver as Search. Zero real examples for
     either either.
+  - **ASpy/Defend's remaining gap** (see Phase 26's note above):
+    intelligence-report generation (ASpy) and reactive cross-province
+    battle-triggering (Defend) both need `GameState`/battle-orchestrator
+    logic that doesn't exist yet, plus `target_province` staying an
+    unconverted raw int until the hex-numbering-vs-`XMULT` question is
+    resolved. Zero real examples for either.
   - **Trail and Succ_Trail, not yet started**: briefly investigated
     while researching Pursue. Trail ([3.17]) is Pursue's simpler
     sibling -- same character-id target, but confirmed via Pascal
