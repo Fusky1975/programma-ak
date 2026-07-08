@@ -53,6 +53,12 @@ to dispatch automatically:
   details: a Hero's own "required pay" (may be less than the offer),
   recurring per-turn pay, alignment-based hire refusal, or "can't Hire a
   Hero who rules his own province" -- see ``README.md``.
+- **SEARCH** is decode-only (Phase 19), same status Recruit had before
+  Phase 15: ``obj``/``extra`` decode to a target feature id plus an
+  Encounter Plan tactic list via ``turn/search_decode.py``, but nothing
+  is applied to ``GameState`` -- Search resolves as personal combat
+  against a feature's guardian monster (rulebook [3.3], [5.0]), and this
+  project has no non-army Encounter resolver yet.
 
 Every other ``ActionCode`` raises ``UnsupportedActionError``.
 
@@ -79,11 +85,13 @@ from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fir
 from ak_engine.turn.move_execution import execute_move
 from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_recruit
+from ak_engine.turn.search_decode import decode_search_phase
 
 SUPPORTED_ACTIONS = frozenset(
     {
         ActionCode.LMOVE,
         ActionCode.EXPLORE,
+        ActionCode.SEARCH,
         ActionCode.RECRUIT,
         ActionCode.DISBAND,
         ActionCode.LEAVE,
@@ -155,6 +163,9 @@ def dispatch_phase(
         result = resolve_explore(province.explored_percent, province.terrain, explorer_skill)
         province.explored_percent = result.new_percent
         return result
+
+    if action is ActionCode.SEARCH:
+        return decode_search_phase(phase)
 
     if action is ActionCode.RECRUIT:
         return _dispatch_recruit(phase, state, kingdom_id, leader_id)

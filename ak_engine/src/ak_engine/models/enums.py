@@ -66,3 +66,36 @@ def action_from_int(value: int) -> "ActionCode | int":
         return ActionCode(value)
     except ValueError:
         return value
+
+
+class Maneuver(IntEnum):
+    """Mirrors the Pascal ``maneuver`` enum (``CTBOTH.PAS``, the ``manab``
+    abbreviation table: ``'CA','US','SQ','TA','SA','GI','FU','ST','FI',
+    'ME','FL','BE','NM','SC'``) -- an Encounter Plan's ordered combat
+    tactics (rulebook [5.1]-[5.8]), used by the Search and Challenge
+    actions.
+    """
+
+    CAST = 0
+    USE_MI = 1
+    SQUEEZE = 2
+    TALK = 3
+    SAY = 4
+    GIVE = 5
+    FULFILL = 6
+    STEAL = 7
+    SHOOT = 8
+    MELEE = 9
+    FLEE = 10
+    BEG = 11
+    NONE = 12
+    SCOUT = 13
+
+
+def maneuver_from_int(value: int) -> "Maneuver | int":
+    """Map a raw maneuver int to ``Maneuver`` where valid, else keep it raw."""
+
+    try:
+        return Maneuver(value)
+    except ValueError:
+        return value

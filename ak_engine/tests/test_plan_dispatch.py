@@ -17,6 +17,7 @@ from ak_engine.turn.hire_fire_decode import FireRequest
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.plan_dispatch import HireExecutionResult, UnsupportedActionError, dispatch_phase, run_leader_plan
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
+from ak_engine.turn.search_decode import SearchRequest
 
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
 BOARD_WIDTH = 10
@@ -94,6 +95,33 @@ def test_dispatch_explore_uses_leader_location():
 
     assert result.new_percent == 100  # Plains(50) * (skill 1 + 1) = 100
     assert state.provinces[location].explored_percent == 100
+
+
+def test_dispatch_search_is_decode_only():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P2", action=ActionCode.SEARCH, obj=20, extra=[0, 0, 11, 0, 22, 0, 7, 9, 13, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, SearchRequest)
+    assert result.feature_id == 20
+    assert len(result.tactics) == 5
+
+
+def test_real_move_file_leader_search_phase_dispatches():
+    # Leader 42 ("Garin") in AK3__T10.K1 has a real Search phase (P2):
+    # "P2 : 2 20 0 0 11 0 22 0 7 9 13 -1" -> Search feature 20.
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T10.K1")
+    leader = next(leader for leader in kingdom.leaders if leader.leader_id == 42)
+    search_phase = leader.plan.segments[0].phases["P2"]
+    assert search_phase.action == ActionCode.SEARCH
+
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+
+    result = dispatch_phase(search_phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, SearchRequest)
+    assert result.feature_id == 20
 
 
 def test_dispatch_recruit_executes_debits_treasury_and_creates_armies():

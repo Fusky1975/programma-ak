@@ -270,6 +270,32 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   Cast-triggered nested plan's owning character id can't be recovered
   (this project doesn't decode spell ids); a Hire-triggered one always
   has a real id (Hire's own `obj`).
+- **Phase 19 (current)**: Search Feature decoding (rulebook [3.3]) --
+  structurally unlike Explore ([3.2]): Explore is an untargeted,
+  deterministic percentage roll over the mover's own province; Search
+  targets one *already-known* feature by number (possibly in a province
+  the searcher doesn't own, or hasn't Explored, if a rumor gave up its
+  number) and immediately triggers a personal Encounter against that
+  feature's guardian monster (rulebook [5.0]), resolved via a
+  player-supplied Encounter Plan -- an ordered list of combat tactics.
+  `models/enums.py` gains `Maneuver` (transcribed from `CTBOTH.PAS`'s
+  `maneuver` enum: Cast, Use_MI, Squeeze, Talk, Say, Give, Fulfill,
+  Steal, Shoot, Melee, Flee, Beg, None, Scout). `turn/search_decode.py`
+  decodes `obj` as the target feature id and the rest of `extra` as a
+  `-1`-terminated tactic list (`HostAK/TP/DEF2.PAS`'s `R_HPlan`'s
+  `R_List(..., Tac_Bytes, ...)` call), pairing a sub-object (spell/item
+  id) onto a tactic only for Cast/Use_MI/Give, matching `W_List`'s
+  `Tac_Bytes` mode exactly. Validated against all 12 real Search phases
+  across 5 of the 10 sample `AK3__T*.K1` files: every one decodes to a
+  clean, fully-consumed tactic list with no leftover tokens, and
+  `extra[0]` ("tl" in the Pascal source) is `0` in every real example --
+  kept as an unconfirmed raw field, same convention as Recruit's own
+  always-`0` `extra[0]`. **Decode-only**, same status Recruit had before
+  Phase 15: resolving what a Search actually *does* needs a personal,
+  non-army Encounter/combat resolver this project doesn't have (distinct
+  from `turn/combat.py`'s army battle math), plus the same stochastic
+  treasure/monster-content generation already flagged as out of scope
+  for Explore.
 
 ## Setup
 
@@ -435,12 +461,14 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` closes the loop for 8 of 22 `ActionCode`s.** LMOVE,
-  EXPLORE, LEAVE, PICK_UP, RECRUIT (Phase 15), DISBAND (Phase 16), and
-  HIRE/FIRE (Phase 17) all now run end-to-end with real `GameState`
-  mutation. Every other action (Search, Cast, Use_MI, Challenge,
-  Practice, ASpy, Trade, Defend, Pursue, Trail, Wait, No_Action,
-  Succ_Trail, Move_Abort) raises `UnsupportedActionError`.
+- **`plan_dispatch.py` dispatches 9 of 22 `ActionCode`s without raising
+  `UnsupportedActionError`.** LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT
+  (Phase 15), DISBAND (Phase 16), and HIRE/FIRE (Phase 17) run
+  end-to-end with real `GameState` mutation; SEARCH (Phase 19) decodes
+  but doesn't mutate `GameState` (see Phase 19's note above -- same
+  decode-only status Recruit had before Phase 15). Every other action
+  (Cast, Use_MI, Challenge, Practice, ASpy, Trade, Defend, Pursue, Trail,
+  Wait, No_Action, Succ_Trail, Move_Abort) raises `UnsupportedActionError`.
   - **Recruit's remaining gaps**: the recruiting leader must already
     exist as a `LeaderState` at the target province (no validation that
     a *co-located* character issued the order); the rulebook's more
@@ -463,6 +491,13 @@ rulebook before being turned into named, typed fields:
     means co-location isn't enforced for anyone (see Phase 16's note
     above) -- a Hero should arguably need to be with the army to disband
     it, a King shouldn't.
+  - **Search's remaining gap** (see Phase 19's note above): decoded but
+    entirely unapplied -- resolving it needs a personal, non-army
+    Encounter/combat resolver (Steal/Melee/Fire/Flee/Scout tactic
+    resolution, [5.2]-[5.8]) plus stochastic feature-content generation,
+    neither of which exist yet. A Cast/Use_MI/Give tactic's sub-object is
+    also just a raw int -- no decoded spell-id or magic-item-id table
+    exists in this project yet to resolve it further.
   - Pursuit, duels, and Multiple Contingents (all exist as standalone
     modules from Phase 8) aren't called from `fight_battle()` yet, nor is
     the "Fleets fighting on land are reduced to Depleted instead of
