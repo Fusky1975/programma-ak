@@ -80,8 +80,13 @@ def test_move_triggers_battle_and_conquest_relocates_the_attacker():
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))
     state.armies[101].army_type = ArmyType.HVY_CAVALRY
     state.armies[101].quality = Quality.ELITE
-    # no luck for either side, decisive attacker win, no quality changes
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.1, 0.99, 0.99])
+    # no luck for either side, decisive attacker win, no quality changes.
+    # The 5th value (0.99) is the defender-clean-swept pursuit-attempt
+    # roll -- >= the 75% cavalry chance, so the sole winning HVY_CAVALRY
+    # unit declines to pursue and the retreating defender proceeds
+    # unchanged (see test_battle_orchestrator.py's
+    # no_luck_overwhelming_attacker_rng for the same pattern).
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
 
@@ -102,8 +107,14 @@ def test_move_that_fails_to_conquer_leaves_attacker_at_origin():
     state = base_state()
     state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET))
     # attacker is the weak BOWMEN/AVERAGE army from base_state(); force a
-    # defender win with no luck events.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.99, 0.99, 0.99])
+    # defender win with no luck events -- a clean sweep, so the attacker
+    # retreats. The 5th value (0.99) is the attacker-clean-swept
+    # pursuit-attempt roll -- >= the 75% cavalry chance, so the sole
+    # winning HVY_CAVALRY (defender) unit declines to pursue and the
+    # retreating attacker proceeds unchanged; the 6th is that retreat's
+    # own quality-change roll; the 7th is the defender's own
+    # winner_quality_roll.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.99, 0.99, 0.99, 0.99])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
 

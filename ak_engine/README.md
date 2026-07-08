@@ -560,6 +560,58 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   test guarding against silently "completing" it later without
   revisiting this. `plan_dispatch.py` now dispatches **21 of 22**
   `ActionCode`s -- its practical maximum, given the available evidence.
+- **Phase 28 (current)**: wires the three battle subsystems built
+  standalone since Phase 8 (`turn/duel.py`, `turn/pursuit.py`,
+  `turn/multiple_contingents.py`) into `turn/battle_orchestrator.py`.
+  - **Duel** ([7.1]): each side's armies are grouped by `commanded_by`
+    into `Commander`s (contingent size = army count; `tactical_ability`
+    is always 0 -- `GameState` has no per-leader ability data yet, a
+    documented gap). Defenders fall back to
+    `provincial_garrison_commander()` for unled armies, per the
+    rulebook's explicit fallback; attackers have no such fallback, so a
+    duel only happens when the attacker side has at least one led army
+    -- which no existing pre-Phase-28 test fixture did, so this change
+    was non-breaking for all of them. Since the duel's own fight still
+    needs the unbuilt Special Encounter Plan system [5.10], its outcome
+    is approximated the same way Pursuit's own one-on-one standstill
+    check already was: `estimate_win_probability()` compares the two
+    commanders' own led units' total strength, rng picks the loser, and
+    `apply_duel_demoralization()` reduces that loser's own led units by
+    25% *before* the main battle resolves. `BattleReport` gains
+    `attacker_commander_leader_id`/`defender_commander_leader_id`/
+    `duel_loser_side`.
+  - **Pursuit** ([7.3]): once a side is judged clean-swept with
+    `loser_retreats=True`, before its armies retreat/disband, the
+    winning side's units get a chance (`select_pursuers()`) to catch
+    and destroy some of them (`resolve_pursuit()`) -- per that module's
+    own documented requirement, each retreating army's strength for
+    this specific check is recomputed one quality level down with the
+    defender bonus. Caught armies are removed outright
+    (`BattleReport.pursuit_destroyed_army_ids`) instead of ever reaching
+    the existing retreat/disband logic. This inserted new rng
+    consumption into every clean-swept-retreat code path, so every
+    affected existing `ScriptedRandom` sequence in
+    `tests/test_battle_orchestrator.py`/`tests/test_move_execution.py`
+    needed its exact roll position re-derived and updated (documented
+    inline in each test).
+  - **Multiple Contingents** ([7.8]): a new, separate entry point,
+    `fight_multi_attacker_battle()`, for when several leaders attack the
+    same province in the same phase -- it partitions them via
+    `group_attackers_into_battles()` (same origin -> very likely unite;
+    different origins -> probably separate) and calls `fight_battle()`
+    once per resulting group. **Not automatically invoked from
+    `execute_move()`/`plan_dispatch.py`** -- `run_leader_plan` resolves
+    one leader's moves at a time and has no notion of "wait for every
+    other leader's same-phase move before resolving a battle," which
+    real detection would need; available for any caller that already
+    has several simultaneous attacks assembled. Two more documented
+    simplifications specific to this new function: which allied
+    kingdom claims a jointly-won province isn't specified by the
+    rulebook, resolved here as "whichever contributed the largest
+    contingent" (mirroring [7.1]'s own Supreme Commander principle);
+    and `fight_battle()`'s own single-`attacker_kingdom_id` signature
+    means a united multi-kingdom group's defender-ally check only runs
+    against the *claiming* kingdom's alliances, not every member's.
 
 ## Setup
 
@@ -810,12 +862,25 @@ rulebook before being turned into named, typed fields:
     docstring for the full evidence trail (exhaustive `lactions[...] :=`
     assignment search across all 14 available `.PAS` files, zero sites
     found).
-  - Pursuit, duels, and Multiple Contingents (all exist as standalone
-    modules from Phase 8) aren't called from `fight_battle()` yet, nor is
-    the "Fleets fighting on land are reduced to Depleted instead of
-    eliminated" exception or the non-humanoid rear-targeting nuance [7.2].
-  - The duel *fight itself* [7.1] — needs the separate "Special Encounter
-    Plan" character-combat system [5.10], not built.
+  - Pursuit and Duel are now wired into `fight_battle()` (Phase 28, see
+    below); Multiple Contingents is available via the new
+    `fight_multi_attacker_battle()` but not yet auto-invoked from
+    `execute_move()`/`plan_dispatch.py` (see Phase 28's note). Still
+    missing regardless: the "Fleets fighting on land are reduced to
+    Depleted instead of eliminated" exception and the non-humanoid
+    rear-targeting nuance [7.2].
+  - **`fight_multi_attacker_battle()`'s own edge case**: separate
+    (non-united) groups are resolved sequentially against whatever's
+    left of the province's defenders; if an earlier group cleanly
+    sweeps them, a later group calling `fight_battle()` against an
+    empty defender list will raise `ValueError`. The rulebook doesn't
+    say how simultaneous separate battles against the same defenders
+    are meant to interact -- not fixed here.
+  - The duel *fight itself* [7.1] is still approximated, not resolved --
+    the separate "Special Encounter Plan" character-combat system
+    [5.10] this would need isn't built; see Phase 28's note for the
+    `estimate_win_probability`-based approximation used instead, and
+    that `tactical_ability` is always 0 pending per-leader ability data.
   - Contested-province state across multiple turns
     (`turn/contested_province.py`'s functions exist but nothing calls
     them from `execute_move()`/`fight_battle()` -- a contested result

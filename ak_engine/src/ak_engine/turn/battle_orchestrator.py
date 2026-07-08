@@ -1,9 +1,56 @@
 """End-to-end battle orchestration on top of a persistent ``GameState``.
 
 Wires together, in order: ``turn/strength.py`` (per-army effective
-strength) -> ``turn/battle_resolution.py`` (line-up, luck, column
-winners) -> ``turn/aftermath.py`` (quality changes) -> ``turn/retreat.py``
-(retreat/disband for a clean-swept loser) -> province ownership.
+strength) -> ``turn/duel.py`` (Supreme Commander selection + demoralization,
+[7.1]) -> ``turn/battle_resolution.py`` (line-up, luck, column winners) ->
+``turn/pursuit.py`` (chasing a clean-swept loser's retreaters, [7.3]) ->
+``turn/aftermath.py`` (quality changes) -> ``turn/retreat.py`` (retreat/
+disband for whoever pursuit doesn't catch) -> province ownership.
+
+**Duel** ([7.1]): each side's armies are grouped by ``commanded_by`` into
+``turn/duel.py`` ``Commander``s (contingent size = army count;
+``tactical_ability`` is always 0 -- ``GameState`` has no per-leader
+ability data yet, a documented gap). Defenders fall back to
+``provincial_garrison_commander()`` for any unled armies, per the
+rulebook's explicit fallback; attackers have no such fallback (none is
+specified), so a duel only happens when the attacker side has at least
+one led army. The duel *fight itself* still isn't modeled (rulebook
+points to the unbuilt Special Encounter Plan system, [5.10]) -- its
+outcome is instead approximated the same way ``turn/pursuit.py``'s own
+one-on-one standstill check already is: ``estimate_win_probability()``
+compares the two commanders' own led units' total strength, rng decides
+the loser, and ``apply_duel_demoralization()`` reduces that loser's own
+led units by 25% before the main battle resolves. Not a sourced
+mechanic -- a documented approximation, same spirit and precedent as
+Pursuit's own.
+
+**Pursuit** ([7.3]): once a side is judged clean-swept and
+``loser_retreats=True``, before its armies retreat/disband, the winning
+side's units get a chance (``turn/pursuit.py select_pursuers()``) to
+catch and destroy some of them (``resolve_pursuit()``) -- per that
+module's own documented requirement, each retreating army's strength for
+this check is recomputed one quality level down, with the defender
+bonus, via ``turn/strength.py compute_effective_strength()``. Caught
+armies are removed outright (``BattleReport.pursuit_destroyed_army_ids``)
+instead of reaching ``_retreat_or_disband`` at all.
+
+**Multiple Contingents** ([7.8]): ``fight_battle()`` itself still only
+ever fights one attacking party against one province's defenders.
+``fight_multi_attacker_battle()`` is a separate, additional entry point
+for when several leaders attack the *same* province in the *same*
+phase: it partitions them into one or more actual battles via
+``turn/multiple_contingents.py group_attackers_into_battles()`` (same
+origin -> very likely to unite; different origins -> probably separate
+battles) and calls ``fight_battle()`` once per resulting group, with
+that group's army ids combined. **Not automatically invoked from
+``execute_move()``/``plan_dispatch.py`` yet** -- this project's
+per-leader plan processing (``run_leader_plan``) resolves one leader's
+moves at a time and has no notion of "wait for every other leader's
+same-phase move before resolving a battle", which is what real
+Multiple-Contingents detection would need. ``fight_multi_attacker_battle``
+is available for any caller that already has several simultaneous
+attacks assembled (e.g. a future multi-leader turn processor), not
+wired into the single-leader execution path.
 
 **Simplifications made to keep this tractable, all documented in
 ak_engine/README.md:**
@@ -48,10 +95,13 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.map import HexCoord
 from ak_engine.turn.aftermath import roll_quality_change
-from ak_engine.turn.battle_line import BattleUnit
+from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
+from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles
+from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
 from ak_engine.turn.retreat import attacker_retreat_candidates, find_retreat_destination
 from ak_engine.turn.strength import compute_effective_strength, roll_elephants_strength
 
@@ -64,7 +114,11 @@ class BattleReport:
     retreated_army_ids: list[int] = field(default_factory=list)
     disbanded_army_ids: list[int] = field(default_factory=list)
     mercenary_army_ids: list[int] = field(default_factory=list)
+    pursuit_destroyed_army_ids: list[int] = field(default_factory=list)
     quality_changes: dict[int, Quality] = field(default_factory=dict)
+    attacker_commander_leader_id: int | None = None
+    defender_commander_leader_id: int | None = None
+    duel_loser_side: str | None = None  # "attacker" / "defender" / None if no duel occurred
 
 
 def _build_battle_units(
@@ -128,6 +182,120 @@ def _retreat_or_disband(
         report.mercenary_army_ids.append(army.army_id)
 
 
+def _select_side_commander(
+    armies: list[ArmyState], units: list[BattleUnit], *, allow_garrison_fallback: bool
+) -> tuple[Commander | None, list[BattleUnit]]:
+    """Group one side's armies by ``commanded_by`` and pick the Supreme Commander (rulebook [7.1]).
+
+    ``armies``/``units`` must be the same length and in the same order
+    (one ``BattleUnit`` per ``ArmyState``, as ``_build_battle_units``
+    produces). Unled armies are dropped unless ``allow_garrison_fallback``
+    -- only the rulebook-specified defender fallback -- in which case
+    they compete as a single "provincial garrison commander" candidate.
+    """
+
+    by_leader: dict[int | None, list[BattleUnit]] = {}
+    for army, unit in zip(armies, units):
+        by_leader.setdefault(army.commanded_by, []).append(unit)
+
+    unled_units = by_leader.pop(None, [])
+
+    candidates = [
+        Commander(leader_id=leader_id, contingent_size=len(led_units), tactical_ability=0)
+        for leader_id, led_units in by_leader.items()
+    ]
+    if unled_units and allow_garrison_fallback:
+        candidates.append(provincial_garrison_commander(len(unled_units)))
+        by_leader[None] = unled_units
+
+    winner = select_supreme_commander(candidates)
+    if winner is None:
+        return None, []
+    return winner, by_leader[winner.leader_id]
+
+
+@dataclass(slots=True)
+class _DuelOutcome:
+    attacker_commander_leader_id: int | None
+    defender_commander_leader_id: int | None
+    loser_side: str | None  # "attacker" / "defender" / None if no duel occurred
+
+
+def _maybe_fight_duel(
+    attacker_armies: list[ArmyState],
+    defender_armies: list[ArmyState],
+    attacker_units: list[BattleUnit],
+    defender_units: list[BattleUnit],
+    rng: random.Random,
+) -> _DuelOutcome:
+    """Rulebook [7.1]: mutates ``attacker_units``/``defender_units`` in place if a duel loser is decided.
+
+    See the module docstring for why the duel's own outcome is
+    approximated via ``estimate_win_probability`` rather than resolved
+    (no Special Encounter Plan system exists). No-op (and no rng
+    consumed) unless both sides have a real commander -- attackers have
+    no garrison-style fallback, so this is skipped whenever no attacking
+    army is led.
+    """
+
+    attacker_commander, attacker_commander_units = _select_side_commander(
+        attacker_armies, attacker_units, allow_garrison_fallback=False
+    )
+    defender_commander, defender_commander_units = _select_side_commander(
+        defender_armies, defender_units, allow_garrison_fallback=True
+    )
+    if attacker_commander is None or defender_commander is None:
+        return _DuelOutcome(None, None, None)
+
+    attacker_strength = sum(u.effective_strength for u in attacker_commander_units)
+    defender_strength = sum(u.effective_strength for u in defender_commander_units)
+    attacker_wins_duel = rng.random() < estimate_win_probability(attacker_strength, defender_strength)
+
+    if attacker_wins_duel:
+        loser_side, loser_units, target_list = "defender", defender_commander_units, defender_units
+    else:
+        loser_side, loser_units, target_list = "attacker", attacker_commander_units, attacker_units
+
+    demoralized_by_id = {u.source_id: u for u in apply_duel_demoralization(loser_units)}
+    for index, unit in enumerate(target_list):
+        if unit.source_id in demoralized_by_id:
+            target_list[index] = demoralized_by_id[unit.source_id]
+
+    return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, loser_side)
+
+
+def _apply_pursuit(
+    losing_armies: list[ArmyState],
+    winner_units: list[BattleUnit],
+    state: GameState,
+    terrain,
+    report: BattleReport,
+    rng: random.Random,
+) -> set[int]:
+    """Rulebook [7.3]: chase down some of a clean-swept, retreating loser's armies before they escape.
+
+    Returns the set of army ids caught and destroyed (already removed
+    from ``state`` and recorded on ``report``) -- callers should skip
+    ``_retreat_or_disband`` for those.
+    """
+
+    retreating_units = []
+    for army in losing_armies:
+        kingdom = state.kingdoms[army.kingdom_id]
+        pursued_quality = Quality(max(int(Quality.DEPLETED), int(army.quality) - 1))
+        strength = compute_effective_strength(army.army_type, kingdom.race, pursued_quality, terrain, is_defender=True)
+        retreating_units.append(BattleUnit(army.army_type, strength, source_id=army.army_id))
+
+    pursuers = select_pursuers(winner_units, rng)
+    outcomes = resolve_pursuit(pursuers, retreating_units, rng)
+
+    destroyed_ids = {o.target.source_id for o in outcomes if o.target_destroyed}
+    for army_id in destroyed_ids:
+        report.pursuit_destroyed_army_ids.append(army_id)
+        state.remove_army(army_id)
+    return destroyed_ids
+
+
 def fight_battle(
     state: GameState,
     attacker_kingdom_id: int,
@@ -163,14 +331,35 @@ def fight_battle(
         defender_armies, state, is_defender=True, terrain=province.terrain, province_coord=province_coord, rng=rng
     )
 
+    duel = _maybe_fight_duel(attacker_armies, defender_armies, attacker_units, defender_units, rng)
+
     battle_result = resolve_battle(attacker_units, defender_units, rng=rng)
 
     defender_clean_swept = battle_result.winner == "attacker" and battle_result.defender_columns_won == 0
     attacker_clean_swept = battle_result.winner == "defender" and battle_result.attacker_columns_won == 0
 
-    report = BattleReport(battle_result=battle_result, conquered=defender_clean_swept)
+    report = BattleReport(
+        battle_result=battle_result,
+        conquered=defender_clean_swept,
+        attacker_commander_leader_id=duel.attacker_commander_leader_id,
+        defender_commander_leader_id=duel.defender_commander_leader_id,
+        duel_loser_side=duel.loser_side,
+    )
+
+    attacker_pursuit_destroyed: set[int] = set()
+    if attacker_clean_swept and loser_retreats:
+        attacker_pursuit_destroyed = _apply_pursuit(
+            attacker_armies, defender_units, state, province.terrain, report, rng
+        )
+    defender_pursuit_destroyed: set[int] = set()
+    if defender_clean_swept and loser_retreats:
+        defender_pursuit_destroyed = _apply_pursuit(
+            defender_armies, attacker_units, state, province.terrain, report, rng
+        )
 
     for army in attacker_armies:
+        if army.army_id in attacker_pursuit_destroyed:
+            continue
         if battle_result.winner == "attacker":
             army.quality = roll_quality_change(army.quality, rng, is_winner=True)
             report.quality_changes[army.army_id] = army.quality
@@ -190,6 +379,8 @@ def fight_battle(
             report.quality_changes[army.army_id] = army.quality
 
     for army in defender_armies:
+        if army.army_id in defender_pursuit_destroyed:
+            continue
         if battle_result.winner == "defender":
             army.quality = roll_quality_change(army.quality, rng, is_winner=True)
             report.quality_changes[army.army_id] = army.quality
@@ -218,3 +409,82 @@ def fight_battle(
         province.contested_by_kingdom_id = attacker_kingdom_id
 
     return report
+
+
+@dataclass(slots=True)
+class MultiAttackerParty:
+    leader_id: int
+    kingdom_id: int
+    army_ids: list[int]
+    origin_province: HexCoord
+
+
+def fight_multi_attacker_battle(
+    state: GameState,
+    province_coord: HexCoord,
+    parties: list[MultiAttackerParty],
+    *,
+    loser_retreats: bool = True,
+    rng: random.Random | None = None,
+) -> list[BattleReport]:
+    """Rulebook [7.8] Multiple Contingents: partition several leaders' simultaneous
+    attacks on ``province_coord`` into one or more battles, then fight each.
+
+    See the module docstring for why this isn't automatically invoked
+    from the single-leader execution path yet.
+
+    **Which kingdom claims a jointly-won province** isn't specified by
+    the rulebook for a united coalition of allied attackers -- resolved
+    here as a documented heuristic: whichever kingdom contributed the
+    largest combined contingent to that battle, the same "largest
+    contingent" principle already used for [7.1]'s Supreme Commander
+    selection. That kingdom's own party also supplies ``attacker_origin``
+    for ``fight_battle()``'s forced-retreat-destination rule -- a
+    simplification for a coalition that may not share one origin.
+
+    **Also simplified**: ``fight_battle()`` itself only takes one
+    ``attacker_kingdom_id`` to decide who a defender is allied with;
+    for a united multi-kingdom group, that check runs only against the
+    claiming kingdom's own alliances, not every coalition member's --
+    generalizing it properly would need a broader change to
+    ``fight_battle()``'s own signature, not attempted here.
+    """
+
+    rng = rng if rng is not None else random.Random()
+    if not parties:
+        raise ValueError("no attacking parties given")
+
+    attackers = [Attacker(leader_id=p.leader_id, kingdom_id=p.kingdom_id, origin_province=p.origin_province) for p in parties]
+    groups = group_attackers_into_battles(attackers, state.allied_kingdoms, rng)
+    parties_by_leader = {p.leader_id: p for p in parties}
+
+    reports = []
+    for group in groups:
+        combined_army_ids = [
+            army_id for member in group for army_id in parties_by_leader[member.leader_id].army_ids
+        ]
+
+        contingent_sizes: dict[int, int] = {}
+        for member in group:
+            contingent_sizes[member.kingdom_id] = contingent_sizes.get(member.kingdom_id, 0) + len(
+                parties_by_leader[member.leader_id].army_ids
+            )
+        claiming_kingdom_id = max(contingent_sizes, key=contingent_sizes.get)
+        attacker_origin = next(
+            parties_by_leader[member.leader_id].origin_province
+            for member in group
+            if member.kingdom_id == claiming_kingdom_id
+        )
+
+        report = fight_battle(
+            state,
+            claiming_kingdom_id,
+            province_coord,
+            combined_army_ids,
+            loser_retreats=loser_retreats,
+            attacker_origin=attacker_origin,
+            rng=rng,
+        )
+        reports.append(report)
+
+    return reports
