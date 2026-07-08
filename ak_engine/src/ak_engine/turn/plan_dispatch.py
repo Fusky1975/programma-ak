@@ -78,6 +78,26 @@ to dispatch automatically:
   same-phase action (the core mechanic is multi-character, not
   resolvable from one leader's plan alone), and a dice-roll procedure
   not present in the available Pascal source.
+- **WAIT**, **NO_ACTION**, and **MOVE_ABORT** dispatch as bare no-ops
+  (Phase 22): no ``turn/*_decode.py`` module exists for any of the
+  three, and none is needed -- an exhaustive grep of every
+  ``lactions[...]`` read/write site in the available Pascal source (all
+  14 ``.PAS`` files) confirms none of the three has a ``CASE`` branch in
+  ``DEF2.PAS``'s ``R_HPlan``/``W_HPlan``, so there's no extra payload to
+  decode, and none has a single real example in the 10 sample
+  ``AK3__T*.K1`` files to validate against even if there were. None is a
+  documented rulebook order either (zero mentions anywhere in
+  ``RULES.AK``/``AKMAN.TXT``/``ADDEND.AK``/``INFO.AK``). Wait and
+  No_Action are, however, confirmed **engine-internal** values: the
+  Pascal source auto-fills a missed-deadline king's leaders with Defend
+  (phase 0) then Wait (phases 1-4) (``REPORTS.PAS Set_Defend``), and
+  initializes/pads every unused phase slot outside a plan's
+  ``planstart..planend`` range to No_Action (``DEF2.PAS Clear_M``) --
+  neither looks like a routine player-typed order. Move_Abort is the
+  most speculative of the three: declared in the ``action`` enum purely
+  for abbreviation-table symmetry (``'MA'``), but never assigned to or
+  compared against anywhere else in the entire available source tree --
+  effectively vestigial as far as this project's source access goes.
 
 Every other ``ActionCode`` raises ``UnsupportedActionError``.
 
@@ -121,12 +141,22 @@ SUPPORTED_ACTIONS = frozenset(
         ActionCode.TRADE,
         ActionCode.FIRE,
         ActionCode.PRACTICE,
+        ActionCode.WAIT,
+        ActionCode.NO_ACTION,
+        ActionCode.MOVE_ABORT,
     }
 )
 
 
 class UnsupportedActionError(NotImplementedError):
     """Raised for a PlanPhase whose action has no turn/* resolver wired up yet."""
+
+
+@dataclass(slots=True)
+class NoOpResult:
+    """The result of dispatching a Wait/No_Action/Move_Abort phase -- see module docstring."""
+
+    action: ActionCode
 
 
 @dataclass(slots=True)
@@ -213,6 +243,9 @@ def dispatch_phase(
 
     if action is ActionCode.PRACTICE:
         return decode_practice_phase(phase)
+
+    if action in (ActionCode.WAIT, ActionCode.NO_ACTION, ActionCode.MOVE_ABORT):
+        return NoOpResult(action=action)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 

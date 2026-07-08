@@ -15,7 +15,13 @@ from ak_engine.turn.army_list_decode import ArmyListRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.hire_fire_decode import FireRequest
 from ak_engine.turn.move_execution import MoveExecutionResult
-from ak_engine.turn.plan_dispatch import HireExecutionResult, UnsupportedActionError, dispatch_phase, run_leader_plan
+from ak_engine.turn.plan_dispatch import (
+    HireExecutionResult,
+    NoOpResult,
+    UnsupportedActionError,
+    dispatch_phase,
+    run_leader_plan,
+)
 from ak_engine.turn.practice_decode import PracticeRequest
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
@@ -161,6 +167,21 @@ def test_real_move_file_leader_practice_phase_dispatches():
 
     assert isinstance(result, PracticeRequest)
     assert result.ability == Ability.NECROMANCY
+
+
+def test_dispatch_wait_no_action_move_abort_are_bare_noops():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+
+    for action in (ActionCode.WAIT, ActionCode.NO_ACTION, ActionCode.MOVE_ABORT):
+        phase = PlanPhase(label="P0", action=action, obj=0, extra=[])
+
+        result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+        assert result == NoOpResult(action=action)
+
+    # Genuinely inert: nothing about the state changed.
+    assert state.armies[army_id].location == HexCoord(3, 9)
+    assert state.kingdoms[1].treasury == 100
 
 
 def test_dispatch_recruit_executes_debits_treasury_and_creates_armies():

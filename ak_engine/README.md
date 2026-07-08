@@ -375,6 +375,25 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   quality-tier upgrades instead; Practicing **Sage** ([4.31]) rolls an
   independent ~5%/level "device discovery" chance alongside the normal
   skill roll.
+- **Phase 22 (current)**: Wait, No_Action, and Move_Abort dispatch as
+  bare no-ops -- no decode module, since an exhaustive grep of every
+  ``lactions[...]`` site across the entire available Pascal source (all
+  14 ``.PAS`` files) confirms none of the three has a ``CASE`` branch in
+  `DEF2.PAS`'s `R_HPlan`/`W_HPlan`, so there's no extra payload beyond
+  the generic `(action, obj, extra)` triple, and none has a single real
+  example in the 10 sample `AK3__T*.K1` files either. None is documented
+  as a player-issuable order in the rulebook (zero mentions anywhere).
+  Wait and No_Action, however, are confirmed **engine-internal** values:
+  `REPORTS.PAS Set_Defend` auto-fills a missed-turn-deadline king's
+  leaders with Defend (phase 0) then Wait (phases 1-4); `DEF2.PAS
+  Clear_M` initializes/pads every phase slot outside a plan's
+  `planstart..planend` range to No_Action. Move_Abort is the most
+  speculative of the three: declared in the `action` enum purely for
+  abbreviation-table symmetry (`'MA'`), but never assigned to or
+  compared against anywhere else in the entire available source --
+  effectively vestigial as far as this project's source access goes.
+  `plan_dispatch.py` gains a small `NoOpResult(action: ActionCode)`
+  dataclass shared by all three.
 
 ## Setup
 
@@ -540,15 +559,15 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` dispatches 11 of 22 `ActionCode`s without raising
+- **`plan_dispatch.py` dispatches 14 of 22 `ActionCode`s without raising
   `UnsupportedActionError`.** LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT
   (Phase 15), DISBAND (Phase 16), and HIRE/FIRE (Phase 17) run
   end-to-end with real `GameState` mutation; SEARCH (Phase 19), TRADE
   (Phase 20), and PRACTICE (Phase 21) decode but don't mutate `GameState`
   (see their notes above -- same decode-only status Recruit had before
-  Phase 15). Every other action (Cast, Use_MI, Challenge, ASpy, Defend,
-  Pursue, Trail, Wait, No_Action, Succ_Trail, Move_Abort) raises
-  `UnsupportedActionError`.
+  Phase 15); WAIT, NO_ACTION, and MOVE_ABORT (Phase 22) dispatch as bare
+  no-ops. Every other action (Cast, Use_MI, Challenge, ASpy, Defend,
+  Pursue, Trail, Succ_Trail) raises `UnsupportedActionError`.
   - **Recruit's remaining gaps**: the recruiting leader must already
     exist as a `LeaderState` at the target province (no validation that
     a *co-located* character issued the order); the rulebook's more
