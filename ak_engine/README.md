@@ -528,6 +528,38 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   **Zero real ASpy or Defend phases exist in any of the 10 sample
   files** (re-verified fresh via the real parser) -- same situation as
   Fire, Trade, Challenge, Pursue, and Use_MI.
+- **Phase 27 (current, closes the `ActionCode` decoding arc started in
+  Phase 11)**: Trail decoding, plus a deliberate, documented exclusion
+  for Succ_Trail. `turn/trail_decode.py` decodes `obj` as a target
+  character id -- the same shape as Pursue/Challenge, but confirmed
+  bare (no Encounter Plan tactic list) three independent ways: the
+  Italian rulebook states it outright ("il primo non genera un Piano
+  d'Incontro, il secondo invece sì" -- "the former doesn't generate an
+  Encounter Plan, while the latter does"), `DEF2.PAS`'s `R_HPlan`
+  structurally (Trail's only appearance there is a moderator-only,
+  no-extra-data stealth-bonus side effect, `Trail,ASpy: cover[sldr]:=
+  Spy`), and the official `AKMOVES.TXT` example sheet (Pursue's tactic
+  line is filled in, `CA-FI,ME`; Trail's own is blank). Rulebook [3.17].
+  **`ActionCode.SUCC_TRAIL` is deliberately excluded from
+  `SUPPORTED_ACTIONS`** -- not left undecoded like everything above, but
+  concluded to be *structurally impossible* to ever appear in a player
+  move-submission file: an exhaustive search of every
+  `lactions[...] :=` assignment across all 14 available `.PAS` files
+  found no site that ever sets a phase's action to `Succ_Trail` (only
+  the enum declaration and one *read* site, `RUMORS.PAS`'s `Set_Intel`,
+  which consumes the moderator's own post-turn-simulation in-memory
+  state -- not anything parsed from a move file); no `W_HPlan` writer
+  path exists for it either; and it has no rulebook section, no
+  move-sheet example, and zero real occurrences. The code that would
+  produce it (rewriting a resolved Trail phase's action in memory) lives
+  in the main turn-simulation engine, which was never included in this
+  project's available Pascal source (only the library/plan-I-O/
+  report-generation layers survive; the real engine exists only as the
+  compiled `AK.EXE`/`AK.OVR`). See `turn/plan_dispatch.py`'s module
+  docstring for the full reasoning, and its test suite for a regression
+  test guarding against silently "completing" it later without
+  revisiting this. `plan_dispatch.py` now dispatches **21 of 22**
+  `ActionCode`s -- its practical maximum, given the available evidence.
 
 ## Setup
 
@@ -693,18 +725,18 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` dispatches 20 of 22 `ActionCode`s without raising
-  `UnsupportedActionError`.** LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT
-  (Phase 15), DISBAND (Phase 16), and HIRE/FIRE (Phase 17) run
-  end-to-end with real `GameState` mutation; SEARCH (Phase 19), TRADE
-  (Phase 20), PRACTICE (Phase 21), CAST (Phase 23), USE_MI (Phase 24),
-  CHALLENGE/PURSUE (Phase 25), and ASPY/DEFEND (Phase 26) decode but
+- **`plan_dispatch.py` dispatches 21 of 22 `ActionCode`s without raising
+  `UnsupportedActionError`** -- its practical maximum (see Phase 27's
+  note above). LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT (Phase 15),
+  DISBAND (Phase 16), and HIRE/FIRE (Phase 17) run end-to-end with real
+  `GameState` mutation; SEARCH (Phase 19), TRADE (Phase 20), PRACTICE
+  (Phase 21), CAST (Phase 23), USE_MI (Phase 24), CHALLENGE/PURSUE
+  (Phase 25), ASPY/DEFEND (Phase 26), and TRAIL (Phase 27) decode but
   don't mutate `GameState` (see their notes above -- same decode-only
   status Recruit had before Phase 15); WAIT, NO_ACTION, and MOVE_ABORT
-  (Phase 22) dispatch as bare no-ops. Only **Trail** and **Succ_Trail**
-  raise `UnsupportedActionError` now -- see the Phase 25 note above:
-  Trail is Pursue's simpler, tactic-list-free sibling, and Succ_Trail is
-  plausibly an internal engine-set marker, not a player order.
+  (Phase 22) dispatch as bare no-ops. Only **Succ_Trail** raises
+  `UnsupportedActionError` -- deliberately, by design, not as an
+  oversight (see Phase 27's note above).
   - **Recruit's remaining gaps**: the recruiting leader must already
     exist as a `LeaderState` at the target province (no validation that
     a *co-located* character issued the order); the rulebook's more
@@ -770,17 +802,14 @@ rulebook before being turned into named, typed fields:
     logic that doesn't exist yet, plus `target_province` staying an
     unconverted raw int until the hex-numbering-vs-`XMULT` question is
     resolved. Zero real examples for either.
-  - **Trail and Succ_Trail, not yet started**: briefly investigated
-    while researching Pursue. Trail ([3.17]) is Pursue's simpler
-    sibling -- same character-id target, but confirmed via Pascal
-    source to carry **no** tactic list at all (`Trail` doesn't appear in
-    `R_HPlan`'s `CASE` list the way `Search,Challenge,Pursue` do), since
-    it only follows/spies rather than triggering an Encounter. Succ_Trail
-    is plausibly an internal engine-set marker (`RUMORS.PAS` reads
-    `lactions[...] = Succ_Trail` to detect a successfully-resolved
-    Trail for spy-intelligence purposes) rather than a player-writable
-    order -- **inferred, not proven**: no explicit `lactions[...] :=
-    Succ_Trail` assignment site was found in the available source.
+  - **Trail's remaining gap** (see Phase 27's note above): decoded but
+    unexecuted, same missing turn-simulation engine as everything else
+    in this list. Succ_Trail is deliberately not decoded at all --
+    concluded structurally impossible to receive in a player move file,
+    not merely unimplemented; see `turn/plan_dispatch.py`'s module
+    docstring for the full evidence trail (exhaustive `lactions[...] :=`
+    assignment search across all 14 available `.PAS` files, zero sites
+    found).
   - Pursuit, duels, and Multiple Contingents (all exist as standalone
     modules from Phase 8) aren't called from `fight_battle()` yet, nor is
     the "Fleets fighting on land are reduced to Depleted instead of

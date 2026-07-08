@@ -140,8 +140,55 @@ to dispatch automatically:
   Province; ``ActionCode.DEFEND`` is [3.15] Defend -- neither has a
   Trade/Challenge-style naming mismatch. Zero real phases exist for
   either action in the 10 sample files.
+- **TRAIL** is decode-only (Phase 27): ``turn/trail_decode.py`` decodes
+  ``obj`` as a target character id, matching Pursue/Challenge's target
+  shape but confirmed -- by the Italian rulebook explicitly ("il primo
+  non genera un Piano d'Incontro, il secondo invece sì") and by
+  ``DEF2.PAS`` structurally -- to carry **no** Encounter Plan tactic
+  list, unlike Pursue/Challenge/Search. Rulebook [3.17]. Zero real
+  phases exist in the 10 sample files.
 
-Every other ``ActionCode`` raises ``UnsupportedActionError``.
+**``ActionCode.SUCC_TRAIL`` is deliberately excluded from
+``SUPPORTED_ACTIONS`` -- not a gap, a considered exclusion.** Unlike
+every other action ever left unsupported in this project, the evidence
+here points to it being **structurally impossible to receive** in a
+player move-submission file, not merely undecoded:
+
+- No rulebook section describes it as a player order (no ``[3.x]``
+  entry, no ``AKMOVES.TXT`` example, no player-facing 2-letter mnemonic
+  beyond the internal ``actab`` table).
+- ``HostAK/TP/DEF2.PAS``'s ``W_HPlan`` (the move-file *writer*) has no
+  path that ever emits ``Succ_Trail`` -- confirmed by reading its full
+  ``CASE lactions[m] OF`` dispatch, which has no arm for it at all.
+- An exhaustive search of every ``lactions[...] :=`` assignment in the
+  entire available Pascal source (all 14 ``.PAS`` files) found exactly
+  two ``Succ_Trail`` references total: the enum declaration itself
+  (``CTBOTH.PAS``) and a single **read** site, ``RUMORS.PAS``'s
+  ``Set_Intel`` (``IF lactions[_rphase] = Succ_Trail THEN ... Add_Spy(1)``).
+  No assignment site exists anywhere in the source that would ever set
+  a phase's action to ``Succ_Trail``.
+- That read site consumes the moderator's own **post-turn-simulation
+  in-memory plan state** (after a Trail phase has already been resolved
+  by the engine, presumably rewriting that phase's action in memory from
+  ``Trail`` to ``Succ_Trail`` as a resolution marker) -- not anything
+  parsed from a player-submitted move file. The code that would perform
+  that in-memory rewrite isn't present in the available source at all
+  (this project's Pascal archive has no main turn-simulation unit,
+  only the library/plan-I-O/report-generation layers -- the actual
+  turn engine exists only as the compiled ``AK.EXE``/``AK.OVR``).
+- Zero real occurrences in the 10 sample ``AK3__T*.K1`` files, consistent
+  with all of the above.
+
+Given this, decoding it would mean inventing a shape for a value this
+project can neither observe in real data nor verify against any source
+logic -- worse than every other high-uncertainty module already built
+here (Trade, Use_MI), which at least decode a *real wire triple* a
+player genuinely could have written. Raising ``UnsupportedActionError``
+for it is the honest choice, and doubles as a loud signal if it were
+ever to appear in real input (e.g. a corrupted or hand-edited file) --
+exactly the situation where a clear failure beats a guessed-at decode.
+This closes out ``ActionCode`` coverage at its practical maximum: 21 of
+22, with the 22nd excluded by design rather than left as an open gap.
 
 Every dispatch call takes an explicit ``leader_id`` -- the acting
 character -- and ``army_ids`` defaults to whatever that leader currently
@@ -172,6 +219,7 @@ from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_recruit
 from ak_engine.turn.search_decode import decode_search_phase
 from ak_engine.turn.trade_decode import decode_trade_phase
+from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.use_mi_decode import decode_use_mi_phase
 
 SUPPORTED_ACTIONS = frozenset(
@@ -185,6 +233,7 @@ SUPPORTED_ACTIONS = frozenset(
         ActionCode.PURSUE,
         ActionCode.ASPY,
         ActionCode.DEFEND,
+        ActionCode.TRAIL,
         ActionCode.RECRUIT,
         ActionCode.DISBAND,
         ActionCode.LEAVE,
@@ -316,6 +365,9 @@ def dispatch_phase(
 
     if action is ActionCode.DEFEND:
         return decode_defend_phase(phase)
+
+    if action is ActionCode.TRAIL:
+        return decode_trail_phase(phase)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 

@@ -29,6 +29,7 @@ from ak_engine.turn.practice_decode import PracticeRequest
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
 from ak_engine.turn.trade_decode import TradeRequest
+from ak_engine.turn.trail_decode import TrailRequest
 from ak_engine.turn.use_mi_decode import UseMIRequest
 
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
@@ -267,6 +268,33 @@ def test_dispatch_defend_is_decode_only():
     assert result.target_province == 304
 
 
+def test_dispatch_trail_is_decode_only():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P0", action=ActionCode.TRAIL, obj=88, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, TrailRequest)
+    assert result.target_character_id == 88
+
+
+def test_dispatch_succ_trail_is_deliberately_unsupported():
+    # ActionCode.SUCC_TRAIL is intentionally excluded from
+    # SUPPORTED_ACTIONS -- see plan_dispatch.py's module docstring: no
+    # writer, no assignment site anywhere in the available Pascal
+    # source, no rulebook order, never observed in real data. This test
+    # guards against a future edit silently "completing" it without
+    # revisiting that reasoning.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P0", action=ActionCode.SUCC_TRAIL, obj=88, extra=[0])
+
+    try:
+        dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+        assert False, "expected UnsupportedActionError"
+    except UnsupportedActionError:
+        pass
+
+
 def test_dispatch_recruit_executes_debits_treasury_and_creates_armies():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})
@@ -287,7 +315,7 @@ def test_dispatch_recruit_executes_debits_treasury_and_creates_armies():
 
 def test_dispatch_unsupported_action_raises():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
-    phase = PlanPhase(label="P0", action=ActionCode.TRAIL, obj=6, extra=[0])
+    phase = PlanPhase(label="P0", action=ActionCode.SUCC_TRAIL, obj=6, extra=[0])
 
     try:
         dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
@@ -499,9 +527,9 @@ def test_run_leader_plan_records_errors_and_continues():
                     plan_end=4,
                     sp=(),
                     phases={
-                        "P0": PlanPhase("P0", ActionCode.TRAIL, 6, [0]),
-                        "P1": PlanPhase("P1", ActionCode.TRAIL, 6, [0]),
-                        "P2": PlanPhase("P2", ActionCode.TRAIL, 6, [0]),
+                        "P0": PlanPhase("P0", ActionCode.SUCC_TRAIL, 6, [0]),
+                        "P1": PlanPhase("P1", ActionCode.SUCC_TRAIL, 6, [0]),
+                        "P2": PlanPhase("P2", ActionCode.SUCC_TRAIL, 6, [0]),
                         "P3": PlanPhase("P3", ActionCode.LMOVE, 94, [0]),
                         "P4": PlanPhase("P4", ActionCode.LMOVE, 104, [0]),
                     },
