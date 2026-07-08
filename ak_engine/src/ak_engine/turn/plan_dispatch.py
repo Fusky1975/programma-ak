@@ -69,6 +69,15 @@ to dispatch automatically:
   turn-execution engine present in the available Pascal source, and the
   rulebook itself flags an unresolved item-id/gold-amount ambiguity in
   ``obj``).
+- **PRACTICE** is decode-only (Phase 21): ``obj`` decodes directly to an
+  ``Ability`` via ``turn/practice_decode.py``, but nothing is applied to
+  ``GameState`` -- resolving what practicing an ability actually does
+  (rulebook [3.13]) needs a per-leader skill/aptitude table this project
+  doesn't have yet (the move file only exposes the *King's* pairs, not
+  each Hero's), a province-level view of every co-located character's
+  same-phase action (the core mechanic is multi-character, not
+  resolvable from one leader's plan alone), and a dice-roll procedure
+  not present in the available Pascal source.
 
 Every other ``ActionCode`` raises ``UnsupportedActionError``.
 
@@ -93,6 +102,7 @@ from ak_engine.turn.exploration import resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
 from ak_engine.turn.move_execution import execute_move
+from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_recruit
 from ak_engine.turn.search_decode import decode_search_phase
@@ -110,6 +120,7 @@ SUPPORTED_ACTIONS = frozenset(
         ActionCode.HIRE,
         ActionCode.TRADE,
         ActionCode.FIRE,
+        ActionCode.PRACTICE,
     }
 )
 
@@ -199,6 +210,9 @@ def dispatch_phase(
 
     if action is ActionCode.TRADE:
         return decode_trade_phase(phase)
+
+    if action is ActionCode.PRACTICE:
+        return decode_practice_phase(phase)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 

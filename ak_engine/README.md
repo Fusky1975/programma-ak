@@ -344,6 +344,37 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   model and `parser/k1_moves.py` for a new turnsheet field this project
   doesn't read at all today -- a distinct future task, not attempted
   here.
+- **Phase 21 (current)**: Practice Ability decoding (rulebook [3.13]),
+  plus a resolved long-standing unknown. `obj` maps directly onto the
+  existing `Ability` enum (`turn/practice_decode.py`); `extra` carries no
+  meaning for Practice at all (`DEF2.PAS`'s `R_HPlan`/`W_HPlan` has no
+  `CASE` branch for it, unlike Search/Trade/Hire/Recruit) -- confirmed by
+  real data: all 189 real Practice phases across the 10 sample
+  `AK3__T*.K1` files have `extra == [0]`.
+  **`models/kingdom.py SkillTable`'s pair is now resolved**:
+  `(current_skill_level, current_aptitude_level)`, each 0-9. Confirmed
+  three ways -- `CTME.PAS`'s `power` enum tracks `UpSkill`/`UpApt` as
+  independent quantities; the King-creation formula (starting aptitude =
+  skill+2, capped at 5, with race/alignment overrides) matches; and every
+  one of `AK3__T1.K1`'s 15 real pairs matches that formula exactly,
+  including both override cases (an Undead King's `WHITE = (0, 0)`,
+  `NECROMANCY = (3, 5)`). The 31st trailing skill-line value stays
+  unconfirmed (constant `3` across all 10 sample turns -- plausibly a
+  race ordinal, not asserted since only one Kingdom's data is available).
+  **Decode-only**: resolving what Practice actually does needs a
+  per-leader skill/aptitude table in `GameState` (the move file only
+  exposes the *King's* pairs -- 74% of real Practice instances belong to
+  Heroes, who have none), a province-level view of every co-located
+  character's same-phase action (rulebook [3.13]'s core mechanic --
+  "2 or more characters... Practice the same ability in a phase" -- is
+  inherently multi-character), and a dice-roll procedure not present in
+  the available Pascal source (only the rulebook's percentages and
+  `CTME.PAS`'s `apt_rise` aptitude-rise table are available). Also
+  flagged for a future execution phase: Practicing **Tactical**
+  ([6.1]) doesn't raise personal skill at all -- it rolls army
+  quality-tier upgrades instead; Practicing **Sage** ([4.31]) rolls an
+  independent ~5%/level "device discovery" chance alongside the normal
+  skill roll.
 
 ## Setup
 
@@ -509,14 +540,15 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` dispatches 10 of 22 `ActionCode`s without raising
+- **`plan_dispatch.py` dispatches 11 of 22 `ActionCode`s without raising
   `UnsupportedActionError`.** LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT
   (Phase 15), DISBAND (Phase 16), and HIRE/FIRE (Phase 17) run
-  end-to-end with real `GameState` mutation; SEARCH (Phase 19) and TRADE
-  (Phase 20) decode but don't mutate `GameState` (see their notes above
-  -- same decode-only status Recruit had before Phase 15). Every other
-  action (Cast, Use_MI, Challenge, Practice, ASpy, Defend, Pursue, Trail,
-  Wait, No_Action, Succ_Trail, Move_Abort) raises `UnsupportedActionError`.
+  end-to-end with real `GameState` mutation; SEARCH (Phase 19), TRADE
+  (Phase 20), and PRACTICE (Phase 21) decode but don't mutate `GameState`
+  (see their notes above -- same decode-only status Recruit had before
+  Phase 15). Every other action (Cast, Use_MI, Challenge, ASpy, Defend,
+  Pursue, Trail, Wait, No_Action, Succ_Trail, Move_Abort) raises
+  `UnsupportedActionError`.
   - **Recruit's remaining gaps**: the recruiting leader must already
     exist as a `LeaderState` at the target province (no validation that
     a *co-located* character issued the order); the rulebook's more
@@ -553,6 +585,13 @@ rulebook before being turned into named, typed fields:
     (scientific-discovery exchange between Allies, [8.4]) is a separate,
     entirely unstarted system -- not parsed, not modeled, no real data
     available yet either.
+  - **Practice's remaining gap** (see Phase 21's note above): needs a
+    per-leader skill/aptitude table in `GameState` (only the King's is
+    currently parsed at all, and only from the move file, not persisted
+    into `GameState` either), province-level multi-character grouping,
+    and a dice-roll procedure this project has no Pascal source for --
+    the largest remaining gap of any decoded-but-unexecuted action so
+    far, data-model-wise.
   - Pursuit, duels, and Multiple Contingents (all exist as standalone
     modules from Phase 8) aren't called from `fight_battle()` yet, nor is
     the "Fleets fighting on land are reduced to Depleted instead of

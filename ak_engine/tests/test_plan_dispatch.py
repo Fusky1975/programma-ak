@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.enums import ActionCode
+from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord, Terrain
@@ -16,6 +16,7 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.hire_fire_decode import FireRequest
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.plan_dispatch import HireExecutionResult, UnsupportedActionError, dispatch_phase, run_leader_plan
+from ak_engine.turn.practice_decode import PracticeRequest
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
 from ak_engine.turn.trade_decode import TradeRequest
@@ -136,6 +137,32 @@ def test_dispatch_trade_is_decode_only():
     assert result.extra == [7, 3]
 
 
+def test_dispatch_practice_is_decode_only():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P0", action=ActionCode.PRACTICE, obj=14, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, PracticeRequest)
+    assert result.ability == Ability.SAGE
+
+
+def test_real_move_file_leader_practice_phase_dispatches():
+    # Leader 1 (the King) in AK3__T1.K1 has real Practice phases (P0-P2):
+    # "P0 : 12 6 0" -> Practice Necromancy.
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T1.K1")
+    leader = next(leader for leader in kingdom.leaders if leader.leader_id == 1)
+    practice_phase = leader.plan.segments[0].phases["P0"]
+    assert practice_phase.action == ActionCode.PRACTICE
+
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+
+    result = dispatch_phase(practice_phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, PracticeRequest)
+    assert result.ability == Ability.NECROMANCY
+
+
 def test_dispatch_recruit_executes_debits_treasury_and_creates_armies():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})
@@ -156,7 +183,7 @@ def test_dispatch_recruit_executes_debits_treasury_and_creates_armies():
 
 def test_dispatch_unsupported_action_raises():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
-    phase = PlanPhase(label="P0", action=ActionCode.PRACTICE, obj=6, extra=[0])
+    phase = PlanPhase(label="P0", action=ActionCode.CHALLENGE, obj=6, extra=[0])
 
     try:
         dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
@@ -368,9 +395,9 @@ def test_run_leader_plan_records_errors_and_continues():
                     plan_end=4,
                     sp=(),
                     phases={
-                        "P0": PlanPhase("P0", ActionCode.PRACTICE, 6, [0]),
-                        "P1": PlanPhase("P1", ActionCode.PRACTICE, 6, [0]),
-                        "P2": PlanPhase("P2", ActionCode.PRACTICE, 6, [0]),
+                        "P0": PlanPhase("P0", ActionCode.CHALLENGE, 6, [0]),
+                        "P1": PlanPhase("P1", ActionCode.CHALLENGE, 6, [0]),
+                        "P2": PlanPhase("P2", ActionCode.CHALLENGE, 6, [0]),
                         "P3": PlanPhase("P3", ActionCode.LMOVE, 94, [0]),
                         "P4": PlanPhase("P4", ActionCode.LMOVE, 104, [0]),
                     },
