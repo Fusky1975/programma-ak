@@ -27,6 +27,7 @@ from ak_engine.turn.practice_decode import PracticeRequest
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
 from ak_engine.turn.trade_decode import TradeRequest
+from ak_engine.turn.use_mi_decode import UseMIRequest
 
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
 BOARD_WIDTH = 10
@@ -211,6 +212,17 @@ def test_real_move_file_leader_cast_phase_dispatches():
     assert isinstance(result, CastRequest)
     assert result.spell == Spell.CHARM
     assert result.target == 78
+
+
+def test_dispatch_use_mi_is_decode_only():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P0", action=ActionCode.USE_MI, obj=31, extra=[97])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, UseMIRequest)
+    assert result.item_instance_id == 31
+    assert result.target == 97
 
 
 def test_dispatch_recruit_executes_debits_treasury_and_creates_armies():

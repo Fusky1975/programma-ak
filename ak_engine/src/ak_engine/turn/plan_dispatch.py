@@ -107,6 +107,17 @@ to dispatch automatically:
   confused with ``Maneuver.CAST``, the *encounter-plan* tactic already
   decoded by ``turn/search_decode.py`` -- a different Pascal reading
   path entirely, with no top-level ``ActionCode`` of its own.
+- **USE_MI** is decode-only (Phase 24): ``obj`` decodes to a global
+  item-*instance* id via ``turn/use_mi_decode.py`` -- structurally
+  different from Cast's ``obj``, which is a self-describing ``Spell``
+  ordinal. Use_MI's ``obj`` can't be resolved to "what item this is"
+  from the move file alone: it's a lookup key into a per-game item
+  registry (which type each instance is, who holds it, its remaining
+  charges) that this project has no way to reconstruct, since the
+  Pascal source describing how item instances come into existence
+  (loot/world generation) isn't in the available source tree. Zero real
+  Use_MI phases exist in any of the 10 sample files either -- see that
+  module's docstring for the full reasoning.
 
 Every other ``ActionCode`` raises ``UnsupportedActionError``.
 
@@ -137,6 +148,7 @@ from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_recruit
 from ak_engine.turn.search_decode import decode_search_phase
 from ak_engine.turn.trade_decode import decode_trade_phase
+from ak_engine.turn.use_mi_decode import decode_use_mi_phase
 
 SUPPORTED_ACTIONS = frozenset(
     {
@@ -144,6 +156,7 @@ SUPPORTED_ACTIONS = frozenset(
         ActionCode.EXPLORE,
         ActionCode.SEARCH,
         ActionCode.CAST,
+        ActionCode.USE_MI,
         ActionCode.RECRUIT,
         ActionCode.DISBAND,
         ActionCode.LEAVE,
@@ -260,6 +273,9 @@ def dispatch_phase(
 
     if action is ActionCode.CAST:
         return decode_cast_phase(phase)
+
+    if action is ActionCode.USE_MI:
+        return decode_use_mi_phase(phase)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 

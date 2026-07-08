@@ -440,6 +440,37 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   Search/Trade/Practice: resolving what a successful Cast actually does
   needs game-state mutation logic not present anywhere in the available
   Pascal source.
+- **Phase 24 (current)**: Use Magic Item decoding (rulebook [3.11]).
+  Structurally distinct from Cast in one key way: Use_MI's `obj` is a
+  **global item-instance id** (an index into three parallel Pascal
+  arrays -- `treaslist`/`trowner`/`trcharges` -- tracking every physical
+  magic item in the game), not a self-describing type ordinal the way
+  Cast's `obj` directly is a `Spell`. `turn/use_mi_decode.py` therefore
+  cannot resolve "what item is this" from the move file alone -- doing
+  so needs that specific game's item-creation history, and the only
+  Pascal source for creating an item instance (`RUMORS.PAS`'s `Add_Tr`)
+  has just one caller in the available source (a narrow Valhalla-visitor
+  special case), not a general loot/world-gen pipeline. `UseMIRequest`
+  stays honestly raw: `item_instance_id`, a generic `target`, and (only
+  if a second `extra` element is present) a `terrain`, mirroring Cast's
+  `Illus_Terrain` sub-read since the same `Read_More` mechanism fires
+  when the resolved item type is a spell-casting wand.
+  The underlying `treasure` type enum was fully reconstructed for
+  context (`CTBOTH.PAS` lines 605-645, cross-referenced against the
+  obfuscated identifiers' real names/mechanics in
+  `HostAK/TP/PROSE/TREASURE.X2`/`TREASAB.X2`): 113 ordinals across seven
+  functional groups, only two of which -- 20 spell-casting wands and 15
+  one-shot skill-boosting books, 35 of 113 -- are legitimate `Use_MI`
+  targets at all; the rest (ability-boosting items, named weapons,
+  amulets, monster-command items, plus non-item bookkeeping/quest-
+  tracking/scenario-specific/unused ordinals) "operate automatically"
+  per rulebook [5.9] and are never invoked by this action. Not
+  transcribed into `models/item.py` this phase -- would need a careful
+  direct read of the prose files for all 113 entries, not attempted
+  here to avoid asserting names beyond what's been anchor-verified.
+  **Zero real Use_MI phases exist in any of the 10 sample
+  `AK3__T*.K1` files** (confirmed via this project's own parser, not
+  just a text search) -- same situation as Fire and Trade.
 
 ## Setup
 
@@ -605,15 +636,15 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` dispatches 15 of 22 `ActionCode`s without raising
+- **`plan_dispatch.py` dispatches 16 of 22 `ActionCode`s without raising
   `UnsupportedActionError`.** LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT
   (Phase 15), DISBAND (Phase 16), and HIRE/FIRE (Phase 17) run
   end-to-end with real `GameState` mutation; SEARCH (Phase 19), TRADE
-  (Phase 20), PRACTICE (Phase 21), and CAST (Phase 23) decode but don't
-  mutate `GameState` (see their notes above -- same decode-only status
-  Recruit had before Phase 15); WAIT, NO_ACTION, and MOVE_ABORT (Phase
-  22) dispatch as bare no-ops. Every other action (Use_MI, Challenge,
-  ASpy, Defend, Pursue, Trail, Succ_Trail) raises
+  (Phase 20), PRACTICE (Phase 21), CAST (Phase 23), and USE_MI (Phase
+  24) decode but don't mutate `GameState` (see their notes above -- same
+  decode-only status Recruit had before Phase 15); WAIT, NO_ACTION, and
+  MOVE_ABORT (Phase 22) dispatch as bare no-ops. Every other action
+  (Challenge, ASpy, Defend, Pursue, Trail, Succ_Trail) raises
   `UnsupportedActionError`.
   - **Recruit's remaining gaps**: the recruiting leader must already
     exist as a `LeaderState` at the target province (no validation that
@@ -664,6 +695,11 @@ rulebook before being turned into named, typed fields:
     the id/target/nesting *shape* is known, not the mechanics. The
     Trade-\>Cast rewrite for secret spells 25-34 is also unmodeled
     (confirmed to exist in Pascal, zero real examples).
+  - **Use_MI's remaining gap** (see Phase 24's note above): deeper than
+    Cast's -- there's no Pascal source for how item instances are even
+    created, so `item_instance_id` can never be resolved to a concrete
+    item/spell from this project's available data, not just "not
+    executed yet". Zero real examples either.
   - Pursuit, duels, and Multiple Contingents (all exist as standalone
     modules from Phase 8) aren't called from `fight_battle()` yet, nor is
     the "Fleets fighting on land are reduced to Depleted instead of
