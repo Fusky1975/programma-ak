@@ -23,6 +23,7 @@ from ak_engine.turn.plan_dispatch import (
     run_leader_plan,
 )
 from ak_engine.turn.cast_decode import CastRequest
+from ak_engine.turn.challenge_pursue_decode import ChallengeRequest, PursueRequest
 from ak_engine.turn.practice_decode import PracticeRequest
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
@@ -225,6 +226,26 @@ def test_dispatch_use_mi_is_decode_only():
     assert result.target == 97
 
 
+def test_dispatch_challenge_is_decode_only():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P0", action=ActionCode.CHALLENGE, obj=88, extra=[0, 9, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, ChallengeRequest)
+    assert result.target_character_id == 88
+
+
+def test_dispatch_pursue_is_decode_only():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P0", action=ActionCode.PURSUE, obj=88, extra=[0, 9, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, PursueRequest)
+    assert result.target_character_id == 88
+
+
 def test_dispatch_recruit_executes_debits_treasury_and_creates_armies():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})
@@ -245,7 +266,7 @@ def test_dispatch_recruit_executes_debits_treasury_and_creates_armies():
 
 def test_dispatch_unsupported_action_raises():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
-    phase = PlanPhase(label="P0", action=ActionCode.CHALLENGE, obj=6, extra=[0])
+    phase = PlanPhase(label="P0", action=ActionCode.DEFEND, obj=6, extra=[0])
 
     try:
         dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
@@ -457,9 +478,9 @@ def test_run_leader_plan_records_errors_and_continues():
                     plan_end=4,
                     sp=(),
                     phases={
-                        "P0": PlanPhase("P0", ActionCode.CHALLENGE, 6, [0]),
-                        "P1": PlanPhase("P1", ActionCode.CHALLENGE, 6, [0]),
-                        "P2": PlanPhase("P2", ActionCode.CHALLENGE, 6, [0]),
+                        "P0": PlanPhase("P0", ActionCode.DEFEND, 6, [0]),
+                        "P1": PlanPhase("P1", ActionCode.DEFEND, 6, [0]),
+                        "P2": PlanPhase("P2", ActionCode.DEFEND, 6, [0]),
                         "P3": PlanPhase("P3", ActionCode.LMOVE, 94, [0]),
                         "P4": PlanPhase("P4", ActionCode.LMOVE, 104, [0]),
                     },

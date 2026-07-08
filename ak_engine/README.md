@@ -471,6 +471,34 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   **Zero real Use_MI phases exist in any of the 10 sample
   `AK3__T*.K1` files** (confirmed via this project's own parser, not
   just a text search) -- same situation as Fire and Trade.
+- **Phase 25 (current)**: Challenge and Pursue decoding, sharing one
+  module (`turn/challenge_pursue_decode.py`) since they're wire-
+  identical to Search -- `DEF2.PAS`'s `Search,Challenge,Pursue:
+  W_List(...,Tac_Bytes)` handles all three together, same `-1`-
+  terminated tactic-list format already decoded for Search, reused here
+  via `search_decode.py`'s `SearchTactic` rather than a near-duplicate
+  type. The one real difference: `obj` is a target **character** id for
+  both, not a feature id -- confirmed by the rulebook, the official
+  move-sheet example (`(EN)_88_____` / `(_Lancelot__)`), and Pascal
+  itself (`R_List` is called with `sfeat = -(lobjects[m]+1)`, always
+  negative, deliberately routing around `R_List`'s Search-only
+  feature-id special case). `ActionCode.CHALLENGE` turns out to be
+  another Pascal-vs-rulebook naming mismatch (like Trade/Give): its
+  `actab` abbreviation is `'EN'`, matching the rulebook's **Encounter
+  Character (EN)** order ([3.12]), not literally "Challenge."
+  `ActionCode.PURSUE` matches its own rulebook order directly ([3.16]):
+  a player-issued "chase this character across the map" order (success
+  via the Spy Table [4.33]: base chance by Spy level, `x2` if the target
+  leads an army, `/` distance in provinces, `100%` if same Kingdom) --
+  confirmed **entirely unrelated** to `turn/pursuit.py`'s separate,
+  already-implemented automatic post-battle retreat-chasing mechanic
+  ([7.3]); no Pascal-source overlap between the two, and this phase
+  doesn't touch `turn/pursuit.py`. A documented nuance left unmodeled:
+  targeting one's own character id turns Pursue into a standing
+  "Patrol" order. **Zero real Challenge or Pursue phases exist in any of
+  the 10 sample files** (double-confirmed: a raw-text scan and a full
+  parser walk including nested plans both agree) -- weaker evidence than
+  Search's own 12 real examples, same situation as Fire/Trade/Use_MI.
 
 ## Setup
 
@@ -636,15 +664,15 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` dispatches 16 of 22 `ActionCode`s without raising
+- **`plan_dispatch.py` dispatches 18 of 22 `ActionCode`s without raising
   `UnsupportedActionError`.** LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT
   (Phase 15), DISBAND (Phase 16), and HIRE/FIRE (Phase 17) run
   end-to-end with real `GameState` mutation; SEARCH (Phase 19), TRADE
-  (Phase 20), PRACTICE (Phase 21), CAST (Phase 23), and USE_MI (Phase
-  24) decode but don't mutate `GameState` (see their notes above -- same
-  decode-only status Recruit had before Phase 15); WAIT, NO_ACTION, and
-  MOVE_ABORT (Phase 22) dispatch as bare no-ops. Every other action
-  (Challenge, ASpy, Defend, Pursue, Trail, Succ_Trail) raises
+  (Phase 20), PRACTICE (Phase 21), CAST (Phase 23), USE_MI (Phase 24),
+  and CHALLENGE/PURSUE (Phase 25) decode but don't mutate `GameState`
+  (see their notes above -- same decode-only status Recruit had before
+  Phase 15); WAIT, NO_ACTION, and MOVE_ABORT (Phase 22) dispatch as bare
+  no-ops. Every other action (ASpy, Defend, Trail, Succ_Trail) raises
   `UnsupportedActionError`.
   - **Recruit's remaining gaps**: the recruiting leader must already
     exist as a `LeaderState` at the target province (no validation that
@@ -700,6 +728,22 @@ rulebook before being turned into named, typed fields:
     created, so `item_instance_id` can never be resolved to a concrete
     item/spell from this project's available data, not just "not
     executed yet". Zero real examples either.
+  - **Challenge/Pursue's remaining gap** (see Phase 25's note above):
+    the King/Hero encounter-acceptance rules ([3.12]) and the Spy Table
+    catch-up formula ([4.33], [3.16]) aren't modeled -- same missing
+    non-army Encounter resolver as Search. Zero real examples for
+    either either.
+  - **Trail and Succ_Trail, not yet started**: briefly investigated
+    while researching Pursue. Trail ([3.17]) is Pursue's simpler
+    sibling -- same character-id target, but confirmed via Pascal
+    source to carry **no** tactic list at all (`Trail` doesn't appear in
+    `R_HPlan`'s `CASE` list the way `Search,Challenge,Pursue` do), since
+    it only follows/spies rather than triggering an Encounter. Succ_Trail
+    is plausibly an internal engine-set marker (`RUMORS.PAS` reads
+    `lactions[...] = Succ_Trail` to detect a successfully-resolved
+    Trail for spy-intelligence purposes) rather than a player-writable
+    order -- **inferred, not proven**: no explicit `lactions[...] :=
+    Succ_Trail` assignment site was found in the available source.
   - Pursuit, duels, and Multiple Contingents (all exist as standalone
     modules from Phase 8) aren't called from `fight_battle()` yet, nor is
     the "Fleets fighting on land are reduced to Depleted instead of

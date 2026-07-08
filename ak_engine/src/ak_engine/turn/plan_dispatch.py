@@ -118,6 +118,18 @@ to dispatch automatically:
   (loot/world generation) isn't in the available source tree. Zero real
   Use_MI phases exist in any of the 10 sample files either -- see that
   module's docstring for the full reasoning.
+- **CHALLENGE** and **PURSUE** are decode-only (Phase 25):
+  ``turn/challenge_pursue_decode.py`` decodes both from the exact same
+  wire format as Search (``DEF2.PAS``'s shared ``Search,Challenge,
+  Pursue: W_List(...,Tac_Bytes)`` branch), except ``obj`` is a target
+  *character* id rather than a feature id. ``ActionCode.CHALLENGE`` is
+  the Pascal engine's internal name for the rulebook's **Encounter
+  Character (EN)** order ([3.12]) -- same kind of naming mismatch as
+  Trade/Give. ``ActionCode.PURSUE`` ([3.16]) is a player-issued "chase
+  this character across the map" order, entirely unrelated to
+  ``turn/pursuit.py``'s separate automatic post-battle retreat-chasing
+  mechanic ([7.3]) -- confirmed no overlap. Zero real phases exist for
+  either action in the 10 sample files.
 
 Every other ``ActionCode`` raises ``UnsupportedActionError``.
 
@@ -139,6 +151,7 @@ from ak_engine.models.leader import Leader
 from ak_engine.models.plan import PlanPhase
 from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
 from ak_engine.turn.cast_decode import decode_cast_phase
+from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.exploration import resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
@@ -157,6 +170,8 @@ SUPPORTED_ACTIONS = frozenset(
         ActionCode.SEARCH,
         ActionCode.CAST,
         ActionCode.USE_MI,
+        ActionCode.CHALLENGE,
+        ActionCode.PURSUE,
         ActionCode.RECRUIT,
         ActionCode.DISBAND,
         ActionCode.LEAVE,
@@ -276,6 +291,12 @@ def dispatch_phase(
 
     if action is ActionCode.USE_MI:
         return decode_use_mi_phase(phase)
+
+    if action is ActionCode.CHALLENGE:
+        return decode_challenge_phase(phase)
+
+    if action is ActionCode.PURSUE:
+        return decode_pursue_phase(phase)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 
