@@ -98,6 +98,15 @@ to dispatch automatically:
   for abbreviation-table symmetry (``'MA'``), but never assigned to or
   compared against anywhere else in the entire available source tree --
   effectively vestigial as far as this project's source access goes.
+- **CAST** is decode-only (Phase 23): ``obj``/``extra`` decode to a
+  target ``Spell`` plus its target (character id, province id, or
+  unused, depending on the spell) via ``turn/cast_decode.py``, but
+  nothing is applied to ``GameState`` -- resolving what a successful
+  Cast actually does (rulebook [3.10]) needs game-state mutation logic
+  not present anywhere in the available Pascal source. Not to be
+  confused with ``Maneuver.CAST``, the *encounter-plan* tactic already
+  decoded by ``turn/search_decode.py`` -- a different Pascal reading
+  path entirely, with no top-level ``ActionCode`` of its own.
 
 Every other ``ActionCode`` raises ``UnsupportedActionError``.
 
@@ -118,6 +127,7 @@ from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
 from ak_engine.models.plan import PlanPhase
 from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
+from ak_engine.turn.cast_decode import decode_cast_phase
 from ak_engine.turn.exploration import resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
@@ -133,6 +143,7 @@ SUPPORTED_ACTIONS = frozenset(
         ActionCode.LMOVE,
         ActionCode.EXPLORE,
         ActionCode.SEARCH,
+        ActionCode.CAST,
         ActionCode.RECRUIT,
         ActionCode.DISBAND,
         ActionCode.LEAVE,
@@ -246,6 +257,9 @@ def dispatch_phase(
 
     if action in (ActionCode.WAIT, ActionCode.NO_ACTION, ActionCode.MOVE_ABORT):
         return NoOpResult(action=action)
+
+    if action is ActionCode.CAST:
+        return decode_cast_phase(phase)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 

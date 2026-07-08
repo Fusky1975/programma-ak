@@ -11,7 +11,7 @@ import re
 import warnings
 from pathlib import Path
 
-from ak_engine.models.enums import ActionCode, action_from_int
+from ak_engine.models.enums import ActionCode, Spell, action_from_int
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader, SkillTable
 from ak_engine.models.leader import Leader
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
@@ -227,9 +227,18 @@ def _maybe_parse_nested_plan(
     if label_num >= 4 or i >= len(tokens) or tokens[i] != "AP:":
         return None, i
 
-    # Hire's own `obj` *is* the target character's id (rulebook [3.5]);
-    # a Cast-triggered nesting (Charm/Resurrection) has no such
-    # recoverable id here, since this project doesn't decode spell ids
-    # yet -- see `models/plan.py ActionPlan.leader_id`'s docstring.
-    nested_leader_id = phase.obj if phase.action is ActionCode.HIRE else None
+    # Hire's own `obj` *is* the target character's id (rulebook [3.5]).
+    # A Cast of Charm or Resurrection is the other nesting trigger
+    # (`DEF2.PAS Read_More`: "Charm, Resurrection: Read_HPlan") -- there,
+    # `obj` is the *spell* id, not a character id, but the spell's own
+    # target (`extra[0]`, per `turn/cast_decode.py`) is the character
+    # being charmed/resurrected, i.e. the newly-joined leader's id. Any
+    # other Cast (or any other action) triggering this structurally
+    # (next token is `AP:`) has no recoverable owning-character id.
+    if phase.action is ActionCode.HIRE:
+        nested_leader_id = phase.obj
+    elif phase.action is ActionCode.CAST and phase.obj in (Spell.CHARM, Spell.RESURRECTION) and phase.extra:
+        nested_leader_id = phase.extra[0]
+    else:
+        nested_leader_id = None
     return _parse_action_plan(tokens, i, nested_leader_id, owner_desc=f"{owner_desc} > nested plan")

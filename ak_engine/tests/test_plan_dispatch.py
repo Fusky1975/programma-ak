@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.enums import Ability, ActionCode
+from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord, Terrain
@@ -22,6 +22,7 @@ from ak_engine.turn.plan_dispatch import (
     dispatch_phase,
     run_leader_plan,
 )
+from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.practice_decode import PracticeRequest
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
@@ -182,6 +183,34 @@ def test_dispatch_wait_no_action_move_abort_are_bare_noops():
     # Genuinely inert: nothing about the state changed.
     assert state.armies[army_id].location == HexCoord(3, 9)
     assert state.kingdoms[1].treasury == 100
+
+
+def test_dispatch_cast_is_decode_only():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P0", action=ActionCode.CAST, obj=17, extra=[18])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, CastRequest)
+    assert result.spell == Spell.ILLUS_ARMIES
+    assert result.target == 18
+
+
+def test_real_move_file_leader_cast_phase_dispatches():
+    # Leader 1 (the King) in AK3__T10.K1 has a real Cast phase (P1):
+    # "P1 : 9 12 78" -> Cast Charm targeting character 78.
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T10.K1")
+    leader = next(leader for leader in kingdom.leaders if leader.leader_id == 1)
+    cast_phase = leader.plan.segments[0].phases["P1"]
+    assert cast_phase.action == ActionCode.CAST
+
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+
+    result = dispatch_phase(cast_phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, CastRequest)
+    assert result.spell == Spell.CHARM
+    assert result.target == 78
 
 
 def test_dispatch_recruit_executes_debits_treasury_and_creates_armies():

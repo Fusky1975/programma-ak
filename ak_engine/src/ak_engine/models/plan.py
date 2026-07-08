@@ -59,13 +59,16 @@ class ActionPlan:
     """Full set of move segments submitted for one leader (or, when nested
     inside a ``PlanPhase``, one newly-joined character) in one turn.
 
-    ``leader_id`` is ``None`` for a nested plan whose owning character's
-    id can't be recovered from currently-decoded data -- true for every
-    Cast-triggered nesting, since this project doesn't decode spell ids
-    yet and so can't tell a Charm/Resurrection cast from any other spell,
-    let alone read the resulting character's id. It's always a real id
-    for a Hire-triggered nesting, since Hire's own ``obj`` field *is* the
-    target character's id (rulebook [3.5]).
+    ``leader_id`` is a real id for a Hire-triggered nesting (Hire's own
+    ``obj`` field *is* the target character's id, rulebook [3.5]) and for
+    a Cast-triggered nesting specifically from Charm or Resurrection
+    (Phase 23: the spell's own target, ``extra[0]``, is the character
+    being charmed/resurrected -- see ``turn/cast_decode.py``). It's
+    ``None`` for any other Cast that happens to structurally trigger
+    nesting (no other spell is documented to do so, but the parser
+    doesn't hard-code that -- see ``parser/k1_moves.py
+    _maybe_parse_nested_plan``) or for any nesting this project simply
+    has no owning-character id for.
     """
 
     leader_id: int | None

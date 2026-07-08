@@ -72,10 +72,10 @@ def test_ak3_t10_king_p1_cast_embeds_a_nested_plan() -> None:
     # P1 : 9 12 78 AP: 2 4 SP: 10 -1  P2 : 9 4 0 P3 : 0 12 0 P4 : 9 6 13
     # P2 : 7 0 78 71 154 233 -1 P3 : 0 1 0 P4 : 0 171 0" -- this used to be
     # (mis-)parsed as "multiple AP:/SP: segments" for the King; it's
-    # actually ONE segment whose P1 (a Cast, action 9 -- presumably
-    # Charm/Resurrection, spell ids aren't decoded by this project) embeds
-    # a nested plan for the character it creates, spanning P2-P4, before
-    # the King's own P2-P4 continue.
+    # actually ONE segment whose P1 (a Cast of spell 12 = Charm, target
+    # 78 -- see turn/cast_decode.py, Phase 23) embeds a nested plan for
+    # the character it creates, spanning P2-P4, before the King's own
+    # P2-P4 continue.
     kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T10.K1")
 
     king = kingdom.leaders[0]
@@ -85,7 +85,7 @@ def test_ak3_t10_king_p1_cast_embeds_a_nested_plan() -> None:
     p1 = outer.phases["P1"]
     assert p1.action == ActionCode.CAST
     assert p1.nested_plan is not None
-    assert p1.nested_plan.leader_id is None  # Cast-triggered: no recoverable character id
+    assert p1.nested_plan.leader_id == 78  # Charm's target (extra[0]) IS the charmed character's real id
 
     nested_segment = p1.nested_plan.segments[0]
     assert nested_segment.plan_start == 2
@@ -140,7 +140,7 @@ def test_ak3_t9_leader72_triple_nested_plan() -> None:
     p0 = level0.phases["P0"]
     assert p0.action == ActionCode.CAST
     assert p0.nested_plan is not None
-    assert p0.nested_plan.leader_id is None
+    assert p0.nested_plan.leader_id == 13  # Cast(Resurrection, target=13)'s target IS the resurrected character's id
 
     level1 = p0.nested_plan.segments[0]
     assert (level1.plan_start, level1.plan_end) == (1, 4)

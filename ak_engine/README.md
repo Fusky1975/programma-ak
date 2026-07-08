@@ -394,6 +394,52 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   effectively vestigial as far as this project's source access goes.
   `plan_dispatch.py` gains a small `NoOpResult(action: ActionCode)`
   dataclass shared by all three.
+- **Phase 23 (current)**: Cast Spell decoding (rulebook [3.10]), the
+  second-most-common real action (108/10 sample files, after LMove).
+  `models/enums.py` gains `Spell`, transcribed exactly from
+  `CTBOTH.PAS`'s 56-member `spell` enum: the 25 documented base spells
+  ([4.21]-[4.25], five per Magical `Ability`, packed as four
+  "first-four-spells" blocks then one "fifth-spell" block, not five
+  contiguous per-ability blocks), 10 undocumented "secret" spells
+  (25-34, gated behind a special ability granted at skill 5+ --
+  `CTBOTH.PAS`'s `spdex` lookup table), a `NOSPELL` sentinel (35), and
+  20 unused/reserved placeholder ordinals not modeled. `obj` maps
+  directly to `Spell`; `extra[0]` is the spell's target, whose meaning
+  (character id / province id / unused) depends on which spell it is --
+  `turn/cast_decode.py` exposes `CHARACTER_TARGET_SPELLS`/
+  `PROVINCE_TARGET_SPELLS`/`NO_TARGET_SPELLS` lookup sets so callers
+  don't have to hardcode this themselves, mirroring
+  `search_decode.py`'s tactic-sub-object pattern. **Illusory Terrain**
+  is the one spell with an extra field beyond the standard triple --
+  its selected fake `Terrain` lands at `extra[1]`.
+  Validated against all 108 real Cast phases across the 10 sample
+  `AK3__T*.K1` files: 12 distinct spell ids appear, and -- independent
+  confirmation the decode is right, not just plausible -- **every single
+  one is a documented Action spell**, never one of the 10
+  Personal-Combat-only spells, exactly matching rulebook [3.10]'s "must
+  be an Action Spell, not a personal-combat spell" restriction. Skeletal
+  Army's `extra[0]` is `0` in all 29 real examples, matching its
+  documented "no target" case exclusively; both real Illusory Terrain
+  casts have `extra == [target, 3]`, confirming `Terrain.FOREST`.
+  **Also resolves part of a previously-flagged gap**: Charm and
+  Resurrection are the two spells whose Cast phase embeds a nested plan
+  (same mechanism as Hire, `DEF2.PAS Read_More`'s `Charm, Resurrection:
+  Read_HPlan`) -- `parser/k1_moves.py`'s `_maybe_parse_nested_plan` now
+  infers the nested character's real id from the spell's own target
+  (`extra[0]`) for these two specifically, instead of always leaving
+  `ActionPlan.leader_id` `None` for any Cast-triggered nesting. Verified
+  against the real `AK3__T9.K1`/`AK3__T10.K1` nested-Charm/Resurrection
+  examples already covered by Phase 18's tests (now asserting real ids
+  instead of `None`).
+  **Deliberately not modeled**: the Trade-\>Cast rewrite for secret
+  spells 25-34 (`DEF2.PAS`'s `Trade` branch can reclassify a
+  self-targeted Give into a Cast if the caster has the matching special
+  ability) -- confirmed to exist in the Pascal source but zero real
+  examples anywhere, and it belongs to `trade_decode.py` if ever built,
+  not this module. **Decode-only** otherwise, same status as
+  Search/Trade/Practice: resolving what a successful Cast actually does
+  needs game-state mutation logic not present anywhere in the available
+  Pascal source.
 
 ## Setup
 
@@ -559,15 +605,16 @@ rulebook before being turned into named, typed fields:
   that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
   algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
-- **`plan_dispatch.py` dispatches 14 of 22 `ActionCode`s without raising
+- **`plan_dispatch.py` dispatches 15 of 22 `ActionCode`s without raising
   `UnsupportedActionError`.** LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT
   (Phase 15), DISBAND (Phase 16), and HIRE/FIRE (Phase 17) run
   end-to-end with real `GameState` mutation; SEARCH (Phase 19), TRADE
-  (Phase 20), and PRACTICE (Phase 21) decode but don't mutate `GameState`
-  (see their notes above -- same decode-only status Recruit had before
-  Phase 15); WAIT, NO_ACTION, and MOVE_ABORT (Phase 22) dispatch as bare
-  no-ops. Every other action (Cast, Use_MI, Challenge, ASpy, Defend,
-  Pursue, Trail, Succ_Trail) raises `UnsupportedActionError`.
+  (Phase 20), PRACTICE (Phase 21), and CAST (Phase 23) decode but don't
+  mutate `GameState` (see their notes above -- same decode-only status
+  Recruit had before Phase 15); WAIT, NO_ACTION, and MOVE_ABORT (Phase
+  22) dispatch as bare no-ops. Every other action (Use_MI, Challenge,
+  ASpy, Defend, Pursue, Trail, Succ_Trail) raises
+  `UnsupportedActionError`.
   - **Recruit's remaining gaps**: the recruiting leader must already
     exist as a `LeaderState` at the target province (no validation that
     a *co-located* character issued the order); the rulebook's more
@@ -611,6 +658,12 @@ rulebook before being turned into named, typed fields:
     and a dice-roll procedure this project has no Pascal source for --
     the largest remaining gap of any decoded-but-unexecuted action so
     far, data-model-wise.
+  - **Cast's remaining gap** (see Phase 23's note above): every spell's
+    actual effect (province/character/army mutation) needs game-state
+    logic not present anywhere in the available Pascal source -- only
+    the id/target/nesting *shape* is known, not the mechanics. The
+    Trade-\>Cast rewrite for secret spells 25-34 is also unmodeled
+    (confirmed to exist in Pascal, zero real examples).
   - Pursuit, duels, and Multiple Contingents (all exist as standalone
     modules from Phase 8) aren't called from `fight_battle()` yet, nor is
     the "Fleets fighting on land are reduced to Depleted instead of
