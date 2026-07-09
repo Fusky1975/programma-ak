@@ -780,6 +780,41 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     (two nested Practice phases), and `AK3__T6.K1` leader 18's
     Resurrection of character 22 (real nested plan, confirmed never
     dispatched).
+- **Phase 33 (current)**: the nemesis penalty (rulebook [6.3]: 2/3
+  strength) is now actually applied in the main battle line, closing a
+  gap `turn/battle_orchestrator.py`'s docstring had flagged since Phase
+  9 -- `turn/strength.py compute_effective_strength`'s own
+  `opponent_army_type` parameter could only ever apply it against one
+  known opponent given upfront (a 1v1 check), but the main battle's real
+  column pairings only exist *inside* `turn/battle_resolution.py
+  resolve_battle`, after line-up runs -- so that's where the fix lives:
+  a new `turn/battle_line.py apply_nemesis_penalties(attacker_columns,
+  defender_columns)`, called right after `assign_battle_lines` and
+  before front-line luck.
+  - **Column-pairing interpretation (documented, not verbatim rulebook
+    text)**: every unit in a column -- front line and any stacked
+    rearward units -- is checked against the *opposing* column's own
+    front-line unit's `ArmyType`, not a same-depth counterpart. Anchored
+    in the one place nemesis and depth are discussed together in the
+    rulebook: the Tactical-ability switch rule, "The switch will only be
+    made if the army strength of the current front-line unit is less
+    than the strength of a rearward unit, **after adjustments are made
+    for all nemesis effects**" -- which only makes sense if a rearward
+    unit's nemesis-adjusted strength is judged against whoever is
+    *currently at the front* of the opposing column, the same unit it
+    would actually face if switched in.
+  - **Newly-discovered, still-open gap while researching this**: that
+    same Tactical-ability switch mechanic (`switch_chance`,
+    `maybe_switch_front_line`, implemented since Phase 6) is itself
+    **never called from `resolve_battle`/`battle_orchestrator.py`** --
+    confirmed by grep, zero call sites outside `turn/battle_line.py`'s
+    own module. Not something this phase touches (a separate, distinct
+    gap from the nemesis penalty, even though the rulebook discusses
+    them in the same breath) -- flagged honestly rather than silently
+    left for a future phase to rediscover.
+  - Non-breaking: full suite passed unchanged before adding new tests,
+    since no pre-existing fixture pairs nemesis-related `ArmyType`s
+    against each other.
 
 ## Setup
 
@@ -895,17 +930,20 @@ rulebook before being turned into named, typed fields:
   doesn't itself specify a per-column elimination rule for a *partially*
   losing side, so this is an interpretation.
 - **What `fight_battle` leaves out of the strength calculation**: the
-  exploration-advantage and Tactical/Naval-ability special factors,
-  fanaticism, and the desert-without-camels penalty aren't wired in --
-  they need per-battle context (leader ability values, a camel-unit
-  check, alignment-based fanaticism rolls) the orchestrator doesn't
-  collect yet. More importantly, **the nemesis penalty isn't applied
-  either**: it depends on which specific unit ends up paired against
-  which in a column, and that pairing only exists *inside*
-  `resolve_battle` after line-up — by the time `fight_battle` calls
-  `compute_effective_strength`, pairings aren't known yet. Properly
-  fixing this needs `resolve_battle` to support a post-hoc,
-  pairing-aware strength adjustment pass.
+  exploration-advantage special factor, fanaticism, and the
+  desert-without-camels penalty aren't wired in -- they need per-battle
+  context (an exploration-percent comparison, alignment-based fanaticism
+  rolls, a camel-unit check) the orchestrator doesn't collect yet.
+  ~~Tactical/Naval-ability~~ **is** wired in (Phase 30), and ~~the
+  nemesis penalty isn't applied~~ **is now applied too** (Phase 33, in
+  `resolve_battle` itself rather than `fight_battle`'s own
+  `compute_effective_strength` calls, since nemesis needs the real
+  column pairings that only exist after line-up -- see Phase 33's note
+  above for the column-pairing interpretation used, and the still-open
+  Tactical-ability-switch gap discovered alongside it).
+  Still genuinely unwired: the Tactical-ability *switch* mechanic itself
+  (`turn/battle_line.py maybe_switch_front_line`) -- implemented since
+  Phase 6, but never called from `resolve_battle`/`battle_orchestrator.py`.
 - **Attacker forced-retreat destination** (`fight_battle`
   `attacker_origin`) — when supplied, uses the rulebook-correct "back to
   the province invaded from, or adjacent to it" rule, but always picks

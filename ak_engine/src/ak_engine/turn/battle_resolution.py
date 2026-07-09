@@ -2,13 +2,19 @@
 contests equal to the length of the battle line... The side that does
 best in these contests wins the battle.").
 
-Ties together ``turn/battle_line.py`` (line-up and column strength),
-``turn/battle_luck.py`` (the two kinds of random event), and
-``turn/combat.py`` (``win_probability``) into one call that produces a
-concrete outcome -- unlike every earlier phase, this one needs an actual
-random decision, not just a probability estimate, so it takes an
-injectable ``random.Random`` (defaulting to a fresh one) to stay
-testable: pass a seeded ``random.Random(seed)`` for reproducible results.
+Ties together ``turn/battle_line.py`` (line-up, nemesis penalties, and
+column strength), ``turn/battle_luck.py`` (the two kinds of random
+event), and ``turn/combat.py`` (``win_probability``) into one call that
+produces a concrete outcome -- unlike every earlier phase, this one
+needs an actual random decision, not just a probability estimate, so it
+takes an injectable ``random.Random`` (defaulting to a fresh one) to
+stay testable: pass a seeded ``random.Random(seed)`` for reproducible
+results. **Nemesis penalties are applied right after line-up, before
+front-line luck** (Phase 33, ``turn/battle_line.py
+apply_nemesis_penalties`` -- see its docstring for the column-pairing
+interpretation), so every downstream strength read (luck multipliers,
+column contests, and whatever ``BattleUnit`` list the caller keeps using
+afterward, e.g. for pursuit) already reflects it.
 
 Still NOT handled here -- see ak_engine/README.md: eliminating or
 demoting the losing side's armies, duels, pursuit, retreat, post-battle
@@ -24,6 +30,7 @@ from dataclasses import dataclass, field
 from ak_engine.turn.battle_line import (
     BattleUnit,
     Column,
+    apply_nemesis_penalties,
     assign_battle_lines,
     column_strength,
     estimate_win_probability,
@@ -90,6 +97,8 @@ def resolve_battle(
     defender_columns = assign_battle_lines(
         sorted(defender_units, key=lambda u: u.effective_strength, reverse=True), line_length
     )
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
 
     attacker_luck = [_apply_front_line_luck(column, rng) for column in attacker_columns]
     defender_luck = [_apply_front_line_luck(column, rng) for column in defender_columns]

@@ -9,6 +9,7 @@ from ak_engine.models.map import Terrain
 from ak_engine.turn.battle_line import (
     TERRAIN_LINE_LENGTH_RANGE,
     BattleUnit,
+    apply_nemesis_penalties,
     assign_battle_lines,
     column_strength,
     contest_columns,
@@ -175,3 +176,50 @@ def test_maybe_switch_front_line_no_switch_when_roll_fails():
 def test_maybe_switch_front_line_single_unit_column_never_switches():
     column = [unit(ArmyType.BOWMEN, 5)]
     assert maybe_switch_front_line(column, line_length=1, tactical_ability=5, rng=random.Random(0)) is False
+
+
+def test_apply_nemesis_penalties_reduces_the_weak_sides_front_line_only():
+    # Phalanx is Legion's nemesis-victim (NEMESIS[Phalanx] == {Legion}), but
+    # not the reverse (NEMESIS[Legion] == {Heavy Cavalry}) -- an asymmetric
+    # pair, so only the Phalanx side should be penalized here.
+    attacker_columns = [[unit(ArmyType.PHALANX, 10)]]
+    defender_columns = [[unit(ArmyType.LEGION, 10)]]
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
+
+    assert attacker_columns[0][0].effective_strength == pytest.approx(10 * 2 / 3)
+    assert defender_columns[0][0].effective_strength == 10
+
+
+def test_apply_nemesis_penalties_checks_rearward_units_against_the_opposing_front_line():
+    # The rearward Phalanx (depth 1) has no same-depth defender counterpart
+    # at all (defender's column is a single unit) -- it's still checked
+    # against the opposing column's front-line (depth 0) type, per this
+    # function's documented pairing rule.
+    attacker_columns = [[unit(ArmyType.LEGION, 10), unit(ArmyType.PHALANX, 5)]]
+    defender_columns = [[unit(ArmyType.LEGION, 8)]]
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
+
+    assert attacker_columns[0][0].effective_strength == 10  # Legion vs Legion: no nemesis relation
+    assert attacker_columns[0][1].effective_strength == pytest.approx(5 * 2 / 3)
+    assert defender_columns[0][0].effective_strength == 8
+
+
+def test_apply_nemesis_penalties_no_effect_for_unrelated_types():
+    attacker_columns = [[unit(ArmyType.BOWMEN, 10)]]
+    defender_columns = [[unit(ArmyType.GARRISON, 10)]]
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
+
+    assert attacker_columns[0][0].effective_strength == 10
+    assert defender_columns[0][0].effective_strength == 10
+
+
+def test_apply_nemesis_penalties_ignores_an_empty_opposing_column():
+    attacker_columns = [[unit(ArmyType.PHALANX, 10)]]
+    defender_columns = [[]]
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)  # must not raise
+
+    assert attacker_columns[0][0].effective_strength == 10

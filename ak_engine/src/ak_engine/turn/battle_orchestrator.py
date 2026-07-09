@@ -71,18 +71,21 @@ ak_engine/README.md:**
   province **contested** -- no eliminations, just a quality-change roll,
   matching the rulebook's [7.5]/[7.6] framing around "the defeated army"
   and "contested provinces" rather than individual units.
-- The exploration-advantage and Tactical/Naval-ability special factors,
-  fanaticism, and the desert-without-camels penalty are NOT wired in here
-  -- they need per-battle context (leader ability values, a camel-unit
-  check, alignment-based fanaticism rolls) this orchestrator doesn't
-  collect yet. Strength here is race + terrain + quality + defender bonus
-  only.
-- The nemesis penalty is NOT applied: it depends on which specific unit
-  ends up paired against which in a column, and that pairing only exists
-  *inside* `resolve_battle` (after line-up) -- by the time this module
-  calls `compute_effective_strength`, the pairing isn't known yet. Fixing
-  this needs `resolve_battle` to support a post-hoc strength adjustment
-  pass, which doesn't exist yet.
+- The exploration-advantage special factor, fanaticism, and the
+  desert-without-camels penalty are NOT wired in here -- they need
+  per-battle context (an exploration-percent comparison, alignment-based
+  fanaticism rolls, a camel-unit check) this orchestrator doesn't collect
+  yet. ~~Tactical/Naval-ability~~ **is** wired in, as of Phase 30 (see
+  `combat_ability_level` above). Strength here is race + terrain +
+  quality + defender bonus + Tactical/Naval ability only.
+- ~~The nemesis penalty is NOT applied~~ **fixed in Phase 33**: it
+  depends on which specific unit ends up paired against which in a
+  column, and that pairing only exists *inside* `resolve_battle` (after
+  line-up) -- so it's applied there, not here, by
+  `turn/battle_line.py apply_nemesis_penalties` right after line-up,
+  before this module's `compute_effective_strength` output is used any
+  further (luck, column contests, and whatever `BattleUnit`s a caller
+  like `_apply_pursuit` keeps reading afterward).
 - A clean-swept loser's retreat destination always uses
   ``find_retreat_destination`` (nearest friendly neighboring province),
   even for an attacker forced to retreat -- the more precise "back to the

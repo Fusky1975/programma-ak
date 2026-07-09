@@ -101,6 +101,18 @@ def test_resolve_battle_structural_invariants_with_real_rng_multi_column():
         assert column.defender_strength >= 0
 
 
+def test_resolve_battle_applies_nemesis_penalty_before_column_strength_is_reported():
+    # Phalanx is Legion's nemesis-victim (see turn/battle_line.py's
+    # apply_nemesis_penalties) -- the attacker's reported column strength
+    # should already reflect the 2/3 penalty, before any luck is rolled.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.5])
+
+    result = resolve_battle([unit(10, ArmyType.PHALANX)], [unit(10, ArmyType.LEGION)], rng=rng)
+
+    assert result.columns[0].attacker_strength == pytest.approx(10 * 2 / 3)
+    assert result.columns[0].defender_strength == 10
+
+
 def test_resolve_battle_column_results_expose_the_actual_units_for_bookkeeping():
     attacker = [BattleUnit(ArmyType.BOWMEN, 10, source_id=101)]
     defender = [BattleUnit(ArmyType.AXEMEN, 5, source_id=202)]

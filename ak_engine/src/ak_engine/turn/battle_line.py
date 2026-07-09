@@ -33,7 +33,19 @@ implements "The switch will only be made if the army strength of the
 current front-line unit is less than the strength of a rearward unit,
 after adjustments are made for all nemesis effects... the defender always
 gets the last chance to switch" -- callers control switch order between
-attacker and defender to reflect that.
+attacker and defender to reflect that. **Not currently called from
+``resolve_battle``/``turn/battle_orchestrator.py`` -- a separate,
+still-open gap from the nemesis penalty below (see
+``ak_engine/README.md``).**
+
+**Nemesis penalty across columns** (Phase 33, ``apply_nemesis_penalties``):
+``turn/strength.py compute_effective_strength``'s own ``opponent_army_type``
+parameter can only apply the rulebook [6.3] 2/3 nemesis penalty when a
+single known opponent is given upfront (e.g. a 1v1 Duel/Pursuit check) --
+the main battle line's actual pairings only exist here, after
+``assign_battle_lines`` runs. ``apply_nemesis_penalties`` fills that gap
+for stacked, multi-unit columns; see its own docstring for the pairing
+interpretation.
 """
 
 from __future__ import annotations
@@ -43,7 +55,7 @@ from dataclasses import dataclass
 
 from ak_engine.models.army_type import ArmyType, is_overflight_unit, overflight_group
 from ak_engine.models.map import TERRAIN_LINE_LENGTH_RANGE, Terrain
-from ak_engine.turn.combat import line_contribution, win_probability
+from ak_engine.turn.combat import apply_nemesis_penalty, line_contribution, win_probability
 
 
 @dataclass(slots=True)
@@ -99,6 +111,51 @@ def assign_battle_lines(units: list[BattleUnit], line_length: int) -> list[Colum
     for index, unit in enumerate(units):
         columns[index % line_length].append(unit)
     return columns
+
+
+def apply_nemesis_penalties(attacker_columns: list[Column], defender_columns: list[Column]) -> None:
+    """Apply the rulebook [6.3] nemesis penalty (2/3 strength) across paired columns.
+
+    Mutates both column lists in place, replacing any nemesis-penalized
+    unit with a copy at its reduced strength (same pattern as
+    ``turn/battle_resolution.py``'s front-line luck: never mutate a
+    ``BattleUnit`` in place, since it's the same object the caller's own
+    ``attacker_units``/``defender_units`` lists still reference).
+
+    **Pairing interpretation** (documented, not verbatim rulebook text):
+    every unit in a column -- front line and any stacked rearward units --
+    is checked against the *opposing* column's own front-line (depth 0)
+    unit's ``ArmyType``, not a same-depth counterpart. The rulebook itself
+    doesn't spell out column pairing for a multi-deep stack, but this
+    reading is anchored in the one place nemesis and depth are discussed
+    together: the Tactical-ability switch rule, "The switch will only be
+    made if the army strength of the current front-line unit is less than
+    the strength of a rearward unit, **after adjustments are made for all
+    nemesis effects**" (``maybe_switch_front_line``'s docstring) -- which
+    only makes sense if a rearward unit's nemesis-adjusted strength is
+    evaluated against whoever is *currently at the front* of the opposing
+    column, the same unit it would actually face if switched in. Applied
+    here regardless of whether that switch mechanic itself runs (it isn't
+    wired into ``resolve_battle`` yet -- see ``ak_engine/README.md``).
+
+    Requires ``attacker_columns``/``defender_columns`` to be paired
+    index-for-index (as ``resolve_battle`` produces); callers with a
+    different pairing scheme need a different function.
+    """
+
+    for attacker_column, defender_column in zip(attacker_columns, defender_columns):
+        _apply_nemesis_to_column(attacker_column, defender_column)
+        _apply_nemesis_to_column(defender_column, attacker_column)
+
+
+def _apply_nemesis_to_column(own_column: Column, opposing_column: Column) -> None:
+    if not opposing_column:
+        return
+    opponent_type = opposing_column[0].army_type
+    for index, unit in enumerate(own_column):
+        adjusted_strength = apply_nemesis_penalty(unit.effective_strength, unit.army_type, opponent_type)
+        if adjusted_strength != unit.effective_strength:
+            own_column[index] = BattleUnit(unit.army_type, adjusted_strength, source_id=unit.source_id)
 
 
 def column_strength(column: Column, *, outflank_second_line: bool = False) -> float:
