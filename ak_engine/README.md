@@ -815,6 +815,62 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged before adding new tests,
     since no pre-existing fixture pairs nemesis-related `ArmyType`s
     against each other.
+- **Phase 34 (current)**: the Tactical-ability switch mechanic
+  (rulebook [7.2]) discovered-but-not-fixed at the end of Phase 33 is now
+  wired in. `turn/battle_line.py apply_tactical_switches()` runs right
+  after line-up, *before* `apply_nemesis_penalties` -- the nemesis
+  penalty now applies to the final, possibly-just-switched lineup rather
+  than the raw one.
+  - **Re-checked against `RULES.AK` directly** (per the user's standing
+    instruction to verify against the original source before
+    implementing): "Switches can only be made within the same column,
+    and the defender always gets the last chance to switch. The switch
+    will only be made if the army strength of the current front-line
+    unit is less than the strength of a rearward unit, after adjustments
+    are made for all nemesis effects." Confirmed: switches are per-column
+    only (no cross-column swaps), and the defender's decision comes
+    strictly after the attacker's -- implemented as sequential per-column
+    processing, so the defender's nemesis-aware comparison reads the
+    attacker's *already-decided* front-line type at that column, not
+    whatever it was before the attacker's own switch. Verified with a
+    dedicated test constructing a case where the defender's swap would
+    *not* trigger against the attacker's original front but *does*
+    trigger against its post-switch front.
+  - **Nemesis-aware but not persistent during the decision itself**: the
+    switch check uses a fresh, ephemeral nemesis-adjusted comparison
+    (`_nemesis_aware_strength_key`, shared with `apply_nemesis_penalties`)
+    against the opposing column's *current* front-line `ArmyType` --
+    without mutating any unit's real `effective_strength`. The persistent
+    strength adjustment still comes from `apply_nemesis_penalties`,
+    called afterward against the final lineup, so column-strength math
+    and the switch decision can never disagree about what "nemesis-
+    adjusted" means.
+  - **Ability source**: `resolve_battle` gains
+    `attacker_tactical_ability`/`defender_tactical_ability` (default 0,
+    exactly preserving pre-Phase-34 behavior). `fight_battle`
+    (`turn/battle_orchestrator.py`) threads through the same
+    terrain-aware ability level Phase 30 already derives for the
+    strength bonus and Duel tiebreak -- one commander ability level now
+    drives three rulebook effects instead of three independently-derived
+    numbers. The rulebook's switch-chance sentence just says
+    "Tactical-Ability" with no Sea-battle exception, so reusing the same
+    terrain-aware (Tactical-or-Naval) value here is a documented
+    consistency choice, not a separately sourced rule.
+  - **Provably non-breaking without touching any existing test**: since
+    `assign_battle_lines` always deals units out strongest-first, a
+    column's front unit is *structurally* guaranteed to already be its
+    own maximum by raw strength -- the switch-eligibility check
+    (`rearward strength > front strength`) can only ever pass when
+    nemesis adjustment specifically discounts the front unit. No
+    pre-existing fixture anywhere in this project pairs nemesis-related
+    `ArmyType`s, so with the new parameters defaulting to 0 the eligible
+    branch is never reached and zero new `rng` calls are consumed --
+    confirmed empirically (full suite passed unchanged both right after
+    wiring `resolve_battle` and again after threading `fight_battle`,
+    before any new tests were added).
+  - `BattleColumnResult` gains `attacker_switched`/`defender_switched`
+    bool fields, same observability pattern as the existing luck-event
+    fields.
 
 ## Setup
 
@@ -939,11 +995,11 @@ rulebook before being turned into named, typed fields:
   `resolve_battle` itself rather than `fight_battle`'s own
   `compute_effective_strength` calls, since nemesis needs the real
   column pairings that only exist after line-up -- see Phase 33's note
-  above for the column-pairing interpretation used, and the still-open
-  Tactical-ability-switch gap discovered alongside it).
-  Still genuinely unwired: the Tactical-ability *switch* mechanic itself
-  (`turn/battle_line.py maybe_switch_front_line`) -- implemented since
-  Phase 6, but never called from `resolve_battle`/`battle_orchestrator.py`.
+  above for the column-pairing interpretation used). ~~The
+  Tactical-ability *switch* mechanic itself is genuinely unwired~~ **is
+  now wired too** (Phase 34, see above) -- `resolve_battle` reads the
+  same terrain-aware ability level as the strength bonus and Duel
+  tiebreak.
 - **Attacker forced-retreat destination** (`fight_battle`
   `attacker_origin`) — when supplied, uses the rulebook-correct "back to
   the province invaded from, or adjacent to it" rule, but always picks

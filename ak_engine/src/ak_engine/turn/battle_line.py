@@ -28,15 +28,15 @@ Terrain Table") is now sourced: the rulebook's Terrain Table [1.6] gives a
 formula for picking within it, so that pick is a uniform random roll --
 a documented choice, not a sourced rule.
 
-Tactical-ability switching (``switch_chance``, ``maybe_switch_front_line``)
-implements "The switch will only be made if the army strength of the
-current front-line unit is less than the strength of a rearward unit,
-after adjustments are made for all nemesis effects... the defender always
-gets the last chance to switch" -- callers control switch order between
-attacker and defender to reflect that. **Not currently called from
-``resolve_battle``/``turn/battle_orchestrator.py`` -- a separate,
-still-open gap from the nemesis penalty below (see
-``ak_engine/README.md``).**
+Tactical-ability switching (``switch_chance``, ``maybe_switch_front_line``,
+``apply_tactical_switches``) implements "The switch will only be made if
+the army strength of the current front-line unit is less than the
+strength of a rearward unit, after adjustments are made for all nemesis
+effects... the defender always gets the last chance to switch" --
+``apply_tactical_switches`` is the per-column orchestrator (attacker
+switch, then defender), wired into ``resolve_battle`` since Phase 34;
+``maybe_switch_front_line``/``switch_chance`` stay available standalone
+for direct use.
 
 **Nemesis penalty across columns** (Phase 33, ``apply_nemesis_penalties``):
 ``turn/strength.py compute_effective_strength``'s own ``opponent_army_type``
@@ -45,7 +45,9 @@ single known opponent is given upfront (e.g. a 1v1 Duel/Pursuit check) --
 the main battle line's actual pairings only exist here, after
 ``assign_battle_lines`` runs. ``apply_nemesis_penalties`` fills that gap
 for stacked, multi-unit columns; see its own docstring for the pairing
-interpretation.
+interpretation. Applied *after* ``apply_tactical_switches`` in
+``resolve_battle``, against the final post-switch lineup -- see that
+function's docstring for why.
 """
 
 from __future__ import annotations
@@ -113,6 +115,19 @@ def assign_battle_lines(units: list[BattleUnit], line_length: int) -> list[Colum
     return columns
 
 
+def _nemesis_aware_strength_key(opposing_column: Column):
+    """A ``strength_key`` (e.g. for ``maybe_switch_front_line``) that nemesis-adjusts
+    against the opposing column's *current* front-line ``ArmyType`` -- an
+    ephemeral comparison only, never persisted to the unit itself (the
+    persistent penalty is applied by ``apply_nemesis_penalties`` below).
+    """
+
+    if not opposing_column:
+        return lambda unit: unit.effective_strength
+    opponent_type = opposing_column[0].army_type
+    return lambda unit: apply_nemesis_penalty(unit.effective_strength, unit.army_type, opponent_type)
+
+
 def apply_nemesis_penalties(attacker_columns: list[Column], defender_columns: list[Column]) -> None:
     """Apply the rulebook [6.3] nemesis penalty (2/3 strength) across paired columns.
 
@@ -134,9 +149,11 @@ def apply_nemesis_penalties(attacker_columns: list[Column], defender_columns: li
     nemesis effects**" (``maybe_switch_front_line``'s docstring) -- which
     only makes sense if a rearward unit's nemesis-adjusted strength is
     evaluated against whoever is *currently at the front* of the opposing
-    column, the same unit it would actually face if switched in. Applied
-    here regardless of whether that switch mechanic itself runs (it isn't
-    wired into ``resolve_battle`` yet -- see ``ak_engine/README.md``).
+    column, the same unit it would actually face if switched in. In
+    ``resolve_battle``, this runs *after* ``apply_tactical_switches``
+    (Phase 34), so "front-line" here already reflects any switch that
+    just happened -- this function only needs to know the final lineup,
+    not whether a switch caused it.
 
     Requires ``attacker_columns``/``defender_columns`` to be paired
     index-for-index (as ``resolve_battle`` produces); callers with a
@@ -149,11 +166,9 @@ def apply_nemesis_penalties(attacker_columns: list[Column], defender_columns: li
 
 
 def _apply_nemesis_to_column(own_column: Column, opposing_column: Column) -> None:
-    if not opposing_column:
-        return
-    opponent_type = opposing_column[0].army_type
+    strength_key = _nemesis_aware_strength_key(opposing_column)
     for index, unit in enumerate(own_column):
-        adjusted_strength = apply_nemesis_penalty(unit.effective_strength, unit.army_type, opponent_type)
+        adjusted_strength = strength_key(unit)
         if adjusted_strength != unit.effective_strength:
             own_column[index] = BattleUnit(unit.army_type, adjusted_strength, source_id=unit.source_id)
 
@@ -239,6 +254,61 @@ def maybe_switch_front_line(
         return False
     column[0], column[best_index] = column[best_index], column[0]
     return True
+
+
+def apply_tactical_switches(
+    attacker_columns: list[Column],
+    defender_columns: list[Column],
+    line_length: int,
+    attacker_tactical_ability: int,
+    defender_tactical_ability: int,
+    rng: random.Random,
+) -> tuple[list[bool], list[bool]]:
+    """Rulebook [7.2]: run the Tactical-ability switch check for every column,
+    attacker first, then defender ("the defender always gets the last
+    chance to switch").
+
+    Processed column by column rather than side by side, so the
+    defender's per-column decision reads whatever ``attacker_columns[i]``
+    looks like *after* that same column's attacker switch just ran --
+    "last chance" read as temporal ordering within each column's own
+    contest, not a separate global pass. Each side's switch decision uses
+    ``_nemesis_aware_strength_key`` against the *other* side's current
+    front-line ``ArmyType`` at that column, matching "adjustments are made
+    for all nemesis effects" -- but this only decides *whether front and
+    rear swap*; it doesn't persist a strength change itself. Callers must
+    still run ``apply_nemesis_penalties`` afterward, against the final
+    (possibly just-swapped) lineup, to get the persistent strength
+    adjustment the rest of battle resolution reads.
+
+    Mutates both column lists in place (via ``maybe_switch_front_line``).
+    Returns ``(attacker_switched, defender_switched)``, one bool per
+    column, for callers that want to record it (e.g.
+    ``BattleColumnResult``).
+    """
+
+    attacker_switched: list[bool] = []
+    defender_switched: list[bool] = []
+    for attacker_column, defender_column in zip(attacker_columns, defender_columns):
+        attacker_switched.append(
+            maybe_switch_front_line(
+                attacker_column,
+                line_length,
+                attacker_tactical_ability,
+                rng,
+                strength_key=_nemesis_aware_strength_key(defender_column),
+            )
+        )
+        defender_switched.append(
+            maybe_switch_front_line(
+                defender_column,
+                line_length,
+                defender_tactical_ability,
+                rng,
+                strength_key=_nemesis_aware_strength_key(attacker_column),
+            )
+        )
+    return attacker_switched, defender_switched
 
 
 @dataclass(slots=True)

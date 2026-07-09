@@ -113,6 +113,53 @@ def test_resolve_battle_applies_nemesis_penalty_before_column_strength_is_report
     assert result.columns[0].defender_strength == 10
 
 
+def test_resolve_battle_runs_tactical_switches_before_nemesis_penalties_and_luck():
+    # Same nemesis chain as test_battle_line.py's
+    # test_apply_tactical_switches_defenders_decision_uses_the_attackers_post_switch_front:
+    # both sides are nemesis-eligible to switch once ability lets them, and
+    # the defender's switch only makes sense reading the attacker's
+    # already-switched front. terrain_line_length_cap=1 forces both units
+    # per side into one stacked column instead of two separate ones.
+    attacker_units = [unit(10, ArmyType.PHALANX), unit(9, ArmyType.HVY_CAVALRY)]
+    defender_units = [unit(10, ArmyType.LEGION), unit(9, ArmyType.BOWMEN)]
+    # atk-switch-roll, def-switch-roll, atk-col-luck-skip, def-col-luck-skip,
+    # battle-luck-skip, win-roll.
+    rng = ScriptedRandom([0.0, 0.0, 0.9, 0.9, 0.9, 0.5])
+
+    result = resolve_battle(
+        attacker_units,
+        defender_units,
+        terrain_line_length_cap=1,
+        attacker_tactical_ability=1,
+        defender_tactical_ability=1,
+        rng=rng,
+    )
+
+    column = result.columns[0]
+    assert column.attacker_switched is True
+    assert column.defender_switched is True
+    assert [u.army_type for u in column.attacker_units] == [ArmyType.HVY_CAVALRY, ArmyType.PHALANX]
+    assert [u.army_type for u in column.defender_units] == [ArmyType.BOWMEN, ArmyType.LEGION]
+    # Post-switch, the defender's rearward Legion is nemesis-weak against
+    # the attacker's new front (Heavy Cavalry) -- apply_nemesis_penalties
+    # ran against the final lineup, not the original one.
+    assert column.attacker_strength == pytest.approx(9 * 1.0 + 10 * 0.5)
+    assert column.defender_strength == pytest.approx(9 * 1.0 + (10 * 2 / 3) * 0.5)
+
+
+def test_resolve_battle_defaults_to_no_switching():
+    # attacker_tactical_ability/defender_tactical_ability default to 0 --
+    # switch_chance is 0, so even a nemesis-eligible column never swaps.
+    attacker_units = [unit(10, ArmyType.PHALANX), unit(9, ArmyType.HVY_CAVALRY)]
+    defender_units = [unit(10, ArmyType.LEGION)]
+    rng = ScriptedRandom([0.0, 0.9, 0.9, 0.9, 0.5])  # atk-switch-roll (consumed, fails), rest as usual
+
+    result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=1, rng=rng)
+
+    assert result.columns[0].attacker_switched is False
+    assert [u.army_type for u in result.columns[0].attacker_units] == [ArmyType.PHALANX, ArmyType.HVY_CAVALRY]
+
+
 def test_resolve_battle_column_results_expose_the_actual_units_for_bookkeeping():
     attacker = [BattleUnit(ArmyType.BOWMEN, 10, source_id=101)]
     defender = [BattleUnit(ArmyType.AXEMEN, 5, source_id=202)]

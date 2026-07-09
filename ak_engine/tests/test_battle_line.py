@@ -10,6 +10,7 @@ from ak_engine.turn.battle_line import (
     TERRAIN_LINE_LENGTH_RANGE,
     BattleUnit,
     apply_nemesis_penalties,
+    apply_tactical_switches,
     assign_battle_lines,
     column_strength,
     contest_columns,
@@ -18,6 +19,8 @@ from ak_engine.turn.battle_line import (
     roll_terrain_line_length_cap,
     switch_chance,
 )
+
+from _helpers import ScriptedRandom
 
 
 def unit(army_type: ArmyType, strength: float) -> BattleUnit:
@@ -223,3 +226,61 @@ def test_apply_nemesis_penalties_ignores_an_empty_opposing_column():
     apply_nemesis_penalties(attacker_columns, defender_columns)  # must not raise
 
     assert attacker_columns[0][0].effective_strength == 10
+
+
+def test_apply_tactical_switches_swaps_the_nemesis_weak_attacker_front_line():
+    # Front is Phalanx(10) vs a Legion-fronted defender -- nemesis-adjusted
+    # to 6.67, which the raw-9 Heavy Cavalry rear now beats, so the switch
+    # is eligible; ability=1 with line_length=1 makes switch_chance 1.0.
+    attacker_columns = [[unit(ArmyType.PHALANX, 10), unit(ArmyType.HVY_CAVALRY, 9)]]
+    defender_columns = [[unit(ArmyType.LEGION, 10)]]
+    rng = ScriptedRandom([0.0])  # attacker's roll succeeds; defender column has <2 units, no roll
+
+    attacker_switched, defender_switched = apply_tactical_switches(
+        attacker_columns, defender_columns, line_length=1, attacker_tactical_ability=1, defender_tactical_ability=1, rng=rng
+    )
+
+    assert attacker_switched == [True]
+    assert defender_switched == [False]
+    assert [u.army_type for u in attacker_columns[0]] == [ArmyType.HVY_CAVALRY, ArmyType.PHALANX]
+    # Raw effective_strength is untouched -- apply_tactical_switches only
+    # reorders; the persistent nemesis discount is apply_nemesis_penalties'
+    # job, run separately (see turn/battle_resolution.py resolve_battle).
+    assert [u.effective_strength for u in attacker_columns[0]] == [9, 10]
+
+
+def test_apply_tactical_switches_no_swap_when_ability_is_zero_despite_nemesis_eligibility():
+    # Same nemesis-eligible setup as above, but ability=0 -> switch_chance
+    # is 0, so the roll (still consumed) always fails the ">=" check.
+    attacker_columns = [[unit(ArmyType.PHALANX, 10), unit(ArmyType.HVY_CAVALRY, 9)]]
+    defender_columns = [[unit(ArmyType.LEGION, 10)]]
+    rng = ScriptedRandom([0.0])  # consumed, but switch_chance(0, 1) == 0 so 0.0 >= 0.0 is True -> no switch
+
+    attacker_switched, _ = apply_tactical_switches(
+        attacker_columns, defender_columns, line_length=1, attacker_tactical_ability=0, defender_tactical_ability=0, rng=rng
+    )
+
+    assert attacker_switched == [False]
+    assert [u.army_type for u in attacker_columns[0]] == [ArmyType.PHALANX, ArmyType.HVY_CAVALRY]
+
+
+def test_apply_tactical_switches_defenders_decision_uses_the_attackers_post_switch_front():
+    # Defender's front (Legion) is safe against the attacker's ORIGINAL
+    # front (Phalanx) -- NEMESIS[Legion] == {Heavy Cavalry}, not Phalanx --
+    # but becomes nemesis-weak once the attacker switches its own front to
+    # Heavy Cavalry. If the defender's decision used the attacker's
+    # pre-switch front, it would never swap; this proves it uses the
+    # post-switch (current) front instead, per "the defender always gets
+    # the last chance to switch."
+    attacker_columns = [[unit(ArmyType.PHALANX, 10), unit(ArmyType.HVY_CAVALRY, 9)]]
+    defender_columns = [[unit(ArmyType.LEGION, 10), unit(ArmyType.BOWMEN, 9)]]
+    rng = ScriptedRandom([0.0, 0.0])  # attacker's roll, then defender's roll
+
+    attacker_switched, defender_switched = apply_tactical_switches(
+        attacker_columns, defender_columns, line_length=1, attacker_tactical_ability=1, defender_tactical_ability=1, rng=rng
+    )
+
+    assert attacker_switched == [True]
+    assert defender_switched == [True]
+    assert attacker_columns[0][0].army_type == ArmyType.HVY_CAVALRY
+    assert defender_columns[0][0].army_type == ArmyType.BOWMEN

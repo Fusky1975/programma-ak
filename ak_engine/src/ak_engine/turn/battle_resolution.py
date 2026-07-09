@@ -2,19 +2,26 @@
 contests equal to the length of the battle line... The side that does
 best in these contests wins the battle.").
 
-Ties together ``turn/battle_line.py`` (line-up, nemesis penalties, and
-column strength), ``turn/battle_luck.py`` (the two kinds of random
-event), and ``turn/combat.py`` (``win_probability``) into one call that
-produces a concrete outcome -- unlike every earlier phase, this one
-needs an actual random decision, not just a probability estimate, so it
-takes an injectable ``random.Random`` (defaulting to a fresh one) to
-stay testable: pass a seeded ``random.Random(seed)`` for reproducible
-results. **Nemesis penalties are applied right after line-up, before
-front-line luck** (Phase 33, ``turn/battle_line.py
-apply_nemesis_penalties`` -- see its docstring for the column-pairing
-interpretation), so every downstream strength read (luck multipliers,
+Ties together ``turn/battle_line.py`` (line-up, tactical switches,
+nemesis penalties, and column strength), ``turn/battle_luck.py`` (the
+two kinds of random event), and ``turn/combat.py`` (``win_probability``)
+into one call that produces a concrete outcome -- unlike every earlier
+phase, this one needs an actual random decision, not just a probability
+estimate, so it takes an injectable ``random.Random`` (defaulting to a
+fresh one) to stay testable: pass a seeded ``random.Random(seed)`` for
+reproducible results.
+
+**Order right after line-up (Phase 34), before front-line luck:**
+``turn/battle_line.py apply_tactical_switches`` (rulebook: attacker
+attempts a per-column front/rear switch first, defender gets "the last
+chance"), *then* ``apply_nemesis_penalties`` (Phase 33) against the
+resulting -- possibly just-switched -- lineup. Switching itself defaults
+to a no-op (``attacker_tactical_ability``/``defender_tactical_ability``
+default to 0, giving ``switch_chance`` 0) unless the caller passes real
+ability levels, so every downstream strength read (luck multipliers,
 column contests, and whatever ``BattleUnit`` list the caller keeps using
-afterward, e.g. for pursuit) already reflects it.
+afterward, e.g. for pursuit) reflects both the final lineup and its
+nemesis-adjusted strength.
 
 Still NOT handled here -- see ak_engine/README.md: eliminating or
 demoting the losing side's armies, duels, pursuit, retreat, post-battle
@@ -31,6 +38,7 @@ from ak_engine.turn.battle_line import (
     BattleUnit,
     Column,
     apply_nemesis_penalties,
+    apply_tactical_switches,
     assign_battle_lines,
     column_strength,
     estimate_win_probability,
@@ -49,6 +57,8 @@ class BattleColumnResult:
     defender_column_luck: ColumnLuckEvent | None
     attacker_units: Column = field(default_factory=list)
     defender_units: Column = field(default_factory=list)
+    attacker_switched: bool = False
+    defender_switched: bool = False
 
 
 @dataclass(slots=True)
@@ -79,9 +89,23 @@ def resolve_battle(
     defender_units: list[BattleUnit],
     *,
     terrain_line_length_cap: int | None = None,
+    attacker_tactical_ability: int = 0,
+    defender_tactical_ability: int = 0,
     rng: random.Random | None = None,
 ) -> BattleResult:
-    """Line up both sides, apply luck, and decide a winner column by column."""
+    """Line up both sides, apply luck, and decide a winner column by column.
+
+    ``attacker_tactical_ability``/``defender_tactical_ability`` (Phase 34)
+    are each side's Tactical (or Naval, in Sea provinces) skill level --
+    the same terrain-aware value ``turn/battle_orchestrator.py`` already
+    derives for the [6.3] strength bonus (Phase 30) and the Duel tiebreak
+    (rulebook [7.1]), reused here for the [7.2] front/rear switch chance
+    too. The rulebook's switch-chance sentence just says "Tactical-
+    Ability" without a Sea-battle exception, so extending the same
+    terrain-aware value to it is a documented consistency choice, not a
+    separately sourced rule. Default 0 for both -- ``switch_chance(0,
+    ...)`` is 0, matching this function's pre-Phase-34 behavior exactly.
+    """
 
     rng = rng if rng is not None else random.Random()
 
@@ -96,6 +120,10 @@ def resolve_battle(
     )
     defender_columns = assign_battle_lines(
         sorted(defender_units, key=lambda u: u.effective_strength, reverse=True), line_length
+    )
+
+    attacker_switched, defender_switched = apply_tactical_switches(
+        attacker_columns, defender_columns, line_length, attacker_tactical_ability, defender_tactical_ability, rng
     )
 
     apply_nemesis_penalties(attacker_columns, defender_columns)
@@ -116,8 +144,15 @@ def resolve_battle(
     columns: list[BattleColumnResult] = []
     attacker_wins = 0
     defender_wins = 0
-    for a_strength, d_strength, a_luck, d_luck, a_units, d_units in zip(
-        attacker_strengths, defender_strengths, attacker_luck, defender_luck, attacker_columns, defender_columns
+    for a_strength, d_strength, a_luck, d_luck, a_units, d_units, a_switched, d_switched in zip(
+        attacker_strengths,
+        defender_strengths,
+        attacker_luck,
+        defender_luck,
+        attacker_columns,
+        defender_columns,
+        attacker_switched,
+        defender_switched,
     ):
         probability = estimate_win_probability(a_strength, d_strength)
         attacker_won = rng.random() < probability
@@ -133,6 +168,8 @@ def resolve_battle(
                 defender_column_luck=d_luck,
                 attacker_units=a_units,
                 defender_units=d_units,
+                attacker_switched=a_switched,
+                defender_switched=d_switched,
             )
         )
 

@@ -31,7 +31,12 @@ the rulebook [6.3] "Tactical Ability +20%/level (or Naval in Sea
 provinces)" strength bonus for their *entire* side, not just their own
 led units -- previously always 0 (``turn/strength.py
 compute_effective_strength``'s ``combat_ability_level`` parameter was
-never passed by this module at all).
+never passed by this module at all). That same ability level is now
+also passed to ``resolve_battle``'s ``attacker_tactical_ability``/
+``defender_tactical_ability`` (Phase 34), feeding the [7.2] front/rear
+switch chance too -- one commander ability level driving three rulebook
+effects (Duel tiebreak, strength bonus, switch chance) instead of three
+independently-derived numbers.
 
 **Pursuit** ([7.3]): once a side is judged clean-swept and
 ``loser_retreats=True``, before its armies retreat/disband, the winning
@@ -379,7 +384,13 @@ def fight_battle(
         attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng
     )
 
-    battle_result = resolve_battle(attacker_units, defender_units, rng=rng)
+    battle_result = resolve_battle(
+        attacker_units,
+        defender_units,
+        attacker_tactical_ability=attacker_ability_level,
+        defender_tactical_ability=defender_ability_level,
+        rng=rng,
+    )
 
     defender_clean_swept = battle_result.winner == "attacker" and battle_result.defender_columns_won == 0
     attacker_clean_swept = battle_result.winner == "defender" and battle_result.attacker_columns_won == 0
