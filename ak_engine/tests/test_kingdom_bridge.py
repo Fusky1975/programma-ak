@@ -36,6 +36,10 @@ def test_syncs_kingdom_id_and_attaches_kings_skills_when_leaders_already_exist()
     # ability data is never present, so they stay untouched.
     assert state.leaders[18].skills is None
     assert state.leaders[72].skills is None
+    # Phase 40: the same name-matched identification also syncs is_king.
+    assert state.leaders[1].is_king is True
+    assert state.leaders[18].is_king is False
+    assert state.leaders[72].is_king is False
 
 
 def test_reports_leaders_with_no_existing_leaderstate_without_creating_them():
@@ -83,3 +87,19 @@ def test_king_not_identified_when_no_leader_name_matches_king_name():
     assert state.leaders[1].skills is None
     # kingdom_id syncing is unaffected -- it doesn't depend on King identification.
     assert state.leaders[1].kingdom_id == 27
+    # Nobody in the file was matched as King, so nobody gets is_king=True.
+    assert state.leaders[1].is_king is False
+
+
+def test_is_king_sync_corrects_a_stale_flag_from_a_prior_state():
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T1.K1")  # King id 1, Hero 18
+    state = GameState()
+    # Hand-built state has this backwards -- leader 18 was (incorrectly)
+    # marked King, and the real King (1) wasn't.
+    state.add_leader(LeaderState(1, kingdom_id=None, name="Uga-Buga Makumb", location=LOCATION, is_king=False))
+    state.add_leader(LeaderState(18, kingdom_id=None, name="Guerin", location=LOCATION, is_king=True))
+
+    sync_leaders_from_kingdom(kingdom, state)
+
+    assert state.leaders[1].is_king is True
+    assert state.leaders[18].is_king is False

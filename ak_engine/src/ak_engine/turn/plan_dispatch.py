@@ -39,20 +39,28 @@ to dispatch automatically:
   ``commanded_by`` (see ``models/game_state.py``'s nullable-``kingdom_id``
   convention). Recruit, in turn, checks ``GameState.mercenaries_at()``
   before levying a fresh unit, so a disbanded army can be re-hired later
-  (rulebook [3.4]).
+  (rulebook [3.4]). **King-vs-Hero co-location is enforced as of Phase
+  40** (rulebook [3.6]: "A King may Disband any army at any time. A
+  character can Disband an army only if he is in the same province.") --
+  ``LeaderState.is_king`` bypasses the check; a Hero must be co-located
+  with each target army or it's silently skipped (left undisbanded),
+  same convention as an unknown army id.
 - **HIRE** and **FIRE** actually execute (Phase 17), operating on
   independent *Heroes* (``LeaderState.kingdom_id is None``) rather than
   armies -- a different concept from Recruit's mercenary-army hiring, see
   ``turn/hire_fire_decode.py``. Hire requires the target Hero to be
   independent and co-located with the acting leader, then debits the
   gold offer from the kingdom's treasury and assigns the Hero to
-  ``kingdom_id`` (rulebook [3.5]). Fire releases a Hero back to
-  ``kingdom_id = None`` (rulebook [3.7]); like Disband, co-location isn't
-  enforced (same King-vs-Hero authority gap, see ``_dispatch_disband``'s
-  docstring). Neither models the rulebook's finer unsourced/undata-able
-  details: a Hero's own "required pay" (may be less than the offer),
-  recurring per-turn pay, alignment-based hire refusal, or "can't Hire a
-  Hero who rules his own province" -- see ``README.md``. **A successful
+  ``kingdom_id`` (rulebook [3.5]); **also rejects a target with
+  ``is_king=True``, "You can't Hire a Hero who rules his own province"
+  (Phase 40)**. Fire releases a Hero back to ``kingdom_id = None``
+  (rulebook [3.7]); **King-vs-Hero co-location is enforced as of Phase
+  40**, same pattern as Disband (a King bypasses it; a Hero must be
+  co-located with the target -- which also naturally covers "firing
+  himself," since he's always in his own province). Neither models the
+  rulebook's finer unsourced/undata-able details: a Hero's own "required
+  pay" (may be less than the offer), recurring per-turn pay, or
+  alignment-based hire refusal -- see ``README.md``. **A successful
   Hire also dispatches the hired Hero's own embedded plan the same turn**
   (Phase 32, ``run_leader_plan``'s nested-plan handling -- see below).
 - **SEARCH** is decode-only (Phase 19), same status Recruit had before
@@ -381,7 +389,7 @@ def dispatch_phase(
         return _dispatch_hire(phase, state, kingdom_id, leader_id)
 
     if action is ActionCode.FIRE:
-        return _dispatch_fire(phase, state)
+        return _dispatch_fire(phase, state, leader_id)
 
     if action is ActionCode.TRADE:
         return decode_trade_phase(phase)
@@ -479,18 +487,20 @@ def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
     target_ids = (
         [army.army_id for army in state.armies_commanded_by(leader_id)] if request.all_armies else request.army_ids
     )
+    acting_leader = state.leaders.get(leader_id)
+    is_king = acting_leader is not None and acting_leader.is_king
 
     for army_id in target_ids:
         army = state.armies.get(army_id)
         if army is None:
             continue
-        # "Releases the army(s) into mercenary status" (rulebook [3.6]) --
-        # ownerless and unled, available to be hired later. Unlike Pick_Up,
-        # co-location with the acting leader is NOT enforced here: the
-        # rulebook grants Kings a broader disband authority than Heroes
-        # (who need to be with the army), and LeaderState doesn't yet track
-        # which is which -- a documented simplification, not a guess at
-        # which restriction applies.
+        # "Releases the army(s) into mercenary status" (rulebook [3.6]:
+        # "A King may Disband any army at any time. A character can
+        # Disband an army only if he is in the same province.") --
+        # ownerless and unled, available to be hired later. A Hero must
+        # be co-located with the army; a King (Phase 40) bypasses that.
+        if not is_king and (acting_leader is None or army.location != acting_leader.location):
+            continue
         army.kingdom_id = None
         army.commanded_by = None
 
@@ -504,6 +514,13 @@ def _dispatch_hire(phase: PlanPhase, state: GameState, kingdom_id: int, leader_i
 
     if hero is None:
         return HireExecutionResult(request, hired=False, reason="hero not found")
+    if hero.is_king:
+        # rulebook [3.5]: "You can't Hire a Hero who rules his own
+        # province." Checked explicitly (Phase 40) rather than relying
+        # on the "already in service" check below to catch every King
+        # as a side effect -- that only works if the King happens to
+        # have a kingdom_id set, which isn't guaranteed by is_king alone.
+        return HireExecutionResult(request, hired=False, reason="cannot hire a King")
     if hero.kingdom_id is not None:
         return HireExecutionResult(request, hired=False, reason="hero already in service")
     if hero.location != acting_leader.location:
@@ -525,17 +542,21 @@ def _dispatch_hire(phase: PlanPhase, state: GameState, kingdom_id: int, leader_i
     return HireExecutionResult(request, hired=True)
 
 
-def _dispatch_fire(phase: PlanPhase, state: GameState) -> FireRequest:
+def _dispatch_fire(phase: PlanPhase, state: GameState, leader_id: int) -> FireRequest:
     request = decode_fire_phase(phase)
     hero = state.leaders.get(request.hero_id)
+    acting_leader = state.leaders.get(leader_id)
     if hero is not None:
         # "Releases the Hero into private life... will wander around
-        # until hired by another King." (rulebook [3.7]) Co-location is
-        # NOT enforced here, same simplification as Disband (see
-        # `_dispatch_disband`'s docstring): a King may Fire "at any
-        # time", and a Hero "can always fire himself", but `LeaderState`
-        # doesn't track King-vs-Hero status to distinguish the cases.
-        hero.kingdom_id = None
+        # until hired by another King." (rulebook [3.7]: "A King may
+        # Fire a Hero at any time. A character can Fire a Hero only if
+        # he is in the same province.") A Hero must be co-located with
+        # the target (this also naturally covers "firing himself" --
+        # he's always in his own province); a King (Phase 40) bypasses
+        # that, same as Disband.
+        is_king = acting_leader is not None and acting_leader.is_king
+        if is_king or (acting_leader is not None and acting_leader.location == hero.location):
+            hero.kingdom_id = None
     return request
 
 

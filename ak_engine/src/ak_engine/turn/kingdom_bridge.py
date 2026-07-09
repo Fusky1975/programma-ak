@@ -34,6 +34,12 @@ two pieces of real data the file provides:
   the king-name line "Uga-Buga Makumb" -- but matched by name here rather
   than by position/id, since that's the actual invariant the file
   encodes, not an assumption that the King is always id 1).
+- **``is_king``** (Phase 40): the same name-matched identification also
+  sets ``LeaderState.is_king`` for every synced leader in the file --
+  ``True`` for the identified King, ``False`` for every other leader
+  (an authoritative sync, not just "set True and leave everyone else
+  alone" -- a leader who was, say, hand-marked as a King in a prior test
+  setup but isn't the King in *this* file's data gets corrected).
 
 Leaders present in ``kingdom.leaders`` with no existing ``LeaderState``
 are left uncreated and reported as skipped -- not a bug, a direct
@@ -77,6 +83,7 @@ def sync_leaders_from_kingdom(kingdom: Kingdom, state: GameState) -> KingdomBrid
             continue
 
         leader_state.kingdom_id = kingdom_id
+        leader_state.is_king = leader.leader_id == king_leader_id
         report.synced_leader_ids.append(leader.leader_id)
 
         if leader.leader_id == king_leader_id:

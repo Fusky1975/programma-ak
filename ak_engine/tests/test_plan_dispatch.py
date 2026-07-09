@@ -46,7 +46,12 @@ def _state_with_army(
     state.add_province(ProvinceState(location, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     for coord, terrain in target_terrains.items():
         state.add_province(ProvinceState(coord, terrain, Race.HUMAN))
-    state.add_leader(LeaderState(LEADER_ID, 1, "Test Leader", location))
+    # is_king=True: most tests using this helper predate Phase 40's
+    # King-vs-Hero co-location enforcement and were never about testing
+    # that restriction -- treating this shared leader as the King
+    # preserves their original intent. Tests that specifically exercise
+    # Hero co-location build their own LeaderState with is_king=False.
+    state.add_leader(LeaderState(LEADER_ID, 1, "Test Leader", location, is_king=True))
     army_id = 1
     state.add_army(
         ArmyState(army_id, 1, ArmyType.BOWMEN, Quality.AVERAGE, location, movement_points=5, commanded_by=LEADER_ID)
@@ -509,6 +514,100 @@ def test_dispatch_fire_unknown_hero_id_is_a_noop():
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
     assert result.hero_id == 999  # no exception, nothing to mutate
+
+
+# --- King/Hero distinction (Phase 40) ------------------------------------
+
+
+def test_dispatch_disband_by_a_hero_skips_a_noncolocated_army():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(50, 1, "A Hero", HexCoord(9, 9), is_king=False))  # not co-located with army_id
+    phase = PlanPhase(label="P0", action=ActionCode.DISBAND, obj=0, extra=[0, army_id, -1])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=50, army_ids=[], board_width=BOARD_WIDTH)
+
+    # Rulebook [3.6]: "A character can Disband an army only if he is in
+    # the same province." -- left untouched, still owned and led.
+    assert state.armies[army_id].kingdom_id == 1
+    assert state.armies[army_id].commanded_by == LEADER_ID
+
+
+def test_dispatch_disband_by_a_hero_succeeds_when_colocated():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(50, 1, "A Hero", location, is_king=False))
+    phase = PlanPhase(label="P0", action=ActionCode.DISBAND, obj=0, extra=[0, army_id, -1])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=50, army_ids=[], board_width=BOARD_WIDTH)
+
+    assert state.armies[army_id].kingdom_id is None
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_disband_by_a_king_bypasses_colocation():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(50, 1, "The King", HexCoord(9, 9), is_king=True))  # not co-located, but a King
+    phase = PlanPhase(label="P0", action=ActionCode.DISBAND, obj=0, extra=[0, army_id, -1])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=50, army_ids=[], board_width=BOARD_WIDTH)
+
+    assert state.armies[army_id].kingdom_id is None
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_fire_by_a_hero_fails_when_not_colocated():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.add_leader(LeaderState(32, 1, "Employed Hero", HexCoord(9, 9)))
+    state.add_leader(LeaderState(50, 1, "Acting Hero", HexCoord(1, 1), is_king=False))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=50, board_width=BOARD_WIDTH)
+
+    # Rulebook [3.7]: "A character can Fire a Hero only if he is in the
+    # same province." -- not co-located, so the Hero stays employed.
+    assert state.leaders[32].kingdom_id == 1
+
+
+def test_dispatch_fire_by_a_hero_succeeds_when_colocated():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(32, 1, "Employed Hero", location))
+    state.add_leader(LeaderState(50, 1, "Acting Hero", location, is_king=False))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=50, board_width=BOARD_WIDTH)
+
+    assert state.leaders[32].kingdom_id is None
+
+
+def test_dispatch_fire_by_a_king_bypasses_colocation():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.add_leader(LeaderState(32, 1, "Employed Hero", HexCoord(9, 9)))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
+
+    # LEADER_ID (from _state_with_army) is a King, not co-located with 32.
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert state.leaders[32].kingdom_id is None
+
+
+def test_dispatch_hire_cannot_hire_a_king():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    # A King without a kingdom_id (e.g. deposed) -- proves this is a real,
+    # explicit check, not just an accidental side effect of the
+    # "already in service" check below it.
+    state.add_leader(LeaderState(32, None, "A Rival King", location, is_king=True))
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[3])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is False
+    assert result.reason == "cannot hire a King"
+    assert state.leaders[32].kingdom_id is None  # untouched
+    assert state.kingdoms[1].treasury == 100  # untouched
 
 
 def test_real_move_file_leader_hire_phase_dispatches():

@@ -48,6 +48,16 @@ other's allies just because both have no owner.
 ``None`` means an independent Hero, not yet in anyone's service (rulebook
 [3.5] Hire, [3.7] Fire: "The Hero will wander around until hired by
 another King").
+
+``LeaderState.is_king`` (Phase 40) is the King/Hero distinction earlier
+phases repeatedly flagged as missing (Disband [3.6], Fire [3.7], Hire
+[3.5] all give a King broader authority than an ordinary Hero -- see
+``turn/plan_dispatch.py``). Defaults to ``False``, same "no data yet"
+convention as ``skills``: a hand-built ``LeaderState`` in a test is a
+Hero unless the caller says otherwise. ``turn/kingdom_bridge.py``
+(Phase 31) is the one piece of code that sets it from real data,
+reusing the same King-identification (name match against
+``kingdom.king_name``) it already uses for ``skills``.
 """
 
 from __future__ import annotations
@@ -97,6 +107,8 @@ class LeaderState:
     location: HexCoord
     # None = no ability data recorded for this leader -- see module docstring.
     skills: SkillTable | None = None
+    # King/Hero distinction (Phase 40) -- see module docstring.
+    is_king: bool = False
 
 
 @dataclass(slots=True)

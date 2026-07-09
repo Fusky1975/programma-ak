@@ -230,15 +230,16 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   `GameState`: Hire requires the target Hero to be independent and
   co-located with the acting leader, then debits the gold offer from the
   kingdom's treasury and assigns `kingdom_id`; Fire releases a Hero back
-  to `kingdom_id = None` without enforcing co-location (same
-  Disband-style King-vs-Hero simplification, `LeaderState` still has no
-  King/Hero distinction). Several rulebook nuances are explicitly not
-  modeled here (no data/formula exists for them, same situation as other
-  entries in the TODO section below): a Hero's own "required pay" (which
-  may be lower than the offer and depends on unmodeled per-Hero
-  temper/race/alignment compatibility), recurring per-gameturn pay (only
-  the initial offer is charged, once), and "can't Hire a Hero who rules
-  his own province" (no King flag to check against).
+  to `kingdom_id = None`. ~~Co-location isn't enforced (same Disband-style
+  King-vs-Hero simplification, `LeaderState` still has no King/Hero
+  distinction)~~ **fixed in Phase 40**, see below. Several rulebook
+  nuances are explicitly not modeled here (no data/formula exists for
+  them, same situation as other entries in the TODO section below): a
+  Hero's own "required pay" (which may be lower than the offer and
+  depends on unmodeled per-Hero temper/race/alignment compatibility),
+  recurring per-gameturn pay (only the initial offer is charged, once).
+  ~~"Can't Hire a Hero who rules his own province" (no King flag to
+  check against)~~ **also fixed in Phase 40**.
   **A real, confirmed parser bug was found while researching this
   phase** (fixed in Phase 18, see below): a Hire (or Charm/Resurrection
   Cast) phase's own nested plan for the newly-joined character was being
@@ -1069,6 +1070,67 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged after wiring, before any
     new tests were added -- no pre-existing fixture pairs an overflight
     unit against a 2+-deep opposing column.
+- **Phase 40 (current)**: the King/Hero distinction, flagged as missing
+  since Phase 16-17 (and re-flagged again at Phase 25 for Challenge's
+  own encounter-acceptance rules) every time Disband, Fire, or Hire's
+  finer rulebook nuances came up. `models/game_state.py LeaderState`
+  gains `is_king: bool = False`.
+  - **`turn/kingdom_bridge.py`** (Phase 31) already had to solve "which
+    leader in this move file is the King" to attach the King's own
+    `SkillTable` -- `sync_leaders_from_kingdom()` now reuses that exact
+    identification to set `is_king` too: `True` for the matched King,
+    `False` for every other synced leader in the same file (an
+    authoritative sync, not just "set True and never touch False" --
+    tested by deliberately seeding a stale, backwards flag first and
+    confirming the sync corrects it).
+  - **Disband** (`turn/plan_dispatch.py _dispatch_disband`, rulebook
+    [3.6] verbatim: *"A King may Disband any army at any time. A
+    character can Disband an army only if he is in the same
+    province."*): a Hero must now be co-located with each target army
+    or it's silently left alone (same "skip, don't raise" convention
+    already used for an unknown army id); a King bypasses the check
+    entirely, as before Phase 40.
+  - **Fire** (`_dispatch_fire`, [3.7] verbatim: *"A King may Fire a Hero
+    at any time. A character can Fire a Hero only if he is in the same
+    province."*): same pattern. `_dispatch_fire`'s own signature gained
+    a `leader_id` parameter it never needed before (it had no way to
+    check *who* was acting). The rulebook's co-location requirement
+    already covers "a Hero can fire himself" as a trivial case -- he's
+    always in his own province -- so no separate self-fire carve-out
+    was needed.
+  - **Hire** (`_dispatch_hire`, [3.5]: *"You can't Hire a Hero who rules
+    his own province."*): now rejects a target with `is_king=True`
+    outright (`reason="cannot hire a King"`), checked as its own
+    explicit condition rather than left to happen as a side effect of
+    the existing "hero already in service" check -- which would only
+    coincidentally catch a King who happens to still have a
+    `kingdom_id` set. A dedicated test uses a King *without* a
+    `kingdom_id` (an edge case, e.g. a deposed King) to prove the check
+    is real, not incidental.
+  - **`Pick_Up` deliberately untouched**: rulebook [3.9] gives Pick_Up
+    no King exception ("You can Pick Up an army led by a co-located
+    character" -- no "a King may..." carve-out anywhere in that
+    section), confirmed by re-reading `RULES.AK` directly rather than
+    assuming symmetry with Disband/Fire.
+  - **One test-infrastructure change**: `tests/test_plan_dispatch.py`'s
+    shared `_state_with_army()` helper's leader is now built with
+    `is_king=True` -- almost every existing test using it predates this
+    distinction and was never about testing co-location, so treating it
+    as the King (the same role it already implicitly played throughout
+    those tests) preserves their original intent with a one-line change
+    instead of touching dozens of call sites; tests that specifically
+    exercise Hero co-location build their own `LeaderState` with
+    `is_king=False`.
+  - **Foundational for later phases**: this is the piece the Druid
+    Table's own garrison-commander clause ("If a unit is under the
+    garrison commander of a province, and is of a different race than
+    the King, then the King's druidic ability is used...") will need --
+    not attempted this phase, but no longer blocked on "which leader is
+    the King" the way it would have been before.
+  - Non-breaking except for one deliberate, documented test-helper
+    default change (see above) -- confirmed by running the full suite
+    immediately after that one-line edit, before writing any new
+    Phase 40 tests.
 
 ## Setup
 
@@ -1262,16 +1324,17 @@ rulebook before being turned into named, typed fields:
   - **Hire's remaining gaps** (see Phase 17's note above): a Hero's own
     "required pay" (may be less than the offer, depends on unmodeled
     temper/race/alignment compatibility), recurring per-gameturn pay
-    (only the one-time offer is charged), alignment-based hire refusal,
-    and "can't Hire a Hero who rules his own province" (no King flag).
+    (only the one-time offer is charged), and alignment-based hire
+    refusal. ~~"Can't Hire a Hero who rules his own province" (no King
+    flag)~~ **fixed in Phase 40** -- see below.
     ~~`run_leader_plan` doesn't dispatch a `PlanPhase.nested_plan`'s own
     phases~~ **fixed in Phase 32** -- a newly-hired hero's own orders now
     dispatch the same turn, provided he already has a `LeaderState` in
     `state` to enrich (see Phase 32's note above).
-  - **Disband's remaining gap**: no King/Hero distinction on `LeaderState`
-    means co-location isn't enforced for anyone (see Phase 16's note
-    above) -- a Hero should arguably need to be with the army to disband
-    it, a King shouldn't.
+  - ~~**Disband's remaining gap**: no King/Hero distinction on
+    `LeaderState` means co-location isn't enforced for anyone~~ **fixed
+    in Phase 40** (see Phase 16's note above for context on the original
+    gap, and Phase 40's note below for the fix).
   - **Search's remaining gap** (see Phase 19's note above): decoded but
     entirely unapplied -- resolving it needs a personal, non-army
     Encounter/combat resolver (Steal/Melee/Fire/Flee/Scout tactic
@@ -1313,8 +1376,10 @@ rulebook before being turned into named, typed fields:
   - **Challenge/Pursue's remaining gap** (see Phase 25's note above):
     the King/Hero encounter-acceptance rules ([3.12]) and the Spy Table
     catch-up formula ([4.33], [3.16]) aren't modeled -- same missing
-    non-army Encounter resolver as Search. Zero real examples for
-    either either.
+    non-army Encounter resolver as Search. `LeaderState.is_king` (Phase
+    40) now exists, so the *data* this rule would need is no longer
+    missing, only the encounter-resolution system itself. Zero real
+    examples for either either.
   - **ASpy/Defend's remaining gap** (see Phase 26's note above):
     intelligence-report generation (ASpy) and reactive cross-province
     battle-triggering (Defend) both need `GameState`/battle-orchestrator
