@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import random
 
+import pytest
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability
@@ -20,6 +22,7 @@ from ak_engine.turn.battle_orchestrator import (
 )
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.duel import Commander
+from ak_engine.turn.strength import compute_effective_strength
 
 from _helpers import ScriptedRandom
 
@@ -226,6 +229,84 @@ def test_build_battle_units_applies_combat_ability_level_to_every_unit_on_the_si
     )
 
     assert units_with_ability[0].effective_strength == units_no_ability[0].effective_strength * 1.6
+
+
+def test_build_battle_units_reduces_quality_in_desert_without_camels():
+    # Rulebook: "In a desert battle, one camel unit should be present...
+    # If not, all armies have their quality reduced by 1 level." AVERAGE
+    # (2) -> GREEN (1) halves the strength multiplier, all else equal.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    bowmen = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(bowmen)
+
+    without_camel = _build_battle_units(
+        [bowmen], state, is_defender=False, terrain=Terrain.DESERT, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    camel = ArmyState(102, 1, ArmyType.CAMEL_CORPS, Quality.AVERAGE, location=FIELD)
+    with_camel = _build_battle_units(
+        [bowmen, camel], state, is_defender=False, terrain=Terrain.DESERT, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    # with_camel[0] is still the Bowmen unit (list order preserved) -- no
+    # penalty for anyone on the side once a Camel Corps is present.
+    assert with_camel[0].effective_strength == pytest.approx(without_camel[0].effective_strength * 2)
+
+
+def test_build_battle_units_camel_check_ignored_outside_desert():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    bowmen = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(bowmen)
+
+    no_camel_plains = _build_battle_units(
+        [bowmen], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+    camel = ArmyState(102, 1, ArmyType.CAMEL_CORPS, Quality.AVERAGE, location=FIELD)
+    with_camel_plains = _build_battle_units(
+        [bowmen, camel], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    assert no_camel_plains[0].effective_strength == with_camel_plains[0].effective_strength
+
+
+def test_build_battle_units_fanaticism_off_by_default_never_touches_rng():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+    rng = ScriptedRandom([])  # any rng.random() call here raises IndexError
+
+    units = _build_battle_units([army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng)
+
+    baseline = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert units[0].effective_strength == baseline
+
+
+def test_build_battle_units_fanaticism_enabled_rolls_the_kingdoms_real_chance():
+    # Alignment.GOOD -> 40% chance (turn/strength.py FANATICISM_CHANCE).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+
+    succeeds = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=ScriptedRandom([0.1]), apply_fanaticism=True,
+    )
+    fails = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=ScriptedRandom([0.9]), apply_fanaticism=True,
+    )
+
+    fanatical_strength = compute_effective_strength(
+        ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_fanatical=True
+    )
+    baseline = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert succeeds[0].effective_strength == fanatical_strength
+    assert fails[0].effective_strength == baseline
+    assert fanatical_strength > baseline
 
 
 def test_fight_battle_reads_a_led_attackers_real_tactical_skill_end_to_end():

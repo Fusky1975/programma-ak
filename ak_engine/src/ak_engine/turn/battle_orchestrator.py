@@ -76,13 +76,22 @@ ak_engine/README.md:**
   province **contested** -- no eliminations, just a quality-change roll,
   matching the rulebook's [7.5]/[7.6] framing around "the defeated army"
   and "contested provinces" rather than individual units.
-- The exploration-advantage special factor, fanaticism, and the
-  desert-without-camels penalty are NOT wired in here -- they need
-  per-battle context (an exploration-percent comparison, alignment-based
-  fanaticism rolls, a camel-unit check) this orchestrator doesn't collect
-  yet. ~~Tactical/Naval-ability~~ **is** wired in, as of Phase 30 (see
+- ~~The exploration-advantage special factor, fanaticism, and the
+  desert-without-camels penalty are NOT wired in here~~ **fanaticism and
+  desert-without-camels are wired in, as of Phase 35** -- see
+  `_build_battle_units`'s docstring. **Exploration-advantage stays
+  unwired**, and not for lack of trying: `models/game_state.py
+  ProvinceState.explored_percent` is a single value per province, not
+  per-kingdom, so there's no data anywhere in this project to compute a
+  meaningful "own side's exploration vs. the enemy's" comparison for the
+  same province -- a structural data-model gap, not a guess avoided.
+  Fixing it would mean redesigning how every Explore/Move-triggered
+  partial-exploration write updates state (`turn/move_execution.py`,
+  `turn/plan_dispatch.py`'s own EXPLORE branch), out of scope here.
+  ~~Tactical/Naval-ability~~ **is** wired in, as of Phase 30 (see
   `combat_ability_level` above). Strength here is race + terrain +
-  quality + defender bonus + Tactical/Naval ability only.
+  quality + defender bonus + Tactical/Naval ability + fanaticism +
+  desert-without-camels only.
 - ~~The nemesis penalty is NOT applied~~ **fixed in Phase 33**: it
   depends on which specific unit ends up paired against which in a
   column, and that pairing only exists *inside* `resolve_battle` (after
@@ -121,7 +130,7 @@ from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles
 from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
 from ak_engine.turn.retreat import attacker_retreat_candidates, find_retreat_destination
-from ak_engine.turn.strength import compute_effective_strength, roll_elephants_strength
+from ak_engine.turn.strength import compute_effective_strength, roll_elephants_strength, roll_fanaticism
 
 
 @dataclass(slots=True)
@@ -148,6 +157,7 @@ def _build_battle_units(
     province_coord: HexCoord,
     rng: random.Random,
     combat_ability_level: int = 0,
+    apply_fanaticism: bool = False,
 ) -> list[BattleUnit]:
     """Build BattleUnits for one side of a battle at ``province_coord``.
 
@@ -161,13 +171,44 @@ def _build_battle_units(
     Tactical (or Naval, in Sea provinces) skill level -- rulebook [6.3]:
     "+20%/level", applied to every unit on the side, not just the
     commander's own led units (see ``fight_battle``'s docstring for why).
+
+    **Desert without camels** (Phase 35): "In a desert battle, one camel
+    unit should be present (it sees double duty as a supply train.) If
+    not, all armies have their quality reduced by 1 level." -- checked
+    once per side (not per unit): if the battle is in a Desert province
+    and this side's ``armies`` include no ``ArmyType.CAMEL_CORPS``, every
+    unit on the side gets the penalty, including any Elephants (the
+    rulebook names "Camels" specifically here, not the broader "Beasts"
+    grouping used for the nemesis table -- a confident reading, not a
+    guess). Fully deterministic, no ``rng`` involved.
+
+    **Fanaticism** (Phase 35, ``apply_fanaticism``): "An army fighting
+    for a Divine/Good/Evil kingdom has a 50%/40%/25% chance of becoming
+    fanatical" -- rolled once per army via ``turn/strength.py
+    roll_fanaticism(kingdom.alignment, rng)``. Defaults to **off**
+    (``False``): unlike ``combat_ability_level``, there's no data-absence
+    condition that keeps this naturally silent, since every
+    ``KingdomState`` always has a concrete, often-nonzero-chance
+    ``Alignment`` -- an unconditional roll would consume a new ``rng``
+    call for essentially every unit in every existing battle test (many
+    already use ``Alignment.GOOD``, a real 40% chance), silently
+    perturbing scripted RNG sequences across most of the pre-Phase-35
+    test suite for a mechanic most callers don't need precision on. A
+    caller that wants real fanaticism opts in explicitly.
     """
+
+    desert_without_camels = terrain is Terrain.DESERT and not any(
+        army.army_type is ArmyType.CAMEL_CORPS for army in armies
+    )
 
     units = []
     for army in armies:
         kingdom = state.kingdoms[army.kingdom_id]
         is_home = province_coord == kingdom.home_province
         override = roll_elephants_strength(rng) if army.army_type is ArmyType.ELEPHANTS else None
+        # Short-circuited: roll_fanaticism (and its rng.random() call) never
+        # runs at all when apply_fanaticism is False -- see docstring.
+        is_fanatical = apply_fanaticism and roll_fanaticism(kingdom.alignment, rng)
         strength = compute_effective_strength(
             army.army_type,
             kingdom.race,
@@ -175,6 +216,8 @@ def _build_battle_units(
             terrain,
             is_defender=is_defender,
             is_home_province=is_home,
+            is_fanatical=is_fanatical,
+            desert_without_camels=desert_without_camels,
             base_strength_override=override,
             combat_ability_level=combat_ability_level,
         )
@@ -345,9 +388,15 @@ def fight_battle(
     *,
     loser_retreats: bool = True,
     attacker_origin: HexCoord | None = None,
+    apply_fanaticism: bool = False,
     rng: random.Random | None = None,
 ) -> BattleReport:
-    """Resolve one battle at ``province_coord`` and apply its consequences to ``state``."""
+    """Resolve one battle at ``province_coord`` and apply its consequences to ``state``.
+
+    ``apply_fanaticism`` (Phase 35, default off) opts into real per-army
+    fanaticism rolls -- see ``_build_battle_units``'s docstring for why
+    this isn't on by default.
+    """
 
     rng = rng if rng is not None else random.Random()
     province = state.provinces[province_coord]
@@ -373,11 +422,11 @@ def fight_battle(
 
     attacker_units = _build_battle_units(
         attacker_armies, state, is_defender=False, terrain=province.terrain, province_coord=province_coord, rng=rng,
-        combat_ability_level=attacker_ability_level,
+        combat_ability_level=attacker_ability_level, apply_fanaticism=apply_fanaticism,
     )
     defender_units = _build_battle_units(
         defender_armies, state, is_defender=True, terrain=province.terrain, province_coord=province_coord, rng=rng,
-        combat_ability_level=defender_ability_level,
+        combat_ability_level=defender_ability_level, apply_fanaticism=apply_fanaticism,
     )
 
     duel = _maybe_fight_duel(
@@ -482,6 +531,7 @@ def fight_multi_attacker_battle(
     parties: list[MultiAttackerParty],
     *,
     loser_retreats: bool = True,
+    apply_fanaticism: bool = False,
     rng: random.Random | None = None,
 ) -> list[BattleReport]:
     """Rulebook [7.8] Multiple Contingents: partition several leaders' simultaneous
@@ -540,6 +590,7 @@ def fight_multi_attacker_battle(
             combined_army_ids,
             loser_retreats=loser_retreats,
             attacker_origin=attacker_origin,
+            apply_fanaticism=apply_fanaticism,
             rng=rng,
         )
         reports.append(report)

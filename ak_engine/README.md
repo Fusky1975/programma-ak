@@ -871,6 +871,63 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - `BattleColumnResult` gains `attacker_switched`/`defender_switched`
     bool fields, same observability pattern as the existing luck-event
     fields.
+- **Phase 35 (current)**: two of the three remaining unwired [6.3]
+  strength factors flagged since Phase 9 -- fanaticism and
+  desert-without-camels -- are wired into
+  `turn/battle_orchestrator.py _build_battle_units`. The third,
+  exploration-advantage, stays unwired -- see below for why.
+  - **Desert without camels**: `RULES.AK`'s "Special rules" section is
+    exact: "In a desert battle, one camel unit should be present (it
+    sees double duty as a supply train.) If not, all armies have their
+    quality reduced by 1 level." Checked once per side (not per unit):
+    if the battle's terrain is Desert and that side's armies include no
+    `ArmyType.CAMEL_CORPS`, every unit on the side gets the penalty; if
+    one *is* present, nobody on the side gets it -- including the camel
+    unit itself, since it's presence alone that matters, not who's being
+    checked. Deliberately narrower than the "Beasts" nemesis-table grouping
+    (Elephants + Camel Corps): the rule names "Camels" specifically, not
+    Beasts, so an Elephant doesn't count. Fully deterministic (no `rng`
+    involved), and confirmed zero pre-existing test anywhere uses
+    `Terrain.DESERT` in a battle context, so this was wired in
+    unconditionally with no regression risk.
+  - **Fanaticism**: "An army fighting for a Divine kingdom has a 50%
+    chance of becoming fanatical... Good kingdom... 40%... Evil
+    kingdom... 25%" -- already implemented since Phase 5
+    (`turn/strength.py roll_fanaticism`/`FANATICISM_CHANCE`), just never
+    called. Now rolled once per army via a new `apply_fanaticism: bool`
+    parameter threaded through `_build_battle_units` /
+    `fight_battle` / `fight_multi_attacker_battle`, **defaulting to
+    `False`**. Unlike `combat_ability_level`/the Phase 34 switch
+    abilities, there's no natural "data absence" condition to lean on
+    here -- every `KingdomState` always has a concrete `Alignment`, often
+    one with a real nonzero chance (`Alignment.GOOD` alone appears in 7
+    ``test_battle_orchestrator.py`` fixtures at a real 40% chance) -- so
+    an unconditional roll would silently consume a new `rng.random()`
+    call for essentially every unit in most existing battle tests,
+    perturbing scripted sequences project-wide for a mechanic most
+    callers don't need precision on. `apply_fanaticism and
+    roll_fanaticism(...)` short-circuits, so the roll -- and its `rng`
+    call -- never happens at all when the flag is off, confirmed
+    empirically (full suite passed unchanged before any new tests were
+    added). A caller that wants realistic fanaticism opts in explicitly.
+    "A Skeletal army fighting under an Undead character will always be
+    fanatical" (`roll_fanaticism`'s `always_fanatical` override, already
+    built) is never triggered by this wiring: `Skeletal_Army` is a Cast
+    spell effect this project doesn't execute (see Phase 29's note), so
+    no `ArmyState` representing one can exist yet -- not an oversight,
+    a consequence of a gap documented elsewhere.
+  - **Exploration-advantage stays unwired, and not for lack of trying**:
+    `models/game_state.py ProvinceState.explored_percent` is a single
+    value per province, shared by whoever's asking -- not one per
+    kingdom. The rulebook's factor needs "own side's exploration of this
+    province vs. the enemy's," but this project's data model has no way
+    to represent two different kingdoms' independent knowledge of the
+    same province at all. This is a genuine structural gap, not a guess
+    avoided: fixing it would mean redesigning how every
+    Explore/Move-triggered partial-exploration write updates state
+    (`turn/move_execution.py`, `turn/plan_dispatch.py`'s own EXPLORE
+    branch) to track per-kingdom percentages instead of one shared
+    number -- a larger, separate future task, not attempted here.
 
 ## Setup
 
@@ -985,11 +1042,14 @@ rulebook before being turned into named, typed fields:
   defeated army", "contested provinces") supports this reading, but it
   doesn't itself specify a per-column elimination rule for a *partially*
   losing side, so this is an interpretation.
-- **What `fight_battle` leaves out of the strength calculation**: the
-  exploration-advantage special factor, fanaticism, and the
-  desert-without-camels penalty aren't wired in -- they need per-battle
-  context (an exploration-percent comparison, alignment-based fanaticism
-  rolls, a camel-unit check) the orchestrator doesn't collect yet.
+- **What `fight_battle` leaves out of the strength calculation**:
+  ~~the exploration-advantage special factor, fanaticism, and the
+  desert-without-camels penalty aren't wired in~~ **fanaticism (opt-in,
+  see Phase 35 above) and desert-without-camels are wired in now**.
+  **Exploration-advantage stays unwired** -- a genuine structural gap,
+  not a missing-context oversight: `ProvinceState.explored_percent` is
+  one shared value per province, with no per-kingdom split to compare
+  "own vs. enemy" against (see Phase 35's note above).
   ~~Tactical/Naval-ability~~ **is** wired in (Phase 30), and ~~the
   nemesis penalty isn't applied~~ **is now applied too** (Phase 33, in
   `resolve_battle` itself rather than `fight_battle`'s own
