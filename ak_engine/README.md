@@ -740,6 +740,46 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     anywhere in this project's available data to do that safely. This
     bridge only ever helps once *some* prior setup has already given a
     leader a `LeaderState` to enrich.
+- **Phase 32 (current)**: nested-plan dispatch. `run_leader_plan()` now
+  actually dispatches `PlanPhase.nested_plan` (parsed since Phase 18, but
+  never executed until now) -- closing the gap every phase note since
+  then has pointed back to.
+  - **Confirmed against `HostAK/TP/DEF2.PAS`** (the move-file *reader*,
+    per the user's standing instruction to check the original Pascal
+    program before implementing anything): `R_HPlan`'s own `CASE
+    lactions[m] OF` has exactly two arms that call `Read_HPlan`
+    (recursively read a nested character's own plan) -- `Hire: BEGIN
+    totspent:= totspent+tl; Read_HPlan; END` and `Read_More`'s `Charm,
+    Resurrection: Read_HPlan`. No other action ever nests a plan; this
+    matches `models/plan.py`'s existing Phase 18 docstring exactly, now
+    double-checked directly against the source line numbers
+    (`DEF2.PAS` ~475-517) rather than taken on trust from that earlier
+    note.
+  - **What actually happens**: after a phase's own dispatch succeeds,
+    if it set `nested_plan` *and* really brought a character into the
+    kingdom this turn -- `HireExecutionResult.hired` or
+    `CastExecutionResult.applied` -- the nested character's plan is
+    dispatched the same way, recursively, via the same `run_leader_plan`
+    (so a nested character's own Hire/Charm can nest again; confirmed to
+    happen for real in `AK3__T9.K1`, leader 72's Resurrection-nested
+    plan contains its own Hire-nested plan three levels deep). Checking
+    `applied` rather than inspecting the spell is what keeps
+    Resurrection's own real embedded plans (present in several sample
+    files, e.g. `AK3__T6.K1` leader 18's P3) from ever dispatching --
+    `execute_cast` never executes Resurrection at all, so `applied` is
+    always `False` for it, nested plan or not.
+  - **Still "enrich, don't create"**, same rule as Phase 31's bridge: a
+    nested character with no existing `LeaderState` in `state` (nobody
+    set one up) is silently skipped, not fabricated.
+  - `PhaseDispatchResult` gained a `leader_id` field so a flattened,
+    multi-leader results list (the outer leader's phases interleaved
+    with any nested characters') stays traceable to who actually issued
+    each phase.
+  - Real-file coverage: `AK3__T5.K1` leader 58's Hire of hero 38 (a
+    single nested LMOVE), `AK3__T2.K1` leader 1's Charm of character 30
+    (two nested Practice phases), and `AK3__T6.K1` leader 18's
+    Resurrection of character 22 (real nested plan, confirmed never
+    dispatched).
 
 ## Setup
 
@@ -768,16 +808,13 @@ rulebook before being turned into named, typed fields:
 - ~~`parser/k1_moves.py` mis-parses a nested Hire/Charm/Resurrection
   plan~~ **fixed in Phase 18** — see that phase's note above for the
   fix; `PlanPhase.nested_plan` now holds the recovered embedded plan.
-  What's still open: **nothing decodes/executes a nested plan's own
-  contents** -- `turn/plan_dispatch.py run_leader_plan()` doesn't look at
-  `PlanPhase.nested_plan` at all, so a newly-hired hero's own orders
-  (now correctly *parsed*) still aren't automatically *dispatched*
-  against `GameState` the same turn they're hired. Also, a
-  Cast-triggered nested plan's `ActionPlan.leader_id` is always `None`
-  (this project doesn't decode spell ids, so it can't tell a
-  Charm/Resurrection cast from any other spell, let alone recover the
-  resulting character's id) -- only Hire-triggered nesting has a real
-  `leader_id`.
+  ~~A Cast-triggered nested plan's `ActionPlan.leader_id` is always
+  `None`~~ **fixed in Phase 23** (`turn/cast_decode.py` now decodes the
+  spell, so a Charm/Resurrection cast's own target -- the nested
+  character's real id -- is recoverable). ~~Nothing decodes/executes a
+  nested plan's own contents~~ **fixed in Phase 23 (decode) and Phase 32
+  (dispatch)** — see Phase 32's note above; a newly-hired or
+  Charm-targeted character's own orders now dispatch the same turn.
 - **Hex adjacency scheme** (`turn/movement.py`) — the original adjacency
   code isn't in the available source (it lived in the missing main
   program). The module implements a standard "odd-r" offset hex grid,
@@ -932,10 +969,10 @@ rulebook before being turned into named, typed fields:
     temper/race/alignment compatibility), recurring per-gameturn pay
     (only the one-time offer is charged), alignment-based hire refusal,
     and "can't Hire a Hero who rules his own province" (no King flag).
-    Also, `run_leader_plan` doesn't dispatch a `PlanPhase.nested_plan`'s
-    own phases (see Phase 18's note above) -- a newly-hired hero's own
-    orders are now correctly *parsed*, not lost, but still aren't
-    automatically *executed* the same run.
+    ~~`run_leader_plan` doesn't dispatch a `PlanPhase.nested_plan`'s own
+    phases~~ **fixed in Phase 32** -- a newly-hired hero's own orders now
+    dispatch the same turn, provided he already has a `LeaderState` in
+    `state` to enrich (see Phase 32's note above).
   - **Disband's remaining gap**: no King/Hero distinction on `LeaderState`
     means co-location isn't enforced for anyone (see Phase 16's note
     above) -- a Hero should arguably need to be with the army to disband

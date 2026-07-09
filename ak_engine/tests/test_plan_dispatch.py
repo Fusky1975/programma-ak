@@ -634,3 +634,262 @@ def test_real_move_file_leader_leave_phase_dispatches():
     assert result.target_leader_id == 1
     assert result.army_ids == [108, 109, 110]
     assert all(state.armies[aid].commanded_by == 1 for aid in (108, 109, 110))
+
+
+# --- Nested-plan dispatch (Phase 32) -------------------------------------
+
+
+def test_successful_hire_dispatches_the_hired_characters_own_plan():
+    location = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, _ = _state_with_army(location, {target: Terrain.PLAINS})
+    state.add_leader(LeaderState(50, None, "Wandering Hero", location))
+
+    hire_phase = PlanPhase(
+        label="P0",
+        action=ActionCode.HIRE,
+        obj=50,
+        extra=[5],
+        nested_plan=ActionPlan(
+            leader_id=50,
+            segments=[PlanSegment(plan_start=1, plan_end=1, sp=(), phases={"P1": PlanPhase("P1", ActionCode.LMOVE, 94, [0])})],
+        ),
+    )
+    leader = Leader(
+        leader_id=LEADER_ID,
+        name="Hirer",
+        plan=ActionPlan(leader_id=LEADER_ID, segments=[PlanSegment(0, 0, (), {"P0": hire_phase})]),
+    )
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    hirer_results = [r for r in results if r.leader_id == LEADER_ID]
+    nested_results = [r for r in results if r.leader_id == 50]
+    assert len(hirer_results) == 1
+    assert hirer_results[0].result.hired is True
+    assert len(nested_results) == 1
+    assert nested_results[0].phase_label == "P1"
+    assert nested_results[0].error is None
+    assert state.leaders[50].location == target
+
+
+def test_failed_hire_does_not_dispatch_the_nested_plan():
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    # Hero 50 already in another kingdom's service -> Hire fails.
+    state.add_leader(LeaderState(50, 2, "Enemy's Hero", location))
+
+    hire_phase = PlanPhase(
+        label="P0",
+        action=ActionCode.HIRE,
+        obj=50,
+        extra=[5],
+        nested_plan=ActionPlan(
+            leader_id=50,
+            segments=[PlanSegment(1, 1, (), {"P1": PlanPhase("P1", ActionCode.LMOVE, 94, [0])})],
+        ),
+    )
+    leader = Leader(
+        leader_id=LEADER_ID,
+        name="Hirer",
+        plan=ActionPlan(leader_id=LEADER_ID, segments=[PlanSegment(0, 0, (), {"P0": hire_phase})]),
+    )
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    assert len(results) == 1
+    assert results[0].result.hired is False
+    assert not any(r.leader_id == 50 for r in results)
+
+
+def test_successful_charm_dispatches_the_charmed_characters_own_plan():
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(LeaderState(50, None, "Wandering Hero", location))
+
+    charm_phase = PlanPhase(
+        label="P0",
+        action=ActionCode.CAST,
+        obj=int(Spell.CHARM),
+        extra=[50],
+        nested_plan=ActionPlan(
+            leader_id=50,
+            segments=[PlanSegment(1, 1, (), {"P1": PlanPhase("P1", ActionCode.PRACTICE, 14, [0])})],
+        ),
+    )
+    leader = Leader(
+        leader_id=LEADER_ID,
+        name="Charmer",
+        plan=ActionPlan(leader_id=LEADER_ID, segments=[PlanSegment(0, 0, (), {"P0": charm_phase})]),
+    )
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    nested_results = [r for r in results if r.leader_id == 50]
+    assert len(nested_results) == 1
+    assert nested_results[0].phase_label == "P1"
+    assert nested_results[0].error is None
+    assert isinstance(nested_results[0].result, PracticeRequest)
+    assert state.leaders[50].kingdom_id == 1
+
+
+def test_resurrections_own_nested_plan_never_dispatches():
+    # Resurrection has real embedded plans in sample data (see AK3__T6.K1),
+    # but execute_cast never executes Resurrection at all -- applied is
+    # always False, so _nested_plan_triggered must never fire for it.
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(LeaderState(50, None, "Would-be Revived", location))
+
+    resurrection_phase = PlanPhase(
+        label="P0",
+        action=ActionCode.CAST,
+        obj=int(Spell.RESURRECTION),
+        extra=[50],
+        nested_plan=ActionPlan(
+            leader_id=50,
+            segments=[PlanSegment(1, 1, (), {"P1": PlanPhase("P1", ActionCode.LMOVE, 94, [0])})],
+        ),
+    )
+    leader = Leader(
+        leader_id=LEADER_ID,
+        name="Necromancer",
+        plan=ActionPlan(leader_id=LEADER_ID, segments=[PlanSegment(0, 0, (), {"P0": resurrection_phase})]),
+    )
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    assert len(results) == 1
+    assert results[0].result.applied is False
+    assert not any(r.leader_id == 50 for r in results)
+
+
+def test_nested_plan_skipped_when_target_has_no_existing_leaderstate():
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(LeaderState(50, None, "Wandering Hero", location))
+
+    hire_phase = PlanPhase(
+        label="P0",
+        action=ActionCode.HIRE,
+        obj=50,
+        extra=[5],
+        # A different character (999) is who the file says joined -- but
+        # nothing in `state` ever created a LeaderState for them.
+        nested_plan=ActionPlan(
+            leader_id=999,
+            segments=[PlanSegment(1, 1, (), {"P1": PlanPhase("P1", ActionCode.LMOVE, 94, [0])})],
+        ),
+    )
+    leader = Leader(
+        leader_id=LEADER_ID,
+        name="Hirer",
+        plan=ActionPlan(leader_id=LEADER_ID, segments=[PlanSegment(0, 0, (), {"P0": hire_phase})]),
+    )
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    assert len(results) == 1  # no crash, no phantom nested results
+    assert results[0].result.hired is True
+
+
+def test_real_move_file_hire_dispatches_the_hired_heros_nested_lmove():
+    # Leader 58 ("Elmer") in AK3__T5.K1 has a real Hire phase (P3):
+    # "P3 : 5 38 4" -> Hire hero 38, offer 4 gold, with hero 38's own
+    # nested plan embedded right after it: a single P4 LMOVE to hex 115.
+    # Dispatched in isolation (not Elmer's whole real plan) so his own
+    # earlier real LMOVE phases (which this synthetic state doesn't have
+    # provinces for) can't move him away before the Hire phase runs.
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T5.K1")
+    real_leader = next(leader for leader in kingdom.leaders if leader.leader_id == 58)
+    hire_phase = real_leader.plan.segments[0].phases["P3"]
+    assert hire_phase.action == ActionCode.HIRE
+    assert hire_phase.nested_plan.leader_id == 38
+
+    from ak_engine.turn.hex_numbering import decode_hex_number
+
+    target = decode_hex_number(hire_phase.nested_plan.segments[0].phases["P4"].obj, BOARD_WIDTH)
+    origin = HexCoord(target.x - 1, target.y)  # adjacent starting point, same pattern as the LMOVE test above
+
+    state, _ = _state_with_army(origin, {target: Terrain.PLAINS})
+    state.add_leader(LeaderState(58, 1, "Elmer", origin))
+    state.add_leader(LeaderState(38, None, "Wandering Hero", origin))
+
+    leader = Leader(
+        leader_id=58,
+        name="Elmer",
+        plan=ActionPlan(leader_id=58, segments=[PlanSegment(3, 3, (), {"P3": hire_phase})]),
+    )
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    nested_results = [r for r in results if r.leader_id == 38]
+    assert len(nested_results) == 1
+    assert nested_results[0].phase_label == "P4"
+    assert nested_results[0].error is None
+    assert state.leaders[38].location == target
+
+
+def test_real_move_file_charm_dispatches_the_charmed_heros_nested_practice():
+    # Leader 1 (the King) in AK3__T2.K1 has a real Cast phase (P2):
+    # "P2 : 9 12 30" -> Cast Charm targeting character 30, whose own
+    # nested plan (P3/P4 Practice) is embedded right after it. Dispatched
+    # in isolation (not the King's whole real plan), same reason as the
+    # Hire test above -- his own earlier real LMOVE phase would otherwise
+    # move him off this synthetic state's single province.
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T2.K1")
+    real_leader = next(leader for leader in kingdom.leaders if leader.leader_id == 1)
+    charm_phase = real_leader.plan.segments[0].phases["P2"]
+    assert charm_phase.action == ActionCode.CAST
+    assert charm_phase.nested_plan.leader_id == 30
+
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(LeaderState(1, 1, "Uga-Buga Makumb", location))
+    state.add_leader(LeaderState(30, None, "Wandering Hero", location))
+
+    leader = Leader(
+        leader_id=1,
+        name="Uga-Buga Makumb",
+        plan=ActionPlan(leader_id=1, segments=[PlanSegment(2, 2, (), {"P2": charm_phase})]),
+    )
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    nested_results = [r for r in results if r.leader_id == 30]
+    assert [r.phase_label for r in nested_results] == ["P3", "P4"]
+    assert all(r.error is None for r in nested_results)
+    assert all(isinstance(r.result, PracticeRequest) for r in nested_results)
+    assert state.leaders[30].kingdom_id == 1
+
+
+def test_real_move_file_resurrections_nested_plan_never_dispatches():
+    # Leader 18 ("Guerin") in AK3__T6.K1 has a real Cast phase (P3):
+    # "P3 : 9 0 22" -> Cast Resurrection targeting character 22, whose
+    # own nested plan (a real P4 Recruit) is embedded right after it --
+    # confirming Resurrection's nested plans are real data, not just a
+    # theoretical case, and still never dispatch (execute_cast never
+    # executes Resurrection, so CastExecutionResult.applied is always
+    # False for it).
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T6.K1")
+    real_leader = next(leader for leader in kingdom.leaders if leader.leader_id == 18)
+    resurrection_phase = real_leader.plan.segments[0].phases["P3"]
+    assert resurrection_phase.action == ActionCode.CAST
+    assert resurrection_phase.nested_plan.leader_id == 22
+
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(LeaderState(18, 1, "Guerin", location))
+    # No LeaderState 22 at all -- a "deceased character" has nothing to
+    # revive in this project's data model (see cast_execution.py); the
+    # point of this test is that nested dispatch never even gets that
+    # far, since Resurrection never applies regardless.
+
+    leader = Leader(
+        leader_id=18,
+        name="Guerin",
+        plan=ActionPlan(leader_id=18, segments=[PlanSegment(3, 3, (), {"P3": resurrection_phase})]),
+    )
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    assert len(results) == 1
+    assert results[0].result.applied is False
+    assert not any(r.leader_id == 22 for r in results)

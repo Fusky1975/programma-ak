@@ -52,7 +52,9 @@ to dispatch automatically:
   docstring). Neither models the rulebook's finer unsourced/undata-able
   details: a Hero's own "required pay" (may be less than the offer),
   recurring per-turn pay, alignment-based hire refusal, or "can't Hire a
-  Hero who rules his own province" -- see ``README.md``.
+  Hero who rules his own province" -- see ``README.md``. **A successful
+  Hire also dispatches the hired Hero's own embedded plan the same turn**
+  (Phase 32, ``run_leader_plan``'s nested-plan handling -- see below).
 - **SEARCH** is decode-only (Phase 19), same status Recruit had before
   Phase 15: ``obj``/``extra`` decode to a target feature id plus an
   Encounter Plan tactic list via ``turn/search_decode.py``, but nothing
@@ -112,13 +114,15 @@ to dispatch automatically:
   documented reason -- see ``turn/cast_execution.py``'s docstring, most
   notably Resurrection, which can't be executed even conceptually since
   ``GameState`` has no "dead leader" registry to revive from. The
-  success/failure roll itself (rulebook [3.10]) also isn't modeled --
-  needs per-leader ability data ``GameState`` doesn't have yet (same gap
-  Practice hit); a valid Charm/Kill_Enemy attempt always succeeds for
-  now. Not to be confused with ``Maneuver.CAST``, the *encounter-plan*
-  tactic already decoded by ``turn/search_decode.py`` -- a different
-  Pascal reading path entirely, with no top-level ``ActionCode`` of its
-  own.
+  success/failure roll itself (rulebook [3.10]) is real when the caster
+  has ``LeaderState.skills`` recorded, falling back to always-succeeds
+  otherwise (Phase 30). Not to be confused with ``Maneuver.CAST``, the
+  *encounter-plan* tactic already decoded by ``turn/search_decode.py`` --
+  a different Pascal reading path entirely, with no top-level
+  ``ActionCode`` of its own. **A successful Charm also dispatches the
+  charmed character's own embedded plan the same turn** (Phase 32, see
+  below); Resurrection's own embedded plan (real samples have some) never
+  dispatches, since ``execute_cast`` never reports it as applied.
 - **USE_MI** is decode-only (Phase 24): ``obj`` decodes to a global
   item-*instance* id via ``turn/use_mi_decode.py`` -- structurally
   different from Cast's ``obj``, which is a self-describing ``Spell``
@@ -202,6 +206,32 @@ exactly the situation where a clear failure beats a guessed-at decode.
 This closes out ``ActionCode`` coverage at its practical maximum: 21 of
 22, with the 22nd excluded by design rather than left as an open gap.
 
+**Nested-plan dispatch (Phase 32)**: ``run_leader_plan()`` now looks at
+``PlanPhase.nested_plan`` (parsed since Phase 18, but never dispatched
+until now). Per ``HostAK/TP/DEF2.PAS``'s ``R_HPlan``/``Read_More`` (the
+move-file *reader*: ``Hire: BEGIN ... Read_HPlan; END`` and
+``Read_More``'s ``Charm,Resurrection: Read_HPlan``), a move file embeds a
+newly-joined character's own complete plan at exactly two trigger
+points: a successful **Hire**, and a **Cast** of **Charm** or
+**Resurrection**. After a phase's own dispatch succeeds, if it set
+``nested_plan`` and really did bring a character into the kingdom this
+turn (``_nested_plan_triggered`` -- ``HireExecutionResult.hired`` /
+``CastExecutionResult.applied``), the nested character's plan is
+recursively dispatched the same way, via the same recursive call to
+``run_leader_plan`` (so a nested character's own Hire/Charm can nest
+again -- confirmed to happen in real data, e.g. turn 9's leader 72 in
+``AK3__T9.K1``). Checking ``applied`` rather than the spell itself is
+what keeps Resurrection's own real embedded plans (present in several
+samples) from ever dispatching: ``execute_cast`` never executes
+Resurrection, so it never reports ``applied=True``, regardless of
+whether the file happened to embed a plan for it. A nested character
+with no existing ``LeaderState`` in ``state`` (nobody set one up) is
+silently skipped -- same "can't act on what doesn't exist yet" rule as
+``turn/kingdom_bridge.py`` (Phase 31). ``PhaseDispatchResult`` gained a
+``leader_id`` field so a flattened, multi-leader results list (outer
+leader's phases interleaved with any nested characters') stays
+traceable to who actually issued each phase.
+
 Every dispatch call takes an explicit ``leader_id`` -- the acting
 character -- and ``army_ids`` defaults to whatever that leader currently
 commands (``GameState.armies_commanded_by``) unless the caller overrides
@@ -217,7 +247,7 @@ from typing import Any
 from ak_engine.models.enums import ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
-from ak_engine.models.plan import PlanPhase
+from ak_engine.models.plan import ActionPlan, PlanPhase
 from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
 from ak_engine.turn.aspy_defend_decode import decode_aspy_phase, decode_defend_phase
 from ak_engine.turn.cast_decode import decode_cast_phase
@@ -282,6 +312,7 @@ class HireExecutionResult:
 
 @dataclass(slots=True)
 class PhaseDispatchResult:
+    leader_id: int
     segment_index: int
     phase_label: str
     action: Any
@@ -549,7 +580,60 @@ def run_leader_plan(
                     explorer_skill=explorer_skill,
                     rng=rng,
                 )
-                results.append(PhaseDispatchResult(segment_index, label, phase.action, result, None))
+                results.append(PhaseDispatchResult(leader.leader_id, segment_index, label, phase.action, result, None))
             except Exception as exc:  # noqa: BLE001 -- intentionally broad, see docstring
-                results.append(PhaseDispatchResult(segment_index, label, phase.action, None, exc))
+                results.append(PhaseDispatchResult(leader.leader_id, segment_index, label, phase.action, None, exc))
+                continue
+
+            if phase.nested_plan is not None and _nested_plan_triggered(phase.action, result):
+                results.extend(_dispatch_nested_plan(phase.nested_plan, state, kingdom_id, board_width, explorer_skill, rng))
     return results
+
+
+def _nested_plan_triggered(action: Any, result: Any) -> bool:
+    """Rulebook-independent, ``DEF2.PAS``-sourced check: does this phase's own
+    successful result mean a real character joined the kingdom this turn?
+
+    ``DEF2.PAS``'s ``R_HPlan``/``Read_More`` (the move-file *reader*) embeds
+    a nested plan exactly for Hire and for Cast-ing Charm or Resurrection --
+    see ``models/plan.py``'s module docstring. Resurrection never reaches
+    "applied" (``turn/cast_execution.py`` doesn't execute it at all), so
+    checking ``CastExecutionResult.applied`` here already excludes it
+    without needing to inspect the spell -- only a genuinely successful
+    Charm ever returns ``applied=True``.
+    """
+
+    if action is ActionCode.HIRE:
+        return isinstance(result, HireExecutionResult) and result.hired
+    if action is ActionCode.CAST:
+        return isinstance(result, CastExecutionResult) and result.applied
+    return False
+
+
+def _dispatch_nested_plan(
+    nested_plan: ActionPlan,
+    state: GameState,
+    kingdom_id: int,
+    board_width: int,
+    explorer_skill: int,
+    rng: random.Random | None,
+) -> list[PhaseDispatchResult]:
+    """Dispatch a newly-joined character's own embedded plan (see module docstring).
+
+    Silently skipped (empty list) if the nested plan has no resolved
+    ``leader_id`` or that character has no existing ``LeaderState`` in
+    ``state`` -- there's nothing to enrich, same "can't create from
+    nothing" rule as ``turn/kingdom_bridge.py`` (Phase 31). Never pins
+    ``army_ids``: a freshly Hired/Charmed character's own commanded armies
+    (if any) are re-derived fresh, independent of whatever the triggering
+    leader's own dispatch was pinned to.
+    """
+
+    nested_leader_id = nested_plan.leader_id
+    if nested_leader_id is None or nested_leader_id not in state.leaders:
+        return []
+
+    nested_leader = Leader(leader_id=nested_leader_id, name=state.leaders[nested_leader_id].name, plan=nested_plan)
+    return run_leader_plan(
+        nested_leader, state, kingdom_id, board_width=board_width, explorer_skill=explorer_skill, rng=rng
+    )
