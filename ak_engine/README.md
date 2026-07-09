@@ -1062,11 +1062,19 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     has low strength because its leader has insufficient Druidic
     ability, it will be held back and will throw its low strength into
     the attack on the front-line unit" (i.e. no rear-targeting in that
-    case) -- skipped for the same reason every other Druidic-ability
-    rule in this project is skipped (`turn/strength.py`'s own module
-    docstring: no "Druid Table" data available). Every overflight unit
-    is treated as eligible to rear-target regardless of its
-    controller's Druidic ability.
+    case) -- skipped at the time of writing for the same reason every
+    other Druidic-ability rule in this project was then skipped
+    (`turn/strength.py`'s own module docstring: no "Druid Table" data
+    available). **The Druid Table itself now exists as of Phase 41**
+    (`turn/strength.py DRUID_TABLE`/`compute_druidic_shortfall`), so the
+    underlying data gap is closed, but this specific carve-out --
+    *which* units get held back from rear-targeting because of it --
+    is still not wired into `battle_line.py`/`resolve_battle`; every
+    overflight unit is still treated as eligible to rear-target
+    regardless of its controller's Druidic ability. Left as a
+    consequence of Phase 41's own deliberately narrow scope (quality
+    penalty only, see that phase's note below) rather than revisited
+    here.
   - Non-breaking: full suite passed unchanged after wiring, before any
     new tests were added -- no pre-existing fixture pairs an overflight
     unit against a 2+-deep opposing column.
@@ -1131,6 +1139,74 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     default change (see above) -- confirmed by running the full suite
     immediately after that one-line edit, before writing any new
     Phase 40 tests.
+- **Phase 41 (current)**: the Druid Table quality penalty, rulebook
+  [4.32]: *"With each level, Druids gain the ability to lead armies of
+  races other than their own, as listed in the Druid Table. If a
+  character attempts to lead an army when he has insufficient Druidic
+  ability, the quality of the army suffers a decrease equal to his
+  shortfall in Druidic ability."* Resolves the `[6.3]` quality-modifier
+  list's `-? insufficient Druidic ability` line, open since the earliest
+  `turn/strength.py` work (Phase 21-adjacent) for lack of "Druid Table"
+  data -- found by reading `RULES.AK`'s own `[4.32]` section directly.
+  - **`turn/strength.py DRUID_TABLE`**: transcribed verbatim from the
+    rulebook table -- Level 1: Humans, Elves, Dwarves, Orcs, Mermen,
+    Werebeasts; Level 2: Whales, Trolls; Level 3: Eagles, Ents; Level 4:
+    Dragons. `Race.NO_RACE`/`SAURIAN`/`VAMPISH`/`ROHAN` have no entry in
+    the rulebook text available to this project -- treated as requiring
+    Druidic skill 0, not guessed at a higher value.
+  - **`compute_druidic_shortfall(leader_race, army_race,
+    leader_druidic_skill)`**: `max(0, DRUID_TABLE.get(army_race, 0) -
+    leader_druidic_skill)`, with two deliberate short-circuits to 0: (1)
+    `leader_race == army_race` -- the rulebook's own framing is
+    specifically about "races OTHER than their own," so a Whale leader
+    commanding Whales needs no Druidic skill at all, even though
+    `DRUID_TABLE[Race.WHALES] == 2` (that entry is for a *non*-Whale
+    leader); (2) `leader_race is None` -- an independent Hero has no
+    kingdom to derive a race from, treated as insufficient data rather
+    than a guessed penalty.
+  - **Wired into `turn/strength.py modified_quality`/
+    `compute_effective_strength`** as a new `druidic_shortfall: int = 0`
+    parameter, subtracted from the quality level in the documented
+    `[6.3]` order (after desert-without-camels, before the
+    home-province/fanatical additions), then clamped to `Quality`'s
+    range same as every other modifier there.
+  - **Wired into `battle_orchestrator.py _build_battle_units`**
+    (`_druidic_shortfall_for`): for a *led* army (`commanded_by` is not
+    `None`), the leader's own race and the army's race are both derived
+    the same way every other per-leader/per-army race lookup in this
+    project already is -- via `kingdom_id -> KingdomState.race`, since
+    no per-character race field exists. The leader's Druidic skill comes
+    from `LeaderState.skills.pair_for_ability(Ability.DRUID)[0]`, or `0`
+    if that leader has no `skills` recorded (the same placeholder
+    convention used for Tactical/Naval ability since Phase 30). Fully
+    deterministic, no `rng` involved, so wired in unconditionally (same
+    precedent as desert-without-camels).
+  - **Structurally a no-op for the overwhelmingly common case**: a
+    leader's own race always equals his own army's race when both
+    belong to the same kingdom, which is virtually every army in this
+    project. The mismatch this rule is actually for is only reachable
+    via `Pick_Up` attaching a co-located army regardless of ownership,
+    or an army's owning kingdom changing after `Leave`/`Disband` --
+    confirmed empirically: the full suite passed unchanged (833 -> still
+    833) the moment this was wired in, before any new Phase 41 tests
+    were added.
+  - **Deliberately unmodeled**: the rulebook's own carve-out for *unled*
+    armies under the garrison commander ("If a unit is under the
+    garrison commander of a province, and is of a different race than
+    the King, then the King's druidic ability is used...") is not
+    covered -- resolving it would mean `_build_battle_units` looking up
+    *which* King owns the province the battle is in (not necessarily the
+    army's own kingdom), a province-ownership lookup this function isn't
+    currently wired for. Left unmodeled, the same "garrison commander
+    has no special abilities" simplification this project already uses
+    for Tactical ability's own Duel fallback ([7.1]). This is exactly
+    the piece Phase 40's `is_king` flag was built as a foundation for,
+    per that phase's own note above -- still not attempted this phase.
+  - Also **not extended to `battle_line.py`'s rear-targeting carve-out**
+    (Phase 39) -- see that phase's note above, updated to reflect that
+    the data gap it cited is now closed but the specific wiring isn't.
+  - Non-breaking: full suite passed unchanged (833 passed) immediately
+    after wiring, before any new tests were written.
 
 ## Setup
 

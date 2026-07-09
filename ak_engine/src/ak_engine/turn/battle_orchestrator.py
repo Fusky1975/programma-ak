@@ -150,6 +150,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.race import Race
 from ak_engine.turn.aftermath import roll_quality_change
 from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
@@ -159,7 +160,12 @@ from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles
 from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
 from ak_engine.turn.retreat import attacker_retreat_candidates, find_retreat_destination
-from ak_engine.turn.strength import compute_effective_strength, roll_elephants_strength, roll_fanaticism
+from ak_engine.turn.strength import (
+    compute_druidic_shortfall,
+    compute_effective_strength,
+    roll_elephants_strength,
+    roll_fanaticism,
+)
 
 
 @dataclass(slots=True)
@@ -224,6 +230,30 @@ def _build_battle_units(
     perturbing scripted RNG sequences across most of the pre-Phase-35
     test suite for a mechanic most callers don't need precision on. A
     caller that wants real fanaticism opts in explicitly.
+
+    **Druidic ability** (Phase 41, rulebook [4.32]): a *led* army
+    (``commanded_by`` is not ``None``) whose commander leads a race
+    other than his own (both derived the same documented way as
+    everywhere else in this project -- via each leader's own
+    ``kingdom_id`` -> ``KingdomState.race``, since no per-character race
+    is tracked) suffers a quality shortfall per ``turn/strength.py
+    compute_druidic_shortfall``/``DRUID_TABLE`` if the commander's
+    Druidic skill (``LeaderState.skills``, 0 if unrecorded) falls short
+    of what the Druid Table requires for that race. Fully deterministic,
+    no ``rng`` involved -- and structurally a no-op for same-kingdom
+    commanding (the overwhelmingly common case), since a leader's own
+    race always equals his own army's race unless the two came from
+    *different* kingdoms (only reachable via Pick_Up attaching a
+    co-located army regardless of ownership, or an army's owning
+    kingdom changing after Leave/Disband). **Unled armies (under the
+    garrison commander) are deliberately not covered**: the rulebook's
+    own carve-out for that case ("the King's druidic ability is used")
+    would need this function to resolve *which* King -- the owning
+    province's, not necessarily the army's own kingdom -- which
+    `_build_battle_units` isn't wired to look up without a larger
+    province-ownership-plumbing change. Left unmodeled, the same
+    "garrison commander has no special abilities" simplification this
+    project already uses for Tactical ability's own duel fallback.
     """
 
     desert_without_camels = terrain is Terrain.DESERT and not any(
@@ -238,6 +268,7 @@ def _build_battle_units(
         # Short-circuited: roll_fanaticism (and its rng.random() call) never
         # runs at all when apply_fanaticism is False -- see docstring.
         is_fanatical = apply_fanaticism and roll_fanaticism(kingdom.alignment, rng)
+        druidic_shortfall = _druidic_shortfall_for(army, state, kingdom.race)
         strength = compute_effective_strength(
             army.army_type,
             kingdom.race,
@@ -247,11 +278,28 @@ def _build_battle_units(
             is_home_province=is_home,
             is_fanatical=is_fanatical,
             desert_without_camels=desert_without_camels,
+            druidic_shortfall=druidic_shortfall,
             base_strength_override=override,
             combat_ability_level=combat_ability_level,
         )
         units.append(BattleUnit(army.army_type, strength, source_id=army.army_id))
     return units
+
+
+def _druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race) -> int:
+    """Rulebook [4.32] Druid Table -- see ``_build_battle_units``'s docstring for scope
+    (led armies only; the garrison-commander/King-substitution carve-out
+    for unled armies isn't modeled).
+    """
+
+    if army.commanded_by is None:
+        return 0
+    leader = state.leaders.get(army.commanded_by)
+    if leader is None or leader.kingdom_id is None:
+        return 0
+    leader_race = state.kingdoms[leader.kingdom_id].race
+    leader_druidic_skill = leader.skills.pair_for_ability(Ability.DRUID)[0] if leader.skills is not None else 0
+    return compute_druidic_shortfall(leader_race, army_race, leader_druidic_skill)
 
 
 def _retreat_or_disband(

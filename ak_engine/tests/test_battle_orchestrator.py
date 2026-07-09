@@ -458,6 +458,108 @@ def test_build_battle_units_fanaticism_enabled_rolls_the_kingdoms_real_chance():
     assert fanatical_strength > baseline
 
 
+def _skills_with_druid(level: int) -> SkillTable:
+    raw = [0] * 30
+    raw[Ability.DRUID.value * 2] = level  # (skill, aptitude) pair -- only skill matters here
+    return SkillTable(raw)
+
+
+def test_build_battle_units_druidic_shortfall_penalizes_a_foreign_race_led_army():
+    # A Human leader (Druid skill 0) commanding a Dragon army (DRUID_TABLE
+    # requires 4) -- reachable via Pick_Up attaching a co-located army
+    # regardless of ownership. Race mismatch is what triggers the penalty,
+    # not the kingdom_id mismatch itself.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Hero", location=FIELD))
+    # Army belongs to kingdom 2 (Dragons) but is commanded by kingdom 1's leader.
+    army = ArmyState(101, 2, ArmyType.DRAGON_WING, Quality.ELITE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(
+        ArmyType.DRAGON_WING, Race.DRAGONS, Quality.ELITE, Terrain.PLAINS, druidic_shortfall=4
+    )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_druidic_shortfall_is_zero_when_leader_has_sufficient_skill():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    leader = LeaderState(1, kingdom_id=1, name="Hero", location=FIELD, skills=_skills_with_druid(4))
+    state.add_leader(leader)
+    army = ArmyState(101, 2, ArmyType.DRAGON_WING, Quality.ELITE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(ArmyType.DRAGON_WING, Race.DRAGONS, Quality.ELITE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_druidic_shortfall_bypassed_for_same_kingdom_commanding():
+    # The overwhelmingly common case: leader and army share a kingdom, so
+    # their races always match regardless of the leader's Druid skill.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    leader = LeaderState(1, kingdom_id=1, name="Hero", location=FIELD, skills=_skills_with_druid(0))
+    state.add_leader(leader)
+    army = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(ArmyType.DRAGON_WING, Race.DRAGONS, Quality.ELITE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_druidic_shortfall_unled_army_unaffected():
+    # Deliberately unmodeled scope (see _build_battle_units's docstring):
+    # an unled army isn't penalized regardless of race.
+    state = GameState()
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    army = ArmyState(101, 2, ArmyType.DRAGON_WING, Quality.ELITE, location=FIELD, commanded_by=None)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(ArmyType.DRAGON_WING, Race.DRAGONS, Quality.ELITE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_druidic_shortfall_defaults_to_zero_skill_when_unrecorded():
+    # Leader exists but has no LeaderState.skills recorded at all (the
+    # same placeholder-0 convention used everywhere else in this project).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Whalia", Race.WHALES, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    leader = LeaderState(1, kingdom_id=1, name="Hero", location=FIELD, skills=None)
+    state.add_leader(leader)
+    army = ArmyState(101, 2, ArmyType.WHALES, Quality.ELITE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.SEA, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    # DRUID_TABLE[Race.WHALES] == 2, skill defaults to 0 -> shortfall 2.
+    expected = compute_effective_strength(
+        ArmyType.WHALES, Race.WHALES, Quality.ELITE, Terrain.SEA, druidic_shortfall=2
+    )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
 def test_fight_battle_reads_a_led_attackers_real_tactical_skill_end_to_end():
     # End-to-end (task #180): a real LeaderState.skills tactical level,
     # attached via ArmyState.commanded_by, is what fight_battle() itself

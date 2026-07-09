@@ -11,7 +11,8 @@ The rulebook gives an exact, ordered pipeline:
        spellcasting system exists yet)
     Multiply strength by modified unit quality:
       -1 if in desert without camels
-      (-? insufficient Druidic ability -- SKIPPED, no "Druid Table" data)
+      -? insufficient Druidic ability (see Druid Table) -- Phase 41,
+       ``compute_druidic_shortfall``/``DRUID_TABLE`` below
       +1 if in home province
       +1 for fanatical units
       (+1 Oratory spell, +? magic items -- SKIPPED, no spell/item-effect
@@ -28,9 +29,9 @@ The rulebook gives an exact, ordered pipeline:
 
 This resolves the "unspecified stacking order" gap flagged in earlier
 phases: the order above is a direct rulebook quote, not a guess. What's
-still skipped (Illusory Terrain, Druidic ability penalty, Oratory,
-magic items, Phantasmal Armies) all depend on spellcasting/item-effect
-systems this project hasn't built; they're omitted rather than guessed.
+still skipped (Illusory Terrain, Oratory, magic items, Phantasmal
+Armies) all depend on spellcasting/item-effect systems this project
+hasn't built; they're omitted rather than guessed.
 """
 
 from __future__ import annotations
@@ -71,9 +72,55 @@ FANATICISM_CHANCE: dict[Alignment, float] = {
 MAX_EXPLORATION_ADVANTAGE = 0.25
 TACTICAL_BONUS_PER_LEVEL = 0.20
 
+# Rulebook [4.32] DRUID TABLE, transcribed verbatim:
+#   Level 1: Humans, Elves, Dwarves, Orcs, Mermen, Werebeasts
+#   Level 2: Whales, Trolls
+#   Level 3: Eagles, Ents
+#   Level 4: Dragons
+# Races with no entry (NO_RACE, SAURIAN, VAMPISH, ROHAN) aren't listed in
+# the rulebook text available to this project -- treated as requiring no
+# special Druidic skill (0), not guessed at a higher value.
+DRUID_TABLE: dict[Race, int] = {
+    Race.HUMAN: 1,
+    Race.ELVEN: 1,
+    Race.DWARVEN: 1,
+    Race.ORCISH: 1,
+    Race.MERMISH: 1,
+    Race.WEREFOLK: 1,
+    Race.WHALES: 2,
+    Race.TROLLISH: 2,
+    Race.EAGLES: 3,
+    Race.ENTISH: 3,
+    Race.DRAGONS: 4,
+}
+
 
 def roll_elephants_strength(rng: random.Random) -> int:
     return rng.randint(*ELEPHANTS_STRENGTH_RANGE)
+
+
+def compute_druidic_shortfall(leader_race: Race | None, army_race: Race, leader_druidic_skill: int) -> int:
+    """Rulebook [4.32]: "With each level, Druids gain the ability to lead armies of
+    races other than their own, as listed in the Druid Table. If a
+    character attempts to lead an army when he has insufficient Druidic
+    ability, the quality of the army suffers a decrease equal to his
+    shortfall in Druidic ability."
+
+    Leading an army of your *own* race never needs Druidic skill at all
+    -- the rulebook's own framing is specifically about "races other
+    than their own" -- so ``leader_race == army_race`` always returns 0,
+    even for a race the Druid Table itself lists (e.g. a Whale leading
+    Whales needs no Druidic skill, despite the table saying "Whales
+    requires level 2" -- that entry is for a *non*-Whale leader).
+    ``leader_race=None`` (no race data available for the leader, e.g. an
+    independent Hero with no kingdom to derive one from) also returns 0
+    -- insufficient data to judge a shortfall, not a guessed penalty.
+    """
+
+    if leader_race is None or leader_race == army_race:
+        return 0
+    required = DRUID_TABLE.get(army_race, 0)
+    return max(0, required - leader_druidic_skill)
 
 
 def roll_fanaticism(alignment: Alignment, rng: random.Random, *, always_fanatical: bool = False) -> bool:
@@ -88,12 +135,14 @@ def modified_quality(
     desert_without_camels: bool = False,
     is_home_province: bool = False,
     is_fanatical: bool = False,
+    druidic_shortfall: int = 0,
 ) -> Quality:
     """Shift a quality level per the rulebook's quality-modifier list, clamped to Quality's range."""
 
     level = int(base_quality)
     if desert_without_camels:
         level -= 1
+    level -= druidic_shortfall
     if is_home_province:
         level += 1
     if is_fanatical:
@@ -148,6 +197,7 @@ def compute_effective_strength(
     is_home_province: bool = False,
     is_fanatical: bool = False,
     desert_without_camels: bool = False,
+    druidic_shortfall: int = 0,
     own_explored_percent: int = 0,
     enemy_explored_percent: int = 0,
     combat_ability_level: int = 0,
@@ -190,6 +240,7 @@ def compute_effective_strength(
         desert_without_camels=desert_without_camels,
         is_home_province=is_home_province,
         is_fanatical=is_fanatical,
+        druidic_shortfall=druidic_shortfall,
     )
     strength *= int(quality)
 

@@ -10,8 +10,10 @@ from ak_engine.models.map import Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.strength import (
+    DRUID_TABLE,
     ELEPHANTS_STRENGTH_RANGE,
     combat_ability_multiplier,
+    compute_druidic_shortfall,
     compute_effective_strength,
     exploration_advantage_multiplier,
     modified_quality,
@@ -69,6 +71,59 @@ def test_modified_quality_stacks_and_clamps():
     assert modified_quality(Quality.DEPLETED, desert_without_camels=True) == Quality.DEPLETED  # clamped at floor
     assert modified_quality(Quality.ELITE, is_home_province=True, is_fanatical=True) == Quality.ELITE  # clamped at ceiling
     assert modified_quality(Quality.AVERAGE, desert_without_camels=True, is_home_province=True, is_fanatical=True) == Quality.VETERAN
+
+
+def test_compute_druidic_shortfall_same_race_never_penalized_even_with_zero_skill():
+    # Rulebook [4.32] is framed as "races OTHER than their own" -- a Whale
+    # leader commanding Whales needs no Druidic skill at all, even though
+    # DRUID_TABLE[Race.WHALES] == 2 (that entry is for a *non*-Whale leader).
+    assert DRUID_TABLE[Race.WHALES] == 2
+    assert compute_druidic_shortfall(Race.WHALES, Race.WHALES, 0) == 0
+    assert compute_druidic_shortfall(Race.HUMAN, Race.HUMAN, 0) == 0
+
+
+def test_compute_druidic_shortfall_none_leader_race_returns_zero():
+    # No race data for the leader (e.g. an independent Hero with no
+    # kingdom) -- insufficient data to judge a shortfall, not a guess.
+    assert compute_druidic_shortfall(None, Race.DRAGONS, 0) == 0
+
+
+def test_compute_druidic_shortfall_returns_exact_gap_when_insufficient():
+    # DRUID_TABLE[Race.DRAGONS] == 4; a Human leader (skill 1) leading
+    # Dragons is short by 3.
+    assert compute_druidic_shortfall(Race.HUMAN, Race.DRAGONS, 1) == 3
+
+
+def test_compute_druidic_shortfall_zero_when_skill_meets_or_exceeds_requirement():
+    # DRUID_TABLE[Race.TROLLISH] == 2.
+    assert compute_druidic_shortfall(Race.HUMAN, Race.TROLLISH, 2) == 0
+    assert compute_druidic_shortfall(Race.HUMAN, Race.TROLLISH, 5) == 0  # never negative
+
+
+def test_compute_druidic_shortfall_race_absent_from_table_requires_nothing():
+    # NO_RACE/SAURIAN/VAMPISH/ROHAN aren't in the rulebook's Druid Table
+    # text available to this project -- treated as requiring 0, not guessed.
+    assert Race.SAURIAN not in DRUID_TABLE
+    assert compute_druidic_shortfall(Race.HUMAN, Race.SAURIAN, 0) == 0
+
+
+def test_modified_quality_druidic_shortfall_reduces_and_clamps_at_floor():
+    assert modified_quality(Quality.VETERAN, druidic_shortfall=1) == Quality.AVERAGE
+    assert modified_quality(Quality.GREEN, druidic_shortfall=4) == Quality.DEPLETED  # clamped, can't go negative
+    # Stacks with the other modifiers, applied in the documented order:
+    # AVERAGE(2) - 1 (shortfall) + 1 (home) + 1 (fanatical) = VETERAN(3).
+    assert (
+        modified_quality(Quality.AVERAGE, druidic_shortfall=1, is_home_province=True, is_fanatical=True)
+        == Quality.VETERAN
+    )
+
+
+def test_compute_effective_strength_applies_druidic_shortfall_to_quality():
+    penalized = compute_effective_strength(
+        ArmyType.BOWMEN, Race.HUMAN, Quality.VETERAN, Terrain.PLAINS, druidic_shortfall=1
+    )
+    unpenalized = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.VETERAN, Terrain.PLAINS)
+    assert penalized == pytest.approx(unpenalized / int(Quality.VETERAN) * int(Quality.AVERAGE))
 
 
 def test_desert_without_camels_reduces_quality_multiplier():
