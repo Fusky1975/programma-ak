@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from ak_engine.models.alignment import Alignment
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.map import HexCoord
+from ak_engine.models.race import Race
+from ak_engine.parser.k1_moves import parse_k1_moves_file
+from ak_engine.turn.kingdom_bridge import sync_leaders_from_kingdom
+
+GAME_DATA_DIR = Path(__file__).resolve().parents[2]
+LOCATION = HexCoord(3, 9)
+
+
+def test_syncs_kingdom_id_and_attaches_kings_skills_when_leaders_already_exist():
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T1.K1")  # King id 1, Heroes 18 and 72
+    state = GameState()
+    state.add_kingdom(KingdomState(27, "Uga-Buga Makumb", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.add_leader(LeaderState(1, kingdom_id=None, name="Uga-Buga Makumb", location=LOCATION))
+    state.add_leader(LeaderState(18, kingdom_id=None, name="Guerin", location=LOCATION))
+    state.add_leader(LeaderState(72, kingdom_id=None, name="Teleko", location=LOCATION))
+
+    report = sync_leaders_from_kingdom(kingdom, state)
+
+    assert sorted(report.synced_leader_ids) == [1, 18, 72]
+    assert report.not_found_leader_ids == []
+    assert report.king_not_identified is False
+    assert report.skills_attached_to_leader_id == 1
+
+    assert state.leaders[1].kingdom_id == 27
+    assert state.leaders[18].kingdom_id == 27
+    assert state.leaders[72].kingdom_id == 27
+    assert state.leaders[1].skills is kingdom.skills
+    # Only the King's real skill line exists in the file -- Heroes' own
+    # ability data is never present, so they stay untouched.
+    assert state.leaders[18].skills is None
+    assert state.leaders[72].skills is None
+
+
+def test_reports_leaders_with_no_existing_leaderstate_without_creating_them():
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T1.K1")
+    state = GameState()  # no leaders tracked at all yet
+
+    report = sync_leaders_from_kingdom(kingdom, state)
+
+    assert report.synced_leader_ids == []
+    assert sorted(report.not_found_leader_ids) == [1, 18, 72]
+    assert report.skills_attached_to_leader_id is None
+    assert state.leaders == {}
+
+
+def test_only_matched_leaders_are_synced_others_still_reported_missing():
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T1.K1")
+    state = GameState()
+    state.add_leader(LeaderState(18, kingdom_id=5, name="Guerin", location=LOCATION))  # was Hired away
+
+    report = sync_leaders_from_kingdom(kingdom, state)
+
+    assert report.synced_leader_ids == [18]
+    assert sorted(report.not_found_leader_ids) == [1, 72]
+    # Guerin is back in this kingdom's own move-file submission this turn
+    # -> re-synced to kingdom_id 27, regardless of last turn's employer.
+    assert state.leaders[18].kingdom_id == 27
+    # He's not the King, so no skills attached even though he was found.
+    assert report.skills_attached_to_leader_id is None
+    assert state.leaders[18].skills is None
+
+
+def test_king_not_identified_when_no_leader_name_matches_king_name():
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T1.K1")
+    # Simulate a hypothetical file whose King's own leader-block name
+    # doesn't match the king-name line (never observed in real samples,
+    # but the module must not silently guess a King in that case).
+    kingdom.leaders[0].name = "Someone Else"
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=None, name="Uga-Buga Makumb", location=LOCATION))
+
+    report = sync_leaders_from_kingdom(kingdom, state)
+
+    assert report.king_not_identified is True
+    assert report.skills_attached_to_leader_id is None
+    assert state.leaders[1].skills is None
+    # kingdom_id syncing is unaffected -- it doesn't depend on King identification.
+    assert state.leaders[1].kingdom_id == 27

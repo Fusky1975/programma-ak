@@ -17,20 +17,25 @@ diplomacy/treaty tracking beyond a flat alliance set, no turn-history
 log.
 
 ``LeaderState.skills`` (Phase 30) reuses ``models/kingdom.py``'s
-already-resolved ``SkillTable`` -- but note **no code anywhere in this
-project populates it from a real parsed move file**: there is no bridge
-from Phase 1's parsed ``Kingdom`` (whose own ``skills: SkillTable`` is
-the *King's* ability pairs, straight from the move file's skill-values
-line) into any ``GameState``/``LeaderState``. Every ``GameState`` in
-this project -- in every test, and in any real usage today -- is
-hand-built by its caller; wiring a real parse-to-execution pipeline is
-a distinct, larger future task. Until then, ``skills`` defaults to
-``None`` ("no ability data recorded for this leader"), and every
-consumer (``turn/battle_orchestrator.py``'s Tactical/Naval strength
-bonus and Duel commander selection, ``turn/cast_execution.py``'s
-Cast success roll) falls back to its pre-Phase-30 placeholder behavior
-in that case -- a real skill level only changes anything once a caller
-sets it explicitly.
+already-resolved ``SkillTable``. ``skills`` defaults to ``None`` ("no
+ability data recorded for this leader"), and every consumer
+(``turn/battle_orchestrator.py``'s Tactical/Naval strength bonus and
+Duel commander selection, ``turn/cast_execution.py``'s Cast success
+roll) falls back to its pre-Phase-30 placeholder behavior in that case
+-- a real skill level only changes anything once it's set.
+
+``turn/kingdom_bridge.py`` (Phase 31) is the one piece of code that sets
+it from real data: given a parsed ``Kingdom`` (Phase 1) and a
+``GameState`` that **already has** matching ``LeaderState``s (created by
+whatever turn-0 setup the caller already did), it attaches the King's
+real ``SkillTable`` to his ``LeaderState`` and syncs everyone's
+``kingdom_id``. It's deliberately narrow: a move file carries no
+location/race/alignment/treasury for anyone, so it can only enrich
+``LeaderState``s that already exist, never create a ``KingdomState`` or
+a new ``LeaderState`` from nothing -- see that module's docstring for
+why. Building the missing piece (populating a brand-new ``GameState``
+from turn 0, with no existing entries to enrich) remains a distinct,
+unsolved, larger future task.
 
 ``ArmyState.kingdom_id`` is nullable (Phase 16): ``None`` means an
 unowned mercenary army (rulebook [3.6]: Disband "releases the army(s)

@@ -689,21 +689,57 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     the real-skill tiebreak); every black-box `fight_battle()` test
     passed unchanged, since no pre-existing fixture ever combined
     `commanded_by` with `skills`.
-  - **No parsing pipeline populates this from real move files** --
-    confirmed by exhaustive search, there is no bridge anywhere from
-    Phase 1's parsed `models.kingdom.Kingdom.skills` (the *King's*
-    ability pairs, straight off the move file) into any
+  - **No parsing pipeline populates this from real move files yet** --
+    confirmed by exhaustive search at the time, there was no bridge
+    anywhere from Phase 1's parsed `models.kingdom.Kingdom.skills` (the
+    *King's* ability pairs, straight off the move file) into any
     `GameState`/`LeaderState`. Every `GameState` in this project, in
-    every test and in any real usage today, is hand-built by its
-    caller; `skills` only ever has a real value when a caller sets it
-    explicitly. Building that Kingdom→GameState pipeline is a distinct,
-    larger future task, not attempted here.
+    every test and in any real usage at the time, was hand-built by its
+    caller; `skills` only ever had a real value when a caller set it
+    explicitly. **A narrow bridge now exists -- see Phase 31, below.**
   - **Practice ([3.13]) is still not executed** despite now having the
     ability-data piece it was missing -- see Phase 21's note above and
     the "Not yet implemented" section below: its other two gaps
     (province-level multi-character grouping, and a dice-roll procedure
     with no available Pascal source) are untouched by this phase, so it
     stays decode-only.
+- **Phase 31 (current)**: `turn/kingdom_bridge.py`
+  `sync_leaders_from_kingdom()`, a first (deliberately narrow) bridge
+  from a parsed move file (`models.kingdom.Kingdom`) into a persistent
+  `GameState`, closing part of the gap Phase 30 flagged.
+  - **Why it's narrow**: a `.K1` move file is an *order submission*, not
+    a state snapshot -- it has no location, race, alignment, home
+    province, or treasury for anyone (those live in the original
+    engine's save-game state, never part of this project's available
+    Pascal source). So this module can't fabricate a new `KingdomState`
+    or `LeaderState` out of thin air; it only **enriches
+    `LeaderState`s that already exist** in the `GameState` passed in
+    (created by whatever turn-0 setup or prior-turn processing the
+    caller already did).
+  - **What it actually syncs**, for every `Leader` in `kingdom.leaders`
+    with a matching existing `LeaderState`: `kingdom_id` is set to
+    `kingdom.header.kingdom_number` for all of them (a leader appearing
+    in Kingdom N's move-file submission this turn is, by construction,
+    in Kingdom N's service this turn); and the King's own real
+    `SkillTable` (`Kingdom.skills` -- no other leader's ability data is
+    ever present in a move file) is attached to his `LeaderState.skills`
+    specifically -- identified by matching `leader.name ==
+    kingdom.king_name` (empirically always the first leader block in
+    every sample file, but matched by name here as the actual invariant
+    the file encodes, not an assumption that the King is always id 1).
+  - **`KingdomBridgeReport`** makes the "enrich, don't create" behavior
+    observable rather than silent: `synced_leader_ids`,
+    `not_found_leader_ids` (present in the file, no matching
+    `LeaderState` yet -- left uncreated, not an error),
+    `skills_attached_to_leader_id`, and `king_not_identified` (no
+    leader's name matched `king_name` -- never observed in real sample
+    data, but the module doesn't guess a King in that case rather than
+    risk it).
+  - **Still unsolved**: populating a brand-new `GameState` from nothing
+    at turn 0 -- there's no source of location/race/alignment/treasury
+    anywhere in this project's available data to do that safely. This
+    bridge only ever helps once *some* prior setup has already given a
+    leader a `LeaderState` to enrich.
 
 ## Setup
 
@@ -985,6 +1021,14 @@ rulebook before being turned into named, typed fields:
     (`turn/contested_province.py`'s functions exist but nothing calls
     them from `execute_move()`/`fight_battle()` -- a contested result
     just sets `ProvinceState.contested_by_kingdom_id` and stops there).
+- **Populating a brand-new `GameState` from nothing at turn 0** (see
+  Phase 31's note above): `turn/kingdom_bridge.py` can only *enrich*
+  `LeaderState`s that already exist -- there is no source anywhere in
+  this project's available data (move files carry orders, not state) for
+  a leader's starting location, a kingdom's race/alignment/home
+  province, or its treasury, so a true "load this Kingdom for the first
+  time" path remains unbuilt. Every `GameState` in this project's tests
+  is still hand-built by its caller.
 - **Feature discovery, monsters, treasures, rumors, battlefield reports**
   (rulebook [3.2]): `resolve_explore()` only computes the deterministic
   cumulative exploration percentage. Actually discovering *what* a
