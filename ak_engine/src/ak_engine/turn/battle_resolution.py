@@ -23,6 +23,16 @@ column contests, and whatever ``BattleUnit`` list the caller keeps using
 afterward, e.g. for pursuit) reflects both the final lineup and its
 nemesis-adjusted strength.
 
+**Non-humanoid rear-targeting** (Phase 39, rulebook [7.2]): each side's
+own column strength is computed with ``column_strength``'s
+``outflank_second_line`` driven by whether the *opposing* column
+contains an overflight unit (``column_has_overflight_unit``) -- "it will
+attack the rear unit instead (the non-human unit and the rearward unit
+will both be at 100% strength in this case.)" See ``column_strength``'s
+own docstring for why this reuses a parameter originally meant for a
+*different*, still-unwired rulebook rule (numeric-superiority
+outflanking), and for the unmodeled Druidic-ability carve-out.
+
 Still NOT handled here -- see ak_engine/README.md: eliminating or
 demoting the losing side's armies, duels, pursuit, retreat, post-battle
 quality changes, contested provinces, conquest movement cost, and
@@ -40,6 +50,7 @@ from ak_engine.turn.battle_line import (
     apply_nemesis_penalties,
     apply_tactical_switches,
     assign_battle_lines,
+    column_has_overflight_unit,
     column_strength,
     estimate_win_probability,
     line_length_for_battle,
@@ -131,8 +142,17 @@ def resolve_battle(
     attacker_luck = [_apply_front_line_luck(column, rng) for column in attacker_columns]
     defender_luck = [_apply_front_line_luck(column, rng) for column in defender_columns]
 
-    attacker_strengths = [column_strength(column) for column in attacker_columns]
-    defender_strengths = [column_strength(column) for column in defender_columns]
+    # Non-humanoid rear-targeting (Phase 39, rulebook [7.2]): an opposing
+    # overflight unit boosts this column's own ordinary second-line unit
+    # to 100% strength -- see column_strength's docstring.
+    attacker_strengths = [
+        column_strength(a_col, outflank_second_line=column_has_overflight_unit(d_col))
+        for a_col, d_col in zip(attacker_columns, defender_columns)
+    ]
+    defender_strengths = [
+        column_strength(d_col, outflank_second_line=column_has_overflight_unit(a_col))
+        for a_col, d_col in zip(attacker_columns, defender_columns)
+    ]
 
     battle_luck = roll_battle_luck(rng)
     if battle_luck is not None:

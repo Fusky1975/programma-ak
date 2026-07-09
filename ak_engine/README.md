@@ -1029,6 +1029,46 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged after wiring, before any
     new tests were added -- no pre-existing fixture uses
     `ArmyType.FLEET` in a battle context.
+- **Phase 39 (current)**: the last item from Phase 38's own "still
+  missing" list -- non-humanoid rear-targeting, rulebook [7.2]
+  verbatim: **"Non-humanoid units (Eagles, Dragons, Whales and Mermen)
+  can attack from above or below... If there is an enemy unit behind
+  the front lines for the non-human unit to attack instead of a unit on
+  the front line, it will attack the rear unit instead (the non-human
+  unit and the rearward unit will both be at 100% strength in this
+  case.)"**
+  - **Discovered while implementing this**: `turn/battle_line.py
+    column_strength`'s `outflank_second_line` parameter -- which boosts
+    an ordinary column's own second-line unit from 50% to 100% -- was
+    already fully built (since Phase 6) but, like the Tactical-ability
+    switch before Phase 34, **never actually wired into
+    `resolve_battle`**. Rather than build a second, parallel mechanism,
+    Phase 39 reuses it: a new `turn/battle_line.py
+    column_has_overflight_unit(column)` helper checks whether the
+    *opposing* column contains an overflight unit (any depth -- they
+    "attack from above or below" regardless of their own position, the
+    same reason they already contribute 100% themselves), and
+    `resolve_battle` now drives `outflank_second_line` from that check
+    for each column.
+  - **One parameter, two distinct triggers, both documented on
+    `column_strength` itself**: the rule this parameter was originally
+    named for -- "a force superior in numbers may outflank... they
+    count as 100% instead of 50%" -- depends on `terrain_line_length_cap`
+    eligibility this module can't derive, and **remains unwired, a
+    separate, still-open gap**, distinct from rear-targeting even though
+    both happen to produce the identical numeric effect.
+  - **Druidic-ability carve-out not modeled**: "if the non-human unit
+    has low strength because its leader has insufficient Druidic
+    ability, it will be held back and will throw its low strength into
+    the attack on the front-line unit" (i.e. no rear-targeting in that
+    case) -- skipped for the same reason every other Druidic-ability
+    rule in this project is skipped (`turn/strength.py`'s own module
+    docstring: no "Druid Table" data available). Every overflight unit
+    is treated as eligible to rear-target regardless of its
+    controller's Druidic ability.
+  - Non-breaking: full suite passed unchanged after wiring, before any
+    new tests were added -- no pre-existing fixture pairs an overflight
+    unit against a 2+-deep opposing column.
 
 ## Setup
 
@@ -1297,7 +1337,11 @@ rulebook before being turned into named, typed fields:
     Depleted status instead of being eliminated" exception~~ **fixed in
     Phase 38** (see above) -- not to be conflated with Whales' own "zero
     strength off-sea, guaranteed Sea retreat" rule, fixed separately in
-    Phase 37. Still open: the non-humanoid rear-targeting nuance [7.2].
+    Phase 37. ~~The non-humanoid rear-targeting nuance~~ **fixed in
+    Phase 39** (see above) -- discovered along the way: the *separate*
+    numeric-superiority outflanking rule that `column_strength`'s
+    `outflank_second_line` parameter was originally built for is still
+    unwired, a distinct, still-open gap of its own.
   - **`fight_multi_attacker_battle()`'s own edge case**: separate
     (non-united) groups are resolved sequentially against whatever's
     left of the province's defenders; if an earlier group cleanly

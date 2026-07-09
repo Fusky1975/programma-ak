@@ -184,13 +184,40 @@ def column_strength(column: Column, *, outflank_second_line: bool = False) -> fl
     column -- "Non-humanoid air units, non-humanoid sea units and humanoid
     units are considered three separate groups when halving strength."
 
-    ``outflank_second_line=True`` reproduces "flanking second-line units
-    of a force which is superior in numbers may outflank the enemy force.
-    If they do that, they count as 100% strength instead of 50%" -- it
-    only affects ordinary units at depth index 1 (the second line).
-    Callers decide eligibility (numeric superiority and a shorter-than-
-    terrain-allows line) since that depends on ``terrain_line_length_cap``,
-    which this module can't derive -- see the module docstring.
+    ``outflank_second_line=True`` boosts the ordinary unit at depth index
+    1 (the second line) to 100% strength instead of 50% -- the numeric
+    effect shared by **two distinct rulebook triggers**:
+
+    1. "Flanking second-line units of a force which is superior in
+       numbers may outflank the enemy force. If they do that, they count
+       as 100% strength instead of 50%." Eligibility (numeric superiority
+       and a shorter-than-terrain-allows line) depends on
+       ``terrain_line_length_cap``, which this module can't derive --
+       callers decide it. **Still unwired from ``resolve_battle`` as of
+       Phase 39** -- a separate, still-open gap (see
+       ``ak_engine/README.md``).
+    2. **Non-humanoid rear-targeting** (Phase 39, rulebook [7.2]): "If
+       there is an enemy unit behind the front lines for the non-human
+       unit to attack instead of a unit on the front line, it will
+       attack the rear unit instead (the non-human unit and the
+       rearward unit will both be at 100% strength in this case.)" --
+       i.e. an *opposing* overflight unit (see ``column_has_overflight_
+       unit``) triggers this same 100%-instead-of-50% boost on this
+       column's own ordinary second-line unit. Wired into
+       ``resolve_battle`` since Phase 39. The rulebook's own carve-out
+       ("if the non-human unit has low strength because its leader has
+       insufficient Druidic ability, it will be held back and will throw
+       its low strength into the attack on the front-line unit" --
+       i.e. no rear-targeting, no boost, in that case) is **not**
+       modeled: this project has no "Druid Table" data at all (see
+       ``turn/strength.py``'s module docstring, the same Druidic-ability
+       gap already skipped for the quality-modifier pipeline), so every
+       overflight unit is treated as eligible to rear-target regardless
+       of its controller's Druidic ability.
+
+    Only affects ordinary units at depth index 1 -- an overflight unit
+    already gets 100% unconditionally (the ``is_overflight_unit`` branch
+    below runs first), so it's never double-boosted by this.
     """
 
     overflight_group_counts: dict[str, int] = {}
@@ -206,6 +233,19 @@ def column_strength(column: Column, *, outflank_second_line: bool = False) -> fl
         else:
             total += unit.effective_strength * line_contribution(depth)
     return total
+
+
+def column_has_overflight_unit(column: Column) -> bool:
+    """True if any unit in ``column`` (any depth) is an overflight type (air or sea).
+
+    Used to drive ``column_strength``'s ``outflank_second_line`` for the
+    rear-targeting rule -- checked across the *whole* column, not just
+    the front, since overflight units "attack from above or below"
+    regardless of their own depth (the same reason they contribute 100%
+    strength unconditionally themselves).
+    """
+
+    return any(is_overflight_unit(unit.army_type) for unit in column)
 
 
 def switch_chance(tactical_ability: int, line_length: int) -> float:

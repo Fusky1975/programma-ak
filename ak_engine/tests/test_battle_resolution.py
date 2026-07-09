@@ -160,6 +160,25 @@ def test_resolve_battle_defaults_to_no_switching():
     assert [u.army_type for u in result.columns[0].attacker_units] == [ArmyType.PHALANX, ArmyType.HVY_CAVALRY]
 
 
+def test_resolve_battle_opposing_overflight_unit_boosts_second_line_to_full_strength():
+    # Rulebook [7.2]: an overflight attacker "will attack the rear unit
+    # instead (the non-human unit and the rearward unit will both be at
+    # 100% strength in this case.)" -- the defender's own second-line
+    # Axemen goes from 50% to 100% because the attacker's Whales unit is
+    # present, regardless of column depth on either side. (Whales, not
+    # Dragon/Eagle Wing or Mermen, to avoid an incidental nemesis
+    # matchup against Bowmen muddying the numbers -- NEMESIS[Whales] is
+    # Mermen, not Bowmen.)
+    attacker_units = [unit(10, ArmyType.WHALES)]
+    defender_units = [unit(10, ArmyType.BOWMEN), unit(9, ArmyType.AXEMEN)]
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.5])
+
+    result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=1, rng=rng)
+
+    assert result.columns[0].attacker_strength == pytest.approx(10)
+    assert result.columns[0].defender_strength == pytest.approx(10 * 1.0 + 9 * 1.0)
+
+
 def test_resolve_battle_column_results_expose_the_actual_units_for_bookkeeping():
     attacker = [BattleUnit(ArmyType.BOWMEN, 10, source_id=101)]
     defender = [BattleUnit(ArmyType.AXEMEN, 5, source_id=202)]

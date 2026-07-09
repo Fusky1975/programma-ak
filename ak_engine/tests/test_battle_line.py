@@ -12,6 +12,7 @@ from ak_engine.turn.battle_line import (
     apply_nemesis_penalties,
     apply_tactical_switches,
     assign_battle_lines,
+    column_has_overflight_unit,
     column_strength,
     contest_columns,
     line_length_for_battle,
@@ -89,6 +90,13 @@ def test_column_strength_outflank_boosts_second_line_to_full_strength():
     outflanked = column_strength(column, outflank_second_line=True)
     assert normal == pytest.approx(10 * 1.0 + 10 * 0.5)
     assert outflanked == pytest.approx(10 * 1.0 + 10 * 1.0)
+
+
+def test_column_has_overflight_unit_detects_at_any_depth():
+    assert column_has_overflight_unit([unit(ArmyType.BOWMEN, 10), unit(ArmyType.DRAGON_WING, 5)]) is True
+    assert column_has_overflight_unit([unit(ArmyType.DRAGON_WING, 5), unit(ArmyType.BOWMEN, 10)]) is True
+    assert column_has_overflight_unit([unit(ArmyType.BOWMEN, 10), unit(ArmyType.AXEMEN, 5)]) is False
+    assert column_has_overflight_unit([]) is False
 
 
 def test_switch_chance_matches_formula():
