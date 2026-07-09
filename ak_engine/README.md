@@ -1002,6 +1002,33 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged after both changes, before
     any new tests were added -- no pre-existing fixture uses
     `ArmyType.WHALES` at all.
+- **Phase 38 (current)**: Fleets' own special rule, the "still missing"
+  item re-confirmed while researching Phase 37 -- `RULES.AK` [7.2]
+  verbatim: **"Fleets fighting on land provinces would generally be
+  reduced to Depleted status instead of being eliminated."** A
+  different, separate exception from Whales' own: no forced retreat,
+  just quality forced to `Quality.DEPLETED` *in place* instead of
+  removal from `state`.
+  - **Only two of `fight_battle`'s branches actually remove an army from
+    `state`, so only those two needed intercepting**
+    (`_fleet_avoids_elimination`, `turn/battle_orchestrator.py`): the
+    outright "clean-swept, `loser_retreats=False`" destroy branch, and
+    `_retreat_or_disband`'s "no retreat destination, GREEN/DEPLETED"
+    disband branch (which now takes a new `avoid_elimination: bool`
+    parameter). A successful ordinary retreat already avoids elimination
+    on its own (no change needed), and becoming a mercenary (the
+    AVERAGE-or-better "no retreat destination" branch) already isn't
+    elimination either -- confirmed by a dedicated test that an
+    AVERAGE-quality Fleet with no retreat destination still becomes a
+    mercenary as before, quality untouched.
+  - Same non-extension to Pursuit as Whales (Phase 37), for the same
+    reason: the rulebook's "not eliminated" guarantee is specifically
+    about the battle-resolution elimination decision, not the separate
+    [7.3] pursuit mechanic -- a retreating Fleet can still be caught and
+    destroyed by `_apply_pursuit`.
+  - Non-breaking: full suite passed unchanged after wiring, before any
+    new tests were added -- no pre-existing fixture uses
+    `ArmyType.FLEET` in a battle context.
 
 ## Setup
 
@@ -1265,14 +1292,12 @@ rulebook before being turned into named, typed fields:
   - Pursuit and Duel are now wired into `fight_battle()` (Phase 28, see
     below); Multiple Contingents is available via the new
     `fight_multi_attacker_battle()` but not yet auto-invoked from
-    `execute_move()`/`plan_dispatch.py` (see Phase 28's note). Still
-    missing regardless: **the "Fleets fighting on land provinces would
-    generally be reduced to Depleted status instead of being eliminated"
-    exception** -- re-confirmed verbatim in `RULES.AK` [7.2] while
-    researching Phase 37's Whales rule (a *different*, separate special
-    case -- not to be conflated with Whales' own "zero strength off-sea,
-    guaranteed Sea retreat" rule, which Phase 37 did fix) -- and the
-    non-humanoid rear-targeting nuance [7.2], both still open.
+    `execute_move()`/`plan_dispatch.py` (see Phase 28's note). ~~The
+    "Fleets fighting on land provinces would generally be reduced to
+    Depleted status instead of being eliminated" exception~~ **fixed in
+    Phase 38** (see above) -- not to be conflated with Whales' own "zero
+    strength off-sea, guaranteed Sea retreat" rule, fixed separately in
+    Phase 37. Still open: the non-humanoid rear-targeting nuance [7.2].
   - **`fight_multi_attacker_battle()`'s own edge case**: separate
     (non-united) groups are resolved sequentially against whatever's
     left of the province's defenders; if an earlier group cleanly

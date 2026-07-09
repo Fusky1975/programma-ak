@@ -123,6 +123,18 @@ ak_engine/README.md:**
   since the rulebook's guarantee is specifically about the *ordinary,
   no-retreat-destination* disband path, not about the separate [7.3]
   pursuit mechanic.
+- **Fleets are a second, separate exception** (Phase 38, [7.2]):
+  "Fleets fighting on land provinces would generally be reduced to
+  Depleted status instead of being eliminated" -- unlike Whales, no
+  forced retreat, just quality forced to ``DEPLETED`` *in place* instead
+  of removal. Only the two branches that actually remove an army from
+  ``state`` needed intercepting (``_fleet_avoids_elimination``): the
+  outright "clean-swept, `loser_retreats=False`" destroy, and
+  ``_retreat_or_disband``'s "no retreat destination, GREEN/DEPLETED"
+  disband (now takes an ``avoid_elimination`` flag). A successful
+  ordinary retreat already avoids elimination on its own, and becoming a
+  mercenary already isn't elimination either, so neither needed
+  changing. Same non-extension to Pursuit as Whales, for the same reason.
 - **Whether a losing side even attempts to retreat vs. fights on** is a
   rulebook decision with no formula (capital status, wealth, retreat path,
   etc. -- see `turn/retreat.py`); exposed here as ``loser_retreats: bool``,
@@ -249,7 +261,16 @@ def _retreat_or_disband(
     rng: random.Random,
     *,
     destination: HexCoord | None,
+    avoid_elimination: bool = False,
 ) -> None:
+    """``avoid_elimination`` (Phase 38): the caller's way of saying this army must not be
+    removed from ``state`` even if it would otherwise disband -- see
+    ``_fleet_avoids_elimination``. Only changes the GREEN/DEPLETED
+    "no retreat destination" branch, since that's the only branch here
+    that actually removes the army; the mercenary branch already leaves
+    it in ``state.armies``.
+    """
+
     if destination is not None:
         army.location = destination
         army.quality = roll_quality_change(army.quality, rng, is_winner=False, retreated=True)
@@ -258,6 +279,10 @@ def _retreat_or_disband(
         return
 
     if army.quality in (Quality.GREEN, Quality.DEPLETED):
+        if avoid_elimination:
+            army.quality = Quality.DEPLETED
+            report.quality_changes[army.army_id] = army.quality
+            return
         report.disbanded_army_ids.append(army.army_id)
         state.remove_army(army.army_id)
     else:
@@ -299,6 +324,27 @@ def _whale_sea_retreat_destination(army: ArmyState, state: GameState, bounds: Ma
 
     sea_provinces = {coord for coord, p in state.provinces.items() if p.terrain is Terrain.SEA}
     return find_retreat_destination(army.location, bounds, sea_provinces)
+
+
+def _fleet_avoids_elimination(army: ArmyState, battle_terrain: Terrain) -> bool:
+    """Rulebook [7.2]: "Fleets fighting on land provinces would generally be
+    reduced to Depleted status instead of being eliminated."
+
+    A different, separate special case from Whales' own (Phase 37):
+    Fleets don't get a forced retreat, just quality-forced-to-DEPLETED
+    survival in place -- so this only ever needs to intercept the two
+    branches that actually remove an army from ``state`` (the outright
+    "clean-swept, not retreating" destroy, and ``_retreat_or_disband``'s
+    "no retreat destination, GREEN/DEPLETED" disband). A successful
+    ordinary retreat already avoids elimination on its own (no special
+    casing needed), and becoming a mercenary already isn't elimination
+    either. Like Whales, this is **not** extended to Pursuit ([7.3]) --
+    a separate mechanic from the battle-resolution elimination decision
+    this rule is actually about; a retreating Fleet can still be caught
+    and destroyed by ``_apply_pursuit``.
+    """
+
+    return army.army_type is ArmyType.FLEET and battle_terrain is not Terrain.SEA
 
 
 def _select_side_commander(
@@ -525,7 +571,13 @@ def fight_battle(
             else:
                 friendly = state.friendly_provinces_for(attacker_kingdom_id) - {province_coord}
                 destination = find_retreat_destination(army.location, bounds, friendly)
-            _retreat_or_disband(army, state, report, rng, destination=destination)
+            _retreat_or_disband(
+                army, state, report, rng, destination=destination,
+                avoid_elimination=_fleet_avoids_elimination(army, province.terrain),
+            )
+        elif attacker_clean_swept and _fleet_avoids_elimination(army, province.terrain):
+            army.quality = Quality.DEPLETED
+            report.quality_changes[army.army_id] = army.quality
         elif attacker_clean_swept:
             report.destroyed_army_ids.append(army.army_id)
             state.remove_army(army.army_id)
@@ -547,7 +599,13 @@ def fight_battle(
             bounds = MapBounds(*NORMAL_MAP_BOUNDS)
             friendly = state.friendly_provinces_for(army.kingdom_id) - {province_coord}
             destination = find_retreat_destination(army.location, bounds, friendly)
-            _retreat_or_disband(army, state, report, rng, destination=destination)
+            _retreat_or_disband(
+                army, state, report, rng, destination=destination,
+                avoid_elimination=_fleet_avoids_elimination(army, province.terrain),
+            )
+        elif defender_clean_swept and _fleet_avoids_elimination(army, province.terrain):
+            army.quality = Quality.DEPLETED
+            report.quality_changes[army.army_id] = army.quality
         elif defender_clean_swept:
             report.destroyed_army_ids.append(army.army_id)
             state.remove_army(army.army_id)

@@ -162,6 +162,93 @@ def test_whales_fall_back_to_ordinary_disband_when_no_adjacent_sea_province():
     assert 201 not in state.armies
 
 
+# --- Fleets on land: reduced to Depleted instead of eliminated (Phase 38) -
+
+
+def test_defender_fleet_on_land_reduced_to_depleted_instead_of_destroyed():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, FIELD))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.FLEET, Quality.AVERAGE, FIELD))
+    rng = no_luck_overwhelming_attacker_rng()
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], loser_retreats=False, rng=rng
+    )
+
+    assert 201 not in report.destroyed_army_ids
+    assert 201 in state.armies
+    assert state.armies[201].quality == Quality.DEPLETED
+    assert report.quality_changes[201] == Quality.DEPLETED
+
+
+def test_defender_fleet_on_land_reduced_to_depleted_instead_of_disbanding():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, FIELD))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    # No friendly province to retreat to -> would ordinarily disband (GREEN).
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.FLEET, Quality.GREEN, FIELD))
+    rng = no_luck_overwhelming_attacker_rng()
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
+
+    assert 201 not in report.disbanded_army_ids
+    assert 201 in state.armies
+    assert state.armies[201].quality == Quality.DEPLETED
+
+
+def test_fleet_retreats_normally_when_a_destination_exists():
+    # A successful ordinary retreat already avoids elimination on its own
+    # -- no special-casing needed or applied.
+    state = build_state()
+    state.armies[201].army_type = ArmyType.FLEET
+    rng = no_luck_overwhelming_attacker_rng()
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
+
+    assert 201 in report.retreated_army_ids
+    assert state.armies[201].location == DEFENDER_HOME
+
+
+def test_fleet_at_average_quality_still_becomes_mercenary_when_no_retreat_destination():
+    # Becoming a mercenary already isn't "elimination" -- unaffected by
+    # the Depleted-instead-of-eliminated exception.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, FIELD))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.FLEET, Quality.AVERAGE, FIELD))
+    rng = no_luck_overwhelming_attacker_rng()
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
+
+    assert 201 in report.mercenary_army_ids
+    assert state.armies[201].kingdom_id is None
+    assert state.armies[201].quality == Quality.AVERAGE  # untouched, not forced to Depleted
+
+
+def test_fleet_in_a_sea_battle_follows_ordinary_elimination_rules():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, FIELD))
+    state.add_province(ProvinceState(FIELD, Terrain.SEA, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.WHALES, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.FLEET, Quality.AVERAGE, FIELD))
+    rng = no_luck_overwhelming_attacker_rng()
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], loser_retreats=False, rng=rng
+    )
+
+    assert 201 in report.destroyed_army_ids
+    assert 201 not in state.armies
+
+
 def test_defender_becomes_unhireable_mercenary_when_average_quality_and_no_retreat():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
