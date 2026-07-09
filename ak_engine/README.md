@@ -1190,8 +1190,8 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     confirmed empirically: the full suite passed unchanged (833 -> still
     833) the moment this was wired in, before any new Phase 41 tests
     were added.
-  - **Deliberately unmodeled**: the rulebook's own carve-out for *unled*
-    armies under the garrison commander ("If a unit is under the
+  - ~~**Deliberately unmodeled**: the rulebook's own carve-out for
+    *unled* armies under the garrison commander ("If a unit is under the
     garrison commander of a province, and is of a different race than
     the King, then the King's druidic ability is used...") is not
     covered -- resolving it would mean `_build_battle_units` looking up
@@ -1201,12 +1201,52 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     has no special abilities" simplification this project already uses
     for Tactical ability's own Duel fallback ([7.1]). This is exactly
     the piece Phase 40's `is_king` flag was built as a foundation for,
-    per that phase's own note above -- still not attempted this phase.
+    per that phase's own note above -- still not attempted this phase.~~
+    **Fixed in Phase 42** -- see that phase's note below.
   - Also **not extended to `battle_line.py`'s rear-targeting carve-out**
     (Phase 39) -- see that phase's note above, updated to reflect that
     the data gap it cited is now closed but the specific wiring isn't.
   - Non-breaking: full suite passed unchanged (833 passed) immediately
     after wiring, before any new tests were written.
+- **Phase 42 (current)**: the Druid Table's garrison-commander/King-
+  substitution carve-out, rulebook [4.32]: *"If a unit is under the
+  garrison commander of a province, and is of a different race than the
+  King, then the King's druidic ability is used"* -- the piece Phase 41
+  deliberately left out, and exactly what Phase 40's `is_king` flag was
+  built as a foundation for.
+  - **`battle_orchestrator.py _druidic_shortfall_for`** now branches on
+    `army.commanded_by`: a led army keeps Phase 41's own leader-based
+    path unchanged; an unled army (`commanded_by is None`) now routes
+    through a new `_king_druidic_shortfall_for`.
+  - **`_king_druidic_shortfall_for`**: resolves the battle province's
+    *owning* kingdom via `ProvinceState.owner_kingdom_id` -- not
+    necessarily the unled army's own `kingdom_id`, since the rulebook is
+    explicit that it's the King, not the garrison commander or the
+    army's own allegiance, whose ability is substituted (an allied army
+    defending alongside the owner's garrison is still judged against the
+    *owning* kingdom's King). That kingdom's King is found via a new
+    `_find_king_of_kingdom` helper -- a linear scan of `state.leaders`
+    for a `kingdom_id` match with `is_king=True`, reusing Phase 40's flag
+    for exactly the purpose flagged when it was built. No owning
+    kingdom, or no King identified for one (an edge case this project's
+    data can't always resolve, e.g. a captured province with no
+    surviving King on record), falls back to 0 -- insufficient data, not
+    a guessed penalty, same convention as every other Druidic-shortfall
+    edge case in Phase 41.
+  - **Same same-race bypass reused as-is**: `compute_druidic_shortfall`
+    already treats `leader_race == army_race` as 0 regardless of skill,
+    which is exactly right here too -- an unled army whose own race
+    matches the province-owning King's race needs no Druidic check,
+    matching the rulebook's "of a different race than the King" framing
+    with zero new logic.
+  - **Not extended to `battle_line.py`'s rear-targeting carve-out**
+    (still open, see Phase 39/41's notes above) -- this phase only
+    closes the quality-penalty gap for unled armies, not the separate
+    "held back from rear-targeting" behavior tied to the same rulebook
+    sentence.
+  - Non-breaking: full suite passed unchanged (845 passed) immediately
+    after wiring, before any new tests were written. 5 new tests added
+    (850 passed total).
 
 ## Setup
 

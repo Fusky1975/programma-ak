@@ -522,9 +522,10 @@ def test_build_battle_units_druidic_shortfall_bypassed_for_same_kingdom_commandi
     assert units[0].effective_strength == pytest.approx(expected)
 
 
-def test_build_battle_units_druidic_shortfall_unled_army_unaffected():
-    # Deliberately unmodeled scope (see _build_battle_units's docstring):
-    # an unled army isn't penalized regardless of race.
+def test_build_battle_units_druidic_shortfall_unled_army_falls_back_to_zero_when_province_unregistered():
+    # No ProvinceState registered for FIELD at all -> _king_druidic_shortfall_for
+    # can't resolve an owning kingdom, so no King-substitution penalty applies
+    # (insufficient data, not a guessed one -- see _king_druidic_shortfall_for).
     state = GameState()
     state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
     army = ArmyState(101, 2, ArmyType.DRAGON_WING, Quality.ELITE, location=FIELD, commanded_by=None)
@@ -535,6 +536,108 @@ def test_build_battle_units_druidic_shortfall_unled_army_unaffected():
     )
 
     expected = compute_effective_strength(ArmyType.DRAGON_WING, Race.DRAGONS, Quality.ELITE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_druidic_shortfall_unled_army_falls_back_to_zero_when_province_unowned():
+    # A registered province with no owner_kingdom_id at all -- same "no
+    # King to resolve" fallback as the unregistered-province case above.
+    state = GameState()
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None))
+    army = ArmyState(101, 2, ArmyType.DRAGON_WING, Quality.ELITE, location=FIELD, commanded_by=None)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(ArmyType.DRAGON_WING, Race.DRAGONS, Quality.ELITE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_druidic_shortfall_unled_army_falls_back_to_zero_when_no_king_identified():
+    # The owning kingdom exists and has a leader, but nobody is flagged
+    # is_king -- same "insufficient data" fallback, not a guess at who
+    # the King might be.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Not The King", location=FIELD, is_king=False))
+    army = ArmyState(101, 2, ArmyType.DRAGON_WING, Quality.ELITE, location=FIELD, commanded_by=None)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(ArmyType.DRAGON_WING, Race.DRAGONS, Quality.ELITE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_druidic_shortfall_unled_army_uses_the_provinces_owning_kings_druidic_skill():
+    # Rulebook [4.32] garrison-commander carve-out: an unled Dragon-race
+    # army defending in Humania's own province is judged against
+    # Humania's King -- a different kingdom entirely from the army's own
+    # (Dragonia), which is the point: it's the *province owner's* King,
+    # not the army's own kingdom, that matters here.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="The King", location=HexCoord(9, 9), is_king=True))
+    army = ArmyState(101, 2, ArmyType.DRAGON_WING, Quality.ELITE, location=FIELD, commanded_by=None)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    # King's Druidic skill unrecorded (skills=None) -> defaults to 0;
+    # DRUID_TABLE[Race.DRAGONS] == 4 -> full shortfall of 4.
+    expected = compute_effective_strength(
+        ArmyType.DRAGON_WING, Race.DRAGONS, Quality.ELITE, Terrain.PLAINS, druidic_shortfall=4
+    )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_druidic_shortfall_unled_army_same_race_as_king_needs_no_check():
+    # The unled army's own race (via its own kingdom_id) happens to match
+    # the province-owning King's race -- no shortfall regardless of the
+    # King's actual Druidic skill, same same-race bypass as the led case.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="The King", location=HexCoord(9, 9), is_king=True))
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD, commanded_by=None)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_druidic_shortfall_unled_army_uses_kings_sufficient_skill():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Trollia", Race.TROLLISH, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(
+        LeaderState(1, kingdom_id=1, name="The King", location=HexCoord(9, 9), is_king=True, skills=_skills_with_druid(2))
+    )
+    army = ArmyState(101, 2, ArmyType.TROLLS, Quality.ELITE, location=FIELD, commanded_by=None)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    # DRUID_TABLE[Race.TROLLISH] == 2, King's skill == 2 -> no shortfall.
+    expected = compute_effective_strength(ArmyType.TROLLS, Race.TROLLISH, Quality.ELITE, Terrain.PLAINS)
     assert units[0].effective_strength == pytest.approx(expected)
 
 

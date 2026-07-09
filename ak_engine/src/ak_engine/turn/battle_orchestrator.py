@@ -148,7 +148,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability
-from ak_engine.models.game_state import ArmyState, GameState
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.aftermath import roll_quality_change
@@ -245,15 +245,25 @@ def _build_battle_units(
     race always equals his own army's race unless the two came from
     *different* kingdoms (only reachable via Pick_Up attaching a
     co-located army regardless of ownership, or an army's owning
-    kingdom changing after Leave/Disband). **Unled armies (under the
-    garrison commander) are deliberately not covered**: the rulebook's
-    own carve-out for that case ("the King's druidic ability is used")
-    would need this function to resolve *which* King -- the owning
-    province's, not necessarily the army's own kingdom -- which
-    `_build_battle_units` isn't wired to look up without a larger
-    province-ownership-plumbing change. Left unmodeled, the same
-    "garrison commander has no special abilities" simplification this
-    project already uses for Tactical ability's own duel fallback.
+    kingdom changing after Leave/Disband).
+
+    **Unled armies (under the garrison commander)** (Phase 42, same
+    rulebook section): *"If a unit is under the garrison commander of a
+    province, and is of a different race than the King, then the King's
+    druidic ability is used"* -- ``_king_druidic_shortfall_for`` resolves
+    *which* King via ``province_coord``'s own ``ProvinceState.
+    owner_kingdom_id`` (not necessarily the unled army's own
+    ``kingdom_id`` -- an allied army defending alongside the owner's
+    garrison is still judged against the *owning* kingdom's King, per
+    the rulebook's literal wording), then finds that kingdom's King
+    among ``state.leaders`` via the same ``is_king`` flag Phase 40 added
+    for exactly this. No owning kingdom, or no King identified for it
+    (an edge case this project's data can't always resolve, e.g. a
+    captured province with no surviving King), falls back to 0 -- no
+    penalty, not a guessed one. This closes the "held back" gap; unlike
+    Phase 34's Duel garrison-commander fallback (which really has no
+    ability data to draw on), an unled army's Druidic exposure runs
+    through its province's King, not the garrison commander itself.
     """
 
     desert_without_camels = terrain is Terrain.DESERT and not any(
@@ -268,7 +278,7 @@ def _build_battle_units(
         # Short-circuited: roll_fanaticism (and its rng.random() call) never
         # runs at all when apply_fanaticism is False -- see docstring.
         is_fanatical = apply_fanaticism and roll_fanaticism(kingdom.alignment, rng)
-        druidic_shortfall = _druidic_shortfall_for(army, state, kingdom.race)
+        druidic_shortfall = _druidic_shortfall_for(army, state, kingdom.race, province_coord)
         strength = compute_effective_strength(
             army.army_type,
             kingdom.race,
@@ -286,20 +296,46 @@ def _build_battle_units(
     return units
 
 
-def _druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race) -> int:
-    """Rulebook [4.32] Druid Table -- see ``_build_battle_units``'s docstring for scope
-    (led armies only; the garrison-commander/King-substitution carve-out
-    for unled armies isn't modeled).
+def _druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race, province_coord: HexCoord) -> int:
+    """Rulebook [4.32] Druid Table -- see ``_build_battle_units``'s docstring for scope."""
+
+    if army.commanded_by is not None:
+        leader = state.leaders.get(army.commanded_by)
+        if leader is None or leader.kingdom_id is None:
+            return 0
+        leader_race = state.kingdoms[leader.kingdom_id].race
+        leader_druidic_skill = leader.skills.pair_for_ability(Ability.DRUID)[0] if leader.skills is not None else 0
+        return compute_druidic_shortfall(leader_race, army_race, leader_druidic_skill)
+
+    return _king_druidic_shortfall_for(state, army_race, province_coord)
+
+
+def _king_druidic_shortfall_for(state: GameState, army_race: Race, province_coord: HexCoord) -> int:
+    """Phase 42, rulebook [4.32]: "If a unit is under the garrison commander of a
+    province, and is of a different race than the King, then the King's
+    druidic ability is used" -- the province's *owning* kingdom's King
+    (``ProvinceState.owner_kingdom_id`` + ``LeaderState.is_king``, Phase
+    40), not necessarily the unled army's own kingdom. No owning kingdom,
+    or no King identified for it, falls back to 0 -- insufficient data,
+    not a guessed penalty.
     """
 
-    if army.commanded_by is None:
+    province = state.provinces.get(province_coord)
+    if province is None or province.owner_kingdom_id is None:
         return 0
-    leader = state.leaders.get(army.commanded_by)
-    if leader is None or leader.kingdom_id is None:
+    king = _find_king_of_kingdom(state, province.owner_kingdom_id)
+    if king is None or king.kingdom_id is None:
         return 0
-    leader_race = state.kingdoms[leader.kingdom_id].race
-    leader_druidic_skill = leader.skills.pair_for_ability(Ability.DRUID)[0] if leader.skills is not None else 0
-    return compute_druidic_shortfall(leader_race, army_race, leader_druidic_skill)
+    king_race = state.kingdoms[king.kingdom_id].race
+    king_druidic_skill = king.skills.pair_for_ability(Ability.DRUID)[0] if king.skills is not None else 0
+    return compute_druidic_shortfall(king_race, army_race, king_druidic_skill)
+
+
+def _find_king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | None:
+    for leader in state.leaders.values():
+        if leader.kingdom_id == kingdom_id and leader.is_king:
+            return leader
+    return None
 
 
 def _retreat_or_disband(
