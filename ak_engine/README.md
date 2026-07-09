@@ -928,6 +928,45 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     (`turn/move_execution.py`, `turn/plan_dispatch.py`'s own EXPLORE
     branch) to track per-kingdom percentages instead of one shared
     number -- a larger, separate future task, not attempted here.
+- **Phase 36 (current)**: `turn/move_execution.py execute_move()` now enforces rulebook
+  [7.6]'s contested-province move restriction -- the first of
+  `turn/contested_province.py`'s three functions to actually get called
+  from anywhere (`is_illegal_move_from_contested`, implemented since
+  Phase 8 but unwired ever since).
+  - **Exact quote**: "The leader who invaded the contested province will
+    execute his orders in the next phase, except that it's illegal to
+    move from a contested province to an adjacent enemy province. You
+    can, however, move from a province owned by a neutral player-King to
+    an enemy province."
+  - **Kingdom-matching interpretation**: "contested" here means
+    contested *by the mover's own kingdom*
+    (`ProvinceState.contested_by_kingdom_id == kingdom_id`), not merely
+    contested by anyone -- the quote is specifically about "the leader
+    who invaded," i.e. the attacker still stuck there from an earlier
+    inconclusive battle, not some unrelated third kingdom's army that
+    happens to be passing through a province someone else is contesting.
+    A dedicated test confirms a province contested by a *different*
+    kingdom doesn't restrict this mover. The quote's second sentence
+    ("you can... move from a neutral province") needed no separate
+    code path -- it's just the ordinary, uncontested case already
+    handled.
+  - **No new tracking needed**: `contested_by_kingdom_id` has been
+    correctly set (on a mixed/tied battle result) and cleared (on
+    conquest or a repelled invasion) by `turn/battle_orchestrator.py
+    fight_battle()` since Phase 9 -- this phase only adds the read side
+    that was missing, raising `ValueError` the same way every other
+    illegal-move precondition in `execute_move()` already does.
+  - **Still out of scope**: `contested_province.py`'s other two
+    functions (`attacker_can_force_rebattle`,
+    `contested_battle_movement_cost`) -- automatically forcing a
+    rebattle "in the next phase" without a new player order needs
+    turn-loop restructuring (`turn/plan_dispatch.py run_leader_plan`
+    processes one leader's phases at a time, with no notion of
+    "re-trigger a battle here next phase regardless of what this leader
+    ordered") well beyond this phase's scope.
+  - Non-breaking: full suite passed unchanged before adding new tests,
+    since `contested_by_kingdom_id` defaults to `None` and no
+    pre-existing fixture sets it.
 
 ## Setup
 
@@ -1208,10 +1247,13 @@ rulebook before being turned into named, typed fields:
     `estimate_win_probability`-based approximation used instead.
     `tactical_ability` now reads a real skill level when the commander's
     `LeaderState.skills` is set (Phase 30), 0 otherwise.
-  - Contested-province state across multiple turns
+  - ~~Contested-province state across multiple turns
     (`turn/contested_province.py`'s functions exist but nothing calls
-    them from `execute_move()`/`fight_battle()` -- a contested result
-    just sets `ProvinceState.contested_by_kingdom_id` and stops there).
+    them from `execute_move()`/`fight_battle()`)~~ **the illegal-move
+    check is wired in as of Phase 36** -- see above. Still open: a
+    contested result still just sets `ProvinceState.contested_by_kingdom_id`
+    and stops there, with no automatic rebattle "in the next phase"
+    (needs turn-loop restructuring, see Phase 36's note above).
 - **Populating a brand-new `GameState` from nothing at turn 0** (see
   Phase 31's note above): `turn/kingdom_bridge.py` can only *enrich*
   `LeaderState`s that already exist -- there is no source anywhere in

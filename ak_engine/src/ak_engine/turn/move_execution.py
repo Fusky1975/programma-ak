@@ -2,20 +2,42 @@
 
 Wires together, in order:
 
-1. ``turn/movement.py resolve_move()`` -- adjacency check + the partial-
+1. **Contested-province check** (Phase 36, rulebook [7.6]): "The leader
+   who invaded the contested province will execute his orders in the
+   next phase, except that it's illegal to move from a contested
+   province to an adjacent enemy province." Raises ``ValueError`` via
+   ``turn/contested_province.py is_illegal_move_from_contested()`` when
+   the mover's *origin* province is currently contested *by the mover's
+   own kingdom* (``ProvinceState.contested_by_kingdom_id == kingdom_id``
+   -- not merely contested by anyone, since the rule is specifically
+   about "the leader who invaded," i.e. the attacker still stuck there,
+   not some third kingdom's army passing through) and the *target*
+   province is enemy-owned. ``contested_by_kingdom_id`` has been
+   correctly set/cleared by ``turn/battle_orchestrator.py fight_battle()``
+   since Phase 9 -- this only adds the read side that was missing. "You
+   can, however, move from a province owned by a neutral player-King to
+   an enemy province" needs no separate handling: that's just the
+   `origin_contested_by_mover=False` case, already legal.
+2. ``turn/movement.py resolve_move()`` -- adjacency check + the partial-
    exploration side effect.
-2. **Battle trigger**: if the target province holds any army not allied
+3. **Battle trigger**: if the target province holds any army not allied
    with the mover, calls ``turn/battle_orchestrator.py fight_battle()``.
-3. ``turn/conquest.py movement_cost_for_move()`` -- movement-point
+4. ``turn/conquest.py movement_cost_for_move()`` -- movement-point
    deduction, including the extra point for conquering and/or for a sea
    battle.
-4. ``GameState`` mutation: army relocation (only if the move actually
+5. ``GameState`` mutation: army relocation (only if the move actually
    succeeds -- an unconquered, contested, or repelled battle leaves the
    mover's surviving armies where ``fight_battle()`` put them, not at the
    target) and the province's exploration-percent update.
 
 Still out of scope, same as ``turn/movement.py``: chasing a *non-adjacent*
-target (`resolve_move` still raises `NonAdjacentMoveError`).
+target (`resolve_move` still raises `NonAdjacentMoveError`). Also still
+out of scope: ``turn/contested_province.py``'s other two functions --
+``attacker_can_force_rebattle``/``contested_battle_movement_cost`` --
+since automatically forcing a rebattle "in the next phase" without a new
+player order needs turn-loop restructuring this project's per-leader,
+one-phase-at-a-time dispatch (``turn/plan_dispatch.py run_leader_plan``)
+doesn't support yet.
 
 **Leader-only movement** (Phase 14): pass ``leader_id`` and an empty
 ``army_ids`` for a character moving without any army. Per rulebook [3.1]
@@ -37,6 +59,7 @@ from ak_engine.models.game_state import GameState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
 from ak_engine.turn.conquest import movement_cost_for_move
+from ak_engine.turn.contested_province import is_illegal_move_from_contested
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 
@@ -89,6 +112,14 @@ def execute_move(
     target_province = state.provinces.get(target)
     if target_province is None:
         raise ValueError(f"no province data for {target}")
+
+    origin_province = state.provinces.get(current)
+    origin_contested_by_mover = origin_province is not None and origin_province.contested_by_kingdom_id == kingdom_id
+    target_owner_is_enemy = target_province.owner_kingdom_id is not None and not state.is_allied(
+        target_province.owner_kingdom_id, kingdom_id
+    )
+    if is_illegal_move_from_contested(origin_contested_by_mover, target_owner_is_enemy):
+        raise ValueError("illegal to move from a contested province to an adjacent enemy province")
 
     bounds = MapBounds(*NORMAL_MAP_BOUNDS)
     defenders_present = [

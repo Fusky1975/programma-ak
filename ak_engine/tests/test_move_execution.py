@@ -164,3 +164,50 @@ def test_raises_with_no_armies_and_no_leader():
 
     with pytest.raises(ValueError):
         execute_move(state, kingdom_id=1, army_ids=[], target=TARGET)
+
+
+# --- Contested-province move validation (Phase 36, rulebook [7.6]) ------
+
+
+def test_raises_moving_from_a_province_the_mover_is_contesting_to_an_enemy_province():
+    state = base_state()
+    state.provinces[ORIGIN].contested_by_kingdom_id = 1  # kingdom 1 is the mover
+
+    with pytest.raises(ValueError):
+        execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)  # TARGET is enemy-owned (kingdom 2)
+
+
+def test_allowed_from_a_contested_province_to_a_non_enemy_province():
+    state = base_state()
+    state.provinces[ORIGIN].contested_by_kingdom_id = 1
+    state.provinces[TARGET].owner_kingdom_id = 1  # the mover's own province, not an enemy's
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert result.moved is True
+    assert state.armies[101].location == TARGET
+
+
+def test_allowed_when_the_origin_is_contested_by_a_different_kingdom():
+    # Only "the leader who invaded" is restricted -- a province contested
+    # by someone else's ongoing invasion doesn't limit this mover.
+    state = base_state()
+    state.provinces[ORIGIN].contested_by_kingdom_id = 2
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert result.moved is True
+    assert state.armies[101].location == TARGET
+
+
+def test_allowed_from_a_merely_neutral_owned_province_to_an_enemy_province():
+    # "You can, however, move from a province owned by a neutral
+    # player-King to an enemy province" -- ORIGIN is owned by the mover's
+    # own kingdom and isn't contested at all, so this is ordinary movement.
+    state = base_state()
+    assert state.provinces[ORIGIN].contested_by_kingdom_id is None
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert result.moved is True
+    assert state.armies[101].location == TARGET
