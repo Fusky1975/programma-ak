@@ -967,6 +967,41 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged before adding new tests,
     since `contested_by_kingdom_id` defaults to `None` and no
     pre-existing fixture sets it.
+- **Phase 37 (current)**: Whales' special rule, verified against the
+  English `RULES.AK` directly (not the Italian working-notes
+  transcript, which turned out to paraphrase a different, related rule)
+  -- verbatim: **"Whales: When fighting in any terrain other than Sea,
+  they have zero strength. However, if they lose a battle in such
+  terrain, they can retreat into a Sea hex automatically without fear of
+  being destroyed."** Two changes:
+  - **Zero strength off-sea** (`turn/strength.py
+    compute_effective_strength`): an unconditional early-return `0.0`
+    for `ArmyType.WHALES` off-sea, replacing the generic adverse-terrain
+    *halving* `ARMY_TABLE`'s own Whales row would otherwise apply --
+    "zero," not "reduced." Bypasses every other factor in the pipeline
+    (quality, defender bonus, fanaticism, etc. would all just multiply a
+    nonzero base by something).
+  - **Guaranteed Sea retreat** (`turn/battle_orchestrator.py
+    fight_battle`): a clean-swept Whale army fighting in non-Sea terrain
+    now always retreats to the nearest adjacent Sea-terrain province
+    (`_whale_sea_retreat_destination`, any ownership -- the rulebook
+    says "a Sea hex," not "a *friendly* Sea hex," unlike the ordinary
+    retreat rule) -- bypassing both the `loser_retreats` flag (checked
+    *before* the existing `elif ... and loser_retreats` branch) and the
+    outright-destroy branch entirely, and regardless of quality (a GREEN
+    Whale retreats instead of disbanding).
+  - **Two documented edge cases, not silently guessed around**: if no
+    adjacent province is Sea terrain at all, `_retreat_or_disband` falls
+    back to its ordinary quality-based disband/mercenary rule -- the
+    rulebook's guarantee can't be literally honored without a Sea hex to
+    retreat to; and Pursuit ([7.3]) isn't exempted -- a retreating Whale
+    can still be caught and destroyed by `_apply_pursuit` before this
+    branch is even reached, since the rulebook's guarantee is
+    specifically about the *ordinary, no-destination* disband path, not
+    the separate pursuit mechanic.
+  - Non-breaking: full suite passed unchanged after both changes, before
+    any new tests were added -- no pre-existing fixture uses
+    `ArmyType.WHALES` at all.
 
 ## Setup
 
@@ -1231,9 +1266,13 @@ rulebook before being turned into named, typed fields:
     below); Multiple Contingents is available via the new
     `fight_multi_attacker_battle()` but not yet auto-invoked from
     `execute_move()`/`plan_dispatch.py` (see Phase 28's note). Still
-    missing regardless: the "Fleets fighting on land are reduced to
-    Depleted instead of eliminated" exception and the non-humanoid
-    rear-targeting nuance [7.2].
+    missing regardless: **the "Fleets fighting on land provinces would
+    generally be reduced to Depleted status instead of being eliminated"
+    exception** -- re-confirmed verbatim in `RULES.AK` [7.2] while
+    researching Phase 37's Whales rule (a *different*, separate special
+    case -- not to be conflated with Whales' own "zero strength off-sea,
+    guaranteed Sea retreat" rule, which Phase 37 did fix) -- and the
+    non-humanoid rear-targeting nuance [7.2], both still open.
   - **`fight_multi_attacker_battle()`'s own edge case**: separate
     (non-united) groups are resolved sequentially against whatever's
     left of the province's defenders; if an earlier group cleanly

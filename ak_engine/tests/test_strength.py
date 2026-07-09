@@ -117,3 +117,25 @@ def test_roll_fanaticism_matches_documented_chances():
 def test_roll_fanaticism_always_fanatical_override():
     rng = random.Random(0)
     assert roll_fanaticism(Alignment.NEUTRAL, rng, always_fanatical=True) is True
+
+
+def test_whales_have_zero_strength_off_sea_regardless_of_bonuses():
+    # Elven home terrain/race bonuses, ELITE quality, home province, a
+    # Tactical bonus, fanaticism -- none of it should matter off-sea.
+    for terrain in (Terrain.PLAINS, Terrain.FOREST, Terrain.MTNS, Terrain.DESERT, Terrain.JUNGLE):
+        strength = compute_effective_strength(
+            ArmyType.WHALES,
+            Race.ELVEN,
+            Quality.ELITE,
+            terrain,
+            is_defender=True,
+            is_home_province=True,
+            is_fanatical=True,
+            combat_ability_level=5,
+        )
+        assert strength == 0.0
+
+
+def test_whales_compute_normally_at_sea():
+    strength = compute_effective_strength(ArmyType.WHALES, Race.HUMAN, Quality.AVERAGE, Terrain.SEA)
+    assert strength > 0

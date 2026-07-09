@@ -100,6 +100,68 @@ def test_defender_disbands_when_no_friendly_province_to_retreat_to():
     assert 201 not in state.armies
 
 
+# --- Whales: zero strength off-sea + guaranteed sea retreat (Phase 37) --
+
+
+def test_defender_whales_retreat_to_sea_even_when_no_retreat_allowed():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.SEA, Race.HUMAN, owner_kingdom_id=None))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.WHALES, Quality.GREEN, FIELD))
+    rng = no_luck_overwhelming_attacker_rng()
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], loser_retreats=False, rng=rng
+    )
+
+    # "without fear of being destroyed" -- retreats even though
+    # loser_retreats=False would otherwise mean outright destruction, and
+    # even at GREEN quality (which would normally disband, not retreat).
+    assert 201 in report.retreated_army_ids
+    assert 201 not in report.destroyed_army_ids
+    assert 201 not in report.disbanded_army_ids
+    assert state.armies[201].location == DEFENDER_HOME
+
+
+def test_attacker_whales_retreat_to_sea_when_repelled():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.SEA, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.WHALES, Quality.GREEN, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    # Whales have 0 strength on Plains regardless of the win roll -- the
+    # defender wins decisively no matter what value is scripted there.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.5, 0.99, 0.99])
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], loser_retreats=False, rng=rng
+    )
+
+    assert 101 in report.retreated_army_ids
+    assert state.armies[101].location == DEFENDER_HOME
+
+
+def test_whales_fall_back_to_ordinary_disband_when_no_adjacent_sea_province():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, FIELD))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    # No adjacent Sea province exists anywhere in this state.
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.WHALES, Quality.GREEN, FIELD))
+    rng = no_luck_overwhelming_attacker_rng()
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
+
+    assert 201 in report.disbanded_army_ids
+    assert 201 not in state.armies
+
+
 def test_defender_becomes_unhireable_mercenary_when_average_quality_and_no_retreat():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))

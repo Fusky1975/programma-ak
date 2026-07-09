@@ -105,7 +105,24 @@ ak_engine/README.md:**
   even for an attacker forced to retreat -- the more precise "back to the
   province it invaded from, or adjacent to that" rule
   (``retreat.attacker_retreat_candidates``) is used when
-  ``attacker_origin`` is supplied, and skipped otherwise.
+  ``attacker_origin`` is supplied, and skipped otherwise. **Whales are
+  the one exception** (Phase 37): "When fighting in any terrain other
+  than Sea, they have zero strength [``compute_effective_strength``'s
+  own early-return]. However, if they lose a battle in such terrain,
+  they can retreat into a Sea hex automatically without fear of being
+  destroyed" -- a clean-swept Whale army in a non-Sea battle always
+  retreats to the nearest adjacent Sea province (``_whale_sea_retreat_
+  destination``, any ownership, not just friendly), bypassing both
+  ``loser_retreats`` and the outright-destroy branch entirely. Two
+  documented edge cases, not silently guessed around: if no adjacent
+  province is Sea terrain at all, `_retreat_or_disband` falls back to
+  its ordinary quality-based disband/mercenary rule (the rulebook's
+  guarantee can't be literally honored by this project's map data); and
+  Pursuit isn't exempted -- a retreating Whale can still be caught and
+  destroyed by ``_apply_pursuit`` before reaching this branch at all,
+  since the rulebook's guarantee is specifically about the *ordinary,
+  no-retreat-destination* disband path, not about the separate [7.3]
+  pursuit mechanic.
 - **Whether a losing side even attempts to retreat vs. fights on** is a
   rulebook decision with no formula (capital status, wealth, retreat path,
   etc. -- see `turn/retreat.py`); exposed here as ``loser_retreats: bool``,
@@ -254,6 +271,34 @@ def _combat_ability_for_terrain(terrain: Terrain) -> Ability:
     """Rulebook [6.3]: "Tactical Ability... (or Naval ability in Sea provinces)"."""
 
     return Ability.NAVAL if terrain is Terrain.SEA else Ability.TACTICAL
+
+
+def _whale_forced_retreat_applies(army: ArmyState, battle_terrain: Terrain) -> bool:
+    """Rulebook: "Whales... if they lose a battle in [a terrain other than Sea], they
+    can retreat into a Sea hex automatically without fear of being destroyed."
+
+    Only about the battle's own terrain, not the Whale army's own location
+    otherwise -- a losing Whale army in a Sea-terrain battle follows the
+    ordinary retreat/disband rules, same as anyone else.
+    """
+
+    return army.army_type is ArmyType.WHALES and battle_terrain is not Terrain.SEA
+
+
+def _whale_sea_retreat_destination(army: ArmyState, state: GameState, bounds: MapBounds) -> HexCoord | None:
+    """Nearest adjacent Sea-terrain province, regardless of ownership.
+
+    Reuses ``find_retreat_destination``'s "first neighbor in this set"
+    logic with a set of Sea provinces instead of friendly ones -- the
+    rulebook says "into a Sea hex," not "into a *friendly* Sea hex."
+    Returns ``None`` if no adjacent province is Sea terrain at all (not
+    addressed by the rulebook; ``_retreat_or_disband`` falls back to its
+    ordinary quality-based disband/mercenary rule in that case -- a
+    documented limitation of this project's map data, not a guess).
+    """
+
+    sea_provinces = {coord for coord, p in state.provinces.items() if p.terrain is Terrain.SEA}
+    return find_retreat_destination(army.location, bounds, sea_provinces)
 
 
 def _select_side_commander(
@@ -469,6 +514,10 @@ def fight_battle(
         if battle_result.winner == "attacker":
             army.quality = roll_quality_change(army.quality, rng, is_winner=True)
             report.quality_changes[army.army_id] = army.quality
+        elif attacker_clean_swept and _whale_forced_retreat_applies(army, province.terrain):
+            bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+            destination = _whale_sea_retreat_destination(army, state, bounds)
+            _retreat_or_disband(army, state, report, rng, destination=destination)
         elif attacker_clean_swept and loser_retreats:
             bounds = MapBounds(*NORMAL_MAP_BOUNDS)
             if attacker_origin is not None:
@@ -490,6 +539,10 @@ def fight_battle(
         if battle_result.winner == "defender":
             army.quality = roll_quality_change(army.quality, rng, is_winner=True)
             report.quality_changes[army.army_id] = army.quality
+        elif defender_clean_swept and _whale_forced_retreat_applies(army, province.terrain):
+            bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+            destination = _whale_sea_retreat_destination(army, state, bounds)
+            _retreat_or_disband(army, state, report, rng, destination=destination)
         elif defender_clean_swept and loser_retreats:
             bounds = MapBounds(*NORMAL_MAP_BOUNDS)
             friendly = state.friendly_provinces_for(army.kingdom_id) - {province_coord}

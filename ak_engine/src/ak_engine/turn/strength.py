@@ -160,7 +160,18 @@ def compute_effective_strength(
     front-line unit / once per battle in ``turn/battle_luck.py`` and
     applied in ``turn/battle_resolution.py``, to keep randomness in one
     place.
+
+    **Whales off-sea** (Phase 37): "Whales: When fighting in any terrain
+    other than Sea, they have zero strength." An unconditional override,
+    not the generic adverse-terrain halving ``ARMY_TABLE``'s own
+    ``adverse_terrain`` entry for Whales would otherwise apply -- checked
+    first and short-circuits the rest of this pipeline (quality,
+    defender bonus, etc. would all still multiply a nonzero base by
+    something, and the rule says exactly zero, not "reduced").
     """
+
+    if army_type is ArmyType.WHALES and terrain is not Terrain.SEA:
+        return 0.0
 
     strength = _base_strength(army_type, is_defender=is_defender, base_strength_override=base_strength_override)
 
