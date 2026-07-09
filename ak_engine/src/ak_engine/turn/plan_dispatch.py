@@ -98,15 +98,27 @@ to dispatch automatically:
   for abbreviation-table symmetry (``'MA'``), but never assigned to or
   compared against anywhere else in the entire available source tree --
   effectively vestigial as far as this project's source access goes.
-- **CAST** is decode-only (Phase 23): ``obj``/``extra`` decode to a
-  target ``Spell`` plus its target (character id, province id, or
-  unused, depending on the spell) via ``turn/cast_decode.py``, but
-  nothing is applied to ``GameState`` -- resolving what a successful
-  Cast actually does (rulebook [3.10]) needs game-state mutation logic
-  not present anywhere in the available Pascal source. Not to be
-  confused with ``Maneuver.CAST``, the *encounter-plan* tactic already
-  decoded by ``turn/search_decode.py`` -- a different Pascal reading
-  path entirely, with no top-level ``ActionCode`` of its own.
+- **CAST** decodes every spell (``turn/cast_decode.py``, Phase 23) but
+  only *executes* two of the 12 real spells observed in sample data
+  (``turn/cast_execution.py``, Phase 29): **Charm** assigns a co-located
+  target character to the caster's kingdom (the same
+  ``LeaderState.kingdom_id`` mechanism Hire uses, but without Hire's
+  "must already be independent" requirement -- Charm plausibly steals
+  allegiance from *any* co-located character, a documented
+  interpretation); **Kill_Enemy** removes a co-located target character
+  from ``GameState`` entirely. Every other spell (Resurrection, Bless,
+  Plague, Flood, Tornado, Illus_Armies, Oratory, Part_Sea,
+  Illus_Terrain, Skeletal_Army) stays unexecuted, each for its own
+  documented reason -- see ``turn/cast_execution.py``'s docstring, most
+  notably Resurrection, which can't be executed even conceptually since
+  ``GameState`` has no "dead leader" registry to revive from. The
+  success/failure roll itself (rulebook [3.10]) also isn't modeled --
+  needs per-leader ability data ``GameState`` doesn't have yet (same gap
+  Practice hit); a valid Charm/Kill_Enemy attempt always succeeds for
+  now. Not to be confused with ``Maneuver.CAST``, the *encounter-plan*
+  tactic already decoded by ``turn/search_decode.py`` -- a different
+  Pascal reading path entirely, with no top-level ``ActionCode`` of its
+  own.
 - **USE_MI** is decode-only (Phase 24): ``obj`` decodes to a global
   item-*instance* id via ``turn/use_mi_decode.py`` -- structurally
   different from Cast's ``obj``, which is a self-describing ``Spell``
@@ -209,6 +221,7 @@ from ak_engine.models.plan import PlanPhase
 from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
 from ak_engine.turn.aspy_defend_decode import decode_aspy_phase, decode_defend_phase
 from ak_engine.turn.cast_decode import decode_cast_phase
+from ak_engine.turn.cast_execution import CastExecutionResult, execute_cast
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.exploration import resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
@@ -349,7 +362,7 @@ def dispatch_phase(
         return NoOpResult(action=action)
 
     if action is ActionCode.CAST:
-        return decode_cast_phase(phase)
+        return _dispatch_cast(phase, state, kingdom_id, leader_id)
 
     if action is ActionCode.USE_MI:
         return decode_use_mi_phase(phase)
@@ -375,6 +388,11 @@ def dispatch_phase(
 def _dispatch_recruit(phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int) -> RecruitExecutionResult:
     request = decode_recruit_phase(phase)
     return execute_recruit(state, kingdom_id, leader_id, request)
+
+
+def _dispatch_cast(phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int) -> CastExecutionResult:
+    request = decode_cast_phase(phase)
+    return execute_cast(state, kingdom_id, leader_id, request)
 
 
 def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListRequest:

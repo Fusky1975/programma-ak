@@ -612,6 +612,47 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     and `fight_battle()`'s own single-`attacker_kingdom_id` signature
     means a united multi-kingdom group's defender-ally check only runs
     against the *claiming* kingdom's alliances, not every member's.
+- **Phase 29 (current)**: real Cast execution (`turn/cast_execution.py`),
+  but only for 2 of the 12 real spells observed in sample data --
+  `turn/cast_decode.py` still decodes all of them, this phase adds a
+  `GameState`-mutating resolver only where a rulebook-clear effect maps
+  onto mechanics this project already has:
+  - **Charm**: assigns the co-located target character to the caster's
+    kingdom (rulebook [4.22]: "a Hero in same province") -- the same
+    `LeaderState.kingdom_id` mechanism Hire uses (Phase 17), but
+    *without* Hire's "must already be independent" requirement: nothing
+    read so far restricts Charm to unemployed Heroes the way Hire's own
+    section does, and "Charm" plausibly steals allegiance from *any*
+    co-located character -- a documented interpretation, not a sourced
+    distinction. No gold cost (a spell, not a payment).
+  - **Kill_Enemy**: removes the co-located target character from
+    `GameState` entirely (new `GameState.remove_leader()`, mirroring
+    army destruction).
+  - **Every other real spell stays unexecuted**, each with its own
+    documented reason in `turn/cast_execution.py`'s docstring --
+    **Resurrection** most notably can't be executed even conceptually
+    with today's data model (not just "not modeled yet"): its rulebook
+    target is "a deceased character," but `GameState` has no registry of
+    dead/removed leaders to revive from -- once a `LeaderState` is
+    deleted (by Kill_Enemy or otherwise), their data is gone, not
+    archived, so there's nothing to resurrect *from*. The remaining
+    spells (Bless, Plague, Flood, Tornado, Illus_Armies, Oratory,
+    Part_Sea, Illus_Terrain, Skeletal_Army) have real rulebook
+    descriptions of *what* they conceptually do but **no numeric effect
+    magnitude anywhere** in the rulebook text read so far or in the
+    available Pascal source -- inventing tax/army/quality numbers for
+    them would break this project's own sourcing standard, so they stay
+    decode-only.
+  - **The success/failure roll itself ([3.10]: "15% plus 15% per
+    level") is also not modeled this phase** -- resolving it needs the
+    caster's own skill level in the spell's Magical ability, and
+    `GameState` doesn't carry per-leader ability data yet (the same
+    blocking gap already flagged for Practice, Phase 21 -- the move
+    file only exposes the *King's* skill pairs, and even those aren't
+    persisted into `GameState`). Every co-located, valid-target
+    Charm/Kill_Enemy attempt currently always succeeds -- an
+    incremental simplification with direct precedent: Recruit executed
+    without its per-turn limits in Phase 12, gaining them in Phase 15.
 
 ## Setup
 
@@ -780,13 +821,14 @@ rulebook before being turned into named, typed fields:
 - **`plan_dispatch.py` dispatches 21 of 22 `ActionCode`s without raising
   `UnsupportedActionError`** -- its practical maximum (see Phase 27's
   note above). LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT (Phase 15),
-  DISBAND (Phase 16), and HIRE/FIRE (Phase 17) run end-to-end with real
-  `GameState` mutation; SEARCH (Phase 19), TRADE (Phase 20), PRACTICE
-  (Phase 21), CAST (Phase 23), USE_MI (Phase 24), CHALLENGE/PURSUE
-  (Phase 25), ASPY/DEFEND (Phase 26), and TRAIL (Phase 27) decode but
-  don't mutate `GameState` (see their notes above -- same decode-only
-  status Recruit had before Phase 15); WAIT, NO_ACTION, and MOVE_ABORT
-  (Phase 22) dispatch as bare no-ops. Only **Succ_Trail** raises
+  DISBAND (Phase 16), HIRE/FIRE (Phase 17), and (for Charm/Kill_Enemy
+  only) CAST (Phase 29) run end-to-end with real `GameState` mutation;
+  SEARCH (Phase 19), TRADE (Phase 20), PRACTICE (Phase 21), CAST's other
+  10 spells (Phase 23/29), USE_MI (Phase 24), CHALLENGE/PURSUE (Phase
+  25), ASPY/DEFEND (Phase 26), and TRAIL (Phase 27) decode but don't
+  mutate `GameState` (see their notes above -- same decode-only status
+  Recruit had before Phase 15); WAIT, NO_ACTION, and MOVE_ABORT (Phase
+  22) dispatch as bare no-ops. Only **Succ_Trail** raises
   `UnsupportedActionError` -- deliberately, by design, not as an
   oversight (see Phase 27's note above).
   - **Recruit's remaining gaps**: the recruiting leader must already
@@ -832,12 +874,17 @@ rulebook before being turned into named, typed fields:
     and a dice-roll procedure this project has no Pascal source for --
     the largest remaining gap of any decoded-but-unexecuted action so
     far, data-model-wise.
-  - **Cast's remaining gap** (see Phase 23's note above): every spell's
-    actual effect (province/character/army mutation) needs game-state
-    logic not present anywhere in the available Pascal source -- only
-    the id/target/nesting *shape* is known, not the mechanics. The
-    Trade-\>Cast rewrite for secret spells 25-34 is also unmodeled
-    (confirmed to exist in Pascal, zero real examples).
+  - **Cast's remaining gap** (see Phase 29's note above): only Charm and
+    Kill_Enemy execute; the other 10 real spells' actual effects
+    (province/army mutation, mostly) need game-state logic not present
+    anywhere in the available Pascal source -- only the id/target/
+    nesting *shape* is known for them, not the mechanics -- and
+    Resurrection specifically can never be executed without a
+    dead-leader registry this project doesn't have. The success/failure
+    percentage roll isn't modeled for any spell yet, Charm/Kill_Enemy
+    included (needs per-leader ability data). The Trade-\>Cast rewrite
+    for secret spells 25-34 is also unmodeled (confirmed to exist in
+    Pascal, zero real examples).
   - **Use_MI's remaining gap** (see Phase 24's note above): deeper than
     Cast's -- there's no Pascal source for how item instances are even
     created, so `item_instance_id` can never be resolved to a concrete

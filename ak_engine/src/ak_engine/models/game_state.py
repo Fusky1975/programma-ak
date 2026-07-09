@@ -120,6 +120,9 @@ class GameState:
     def add_leader(self, leader: LeaderState) -> None:
         self.leaders[leader.leader_id] = leader
 
+    def remove_leader(self, leader_id: int) -> None:
+        self.leaders.pop(leader_id, None)
+
     def armies_at(self, coord: HexCoord) -> list[ArmyState]:
         return [army for army in self.armies.values() if army.location == coord]
 

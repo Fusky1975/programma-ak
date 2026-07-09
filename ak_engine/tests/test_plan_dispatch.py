@@ -24,6 +24,7 @@ from ak_engine.turn.plan_dispatch import (
 )
 from ak_engine.turn.aspy_defend_decode import DefendRequest, SpyProvinceRequest
 from ak_engine.turn.cast_decode import CastRequest
+from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest, PursueRequest
 from ak_engine.turn.practice_decode import PracticeRequest
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
@@ -189,15 +190,31 @@ def test_dispatch_wait_no_action_move_abort_are_bare_noops():
     assert state.kingdoms[1].treasury == 100
 
 
-def test_dispatch_cast_is_decode_only():
+def test_dispatch_cast_illus_armies_is_not_executed():
+    # Phantasmal Armies has no sourced effect data -- decode-only.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P0", action=ActionCode.CAST, obj=17, extra=[18])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, CastRequest)
-    assert result.spell == Spell.ILLUS_ARMIES
-    assert result.target == 18
+    assert isinstance(result, CastExecutionResult)
+    assert result.request.spell == Spell.ILLUS_ARMIES
+    assert result.request.target == 18
+    assert result.applied is False
+    assert result.reason == "spell effect not modeled"
+
+
+def test_dispatch_cast_charm_assigns_colocated_target_to_casters_kingdom():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(78, None, "Wandering Hero", location))
+    phase = PlanPhase(label="P1", action=ActionCode.CAST, obj=12, extra=[78])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, CastExecutionResult)
+    assert result.applied is True
+    assert state.leaders[78].kingdom_id == 1
 
 
 def test_real_move_file_leader_cast_phase_dispatches():
@@ -208,13 +225,17 @@ def test_real_move_file_leader_cast_phase_dispatches():
     cast_phase = leader.plan.segments[0].phases["P1"]
     assert cast_phase.action == ActionCode.CAST
 
-    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(78, None, "Wandering Hero", location))
 
     result = dispatch_phase(cast_phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, CastRequest)
-    assert result.spell == Spell.CHARM
-    assert result.target == 78
+    assert isinstance(result, CastExecutionResult)
+    assert result.request.spell == Spell.CHARM
+    assert result.request.target == 78
+    assert result.applied is True
+    assert state.leaders[78].kingdom_id == 1
 
 
 def test_dispatch_use_mi_is_decode_only():
