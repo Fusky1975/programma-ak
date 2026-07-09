@@ -4,7 +4,9 @@ import random
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, ProvinceState
+from ak_engine.models.enums import Ability
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.battle_line import BattleUnit
@@ -17,6 +19,7 @@ from ak_engine.turn.battle_orchestrator import (
     fight_multi_attacker_battle,
 )
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.duel import Commander
 
 from _helpers import ScriptedRandom
 
@@ -200,6 +203,52 @@ def test_build_battle_units_checks_home_province_against_the_battle_province_not
     assert units_at_home[0].effective_strength > units_away[0].effective_strength
 
 
+def test_build_battle_units_applies_combat_ability_level_to_every_unit_on_the_side():
+    # Rulebook [6.3]: "Tactical Ability +20%/level". Phase 30: the level
+    # passed in here is the side's real Supreme Commander tactical skill,
+    # looked up via LeaderState.skills -- see _select_side_commander.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+
+    units_no_ability = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+    units_with_ability = _build_battle_units(
+        [army],
+        state,
+        is_defender=False,
+        terrain=Terrain.PLAINS,
+        province_coord=FIELD,
+        rng=random.Random(0),
+        combat_ability_level=3,
+    )
+
+    assert units_with_ability[0].effective_strength == units_no_ability[0].effective_strength * 1.6
+
+
+def test_fight_battle_reads_a_led_attackers_real_tactical_skill_end_to_end():
+    # End-to-end (task #180): a real LeaderState.skills tactical level,
+    # attached via ArmyState.commanded_by, is what fight_battle() itself
+    # now picks up as the attacker's Supreme Commander -- not just the
+    # unit-level _build_battle_units/_select_side_commander helpers.
+    # Giving the attacker a commander also means the defender's unled
+    # army now faces a real Duel (garrison-commander fallback), so this
+    # scripts one extra leading roll for that (attacker wins the duel,
+    # consistent with the otherwise-overwhelming attacker).
+    state = build_state()
+    state.add_leader(LeaderState(1, 1, "Skilled Commander", FIELD, skills=SkillTable(raw_values=[5] * 30 + [0])))
+    state.armies[101].commanded_by = 1
+    rng = ScriptedRandom([0.05, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
+
+    assert report.attacker_commander_leader_id == 1
+    assert report.duel_loser_side == "defender"
+    assert report.conquered is True
+
+
 # --- Pursuit (rulebook [7.3]) -------------------------------------------
 
 
@@ -238,44 +287,56 @@ def test_pursuit_does_not_apply_when_loser_retreats_is_false():
 
 
 def test_select_side_commander_falls_back_to_garrison_for_unled_defenders():
+    state = GameState()
     armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD)]  # unled
-    units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
 
-    commander, commander_units = _select_side_commander(armies, units, allow_garrison_fallback=True)
+    commander = _select_side_commander(armies, state, Ability.TACTICAL, allow_garrison_fallback=True)
 
     assert commander is not None
     assert commander.leader_id is None
     assert commander.contingent_size == 1
-    assert commander_units == units
+    assert commander.tactical_ability == 0  # "has no abilities"
 
 
 def test_select_side_commander_no_fallback_for_unled_attackers():
+    state = GameState()
     armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD)]  # unled
-    units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
 
-    commander, commander_units = _select_side_commander(armies, units, allow_garrison_fallback=False)
+    commander = _select_side_commander(armies, state, Ability.TACTICAL, allow_garrison_fallback=False)
 
     assert commander is None
-    assert commander_units == []
 
 
 def test_select_side_commander_picks_largest_contingent_among_led_armies():
+    state = GameState()
+    state.add_leader(LeaderState(1, 1, "Leader One", FIELD))
+    state.add_leader(LeaderState(2, 1, "Leader Two", FIELD))
     armies = [
         ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, commanded_by=1),
         ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, commanded_by=2),
         ArmyState(103, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, commanded_by=2),
     ]
-    units = [
-        BattleUnit(ArmyType.BOWMEN, 10.0, source_id=101),
-        BattleUnit(ArmyType.BOWMEN, 10.0, source_id=102),
-        BattleUnit(ArmyType.BOWMEN, 10.0, source_id=103),
-    ]
 
-    commander, commander_units = _select_side_commander(armies, units, allow_garrison_fallback=False)
+    commander = _select_side_commander(armies, state, Ability.TACTICAL, allow_garrison_fallback=False)
 
     assert commander.leader_id == 2  # 2 armies vs leader 1's 1 army
     assert commander.contingent_size == 2
-    assert {u.source_id for u in commander_units} == {102, 103}
+
+
+def test_select_side_commander_uses_real_tactical_skill_for_the_tiebreak():
+    state = GameState()
+    state.add_leader(LeaderState(1, 1, "Weaker Tactician", FIELD, skills=SkillTable(raw_values=[0] * 30 + [0])))
+    state.add_leader(LeaderState(2, 1, "Stronger Tactician", FIELD, skills=SkillTable(raw_values=[5] * 30 + [0])))
+    # Equal contingent size -- the tiebreak must fall to real Tactical skill.
+    armies = [
+        ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, commanded_by=1),
+        ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, commanded_by=2),
+    ]
+
+    commander = _select_side_commander(armies, state, Ability.TACTICAL, allow_garrison_fallback=False)
+
+    assert commander.leader_id == 2
+    assert commander.tactical_ability == 5
 
 
 def test_maybe_fight_duel_demoralizes_the_losers_own_led_units():
@@ -283,9 +344,13 @@ def test_maybe_fight_duel_demoralizes_the_losers_own_led_units():
     defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
     attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
     defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
     rng = ScriptedRandom([0.01])  # attacker's huge strength edge -> wins the duel
 
-    outcome = _maybe_fight_duel(attacker_armies, defender_armies, attacker_units, defender_units, rng)
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng
+    )
 
     assert outcome.attacker_commander_leader_id == 501
     assert outcome.defender_commander_leader_id == 502
@@ -299,9 +364,12 @@ def test_maybe_fight_duel_skips_when_attacker_is_unled():
     defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
     attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
     defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
     rng = ScriptedRandom([])  # must not be consumed -- no duel without an attacker commander
 
-    outcome = _maybe_fight_duel(attacker_armies, defender_armies, attacker_units, defender_units, rng)
+    outcome = _maybe_fight_duel(
+        None, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng
+    )
 
     assert outcome.loser_side is None
     assert defender_units[0].effective_strength == 10.0  # untouched

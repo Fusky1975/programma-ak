@@ -15,10 +15,13 @@ execution here:
   does, and "Charm" as a spell plausibly means *stealing* a
   co-located character's allegiance regardless of who currently employs
   them -- a documented interpretation, not a sourced distinction. No
-  gold cost (a spell, not a payment).
+  gold cost (a spell, not a payment). Grouped under the **Psychic**
+  Magical ability, per the Spell-to-Ability grouping established while
+  researching Cast (Phase 23).
 - **Kill_Enemy**: removes the co-located target character from
   ``GameState`` entirely (``GameState.remove_leader()``), mirroring how
-  a destroyed army is removed from ``GameState.armies``.
+  a destroyed army is removed from ``GameState.armies``. Grouped under
+  **Necromancy**.
 
 Both require the acting leader (the caster) and the target character to
 be co-located, per each spell's own rulebook targeting text (Charm: "in
@@ -47,26 +50,40 @@ reason:
   for these would violate this project's own sourcing standard; they
   stay decode-only until real data or source turns up.
 
-**The success/failure roll itself is also not modeled this phase**
-(rulebook [3.10]: "15% plus 15% per level"): resolving it needs the
-caster's own skill level in the spell's Magical ability, and
-``GameState`` doesn't carry per-leader ability data yet (the move file
-only exposes the *King's* own skill pairs, and even those aren't
-persisted into ``GameState`` -- the same blocking gap already flagged
-for Practice, Phase 21). Every Charm/Kill_Enemy attempt that passes the
-co-location/target-exists checks currently always succeeds -- a
-deliberate, incremental simplification, the same shape as Recruit
-executing without its per-turn limits before a later phase added them
-(Phase 12 -> Phase 15).
+**The success/failure roll (Phase 30)**: rulebook [3.10], "The chance
+that an action spell will succeed is 15% plus 15% per level," and "A
+character may cast a spell in a Magical ability only if he has a skill
+level of 1 or higher in that ability." Resolved via
+``LeaderState.skills`` (``models/kingdom.py SkillTable``,
+Phase 30) when the caster has it recorded: below skill 1, the cast fails
+outright ("insufficient skill"); at skill 1+, a real ``15% + 15%*level``
+roll decides it. **If the caster has no ``skills`` data at all**
+(``None`` -- the default, and true for every leader this project hasn't
+explicitly given ability data, since no real parsed-move-file-to-
+``GameState`` pipeline exists yet -- see ``models/game_state.py``'s
+module docstring), the precondition can't be checked and the chance
+can't be computed, so casting always succeeds -- the exact placeholder
+behavior this project used for every Charm/Kill_Enemy attempt before
+Phase 30, preserved for backward compatibility rather than silently
+becoming impossible to cast without ability data.
 """
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 
-from ak_engine.models.enums import Spell
-from ak_engine.models.game_state import GameState
+from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.turn.cast_decode import CastRequest
+
+ACTION_SPELL_BASE_CHANCE = 0.15
+ACTION_SPELL_CHANCE_PER_LEVEL = 0.15
+
+_SPELL_ABILITY: dict[Spell, Ability] = {
+    Spell.CHARM: Ability.PSYCHIC,
+    Spell.KILL_ENEMY: Ability.NECROMANCY,
+}
 
 
 @dataclass(slots=True)
@@ -76,38 +93,72 @@ class CastExecutionResult:
     reason: str | None = None  # set when applied is False
 
 
-def execute_cast(state: GameState, kingdom_id: int, leader_id: int, request: CastRequest) -> CastExecutionResult:
+def execute_cast(
+    state: GameState, kingdom_id: int, leader_id: int, request: CastRequest, rng: random.Random | None = None
+) -> CastExecutionResult:
     """Apply a decoded Cast request to ``state``, for the spells this project can execute.
 
     See the module docstring for exactly which spells that is and why.
+    ``rng`` is only ever consumed when the caster has real ``skills``
+    data recorded (see the module docstring's success-roll section) --
+    every existing caller/test that doesn't set it is unaffected.
     """
 
+    rng = rng if rng is not None else random.Random()
     if request.spell is Spell.CHARM:
-        return _execute_charm(state, kingdom_id, leader_id, request)
+        return _execute_charm(state, kingdom_id, leader_id, request, rng)
     if request.spell is Spell.KILL_ENEMY:
-        return _execute_kill_enemy(state, leader_id, request)
+        return _execute_kill_enemy(state, leader_id, request, rng)
     return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
 
 
-def _execute_charm(state: GameState, kingdom_id: int, leader_id: int, request: CastRequest) -> CastExecutionResult:
+def _roll_cast_success(caster: LeaderState, spell: Spell, rng: random.Random) -> tuple[bool, str | None]:
+    """Rulebook [3.10]: 15% + 15%/level, requiring skill >= 1. See module docstring for the ``skills is None`` fallback."""
+
+    if caster.skills is None:
+        return True, None
+
+    level = caster.skills.pair_for_ability(_SPELL_ABILITY[spell])[0]
+    if level < 1:
+        return False, "insufficient skill"
+
+    chance = ACTION_SPELL_BASE_CHANCE + ACTION_SPELL_CHANCE_PER_LEVEL * level
+    if rng.random() < chance:
+        return True, None
+    return False, "spell failed"
+
+
+def _execute_charm(
+    state: GameState, kingdom_id: int, leader_id: int, request: CastRequest, rng: random.Random
+) -> CastExecutionResult:
     caster = state.leaders[leader_id]
     target = state.leaders.get(request.target)
     if target is None:
         return CastExecutionResult(request, applied=False, reason="target character not found")
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
+
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    if not succeeded:
+        return CastExecutionResult(request, applied=False, reason=reason)
 
     target.kingdom_id = kingdom_id
     return CastExecutionResult(request, applied=True)
 
 
-def _execute_kill_enemy(state: GameState, leader_id: int, request: CastRequest) -> CastExecutionResult:
+def _execute_kill_enemy(
+    state: GameState, leader_id: int, request: CastRequest, rng: random.Random
+) -> CastExecutionResult:
     caster = state.leaders[leader_id]
     target = state.leaders.get(request.target)
     if target is None:
         return CastExecutionResult(request, applied=False, reason="target character not found")
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
+
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    if not succeeded:
+        return CastExecutionResult(request, applied=False, reason=reason)
 
     state.remove_leader(request.target)
     return CastExecutionResult(request, applied=True)

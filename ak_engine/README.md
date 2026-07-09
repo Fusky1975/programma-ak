@@ -566,7 +566,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - **Duel** ([7.1]): each side's armies are grouped by `commanded_by`
     into `Commander`s (contingent size = army count; `tactical_ability`
     is always 0 -- `GameState` has no per-leader ability data yet, a
-    documented gap). Defenders fall back to
+    documented gap **fixed in Phase 30**, see below). Defenders fall back to
     `provincial_garrison_commander()` for unled armies, per the
     rulebook's explicit fallback; attackers have no such fallback, so a
     duel only happens when the attacker side has at least one led army
@@ -653,6 +653,57 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     Charm/Kill_Enemy attempt currently always succeeds -- an
     incremental simplification with direct precedent: Recruit executed
     without its per-turn limits in Phase 12, gaining them in Phase 15.
+    **Fixed in Phase 30**, see below.
+- **Phase 30 (current)**: per-leader ability data -- adds
+  `LeaderState.skills: SkillTable | None` (`models/game_state.py`),
+  reusing Phase 1's already-resolved `models/kingdom.py SkillTable`
+  rather than inventing a new shape, and wires it into the three
+  consumers that were previously hardcoded to their pre-ability
+  placeholder behavior:
+  - **Duel's `tactical_ability`** ([7.1]) and **the battle-strength
+    formula's Tactical/Naval bonus** ([6.3]: "+20%/level") are now read
+    from the same place: `battle_orchestrator.py`'s
+    `_select_side_commander()` picks each side's Supreme Commander
+    *before* `_build_battle_units()` runs (previously commander
+    selection happened only inside the Duel step, after units were
+    already built), looks up that leader's real skill level via
+    `LeaderState.skills.pair_for_ability()`, and feeds it to *both* the
+    Duel tiebreak *and* `compute_effective_strength()`'s
+    `combat_ability_level` for every unit on that side -- one single
+    source of truth instead of two independently-derived answers that
+    could disagree.
+  - **Cast's success/failure roll** ([3.10]: "15% plus 15% per level,"
+    requiring "a skill level of 1 or higher") is now real for Charm and
+    Kill_Enemy: `cast_execution.py _roll_cast_success()` looks up the
+    caster's level in the spell's Magical ability (Charm→Psychic,
+    Kill_Enemy→Necromancy, the Phase 23 grouping), fails outright below
+    skill 1 ("insufficient skill"), and otherwise rolls the real
+    `15% + 15%*level` chance.
+  - **Backward-compatible by construction**: `skills` defaults to
+    `None`, and every consumer falls back to its exact pre-Phase-30
+    behavior when it is -- ability level 0 (no strength/duel change) and
+    Cast always succeeding. Confirmed by running the full suite after
+    each change: the battle-orchestrator refactor only broke the 5
+    white-box tests that called its rewritten private functions
+    directly (fixed to match the new signatures, plus one new test for
+    the real-skill tiebreak); every black-box `fight_battle()` test
+    passed unchanged, since no pre-existing fixture ever combined
+    `commanded_by` with `skills`.
+  - **No parsing pipeline populates this from real move files** --
+    confirmed by exhaustive search, there is no bridge anywhere from
+    Phase 1's parsed `models.kingdom.Kingdom.skills` (the *King's*
+    ability pairs, straight off the move file) into any
+    `GameState`/`LeaderState`. Every `GameState` in this project, in
+    every test and in any real usage today, is hand-built by its
+    caller; `skills` only ever has a real value when a caller sets it
+    explicitly. Building that Kingdom→GameState pipeline is a distinct,
+    larger future task, not attempted here.
+  - **Practice ([3.13]) is still not executed** despite now having the
+    ability-data piece it was missing -- see Phase 21's note above and
+    the "Not yet implemented" section below: its other two gaps
+    (province-level multi-character grouping, and a dice-roll procedure
+    with no available Pascal source) are untouched by this phase, so it
+    stays decode-only.
 
 ## Setup
 
@@ -867,13 +918,12 @@ rulebook before being turned into named, typed fields:
     (scientific-discovery exchange between Allies, [8.4]) is a separate,
     entirely unstarted system -- not parsed, not modeled, no real data
     available yet either.
-  - **Practice's remaining gap** (see Phase 21's note above): needs a
-    per-leader skill/aptitude table in `GameState` (only the King's is
-    currently parsed at all, and only from the move file, not persisted
-    into `GameState` either), province-level multi-character grouping,
-    and a dice-roll procedure this project has no Pascal source for --
-    the largest remaining gap of any decoded-but-unexecuted action so
-    far, data-model-wise.
+  - **Practice's remaining gap** (see Phase 21's note above): `GameState`
+    now has a per-leader skill/aptitude table (`LeaderState.skills`,
+    Phase 30), but nothing populates it from a real parsed move file yet
+    (see Phase 30's note above), and Practice is still blocked by its
+    other two gaps regardless -- province-level multi-character grouping
+    and a dice-roll procedure this project has no Pascal source for.
   - **Cast's remaining gap** (see Phase 29's note above): only Charm and
     Kill_Enemy execute; the other 10 real spells' actual effects
     (province/army mutation, mostly) need game-state logic not present
@@ -881,8 +931,10 @@ rulebook before being turned into named, typed fields:
     nesting *shape* is known for them, not the mechanics -- and
     Resurrection specifically can never be executed without a
     dead-leader registry this project doesn't have. The success/failure
-    percentage roll isn't modeled for any spell yet, Charm/Kill_Enemy
-    included (needs per-leader ability data). The Trade-\>Cast rewrite
+    percentage roll is now real for Charm/Kill_Enemy (Phase 30), but
+    only takes effect once a caster has real `LeaderState.skills` data
+    (see Phase 30's note above); it isn't modeled at all for the other
+    10 spells, since they aren't executed in the first place. The Trade-\>Cast rewrite
     for secret spells 25-34 is also unmodeled (confirmed to exist in
     Pascal, zero real examples).
   - **Use_MI's remaining gap** (see Phase 24's note above): deeper than
@@ -926,8 +978,9 @@ rulebook before being turned into named, typed fields:
   - The duel *fight itself* [7.1] is still approximated, not resolved --
     the separate "Special Encounter Plan" character-combat system
     [5.10] this would need isn't built; see Phase 28's note for the
-    `estimate_win_probability`-based approximation used instead, and
-    that `tactical_ability` is always 0 pending per-leader ability data.
+    `estimate_win_probability`-based approximation used instead.
+    `tactical_ability` now reads a real skill level when the commander's
+    `LeaderState.skills` is set (Phase 30), 0 otherwise.
   - Contested-province state across multiple turns
     (`turn/contested_province.py`'s functions exist but nothing calls
     them from `execute_move()`/`fight_battle()` -- a contested result

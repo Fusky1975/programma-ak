@@ -362,7 +362,7 @@ def dispatch_phase(
         return NoOpResult(action=action)
 
     if action is ActionCode.CAST:
-        return _dispatch_cast(phase, state, kingdom_id, leader_id)
+        return _dispatch_cast(phase, state, kingdom_id, leader_id, rng)
 
     if action is ActionCode.USE_MI:
         return decode_use_mi_phase(phase)
@@ -390,9 +390,11 @@ def _dispatch_recruit(phase: PlanPhase, state: GameState, kingdom_id: int, leade
     return execute_recruit(state, kingdom_id, leader_id, request)
 
 
-def _dispatch_cast(phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int) -> CastExecutionResult:
+def _dispatch_cast(
+    phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int, rng: random.Random | None
+) -> CastExecutionResult:
     request = decode_cast_phase(phase)
-    return execute_cast(state, kingdom_id, leader_id, request)
+    return execute_cast(state, kingdom_id, leader_id, request, rng)
 
 
 def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListRequest:

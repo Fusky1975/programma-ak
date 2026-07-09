@@ -9,20 +9,29 @@ disband for whoever pursuit doesn't catch) -> province ownership.
 
 **Duel** ([7.1]): each side's armies are grouped by ``commanded_by`` into
 ``turn/duel.py`` ``Commander``s (contingent size = army count;
-``tactical_ability`` is always 0 -- ``GameState`` has no per-leader
-ability data yet, a documented gap). Defenders fall back to
+``tactical_ability`` is a real skill level read from
+``LeaderState.skills`` as of Phase 30 -- 0 if that leader has no
+``skills`` recorded, the same placeholder behavior this project used
+before Phase 30 for every leader). Defenders fall back to
 ``provincial_garrison_commander()`` for any unled armies, per the
-rulebook's explicit fallback; attackers have no such fallback (none is
-specified), so a duel only happens when the attacker side has at least
-one led army. The duel *fight itself* still isn't modeled (rulebook
-points to the unbuilt Special Encounter Plan system, [5.10]) -- its
-outcome is instead approximated the same way ``turn/pursuit.py``'s own
-one-on-one standstill check already is: ``estimate_win_probability()``
-compares the two commanders' own led units' total strength, rng decides
-the loser, and ``apply_duel_demoralization()`` reduces that loser's own
-led units by 25% before the main battle resolves. Not a sourced
-mechanic -- a documented approximation, same spirit and precedent as
-Pursuit's own.
+rulebook's explicit fallback ("has no abilities" -- always 0); attackers
+have no such fallback (none is specified), so a duel only happens when
+the attacker side has at least one led army. The duel *fight itself*
+still isn't modeled (rulebook points to the unbuilt Special Encounter
+Plan system, [5.10]) -- its outcome is instead approximated the same way
+``turn/pursuit.py``'s own one-on-one standstill check already is:
+``estimate_win_probability()`` compares the two commanders' own led
+units' total strength, rng decides the loser, and
+``apply_duel_demoralization()`` reduces that loser's own led units by
+25% before the main battle resolves. Not a sourced mechanic -- a
+documented approximation, same spirit and precedent as Pursuit's own.
+Each side's Supreme Commander is now selected *before* ``_build_battle_units``
+runs (Phase 30), specifically so their real ability level can also feed
+the rulebook [6.3] "Tactical Ability +20%/level (or Naval in Sea
+provinces)" strength bonus for their *entire* side, not just their own
+led units -- previously always 0 (``turn/strength.py
+compute_effective_strength``'s ``combat_ability_level`` parameter was
+never passed by this module at all).
 
 **Pursuit** ([7.3]): once a side is judged clean-swept and
 ``loser_retreats=True``, before its armies retreat/disband, the winning
@@ -92,8 +101,9 @@ import random
 from dataclasses import dataclass, field
 
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.aftermath import roll_quality_change
 from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
@@ -129,6 +139,7 @@ def _build_battle_units(
     terrain,
     province_coord: HexCoord,
     rng: random.Random,
+    combat_ability_level: int = 0,
 ) -> list[BattleUnit]:
     """Build BattleUnits for one side of a battle at ``province_coord``.
 
@@ -137,6 +148,11 @@ def _build_battle_units(
     Move that triggers a battle completes, an attacking army's
     ``location`` is still its *origin*, not the contested province, so
     comparing against ``army.location`` would ask the wrong question.
+
+    ``combat_ability_level`` (Phase 30) is this side's Supreme Commander's
+    Tactical (or Naval, in Sea provinces) skill level -- rulebook [6.3]:
+    "+20%/level", applied to every unit on the side, not just the
+    commander's own led units (see ``fight_battle``'s docstring for why).
     """
 
     units = []
@@ -152,6 +168,7 @@ def _build_battle_units(
             is_defender=is_defender,
             is_home_province=is_home,
             base_strength_override=override,
+            combat_ability_level=combat_ability_level,
         )
         units.append(BattleUnit(army.army_type, strength, source_id=army.army_id))
     return units
@@ -182,36 +199,50 @@ def _retreat_or_disband(
         report.mercenary_army_ids.append(army.army_id)
 
 
+def _combat_ability_for_terrain(terrain: Terrain) -> Ability:
+    """Rulebook [6.3]: "Tactical Ability... (or Naval ability in Sea provinces)"."""
+
+    return Ability.NAVAL if terrain is Terrain.SEA else Ability.TACTICAL
+
+
 def _select_side_commander(
-    armies: list[ArmyState], units: list[BattleUnit], *, allow_garrison_fallback: bool
-) -> tuple[Commander | None, list[BattleUnit]]:
+    armies: list[ArmyState], state: GameState, ability: Ability, *, allow_garrison_fallback: bool
+) -> Commander | None:
     """Group one side's armies by ``commanded_by`` and pick the Supreme Commander (rulebook [7.1]).
 
-    ``armies``/``units`` must be the same length and in the same order
-    (one ``BattleUnit`` per ``ArmyState``, as ``_build_battle_units``
-    produces). Unled armies are dropped unless ``allow_garrison_fallback``
-    -- only the rulebook-specified defender fallback -- in which case
-    they compete as a single "provincial garrison commander" candidate.
+    Operates on ``armies`` alone (no ``BattleUnit``s needed) so this can
+    run *before* ``_build_battle_units``, letting the winner's real
+    ability level (Phase 30: read from ``LeaderState.skills``, 0 if that
+    leader has none recorded) feed the strength formula, not just the
+    duel. Unled armies are dropped unless ``allow_garrison_fallback`` --
+    only the rulebook-specified defender fallback -- in which case they
+    compete as a single "provincial garrison commander" candidate
+    ("has no abilities", i.e. always level 0).
     """
 
-    by_leader: dict[int | None, list[BattleUnit]] = {}
-    for army, unit in zip(armies, units):
-        by_leader.setdefault(army.commanded_by, []).append(unit)
+    by_leader: dict[int | None, list[ArmyState]] = {}
+    for army in armies:
+        by_leader.setdefault(army.commanded_by, []).append(army)
 
-    unled_units = by_leader.pop(None, [])
+    unled_armies = by_leader.pop(None, [])
 
-    candidates = [
-        Commander(leader_id=leader_id, contingent_size=len(led_units), tactical_ability=0)
-        for leader_id, led_units in by_leader.items()
-    ]
-    if unled_units and allow_garrison_fallback:
-        candidates.append(provincial_garrison_commander(len(unled_units)))
-        by_leader[None] = unled_units
+    candidates = []
+    for leader_id, led_armies in by_leader.items():
+        level = 0
+        leader = state.leaders.get(leader_id)
+        if leader is not None and leader.skills is not None:
+            level = leader.skills.pair_for_ability(ability)[0]
+        candidates.append(Commander(leader_id=leader_id, contingent_size=len(led_armies), tactical_ability=level))
+    if unled_armies and allow_garrison_fallback:
+        candidates.append(provincial_garrison_commander(len(unled_armies)))
 
-    winner = select_supreme_commander(candidates)
-    if winner is None:
-        return None, []
-    return winner, by_leader[winner.leader_id]
+    return select_supreme_commander(candidates)
+
+
+def _units_led_by(armies: list[ArmyState], units: list[BattleUnit], leader_id: int | None) -> list[BattleUnit]:
+    """``armies``/``units`` must be the same length and order (as ``_build_battle_units`` produces)."""
+
+    return [unit for army, unit in zip(armies, units) if army.commanded_by == leader_id]
 
 
 @dataclass(slots=True)
@@ -222,6 +253,8 @@ class _DuelOutcome:
 
 
 def _maybe_fight_duel(
+    attacker_commander: Commander | None,
+    defender_commander: Commander | None,
     attacker_armies: list[ArmyState],
     defender_armies: list[ArmyState],
     attacker_units: list[BattleUnit],
@@ -230,22 +263,22 @@ def _maybe_fight_duel(
 ) -> _DuelOutcome:
     """Rulebook [7.1]: mutates ``attacker_units``/``defender_units`` in place if a duel loser is decided.
 
-    See the module docstring for why the duel's own outcome is
-    approximated via ``estimate_win_probability`` rather than resolved
-    (no Special Encounter Plan system exists). No-op (and no rng
-    consumed) unless both sides have a real commander -- attackers have
-    no garrison-style fallback, so this is skipped whenever no attacking
-    army is led.
+    Takes the already-selected Supreme Commanders (``fight_battle`` picks
+    them early now, for the strength bonus too -- see the module
+    docstring) rather than re-deriving them, so there's one single source
+    of truth for "who commands this side." See the module docstring for
+    why the duel's own outcome is approximated via
+    ``estimate_win_probability`` rather than resolved (no Special
+    Encounter Plan system exists). No-op (and no rng consumed) unless
+    both sides have a real commander -- attackers have no garrison-style
+    fallback, so this is skipped whenever no attacking army is led.
     """
 
-    attacker_commander, attacker_commander_units = _select_side_commander(
-        attacker_armies, attacker_units, allow_garrison_fallback=False
-    )
-    defender_commander, defender_commander_units = _select_side_commander(
-        defender_armies, defender_units, allow_garrison_fallback=True
-    )
     if attacker_commander is None or defender_commander is None:
         return _DuelOutcome(None, None, None)
+
+    attacker_commander_units = _units_led_by(attacker_armies, attacker_units, attacker_commander.leader_id)
+    defender_commander_units = _units_led_by(defender_armies, defender_units, defender_commander.leader_id)
 
     attacker_strength = sum(u.effective_strength for u in attacker_commander_units)
     defender_strength = sum(u.effective_strength for u in defender_commander_units)
@@ -324,14 +357,24 @@ def fight_battle(
     if not defender_armies:
         raise ValueError("no defending armies at this province to fight")
 
+    ability = _combat_ability_for_terrain(province.terrain)
+    attacker_commander = _select_side_commander(attacker_armies, state, ability, allow_garrison_fallback=False)
+    defender_commander = _select_side_commander(defender_armies, state, ability, allow_garrison_fallback=True)
+    attacker_ability_level = attacker_commander.tactical_ability if attacker_commander is not None else 0
+    defender_ability_level = defender_commander.tactical_ability if defender_commander is not None else 0
+
     attacker_units = _build_battle_units(
-        attacker_armies, state, is_defender=False, terrain=province.terrain, province_coord=province_coord, rng=rng
+        attacker_armies, state, is_defender=False, terrain=province.terrain, province_coord=province_coord, rng=rng,
+        combat_ability_level=attacker_ability_level,
     )
     defender_units = _build_battle_units(
-        defender_armies, state, is_defender=True, terrain=province.terrain, province_coord=province_coord, rng=rng
+        defender_armies, state, is_defender=True, terrain=province.terrain, province_coord=province_coord, rng=rng,
+        combat_ability_level=defender_ability_level,
     )
 
-    duel = _maybe_fight_duel(attacker_armies, defender_armies, attacker_units, defender_units, rng)
+    duel = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng
+    )
 
     battle_result = resolve_battle(attacker_units, defender_units, rng=rng)
 

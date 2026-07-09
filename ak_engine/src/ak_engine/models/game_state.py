@@ -14,8 +14,23 @@ carry Phase 1's parsed ``ActionPlan`` (``models.kingdom.Leader`` is a
 parsed *move submission*, a different concept from the persistent
 leader here; the two are linked only by sharing a ``leader_id``). No
 diplomacy/treaty tracking beyond a flat alliance set, no turn-history
-log, no character abilities/stats yet (needed eventually for
-``turn/strength.py``'s Tactical/Naval special factor, still unwired).
+log.
+
+``LeaderState.skills`` (Phase 30) reuses ``models/kingdom.py``'s
+already-resolved ``SkillTable`` -- but note **no code anywhere in this
+project populates it from a real parsed move file**: there is no bridge
+from Phase 1's parsed ``Kingdom`` (whose own ``skills: SkillTable`` is
+the *King's* ability pairs, straight from the move file's skill-values
+line) into any ``GameState``/``LeaderState``. Every ``GameState`` in
+this project -- in every test, and in any real usage today -- is
+hand-built by its caller; wiring a real parse-to-execution pipeline is
+a distinct, larger future task. Until then, ``skills`` defaults to
+``None`` ("no ability data recorded for this leader"), and every
+consumer (``turn/battle_orchestrator.py``'s Tactical/Naval strength
+bonus and Duel commander selection, ``turn/cast_execution.py``'s
+Cast success roll) falls back to its pre-Phase-30 placeholder behavior
+in that case -- a real skill level only changes anything once a caller
+sets it explicitly.
 
 ``ArmyState.kingdom_id`` is nullable (Phase 16): ``None`` means an
 unowned mercenary army (rulebook [3.6]: Disband "releases the army(s)
@@ -36,6 +51,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
@@ -74,6 +90,8 @@ class LeaderState:
     kingdom_id: int | None  # None = independent Hero, not in any kingdom's service
     name: str
     location: HexCoord
+    # None = no ability data recorded for this leader -- see module docstring.
+    skills: SkillTable | None = None
 
 
 @dataclass(slots=True)
