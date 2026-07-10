@@ -1569,6 +1569,48 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     after wiring, before any new tests were written -- no pre-existing
     fixture exercised a target leader that was absent or elsewhere. 3
     new tests added (900 passed total).
+- **Phase 48 (current)**: `turn/encounter.py`, the first slice of the
+  personal-combat ("Encounter") system (rulebook [5.0]-[5.3], [5.9]) --
+  the missing piece behind Search's, Challenge/Pursue's, and ASpy/
+  Defend's own "remaining gap" notes above, and Duel's own approximated
+  fight ([7.1], Phase 28's note). **Not yet wired into any of those** --
+  a deliberately narrow first phase, the same incremental approach this
+  project already used for the army-battle system (Phase 5's combat
+  primitives, built up over several more phases before a full
+  `fight_battle()` existed).
+  - **Scope: only Melee and Fire Arrow**, the two tactics [5.0]-[5.8]
+    gives concrete numbers for. `CHARACTER_HIT_POINTS = 10` ([5.0]:
+    "In combat, all characters have 10 hit points"); `resolve_melee_duel`
+    (flat 50% hit chance, 1-6 damage, [5.3]) and `resolve_fire_arrow_duel`
+    (30% + 10%/Archery-level hit chance, 1-6 damage, a free-attack count
+    equal to Archery skill, [5.2]) each assume *both* combatants use
+    that one tactic for the whole encounter -- sidestepping the
+    Spell/Bow/Melee range-transition state machine real mixed-tactic
+    combat would need entirely, a documented scope-narrowing choice.
+  - **Initiative** ([5.0]: "the character with the greater skill level
+    relevant to the tactic he is using generally goes first... If the
+    skill is the same, the characters go in random order"): `_acts_first`
+    compares the relevant skill directly, tie broken by `rng.random()`.
+  - **Neutral Kingdoms' "Order of Duelists"** ([5.0]: "+1 modifier to
+    their Melee and Archery abilities"): `Combatant.neutral_duelist_bonus`
+    -> `effective_melee_skill`/`effective_archery_skill`.
+  - **Explicitly out of scope, each independently flagged in the module
+    docstring**: Steal/Negotiate/Flee/Scout/Give ([5.4]-[5.8]); casting
+    spells or using magic items in combat ([5.1], no spell/item-effect
+    system exists anywhere in this project); the "about double" free
+    attacks when both combatants have Archery skill ([5.2], no concrete
+    formula given -- "about double", "some random chance"); what happens
+    once Fire Arrow's free attacks run out with nobody dead (real combat
+    would continue at Melee range -- `resolve_fire_arrow_duel` just
+    stops, `winner=None`); Temper's effect on Melee (this project has no
+    `Temper` model anywhere at all, not merely an unwired mechanic); and
+    Victory/Death's aftermath ([5.9]) -- looting, magic items changing
+    hands, and a slain King's heir taking over with *player-chosen*
+    starting ability levels, which needs an interactive choice channel
+    this automated engine has none of.
+  - Non-breaking: brand-new, self-contained module with no existing
+    callers -- full suite passed unchanged (900 passed) before any new
+    tests were written. 15 new tests added (915 passed total).
 
 ## Setup
 
@@ -1778,10 +1820,14 @@ rulebook before being turned into named, typed fields:
   - **Search's remaining gap** (see Phase 19's note above): decoded but
     entirely unapplied -- resolving it needs a personal, non-army
     Encounter/combat resolver (Steal/Melee/Fire/Flee/Scout tactic
-    resolution, [5.2]-[5.8]) plus stochastic feature-content generation,
-    neither of which exist yet. A Cast/Use_MI/Give tactic's sub-object is
-    also just a raw int -- no decoded spell-id or magic-item-id table
-    exists in this project yet to resolve it further.
+    resolution, [5.2]-[5.8]) plus stochastic feature-content generation.
+    `turn/encounter.py` (Phase 48) now provides a first slice of the
+    former (Melee + Fire Arrow combat math only, not yet wired to
+    Search itself -- see that phase's note below), so this gap is
+    narrower than it was, not closed. A Cast/Use_MI/Give tactic's
+    sub-object is also just a raw int -- no decoded spell-id or
+    magic-item-id table exists in this project yet to resolve it
+    further.
   - **Trade's remaining gap** (see Phase 20's note above): the whole
     module, not just execution -- `obj`/`extra`'s field meanings aren't
     confirmed, so there's nothing yet to safely execute even if a
@@ -1824,10 +1870,11 @@ rulebook before being turned into named, typed fields:
   - **Challenge/Pursue's remaining gap** (see Phase 25's note above):
     the King/Hero encounter-acceptance rules ([3.12]) and the Spy Table
     catch-up formula ([4.33], [3.16]) aren't modeled -- same missing
-    non-army Encounter resolver as Search. `LeaderState.is_king` (Phase
-    40) now exists, so the *data* this rule would need is no longer
-    missing, only the encounter-resolution system itself. Zero real
-    examples for either either.
+    non-army Encounter resolver as Search, now with a first slice
+    (`turn/encounter.py`, Phase 48) but not yet wired here either.
+    `LeaderState.is_king` (Phase 40) now exists, so the *data* this rule
+    would need is no longer missing, only the encounter-resolution
+    system itself. Zero real examples for either either.
   - **ASpy/Defend's remaining gap** (see Phase 26's note above):
     intelligence-report generation (ASpy) and reactive cross-province
     battle-triggering (Defend) both need `GameState`/battle-orchestrator
