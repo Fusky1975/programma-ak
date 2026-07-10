@@ -1999,7 +1999,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     test's fixtures produce -- full suite passed unchanged (1350
     passed) before any new tests were written. 4 new tests added (1354
     passed total).
-- **Phase 57 (current)**: wires Defend's [3.15] reactive
+- **Phase 57**: wires Defend's [3.15] reactive
   battle-joining into `turn/turn_processor.py`, via a new `turn/
   defend_execution.py`.
   - **A confirmed blocker forced a scope pivot mid-implementation**:
@@ -2062,6 +2062,75 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     suite passed unchanged (1354 passed) before any new tests were
     written. 7 new tests added (3 for `defend_coverage_area` itself, 4
     for the `run_turn()` wiring; 1361 passed total).
+- **Phase 58 (current)**: begins report generation -- the "structurally
+  biggest piece remaining" flagged at the end of Phase 57 -- with a new
+  `report/` subpackage and its first module, `report/prose.py`, a
+  micro-template rendering engine. **Explicitly the foundation, not any
+  report content yet**: this module renders one already-selected
+  template string given substitution values; it knows nothing about
+  `GameState`, the same separation Phase 48's Encounter core established
+  before any of its consumers existed.
+  - **Research materially changed the size/risk estimate before any
+    code was written, and was reported back to the user before
+    proceeding**: `HostAK/TP/SAY.PAS`/`RUMORS.PAS` (~4000 combined lines,
+    115 procedures) and the `HostAK/TP/PROSE/` folder (164 `.X`/`.X2`
+    template files) turned out to contain the *actual* English sentence
+    templates as real, quotable text -- not just opaque binary logic --
+    and `HostAK/TP/PROSE/PROSE.TXT` documents the template
+    mini-language's symbols in full (written for a translator, but a
+    complete spec nonetheless). This is real, sourced content, not
+    something to invent. The genuinely large, still-unbuilt part is
+    `RUMORS.PAS Say()`'s own stateful narrator engine: 1st/2nd/3rd-person
+    narration depending on who's reading, gender-based pronoun
+    selection, "already mentioned this character" sentence-merging
+    (turning two events into "recruited 222 and 223"), and King-only
+    exclusion zones -- confirmed by reading `Set_Person`/`Set_Alt`/
+    `Set_Plural`'s real implementations, not guessed at.
+  - **`render(template, values, *, rng)`** implements exactly the
+    symbols `PROSE.TXT` documents that are also confirmed, from
+    `Say_Options`'s real source, to be genuinely random: `_` (space),
+    `{...}` (50% inclusion), `/R` (50/50 word choice), plain
+    caller-supplied placeholder substitution, and `^A` (a/an, resolved
+    by peeking past the substituted text to the next real word). The
+    staged resolution order (`/R` before `{...}` before `_`-to-space)
+    is copied directly from `Say_Options`'s own procedure body, not
+    inferred from the prose description alone -- `/R`'s word-boundary
+    scan depends on `_` still being literal at that point (an
+    underscore-joined phrase like `bored_with` counts as one word).
+  - **`/F`, `/S`, `/P` raise `NotImplementedError` naming the exact
+    marker instead of being silently treated as another random 50/50
+    choice**: confirmed from `Say_Options`'s `Left_Choice` function that
+    none of the three is actually random at the Pascal level (`/F`
+    reads a feature-instance parity bit, `/S` reads sea-vs-land terrain,
+    `/P` reads a sentence-merge state flag) -- this project has no
+    per-render-call source for any of that context yet, and guessing a
+    random substitute would be quietly wrong in a specific, checkable
+    way, worse than an honest "not yet."
+  - **Full pronoun/narrator logic (`<`, `[`, `>`, `]`, `^B`/`^E`) is a
+    declared, separate follow-up**, not attempted this phase -- it needs
+    `Set_Person`/`Set_Alt`'s own stateful person/gender/repeat-tracking
+    system, a genuinely different and larger piece of work than a
+    stateless template renderer.
+  - Validated against real quoted template strings from `RUMORS.PAS`
+    (cited by line number in the test file), including an end-to-end
+    render of `_LPOwns` (line 446) that reproduces, word-for-word, the
+    exact phrasing found in the real sample report `SE3__T0.K1`: "The
+    province of the Dolphin Sea owes allegiance to your Majesty."
+  - **Roadmap for the phases after this one** (not committed to exact
+    numbering): a "story event" model recording what happened during
+    `ak_engine`'s own already-computed turn results (battles, moves,
+    casts, recruits...); then `Set_Person`/`Set_Alt`'s narrator system;
+    then individual report sections wired one at a time (Quote of the
+    Week first, since `PROSE/QUOTES.X2` needs no game-state at all;
+    then FINANCES/PROVINCES/CHARACTERS/ARMIES, which are structured data
+    this project already computes; the full narrative ACTION REPORT and
+    birthright-report province descriptions last, since they need the
+    most of the deferred narrator machinery) -- validated turn-by-turn
+    against the real `SE3__T*.K1` sample reports as they become
+    available.
+  - Non-breaking: brand-new subpackage with no existing callers -- full
+    suite passed unchanged (1361 passed) before any new tests were
+    written. 19 new tests added (1380 passed total).
 
 ## Setup
 
