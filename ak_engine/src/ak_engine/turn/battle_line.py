@@ -65,6 +65,11 @@ class BattleUnit:
     army_type: ArmyType
     effective_strength: float
     source_id: int | None = None  # opaque caller id (e.g. an ArmyState id), for post-battle bookkeeping
+    # Phase 43, rulebook [4.32]/[7.2]: an overflight unit whose controller
+    # has insufficient Druidic ability for it is "held back" instead of
+    # rear-targeting -- see column_strength's docstring. False for every
+    # non-overflight unit regardless of this field (irrelevant to them).
+    druidic_rear_targeting_blocked: bool = False
 
 
 Column = list[BattleUnit]
@@ -170,7 +175,12 @@ def _apply_nemesis_to_column(own_column: Column, opposing_column: Column) -> Non
     for index, unit in enumerate(own_column):
         adjusted_strength = strength_key(unit)
         if adjusted_strength != unit.effective_strength:
-            own_column[index] = BattleUnit(unit.army_type, adjusted_strength, source_id=unit.source_id)
+            own_column[index] = BattleUnit(
+                unit.army_type,
+                adjusted_strength,
+                source_id=unit.source_id,
+                druidic_rear_targeting_blocked=unit.druidic_rear_targeting_blocked,
+            )
 
 
 def column_strength(column: Column, *, outflank_second_line: bool = False) -> float:
@@ -204,16 +214,22 @@ def column_strength(column: Column, *, outflank_second_line: bool = False) -> fl
        i.e. an *opposing* overflight unit (see ``column_has_overflight_
        unit``) triggers this same 100%-instead-of-50% boost on this
        column's own ordinary second-line unit. Wired into
-       ``resolve_battle`` since Phase 39. The rulebook's own carve-out
+       ``resolve_battle`` since Phase 39. **The rulebook's own carve-out**
        ("if the non-human unit has low strength because its leader has
        insufficient Druidic ability, it will be held back and will throw
-       its low strength into the attack on the front-line unit" --
-       i.e. no rear-targeting, no boost, in that case) is **not**
-       modeled: this project has no "Druid Table" data at all (see
-       ``turn/strength.py``'s module docstring, the same Druidic-ability
-       gap already skipped for the quality-modifier pipeline), so every
-       overflight unit is treated as eligible to rear-target regardless
-       of its controller's Druidic ability.
+       its low strength into the attack on the front-line unit" -- i.e.
+       no rear-targeting, no boost, in that case) **is modeled as of
+       Phase 43** via ``BattleUnit.druidic_rear_targeting_blocked``
+       (set by ``battle_orchestrator.py _build_battle_units`` from
+       ``turn/strength.py compute_druidic_shortfall`` > 0 for an
+       overflight-type unit): a blocked unit is treated as an *ordinary*
+       unit here (falls through to the ``elif``/``else`` branches below,
+       normal depth-based halving) instead of getting the unconditional
+       overflight 100%, and ``column_has_overflight_unit`` no longer
+       counts it either -- "held back... throws its low strength into
+       the attack on the front-line unit" reads as this unit behaving
+       exactly like a non-overflight one, on both sides of the
+       interaction.
 
     Only affects ordinary units at depth index 1 -- an overflight unit
     already gets 100% unconditionally (the ``is_overflight_unit`` branch
@@ -223,7 +239,7 @@ def column_strength(column: Column, *, outflank_second_line: bool = False) -> fl
     overflight_group_counts: dict[str, int] = {}
     total = 0.0
     for depth, unit in enumerate(column):
-        if is_overflight_unit(unit.army_type):
+        if _is_effective_overflight(unit):
             group = overflight_group(unit.army_type)
             stack_index = overflight_group_counts.get(group, 0)
             total += unit.effective_strength * line_contribution(stack_index)
@@ -235,8 +251,17 @@ def column_strength(column: Column, *, outflank_second_line: bool = False) -> fl
     return total
 
 
+def _is_effective_overflight(unit: BattleUnit) -> bool:
+    """An overflight-type unit that isn't held back by ``druidic_rear_targeting_blocked``
+    (Phase 43) -- see ``column_strength``'s docstring.
+    """
+
+    return is_overflight_unit(unit.army_type) and not unit.druidic_rear_targeting_blocked
+
+
 def column_has_overflight_unit(column: Column) -> bool:
-    """True if any unit in ``column`` (any depth) is an overflight type (air or sea).
+    """True if any unit in ``column`` (any depth) is an *effectively* overflight type
+    (air or sea, and not held back by insufficient Druidic ability -- Phase 43).
 
     Used to drive ``column_strength``'s ``outflank_second_line`` for the
     rear-targeting rule -- checked across the *whole* column, not just
@@ -245,7 +270,7 @@ def column_has_overflight_unit(column: Column) -> bool:
     strength unconditionally themselves).
     """
 
-    return any(is_overflight_unit(unit.army_type) for unit in column)
+    return any(_is_effective_overflight(unit) for unit in column)
 
 
 def switch_chance(tactical_ability: int, line_length: int) -> float:

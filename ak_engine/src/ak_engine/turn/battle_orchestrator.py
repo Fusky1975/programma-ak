@@ -146,7 +146,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
-from ak_engine.models.army_type import ArmyType
+from ak_engine.models.army_type import ArmyType, is_overflight_unit
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
@@ -292,7 +292,15 @@ def _build_battle_units(
             base_strength_override=override,
             combat_ability_level=combat_ability_level,
         )
-        units.append(BattleUnit(army.army_type, strength, source_id=army.army_id))
+        rear_targeting_blocked = is_overflight_unit(army.army_type) and druidic_shortfall > 0
+        units.append(
+            BattleUnit(
+                army.army_type,
+                strength,
+                source_id=army.army_id,
+                druidic_rear_targeting_blocked=rear_targeting_blocked,
+            )
+        )
     return units
 
 

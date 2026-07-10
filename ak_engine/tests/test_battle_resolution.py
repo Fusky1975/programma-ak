@@ -11,8 +11,12 @@ from ak_engine.turn.battle_resolution import resolve_battle
 from _helpers import ScriptedRandom
 
 
-def unit(strength: float, army_type: ArmyType = ArmyType.BOWMEN) -> BattleUnit:
-    return BattleUnit(army_type=army_type, effective_strength=strength)
+def unit(strength: float, army_type: ArmyType = ArmyType.BOWMEN, *, druidic_rear_targeting_blocked: bool = False) -> BattleUnit:
+    return BattleUnit(
+        army_type=army_type,
+        effective_strength=strength,
+        druidic_rear_targeting_blocked=druidic_rear_targeting_blocked,
+    )
 
 
 def test_resolve_battle_with_no_luck_events_uses_plain_win_probability():
@@ -177,6 +181,46 @@ def test_resolve_battle_opposing_overflight_unit_boosts_second_line_to_full_stre
 
     assert result.columns[0].attacker_strength == pytest.approx(10)
     assert result.columns[0].defender_strength == pytest.approx(10 * 1.0 + 9 * 1.0)
+
+
+def test_resolve_battle_druidic_blocked_overflight_unit_does_not_trigger_rear_targeting():
+    # Phase 43: same setup as the boost test above, but the attacker's
+    # Whales unit is held back (insufficient Druidic ability) -- the
+    # defender's second-line Axemen stays at ordinary 50%, not boosted.
+    attacker_units = [unit(10, ArmyType.WHALES, druidic_rear_targeting_blocked=True)]
+    defender_units = [unit(10, ArmyType.BOWMEN), unit(9, ArmyType.AXEMEN)]
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.5])
+
+    result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=1, rng=rng)
+
+    # The blocked Whales unit also loses its own 100%-regardless-of-depth
+    # treatment, but it's alone at depth 0 so that part reads the same
+    # either way (100%) -- the defender side is where the difference shows.
+    assert result.columns[0].attacker_strength == pytest.approx(10)
+    assert result.columns[0].defender_strength == pytest.approx(10 * 1.0 + 9 * 0.5)
+
+
+def test_resolve_battle_druidic_blocked_flag_survives_front_line_luck():
+    # Regression (Phase 43): _apply_front_line_luck replaces the front-line
+    # unit with a new BattleUnit when a luck event lands -- the held-back
+    # flag must survive that replacement too, or a later opposing-side
+    # column_has_overflight_unit check downstream would misread it.
+    attacker_units = [unit(10, ArmyType.WHALES, druidic_rear_targeting_blocked=True)]
+    defender_units = [unit(10, ArmyType.BOWMEN), unit(9, ArmyType.AXEMEN)]
+    # No tactical switching happens either side (ability=0 default, and
+    # the check bails before consuming rng -- see the sibling boost test
+    # above for the same structural setup). Sequence: attacker column-luck
+    # chance (0.05, under COLUMN_LUCK_CHANCE=0.75 -> event triggers),
+    # is_bonus roll, uniform's internal random() call; defender column-luck
+    # chance (0.9, no event); battle-luck chance (0.9, no event); the
+    # single column's win roll (0.5).
+    rng = ScriptedRandom([0.05, 0.5, 0.5, 0.9, 0.9, 0.5])
+
+    result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=1, rng=rng)
+
+    # Still no rear-targeting boost for the defender's second-line unit,
+    # proving the flag wasn't reset to False by the luck-driven replacement.
+    assert result.columns[0].defender_strength == pytest.approx(10 * 1.0 + 9 * 0.5)
 
 
 def test_resolve_battle_column_results_expose_the_actual_units_for_bookkeeping():

@@ -487,6 +487,58 @@ def test_build_battle_units_druidic_shortfall_penalizes_a_foreign_race_led_army(
     assert units[0].effective_strength == pytest.approx(expected)
 
 
+def test_build_battle_units_marks_an_overflight_unit_rear_targeting_blocked_when_shortfall_is_positive():
+    # Phase 43: same scenario as the test above (Dragon Wing shortfall of
+    # 4) -- an overflight-type unit with a real shortfall also gets
+    # BattleUnit.druidic_rear_targeting_blocked=True.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Hero", location=FIELD))
+    army = ArmyState(101, 2, ArmyType.DRAGON_WING, Quality.ELITE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    assert units[0].druidic_rear_targeting_blocked is True
+
+
+def test_build_battle_units_rear_targeting_flag_false_when_shortfall_is_zero():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    leader = LeaderState(1, kingdom_id=1, name="Hero", location=FIELD, skills=_skills_with_druid(4))
+    state.add_leader(leader)
+    army = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    assert units[0].druidic_rear_targeting_blocked is False
+
+
+def test_build_battle_units_rear_targeting_flag_never_set_for_a_non_overflight_unit():
+    # A ground unit with a real Druidic shortfall still isn't "held back
+    # from rear-targeting" -- that carve-out is specifically about the
+    # rulebook's overflight ("non-human") rear-targeting rule, which
+    # never applied to Bowmen in the first place.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Hero", location=FIELD))
+    army = ArmyState(101, 2, ArmyType.BOWMEN, Quality.ELITE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    assert units[0].druidic_rear_targeting_blocked is False
+
+
 def test_build_battle_units_druidic_shortfall_is_zero_when_leader_has_sufficient_skill():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
@@ -600,6 +652,11 @@ def test_build_battle_units_druidic_shortfall_unled_army_uses_the_provinces_owni
         ArmyType.DRAGON_WING, Race.DRAGONS, Quality.ELITE, Terrain.PLAINS, druidic_shortfall=4
     )
     assert units[0].effective_strength == pytest.approx(expected)
+    # Phase 43: the King-substitution shortfall feeds the same
+    # rear-targeting-blocked flag as the led-army path, with no extra
+    # wiring -- an unled overflight army held back by its province's own
+    # King's insufficient Druidic ability is "held back" too.
+    assert units[0].druidic_rear_targeting_blocked is True
 
 
 def test_build_battle_units_druidic_shortfall_unled_army_same_race_as_king_needs_no_check():

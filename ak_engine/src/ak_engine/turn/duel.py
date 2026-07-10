@@ -55,6 +55,11 @@ def apply_duel_demoralization(units: list[BattleUnit]) -> list[BattleUnit]:
     """Return a new list with the duel loser's armies reduced 25% in strength."""
 
     return [
-        BattleUnit(u.army_type, u.effective_strength * DUEL_DEMORALIZATION_MULTIPLIER, source_id=u.source_id)
+        BattleUnit(
+            u.army_type,
+            u.effective_strength * DUEL_DEMORALIZATION_MULTIPLIER,
+            source_id=u.source_id,
+            druidic_rear_targeting_blocked=u.druidic_rear_targeting_blocked,
+        )
         for u in units
     ]

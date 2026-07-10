@@ -31,7 +31,7 @@ attack the rear unit instead (the non-human unit and the rearward unit
 will both be at 100% strength in this case.)" See ``column_strength``'s
 own docstring for why this reuses a parameter originally meant for a
 *different*, still-unwired rulebook rule (numeric-superiority
-outflanking), and for the unmodeled Druidic-ability carve-out.
+outflanking), and for the Druidic-ability held-back carve-out (Phase 43).
 
 Still NOT handled here -- see ak_engine/README.md: eliminating or
 demoting the losing side's armies, duels, pursuit, retreat, post-battle
@@ -91,6 +91,7 @@ def _apply_front_line_luck(column: Column, rng: random.Random) -> ColumnLuckEven
             army_type=front.army_type,
             effective_strength=front.effective_strength * event.multiplier,
             source_id=front.source_id,
+            druidic_rear_targeting_blocked=front.druidic_rear_targeting_blocked,
         )
     return event
 

@@ -1058,7 +1058,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     eligibility this module can't derive, and **remains unwired, a
     separate, still-open gap**, distinct from rear-targeting even though
     both happen to produce the identical numeric effect.
-  - **Druidic-ability carve-out not modeled**: "if the non-human unit
+  - ~~**Druidic-ability carve-out not modeled**: "if the non-human unit
     has low strength because its leader has insufficient Druidic
     ability, it will be held back and will throw its low strength into
     the attack on the front-line unit" (i.e. no rear-targeting in that
@@ -1074,7 +1074,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     regardless of its controller's Druidic ability. Left as a
     consequence of Phase 41's own deliberately narrow scope (quality
     penalty only, see that phase's note below) rather than revisited
-    here.
+    here.~~ **Fixed in Phase 43** -- see that phase's note below.
   - Non-breaking: full suite passed unchanged after wiring, before any
     new tests were added -- no pre-existing fixture pairs an overflight
     unit against a 2+-deep opposing column.
@@ -1239,14 +1239,65 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     matches the province-owning King's race needs no Druidic check,
     matching the rulebook's "of a different race than the King" framing
     with zero new logic.
-  - **Not extended to `battle_line.py`'s rear-targeting carve-out**
+  - ~~**Not extended to `battle_line.py`'s rear-targeting carve-out**
     (still open, see Phase 39/41's notes above) -- this phase only
     closes the quality-penalty gap for unled armies, not the separate
     "held back from rear-targeting" behavior tied to the same rulebook
-    sentence.
+    sentence.~~ **Fixed in Phase 43** -- see that phase's note below.
+    Since Phase 43's own flag is derived from the *same*
+    `druidic_shortfall` value this phase already computes (via
+    `_druidic_shortfall_for`, King-substitution included), an unled
+    overflight army under the garrison commander gets
+    `druidic_rear_targeting_blocked` set correctly too, with no
+    additional wiring needed -- this phase's own scope already covered it
+    once Phase 43 landed.
   - Non-breaking: full suite passed unchanged (845 passed) immediately
     after wiring, before any new tests were written. 5 new tests added
     (850 passed total).
+- **Phase 43 (current)**: the rear-targeting Druidic-ability carve-out,
+  rulebook [4.32]/[7.2]: *"if the non-human unit has low strength
+  because its leader has insufficient Druidic ability, it will be held
+  back and will throw its low strength into the attack on the
+  front-line unit"* -- the last open note from Phase 39's own
+  rear-targeting work, unblocked once the Druid Table existed (Phase
+  41/42).
+  - **`BattleUnit.druidic_rear_targeting_blocked: bool = False`**
+    (`turn/battle_line.py`): a new field marking an overflight unit as
+    "held back" instead of eligible to rear-target. Set by
+    `battle_orchestrator.py _build_battle_units` from
+    `is_overflight_unit(army.army_type) and druidic_shortfall > 0` --
+    reusing the *same* `druidic_shortfall` value Phase 41/42 already
+    compute per unit (`_druidic_shortfall_for`), so an unled army's
+    King-substitution shortfall (Phase 42) feeds this flag automatically
+    too, with zero extra wiring.
+  - **`column_strength`/`column_has_overflight_unit`** (`battle_line.py`)
+    now route through a new `_is_effective_overflight(unit)` helper --
+    `is_overflight_unit(unit.army_type) and not
+    unit.druidic_rear_targeting_blocked` -- instead of checking
+    `is_overflight_unit` directly. A blocked unit falls through to
+    ordinary depth-based halving in `column_strength` (ends up "throwing
+    its low strength into the attack on the front-line unit," i.e.
+    treated exactly like a non-overflight unit) and no longer counts
+    toward `column_has_overflight_unit`, so it doesn't trigger the
+    *opposing* column's own rear-targeting boost either -- both halves
+    of the rulebook sentence, with one helper.
+  - **Regression risk found and fixed while wiring**: three other call
+    sites construct a *replacement* `BattleUnit` from an existing one
+    (`battle_line.py _apply_nemesis_to_column`, `battle_resolution.py
+    _apply_front_line_luck`, `duel.py apply_duel_demoralization`), and
+    all three run *before* `resolve_battle`'s own
+    `column_has_overflight_unit` checks. None of them originally passed
+    the new field through, which would have silently reset a blocked
+    unit back to "eligible" the moment nemesis, front-line luck, or duel
+    demoralization touched it. All three now forward
+    `druidic_rear_targeting_blocked` explicitly; covered by dedicated
+    regression tests (`test_apply_nemesis_penalties_preserves_the_
+    druidic_rear_targeting_blocked_flag`,
+    `test_resolve_battle_druidic_blocked_flag_survives_front_line_luck`)
+    that would have failed before the fix.
+  - Non-breaking: full suite passed unchanged (850 passed) immediately
+    after wiring, before any new tests were written. 10 new tests added
+    (860 passed total).
 
 ## Setup
 

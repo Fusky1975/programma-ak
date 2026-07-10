@@ -24,8 +24,12 @@ from ak_engine.turn.battle_line import (
 from _helpers import ScriptedRandom
 
 
-def unit(army_type: ArmyType, strength: float) -> BattleUnit:
-    return BattleUnit(army_type=army_type, effective_strength=strength)
+def unit(army_type: ArmyType, strength: float, *, druidic_rear_targeting_blocked: bool = False) -> BattleUnit:
+    return BattleUnit(
+        army_type=army_type,
+        effective_strength=strength,
+        druidic_rear_targeting_blocked=druidic_rear_targeting_blocked,
+    )
 
 
 def test_line_length_is_capped_by_smaller_force():
@@ -97,6 +101,47 @@ def test_column_has_overflight_unit_detects_at_any_depth():
     assert column_has_overflight_unit([unit(ArmyType.DRAGON_WING, 5), unit(ArmyType.BOWMEN, 10)]) is True
     assert column_has_overflight_unit([unit(ArmyType.BOWMEN, 10), unit(ArmyType.AXEMEN, 5)]) is False
     assert column_has_overflight_unit([]) is False
+
+
+def test_column_strength_held_back_overflight_unit_gets_ordinary_depth_halving():
+    # Phase 43, rulebook [4.32]/[7.2]: "held back... throws its low
+    # strength into the attack on the front-line unit" -- a blocked
+    # overflight unit at depth 1 is treated as an ordinary unit (50%),
+    # not the unconditional overflight 100%.
+    column = [
+        unit(ArmyType.BOWMEN, 10),
+        unit(ArmyType.DRAGON_WING, 10, druidic_rear_targeting_blocked=True),
+    ]
+    assert column_strength(column) == pytest.approx(10 * 1.0 + 10 * 0.5)
+
+
+def test_column_strength_held_back_overflight_unit_does_not_join_the_overflight_stack():
+    # A blocked overflight unit doesn't consume/share the overflight
+    # group's stacking count with a genuinely eligible overflight unit.
+    column = [
+        unit(ArmyType.DRAGON_WING, 10, druidic_rear_targeting_blocked=True),
+        unit(ArmyType.EAGLE_WING, 10),
+    ]
+    # Blocked Dragon Wing (depth 0) -> ordinary depth-0 = 100% anyway;
+    # Eagle Wing (depth 1, air group) -> first *eligible* air unit -> 100%,
+    # not the 50% it would get if it were counted as the group's second.
+    assert column_strength(column) == pytest.approx(10 * 1.0 + 10 * 1.0)
+
+
+def test_column_strength_unblocked_overflight_unit_still_gets_full_strength():
+    column = [unit(ArmyType.BOWMEN, 10), unit(ArmyType.DRAGON_WING, 10, druidic_rear_targeting_blocked=False)]
+    assert column_strength(column) == pytest.approx(10 * 1.0 + 10 * 1.0)
+
+
+def test_column_has_overflight_unit_ignores_held_back_units():
+    blocked_only = [unit(ArmyType.BOWMEN, 10), unit(ArmyType.DRAGON_WING, 5, druidic_rear_targeting_blocked=True)]
+    assert column_has_overflight_unit(blocked_only) is False
+
+    mixed = [
+        unit(ArmyType.DRAGON_WING, 5, druidic_rear_targeting_blocked=True),
+        unit(ArmyType.WHALES, 5),
+    ]
+    assert column_has_overflight_unit(mixed) is True
 
 
 def test_switch_chance_matches_formula():
@@ -225,6 +270,21 @@ def test_apply_nemesis_penalties_no_effect_for_unrelated_types():
 
     assert attacker_columns[0][0].effective_strength == 10
     assert defender_columns[0][0].effective_strength == 10
+
+
+def test_apply_nemesis_penalties_preserves_the_druidic_rear_targeting_blocked_flag():
+    # Regression (Phase 43): a nemesis-penalized unit gets replaced with a
+    # new BattleUnit at reduced strength -- the held-back flag must
+    # survive that replacement, or resolve_battle's later
+    # column_has_overflight_unit check would see it reset to False.
+    attacker_columns = [[unit(ArmyType.DRAGON_WING, 10, druidic_rear_targeting_blocked=True)]]
+    defender_columns = [[unit(ArmyType.BOWMEN, 10)]]  # Dragon Wing's nemesis
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
+
+    penalized = attacker_columns[0][0]
+    assert penalized.effective_strength == pytest.approx(10 * 2 / 3)
+    assert penalized.druidic_rear_targeting_blocked is True
 
 
 def test_apply_nemesis_penalties_ignores_an_empty_opposing_column():
