@@ -208,16 +208,16 @@ def test_dispatch_wait_no_action_move_abort_are_bare_noops():
     assert state.kingdoms[1].treasury == 100
 
 
-def test_dispatch_cast_illus_armies_is_not_executed():
-    # Phantasmal Armies has no sourced effect data -- decode-only.
+def test_dispatch_cast_skeletal_army_is_not_executed():
+    # Skeletal_Army needs a per-province "who died here" registry this
+    # project doesn't have -- see cast_execution.py's module docstring.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
-    phase = PlanPhase(label="P0", action=ActionCode.CAST, obj=17, extra=[18])
+    phase = PlanPhase(label="P0", action=ActionCode.CAST, obj=int(Spell.SKELETAL_ARMY), extra=[0])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
     assert isinstance(result, CastExecutionResult)
-    assert result.request.spell == Spell.ILLUS_ARMIES
-    assert result.request.target == 18
+    assert result.request.spell == Spell.SKELETAL_ARMY
     assert result.applied is False
     assert result.reason == "spell effect not modeled"
 
@@ -873,10 +873,13 @@ def test_successful_charm_dispatches_the_charmed_characters_own_plan():
     assert state.leaders[50].kingdom_id == 1
 
 
-def test_resurrections_own_nested_plan_never_dispatches():
-    # Resurrection has real embedded plans in sample data (see AK3__T6.K1),
-    # but execute_cast never executes Resurrection at all -- applied is
-    # always False, so _nested_plan_triggered must never fire for it.
+def test_resurrections_own_nested_plan_never_dispatches_without_a_dead_leader():
+    # Resurrection has real embedded plans in sample data (see AK3__T6.K1)
+    # and is executed as of Phase 59, but only for a target actually
+    # archived in state.dead_leaders (see cast_execution.py). Here the
+    # target is a plain, living LeaderState instead -- not what
+    # Resurrection looks for -- so it still can't apply, and
+    # _nested_plan_triggered still never fires.
     location = HexCoord(3, 9)
     state, _ = _state_with_army(location, {})
     state.add_leader(LeaderState(50, None, "Would-be Revived", location))
@@ -1001,14 +1004,16 @@ def test_real_move_file_charm_dispatches_the_charmed_heros_nested_practice():
     assert state.leaders[30].kingdom_id == 1
 
 
-def test_real_move_file_resurrections_nested_plan_never_dispatches():
+def test_real_move_file_resurrections_nested_plan_never_dispatches_without_a_dead_leader():
     # Leader 18 ("Guerin") in AK3__T6.K1 has a real Cast phase (P3):
     # "P3 : 9 0 22" -> Cast Resurrection targeting character 22, whose
     # own nested plan (a real P4 Recruit) is embedded right after it --
     # confirming Resurrection's nested plans are real data, not just a
-    # theoretical case, and still never dispatch (execute_cast never
-    # executes Resurrection, so CastExecutionResult.applied is always
-    # False for it).
+    # theoretical case. As of Phase 59 Resurrection is executed, but only
+    # for a target actually archived in state.dead_leaders -- see
+    # cast_execution.py; a real successful revival's own nested-plan
+    # dispatch is covered separately in test_cast_execution.py /
+    # test_plan_dispatch.py's newer Resurrection tests.
     kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T6.K1")
     real_leader = next(leader for leader in kingdom.leaders if leader.leader_id == 18)
     resurrection_phase = real_leader.plan.segments[0].phases["P3"]
@@ -1018,10 +1023,8 @@ def test_real_move_file_resurrections_nested_plan_never_dispatches():
     location = HexCoord(3, 9)
     state, _ = _state_with_army(location, {})
     state.add_leader(LeaderState(18, 1, "Guerin", location))
-    # No LeaderState 22 at all -- a "deceased character" has nothing to
-    # revive in this project's data model (see cast_execution.py); the
-    # point of this test is that nested dispatch never even gets that
-    # far, since Resurrection never applies regardless.
+    # No LeaderState 22, and no state.dead_leaders[22] either -- nothing
+    # for Resurrection to revive, so nested dispatch never gets that far.
 
     leader = Leader(
         leader_id=18,

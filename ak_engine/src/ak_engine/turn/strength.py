@@ -15,23 +15,32 @@ The rulebook gives an exact, ordered pipeline:
        ``compute_druidic_shortfall``/``DRUID_TABLE`` below
       +1 if in home province
       +1 for fanatical units
-      (+1 Oratory spell, +? magic items -- SKIPPED, no spell/item-effect
+      (+1 Oratory spell -- applied directly as a persistent ``Quality``
+       rank bump at cast time, not threaded through here as a per-battle
+       modifier: rulebook (Regolamento AK.txt [4.22.2]) describes Oratory
+       as literally turning Green units Average, Average units Veteran,
+       etc. -- the same discrete step ``Quality``'s own enum ordering
+       already represents -- see ``turn/cast_execution.py``'s
+       ``_execute_oratory``. +? magic items -- SKIPPED, no item-effect
        system exists yet)
     Multiply result by special factors (multiplied together, not added):
       Defense: +25%
       Exploration: +25% (maximum)
       Tactical Ability +20%/level (or Naval in Sea provinces)
-      (Phantasmal Armies +15%/level of caster -- SKIPPED, no spellcasting)
+      Phantasmal Armies +15%/level of caster (Phase 59, wired below via
+       ``phantasmal_armies_multiplier``/``phantasmal_armies_level``)
       Nemesis encounter: -33% (== the 2/3 multiplier already in
        turn/combat.py -- confirms it, doesn't change it)
       Random Event: +/-% (applied later, in turn/battle_luck.py -- NOT
        part of this function, to avoid double-applying it)
 
 This resolves the "unspecified stacking order" gap flagged in earlier
-phases: the order above is a direct rulebook quote, not a guess. What's
-still skipped (Illusory Terrain, Oratory, magic items, Phantasmal
-Armies) all depend on spellcasting/item-effect systems this project
-hasn't built; they're omitted rather than guessed.
+phases: the order above is a direct rulebook quote, not a guess.
+Illusory Terrain's blended-strength averaging and magic items still stay
+SKIPPED: Illusory Terrain needs an exploration/movement-side "does this
+observer know the real terrain" distinction this project hasn't built
+(see ``models/game_state.py``'s ``ProvinceState.illusory_terrain``
+docstring), and no item-effect system exists at all.
 """
 
 from __future__ import annotations
@@ -71,6 +80,7 @@ FANATICISM_CHANCE: dict[Alignment, float] = {
 
 MAX_EXPLORATION_ADVANTAGE = 0.25
 TACTICAL_BONUS_PER_LEVEL = 0.20
+PHANTASMAL_ARMIES_BONUS_PER_LEVEL = 0.15
 
 # Rulebook [4.32] DRUID TABLE, transcribed verbatim:
 #   Level 1: Humans, Elves, Dwarves, Orcs, Mermen, Werebeasts
@@ -174,6 +184,24 @@ def combat_ability_multiplier(ability_level: int) -> float:
     return 1 + TACTICAL_BONUS_PER_LEVEL * ability_level
 
 
+def phantasmal_armies_multiplier(caster_illusion_level: int) -> float:
+    """Rulebook (Regolamento AK.txt [4.23.2]): "la forza delle unita' militari che
+    egli comanda aumenta del 15% per livello d'abilita'" -- Phantasmal
+    Armies' strength bonus, keyed by the *caster's* Illusionist skill
+    level at cast time (not the commanding leader's, if different --
+    "chi lo lancia evoca eserciti fantasma" (evoked by the caster) "che
+    viaggiano con lui (o con un personaggio situato nella stessa
+    provincia)": the phantom armies travel with whoever the spell
+    targets, but their number/potency is the caster's own). "L'uso
+    ripetuto di questo incantesimo non ha effetto cumulativo" (repeated
+    casts don't stack) is enforced by the caller storing (not adding)
+    ``LeaderState.phantasmal_armies_level`` -- see ``turn/
+    cast_execution.py``'s ``_execute_illus_armies``.
+    """
+
+    return 1 + PHANTASMAL_ARMIES_BONUS_PER_LEVEL * caster_illusion_level
+
+
 def _base_strength(army_type: ArmyType, *, is_defender: bool, base_strength_override: float | None) -> float:
     if base_strength_override is not None:
         return base_strength_override
@@ -201,6 +229,7 @@ def compute_effective_strength(
     own_explored_percent: int = 0,
     enemy_explored_percent: int = 0,
     combat_ability_level: int = 0,
+    phantasmal_armies_level: int = 0,
     opponent_army_type: ArmyType | None = None,
     base_strength_override: float | None = None,
 ) -> float:
@@ -248,6 +277,7 @@ def compute_effective_strength(
         strength *= DEFENDER_BONUS
     strength *= exploration_advantage_multiplier(own_explored_percent, enemy_explored_percent)
     strength *= combat_ability_multiplier(combat_ability_level)
+    strength *= phantasmal_armies_multiplier(phantasmal_armies_level)
     if opponent_army_type is not None and is_nemesis_of(army_type, opponent_army_type):
         strength *= NEMESIS_PENALTY
 

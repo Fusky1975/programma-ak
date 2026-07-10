@@ -58,6 +58,49 @@ Hero unless the caller says otherwise. ``turn/kingdom_bridge.py``
 (Phase 31) is the one piece of code that sets it from real data,
 reusing the same King-identification (name match against
 ``kingdom.king_name``) it already uses for ``skills``.
+
+**Fields added for Phase 59's Cast spell execution** (``turn/
+cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
+
+- ``GameState.dead_leaders`` is a graveyard: ``remove_leader`` now
+  archives into it instead of discarding, so Resurrection has something
+  concrete to revive. Only deaths that go through ``remove_leader``
+  itself are archived -- any code that instead does
+  ``state.leaders.pop(...)`` directly bypasses the graveyard (no such
+  call site exists in this project as of Phase 59, confirmed by grep,
+  but a future one should call ``remove_leader`` to stay resurrectable).
+- ``ProvinceState.terrain_override`` (Part Sea, Flood): "for the rest of
+  the turn" province-terrain replacement. Not auto-cleared at a turn
+  boundary -- same "caller's job" convention as ``recruited_this_turn``/
+  ``ArmyState.movement_points`` -- and, as of Phase 59, **not yet read
+  by any consumer** (``turn/movement.py``, ``turn/strength.py``, etc.
+  still use ``ProvinceState.terrain`` directly): the spells write real
+  state, a later phase still needs to make movement/battle honor it.
+- ``ProvinceState.tax_modifier_percent`` (Bless, Earthquake): a signed
+  percent (+60 / -100, matching each spell's exact rulebook number, and
+  each spell *sets* rather than adds since both are documented "not
+  cumulative"). **No tax/revenue-collection system exists anywhere in
+  this project yet** (recruit/hire spend from ``KingdomState.treasury``,
+  but nothing computes or credits per-turn tax income), so this field
+  currently has no consumer either -- same "spell writes real state,
+  nothing reads it yet" situation as ``terrain_override``.
+- ``ProvinceState.illusory_terrain`` (Illusory Terrain): the fake
+  terrain an outside observer would be told the province is. Same "no
+  consumer yet" situation -- no exploration/movement code distinguishes
+  real vs. illusory terrain today.
+- ``LeaderState.phantasmal_armies_level`` (Phantasmal Armies): unlike
+  the three fields above, this one *is* wired into a real consumer the
+  same phase it's added -- see ``turn/strength.py
+  phantasmal_armies_multiplier`` and ``turn/battle_orchestrator.py``'s
+  ``_build_battle_units``.
+- ``LeaderState.oratory_boosted_this_turn`` (Oratory): Oratory's effect
+  (bump every commanded army's ``Quality`` one rank) is applied directly
+  and immediately rather than stored as a multiplier, since ``Quality``
+  is already a first-class field every strength calculation reads. This
+  flag exists purely so a second Oratory cast on the same leader the
+  same turn is the required "not cumulative" no-op instead of bumping
+  rank twice; not auto-cleared at a turn boundary, same convention as
+  every other "caller's job to reset" field in this dataclass.
 """
 
 from __future__ import annotations
@@ -109,6 +152,10 @@ class LeaderState:
     skills: SkillTable | None = None
     # King/Hero distinction (Phase 40) -- see module docstring.
     is_king: bool = False
+    # Phantasmal Armies' strength bonus level (Phase 59) -- see module docstring.
+    phantasmal_armies_level: int = 0
+    # Oratory idempotency flag (Phase 59) -- see module docstring.
+    oratory_boosted_this_turn: bool = False
 
 
 @dataclass(slots=True)
@@ -124,6 +171,12 @@ class ProvinceState:
     # per turn, 2 in a King's home province). Not auto-reset at turn start
     # -- the caller clears it, same convention as ArmyState.movement_points.
     recruited_this_turn: dict[ArmyType, int] = field(default_factory=dict)
+    # Part Sea / Flood Province (Phase 59) -- see module docstring.
+    terrain_override: Terrain | None = None
+    # Bless / Earthquake (Phase 59) -- see module docstring.
+    tax_modifier_percent: int = 0
+    # Illusory Terrain (Phase 59) -- see module docstring.
+    illusory_terrain: Terrain | None = None
 
 
 @dataclass(slots=True)
@@ -133,6 +186,9 @@ class GameState:
     provinces: dict[HexCoord, ProvinceState] = field(default_factory=dict)
     armies: dict[int, ArmyState] = field(default_factory=dict)
     leaders: dict[int, LeaderState] = field(default_factory=dict)
+    # Archived by remove_leader() (Phase 59) -- see module docstring. Keyed
+    # by the same leader_id, so a resurrection can look it up directly.
+    dead_leaders: dict[int, LeaderState] = field(default_factory=dict)
     allied_kingdoms: set[frozenset[int]] = field(default_factory=set)
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
@@ -156,7 +212,13 @@ class GameState:
         self.leaders[leader.leader_id] = leader
 
     def remove_leader(self, leader_id: int) -> None:
-        self.leaders.pop(leader_id, None)
+        """Removes a leader from play, archiving it into ``dead_leaders`` (Phase 59) so a
+        later Resurrection has something to revive -- see module docstring.
+        """
+
+        leader = self.leaders.pop(leader_id, None)
+        if leader is not None:
+            self.dead_leaders[leader_id] = leader
 
     def armies_at(self, coord: HexCoord) -> list[ArmyState]:
         return [army for army in self.armies.values() if army.location == coord]

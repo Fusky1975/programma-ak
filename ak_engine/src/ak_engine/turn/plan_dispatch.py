@@ -118,29 +118,28 @@ to dispatch automatically:
   for abbreviation-table symmetry (``'MA'``), but never assigned to or
   compared against anywhere else in the entire available source tree --
   effectively vestigial as far as this project's source access goes.
-- **CAST** decodes every spell (``turn/cast_decode.py``, Phase 23) but
-  only *executes* two of the 12 real spells observed in sample data
-  (``turn/cast_execution.py``, Phase 29): **Charm** assigns a co-located
-  target character to the caster's kingdom (the same
-  ``LeaderState.kingdom_id`` mechanism Hire uses, but without Hire's
-  "must already be independent" requirement -- Charm plausibly steals
-  allegiance from *any* co-located character, a documented
-  interpretation); **Kill_Enemy** removes a co-located target character
-  from ``GameState`` entirely. Every other spell (Resurrection, Bless,
-  Plague, Flood, Tornado, Illus_Armies, Oratory, Part_Sea,
-  Illus_Terrain, Skeletal_Army) stays unexecuted, each for its own
-  documented reason -- see ``turn/cast_execution.py``'s docstring, most
-  notably Resurrection, which can't be executed even conceptually since
-  ``GameState`` has no "dead leader" registry to revive from. The
+- **CAST** decodes every spell (``turn/cast_decode.py``, Phase 23) and
+  now *executes* 12 of the 25 base spells (``turn/cast_execution.py``,
+  Phases 29 and 59): **Charm**/**Kill_Enemy** (Phase 29, unchanged) plus
+  **Resurrect, Part_Sea, Bless, Flood, Tornado, Earthquake, Oratory,
+  Plague, Illus_Terrain, Illus_Armies** (Phase 59, once Regolamento
+  AK.txt supplied the exact numbers/targeting rules ``RULES.AK``/
+  ``ADDEND.AK`` never gave). Province-targeted spells decode their raw
+  hex-number target via ``turn/hex_numbering.py`` using this dispatcher's
+  own ``board_width`` -- the same value Move's own LMOVE decoding
+  already uses. **Skeletal_Army, Hide_Feature, Clairvoyance**, and all
+  10 Personal-Combat-only spells stay unexecuted, each for its own
+  documented reason -- see ``turn/cast_execution.py``'s docstring. The
   success/failure roll itself (rulebook [3.10]) is real when the caster
   has ``LeaderState.skills`` recorded, falling back to always-succeeds
   otherwise (Phase 30). Not to be confused with ``Maneuver.CAST``, the
   *encounter-plan* tactic already decoded by ``turn/search_decode.py`` --
   a different Pascal reading path entirely, with no top-level
-  ``ActionCode`` of its own. **A successful Charm also dispatches the
-  charmed character's own embedded plan the same turn** (Phase 32, see
-  below); Resurrection's own embedded plan (real samples have some) never
-  dispatches, since ``execute_cast`` never reports it as applied.
+  ``ActionCode`` of its own. **A successful Charm or Resurrection also
+  dispatches the (re-)joined character's own embedded plan the same
+  turn** (Phase 32, see below) -- Resurrection's own embedded plans (real
+  samples have some) now dispatch too whenever the revival actually
+  succeeds, no longer unconditionally suppressed.
 - **USE_MI** is decode-only (Phase 24): ``obj`` decodes to a global
   item-*instance* id via ``turn/use_mi_decode.py`` -- structurally
   different from Cast's ``obj``, which is a self-describing ``Spell``
@@ -430,7 +429,7 @@ def dispatch_phase(
         return NoOpResult(action=action)
 
     if action is ActionCode.CAST:
-        return _dispatch_cast(phase, state, kingdom_id, leader_id, rng)
+        return _dispatch_cast(phase, state, kingdom_id, leader_id, rng, board_width)
 
     if action is ActionCode.USE_MI:
         return decode_use_mi_phase(phase)
@@ -466,10 +465,10 @@ def _dispatch_recruit(phase: PlanPhase, state: GameState, kingdom_id: int, leade
 
 
 def _dispatch_cast(
-    phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int, rng: random.Random | None
+    phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int, rng: random.Random | None, board_width: int
 ) -> CastExecutionResult:
     request = decode_cast_phase(phase)
-    return execute_cast(state, kingdom_id, leader_id, request, rng)
+    return execute_cast(state, kingdom_id, leader_id, request, rng, board_width=board_width)
 
 
 def _dispatch_challenge(
@@ -685,11 +684,12 @@ def _nested_plan_triggered(action: Any, result: Any) -> bool:
 
     ``DEF2.PAS``'s ``R_HPlan``/``Read_More`` (the move-file *reader*) embeds
     a nested plan exactly for Hire and for Cast-ing Charm or Resurrection --
-    see ``models/plan.py``'s module docstring. Resurrection never reaches
-    "applied" (``turn/cast_execution.py`` doesn't execute it at all), so
-    checking ``CastExecutionResult.applied`` here already excludes it
-    without needing to inspect the spell -- only a genuinely successful
-    Charm ever returns ``applied=True``.
+    see ``models/plan.py``'s module docstring. As of Phase 59,
+    ``turn/cast_execution.py`` executes Resurrection too, so a successful
+    revival now also dispatches its target's own embedded plan the same
+    way a successful Charm always has -- both are "a character (re-)joins
+    the kingdom this turn," the same underlying condition ``applied=True``
+    already captures without needing to inspect which spell it was.
     """
 
     if action is ActionCode.HIRE:

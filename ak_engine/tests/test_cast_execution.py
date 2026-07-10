@@ -1,25 +1,34 @@
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, Spell
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import execute_cast
+from ak_engine.turn.combat import Quality
+from ak_engine.turn.hex_numbering import encode_hex_number
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 
 from _helpers import ScriptedRandom
 
 LOCATION = HexCoord(3, 9)
 ELSEWHERE = HexCoord(9, 9)
 CASTER_ID = 1
+BOARD_WIDTH = NORMAL_MAP_BOUNDS[0]
 
 
 def _skills_with(ability: Ability, level: int) -> SkillTable:
     raw_values = [0] * 30
     raw_values[ability.value * 2] = level
     return SkillTable(raw_values=raw_values)
+
+
+def _target(coord: HexCoord) -> int:
+    return encode_hex_number(coord, BOARD_WIDTH)
 
 
 def build_state() -> GameState:
@@ -179,13 +188,384 @@ def test_cast_always_succeeds_when_caster_has_no_skills_recorded():
 
 
 def test_unmodeled_spells_report_a_reason_without_touching_state():
-    # Resurrection can't be executed even conceptually -- see the module
-    # docstring (no "dead leader" registry to revive from). Representative
-    # of every other real spell this project doesn't execute.
+    # Skeletal_Army can't be executed -- see the module docstring (no
+    # per-province "who died here" registry to summon from). Representative
+    # of every other real spell this project doesn't execute (see the
+    # module docstring's full list).
     state = build_state()
-    request = CastRequest(spell=Spell.RESURRECTION, target=999)
+    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
 
     assert result.applied is False
     assert result.reason == "spell effect not modeled"
+
+
+# ---------------------------------------------------------------------------
+# Resurrection (Phase 59) -- Regolamento AK.txt [4.21.1]
+# ---------------------------------------------------------------------------
+
+
+def test_resurrection_revives_a_dead_leader_co_located_with_caster():
+    state = build_state()
+    dead = LeaderState(78, 2, "Fallen Hero", LOCATION)
+    state.dead_leaders[78] = dead
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert 78 not in state.dead_leaders
+    assert state.leaders[78] is dead
+    assert state.leaders[78].kingdom_id == 1
+
+
+def test_resurrection_fails_when_target_is_not_a_dead_leader():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Very Much Alive", LOCATION))  # alive, not in dead_leaders
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "target character not found"
+
+
+def test_resurrection_fails_when_dead_leader_died_elsewhere():
+    state = build_state()
+    state.dead_leaders[78] = LeaderState(78, 2, "Fallen Hero", ELSEWHERE)
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "not co-located"
+    assert 78 in state.dead_leaders  # untouched
+
+
+# ---------------------------------------------------------------------------
+# Part Sea (Phase 59) -- Regolamento AK.txt [4.21.2]
+# ---------------------------------------------------------------------------
+
+
+def test_part_sea_turns_a_sea_province_into_plains():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.SEA, Race.HUMAN))
+    request = CastRequest(spell=Spell.PART_SEA, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].terrain_override is Terrain.PLAINS
+
+
+def test_part_sea_fails_on_a_non_sea_province():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.PART_SEA, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "target province is not Sea"
+    assert state.provinces[LOCATION].terrain_override is None
+
+
+def test_part_sea_fails_on_a_province_out_of_range():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.SEA, Race.HUMAN))
+    state.add_province(ProvinceState(ELSEWHERE, Terrain.SEA, Race.HUMAN))
+    request = CastRequest(spell=Spell.PART_SEA, target=_target(ELSEWHERE))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "province not found or not in range"
+
+
+def test_part_sea_succeeds_on_an_adjacent_province():
+    state = build_state()
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    adjacent = neighbors(LOCATION, bounds)[0]
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.add_province(ProvinceState(adjacent, Terrain.SEA, Race.HUMAN))
+    request = CastRequest(spell=Spell.PART_SEA, target=_target(adjacent))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.provinces[adjacent].terrain_override is Terrain.PLAINS
+
+
+def test_part_sea_fails_when_target_province_is_unknown():
+    state = build_state()
+    request = CastRequest(spell=Spell.PART_SEA, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "province not found or not in range"
+
+
+# ---------------------------------------------------------------------------
+# Flood Province (Phase 59) -- Regolamento AK.txt [4.24.1]
+# ---------------------------------------------------------------------------
+
+
+def test_flood_turns_a_land_province_into_sea():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.FLOOD, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].terrain_override is Terrain.SEA
+
+
+def test_flood_fails_on_a_mountain_province():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.MTNS, Race.HUMAN))
+    request = CastRequest(spell=Spell.FLOOD, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "target province is not a non-mountain land province"
+
+
+def test_flood_fails_on_an_already_sea_province():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.SEA, Race.HUMAN))
+    request = CastRequest(spell=Spell.FLOOD, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "target province is not a non-mountain land province"
+
+
+# ---------------------------------------------------------------------------
+# Tornado (Phase 59) -- Regolamento AK.txt [4.24.2]
+# ---------------------------------------------------------------------------
+
+
+def test_tornado_destroys_units_that_roll_under_the_per_level_chance():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 2)  # 20% destroy chance
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))  # caster's own army
+    state.add_army(ArmyState(2, 2, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))  # enemy army
+    request = CastRequest(spell=Spell.TORNADO, target=_target(LOCATION))
+    # rolls: [0] cast-success roll, [1] army 1 destroy roll (hits), [2] army 2 destroy roll (misses)
+    rng = ScriptedRandom([0.01, 0.19, 0.99])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert 1 not in state.armies  # own army destroyed too -- no ownership exemption
+    assert 2 in state.armies
+
+
+def test_tornado_destroys_nothing_when_caster_has_no_recorded_level():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.add_army(ArmyState(1, 2, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))
+    request = CastRequest(spell=Spell.TORNADO, target=_target(LOCATION))
+    rng = ScriptedRandom([0.0])  # would destroy at any nonzero chance -- see module docstring
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert 1 in state.armies  # unknown level -> 0% chance, nothing destroyed
+
+
+# ---------------------------------------------------------------------------
+# Earthquake (Phase 59) -- Regolamento AK.txt [4.24.3]
+# ---------------------------------------------------------------------------
+
+
+def test_earthquake_zeroes_the_tax_modifier_on_a_land_province():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].tax_modifier_percent == -100
+
+
+def test_earthquake_fails_on_a_sea_province():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.SEA, Race.HUMAN))
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "target province is not land"
+
+
+# ---------------------------------------------------------------------------
+# Bless (Phase 59) -- Regolamento AK.txt [4.21.3]
+# ---------------------------------------------------------------------------
+
+
+def test_bless_sets_the_tax_bonus_on_any_province_regardless_of_distance():
+    state = build_state()
+    state.add_province(ProvinceState(ELSEWHERE, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.BLESS, target=_target(ELSEWHERE))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.provinces[ELSEWHERE].tax_modifier_percent == 60
+
+
+def test_bless_fails_when_target_province_is_unknown():
+    state = build_state()
+    request = CastRequest(spell=Spell.BLESS, target=_target(ELSEWHERE))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "province not found"
+
+
+# ---------------------------------------------------------------------------
+# Illusory Terrain (Phase 59) -- Regolamento AK.txt [4.23.1]
+# ---------------------------------------------------------------------------
+
+
+def test_illus_terrain_records_the_fake_terrain_on_the_province():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.ILLUS_TERRAIN, target=_target(LOCATION), terrain=Terrain.FOREST)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].illusory_terrain is Terrain.FOREST
+
+
+def test_illus_terrain_fails_without_a_fake_terrain_specified():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.ILLUS_TERRAIN, target=_target(LOCATION))  # terrain left as None
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "fake terrain not specified"
+
+
+# ---------------------------------------------------------------------------
+# Phantasmal Armies / Illus_Armies (Phase 59) -- Regolamento AK.txt [4.23.2]
+# ---------------------------------------------------------------------------
+
+
+def test_illus_armies_sets_the_casters_illusion_level_on_a_colocated_target():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ILLUSION, 3)
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    request = CastRequest(spell=Spell.ILLUS_ARMIES, target=78)
+    rng = ScriptedRandom([0.01])  # 15% + 15%*3 = 60% chance
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.leaders[78].phantasmal_armies_level == 3
+
+
+def test_illus_armies_can_target_the_caster_himself():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ILLUSION, 2)
+    request = CastRequest(spell=Spell.ILLUS_ARMIES, target=CASTER_ID)
+    rng = ScriptedRandom([0.01])  # 15% + 15%*2 = 45% chance
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].phantasmal_armies_level == 2
+
+
+# ---------------------------------------------------------------------------
+# Oratory (Phase 59) -- Regolamento AK.txt [4.22.2]
+# ---------------------------------------------------------------------------
+
+
+def test_oratory_bumps_quality_one_rank_for_every_army_the_target_commands():
+    state = build_state()
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
+    state.add_army(ArmyState(2, 1, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.ORATORY, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.armies[1].quality is Quality.AVERAGE
+    assert state.armies[2].quality is Quality.VETERAN
+
+
+def test_oratory_caps_at_elite():
+    state = build_state()
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.ELITE, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.ORATORY, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.armies[1].quality is Quality.ELITE
+
+
+def test_oratory_is_not_cumulative_on_a_second_cast_the_same_turn():
+    state = build_state()
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.ORATORY, target=78)
+
+    first = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+    second = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert first.applied is True
+    assert second.applied is True  # the cast itself still succeeds
+    assert state.armies[1].quality is Quality.AVERAGE  # but only bumped once
+
+
+# ---------------------------------------------------------------------------
+# Plague (Phase 59) -- Regolamento AK.txt [4.25.3]
+# ---------------------------------------------------------------------------
+
+
+def test_plague_destroys_humanoid_units_that_roll_under_the_chance():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # 10% + 10% = 20%
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
+    request = CastRequest(spell=Spell.PLAGUE, target=_target(LOCATION))
+    rng = ScriptedRandom([0.01, 0.19])  # [0] cast success, [1] per-unit destroy roll (hits)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert 1 not in state.armies
+
+
+def test_plague_skips_non_humanoid_and_mercenary_armies():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 9)  # near-certain chance
+    state.kingdoms[2] = KingdomState(2, "Rivalia", Race.DRAGONS, Alignment.EVIL, ELSEWHERE)
+    state.add_army(ArmyState(1, 2, ArmyType.DRAGON_WING, Quality.AVERAGE, LOCATION))  # non-humanoid race
+    state.add_army(ArmyState(2, None, ArmyType.LEGION, Quality.AVERAGE, LOCATION))  # mercenary, race unknown
+    request = CastRequest(spell=Spell.PLAGUE, target=_target(LOCATION))
+    rng = ScriptedRandom([0.01])  # only the cast-success roll is ever consumed
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert 1 in state.armies
+    assert 2 in state.armies

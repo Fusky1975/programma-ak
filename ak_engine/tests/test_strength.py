@@ -17,6 +17,7 @@ from ak_engine.turn.strength import (
     compute_effective_strength,
     exploration_advantage_multiplier,
     modified_quality,
+    phantasmal_armies_multiplier,
     roll_elephants_strength,
     roll_fanaticism,
 )
@@ -144,6 +145,20 @@ def test_exploration_advantage_scales_linearly_up_to_max():
 def test_combat_ability_multiplier_matches_20_percent_per_level():
     assert combat_ability_multiplier(0) == 1.0
     assert combat_ability_multiplier(3) == pytest.approx(1.6)
+
+
+def test_phantasmal_armies_multiplier_matches_15_percent_per_level():
+    # Phase 59, Regolamento AK.txt [4.23.2].
+    assert phantasmal_armies_multiplier(0) == 1.0
+    assert phantasmal_armies_multiplier(2) == pytest.approx(1.3)
+
+
+def test_phantasmal_armies_level_stacks_into_compute_effective_strength():
+    baseline = compute_effective_strength(ArmyType.LEGION, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    boosted = compute_effective_strength(
+        ArmyType.LEGION, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, phantasmal_armies_level=2
+    )
+    assert boosted == pytest.approx(baseline * 1.3)
 
 
 def test_nemesis_penalty_applied_when_opponent_given():

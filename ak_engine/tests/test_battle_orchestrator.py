@@ -489,6 +489,40 @@ def test_build_battle_units_druidic_shortfall_penalizes_a_foreign_race_led_army(
     assert units[0].effective_strength == pytest.approx(expected)
 
 
+def test_build_battle_units_applies_the_commanders_phantasmal_armies_level():
+    # Phase 59, Regolamento AK.txt [4.23.2]: +15%/level of the *caster*
+    # (stored on the commanding LeaderState by cast_execution.py's
+    # _execute_illus_armies), applied to every army that leader commands.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Illusia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Illusionist", location=FIELD, phantasmal_armies_level=2))
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(
+        ArmyType.LEGION, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, phantasmal_armies_level=2
+    )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_unled_army_gets_no_phantasmal_armies_bonus():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Illusia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD)  # commanded_by=None
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(ArmyType.LEGION, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
 def test_build_battle_units_marks_an_overflight_unit_rear_targeting_blocked_when_shortfall_is_positive():
     # Phase 43: same scenario as the test above (Dragon Wing shortfall of
     # 4) -- an overflight-type unit with a real shortfall also gets

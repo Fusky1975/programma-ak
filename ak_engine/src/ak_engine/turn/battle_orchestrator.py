@@ -285,6 +285,7 @@ def _build_battle_units(
         # runs at all when apply_fanaticism is False -- see docstring.
         is_fanatical = apply_fanaticism and roll_fanaticism(kingdom.alignment, rng)
         druidic_shortfall = _druidic_shortfall_for(army, state, kingdom.race, province_coord)
+        phantasmal_armies_level = _phantasmal_armies_level_for(army, state)
         strength = compute_effective_strength(
             army.army_type,
             kingdom.race,
@@ -297,6 +298,7 @@ def _build_battle_units(
             druidic_shortfall=druidic_shortfall,
             base_strength_override=override,
             combat_ability_level=combat_ability_level,
+            phantasmal_armies_level=phantasmal_armies_level,
         )
         rear_targeting_blocked = is_overflight_unit(army.army_type) and druidic_shortfall > 0
         units.append(
@@ -350,6 +352,21 @@ def _find_king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | No
         if leader.kingdom_id == kingdom_id and leader.is_king:
             return leader
     return None
+
+
+def _phantasmal_armies_level_for(army: ArmyState, state: GameState) -> int:
+    """Phase 59, Phantasmal Armies (Regolamento AK.txt [4.23.2]): an unled army has no
+    commander to carry the buff, so it's simply 0 -- unlike Druidic
+    ability, the rulebook gives no garrison-commander substitute for this
+    spell.
+    """
+
+    if army.commanded_by is None:
+        return 0
+    commander = state.leaders.get(army.commanded_by)
+    if commander is None:
+        return 0
+    return commander.phantasmal_armies_level
 
 
 def _retreat_or_disband(

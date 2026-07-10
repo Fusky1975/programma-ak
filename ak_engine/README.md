@@ -2062,7 +2062,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     suite passed unchanged (1354 passed) before any new tests were
     written. 7 new tests added (3 for `defend_coverage_area` itself, 4
     for the `run_turn()` wiring; 1361 passed total).
-- **Phase 58 (current)**: begins report generation -- the "structurally
+- **Phase 58**: begins report generation -- the "structurally
   biggest piece remaining" flagged at the end of Phase 57 -- with a new
   `report/` subpackage and its first module, `report/prose.py`, a
   micro-template rendering engine. **Explicitly the foundation, not any
@@ -2131,6 +2131,116 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: brand-new subpackage with no existing callers -- full
     suite passed unchanged (1361 passed) before any new tests were
     written. 19 new tests added (1380 passed total).
+- **Phase 59 (current)**: executes 10 of the 13 real spells Phase 29 left
+  unmodeled (Resurrect, Part Sea, Bless, Flood, Tornado, Earthquake,
+  Oratory, Plague, Illusory Terrain, Phantasmal Armies), unblocked by
+  **`Regolamento AK.txt`**, a more detailed Italian-language rulebook the
+  user supplied and asked to be studied specifically for its spell
+  mechanics -- it spells out exact percentages, damage ranges, and
+  targeting rules the English `RULES.AK`/`ADDEND.AK` sources never gave
+  (Phase 29's own docstring named this gap explicitly for exactly these
+  ten spells). The `.doc` was converted with `antiword -m UTF-8.txt` and
+  committed to the repo root as a plain-text, greppable, directly
+  quotable source (`../Regolamento AK.txt`, outside this package).
+  - **Research first identified the real remaining scope, then the user
+    confirmed proceeding with all of it in one phase**: of the 23
+    unmodeled spells, 10 are Personal-Combat-only ([5.1]: Holy Symbol,
+    Spiritwrack, Psychic Blast, Telekinetic Storm, Invisibility, Mirror
+    Image Phantasm, Fireball, Ice Suspension, Hand of Death, Control
+    Undead) and can never be cast via a top-level `ActionCode.CAST`
+    phase at all (confirmed by `cast_decode.py`'s own validation against
+    all 108 real sample Cast phases: only Action spells ever appear
+    there) -- they only exist inside an encounter's own tactic list, and
+    `turn/encounter.py`'s own docstring already scopes out the general
+    tactic-sequence combat engine (range transitions, mixed tactics, a
+    monster-HP model, spell effects mid-combat) they'd need. Of the
+    remaining 13 Action spells, Skeletal_Army needs a per-province
+    "who died here" registry no battle-resolution code populates,
+    Hide_Feature needs the still-unpopulated `Feature` stub, and
+    Clairvoyance needs the "story event" model Phase 58's own roadmap
+    already deferred -- all three stay unexecuted for the same reason
+    Resurrection was blocked before this phase: real, structural gaps,
+    not oversights. The other 10 had no such blocker once the numbers
+    existed, so this phase implements all 10 together rather than
+    splitting them further.
+  - **`GameState.dead_leaders`** (new): `remove_leader()` now archives
+    into it instead of discarding, giving Resurrection something
+    concrete to revive from -- the exact gap Phase 29's docstring named.
+    Only the ordinary-Hero case is modeled; the rulebook's separate
+    King-via-Heir revival (Heir must have zero Talents assigned; a
+    revived King resumes his own throne rather than joining the
+    reviver's Kingdom) needs a throne/heir-succession model this project
+    doesn't have. A successful Resurrection now also dispatches its
+    target's own embedded plan the same turn, the same as a successful
+    Charm always has (`plan_dispatch.py _nested_plan_triggered`).
+  - **Province-targeted spells share one targeting mechanism**
+    (`cast_execution._resolve_province_target`): `CastRequest.target`
+    decodes via `turn/hex_numbering.py`'s already-existing,
+    empirically-derived scheme (Phase 11 -- not 100% validated, see that
+    module's own docstring), reusing `board_width` the same way Move's
+    own LMOVE decoding already does (`execute_cast` gained an optional
+    `board_width` parameter, threaded through
+    `plan_dispatch._dispatch_cast`). Each spell enforces its own
+    same-province-or-adjacent rule, except Bless, which the rulebook
+    explicitly exempts ("any province on the map, regardless of where
+    the caster is").
+  - **Three new `ProvinceState` fields are set but have no consumer
+    yet**, an intentional "spell writes real state, a later phase makes
+    the rest of the engine honor it" split, the same shape Phase 55 used
+    for `contested_by_kingdom_id` before its own rebattle logic existed:
+    `terrain_override` (Part Sea: Sea->Plains; Flood: non-mountain
+    land->Sea -- Flood's secondary "land units trapped" effect stays
+    unmodeled, since this project has no first-class land-vs-sea unit
+    classification), `tax_modifier_percent` (Bless +60%, Earthquake
+    -100%, both "not cumulative" so each *sets* rather than adds --
+    genuinely no consumer at all yet, since no tax/revenue-collection
+    system exists anywhere in this project), and `illusory_terrain`
+    (Illusory Terrain's fake-terrain record -- the dissolve-chance timer
+    and blended real/illusory combat strength both need
+    exploration/movement-side consumers that don't exist).
+  - **Tornado and Plague are the two spells with a real, immediate,
+    stochastic effect**: every army in the target province gets an
+    independent per-unit destroy roll (`TORNADO_DESTROY_CHANCE_PER_LEVEL`
+    10%/level, no ownership exemption -- the rulebook explicitly says
+    own/allied units aren't spared; Plague's `10% + 10%/level`, filtered
+    to `HUMANOID_RACES` only, mercenary armies skipped since this
+    project has no way to know an ownerless army's race). Plague's own
+    "15%/phase spread to an adjacent province" stays unmodeled -- it
+    needs the same per-phase scheduling `turn_processor.py` already uses
+    for Defend's reinforcement (Phase 57), a natural follow-up.
+  - **Oratory is applied as a direct, persistent `ArmyState.quality`
+    bump** (capped at Elite), not a `strength.py` multiplier -- the
+    rulebook literally describes it as units *becoming* Average/Veteran/
+    etc., the same discrete step `Quality`'s own enum ordering already
+    represents, more faithful than threading a fourth "SKIPPED" note
+    through the strength pipeline. A new `LeaderState.
+    oratory_boosted_this_turn` flag makes a second cast on the same
+    leader the same turn correctly a no-op ("not cumulative") instead of
+    double-bumping.
+  - **Phantasmal Armies is a real `strength.py` multiplier**, the one
+    spell in this batch with a natural, already-multiplicative extension
+    point: `phantasmal_armies_multiplier` (+15%/level) joins
+    `compute_effective_strength`'s existing chain (`combat_ability_
+    multiplier`'s neighbor), and `LeaderState.phantasmal_armies_level`
+    is threaded through `battle_orchestrator._build_battle_units` the
+    same per-army-commander-lookup pattern Druidic shortfall (Phase 41)
+    already established. Unlike Druidic ability, an unled army gets no
+    substitute source for this bonus -- the rulebook gives no
+    garrison-commander fallback for it.
+  - **Level-dependent magnitudes with no recorded caster skill** default
+    to 0 (no effect), the same "no data -> no numeric effect" convention
+    `compute_druidic_shortfall` already uses, not a guessed level.
+  - Non-breaking: full suite passed unchanged (1380 passed) before any
+    new tests were written (two pre-existing tests needed comment/name
+    updates, not behavior changes, since Resurrection and Phantasmal
+    Armies moved from "representative of an unmodeled spell" to "a real
+    spell with its own specific unexecuted edge case"). 30 new tests
+    added (1410 passed total): 26 in `test_cast_execution.py` (one or
+    more per new spell, covering both the success path and each spell's
+    own validation failures), 2 in `test_strength.py`
+    (`phantasmal_armies_multiplier` + its `compute_effective_strength`
+    integration), 2 in `test_battle_orchestrator.py` (the commander
+    lookup + the unled-army no-bonus case).
 
 ## Setup
 
@@ -2369,19 +2479,22 @@ rulebook before being turned into named, typed fields:
     "always solo" approximation. Tactical's army-quality-training
     variant and Sage's extra device-discovery roll are separate,
     still-unmodeled special cases (see Phase 44's own note).
-  - **Cast's remaining gap** (see Phase 29's note above): only Charm and
-    Kill_Enemy execute; the other 10 real spells' actual effects
-    (province/army mutation, mostly) need game-state logic not present
-    anywhere in the available Pascal source -- only the id/target/
-    nesting *shape* is known for them, not the mechanics -- and
-    Resurrection specifically can never be executed without a
-    dead-leader registry this project doesn't have. The success/failure
-    percentage roll is now real for Charm/Kill_Enemy (Phase 30), but
-    only takes effect once a caster has real `LeaderState.skills` data
-    (see Phase 30's note above); it isn't modeled at all for the other
-    10 spells, since they aren't executed in the first place. The Trade-\>Cast rewrite
-    for secret spells 25-34 is also unmodeled (confirmed to exist in
-    Pascal, zero real examples).
+  - ~~**Cast's remaining gap** (see Phase 29's note above): only Charm
+    and Kill_Enemy execute; the other 10 real spells' actual effects...
+    need game-state logic not present anywhere in the available Pascal
+    source~~ -- **12 of the 25 base spells execute as of Phase 59** (see
+    that phase's note above), once `Regolamento AK.txt` supplied exact
+    numbers `RULES.AK`/`ADDEND.AK` never gave. **Still open**:
+    Skeletal_Army, Hide_Feature, and Clairvoyance (each blocked by its
+    own distinct missing subsystem -- a per-province death registry, the
+    unpopulated `Feature` stub, and the "story event" model
+    respectively), plus all 10 Personal-Combat-only spells, which need
+    the general tactic-sequence combat engine `turn/encounter.py`'s own
+    docstring already scopes out. The success/failure percentage roll
+    (Phase 30) covers every executed spell uniformly, real once a caster
+    has `LeaderState.skills` data, always-succeeds otherwise. The Trade-
+    \>Cast rewrite for secret spells 25-34 is also unmodeled (confirmed
+    to exist in Pascal, zero real examples).
   - **Use_MI's remaining gap** (see Phase 24's note above): deeper than
     Cast's -- there's no Pascal source for how item instances are even
     created, so `item_instance_id` can never be resolved to a concrete
