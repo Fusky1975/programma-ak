@@ -80,13 +80,25 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
 
     Recruits at the acting leader's current location. Newly recruited
     armies are commanded by ``request.leader_id`` (the phase's decoded
-    target leader, possibly None = unled/garrison).
+    target leader, possibly None = unled/garrison) -- **provided that
+    leader is co-located with the acting leader** (rulebook [3.4]: "Any
+    character in the province may lead the armies, or they can be
+    placed under the garrison commander"). A ``request.leader_id`` that
+    doesn't exist as a ``LeaderState`` at all, or exists but is in a
+    different province, falls back to unled/garrison command
+    (``commanded_by=None``) instead -- the same silent "skip, don't
+    raise" convention already used for Disband/Fire/Pick_Up's own
+    co-location checks (Phase 40), rather than assigning command to a
+    character who couldn't plausibly have issued this order.
     """
 
     leader = state.leaders[leader_id]
     location = leader.location
     province = state.provinces[location]
     kingdom = state.kingdoms[kingdom_id]
+
+    target_leader = state.leaders.get(request.leader_id) if request.leader_id is not None else None
+    commanded_by = request.leader_id if target_leader is not None and target_leader.location == location else None
 
     is_home_province = location == kingdom.home_province
     in_ally_territory = (
@@ -137,7 +149,7 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         )
         if mercenary is not None:
             mercenary.kingdom_id = kingdom_id
-            mercenary.commanded_by = request.leader_id
+            mercenary.commanded_by = commanded_by
             army_id = mercenary.army_id
             hired = True
         else:
@@ -149,7 +161,7 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
                     army_type=army_type,
                     quality=Quality.AVERAGE,
                     location=location,
-                    commanded_by=request.leader_id,
+                    commanded_by=commanded_by,
                     movement_points=0,
                 )
             )

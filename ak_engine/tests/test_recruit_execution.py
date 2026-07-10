@@ -47,6 +47,43 @@ def test_new_army_commanded_by_requested_leader():
     assert state.armies[result.recruited[0].army_id].commanded_by == 2
 
 
+def test_recruit_falls_back_to_unled_when_requested_leader_does_not_exist():
+    # Rulebook [3.4]: "Any character in the province may lead the
+    # armies" -- a target leader id with no LeaderState at all can't
+    # plausibly have issued this order, so command falls back to the
+    # garrison instead of pointing at a nonexistent leader.
+    state = build_state()
+    request = RecruitRequest(leader_id=999, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert state.armies[result.recruited[0].army_id].commanded_by is None
+
+
+def test_recruit_falls_back_to_unled_when_requested_leader_is_elsewhere():
+    state = build_state()
+    state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(2, 1, "Elsewhere Leader", HexCoord(5, 5)))
+    request = RecruitRequest(leader_id=2, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert state.armies[result.recruited[0].army_id].commanded_by is None
+
+
+def test_recruit_falls_back_to_unled_leaves_a_colocated_mercenary_unaffected_by_a_bad_target():
+    # Same "nonexistent target -> garrison" fallback, exercised through
+    # the mercenary-hiring branch instead of the fresh-levy branch.
+    state = build_state()
+    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))
+    request = RecruitRequest(leader_id=999, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited[0].hired is True
+    assert state.armies[50].commanded_by is None
+
+
 def test_per_type_limit_blocks_excess_within_one_request_non_home():
     state = build_state(is_home_province=False)
     # Normal (non-home) limit is 1 per type; request 2.

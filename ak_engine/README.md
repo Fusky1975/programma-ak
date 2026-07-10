@@ -1540,6 +1540,35 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_practice_execution.py`, 4 for the `run_turn()`
     detection rule in `tests/test_turn_processor.py` -- 897 passed
     total).
+- **Phase 47 (current)**: Recruit's target-leader co-location
+  validation, rulebook [3.4]: *"Any character in the province may lead
+  the armies, or they can be placed under the garrison commander."*
+  `turn/recruit_execution.py execute_recruit()` previously assigned
+  command of a newly recruited (or newly hired mercenary) army to
+  `request.leader_id` unconditionally -- never checking that leader
+  actually existed as a `LeaderState`, let alone that he was co-located
+  with whoever issued the Recruit order.
+  - **Fix**: resolves an effective `commanded_by` once per call --
+    `request.leader_id` if (and only if) that id resolves to a real
+    `LeaderState` whose `location` matches the acting leader's own
+    (i.e. the recruiting province); `None` (unled/garrison) otherwise.
+    Applied uniformly to both the fresh-levy and mercenary-hiring
+    branches. Same silent "skip, don't raise" convention already used
+    for Disband/Fire/Pick_Up's own co-location checks (Phase 40) --
+    an implausible target falls back to the garrison rather than
+    raising or silently trusting a bogus/absent leader id.
+  - **Was investigated as a candidate for the [Multiple Contingents /
+    Practice-style] `turn/turn_processor.py` grouping treatment first**,
+    but doesn't need it: unlike LMOVE or PRACTICE, a Recruit order's
+    "who can command the result" question only depends on data already
+    available to a single-leader dispatch (the acting leader's own
+    location and `state.leaders`), not on what any *other* leader is
+    doing this same phase -- so the ordinary per-leader path was the
+    right fix, no orchestrator involvement needed.
+  - Non-breaking: full suite passed unchanged (897 passed) immediately
+    after wiring, before any new tests were written -- no pre-existing
+    fixture exercised a target leader that was absent or elsewhere. 3
+    new tests added (900 passed total).
 
 ## Setup
 
@@ -1722,9 +1751,10 @@ rulebook before being turned into named, typed fields:
   (Phase 22) dispatch as bare no-ops. Only **Succ_Trail** raises
   `UnsupportedActionError` -- deliberately, by design, not as an
   oversight (see Phase 27's note above).
-  - **Recruit's remaining gaps**: the recruiting leader must already
-    exist as a `LeaderState` at the target province (no validation that
-    a *co-located* character issued the order); the rulebook's more
+  - **Recruit's remaining gaps**: ~~the target leader who will command a
+    newly recruited army isn't validated as co-located (or even as
+    existing at all) before being assigned command~~ **fixed in Phase
+    47** -- see that phase's note below. Still open: the rulebook's more
     specific "1-2 recruitable types per province" isn't tracked, only
     approximated via race-compatibility (see Phase 12's note above); and
     the ally "Treat" order precondition for recruiting in allied
