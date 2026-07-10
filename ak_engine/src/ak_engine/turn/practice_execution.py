@@ -52,18 +52,20 @@ increase instead.
 case (guaranteed-if-lower / 10%-each-if-tied) exactly as the rulebook
 states it, and is available for a caller that already has two
 co-located same-phase practicers in hand. It is **not** reachable from
-``plan_dispatch.py``'s per-leader dispatch, for the same structural
-reason ``battle_orchestrator.py fight_multi_attacker_battle`` isn't
-auto-invoked from the single-leader execution path: ``run_leader_plan``
-resolves one leader's plan at a time against a shared ``GameState``, with
-no notion of "wait for every other leader's same-phase order before
-resolving this one" -- the rulebook's own core mechanic here needs
-exactly that. **``execute_practice`` (the function actually wired into
-dispatch) therefore always treats the acting leader as practicing
-alone** -- a documented, deliberately conservative approximation: 5% is
-the *smallest* of the three base chances the rulebook gives (100%/10%/
-5%), so this never overstates a rise chance, only potentially
-understates one whenever two+ leaders are genuinely co-practicing.
+``plan_dispatch.py``'s per-leader dispatch (``run_leader_plan`` resolves
+one leader's plan at a time against a shared ``GameState``, with no
+notion of "wait for every other leader's same-phase order before
+resolving this one"). **A genuinely phase-by-phase, multi-leader
+orchestrator now exists** (``turn/turn_processor.py run_turn()``, Phase
+45) -- the structural gap this note used to describe -- but it only
+wires in Multiple Contingents detection so far, not this mechanic; a
+fast follow-up, not attempted this phase. **``execute_practice`` (the
+function actually wired into ``dispatch_phase``) therefore still always
+treats the acting leader as practicing alone** -- a documented,
+deliberately conservative approximation: 5% is the *smallest* of the
+three base chances the rulebook gives (100%/10%/5%), so this never
+overstates a rise chance, only potentially understates one whenever
+two+ leaders are genuinely co-practicing.
 
 **Extending to N > 2 co-practicers** (only relevant to
 ``resolve_practice_group``, itself only reachable the same way

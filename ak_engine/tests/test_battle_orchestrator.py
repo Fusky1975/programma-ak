@@ -911,16 +911,18 @@ def test_fight_multi_attacker_battle_unites_same_origin_attackers():
     # many luck/quality rolls its own resolution consumes.
     rng = ScriptedRandom([0.1] + [0.1] * 40, choice_indices=[0] * 40)
 
-    reports = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
 
-    assert len(reports) == 1
+    assert len(battles) == 1
+    assert sorted(battles[0].leader_ids) == [10, 20]  # both leaders united into the same battle
+    report = battles[0].report
     all_ids = {
-        *reports[0].destroyed_army_ids,
-        *reports[0].retreated_army_ids,
-        *reports[0].disbanded_army_ids,
-        *reports[0].mercenary_army_ids,
-        *reports[0].pursuit_destroyed_army_ids,
-        *reports[0].quality_changes.keys(),
+        *report.destroyed_army_ids,
+        *report.retreated_army_ids,
+        *report.disbanded_army_ids,
+        *report.mercenary_army_ids,
+        *report.pursuit_destroyed_army_ids,
+        *report.quality_changes.keys(),
     }
     assert 101 in all_ids
     assert 102 in all_ids  # both armies fought in the SAME (united) battle
@@ -939,9 +941,10 @@ def test_fight_multi_attacker_battle_splits_different_origin_attackers():
     # survives both) defender.
     rng = ScriptedRandom([0.99] + [0.5] * 40, choice_indices=[0] * 40)
 
-    reports = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
 
-    assert len(reports) == 2
+    assert len(battles) == 2
+    assert sorted(battle.leader_ids[0] for battle in battles) == [10, 20]  # each fought its own battle
 
 
 def test_fight_multi_attacker_battle_claims_province_for_largest_contingent_kingdom():
@@ -959,8 +962,9 @@ def test_fight_multi_attacker_battle_claims_province_for_largest_contingent_king
     # the resulting 3-vs-1 battle against the weak GARRISON/GREEN defender.
     rng = ScriptedRandom([0.1] + [0.1] * 40, choice_indices=[0] * 40)
 
-    reports = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
 
-    assert len(reports) == 1
-    if reports[0].conquered:
+    assert len(battles) == 1
+    assert sorted(battles[0].leader_ids) == [10, 20]
+    if battles[0].report.conquered:
         assert state.provinces[FIELD].owner_kingdom_id == 3  # kingdom 3 contributed 2 of 3 armies

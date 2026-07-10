@@ -56,15 +56,19 @@ phase: it partitions them into one or more actual battles via
 ``turn/multiple_contingents.py group_attackers_into_battles()`` (same
 origin -> very likely to unite; different origins -> probably separate
 battles) and calls ``fight_battle()`` once per resulting group, with
-that group's army ids combined. **Not automatically invoked from
-``execute_move()``/``plan_dispatch.py`` yet** -- this project's
-per-leader plan processing (``run_leader_plan``) resolves one leader's
-moves at a time and has no notion of "wait for every other leader's
-same-phase move before resolving a battle", which is what real
-Multiple-Contingents detection would need. ``fight_multi_attacker_battle``
-is available for any caller that already has several simultaneous
-attacks assembled (e.g. a future multi-leader turn processor), not
-wired into the single-leader execution path.
+that group's army ids combined -- returning one ``MultiAttackerBattle``
+per resulting battle (``leader_ids`` + its own ``BattleReport``), so a
+caller driving several leaders at once can tell which report belongs to
+which leader without re-deriving the (rng-consuming) grouping itself.
+**Now reachable from real multi-leader play as of Phase 45**:
+``turn/turn_processor.py run_turn()`` is a phase-by-phase (not
+per-leader) orchestrator that detects same-phase LMOVEs converging on
+one province and routes them through here -- see that module's
+docstring for the detection rule and its own documented scope limits.
+``execute_move()``/``plan_dispatch.py run_leader_plan()`` themselves are
+unchanged and still only ever fight a single attacker's battle -- they
+remain the right call for driving one leader's plan in isolation (most
+of this project's own tests still do exactly that).
 
 **Simplifications made to keep this tractable, all documented in
 ak_engine/README.md:**
@@ -728,6 +732,23 @@ class MultiAttackerParty:
     origin_province: HexCoord
 
 
+@dataclass(slots=True)
+class MultiAttackerBattle:
+    """One resulting battle from ``fight_multi_attacker_battle``'s grouping.
+
+    ``leader_ids`` (Phase 45) is every party's ``leader_id`` that ended up
+    united into this specific battle -- added so a caller driving several
+    leaders at once (``turn/turn_processor.py``) can look up which
+    ``BattleReport`` its own post-battle bookkeeping (movement cost, army
+    relocation) should read for a given leader, without re-deriving
+    ``group_attackers_into_battles``' own rng-consuming grouping itself
+    (which would desync the shared ``rng`` stream).
+    """
+
+    leader_ids: list[int]
+    report: BattleReport
+
+
 def fight_multi_attacker_battle(
     state: GameState,
     province_coord: HexCoord,
@@ -736,12 +757,12 @@ def fight_multi_attacker_battle(
     loser_retreats: bool = True,
     apply_fanaticism: bool = False,
     rng: random.Random | None = None,
-) -> list[BattleReport]:
+) -> list[MultiAttackerBattle]:
     """Rulebook [7.8] Multiple Contingents: partition several leaders' simultaneous
     attacks on ``province_coord`` into one or more battles, then fight each.
 
-    See the module docstring for why this isn't automatically invoked
-    from the single-leader execution path yet.
+    See the module docstring for how ``turn/turn_processor.py`` now
+    reaches this from real multi-leader play (Phase 45).
 
     **Which kingdom claims a jointly-won province** isn't specified by
     the rulebook for a united coalition of allied attackers -- resolved
@@ -796,6 +817,6 @@ def fight_multi_attacker_battle(
             apply_fanaticism=apply_fanaticism,
             rng=rng,
         )
-        reports.append(report)
+        reports.append(MultiAttackerBattle(leader_ids=[member.leader_id for member in group], report=report))
 
     return reports

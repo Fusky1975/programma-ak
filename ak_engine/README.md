@@ -600,12 +600,10 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     same province in the same phase -- it partitions them via
     `group_attackers_into_battles()` (same origin -> very likely unite;
     different origins -> probably separate) and calls `fight_battle()`
-    once per resulting group. **Not automatically invoked from
-    `execute_move()`/`plan_dispatch.py`** -- `run_leader_plan` resolves
-    one leader's moves at a time and has no notion of "wait for every
-    other leader's same-phase move before resolving a battle," which
-    real detection would need; available for any caller that already
-    has several simultaneous attacks assembled. Two more documented
+    once per resulting group. ~~Not automatically invoked from
+    `execute_move()`/`plan_dispatch.py`~~ **reachable from real
+    multi-leader play as of Phase 45** via `turn/turn_processor.py
+    run_turn()` -- see that phase's note below. Two more documented
     simplifications specific to this new function: which allied
     kingdom claims a jointly-won province isn't specified by the
     rulebook, resolved here as "whichever contributed the largest
@@ -963,10 +961,13 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     functions (`attacker_can_force_rebattle`,
     `contested_battle_movement_cost`) -- automatically forcing a
     rebattle "in the next phase" without a new player order needs
-    turn-loop restructuring (`turn/plan_dispatch.py run_leader_plan`
-    processes one leader's phases at a time, with no notion of
-    "re-trigger a battle here next phase regardless of what this leader
-    ordered") well beyond this phase's scope.
+    tracking state across phases for a given province, well beyond this
+    phase's scope. ~~`turn/plan_dispatch.py run_leader_plan` processes
+    one leader's phases at a time, with no notion of "re-trigger a
+    battle here next phase regardless of what this leader ordered"~~
+    **a genuinely phase-by-phase, multi-leader orchestrator now exists**
+    (`turn/turn_processor.py run_turn()`, Phase 45), but this specific
+    mechanic isn't wired into it yet -- see that phase's note below.
   - Non-breaking: full suite passed unchanged before adding new tests,
     since `contested_by_kingdom_id` defaults to `None` and no
     pre-existing fixture sets it.
@@ -1374,9 +1375,11 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `plan_dispatch.py`** (`_dispatch_practice` -> `execute_practice`):
     true multi-character coordination needs visibility into every other
     leader's same-phase order, which the per-leader `run_leader_plan`
-    dispatch structurally doesn't have -- the same reason
-    `battle_orchestrator.py fight_multi_attacker_battle` isn't
-    auto-invoked either. **Documented as a deliberately conservative
+    dispatch structurally doesn't have. `turn/turn_processor.py
+    run_turn()` (Phase 45) now provides exactly that visibility for
+    Multiple Contingents, but this mechanic isn't wired into it yet --
+    a fast follow-up, not attempted this phase (or Phase 45's own).
+    **Documented as a deliberately conservative
     approximation, not a guess**: 5% is the *smallest* of the
     rulebook's three base chances (100%/10%/5%), so always treating the
     acting leader as solo never overstates a rise chance, only
@@ -1418,6 +1421,88 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     instead, the same kind of test update Phase 15 (Recruit) and Phase
     29 (Cast) needed for their own graduations. Full suite green after
     that fix (860 passed), then 20 new tests added (880 passed total).
+- **Phase 45 (current)**: `turn/turn_processor.py`, a genuinely
+  phase-by-phase, multi-leader turn orchestrator -- the structural gap
+  behind three separate "built but not auto-invoked" notes scattered
+  across Phases 28, 36, and 44: Multiple Contingents, Practice's
+  multi-character coordination, and `contested_province.py`'s
+  forced-rebattle rule all need the same thing, visibility into every
+  leader's *same-phase* order before any of them resolve, which
+  `turn/plan_dispatch.py run_leader_plan()` structurally can't provide
+  (it dispatches one leader's *entire* plan before moving to the next).
+  This phase builds the orchestrator and wires in the first of the
+  three -- Multiple Contingents; the other two are flagged, fast
+  follow-ups now that the structural blocker is gone, not attempted
+  here.
+  - **`run_turn(turn_leaders, state, *, board_width, ...)`** iterates
+    P0..P4 *across every leader's plan at once* (`TurnLeader` pairs a
+    `Leader` with its `kingdom_id`) instead of leader-by-leader. For
+    each phase label: decode every LMOVE's target hex (without
+    executing it yet), group same-target movers, and detect which
+    groups are a real Multiple Contingents scenario -- see below --
+    before dispatching anything else.
+  - **Detection rule**: 2+ leaders' LMOVEs at the same phase label
+    targeting the same province, where at least 2 of them each
+    independently see a non-allied defending army there (the identical
+    "attacking" criterion `turn/move_execution.py execute_move()`
+    already uses -- a leader-only move, with no army, never counts),
+    route through `turn/battle_orchestrator.py
+    fight_multi_attacker_battle()` as one united scenario instead of N
+    independent solo battles. A **mixed** group (some movers see the
+    target as friendly, others as hostile) only routes the *hostile*
+    subset through Multiple Contingents; peaceful movers dispatch an
+    ordinary independent move, unaffected -- the rulebook doesn't
+    address this mixed case, so no attempt is made to have a peaceful
+    mover somehow "witness" or join the battle.
+  - **`battle_orchestrator.py fight_multi_attacker_battle()`'s own
+    return type changed**: it now returns `list[MultiAttackerBattle]`
+    (`leader_ids` + the shared `BattleReport`) instead of a bare
+    `list[BattleReport]` -- added so a caller driving several leaders at
+    once can look up which report belongs to which leader, without
+    re-deriving `group_attackers_into_battles()`'s own rng-consuming
+    grouping a second time (which would desync the shared `rng`
+    stream). The 3 existing `fight_multi_attacker_battle` tests were
+    updated for the new wrapper (`.report` instead of direct field
+    access) -- the only genuinely breaking change in this phase.
+  - **Everything else reuses `turn/plan_dispatch.py` verbatim, not
+    duplicated**: `_dispatch_single` wraps one `PlanPhase` in a
+    throwaway one-segment `ActionPlan` and calls the existing, fully-
+    tested `run_leader_plan()` on it -- including its own nested-plan
+    dispatch (Hire/Charm/Resurrection still fires immediately, in full,
+    exactly as before; a nested character's own LMOVE never
+    participates in *this* phase's Multiple Contingents grouping, an
+    already-small, documented scope limitation). The cost of this reuse:
+    every `PhaseDispatchResult.segment_index` produced via `run_turn`
+    reads `0` regardless of the real plan's own segment index -- lost no
+    real information in practice, since real move-file data confirms
+    every leader has exactly one top-level segment anyway
+    (`models/plan.py`'s own docstring).
+  - **Post-battle bookkeeping (movement cost, army/leader relocation)
+    for the multi-attacker path is duplicated from `execute_move()`**,
+    not extracted into a shared helper -- a deliberate choice to avoid
+    touching the heavily-tested single-attacker path in this phase.
+  - **The partial-exploration side effect for a united multi-attacker
+    move is applied once per target province per phase (shared), not
+    once per attacker** -- the rulebook doesn't say whether simultaneous
+    arrivals compound it; a documented, unsourced design choice, the
+    same category as `turn/multiple_contingents.py`'s own unite-chance
+    constants.
+  - **Contested-province illegal-move filtering runs per mover**, same
+    as `execute_move()`'s own check: an illegal mover is excluded from
+    the group (recorded as an error result, same "never raises, records
+    errors" convention as `run_leader_plan`) rather than blocking the
+    whole group; if fewer than 2 valid attackers remain after filtering,
+    whoever's left dispatches individually and normally instead.
+  - **Still explicitly out of scope**: Practice's own multi-character
+    coordination and `contested_province.py`'s forced-rebattle rule
+    aren't wired into `run_turn()` either, despite the structural
+    blocker for both now being gone -- flagged as fast follow-ups, not
+    attempted this phase (see Phase 44's and Phase 9's own notes,
+    updated to point here).
+  - Non-breaking except for the documented `fight_multi_attacker_battle`
+    return-type change (3 existing tests updated accordingly); full
+    suite green after that fix (880 passed), then 6 new tests added in
+    `tests/test_turn_processor.py` (886 passed total).
 
 ## Setup
 
@@ -1692,8 +1777,10 @@ rulebook before being turned into named, typed fields:
     found).
   - Pursuit and Duel are now wired into `fight_battle()` (Phase 28, see
     below); Multiple Contingents is available via the new
-    `fight_multi_attacker_battle()` but not yet auto-invoked from
-    `execute_move()`/`plan_dispatch.py` (see Phase 28's note). ~~The
+    `fight_multi_attacker_battle()`, ~~but not yet auto-invoked from
+    `execute_move()`/`plan_dispatch.py`~~ **reachable from real
+    multi-leader play as of Phase 45** via `turn/turn_processor.py
+    run_turn()` -- see that phase's note below. ~~The
     "Fleets fighting on land provinces would generally be reduced to
     Depleted status instead of being eliminated" exception~~ **fixed in
     Phase 38** (see above) -- not to be conflated with Whales' own "zero
@@ -1721,8 +1808,10 @@ rulebook before being turned into named, typed fields:
     them from `execute_move()`/`fight_battle()`)~~ **the illegal-move
     check is wired in as of Phase 36** -- see above. Still open: a
     contested result still just sets `ProvinceState.contested_by_kingdom_id`
-    and stops there, with no automatic rebattle "in the next phase"
-    (needs turn-loop restructuring, see Phase 36's note above).
+    and stops there, with no automatic rebattle "in the next phase" --
+    `turn/turn_processor.py run_turn()` (Phase 45) is now a real
+    phase-by-phase, multi-leader orchestrator, but doesn't wire this
+    specific mechanic in either; see that phase's note below.
 - **Populating a brand-new `GameState` from nothing at turn 0** (see
   Phase 31's note above): `turn/kingdom_bridge.py` can only *enrich*
   `LeaderState`s that already exist -- there is no source anywhere in

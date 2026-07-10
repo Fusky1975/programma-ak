@@ -35,9 +35,12 @@ target (`resolve_move` still raises `NonAdjacentMoveError`). Also still
 out of scope: ``turn/contested_province.py``'s other two functions --
 ``attacker_can_force_rebattle``/``contested_battle_movement_cost`` --
 since automatically forcing a rebattle "in the next phase" without a new
-player order needs turn-loop restructuring this project's per-leader,
-one-phase-at-a-time dispatch (``turn/plan_dispatch.py run_leader_plan``)
-doesn't support yet.
+player order needs a caller that tracks state across phases for a given
+province. ``turn/turn_processor.py run_turn()`` (Phase 45) *is* now a
+genuinely phase-by-phase, multi-leader orchestrator -- the structural
+gap this note used to point at -- but it doesn't wire this specific
+mechanic in yet either; see that module's own docstring for what it
+does wire in (Multiple Contingents) and what's still deferred.
 
 **Leader-only movement** (Phase 14): pass ``leader_id`` and an empty
 ``army_ids`` for a character moving without any army. Per rulebook [3.1]
