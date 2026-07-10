@@ -1,4 +1,4 @@
-"""Multi-leader, phase-by-phase turn processing (Phase 45).
+"""Multi-leader, phase-by-phase turn processing (Phase 45; Practice coordination Phase 46).
 
 ``turn/plan_dispatch.py run_leader_plan()`` processes *one* leader's
 entire plan (every phase, in order) before moving to the next leader.
@@ -9,20 +9,20 @@ resolve:
 
 - **Multiple Contingents** ([7.8], ``turn/battle_orchestrator.py
   fight_multi_attacker_battle``) -- several leaders attacking the same
-  province in the same phase.
+  province in the same phase. Wired in as of Phase 45.
 - **Practice's [3.13] multi-character coordination** (``turn/
-  practice_execution.py resolve_practice_pair``/``_group``) -- 2+
-  co-located characters practicing the same ability in the same phase.
+  practice_execution.py resolve_practice_pair``/``_group``/
+  ``execute_practice_group``) -- 2+ co-located characters practicing
+  the same ability in the same phase. Wired in as of Phase 46.
 - **``contested_province.py``'s forced-rebattle** "in the next phase"
-  rule.
+  rule. Still unwired -- a fast follow-up, not attempted yet: see
+  ``ak_engine/README.md``.
 
 This module is a genuinely phase-by-phase orchestrator -- ``run_turn()``
 iterates P0..P4 *across every leader's plan at once*, instead of
-leader-by-leader -- and wires in the first of the three, Multiple
-Contingents. The other two stay unwired this phase (fast follow-ups,
-now unblocked structurally): see ``ak_engine/README.md``.
+leader-by-leader.
 
-**Detection rule wired in this phase**: when 2+ leaders' LMOVE phases
+**LMOVE detection rule (Phase 45)**: when 2+ leaders' LMOVE phases
 at the *same* phase label decode to the *same* target province, and at
 least 2 of them each independently see a non-allied defending army
 there (the same "attacking" criterion ``turn/move_execution.py
@@ -31,18 +31,33 @@ never counts), their moves are routed through
 ``turn/battle_orchestrator.py fight_multi_attacker_battle()`` as one
 united scenario instead of N independent solo battles.
 
-**Explicitly out of scope this phase, to keep it tractable**:
+**PRACTICE detection rule (Phase 46)**: when 2+ leaders' PRACTICE
+phases at the *same* phase label decode to the *same* ``Ability`` AND
+those leaders' current locations (``LeaderState.location``, read before
+any of this phase's actions run) are the *same* province, they're
+routed through ``turn/practice_execution.py execute_practice_group()``
+together instead of each resolving solo. **No alliance/kingdom
+requirement** -- unlike Multiple Contingents, the rulebook's own text
+("If 2 or more characters are in the same province...") never mentions
+kingdom membership at all, so this groups purely by co-location, across
+any kingdoms. ``Ability.TACTICAL``/an undecoded raw ability value groups
+the same as any other ability (so ``execute_practice_group`` still sees
+the collision), but resolves to ``not_implemented_for_ability=True`` for
+the whole group, same as the solo path already does for those cases.
 
-- A "mixed" group (some movers see the target as friendly, others as
-  hostile) only routes the *hostile* subset through Multiple
+**Explicitly out of scope, to keep this tractable**:
+
+- A "mixed" LMOVE group (some movers see the target as friendly, others
+  as hostile) only routes the *hostile* subset through Multiple
   Contingents; peaceful movers dispatch an ordinary independent move,
   unaffected. The rulebook doesn't address this mixed case, so no
   attempt is made to have a peaceful mover "witness" or join the battle.
-- Every other action, every non-LMOVE phase, and every leader with no
-  competing same-target LMOVE this phase, dispatches exactly the way
-  ``turn/plan_dispatch.py`` already handles it -- this module doesn't
-  reimplement or change that path, only detects the LMOVE-collision
-  case *before* it and routes around it. Concretely, ``_dispatch_single``
+- Every other action, every non-LMOVE/non-PRACTICE phase, and every
+  leader with no competing same-target/same-ability collision this
+  phase, dispatches exactly the way ``turn/plan_dispatch.py`` already
+  handles it -- this module doesn't reimplement or change that path,
+  only detects the two collision cases above *before* it and routes
+  around them. Concretely, ``_dispatch_single``
   wraps a single ``PlanPhase`` in a throwaway one-segment ``ActionPlan``
   and calls the existing, fully-tested ``run_leader_plan()`` on it --
   reusing its dispatch and nested-plan logic verbatim rather than
@@ -54,10 +69,11 @@ united scenario instead of N independent solo battles.
 - **Nested-plan dispatch** (Hire/Charm/Resurrection) is unaffected: a
   newly-joined character's own plan still dispatches immediately, in
   full, via ``turn/plan_dispatch.py``'s own nested-plan handling inside
-  ``run_leader_plan``. A nested character's own LMOVE never participates
-  in *this* phase's Multiple Contingents grouping -- an already-small,
-  documented scope limitation (nested dispatch has always run "out of
-  band" from the outer phase sequence, even before this module existed).
+  ``run_leader_plan``. A nested character's own LMOVE or PRACTICE never
+  participates in *this* phase's Multiple Contingents/Practice grouping
+  -- an already-small, documented scope limitation (nested dispatch has
+  always run "out of band" from the outer phase sequence, even before
+  this module existed).
 - **The partial-exploration side effect** for a united multi-attacker
   move is applied *once* per target province per phase (shared), not
   once per attacker -- the rulebook doesn't say whether simultaneous
@@ -75,7 +91,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from ak_engine.models.enums import ActionCode
+from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord, Terrain
@@ -86,6 +102,8 @@ from ak_engine.turn.contested_province import is_illegal_move_from_contested
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, run_leader_plan
+from ak_engine.turn.practice_decode import decode_practice_phase
+from ak_engine.turn.practice_execution import execute_practice_group
 
 PHASE_LABELS = ("P0", "P1", "P2", "P3", "P4")
 
@@ -146,11 +164,33 @@ def run_turn(
             if len(attacking) >= 2:
                 multi_attacker_groups.append((target, attacking))
 
+        practice_keys: dict[int, tuple[HexCoord, Ability | int]] = {}
+        for index, (tl, _segment_index, phase) in enumerate(entries):
+            if phase.action is ActionCode.PRACTICE:
+                leader_state = state.leaders.get(tl.leader.leader_id)
+                if leader_state is None:
+                    continue  # left for the ordinary per-leader path to raise/record consistently
+                ability = decode_practice_phase(phase).ability
+                practice_keys[index] = (leader_state.location, ability)
+
+        practice_groups: dict[tuple[HexCoord, Ability | int], list[int]] = {}
+        for index, key in practice_keys.items():
+            practice_groups.setdefault(key, []).append(index)
+
+        multi_practice_groups: list[tuple[Ability | int, list[int]]] = [
+            (key[1], indices) for key, indices in practice_groups.items() if len(indices) >= 2
+        ]
+
         consumed = {index for _target, indices in multi_attacker_groups for index in indices}
+        consumed |= {index for _ability, indices in multi_practice_groups for index in indices}
 
         for target, indices in multi_attacker_groups:
             movers = [entries[i] for i in indices]
             results.extend(_dispatch_multi_attacker_lmove(movers, target, state, board_width, explorer_skill, rng))
+
+        for ability, indices in multi_practice_groups:
+            movers = [entries[i] for i in indices]
+            results.extend(_dispatch_multi_practice(movers, ability, state, rng))
 
         for index, (tl, segment_index, phase) in enumerate(entries):
             if index in consumed:
@@ -158,6 +198,22 @@ def run_turn(
             results.extend(_dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng))
 
     return results
+
+
+def _dispatch_multi_practice(
+    movers: list[tuple[TurnLeader, int, PlanPhase]],
+    ability: Ability | int,
+    state: GameState,
+    rng: random.Random,
+) -> list[PhaseDispatchResult]:
+    """Rulebook [3.13] multi-character Practice case, via ``execute_practice_group`` (Phase 46)."""
+
+    leader_ids = [tl.leader.leader_id for tl, _segment_index, _phase in movers]
+    outcomes = execute_practice_group(state, leader_ids, ability, rng)
+    return [
+        PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, outcome, None)
+        for (tl, segment_index, phase), outcome in zip(movers, outcomes)
+    ]
 
 
 def _collect_phase_entries(

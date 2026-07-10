@@ -17,6 +17,7 @@ from ak_engine.turn.practice_execution import (
     PracticeExecutionResult,
     attempt_skill_rise,
     execute_practice,
+    execute_practice_group,
     resolve_practice_group,
     resolve_practice_pair,
     resolve_practice_solo,
@@ -248,3 +249,117 @@ def test_execute_practice_sages_own_skill_still_rises_normally():
 
     assert result.not_implemented_for_ability is False
     assert result.skill_rose is True
+
+
+# --- execute_practice_group (Phase 46) ------------------------------------
+
+
+def _state_with_leaders(*leader_ids: int, skills_by_id: dict[int, SkillTable | None] | None = None) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    skills_by_id = skills_by_id or {}
+    for leader_id in leader_ids:
+        state.add_leader(
+            LeaderState(leader_id, kingdom_id=1, name=f"L{leader_id}", location=LOCATION, skills=skills_by_id.get(leader_id))
+        )
+    return state
+
+
+def _skills_with(ability: Ability, skill: int, aptitude: int) -> SkillTable:
+    raw = [0] * 30
+    raw[ability.value * 2] = skill
+    raw[ability.value * 2 + 1] = aptitude
+    return SkillTable(raw)
+
+
+def test_execute_practice_group_lower_skill_member_gets_guaranteed_roll():
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=9),
+            2: _skills_with(Ability.NECROMANCY, skill=3, aptitude=9),
+        },
+    )
+
+    results = execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.01]))
+
+    assert len(results) == 2
+    assert results[0].skill_rose is True
+    assert results[0].new_skill == 2
+    assert results[1].skill_rose is False
+    assert results[1].new_skill == 3
+    assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (2, 9)
+    assert state.leaders[2].skills.pair_for_ability(Ability.NECROMANCY) == (3, 9)
+
+
+def test_execute_practice_group_tied_skill_rolls_independently_for_each():
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=2, aptitude=9),
+            2: _skills_with(Ability.NECROMANCY, skill=2, aptitude=9),
+        },
+    )
+
+    results = execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.05, 0.5]))
+
+    assert results[0].skill_rose is True  # 0.05 < 10%
+    assert results[1].skill_rose is False  # 0.5 >= 10%
+
+
+def test_execute_practice_group_three_leaders_only_minimum_skill_ones_roll():
+    state = _state_with_leaders(
+        1,
+        2,
+        3,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=9),
+            2: _skills_with(Ability.NECROMANCY, skill=4, aptitude=9),
+            3: _skills_with(Ability.NECROMANCY, skill=1, aptitude=9),
+        },
+    )
+
+    results = execute_practice_group(state, [1, 2, 3], Ability.NECROMANCY, rng=ScriptedRandom([0.01, 0.01]))
+
+    assert results[0].skill_rose is True
+    assert results[1].skill_rose is False
+    assert results[1].new_skill == 4
+    assert results[2].skill_rose is True
+
+
+def test_execute_practice_group_attaches_fresh_skill_tables_when_none_recorded():
+    state = _state_with_leaders(1, 2)  # neither has skills recorded
+
+    results = execute_practice_group(state, [1, 2], Ability.SAGE, rng=random.Random(0))
+
+    assert state.leaders[1].skills is not None
+    assert state.leaders[2].skills is not None
+    assert len(results) == 2
+
+
+def test_execute_practice_group_tactical_is_not_implemented_for_the_whole_group():
+    state = _state_with_leaders(1, 2)
+
+    results = execute_practice_group(state, [1, 2], Ability.TACTICAL, rng=ScriptedRandom([]))
+
+    assert all(r.not_implemented_for_ability for r in results)
+    assert state.leaders[1].skills is None
+    assert state.leaders[2].skills is None
+
+
+def test_execute_practice_group_raw_out_of_range_ability_is_not_implemented():
+    state = _state_with_leaders(1, 2)
+
+    results = execute_practice_group(state, [1, 2], 99, rng=ScriptedRandom([]))
+
+    assert all(r.not_implemented_for_ability for r in results)
+    assert all(r.ability == 99 for r in results)
+
+
+def test_execute_practice_group_requires_at_least_two_leaders():
+    state = _state_with_leaders(1)
+
+    with pytest.raises(ValueError):
+        execute_practice_group(state, [1], Ability.SAGE, rng=random.Random(0))

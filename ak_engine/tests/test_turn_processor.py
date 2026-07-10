@@ -4,8 +4,9 @@ import random
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.enums import ActionCode
+from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
@@ -14,6 +15,8 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.turn_processor import MultiAttackerMoveResult, TurnLeader, run_turn
+
+from _helpers import ScriptedRandom
 
 BOARD_WIDTH = 10
 ORIGIN = HexCoord(1, 1)
@@ -206,3 +209,136 @@ def test_run_turn_nested_plan_dispatch_still_works_through_the_wrapper():
     assert nested_results[0].phase_label == "P1"
     assert nested_results[0].error is None
     assert state.leaders[50].kingdom_id == 1
+
+
+# --- Practice multi-character coordination (Phase 46) ---------------------
+
+
+def _practice_phase(label: str, ability: Ability) -> PlanPhase:
+    return PlanPhase(label=label, action=ActionCode.PRACTICE, obj=ability.value, extra=[0])
+
+
+def _skills_with(ability: Ability, skill: int, aptitude: int) -> SkillTable:
+    raw = [0] * 30
+    raw[ability.value * 2] = skill
+    raw[ability.value * 2 + 1] = aptitude
+    return SkillTable(raw)
+
+
+def _practice_state(*leader_ids: int, skills_by_id: dict[int, SkillTable] | None = None) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    skills_by_id = skills_by_id or {}
+    for leader_id in leader_ids:
+        state.add_leader(
+            LeaderState(leader_id, kingdom_id=1, name=f"L{leader_id}", location=ORIGIN, skills=skills_by_id.get(leader_id))
+        )
+    return state
+
+
+def test_run_turn_groups_co_located_same_ability_practicers():
+    state = _practice_state(
+        10,
+        20,
+        skills_by_id={
+            10: _skills_with(Ability.NECROMANCY, skill=1, aptitude=9),
+            20: _skills_with(Ability.NECROMANCY, skill=4, aptitude=9),
+        },
+    )
+    leader_a = _leader_with_phase(10, "A", "P0", _practice_phase("P0", Ability.NECROMANCY))
+    leader_b = _leader_with_phase(20, "B", "P0", _practice_phase("P0", Ability.NECROMANCY))
+
+    results = run_turn(
+        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.01])
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    # Lower-skill leader 10 gets the guaranteed (subject to aptitude) roll;
+    # leader 20 (already higher) gets nothing this phase -- only reachable
+    # if they were actually grouped together, not resolved independently.
+    assert by_leader[10].result.skill_rose is True
+    assert by_leader[10].result.new_skill == 2
+    assert by_leader[20].result.skill_rose is False
+    assert by_leader[20].result.new_skill == 4
+
+
+def test_run_turn_does_not_group_different_abilities_even_when_co_located():
+    state = _practice_state(
+        10,
+        20,
+        skills_by_id={
+            10: _skills_with(Ability.NECROMANCY, skill=0, aptitude=9),
+            20: _skills_with(Ability.SAGE, skill=0, aptitude=9),
+        },
+    )
+    leader_a = _leader_with_phase(10, "A", "P0", _practice_phase("P0", Ability.NECROMANCY))
+    leader_b = _leader_with_phase(20, "B", "P0", _practice_phase("P0", Ability.SAGE))
+
+    # 0.07 is above the 5% solo chance (correct, independent behavior) but
+    # below the 10% tied-group chance -- if these were incorrectly grouped
+    # by location alone (ignoring ability), both would succeed instead.
+    results = run_turn(
+        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=ScriptedRandom([0.07, 0.07]),
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[10].result.skill_rose is False
+    assert by_leader[20].result.skill_rose is False
+
+
+def test_run_turn_does_not_group_same_ability_at_different_locations():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(
+        LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=_skills_with(Ability.NECROMANCY, 0, 9))
+    )
+    state.add_leader(
+        LeaderState(20, kingdom_id=1, name="B", location=ORIGIN2, skills=_skills_with(Ability.NECROMANCY, 0, 9))
+    )
+    leader_a = _leader_with_phase(10, "A", "P0", _practice_phase("P0", Ability.NECROMANCY))
+    leader_b = _leader_with_phase(20, "B", "P0", _practice_phase("P0", Ability.NECROMANCY))
+
+    results = run_turn(
+        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=ScriptedRandom([0.07, 0.07]),
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    # Solo (5%) chance for both, not the tied-group (10%) chance.
+    assert by_leader[10].result.skill_rose is False
+    assert by_leader[20].result.skill_rose is False
+
+
+def test_run_turn_groups_three_co_located_same_ability_practicers():
+    state = _practice_state(
+        10,
+        20,
+        30,
+        skills_by_id={
+            10: _skills_with(Ability.NECROMANCY, skill=1, aptitude=9),
+            20: _skills_with(Ability.NECROMANCY, skill=4, aptitude=9),
+            30: _skills_with(Ability.NECROMANCY, skill=1, aptitude=9),
+        },
+    )
+    leaders = [
+        _leader_with_phase(10, "A", "P0", _practice_phase("P0", Ability.NECROMANCY)),
+        _leader_with_phase(20, "B", "P0", _practice_phase("P0", Ability.NECROMANCY)),
+        _leader_with_phase(30, "C", "P0", _practice_phase("P0", Ability.NECROMANCY)),
+    ]
+
+    results = run_turn(
+        [TurnLeader(leaders[0], 1), TurnLeader(leaders[1], 1), TurnLeader(leaders[2], 1)],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=ScriptedRandom([0.01, 0.01]),
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[10].result.skill_rose is True
+    assert by_leader[20].result.skill_rose is False
+    assert by_leader[30].result.skill_rose is True

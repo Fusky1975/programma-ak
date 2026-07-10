@@ -47,25 +47,22 @@ of low aptitude", not just unlucky on an unconstrained roll), roll a
 second time against ``APT_RISE_CHANCE[current_skill]`` for an aptitude
 increase instead.
 
-**Multi-character coordination -- only partially resolved**:
-``resolve_practice_pair`` implements the fully-sourced two-character
-case (guaranteed-if-lower / 10%-each-if-tied) exactly as the rulebook
-states it, and is available for a caller that already has two
-co-located same-phase practicers in hand. It is **not** reachable from
-``plan_dispatch.py``'s per-leader dispatch (``run_leader_plan`` resolves
-one leader's plan at a time against a shared ``GameState``, with no
-notion of "wait for every other leader's same-phase order before
-resolving this one"). **A genuinely phase-by-phase, multi-leader
-orchestrator now exists** (``turn/turn_processor.py run_turn()``, Phase
-45) -- the structural gap this note used to describe -- but it only
-wires in Multiple Contingents detection so far, not this mechanic; a
-fast follow-up, not attempted this phase. **``execute_practice`` (the
-function actually wired into ``dispatch_phase``) therefore still always
-treats the acting leader as practicing alone** -- a documented,
-deliberately conservative approximation: 5% is the *smallest* of the
-three base chances the rulebook gives (100%/10%/5%), so this never
-overstates a rise chance, only potentially understates one whenever
-two+ leaders are genuinely co-practicing.
+**Multi-character coordination -- now resolved (Phase 46)**:
+``resolve_practice_pair``/``resolve_practice_group`` implement the
+rulebook's multi-character case (guaranteed-if-lower / 10%-each-if-tied,
+generalized to N >= 2 -- see "Extending to N > 2" below);
+``execute_practice_group`` wraps that with the same ``LeaderState.
+skills`` read/write plumbing ``execute_practice`` uses. **Reachable as
+of Phase 46** via ``turn/turn_processor.py run_turn()``, which detects
+2+ leaders co-located (same current province) and Practicing the same
+ability in the same phase, and routes them through
+``execute_practice_group`` instead of each dispatching solo --
+``plan_dispatch.py``'s own per-leader ``dispatch_phase`` still can't see
+this (it has no visibility into other leaders' same-phase orders), so
+``execute_practice`` (wired there) keeps resolving solo-only when driven
+directly, same as before -- a caller going through `run_leader_plan`
+alone (bypassing `run_turn`) still gets the conservative solo-only
+approximation.
 
 **Extending to N > 2 co-practicers** (only relevant to
 ``resolve_practice_group``, itself only reachable the same way
@@ -258,24 +255,31 @@ class PracticeExecutionResult:
     not_implemented_for_ability: bool = False
 
 
+def _get_or_create_skills(leader: LeaderState) -> SkillTable:
+    """``leader.skills is None`` (no ability data recorded at all -- the common case for
+    Heroes, whose starting pairs the move file never exposes) is treated as a
+    fresh all-zero ``SkillTable``, the same "0 if unrecorded" placeholder
+    convention already used everywhere else in this project for missing
+    per-leader ability data (Tactical/Naval strength bonus, Druidic
+    shortfall, Cast's success roll). Attached to the leader so this and
+    later Practice attempts build on it, rather than staying stuck at the
+    placeholder forever.
+    """
+
+    if leader.skills is None:
+        leader.skills = SkillTable([0] * 30)
+    return leader.skills
+
+
 def execute_practice(
     state: GameState, leader_id: int, ability: Ability | int, rng: random.Random | None = None
 ) -> PracticeExecutionResult:
     """Apply a Practice order to ``state``, mutating the acting leader's ``LeaderState.skills``.
 
-    Always resolves as ``resolve_practice_solo`` -- see module docstring
-    for why (multi-character coordination isn't reachable here, and solo
-    is a documented, never-overstating lower bound on the real chance).
-
-    ``leader.skills is None`` (no ability data recorded at all -- the
-    common case for Heroes, whose starting pairs the move file never
-    exposes) is treated as a fresh all-zero ``SkillTable``, the same
-    "0 if unrecorded" placeholder convention already used everywhere
-    else in this project for missing per-leader ability data (Tactical/
-    Naval strength bonus, Druidic shortfall, Cast's success roll). A
-    fresh ``SkillTable`` is attached to the leader so this and later
-    Practice attempts build on it, rather than staying stuck at the
-    placeholder forever.
+    Always resolves as ``resolve_practice_solo`` -- for the multi-
+    character case, see ``execute_practice_group`` (Phase 46), reachable
+    from ``turn/turn_processor.py run_turn()`` rather than from this
+    single-leader entry point.
 
     ``Ability.TACTICAL`` (and any raw out-of-range ability value that
     failed to decode to a real ``Ability``) is not resolved here -- see
@@ -289,12 +293,11 @@ def execute_practice(
         return PracticeExecutionResult(ability=ability, not_implemented_for_ability=True)
 
     leader: LeaderState = state.leaders[leader_id]
-    if leader.skills is None:
-        leader.skills = SkillTable([0] * 30)
+    skills = _get_or_create_skills(leader)
 
-    current_skill, aptitude = leader.skills.pair_for_ability(ability)
+    current_skill, aptitude = skills.pair_for_ability(ability)
     outcome = resolve_practice_solo(current_skill, aptitude, rng)
-    leader.skills.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
+    skills.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
 
     return PracticeExecutionResult(
         ability=ability,
@@ -303,3 +306,46 @@ def execute_practice(
         new_skill=outcome.new_skill,
         new_aptitude=outcome.new_aptitude,
     )
+
+
+def execute_practice_group(
+    state: GameState, leader_ids: list[int], ability: Ability | int, rng: random.Random | None = None
+) -> list[PracticeExecutionResult]:
+    """Apply a co-located, same-phase, same-ability Practice order to 2+ leaders at once
+    (Phase 46) -- rulebook [3.13]'s fully-sourced/documented-generalized
+    multi-character case, via ``resolve_practice_group``.
+
+    Reachable only from a caller that has already verified co-location
+    and phase-simultaneity itself -- ``turn/turn_processor.py run_turn()``
+    -- this function doesn't check either, only that ``len(leader_ids) >=
+    2`` (raises ``ValueError`` otherwise; use ``execute_practice`` for a
+    lone practicer). Results are returned in the same order as
+    ``leader_ids``.
+    """
+
+    rng = rng if rng is not None else random.Random()
+
+    if not isinstance(ability, Ability) or ability is Ability.TACTICAL:
+        return [PracticeExecutionResult(ability=ability, not_implemented_for_ability=True) for _ in leader_ids]
+
+    if len(leader_ids) < 2:
+        raise ValueError("execute_practice_group needs at least 2 leaders; use execute_practice for 1")
+
+    skills_tables = [_get_or_create_skills(state.leaders[leader_id]) for leader_id in leader_ids]
+    pairs = [table.pair_for_ability(ability) for table in skills_tables]
+
+    outcomes = resolve_practice_group(pairs, rng)
+
+    results = []
+    for table, outcome in zip(skills_tables, outcomes):
+        table.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
+        results.append(
+            PracticeExecutionResult(
+                ability=ability,
+                skill_rose=outcome.skill_rose,
+                aptitude_rose=outcome.aptitude_rose,
+                new_skill=outcome.new_skill,
+                new_aptitude=outcome.new_aptitude,
+            )
+        )
+    return results

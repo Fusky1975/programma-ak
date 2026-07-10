@@ -1371,24 +1371,21 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     inventory or skill modifiers at all -- comparisons always use
     `LeaderState.skills`' raw current level, the same gap already
     flagged everywhere else magic items come up in this project.
-  - **Only `resolve_practice_solo` is reachable from
+  - ~~**Only `resolve_practice_solo` is reachable from
     `plan_dispatch.py`** (`_dispatch_practice` -> `execute_practice`):
     true multi-character coordination needs visibility into every other
     leader's same-phase order, which the per-leader `run_leader_plan`
-    dispatch structurally doesn't have. `turn/turn_processor.py
-    run_turn()` (Phase 45) now provides exactly that visibility for
-    Multiple Contingents, but this mechanic isn't wired into it yet --
-    a fast follow-up, not attempted this phase (or Phase 45's own).
-    **Documented as a deliberately conservative
+    dispatch structurally doesn't have.~~ **Reachable as of Phase 46**
+    via `turn/turn_processor.py run_turn()` (`execute_practice_group`)
+    -- see that phase's note below. `plan_dispatch.py`'s own
+    `_dispatch_practice` -> `execute_practice` still resolves solo-only
+    when driven directly (e.g. via `run_leader_plan` alone, bypassing
+    `run_turn`) -- **documented as a deliberately conservative
     approximation, not a guess**: 5% is the *smallest* of the
     rulebook's three base chances (100%/10%/5%), so always treating the
     acting leader as solo never overstates a rise chance, only
     potentially understates one whenever two+ leaders are genuinely
-    co-practicing. `resolve_practice_pair`/`resolve_practice_group`
-    exist and are fully tested for a future caller that already has
-    co-located same-phase practicers in hand (e.g. a restructured
-    turn-loop), the same "built but not auto-invoked" precedent as
-    Multiple Contingents.
+    co-practicing.
   - **`leader.skills is None` (no ability data recorded at all -- the
     common case for Heroes, per Phase 21's own finding that 74% of real
     Practice instances belong to Heroes) is treated as a fresh all-zero
@@ -1493,16 +1490,56 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     errors" convention as `run_leader_plan`) rather than blocking the
     whole group; if fewer than 2 valid attackers remain after filtering,
     whoever's left dispatches individually and normally instead.
-  - **Still explicitly out of scope**: Practice's own multi-character
-    coordination and `contested_province.py`'s forced-rebattle rule
-    aren't wired into `run_turn()` either, despite the structural
-    blocker for both now being gone -- flagged as fast follow-ups, not
-    attempted this phase (see Phase 44's and Phase 9's own notes,
-    updated to point here).
+  - **Still explicitly out of scope**: ~~Practice's own multi-character
+    coordination~~ **wired in as of Phase 46** -- see that phase's note
+    below. `contested_province.py`'s forced-rebattle rule still isn't
+    wired into `run_turn()`, despite the structural blocker being gone
+    -- flagged as a fast follow-up, not attempted this phase (see Phase
+    9's own note, updated to point here).
   - Non-breaking except for the documented `fight_multi_attacker_battle`
     return-type change (3 existing tests updated accordingly); full
     suite green after that fix (880 passed), then 6 new tests added in
     `tests/test_turn_processor.py` (886 passed total).
+- **Phase 46 (current)**: Practice's [3.13] multi-character coordination,
+  the second of the three fast follow-ups Phase 45 unblocked -- wired
+  into `turn/turn_processor.py run_turn()` using the exact same
+  detect-before-dispatch pattern already built there for Multiple
+  Contingents.
+  - **`turn/practice_execution.py execute_practice_group(state,
+    leader_ids, ability, rng)`** (new): applies a co-located, same-phase,
+    same-ability Practice order to 2+ leaders at once, via
+    `resolve_practice_group` (the module's own fully-sourced/documented-
+    generalized N >= 2 case, already built in Phase 44 but until now
+    unreachable). Shares a new `_get_or_create_skills()` helper with
+    `execute_practice` -- the same "fresh all-zero `SkillTable` if none
+    recorded" placeholder convention, factored out rather than
+    duplicated. `Ability.TACTICAL`/a raw out-of-range ability resolves
+    to `not_implemented_for_ability=True` for the whole group, same as
+    the solo path.
+  - **`run_turn()`'s detection rule**: for each phase label, 2+ leaders'
+    PRACTICE phases decoding to the *same* `Ability`, where those
+    leaders' current locations (read *before* any of this phase's
+    actions run, same timing as the LMOVE detection) are the *same*
+    province, route through `execute_practice_group` instead of each
+    resolving solo via `_dispatch_single`. **No alliance/kingdom
+    requirement** -- unlike Multiple Contingents, rulebook [3.13]'s own
+    text ("If 2 or more characters are in the same province...") never
+    mentions kingdom membership, so this groups purely by co-location,
+    across any kingdoms including enemies.
+  - **Reuses `resolve_practice_group` uniformly for every group size
+    >= 2**, not `resolve_practice_pair` specially for exactly 2 -- a
+    correctness check done while wiring this in confirmed
+    `resolve_practice_group`'s own branching (all-equal -> tied chance
+    for everyone; otherwise -> only the group's minimum-skill members
+    get the guaranteed roll) produces *identical* results to
+    `resolve_practice_pair` for N=2 in both its symmetric and
+    asymmetric cases, so no special-casing was needed.
+  - Non-breaking: full suite passed unchanged (886 passed) immediately
+    after wiring, before any new tests were written. 11 new tests added
+    (7 for `execute_practice_group`'s own math in
+    `tests/test_practice_execution.py`, 4 for the `run_turn()`
+    detection rule in `tests/test_turn_processor.py` -- 897 passed
+    total).
 
 ## Setup
 
