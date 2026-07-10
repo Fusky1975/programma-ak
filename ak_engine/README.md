@@ -1611,6 +1611,53 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: brand-new, self-contained module with no existing
     callers -- full suite passed unchanged (900 passed) before any new
     tests were written. 15 new tests added (915 passed total).
+- **Phase 49 (current)**: wires Phase 48's Encounter core into the Duel
+  ([7.1]), the first of its four flagged consumers (Search, Challenge/
+  Pursue, ASpy/Defend, Duel) to actually connect to it. Replaces
+  `estimate_win_probability`'s strength-ratio approximation with a real
+  `resolve_melee_duel` fight between the two Supreme Commanders --
+  **opt-in only** (`use_real_duel_combat: bool = False` on
+  `fight_battle()`/`_maybe_fight_duel`), the same pattern Phase 35 used
+  for fanaticism: a real personal-combat resolution consumes a
+  variable, not-knowable-in-advance number of `rng.random()` calls
+  (until someone's hit points reach 0), which would silently desync
+  every existing scripted-`rng` test sequence in this project if turned
+  on unconditionally.
+  - **`_commander_combatant(commander, state)`** (new): builds an
+    `encounter.Combatant` for a Supreme Commander -- real
+    `Ability.MELEE` skill from `LeaderState.skills` (0 if unrecorded,
+    the same placeholder convention used everywhere else in this
+    project), `CHARACTER_HIT_POINTS` (10), and the Neutral Kingdom
+    "Order of Duelists" +1 bonus ([5.0]) read from `KingdomState.
+    alignment`. The provincial garrison commander (`leader_id=None`,
+    "has no abilities") gets Melee skill 0 and no bonus -- no real
+    character exists to look either one up for.
+  - **Always Melee, never Fire Arrow**: no Encounter Plan data exists
+    anywhere in this project to know which tactic a commander would
+    actually choose, and Melee needs no skill prerequisite ("You can
+    enter melee even if you have no skill in melee combat") -- the one
+    defensible default, a documented design choice.
+  - **Critical distinction preserved**: rulebook [7.1] only says "the
+    armies which were led by the loser of the duel will become
+    demoralized" -- it never says the losing *commander* dies, unlike
+    personal combat's own generic rule ([5.0]: "until one combatant is
+    killed"). `_maybe_fight_duel` reads only `resolve_melee_duel`'s
+    `winner` field and otherwise ignores the resolved hit-point state --
+    the losing commander's own `LeaderState` is left completely
+    untouched, only his side's `BattleUnit`s are demoralized, exactly as
+    before. A dedicated test confirms the loser is never removed from
+    `state.leaders`.
+  - **The astronomically-unlikely "no decisive winner" edge case**
+    (`resolve_melee_duel`'s own defensive round cap exhausted with
+    neither combatant "dead," effectively impossible at 10 hit points
+    each) is treated as no duel having occurred at all
+    (`loser_side=None`) -- an explicit, documented fallback, not left to
+    crash or guessed at.
+  - Non-breaking: full suite passed unchanged (915 passed) immediately
+    after wiring, before any new tests were written -- the opt-in
+    default means every pre-existing test (all of which omit
+    `use_real_duel_combat`) is byte-for-byte unaffected. 8 new tests
+    added (923 passed total).
 
 ## Setup
 
@@ -1911,12 +1958,16 @@ rulebook before being turned into named, typed fields:
     empty defender list will raise `ValueError`. The rulebook doesn't
     say how simultaneous separate battles against the same defenders
     are meant to interact -- not fixed here.
-  - The duel *fight itself* [7.1] is still approximated, not resolved --
-    the separate "Special Encounter Plan" character-combat system
-    [5.10] this would need isn't built; see Phase 28's note for the
-    `estimate_win_probability`-based approximation used instead.
-    `tactical_ability` now reads a real skill level when the commander's
-    `LeaderState.skills` is set (Phase 30), 0 otherwise.
+  - ~~The duel *fight itself* [7.1] is still approximated, not resolved
+    -- the separate "Special Encounter Plan" character-combat system
+    [5.10] this would need isn't built~~ **a real Melee duel is now
+    available as of Phase 49** (`turn/encounter.py`, opt-in via
+    `use_real_duel_combat`) -- see that phase's note below;
+    `estimate_win_probability`-based approximation (Phase 28's note)
+    stays the *default* to avoid perturbing this project's existing
+    scripted-`rng` test sequences. `tactical_ability` now reads a real
+    skill level when the commander's `LeaderState.skills` is set
+    (Phase 30), 0 otherwise.
   - ~~Contested-province state across multiple turns
     (`turn/contested_province.py`'s functions exist but nothing calls
     them from `execute_move()`/`fight_battle()`)~~ **the illegal-move

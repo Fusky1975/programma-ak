@@ -15,13 +15,15 @@ from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import (
     MultiAttackerParty,
     _build_battle_units,
+    _commander_combatant,
     _maybe_fight_duel,
     _select_side_commander,
     fight_battle,
     fight_multi_attacker_battle,
 )
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.duel import Commander
+from ak_engine.turn.duel import Commander, provincial_garrison_commander
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS
 from ak_engine.turn.strength import compute_effective_strength
 
 from _helpers import ScriptedRandom
@@ -865,6 +867,173 @@ def test_maybe_fight_duel_skips_when_attacker_is_unled():
 
     assert outcome.loser_side is None
     assert defender_units[0].effective_strength == 10.0  # untouched
+
+
+# --- Real Melee duel combat (Phase 49, opt-in via use_real_duel_combat) --
+
+
+def _skills_with(ability: Ability, skill: int, aptitude: int) -> SkillTable:
+    raw = [0] * 30
+    raw[ability.value * 2] = skill
+    raw[ability.value * 2 + 1] = aptitude
+    return SkillTable(raw)
+
+
+def test_commander_combatant_reads_real_melee_skill_and_neutral_bonus():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Neutralia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="Commander", location=FIELD, skills=_skills_with(Ability.MELEE, 2, 9))
+    )
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.melee_skill == 2
+    assert combatant.neutral_duelist_bonus is True
+    assert combatant.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_commander_combatant_non_neutral_kingdom_gets_no_bonus():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Goodia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="Commander", location=FIELD, skills=_skills_with(Ability.MELEE, 2, 9))
+    )
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.neutral_duelist_bonus is False
+
+
+def test_commander_combatant_defaults_skill_to_zero_when_unrecorded():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Commander", location=FIELD))  # skills=None
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.melee_skill == 0
+
+
+def test_commander_combatant_garrison_commander_has_no_skill_or_bonus():
+    state = GameState()
+    commander = provincial_garrison_commander(contingent_size=3)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.melee_skill == 0
+    assert combatant.neutral_duelist_bonus is False
+    assert combatant.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_maybe_fight_duel_real_combat_decisive_winner_demoralizes_loser_not_kills_it():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.MELEE, 3, 9))
+    )
+    state.add_leader(
+        LeaderState(502, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 0, 9))
+    )
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+    # A(melee 3) always acts first over B(melee 0) -- no initiative roll
+    # needed. Scripted so A always hits, B always misses.
+    rng = ScriptedRandom([0.1, 0.5, 0.9] * 15)
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state, use_real_duel_combat=True,
+    )
+
+    assert outcome.loser_side == "defender"
+    assert defender_units[0].effective_strength == 10.0 * 0.75  # DUEL_DEMORALIZATION_MULTIPLIER
+    assert attacker_units[0].effective_strength == 100.0
+    # Rulebook [7.1]: only the loser's armies are demoralized -- the
+    # losing commander himself is never killed, unlike the generic
+    # Encounter combat rule this reuses under the hood.
+    assert 502 in state.leaders
+
+
+def test_maybe_fight_duel_real_combat_works_with_a_garrison_commander_defender():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.MELEE, 3, 9))
+    )
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD)]  # unled
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = provincial_garrison_commander(contingent_size=1)
+    rng = ScriptedRandom([0.1, 0.5, 0.9] * 15)
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state, use_real_duel_combat=True,
+    )
+
+    assert outcome.loser_side == "defender"
+    assert defender_units[0].effective_strength == 10.0 * 0.75
+
+
+def test_maybe_fight_duel_real_combat_requires_state_or_falls_back_to_approximation():
+    # use_real_duel_combat=True without a state given can't build
+    # Combatants -- falls back to the strength-ratio approximation
+    # rather than raising.
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+    rng = ScriptedRandom([0.01])  # a single roll -- only valid for the approximation path
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        use_real_duel_combat=True,  # state defaults to None
+    )
+
+    assert outcome.loser_side == "defender"  # attacker's huge strength edge wins the approximation
+
+
+def test_fight_battle_with_real_duel_combat_reports_a_loser_side():
+    state = build_state()
+    state.armies[101].commanded_by = 501
+    state.armies[201].commanded_by = 502
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.MELEE, 3, 9))
+    )
+    state.add_leader(
+        LeaderState(502, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 0, 9))
+    )
+    # Duel: A always hits, B always misses -- exactly 5 rolls to a
+    # decisive 2-round kill with this scripted sequence (round 1: A's
+    # hit-check + damage roll, B's miss-check; round 2: A's hit-check +
+    # damage roll finishes B off, whose own swing is skipped since he's
+    # already dead) -- confirmed empirically, not padded, so the
+    # remaining values line up exactly with resolve_battle's own
+    # luck/win rolls afterward. Then the usual no-luck-overwhelming
+    # sequence.
+    rng = ScriptedRandom([0.1, 0.5, 0.9, 0.1, 0.5] + [0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng,
+        use_real_duel_combat=True,
+    )
+
+    assert report.attacker_commander_leader_id == 501
+    assert report.defender_commander_leader_id == 502
+    assert report.duel_loser_side == "defender"
 
 
 def test_fight_battle_reports_duel_commanders_and_demoralizes_loser():

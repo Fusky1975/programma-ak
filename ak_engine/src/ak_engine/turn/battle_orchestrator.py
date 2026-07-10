@@ -150,6 +150,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType, is_overflight_unit
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
@@ -160,6 +161,7 @@ from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles
 from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
@@ -490,6 +492,35 @@ class _DuelOutcome:
     loser_side: str | None  # "attacker" / "defender" / None if no duel occurred
 
 
+def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
+    """Build an ``encounter.Combatant`` for a Supreme Commander (Phase 49, opt-in real duel combat).
+
+    ``leader_id=None`` (the provincial garrison commander, rulebook
+    [7.1]: "has no abilities") gets Melee skill 0 and no Neutral-Kingdom
+    bonus -- there's no real character to look either one up for.
+    """
+
+    if commander.leader_id is None:
+        return Combatant(name="garrison commander", hit_points=CHARACTER_HIT_POINTS)
+
+    leader = state.leaders.get(commander.leader_id)
+    melee_skill = 0
+    if leader is not None and leader.skills is not None:
+        melee_skill = leader.skills.pair_for_ability(Ability.MELEE)[0]
+
+    neutral_bonus = False
+    if leader is not None and leader.kingdom_id is not None:
+        kingdom = state.kingdoms.get(leader.kingdom_id)
+        neutral_bonus = kingdom is not None and kingdom.alignment is Alignment.NEUTRAL
+
+    return Combatant(
+        name=f"leader {commander.leader_id}",
+        hit_points=CHARACTER_HIT_POINTS,
+        melee_skill=melee_skill,
+        neutral_duelist_bonus=neutral_bonus,
+    )
+
+
 def _maybe_fight_duel(
     attacker_commander: Commander | None,
     defender_commander: Commander | None,
@@ -498,18 +529,43 @@ def _maybe_fight_duel(
     attacker_units: list[BattleUnit],
     defender_units: list[BattleUnit],
     rng: random.Random,
+    *,
+    state: GameState | None = None,
+    use_real_duel_combat: bool = False,
 ) -> _DuelOutcome:
     """Rulebook [7.1]: mutates ``attacker_units``/``defender_units`` in place if a duel loser is decided.
 
     Takes the already-selected Supreme Commanders (``fight_battle`` picks
     them early now, for the strength bonus too -- see the module
     docstring) rather than re-deriving them, so there's one single source
-    of truth for "who commands this side." See the module docstring for
-    why the duel's own outcome is approximated via
-    ``estimate_win_probability`` rather than resolved (no Special
-    Encounter Plan system exists). No-op (and no rng consumed) unless
-    both sides have a real commander -- attackers have no garrison-style
-    fallback, so this is skipped whenever no attacking army is led.
+    of truth for "who commands this side." No-op (and no rng consumed)
+    unless both sides have a real commander -- attackers have no
+    garrison-style fallback, so this is skipped whenever no attacking
+    army is led.
+
+    **``use_real_duel_combat`` (Phase 49, default ``False``)**: the
+    duel's own outcome is still approximated via
+    ``estimate_win_probability`` by default -- an opt-in flag, the same
+    pattern Phase 35 used for fanaticism, to avoid perturbing every
+    existing scripted-``rng`` test sequence in this project with a
+    variable-length combat resolution. When ``True`` (and ``state`` is
+    given), resolves a real ``turn/encounter.py resolve_melee_duel``
+    between the two commanders instead -- **always Melee**, since no
+    Encounter Plan data exists anywhere in this project to know which
+    tactic a commander would actually choose (Melee needs no skill
+    prerequisite, "You can enter melee even if you have no skill in
+    melee combat," making it the one defensible default). **Critically,
+    the losing commander is never killed even though
+    ``resolve_melee_duel`` tracks hit points reaching 0** -- rulebook
+    [7.1] only says "the armies which were led by the loser of the duel
+    will become demoralized," never that the duel loser himself dies;
+    character death is the *generic* Encounter combat rule ([5.0]), not
+    this specific one, so this function reads only ``result.winner`` and
+    otherwise ignores the resolved hit-point state. If the encounter
+    resolver's own defensive round cap is somehow exhausted with neither
+    combatant "dead" (astronomically unlikely at 10 hit points each),
+    that's treated as no duel occurring at all (``loser_side=None``) --
+    an explicit, documented fallback, not a guess.
     """
 
     if attacker_commander is None or defender_commander is None:
@@ -518,9 +574,17 @@ def _maybe_fight_duel(
     attacker_commander_units = _units_led_by(attacker_armies, attacker_units, attacker_commander.leader_id)
     defender_commander_units = _units_led_by(defender_armies, defender_units, defender_commander.leader_id)
 
-    attacker_strength = sum(u.effective_strength for u in attacker_commander_units)
-    defender_strength = sum(u.effective_strength for u in defender_commander_units)
-    attacker_wins_duel = rng.random() < estimate_win_probability(attacker_strength, defender_strength)
+    if use_real_duel_combat and state is not None:
+        attacker_combatant = _commander_combatant(attacker_commander, state)
+        defender_combatant = _commander_combatant(defender_commander, state)
+        combat_result = resolve_melee_duel(attacker_combatant, defender_combatant, rng)
+        if combat_result.winner is None:
+            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, None)
+        attacker_wins_duel = combat_result.winner == "a"
+    else:
+        attacker_strength = sum(u.effective_strength for u in attacker_commander_units)
+        defender_strength = sum(u.effective_strength for u in defender_commander_units)
+        attacker_wins_duel = rng.random() < estimate_win_probability(attacker_strength, defender_strength)
 
     if attacker_wins_duel:
         loser_side, loser_units, target_list = "defender", defender_commander_units, defender_units
@@ -576,13 +640,18 @@ def fight_battle(
     loser_retreats: bool = True,
     attacker_origin: HexCoord | None = None,
     apply_fanaticism: bool = False,
+    use_real_duel_combat: bool = False,
     rng: random.Random | None = None,
 ) -> BattleReport:
     """Resolve one battle at ``province_coord`` and apply its consequences to ``state``.
 
     ``apply_fanaticism`` (Phase 35, default off) opts into real per-army
     fanaticism rolls -- see ``_build_battle_units``'s docstring for why
-    this isn't on by default.
+    this isn't on by default. ``use_real_duel_combat`` (Phase 49, default
+    off) opts into a real Melee duel between the two Supreme Commanders
+    instead of the strength-ratio approximation -- see
+    ``_maybe_fight_duel``'s docstring for why this isn't on by default
+    either.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -617,7 +686,8 @@ def fight_battle(
     )
 
     duel = _maybe_fight_duel(
-        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state, use_real_duel_combat=use_real_duel_combat,
     )
 
     battle_result = resolve_battle(
