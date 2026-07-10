@@ -1723,7 +1723,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: brand-new, self-contained module with no existing
     callers -- full suite passed unchanged (923 passed) before any new
     tests were written. 18 new tests added (941 passed total).
-- **Phase 51 (current)**: `turn/spy_table.py` (rulebook [4.33] Spy
+- **Phase 51**: `turn/spy_table.py` (rulebook [4.33] Spy
   Table's catch-up formula) plus `turn/pursue_execution.py`, a
   **single-phase-only** Pursue ([3.16]) resolver -- scoped down from a
   full persistent multi-phase chase, confirmed with the user before
@@ -1794,6 +1794,44 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     total; the jump is mostly `hex_distance`'s own neighbor-adjacency
     test, parametrized across the whole map like `test_movement.py`'s
     existing adjacency-symmetry test).
+- **Phase 52 (current)**: `turn/trail_execution.py`, a single-phase
+  Trail ([3.17]) resolver -- the natural, small follow-up flagged at
+  the end of Phase 51, since [4.33]'s Spy Table "Chance to Pursue **or
+  Trail**" column is one shared formula and `turn/spy_table.py`
+  already existed to reuse.
+  - **`execute_trail`** validates [3.17]'s own restriction ("A
+    character leading an army may not be ordered to Trail" -- the
+    order is ignored, reported via `reason`, not raised as an
+    exception, the same convention Pursue's army-leading-mismatch rule
+    uses), then rolls the same `pursue_catch_up_chance` Pursue uses
+    (Phase 51), driven by the trailer's real `Ability.SPY` skill,
+    whether the target leads an army, distance via `hex_distance`, and
+    same-Kingdom status. Unlike Pursue, there is no "both sides must
+    lead an army or neither" symmetry rule -- only the trailer's own
+    army-leading status is restricted.
+  - **Deliberately no intelligence payload, a documented scope
+    decision, not an oversight**: `TrailExecutionResult` only reports
+    `spied_on: bool`, not the rulebook's own "Actions, race, temper,
+    alignment, treasures owned and armies led" (or, for a King, "
+    finances, alliances, enemies and controlled provinces"). Two
+    already-declared project-wide gaps, not new ones invented here:
+    this project has no report-generation system at all yet (same gap
+    ASpy's own note already flags), and several of those named fields
+    -- race, temper, alignment, per-leader treasure ownership -- don't
+    exist anywhere in `LeaderState` to report on regardless (`Temper`
+    has no model in this project at all, confirmed back in Phase 48's
+    own `turn/encounter.py` docstring). A future report-generation
+    phase is the natural place to extend this, once those fields
+    exist.
+  - **Not wired into `plan_dispatch.py`'s TRAIL dispatch**, which stays
+    decode-only -- same "built but not auto-invoked" precedent as
+    every other action resolver in this project.
+  - ~~**Trail's remaining gap** (see Phase 27's note above)~~ -- closed
+    for the catch-up-resolution piece; the intelligence-payload piece
+    stays open pending report generation, as explained above.
+  - Non-breaking: brand-new, self-contained module with no existing
+    callers -- full suite passed unchanged (1334 passed) before any new
+    tests were written. 8 new tests added (1342 passed total).
 
 ## Setup
 
@@ -2074,14 +2112,17 @@ rulebook before being turned into named, typed fields:
     logic that doesn't exist yet, plus `target_province` staying an
     unconverted raw int until the hex-numbering-vs-`XMULT` question is
     resolved. Zero real examples for either.
-  - **Trail's remaining gap** (see Phase 27's note above): decoded but
-    unexecuted. `turn/spy_table.py`'s `pursue_catch_up_chance` (Phase
-    51) already covers Trail's own share of the Spy Table formula --
-    [4.33]'s "Chance to Pursue **or Trail**" is one shared column -- so
-    a Trail resolver is now mostly plumbing (co-location, the catch-up
-    roll, then recording spied-on information this project has no
-    report-generation system to surface yet) rather than a fresh
-    research gap. Succ_Trail is deliberately not decoded at all --
+  - ~~**Trail's remaining gap** (see Phase 27's note above): decoded but
+    unexecuted~~ -- **Trail's catch-up resolution is now implemented**
+    (`turn/trail_execution.py`, Phase 52), reusing Phase 51's Spy Table
+    directly ([4.33]'s "Chance to Pursue **or Trail**" is one shared
+    column). **Still open**: the actual spied-on intelligence payload
+    (Actions, race, temper, alignment, treasures, armies led) isn't
+    assembled -- no report-generation system exists yet to route it to,
+    and several of those fields (race, temper, alignment, per-leader
+    treasures) don't exist on `LeaderState` at all, so there is nothing
+    concrete to report even if there were somewhere to send it. Succ_Trail
+    is deliberately not decoded at all --
     concluded structurally impossible to receive in a player move file,
     not merely unimplemented; see `turn/plan_dispatch.py`'s module
     docstring for the full evidence trail (exhaustive `lactions[...] :=`
