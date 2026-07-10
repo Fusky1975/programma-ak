@@ -1794,7 +1794,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     total; the jump is mostly `hex_distance`'s own neighbor-adjacency
     test, parametrized across the whole map like `test_movement.py`'s
     existing adjacency-symmetry test).
-- **Phase 52 (current)**: `turn/trail_execution.py`, a single-phase
+- **Phase 52**: `turn/trail_execution.py`, a single-phase
   Trail ([3.17]) resolver -- the natural, small follow-up flagged at
   the end of Phase 51, since [4.33]'s Spy Table "Chance to Pursue **or
   Trail**" column is one shared formula and `turn/spy_table.py`
@@ -1832,6 +1832,42 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: brand-new, self-contained module with no existing
     callers -- full suite passed unchanged (1334 passed) before any new
     tests were written. 8 new tests added (1342 passed total).
+- **Phase 53 (current)**: wires a real army battle into `turn/
+  pursue_execution.py`'s army-vs-army catch-up case, closing the
+  explicit gap Phase 51 declared (and flagged as its own natural
+  follow-up).
+  - **`_fight_army_pursuit_battle`** relocates the pursuer's leader and
+    every army they command to the target's location, then calls
+    `turn/battle_orchestrator.py fight_battle` there.
+    **Relocation-on-catch-up is a documented design choice, not a
+    rulebook quote**: this project's single-phase abstraction (Phase
+    51) has no multi-province chase path to walk the pursuer's armies
+    along, so "catches up" is modeled as the pursuer's whole force
+    converging on the target's province the instant the Spy Table roll
+    succeeds -- the same abstraction level already used for the
+    armyless case's encounter (no travel time modeled there either).
+  - **Two narrow, explicitly-guarded carve-outs**, both falling back to
+    `caught_up=True` with a `reason` instead of fighting: a pursuer
+    with no Kingdom (`fight_battle` needs a concrete
+    `attacker_kingdom_id`; an independent Hero leading an army has
+    none) and a target location with no `ProvinceState` recorded
+    (`fight_battle` needs terrain/ownership data that doesn't exist for
+    an unexplored or out-of-map hex).
+  - `PursueExecutionResult` gains a `battle_report: BattleReport | None`
+    field, surfacing `fight_battle`'s own full result (quality changes,
+    retreats, conquest, duel outcome if any) directly -- no new
+    battle-result shape invented, the same `BattleReport` every other
+    `fight_battle` caller already returns.
+  - **Multi-phase persistent chase state remains the one open gap**:
+    `execute_pursue` still only resolves a single phase's catch-up-and-
+    battle; the rulebook's "for the rest of the turn" standing order
+    still needs `turn/turn_processor.py` integration, not attempted
+    here.
+  - Non-breaking: `fight_battle` is an existing, already-tested
+    function reused as-is (not modified) -- full suite passed unchanged
+    (1342 passed) before any new tests were written. 2 net new tests
+    added (one old placeholder test replaced by three narrower ones;
+    1344 passed total).
 
 ## Setup
 
@@ -2100,12 +2136,13 @@ rulebook before being turned into named, typed fields:
     `mutual_encounter` needs cross-leader visibility `plan_dispatch.py`
     doesn't have, and real combat's variable rng consumption is
     opt-in-only by the same reasoning as Phase 49's Duel wiring).
-    **Still open**: Pursue's own persistent multi-phase chase state
-    (the rulebook's "for the rest of the turn" behavior -- `turn/
-    pursue_execution.py` only resolves a single phase's catch-up roll)
-    and army-vs-army pursuit battle (needs `fight_battle` wired in,
-    explicitly declared unmodeled in Phase 51's own result reason
-    string). Zero real examples for either action either.
+    **Pursue's army-vs-army catch-up now fights a real battle too**
+    (`fight_battle` wired into `turn/pursue_execution.py`, Phase 53).
+    **Still open**: Pursue's own persistent multi-phase chase state --
+    the rulebook's "for the rest of the turn" behavior; `turn/
+    pursue_execution.py` still only resolves a single phase's catch-up
+    (and, if applicable, battle) per call. Zero real examples for
+    either action either.
   - **ASpy/Defend's remaining gap** (see Phase 26's note above):
     intelligence-report generation (ASpy) and reactive cross-province
     battle-triggering (Defend) both need `GameState`/battle-orchestrator

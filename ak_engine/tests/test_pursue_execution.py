@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import random
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, Maneuver
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
@@ -15,6 +17,7 @@ from ak_engine.turn.search_decode import SearchTactic
 from _helpers import ScriptedRandom
 
 FIELD = HexCoord(1, 1)
+DEFENDER_HOME = HexCoord(2, 1)  # a neighbor of FIELD on the odd-r grid
 FAR_AWAY = HexCoord(20, 10)
 
 
@@ -209,16 +212,57 @@ def test_execute_pursue_mutual_king_encounter_can_result_in_combat():
 # -- army-vs-army pursuit: caught up but not fought here -------------------
 
 
-def test_execute_pursue_army_vs_army_catch_up_reports_unmodeled_battle():
+def test_execute_pursue_army_vs_army_catch_up_fights_a_real_battle():
+    state = _base_state()
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_leader(
+        LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD, skills=_skills_with(Ability.SPY, 4, 9))
+    )
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=DEFENDER_HOME))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=1))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, DEFENDER_HOME, commanded_by=2))
+
+    # Spy 4 (250%) x2 (target leads an army) / distance 1 = 500%, clamped to
+    # 100% -- catch-up always succeeds regardless of the rng's actual
+    # values (random() is always < 1.0), so a real, unseeded rng is fine
+    # here; only the battle's occurrence and the relocation are asserted,
+    # not its win/loss outcome.
+    result = execute_pursue(state, 1, _melee_request(2), rng=random.Random(1234))
+
+    assert result.caught_up is True
+    assert result.combat_occurred is True
+    assert result.battle_report is not None
+    assert state.leaders[1].location == DEFENDER_HOME
+    assert state.armies[101].location == DEFENDER_HOME
+
+
+def test_execute_pursue_army_vs_army_catch_up_with_no_province_data_is_not_fought():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
     state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=1))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
+    # No ProvinceState registered at FIELD.
+
+    result = execute_pursue(state, 1, _melee_request(2), rng=ScriptedRandom([0.0]))
+
+    assert result.caught_up is True
+    assert result.combat_occurred is False
+    assert result.reason == "no province data recorded at the target's location"
+    assert 1 in state.leaders and 2 in state.leaders
+
+
+def test_execute_pursue_army_vs_army_catch_up_with_no_pursuer_kingdom_is_not_fought():
+    state = _base_state()
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_leader(LeaderState(1, kingdom_id=None, name="Independent Pursuer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+    state.add_army(ArmyState(101, None, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=1))
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
 
     result = execute_pursue(state, 1, _melee_request(2), rng=ScriptedRandom([0.0]))
 
     assert result.caught_up is True
     assert result.combat_occurred is False
-    assert result.reason == "army-vs-army pursuit battle not modeled"
-    assert 1 in state.leaders and 2 in state.leaders
+    assert result.reason == "pursuer has no Kingdom to fight the battle under"
