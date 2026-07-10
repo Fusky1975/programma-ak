@@ -698,12 +698,14 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     every test and in any real usage at the time, was hand-built by its
     caller; `skills` only ever had a real value when a caller set it
     explicitly. **A narrow bridge now exists -- see Phase 31, below.**
-  - **Practice ([3.13]) is still not executed** despite now having the
+  - ~~**Practice ([3.13]) is still not executed** despite now having the
     ability-data piece it was missing -- see Phase 21's note above and
     the "Not yet implemented" section below: its other two gaps
     (province-level multi-character grouping, and a dice-roll procedure
     with no available Pascal source) are untouched by this phase, so it
-    stays decode-only.
+    stays decode-only.~~ **Executed as of Phase 44** -- see that phase's
+    note below (the dice-roll procedure turned out to be fully sourced;
+    only the multi-character grouping stays unresolved).
 - **Phase 31 (current)**: `turn/kingdom_bridge.py`
   `sync_leaders_from_kingdom()`, a first (deliberately narrow) bridge
   from a parsed move file (`models.kingdom.Kingdom`) into a persistent
@@ -1298,6 +1300,124 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (850 passed) immediately
     after wiring, before any new tests were written. 10 new tests added
     (860 passed total).
+- **Phase 44 (current)**: real Practice execution (rulebook [3.13],
+  quoted in full below), the first of the three original blockers
+  flagged back in Phase 21 to actually close (per-leader skill data,
+  Phase 30) plus a design choice for the roll procedure -- multi-
+  character coordination stays the one genuinely open piece.
+
+  **[3.13] Practice Ability, quoted in full:**
+
+  > If 2 or more characters are in the same province and all characters
+  > Practice the same ability in a phase, and one character has a
+  > higher skill in the ability (unmodified by magic items he
+  > possesses), the character(s) with the lower skill in the ability
+  > will rise in skill 1 level (provided he has sufficient aptitude,
+  > explained below.) If the characters have the same skill level,
+  > there is a 10% chance of rising 1 level for each character. A
+  > character who Practices alone has a 5% chance of rising 1 level.
+  > When a character Practices an ability with another character, and
+  > one character has higher skill because he possesses a magic item
+  > that raises his skill level, that magic item does not count and
+  > both characters have only a 10% chance of improving. A character's
+  > chance of rising 1 level is halved for each level beyond his
+  > natural aptitude. For example, if a character has a natural
+  > aptitude of 1, he has no trouble attaining level 1 in an ability,
+  > but has only a 50% chance of attaining level 2, a 25% chance of
+  > attaining level 3, and a 12.5% chance of attaining level 4. This
+  > applies even when the character is learning from a character with
+  > a higher level. The chance to increase by experience is affected by
+  > aptitude in the same way. Aptitude may increase if a character is
+  > due to rise in level, (either from practicing or experience), but
+  > can't because of low aptitude. The chance of an aptitude increase
+  > depends on the current skill level: 0: 0%, 1: 10%, 2: 25%, 3: 50%,
+  > 4: 100%, 5: 80%, 6: 60%, 7: 40%, 8: 20%.
+
+  That aptitude-rise table matches `HostAK/TP/CTME.PAS`'s ``apt_rise:
+  array[0..10] OF byte = (0,10,25,50,100,80,60,40,20,0,0);`` exactly --
+  found by reading `RULES.AK` directly (not the parser's own README
+  quote, which had been paraphrased down to a summary before this
+  phase).
+  - **`turn/practice_execution.py`**, new module: `PracticeOutcome`
+    (the per-attempt result) and `attempt_skill_rise(current_skill,
+    aptitude, base_chance, rng)`, the shared core roll -- halve
+    `base_chance` once per level the target level (`current_skill + 1`)
+    sits beyond `aptitude`, roll once; on failure, **only if aptitude
+    genuinely constrained the chance** (`levels_beyond_aptitude > 0` --
+    i.e. actually "due to rise... but can't because of low aptitude",
+    not merely unlucky on an unconstrained roll), roll a second time
+    against `APT_RISE_CHANCE[current_skill]` for an aptitude increase
+    instead. Both rolls clamp at `MAX_SKILL_LEVEL = 9`
+    (`SkillTable`'s own documented 0-9 range, Phase 21) -- already at
+    the cap is a no-op, no roll at all.
+  - **Roll sequencing is a documented design choice**: no Pascal source
+    shows the actual dice-roll call site for Practice (unlike, say,
+    Cast's success roll or fanaticism's chance), so "one threshold roll
+    per attempt" was chosen as the simplest procedure consistent with
+    every other percentage mechanic already in this project.
+  - **`resolve_practice_solo`** (5%), **`resolve_practice_pair`**
+    (guaranteed-for-the-lower-skill-partner / 10%-each-if-tied -- the
+    rulebook's own fully-sourced two-character case), and
+    **`resolve_practice_group`** (an N >= 2 generalization: all-equal ->
+    10% each; otherwise only the group's *minimum*-skill members get
+    the guaranteed roll, everyone else gets nothing that phase -- a
+    natural but **undsourced** extension, since the rulebook's own
+    examples only ever describe exactly two characters, flagged as an
+    interpretation in the module docstring).
+  - **The magic-item override isn't modeled**: "if one character has
+    higher skill only because of a magic item, both get only 10%" can't
+    be evaluated since this project tracks no per-leader magic-item
+    inventory or skill modifiers at all -- comparisons always use
+    `LeaderState.skills`' raw current level, the same gap already
+    flagged everywhere else magic items come up in this project.
+  - **Only `resolve_practice_solo` is reachable from
+    `plan_dispatch.py`** (`_dispatch_practice` -> `execute_practice`):
+    true multi-character coordination needs visibility into every other
+    leader's same-phase order, which the per-leader `run_leader_plan`
+    dispatch structurally doesn't have -- the same reason
+    `battle_orchestrator.py fight_multi_attacker_battle` isn't
+    auto-invoked either. **Documented as a deliberately conservative
+    approximation, not a guess**: 5% is the *smallest* of the
+    rulebook's three base chances (100%/10%/5%), so always treating the
+    acting leader as solo never overstates a rise chance, only
+    potentially understates one whenever two+ leaders are genuinely
+    co-practicing. `resolve_practice_pair`/`resolve_practice_group`
+    exist and are fully tested for a future caller that already has
+    co-located same-phase practicers in hand (e.g. a restructured
+    turn-loop), the same "built but not auto-invoked" precedent as
+    Multiple Contingents.
+  - **`leader.skills is None` (no ability data recorded at all -- the
+    common case for Heroes, per Phase 21's own finding that 74% of real
+    Practice instances belong to Heroes) is treated as a fresh all-zero
+    `SkillTable`**, the same "0 if unrecorded" placeholder convention
+    already used everywhere else in this project for missing per-leader
+    ability data (Tactical/Naval strength bonus, Druidic shortfall,
+    Cast's success roll) -- attached to the leader so this and later
+    Practice attempts build on it instead of resetting every time.
+  - **`models/kingdom.py SkillTable`** gains `set_pair_for_ability()`,
+    the symmetric write counterpart to the existing `pair_for_ability()`
+    read, so `practice_execution.py` doesn't need to know the table's
+    raw layout.
+  - **Two abilities are explicitly out of scope this phase**:
+    **Tactical** ([6.1]) doesn't raise personal skill via [3.13] at all
+    -- it trains the leader's *armies*' quality tiers instead (a
+    completely different mechanic touching `ArmyState.quality` across a
+    whole command, with its own "needs an existing higher-tier army to
+    train against" condition and multi-leader pooling) --
+    `execute_practice` recognizes `Ability.TACTICAL` and returns
+    `not_implemented_for_ability=True` rather than silently running the
+    wrong mechanic against it. **Sage** ([4.31]) still gets its normal
+    skill-rise roll here (its own skill mechanic is ordinary [3.13]),
+    but the rulebook's *additional* "~5%/level device discovery" roll
+    "on top of, not instead of" the skill roll isn't modeled -- no
+    item/device data model exists anywhere in this project.
+  - **Not fully non-breaking, as expected for a decode-only ->
+    execution graduation**: 4 pre-existing `test_plan_dispatch.py` tests
+    asserted `PRACTICE` dispatch returned the old decode-only
+    `PracticeRequest` type -- updated to expect `PracticeExecutionResult`
+    instead, the same kind of test update Phase 15 (Recruit) and Phase
+    29 (Cast) needed for their own graduations. Full suite green after
+    that fix (860 passed), then 20 new tests added (880 passed total).
 
 ## Setup
 
@@ -1469,14 +1589,15 @@ rulebook before being turned into named, typed fields:
 - **`plan_dispatch.py` dispatches 21 of 22 `ActionCode`s without raising
   `UnsupportedActionError`** -- its practical maximum (see Phase 27's
   note above). LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT (Phase 15),
-  DISBAND (Phase 16), HIRE/FIRE (Phase 17), and (for Charm/Kill_Enemy
-  only) CAST (Phase 29) run end-to-end with real `GameState` mutation;
-  SEARCH (Phase 19), TRADE (Phase 20), PRACTICE (Phase 21), CAST's other
-  10 spells (Phase 23/29), USE_MI (Phase 24), CHALLENGE/PURSUE (Phase
-  25), ASPY/DEFEND (Phase 26), and TRAIL (Phase 27) decode but don't
-  mutate `GameState` (see their notes above -- same decode-only status
-  Recruit had before Phase 15); WAIT, NO_ACTION, and MOVE_ABORT (Phase
-  22) dispatch as bare no-ops. Only **Succ_Trail** raises
+  DISBAND (Phase 16), HIRE/FIRE (Phase 17), PRACTICE (Phase 44, always
+  resolved as solo -- see that phase's note above), and (for
+  Charm/Kill_Enemy only) CAST (Phase 29) run end-to-end with real
+  `GameState` mutation; SEARCH (Phase 19), TRADE (Phase 20), CAST's
+  other 10 spells (Phase 23/29), USE_MI (Phase 24), CHALLENGE/PURSUE
+  (Phase 25), ASPY/DEFEND (Phase 26), and TRAIL (Phase 27) decode but
+  don't mutate `GameState` (see their notes above -- same decode-only
+  status Recruit had before Phase 15); WAIT, NO_ACTION, and MOVE_ABORT
+  (Phase 22) dispatch as bare no-ops. Only **Succ_Trail** raises
   `UnsupportedActionError` -- deliberately, by design, not as an
   oversight (see Phase 27's note above).
   - **Recruit's remaining gaps**: the recruiting leader must already
@@ -1516,12 +1637,20 @@ rulebook before being turned into named, typed fields:
     (scientific-discovery exchange between Allies, [8.4]) is a separate,
     entirely unstarted system -- not parsed, not modeled, no real data
     available yet either.
-  - **Practice's remaining gap** (see Phase 21's note above): `GameState`
-    now has a per-leader skill/aptitude table (`LeaderState.skills`,
-    Phase 30), but nothing populates it from a real parsed move file yet
-    (see Phase 30's note above), and Practice is still blocked by its
-    other two gaps regardless -- province-level multi-character grouping
-    and a dice-roll procedure this project has no Pascal source for.
+  - ~~**Practice's remaining gap** (see Phase 21's note above):
+    `GameState` now has a per-leader skill/aptitude table
+    (`LeaderState.skills`, Phase 30), but nothing populates it from a
+    real parsed move file yet (see Phase 30's note above), and Practice
+    is still blocked by its other two gaps regardless -- province-level
+    multi-character grouping and a dice-roll procedure this project has
+    no Pascal source for.~~ **Executed as of Phase 44** -- see that
+    phase's note above. The dice-roll procedure turned out to be fully
+    sourced in `RULES.AK` (only the roll *sequencing* is a documented
+    design choice); only province-level multi-character grouping stays
+    genuinely unresolved, worked around via a documented conservative
+    "always solo" approximation. Tactical's army-quality-training
+    variant and Sage's extra device-discovery roll are separate,
+    still-unmodeled special cases (see Phase 44's own note).
   - **Cast's remaining gap** (see Phase 29's note above): only Charm and
     Kill_Enemy execute; the other 10 real spells' actual effects
     (province/army mutation, mostly) need game-state logic not present

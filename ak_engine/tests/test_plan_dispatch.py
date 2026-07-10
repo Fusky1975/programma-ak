@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from pathlib import Path
 
 from ak_engine.models.alignment import Alignment
@@ -26,7 +27,7 @@ from ak_engine.turn.aspy_defend_decode import DefendRequest, SpyProvinceRequest
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest, PursueRequest
-from ak_engine.turn.practice_decode import PracticeRequest
+from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
 from ak_engine.turn.trade_decode import TradeRequest
@@ -154,14 +155,23 @@ def test_dispatch_trade_is_decode_only():
     assert result.extra == [7, 3]
 
 
-def test_dispatch_practice_is_decode_only():
+def test_dispatch_practice_executes_and_mutates_leader_skills():
+    # Phase 44: PRACTICE now actually executes (always resolved as solo
+    # practice -- see turn/practice_execution.py's module docstring).
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P0", action=ActionCode.PRACTICE, obj=14, extra=[0])
 
-    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
 
-    assert isinstance(result, PracticeRequest)
+    assert isinstance(result, PracticeExecutionResult)
     assert result.ability == Ability.SAGE
+    assert result.not_implemented_for_ability is False
+    # LEADER_ID had no skills recorded -- execute_practice attaches a
+    # fresh all-zero SkillTable and rolls against it.
+    assert state.leaders[LEADER_ID].skills is not None
+    assert state.leaders[LEADER_ID].skills.pair_for_ability(Ability.SAGE) == (result.new_skill, result.new_aptitude)
 
 
 def test_real_move_file_leader_practice_phase_dispatches():
@@ -174,9 +184,11 @@ def test_real_move_file_leader_practice_phase_dispatches():
 
     state, army_id = _state_with_army(HexCoord(3, 9), {})
 
-    result = dispatch_phase(practice_phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+    result = dispatch_phase(
+        practice_phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
 
-    assert isinstance(result, PracticeRequest)
+    assert isinstance(result, PracticeExecutionResult)
     assert result.ability == Ability.NECROMANCY
 
 
@@ -828,7 +840,7 @@ def test_successful_charm_dispatches_the_charmed_characters_own_plan():
     assert len(nested_results) == 1
     assert nested_results[0].phase_label == "P1"
     assert nested_results[0].error is None
-    assert isinstance(nested_results[0].result, PracticeRequest)
+    assert isinstance(nested_results[0].result, PracticeExecutionResult)
     assert state.leaders[50].kingdom_id == 1
 
 
@@ -956,7 +968,7 @@ def test_real_move_file_charm_dispatches_the_charmed_heros_nested_practice():
     nested_results = [r for r in results if r.leader_id == 30]
     assert [r.phase_label for r in nested_results] == ["P3", "P4"]
     assert all(r.error is None for r in nested_results)
-    assert all(isinstance(r.result, PracticeRequest) for r in nested_results)
+    assert all(isinstance(r.result, PracticeExecutionResult) for r in nested_results)
     assert state.leaders[30].kingdom_id == 1
 
 

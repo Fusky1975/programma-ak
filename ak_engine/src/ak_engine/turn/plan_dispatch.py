@@ -79,15 +79,25 @@ to dispatch automatically:
   turn-execution engine present in the available Pascal source, and the
   rulebook itself flags an unresolved item-id/gold-amount ambiguity in
   ``obj``).
-- **PRACTICE** is decode-only (Phase 21): ``obj`` decodes directly to an
-  ``Ability`` via ``turn/practice_decode.py``, but nothing is applied to
-  ``GameState`` -- resolving what practicing an ability actually does
-  (rulebook [3.13]) needs a per-leader skill/aptitude table this project
-  doesn't have yet (the move file only exposes the *King's* pairs, not
-  each Hero's), a province-level view of every co-located character's
-  same-phase action (the core mechanic is multi-character, not
-  resolvable from one leader's plan alone), and a dice-roll procedure
-  not present in the available Pascal source.
+- **PRACTICE** actually executes (Phase 44): ``obj`` decodes to an
+  ``Ability`` via ``turn/practice_decode.py``, then
+  ``turn/practice_execution.py execute_practice()`` rolls the rulebook
+  [3.13] skill/aptitude-rise mechanic and mutates the acting leader's
+  ``LeaderState.skills`` (creating a fresh all-zero ``SkillTable`` first
+  if none was recorded -- the common case for Heroes). **Always resolved
+  as if practicing alone** (5%, the smallest of the rulebook's three base
+  chances) -- true multi-character coordination ("2+ co-located
+  characters practicing the same ability in the same phase") would need
+  visibility into every other leader's same-phase order, which this
+  per-leader dispatch doesn't have (same structural gap as Multiple
+  Contingents not being auto-invoked here); see
+  ``turn/practice_execution.py``'s module docstring for the full
+  citation and the documented, never-overstating direction of this
+  approximation. ``Ability.TACTICAL`` is recognized but deliberately not
+  resolved (it trains armies, not personal skill, an unbuilt separate
+  mechanic); Sage's own skill rise runs normally here, but its
+  rulebook-additional "device discovery" side roll isn't modeled (no
+  item/device data model exists at all).
 - **WAIT**, **NO_ACTION**, and **MOVE_ABORT** dispatch as bare no-ops
   (Phase 22): no ``turn/*_decode.py`` module exists for any of the
   three, and none is needed -- an exhaustive grep of every
@@ -266,6 +276,7 @@ from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
 from ak_engine.turn.move_execution import execute_move
 from ak_engine.turn.practice_decode import decode_practice_phase
+from ak_engine.turn.practice_execution import PracticeExecutionResult, execute_practice
 from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_recruit
 from ak_engine.turn.search_decode import decode_search_phase
@@ -395,7 +406,7 @@ def dispatch_phase(
         return decode_trade_phase(phase)
 
     if action is ActionCode.PRACTICE:
-        return decode_practice_phase(phase)
+        return _dispatch_practice(phase, state, leader_id, rng)
 
     if action in (ActionCode.WAIT, ActionCode.NO_ACTION, ActionCode.MOVE_ABORT):
         return NoOpResult(action=action)
@@ -422,6 +433,13 @@ def dispatch_phase(
         return decode_trail_phase(phase)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
+
+
+def _dispatch_practice(
+    phase: PlanPhase, state: GameState, leader_id: int, rng: random.Random | None
+) -> PracticeExecutionResult:
+    request = decode_practice_phase(phase)
+    return execute_practice(state, leader_id, request.ability, rng)
 
 
 def _dispatch_recruit(phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int) -> RecruitExecutionResult:

@@ -69,6 +69,18 @@ class SkillTable:
         i = ability.value * 2
         return (self.raw_values[i], self.raw_values[i + 1])
 
+    def set_pair_for_ability(self, ability: Ability, skill: int, aptitude: int) -> None:
+        """Write back a new ``(skill_level, aptitude_level)`` pair (Phase 44, Practice execution).
+
+        Mutates ``raw_values`` in place -- the symmetric write counterpart
+        to ``pair_for_ability``, added so ``turn/practice_execution.py``
+        doesn't need to know this table's raw layout.
+        """
+
+        i = ability.value * 2
+        self.raw_values[i] = skill
+        self.raw_values[i + 1] = aptitude
+
 
 @dataclass(slots=True)
 class Kingdom:
