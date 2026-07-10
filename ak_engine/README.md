@@ -1906,7 +1906,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     already-updated test failures before the fix, then 1345 passed
     total after (net +1 over Phase 53's 1344: three old tests replaced
     by four new ones).
-- **Phase 55 (current)**: wires `turn/contested_province.py`'s
+- **Phase 55**: wires `turn/contested_province.py`'s
   forced-rebattle rule ([7.6]) into `turn/turn_processor.py`, closing
   the module's own "fast follow-up, not attempted yet" note left open
   since Phase 45.
@@ -1947,6 +1947,58 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     contested, which is every existing test's own starting state --
     full suite passed unchanged (1345 passed) before any new tests were
     written. 5 new tests added (1350 passed total).
+- **Phase 56 (current)**: wires mutual Challenge/Pursue detection into
+  `turn/turn_processor.py`, closing the declared follow-up flagged when
+  real Challenge/Pursue execution was wired into `plan_dispatch.py`
+  (Phase 54): "detecting a real mutual pair... needs the same
+  cross-leader, same-phase visibility Multiple Contingents and
+  Practice's own multi-character coordination needed."
+  - **Detection**: when leader A's CHALLENGE or PURSUE phase at a given
+    label targets leader B, and B's own CHALLENGE or PURSUE phase at
+    that *same* label targets A back, the pair is routed through the
+    new `_dispatch_mutual_encounter` instead of each dispatching solo.
+    `phase.obj` is read directly as the target character id -- no
+    decode call needed for detection itself, since `ChallengeRequest`/
+    `PursueRequest` already confirmed `obj` *is* the target id (Phase
+    25). A leader Pursuing their own id ([3.16] "Patrol") is explicitly
+    excluded from ever matching itself as a mutual pair.
+  - **Single shared resolution, confirmed with the user before
+    implementation** (task list: "Un solo scontro condiviso" over the
+    "due scontri separati" alternative): the rulebook only ever
+    describes *one* encounter resulting from mutual orders, and
+    resolving two independent duels between the same pair risked a
+    second duel against a combatant the first one already killed. Both
+    leaders' `PhaseDispatchResult` entries share the exact same result
+    object.
+  - **King-target initiator rule, a documented design choice**: if
+    exactly one of the two leaders is a King, that King is always
+    treated as the *target* (never the challenger) when calling
+    `execute_challenge`/`execute_pursue` -- [3.12]'s `mutual_encounter`
+    mechanism exists specifically to override a King *target's*
+    acceptance, so the King has to occupy that role for the rule to
+    mean anything; picking the King as challenger instead would
+    silently route a King-vs-armyless-Hero pair through the wrong
+    branch of `is_encounter_accepted` (a 50% evasion roll instead of
+    guaranteed acceptance) -- confirmed by a dedicated test using a
+    King with a numerically *lower* `leader_id` than the Hero, so a
+    naive "lower id is always challenger" tiebreak would have gotten it
+    wrong. If both or neither leader is a King, the choice is otherwise
+    symmetric for the King-acceptance branch, so the lower `leader_id`
+    is used as challenger purely as a deterministic tiebreak -- an
+    unsourced simplification for a case the rulebook doesn't
+    disambiguate (it can still affect a non-King Challenge's own
+    target-leads-an-army check), not a claim about the "correct"
+    real-game resolution.
+  - **The initiator's own action type governs which resolver runs**
+    (Challenge or Pursue); the other leader's own tactics/Encounter
+    Plan aren't modeled separately in the shared resolution -- a
+    documented simplification, not a claim that mixed Challenge+Pursue
+    mutual pairs are fully modeled from both sides.
+  - Non-breaking: the new detection only activates for two same-phase
+    CHALLENGE/PURSUE orders that target each other, which no existing
+    test's fixtures produce -- full suite passed unchanged (1350
+    passed) before any new tests were written. 4 new tests added (1354
+    passed total).
 
 ## Setup
 
@@ -2205,23 +2257,22 @@ rulebook before being turned into named, typed fields:
     executed yet". Zero real examples either.
   - ~~**Challenge/Pursue's remaining gap** (see Phase 25's note above):
     the King/Hero encounter-acceptance rules ([3.12]) and the Spy Table
-    catch-up formula ([4.33], [3.16]) aren't modeled~~ -- **Challenge's
-    acceptance rules and real Melee combat are now implemented**
-    (`turn/challenge_execution.py`, Phase 50), and **Pursue's own
-    single-phase catch-up-and-combat resolver is now implemented too**
-    (`turn/spy_table.py` + `turn/pursue_execution.py`, Phase 51). Both
-    stay built-but-not-wired into `plan_dispatch.py`'s own CHALLENGE/
-    PURSUE dispatch (see each phase's own note above for why:
-    `mutual_encounter` needs cross-leader visibility `plan_dispatch.py`
-    doesn't have, and real combat's variable rng consumption is
-    opt-in-only by the same reasoning as Phase 49's Duel wiring).
-    **Pursue's army-vs-army catch-up now fights a real battle too**
-    (`fight_battle` wired into `turn/pursue_execution.py`, Phase 53).
-    **Still open**: Pursue's own persistent multi-phase chase state --
-    the rulebook's "for the rest of the turn" behavior; `turn/
-    pursue_execution.py` still only resolves a single phase's catch-up
-    (and, if applicable, battle) per call. Zero real examples for
-    either action either.
+    catch-up formula ([4.33], [3.16]) aren't modeled~~ -- **fully closed
+    across Phases 50-56**: Challenge's acceptance rules and real Melee
+    combat (`turn/challenge_execution.py`, Phase 50); Pursue's own
+    single-phase catch-up-and-combat resolver (`turn/spy_table.py` +
+    `turn/pursue_execution.py`, Phase 51); Pursue's army-vs-army
+    catch-up fighting a real battle (`fight_battle` wired in, Phase
+    53); both dispatching through real execution instead of decode-only
+    (`plan_dispatch.py`, Phase 54); and mutual `mutual_encounter`
+    detection across leaders (`turn/turn_processor.py
+    _dispatch_mutual_encounter`, Phase 56). **Still open**: Pursue's own
+    persistent multi-phase chase state -- the rulebook's "for the rest
+    of the turn" behavior; `turn/pursue_execution.py` still only
+    resolves a single phase's catch-up (and, if applicable, battle) per
+    call, and a caught-up-but-not-yet-resolved chase doesn't persist
+    into later phases on its own. Zero real examples for either action
+    either.
   - **ASpy/Defend's remaining gap** (see Phase 26's note above):
     intelligence-report generation (ASpy) and reactive cross-province
     battle-triggering (Defend) both need `GameState`/battle-orchestrator

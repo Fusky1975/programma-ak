@@ -401,3 +401,104 @@ def test_run_turn_ignores_a_province_with_no_contested_flag():
     results = run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(42))
 
     assert [r for r in results if r.phase_label == "forced-rebattle"] == []
+
+
+# -- Mutual Challenge/Pursue detection (Phase 56) ---------------------------
+
+
+def _encounter_phase(label: str, action: ActionCode, target_id: int, *, melee: bool) -> PlanPhase:
+    tactic = 9 if melee else 3  # Maneuver.MELEE / Maneuver.TALK ordinals
+    return PlanPhase(label=label, action=action, obj=target_id, extra=[0, tactic, -1])
+
+
+def test_run_turn_resolves_a_mutual_challenge_as_a_single_shared_encounter():
+    state = _base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=_skills_with(Ability.MELEE, 3, 9)))
+    state.add_leader(LeaderState(20, kingdom_id=2, name="B", location=ORIGIN, skills=_skills_with(Ability.MELEE, 0, 9)))
+    leaders = [
+        _leader_with_phase(10, "A", "P0", _encounter_phase("P0", ActionCode.CHALLENGE, 20, melee=True)),
+        _leader_with_phase(20, "B", "P0", _encounter_phase("P0", ActionCode.CHALLENGE, 10, melee=True)),
+    ]
+
+    results = run_turn(
+        [TurnLeader(leaders[0], 1), TurnLeader(leaders[1], 2)],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=ScriptedRandom([0.1, 0.5, 0.9] * 15),
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert set(by_leader) == {10, 20}
+    # Single shared resolution: both dispatch entries point at the exact
+    # same result object, not two independently-fought duels.
+    assert by_leader[10].result is by_leader[20].result
+    assert by_leader[10].result.accepted is True
+    assert by_leader[10].result.combat_occurred is True
+    assert by_leader[10].result.winner_leader_id == 10  # lower id -> challenger, higher skill -> wins
+    assert 20 not in state.leaders
+    assert 10 in state.leaders
+
+
+def test_run_turn_mutual_encounter_keeps_the_king_as_target_regardless_of_leader_id():
+    # King has the *lower* leader_id -- a naive "lower id is always
+    # challenger" tiebreak would wrongly make the King the challenger here,
+    # routing through the King-challenger 50% evade roll instead of the
+    # King-target's guaranteed mutual acceptance ([3.12]).
+    state = _base_state()
+    state.add_leader(
+        LeaderState(5, kingdom_id=1, name="King", location=ORIGIN, is_king=True, skills=_skills_with(Ability.MELEE, 0, 9))
+    )
+    state.add_leader(
+        LeaderState(20, kingdom_id=2, name="Hero", location=ORIGIN, skills=_skills_with(Ability.MELEE, 3, 9))
+    )
+    leaders = [
+        _leader_with_phase(5, "King", "P0", _encounter_phase("P0", ActionCode.CHALLENGE, 20, melee=True)),
+        _leader_with_phase(20, "Hero", "P0", _encounter_phase("P0", ActionCode.CHALLENGE, 5, melee=True)),
+    ]
+
+    results = run_turn(
+        [TurnLeader(leaders[0], 1), TurnLeader(leaders[1], 2)],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=ScriptedRandom([0.1, 0.5, 0.9] * 15),
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[5].result is by_leader[20].result
+    assert by_leader[5].result.accepted is True  # guaranteed, no 50% roll -- King stayed the target
+    assert by_leader[5].result.winner_leader_id == 20  # the Hero (challenger), higher melee skill
+    assert 5 not in state.leaders
+
+
+def test_run_turn_one_sided_challenge_dispatches_normally_not_as_mutual():
+    state = _base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
+    state.add_leader(LeaderState(20, kingdom_id=2, name="King", location=ORIGIN, is_king=True))
+    leaders = [
+        _leader_with_phase(10, "A", "P0", _encounter_phase("P0", ActionCode.CHALLENGE, 20, melee=True)),
+        # B has no reciprocal order this phase at all -- not a mutual pair.
+        _leader_with_phase(20, "King", "P1", _encounter_phase("P1", ActionCode.CHALLENGE, 10, melee=True)),
+    ]
+
+    results = run_turn(
+        [TurnLeader(leaders[0], 1), TurnLeader(leaders[1], 2)],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=ScriptedRandom([]),
+    )
+
+    by_label = {(r.leader_id, r.phase_label): r for r in results}
+    a_result = by_label[(10, "P0")].result
+    assert a_result.accepted is False
+    assert a_result.reason == "encounter refused"  # mutual_encounter defaults False, King target refuses
+
+
+def test_run_turn_self_targeting_pursue_is_not_misdetected_as_mutual():
+    state = _base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
+    leader = _leader_with_phase(10, "A", "P0", _encounter_phase("P0", ActionCode.PURSUE, 10, melee=False))
+
+    results = run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0]))
+
+    assert len(results) == 1
+    assert results[0].leader_id == 10

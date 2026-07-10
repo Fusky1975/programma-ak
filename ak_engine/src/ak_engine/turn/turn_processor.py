@@ -1,5 +1,6 @@
 """Multi-leader, phase-by-phase turn processing (Phase 45; Practice coordination
-Phase 46; contested-province forced rebattle Phase 55).
+Phase 46; contested-province forced rebattle Phase 55; mutual Challenge/
+Pursue detection Phase 56).
 
 ``turn/plan_dispatch.py run_leader_plan()`` processes *one* leader's
 entire plan (every phase, in order) before moving to the next leader.
@@ -19,6 +20,13 @@ resolve:
   rule ([7.6]) -- needs to run at every phase *boundary*, independent of
   any leader's own order that phase. Wired in as of Phase 55, see
   ``_dispatch_contested_rebattles``'s own docstring.
+
+A fourth mechanic needs the same same-phase, cross-leader visibility,
+flagged when Challenge/Pursue execution itself was wired into
+``plan_dispatch.py`` (Phase 54): a King target's own ``mutual_encounter``
+requirement ([3.12]) can only be determined by seeing whether the target
+*also* ordered a Challenge/Pursue back this same phase. Wired in as of
+Phase 56, see ``_dispatch_mutual_encounter``'s own docstring.
 
 This module is a genuinely phase-by-phase orchestrator -- ``run_turn()``
 iterates P0..P4 *across every leader's plan at once*, instead of
@@ -46,6 +54,15 @@ any kingdoms. ``Ability.TACTICAL``/an undecoded raw ability value groups
 the same as any other ability (so ``execute_practice_group`` still sees
 the collision), but resolves to ``not_implemented_for_ability=True`` for
 the whole group, same as the solo path already does for those cases.
+
+**MUTUAL ENCOUNTER detection rule (Phase 56)**: when leader A's CHALLENGE
+or PURSUE phase at a given phase label targets leader B, and leader B's
+own CHALLENGE or PURSUE phase at that *same* label targets A back, the
+pair is resolved as one shared encounter via ``_dispatch_mutual_encounter``
+instead of each dispatching solo -- see that function's own docstring for
+the single-shared-resolution design (confirmed with the user) and the
+King-target initiator rule. A self-targeting Pursue (rulebook [3.16]
+"Patrol") is never treated as a mutual pair with itself.
 
 **Explicitly out of scope, to keep this tractable**:
 
@@ -104,6 +121,8 @@ from ak_engine.turn.battle_orchestrator import (
     fight_battle,
     fight_multi_attacker_battle,
 )
+from ak_engine.turn.challenge_execution import execute_challenge
+from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.contested_province import (
     attacker_can_force_rebattle,
@@ -115,6 +134,7 @@ from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import execute_practice_group
+from ak_engine.turn.pursue_execution import execute_pursue
 
 PHASE_LABELS = ("P0", "P1", "P2", "P3", "P4")
 
@@ -195,8 +215,31 @@ def run_turn(
             (key[1], indices) for key, indices in practice_groups.items() if len(indices) >= 2
         ]
 
+        encounter_targets: dict[int, int] = {}
+        for index, (tl, _segment_index, phase) in enumerate(entries):
+            if phase.action in (ActionCode.CHALLENGE, ActionCode.PURSUE):
+                encounter_targets[index] = phase.obj  # obj is target_character_id directly, no decode needed
+
+        leader_id_by_index = {index: entries[index][0].leader.leader_id for index in encounter_targets}
+        index_by_leader_id = {leader_id: index for index, leader_id in leader_id_by_index.items()}
+
+        mutual_encounter_pairs: list[tuple[int, int]] = []
+        seen_pairs: set[frozenset[int]] = set()
+        for index, target_character_id in encounter_targets.items():
+            target_index = index_by_leader_id.get(target_character_id)
+            if target_index is None or target_index == index:
+                continue  # no reciprocal order this phase, or a self-targeting Patrol (unmodeled, see Pursue's own docstring)
+            if encounter_targets.get(target_index) != leader_id_by_index[index]:
+                continue  # target's own order doesn't point back at this leader
+            pair_key = frozenset({index, target_index})
+            if pair_key in seen_pairs:
+                continue
+            seen_pairs.add(pair_key)
+            mutual_encounter_pairs.append((index, target_index))
+
         consumed = {index for _target, indices in multi_attacker_groups for index in indices}
         consumed |= {index for _ability, indices in multi_practice_groups for index in indices}
+        consumed |= {index for pair in mutual_encounter_pairs for index in pair}
 
         for target, indices in multi_attacker_groups:
             movers = [entries[i] for i in indices]
@@ -206,12 +249,81 @@ def run_turn(
             movers = [entries[i] for i in indices]
             results.extend(_dispatch_multi_practice(movers, ability, state, rng))
 
+        for index_a, index_b in mutual_encounter_pairs:
+            results.extend(_dispatch_mutual_encounter(entries[index_a], entries[index_b], state, rng))
+
         for index, (tl, segment_index, phase) in enumerate(entries):
             if index in consumed:
                 continue
             results.extend(_dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng))
 
     return results
+
+
+def _dispatch_mutual_encounter(
+    entry_a: tuple[TurnLeader, int, PlanPhase],
+    entry_b: tuple[TurnLeader, int, PlanPhase],
+    state: GameState,
+    rng: random.Random,
+) -> list[PhaseDispatchResult]:
+    """Resolves a detected mutual Challenge/Pursue pair (rulebook [3.12]: "Kings only
+    accept a non-peaceful encounter if both King and challenger attempt to
+    Encounter each other in the same province in the same phase") as a
+    **single shared encounter**, not two independent ones -- confirmed with
+    the user before implementation (the rulebook only ever describes one
+    encounter resulting from mutual orders, and resolving two would risk a
+    second duel against a combatant the first duel already killed).
+
+    **Initiator selection, a documented design choice**: if exactly one of
+    the two leaders is a King, that King is always treated as the *target*
+    (never the challenger) -- [3.12]'s ``mutual_encounter`` mechanism exists
+    specifically to override a King *target's* own acceptance, so the King
+    has to occupy that role for the rule to mean anything; picking the King
+    as challenger instead would silently route through a completely
+    different (and wrong) branch of ``is_encounter_accepted`` for a
+    King-vs-armyless-Hero pair (a 50% evasion roll instead of guaranteed
+    acceptance). If both or neither leader is a King, the outcome is
+    otherwise symmetric for the King-acceptance branch, so the leader with
+    the lower ``leader_id`` is used as challenger purely as a deterministic
+    tiebreak -- an unsourced simplification for a case the rulebook doesn't
+    disambiguate (e.g. it can still affect a non-King Challenge's own
+    target-leads-an-army check), not a claim that this is the "correct"
+    real-game resolution.
+
+    The initiator's own action type (Challenge or Pursue) governs which
+    resolver actually runs; the other leader's own tactics/Encounter Plan
+    are not modeled separately -- both ``PhaseDispatchResult`` entries
+    share the exact same result object, one per leader so each leader's own
+    dispatch record still reflects that *their* order was the one that
+    produced this outcome.
+    """
+
+    leader_a_id = entry_a[0].leader.leader_id
+    leader_b_id = entry_b[0].leader.leader_id
+    leader_a = state.leaders.get(leader_a_id)
+    leader_b = state.leaders.get(leader_b_id)
+    a_is_king = leader_a is not None and leader_a.is_king
+    b_is_king = leader_b is not None and leader_b.is_king
+
+    if b_is_king and not a_is_king:
+        initiator = entry_a
+    elif a_is_king and not b_is_king:
+        initiator = entry_b
+    else:
+        initiator = entry_a if leader_a_id < leader_b_id else entry_b
+
+    tl, _segment_index, phase = initiator
+    if phase.action is ActionCode.CHALLENGE:
+        request = decode_challenge_phase(phase)
+        result = execute_challenge(state, tl.leader.leader_id, request, rng, mutual_encounter=True)
+    else:
+        request = decode_pursue_phase(phase)
+        result = execute_pursue(state, tl.leader.leader_id, request, rng, mutual_encounter=True)
+
+    return [
+        PhaseDispatchResult(entry[0].leader.leader_id, entry[1], entry[2].label, entry[2].action, result, None)
+        for entry in (entry_a, entry_b)
+    ]
 
 
 def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[PhaseDispatchResult]:
