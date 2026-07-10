@@ -1492,10 +1492,8 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     whoever's left dispatches individually and normally instead.
   - **Still explicitly out of scope**: ~~Practice's own multi-character
     coordination~~ **wired in as of Phase 46** -- see that phase's note
-    below. `contested_province.py`'s forced-rebattle rule still isn't
-    wired into `run_turn()`, despite the structural blocker being gone
-    -- flagged as a fast follow-up, not attempted this phase (see Phase
-    9's own note, updated to point here).
+    below. ~~`contested_province.py`'s forced-rebattle rule still isn't
+    wired into `run_turn()`~~ **wired in as of Phase 55**.
   - Non-breaking except for the documented `fight_multi_attacker_battle`
     return-type change (3 existing tests updated accordingly); full
     suite green after that fix (880 passed), then 6 new tests added in
@@ -1868,7 +1866,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     (1342 passed) before any new tests were written. 2 net new tests
     added (one old placeholder test replaced by three narrower ones;
     1344 passed total).
-- **Phase 54 (current)**: `turn/plan_dispatch.py`'s CHALLENGE, PURSUE,
+- **Phase 54**: `turn/plan_dispatch.py`'s CHALLENGE, PURSUE,
   and TRAIL dispatch now call `execute_challenge`/`execute_pursue`/
   `execute_trail` (Phases 50-53) directly, replacing their previous
   decode-only dispatch (`decode_challenge_phase`/`decode_pursue_phase`/
@@ -1908,6 +1906,47 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     already-updated test failures before the fix, then 1345 passed
     total after (net +1 over Phase 53's 1344: three old tests replaced
     by four new ones).
+- **Phase 55 (current)**: wires `turn/contested_province.py`'s
+  forced-rebattle rule ([7.6]) into `turn/turn_processor.py`, closing
+  the module's own "fast follow-up, not attempted yet" note left open
+  since Phase 45.
+  - **`_dispatch_contested_rebattles`** runs once at every phase
+    boundary (before phase index 1-4, i.e. "the next phase" after any
+    phase whose battle could have left a province contested), scanning
+    every `ProvinceState` with `contested_by_kingdom_id` set. If the
+    contesting kingdom's armies there still each have >=1 movement
+    point (`attacker_can_force_rebattle`, already built in Phase 5) and
+    a non-allied defender remains, it calls `fight_battle` again
+    automatically -- not tied to any leader's own `PlanPhase` that
+    phase -- then deducts `contested_battle_movement_cost(conquered=...)`
+    (1 point, or 2 if this rebattle conquers the province) from each
+    attacking army, quoting [7.6] exactly: "your armies will use up a
+    movement point to fight a battle... If the province is conquered,
+    the attacker uses another movement point."
+  - **A province stops auto-rebattling the moment movement points run
+    out** ("both armies will encamp") -- simply not being checked again
+    successfully on the next boundary; no separate "encamped" flag
+    needs to exist anywhere, `fight_battle`'s own contested-flag
+    bookkeeping (already correct since Phase 9) does the rest.
+  - **Cross-turn carryover is a documented scope boundary, not an
+    oversight**: the rulebook separately describes a contested province
+    still active "at the start of the next gameturn['s phase 1]" -- this
+    project has no multi-turn/season loop (`run_turn()` only ever
+    processes one turn's P0-P4 per call), so that case can't be
+    distinguished here from an ordinary same-turn continuation; both
+    are handled identically by the same boundary check.
+  - The forced rebattle's own result is appended to `run_turn`'s
+    returned list as a `PhaseDispatchResult` with `phase_label=
+    "forced-rebattle"`, `segment_index=-1` (a sentinel -- it isn't tied
+    to any leader's own plan segment, same category as the existing
+    `_dispatch_single` wrapper's own segment-index sentinel), and
+    `leader_id` read from the battle's own `attacker_commander_leader_id`
+    (falling back to `0` if the attacking side somehow has no
+    identifiable commander).
+  - Non-breaking: the new check is a no-op whenever no province is
+    contested, which is every existing test's own starting state --
+    full suite passed unchanged (1345 passed) before any new tests were
+    written. 5 new tests added (1350 passed total).
 
 ## Setup
 

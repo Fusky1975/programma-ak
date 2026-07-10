@@ -1,4 +1,5 @@
-"""Multi-leader, phase-by-phase turn processing (Phase 45; Practice coordination Phase 46).
+"""Multi-leader, phase-by-phase turn processing (Phase 45; Practice coordination
+Phase 46; contested-province forced rebattle Phase 55).
 
 ``turn/plan_dispatch.py run_leader_plan()`` processes *one* leader's
 entire plan (every phase, in order) before moving to the next leader.
@@ -15,8 +16,9 @@ resolve:
   ``execute_practice_group``) -- 2+ co-located characters practicing
   the same ability in the same phase. Wired in as of Phase 46.
 - **``contested_province.py``'s forced-rebattle** "in the next phase"
-  rule. Still unwired -- a fast follow-up, not attempted yet: see
-  ``ak_engine/README.md``.
+  rule ([7.6]) -- needs to run at every phase *boundary*, independent of
+  any leader's own order that phase. Wired in as of Phase 55, see
+  ``_dispatch_contested_rebattles``'s own docstring.
 
 This module is a genuinely phase-by-phase orchestrator -- ``run_turn()``
 iterates P0..P4 *across every leader's plan at once*, instead of
@@ -96,9 +98,18 @@ from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
-from ak_engine.turn.battle_orchestrator import MultiAttackerBattle, MultiAttackerParty, fight_multi_attacker_battle
+from ak_engine.turn.battle_orchestrator import (
+    MultiAttackerBattle,
+    MultiAttackerParty,
+    fight_battle,
+    fight_multi_attacker_battle,
+)
 from ak_engine.turn.conquest import movement_cost_for_move
-from ak_engine.turn.contested_province import is_illegal_move_from_contested
+from ak_engine.turn.contested_province import (
+    attacker_can_force_rebattle,
+    contested_battle_movement_cost,
+    is_illegal_move_from_contested,
+)
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, run_leader_plan
@@ -141,7 +152,10 @@ def run_turn(
     rng = rng if rng is not None else random.Random()
     results: list[PhaseDispatchResult] = []
 
-    for label in PHASE_LABELS:
+    for phase_index, label in enumerate(PHASE_LABELS):
+        if phase_index > 0:
+            results.extend(_dispatch_contested_rebattles(state, rng))
+
         entries = _collect_phase_entries(turn_leaders, label)
 
         move_targets: dict[int, HexCoord] = {}
@@ -197,6 +211,76 @@ def run_turn(
                 continue
             results.extend(_dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng))
 
+    return results
+
+
+def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[PhaseDispatchResult]:
+    """Rulebook [7.6]: "If the attackers still have at least 1 movement point for
+    each army, they will be used to force another battle in the next
+    phase... your armies will use up a movement point to fight a battle...
+    If the province is conquered, the attacker uses another movement
+    point." Runs once per phase boundary (before every phase after the
+    first), scanning every province this ``GameState`` already knows to
+    be contested (``ProvinceState.contested_by_kingdom_id``, set by an
+    earlier mixed-result ``fight_battle`` call -- possibly from an
+    earlier phase in this same ``run_turn()``, or already contested in
+    the state the caller passed in).
+
+    **Cross-turn carryover is out of scope, a documented boundary, not
+    an oversight**: the rulebook separately describes a contested
+    province still active "at the start of the next gameturn['s
+    phase 1]" -- this project has no multi-turn/season loop
+    (``run_turn()`` only ever processes one turn's P0-P4 at a time), so
+    that case can't be distinguished here from an ordinary same-turn
+    continuation; both are handled identically by this same check.
+
+    A province stops auto-rebattling the moment ``attacker_can_force_
+    rebattle`` returns ``False`` ("both armies will encamp") -- simply
+    not being called again for that province on the next boundary, no
+    special "encamped" state needs to be recorded anywhere.
+    """
+
+    results: list[PhaseDispatchResult] = []
+    for coord, province in list(state.provinces.items()):
+        attacker_kingdom_id = province.contested_by_kingdom_id
+        if attacker_kingdom_id is None:
+            continue
+
+        armies_here = state.armies_at(coord)
+        attacker_armies = [army for army in armies_here if army.kingdom_id == attacker_kingdom_id]
+        movement_by_army = {army.army_id: army.movement_points for army in attacker_armies}
+        if not attacker_can_force_rebattle(movement_by_army):
+            continue  # "both armies will encamp" -- no more auto-rebattles this turn
+
+        defenders_present = any(
+            army.kingdom_id is not None and not state.is_allied(army.kingdom_id, attacker_kingdom_id)
+            for army in armies_here
+        )
+        if not defenders_present:
+            # Whatever the defenders were has left/been removed by some
+            # other means since the province was last marked contested --
+            # nothing left here to force a battle against.
+            continue
+
+        army_ids = [army.army_id for army in attacker_armies]
+        report = fight_battle(state, attacker_kingdom_id, coord, army_ids, rng=rng)
+
+        cost = contested_battle_movement_cost(conquered=report.conquered)
+        for army_id in army_ids:
+            army = state.armies.get(army_id)
+            if army is not None:
+                army.movement_points -= cost
+
+        results.append(
+            PhaseDispatchResult(
+                leader_id=report.attacker_commander_leader_id if report.attacker_commander_leader_id is not None else 0,
+                segment_index=-1,  # sentinel: not tied to any leader's own plan segment, see module docstring
+                phase_label="forced-rebattle",
+                action=None,
+                result=report,
+                error=None,
+            )
+        )
     return results
 
 

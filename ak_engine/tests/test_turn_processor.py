@@ -342,3 +342,62 @@ def test_run_turn_groups_three_co_located_same_ability_practicers():
     assert by_leader[10].result.skill_rose is True
     assert by_leader[20].result.skill_rose is False
     assert by_leader[30].result.skill_rose is True
+
+
+# -- Contested-province forced rebattle (Phase 55) -------------------------
+
+
+def test_run_turn_forces_a_rebattle_before_the_next_phase_when_contested():
+    state = _base_state()
+    state.provinces[TARGET].contested_by_kingdom_id = 1
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET, movement_points=3))
+
+    results = run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(42))
+
+    forced = [r for r in results if r.phase_label == "forced-rebattle"]
+    assert len(forced) == 1
+    assert forced[0].segment_index == -1
+    assert forced[0].action is None
+    assert forced[0].result is not None  # a real BattleReport
+
+
+def test_run_turn_deducts_movement_points_for_the_forced_rebattle():
+    state = _base_state()
+    state.provinces[TARGET].contested_by_kingdom_id = 1
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET, movement_points=3))
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(42))
+
+    army = state.armies.get(101)
+    if army is not None:  # survives an ELITE-vs-GREEN battle either way, but guard for safety
+        assert army.movement_points < 3
+
+
+def test_run_turn_does_not_force_a_rebattle_once_movement_points_run_out():
+    state = _base_state()
+    state.provinces[TARGET].contested_by_kingdom_id = 1
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET, movement_points=0))
+
+    results = run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(42))
+
+    assert [r for r in results if r.phase_label == "forced-rebattle"] == []
+
+
+def test_run_turn_does_not_force_a_rebattle_when_no_defender_remains():
+    state = _base_state()
+    state.provinces[TARGET].contested_by_kingdom_id = 1
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET, movement_points=3))
+    del state.armies[201]  # the defender fixture army -- nothing left to fight
+
+    results = run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(42))
+
+    assert [r for r in results if r.phase_label == "forced-rebattle"] == []
+
+
+def test_run_turn_ignores_a_province_with_no_contested_flag():
+    state = _base_state()  # TARGET's contested_by_kingdom_id defaults to None
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET, movement_points=3))
+
+    results = run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(42))
+
+    assert [r for r in results if r.phase_label == "forced-rebattle"] == []
