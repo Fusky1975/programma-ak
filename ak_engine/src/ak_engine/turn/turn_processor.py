@@ -121,9 +121,11 @@ from ak_engine.turn.battle_orchestrator import (
     fight_battle,
     fight_multi_attacker_battle,
 )
+from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.challenge_execution import execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
+from ak_engine.turn.defend_execution import defend_coverage_area
 from ak_engine.turn.contested_province import (
     attacker_can_force_rebattle,
     contested_battle_movement_cost,
@@ -171,6 +173,8 @@ def run_turn(
 
     rng = rng if rng is not None else random.Random()
     results: list[PhaseDispatchResult] = []
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    active_defends: dict[int, set[HexCoord]] = {}  # defender leader_id -> coverage area
 
     for phase_index, label in enumerate(PHASE_LABELS):
         if phase_index > 0:
@@ -185,6 +189,17 @@ def run_turn(
                     move_targets[index] = decode_hex_number(phase.obj, board_width)
                 except ValueError:
                     pass  # left for the ordinary per-leader path to raise/record consistently
+
+        _apply_defend_reinforcements(active_defends, move_targets, entries, state)
+
+        for index, (tl, _segment_index, phase) in enumerate(entries):
+            if phase.action is ActionCode.DEFEND:
+                leader_state = state.leaders.get(tl.leader.leader_id)
+                if leader_state is not None:
+                    # Registered for *next* phase's reinforcement check, not this
+                    # one -- see turn/defend_execution.py's own docstring and
+                    # _apply_defend_reinforcements's for why.
+                    active_defends[tl.leader.leader_id] = defend_coverage_area(leader_state.location, bounds)
 
         target_groups: dict[HexCoord, list[int]] = {}
         for index, target in move_targets.items():
@@ -258,6 +273,74 @@ def run_turn(
             results.extend(_dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng))
 
     return results
+
+
+def _apply_defend_reinforcements(
+    active_defends: dict[int, set[HexCoord]],
+    move_targets: dict[int, HexCoord],
+    entries: list[tuple[TurnLeader, int, PlanPhase]],
+    state: GameState,
+) -> None:
+    """Rulebook [3.15]: relocates a Defending leader's own armies to an invaded
+    covered province, so the existing battle-dispatch machinery (solo or
+    Multiple Contingents) picks them up as defenders automatically -- the
+    same relocate-then-fight abstraction already used for Pursue's own
+    army-vs-army catch-up (Phase 53). Runs against ``active_defends`` as
+    it stood *before* this phase's own new DEFEND orders are registered
+    (see ``run_turn``'s own call site) -- a Defend order reacts starting
+    the *next* phase, not the one it's given in, sidestepping the
+    Italian rulebook's own noted-but-unmodeled "Defend always resolves
+    last in its phase" ordering nuance (``turn/aspy_defend_decode.py``'s
+    docstring) rather than guessing at same-phase ordering semantics
+    this project has no other precedent for.
+
+    A defender only reinforces **friendly-owned ground** (the invaded
+    province's owner is the defender's own Kingdom or an ally) against a
+    **non-allied invader who actually brings an army** -- the same
+    "attacking" criterion used throughout this module. Each defender's
+    coverage is **consumed after its first reinforcement this
+    ``run_turn()`` call**: once committed to one battle, they're no
+    longer standing by to cover their original area for a second,
+    unrelated invasion later in the turn (a documented simplification,
+    not sourced -- the rulebook doesn't address a general reinforcing
+    twice in the same turn).
+    """
+
+    if not active_defends:
+        return
+
+    invaded_provinces: dict[HexCoord, list[int]] = {}
+    for index, target in move_targets.items():
+        invaded_provinces.setdefault(target, []).append(index)
+
+    for defender_leader_id, coverage in list(active_defends.items()):
+        defender_state = state.leaders.get(defender_leader_id)
+        if defender_state is None or defender_state.kingdom_id is None:
+            continue
+
+        for target, indices in invaded_provinces.items():
+            if target not in coverage:
+                continue
+            target_province = state.provinces.get(target)
+            if target_province is None or target_province.owner_kingdom_id is None:
+                continue
+            owner = target_province.owner_kingdom_id
+            if owner != defender_state.kingdom_id and not state.is_allied(owner, defender_state.kingdom_id):
+                continue  # not friendly ground -- nothing to defend here
+
+            invading = any(
+                state.armies_commanded_by(entries[i][0].leader.leader_id)
+                and not state.is_allied(entries[i][0].kingdom_id, defender_state.kingdom_id)
+                for i in indices
+            )
+            if not invading:
+                continue
+
+            for army in state.armies_commanded_by(defender_leader_id):
+                army.location = target
+            defender_state.location = target
+            del active_defends[defender_leader_id]
+            break
 
 
 def _dispatch_mutual_encounter(

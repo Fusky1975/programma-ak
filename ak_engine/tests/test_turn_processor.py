@@ -14,6 +14,8 @@ from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.move_execution import MoveExecutionResult
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
+from ak_engine.turn.movement import neighbors as _neighbors
 from ak_engine.turn.turn_processor import MultiAttackerMoveResult, TurnLeader, run_turn
 
 from _helpers import ScriptedRandom
@@ -502,3 +504,112 @@ def test_run_turn_self_targeting_pursue_is_not_misdetected_as_mutual():
 
     assert len(results) == 1
     assert results[0].leader_id == 10
+
+
+# -- Defend reactive reinforcement (Phase 57) -------------------------------
+
+
+_BOUNDS = MapBounds(*NORMAL_MAP_BOUNDS)
+DEFEND_HOME = HexCoord(5, 5)
+COVERED = _neighbors(DEFEND_HOME, _BOUNDS)[0]
+ANOTHER_COVERED = _neighbors(DEFEND_HOME, _BOUNDS)[1]
+ATTACKER_ORIGIN = next(n for n in _neighbors(COVERED, _BOUNDS) if n != DEFEND_HOME)
+SECOND_ATTACKER_ORIGIN = next(n for n in _neighbors(ANOTHER_COVERED, _BOUNDS) if n != DEFEND_HOME)
+
+
+def _defend_phase(label: str) -> PlanPhase:
+    return PlanPhase(label=label, action=ActionCode.DEFEND, obj=0, extra=[0])
+
+
+def _defend_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, ATTACKER_ORIGIN))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, DEFEND_HOME))
+    state.add_province(ProvinceState(DEFEND_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(COVERED, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(ANOTHER_COVERED, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(ATTACKER_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(SECOND_ATTACKER_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(100, kingdom_id=2, name="Defender", location=DEFEND_HOME))
+    state.add_army(ArmyState(901, 2, ArmyType.GARRISON, Quality.GREEN, DEFEND_HOME, commanded_by=100))
+    return state
+
+
+def _attacker(leader_id: int, army_id: int, origin: HexCoord, target: HexCoord, label: str) -> Leader:
+    return _leader_with_phase(leader_id, "Attacker", label, _lmove_phase(label, target))
+
+
+def test_run_turn_defend_reinforces_an_invaded_covered_province_next_phase():
+    state = _defend_state()
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=ATTACKER_ORIGIN))
+    state.add_army(ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ATTACKER_ORIGIN, commanded_by=200, movement_points=3))
+    defender = _leader_with_phase(100, "Defender", "P0", _defend_phase("P0"))
+    attacker = _attacker(200, 902, ATTACKER_ORIGIN, COVERED, "P1")
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(7)
+    )
+
+    # The defender's leader (and, before the battle, the garrison itself)
+    # physically converges on the invaded province -- otherwise a
+    # province with zero standing defenders wouldn't trigger a battle at
+    # all (move_execution.py's own occupied_by_enemy check). The garrison
+    # may not have survived the battle itself, so only the leader's own
+    # post-battle position (leaders aren't removed by an ordinary army
+    # battle) is asserted directly.
+    assert state.leaders[100].location == COVERED
+
+    by_leader = {r.leader_id: r for r in results}
+    move_result = by_leader[200].result
+    assert isinstance(move_result, MoveExecutionResult)
+    assert move_result.battle_report is not None  # a battle happened -- reinforcement worked
+
+
+def test_run_turn_defend_does_not_relocate_without_an_invasion():
+    state = _defend_state()
+    defender = _leader_with_phase(100, "Defender", "P0", _defend_phase("P0"))
+
+    run_turn([TurnLeader(defender, 2)], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert state.armies[901].location == DEFEND_HOME
+    assert state.leaders[100].location == DEFEND_HOME
+
+
+def test_run_turn_defend_does_not_reinforce_a_province_it_does_not_own():
+    state = _defend_state()
+    state.provinces[COVERED].owner_kingdom_id = 3  # a third, unrelated Kingdom's ground
+    state.add_kingdom(KingdomState(3, "Neutralia", Race.HUMAN, Alignment.NEUTRAL, COVERED))
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=ATTACKER_ORIGIN))
+    state.add_army(ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ATTACKER_ORIGIN, commanded_by=200, movement_points=3))
+    defender = _leader_with_phase(100, "Defender", "P0", _defend_phase("P0"))
+    attacker = _attacker(200, 902, ATTACKER_ORIGIN, COVERED, "P1")
+
+    run_turn([TurnLeader(defender, 2), TurnLeader(attacker, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(3))
+
+    assert state.armies[901].location == DEFEND_HOME  # never relocated
+
+
+def test_run_turn_defend_is_consumed_after_its_first_reinforcement():
+    state = _defend_state()
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=ATTACKER_ORIGIN))
+    state.add_army(ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ATTACKER_ORIGIN, commanded_by=200, movement_points=3))
+    state.add_leader(LeaderState(300, kingdom_id=1, name="SecondAttacker", location=SECOND_ATTACKER_ORIGIN))
+    state.add_army(
+        ArmyState(903, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, SECOND_ATTACKER_ORIGIN, commanded_by=300, movement_points=3)
+    )
+    defender = _leader_with_phase(100, "Defender", "P0", _defend_phase("P0"))
+    attacker = _attacker(200, 902, ATTACKER_ORIGIN, COVERED, "P1")
+    second_attacker = _attacker(300, 903, SECOND_ATTACKER_ORIGIN, ANOTHER_COVERED, "P2")
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1), TurnLeader(second_attacker, 1)],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=random.Random(11),
+    )
+
+    # Committed to the first (P1) invasion -- never covers the second (P2)
+    # one, which walks in uncontested (battle_report is None).
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[200].result.battle_report is not None
+    assert by_leader[300].result.battle_report is None

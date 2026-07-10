@@ -1947,7 +1947,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     contested, which is every existing test's own starting state --
     full suite passed unchanged (1345 passed) before any new tests were
     written. 5 new tests added (1350 passed total).
-- **Phase 56 (current)**: wires mutual Challenge/Pursue detection into
+- **Phase 56**: wires mutual Challenge/Pursue detection into
   `turn/turn_processor.py`, closing the declared follow-up flagged when
   real Challenge/Pursue execution was wired into `plan_dispatch.py`
   (Phase 54): "detecting a real mutual pair... needs the same
@@ -1999,6 +1999,69 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     test's fixtures produce -- full suite passed unchanged (1350
     passed) before any new tests were written. 4 new tests added (1354
     passed total).
+- **Phase 57 (current)**: wires Defend's [3.15] reactive
+  battle-joining into `turn/turn_processor.py`, via a new `turn/
+  defend_execution.py`.
+  - **A confirmed blocker forced a scope pivot mid-implementation**:
+    ADDEND.AK's own corrected coverage formula ("adjacent to both the
+    named province and the province the leader is currently located
+    in") needs the Defend order's own named-province target as a real
+    `HexCoord` -- but `DefendRequest.target_province` is kept as a raw,
+    unconverted int (`turn/aspy_defend_decode.py`, Phase 26), because no
+    confirmed numbering scheme exists for ASpy/Defend's province
+    references at all (LMOVE's own `hex_numbering.py` scheme is itself
+    only an empirically-inferred guess with no confirmation it applies
+    to ASpy/Defend's `obj` field too). Converting it would have stacked
+    one unconfirmed mapping on top of another. **Confirmed with the
+    user**: rather than leaving Defend blocked like Use_MI, coverage is
+    approximated as every province adjacent to the general's own
+    current location alone (`defend_coverage_area`) -- a documented,
+    conservative *superset* of the true addendum area (intersecting two
+    neighbor-sets can only shrink or preserve a set, never expand it),
+    so this may react to an invasion the real narrower rule wouldn't
+    have covered, but never misses one it would have.
+  - **`_apply_defend_reinforcements`** relocates a covering Defender's
+    leader and every army they command to an invaded, covered,
+    friendly-owned province -- the same relocate-then-fight abstraction
+    already used for Pursue's own army-vs-army catch-up (Phase 53) and
+    the contested-province rebattle (Phase 55) -- so the existing
+    battle-dispatch machinery (solo `execute_move` or Multiple
+    Contingents) picks the reinforcement up as a real defender
+    automatically, even when the invaded province had zero standing
+    defenders beforehand (`move_execution.py`'s own `occupied_by_enemy`
+    check needs a defender physically present *before* it evaluates).
+  - **A Defend order activates starting the *next* phase, not the one
+    it's given in** -- a documented simplification sidestepping the
+    Italian rulebook's own noted-but-unmodeled "Defend always resolves
+    last in its phase" ordering nuance (flagged back in `turn/
+    aspy_defend_decode.py`'s own docstring) rather than inventing
+    same-phase ordering semantics this project has no other precedent
+    for.
+  - **Consumed after its first reinforcement this `run_turn()` call**:
+    once a Defending general commits to one battle, they're no longer
+    standing by to cover their original area for a second, unrelated
+    invasion later in the same turn -- a documented, unsourced
+    simplification (the rulebook doesn't address reinforcing twice).
+  - **No movement-point cost modeled for the reactive move itself** --
+    unlike the contested-province rebattle's explicit "will use up a
+    movement point" text, [3.15] never says a Defend reaction costs
+    anything.
+  - Only reinforces **friendly-owned ground** (the invaded province's
+    owner is the Defender's own Kingdom or an ally) against a
+    **non-allied invader who actually brings an army**.
+  - ~~**ASpy/Defend's remaining gap** (see Phase 26's note above):
+    both need game-state logic not present anywhere in the available
+    Pascal source~~ -- **Defend's own reactive battle-joining is now
+    implemented** (this phase). **ASpy's own report-generation gap
+    stays fully open**: intelligence-report content still needs a
+    report-generation system this project doesn't have at all, a much
+    larger and structurally different piece than Defend's own
+    coverage-and-reinforcement mechanic turned out to be.
+  - Non-breaking: brand-new module plus additive `run_turn()` logic
+    that only activates when a DEFEND order was actually given -- full
+    suite passed unchanged (1354 passed) before any new tests were
+    written. 7 new tests added (3 for `defend_coverage_area` itself, 4
+    for the `run_turn()` wiring; 1361 passed total).
 
 ## Setup
 
