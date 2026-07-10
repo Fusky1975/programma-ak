@@ -1611,7 +1611,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: brand-new, self-contained module with no existing
     callers -- full suite passed unchanged (900 passed) before any new
     tests were written. 15 new tests added (915 passed total).
-- **Phase 49 (current)**: wires Phase 48's Encounter core into the Duel
+- **Phase 49**: wires Phase 48's Encounter core into the Duel
   ([7.1]), the first of its four flagged consumers (Search, Challenge/
   Pursue, ASpy/Defend, Duel) to actually connect to it. Replaces
   `estimate_win_probability`'s strength-ratio approximation with a real
@@ -1658,6 +1658,71 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     default means every pre-existing test (all of which omit
     `use_real_duel_combat`) is byte-for-byte unaffected. 8 new tests
     added (923 passed total).
+- **Phase 50 (current)**: `turn/challenge_execution.py`, the first
+  Challenge (`ActionCode.CHALLENGE`, rulebook [3.12] "Encounter
+  Character" -- naming mismatch confirmed in `turn/
+  challenge_pursue_decode.py`) resolver -- encounter-acceptance rules
+  plus real combat, reusing Phase 48's Encounter core the same way
+  Phase 49's Duel wiring did.
+  - **`is_encounter_accepted`** implements [3.12]'s decision tree
+    directly, quoted in full in the module docstring: a King target
+    only accepts a non-peaceful encounter if `mutual_encounter` (both
+    King and challenger ordered a Challenge on each other, same
+    province, same phase); a Hero leading an army never accepts; an
+    armyless Hero challenged by a King evades 50% of the time
+    (`rng.random() < 0.5`); an armyless Hero challenged by another Hero
+    always accepts. Every branch has a concrete rulebook percentage or
+    rule -- no guessing needed.
+  - **`has_combat_intent`** checks the already-decoded
+    `ChallengeRequest.tactics` for `Maneuver.MELEE`/`Maneuver.SHOOT` --
+    "If the encounter plan has no combat tactics... these restrictions
+    do not apply" ([3.12]) -- a peaceful plan bypasses the entire
+    acceptance check and always succeeds without combat. Steal and
+    Cast's own "personal combat spells (including Charm)" nuance is
+    *not* checked (documented narrowing: Steal is unmodeled per
+    `turn/encounter.py`'s own scope, and classifying which spells count
+    as personal-combat needs a spell-effect system this project
+    doesn't have).
+  - **`execute_challenge(state, challenger_leader_id, request, rng,
+    *, mutual_encounter=False)`**: co-location check (Encounter requires
+    "the same province"), target-not-found handling, acceptance check
+    (skipped entirely for peaceful plans), and -- if accepted with
+    combat intent -- a real `resolve_melee_duel` between the two
+    leaders (always Melee, same documented default as Phase 49's Duel
+    wiring, for the same reason: no Encounter Plan tactic-choice data
+    exists to pick Fire Arrow instead). A decisive loser is removed
+    from `state` via `GameState.remove_leader()`.
+  - **Unlike Duel's own [7.1] special case (Phase 49), a Challenge
+    loser *is* killed**: personal combat's generic rule ([5.0]: "until
+    one combatant is killed") applies here in full. Duel's
+    "demoralizes armies, never kills the commander" rule is specific to
+    [7.1] and does not generalize to every kind of Encounter -- each
+    consumer of `turn/encounter.py`'s combat core has to re-derive its
+    own death-or-not rule from its own rulebook section, not assume the
+    other consumer's rule applies.
+  - **`mutual_encounter` is caller-supplied only, not auto-detected**:
+    knowing whether the target King also ordered a Challenge back needs
+    visibility into another leader's own order, which `turn/
+    plan_dispatch.py`'s single-leader dispatch doesn't have -- the same
+    structural gap `turn/turn_processor.py` (Phase 45) exists to close.
+    `execute_challenge` defaults it to `False` (a King target is never
+    wrongly accepted when the caller can't actually confirm mutuality);
+    wiring real mutual-encounter detection into `run_turn()` is a
+    natural follow-up, not attempted this phase.
+  - **Not wired into `plan_dispatch.py`'s CHALLENGE dispatch**, which
+    stays decode-only exactly as it was -- same "built but not
+    auto-invoked" precedent as `fight_multi_attacker_battle` (Phase 28)
+    and `execute_practice_group` (Phase 46): `mutual_encounter` can't be
+    determined from a single-leader dispatch, and real combat's
+    variable rng consumption would perturb this project's existing
+    scripted-`rng` test sequences if wired in as the unconditional
+    default.
+  - Rulebook [4.33]'s Spy Table (Pursue/Trail's own catch-up-chance
+    formula) is a related, natural follow-up -- not attempted this
+    phase; Pursue's own acceptance-and-combat resolver stays unbuilt.
+  - Non-breaking: brand-new, self-contained module with no existing
+    callers -- full suite passed unchanged (923 passed) before any new
+    tests were written. 18 new tests added (941 passed total).
 
 ## Setup
 
@@ -1914,14 +1979,19 @@ rulebook before being turned into named, typed fields:
     created, so `item_instance_id` can never be resolved to a concrete
     item/spell from this project's available data, not just "not
     executed yet". Zero real examples either.
-  - **Challenge/Pursue's remaining gap** (see Phase 25's note above):
+  - ~~**Challenge/Pursue's remaining gap** (see Phase 25's note above):
     the King/Hero encounter-acceptance rules ([3.12]) and the Spy Table
-    catch-up formula ([4.33], [3.16]) aren't modeled -- same missing
-    non-army Encounter resolver as Search, now with a first slice
-    (`turn/encounter.py`, Phase 48) but not yet wired here either.
-    `LeaderState.is_king` (Phase 40) now exists, so the *data* this rule
-    would need is no longer missing, only the encounter-resolution
-    system itself. Zero real examples for either either.
+    catch-up formula ([4.33], [3.16]) aren't modeled~~ -- **Challenge's
+    acceptance rules and real Melee combat are now implemented**
+    (`turn/challenge_execution.py`, Phase 50), built but not wired into
+    `plan_dispatch.py`'s CHALLENGE dispatch (see Phase 50's note above
+    for why: `mutual_encounter` needs cross-leader visibility
+    `plan_dispatch.py` doesn't have, and real combat's variable rng
+    consumption is opt-in-only by the same reasoning as Phase 49's
+    Duel wiring). **Pursue's own resolver, and the Spy Table [4.33]
+    catch-up formula it (and Trail) would need, remain unbuilt** -- a
+    natural Phase 51+ follow-up. Zero real examples for either action
+    either.
   - **ASpy/Defend's remaining gap** (see Phase 26's note above):
     intelligence-report generation (ASpy) and reactive cross-province
     battle-triggering (Defend) both need `GameState`/battle-orchestrator
