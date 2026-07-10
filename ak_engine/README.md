@@ -1658,7 +1658,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     default means every pre-existing test (all of which omit
     `use_real_duel_combat`) is byte-for-byte unaffected. 8 new tests
     added (923 passed total).
-- **Phase 50 (current)**: `turn/challenge_execution.py`, the first
+- **Phase 50**: `turn/challenge_execution.py`, the first
   Challenge (`ActionCode.CHALLENGE`, rulebook [3.12] "Encounter
   Character" -- naming mismatch confirmed in `turn/
   challenge_pursue_decode.py`) resolver -- encounter-acceptance rules
@@ -1723,6 +1723,77 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: brand-new, self-contained module with no existing
     callers -- full suite passed unchanged (923 passed) before any new
     tests were written. 18 new tests added (941 passed total).
+- **Phase 51 (current)**: `turn/spy_table.py` (rulebook [4.33] Spy
+  Table's catch-up formula) plus `turn/pursue_execution.py`, a
+  **single-phase-only** Pursue ([3.16]) resolver -- scoped down from a
+  full persistent multi-phase chase, confirmed with the user before
+  implementation (see the task list: "Spy Table + cattura in singola
+  fase" over the full multi-phase/army-battle alternative).
+  - **`pursue_catch_up_chance`** implements [4.33]'s table exactly as
+    quoted in the module docstring: base % by Spy skill level 0-4
+    (50/100/150/200/250%), x2 if the target leads an army, divided by
+    distance in provinces, 100% if pursuer and target share a Kingdom
+    -- clamped to [0, 1] (the raw formula can exceed 100%, e.g. a
+    level-4 Spy chasing an army-leading target at distance 1 is 500%).
+    Only the table's third column is modeled; "Chance of Escaping
+    Notice" and "Margin of Error of Spy Reports" belong to ASpy
+    ([3.14]), which has no resolver in this project yet (`turn/
+    aspy_defend_decode.py` is decode-only) -- left unimplemented rather
+    than guessed at partial relevance.
+  - **Distance-0 special case, a documented design choice, not a
+    rulebook quote**: the table's own "divided by distance" is
+    undefined at distance 0 (same province). Treated as guaranteed
+    catch-up, the same way the table's own "same Kingdom -> 100%"
+    carve-out already treats a different full-certainty case.
+  - **`turn/movement.py hex_distance`** (new): straight-line hex
+    distance between two `HexCoord`s, via the standard odd-r-to-cube
+    coordinate conversion -- verified before use to reproduce exactly
+    the module's existing 6-neighbor adjacency (`neighbors`/
+    `is_adjacent`) at distance 1, for both even and odd rows. Not a
+    pathfinding distance: unlike Move's own "through friendly hexes if
+    possible" chase algorithm ([3.1], still unimplemented), the Spy
+    Table's "distance (in number of provinces)" carries no pathfinding
+    rule, so this ignores terrain, ownership, and unexplored hexes.
+  - **`execute_pursue`** resolves [3.16]'s own army-leading-match check
+    first ("If the Pursuing character leads an army and the pursued
+    character doesn't, or visa versa, the Pursue order is ignored"),
+    then rolls the Spy Table catch-up chance for the current phase
+    only. If both sides lead armies and the pursuer catches up, the
+    result reports `caught_up=True` with an explicit
+    `reason="army-vs-army pursuit battle not modeled"` and fights
+    nothing -- wiring `fight_battle` in for this case is a declared,
+    explicit follow-up, not attempted here (it needs `BattleUnit`s
+    built from each side's real armies, more orchestration than this
+    phase's scope). If neither side leads an army and the pursuer
+    catches up, **"All rules listed under the Encounter action apply to
+    Pursuit encounters" ([3.16]) is read literally**: the caught-up
+    target goes through Phase 50's exact same `has_combat_intent`/
+    `is_encounter_accepted`/`resolve_melee_duel` pipeline, including a
+    King target's own `mutual_encounter` requirement (caller-supplied
+    only, defaulting to `False`, same conservative choice as Phase 50).
+    A decisive loser is removed from `state` via `remove_leader()`.
+  - **Explicitly single-phase, not the persistent "for the rest of the
+    turn" chase the rulebook describes**: tracking a Pursue order's
+    state *across* phases needs the same cross-phase, cross-leader
+    visibility `turn/turn_processor.py` (Phase 45) exists to provide --
+    a natural follow-up, not attempted this phase. `execute_pursue`
+    only answers "does the pursuer catch up *this* phase, and if so
+    what happens."
+  - **Not wired into `plan_dispatch.py`'s PURSUE dispatch**, which stays
+    decode-only exactly as it was -- same "built but not auto-invoked"
+    precedent as Challenge (Phase 50) and the others before it.
+  - Trail's own resolver (also driven by the Spy Table's "Chance to
+    Pursue or Trail" column, per [4.33]'s own note) remains unbuilt --
+    a natural follow-up now that `pursue_catch_up_chance` exists to
+    reuse.
+  - Non-breaking: `hex_distance` is a pure addition to `turn/
+    movement.py` with no existing callers touching it, and `turn/
+    spy_table.py`/`turn/pursue_execution.py` are brand-new,
+    self-contained modules -- full suite passed unchanged (941 passed)
+    before any new tests were written. 34 new tests added (1334 passed
+    total; the jump is mostly `hex_distance`'s own neighbor-adjacency
+    test, parametrized across the whole map like `test_movement.py`'s
+    existing adjacency-symmetry test).
 
 ## Setup
 
@@ -1983,15 +2054,20 @@ rulebook before being turned into named, typed fields:
     the King/Hero encounter-acceptance rules ([3.12]) and the Spy Table
     catch-up formula ([4.33], [3.16]) aren't modeled~~ -- **Challenge's
     acceptance rules and real Melee combat are now implemented**
-    (`turn/challenge_execution.py`, Phase 50), built but not wired into
-    `plan_dispatch.py`'s CHALLENGE dispatch (see Phase 50's note above
-    for why: `mutual_encounter` needs cross-leader visibility
-    `plan_dispatch.py` doesn't have, and real combat's variable rng
-    consumption is opt-in-only by the same reasoning as Phase 49's
-    Duel wiring). **Pursue's own resolver, and the Spy Table [4.33]
-    catch-up formula it (and Trail) would need, remain unbuilt** -- a
-    natural Phase 51+ follow-up. Zero real examples for either action
-    either.
+    (`turn/challenge_execution.py`, Phase 50), and **Pursue's own
+    single-phase catch-up-and-combat resolver is now implemented too**
+    (`turn/spy_table.py` + `turn/pursue_execution.py`, Phase 51). Both
+    stay built-but-not-wired into `plan_dispatch.py`'s own CHALLENGE/
+    PURSUE dispatch (see each phase's own note above for why:
+    `mutual_encounter` needs cross-leader visibility `plan_dispatch.py`
+    doesn't have, and real combat's variable rng consumption is
+    opt-in-only by the same reasoning as Phase 49's Duel wiring).
+    **Still open**: Pursue's own persistent multi-phase chase state
+    (the rulebook's "for the rest of the turn" behavior -- `turn/
+    pursue_execution.py` only resolves a single phase's catch-up roll)
+    and army-vs-army pursuit battle (needs `fight_battle` wired in,
+    explicitly declared unmodeled in Phase 51's own result reason
+    string). Zero real examples for either action either.
   - **ASpy/Defend's remaining gap** (see Phase 26's note above):
     intelligence-report generation (ASpy) and reactive cross-province
     battle-triggering (Defend) both need `GameState`/battle-orchestrator
@@ -1999,8 +2075,13 @@ rulebook before being turned into named, typed fields:
     unconverted raw int until the hex-numbering-vs-`XMULT` question is
     resolved. Zero real examples for either.
   - **Trail's remaining gap** (see Phase 27's note above): decoded but
-    unexecuted, same missing turn-simulation engine as everything else
-    in this list. Succ_Trail is deliberately not decoded at all --
+    unexecuted. `turn/spy_table.py`'s `pursue_catch_up_chance` (Phase
+    51) already covers Trail's own share of the Spy Table formula --
+    [4.33]'s "Chance to Pursue **or Trail**" is one shared column -- so
+    a Trail resolver is now mostly plumbing (co-location, the catch-up
+    roll, then recording spied-on information this project has no
+    report-generation system to surface yet) rather than a fresh
+    research gap. Succ_Trail is deliberately not decoded at all --
     concluded structurally impossible to receive in a player move file,
     not merely unimplemented; see `turn/plan_dispatch.py`'s module
     docstring for the full evidence trail (exhaustive `lactions[...] :=`

@@ -79,6 +79,36 @@ def is_adjacent(a: HexCoord, b: HexCoord, bounds: MapBounds) -> bool:
     return b in neighbors(a, bounds)
 
 
+def _to_cube(coord: HexCoord) -> tuple[int, int, int]:
+    """Converts this module's "odd-r" offset coordinates to cube coordinates.
+
+    Standard odd-r-to-cube conversion (redblobgames.com/grids/hexagons);
+    confirmed to reproduce exactly the 6 neighbor offsets above (each at
+    cube distance 1, for both even and odd rows) before use.
+    """
+
+    x = coord.x - (coord.y - (coord.y & 1)) // 2
+    z = coord.y
+    y = -x - z
+    return x, y, z
+
+
+def hex_distance(a: HexCoord, b: HexCoord) -> int:
+    """Straight-line distance in hexes between two coordinates (0 if equal, 1 if adjacent).
+
+    Not a pathfinding distance -- unlike Move's own "through friendly
+    hexes if possible" chase algorithm ([3.1], still unimplemented, see
+    module docstring), this ignores terrain, ownership, and unexplored
+    hexes. Used by ``turn/spy_table.py``'s Pursue/Trail catch-up formula
+    ([4.33]), which just says "distance (in number of provinces)" with
+    no pathfinding rule attached.
+    """
+
+    ax, ay, az = _to_cube(a)
+    bx, by, bz = _to_cube(b)
+    return max(abs(ax - bx), abs(ay - by), abs(az - bz))
+
+
 def resolve_move(
     current: HexCoord,
     target: HexCoord,

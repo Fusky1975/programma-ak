@@ -7,6 +7,7 @@ from ak_engine.turn.movement import (
     NORMAL_MAP_BOUNDS,
     MapBounds,
     NonAdjacentMoveError,
+    hex_distance,
     is_adjacent,
     neighbors,
     resolve_move,
@@ -80,3 +81,37 @@ def test_resolve_move_to_non_adjacent_hex_raises():
             origin, far_away, BOUNDS,
             target_terrain=Terrain.PLAINS, target_explored_percent=0, explorer_skill=0,
         )
+
+
+# -- hex_distance (Phase 51, used by turn/spy_table.py's Pursue formula) --
+
+
+def test_hex_distance_to_self_is_zero():
+    assert hex_distance(HexCoord(5, 5), HexCoord(5, 5)) == 0
+
+
+@pytest.mark.parametrize(
+    "x,y",
+    [(x, y) for x in range(1, NORMAL_MAP_BOUNDS[0] - 1) for y in range(1, NORMAL_MAP_BOUNDS[1] - 1)],
+)
+def test_hex_distance_to_every_neighbor_is_one(x, y):
+    origin = HexCoord(x, y)
+    for neighbor in neighbors(origin, BOUNDS):
+        assert hex_distance(origin, neighbor) == 1
+
+
+def test_hex_distance_is_symmetric():
+    a, b = HexCoord(2, 3), HexCoord(9, 11)
+    assert hex_distance(a, b) == hex_distance(b, a)
+
+
+@pytest.mark.parametrize(
+    "a,b,expected",
+    [
+        (HexCoord(5, 5), HexCoord(7, 5), 2),  # same row, 2 columns over
+        (HexCoord(0, 0), HexCoord(5, 0), 5),  # same row, 5 columns over
+        (HexCoord(0, 0), HexCoord(0, 10), 10),  # same column, straight down
+    ],
+)
+def test_hex_distance_known_multi_hex_cases(a, b, expected):
+    assert hex_distance(a, b) == expected
