@@ -143,6 +143,16 @@ ak_engine/README.md:**
   rulebook decision with no formula (capital status, wealth, retreat path,
   etc. -- see `turn/retreat.py`); exposed here as ``loser_retreats: bool``,
   the caller's call.
+- **Every genuine battle death is recorded in ``GameState.battle_graveyard``**
+  (Phase 60) -- the four sites here that actually remove an army from
+  play (``_retreat_or_disband``'s no-retreat-destination disband,
+  ``_apply_pursuit``'s catch-and-destroy, and each side's own
+  clean-swept elimination) all call ``state.record_battle_death()``
+  first, giving Skeletal Army and Bless's corpse-cleanup addendum
+  (``turn/cast_execution.py``) something concrete to act on. A Fleet
+  forced to ``DEPLETED`` in place, or a demoted-to-mercenary unit, isn't
+  a death and isn't recorded -- only actual removal from ``state.armies``
+  is.
 """
 
 from __future__ import annotations
@@ -399,6 +409,7 @@ def _retreat_or_disband(
             report.quality_changes[army.army_id] = army.quality
             return
         report.disbanded_army_ids.append(army.army_id)
+        state.record_battle_death(army.location, army.army_type, army.quality, army.kingdom_id)
         state.remove_army(army.army_id)
     else:
         army.kingdom_id = None
@@ -644,6 +655,8 @@ def _apply_pursuit(
     destroyed_ids = {o.target.source_id for o in outcomes if o.target_destroyed}
     for army_id in destroyed_ids:
         report.pursuit_destroyed_army_ids.append(army_id)
+        destroyed_army = state.armies[army_id]
+        state.record_battle_death(destroyed_army.location, destroyed_army.army_type, destroyed_army.quality, destroyed_army.kingdom_id)
         state.remove_army(army_id)
     return destroyed_ids
 
@@ -763,6 +776,7 @@ def fight_battle(
             report.quality_changes[army.army_id] = army.quality
         elif attacker_clean_swept:
             report.destroyed_army_ids.append(army.army_id)
+            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id)
             state.remove_army(army.army_id)
         else:
             army.quality = roll_quality_change(army.quality, rng, is_winner=False, retreated=False)
@@ -791,6 +805,7 @@ def fight_battle(
             report.quality_changes[army.army_id] = army.quality
         elif defender_clean_swept:
             report.destroyed_army_ids.append(army.army_id)
+            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id)
             state.remove_army(army.army_id)
         else:
             army.quality = roll_quality_change(army.quality, rng, is_winner=False, retreated=False)

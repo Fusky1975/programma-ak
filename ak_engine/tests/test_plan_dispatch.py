@@ -208,16 +208,16 @@ def test_dispatch_wait_no_action_move_abort_are_bare_noops():
     assert state.kingdoms[1].treasury == 100
 
 
-def test_dispatch_cast_skeletal_army_is_not_executed():
-    # Skeletal_Army needs a per-province "who died here" registry this
-    # project doesn't have -- see cast_execution.py's module docstring.
+def test_dispatch_cast_hide_feature_is_not_executed():
+    # Hide_Feature needs the still-unpopulated Feature model -- see
+    # cast_execution.py's module docstring.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
-    phase = PlanPhase(label="P0", action=ActionCode.CAST, obj=int(Spell.SKELETAL_ARMY), extra=[0])
+    phase = PlanPhase(label="P0", action=ActionCode.CAST, obj=int(Spell.HIDE_FEATURE), extra=[0])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
     assert isinstance(result, CastExecutionResult)
-    assert result.request.spell == Spell.SKELETAL_ARMY
+    assert result.request.spell == Spell.HIDE_FEATURE
     assert result.applied is False
     assert result.reason == "spell effect not modeled"
 

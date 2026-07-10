@@ -119,16 +119,18 @@ to dispatch automatically:
   compared against anywhere else in the entire available source tree --
   effectively vestigial as far as this project's source access goes.
 - **CAST** decodes every spell (``turn/cast_decode.py``, Phase 23) and
-  now *executes* 12 of the 25 base spells (``turn/cast_execution.py``,
-  Phases 29 and 59): **Charm**/**Kill_Enemy** (Phase 29, unchanged) plus
-  **Resurrect, Part_Sea, Bless, Flood, Tornado, Earthquake, Oratory,
+  now *executes* 13 of the 25 base spells (``turn/cast_execution.py``,
+  Phases 29, 59, and 60): **Charm**/**Kill_Enemy** (Phase 29, unchanged)
+  plus **Resurrect, Part_Sea, Bless, Flood, Tornado, Earthquake, Oratory,
   Plague, Illus_Terrain, Illus_Armies** (Phase 59, once Regolamento
   AK.txt supplied the exact numbers/targeting rules ``RULES.AK``/
-  ``ADDEND.AK`` never gave). Province-targeted spells decode their raw
+  ``ADDEND.AK`` never gave) plus **Skeletal_Army** and Bless's own
+  addendum (Phase 60, once ``GameState.battle_graveyard`` gave both
+  something to read/clear). Province-targeted spells decode their raw
   hex-number target via ``turn/hex_numbering.py`` using this dispatcher's
   own ``board_width`` -- the same value Move's own LMOVE decoding
-  already uses. **Skeletal_Army, Hide_Feature, Clairvoyance**, and all
-  10 Personal-Combat-only spells stay unexecuted, each for its own
+  already uses. **Hide_Feature, Clairvoyance**, and all 10
+  Personal-Combat-only spells stay unexecuted, each for its own
   documented reason -- see ``turn/cast_execution.py``'s docstring. The
   success/failure roll itself (rulebook [3.10]) is real when the caster
   has ``LeaderState.skills`` recorded, falling back to always-succeeds

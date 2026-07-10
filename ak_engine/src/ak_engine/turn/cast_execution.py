@@ -1,6 +1,6 @@
 """Executing a Cast order end-to-end (rulebook [3.10]/[4.21]-[4.25]).
 
-Of the 25 base ``Spell``s, 12 get real execution here as of Phase 59:
+Of the 25 base ``Spell``s, 13 get real execution here as of Phase 60:
 
 - **Charm** and **Kill_Enemy** (Phase 29): see their own helpers below,
   unchanged from Phase 29.
@@ -13,16 +13,17 @@ Of the 25 base ``Spell``s, 12 get real execution here as of Phase 59:
   docstring explicitly named this as the blocker for exactly these ten
   spells ("gives no numeric effect magnitude for any of them"). See each
   ``_execute_*`` helper below for its citation.
+- **Skeletal_Army** (Phase 60): unblocked by
+  ``GameState.battle_graveyard`` (a new per-province "what died here in
+  a battle" registry, populated by ``turn/battle_orchestrator.py``'s
+  four real destruction sites) -- the exact registry Phase 59's own
+  docstring said this spell needed and didn't have. **Bless's own
+  addendum rule** ("now also removes dead units from a province,
+  10%+10%/level in White Magic") is implemented the same phase, for the
+  same reason: it reads/clears the same registry.
 
-**Still unexecuted, each for its own documented reason** (13 of the 25):
+**Still unexecuted, each for its own documented reason** (12 of the 25):
 
-- **Skeletal_Army** ([4.25.1]): needs a per-province "how many units of
-  what type died here, and when" registry. No such registry exists --
-  battle results remove/mutate ``ArmyState`` entries directly
-  (``turn/battle_orchestrator.py``, ``turn/aftermath.py``) without
-  archiving what was destroyed or where. Building that registry (and
-  retrofitting every battle-resolution call site to populate it) is a
-  distinct, larger future task, not attempted here.
 - **Hide_Feature** ([4.23.3]): targets a "Special Location" in a
   province, but ``models/map.py``'s ``Feature`` is an unpopulated stub
   (Phase 1's own scope note) -- no per-province feature list exists to
@@ -46,7 +47,10 @@ Of the 25 base ``Spell``s, 12 get real execution here as of Phase 59:
   in combat -- no spell-effect or magic-item system exists anywhere in
   this project," plus the missing range-transition state machine and
   monster-HP model a real Piano d'Incontro needs). None of these ten can
-  be attempted without building that engine first.
+  be attempted without building that engine first. This also means
+  **Invisibility's own addendum** ("now gives +30% chance to flee") stays
+  unmodeled along with the base spell -- there is no Flee tactic
+  resolver to apply the bonus to either.
 
 **Every province-targeted spell here shares one targeting mechanism**:
 ``CastRequest.target`` is a raw hex number (rulebook: "the province you
@@ -82,7 +86,7 @@ import random
 from dataclasses import dataclass
 
 from ak_engine.models.enums import Ability, Spell
-from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import Terrain
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.cast_decode import CastRequest
@@ -105,6 +109,12 @@ TORNADO_DESTROY_CHANCE_PER_LEVEL = 0.10
 BLESS_TAX_BONUS_PERCENT = 60
 EARTHQUAKE_TAX_MODIFIER_PERCENT = -100
 
+# "NUOVE REGOLE E MODIFICHE": "L'incantesimo Benedizione (Bless) ora rimuove
+# le unita' morte in una provincia. La probabilita' e' del 10% + 10% per
+# livello in Magia Bianca di chi lancia l'incantesimo." (Phase 60.)
+BLESS_GRAVEYARD_CLEAR_BASE_CHANCE = 0.10
+BLESS_GRAVEYARD_CLEAR_CHANCE_PER_LEVEL = 0.10
+
 # [4.24.1]: eligible for Flood -- land, non-mountain (Sea is already water;
 # Mountain is explicitly excluded by the rulebook's own wording).
 _FLOOD_ELIGIBLE_TERRAIN = frozenset({Terrain.PLAINS, Terrain.DESERT, Terrain.JUNGLE, Terrain.FOREST})
@@ -122,6 +132,7 @@ _SPELL_ABILITY: dict[Spell, Ability] = {
     Spell.PLAGUE: Ability.NECROMANCY,
     Spell.ILLUS_TERRAIN: Ability.ILLUSION,
     Spell.ILLUS_ARMIES: Ability.ILLUSION,
+    Spell.SKELETAL_ARMY: Ability.NECROMANCY,
 }
 
 
@@ -178,6 +189,8 @@ def execute_cast(
         return _execute_oratory(state, leader_id, request, rng)
     if spell is Spell.PLAGUE:
         return _execute_plague(state, leader_id, request, rng, board_width)
+    if spell is Spell.SKELETAL_ARMY:
+        return _execute_skeletal_army(state, kingdom_id, leader_id, request, rng)
 
     return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
 
@@ -406,14 +419,21 @@ def _execute_bless(
     where the caster is) is increased 60% for one turn. Repeated casts
     aren't cumulative." Unlike every other province-targeted spell here,
     Bless has no same-or-adjacent restriction -- ``require_adjacent=False``.
-    The addendum rule ("Bless now also removes dead units from a
-    province, 10%+10%/level") stays unmodeled: it needs the same
-    per-province death registry Skeletal_Army is blocked on (see module
-    docstring).
+
+    **Addendum (Phase 60)**: "L'incantesimo Benedizione (Bless) ora
+    rimuove le unita' morte in una provincia. La probabilita' e' del 10%
+    + 10% per livello in Magia Bianca di chi lancia l'incantesimo." --
+    rolled independently, *after* the spell itself has already succeeded
+    (a separate roll, not folded into the main 15%+15%/level cast-success
+    check): on a hit, every ``GraveyardEntry`` recorded for the target
+    province is cleared, so it can no longer be raised as a Skeletal
+    Army. On a miss, nothing happens to the graveyard, but the tax bonus
+    still applies -- the two effects are independent, per the addendum's
+    own wording ("also removes," not "instead of").
     """
 
     caster = state.leaders[leader_id]
-    _coord, province = _resolve_province_target(state, caster, request.target, board_width, require_adjacent=False)
+    coord, province = _resolve_province_target(state, caster, request.target, board_width, require_adjacent=False)
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found")
 
@@ -422,6 +442,12 @@ def _execute_bless(
         return CastExecutionResult(request, applied=False, reason=reason)
 
     province.tax_modifier_percent = BLESS_TAX_BONUS_PERCENT
+
+    cleanup_level = _caster_level(caster, Ability.WHITE)
+    cleanup_chance = BLESS_GRAVEYARD_CLEAR_BASE_CHANCE + BLESS_GRAVEYARD_CLEAR_CHANCE_PER_LEVEL * cleanup_level
+    if rng.random() < cleanup_chance:
+        state.battle_graveyard.pop(coord, None)
+
     return CastExecutionResult(request, applied=True)
 
 
@@ -536,4 +562,53 @@ def _execute_plague(
             continue
         if rng.random() < chance:
             state.remove_army(army.army_id)
+    return CastExecutionResult(request, applied=True)
+
+
+def _execute_skeletal_army(
+    state: GameState, kingdom_id: int, leader_id: int, request: CastRequest, rng: random.Random
+) -> CastExecutionResult:
+    """Rulebook [4.25.1] (Phase 60): "if the caster is in a province where a battle
+    was previously fought and armies were destroyed, he can recruit a
+    horde of skeletons... one army per skill level, provided enough
+    units died in battle... identical in every way to the dead army,
+    with all its movement points... the caster has no way to choose
+    which unit type answers the call." No target field (``cast_decode.py``'s
+    ``NO_TARGET_SPELLS``) -- operates on the caster's own current
+    province.
+
+    Draws from ``GameState.battle_graveyard`` (Phase 60), consuming one
+    entry per army raised (arbitrary order -- "no way to choose," so
+    which specific entry is picked doesn't matter). Capped at
+    ``min(caster's Necromancy level, entries available)``; if the
+    graveyard is empty for this province, the precondition itself fails
+    before any success roll, the same "check applicability first" order
+    every other spell here uses. "All its movement points" is
+    approximated as ``movement_points=0``, the same fresh-unit default
+    every newly-recruited ``ArmyState`` gets (``turn/
+    recruit_execution.py``) -- carrying over the exact remaining
+    movement the original army had at the moment of its own death has no
+    precedent anywhere else in this project's state model. The global
+    350-unit world cap and ~10%/turn decomposition past it are
+    unenforced -- see ``GameState.battle_graveyard``'s own docstring.
+    """
+
+    caster = state.leaders[leader_id]
+    graveyard = state.battle_graveyard.get(caster.location) or []
+    if not graveyard:
+        return CastExecutionResult(request, applied=False, reason="no dead units in this province to raise")
+
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    if not succeeded:
+        return CastExecutionResult(request, applied=False, reason=reason)
+
+    raised_count = min(_caster_level(caster, Ability.NECROMANCY), len(graveyard))
+    for _ in range(raised_count):
+        entry = graveyard.pop()
+        state.add_army(
+            ArmyState(state.new_army_id(), kingdom_id, entry.army_type, entry.quality, caster.location, commanded_by=leader_id)
+        )
+    if not graveyard:
+        del state.battle_graveyard[caster.location]
+
     return CastExecutionResult(request, applied=True)

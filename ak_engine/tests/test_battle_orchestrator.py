@@ -87,6 +87,25 @@ def test_overwhelming_attacker_conquers_and_defender_is_destroyed_when_no_retrea
     assert 201 not in state.armies
 
 
+def test_fight_battle_records_a_clean_swept_defenders_death_in_the_graveyard():
+    # Phase 60, Regolamento AK.txt [4.25.1]: Skeletal Army/Bless's
+    # corpse-cleanup addendum both read GameState.battle_graveyard --
+    # this confirms a genuine clean-swept battle death actually reaches it.
+    state = build_state()
+    rng = no_luck_overwhelming_attacker_rng()
+
+    fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+        loser_retreats=False, rng=rng,
+    )
+
+    entries = state.battle_graveyard[FIELD]
+    assert len(entries) == 1
+    assert entries[0].army_type is ArmyType.GARRISON
+    assert entries[0].quality is Quality.GREEN
+    assert entries[0].kingdom_id == 2
+
+
 def test_defender_disbands_when_no_friendly_province_to_retreat_to():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
@@ -100,6 +119,9 @@ def test_defender_disbands_when_no_friendly_province_to_retreat_to():
 
     assert 201 in report.disbanded_army_ids
     assert 201 not in state.armies
+    # Phase 60: a no-retreat-destination disband is also a real battle
+    # death, recorded the same as an outright clean-swept elimination.
+    assert state.battle_graveyard[FIELD][0].army_type is ArmyType.GARRISON
 
 
 # --- Whales: zero strength off-sea + guaranteed sea retreat (Phase 37) --
@@ -796,6 +818,8 @@ def test_pursuit_destroys_a_caught_retreating_army():
     assert 201 in report.pursuit_destroyed_army_ids
     assert 201 not in report.retreated_army_ids
     assert 201 not in state.armies
+    # Phase 60: a pursuit kill is also a real battle death.
+    assert state.battle_graveyard[FIELD][0].army_type is ArmyType.GARRISON
 
 
 def test_pursuit_does_not_apply_when_loser_retreats_is_false():

@@ -3,7 +3,7 @@ from __future__ import annotations
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, Spell
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, GraveyardEntry, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
@@ -188,12 +188,12 @@ def test_cast_always_succeeds_when_caster_has_no_skills_recorded():
 
 
 def test_unmodeled_spells_report_a_reason_without_touching_state():
-    # Skeletal_Army can't be executed -- see the module docstring (no
-    # per-province "who died here" registry to summon from). Representative
-    # of every other real spell this project doesn't execute (see the
-    # module docstring's full list).
+    # Hide_Feature can't be executed -- see the module docstring (the
+    # Feature model is an unpopulated stub). Representative of every
+    # other real spell this project doesn't execute (see the module
+    # docstring's full list).
     state = build_state()
-    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+    request = CastRequest(spell=Spell.HIDE_FEATURE, target=0)
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
 
@@ -569,3 +569,115 @@ def test_plague_skips_non_humanoid_and_mercenary_armies():
     assert result.applied is True
     assert 1 in state.armies
     assert 2 in state.armies
+
+
+# ---------------------------------------------------------------------------
+# Bless's corpse-cleanup addendum (Phase 60) -- "NUOVE REGOLE E MODIFICHE"
+# ---------------------------------------------------------------------------
+
+
+def test_bless_clears_the_graveyard_on_a_successful_cleanup_roll():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.battle_graveyard[LOCATION] = [GraveyardEntry(ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2)]
+    request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
+    rng = ScriptedRandom([0.05])  # no skills recorded -> cast succeeds free; cleanup chance 10% -> hits
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].tax_modifier_percent == 60
+    assert LOCATION not in state.battle_graveyard
+
+
+def test_bless_does_not_clear_the_graveyard_on_a_failed_cleanup_roll():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.battle_graveyard[LOCATION] = [GraveyardEntry(ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2)]
+    request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
+    rng = ScriptedRandom([0.99])  # cleanup chance 10% -> misses
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].tax_modifier_percent == 60  # tax bonus still applies
+    assert len(state.battle_graveyard[LOCATION]) == 1  # graveyard untouched
+
+
+def test_bless_cleanup_chance_scales_with_white_magic_level():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 2)  # cast 45%, cleanup 30%
+    state.battle_graveyard[LOCATION] = [GraveyardEntry(ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2)]
+    request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
+    rng = ScriptedRandom([0.01, 0.25])  # [0] cast success, [1] cleanup roll (0.25 < 30%)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert LOCATION not in state.battle_graveyard
+
+
+# ---------------------------------------------------------------------------
+# Skeletal Army (Phase 60) -- Regolamento AK.txt [4.25.1]
+# ---------------------------------------------------------------------------
+
+
+def test_skeletal_army_raises_a_unit_from_the_casters_own_province_graveyard():
+    state = build_state()
+    state.battle_graveyard[LOCATION] = [GraveyardEntry(ArmyType.LEGION, Quality.VETERAN, kingdom_id=2)]
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # level 1 -> raise up to 1
+    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+    rng = ScriptedRandom([0.01])  # cast-success roll only -- raising itself is deterministic
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert LOCATION not in state.battle_graveyard  # the one entry was consumed
+    raised = [a for a in state.armies.values() if a.army_type is ArmyType.LEGION]
+    assert len(raised) == 1
+    assert raised[0].quality is Quality.VETERAN
+    assert raised[0].kingdom_id == 1  # joins the caster's kingdom
+    assert raised[0].commanded_by == CASTER_ID
+    assert raised[0].location == LOCATION
+
+
+def test_skeletal_army_fails_when_the_provinces_graveyard_is_empty():
+    state = build_state()
+    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "no dead units in this province to raise"
+
+
+def test_skeletal_army_caps_the_raised_count_at_the_casters_necromancy_level():
+    state = build_state()
+    state.battle_graveyard[LOCATION] = [
+        GraveyardEntry(ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2),
+        GraveyardEntry(ArmyType.BOWMEN, Quality.VETERAN, kingdom_id=2),
+        GraveyardEntry(ArmyType.AXEMEN, Quality.GREEN, kingdom_id=2),
+    ]
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)  # level 2 -> raise at most 2 of the 3
+    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+    rng = ScriptedRandom([0.01])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert len(state.battle_graveyard[LOCATION]) == 1  # one entry left unraised
+    assert len([a for a in state.armies.values()]) == 2
+
+
+def test_skeletal_army_raises_nothing_when_caster_has_no_recorded_level():
+    state = build_state()
+    state.battle_graveyard[LOCATION] = [GraveyardEntry(ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2)]
+    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+    rng = ScriptedRandom([])  # no skills recorded -> cast succeeds free, no roll consumed
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True  # the cast itself still "succeeds"...
+    assert len(state.armies) == 0  # ...but unknown level -> 0 raised, see module docstring
+    assert len(state.battle_graveyard[LOCATION]) == 1  # graveyard untouched

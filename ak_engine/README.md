@@ -2131,7 +2131,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: brand-new subpackage with no existing callers -- full
     suite passed unchanged (1361 passed) before any new tests were
     written. 19 new tests added (1380 passed total).
-- **Phase 59 (current)**: executes 10 of the 13 real spells Phase 29 left
+- **Phase 59**: executes 10 of the 13 real spells Phase 29 left
   unmodeled (Resurrect, Part Sea, Bless, Flood, Tornado, Earthquake,
   Oratory, Plague, Illusory Terrain, Phantasmal Armies), unblocked by
   **`Regolamento AK.txt`**, a more detailed Italian-language rulebook the
@@ -2241,6 +2241,63 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     (`phantasmal_armies_multiplier` + its `compute_effective_strength`
     integration), 2 in `test_battle_orchestrator.py` (the commander
     lookup + the unled-army no-bonus case).
+- **Phase 60 (current)**: closes two of Phase 59's own deferred gaps --
+  Skeletal_Army and Bless's corpse-cleanup addendum -- both of which
+  turned out to need exactly the same missing piece: a per-province
+  "what died here in a battle" registry. **The user asked directly
+  whether these two `Regolamento AK.txt` "NUOVE REGOLE E MODIFICHE"
+  additions (Bless's corpse-cleanup, Invisibility's +30% flee bonus) had
+  been integrated in Phase 59** -- they hadn't, both for reasons already
+  documented in Phase 59's own code (Bless's addendum explicitly named
+  as unmodeled; Invisibility blocked along with every other
+  Personal-Combat-only spell). The user then confirmed building the
+  missing registry now, since it happened to unblock two spells for the
+  price of one (Invisibility's own addendum stays blocked regardless --
+  it needs the much bigger unbuilt combat-tactic engine, not this
+  registry).
+  - **`GameState.battle_graveyard`** (new): a `dict[HexCoord,
+    list[GraveyardEntry]]`, each entry recording a destroyed army's
+    `ArmyType`, `Quality` at death, and owning `kingdom_id` -- exactly
+    what Skeletal Army's own rulebook text says matters ("identical in
+    every way to the dead army"). Populated by
+    `GameState.record_battle_death()`, called from all four of
+    `turn/battle_orchestrator.py`'s real army-elimination sites
+    (`_retreat_or_disband`'s no-retreat-destination disband,
+    `_apply_pursuit`'s catch-and-destroy, and each side's own
+    clean-swept elimination in `fight_battle`) -- and *only* those four:
+    Tornado/Plague's own spell-caused kills (`turn/cast_execution.py`)
+    are deliberately excluded, since the rulebook's own wording is
+    specifically "battaglia" (battle), not any destruction.
+  - **Bless's addendum executes**: after the base +60% tax effect
+    applies, a second, independent roll (10%+10%/level in White Magic)
+    decides whether the target province's graveyard is cleared outright
+    -- "also removes," not "instead of," so a failed cleanup roll still
+    leaves the tax bonus in place.
+  - **Skeletal Army executes**: no target field (`cast_decode.py`'s
+    `NO_TARGET_SPELLS`) -- operates on the caster's own current
+    province. Raises `min(caster's Necromancy level, graveyard entries
+    available)` new armies, each identical to a consumed graveyard entry
+    (type and quality preserved, "no way to choose which type answers
+    the call" honored by just popping arbitrary entries), joining the
+    caster's own kingdom and command. An empty graveyard at the caster's
+    location fails the spell outright *before* any success roll --
+    "provided enough units died in battle" is a precondition, the same
+    "check applicability first" order every Phase 59 spell already
+    uses. **Deliberately not modeled**: "all its movement points" is
+    approximated as the same `movement_points=0` every freshly-recruited
+    army gets (no precedent anywhere in this project for carrying over
+    an exact remaining-movement value across a unit's death), and the
+    global 350-unit world cap plus its ~10%/turn decomposition are
+    unenforced soft world-balance rules, not core mechanics.
+  - Non-breaking: full suite passed unchanged (1410 passed) before any
+    new tests were written (two pre-existing "representative unmodeled
+    spell" tests were repointed from Skeletal_Army, now executed, to
+    Hide_Feature, still blocked -- a comment/name fix, not a behavior
+    change). 8 new tests added (1418 passed total): 1 new + 2 extended
+    in `test_battle_orchestrator.py` (graveyard population across all
+    three battle-death paths), 7 in `test_cast_execution.py` (3 for
+    Bless's cleanup roll, 4 for Skeletal Army: raising, empty-graveyard
+    failure, level-capped count, and the no-recorded-level fallback).
 
 ## Setup
 
@@ -2482,17 +2539,20 @@ rulebook before being turned into named, typed fields:
   - ~~**Cast's remaining gap** (see Phase 29's note above): only Charm
     and Kill_Enemy execute; the other 10 real spells' actual effects...
     need game-state logic not present anywhere in the available Pascal
-    source~~ -- **12 of the 25 base spells execute as of Phase 59** (see
-    that phase's note above), once `Regolamento AK.txt` supplied exact
-    numbers `RULES.AK`/`ADDEND.AK` never gave. **Still open**:
-    Skeletal_Army, Hide_Feature, and Clairvoyance (each blocked by its
-    own distinct missing subsystem -- a per-province death registry, the
-    unpopulated `Feature` stub, and the "story event" model
-    respectively), plus all 10 Personal-Combat-only spells, which need
-    the general tactic-sequence combat engine `turn/encounter.py`'s own
-    docstring already scopes out. The success/failure percentage roll
-    (Phase 30) covers every executed spell uniformly, real once a caster
-    has `LeaderState.skills` data, always-succeeds otherwise. The Trade-
+    source~~ -- **13 of the 25 base spells execute as of Phase 60** (see
+    Phases 59 and 60's own notes above), once `Regolamento AK.txt`
+    supplied exact numbers `RULES.AK`/`ADDEND.AK` never gave, and
+    `GameState.battle_graveyard` (Phase 60) gave Skeletal_Army and
+    Bless's own addendum something to read/clear. **Still open**:
+    Hide_Feature and Clairvoyance (blocked by their own distinct missing
+    subsystem -- the unpopulated `Feature` stub and the "story event"
+    model respectively), plus all 10 Personal-Combat-only spells, which
+    need the general tactic-sequence combat engine `turn/encounter.py`'s
+    own docstring already scopes out -- this also keeps Invisibility's
+    own addendum ("+30% flee chance") unmodeled along with the base
+    spell. The success/failure percentage roll (Phase 30) covers every
+    executed spell uniformly, real once a caster has `LeaderState.skills`
+    data, always-succeeds otherwise. The Trade-
     \>Cast rewrite for secret spells 25-34 is also unmodeled (confirmed
     to exist in Pascal, zero real examples).
   - **Use_MI's remaining gap** (see Phase 24's note above): deeper than

@@ -101,6 +101,28 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   same turn is the required "not cumulative" no-op instead of bumping
   rank twice; not auto-cleared at a turn boundary, same convention as
   every other "caller's job to reset" field in this dataclass.
+
+**``GameState.battle_graveyard`` (Phase 60)**: rulebook (Regolamento
+AK.txt [4.25.1]/addendum): Skeletal Army needs to know "an army was
+destroyed in a battle fought in this province," and the Bless addendum
+("now also removes dead units from a province") needs the same fact to
+act on -- both were left unmodeled in Phase 59 for exactly this missing
+registry. ``GraveyardEntry`` records only what Skeletal Army's own
+rulebook text says matters (the dead unit's ``ArmyType`` and ``Quality``
+at death -- "identical to the dead army") plus ``kingdom_id`` for
+reference; ``GameState.record_battle_death()`` appends one per
+destroyed army. **Populated only from genuine battle deaths**
+(``turn/battle_orchestrator.py``'s four real destruction sites: a
+retreat with nowhere to go, a post-battle pursuit kill, and a clean-swept
+side's own elimination), **not** from a spell directly destroying units
+(Tornado, Plague in ``turn/cast_execution.py``) -- the rulebook's own
+wording is specifically "battaglia" (battle), and a spell isn't one.
+Entries aren't turn-stamped (nothing else in this project tracks battle
+recency either) and aren't automatically pruned -- the rulebook's
+own "roughly 10%/turn decomposition past a 350-unit world cap" is a
+soft world-balance rule this project doesn't enforce (would need a
+live global army count and a turn-scheduled decay pass, out of scope
+for spell execution).
 """
 
 from __future__ import annotations
@@ -180,6 +202,13 @@ class ProvinceState:
 
 
 @dataclass(slots=True)
+class GraveyardEntry:
+    army_type: ArmyType
+    quality: Quality  # rank at time of death
+    kingdom_id: int | None  # who owned it -- reference only, not read by any consumer yet
+
+
+@dataclass(slots=True)
 class GameState:
     turn_number: int = 1
     kingdoms: dict[int, KingdomState] = field(default_factory=dict)
@@ -189,6 +218,8 @@ class GameState:
     # Archived by remove_leader() (Phase 59) -- see module docstring. Keyed
     # by the same leader_id, so a resurrection can look it up directly.
     dead_leaders: dict[int, LeaderState] = field(default_factory=dict)
+    # Battle deaths only (Phase 60) -- see module docstring.
+    battle_graveyard: dict[HexCoord, list[GraveyardEntry]] = field(default_factory=dict)
     allied_kingdoms: set[frozenset[int]] = field(default_factory=set)
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
@@ -210,6 +241,13 @@ class GameState:
 
     def add_leader(self, leader: LeaderState) -> None:
         self.leaders[leader.leader_id] = leader
+
+    def record_battle_death(self, coord: HexCoord, army_type: ArmyType, quality: Quality, kingdom_id: int | None) -> None:
+        """Appends one ``GraveyardEntry`` for a genuine battle death at ``coord`` -- see
+        module docstring for exactly which destruction sites call this.
+        """
+
+        self.battle_graveyard.setdefault(coord, []).append(GraveyardEntry(army_type, quality, kingdom_id))
 
     def remove_leader(self, leader_id: int) -> None:
         """Removes a leader from play, archiving it into ``dead_leaders`` (Phase 59) so a
