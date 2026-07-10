@@ -1832,7 +1832,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: brand-new, self-contained module with no existing
     callers -- full suite passed unchanged (1334 passed) before any new
     tests were written. 8 new tests added (1342 passed total).
-- **Phase 53 (current)**: wires a real army battle into `turn/
+- **Phase 53**: wires a real army battle into `turn/
   pursue_execution.py`'s army-vs-army catch-up case, closing the
   explicit gap Phase 51 declared (and flagged as its own natural
   follow-up).
@@ -1868,6 +1868,46 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     (1342 passed) before any new tests were written. 2 net new tests
     added (one old placeholder test replaced by three narrower ones;
     1344 passed total).
+- **Phase 54 (current)**: `turn/plan_dispatch.py`'s CHALLENGE, PURSUE,
+  and TRAIL dispatch now call `execute_challenge`/`execute_pursue`/
+  `execute_trail` (Phases 50-53) directly, replacing their previous
+  decode-only dispatch (`decode_challenge_phase`/`decode_pursue_phase`/
+  `decode_trail_phase` alone) -- the "built but not auto-invoked" gap
+  flagged repeatedly across those three phases is now closed for the
+  single-leader dispatch path.
+  - **`mutual_encounter` defaults to `False` at this dispatch layer**,
+    the same documented conservative choice already established in
+    Phases 50/51: a King target is never wrongly accepted when the
+    caller can't actually confirm the target King also ordered a
+    Challenge/Pursue back. Detecting a *real* mutual pair -- two
+    leaders targeting each other with Challenge/Pursue in the same
+    phase -- needs the same cross-leader, same-phase visibility
+    Multiple Contingents and Practice's own multi-character
+    coordination needed (`turn/turn_processor.py`, Phases 45/46).
+    **This was scoped down deliberately, confirmed with the user
+    before implementation** (task list: "Solo dispatch a singolo
+    leader" over the larger "dispatch + rilevamento cross-leader
+    reciproco" alternative) -- wiring that detection into
+    `turn_processor.py` is a declared, natural follow-up, not this
+    phase's own scope.
+  - No changes to `turn/challenge_execution.py`, `turn/
+    pursue_execution.py`, or `turn/trail_execution.py` themselves --
+    this phase is pure wiring, three new one-line-body wrapper
+    functions (`_dispatch_challenge`/`_dispatch_pursue`/
+    `_dispatch_trail`) mirroring the existing `_dispatch_cast`/
+    `_dispatch_practice` pattern.
+  - Three pre-existing "is decode only" tests legitimately changed
+    behavior and were updated (not just re-asserted) to reflect real
+    execution; one new test (`test_dispatch_challenge_executes_a_real_
+    encounter_when_target_exists`) confirms a full real encounter now
+    runs end-to-end through `dispatch_phase`.
+  - Non-breaking in the sense that every other action's dispatch is
+    untouched; CHALLENGE/PURSUE/TRAIL's own behavior deliberately
+    changed (decode-only to real execution) as this phase's whole
+    point -- full suite passed with only the three anticipated,
+    already-updated test failures before the fix, then 1345 passed
+    total after (net +1 over Phase 53's 1344: three old tests replaced
+    by four new ones).
 
 ## Setup
 

@@ -26,12 +26,13 @@ from ak_engine.turn.plan_dispatch import (
 from ak_engine.turn.aspy_defend_decode import DefendRequest, SpyProvinceRequest
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
-from ak_engine.turn.challenge_pursue_decode import ChallengeRequest, PursueRequest
+from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
+from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
 from ak_engine.turn.trade_decode import TradeRequest
-from ak_engine.turn.trail_decode import TrailRequest
+from ak_engine.turn.trail_execution import TrailExecutionResult
 from ak_engine.turn.use_mi_decode import UseMIRequest
 
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
@@ -266,24 +267,49 @@ def test_dispatch_use_mi_is_decode_only():
     assert result.target == 97
 
 
-def test_dispatch_challenge_is_decode_only():
+def test_dispatch_challenge_executes_and_reports_target_not_found():
+    # Phase 54: CHALLENGE now dispatches to execute_challenge, not just
+    # decode_challenge_phase -- target 88 doesn't exist in this fixture.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P0", action=ActionCode.CHALLENGE, obj=88, extra=[0, 9, -1])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, ChallengeRequest)
-    assert result.target_character_id == 88
+    assert isinstance(result, ChallengeExecutionResult)
+    assert result.accepted is False
+    assert result.reason == "challenger or target not found"
 
 
-def test_dispatch_pursue_is_decode_only():
+def test_dispatch_challenge_executes_a_real_encounter_when_target_exists():
+    # Challenger is an armyless Hero (not the shared King fixture leader),
+    # so is_encounter_accepted's "Heroes... can always be Encountered by
+    # other Heroes" branch applies deterministically (no rng consumed for
+    # acceptance) -- only the resulting duel's winner is left to chance.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(3, 9)))
+    state.add_kingdom(KingdomState(2, "Otheria", Race.HUMAN, Alignment.GOOD, HexCoord(3, 9)))
+    state.add_leader(LeaderState(LEADER_ID, kingdom_id=1, name="Challenger", location=HexCoord(3, 9)))
+    state.add_leader(LeaderState(88, kingdom_id=2, name="Target", location=HexCoord(3, 9)))
+    phase = PlanPhase(label="P0", action=ActionCode.CHALLENGE, obj=88, extra=[0, 9, -1])  # tactic 9 = Melee
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, ChallengeExecutionResult)
+    assert result.accepted is True
+    assert result.combat_occurred is True
+
+
+def test_dispatch_pursue_executes_and_reports_target_not_found():
+    # Phase 54: PURSUE now dispatches to execute_pursue, not just
+    # decode_pursue_phase -- target 88 doesn't exist in this fixture.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P0", action=ActionCode.PURSUE, obj=88, extra=[0, 9, -1])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, PursueRequest)
-    assert result.target_character_id == 88
+    assert isinstance(result, PursueExecutionResult)
+    assert result.caught_up is False
+    assert result.reason == "pursuer or target not found"
 
 
 def test_dispatch_aspy_is_decode_only():
@@ -306,14 +332,17 @@ def test_dispatch_defend_is_decode_only():
     assert result.target_province == 304
 
 
-def test_dispatch_trail_is_decode_only():
+def test_dispatch_trail_executes_and_reports_target_not_found():
+    # Phase 54: TRAIL now dispatches to execute_trail, not just
+    # decode_trail_phase -- target 88 doesn't exist in this fixture.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P0", action=ActionCode.TRAIL, obj=88, extra=[0])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, TrailRequest)
-    assert result.target_character_id == 88
+    assert isinstance(result, TrailExecutionResult)
+    assert result.spied_on is False
+    assert result.reason == "trailer or target not found"
 
 
 def test_dispatch_succ_trail_is_deliberately_unsupported():

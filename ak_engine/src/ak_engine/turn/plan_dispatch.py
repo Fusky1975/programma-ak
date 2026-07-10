@@ -152,18 +152,30 @@ to dispatch automatically:
   (loot/world generation) isn't in the available source tree. Zero real
   Use_MI phases exist in any of the 10 sample files either -- see that
   module's docstring for the full reasoning.
-- **CHALLENGE** and **PURSUE** are decode-only (Phase 25):
-  ``turn/challenge_pursue_decode.py`` decodes both from the exact same
-  wire format as Search (``DEF2.PAS``'s shared ``Search,Challenge,
-  Pursue: W_List(...,Tac_Bytes)`` branch), except ``obj`` is a target
-  *character* id rather than a feature id. ``ActionCode.CHALLENGE`` is
-  the Pascal engine's internal name for the rulebook's **Encounter
-  Character (EN)** order ([3.12]) -- same kind of naming mismatch as
-  Trade/Give. ``ActionCode.PURSUE`` ([3.16]) is a player-issued "chase
-  this character across the map" order, entirely unrelated to
-  ``turn/pursuit.py``'s separate automatic post-battle retreat-chasing
-  mechanic ([7.3]) -- confirmed no overlap. Zero real phases exist for
-  either action in the 10 sample files.
+- **CHALLENGE** and **PURSUE** actually execute (decoded Phase 25,
+  executed Phase 54): ``turn/challenge_pursue_decode.py`` decodes both
+  from the exact same wire format as Search (``DEF2.PAS``'s shared
+  ``Search,Challenge,Pursue: W_List(...,Tac_Bytes)`` branch), except
+  ``obj`` is a target *character* id rather than a feature id.
+  ``ActionCode.CHALLENGE`` is the Pascal engine's internal name for the
+  rulebook's **Encounter Character (EN)** order ([3.12]) -- same kind
+  of naming mismatch as Trade/Give; ``turn/challenge_execution.py``
+  (Phase 50) resolves the King/Hero acceptance decision tree and a real
+  Melee duel. ``ActionCode.PURSUE`` ([3.16]) is a player-issued "chase
+  this character across the map" order, entirely unrelated to ``turn/
+  pursuit.py``'s separate automatic post-battle retreat-chasing
+  mechanic ([7.3]) -- confirmed no overlap; ``turn/pursue_execution.py``
+  (Phases 51/53) resolves one phase's Spy Table catch-up roll and
+  either a real army battle or an armyless Encounter, reusing Challenge's
+  own combat core. **``mutual_encounter`` (a King target's own
+  acceptance requirement) defaults to ``False`` at this single-leader
+  dispatch layer** -- detecting a real mutual Challenge/Pursue pair
+  (both leaders targeting each other the same phase) needs the same
+  cross-leader, same-phase visibility Multiple Contingents and
+  Practice's own multi-character coordination needed
+  (``turn/turn_processor.py``, Phases 45/46); wiring that detection in
+  here is a declared, natural follow-up, not attempted this phase. Zero
+  real phases exist for either action in the 10 sample files.
 - **ASPY** and **DEFEND** are decode-only (Phase 26):
   ``turn/aspy_defend_decode.py`` decodes both to a raw ``target_province``
   int -- bare triples in ``DEF2.PAS`` (no dedicated ``CASE`` branch), but
@@ -174,13 +186,16 @@ to dispatch automatically:
   Province; ``ActionCode.DEFEND`` is [3.15] Defend -- neither has a
   Trade/Challenge-style naming mismatch. Zero real phases exist for
   either action in the 10 sample files.
-- **TRAIL** is decode-only (Phase 27): ``turn/trail_decode.py`` decodes
-  ``obj`` as a target character id, matching Pursue/Challenge's target
-  shape but confirmed -- by the Italian rulebook explicitly ("il primo
-  non genera un Piano d'Incontro, il secondo invece sì") and by
-  ``DEF2.PAS`` structurally -- to carry **no** Encounter Plan tactic
-  list, unlike Pursue/Challenge/Search. Rulebook [3.17]. Zero real
-  phases exist in the 10 sample files.
+- **TRAIL** actually executes (decoded Phase 27, executed Phase 54):
+  ``turn/trail_decode.py`` decodes ``obj`` as a target character id,
+  matching Pursue/Challenge's target shape but confirmed -- by the
+  Italian rulebook explicitly ("il primo non genera un Piano
+  d'Incontro, il secondo invece sì") and by ``DEF2.PAS`` structurally --
+  to carry **no** Encounter Plan tactic list, unlike Pursue/Challenge/
+  Search. Rulebook [3.17]; ``turn/trail_execution.py`` (Phase 52)
+  resolves one phase's Spy Table catch-up roll and reports only
+  ``spied_on: bool`` (no intelligence payload -- see that module's own
+  docstring for why). Zero real phases exist in the 10 sample files.
 
 **``ActionCode.SUCC_TRAIL`` is deliberately excluded from
 ``SUPPORTED_ACTIONS`` -- not a gap, a considered exclusion.** Unlike
@@ -270,6 +285,7 @@ from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_ph
 from ak_engine.turn.aspy_defend_decode import decode_aspy_phase, decode_defend_phase
 from ak_engine.turn.cast_decode import decode_cast_phase
 from ak_engine.turn.cast_execution import CastExecutionResult, execute_cast
+from ak_engine.turn.challenge_execution import ChallengeExecutionResult, execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.exploration import resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
@@ -277,11 +293,13 @@ from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fir
 from ak_engine.turn.move_execution import execute_move
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import PracticeExecutionResult, execute_practice
+from ak_engine.turn.pursue_execution import PursueExecutionResult, execute_pursue
 from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_recruit
 from ak_engine.turn.search_decode import decode_search_phase
 from ak_engine.turn.trade_decode import decode_trade_phase
 from ak_engine.turn.trail_decode import decode_trail_phase
+from ak_engine.turn.trail_execution import TrailExecutionResult, execute_trail
 from ak_engine.turn.use_mi_decode import decode_use_mi_phase
 
 SUPPORTED_ACTIONS = frozenset(
@@ -418,10 +436,10 @@ def dispatch_phase(
         return decode_use_mi_phase(phase)
 
     if action is ActionCode.CHALLENGE:
-        return decode_challenge_phase(phase)
+        return _dispatch_challenge(phase, state, leader_id, rng)
 
     if action is ActionCode.PURSUE:
-        return decode_pursue_phase(phase)
+        return _dispatch_pursue(phase, state, leader_id, rng)
 
     if action is ActionCode.ASPY:
         return decode_aspy_phase(phase)
@@ -430,7 +448,7 @@ def dispatch_phase(
         return decode_defend_phase(phase)
 
     if action is ActionCode.TRAIL:
-        return decode_trail_phase(phase)
+        return _dispatch_trail(phase, state, leader_id, rng)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 
@@ -452,6 +470,38 @@ def _dispatch_cast(
 ) -> CastExecutionResult:
     request = decode_cast_phase(phase)
     return execute_cast(state, kingdom_id, leader_id, request, rng)
+
+
+def _dispatch_challenge(
+    phase: PlanPhase, state: GameState, leader_id: int, rng: random.Random | None
+) -> ChallengeExecutionResult:
+    """``mutual_encounter`` defaults to ``False`` here -- a single-leader dispatch has
+    no visibility into whether the target King also ordered a Challenge
+    back this same phase (see ``turn/challenge_execution.py``'s own
+    docstring). Detecting real mutual Challenge/Pursue pairs would need
+    the same cross-leader, same-phase visibility Multiple Contingents and
+    Practice's own multi-character coordination needed -- a declared
+    follow-up for ``turn/turn_processor.py``, not attempted here.
+    """
+
+    request = decode_challenge_phase(phase)
+    return execute_challenge(state, leader_id, request, rng)
+
+
+def _dispatch_pursue(
+    phase: PlanPhase, state: GameState, leader_id: int, rng: random.Random | None
+) -> PursueExecutionResult:
+    """Same ``mutual_encounter=False`` default and reasoning as ``_dispatch_challenge``."""
+
+    request = decode_pursue_phase(phase)
+    return execute_pursue(state, leader_id, request, rng)
+
+
+def _dispatch_trail(
+    phase: PlanPhase, state: GameState, leader_id: int, rng: random.Random | None
+) -> TrailExecutionResult:
+    request = decode_trail_phase(phase)
+    return execute_trail(state, leader_id, request, rng)
 
 
 def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListRequest:
