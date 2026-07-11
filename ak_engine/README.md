@@ -2630,7 +2630,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (1467 passed) before any
     new tests were written. 2 new tests added (1469 passed total) in
     `test_trail_execution.py`.
-- **Phase 69 (current)**: `ProvinceState.explored_percent_by_kingdom` --
+- **Phase 69**: `ProvinceState.explored_percent_by_kingdom` --
   finally unblocks the exploration-advantage strength bonus flagged
   since Phase 9 and explicitly documented as blocked in Phase 35.
   `RULES.AK`'s [6.3] "ARMY STRENGTH NOTES" (quoted in full): "The side
@@ -2678,6 +2678,65 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     behavior changed. 6 new tests added (1475 passed total) across
     `test_move_execution.py`, `test_plan_dispatch.py`,
     `test_battle_orchestrator.py`, and `test_turn_processor.py`.
+- **Phase 70 (current)**: `turn/turn_processor.py
+  _continue_active_pursuits`/`_register_pursuit_continuation` -- wires
+  Pursue/Trail's own persistent multi-phase chase into the phase loop,
+  resuming the work Phase 66/68 deliberately left unattempted. `RULES.AK`
+  [3.16] (quoted in full in earlier phases' notes): "A character can be
+  ordered to chase after another character for the rest of the turn...
+  You can specify other actions on phases 2 through 5 which will be
+  attempted if the pursuit is resolved before the end of the gameturn."
+  Confirmed with the user before implementation as a scoped step, not
+  the whole originally-floated ask (which also named Patrol and Defend's
+  battle-loss cancellation -- both stay open, see below).
+  - **Preemption**: a new `active_pursuits: dict[int, _ActivePursuit]`
+    local to `run_turn()` tracks every leader with a still-unresolved
+    Pursue/Trail. At the start of each phase, any leader listed there
+    has their real plan entry for *that* phase dropped entirely from
+    `entries` -- before Multiple Contingents/Practice/mutual-encounter
+    detection ever sees it -- and a `_continue_active_pursuits` call
+    dispatches one `advance_pursuit`/`advance_trail` step for them
+    instead, at `segment_index=-1` (the same not-tied-to-a-real-segment
+    sentinel `_dispatch_contested_rebattles` already uses).
+  - **Resolution is checked once, at the phase's own start**: if a
+    chase resolves *during* a phase's own continuation dispatch, that
+    phase's original order is still lost (already dropped before the
+    outcome was known) -- only the *following* phase's order dispatches
+    normally. The rulebook doesn't disambiguate same-phase ordering
+    here; this follows the same "act on what's known at the start of
+    the phase" principle Defend cancellation/reinforcement (Phase 57/67)
+    already use, rather than guessing at a same-phase reordering rule
+    this project has no precedent for.
+  - **Registration**: a freshly-dispatched PURSUE/TRAIL phase (via the
+    ordinary `_dispatch_single` path) that comes back with the specific
+    "did not catch up this phase"/"did not find the target this phase"
+    reason -- and only that reason, not a refused encounter or a
+    terminal not-found/army-mismatch failure -- is registered into
+    `active_pursuits` for continuation next phase onward.
+  - **Explicitly still out of scope, confirmed with the user as a
+    scoped step rather than the whole floated ask**: "Characters On
+    Patrol" (self-targeting Pursue, [3.16]) is never registered for
+    persistence -- its detect-any-adjacent-enemy semantics are
+    structurally different from directed chase-toward-one-target and
+    need a different implementation. Defend's other cancellation
+    trigger ("cancelled if he loses a battle") remains the same open
+    gap `_apply_defend_cancellations` already documented in Phase 67. A
+    Pursue/Trail resolved via the mutual-encounter dispatch path is
+    never registered for persistence either -- only the plain
+    single-leader path is. Continuation steps carry no movement-point
+    cost and never trigger Defend reinforcement, matching
+    `advance_pursuit`/`advance_trail`'s own already-documented scope.
+  - Non-breaking: full suite passed unchanged (1475 passed) before any
+    new tests were written -- the preemption/continuation logic only
+    ever runs for a leader already inside `active_pursuits`, which
+    starts empty and nothing in the existing test suite issues a
+    Pursue/Trail that stays unresolved across a phase boundary. 3 new
+    tests added (1478 passed total) in `test_turn_processor.py`: an
+    unresolved Pursue preempts a later LMOVE order and continues the
+    chase via one hex step until it resolves, then the leader's next
+    real order dispatches normally again; the same for Trail; and a
+    Pursue with no such target (a terminal reason, not "did not catch
+    up") is confirmed to *not* preempt anything.
 
 ## Setup
 
@@ -2954,18 +3013,22 @@ rulebook before being turned into named, typed fields:
     53); both dispatching through real execution instead of decode-only
     (`plan_dispatch.py`, Phase 54); and mutual `mutual_encounter`
     detection across leaders (`turn/turn_processor.py
-    _dispatch_mutual_encounter`, Phase 56). **Still open**: Pursue's own
-    persistent multi-phase chase state -- the rulebook's "for the rest
-    of the turn" behavior. Phase 66 added `step_toward_target`/
+    _dispatch_mutual_encounter`, Phase 56). ~~**Still open**: Pursue's
+    own persistent multi-phase chase state -- the rulebook's "for the
+    rest of the turn" behavior. Phase 66 added `step_toward_target`/
     `advance_pursuit`, a standalone chase-step-and-reroll primitive
     (confirmed with the user as a deliberately narrow first slice, not
     the full subsystem), but it isn't auto-wired into
-    `turn/turn_processor.py`'s phase loop -- `execute_pursue` alone
-    still only resolves a single phase's catch-up (and, if applicable,
-    battle) per call, and a caught-up-but-not-yet-resolved chase doesn't
-    persist into later phases on its own without a caller explicitly
-    invoking `advance_pursuit`. Zero real examples for either action
-    either.
+    `turn/turn_processor.py`'s phase loop~~ -- **the directed-chase case
+    is wired in as of Phase 70**: an unresolved Pursue/Trail now
+    genuinely preempts the leader's own later-phase orders and the chase
+    continues phase by phase via `advance_pursuit`/`advance_trail`
+    (`turn/turn_processor.py _continue_active_pursuits`, see that
+    phase's own note below). **Still open**: "Characters On Patrol"
+    (self-targeting Pursue, [3.16]) and Defend's other cancellation
+    trigger ("cancelled if he loses a battle") -- see Phase 70's note
+    below for why both are still deferred. Zero real examples for either
+    action either.
   - ~~**ASpy/Defend's remaining gap** (see Phase 26's note above):
     intelligence-report generation (ASpy) and reactive cross-province
     battle-triggering (Defend) both need `GameState`/battle-orchestrator

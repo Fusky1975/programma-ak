@@ -75,6 +75,57 @@ rulebook's other one ("cancelled if he loses a battle") stays a
 distinct, still-open gap -- see ``_apply_defend_cancellations``'s own
 docstring for why.
 
+**PERSISTENT PURSUE/TRAIL CHASE (Phase 70)**: rulebook [3.16]: "A
+character can be ordered to chase after another character for the
+rest of the turn... You can specify other actions on phases 2 through
+5 which will be attempted if the pursuit is resolved before the end
+of the gameturn." An unresolved Pursue or Trail now genuinely preempts
+that leader's own later-phase orders: at the start of each phase, any
+leader still listed in ``active_pursuits`` has their real plan entry
+for *this* phase dropped entirely from ``entries`` before any grouping
+detection runs, and ``_continue_active_pursuits`` dispatches one
+``turn/pursue_execution.py advance_pursuit``/``turn/trail_execution.py
+advance_trail`` step for them instead (``segment_index=-1`` sentinel,
+same convention as ``_dispatch_contested_rebattles``, since this
+dispatch isn't tied to any real plan segment). The chase ends the
+moment ``advance_pursuit``/``advance_trail`` reports resolution (any
+``caught_up``/``spied_on`` outcome, including a refused encounter or a
+terminal not-found/army-mismatch reason) -- only the exact "did not
+catch up this phase"/"did not find the target this phase" reason keeps
+it alive into the next phase. A freshly-dispatched PURSUE/TRAIL phase
+(via the ordinary ``_dispatch_single`` path at the end of this
+function) that comes back unresolved the same way is registered into
+``active_pursuits`` for the *next* phase onward, via
+``_register_pursuit_continuation``.
+
+**A documented reading of "resolved... will be attempted", not a
+rulebook quote**: resolution is checked once per phase, at that
+phase's own start -- if the chase resolves *during* a phase's own
+continuation dispatch, that same phase's original order is still lost
+(it was already dropped from ``entries`` before the outcome was
+known); only the *following* phase's order, if any, dispatches
+normally. The rulebook doesn't disambiguate same-phase ordering here,
+so this follows the same "process what's known at the start of the
+phase" principle Defend cancellation and Defend reinforcement already
+use.
+
+**Explicitly still out of scope, confirmed with the user as a scoped
+step rather than the whole approved ask**: "Characters On Patrol"
+(self-targeting Pursue, [3.16]) is never registered for persistence --
+a self-targeting Pursue's own detect-any-adjacent-enemy semantics are
+structurally different from directed chase-toward-one-target and would
+need a different implementation, not attempted here. Defend's other
+cancellation trigger ("cancelled if he loses a battle") remains the
+same open gap ``_apply_defend_cancellations`` already documents. A
+Pursue/Trail resolved via the *mutual-encounter* dispatch path is
+never registered for persistence either -- only the plain single-leader
+``_dispatch_single`` path is, keeping continuation detection to the
+common case (PURSUE never participates in the multi-attacker LMOVE
+path in the first place). Continuation steps carry no movement-point
+cost and never trigger Defend reinforcement (a continuing pursuer's
+hex-step never appears in ``move_targets``), matching
+``advance_pursuit``/``advance_trail``'s own already-documented scope.
+
 **Explicitly out of scope, to keep this tractable**:
 
 - A "mixed" LMOVE group (some movers see the target as friendly, others
@@ -148,7 +199,9 @@ from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import execute_practice_group
-from ak_engine.turn.pursue_execution import execute_pursue
+from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue
+from ak_engine.turn.trail_decode import decode_trail_phase
+from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail
 
 PHASE_LABELS = ("P0", "P1", "P2", "P3", "P4")
 
@@ -157,6 +210,16 @@ PHASE_LABELS = ("P0", "P1", "P2", "P3", "P4")
 class TurnLeader:
     leader: Leader
     kingdom_id: int
+
+
+@dataclass(slots=True)
+class _ActivePursuit:
+    """One leader's still-unresolved Pursue/Trail, carried across phases -- see the
+    module docstring's "PERSISTENT PURSUE/TRAIL CHASE" section.
+    """
+
+    kind: str  # "pursue" or "trail"
+    request: object  # PursueRequest for "pursue", TrailRequest for "trail"
 
 
 @dataclass(slots=True)
@@ -187,12 +250,18 @@ def run_turn(
     results: list[PhaseDispatchResult] = []
     bounds = MapBounds(*NORMAL_MAP_BOUNDS)
     active_defends: dict[int, set[HexCoord]] = {}  # defender leader_id -> coverage area
+    active_pursuits: dict[int, _ActivePursuit] = {}  # pursuer/trailer leader_id -> ongoing chase
 
     for phase_index, label in enumerate(PHASE_LABELS):
         if phase_index > 0:
             results.extend(_dispatch_contested_rebattles(state, rng))
 
         entries = _collect_phase_entries(turn_leaders, label)
+        # A leader still mid-chase has this phase's own order preempted
+        # entirely -- see "PERSISTENT PURSUE/TRAIL CHASE" in the module
+        # docstring for why this is checked once, at the phase's start.
+        entries = [entry for entry in entries if entry[0].leader.leader_id not in active_pursuits]
+        results.extend(_continue_active_pursuits(active_pursuits, label, state, rng))
 
         move_targets: dict[int, HexCoord] = {}
         for index, (_tl, _segment_index, phase) in enumerate(entries):
@@ -283,7 +352,10 @@ def run_turn(
         for index, (tl, segment_index, phase) in enumerate(entries):
             if index in consumed:
                 continue
-            results.extend(_dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng))
+            dispatch_results = _dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng)
+            results.extend(dispatch_results)
+            if phase.action in (ActionCode.PURSUE, ActionCode.TRAIL):
+                _register_pursuit_continuation(active_pursuits, tl.leader.leader_id, phase, dispatch_results)
 
     return results
 
@@ -386,6 +458,83 @@ def _apply_defend_reinforcements(
             defender_state.location = target
             del active_defends[defender_leader_id]
             break
+
+
+_PURSUE_STILL_CHASING_REASON = "did not catch up this phase"
+_TRAIL_STILL_CHASING_REASON = "did not find the target this phase"
+
+
+def _continue_active_pursuits(
+    active_pursuits: dict[int, _ActivePursuit],
+    label: str,
+    state: GameState,
+    rng: random.Random,
+) -> list[PhaseDispatchResult]:
+    """Dispatches one ``advance_pursuit``/``advance_trail`` step for every leader still
+    mid-chase, and drops resolved (or terminally-failed) chases from
+    ``active_pursuits``. See the module docstring's "PERSISTENT PURSUE/
+    TRAIL CHASE" section for the ``segment_index=-1`` sentinel and why
+    resolution is checked once, here, at the phase's own start.
+    """
+
+    results: list[PhaseDispatchResult] = []
+    for leader_id, active in list(active_pursuits.items()):
+        if active.kind == "pursue":
+            result = advance_pursuit(state, leader_id, active.request, rng)
+            action = ActionCode.PURSUE
+            still_chasing = not result.caught_up and result.reason == _PURSUE_STILL_CHASING_REASON
+        else:
+            result = advance_trail(state, leader_id, active.request, rng)
+            action = ActionCode.TRAIL
+            still_chasing = not result.spied_on and result.reason == _TRAIL_STILL_CHASING_REASON
+
+        if not still_chasing:
+            del active_pursuits[leader_id]
+
+        results.append(
+            PhaseDispatchResult(
+                leader_id=leader_id,
+                segment_index=-1,  # sentinel: continuation, not tied to a real plan segment this phase
+                phase_label=label,
+                action=action,
+                result=result,
+                error=None,
+            )
+        )
+    return results
+
+
+def _register_pursuit_continuation(
+    active_pursuits: dict[int, _ActivePursuit],
+    leader_id: int,
+    phase: PlanPhase,
+    dispatch_results: list[PhaseDispatchResult],
+) -> None:
+    """After a freshly-dispatched PURSUE/TRAIL phase, registers the chase for
+    continuation next phase if -- and only if -- it came back with the
+    specific "still looking, try again next phase" outcome. Any other
+    outcome (resolved, refused, or a terminal not-found/army-mismatch
+    reason) needs no follow-up. See module docstring.
+    """
+
+    if not dispatch_results:
+        return
+    result = dispatch_results[-1].result
+
+    if phase.action is ActionCode.PURSUE:
+        if not isinstance(result, PursueExecutionResult):
+            return
+        if result.caught_up or result.reason != _PURSUE_STILL_CHASING_REASON:
+            return
+        request = decode_pursue_phase(phase)
+        active_pursuits[leader_id] = _ActivePursuit(kind="pursue", request=request)
+    else:
+        if not isinstance(result, TrailExecutionResult):
+            return
+        if result.spied_on or result.reason != _TRAIL_STILL_CHASING_REASON:
+            return
+        request = decode_trail_phase(phase)
+        active_pursuits[leader_id] = _ActivePursuit(kind="trail", request=request)
 
 
 def _dispatch_mutual_encounter(
