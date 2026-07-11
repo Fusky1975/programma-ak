@@ -613,3 +613,89 @@ def test_run_turn_defend_is_consumed_after_its_first_reinforcement():
     by_leader = {r.leader_id: r for r in results}
     assert by_leader[200].result.battle_report is not None
     assert by_leader[300].result.battle_report is None
+
+
+# -- Defend cancellation (Phase 67) -----------------------------------------
+
+
+def _two_phase_leader(leader_id: int, name: str, phase0: PlanPhase, phase1: PlanPhase) -> Leader:
+    return Leader(
+        leader_id=leader_id,
+        name=name,
+        plan=ActionPlan(
+            leader_id=leader_id, segments=[PlanSegment(0, 1, (), {phase0.label: phase0, phase1.label: phase1})]
+        ),
+    )
+
+
+def _invading_attacker() -> tuple[LeaderState, ArmyState, Leader]:
+    leader_state = LeaderState(200, kingdom_id=1, name="Attacker", location=ATTACKER_ORIGIN)
+    army_state = ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ATTACKER_ORIGIN, commanded_by=200, movement_points=3)
+    leader = _attacker(200, 902, ATTACKER_ORIGIN, COVERED, "P2")
+    return leader_state, army_state, leader
+
+
+def test_run_turn_defend_is_cancelled_by_a_later_move_order():
+    state = _defend_state()
+    attacker_state, attacker_army, attacker = _invading_attacker()
+    state.add_leader(attacker_state)
+    state.add_army(attacker_army)
+    defender = _two_phase_leader(100, "Defender", _defend_phase("P0"), _lmove_phase("P1", ANOTHER_COVERED))
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(5)
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[200].result.battle_report is None  # cancelled -- walks in uncontested
+
+
+def test_run_turn_defend_is_cancelled_by_a_later_pursue_order():
+    state = _defend_state()
+    attacker_state, attacker_army, attacker = _invading_attacker()
+    state.add_leader(attacker_state)
+    state.add_army(attacker_army)
+    pursue_phase = PlanPhase(label="P1", action=ActionCode.PURSUE, obj=999, extra=[-1])
+    defender = _two_phase_leader(100, "Defender", _defend_phase("P0"), pursue_phase)
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(5)
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[200].result.battle_report is None
+
+
+def test_run_turn_defend_is_cancelled_by_a_later_trail_order():
+    state = _defend_state()
+    attacker_state, attacker_army, attacker = _invading_attacker()
+    state.add_leader(attacker_state)
+    state.add_army(attacker_army)
+    trail_phase = PlanPhase(label="P1", action=ActionCode.TRAIL, obj=999, extra=[0])
+    defender = _two_phase_leader(100, "Defender", _defend_phase("P0"), trail_phase)
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(5)
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[200].result.battle_report is None
+
+
+def test_run_turn_defend_survives_an_unrelated_action():
+    # WAIT (and, by the same logic, Practice/Explore/etc.) doesn't cancel
+    # Defend -- only LMOVE/PURSUE/TRAIL do. Proves the cancellation check
+    # isn't over-broad.
+    state = _defend_state()
+    attacker_state, attacker_army, attacker = _invading_attacker()
+    state.add_leader(attacker_state)
+    state.add_army(attacker_army)
+    wait_phase = PlanPhase(label="P1", action=ActionCode.WAIT, obj=0, extra=[0])
+    defender = _two_phase_leader(100, "Defender", _defend_phase("P0"), wait_phase)
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(5)
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[200].result.battle_report is not None

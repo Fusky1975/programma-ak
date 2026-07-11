@@ -64,6 +64,17 @@ the single-shared-resolution design (confirmed with the user) and the
 King-target initiator rule. A self-targeting Pursue (rulebook [3.16]
 "Patrol") is never treated as a mutual pair with itself.
 
+**DEFEND CANCELLATION rule (Phase 67)**: ``_apply_defend_cancellations``
+removes a leader from ``active_defends`` the moment their own plan
+reaches an LMOVE/PURSUE/TRAIL phase -- rulebook [3.15]: "If he receives
+a Move, Pursue or Trail order, the Defend order is cancelled." Runs
+before ``_apply_defend_reinforcements`` each phase, so a leader who's
+moving/pursuing/trailing this phase no longer reacts to an invasion
+this same phase either. Only this cancellation trigger is modeled; the
+rulebook's other one ("cancelled if he loses a battle") stays a
+distinct, still-open gap -- see ``_apply_defend_cancellations``'s own
+docstring for why.
+
 **Explicitly out of scope, to keep this tractable**:
 
 - A "mixed" LMOVE group (some movers see the target as friendly, others
@@ -190,6 +201,7 @@ def run_turn(
                 except ValueError:
                     pass  # left for the ordinary per-leader path to raise/record consistently
 
+        _apply_defend_cancellations(active_defends, entries)
         _apply_defend_reinforcements(active_defends, move_targets, entries, state)
 
         for index, (tl, _segment_index, phase) in enumerate(entries):
@@ -273,6 +285,38 @@ def run_turn(
             results.extend(_dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng))
 
     return results
+
+
+_DEFEND_CANCELLING_ACTIONS = frozenset({ActionCode.LMOVE, ActionCode.PURSUE, ActionCode.TRAIL})
+
+
+def _apply_defend_cancellations(
+    active_defends: dict[int, set[HexCoord]], entries: list[tuple[TurnLeader, int, PlanPhase]]
+) -> None:
+    """Rulebook [3.15] (quoted in full, ``RULES.AK`` ~line 573-576): "A general with
+    Defend orders may use the rest of his actions to practice, explore,
+    etc. If he receives a Move, Pursue or Trail order, the Defend order
+    is cancelled." Removes a leader from ``active_defends`` the moment
+    their own plan reaches an LMOVE/PURSUE/TRAIL phase, *before* this
+    same phase's own ``_apply_defend_reinforcements`` check runs -- a
+    general who's off moving/pursuing/trailing this phase is no longer
+    standing by to react to an invasion this phase either.
+
+    **Only this cancellation trigger is modeled here.** The rulebook's
+    other cancellation condition, "a character's Defend order is
+    cancelled if he loses a battle, to prevent further needless
+    defeats," is a distinct, still-open gap -- it needs this leader's
+    own battle outcome *this same phase*, which isn't available yet at
+    this point in ``run_turn()`` (battles dispatch later in the phase,
+    across several different code paths: solo, Multiple Contingents,
+    contested-province rebattles, and Pursue's own army-vs-army catch-up
+    each produce their own result shape) -- left unattempted rather than
+    guessed at.
+    """
+
+    for tl, _segment_index, phase in entries:
+        if phase.action in _DEFEND_CANCELLING_ACTIONS:
+            active_defends.pop(tl.leader.leader_id, None)
 
 
 def _apply_defend_reinforcements(

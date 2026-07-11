@@ -2544,7 +2544,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     candidate instead (proving genuine randomness, not "overflight
     always wins"), and the Druidic-blocked-overflight-stays-excluded
     case.
-- **Phase 66 (current)**: `turn/pursue_execution.py step_toward_target`/
+- **Phase 66**: `turn/pursue_execution.py step_toward_target`/
   `advance_pursuit` -- a deliberately narrow first step toward Pursue's
   ([3.16]) still-open persistent multi-phase chase, confirmed with the
   user before implementation. Researching the full picture first
@@ -2581,6 +2581,36 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (1459 passed) before any
     new tests were written. 4 new tests added (1463 passed total) in
     `test_pursue_execution.py`.
+- **Phase 67 (current)**: `turn/turn_processor.py
+  _apply_defend_cancellations` -- Defend's own cancellation rule,
+  directly relevant now that Phase 66's Pursue research surfaced its
+  exact wording. `RULES.AK` [3.15] (quoted in full): "A general with
+  Defend orders may use the rest of his actions to practice, explore,
+  etc. If he receives a Move, Pursue or Trail order, the Defend order is
+  cancelled."
+  - Removes a leader from `active_defends` the moment their own plan
+    reaches an LMOVE/PURSUE/TRAIL phase, running *before*
+    `_apply_defend_reinforcements`'s own check each phase -- a general
+    who's moving/pursuing/trailing this phase is no longer standing by
+    to react to an invasion this same phase either. Cancellation keys
+    only off the order *type* the leader's own plan contains at that
+    phase, not whether the underlying move/pursue/trail itself actually
+    succeeds -- "if he **receives**" an order is read as the order being
+    given, not the order landing.
+  - **Only this cancellation trigger is modeled.** The rulebook's other
+    one -- "a character's Defend order is cancelled if he loses a
+    battle, to prevent further needless defeats" -- stays a distinct,
+    still-open gap: it needs this leader's own battle outcome *this same
+    phase*, not yet available at the point `_apply_defend_cancellations`
+    runs (battles dispatch later in the phase, across several different
+    code paths -- solo, Multiple Contingents, contested-province
+    rebattles, and Pursue's own army-vs-army catch-up each produce their
+    own result shape) -- left unattempted rather than guessed at.
+  - Non-breaking: full suite passed unchanged (1463 passed) before any
+    new tests were written. 4 new tests added (1467 passed total) in
+    `test_turn_processor.py`: LMOVE/PURSUE/TRAIL each cancel an active
+    Defend before its next reinforcement check, and an unrelated action
+    (WAIT) doesn't.
 
 ## Setup
 
