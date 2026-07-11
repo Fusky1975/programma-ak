@@ -23,7 +23,8 @@ from ak_engine.turn.plan_dispatch import (
     dispatch_phase,
     run_leader_plan,
 )
-from ak_engine.turn.aspy_defend_decode import DefendRequest, SpyProvinceRequest
+from ak_engine.turn.aspy_defend_decode import DefendRequest
+from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
@@ -312,14 +313,20 @@ def test_dispatch_pursue_executes_and_reports_target_not_found():
     assert result.reason == "pursuer or target not found"
 
 
-def test_dispatch_aspy_is_decode_only():
+def test_dispatch_aspy_executes_and_reports_the_casters_own_province():
+    # Phase 62: ASPY now dispatches to execute_aspy, not just
+    # decode_aspy_phase -- the report is always for the caster's own
+    # current province, per rulebook [3.14] ("a character may only Spy
+    # on a province he is actually in"), regardless of the raw obj value.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P0", action=ActionCode.ASPY, obj=304, extra=[0])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, SpyProvinceRequest)
-    assert result.target_province == 304
+    assert isinstance(result, SpyReport)
+    assert result.province == HexCoord(3, 9)
+    assert result.owner_kingdom_id == 1
+    assert result.is_capital is True
 
 
 def test_dispatch_defend_is_decode_only():

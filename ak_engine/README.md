@@ -2298,7 +2298,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     three battle-death paths), 7 in `test_cast_execution.py` (3 for
     Bless's cleanup roll, 4 for Skeletal Army: raising, empty-graveyard
     failure, level-capped count, and the no-recorded-level fallback).
-- **Phase 61 (current)**: `report/turn_report.py`, the first real consumer
+- **Phase 61**: `report/turn_report.py`, the first real consumer
   of Phase 58's `report/prose.py` rendering engine -- turns an
   already-computed `turn/battle_orchestrator.py BattleReport` into the
   same English battle-narrative sentences the original game's turn
@@ -2371,6 +2371,54 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     bucketing, each render function's real-template output against
     hand-verified rendering traces, and one full `describe_battle()`
     integration case plus an all-skipped (tie, no army names) edge case.
+- **Phase 62 (current)**: `turn/aspy_execution.py`, closing the
+  report-generation half of ASpy's Phase 26 gap -- "intelligence-report
+  content ... needs a report-generation system this project doesn't have
+  at all" was true when that was written; Phases 58/61 now give this
+  project exactly that. Only the *data* side is built here (matching the
+  "data first, prose later" split Phases 58/61 already established for
+  battle outcomes); rendering a `SpyReport` into English sentences is a
+  natural, still-open follow-up.
+  - **`execute_aspy()`** builds rulebook [3.14]'s report -- "owner,
+    owners of adjacent provinces, ... army types recruitable there, and
+    whether the province is the capital" -- for the caster's own current
+    province, reusing `turn/movement.py neighbors()` for adjacency and
+    `turn/recruit.py is_army_type_compatible_with_race()` (the same
+    table Recruit itself already resolves against) for recruitable
+    types. Returns `None` if the caster's own province isn't a known
+    `ProvinceState` -- insufficient data, not a guessed report.
+  - **"A character may only Spy on a province he is actually in" is read
+    literally**: the report always covers `LeaderState.location`, and
+    `SpyProvinceRequest.target_province` (the raw, player-typed int) is
+    decoded but deliberately never trusted or cross-checked --
+    `turn/aspy_defend_decode.py`'s own docstring already flags that no
+    Pascal source confirms whether that field shares
+    `turn/hex_numbering.py`'s empirically-inferred numbering space or
+    the host's separate internal `x*XMULT+y` arithmetic. Trusting the
+    rule's own text over an unconfirmed number space matches how Recruit
+    and Practice already resolve against the acting leader's own
+    location rather than a player-typed target.
+  - **Taxation of the province is not reported** -- there is still no
+    per-province tax-base model anywhere in this project;
+    `ProvinceState.tax_modifier_percent` is a *modifier* (Bless/
+    Earthquake, Phase 59), not a base tax figure. `SpyReport` omits the
+    field rather than guessing a number.
+  - **`ActionCode.ASPY` now dispatches to real execution** in
+    `turn/plan_dispatch.py` (`_dispatch_aspy`), replacing the
+    decode-only wiring from Phase 26. `ActionCode.DEFEND` stays
+    decode-only in `plan_dispatch.py` itself -- its own reactive
+    battle-joining was separately wired into `turn/turn_processor.py`
+    back in Phase 57.
+  - Non-breaking: full suite passed unchanged (1439 passed) before any
+    new tests were written -- one pre-existing dispatch test
+    (`test_dispatch_aspy_is_decode_only`) asserted the now-superseded
+    decode-only behavior and was renamed/rewritten, a comment/behavior
+    fix flagged the same way Phase 59/60's "representative unmodeled
+    spell" test swaps were, not a silent behavior change. 9 new tests
+    added (1448 passed total): 8 in `test_aspy_execution.py` (own
+    province/owner, ignoring the raw target field, unowned province,
+    adjacent owners, unknown-neighbor omission, recruitable types,
+    capital true/false) plus the rewritten dispatch test.
 
 ## Setup
 
@@ -2651,12 +2699,20 @@ rulebook before being turned into named, typed fields:
     call, and a caught-up-but-not-yet-resolved chase doesn't persist
     into later phases on its own. Zero real examples for either action
     either.
-  - **ASpy/Defend's remaining gap** (see Phase 26's note above):
+  - ~~**ASpy/Defend's remaining gap** (see Phase 26's note above):
     intelligence-report generation (ASpy) and reactive cross-province
     battle-triggering (Defend) both need `GameState`/battle-orchestrator
-    logic that doesn't exist yet, plus `target_province` staying an
-    unconverted raw int until the hex-numbering-vs-`XMULT` question is
-    resolved. Zero real examples for either.
+    logic that doesn't exist yet~~ -- **Defend's own reactive
+    battle-joining shipped in Phase 57, and ASpy's report-data
+    generation shipped in Phase 62** (`turn/aspy_execution.py`) -- see
+    those phases' own notes above. **Still open for ASpy**: rendering
+    its `SpyReport` into narrative English (a natural follow-up to
+    Phase 61's `report/turn_report.py`, not attempted yet), and
+    taxation reporting (no per-province tax-base model exists). `obj`
+    (`target_province`) still stays an unconverted, untrusted raw int
+    for both actions -- Phase 62 sidesteps needing it for ASpy at all by
+    reading the rulebook's own "he is actually in" text literally
+    instead. Zero real examples for either action either.
   - ~~**Trail's remaining gap** (see Phase 27's note above): decoded but
     unexecuted~~ -- **Trail's catch-up resolution is now implemented**
     (`turn/trail_execution.py`, Phase 52), reusing Phase 51's Spy Table

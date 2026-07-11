@@ -177,13 +177,21 @@ to dispatch automatically:
   (``turn/turn_processor.py``, Phases 45/46); wiring that detection in
   here is a declared, natural follow-up, not attempted this phase. Zero
   real phases exist for either action in the 10 sample files.
-- **ASPY** and **DEFEND** are decode-only (Phase 26):
-  ``turn/aspy_defend_decode.py`` decodes both to a raw ``target_province``
-  int -- bare triples in ``DEF2.PAS`` (no dedicated ``CASE`` branch), but
+- **ASPY** now executes (decoded Phase 26, executed Phase 62):
+  ``turn/aspy_defend_decode.py`` decodes it to a raw ``target_province``
+  int -- a bare triple in ``DEF2.PAS`` (no dedicated ``CASE`` branch), but
   ``obj`` is confirmed to be a real, engine-consulted province reference
-  rather than dead data (``RUMORS.PAS``'s ``Set_Intel`` reads it for
-  ASpy; ``REPORTS.PAS``'s ``Set_Defend`` missed-deadline auto-fill
-  writes it for Defend). ``ActionCode.ASPY`` is rulebook [3.14] Spy
+  rather than dead data (``RUMORS.PAS``'s ``Set_Intel`` reads it).
+  ``turn/aspy_execution.py execute_aspy()`` builds the rulebook [3.14]
+  intelligence report (owner, adjacent owners, recruitable army types,
+  capital status) for the caster's *own* current province -- "a
+  character may only Spy on a province he is actually in" is read
+  literally, so the raw ``target_province`` int is decoded but
+  deliberately never trusted or cross-checked (see that module's own
+  docstring for why: no confirmed numbering scheme for it exists).
+  **DEFEND** is decode-only still (Phase 26); its own reactive
+  battle-joining is separately wired into ``turn/turn_processor.py``
+  (Phase 57), not here. ``ActionCode.ASPY`` is rulebook [3.14] Spy
   Province; ``ActionCode.DEFEND`` is [3.15] Defend -- neither has a
   Trade/Challenge-style naming mismatch. Zero real phases exist for
   either action in the 10 sample files.
@@ -284,6 +292,7 @@ from ak_engine.models.leader import Leader
 from ak_engine.models.plan import ActionPlan, PlanPhase
 from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
 from ak_engine.turn.aspy_defend_decode import decode_aspy_phase, decode_defend_phase
+from ak_engine.turn.aspy_execution import SpyReport, execute_aspy
 from ak_engine.turn.cast_decode import decode_cast_phase
 from ak_engine.turn.cast_execution import CastExecutionResult, execute_cast
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult, execute_challenge
@@ -443,7 +452,7 @@ def dispatch_phase(
         return _dispatch_pursue(phase, state, leader_id, rng)
 
     if action is ActionCode.ASPY:
-        return decode_aspy_phase(phase)
+        return _dispatch_aspy(phase, state, leader_id)
 
     if action is ActionCode.DEFEND:
         return decode_defend_phase(phase)
@@ -452,6 +461,11 @@ def dispatch_phase(
         return _dispatch_trail(phase, state, leader_id, rng)
 
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
+
+
+def _dispatch_aspy(phase: PlanPhase, state: GameState, leader_id: int) -> SpyReport | None:
+    request = decode_aspy_phase(phase)
+    return execute_aspy(state, leader_id, request)
 
 
 def _dispatch_practice(
