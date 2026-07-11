@@ -3376,6 +3376,32 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     6 new tests added (1584 passed total) in a new
     `tests/test_weapon.py`, covering full 29-count coverage across both
     dicts, the confirmed Bow/Sword usage, and the live `/R` marker.
+- **Phase 84 (current)**: `models/enums.py SPELL_NAME` -- `Spell`
+  (Phase 23) finally gets real display names, found continuing to mine
+  `CTBOTH.PAS` the way Phases 79-83 found theirs. `CTBOTH.PAS`'s own
+  `spname` table (~line 677, 56 entries), confirmed to be `PROSE.TXT`'s
+  own documented `"~: Spell name"` marker via `RUMORS.PAS`'s
+  `Say(spname[_spell], spytype)`.
+  - **All 35 real `Spell` ordinals (0-34) line up cleanly, positionally
+    verbatim** -- including the 10 "secret" spells (25-34), which until
+    now this project only ever cited by their Pascal identifier
+    (`GATE_ANGEL`, `HEAL`, ...); `spname` gives their real display
+    names for the first time (`HEAL` displays as "Words of Healing",
+    for example).
+  - **`NOSPELL` (35) deliberately excluded**, confirming a mismatch
+    `Spell`'s own class docstring had already flagged from indirect
+    evidence back in Phase 23: `spname[35]` is `"Extra Spell 1"`, not
+    `"No spell"` -- the real `"No spell"` string sits at the table's
+    very *end* (index 55), after the 20 unused `es1`-`es20` slots this
+    project already excludes from `Spell` entirely. Directly confirms
+    (rather than just infers) the docstring's own "stale-table
+    authoring artifact" conclusion.
+  - Non-breaking: full suite passed unchanged (1584 passed) before any
+    new tests were written -- a new dict with no existing call sites.
+    4 new tests added (1588 passed total) in a new
+    `tests/test_spell_name.py`, covering full 35-entry coverage,
+    Nospell's confirmed exclusion, and verbatim spot-checks including
+    two of the newly-named secret spells.
 
 ## Setup
 

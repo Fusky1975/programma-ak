@@ -170,6 +170,55 @@ class Spell(IntEnum):
     NOSPELL = 35
 
 
+# CTBOTH.PAS `spname` (~line 677), verbatim, positional with `Spell`'s own
+# 35 real ordinals (0-34) -- confirmed real and actually used via
+# RUMORS.PAS's own `Say(spname[_spell], spytype)`, matching PROSE.TXT's
+# documented "~: Spell name" marker. `NOSPELL` (35) is deliberately
+# excluded: `spname[35]` is `"Extra Spell 1"`, not `"No spell"` (which sits
+# at the *end* of the table, index 55) -- the exact table-misalignment this
+# class's own docstring already flagged ("the Pascal display-name tables
+# even list nospell after [the unused es1-es20 slots], inconsistent with
+# the type declaration's ordinal 35 -- a likely stale-table authoring
+# artifact"), now confirmed directly rather than only inferred.
+SPELL_NAME: dict[Spell, str] = {
+    Spell.RESURRECTION: "Resurrection",
+    Spell.PART_SEA: "Part Sea",
+    Spell.BLESS: "Bless",
+    Spell.HOLY_SYMBOL: "Holy Symbol",
+    Spell.SKELETAL_ARMY: "Skeletal Army",
+    Spell.KILL_ENEMY: "Kill Enemy",
+    Spell.PLAGUE: "Plague",
+    Spell.HAND_OF_DEATH: "Hand Of Death",
+    Spell.FLOOD: "Flood",
+    Spell.TORNADO: "Tornado",
+    Spell.EARTHQUAKE: "Earthquake",
+    Spell.FIREBALL: "Fireball",
+    Spell.CHARM: "Charm",
+    Spell.ORATORY: "Oratory",
+    Spell.CLAIRVOYANCE: "Clairvoyance",
+    Spell.PSYCHIC_BLAST: "Psychic Blast",
+    Spell.ILLUS_TERRAIN: "Illusory Terrain",
+    Spell.ILLUS_ARMIES: "Phantasmal Armies",
+    Spell.HIDE_FEATURE: "Hide Feature",
+    Spell.INVISIBILITY: "Invisibility",
+    Spell.SPIRITWRACK: "Spiritwrack",
+    Spell.CONTROL_UNDEAD: "Control Undead",
+    Spell.ICE_SUSPEND: "Ice Suspension",
+    Spell.TELEK_STORM: "Telekinetic Storm",
+    Spell.MIRROR_IMAGE: "Mirror-Image Phantasm",
+    Spell.GATE_ANGEL: "Gate Angel",
+    Spell.HEAL: "Words of Healing",
+    Spell.SCAR_TERRAIN: "Scar Terrain",
+    Spell.GATE_DEMON: "Gate Demon",
+    Spell.MYSTIC_WINDS: "Mystic Winds",
+    Spell.LAVA_POOL: "Lava Pool",
+    Spell.LOCATE_OBJECT: "Locate Object",
+    Spell.AUGUR_COMBAT: "Augur Combat",
+    Spell.ILLUS_FOG: "Illusory Fog",
+    Spell.ILLUS_HERO: "Illusory Hero",
+}
+
+
 def spell_from_int(value: int) -> "Spell | int":
     """Map a raw spell int to ``Spell`` where valid, else keep it raw."""
 
