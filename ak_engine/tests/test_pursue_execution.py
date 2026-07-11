@@ -11,7 +11,8 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.pursue_execution import PursueExecutionResult, execute_pursue
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
+from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue, step_toward_target
 from ak_engine.turn.search_decode import SearchTactic
 
 from _helpers import ScriptedRandom
@@ -266,3 +267,46 @@ def test_execute_pursue_army_vs_army_catch_up_with_no_pursuer_kingdom_is_not_fou
     assert result.caught_up is True
     assert result.combat_occurred is False
     assert result.reason == "pursuer has no Kingdom to fight the battle under"
+
+
+# -- step_toward_target / advance_pursuit (Phase 66) -----------------------
+
+
+_BOUNDS = MapBounds(*NORMAL_MAP_BOUNDS)
+
+
+def test_step_toward_target_reduces_distance_by_exactly_one():
+    before = hex_distance(FIELD, FAR_AWAY)
+    stepped = step_toward_target(FIELD, FAR_AWAY, _BOUNDS)
+
+    assert hex_distance(stepped, FAR_AWAY) == before - 1
+
+
+def test_step_toward_target_is_a_no_op_when_already_there():
+    assert step_toward_target(FIELD, FIELD, _BOUNDS) == FIELD
+
+
+def test_advance_pursuit_moves_the_pursuer_and_commanded_armies_one_step():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FAR_AWAY))  # different Kingdom
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=1))
+
+    # Rigged to fail the catch-up roll at the new (still nonzero) distance --
+    # proves execute_pursue ran on the *post-step* location without erroring.
+    result = advance_pursuit(state, 1, _melee_request(2), rng=ScriptedRandom([1.0]))
+
+    assert result.caught_up is False
+    assert state.leaders[1].location != FIELD
+    assert hex_distance(state.leaders[1].location, FAR_AWAY) == hex_distance(FIELD, FAR_AWAY) - 1
+    assert state.armies[101].location == state.leaders[1].location
+
+
+def test_advance_pursuit_reports_not_found_when_pursuer_or_target_missing():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
+
+    result = advance_pursuit(state, 1, _melee_request(2))
+
+    assert result.caught_up is False
+    assert result.reason == "pursuer or target not found"

@@ -1,5 +1,8 @@
-"""Executing a Pursue (rulebook [3.16]) order, single phase only -- Phase 51,
-extended with a real army-vs-army battle in Phase 53.
+"""Executing a Pursue (rulebook [3.16]) order -- Phase 51, extended with a
+real army-vs-army battle in Phase 53, and a standalone multi-phase
+chase-step primitive in Phase 66 (``step_toward_target``/
+``advance_pursuit``, not auto-wired anywhere yet -- see that section
+below).
 
 **[3.16] Pursue, quoted in full** (also quoted in ``turn/
 challenge_pursue_decode.py``'s own docstring):
@@ -69,6 +72,40 @@ army-leading-mismatch check above already guarantees both sides match),
 whether pursuer and target share a Kingdom, and ``turn/movement.py``'s
 new ``hex_distance`` helper (straight-line hex distance, not
 pathfinding -- see that function's own docstring for why).
+
+**Phase 66 -- one scoped step toward the multi-phase chase, confirmed
+with the user before implementation as deliberately narrow.** [3.16],
+quoted in full above, describes real movement: "he will keep moving
+from province to province until he arrives in the province occupied by
+the targeted character" -- not just a repeated catch-up roll at a fixed
+distance. ``step_toward_target``/``advance_pursuit`` add exactly that
+mechanical piece: a greedy hex-distance-minimizing step toward the
+target's *current* location (reusing ``turn/movement.py``'s own
+``neighbors``/``hex_distance``, the same "not pathfinding, just
+straight-line" abstraction ``execute_pursue`` already accepts), then a
+fresh ``execute_pursue`` call at the new, shorter distance.
+
+**Explicitly still out of scope, confirmed with the user** (a
+substantially larger undertaking, deferred rather than guessed at):
+
+- **Not auto-wired into ``turn/turn_processor.py``'s phase loop.**
+  Doing so would require resolving exactly what the rulebook leaves
+  ambiguous and this project doesn't attempt here: whether an ongoing,
+  uncaught Pursue *preempts* the pursuer's own later-phase orders (the
+  rulebook's "other actions... will be attempted if the pursuit is
+  resolved before the end of the gameturn" implies yes), how that
+  interacts with Multiple Contingents/mutual-encounter detection, and
+  how "Characters On Patrol" (self-targeting Pursue, [3.16]) and
+  Defend's own "if he receives a Move, Pursue or Trail order, the
+  Defend order is cancelled" fit in. ``advance_pursuit`` is a
+  standalone, explicitly-invoked primitive a future integration phase
+  can call, not automatic behavior today.
+- **No movement-point cost.** A normal Move deducts
+  ``ArmyState.movement_points``; this step doesn't, since enforcing
+  insufficient-movement-to-continue-chasing is part of the same
+  larger, deferred integration.
+- **Patrol, Defend-cancellation, and catch-conditional later actions**:
+  none of these are modeled by this addition.
 """
 
 from __future__ import annotations
@@ -79,11 +116,12 @@ from dataclasses import dataclass
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.map import HexCoord
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
-from ak_engine.turn.movement import hex_distance
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance, neighbors
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 
 
@@ -225,3 +263,62 @@ def execute_pursue(
     return PursueExecutionResult(
         caught_up=True, combat_occurred=True, winner_leader_id=winner_id, loser_leader_id=loser_id, loser_killed=True
     )
+
+
+def step_toward_target(pursuer_location: HexCoord, target_location: HexCoord, bounds: MapBounds) -> HexCoord:
+    """One greedy hex step from ``pursuer_location`` toward ``target_location`` -- [3.16]'s
+    "keep moving from province to province until he arrives", reduced to its
+    mechanical piece (see module docstring for what's still not wired around
+    it). Picks whichever neighbor minimizes ``hex_distance`` to the target,
+    the same straight-line abstraction ``execute_pursue`` itself already
+    uses -- not real pathfinding (no terrain/ownership avoidance).
+
+    Returns ``pursuer_location`` unchanged if already there, or if
+    (degenerate, off-map) there are no neighbors to step to.
+    """
+
+    if pursuer_location == target_location:
+        return pursuer_location
+    candidates = neighbors(pursuer_location, bounds)
+    if not candidates:
+        return pursuer_location
+    return min(candidates, key=lambda candidate: hex_distance(candidate, target_location))
+
+
+def advance_pursuit(
+    state: GameState,
+    pursuer_leader_id: int,
+    request: PursueRequest,
+    rng: random.Random | None = None,
+    *,
+    mutual_encounter: bool = False,
+    board_width: int = NORMAL_MAP_BOUNDS[0],
+    board_height: int = NORMAL_MAP_BOUNDS[1],
+) -> PursueExecutionResult:
+    """Resolve a further phase of an *already-ongoing* Pursue: one ``step_toward_target``
+    hex-step for the pursuer (and every army they command, moving together --
+    the same leader-plus-armies convention ``turn/move_execution.py`` already
+    uses), then a fresh ``execute_pursue`` catch-up attempt at the new,
+    shorter distance.
+
+    Callers are responsible for deciding *when* to invoke this across
+    phases and for not re-invoking ``execute_pursue`` itself for the same
+    (already-advanced) pair -- see module docstring for what's not wired
+    automatically yet.
+    """
+
+    rng = rng if rng is not None else random.Random()
+
+    pursuer = state.leaders.get(pursuer_leader_id)
+    target = state.leaders.get(request.target_character_id)
+    if pursuer is None or target is None:
+        return PursueExecutionResult(caught_up=False, reason="pursuer or target not found")
+
+    bounds = MapBounds(board_width, board_height)
+    new_location = step_toward_target(pursuer.location, target.location, bounds)
+    if new_location != pursuer.location:
+        pursuer.location = new_location
+        for army in state.armies_commanded_by(pursuer_leader_id):
+            army.location = new_location
+
+    return execute_pursue(state, pursuer_leader_id, request, rng, mutual_encounter=mutual_encounter)

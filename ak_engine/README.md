@@ -2500,7 +2500,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     added (1456 passed total) in `test_battle_resolution.py`: the
     eligible-and-boosted case, the terrain-is-the-binding-cap case, and
     the no-cap-supplied case.
-- **Phase 65 (current)**: widens `turn/battle_line.py
+- **Phase 65**: widens `turn/battle_line.py
   apply_nemesis_penalties`'s eligibility rule -- the user directly asked
   whether the nemesis-selection nuance Phase 64 flagged as unmodeled
   ("if more than one of your units are eligible to be a nemesis due to
@@ -2544,6 +2544,43 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     candidate instead (proving genuine randomness, not "overflight
     always wins"), and the Druidic-blocked-overflight-stays-excluded
     case.
+- **Phase 66 (current)**: `turn/pursue_execution.py step_toward_target`/
+  `advance_pursuit` -- a deliberately narrow first step toward Pursue's
+  ([3.16]) still-open persistent multi-phase chase, confirmed with the
+  user before implementation. Researching the full picture first
+  (quoted in full, `RULES.AK` [3.16]) showed the real rule is much
+  bigger than "reroll the catch-up chance each phase": the pursuer
+  actually moves province to province toward a moving target, later
+  phases' own orders are pre-empted until the chase resolves, and there
+  are Patrol ([3.16]'s "Characters On Patrol" self-Pursue variant) and
+  Defend-cancellation interactions ("if he receives a Move, Pursue or
+  Trail order, the Defend order is cancelled") on top -- a subsystem
+  roughly the size of `turn/turn_processor.py` itself, not a single
+  phase. The user chose the smallest safe slice over both "skip it" and
+  "plan the whole subsystem now".
+  - **`step_toward_target`**: one greedy hex step minimizing
+    `turn/movement.py hex_distance` to the target -- the mechanical
+    piece of "he will keep moving from province to province until he
+    arrives", reusing `neighbors()`/`hex_distance()` rather than
+    building new pathfinding (same straight-line abstraction
+    `execute_pursue`'s own catch-up-chance distance already uses).
+  - **`advance_pursuit`**: moves the pursuer and every army they command
+    one step closer (same leader-plus-armies convention
+    `turn/move_execution.py` already uses), then calls the existing
+    `execute_pursue` fresh at the new, shorter distance -- reuses
+    Phase 51/53's catch-up roll and army-battle/encounter resolution
+    entirely unchanged, adding only the movement step in front of it.
+  - **Deliberately not attempted, confirmed with the user as future
+    work**: auto-wiring this into `turn/turn_processor.py`'s phase
+    loop (would require resolving whether an unresolved Pursue preempts
+    the pursuer's own later-phase orders, and how that interacts with
+    Multiple Contingents/mutual-encounter detection); movement-point
+    cost for the step; Patrol; Defend-cancellation; and Pursue's own
+    catch-conditional later actions. `advance_pursuit` is a standalone,
+    explicitly-invoked primitive today, not automatic turn behavior.
+  - Non-breaking: full suite passed unchanged (1459 passed) before any
+    new tests were written. 4 new tests added (1463 passed total) in
+    `test_pursue_execution.py`.
 
 ## Setup
 
@@ -2819,10 +2856,15 @@ rulebook before being turned into named, typed fields:
     detection across leaders (`turn/turn_processor.py
     _dispatch_mutual_encounter`, Phase 56). **Still open**: Pursue's own
     persistent multi-phase chase state -- the rulebook's "for the rest
-    of the turn" behavior; `turn/pursue_execution.py` still only
-    resolves a single phase's catch-up (and, if applicable, battle) per
-    call, and a caught-up-but-not-yet-resolved chase doesn't persist
-    into later phases on its own. Zero real examples for either action
+    of the turn" behavior. Phase 66 added `step_toward_target`/
+    `advance_pursuit`, a standalone chase-step-and-reroll primitive
+    (confirmed with the user as a deliberately narrow first slice, not
+    the full subsystem), but it isn't auto-wired into
+    `turn/turn_processor.py`'s phase loop -- `execute_pursue` alone
+    still only resolves a single phase's catch-up (and, if applicable,
+    battle) per call, and a caught-up-but-not-yet-resolved chase doesn't
+    persist into later phases on its own without a caller explicitly
+    invoking `advance_pursuit`. Zero real examples for either action
     either.
   - ~~**ASpy/Defend's remaining gap** (see Phase 26's note above):
     intelligence-report generation (ASpy) and reactive cross-province
