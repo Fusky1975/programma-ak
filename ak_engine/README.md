@@ -2678,7 +2678,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     behavior changed. 6 new tests added (1475 passed total) across
     `test_move_execution.py`, `test_plan_dispatch.py`,
     `test_battle_orchestrator.py`, and `test_turn_processor.py`.
-- **Phase 70 (current)**: `turn/turn_processor.py
+- **Phase 70**: `turn/turn_processor.py
   _continue_active_pursuits`/`_register_pursuit_continuation` -- wires
   Pursue/Trail's own persistent multi-phase chase into the phase loop,
   resuming the work Phase 66/68 deliberately left unattempted. `RULES.AK`
@@ -2737,6 +2737,67 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     real order dispatches normally again; the same for Trail; and a
     Pursue with no such target (a terminal reason, not "did not catch
     up") is confirmed to *not* preempt anything.
+- **Phase 71 (current)**: `turn/patrol_execution.py` (new) +
+  `turn/turn_processor.py _apply_patrol_cancellations`/
+  `_dispatch_active_patrols` -- "Characters On Patrol" ([3.16]), the
+  self-targeting-Pursue standing order Phase 70 explicitly deferred.
+  Confirmed with the user (options: Patrol, Defend's battle-loss
+  cancellation, or Feature model foundations) as the next scoped step.
+  `RULES.AK` [3.16] "Characters On Patrol", quoted in full in `turn/
+  patrol_execution.py`'s own module docstring (rules a-i): "This is
+  like the Defend order, except whenever the character hears of an
+  intruding character, he chases him down... Write this order by
+  having the character 'Pursue' his own character number."
+  - **`find_patrol_target`/`execute_patrol`**: rules (a) armyless-only
+    (both patroller and candidate), (b) current-plus-adjacent-hex
+    coverage, (c) enemy-only (reading "enemy" the same way `turn/
+    turn_processor.py _sees_nonallied_defender` already does --
+    kingdomless is never automatically hostile), (f) owned/allied
+    territory, (g) skill-gated ("best skill in Archery, Melee or
+    Magic," with "Magic" read as the max of this project's five magic
+    schools -- no single "Magic" `Ability` exists), (h) most-threatening
+    tiebreak (rule (h)'s own "point (7)" cross-reference doesn't exist
+    anywhere in the available `RULES.AK` text -- an orphaned reference
+    in the source rulebook itself, falls back to rule (g)'s own metric
+    plus lower `leader_id`), and (i) the Spy Table's 50%-wander roll
+    for an adjacent-hex (not same-hex) interception at Spy skill 0,
+    guaranteed at skill 1+ (the rule states only the skill-0 case).
+    Combat resolution once a target is confirmed reuses the exact same
+    armyless-Encounter core `execute_pursue` already uses.
+  - **Explicitly not modeled, a genuine data-model gap**: rule (e)
+    ("unable to detect... if he is using his Spy or Thief ability that
+    gameturn") needs per-turn ability-usage tracking this project's
+    `GameState` has nowhere -- the same category of gap already
+    declared for ASpy's "Chance of Escaping Notice" column.
+  - **Standing-order persistence lives in `turn_processor.py`, not the
+    new module**: a new `active_patrols: dict[int, PursueRequest]`
+    local to `run_turn()` -- a self-targeting PURSUE phase is detected
+    and dropped from `entries` before anything else sees it (declaring
+    Patrol, never dispatching as an ordinary nonsensical self-Pursue),
+    and `_dispatch_active_patrols` re-checks every phase for every
+    active patroller. Rule (d) ("stays active until the next Move,
+    Trail or Pursue order; other orders... are used if there is no
+    current threat"): `_apply_patrol_cancellations` reuses
+    `_apply_defend_cancellations`'s identical LMOVE/PURSUE/TRAIL
+    trigger set verbatim (same rulebook wording for both), and a
+    leader's own real order for a phase is only preempted when a
+    threat is actually found that phase -- unlike Phase 70's directed
+    chase (which always re-attempts every phase while unresolved),
+    Patrol never "resolves" and stops on its own; only cancellation or
+    an absent threat lets the next order through.
+  - Non-breaking: full suite passed unchanged (1478 passed) before any
+    new tests were written -- the one pre-existing test that dispatched
+    a self-targeting Pursue through the old (already-documented-as-
+    nonsensical) path needed its assertion updated to the new, correct
+    "Patrol declaration, no other leader around, nothing to report"
+    outcome, not a regression. 26 new tests added (1504 passed total):
+    23 in `test_patrol_execution.py` covering `find_patrol_target`'s
+    every rule and `execute_patrol`'s Spy Table roll and combat
+    resolution, and 3 in `test_turn_processor.py` covering the standing
+    order's interception-preempts-a-scheduled-order behavior, the
+    no-threat-lets-it-through behavior, and cancellation by a later
+    Move order (even with an intruder still adjacent, proving
+    cancellation wins over interception for that same phase).
 
 ## Setup
 
@@ -3024,11 +3085,13 @@ rulebook before being turned into named, typed fields:
     genuinely preempts the leader's own later-phase orders and the chase
     continues phase by phase via `advance_pursuit`/`advance_trail`
     (`turn/turn_processor.py _continue_active_pursuits`, see that
-    phase's own note below). **Still open**: "Characters On Patrol"
-    (self-targeting Pursue, [3.16]) and Defend's other cancellation
-    trigger ("cancelled if he loses a battle") -- see Phase 70's note
-    below for why both are still deferred. Zero real examples for either
-    action either.
+    phase's own note below). ~~**Still open**: "Characters On Patrol"
+    (self-targeting Pursue, [3.16])~~ -- **wired in as of Phase 71**
+    (`turn/patrol_execution.py`, `turn/turn_processor.py
+    _dispatch_active_patrols`, see that phase's own note below).
+    **Still open**: Defend's other cancellation trigger ("cancelled if
+    he loses a battle") -- see Phase 70's note below for why it's still
+    deferred. Zero real examples for either action either.
   - ~~**ASpy/Defend's remaining gap** (see Phase 26's note above):
     intelligence-report generation (ASpy) and reactive cross-province
     battle-triggering (Defend) both need `GameState`/battle-orchestrator

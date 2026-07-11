@@ -199,6 +199,7 @@ from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import execute_practice_group
+from ak_engine.turn.patrol_execution import execute_patrol
 from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail
@@ -251,6 +252,7 @@ def run_turn(
     bounds = MapBounds(*NORMAL_MAP_BOUNDS)
     active_defends: dict[int, set[HexCoord]] = {}  # defender leader_id -> coverage area
     active_pursuits: dict[int, _ActivePursuit] = {}  # pursuer/trailer leader_id -> ongoing chase
+    active_patrols: dict[int, object] = {}  # patroller leader_id -> its own PursueRequest (standing order)
 
     for phase_index, label in enumerate(PHASE_LABELS):
         if phase_index > 0:
@@ -262,6 +264,25 @@ def run_turn(
         # docstring for why this is checked once, at the phase's start.
         entries = [entry for entry in entries if entry[0].leader.leader_id not in active_pursuits]
         results.extend(_continue_active_pursuits(active_pursuits, label, state, rng))
+
+        # A self-targeting PURSUE phase is a Patrol declaration ("Characters
+        # On Patrol", see turn/patrol_execution.py's own docstring) -- it
+        # never dispatches as an ordinary Pursue, so it's registered and
+        # dropped from ``entries`` before anything else sees it.
+        new_patrol_leader_ids = {
+            tl.leader.leader_id
+            for tl, _segment_index, phase in entries
+            if phase.action is ActionCode.PURSUE and phase.obj == tl.leader.leader_id
+        }
+        for tl, _segment_index, phase in entries:
+            if tl.leader.leader_id in new_patrol_leader_ids:
+                active_patrols[tl.leader.leader_id] = decode_pursue_phase(phase)
+        entries = [entry for entry in entries if entry[0].leader.leader_id not in new_patrol_leader_ids]
+
+        _apply_patrol_cancellations(active_patrols, entries)
+        patrol_results, patrol_preempted = _dispatch_active_patrols(active_patrols, label, state, rng, bounds)
+        results.extend(patrol_results)
+        entries = [entry for entry in entries if entry[0].leader.leader_id not in patrol_preempted]
 
         move_targets: dict[int, HexCoord] = {}
         for index, (_tl, _segment_index, phase) in enumerate(entries):
@@ -535,6 +556,60 @@ def _register_pursuit_continuation(
             return
         request = decode_trail_phase(phase)
         active_pursuits[leader_id] = _ActivePursuit(kind="trail", request=request)
+
+
+def _apply_patrol_cancellations(
+    active_patrols: dict[int, object], entries: list[tuple[TurnLeader, int, PlanPhase]]
+) -> None:
+    """Rule (d) (``turn/patrol_execution.py``'s own docstring, quoted in full):
+    "The Patrol stays active until the next Move, Trail or Pursue order."
+    Reuses ``_apply_defend_cancellations``'s identical LMOVE/PURSUE/TRAIL
+    trigger set verbatim, since the rulebook uses the same wording for
+    both Defend and Patrol cancellation. A brand-new Patrol declaration
+    itself (this phase's own self-targeting Pursue) is already removed
+    from ``entries`` before this runs, so it never immediately cancels
+    itself.
+    """
+
+    for tl, _segment_index, phase in entries:
+        if phase.action in _DEFEND_CANCELLING_ACTIONS:
+            active_patrols.pop(tl.leader.leader_id, None)
+
+
+def _dispatch_active_patrols(
+    active_patrols: dict[int, object],
+    label: str,
+    state: GameState,
+    rng: random.Random,
+    bounds: MapBounds,
+) -> tuple[list[PhaseDispatchResult], set[int]]:
+    """Dispatches one ``execute_patrol`` check for every leader with a standing
+    Patrol order. Rule (d): "other orders after the Patrol order are used
+    if there is no current threat" -- when no intruder is found this
+    phase, nothing is emitted and the leader's own real order (if any)
+    proceeds completely normally; a dispatch result is only produced, and
+    the leader's own real order for this phase preempted, when a threat
+    actually is found (whether or not the interception itself succeeds).
+    """
+
+    results: list[PhaseDispatchResult] = []
+    preempted: set[int] = set()
+    for leader_id, request in list(active_patrols.items()):
+        result = execute_patrol(state, leader_id, request, rng, board_width=bounds.width, board_height=bounds.height)
+        if result.target_leader_id is None:
+            continue
+        preempted.add(leader_id)
+        results.append(
+            PhaseDispatchResult(
+                leader_id=leader_id,
+                segment_index=-1,  # sentinel: standing-order dispatch, not tied to a real plan segment
+                phase_label=label,
+                action=ActionCode.PURSUE,
+                result=result,
+                error=None,
+            )
+        )
+    return results, preempted
 
 
 def _dispatch_mutual_encounter(

@@ -525,14 +525,19 @@ def test_run_turn_one_sided_challenge_dispatches_normally_not_as_mutual():
 
 
 def test_run_turn_self_targeting_pursue_is_not_misdetected_as_mutual():
+    # Also the Phase 71 correct-path check: a self-targeting Pursue is a
+    # Patrol declaration, not an ordinary Pursue dispatch -- with no
+    # other leader around to intercept, it produces no dispatch result
+    # at all (rule (d): "no current threat" -> nothing to report), not
+    # the nonsensical self-battle the old (pre-Phase-71) dispatch path
+    # would have produced.
     state = _base_state()
     state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
     leader = _leader_with_phase(10, "A", "P0", _encounter_phase("P0", ActionCode.PURSUE, 10, melee=False))
 
     results = run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0]))
 
-    assert len(results) == 1
-    assert results[0].leader_id == 10
+    assert results == []
 
 
 # -- Defend reactive reinforcement (Phase 57) -------------------------------
@@ -851,3 +856,98 @@ def test_run_turn_pursue_with_no_target_is_not_registered_for_continuation():
     assert p1_entry.segment_index == 0  # ordinary _dispatch_single, not a continuation
     assert isinstance(p1_entry.result, MoveExecutionResult)
     assert state.leaders[10].location == DECOY
+
+
+# -- Patrol / "Characters On Patrol" (Phase 71) -----------------------------
+
+
+PATROL_HOME = HexCoord(5, 4)
+INTRUDER_HEX = _neighbors(PATROL_HOME, _BOUNDS)[0]
+MOVE_TARGET = _neighbors(PATROL_HOME, _BOUNDS)[1]
+
+
+def _patrol_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Patrolia", Race.HUMAN, Alignment.GOOD, PATROL_HOME))
+    state.add_kingdom(KingdomState(2, "Intrudia", Race.HUMAN, Alignment.EVIL, INTRUDER_HEX))
+    state.add_province(ProvinceState(PATROL_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(INTRUDER_HEX, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(MOVE_TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Patroller", location=PATROL_HOME))
+    return state
+
+
+def _patrol_declare_phase(label: str, own_leader_id: int) -> PlanPhase:
+    return PlanPhase(label=label, action=ActionCode.PURSUE, obj=own_leader_id, extra=[0, -1])  # peaceful, no tactics
+
+
+def test_run_turn_patrol_intercepts_an_adjacent_intruder_and_preempts_a_later_order():
+    state = _patrol_state()
+    state.add_leader(LeaderState(20, kingdom_id=2, name="Intruder", location=INTRUDER_HEX))
+    p0 = _patrol_declare_phase("P0", 10)
+    p1 = PlanPhase(label="P1", action=ActionCode.WAIT, obj=0, extra=[0])
+    patroller = _two_phase_leader(10, "Patroller", p0, p1)
+
+    # Spy skill 0 -> a 50% wander roll every phase the intruder is still
+    # adjacent -- run_turn always processes all 5 phases (P0-P4)
+    # regardless of how many the plan itself uses, and nothing here ever
+    # removes the intruder, so the standing Patrol keeps re-checking
+    # through P2-P4 too; one scripted success per phase.
+    results = run_turn([TurnLeader(patroller, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9] * 5))
+
+    by_label = {(r.leader_id, r.phase_label): r for r in results}
+
+    p0_entry = by_label[(10, "P0")]
+    assert p0_entry.segment_index == -1
+    assert p0_entry.action is ActionCode.PURSUE
+    assert p0_entry.result.intercepted is True
+    assert p0_entry.result.target_leader_id == 20
+
+    # P1's own WAIT never dispatched -- the still-adjacent intruder
+    # preempted it too (rule (d): the Patrol re-checks every phase).
+    p1_entry = by_label[(10, "P1")]
+    assert p1_entry.segment_index == -1
+    assert p1_entry.action is ActionCode.PURSUE
+    assert p1_entry.result.target_leader_id == 20
+
+
+def test_run_turn_patrol_lets_the_scheduled_order_through_when_no_threat():
+    state = _patrol_state()  # no intruder anywhere
+    p0 = _patrol_declare_phase("P0", 10)
+    p1 = PlanPhase(label="P1", action=ActionCode.WAIT, obj=0, extra=[0])
+    patroller = _two_phase_leader(10, "Patroller", p0, p1)
+
+    results = run_turn([TurnLeader(patroller, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+
+    by_label = {(r.leader_id, r.phase_label): r for r in results}
+    # No threat at P0 -- the Patrol declaration itself produces no
+    # dispatch result at all (rule (d): "other orders ... are used").
+    assert (10, "P0") not in by_label
+    p1_entry = by_label[(10, "P1")]
+    assert p1_entry.segment_index == 0  # ordinary dispatch, not preempted
+    assert p1_entry.action is ActionCode.WAIT
+
+
+def test_run_turn_patrol_is_cancelled_by_a_later_move_order():
+    # The intruder stays adjacent the whole time -- proves cancellation
+    # itself, at P1, wins over interception, not just "there was nothing
+    # to intercept."
+    state = _patrol_state()
+    state.add_leader(LeaderState(20, kingdom_id=2, name="Intruder", location=INTRUDER_HEX))
+    p0 = _patrol_declare_phase("P0", 10)
+    p1 = _lmove_phase("P1", MOVE_TARGET)
+    patroller = _two_phase_leader(10, "Patroller", p0, p1)
+
+    # One roll: P0's own adjacent-hex wander check (succeeds, intercepts).
+    # P1's cancelling LMOVE removes the Patrol before any P1 wander check
+    # would otherwise run, even though the intruder is still adjacent.
+    results = run_turn([TurnLeader(patroller, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9]))
+
+    by_label = {(r.leader_id, r.phase_label): r for r in results}
+    assert by_label[(10, "P0")].result.intercepted is True
+
+    p1_entry = by_label[(10, "P1")]
+    assert p1_entry.segment_index == 0  # cancellation ran before dispatch -- not preempted
+    assert p1_entry.action is ActionCode.LMOVE
+    assert isinstance(p1_entry.result, MoveExecutionResult)
+    assert state.leaders[10].location == MOVE_TARGET
