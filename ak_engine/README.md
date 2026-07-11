@@ -2458,7 +2458,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `test_turn_report.py`, covering both real usable CONQ.X variants
     and three SPY.X variants (including the King-exclusion elision and
     a variant exercising both `/R` and `{}` resolution together).
-- **Phase 64 (current)**: wires the numeric-superiority outflanking rule
+- **Phase 64**: wires the numeric-superiority outflanking rule
   into `turn/battle_resolution.py resolve_battle` -- the *other*
   rulebook trigger `turn/battle_line.py column_strength`'s
   `outflank_second_line` parameter was originally built for (Phase 6),
@@ -2500,6 +2500,50 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     added (1456 passed total) in `test_battle_resolution.py`: the
     eligible-and-boosted case, the terrain-is-the-binding-cap case, and
     the no-cap-supplied case.
+- **Phase 65 (current)**: widens `turn/battle_line.py
+  apply_nemesis_penalties`'s eligibility rule -- the user directly asked
+  whether the nemesis-selection nuance Phase 64 flagged as unmodeled
+  ("if more than one of your units are eligible to be a nemesis due to
+  overflight or outflanking, one of them is chosen at random") could be
+  built; chose to tackle only its overflight half, since `RULES.AK`
+  gives no further text connecting the outflanking half to nemesis
+  eligibility specifically.
+  - `RULES.AK` (quoted in full, same paragraph as the nemesis penalty
+    itself): "A unit is a nemesis to its opponent if it's on the front
+    line or it's an air unit flying against a unit behind the front
+    line. If more than one of your units are eligible to be a nemesis
+    due to overflight or outflanking, one of them is chosen at random."
+  - For each of `own_column`'s units, the eligible opposing
+    nemesis-inflictors are now: (1) the opposing front-line unit --
+    always eligible, against every one of `own_column`'s units
+    regardless of depth (unchanged from Phase 33); (2) any *effectively*
+    overflight unit (Phase 43's Druidic held-back carve-out still
+    applies) anywhere in the opposing column, but *only* against
+    `own_column`'s units at depth >= 1 ("flying against a unit **behind**
+    the front line" -- never against `own_column`'s own front-line
+    unit). When eligibility has more than one member, `rng.choice`
+    picks one before the nemesis-type check runs against just that one.
+  - **Backward-compatible by construction, not by accident**: `rng` (a
+    new parameter, threaded through from `resolve_battle`) is only ever
+    actually called when a column has a genuinely ambiguous case (an
+    opposing overflight unit stacked *behind* that opposing column's own
+    front line) -- true of zero fixtures anywhere in this project's test
+    suite before this phase, confirmed by the non-breaking check passing
+    unchanged.
+  - **"...or outflanking" stays unmodeled**, documented explicitly
+    in `apply_nemesis_penalties`'s own docstring: whether it means an
+    outflanking-eligible *own* second-line unit becomes an eligible
+    inflictor itself (against whom?), or something else, isn't
+    resolvable from the available source without guessing -- left as
+    its own distinct, still-open gap rather than forcing an unconfident
+    reading.
+  - Non-breaking: full suite passed unchanged (1456 passed) before any
+    new tests were written. 3 new tests added (1459 passed total) in
+    `test_battle_line.py`: the widened-eligibility-triggers-the-penalty
+    case, the same setup with `rng.choice` landing on the non-overflight
+    candidate instead (proving genuine randomness, not "overflight
+    always wins"), and the Druidic-blocked-overflight-stays-excluded
+    case.
 
 ## Setup
 
@@ -2830,8 +2874,12 @@ rulebook before being turned into named, typed fields:
     `outflank_second_line` parameter was originally built for ~~is still
     unwired, a distinct, still-open gap of its own~~ **wired in Phase
     64** (see above) -- its own related nemesis-selection nuance
-    ("chosen at random" among several eligible units) stays unmodeled,
-    a distinct, still-open gap of its own.
+    ("chosen at random" among several eligible units) ~~stays
+    unmodeled~~ **partly closed in Phase 65** (see above): the overflight
+    half (an opposing overflight unit stacked behind the front line
+    widens nemesis eligibility against your rearward units) is wired;
+    the outflanking half stays unmodeled, since `RULES.AK` gives no
+    further text connecting it to nemesis eligibility specifically.
   - **`fight_multi_attacker_battle()`'s own edge case**: separate
     (non-united) groups are resolved sequentially against whatever's
     left of the province's defenders; if an earlier group cleanly

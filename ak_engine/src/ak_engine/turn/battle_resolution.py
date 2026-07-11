@@ -166,7 +166,7 @@ def resolve_battle(
         attacker_columns, defender_columns, line_length, attacker_tactical_ability, defender_tactical_ability, rng
     )
 
-    apply_nemesis_penalties(attacker_columns, defender_columns)
+    apply_nemesis_penalties(attacker_columns, defender_columns, rng)
 
     attacker_luck = [_apply_front_line_luck(column, rng) for column in attacker_columns]
     defender_luck = [_apply_front_line_luck(column, rng) for column in defender_columns]

@@ -296,6 +296,58 @@ def test_apply_nemesis_penalties_ignores_an_empty_opposing_column():
     assert attacker_columns[0][0].effective_strength == 10
 
 
+def test_apply_nemesis_penalties_overflight_rear_unit_widens_eligibility_but_not_for_the_front_line():
+    # RULES.AK: "a unit is a nemesis to its opponent if it's on the front
+    # line or it's an air unit flying against a unit behind the front
+    # line." NEMESIS[ENTS] = {AXEMEN, DRAGON_WING} -- Ents are vulnerable
+    # to Dragon Wing. Garrison isn't Ents' nemesis, so the front-line
+    # Ents stays unpenalized (deterministic -- no rng draw needed at
+    # all: its only eligible candidate is the opposing front line). The
+    # rearward Dragon Wing IS Ents' nemesis and is an overflight type, so
+    # it becomes an *additional* eligible candidate against the
+    # attacker's own rearward Ents -- ambiguous (2 candidates), resolved
+    # via rng.choice ("chosen at random"). Picking index 1 (Dragon Wing)
+    # here triggers the penalty.
+    attacker_columns = [[unit(ArmyType.ENTS, 10), unit(ArmyType.ENTS, 8)]]
+    defender_columns = [[unit(ArmyType.GARRISON, 5), unit(ArmyType.DRAGON_WING, 6)]]
+    rng = ScriptedRandom([], choice_indices=[1])
+
+    apply_nemesis_penalties(attacker_columns, defender_columns, rng)
+
+    assert attacker_columns[0][0].effective_strength == 10  # front line: unaffected, no ambiguity
+    assert attacker_columns[0][1].effective_strength == pytest.approx(8 * 2 / 3)  # rear: penalized
+
+
+def test_apply_nemesis_penalties_random_choice_can_land_on_the_non_overflight_candidate():
+    # Same setup as above, but rng.choice picks index 0 (the non-nemesis
+    # Garrison front line) instead -- proving this is a genuine random
+    # pick among eligible candidates, not "overflight always wins".
+    attacker_columns = [[unit(ArmyType.ENTS, 10), unit(ArmyType.ENTS, 8)]]
+    defender_columns = [[unit(ArmyType.GARRISON, 5), unit(ArmyType.DRAGON_WING, 6)]]
+    rng = ScriptedRandom([], choice_indices=[0])
+
+    apply_nemesis_penalties(attacker_columns, defender_columns, rng)
+
+    assert attacker_columns[0][1].effective_strength == 8  # rear: unaffected this time
+
+
+def test_apply_nemesis_penalties_druidic_blocked_overflight_unit_does_not_widen_eligibility():
+    # Phase 43's held-back carve-out applies here too: a Dragon Wing whose
+    # controller lacks sufficient Druidic ability isn't "flying" at all
+    # (_is_effective_overflight is False for it), so it never becomes an
+    # eligible nemesis-inflictor against the rear Ents -- back to the
+    # single-candidate (front-line-only) case, no rng draw consumed.
+    attacker_columns = [[unit(ArmyType.ENTS, 10), unit(ArmyType.ENTS, 8)]]
+    defender_columns = [
+        [unit(ArmyType.GARRISON, 5), unit(ArmyType.DRAGON_WING, 6, druidic_rear_targeting_blocked=True)]
+    ]
+    rng = ScriptedRandom([], choice_indices=[])  # must not be consumed
+
+    apply_nemesis_penalties(attacker_columns, defender_columns, rng)
+
+    assert attacker_columns[0][1].effective_strength == 8
+
+
 def test_apply_tactical_switches_swaps_the_nemesis_weak_attacker_front_line():
     # Front is Phalanx(10) vs a Legion-fronted defender -- nemesis-adjusted
     # to 6.67, which the raw-9 Heavy Cavalry rear now beats, so the switch

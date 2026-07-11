@@ -125,6 +125,16 @@ def _nemesis_aware_strength_key(opposing_column: Column):
     against the opposing column's *current* front-line ``ArmyType`` -- an
     ephemeral comparison only, never persisted to the unit itself (the
     persistent penalty is applied by ``apply_nemesis_penalties`` below).
+
+    **Front-line-only, deliberately not widened for Phase 65's
+    overflight-reaches-rear-units eligibility** -- this pre-switch
+    heuristic only ever compares against a hypothetical front-line
+    matchup (the unit being considered *for* the front line), where an
+    opposing rearward overflight unit was never eligible to begin with
+    (``apply_nemesis_penalties``'s own rule only widens eligibility for
+    a unit *behind* its own front line). Not a scope gap, just a
+    reminder this helper and the persistent-penalty function below stay
+    intentionally different in shape.
     """
 
     if not opposing_column:
@@ -133,7 +143,9 @@ def _nemesis_aware_strength_key(opposing_column: Column):
     return lambda unit: apply_nemesis_penalty(unit.effective_strength, unit.army_type, opponent_type)
 
 
-def apply_nemesis_penalties(attacker_columns: list[Column], defender_columns: list[Column]) -> None:
+def apply_nemesis_penalties(
+    attacker_columns: list[Column], defender_columns: list[Column], rng: random.Random | None = None
+) -> None:
     """Apply the rulebook [6.3] nemesis penalty (2/3 strength) across paired columns.
 
     Mutates both column lists in place, replacing any nemesis-penalized
@@ -142,20 +154,52 @@ def apply_nemesis_penalties(attacker_columns: list[Column], defender_columns: li
     ``BattleUnit`` in place, since it's the same object the caller's own
     ``attacker_units``/``defender_units`` lists still reference).
 
-    **Pairing interpretation** (documented, not verbatim rulebook text):
-    every unit in a column -- front line and any stacked rearward units --
-    is checked against the *opposing* column's own front-line (depth 0)
-    unit's ``ArmyType``, not a same-depth counterpart. The rulebook itself
-    doesn't spell out column pairing for a multi-deep stack, but this
-    reading is anchored in the one place nemesis and depth are discussed
-    together: the Tactical-ability switch rule, "The switch will only be
-    made if the army strength of the current front-line unit is less than
-    the strength of a rearward unit, **after adjustments are made for all
-    nemesis effects**" (``maybe_switch_front_line``'s docstring) -- which
-    only makes sense if a rearward unit's nemesis-adjusted strength is
-    evaluated against whoever is *currently at the front* of the opposing
-    column, the same unit it would actually face if switched in. In
-    ``resolve_battle``, this runs *after* ``apply_tactical_switches``
+    **Pairing interpretation** (documented, not verbatim rulebook text
+    for the multi-deep-stack case, but now grounded directly in
+    ``RULES.AK``'s own nemesis-eligibility sentence, quoted in full):
+    "A unit's strength is 2/3 normal when fighting against its nemesis...
+    A unit is a nemesis to its opponent if it's on the front line or
+    it's an air unit flying against a unit behind the front line. If
+    more than one of your units are eligible to be a nemesis due to
+    overflight or outflanking, one of them is chosen at random."
+
+    For each of ``own_column``'s units, the set of *eligible* opposing
+    nemesis-inflictors (Phase 65) is:
+
+    1. ``opposing_column``'s own front-line (depth 0) unit -- always
+       eligible, against every one of ``own_column``'s units regardless
+       of depth ("if it's on the front line"). This is the sole
+       eligible unit -- no ambiguity, no ``rng`` consumed -- whenever
+       ``opposing_column`` has no *effectively* overflight units (Phase
+       43's Druidic held-back carve-out, see ``_is_effective_overflight``)
+       beyond its own front line, which is every fixture in this
+       project's test suite prior to Phase 65.
+    2. Every *effectively* overflight unit anywhere in ``opposing_column``
+       (any depth, since overflight "flies" regardless of position) is
+       **also** eligible, but *only* against ``own_column``'s units at
+       depth >= 1 ("flying against a unit **behind** the front line") --
+       never against ``own_column``'s own front-line unit, which is
+       already exhaustively covered by rule 1.
+
+    When the resulting eligible set has more than one member (only
+    possible for one of ``own_column``'s rearward units, facing an
+    opposing side with a stacked overflight unit distinct from its own
+    front-line unit), one is chosen via ``rng.choice`` -- "chosen at
+    random" -- before the nemesis-type check runs against just that
+    one. ``rng`` defaults to a fresh ``random.Random()``, but is only
+    ever actually called in this genuinely ambiguous case, keeping every
+    pre-Phase-65 caller's ``rng`` consumption unchanged.
+
+    **"...or outflanking" is deliberately not modeled here.** Unlike the
+    overflight half of the sentence, `RULES.AK` gives no further text
+    connecting Phase 64's numeric-superiority outflanking to nemesis
+    eligibility specifically -- whether it means an outflanking-eligible
+    *own* second-line unit becomes an eligible inflictor itself (against
+    whom?), or something else, isn't resolvable from the available
+    source without guessing. Left as a distinct, still-open gap (see
+    ``ak_engine/README.md``) rather than forcing an unconfident reading.
+
+    In ``resolve_battle``, this runs *after* ``apply_tactical_switches``
     (Phase 34), so "front-line" here already reflects any switch that
     just happened -- this function only needs to know the final lineup,
     not whether a switch caused it.
@@ -165,15 +209,35 @@ def apply_nemesis_penalties(attacker_columns: list[Column], defender_columns: li
     different pairing scheme need a different function.
     """
 
+    rng = rng if rng is not None else random.Random()
     for attacker_column, defender_column in zip(attacker_columns, defender_columns):
-        _apply_nemesis_to_column(attacker_column, defender_column)
-        _apply_nemesis_to_column(defender_column, attacker_column)
+        _apply_nemesis_to_column(attacker_column, defender_column, rng)
+        _apply_nemesis_to_column(defender_column, attacker_column, rng)
 
 
-def _apply_nemesis_to_column(own_column: Column, opposing_column: Column) -> None:
-    strength_key = _nemesis_aware_strength_key(opposing_column)
+def _eligible_nemesis_inflictors(opposing_column: Column, own_depth: int) -> list[BattleUnit]:
+    """The opposing units eligible to inflict a nemesis check on one of ``own_column``'s
+    units at ``own_depth`` -- see ``apply_nemesis_penalties``'s own docstring.
+    """
+
+    if not opposing_column:
+        return []
+
+    candidates = [opposing_column[0]]
+    if own_depth >= 1:
+        candidates.extend(
+            unit for index, unit in enumerate(opposing_column) if index > 0 and _is_effective_overflight(unit)
+        )
+    return candidates
+
+
+def _apply_nemesis_to_column(own_column: Column, opposing_column: Column, rng: random.Random) -> None:
     for index, unit in enumerate(own_column):
-        adjusted_strength = strength_key(unit)
+        candidates = _eligible_nemesis_inflictors(opposing_column, index)
+        if not candidates:
+            continue
+        inflictor = candidates[0] if len(candidates) == 1 else rng.choice(candidates)
+        adjusted_strength = apply_nemesis_penalty(unit.effective_strength, unit.army_type, inflictor.army_type)
         if adjusted_strength != unit.effective_strength:
             own_column[index] = BattleUnit(
                 unit.army_type,
