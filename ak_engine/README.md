@@ -3314,6 +3314,36 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_office.py`, covering full 52-count coverage across all
     four dicts and verbatim spot-checks including both PROSE.TXT
     example strings.
+- **Phase 82 (current)**: `models/temper.py` -- the character temper
+  (personality/disposition) enum, found continuing to mine `CTBOTH.PAS`
+  the way Phases 79-81 found theirs. `temper = (Cowardly, Cautious,
+  Brave, Berserk)`, the `{$IFNDEF Noble}` (AK-active) branch -- a
+  different, 9-value `temper` plus a `trait` enum exist under the same
+  declaration's `{$ELSE}` (Noble) branch, not modeled, matching this
+  project's already-established "Normal (non-Noble)" target (see
+  `turn/movement.py`'s own map-bounds comment).
+  - **Confirmed real and actually used**: `RUMORS.PAS`'s own
+    `$`-prefixed marker dispatch (the block `report/prose.py`'s own
+    docstring already partially quotes) has `'T':
+    WW(tempername[_temper])` -- an exact match for `PROSE.TXT`'s own
+    documented `"$T: Temper name ('Berserk', 'Cautious', etc.)"`
+    marker, both example strings verbatim `TEMPER_NAME` entries here.
+    The same file also prints alignment and temper together in one
+    character-description sentence, confirming the two are meant to
+    describe a character side by side.
+  - **Directly relevant to two previously-flagged gaps**: Hire's
+    "required pay... depends on unmodeled per-Hero temper/race/
+    alignment compatibility" and Trail's own spied-on-intelligence
+    payload ("Actions, race, temper, alignment..." -- temper "doesn't
+    exist on `LeaderState` at all"). This phase supplies the enum,
+    closing the "no vocabulary at all" half of both gaps; neither
+    gap's actual formula/logic is attempted here -- both "Not yet
+    implemented" bullets below are updated to say so.
+  - Non-breaking: full suite passed unchanged (1574 passed) before any
+    new tests were written -- a new file with no existing call sites.
+    4 new tests added (1578 passed total) in a new
+    `tests/test_temper.py`, covering full 4-count coverage and both
+    PROSE.TXT example strings verbatim.
 
 ## Setup
 
@@ -3510,11 +3540,13 @@ rulebook before being turned into named, typed fields:
     applies whenever the province is simply owned by an ally, regardless
     of whether that ally issued a Treat order permitting it.
   - **Hire's remaining gaps** (see Phase 17's note above): a Hero's own
-    "required pay" (may be less than the offer, depends on unmodeled
-    temper/race/alignment compatibility), recurring per-gameturn pay
-    (only the one-time offer is charged), and alignment-based hire
-    refusal. ~~"Can't Hire a Hero who rules his own province" (no King
-    flag)~~ **fixed in Phase 40** -- see below.
+    "required pay" (may be less than the offer, depends on
+    temper/race/alignment compatibility -- `models/temper.py Temper`
+    now exists as of Phase 82, but the actual compatibility *formula*
+    is still unmodeled, no more than the enum itself), recurring
+    per-gameturn pay (only the one-time offer is charged), and
+    alignment-based hire refusal. ~~"Can't Hire a Hero who rules his
+    own province" (no King flag)~~ **fixed in Phase 40** -- see below.
     ~~`run_leader_plan` doesn't dispatch a `PlanPhase.nested_plan`'s own
     phases~~ **fixed in Phase 32** -- a newly-hired hero's own orders now
     dispatch the same turn, provided he already has a `LeaderState` in
@@ -3635,9 +3667,12 @@ rulebook before being turned into named, typed fields:
     column). **Still open**: the actual spied-on intelligence payload
     (Actions, race, temper, alignment, treasures, armies led) isn't
     assembled -- no report-generation system exists yet to route it to,
-    and several of those fields (race, temper, alignment, per-leader
-    treasures) don't exist on `LeaderState` at all, so there is nothing
-    concrete to report even if there were somewhere to send it. Succ_Trail
+    and several of those fields (race, alignment, per-leader treasures)
+    still don't exist on `LeaderState` at all -- `temper` alone now has
+    a real enum to use (`models/temper.py`, Phase 82), though
+    `LeaderState` still has nowhere to store a per-leader value -- so
+    there is nothing concrete to report even if there were somewhere to
+    send it. Succ_Trail
     is deliberately not decoded at all --
     concluded structurally impossible to receive in a player move file,
     not merely unimplemented; see `turn/plan_dispatch.py`'s module
