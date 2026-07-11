@@ -5,12 +5,14 @@ import pytest
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.movement import (
     NORMAL_MAP_BOUNDS,
+    HexOwnershipTier,
     MapBounds,
     NonAdjacentMoveError,
     hex_distance,
     is_adjacent,
     neighbors,
     resolve_move,
+    step_toward_non_adjacent_target,
 )
 
 BOUNDS = MapBounds(*NORMAL_MAP_BOUNDS)
@@ -115,3 +117,56 @@ def test_hex_distance_is_symmetric():
 )
 def test_hex_distance_known_multi_hex_cases(a, b, expected):
     assert hex_distance(a, b) == expected
+
+
+def _all_neutral(_coord: HexCoord) -> HexOwnershipTier:
+    return HexOwnershipTier.NEUTRAL
+
+
+def test_step_toward_non_adjacent_target_returns_current_when_already_there():
+    target = HexCoord(5, 0)
+    assert step_toward_non_adjacent_target(target, target, BOUNDS, _all_neutral) == target
+
+
+def test_step_toward_non_adjacent_target_picks_the_single_closer_neighbor():
+    # From (0,0) toward (5,0): only (1,0) is strictly closer than (0,0)'s own
+    # distance-5; (0,0)'s other neighbor, (0,1), is distance 5 -- not closer.
+    result = step_toward_non_adjacent_target(HexCoord(0, 0), HexCoord(5, 0), BOUNDS, _all_neutral)
+    assert result == HexCoord(1, 0)
+
+
+def test_step_toward_non_adjacent_target_stops_chasing_when_no_neighbor_is_closer():
+    # From (0,0), both reachable neighbors are farther from (-5,-5) than
+    # (0,0) itself is -- rulebook [3.1]: "stop chasing... if he can't find
+    # a legal way to move closer to it in one phase."
+    result = step_toward_non_adjacent_target(HexCoord(0, 0), HexCoord(-5, -5), BOUNDS, _all_neutral)
+    assert result is None
+
+
+def test_step_toward_non_adjacent_target_breaks_ties_by_ownership_tier():
+    # From (5,5) toward (5,0): (6,4) and (5,4) tie at distance 4, both
+    # strictly closer than (5,5)'s own distance-5.
+    current, target = HexCoord(5, 5), HexCoord(5, 0)
+    tied_candidates = {HexCoord(6, 4), HexCoord(5, 4)}
+
+    def prefer_6_4(coord: HexCoord) -> HexOwnershipTier:
+        return HexOwnershipTier.OWNED_OR_ALLIED if coord == HexCoord(6, 4) else HexOwnershipTier.NEUTRAL
+
+    def prefer_5_4(coord: HexCoord) -> HexOwnershipTier:
+        return HexOwnershipTier.OWNED_OR_ALLIED if coord == HexCoord(5, 4) else HexOwnershipTier.NEUTRAL
+
+    assert step_toward_non_adjacent_target(current, target, BOUNDS, prefer_6_4) == HexCoord(6, 4)
+    assert step_toward_non_adjacent_target(current, target, BOUNDS, prefer_5_4) == HexCoord(5, 4)
+    # sanity: both really are the tied, strictly-closer candidate set
+    assert {
+        c for c in neighbors(current, BOUNDS) if hex_distance(c, target) < hex_distance(current, target)
+    } == tied_candidates
+
+
+def test_hex_ownership_tier_priority_order_matches_rulebook_31():
+    assert (
+        HexOwnershipTier.OWNED_OR_ALLIED
+        < HexOwnershipTier.ENEMY
+        < HexOwnershipTier.HERO_OWNED
+        < HexOwnershipTier.NEUTRAL
+    )

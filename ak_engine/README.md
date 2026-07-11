@@ -3116,6 +3116,72 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_treasure.py`, covering the full 113-count, every
     category group's exact size, the three positional mappings, and
     both `TREASURE_LABEL`/`TREASURE_NAME`'s documented coverage gaps.
+- **Phase 78 (current)**: `turn/movement.py
+  step_toward_non_adjacent_target()` -- the chase-toward-a-non-adjacent-
+  target pathfinding primitive rulebook [3.1] describes and
+  `resolve_move()` has raised `NonAdjacentMoveError` for since Phase 2,
+  deliberately following the same split
+  `turn/pursue_execution.py step_toward_target`/`advance_pursuit`
+  (Phase 66) already used for Pursue/Trail: build and test the pure
+  chase-step primitive alone first, wire multi-phase persistence into
+  `turn_processor.py` in a later, separate phase (as Phase 70 did for
+  Pursue/Trail, four phases after Phase 66).
+  - **Rulebook [3.1], quoted in full for the relevant part**: "If a
+    character is ordered to move to a hex number, but is not adjacent
+    to it, he will move towards it (through friendly hexes, if
+    possible.)... The character will stop chasing the province if he
+    can't find a legal way to move closer to it in one phase. If there
+    are two possible provinces that are both closer to the target
+    province, the following priorities are used: 1) Owned or
+    Allied-player hex; 2) Enemy-player hex; 3) Hero-owned hex; 4)
+    Neutral-player hex."
+  - **`HexOwnershipTier`** transcribes that 4-tier priority list
+    exactly, as an ordinal-ordered `IntEnum` a caller-supplied `tier_of`
+    callback classifies each candidate hex into --
+    `step_toward_non_adjacent_target()` itself stays independent of
+    `GameState`/`ProvinceState`, matching this project's usual
+    primitive/wiring split. **Documented limitation**: this project's
+    `ProvinceState.owner_kingdom_id` (`int | None`) has no way to mark
+    an unowned province as specifically Hero-ruled versus genuinely
+    wild, so a real caller can't currently produce `HERO_OWNED` as
+    distinct from `NEUTRAL` -- not fixed here, flagged for whichever
+    future phase actually wires a `tier_of` against real `GameState`
+    data.
+  - **Algorithm**: among ``current``'s neighbors strictly closer
+    (`hex_distance`, the same straight-line abstraction
+    `step_toward_target` already uses -- no terrain-aware pathfinding)
+    to `target` than `current` itself, picks the lowest-tier one
+    (ties within a tier broken by Python's own stable `min()`, not a
+    further sourced rule -- the rulebook doesn't say). Returns `None`
+    -- "stop chasing" -- when no neighbor is closer, quoting the
+    rulebook's own sentence verbatim in the docstring. Returns
+    `current` unchanged if already at `target`.
+  - **Deliberately not wired into `resolve_move()`/`execute_move()`/
+    `plan_dispatch.py` this phase**: unlike Pursue/Trail's own
+    catch-up (which always resolves against the *target*'s own data),
+    a Move chase step lands on an *intermediate* hex whose
+    terrain/exploration data is different from the ultimate target's --
+    `resolve_move()`'s current signature only takes one caller-supplied
+    hex's terrain/explored-percent, describing whichever hex will
+    actually be entered. Wiring the chase in for real needs
+    `execute_move()` to look up the *intermediate* hex's own province
+    data (not the target's) once the geometry decision is known, plus
+    the rulebook's own multi-phase persistence rule ("The movement
+    order will override orders in a subsequent phase only if the
+    character is practicing in that phase") -- both left for a real
+    follow-up phase, matching Phase 66's own precedent.
+  - Also fixes a stale README bullet found while researching this
+    phase: the "Not yet implemented" section's own note about
+    contested-province forced rebattle was never struck through when
+    Phase 55 actually closed it -- corrected above, in Phase 55's
+    original section, not left to mislead a future reader.
+  - Non-breaking: full suite passed unchanged (1553 passed) before any
+    new tests were written -- a new, standalone function with no
+    existing call sites. 5 new tests added (1558 passed total) in
+    `tests/test_movement.py`, covering the single-closer-candidate
+    case, the ownership-tier tie-break (hand-verified against the hex
+    grid's own cube-coordinate math), the "stop chasing" `None` case,
+    and the already-arrived case.
 
 ## Setup
 
@@ -3489,12 +3555,16 @@ rulebook before being turned into named, typed fields:
   - ~~Contested-province state across multiple turns
     (`turn/contested_province.py`'s functions exist but nothing calls
     them from `execute_move()`/`fight_battle()`)~~ **the illegal-move
-    check is wired in as of Phase 36** -- see above. Still open: a
+    check is wired in as of Phase 36** -- see above. ~~Still open: a
     contested result still just sets `ProvinceState.contested_by_kingdom_id`
     and stops there, with no automatic rebattle "in the next phase" --
     `turn/turn_processor.py run_turn()` (Phase 45) is now a real
     phase-by-phase, multi-leader orchestrator, but doesn't wire this
-    specific mechanic in either; see that phase's note below.
+    specific mechanic in either~~ -- **the automatic forced-rebattle
+    rule is wired in as of Phase 55** (`turn/turn_processor.py
+    _dispatch_contested_rebattles`, see that phase's own note below) --
+    this bullet was left stale (not struck through) when Phase 55
+    shipped; corrected here rather than left to mislead a future reader.
 - **Populating a brand-new `GameState` from nothing at turn 0** (see
   Phase 31's note above): `turn/kingdom_bridge.py` can only *enrich*
   `LeaderState`s that already exist -- there is no source anywhere in

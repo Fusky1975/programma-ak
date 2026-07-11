@@ -16,10 +16,25 @@ without the lost source. If real game data ever contradicts it, this is
 the first place to revisit.
 
 Explicitly out of scope for this phase (rulebook [3.1]):
-- Moving to a *non-adjacent* target hex ("he will move towards it, through
+- ~~Moving to a *non-adjacent* target hex ("he will move towards it, through
   friendly hexes if possible", with tie-break priorities and a "stop
   chasing" condition) -- this needs a pathfinding algorithm, not just
-  adjacency, and is deferred to a later phase.
+  adjacency, and is deferred to a later phase.~~ **The one-hex-per-phase
+  chase-step primitive now exists as of Phase 78** --
+  ``step_toward_non_adjacent_target()`` below, deliberately following the
+  exact same split ``turn/pursue_execution.py step_toward_target``/
+  ``advance_pursuit`` already used (Phase 66 built the primitive alone,
+  Phase 70 wired multi-phase persistence in separately, four phases
+  later): `resolve_move()`/`execute_move()`/`plan_dispatch.py` still
+  raise/reject a non-adjacent target exactly as before -- wiring the new
+  primitive in needs `execute_move()` to resolve exploration/contested/
+  battle checks against whichever *intermediate* hex the chase actually
+  lands on this phase, not the ultimate target (`resolve_move()`'s
+  current signature only ever describes one caller-supplied hex's
+  terrain/exploration data), plus the rulebook's own multi-phase
+  persistence rule ("The movement order will override orders in a
+  subsequent phase only if the character is practicing in that phase")
+  -- both left for a real follow-up phase, not attempted here.
 - Resolving the battle that occurs when moving into an enemy-occupied
   province (rulebook [7.0]) -- this module only flags that a battle would
   be triggered, it does not fight it.
@@ -27,7 +42,9 @@ Explicitly out of scope for this phase (rulebook [3.1]):
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from enum import IntEnum
 
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.exploration import ExploreResult, resolve_explore
@@ -107,6 +124,63 @@ def hex_distance(a: HexCoord, b: HexCoord) -> int:
     ax, ay, az = _to_cube(a)
     bx, by, bz = _to_cube(b)
     return max(abs(ax - bx), abs(ay - by), abs(az - bz))
+
+
+class HexOwnershipTier(IntEnum):
+    """Rulebook [3.1]'s own tie-break order (quoted in full) for a
+    non-adjacent Move's chase step, when two candidate hexes are equally
+    close to the target: "1) Owned or Allied-player hex; 2) Enemy-player
+    hex; 3) Hero-owned hex; 4) Neutral-player hex." Ordinal order matches
+    that priority list exactly (lower = preferred).
+
+    Deliberately independent of this project's own ``GameState``/
+    ``ProvinceState`` model -- callers classify each candidate hex
+    however they can; see ``step_toward_non_adjacent_target``'s own
+    docstring for the one distinction this project's data currently
+    can't make (``HERO_OWNED`` vs ``NEUTRAL`` -- ``ProvinceState.
+    owner_kingdom_id`` has no way to mark an unowned province as
+    specifically Hero-ruled).
+    """
+
+    OWNED_OR_ALLIED = 0
+    ENEMY = 1
+    HERO_OWNED = 2
+    NEUTRAL = 3
+
+
+def step_toward_non_adjacent_target(
+    current: HexCoord,
+    target: HexCoord,
+    bounds: MapBounds,
+    tier_of: Callable[[HexCoord], HexOwnershipTier],
+) -> HexCoord | None:
+    """One hex-step from ``current`` toward a non-adjacent ``target`` (rulebook
+    [3.1]): "If a character is ordered to move to a hex number, but is not
+    adjacent to it, he will move towards it... If there are two possible
+    provinces that are both closer to the target province," ``tier_of``'s
+    ``HexOwnershipTier`` breaks the tie, exactly the quoted priority order.
+
+    Only considers neighbors *strictly closer* (``hex_distance``, the same
+    straight-line abstraction ``turn/pursue_execution.py step_toward_target``
+    already uses -- not real terrain-aware pathfinding) than ``current`` is
+    to ``target``. Returns ``None`` -- "stop chasing" -- when no such
+    neighbor exists: "The character will stop chasing the province if he
+    can't find a legal way to move closer to it in one phase," quoted
+    verbatim. Returns ``current`` unchanged if already at ``target``.
+
+    A same-tier, same-distance tie between two candidates is broken by
+    Python's own stable ``min()`` (whichever ``neighbors()`` yields first)
+    -- the rulebook doesn't specify anything further for that case, so no
+    additional rule is invented here.
+    """
+
+    if current == target:
+        return current
+    current_distance = hex_distance(current, target)
+    candidates = [c for c in neighbors(current, bounds) if hex_distance(c, target) < current_distance]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda c: (tier_of(c), hex_distance(c, target)))
 
 
 def resolve_move(
