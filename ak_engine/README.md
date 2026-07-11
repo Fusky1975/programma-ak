@@ -3265,6 +3265,55 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     any `Alignment` member, so the `DRUID` string fix changed no
     behavior either. 3 new tests added (1564 passed total) in a new
     `tests/test_alignment.py`.
+- **Phase 81 (current)**: `models/office.py` -- the kingdom/King
+  "office" (achievement-based rank/title) catalog, found continuing to
+  mine `CTBOTH.PAS` for real, sourced data the same way Phases 79 and
+  80 found theirs. 52-member `Office` enum (~line 249-260) plus
+  `OFFICE_NAME` (`ofcname`), `OFFICE_MIN_POINTS` (`minpts`),
+  `OFFICE_VALUE` (`ofcval`), and `OFFICE_ENABLED_BY_DEFAULT` (`ofcuse`,
+  all three tables `{$IFDEF Moderator}`, world/scoring-side only).
+  - **Confirmed to be `PROSE.TXT`'s own documented `"$O"` marker**:
+    "$O: Office name ('World Emperor', 'Arch-Mage Palatine', etc.)" --
+    both example strings PROSE.TXT itself gives are verbatim
+    `OFFICE_NAME` entries here (`Office.EMPEROR`/`Office.MAGE`), not
+    just a plausible-sounding match.
+  - **A red herring found and ruled out while researching this**: a
+    second, much smaller `office` enum (`Pope, Caliph, Shaman, Emperor,
+    King, Duke, Prince, Notitle`) appears at `CTBOTH.PAS` ~line 1741,
+    immediately after a comment banner reading `"****Not implemented
+    yet:"` -- dead, never-compiled placeholder code. This project's own
+    `models/kingdom.py Kingdom.king_title` (a move file's free-text
+    king-title line, e.g. "Shaman" in the real `AK3__T1.K1` sample) is
+    **not** connected to either `office` enum -- confirmed by checking
+    whether any real sample's own king-title text appears in the real,
+    active 52-member `OFFICE_NAME` list; it doesn't. `king_title`
+    remains exactly what Phase 1 already documented: unparsed,
+    unvalidated free text.
+  - **Confirmed real usage** (`REPORTS.PAS` ~line 624-632, the only
+    place in the available source that reads these tables): for each
+    office except `NO_OFFICE`, gated by `OFFICE_ENABLED_BY_DEFAULT`
+    (unless a newer game version), a kingdom's accumulated points for
+    that office (`Ofc_Pts(...)`, not available in this project's source
+    -- lives in the missing main program) are compared against
+    `OFFICE_MIN_POINTS` -- meeting the threshold *and* ranking #1 among
+    all kingdoms for that office (`Rank(...) = 1`) is what earns the
+    King the right to display that office's name in his own turn
+    report, printed via the `ioname.x2` prose file. `OFFICE_VALUE`
+    feeds a separate points-decay formula
+    (`ofcpoints[ofc] := ofcval[ofc] * (1.0 - reduct)`) whose own
+    `reduct` term isn't traced further here.
+  - **Explicitly out of scope**: the actual points-accumulation formula
+    (`Ofc_Pts`) and cross-kingdom ranking (`Rank`) live in the missing
+    main program, so nothing in this module can compute which office a
+    real `KingdomState` currently holds -- a type/threshold catalog
+    only, the same category of "real, sourced, but not a complete
+    algorithm" as Phase 79's `MONSTER_GUARDED_FEATURE_TYPES`.
+  - Non-breaking: full suite passed unchanged (1564 passed) before any
+    new tests were written -- a new file with no existing call sites.
+    10 new tests added (1574 passed total) in a new
+    `tests/test_office.py`, covering full 52-count coverage across all
+    four dicts and verbatim spot-checks including both PROSE.TXT
+    example strings.
 
 ## Setup
 
