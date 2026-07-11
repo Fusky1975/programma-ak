@@ -209,6 +209,8 @@ def _build_battle_units(
     rng: random.Random,
     combat_ability_level: int = 0,
     apply_fanaticism: bool = False,
+    own_explored_percent: int = 0,
+    enemy_explored_percent: int = 0,
 ) -> list[BattleUnit]:
     """Build BattleUnits for one side of a battle at ``province_coord``.
 
@@ -222,6 +224,15 @@ def _build_battle_units(
     Tactical (or Naval, in Sea provinces) skill level -- rulebook [6.3]:
     "+20%/level", applied to every unit on the side, not just the
     commander's own led units (see ``fight_battle``'s docstring for why).
+
+    **Exploration advantage** (Phase 69): ``own_explored_percent``/
+    ``enemy_explored_percent`` are single side-level values (not
+    per-army), computed once by ``fight_battle`` and applied uniformly
+    to every unit on this side via ``turn/strength.py
+    exploration_advantage_multiplier`` -- see ``fight_battle``'s own
+    docstring for exactly which kingdom's ``ProvinceState.
+    explored_percent_by_kingdom`` entry each side reads. Both default to
+    0 (no advantage either way) for any caller that doesn't pass them.
 
     **Desert without camels** (Phase 35): "In a desert battle, one camel
     unit should be present (it sees double duty as a supply train.) If
@@ -309,6 +320,8 @@ def _build_battle_units(
             base_strength_override=override,
             combat_ability_level=combat_ability_level,
             phantasmal_armies_level=phantasmal_armies_level,
+            own_explored_percent=own_explored_percent,
+            enemy_explored_percent=enemy_explored_percent,
         )
         rear_targeting_blocked = is_overflight_unit(army.army_type) and druidic_shortfall > 0
         units.append(
@@ -706,13 +719,27 @@ def fight_battle(
     attacker_ability_level = attacker_commander.tactical_ability if attacker_commander is not None else 0
     defender_ability_level = defender_commander.tactical_ability if defender_commander is not None else 0
 
+    # Exploration advantage (Phase 69, rulebook [6.3]): each side's own
+    # exploration reads province.explored_percent_by_kingdom for its own
+    # kingdom_id (the attacker's, and the defending *province's owner*'s
+    # -- an allied co-defender not the owner isn't separately tracked,
+    # see models/game_state.py's own docstring). Missing entries default
+    # to 0, a neutral "no advantage" default, not a guess.
+    defender_kingdom_id = province.owner_kingdom_id
+    attacker_explored = province.explored_percent_by_kingdom.get(attacker_kingdom_id, 0)
+    defender_explored = (
+        province.explored_percent_by_kingdom.get(defender_kingdom_id, 0) if defender_kingdom_id is not None else 0
+    )
+
     attacker_units = _build_battle_units(
         attacker_armies, state, is_defender=False, terrain=province.terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=attacker_ability_level, apply_fanaticism=apply_fanaticism,
+        own_explored_percent=attacker_explored, enemy_explored_percent=defender_explored,
     )
     defender_units = _build_battle_units(
         defender_armies, state, is_defender=True, terrain=province.terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=defender_ability_level, apply_fanaticism=apply_fanaticism,
+        own_explored_percent=defender_explored, enemy_explored_percent=attacker_explored,
     )
 
     duel = _maybe_fight_duel(

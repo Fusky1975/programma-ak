@@ -143,6 +143,7 @@ from ak_engine.turn.contested_province import (
     is_illegal_move_from_contested,
 )
 from ak_engine.turn.hex_numbering import decode_hex_number
+from ak_engine.turn.move_execution import record_kingdom_exploration
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
@@ -631,6 +632,10 @@ def _dispatch_multi_attacker_lmove(
                 occupied_by_enemy=True,
             )
             exploration_new_percent = move_result.exploration.new_percent
+            # Phase 69: each mover's own kingdom gets its own tracked
+            # percentage here, unlike the single shared exploration_new_percent
+            # scalar above (which only the last mover in this loop wins).
+            record_kingdom_exploration(target_province, tl.kingdom_id, explorer_skill, partial=True)
         except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
             results.append(PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, None, exc))
             continue

@@ -404,6 +404,60 @@ def test_build_battle_units_applies_combat_ability_level_to_every_unit_on_the_si
     assert units_with_ability[0].effective_strength == units_no_ability[0].effective_strength * 1.6
 
 
+def test_build_battle_units_applies_exploration_advantage_to_every_unit_on_the_side():
+    # Rulebook [6.3]: "the side with the better exploration... up to a 25%
+    # advantage" -- Phase 69, turn/strength.py exploration_advantage_multiplier.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+
+    units_no_advantage = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+    units_with_advantage = _build_battle_units(
+        [army],
+        state,
+        is_defender=False,
+        terrain=Terrain.PLAINS,
+        province_coord=FIELD,
+        rng=random.Random(0),
+        own_explored_percent=100,
+        enemy_explored_percent=0,
+    )
+
+    assert units_with_advantage[0].effective_strength == pytest.approx(units_no_advantage[0].effective_strength * 1.25)
+
+
+def _exploration_battle_state(*, attacker_explored: int) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, home_province=FIELD))
+    province = ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2)
+    if attacker_explored:
+        province.explored_percent_by_kingdom[1] = attacker_explored
+    state.add_province(province)
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, location=FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, location=FIELD))
+    return state
+
+
+def test_fight_battle_reads_real_per_kingdom_exploration_from_the_province():
+    # Integration: fight_battle wires ProvinceState.explored_percent_by_kingdom
+    # into _build_battle_units for both sides -- same rng seed, only the
+    # attacker's own recorded exploration differs (100% vs never recorded),
+    # so any strength difference is attributable to the new wiring alone.
+    state_without_advantage = _exploration_battle_state(attacker_explored=0)
+    state_with_advantage = _exploration_battle_state(attacker_explored=100)
+
+    report_without = fight_battle(state_without_advantage, 1, FIELD, [101], rng=random.Random(3))
+    report_with = fight_battle(state_with_advantage, 1, FIELD, [101], rng=random.Random(3))
+
+    assert report_with.battle_result.columns[0].attacker_strength == pytest.approx(
+        report_without.battle_result.columns[0].attacker_strength * 1.25
+    )
+
+
 def test_build_battle_units_reduces_quality_in_desert_without_camels():
     # Rulebook: "In a desert battle, one camel unit should be present...
     # If not, all armies have their quality reduced by 1 level." AVERAGE

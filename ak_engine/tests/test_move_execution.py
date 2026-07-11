@@ -8,7 +8,7 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.move_execution import execute_move
+from ak_engine.turn.move_execution import execute_move, record_kingdom_exploration
 
 from _helpers import ScriptedRandom
 
@@ -48,6 +48,33 @@ def test_uncontested_move_applies_partial_exploration():
     # Plains basic exploration number 50, skill 1 -> full=100, halved (Move) = 50.
     assert result.exploration.new_percent == 50
     assert state.provinces[TARGET].explored_percent == 50
+
+
+def test_uncontested_move_also_records_the_movers_own_kingdom_exploration():
+    # Phase 69: alongside the pre-existing shared explored_percent scalar,
+    # the mover's own kingdom_id gets its own independent entry.
+    state = base_state()
+
+    execute_move(state, kingdom_id=1, army_ids=[101], explorer_skill=1, target=TARGET)
+
+    assert state.provinces[TARGET].explored_percent_by_kingdom[1] == 50
+    assert 2 not in state.provinces[TARGET].explored_percent_by_kingdom
+
+
+def test_record_kingdom_exploration_seeds_from_that_kingdoms_own_prior_entry():
+    province = ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2)
+    province.explored_percent_by_kingdom[1] = 50  # kingdom 1 already at 50%
+
+    new_percent = record_kingdom_exploration(province, kingdom_id=1, explorer_skill=1, partial=True)
+
+    # Plains=50, skill 1 -> 100, halved (partial) = 50 -> 50+50 = 100.
+    assert new_percent == 100
+    assert province.explored_percent_by_kingdom[1] == 100
+    # A different kingdom's own entry starts fresh from 0, independent of
+    # kingdom 1's progress.
+    other_percent = record_kingdom_exploration(province, kingdom_id=2, explorer_skill=1, partial=True)
+    assert other_percent == 50
+    assert province.explored_percent_by_kingdom == {1: 100, 2: 50}
 
 
 def test_move_into_allied_territory_is_uncontested():

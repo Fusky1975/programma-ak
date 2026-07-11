@@ -116,6 +116,35 @@ def test_run_turn_groups_same_phase_same_target_lmoves_into_one_multi_attacker_b
     assert sorted(results[0].result.battle.leader_ids) == [10, 20]
 
 
+def test_run_turn_multi_attacker_lmove_records_each_movers_own_kingdom_exploration():
+    # Phase 69: two *different* (allied) kingdoms uniting into one Multiple
+    # Contingents battle each still get their own independent
+    # explored_percent_by_kingdom entry -- unlike the pre-existing shared
+    # explored_percent scalar, where only the last mover in the loop wins.
+    state = _base_state()
+    state.add_kingdom(KingdomState(3, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.allied_kingdoms.add(frozenset({1, 3}))
+    # Same origin as each other (unlike the "peaceful mover" fixture's
+    # ORIGIN/ORIGIN2 split) so Multiple Contingents' own grouping unites
+    # them into one battle instead of two sequential ones -- the latter
+    # would exhaust the lone defender on the first pass (a separate,
+    # already-documented fight_multi_attacker_battle() edge case, not
+    # something this test is about).
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
+    state.add_leader(LeaderState(30, kingdom_id=3, name="C", location=ORIGIN))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=10))
+    state.add_army(ArmyState(103, 3, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=5, commanded_by=30))
+
+    leader_a = _leader_with_phase(10, "A", "P0", _lmove_phase("P0", TARGET))
+    leader_c = _leader_with_phase(30, "C", "P0", _lmove_phase("P0", TARGET))
+
+    run_turn([TurnLeader(leader_a, 1), TurnLeader(leader_c, 3)], state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    explored = state.provinces[TARGET].explored_percent_by_kingdom
+    assert explored.get(1, 0) > 0
+    assert explored.get(3, 0) > 0
+
+
 def test_run_turn_peaceful_mover_unaffected_by_a_lone_attacker_targeting_the_same_hex():
     # Kingdom 3 is allied with both the attacker's kingdom (1) and the
     # defender's kingdom (2), so its own mover always sees only allied

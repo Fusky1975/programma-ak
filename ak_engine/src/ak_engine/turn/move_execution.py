@@ -58,12 +58,12 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from ak_engine.models.game_state import GameState
+from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.contested_province import is_illegal_move_from_contested
-from ak_engine.turn.exploration import ExploreResult
+from ak_engine.turn.exploration import ExploreResult, resolve_explore
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 
 
@@ -74,6 +74,22 @@ class MoveExecutionResult:
     exploration: ExploreResult
     movement_points_spent: int
     new_location: HexCoord | None
+
+
+def record_kingdom_exploration(
+    province: ProvinceState, kingdom_id: int, explorer_skill: int, *, partial: bool
+) -> int:
+    """Advances ``kingdom_id``'s own cumulative exploration of ``province`` (Phase 69) --
+    see ``models/game_state.py``'s own module docstring for why this is a
+    separate, per-kingdom tracker from ``ProvinceState.explored_percent``.
+    Seeded from that kingdom's own prior entry (0 if never recorded before),
+    not the shared scalar. Returns the new percentage.
+    """
+
+    prior = province.explored_percent_by_kingdom.get(kingdom_id, 0)
+    result = resolve_explore(prior, province.terrain, explorer_skill, partial=partial)
+    province.explored_percent_by_kingdom[kingdom_id] = result.new_percent
+    return result.new_percent
 
 
 def execute_move(
@@ -142,6 +158,7 @@ def execute_move(
         occupied_by_enemy=occupied_by_enemy,
     )
     target_province.explored_percent = move_result.exploration.new_percent
+    record_kingdom_exploration(target_province, kingdom_id, explorer_skill, partial=True)
 
     battle_report = None
     conquered = False

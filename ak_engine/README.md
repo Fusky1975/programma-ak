@@ -2611,7 +2611,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `test_turn_processor.py`: LMOVE/PURSUE/TRAIL each cancel an active
     Defend before its next reinforcement check, and an unrelated action
     (WAIT) doesn't.
-- **Phase 68 (current)**: `turn/trail_execution.py advance_trail` --
+- **Phase 68**: `turn/trail_execution.py advance_trail` --
   the same scoped multi-phase chase step Phase 66 added for Pursue,
   now for Trail. [3.17] draws the parallel explicitly: "Like the
   Pursue order, the Trail order ends when the character finds and has
@@ -2630,6 +2630,54 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (1467 passed) before any
     new tests were written. 2 new tests added (1469 passed total) in
     `test_trail_execution.py`.
+- **Phase 69 (current)**: `ProvinceState.explored_percent_by_kingdom` --
+  finally unblocks the exploration-advantage strength bonus flagged
+  since Phase 9 and explicitly documented as blocked in Phase 35.
+  `RULES.AK`'s [6.3] "ARMY STRENGTH NOTES" (quoted in full): "The side
+  with the better exploration of the contested province will also have
+  up to a 25% advantage, if they have explored 100% of the province and
+  the other side has not explored it." `turn/strength.py
+  exploration_advantage_multiplier` has implemented the formula itself
+  since Phase 9 -- the only missing piece was ever real per-kingdom
+  data to feed it, since the pre-existing `explored_percent` field is a
+  single shared scalar with no way to ask "how much has *this* kingdom
+  explored it."
+  - **Purely additive**: every write site that already updates
+    `explored_percent` (`turn/move_execution.py execute_move`, `turn/
+    plan_dispatch.py`'s EXPLORE branch, `turn/turn_processor.py`'s
+    multi-attacker LMOVE branch) now *also* calls the new `turn/
+    move_execution.py record_kingdom_exploration()`, which seeds from
+    that acting kingdom's own prior per-kingdom entry (0 if never
+    recorded) rather than the shared scalar. In the multi-attacker
+    branch this is a real behavior improvement over the pre-existing
+    shared scalar, not just a parallel write: previously only the
+    *last* mover in the loop's own contribution survived (a documented
+    pre-existing quirk), while now every uniting kingdom gets its own
+    independently tracked percentage.
+  - **`turn/battle_orchestrator.py fight_battle`** reads both sides'
+    entries once per battle -- the attacker's own `attacker_kingdom_id`,
+    and the defending province's own `owner_kingdom_id` for the
+    defending side (an allied co-defender who isn't the owner isn't
+    separately tracked, a documented simplification) -- and threads
+    them through `_build_battle_units`'s new `own_explored_percent`/
+    `enemy_explored_percent` parameters into every unit's `turn/
+    strength.py compute_effective_strength` call.
+  - **A kingdom that owns a province is not automatically seeded at
+    100%.** There is no data anywhere in this project for "how long has
+    this kingdom held it" or "did they explore it before this
+    simulation's own tracked history began," and guessing either would
+    contradict this project's own no-guessing convention -- a longtime
+    owner who never issued an explicit Explore/Move-into order into
+    their own province in a recorded turn reads as 0% here, same as
+    anyone else with no history. Missing entries for *both* sides
+    default to 0, which `exploration_advantage_multiplier(0, 0)` reads
+    as no advantage either way -- a neutral, not a guessed, default.
+  - Non-breaking: full suite passed unchanged (1469 passed) before any
+    new tests were written -- the new field defaults to an empty dict
+    and every new parameter defaults to 0, so no existing caller's
+    behavior changed. 6 new tests added (1475 passed total) across
+    `test_move_execution.py`, `test_plan_dispatch.py`,
+    `test_battle_orchestrator.py`, and `test_turn_processor.py`.
 
 ## Setup
 
@@ -2748,10 +2796,13 @@ rulebook before being turned into named, typed fields:
   ~~the exploration-advantage special factor, fanaticism, and the
   desert-without-camels penalty aren't wired in~~ **fanaticism (opt-in,
   see Phase 35 above) and desert-without-camels are wired in now**.
-  **Exploration-advantage stays unwired** -- a genuine structural gap,
-  not a missing-context oversight: `ProvinceState.explored_percent` is
-  one shared value per province, with no per-kingdom split to compare
-  "own vs. enemy" against (see Phase 35's note above).
+  ~~Exploration-advantage stays unwired -- a genuine structural gap...
+  `ProvinceState.explored_percent` is one shared value per province,
+  with no per-kingdom split to compare "own vs. enemy" against~~ --
+  **wired in as of Phase 69** via the new
+  `ProvinceState.explored_percent_by_kingdom` (see that phase's own
+  note above for exactly which kingdom each side reads and the
+  documented "owner isn't auto-seeded at 100%" simplification).
   ~~Tactical/Naval-ability~~ **is** wired in (Phase 30), and ~~the
   nemesis penalty isn't applied~~ **is now applied too** (Phase 33, in
   `resolve_battle` itself rather than `fight_battle`'s own

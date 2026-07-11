@@ -123,6 +123,34 @@ own "roughly 10%/turn decomposition past a 350-unit world cap" is a
 soft world-balance rule this project doesn't enforce (would need a
 live global army count and a turn-scheduled decay pass, out of scope
 for spell execution).
+
+**``ProvinceState.explored_percent_by_kingdom`` (Phase 69)**: `RULES.AK`'s
+[6.3] "ARMY STRENGTH NOTES" (quoted in full): "The side with the better
+exploration of the contested province will also have up to a 25%
+advantage, if they have explored 100% of the province and the other
+side has not explored it." `turn/strength.py
+exploration_advantage_multiplier` has implemented this formula since
+Phase 9, but `turn/battle_orchestrator.py` could never call it with
+real data -- the pre-existing `explored_percent` field above is a
+*single* scalar per province, with no way to ask "how much has *this*
+kingdom specifically explored it" (a structural gap documented since
+Phase 35). This new field is purely additive: every write site that
+already updates `explored_percent` (`turn/move_execution.py
+execute_move`, `turn/plan_dispatch.py`'s EXPLORE branch, `turn/
+turn_processor.py`'s multi-attacker LMOVE branch) now *also* records
+each acting kingdom's own cumulative percentage here, independently
+seeded from that kingdom's own prior entry (default 0), via
+`turn/move_execution.py record_kingdom_exploration()`. **A kingdom
+that owns a province is not automatically seeded at 100%** -- there is
+no data anywhere in this project for "how long has this kingdom held
+it" or "did they explore it before this simulation's own tracked
+history began," and guessing either would contradict this project's
+own no-guessing convention; a longtime owner who never issued an
+explicit Explore/Move-into order into their own province in a
+recorded turn reads as 0% here, same as anyone else with no history.
+Missing entries for *both* sides default to 0, which
+`exploration_advantage_multiplier(0, 0)` reads as no advantage either
+way -- a neutral, not a guessed, default.
 """
 
 from __future__ import annotations
@@ -199,6 +227,11 @@ class ProvinceState:
     tax_modifier_percent: int = 0
     # Illusory Terrain (Phase 59) -- see module docstring.
     illusory_terrain: Terrain | None = None
+    # Per-kingdom exploration progress (Phase 69) -- see module docstring.
+    # Distinct from `explored_percent` above (a single shared scalar,
+    # unable to answer "how much has *this* kingdom explored" for the
+    # rulebook [6.3] exploration-advantage strength bonus).
+    explored_percent_by_kingdom: dict[int, int] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

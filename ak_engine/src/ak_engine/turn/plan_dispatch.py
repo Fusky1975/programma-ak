@@ -300,7 +300,7 @@ from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decod
 from ak_engine.turn.exploration import resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
-from ak_engine.turn.move_execution import execute_move
+from ak_engine.turn.move_execution import execute_move, record_kingdom_exploration
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import PracticeExecutionResult, execute_practice
 from ak_engine.turn.pursue_execution import PursueExecutionResult, execute_pursue
@@ -407,6 +407,7 @@ def dispatch_phase(
         province = state.provinces[state.leaders[leader_id].location]
         result = resolve_explore(province.explored_percent, province.terrain, explorer_skill)
         province.explored_percent = result.new_percent
+        record_kingdom_exploration(province, kingdom_id, explorer_skill, partial=False)
         return result
 
     if action is ActionCode.SEARCH:

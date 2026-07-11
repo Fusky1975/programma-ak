@@ -119,6 +119,19 @@ def test_dispatch_explore_uses_leader_location():
     assert state.provinces[location].explored_percent == 100
 
 
+def test_dispatch_explore_also_records_the_kingdoms_own_exploration():
+    # Phase 69: alongside the pre-existing shared explored_percent scalar.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH, explorer_skill=1
+    )
+
+    assert state.provinces[location].explored_percent_by_kingdom[1] == 100
+
+
 def test_dispatch_search_is_decode_only():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P2", action=ActionCode.SEARCH, obj=20, extra=[0, 0, 11, 0, 22, 0, 7, 9, 13, -1])
