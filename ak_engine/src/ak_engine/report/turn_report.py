@@ -81,6 +81,44 @@ in this project (`LNAMES.PAS`/`PRNAMES.PAS` territory, a separate,
 entirely unbuilt subsystem). Every function below takes caller-supplied
 display-name strings for armies/provinces/kingdoms, the same
 values-dict pattern ``prose.render()`` itself already uses.
+
+**Phase 63 addendum -- uncontested conquest and the Spy report's opening
+line.** Two more real, standalone templates, added the same way:
+
+- ``HostAK/TP/PROSE/CONQ.X`` narrates a Move that conquers an
+  undefended enemy province (no `_BClash`/`_BWinner` battle dispatch
+  involved at all -- `turn/conquest.py`'s own movement-cost rule
+  already distinguishes this case from a fought battle).
+  ``render_uncontested_conquest()`` doesn't call into
+  `turn/move_execution.py`/`turn/conquest.py` itself; like every other
+  function here, it only renders already-known facts the caller
+  supplies. Only 2 of CONQ.X's real 4 variants are used -- the other
+  two need the "/S" (Sea-terrain) marker `report/prose.py` deliberately
+  doesn't resolve, and this function takes no terrain parameter to
+  resolve it with; see `_CONQ_TEMPLATES`'s own comment.
+- ``HostAK/TP/PROSE/SPY.X`` (``SAY.PAS _LSpy: FD('spy',S_PCom,10)``) is
+  ASpy's own report-opening sentence -- closing part of Phase 62's own
+  documented follow-up ("rendering a `SpyReport` into English sentences
+  is a natural, still-open follow-up"). **Only the opening line renders
+  here.** Research for this phase traced `RUMORS.PAS Set_Intel` (the
+  procedure `turn/aspy_defend_decode.py` already cites for confirming
+  `obj` is engine-consulted) and confirmed it computes cross-kingdom
+  *report-visibility* levels (`intel_lev`, gating what *other* kings
+  learn about a spying event in their own reports) -- a separate,
+  unbuilt system, and not what actually composes the "owner / adjacent
+  owners / recruitable types / capital" sentences themselves. No
+  dedicated PROSE template for those specific facts turned up anywhere
+  in the available Pascal source (`SPDESC.X2`/`FPDESC.X2` are Search
+  Feature-power descriptions, unrelated despite the similar name).
+  Rendering the rest of `turn/aspy_execution.py SpyReport` stays
+  explicitly open, the same category of gap as Hide_Feature/
+  Clairvoyance -- not force-composed from invented, unsourced prose.
+- ``SPY.X``'s own ``^B``/``^E`` markers are Turbo Pascal's
+  King-exclusion narrator markers (`RUMORS.PAS Set_Person`/`Set_Alt`,
+  already flagged out of scope by `report/prose.py`'s own docstring);
+  `render_spy_report_opening()` elides both (substitutes empty string)
+  rather than guessing what text a full narrator-perspective system
+  would put there.
 """
 
 from __future__ import annotations
@@ -210,6 +248,31 @@ _PURSUIT_TEMPLATES: list[str] = [
     "= gave chase and",
     "= overtook the enemy {in their headlong/Rpanicky retreat }and",
     "= chased after the enemy and",
+]
+
+# HostAK/TP/PROSE/CONQ.X -- Move conquering an undefended province. Only 2
+# of the real file's 4 variants are usable here: the other two ("armies/S
+# naval_forces", "host/Sfleet") use the "/S" marker (Sea-terrain
+# conditional), which report/prose.py deliberately doesn't resolve --
+# render_uncontested_conquest() has no is_sea_province parameter to
+# resolve it with, and guessing would silently pick the wrong branch on a
+# real Sea conquest. Left out rather than guessed; a future extension
+# that threads terrain through can restore both.
+_CONQ_TEMPLATES: list[str] = [
+    "<'s forces conquered/Rtook @ without any major battles/Rengagements.",
+    "<'s forces encountered/Rexperienced little resistance/Ropposition in @ and < there established our rule/Rreign.",
+]
+
+# HostAK/TP/PROSE/SPY.X -- ASpy's report-opening sentence. "^B"/"^E" are
+# transcribed literally (see module docstring: King-exclusion markers,
+# elided by render_spy_report_opening rather than resolved).
+_SPY_TEMPLATES: list[str] = [
+    "< {secretly }spied on @.^BHere is > report:__^E",
+    "< conducted espionage in @^B and compiled/Rwrote this report^E.",
+    "< gathered information/Rintelligence in @^B and wrote/Rcompiled this report^E.",
+    "< {covertly }spied on @^B and gathered/Rcollected the following information:/Rintelligence^E.",
+    "< used/Rutilized > {fine }covert/Rspying skills to secretly observe/Rkeep_track_of events/Rhappenings "
+    "in @^B and reported the following{ information}^E.",
 ]
 
 
@@ -351,6 +414,29 @@ def render_retreat(retreating_name: str, destination_name: str, rng: random.Rand
 
     variant = pick_variant(_RETREAT_TEMPLATES, rng)
     values = {"<": retreating_name, "^S": destination_name, ">": f"{retreating_name}'s"}
+    return render(variant, values, rng=rng)
+
+
+def render_uncontested_conquest(attacker_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders an undefended-province conquest sentence (CONQ.X) -- a Move
+    that takes an enemy province with no battle at all, distinct from
+    every other function in this module (which all describe a fought
+    ``BattleReport``).
+    """
+
+    variant = pick_variant(_CONQ_TEMPLATES, rng)
+    return render(variant, {"<": attacker_name, "@": province_name}, rng=rng)
+
+
+def render_spy_report_opening(spy_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders ASpy's report-opening sentence (SPY.X) -- see module docstring
+    for why only this one sentence renders: no sourced template exists
+    for the rest of ``turn/aspy_execution.py SpyReport``'s own facts
+    (owner, adjacent owners, recruitable types, capital status).
+    """
+
+    variant = pick_variant(_SPY_TEMPLATES, rng)
+    values = {"<": spy_name, "@": province_name, ">": f"{spy_name}'s", "^B": "", "^E": ""}
     return render(variant, values, rng=rng)
 
 

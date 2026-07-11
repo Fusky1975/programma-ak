@@ -2371,7 +2371,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     bucketing, each render function's real-template output against
     hand-verified rendering traces, and one full `describe_battle()`
     integration case plus an all-skipped (tie, no army names) edge case.
-- **Phase 62 (current)**: `turn/aspy_execution.py`, closing the
+- **Phase 62**: `turn/aspy_execution.py`, closing the
   report-generation half of ASpy's Phase 26 gap -- "intelligence-report
   content ... needs a report-generation system this project doesn't have
   at all" was true when that was written; Phases 58/61 now give this
@@ -2419,6 +2419,45 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     province/owner, ignoring the raw target field, unowned province,
     adjacent owners, unknown-neighbor omission, recruitable types,
     capital true/false) plus the rewritten dispatch test.
+- **Phase 63 (current)**: extends `report/turn_report.py` with two more
+  real, standalone templates -- `render_uncontested_conquest()`
+  (`HostAK/TP/PROSE/CONQ.X`, a Move that conquers an undefended
+  province, no battle dispatch involved at all) and
+  `render_spy_report_opening()` (`HostAK/TP/PROSE/SPY.X`,
+  `SAY.PAS _LSpy`), the report-opening sentence Phase 62 flagged as its
+  own natural follow-up.
+  - **Research first traced `RUMORS.PAS Set_Intel`** (the procedure
+    `turn/aspy_defend_decode.py` already cites as proof `obj` is
+    engine-consulted) to see whether it composes the actual "owner /
+    adjacent owners / recruitable types / capital" sentences a
+    `SpyReport` needs. It doesn't -- `Set_Intel` computes cross-kingdom
+    *report-visibility* levels (`intel_lev`, gating what *other* kings
+    learn about a spying event in *their own* reports), a separate,
+    unbuilt system. No dedicated template for those specific facts
+    turned up anywhere in the available Pascal source (`SPDESC.X2`/
+    `FPDESC.X2` looked promising by name but are Search Feature-power
+    descriptions, unrelated). **Rendering the rest of `SpyReport` stays
+    open** -- the same category of gap as Hide_Feature/Clairvoyance,
+    not force-composed from invented prose.
+  - **A real discovery while transcribing `CONQ.X`**: 2 of its 4 real
+    variants use the `/S` (Sea-terrain) marker `report/prose.py`
+    deliberately doesn't resolve (Phase 58's own documented gap).
+    `render_uncontested_conquest()` has no `is_sea_province` parameter
+    to resolve it with, so `_CONQ_TEMPLATES` keeps only the 2
+    `/S`-free variants rather than letting the function crash on a
+    coin-flip -- documented in the module docstring and the constant's
+    own comment, not silently dropped.
+  - **`SPY.X`'s own `^B`/`^E` markers** are Turbo Pascal's
+    King-exclusion narrator markers (`RUMORS.PAS Set_Person`/
+    `Set_Alt`, already flagged out of scope by `report/prose.py`'s own
+    docstring) -- `render_spy_report_opening()` elides both
+    (substitutes empty string) rather than guessing what a full
+    narrator-perspective system would put there.
+  - Non-breaking: full suite passed unchanged (1448 passed) before any
+    new tests were written. 5 new tests added (1453 passed total) in
+    `test_turn_report.py`, covering both real usable CONQ.X variants
+    and three SPY.X variants (including the King-exclusion elision and
+    a variant exercising both `/R` and `{}` resolution together).
 
 ## Setup
 
@@ -2705,10 +2744,14 @@ rulebook before being turned into named, typed fields:
     logic that doesn't exist yet~~ -- **Defend's own reactive
     battle-joining shipped in Phase 57, and ASpy's report-data
     generation shipped in Phase 62** (`turn/aspy_execution.py`) -- see
-    those phases' own notes above. **Still open for ASpy**: rendering
-    its `SpyReport` into narrative English (a natural follow-up to
-    Phase 61's `report/turn_report.py`, not attempted yet), and
-    taxation reporting (no per-province tax-base model exists). `obj`
+    those phases' own notes above. **Still open for ASpy**: only the
+    report's *opening sentence* renders as of Phase 63
+    (`report/turn_report.py render_spy_report_opening()`, SPY.X) --
+    the actual owner/adjacent-owners/recruitable-types/capital facts
+    have no confirmed PROSE template anywhere in the available source
+    (see Phase 63's own note above for the research trail), so they
+    stay unrendered, plus taxation reporting (no per-province tax-base
+    model exists). `obj`
     (`target_province`) still stays an unconverted, untrusted raw int
     for both actions -- Phase 62 sidesteps needing it for ASpy at all by
     reading the rulebook's own "he is actually in" text literally

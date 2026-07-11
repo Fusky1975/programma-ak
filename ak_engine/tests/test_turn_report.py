@@ -13,6 +13,8 @@ from ak_engine.report.turn_report import (
     render_destroyed_army,
     render_pursuit_and_destroy,
     render_retreat,
+    render_spy_report_opening,
+    render_uncontested_conquest,
 )
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import BattleReport
@@ -212,3 +214,48 @@ def test_describe_battle_skips_unnamed_armies_and_ties_without_erroring():
         rng=rng,
     )
     assert lines == []
+
+
+# -- render_uncontested_conquest (Phase 63) -----------------------------------
+
+
+def test_render_uncontested_conquest_first_variant():
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+    result = render_uncontested_conquest("Attackia", "the Dolphin Sea", rng)
+    assert result == "Attackia's forces conquered the Dolphin Sea without any major battles."
+
+
+def test_render_uncontested_conquest_second_variant():
+    rng = ScriptedRandom([0.9, 0.9, 0.9], choice_indices=[1])
+    result = render_uncontested_conquest("Attackia", "the Dolphin Sea", rng)
+    assert result == (
+        "Attackia's forces experienced little opposition in the Dolphin Sea "
+        "and Attackia there established our reign."
+    )
+
+
+# -- render_spy_report_opening (Phase 63) -------------------------------------
+
+
+def test_render_spy_report_opening_first_variant_elides_king_exclusion_markers():
+    # Variant 0 has one optional block ("{secretly }") and no /R choice;
+    # the real template's "^B"..."^E" span (a King-exclusion marker this
+    # project doesn't implement) is elided to empty string.
+    rng = ScriptedRandom([0.1], choice_indices=[0])
+    result = render_spy_report_opening("Guerin", "Falkenheim", rng)
+    assert result == "Guerin spied on Falkenheim.Here is Guerin's report:  "
+
+
+def test_render_spy_report_opening_second_variant():
+    rng = ScriptedRandom([0.1], choice_indices=[1])
+    result = render_spy_report_opening("Guerin", "Falkenheim", rng)
+    assert result == "Guerin conducted espionage in Falkenheim and compiled this report."
+
+
+def test_render_spy_report_opening_last_variant_resolves_possessive_and_optional_blocks():
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9], choice_indices=[4])
+    result = render_spy_report_opening("Guerin", "Falkenheim", rng)
+    assert result == (
+        "Guerin utilized Guerin's fine spying skills to secretly keep track "
+        "of happenings in Falkenheim and reported the following information."
+    )
