@@ -3344,6 +3344,38 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     4 new tests added (1578 passed total) in a new
     `tests/test_temper.py`, covering full 4-count coverage and both
     PROSE.TXT example strings verbatim.
+- **Phase 83 (current)**: `models/weapon.py` -- the monster/character
+  attack-weapon vocabulary, found continuing to mine `CTBOTH.PAS` the
+  way Phases 79-82 found theirs. `weapon` enum (29 members, ~line 559)
+  plus `RUMORS.PAS`'s own `wname` (weapon noun) and `whit` (attack
+  verb) tables.
+  - **Confirmed to be `PROSE.TXT`'s own documented `"$S"` marker**:
+    "$S: Attack method ('Slashed', 'Fired', 'Thrust', etc.)" --
+    `RUMORS.PAS`'s own `$`-prefixed marker dispatch resolves `'S'` by
+    picking `whit[Bow]`/`whit[Sword]` for a *character* attacker (Fire
+    Arrow vs. Melee) or `whit[mtrweap[_mtype]]`/`whit[mtweap1[_mtype]]`
+    for a *monster* attacker -- confirming `Weapon.BOW`/`Weapon.SWORD`
+    specifically as real, literally-referenced ordinals.
+  - **A confirmed structural gap, not an oversight, found while
+    researching this**: the actual monster-to-weapon assignment tables
+    `RUMORS.PAS` reads, `mtrweap[_mtype]` (ranged) and
+    `mtweap1[_mtype]` (melee), matching the `mweaps` *type*
+    `CTBOTH.PAS` itself declares, are used but **never declared
+    anywhere in the available source** (checked `CTBOTH.PAS`,
+    `RUMORS.PAS`, `REPORTS.PAS`, `DEF2.PAS`, `SAY.PAS`) -- the same
+    category of gap as the missing main program. No
+    `Monster`-to-`Weapon` mapping can be built from this; only the
+    weapon vocabulary itself is modeled.
+  - **`whit`'s own strings are themselves prose templates, not plain
+    text**: several contain a live `/R` choice marker (e.g.
+    `"slashed/Rclawed at"`) -- stored here as raw, unrendered source
+    text, the same convention `models/treasure.py TREASURE_LABEL`
+    (Phase 77) already uses for its own un-rendered strings.
+  - Non-breaking: full suite passed unchanged (1578 passed) before any
+    new tests were written -- a new file with no existing call sites.
+    6 new tests added (1584 passed total) in a new
+    `tests/test_weapon.py`, covering full 29-count coverage across both
+    dicts, the confirmed Bow/Sword usage, and the live `/R` marker.
 
 ## Setup
 
