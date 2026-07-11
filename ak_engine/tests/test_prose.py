@@ -32,10 +32,10 @@ def test_random_choice_resolves_multiple_occurrences_left_to_right():
 
 
 def test_unsupported_choice_marker_raises_not_implemented():
-    # /F is still deferred (see module docstring); /S itself is now
-    # supported as of Phase 74 -- see the /S-specific tests below.
+    # /P is still deferred (see module docstring); /F itself is now
+    # supported as of Phase 76 -- see the /F-specific tests below.
     with pytest.raises(NotImplementedError):
-        render("a{ferry/Fboat}", rng=ScriptedRandom([0.1]))
+        render("a{ferry/Pboat}", rng=ScriptedRandom([0.1]))
 
 
 def test_sea_marker_picks_left_choice_on_land():
@@ -57,6 +57,25 @@ def test_sea_marker_and_random_choice_combine_in_one_template():
     # no rng; the remaining "/R" still consumes exactly one value.
     rng = ScriptedRandom([0.9])
     assert render("army/Sfleet retreated/Rfled", rng=rng, is_sea=True) == "fleet fled"
+
+
+def test_feature_marker_picks_left_choice_on_odd_feature_id():
+    assert render("crystal/Fcursed", feature_id=1) == "crystal"
+
+
+def test_feature_marker_picks_right_choice_on_even_feature_id():
+    assert render("crystal/Fcursed", feature_id=2) == "cursed"
+
+
+def test_feature_marker_never_consumes_a_random_value():
+    # Unlike /R, /F is never a coin flip -- an empty ScriptedRandom must
+    # not be asked for a value at all.
+    assert render("crystal/Fcursed", rng=ScriptedRandom([]), feature_id=1) == "crystal"
+
+
+def test_feature_marker_without_feature_id_raises_value_error():
+    with pytest.raises(ValueError):
+        render("crystal/Fcursed")
 
 
 def test_optional_inclusion_excludes_below_half():

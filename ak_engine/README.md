@@ -2097,15 +2097,23 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     inferred from the prose description alone -- `/R`'s word-boundary
     scan depends on `_` still being literal at that point (an
     underscore-joined phrase like `bored_with` counts as one word).
-  - **`/F`, `/S`, `/P` raise `NotImplementedError` naming the exact
+  - ~~`/F`, `/S`, `/P` raise `NotImplementedError` naming the exact
     marker instead of being silently treated as another random 50/50
     choice**: confirmed from `Say_Options`'s `Left_Choice` function that
     none of the three is actually random at the Pascal level (`/F`
     reads a feature-instance parity bit, `/S` reads sea-vs-land terrain,
     `/P` reads a sentence-merge state flag) -- this project has no
-    per-render-call source for any of that context yet, and guessing a
-    random substitute would be quietly wrong in a specific, checkable
-    way, worse than an honest "not yet."
+    per-render-call source for any of that context yet~~ -- **`/S` is
+    implemented as of Phase 74 and `/F` as of Phase 76** (see those
+    phases' own notes below); each still defaults to raising rather
+    than guessing wherever this project genuinely lacks the needed
+    context (`/S`/`/F` themselves now take that context as a caller
+    parameter instead). **`/P` alone still raises
+    `NotImplementedError`**: confirmed from `Say_Options`'s own
+    `Left_Choice` function that it reads a sentence-merge state flag
+    (`mlist`) this project has no per-render-call source for yet, and
+    guessing a random substitute would be quietly wrong in a specific,
+    checkable way, worse than an honest "not yet."
   - **Full pronoun/narrator logic (`<`, `[`, `>`, `]`, `^B`/`^E`) is a
     declared, separate follow-up**, not attempted this phase -- it needs
     `Set_Person`/`Set_Alt`'s own stateful person/gender/repeat-tracking
@@ -3006,6 +3014,39 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     broken. 15 new tests added (1537 passed total) across two new files,
     `tests/test_monster.py` and `tests/test_feature.py`, plus two new
     `GameState.features` registry tests in `tests/test_game_state.py`.
+- **Phase 76 (current)**: `report/prose.py` -- resolves the `/F`
+  (feature-parity) prose marker, the mystery Phase 58 first flagged and
+  Phase 75 traced to `REPORTS.PAS`'s one-off `fn and 1` split. This
+  phase confirms it a second, more direct way and implements it for
+  real: `RUMORS.PAS Say_Options`'s own `Left_Choice` function is the
+  single shared decision point for *every* `/X` choice marker (`'R'`,
+  `'S'`, `'F'`, `'P'`, all one `CASE`), and its `'F'` arm reads
+  ``boolean(_feat1 and 1)`` -- the left choice is picked exactly when
+  the current feature instance's own id is odd. `render()` gains a
+  `feature_id: int | None = None` keyword-only parameter, mirroring
+  `is_sea`'s shape from Phase 74, except **with no safe default**: a
+  template needing `/F` with no `feature_id` supplied raises
+  `ValueError` (unlike `is_sea`'s land-side default, there's no
+  non-arbitrary parity to assume for "no feature in context"). `/F`
+  never consumes a random value, confirmed by a dedicated test with an
+  empty `ScriptedRandom`, same pattern as `/S`.
+  - **Unlike `/S`, no real template in the available archive contains
+    a literal `/F`** -- checked all 163 files under `HostAK/TP/PROSE/`,
+    including every feature-adjacent one (`FPDESC.X2`, `FSPEC.X2`,
+    `FSEARCH.X`, `FRUMOR.X`, `MAGFEAT.X2`, `MONSTERS.X2`,
+    `ENCSPEC.X2`). This phase implements `/F` purely because it's a
+    confirmed, sourced part of the shared `Say_Options` marker engine
+    documented in `PROSE.TXT`, not because a real consumer needs it
+    yet -- `report/turn_report.py` isn't touched this phase (nothing
+    there to wire it into).
+  - Non-breaking: full suite passed unchanged (1537 passed) before any
+    new tests were written -- the one pre-existing test that used `/F`
+    as its "still-unsupported marker" example needed to switch to `/P`
+    (still deferred, reads whether the current sentence is a merged
+    plural list -- `mlist`, a context this project doesn't have a
+    per-render-call source for), since `/F` is exactly the gap this
+    phase closes, not a regression. 4 new tests added (1541 passed
+    total) in `tests/test_prose.py`.
 
 ## Setup
 

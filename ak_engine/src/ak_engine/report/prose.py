@@ -62,16 +62,46 @@ land-side behavior unchanged) drives it -- `/S` shares `/R`'s own
 word-boundary-scanning split logic, only the left-vs-right decision
 rule differs (`is_sea` directly, instead of a coin flip).
 
+**`/F` (Phase 76)**: PROSE.TXT's own one-line gloss -- "Basically, the
+same as '/R', with a different method of random decision" -- undersells
+it: like `/S`, it's not random at the Pascal level at all. Confirmed
+directly from `RUMORS.PAS Say_Options`'s own `Left_Choice` function,
+which is the single shared decision point for **every** `/X` marker
+(`'R'`, `'S'`, `'F'`, and `'P'`, all one `CASE` statement): ``'F':
+Left_Choice:= boolean(_feat1 and 1)`` -- the left choice is picked
+exactly when the current feature instance's own id (`_feat1`, the same
+`fn` this project's `models/feature.py Feature.feature_id` already
+models) is odd. This is the exact mechanism Phase 75's own research
+flagged as "confirmed but not yet implemented," now confirmed a second
+time directly against `Say_Options` itself (Phase 75 had only traced
+the *equivalent* hand-rolled parity check in `REPORTS.PAS`'s feature-
+report code, `IF fn and 1 = 1 THEN ... ELSE ...`, a separate piece of
+code that reimplements the same left/right decision by hand on a raw
+`mfname[fmagfeat]` string rather than routing through `Say_Options`).
+`render()`'s new `feature_id: int | None = None` keyword-only parameter
+drives it, mirroring `is_sea`'s shape -- except **`/F` has no safe
+default**: unlike land-vs-sea (where "land" is a meaningful default
+choice), there is no non-arbitrary parity to assume for "no feature in
+context," so a template containing `/F` with no `feature_id` supplied
+raises `ValueError` naming the template, rather than silently picking a
+side. **No real template in the available archive actually contains a
+literal `/F`** (checked all 163 files under `HostAK/TP/PROSE/`, including
+every feature-adjacent one -- `FPDESC.X2`, `FSPEC.X2`, `FSEARCH.X`,
+`FRUMOR.X`, `MAGFEAT.X2`, `MONSTERS.X2`, `ENCSPEC.X2`) -- unlike `/S`,
+which Phase 74 found live in already-transcribed real battle templates,
+`/F` is implemented here purely because it's a confirmed, sourced part
+of the shared `Say_Options` marker engine, not because a real consumer
+needs it yet; `report/turn_report.py` isn't touched this phase.
+
 **Explicitly still out of scope, each a real symbol `PROSE.TXT`
 documents but this module doesn't implement yet**:
 
-- `/F`, `/P`: neither is random at the Pascal level either -- `/F`
-  reads a feature-instance parity bit (`_feat1`) and `/P` reads
-  whether the current sentence is a merged plural list -- context this
-  project doesn't have a per-render-call source for yet. `render()`
-  raises `NotImplementedError` naming the exact marker if a template
-  needs one, rather than silently guessing a 50/50 random choice for
-  something that was never random in the original engine.
+- `/P`: reads whether the current sentence is a merged plural list
+  (`Left_Choice:= not mlist` in the same `Say_Options` `CASE`) --
+  context this project doesn't have a per-render-call source for yet.
+  `render()` raises `NotImplementedError` naming the exact marker if a
+  template needs one, rather than silently guessing a 50/50 random
+  choice for something that was never random in the original engine.
 - `<`, `<2`, `[`, `[1`, `>`, `]` (character-reference pronouns) and the
   King-exclusion markers `^B`/`^E`: these need `RUMORS.PAS Set_Person`/
   `Set_Alt`'s full stateful narrator-perspective system (1st/2nd/3rd
@@ -100,22 +130,25 @@ import random
 
 _STOP_CHARACTERS = frozenset(" {},.!?:;")
 _VOWELS = frozenset("aeiouAEIOU")
-_SUPPORTED_CHOICE_MARKERS = frozenset({"R", "S"})
+_SUPPORTED_CHOICE_MARKERS = frozenset({"R", "S", "F"})
 
 
 def _is_stop(c: str) -> bool:
     return c in _STOP_CHARACTERS
 
 
-def _resolve_choice_markers(template: str, rng: random.Random, is_sea: bool) -> str:
+def _resolve_choice_markers(
+    template: str, rng: random.Random, is_sea: bool, feature_id: int | None
+) -> str:
     """Resolves every ``word1/Xword2`` choice, left-to-right, repeatedly (matching
     ``Say_Options``'s own ``REPEAT...UNTIL slashp = 0`` loop). Raises for any
-    ``/`` marker other than ``R``/``S`` -- see module docstring.
+    ``/`` marker other than ``R``/``S``/``F`` -- see module docstring.
 
-    ``/R``'s choice is a coin flip; ``/S``'s is ``is_sea`` directly (never
-    random at the Pascal level -- see module docstring). Both share the
-    exact same word-boundary-scanning split, only the left-vs-right
-    decision rule differs.
+    ``/R``'s choice is a coin flip; ``/S``'s is ``is_sea`` directly and
+    ``/F``'s is ``feature_id``'s parity (both never random at the Pascal
+    level -- see module docstring). All three share the exact same
+    word-boundary-scanning split, only the left-vs-right decision rule
+    differs.
     """
 
     s = template
@@ -126,7 +159,7 @@ def _resolve_choice_markers(template: str, rng: random.Random, is_sea: bool) -> 
         marker = s[slash_pos + 1] if slash_pos + 1 < len(s) else ""
         if marker not in _SUPPORTED_CHOICE_MARKERS:
             raise NotImplementedError(
-                f"prose choice marker '/{marker}' isn't supported yet (only /R, /S) -- template: {template!r}"
+                f"prose choice marker '/{marker}' isn't supported yet (only /R, /S, /F) -- template: {template!r}"
             )
 
         right_start = slash_pos + 2
@@ -134,7 +167,16 @@ def _resolve_choice_markers(template: str, rng: random.Random, is_sea: bool) -> 
         while right_end < len(s) and not _is_stop(s[right_end]):
             right_end += 1
 
-        choose_right = is_sea if marker == "S" else rng.random() >= 0.5
+        if marker == "S":
+            choose_right = is_sea
+        elif marker == "F":
+            if feature_id is None:
+                raise ValueError(
+                    f"prose template needs /F but no feature_id was supplied -- template: {template!r}"
+                )
+            choose_right = feature_id % 2 == 0
+        else:
+            choose_right = rng.random() >= 0.5
         if not choose_right:
             s = s[:slash_pos] + s[right_end:]  # left choice: drop "/X<right>"
         else:
@@ -220,6 +262,7 @@ def render(
     *,
     rng: random.Random | None = None,
     is_sea: bool = False,
+    feature_id: int | None = None,
 ) -> str:
     """Renders one already-selected prose template string, per ``PROSE.TXT``'s
     documented mini-language -- see module docstring for exactly which
@@ -231,11 +274,15 @@ def render(
     phase -- see module docstring). ``is_sea`` (Phase 74) drives ``/S``
     choices -- whether the current province's terrain is Sea; defaults
     to ``False`` (the land choice), so every pre-Phase-74 caller keeps
-    its existing behavior unchanged.
+    its existing behavior unchanged. ``feature_id`` (Phase 76) drives
+    ``/F`` choices -- the current feature instance's own id, whose
+    parity picks the side (see module docstring); defaults to ``None``,
+    which is fine for every template that doesn't use ``/F`` but raises
+    if one does.
     """
 
     rng = rng if rng is not None else random.Random()
-    s = _resolve_choice_markers(template, rng, is_sea)
+    s = _resolve_choice_markers(template, rng, is_sea, feature_id)
     s = _resolve_optional_inclusion(s, rng)
     s = s.replace("_", " ")
     s = _substitute_placeholders(s, values or {})
