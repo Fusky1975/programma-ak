@@ -1,11 +1,58 @@
-"""Kingdom/monster alignment, transcribed from the tags used in `Mostri.md`
-(Anti-Holy, Evil, Pagan, Good, Neutral, Divine, Druid) in the parent
-project's game-design docs.
+"""Kingdom/character alignment.
 
-This is a minimal enum -- just enough to support the rulebook's
-fanaticism formula (`turn/strength.py roll_fanaticism`). A full kingdom
-alignment model (multi-tag combinations, alignment shifts, diplomacy
-effects) is a separate, much larger system this project hasn't built.
+Originally (Phase 4) transcribed from the tags used in the parent
+project's game-design docs (`Mostri.md`: Anti-Holy, Evil, Pagan, Good,
+Neutral, Divine, Druid) rather than `CTBOTH.PAS` directly. **Phase 80
+confirms those 7 tags are, in fact, the real Pascal `outlook` enum's
+own display strings** -- found while researching what else `CTBOTH.PAS`
+still had to offer, the same way Phase 79's `MONSTER_GUARDED_FEATURE_TYPES`
+was found.
+
+**The real source, `CTBOTH.PAS`**: `outlook = (Heavenly, Good, Druidic,
+Worldly, Animal, Evil, Hellish, Undead, Mechanical, Special)` (~line
+454-459), with its own display-string table `outname: outstrs =
+('Divine', 'Good', 'Druidic', 'Neutral', 'Pagan', 'Evil', 'Anti-Holy',
+'Undead', 'Mechanical', 'Special')` (~line 1642-1643, positionally
+verbatim). Confirmed to genuinely mean "leader/kingdom alignment" (not
+some unrelated concept that happens to share the name) via
+`REPORTS.PAS`'s own `lalign[ldran]: outlook` -- literally "leader
+alignment", read and compared against office/rank thresholds there.
+
+**The Pascal ordinal name and its own display string don't always
+match**, which is easy to miss if only skimming the ordinal list:
+`Heavenly` displays as **"Divine"**, `Worldly` displays as
+**"Neutral"**, `Animal` displays as **"Pagan"**, `Hellish` displays as
+**"Anti-Holy"** -- `Good`, `Druidic`, `Evil`, `Undead`, `Mechanical`,
+and `Special` display as themselves. This module's own enum member
+*names* were chosen (Phase 4, before this correspondence was known) to
+match the **display strings**, not the Pascal ordinal identifiers --
+now confirmed to be the right call, since the display string is what
+every consumer of this project's own `Alignment` actually cares about
+(fanaticism chance, prose rendering, etc.), not Pascal's own internal
+symbol.
+
+**One real discrepancy found and fixed**: `DRUID`'s own value was
+`"Druid"`, but the confirmed Pascal `outname` string is **"Druidic"**
+-- a one-word difference from `Mostri.md`'s own, less formal tag.
+Corrected to the verbatim Pascal string; safe to change outright
+(rather than just flag) since nothing in this project's source or
+tests reads `Alignment.DRUID.value` or any other member's `.value`
+anywhere -- confirmed by a direct grep before making the change.
+
+**Not renamed to the Pascal ordinal identifiers**: `Alignment` is
+consumed across a dozen modules and as many test files by this point
+(kingdom/army fanaticism, battle orchestration, Challenge/Patrol/Pursue
+execution); renaming `DIVINE`→`HEAVENLY`, `NEUTRAL`→`WORLDLY`,
+`PAGAN`→`ANIMAL`, `ANTI_HOLY`→`HELLISH` to match Pascal's own ordinal
+names would touch all of it for zero behavioral change (the string
+*values*, which is what actually matters here, already matched before
+this phase). Only the three real values this project was previously
+missing -- `UNDEAD`, `MECHANICAL`, `SPECIAL` -- are added.
+
+A full kingdom alignment model (multi-tag combinations, alignment
+shifts, diplomacy effects, the `office`/rank-threshold system
+`REPORTS.PAS`'s own `lalign` comparison feeds into) is still a
+separate, much larger system this project hasn't built.
 """
 
 from __future__ import annotations
@@ -20,4 +67,7 @@ class Alignment(Enum):
     EVIL = "Evil"
     ANTI_HOLY = "Anti-Holy"
     PAGAN = "Pagan"
-    DRUID = "Druid"
+    DRUID = "Druidic"
+    UNDEAD = "Undead"
+    MECHANICAL = "Mechanical"
+    SPECIAL = "Special"

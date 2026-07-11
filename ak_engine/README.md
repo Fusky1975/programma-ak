@@ -3222,6 +3222,49 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     covering full 60-species coverage (Nomonster correctly excluded),
     that every value is a real `FeatureType` pair, and known verbatim
     pairs.
+- **Phase 80 (current)**: `models/alignment.py` -- confirms, completes,
+  and one-character-fixes the `Alignment` enum against a real Pascal
+  source found while continuing to mine `CTBOTH.PAS`, the same way
+  Phase 79 found `MONSTER_GUARDED_FEATURE_TYPES`.
+  - **`Alignment` was originally (Phase 4) transcribed from `Mostri.md`**
+    (a parent-project game-design doc), not `CTBOTH.PAS` directly --
+    its own docstring said so honestly from the start. This phase found
+    the real source: `CTBOTH.PAS`'s `outlook` enum (`Heavenly, Good,
+    Druidic, Worldly, Animal, Evil, Hellish, Undead, Mechanical,
+    Special`) and its own `outname` display-string table (`'Divine',
+    'Good', 'Druidic', 'Neutral', 'Pagan', 'Evil', 'Anti-Holy',
+    'Undead', 'Mechanical', 'Special'`, positionally verbatim) --
+    confirmed to genuinely mean "leader/kingdom alignment" (not a
+    same-named unrelated concept) via `REPORTS.PAS`'s own
+    `lalign[ldran]: outlook` ("leader alignment").
+  - **The existing 7 `Mostri.md`-derived tags turned out to already
+    match 7 of the 10 real `outname` strings almost exactly** --
+    independent confirmation this project's earlier, non-Pascal-sourced
+    guess was right, not a lucky coincidence uncovered too late to
+    matter. The 3 real values it was missing (`UNDEAD`, `MECHANICAL`,
+    `SPECIAL`) are added.
+  - **One real discrepancy found and fixed**: `DRUID`'s own value was
+    `"Druid"`; the confirmed Pascal string is `"Druidic"`. Corrected
+    outright (not just flagged) after confirming, by direct grep, that
+    nothing in this project's source or tests ever reads
+    `Alignment.DRUID.value` or any other member's `.value` -- safe to
+    change with no consumer impact.
+  - **Enum member names deliberately not renamed to match Pascal's own
+    ordinal identifiers** (`Heavenly`, `Worldly`, `Animal`, `Hellish`):
+    `Alignment` is consumed across a dozen `turn/*` modules and as many
+    test files by this point (fanaticism, battle orchestration,
+    Challenge/Patrol/Pursue execution); this project's own member names
+    already match the real **display strings**, which is what every
+    actual consumer cares about, so renaming would touch a large
+    surface area for zero behavioral change. `turn/strength.py
+    FANATICISM_CHANCE.get(alignment, 0.0)` already defaults safely for
+    any alignment it doesn't have a chance for, so the 3 new members
+    needed no changes there.
+  - Non-breaking: full suite passed unchanged (1561 passed) before any
+    new tests were written -- confirmed no code path reads `.value` on
+    any `Alignment` member, so the `DRUID` string fix changed no
+    behavior either. 3 new tests added (1564 passed total) in a new
+    `tests/test_alignment.py`.
 
 ## Setup
 
