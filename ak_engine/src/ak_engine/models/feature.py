@@ -98,9 +98,18 @@ separate field; a future phase that needs it can revisit.
 
 - **World generation** -- populating a fresh ``GameState`` with a
   realistic feature roster (which provinces get one, how many, what
-  kind, what guardian, what treasure) has no surviving Pascal source
-  at all, the same category of gap as hex adjacency and item-instance
-  creation.
+  kind, where, what treasure) has no surviving Pascal source at all,
+  the same category of gap as hex adjacency and item-instance
+  creation. ~~What guardian~~ is a partial exception, as of Phase 79
+  -- see ``MONSTER_GUARDED_FEATURE_TYPES`` below: one real piece of
+  the world-gen puzzle *does* survive, in a ``{$IFDEF Moderator}``
+  (world-generation-side, not player-turn-processing-side) compile
+  block, giving each monster's own preferred feature type to guard --
+  still not a full "assign a guardian to a fresh feature instance"
+  algorithm (nothing says how the *feature*'s own kind gets decided
+  first, or how ties/randomness among a feature's several eligible
+  guardians resolve), but a real, sourced building block for
+  whichever future phase attempts that.
 - **Rumor generation** ([3.2]'s "about half... false" mechanic) --
   the prose templates exist (``HostAK/TP/PROSE/FRUMOR.X``) but the
   selection/falsification logic doesn't.
@@ -108,12 +117,17 @@ separate field; a future phase that needs it can revisit.
   needs the still-unbuilt personal/non-army Encounter-combat resolver
   ``turn/encounter.py``'s own docstring already scopes out (a monster
   HP/combat model, Steal/Flee/Scout tactic resolution).
-- **Treasure *instances***: a feature's own treasure content isn't
+- ~~**Treasure *instances***: a feature's own treasure content isn't
   modeled here at all -- ``turn/use_mi_decode.py``'s own docstring
   already reconstructed the full 113-member ``treasure`` type enum
   from ``CTBOTH.PAS``, but promoting it into an actual Python model
   (with the prose-file cross-referencing that needs) is a separate,
-  sizable follow-up, not attempted in this phase.
+  sizable follow-up, not attempted in this phase.~~ **The full
+  ``Treasure`` type catalog now exists as of Phase 77**
+  (``models/treasure.py``) -- see that phase's own README note. A
+  feature's own treasure *instance* (which specific ``Treasure`` a
+  given feature actually holds) is still unmodeled -- world generation
+  itself remains the blocking gap, not the type catalog anymore.
 """
 
 from __future__ import annotations
@@ -209,3 +223,80 @@ class Feature:
 
     def discovery_level(self, kingdom_id: int) -> int:
         return self.discovered_by_kingdom.get(kingdom_id, 0)
+
+
+# CTBOTH.PAS `mfeat1`/`mfeat2` (``type monfeat = array[monster] of feature``,
+# ~line 803-833), inside a ``{$IFDEF Moderator}`` block -- confirming this is
+# world-generation-side data (which feature *type* a monster is placed to
+# guard), not anything the player-turn-processing code ever reads. Each real
+# monster species gets a (primary, secondary) preferred `FeatureType` pair;
+# transcribed verbatim and positionally against `Monster`'s own declaration
+# order (61 real+sentinel entries in the Pascal array; this project's own 10
+# unused `em1`-`em10` monster extension slots at the array's tail are
+# dropped, the same convention used everywhere else in this project).
+# `Monster.NOMONSTER` is deliberately excluded too: its own array entry
+# (`Tomb, Tomb`) is a degenerate positional filler for the "no monster"
+# sentinel, not a real guardian preference -- nothing in the Pascal source
+# ever assigns Nomonster to guard a feature.
+MONSTER_GUARDED_FEATURE_TYPES: dict[Monster, tuple[FeatureType, FeatureType]] = {
+    Monster.ROC: (FeatureType.PET_FOREST, FeatureType.MOUNT_PEAK),
+    Monster.GRYPHON: (FeatureType.PET_FOREST, FeatureType.MOUNT_PEAK),
+    Monster.COUATL: (FeatureType.LOST_CITY, FeatureType.LOST_TEMPLE),
+    Monster.GI_EAGLE: (FeatureType.PET_FOREST, FeatureType.MOUNT_PEAK),
+    Monster.SPHINX: (FeatureType.PET_FOREST, FeatureType.SUNK_CITY),
+    Monster.R_DRAGON: (FeatureType.PYRAMID, FeatureType.LABYRINTH),
+    Monster.B_DRAGON: (FeatureType.PYRAMID, FeatureType.LABYRINTH),
+    Monster.GR_DRAGON: (FeatureType.PYRAMID, FeatureType.LABYRINTH),
+    Monster.S_DRAGON: (FeatureType.TOWER, FeatureType.LOST_TEMPLE),
+    Monster.GO_DRAGON: (FeatureType.TOWER, FeatureType.LOST_TEMPLE),
+    Monster.GI_WORM: (FeatureType.PYRAMID, FeatureType.MOUNT_PEAK),
+    Monster.TITAN: (FeatureType.TOWER, FeatureType.TEMPLE),
+    Monster.GIANT: (FeatureType.PET_FOREST, FeatureType.MOUNT_PEAK),
+    Monster.BIGFOOT: (FeatureType.PET_FOREST, FeatureType.MOUNT_PEAK),
+    Monster.ARCHER: (FeatureType.PET_FOREST, FeatureType.MOUNT_PEAK),
+    Monster.SWORDSMAN: (FeatureType.PYRAMID, FeatureType.MOUNT_PEAK),
+    Monster.WHITE_MAGE: (FeatureType.PYRAMID, FeatureType.MOUNT_PEAK),
+    Monster.NEC_MAGE: (FeatureType.PYRAMID, FeatureType.MOUNT_PEAK),
+    Monster.ELE_MAGE: (FeatureType.PYRAMID, FeatureType.MOUNT_PEAK),
+    Monster.PSY_MAGE: (FeatureType.PYRAMID, FeatureType.MOUNT_PEAK),
+    Monster.ILL_MAGE: (FeatureType.PYRAMID, FeatureType.MOUNT_PEAK),
+    Monster.WITCH: (FeatureType.PYRAMID, FeatureType.MOUNT_PEAK),
+    Monster.DRYAD: (FeatureType.HOLLOW_TREE, FeatureType.HANG_VALLEY),
+    Monster.CENTAUR: (FeatureType.HOLLOW_TREE, FeatureType.HANG_VALLEY),
+    Monster.GENIE: (FeatureType.TOWER, FeatureType.TEMPLE),
+    Monster.GOLEM: (FeatureType.PYRAMID, FeatureType.LOST_TEMPLE),
+    Monster.GARGOYLE: (FeatureType.PYRAMID, FeatureType.LOST_TEMPLE),
+    Monster.BASILISK: (FeatureType.PYRAMID, FeatureType.HANG_VALLEY),
+    Monster.MEDUSA: (FeatureType.PYRAMID, FeatureType.MOUNT_PEAK),
+    Monster.BAL_DEMON: (FeatureType.PYRAMID, FeatureType.DUNGEON),
+    Monster.MAR_DEMON: (FeatureType.PYRAMID, FeatureType.DUNGEON),
+    Monster.SUCCUBUS: (FeatureType.PYRAMID, FeatureType.DUNGEON),
+    Monster.RAKSHASHA: (FeatureType.PYRAMID, FeatureType.DUNGEON),
+    Monster.ICE_DEVIL: (FeatureType.PYRAMID, FeatureType.DUNGEON),
+    Monster.BONE_DEVIL: (FeatureType.PYRAMID, FeatureType.DUNGEON),
+    Monster.IMP: (FeatureType.PYRAMID, FeatureType.DUNGEON),
+    Monster.WEREWOLF: (FeatureType.PYRAMID, FeatureType.MOUNT_PEAK),
+    Monster.CHIMERA: (FeatureType.PYRAMID, FeatureType.HANG_VALLEY),
+    Monster.HYDRA: (FeatureType.PYRAMID, FeatureType.HANG_VALLEY),
+    Monster.BEHOLDER: (FeatureType.PYRAMID, FeatureType.HANG_VALLEY),
+    Monster.TROLL: (FeatureType.PYRAMID, FeatureType.MOUNT_PEAK),
+    Monster.MINOTAUR: (FeatureType.MAZE, FeatureType.LABYRINTH),
+    Monster.GI_WOLVERINE: (FeatureType.HOLLOW_TREE, FeatureType.HANG_VALLEY),
+    Monster.TREANT: (FeatureType.HOLLOW_TREE, FeatureType.HANG_VALLEY),
+    Monster.GI_AMOEBA: (FeatureType.PET_FOREST, FeatureType.HANG_VALLEY),
+    Monster.GI_P_MANTIS: (FeatureType.PET_FOREST, FeatureType.HANG_VALLEY),
+    Monster.GI_SCORPION: (FeatureType.PET_FOREST, FeatureType.HANG_VALLEY),
+    Monster.GI_WASP: (FeatureType.PET_FOREST, FeatureType.HANG_VALLEY),
+    Monster.GI_SPIDER: (FeatureType.PET_FOREST, FeatureType.HANG_VALLEY),
+    Monster.GHOST: (FeatureType.PYRAMID, FeatureType.CRYPT),
+    Monster.VAMPIRE: (FeatureType.PYRAMID, FeatureType.CRYPT),
+    Monster.MUMMY: (FeatureType.PYRAMID, FeatureType.CRYPT),
+    Monster.BANSHEE: (FeatureType.PYRAMID, FeatureType.CRYPT),
+    Monster.LICH: (FeatureType.PYRAMID, FeatureType.CRYPT),
+    Monster.SPECTRE: (FeatureType.PYRAMID, FeatureType.CRYPT),
+    Monster.GI_OCTOPUS: (FeatureType.MAG_POOL, FeatureType.MAELSTROM),
+    Monster.GI_CLAM: (FeatureType.MAG_POOL, FeatureType.MAELSTROM),
+    Monster.ELASMOSAURUS: (FeatureType.MAG_POOL, FeatureType.MAELSTROM),
+    Monster.GW_WHALE: (FeatureType.MAG_POOL, FeatureType.MAELSTROM),
+    Monster.MERMAID: (FeatureType.MAG_POOL, FeatureType.MAELSTROM),
+}

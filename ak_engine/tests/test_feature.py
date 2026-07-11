@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
+from ak_engine.models.feature import FEATURE_TYPE_NAMES, MONSTER_GUARDED_FEATURE_TYPES, Feature, FeatureType
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster
 
@@ -45,3 +45,20 @@ def test_feature_carries_its_own_coordinate_independent_of_province():
 def test_feature_looted_flag():
     feature = Feature(feature_id=1, coord=COORD, kind=FeatureType.CRYPT, looted=True)
     assert feature.looted is True
+
+
+def test_monster_guarded_feature_types_covers_every_real_species_except_nomonster():
+    assert set(MONSTER_GUARDED_FEATURE_TYPES.keys()) == set(Monster) - {Monster.NOMONSTER}
+    assert len(MONSTER_GUARDED_FEATURE_TYPES) == 60
+
+
+def test_monster_guarded_feature_types_every_value_is_a_pair_of_feature_types():
+    for primary, secondary in MONSTER_GUARDED_FEATURE_TYPES.values():
+        assert isinstance(primary, FeatureType)
+        assert isinstance(secondary, FeatureType)
+
+
+def test_monster_guarded_feature_types_known_pairs():
+    assert MONSTER_GUARDED_FEATURE_TYPES[Monster.R_DRAGON] == (FeatureType.PYRAMID, FeatureType.LABYRINTH)
+    assert MONSTER_GUARDED_FEATURE_TYPES[Monster.MERMAID] == (FeatureType.MAG_POOL, FeatureType.MAELSTROM)
+    assert MONSTER_GUARDED_FEATURE_TYPES[Monster.MINOTAUR] == (FeatureType.MAZE, FeatureType.LABYRINTH)

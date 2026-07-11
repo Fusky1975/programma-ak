@@ -3182,6 +3182,46 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     case, the ownership-tier tie-break (hand-verified against the hex
     grid's own cube-coordinate math), the "stop chasing" `None` case,
     and the already-arrived case.
+- **Phase 79 (current)**: `models/feature.py MONSTER_GUARDED_FEATURE_TYPES`
+  -- a real, sourced piece of the world-generation puzzle, found while
+  researching what else `CTBOTH.PAS` might still have to offer:
+  `monfeat`/`mfeat1`/`mfeat2` (~line 803-833, `type monfeat =
+  array[monster] of feature`), giving every real `Monster` species a
+  `(primary, secondary)` preferred `FeatureType` pair to guard.
+  - **Confirmed genuinely world-generation-side, not player-turn-
+    processing data**: the whole table sits inside a `{$IFDEF
+    Moderator}` compile block -- only ever built into the Moderator
+    (game-master/world-generation) executable, never the player-facing
+    turn processor this project otherwise reconstructs from. This is
+    the first piece of real, sourced world-generation data this
+    project has found (every previous phase's own "world generation
+    has no surviving source" note was accurate for everything *else*
+    -- province/feature placement, treasure assignment, rumor
+    falsification -- just not, it turns out, this one specific table).
+  - Positionally verbatim against `Monster`'s own 61-entry declaration
+    order (`ROC`..`MERMAID`, then `NOMONSTER`); the Pascal array itself
+    has 71 entries (61 real + the same 10 unused `em1`-`em10`
+    extension slots this project already excludes everywhere else).
+    `Monster.NOMONSTER` is also excluded from the resulting dict --
+    its own array entry (`Tomb, Tomb`) is a degenerate positional
+    filler for the "no monster" sentinel, not a real preference;
+    nothing in the Pascal source ever assigns Nomonster to guard
+    anything.
+  - **Still not a full world-gen algorithm**: nothing here says how a
+    *feature*'s own kind gets decided first, how many features a
+    province gets, or how ties/randomness among several eligible
+    guardian species for one feature type resolve -- a real, sourced
+    building block for a future world-gen phase, not a complete
+    answer. `models/feature.py`'s own docstring is updated to note
+    this specific exception to its "no surviving source" world-gen
+    claim, and its already-stale note about `Treasure` (fully built
+    since Phase 77) is corrected too.
+  - Non-breaking: full suite passed unchanged (1558 passed) before any
+    new tests were written -- a new dict with no existing call sites.
+    3 new tests added (1561 passed total) in `tests/test_feature.py`,
+    covering full 60-species coverage (Nomonster correctly excluded),
+    that every value is a real `FeatureType` pair, and known verbatim
+    pairs.
 
 ## Setup
 
