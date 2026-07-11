@@ -2737,7 +2737,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     real order dispatches normally again; the same for Trail; and a
     Pursue with no such target (a terminal reason, not "did not catch
     up") is confirmed to *not* preempt anything.
-- **Phase 71 (current)**: `turn/patrol_execution.py` (new) +
+- **Phase 71**: `turn/patrol_execution.py` (new) +
   `turn/turn_processor.py _apply_patrol_cancellations`/
   `_dispatch_active_patrols` -- "Characters On Patrol" ([3.16]), the
   self-targeting-Pursue standing order Phase 70 explicitly deferred.
@@ -2798,6 +2798,60 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     no-threat-lets-it-through behavior, and cancellation by a later
     Move order (even with an intruder still adjacent, proving
     cancellation wins over interception for that same phase).
+- **Phase 72 (current)**: `turn/turn_processor.py
+  _apply_defend_battle_loss`/`_extract_battle_winner` -- Defend's other
+  cancellation trigger, the last of the three options (Patrol, this,
+  Feature model foundations) floated back when Phase 70 first named
+  the gap. `RULES.AK` [3.15] (quoted in full in earlier phases' notes):
+  "A character's Defend order is cancelled if he loses a battle, to
+  prevent further needless defeats."
+  - **Scoped to the one battle a Defend leader can ever actually enter
+    in this project's simulation, confirmed by re-reading
+    `_apply_defend_cancellations`'s own reasoning**: a Defend leader
+    never moves or fights except via `_apply_defend_reinforcements`'s
+    own relocation (any LMOVE/PURSUE/TRAIL order of their own would
+    already cancel Defend via the *other* trigger, Phase 67, before
+    they could ever enter a battle that way) -- so checking only the
+    reinforcement-triggered battle is the complete scenario space for
+    this codebase, not a narrow slice of a bigger one.
+  - **`_apply_defend_reinforcements` now returns `{defender_leader_id:
+    target}`** for every reinforcement it performs, instead of
+    `None` -- `run_turn()` uses it to build `reinforced_by_target` and
+    look up that exact battle's `BattleResult.winner` once this same
+    phase's LMOVE dispatch (solo or Multiple Contingents -- both call
+    sites are wired) resolves it. `_extract_battle_winner` reads
+    whichever of `MoveExecutionResult.battle_report`/
+    `MultiAttackerMoveResult.battle.report` the dispatch produced.
+  - **A new `defeated_while_defending: set[int]`, persistent across
+    phases within one `run_turn()` call, unlike `active_defends`
+    itself**: once a leader's reinforcement battle comes back
+    `winner == "attacker"`, they're added here and permanently blocked
+    from ever registering into `active_defends` again this call, even
+    if their own plan re-issues a fresh DEFEND order at a later phase
+    -- necessary because `active_defends` already unconditionally
+    drops a leader after one reinforcement (Phase 57's own "consumed
+    after first reinforcement" rule) regardless of outcome, so without
+    a separate persistent flag this trigger would have no observable
+    effect on the common case (only the rare "re-declares Defend after
+    already losing" case actually needs it, and that's exactly the
+    case tested).
+  - **Testing note**: an early version of the test compared a *second*,
+    unrelated invasion's own contested/uncontested status, which turned
+    out to be confounded by the losing garrison's own natural retreat
+    (`turn/retreat.py`) landing in the same coverage-area hex being
+    tested -- coverage and retreat both key off "neighbors of the
+    leader's post-battle location," so they can collide. Fixed by
+    asserting on the defender leader's own final location instead
+    (only `_apply_defend_reinforcements`'s own relocation code ever
+    moves it, so it's retreat-independent).
+  - Non-breaking: full suite passed unchanged (1504 passed) before any
+    new tests were written -- `_apply_defend_reinforcements`'s new
+    return value is purely additive, and `defeated_while_defending`
+    starts empty and nothing in the existing suite re-declares DEFEND
+    after a reinforcement battle. 2 new tests added (1506 passed
+    total) in `test_turn_processor.py`: a losing reinforcement battle
+    blocks a later DEFEND re-declaration from ever relocating the
+    leader again, and a winning one doesn't.
 
 ## Setup
 
@@ -3089,9 +3143,11 @@ rulebook before being turned into named, typed fields:
     (self-targeting Pursue, [3.16])~~ -- **wired in as of Phase 71**
     (`turn/patrol_execution.py`, `turn/turn_processor.py
     _dispatch_active_patrols`, see that phase's own note below).
-    **Still open**: Defend's other cancellation trigger ("cancelled if
-    he loses a battle") -- see Phase 70's note below for why it's still
-    deferred. Zero real examples for either action either.
+    ~~**Still open**: Defend's other cancellation trigger ("cancelled if
+    he loses a battle")~~ -- **wired in as of Phase 72**
+    (`turn/turn_processor.py _apply_defend_battle_loss`, see that
+    phase's own note below). Zero real examples for either action
+    either.
   - ~~**ASpy/Defend's remaining gap** (see Phase 26's note above):
     intelligence-report generation (ASpy) and reactive cross-province
     battle-triggering (Defend) both need `GameState`/battle-orchestrator

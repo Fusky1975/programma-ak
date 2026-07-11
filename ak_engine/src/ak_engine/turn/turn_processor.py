@@ -194,7 +194,7 @@ from ak_engine.turn.contested_province import (
     is_illegal_move_from_contested,
 )
 from ak_engine.turn.hex_numbering import decode_hex_number
-from ak_engine.turn.move_execution import record_kingdom_exploration
+from ak_engine.turn.move_execution import MoveExecutionResult, record_kingdom_exploration
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
@@ -253,6 +253,15 @@ def run_turn(
     active_defends: dict[int, set[HexCoord]] = {}  # defender leader_id -> coverage area
     active_pursuits: dict[int, _ActivePursuit] = {}  # pursuer/trailer leader_id -> ongoing chase
     active_patrols: dict[int, object] = {}  # patroller leader_id -> its own PursueRequest (standing order)
+    # Rulebook [3.15]'s other Defend-cancellation trigger ("cancelled if
+    # he loses a battle"): once a leader loses the one battle their own
+    # Defend order can ever draw them into (see
+    # _apply_defend_cancellations's own docstring for why that's the
+    # complete scenario space), they can never register into
+    # active_defends again for the rest of this run_turn() call, even if
+    # a later phase in their own plan re-issues DEFEND -- persistent
+    # across phases, unlike active_defends itself.
+    defeated_while_defending: set[int] = set()
 
     for phase_index, label in enumerate(PHASE_LABELS):
         if phase_index > 0:
@@ -293,16 +302,20 @@ def run_turn(
                     pass  # left for the ordinary per-leader path to raise/record consistently
 
         _apply_defend_cancellations(active_defends, entries)
-        _apply_defend_reinforcements(active_defends, move_targets, entries, state)
+        reinforced = _apply_defend_reinforcements(active_defends, move_targets, entries, state)
 
         for index, (tl, _segment_index, phase) in enumerate(entries):
             if phase.action is ActionCode.DEFEND:
                 leader_state = state.leaders.get(tl.leader.leader_id)
-                if leader_state is not None:
+                if leader_state is not None and tl.leader.leader_id not in defeated_while_defending:
                     # Registered for *next* phase's reinforcement check, not this
                     # one -- see turn/defend_execution.py's own docstring and
                     # _apply_defend_reinforcements's for why.
                     active_defends[tl.leader.leader_id] = defend_coverage_area(leader_state.location, bounds)
+
+        reinforced_by_target: dict[HexCoord, list[int]] = {}
+        for defender_leader_id, target in reinforced.items():
+            reinforced_by_target.setdefault(target, []).append(defender_leader_id)
 
         target_groups: dict[HexCoord, list[int]] = {}
         for index, target in move_targets.items():
@@ -361,7 +374,9 @@ def run_turn(
 
         for target, indices in multi_attacker_groups:
             movers = [entries[i] for i in indices]
-            results.extend(_dispatch_multi_attacker_lmove(movers, target, state, board_width, explorer_skill, rng))
+            group_results = _dispatch_multi_attacker_lmove(movers, target, state, board_width, explorer_skill, rng)
+            results.extend(group_results)
+            _apply_defend_battle_loss(defeated_while_defending, reinforced_by_target, target, group_results)
 
         for ability, indices in multi_practice_groups:
             movers = [entries[i] for i in indices]
@@ -377,6 +392,10 @@ def run_turn(
             results.extend(dispatch_results)
             if phase.action in (ActionCode.PURSUE, ActionCode.TRAIL):
                 _register_pursuit_continuation(active_pursuits, tl.leader.leader_id, phase, dispatch_results)
+            if phase.action is ActionCode.LMOVE:
+                target = move_targets.get(index)
+                if target is not None:
+                    _apply_defend_battle_loss(defeated_while_defending, reinforced_by_target, target, dispatch_results)
 
     return results
 
@@ -396,16 +415,22 @@ def _apply_defend_cancellations(
     general who's off moving/pursuing/trailing this phase is no longer
     standing by to react to an invasion this phase either.
 
-    **Only this cancellation trigger is modeled here.** The rulebook's
-    other cancellation condition, "a character's Defend order is
-    cancelled if he loses a battle, to prevent further needless
-    defeats," is a distinct, still-open gap -- it needs this leader's
-    own battle outcome *this same phase*, which isn't available yet at
-    this point in ``run_turn()`` (battles dispatch later in the phase,
-    across several different code paths: solo, Multiple Contingents,
-    contested-province rebattles, and Pursue's own army-vs-army catch-up
-    each produce their own result shape) -- left unattempted rather than
-    guessed at.
+    The rulebook's other cancellation trigger, "a character's Defend
+    order is cancelled if he loses a battle, to prevent further needless
+    defeats" (Phase 72), is handled separately, later in ``run_turn()``,
+    via a persistent ``defeated_while_defending`` set rather than here --
+    see that variable's own inline comment for why. **Only the
+    reinforcement-triggered battle is checked, a scope boundary, not an
+    oversight**: a Defend leader's own commanded armies never enter any
+    *other* battle in this project's simulation (they only move at all
+    via ``_apply_defend_reinforcements``'s own relocation, since an
+    LMOVE/PURSUE/TRAIL order of their own would already have cancelled
+    Defend right here first) -- so this one path is the complete
+    scenario space, not a narrow slice of a bigger one. Battles this
+    leader's *armies* might separately be swept into by some other
+    leader's own command (a scenario this project's data model doesn't
+    allow -- ``ArmyState.commanded_by`` is single-owner) are out of
+    scope for the same reason.
     """
 
     for tl, _segment_index, phase in entries:
@@ -418,7 +443,7 @@ def _apply_defend_reinforcements(
     move_targets: dict[int, HexCoord],
     entries: list[tuple[TurnLeader, int, PlanPhase]],
     state: GameState,
-) -> None:
+) -> dict[int, HexCoord]:
     """Rulebook [3.15]: relocates a Defending leader's own armies to an invaded
     covered province, so the existing battle-dispatch machinery (solo or
     Multiple Contingents) picks them up as defenders automatically -- the
@@ -442,10 +467,17 @@ def _apply_defend_reinforcements(
     unrelated invasion later in the turn (a documented simplification,
     not sourced -- the rulebook doesn't address a general reinforcing
     twice in the same turn).
+
+    Returns ``{defender_leader_id: target}`` for every reinforcement
+    performed this call -- ``run_turn()`` uses it to look up that same
+    battle's outcome once this phase's LMOVE dispatch resolves it, for
+    rule [3.15]'s other cancellation trigger (see ``_apply_defend_cancellations``'s
+    own docstring and ``_extract_battle_winner``).
     """
 
+    reinforced: dict[int, HexCoord] = {}
     if not active_defends:
-        return
+        return reinforced
 
     invaded_provinces: dict[HexCoord, list[int]] = {}
     for index, target in move_targets.items():
@@ -478,7 +510,47 @@ def _apply_defend_reinforcements(
                 army.location = target
             defender_state.location = target
             del active_defends[defender_leader_id]
+            reinforced[defender_leader_id] = target
             break
+
+    return reinforced
+
+
+def _extract_battle_winner(result: object) -> str | None:
+    """Reads ``BattleResult.winner`` ("attacker"/"defender"/"tie") out of whichever
+    battle-bearing result shape a dispatch produced, or ``None`` if
+    ``result`` carries no battle at all. See ``_apply_defend_cancellations``'s
+    own docstring for why only this one, narrowly-scoped case (a
+    Defend-reinforcement-triggered battle) is checked.
+    """
+
+    if isinstance(result, MoveExecutionResult):
+        battle_report = result.battle_report
+    elif isinstance(result, MultiAttackerMoveResult):
+        battle_report = result.battle.report
+    else:
+        battle_report = None
+    return battle_report.battle_result.winner if battle_report is not None else None
+
+
+def _apply_defend_battle_loss(
+    defeated_while_defending: set[int],
+    reinforced_by_target: dict[HexCoord, list[int]],
+    target: HexCoord,
+    dispatch_results: list[PhaseDispatchResult],
+) -> None:
+    """Rulebook [3.15]'s other Defend-cancellation trigger, applied the moment this
+    phase's own LMOVE dispatch resolves the exact battle a Defend
+    reinforcement (``_apply_defend_reinforcements``) just drew ``target``'s
+    defender(s) into. See ``_apply_defend_cancellations``'s own docstring
+    for why this is the only battle that needs checking.
+    """
+
+    defender_leader_ids = reinforced_by_target.get(target)
+    if not defender_leader_ids or not dispatch_results:
+        return
+    if _extract_battle_winner(dispatch_results[0].result) == "attacker":
+        defeated_while_defending.update(defender_leader_ids)
 
 
 _PURSUE_STILL_CHASING_REASON = "did not catch up this phase"
