@@ -203,9 +203,9 @@ def column_strength(column: Column, *, outflank_second_line: bool = False) -> fl
        as 100% strength instead of 50%." Eligibility (numeric superiority
        and a shorter-than-terrain-allows line) depends on
        ``terrain_line_length_cap``, which this module can't derive --
-       callers decide it. **Still unwired from ``resolve_battle`` as of
-       Phase 39** -- a separate, still-open gap (see
-       ``ak_engine/README.md``).
+       callers decide it. **Wired into ``turn/battle_resolution.py
+       resolve_battle`` as of Phase 64** -- see that module's own
+       docstring for the exact eligibility computation.
     2. **Non-humanoid rear-targeting** (Phase 39, rulebook [7.2]): "If
        there is an enemy unit behind the front lines for the non-human
        unit to attack instead of a unit on the front line, it will

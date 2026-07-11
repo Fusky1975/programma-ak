@@ -2419,7 +2419,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     province/owner, ignoring the raw target field, unowned province,
     adjacent owners, unknown-neighbor omission, recruitable types,
     capital true/false) plus the rewritten dispatch test.
-- **Phase 63 (current)**: extends `report/turn_report.py` with two more
+- **Phase 63**: extends `report/turn_report.py` with two more
   real, standalone templates -- `render_uncontested_conquest()`
   (`HostAK/TP/PROSE/CONQ.X`, a Move that conquers an undefended
   province, no battle dispatch involved at all) and
@@ -2458,6 +2458,48 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `test_turn_report.py`, covering both real usable CONQ.X variants
     and three SPY.X variants (including the King-exclusion elision and
     a variant exercising both `/R` and `{}` resolution together).
+- **Phase 64 (current)**: wires the numeric-superiority outflanking rule
+  into `turn/battle_resolution.py resolve_battle` -- the *other*
+  rulebook trigger `turn/battle_line.py column_strength`'s
+  `outflank_second_line` parameter was originally built for (Phase 6),
+  left unwired ever since (only the *non-humanoid rear-targeting*
+  trigger got wired, in Phase 39).
+  - `RULES.AK` ~line 1362 (quoted in full): "If a battle line is shorter
+    than the terrain allows, the flanking second-line units of a force
+    which is superior in numbers may outflank the enemy force. If they
+    do that, they count as 100% strength instead of 50%." Eligibility is
+    computed once per side in `resolve_battle`: this side's own unit
+    count must exceed the opposing side's, *and* `line_length` must be
+    strictly less than `terrain_line_length_cap` -- a `None` cap (unknown
+    terrain) makes this false, not true, matching the same
+    insufficient-data-isn't-a-guessed-result convention used throughout
+    this project. The rulebook's own worked example (~line 1770: two
+    second-line Legions "will not be penalized 50% because they will be
+    able to outflank the enemy") confirmed this is unconditional once
+    eligible, not a chance roll -- matching `column_strength`'s existing
+    non-probabilistic contract, so no new `rng` consumption at all.
+  - OR'd together with the already-wired rear-targeting driver (a column
+    can be eligible for either reason, or both; the 100% effect itself
+    never stacks, since it's a single boolean flag either way).
+  - **Not modeled**: `RULES.AK`'s related nemesis-selection sentence a
+    few paragraphs later ("If more than one of your units are eligible
+    to be a nemesis due to overflight or outflanking, one of them is
+    chosen at random") -- a separate mechanic about *which* unit
+    receives nemesis targeting when several qualify, not this rule's own
+    100%-strength effect. `turn/battle_line.py
+    apply_nemesis_penalties`'s own documented column-pairing
+    interpretation doesn't yet account for outflanking eligibility
+    specifically -- left as its own distinct, still-open gap rather than
+    folded into this phase.
+  - Non-breaking: full suite passed unchanged (1453 passed) before any
+    new tests were written -- every existing test either passes no
+    `terrain_line_length_cap` (making the new condition unconditionally
+    false) or sets it exactly equal to the already-count-capped
+    `line_length` (the "terrain is the binding constraint" case, also
+    false), so none of them were perturbed by the new logic. 3 new tests
+    added (1456 passed total) in `test_battle_resolution.py`: the
+    eligible-and-boosted case, the terrain-is-the-binding-cap case, and
+    the no-cap-supplied case.
 
 ## Setup
 
@@ -2785,8 +2827,11 @@ rulebook before being turned into named, typed fields:
     Phase 37. ~~The non-humanoid rear-targeting nuance~~ **fixed in
     Phase 39** (see above) -- discovered along the way: the *separate*
     numeric-superiority outflanking rule that `column_strength`'s
-    `outflank_second_line` parameter was originally built for is still
-    unwired, a distinct, still-open gap of its own.
+    `outflank_second_line` parameter was originally built for ~~is still
+    unwired, a distinct, still-open gap of its own~~ **wired in Phase
+    64** (see above) -- its own related nemesis-selection nuance
+    ("chosen at random" among several eligible units) stays unmodeled,
+    a distinct, still-open gap of its own.
   - **`fight_multi_attacker_battle()`'s own edge case**: separate
     (non-united) groups are resolved sequentially against whatever's
     left of the province's defenders; if an earlier group cleanly

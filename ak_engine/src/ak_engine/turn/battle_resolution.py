@@ -29,9 +29,37 @@ own column strength is computed with ``column_strength``'s
 contains an overflight unit (``column_has_overflight_unit``) -- "it will
 attack the rear unit instead (the non-human unit and the rearward unit
 will both be at 100% strength in this case.)" See ``column_strength``'s
-own docstring for why this reuses a parameter originally meant for a
-*different*, still-unwired rulebook rule (numeric-superiority
-outflanking), and for the Druidic-ability held-back carve-out (Phase 43).
+own docstring for the Druidic-ability held-back carve-out (Phase 43).
+
+**Numeric-superiority outflanking** (Phase 64, ``RULES.AK`` ~line 1362,
+quoted in full): "If a battle line is shorter than the terrain allows,
+the flanking second-line units of a force which is superior in numbers
+may outflank the enemy force. If they do that, they count as 100%
+strength instead of 50%." -- the *other* rulebook trigger
+``column_strength``'s ``outflank_second_line`` parameter was originally
+built for (see its own docstring), left unwired from Phase 6 through
+Phase 63. Eligibility is computed once per side, not per column: this
+side's own unit count must exceed the opposing side's (numeric
+superiority), *and* ``line_length`` must be strictly less than
+``terrain_line_length_cap`` (a ``None`` cap -- unknown terrain -- makes
+this condition false, not true; "shorter than the terrain allows" is
+unanswerable without knowing what the terrain allows). Deterministic,
+no ``rng`` involved -- the rulebook's own worked example (~line 1770:
+two second-line Legions "will not be penalized 50% because they will be
+able to outflank the enemy") applies the boost unconditionally once
+eligible, not as a chance roll, matching ``column_strength``'s existing
+non-probabilistic contract. OR'd together with the rear-targeting
+driver above (a column can be eligible for either reason, or both; the
+100% effect itself doesn't stack, matching ``column_strength``'s own
+"only affects... at depth index 1" note). **Not modeled**: the related
+nemesis-selection sentence a few paragraphs later ("If more than one of
+your units are eligible to be a nemesis due to overflight or
+outflanking, one of them is chosen at random") -- a separate mechanic
+about *which* unit receives nemesis targeting when several qualify, not
+this rule's own 100%-strength effect; `turn/battle_line.py
+apply_nemesis_penalties`'s own documented column-pairing interpretation
+doesn't yet account for outflanking eligibility specifically. Left as a
+distinct, still-open gap rather than folded into this phase.
 
 Still NOT handled here -- see ak_engine/README.md: eliminating or
 demoting the losing side's armies, duels, pursuit, retreat, post-battle
@@ -143,15 +171,27 @@ def resolve_battle(
     attacker_luck = [_apply_front_line_luck(column, rng) for column in attacker_columns]
     defender_luck = [_apply_front_line_luck(column, rng) for column in defender_columns]
 
+    # Numeric-superiority outflanking (Phase 64, RULES.AK ~line 1362): see
+    # this module's own docstring for the eligibility rule and why a
+    # None cap makes it ineligible rather than eligible.
+    line_shorter_than_terrain_allows = (
+        terrain_line_length_cap is not None and line_length < terrain_line_length_cap
+    )
+    attacker_numerically_superior = len(attacker_units) > len(defender_units)
+    defender_numerically_superior = len(defender_units) > len(attacker_units)
+    attacker_outflank_eligible = attacker_numerically_superior and line_shorter_than_terrain_allows
+    defender_outflank_eligible = defender_numerically_superior and line_shorter_than_terrain_allows
+
     # Non-humanoid rear-targeting (Phase 39, rulebook [7.2]): an opposing
     # overflight unit boosts this column's own ordinary second-line unit
-    # to 100% strength -- see column_strength's docstring.
+    # to 100% strength -- see column_strength's docstring. OR'd with the
+    # numeric-superiority eligibility computed above.
     attacker_strengths = [
-        column_strength(a_col, outflank_second_line=column_has_overflight_unit(d_col))
+        column_strength(a_col, outflank_second_line=attacker_outflank_eligible or column_has_overflight_unit(d_col))
         for a_col, d_col in zip(attacker_columns, defender_columns)
     ]
     defender_strengths = [
-        column_strength(d_col, outflank_second_line=column_has_overflight_unit(a_col))
+        column_strength(d_col, outflank_second_line=defender_outflank_eligible or column_has_overflight_unit(a_col))
         for a_col, d_col in zip(attacker_columns, defender_columns)
     ]
 

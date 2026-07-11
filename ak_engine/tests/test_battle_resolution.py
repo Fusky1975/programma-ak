@@ -223,6 +223,59 @@ def test_resolve_battle_druidic_blocked_flag_survives_front_line_luck():
     assert result.columns[0].defender_strength == pytest.approx(10 * 1.0 + 9 * 0.5)
 
 
+def test_resolve_battle_numeric_superiority_boosts_second_line_to_full_strength():
+    # RULES.AK ~line 1362: "If a battle line is shorter than the terrain
+    # allows, the flanking second-line units of a force which is superior
+    # in numbers may outflank the enemy force... 100% strength instead of
+    # 50%." Attacker has 4 units against defender's 2 -- line_length is
+    # capped at 2 (the smaller side's count), strictly less than the
+    # terrain_line_length_cap of 5, so the line is "shorter than the
+    # terrain allows" and the attacker (numerically superior) is eligible.
+    attacker_units = [unit(10), unit(10), unit(10), unit(10)]
+    defender_units = [unit(10), unit(10)]
+    # 2 attacker column-luck skips, 2 defender column-luck skips, 1
+    # battle-luck skip, 2 win rolls (one per column).
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.5, 0.5])
+
+    result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=5, rng=rng)
+
+    assert len(result.columns) == 2
+    for column in result.columns:
+        # Depth 0 (100%) + depth 1 boosted from 50% to 100%, instead of
+        # the ordinary 10*1.0 + 10*0.5 = 15.
+        assert column.attacker_strength == pytest.approx(20)
+        assert column.defender_strength == pytest.approx(10)
+
+
+def test_resolve_battle_numeric_superiority_not_eligible_when_terrain_is_the_binding_cap():
+    # Same 4-vs-2 imbalance, but terrain_line_length_cap=2 equals the
+    # already-capped line_length -- the line is exactly as long as the
+    # terrain allows, not shorter, so the outflanking boost doesn't apply.
+    attacker_units = [unit(10), unit(10), unit(10), unit(10)]
+    defender_units = [unit(10), unit(10)]
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.5, 0.5])
+
+    result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=2, rng=rng)
+
+    for column in result.columns:
+        assert column.attacker_strength == pytest.approx(10 * 1.0 + 10 * 0.5)
+
+
+def test_resolve_battle_numeric_superiority_not_eligible_with_no_terrain_cap():
+    # No terrain_line_length_cap at all (None, the default) means "shorter
+    # than the terrain allows" is unanswerable, not assumed true -- see
+    # this module's own docstring. The attacker stays at ordinary 50% on
+    # its second line despite being numerically superior.
+    attacker_units = [unit(10), unit(10), unit(10), unit(10)]
+    defender_units = [unit(10), unit(10)]
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.5, 0.5])
+
+    result = resolve_battle(attacker_units, defender_units, rng=rng)
+
+    for column in result.columns:
+        assert column.attacker_strength == pytest.approx(10 * 1.0 + 10 * 0.5)
+
+
 def test_resolve_battle_column_results_expose_the_actual_units_for_bookkeeping():
     attacker = [BattleUnit(ArmyType.BOWMEN, 10, source_id=101)]
     defender = [BattleUnit(ArmyType.AXEMEN, 5, source_id=202)]
