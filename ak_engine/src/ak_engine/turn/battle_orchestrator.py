@@ -908,6 +908,27 @@ def fight_multi_attacker_battle(
     claiming kingdom's own alliances, not every coalition member's --
     generalizing it properly would need a broader change to
     ``fight_battle()``'s own signature, not attempted here.
+
+    **Separate (non-united) groups sequentially claiming an already-
+    cleared province (Phase 73)**: groups are fought one at a time
+    against the same ``province_coord``, each mutating ``state`` before
+    the next group's own turn. If an earlier group already cleanly
+    swept -- or, for a non-allied later group, if the earlier group's
+    own surviving forces are the only occupants left and happen to be
+    allied with this later group -- there are no non-allied defenders
+    left for this group to fight at all. ``fight_battle()`` itself
+    would raise ``ValueError`` for an empty defender list (it has no
+    other way to signal "nothing to fight"); here that's checked for
+    up front and treated as an uncontested claim instead, the same
+    "no defenders present -> uncontested" reading ``turn/
+    move_execution.py execute_move()`` already gives a lone attacker
+    walking into an empty enemy-owned province. The rulebook's own
+    [7.8] text doesn't say how several simultaneous, unrelated
+    invasions of the same province are meant to interact once one of
+    them has already resolved -- a documented, unsourced-but-reasonable
+    design choice, the same category as this function's own
+    ``SAME_ORIGIN_UNITE_CHANCE``/``DIFFERENT_ORIGIN_UNITE_CHANCE``
+    constants (``multiple_contingents.py``).
     """
 
     rng = rng if rng is not None else random.Random()
@@ -936,16 +957,27 @@ def fight_multi_attacker_battle(
             if member.kingdom_id == claiming_kingdom_id
         )
 
-        report = fight_battle(
-            state,
-            claiming_kingdom_id,
-            province_coord,
-            combined_army_ids,
-            loser_retreats=loser_retreats,
-            attacker_origin=attacker_origin,
-            apply_fanaticism=apply_fanaticism,
-            rng=rng,
+        defenders_present = any(
+            army.army_id not in combined_army_ids
+            and army.kingdom_id is not None
+            and not state.is_allied(army.kingdom_id, claiming_kingdom_id)
+            for army in state.armies_at(province_coord)
         )
+        if defenders_present:
+            report = fight_battle(
+                state,
+                claiming_kingdom_id,
+                province_coord,
+                combined_army_ids,
+                loser_retreats=loser_retreats,
+                attacker_origin=attacker_origin,
+                apply_fanaticism=apply_fanaticism,
+                rng=rng,
+            )
+        else:
+            # An earlier group already cleared/claimed the province this
+            # same call -- see module docstring's "Phase 73" note.
+            report = BattleReport(battle_result=BattleResult(winner="attacker"), conquered=True)
         reports.append(MultiAttackerBattle(leader_ids=[member.leader_id for member in group], report=report))
 
     return reports

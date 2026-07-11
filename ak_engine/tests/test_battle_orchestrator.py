@@ -1249,3 +1249,32 @@ def test_fight_multi_attacker_battle_claims_province_for_largest_contingent_king
     assert sorted(battles[0].leader_ids) == [10, 20]
     if battles[0].report.conquered:
         assert state.provinces[FIELD].owner_kingdom_id == 3  # kingdom 3 contributed 2 of 3 armies
+
+
+def test_fight_multi_attacker_battle_second_separate_group_claims_an_already_cleared_province():
+    # Phase 73: previously, once the first separate group cleanly swept
+    # the lone weak defender, the second group's own fight_battle() call
+    # would raise ValueError against the now-empty defender list.
+    state = build_state()  # weak GARRISON/GREEN defender, overwhelming HVY_CAVALRY/ELITE attacker
+    state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5)),
+        MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102], origin_province=HexCoord(9, 9)),
+    ]
+    # 0.99 >= DIFFERENT_ORIGIN_UNITE_CHANCE (0.30) -> stays split into two
+    # separate battles; the first group's own overwhelming, no-luck rolls
+    # (same shape as no_luck_overwhelming_attacker_rng()) clean-sweep the
+    # lone defender before the second group's own turn.
+    rng = ScriptedRandom([0.99, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 2
+    first_battle, second_battle = battles
+    assert first_battle.leader_ids == [10]
+    assert first_battle.report.conquered is True
+    # The second group finds nothing left to fight -- treated as an
+    # uncontested claim rather than raising.
+    assert second_battle.leader_ids == [20]
+    assert second_battle.report.conquered is True
+    assert second_battle.report.battle_result.winner == "attacker"

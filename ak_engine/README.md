@@ -2798,7 +2798,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     no-threat-lets-it-through behavior, and cancellation by a later
     Move order (even with an intruder still adjacent, proving
     cancellation wins over interception for that same phase).
-- **Phase 72 (current)**: `turn/turn_processor.py
+- **Phase 72**: `turn/turn_processor.py
   _apply_defend_battle_loss`/`_extract_battle_winner` -- Defend's other
   cancellation trigger, the last of the three options (Patrol, this,
   Feature model foundations) floated back when Phase 70 first named
@@ -2852,6 +2852,47 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     total) in `test_turn_processor.py`: a losing reinforcement battle
     blocks a later DEFEND re-declaration from ever relocating the
     leader again, and a winning one doesn't.
+- **Phase 73 (current)**: `turn/battle_orchestrator.py
+  fight_multi_attacker_battle` -- fixes a real, previously-untested
+  crash: when Multiple Contingents ([7.8]) splits several attackers
+  into *separate* (non-united) groups against the same province
+  (`multiple_contingents.py group_attackers_into_battles`'s own
+  unsourced unite-chance roll), each group's `fight_battle()` call
+  runs sequentially against whatever's left of the province's
+  defenders. If an earlier group cleanly sweeps them, a later group's
+  own `fight_battle()` call previously raised `ValueError("no
+  defending armies at this province to fight")` -- uncaught anywhere
+  in the dispatch chain, so it crashed the *entire* `run_turn()`, not
+  just the colliding leaders' own results. Confirmed reachable from
+  real multi-leader play (not just hypothetical): two unallied
+  kingdoms' leaders moving from different origins against a weakly
+  defended province, whenever the different-origin 30% unite roll
+  fails.
+  - **Fix**: before calling `fight_battle()` for each group, checks
+    for any remaining non-allied defender at the province (the same
+    filter `fight_battle()` itself already uses internally). If none
+    are left, synthesizes an uncontested `BattleReport(battle_result=
+    BattleResult(winner="attacker"), conquered=True)` instead of
+    calling `fight_battle()` again -- the same "no defenders present ->
+    uncontested" reading `turn/move_execution.py execute_move()`
+    already gives a lone attacker walking into an empty enemy-owned
+    province. `RULES.AK` [7.8] doesn't say how several simultaneous,
+    unrelated invasions of the same province are meant to interact
+    once one has already resolved -- a documented, unsourced-but-
+    reasonable design choice, the same category as this function's own
+    `SAME_ORIGIN_UNITE_CHANCE`/`DIFFERENT_ORIGIN_UNITE_CHANCE`
+    constants. Since the *first* group's own `fight_battle()` call
+    already transfers province ownership on a clean sweep, the
+    synthetic report doesn't need to repeat that -- it only needs to
+    let the caller's existing post-battle bookkeeping (movement cost,
+    army/leader relocation) proceed correctly for the second group's
+    own leaders too.
+  - Non-breaking: full suite passed unchanged (1506 passed) before any
+    new tests were written. 1 new test added (1507 passed total) in
+    `test_battle_orchestrator.py`: two separate groups attacking the
+    same weakly-defended province, the first cleanly sweeps, the
+    second's own dispatch no longer raises and instead reports an
+    uncontested conquest.
 
 ## Setup
 
@@ -3204,13 +3245,14 @@ rulebook before being turned into named, typed fields:
     widens nemesis eligibility against your rearward units) is wired;
     the outflanking half stays unmodeled, since `RULES.AK` gives no
     further text connecting it to nemesis eligibility specifically.
-  - **`fight_multi_attacker_battle()`'s own edge case**: separate
+  - ~~**`fight_multi_attacker_battle()`'s own edge case**: separate
     (non-united) groups are resolved sequentially against whatever's
     left of the province's defenders; if an earlier group cleanly
     sweeps them, a later group calling `fight_battle()` against an
     empty defender list will raise `ValueError`. The rulebook doesn't
     say how simultaneous separate battles against the same defenders
-    are meant to interact -- not fixed here.
+    are meant to interact -- not fixed here.~~ -- **fixed in Phase 73**
+    (see that phase's own note below).
   - ~~The duel *fight itself* [7.1] is still approximated, not resolved
     -- the separate "Special Encounter Plan" character-combat system
     [5.10] this would need isn't built~~ **a real Melee duel is now
