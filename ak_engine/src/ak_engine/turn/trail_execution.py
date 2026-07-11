@@ -1,4 +1,6 @@
-"""Executing a Trail (rulebook [3.17]) order, single phase only -- Phase 52.
+"""Executing a Trail (rulebook [3.17]) order -- Phase 52, extended with a
+standalone multi-phase chase-step primitive in Phase 68 (``advance_trail``,
+not auto-wired anywhere yet -- see that section below).
 
 **[3.17] Trail, quoted in full** (also quoted in ``turn/trail_decode.py``'s
 own docstring):
@@ -52,6 +54,22 @@ new ones invented for Trail specifically:
 A future report-generation phase that adds those fields is the natural
 place to extend ``TrailExecutionResult`` with the actual intelligence
 payload -- not attempted here.
+
+**Phase 68 -- the same scoped multi-phase chase step Phase 66 added for
+Pursue.** [3.17] itself draws the parallel explicitly: "Like the Pursue
+order, the Trail order ends when the character finds and has spied on
+the character for one phase." ``advance_trail`` mirrors ``turn/
+pursue_execution.py advance_pursuit`` exactly, reusing that module's
+``step_toward_target`` primitive rather than duplicating hex-stepping
+logic -- one greedy hex step toward the target's current location, then
+a fresh ``execute_trail`` catch-up attempt at the new, shorter distance.
+Simpler than Pursue's own version in exactly one respect: a Trail order
+never has armies to move alongside the leader ("a character leading an
+army may not be ordered to Trail" is already enforced by
+``execute_trail`` itself). Same scope boundary as Phase 66, confirmed
+with the user for Pursue and carried over unchanged here: not
+auto-wired into ``turn/turn_processor.py``'s phase loop, no
+movement-point cost, a standalone explicitly-invoked primitive.
 """
 
 from __future__ import annotations
@@ -61,7 +79,8 @@ from dataclasses import dataclass
 
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
-from ak_engine.turn.movement import hex_distance
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
+from ak_engine.turn.pursue_execution import step_toward_target
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 from ak_engine.turn.trail_decode import TrailRequest
 
@@ -111,3 +130,33 @@ def execute_trail(
         return TrailExecutionResult(spied_on=False, reason="did not find the target this phase")
 
     return TrailExecutionResult(spied_on=True)
+
+
+def advance_trail(
+    state: GameState,
+    trailer_leader_id: int,
+    request: TrailRequest,
+    rng: random.Random | None = None,
+    *,
+    board_width: int = NORMAL_MAP_BOUNDS[0],
+    board_height: int = NORMAL_MAP_BOUNDS[1],
+) -> TrailExecutionResult:
+    """Resolve a further phase of an *already-ongoing* Trail: one
+    ``turn/pursue_execution.py step_toward_target`` hex-step for the trailer
+    (never any armies -- [3.17]'s no-army restriction), then a fresh
+    ``execute_trail`` catch-up attempt at the new, shorter distance. See
+    module docstring for what's not wired around this (mirrors
+    ``advance_pursuit``'s own documented scope exactly).
+    """
+
+    rng = rng if rng is not None else random.Random()
+
+    trailer = state.leaders.get(trailer_leader_id)
+    target = state.leaders.get(request.target_character_id)
+    if trailer is None or target is None:
+        return TrailExecutionResult(spied_on=False, reason="trailer or target not found")
+
+    bounds = MapBounds(board_width, board_height)
+    trailer.location = step_toward_target(trailer.location, target.location, bounds)
+
+    return execute_trail(state, trailer_leader_id, request, rng)

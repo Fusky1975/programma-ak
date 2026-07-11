@@ -2581,7 +2581,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (1459 passed) before any
     new tests were written. 4 new tests added (1463 passed total) in
     `test_pursue_execution.py`.
-- **Phase 67 (current)**: `turn/turn_processor.py
+- **Phase 67**: `turn/turn_processor.py
   _apply_defend_cancellations` -- Defend's own cancellation rule,
   directly relevant now that Phase 66's Pursue research surfaced its
   exact wording. `RULES.AK` [3.15] (quoted in full): "A general with
@@ -2611,6 +2611,25 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `test_turn_processor.py`: LMOVE/PURSUE/TRAIL each cancel an active
     Defend before its next reinforcement check, and an unrelated action
     (WAIT) doesn't.
+- **Phase 68 (current)**: `turn/trail_execution.py advance_trail` --
+  the same scoped multi-phase chase step Phase 66 added for Pursue,
+  now for Trail. [3.17] draws the parallel explicitly: "Like the
+  Pursue order, the Trail order ends when the character finds and has
+  spied on the character for one phase."
+  - Mirrors `advance_pursuit` exactly, reusing `turn/
+    pursue_execution.py`'s own `step_toward_target` primitive rather
+    than duplicating hex-stepping logic: one greedy hex step toward the
+    target's current location, then a fresh `execute_trail` catch-up
+    attempt at the new, shorter distance. Simpler than Pursue's own
+    version in exactly one respect -- a Trail order never has armies to
+    move alongside the leader, since `execute_trail` already enforces
+    "a character leading an army may not be ordered to Trail".
+  - Same scope boundary as Phase 66, carried over unchanged: not
+    auto-wired into `turn/turn_processor.py`'s phase loop, no
+    movement-point cost -- a standalone, explicitly-invoked primitive.
+  - Non-breaking: full suite passed unchanged (1467 passed) before any
+    new tests were written. 2 new tests added (1469 passed total) in
+    `test_trail_execution.py`.
 
 ## Setup
 

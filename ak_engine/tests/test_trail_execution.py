@@ -8,8 +8,9 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
 from ak_engine.turn.trail_decode import TrailRequest
-from ak_engine.turn.trail_execution import TrailExecutionResult, execute_trail
+from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail, execute_trail
 
 from _helpers import ScriptedRandom
 
@@ -122,3 +123,33 @@ def test_execute_trail_uses_trailers_real_spy_skill():
     result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.99]))
 
     assert result.spied_on is True
+
+
+# -- advance_trail (Phase 68) -------------------------------------------------
+
+
+_BOUNDS = MapBounds(*NORMAL_MAP_BOUNDS)
+
+
+def test_advance_trail_moves_the_trailer_one_step_closer_then_rerolls():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FAR_AWAY))  # different Kingdom
+
+    # Rigged to fail the catch-up roll at the new (still nonzero) distance --
+    # proves execute_trail ran on the *post-step* location without erroring.
+    result = advance_trail(state, 1, _request(2), rng=ScriptedRandom([1.0]))
+
+    assert result.spied_on is False
+    assert state.leaders[1].location != FIELD
+    assert hex_distance(state.leaders[1].location, FAR_AWAY) == hex_distance(FIELD, FAR_AWAY) - 1
+
+
+def test_advance_trail_reports_not_found_when_trailer_or_target_missing():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+
+    result = advance_trail(state, 1, _request(2))
+
+    assert result.spied_on is False
+    assert result.reason == "trailer or target not found"
