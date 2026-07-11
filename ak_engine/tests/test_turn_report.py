@@ -112,6 +112,25 @@ def test_render_column_clash_appends_a_plus_bucket_sentence():
     assert result == "Attackia's host fought Defendia's line and advanced at will."
 
 
+def test_render_column_clash_resolves_sea_marker():
+    # Phase 74: attacker_win_probability=0.4 -> bucket -1, variant 0
+    # (" gradually gave_ground/Swas_pushed_back.") carries only a "/S"
+    # marker, no "/R" -- the opening clause's own "/R" (fought/battled)
+    # and "{with }" inclusion each still consume one draw (0.1 -> left
+    # choice / excluded).
+    column = _column(attacker_win_probability=0.4)
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+    result = render_column_clash(column, "A", "B", rng, is_sea=True)
+    assert result == "A fought B and gradually was pushed back."
+
+
+def test_render_column_clash_land_default_resolves_sea_marker_left():
+    column = _column(attacker_win_probability=0.4)
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+    result = render_column_clash(column, "A", "B", rng)
+    assert result == "A fought B and gradually gave ground."
+
+
 # -- render_battle_winner ----------------------------------------------------
 
 
@@ -133,6 +152,22 @@ def test_render_battle_winner_uses_defwin_template_for_the_defender():
     rng = ScriptedRandom([0.1, 0.1, 0.1], choice_indices=[2])
     result = render_battle_winner(battle_result, "Attackia", "Defendia", "the Dolphin Sea", rng)
     assert result == "the attacking Kingdom was defeated in its attempt to conquer the Dolphin Sea."
+
+
+def test_render_battle_winner_resolves_sea_markers_land():
+    # DEFWIN variant 1 carries two "/S" markers ("armies/Sfleets",
+    # "pushed/Schased") plus one "/R" ("beaten/Rdefeated").
+    battle_result = BattleResult(winner="defender")
+    rng = ScriptedRandom([0.1], choice_indices=[1])
+    result = render_battle_winner(battle_result, "Attackia", "Defendia", "the Dolphin Sea", rng)
+    assert result == "Attackia's armies were beaten and pushed out of the Dolphin Sea."
+
+
+def test_render_battle_winner_resolves_sea_markers_sea():
+    battle_result = BattleResult(winner="defender")
+    rng = ScriptedRandom([0.1], choice_indices=[1])
+    result = render_battle_winner(battle_result, "Attackia", "Defendia", "the Dolphin Sea", rng, is_sea=True)
+    assert result == "Attackia's fleets were beaten and chased out of the Dolphin Sea."
 
 
 # -- render_destroyed_army ----------------------------------------------------
@@ -159,6 +194,20 @@ def test_render_retreat_substitutes_name_destination_and_possessive():
     rng = ScriptedRandom([0.1, 0.1, 0.1], choice_indices=[5])
     result = render_retreat("Guerin", "Falkenheim", rng)
     assert result == "Guerin retired to Falkenheim, beaten but not broken."
+
+
+def test_render_retreat_resolves_sea_marker_land():
+    # Variant 2 ("< made/Rset_out for {the safety of }^S with > motley
+    # army/SFleet.") carries a "/S" marker -- land keeps "army".
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[2])
+    result = render_retreat("Guerin", "Falkenheim", rng)
+    assert result == "Guerin made for Falkenheim with Guerin's motley army."
+
+
+def test_render_retreat_resolves_sea_marker_sea():
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[2])
+    result = render_retreat("Guerin", "Falkenheim", rng, is_sea=True)
+    assert result == "Guerin made for Falkenheim with Guerin's motley Fleet."
 
 
 def test_render_retreat_resolves_optional_blocks_for_other_variants():
@@ -198,6 +247,31 @@ def test_describe_battle_assembles_clash_winner_and_destroyed_sentences_in_order
     ]
 
 
+def test_describe_battle_threads_is_sea_to_every_sub_renderer():
+    # Phase 74: is_sea propagates to both the per-column clash sentence
+    # (bucket -1 variant 0, "/S" only) and the winner sentence (DEFWIN
+    # variant 1, "/S" x2 + "/R").
+    column = _column(attacker_win_probability=0.4, attacker_source_id=10, defender_source_id=20)
+    battle_result = BattleResult(winner="defender", columns=[column])
+    report = BattleReport(battle_result=battle_result, conquered=False)
+
+    rng = ScriptedRandom([0.1, 0.1, 0.1], choice_indices=[0, 1])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        army_names={10: "the 260th Garrison", 20: "the 45th Orcs"},
+        destination_names={},
+        rng=rng,
+        is_sea=True,
+    )
+    assert lines == [
+        "the 260th Garrison fought the 45th Orcs and gradually was pushed back.",
+        "Attackia's fleets were beaten and chased out of the Dolphin Sea.",
+    ]
+
+
 def test_describe_battle_skips_unnamed_armies_and_ties_without_erroring():
     column = _column(attacker_win_probability=0.5, attacker_source_id=1, defender_source_id=2)
     battle_result = BattleResult(winner="tie", columns=[column])
@@ -225,13 +299,45 @@ def test_render_uncontested_conquest_first_variant():
     assert result == "Attackia's forces conquered the Dolphin Sea without any major battles."
 
 
-def test_render_uncontested_conquest_second_variant():
-    rng = ScriptedRandom([0.9, 0.9, 0.9], choice_indices=[1])
+def test_render_uncontested_conquest_last_variant():
+    rng = ScriptedRandom([0.9, 0.9, 0.9], choice_indices=[3])
     result = render_uncontested_conquest("Attackia", "the Dolphin Sea", rng)
     assert result == (
         "Attackia's forces experienced little opposition in the Dolphin Sea "
         "and Attackia there established our reign."
     )
+
+
+def test_render_uncontested_conquest_second_variant_land():
+    # Phase 74: variant 1 carries both a "/S" marker ("armies/Snaval_forces",
+    # deterministic, no rng consumed) and a "/R" marker ("control/Rpossession",
+    # random) -- land (is_sea defaults to False) picks "armies"; 0.1 -> /R
+    # picks "control".
+    rng = ScriptedRandom([0.1], choice_indices=[1])
+    result = render_uncontested_conquest("Attackia", "the Dolphin Sea", rng)
+    assert result == "Attackia's armies took control of the Dolphin Sea practically uncontested."
+
+
+def test_render_uncontested_conquest_second_variant_sea():
+    rng = ScriptedRandom([0.1], choice_indices=[1])
+    result = render_uncontested_conquest("Attackia", "the Dolphin Sea", rng, is_sea=True)
+    assert result == "Attackia's naval forces took control of the Dolphin Sea practically uncontested."
+
+
+def test_render_uncontested_conquest_third_variant_land():
+    # Variant 2 carries two markers: "/R" (conquered/overrun, always
+    # resolved randomly) and "/S" ("host/Sfleet", deterministic by
+    # is_sea). 0.1 -> /R picks the left choice ("conquered"); the
+    # optional "{ and occupied}" block excluded (also < 0.5).
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[2])
+    result = render_uncontested_conquest("Attackia", "the Dolphin Sea", rng)
+    assert result == "the Dolphin Sea was conquered by Attackia's host."
+
+
+def test_render_uncontested_conquest_third_variant_sea():
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[2])
+    result = render_uncontested_conquest("Attackia", "the Dolphin Sea", rng, is_sea=True)
+    assert result == "the Dolphin Sea was conquered by Attackia's fleet."
 
 
 # -- render_spy_report_opening (Phase 63) -------------------------------------

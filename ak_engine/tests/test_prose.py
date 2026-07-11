@@ -32,8 +32,31 @@ def test_random_choice_resolves_multiple_occurrences_left_to_right():
 
 
 def test_unsupported_choice_marker_raises_not_implemented():
+    # /F is still deferred (see module docstring); /S itself is now
+    # supported as of Phase 74 -- see the /S-specific tests below.
     with pytest.raises(NotImplementedError):
-        render("a{ferry/Sboat}", rng=ScriptedRandom([0.1]))
+        render("a{ferry/Fboat}", rng=ScriptedRandom([0.1]))
+
+
+def test_sea_marker_picks_left_choice_on_land():
+    assert render("army/Sfleet", is_sea=False) == "army"
+
+
+def test_sea_marker_picks_right_choice_at_sea():
+    assert render("army/Sfleet", is_sea=True) == "fleet"
+
+
+def test_sea_marker_never_consumes_a_random_value():
+    # Unlike /R, /S is never a coin flip -- an empty ScriptedRandom must
+    # not be asked for a value at all.
+    assert render("army/Sfleet", rng=ScriptedRandom([]), is_sea=True) == "fleet"
+
+
+def test_sea_marker_and_random_choice_combine_in_one_template():
+    # "/S" resolves first (left-to-right scan hits it first), consuming
+    # no rng; the remaining "/R" still consumes exactly one value.
+    rng = ScriptedRandom([0.9])
+    assert render("army/Sfleet retreated/Rfled", rng=rng, is_sea=True) == "fleet fled"
 
 
 def test_optional_inclusion_excludes_below_half():

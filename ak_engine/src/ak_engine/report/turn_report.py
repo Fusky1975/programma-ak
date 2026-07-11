@@ -92,10 +92,15 @@ line.** Two more real, standalone templates, added the same way:
   ``render_uncontested_conquest()`` doesn't call into
   `turn/move_execution.py`/`turn/conquest.py` itself; like every other
   function here, it only renders already-known facts the caller
-  supplies. Only 2 of CONQ.X's real 4 variants are used -- the other
+  supplies. ~~Only 2 of CONQ.X's real 4 variants are used -- the other
   two need the "/S" (Sea-terrain) marker `report/prose.py` deliberately
   doesn't resolve, and this function takes no terrain parameter to
-  resolve it with; see `_CONQ_TEMPLATES`'s own comment.
+  resolve it with~~ -- **all 4 variants are used as of Phase 74**,
+  which added `/S` resolution to `report/prose.py` and an `is_sea`
+  parameter threaded through every function here whose own template
+  set contains a `/S` marker (`render_column_clash`,
+  `render_battle_winner`, `render_retreat`, `render_uncontested_conquest`,
+  `describe_battle`); see `_CONQ_TEMPLATES`'s own comment.
 - ``HostAK/TP/PROSE/SPY.X`` (``SAY.PAS _LSpy: FD('spy',S_PCom,10)``) is
   ASpy's own report-opening sentence -- closing part of Phase 62's own
   documented follow-up ("rendering a `SpyReport` into English sentences
@@ -250,16 +255,16 @@ _PURSUIT_TEMPLATES: list[str] = [
     "= chased after the enemy and",
 ]
 
-# HostAK/TP/PROSE/CONQ.X -- Move conquering an undefended province. Only 2
-# of the real file's 4 variants are usable here: the other two ("armies/S
-# naval_forces", "host/Sfleet") use the "/S" marker (Sea-terrain
-# conditional), which report/prose.py deliberately doesn't resolve --
-# render_uncontested_conquest() has no is_sea_province parameter to
-# resolve it with, and guessing would silently pick the wrong branch on a
-# real Sea conquest. Left out rather than guessed; a future extension
-# that threads terrain through can restore both.
+# HostAK/TP/PROSE/CONQ.X -- Move conquering an undefended province. All 4
+# real variants, transcribed verbatim from the raw file bytes (plain
+# ASCII text there, unlike RETREAT.X/WINNER.X's compiled control-byte
+# encoding -- see module docstring). Variants 2 and 3 carry a "/S"
+# marker (Sea-terrain conditional), resolved as of Phase 74 via
+# render_uncontested_conquest()'s own is_sea parameter.
 _CONQ_TEMPLATES: list[str] = [
     "<'s forces conquered/Rtook @ without any major battles/Rengagements.",
+    "<'s armies/Snaval_forces took control/Rpossession of @ practically uncontested.",
+    "@ was conquered/Roverrun{ and occupied} by <'s host/Sfleet.",
     "<'s forces encountered/Rexperienced little resistance/Ropposition in @ and < there established our rule/Rreign.",
 ]
 
@@ -343,17 +348,20 @@ def render_column_clash(
     attacker_army_name: str,
     defender_army_name: str,
     rng: random.Random,
+    *,
+    is_sea: bool = False,
 ) -> str:
     """Renders one battle column's "<army> fought with <army> and <result>"
     sentence (``SAY.PAS _BClash`` + ``_BRes``, rulebook [7.2]'s "number of
-    contests equal to the length of the battle line").
+    contests equal to the length of the battle line"). ``is_sea`` (Phase
+    74) resolves the "/S" marker some ``_MARGIN_TEMPLATES`` variants carry.
     """
 
     opening = render("= fought/Rbattled {with }", {"=": attacker_army_name}, rng=rng)
     defender_clause = render("=", {"=": defender_army_name}, rng=rng)
     bucket = margin_bucket(column.attacker_win_probability)
     variant = pick_variant(_MARGIN_TEMPLATES[bucket], rng)
-    result_clause = render(variant, rng=rng)
+    result_clause = render(variant, rng=rng, is_sea=is_sea)
     return f"{opening}{defender_clause} and{result_clause}"
 
 
@@ -363,11 +371,14 @@ def render_battle_winner(
     defender_name: str,
     province_name: str,
     rng: random.Random,
+    *,
+    is_sea: bool = False,
 ) -> str | None:
     """Renders the overall battle-winner sentence (``SAY.PAS _BWinner`` /
     WINNER.X, DEFWIN.X). Returns ``None`` for a tie -- no template exists
     for that outcome anywhere in this project's archive (see module
-    docstring).
+    docstring). ``is_sea`` (Phase 74) resolves the "/S" marker several
+    WINNER.X/DEFWIN.X variants carry.
     """
 
     if battle_result.winner == "tie":
@@ -378,7 +389,7 @@ def render_battle_winner(
     else:
         variant = pick_variant(_DEFWIN_TEMPLATES, rng)
         values = {"<": attacker_name, "@": province_name}
-    return render(variant, values, rng=rng)
+    return render(variant, values, rng=rng, is_sea=is_sea)
 
 
 def render_destroyed_army(winner_name: str, destroyed_army_name: str, rng: random.Random) -> str:
@@ -405,27 +416,32 @@ def render_pursuit_and_destroy(pursuer_army_name: str, destroyed_army_name: str,
     return f"{pursuit_clause}{kill_clause}"
 
 
-def render_retreat(retreating_name: str, destination_name: str, rng: random.Random) -> str:
+def render_retreat(retreating_name: str, destination_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
     """Renders a retreat sentence (RETREAT.X). ``>`` (possessive) is rendered
     as a literal ``"<name>'s"`` -- see module docstring: the real
     pronoun/possessive system stays out of scope, same as
     ``report/prose.py``'s own deferred ``<``/``[``/``>`` handling.
+    ``is_sea`` (Phase 74) resolves the "/S" marker some RETREAT.X
+    variants carry (e.g. "army/Sfleet").
     """
 
     variant = pick_variant(_RETREAT_TEMPLATES, rng)
     values = {"<": retreating_name, "^S": destination_name, ">": f"{retreating_name}'s"}
-    return render(variant, values, rng=rng)
+    return render(variant, values, rng=rng, is_sea=is_sea)
 
 
-def render_uncontested_conquest(attacker_name: str, province_name: str, rng: random.Random) -> str:
+def render_uncontested_conquest(
+    attacker_name: str, province_name: str, rng: random.Random, *, is_sea: bool = False
+) -> str:
     """Renders an undefended-province conquest sentence (CONQ.X) -- a Move
     that takes an enemy province with no battle at all, distinct from
     every other function in this module (which all describe a fought
-    ``BattleReport``).
+    ``BattleReport``). ``is_sea`` (Phase 74) resolves the "/S" marker 2
+    of CONQ.X's 4 variants carry (e.g. "host/Sfleet").
     """
 
     variant = pick_variant(_CONQ_TEMPLATES, rng)
-    return render(variant, {"<": attacker_name, "@": province_name}, rng=rng)
+    return render(variant, {"<": attacker_name, "@": province_name}, rng=rng, is_sea=is_sea)
 
 
 def render_spy_report_opening(spy_name: str, province_name: str, rng: random.Random) -> str:
@@ -449,6 +465,7 @@ def describe_battle(
     army_names: dict[int, str],
     destination_names: dict[int, str],
     rng: random.Random,
+    is_sea: bool = False,
 ) -> list[str]:
     """Assembles the full battle-outcome narrative from an already-computed
     ``BattleReport`` (``turn/battle_orchestrator.py fight_battle()``), in
@@ -460,7 +477,9 @@ def describe_battle(
     own id lists, and each column's ``BattleUnit.source_id``) to
     caller-supplied display strings -- see module docstring: no army- or
     province-naming system exists in this project yet, so nothing here is
-    synthesized.
+    synthesized. ``is_sea`` (Phase 74) is the caller-known fact of
+    whether ``province_name`` is a Sea province, threaded to every
+    sub-renderer whose own templates carry a "/S" marker.
 
     A battle column whose front unit(s) have no entry in ``army_names``
     (a garrison/mercenary/unled stack this project's caller chose not to
@@ -476,10 +495,10 @@ def describe_battle(
         defender_army_name = army_names.get(column.defender_units[0].source_id)
         if attacker_army_name is None or defender_army_name is None:
             continue
-        lines.append(render_column_clash(column, attacker_army_name, defender_army_name, rng))
+        lines.append(render_column_clash(column, attacker_army_name, defender_army_name, rng, is_sea=is_sea))
 
     winner_sentence = render_battle_winner(
-        battle_report.battle_result, attacker_name, defender_name, province_name, rng
+        battle_report.battle_result, attacker_name, defender_name, province_name, rng, is_sea=is_sea
     )
     if winner_sentence is not None:
         lines.append(winner_sentence)
@@ -504,6 +523,6 @@ def describe_battle(
         name = army_names.get(army_id)
         destination = destination_names.get(army_id)
         if name is not None and destination is not None:
-            lines.append(render_retreat(name, destination, rng))
+            lines.append(render_retreat(name, destination, rng, is_sea=is_sea))
 
     return lines

@@ -2852,7 +2852,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     total) in `test_turn_processor.py`: a losing reinforcement battle
     blocks a later DEFEND re-declaration from ever relocating the
     leader again, and a winning one doesn't.
-- **Phase 73 (current)**: `turn/battle_orchestrator.py
+- **Phase 73**: `turn/battle_orchestrator.py
   fight_multi_attacker_battle` -- fixes a real, previously-untested
   crash: when Multiple Contingents ([7.8]) splits several attackers
   into *separate* (non-united) groups against the same province
@@ -2893,6 +2893,50 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     same weakly-defended province, the first cleanly sweeps, the
     second's own dispatch no longer raises and instead reports an
     uncontested conquest.
+- **Phase 74 (current)**: `report/prose.py` -- resolves the "/S"
+  (Sea-terrain) prose marker, one of the three choice markers Phase 58
+  deliberately left as an honest `NotImplementedError` rather than a
+  guessed 50/50 random choice. `PROSE.TXT` (quoted in full): "The '/S'
+  symbol divides between two possible choices. The left choice is used
+  in a land situation, the right choice is for a sea or underwater
+  situation." Unlike `/R`, this was never random at the Pascal level
+  (confirmed from `Say_Options`'s own `Left_Choice` function, already
+  cited in Phase 58's own note) -- a live crash risk, not just a gap:
+  several of `report/turn_report.py`'s own already-transcribed real
+  battle templates (`_MARGIN_TEMPLATES`, `_WINNER_TEMPLATES`,
+  `_DEFWIN_TEMPLATES`, `_RETREAT_TEMPLATES`) carry "/S" markers that
+  raised `NotImplementedError` the moment `pick_variant` happened to
+  select one of them.
+  - **`render()`'s new `is_sea: bool = False` keyword-only parameter**
+    drives it -- default `False` (the land choice) means every
+    pre-Phase-74 caller's behavior is unchanged. `/R` and `/S` now
+    share one merged choice-resolution loop (`_resolve_choice_markers`,
+    renamed from `_resolve_random_choices`): identical word-boundary
+    split logic, only the left-vs-right decision rule differs (a coin
+    flip for `/R`, `is_sea` directly for `/S` -- so `/S` never consumes
+    a random value at all, confirmed by a dedicated test with an empty
+    `ScriptedRandom`).
+  - **`report/turn_report.py`**: `is_sea` threaded through every
+    function whose own template set carries a "/S" marker --
+    `render_column_clash`, `render_battle_winner`, `render_retreat`,
+    `render_uncontested_conquest`, and `describe_battle` (which passes
+    its own `is_sea` down to all of the above uniformly, since every
+    sentence in one battle narrative describes the same province).
+    `_CONQ_TEMPLATES` is restored to all 4 of CONQ.X's real variants
+    (transcribed verbatim from the raw file bytes -- plain ASCII text
+    there, unlike RETREAT.X/WINNER.X's compiled control-byte encoding
+    Phase 61's own note describes) -- the 2 left out since Phase 63
+    specifically because `/S` wasn't resolvable yet.
+  - Non-breaking: full suite passed unchanged (1507 passed) before any
+    new tests were written -- the one pre-existing test that used `/S`
+    as its "still-unsupported marker" example needed to switch to `/F`
+    (still deferred), since `/S` is exactly the gap this phase closes,
+    not a regression; and `render_uncontested_conquest`'s own existing
+    "second variant" test needed its `choice_indices` updated from `1`
+    to `3`, since inserting the 2 restored variants at indices 1-2
+    shifted it down -- both expected, not accidental breakage. 15 new
+    tests added (1522 passed total) across `test_prose.py` and
+    `test_turn_report.py`.
 
 ## Setup
 
