@@ -3047,6 +3047,75 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     per-render-call source for), since `/F` is exactly the gap this
     phase closes, not a regression. 4 new tests added (1541 passed
     total) in `tests/test_prose.py`.
+- **Phase 77 (current)**: `models/treasure.py` -- the `treasure` type
+  catalog (113 ordinals, `CTBOTH.PAS` lines 606-637), the transcription
+  `turn/use_mi_decode.py`'s own docstring had already flagged as "a
+  separate, sizable follow-up" since Phase 24. Unlike `Monster`/
+  `FeatureType` (Phase 75), almost every Pascal identifier in this enum
+  is deliberately obfuscated nonsense (`hla`, `wcp`, `xle`, ...), so
+  `Treasure`'s own member names are systematic category+position names
+  instead, with the real human-readable text kept in two separate
+  lookup dicts (mirroring `MONSTER_NAMES`).
+  - **`TreasureCategory`** (12 groups) and **`TREASURE_CATEGORY`**
+    (a full 113-entry mapping) are read directly off the Pascal
+    declaration's own blank-line grouping and its two inline comments
+    (`{trcharges records origin:}` before the 22 quest items;
+    `{Arcane's Valor}` after the 6 named uniques): 15 `ABILITY_ITEM` +
+    20 `SPELL_WAND` + 5 `COMBAT_WEAPON` + 4 `LEADERSHIP_WEAPON` + 5
+    `ANTI_MAGIC_AMULET` + 3 `MONSTER_COMMAND_ITEM` + 15 `SKILL_BOOK` +
+    3 `GOLD_HOARD` + 22 `QUEST_ITEM` + 1 `SENTINEL` + 6 `NAMED_UNIQUE`
+    + 14 `UNUSED_EXTENSION` = 113. `USE_MI_TARGET_CATEGORIES` marks the
+    only two categories rulebook [5.9] actually invokes via Use_MI
+    (wands + books) -- confirming `turn/use_mi_decode.py`'s own
+    "35 of 113" count exactly.
+  - **Three confirmed 1:1 positional mappings onto existing enums**,
+    derived mechanically (not hand-copied) so they can't drift:
+    `TREASURE_ABILITY_ITEM`/`TREASURE_BOOK_ABILITY` (`Ability`, 15
+    each) and `TREASURE_WAND_SPELL` (`Spell`'s first 20 ordinals) --
+    each confirmed two independent ways (`TREASAB.X2`'s own short
+    labels, e.g. `"+1 Tactical"`.."+1 Sage"`/`'Cast "Resurrection"...'`
+    through `'Cast "Invisibility "...'`, and `TREASURE.X2`'s prose,
+    e.g. "The Standard of Command raises your Tactical ability...").
+  - **`TREASURE_LABEL`**: `HostAK/TP/PROSE/TREASAB.X2`'s 93 non-empty
+    lines, verbatim, covering ordinals 0-92 exactly (the file ends at
+    92's "no treasure" -- ordinals 93-112, the 6 named uniques and 14
+    unused slots, have no line at all).
+  - **`TREASURE_NAME`**: a real proper name extracted from
+    `HostAK/TP/PROSE/TREASURE.X2`'s own longer prose, for a *different*
+    93 ordinals (0-49, 53-93, 97-98). Cross-checking the file's own
+    paragraph content against each expected category **found two real
+    gaps in the source itself, not extraction bugs**: the paragraph
+    right after ordinal 49's "Crown of Dragon Command" jumps straight
+    to "Manual of Speedy Marches" (Force March, ordinal 53) -- skipping
+    the Eagle-aid and Whale-aid items and `BOOK_TACTICAL` entirely (3
+    missing); and the paragraph right after ordinal 93's "Crown of
+    Rohan" jumps straight to "Fang of the Vampire Lord" (ordinal 97) --
+    skipping `Amulet_Power`/`Scepter_Life`/`Map_Marauders`, 3 of the 6
+    named uniques. Past ordinal 98 the file pads out with generic "it
+    is not a magic item" filler (consistent with its own header line,
+    `"199 3"`, allocating more template slots than the 113-member enum
+    actually uses) -- none of that filler is transcribed. The source's
+    own literal typos (`"Seamansip"`, `"GOds Quest"`) are kept verbatim.
+  - **Deliberately not attempted this phase**: resolving a real item
+    *instance* to its `Treasure` type -- confirmed a *deeper* gap than
+    `Feature`'s own "no world generation" problem (Phase 75), since
+    there's no general item-instance-creation Pascal source at all,
+    only the one narrow Valhalla-visitor `Add_Tr` call site
+    `turn/use_mi_decode.py`'s own docstring already named; full
+    `TREASURE.X2` flavor-text transcription beyond a short name; and
+    wiring `USE_MI_TARGET_CATEGORIES` into an actual Use_MI execution
+    resolver (a lookup table alone doesn't unblock execution while
+    `UseMIRequest.item_instance_id` still can't be resolved to a
+    `Treasure` at all). `models/item.py MagicItem`'s own stub is left
+    untouched -- it models a physical item *instance*, a different,
+    still-harder concept this phase doesn't complete, unlike Phase 75's
+    `Feature` stub replacement.
+  - Non-breaking: full suite passed unchanged (1541 passed) before any
+    new tests were written -- a brand new file with no existing
+    call sites. 12 new tests added (1553 passed total) in
+    `tests/test_treasure.py`, covering the full 113-count, every
+    category group's exact size, the three positional mappings, and
+    both `TREASURE_LABEL`/`TREASURE_NAME`'s documented coverage gaps.
 
 ## Setup
 

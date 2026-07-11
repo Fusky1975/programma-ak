@@ -69,10 +69,18 @@ outside the ``wcp..pic`` check, so a book's ``Use_MI`` phase triggers
 (gold-hoard tiers, quest-tracking entries, a sentinel, unused reserved
 slots). Only the 20 wands and 15 books -- 35 of 113 ordinals -- are
 legitimate ``Use_MI`` targets at all; the rest "operate automatically"
-per rulebook [5.9] and are never invoked by this action. This project's
-``models/item.py MagicItem`` stub is a reasonable shape for a future
-type catalog, but populating all 113 entries accurately needs a careful
-direct transcription of the prose files, not attempted here.
+per rulebook [5.9] and are never invoked by this action. ~~This
+project's ``models/item.py MagicItem`` stub is a reasonable shape for a
+future type catalog, but populating all 113 entries accurately needs a
+careful direct transcription of the prose files, not attempted here.~~
+**The full 113-ordinal type catalog now exists as of Phase 77**
+(``models/treasure.py Treasure``/``TreasureCategory``, with
+``USE_MI_TARGET_CATEGORIES`` marking exactly the wand/book split named
+above) -- see that phase's own README note for the transcription
+details. ``models/item.py MagicItem`` itself is untouched: it's a
+physical item *instance* shape (owner, charges), a different, still-
+unbuilt concept from the type catalog -- see the paragraph above this
+one for why an instance model isn't attempted either.
 
 **When the resolved item type is a wand, the exact same conditional
 sub-reads as Cast fire** (Illusory Terrain's extra fake-``Terrain``
