@@ -1,6 +1,7 @@
 from ak_engine.models.enums import Ability, ActionCode, action_from_int
+from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.kingdom import SkillTable
-from ak_engine.models.map import Feature, HexCoord, Terrain
+from ak_engine.models.map import HexCoord
 
 
 def test_action_from_int_maps_known_codes():
@@ -19,7 +20,8 @@ def test_skill_table_pair_for_ability():
     assert table.pair_for_ability(Ability.SAGE) == (28, 29)
 
 
-def test_feature_defaults_to_unexplored():
-    feature = Feature(coord=HexCoord(1, 2), terrain=Terrain.FOREST)
-    assert feature.explored_percent == 0
-    assert feature.owner_kingdom is None
+def test_feature_defaults_to_undiscovered():
+    feature = Feature(feature_id=1, coord=HexCoord(1, 2), kind=FeatureType.DUNGEON)
+    assert feature.guardian_monster is None
+    assert feature.looted is False
+    assert feature.discovery_level(kingdom_id=7) == 0

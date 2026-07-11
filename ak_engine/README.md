@@ -2156,7 +2156,10 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     monster-HP model, spell effects mid-combat) they'd need. Of the
     remaining 13 Action spells, Skeletal_Army needs a per-province
     "who died here" registry no battle-resolution code populates,
-    Hide_Feature needs the still-unpopulated `Feature` stub, and
+    Hide_Feature needs the still-unpopulated `Feature` stub
+    (~~stub~~ **a real `Feature`/`FeatureType` model exists as of Phase
+    75**, but there's still no way to populate a game's actual feature
+    roster -- world generation -- so Hide_Feature stays blocked), and
     Clairvoyance needs the "story event" model Phase 58's own roadmap
     already deferred -- all three stay unexecuted for the same reason
     Resurrection was blocked before this phase: real, structural gaps,
@@ -2937,6 +2940,72 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     shifted it down -- both expected, not accidental breakage. 15 new
     tests added (1522 passed total) across `test_prose.py` and
     `test_turn_report.py`.
+- **Phase 75 (current)**: Feature/Monster model foundations (rulebook
+  [3.2] Explore, [3.3] Search Feature), the type-and-instance shape a
+  future Search-resolution/world-generation phase will need, chosen by
+  the user from a post-Phase-74 "what's next" menu.
+  - **`models/monster.py`** (new): the `monster` enum, transcribed
+    verbatim from `CTBOTH.PAS` (61 declared values -- 60 real species
+    plus the real `Nomonster` sentinel; `nmonsters = 60` apparently
+    counts only the species). `MONSTER_HP_BANDS` transcribes [3.2]'s
+    "Weak/-/Large-Strong/Powerful/Very Powerful" hit-point descriptor
+    table verbatim, including the rulebook's own unlabeled second row.
+    `MonsterSpeed` (Fast/Medium/Slow) is confirmed by [5.6] Flee's
+    20%/50%/80% flee-chance tiers. `MONSTER_STATS` transcribes 6 of the
+    7 rows of `RULES.AK`'s own "Monster Table" (itself labelled
+    "[5.9]" in the source -- a duplicate section number versus the
+    table of contents' distinct [5.9] "Victory and Death", a rulebook-
+    file quirk, not a transcription error here) -- **the 7th row,
+    "Demon", is deliberately excluded**: the Pascal enum has no plain
+    `Demon` member, only `BalDemon`/`MarDemon`, and nothing disambiguates
+    which (or both) the table row describes.
+  - **`models/feature.py`** (new): `FeatureType` (32 values, transcribed
+    from `CTBOTH.PAS`'s `feature` enum) and `Feature`, a per-instance
+    dataclass (`feature_id`, `coord`, `kind`, `guardian_monster`,
+    `looted`, `discovered_by_kingdom: dict[int, int]` -- a per-kingdom
+    discovery level, 0 undiscovered .. 3 fully known, mirroring
+    `ProvinceState.explored_percent_by_kingdom`'s own Phase 69 shape).
+    Confirmed directly from `REPORTS.PAS`'s feature-report-printing code
+    that a feature is its **own map entity with its own coordinate**,
+    not a property of `ProvinceState` -- a province only carries a
+    presence bitflag, and the report loop explicitly handles more than
+    one feature sharing a coordinate, matching [3.2]'s "can sometimes be
+    more than 1 feature in a province." **Replaces (not extends)**
+    `models/map.py`'s old, never-populated `Feature` stub from Phase 1
+    -- removed outright rather than left as unused dead code (this
+    project's usual "leave old stubs alone" convention for superseded-
+    by-unrelated-work models), since this phase is the direct, intended
+    completion of that exact stub, and two same-named `Feature` classes
+    would be confusing.
+  - **Also resolves a previously-flagged mystery**: the `/F` prose
+    marker, flagged unsourced since Phase 58, is confirmed by
+    `REPORTS.PAS` (~line 2071-2077) to be a per-feature-instance parity
+    trick (`fn and 1`) picking one half of a magic-power-hint string --
+    understood now, but **not implemented this phase** (would need
+    `prose.py render()` to accept a caller-supplied parity input, a
+    small, separate follow-up).
+  - `models/game_state.py GameState` gains a `features: dict[int,
+    Feature]` registry plus `add_feature()`/`features_at(coord)`,
+    mirroring the existing `armies`/`add_army`/`armies_at` pattern
+    exactly.
+  - **Deliberately out of scope, confirmed structural gaps**: world
+    generation (which provinces get a feature, of what kind, guarded by
+    what -- no surviving Pascal source, the same "missing main
+    turn-processor" gap already flagged for hex adjacency and magic-item
+    instance creation), rumor generation ([3.2]'s "about half... false"
+    mechanic -- the prose templates exist, the selection logic doesn't),
+    Search resolution (needs the still-unbuilt personal Encounter-combat
+    resolver `turn/encounter.py`'s own docstring already scopes out),
+    and promoting the already-documented 113-member `treasure` enum
+    (`turn/use_mi_decode.py`'s own docstring) into a real model.
+  - Non-breaking: full suite passed unchanged (1522 passed) before any
+    new tests were written -- the one pre-existing test that used
+    `models/map.py`'s old `Feature` stub (`tests/test_models.py`) was
+    updated to import from `models/feature.py` and use the new
+    `Feature(feature_id=..., coord=..., kind=...)` shape, not left
+    broken. 15 new tests added (1537 passed total) across two new files,
+    `tests/test_monster.py` and `tests/test_feature.py`, plus two new
+    `GameState.features` registry tests in `tests/test_game_state.py`.
 
 ## Setup
 
@@ -3333,12 +3402,16 @@ rulebook before being turned into named, typed fields:
   ~~Battlefield reports~~ **the battle-outcome slice now renders as of
   Phase 61** (`report/turn_report.py`) -- see that phase's own note
   above for exactly which sentences (clash/winner/destroyed/pursued/
-  retreated) and which caller-supplied names it needs. Feature
-  discovery, monsters, treasures, and rumors are still entirely
-  unbuilt, and so is everything outside a fought battle: the
-  letter-report frame, financial report, and exploration narrative all
-  still need `GameState` data or a turn-events log this project doesn't
-  have yet.
+  retreated) and which caller-supplied names it needs. ~~Feature
+  discovery, monsters~~ **`models/feature.py`/`models/monster.py` now
+  give both a real type-and-instance shape as of Phase 75** -- see that
+  phase's own note above -- but actually populating a game's feature
+  roster (world generation), generating rumors, and resolving a Search
+  are all still entirely unbuilt, same as before. Treasures and rumors
+  are still entirely unbuilt, and so is everything outside a fought
+  battle: the letter-report frame, financial report, and exploration
+  narrative all still need `GameState` data or a turn-events log this
+  project doesn't have yet.
 ## What's excluded from this phase
 
 - `SE3__T*.K1` files: same extension as the move files, but these are

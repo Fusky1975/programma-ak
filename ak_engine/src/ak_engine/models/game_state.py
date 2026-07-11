@@ -159,6 +159,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.feature import Feature
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
@@ -254,6 +255,11 @@ class GameState:
     # Battle deaths only (Phase 60) -- see module docstring.
     battle_graveyard: dict[HexCoord, list[GraveyardEntry]] = field(default_factory=dict)
     allied_kingdoms: set[frozenset[int]] = field(default_factory=set)
+    # Feature instances (Phase 75) -- see models/feature.py's own docstring
+    # for why this is a flat dict-by-id, mirroring `armies`/`provinces`,
+    # not a per-province list (Pascal's own `fx`/`fy` arrays are keyed by
+    # feature-instance number, not by province).
+    features: dict[int, Feature] = field(default_factory=dict)
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
         self.kingdoms[kingdom.kingdom_id] = kingdom
@@ -296,6 +302,12 @@ class GameState:
 
     def leaders_at(self, coord: HexCoord) -> list[LeaderState]:
         return [leader for leader in self.leaders.values() if leader.location == coord]
+
+    def add_feature(self, feature: Feature) -> None:
+        self.features[feature.feature_id] = feature
+
+    def features_at(self, coord: HexCoord) -> list[Feature]:
+        return [feature for feature in self.features.values() if feature.coord == coord]
 
     def armies_commanded_by(self, leader_id: int) -> list[ArmyState]:
         return [army for army in self.armies.values() if army.commanded_by == leader_id]

@@ -63,11 +63,3 @@ TERRAIN_LINE_LENGTH_RANGE: dict[Terrain, tuple[int, int]] = {
 class HexCoord:
     x: int
     y: int
-
-
-@dataclass(slots=True)
-class Feature:
-    coord: HexCoord
-    terrain: Terrain
-    owner_kingdom: int | None = None
-    explored_percent: int = 0
