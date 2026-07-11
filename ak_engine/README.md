@@ -2241,7 +2241,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     (`phantasmal_armies_multiplier` + its `compute_effective_strength`
     integration), 2 in `test_battle_orchestrator.py` (the commander
     lookup + the unled-army no-bonus case).
-- **Phase 60 (current)**: closes two of Phase 59's own deferred gaps --
+- **Phase 60**: closes two of Phase 59's own deferred gaps --
   Skeletal_Army and Bless's corpse-cleanup addendum -- both of which
   turned out to need exactly the same missing piece: a per-province
   "what died here in a battle" registry. **The user asked directly
@@ -2298,6 +2298,79 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     three battle-death paths), 7 in `test_cast_execution.py` (3 for
     Bless's cleanup roll, 4 for Skeletal Army: raising, empty-graveyard
     failure, level-capped count, and the no-recorded-level fallback).
+- **Phase 61 (current)**: `report/turn_report.py`, the first real consumer
+  of Phase 58's `report/prose.py` rendering engine -- turns an
+  already-computed `turn/battle_orchestrator.py BattleReport` into the
+  same English battle-narrative sentences the original game's turn
+  report contained. Scoped narrowly to the battle-outcome slice only
+  (per-column clash, overall winner, destroyed/pursued/retreated
+  armies) -- **not** the letter-report frame, financial report,
+  exploration narrative, or feature discovery, which need `GameState`
+  data this project doesn't track yet (character correspondence,
+  treasury deltas, discovered features) or a turn-events log, a
+  separate, much larger follow-up.
+  - **Sourced from `HostAK/TP/SAY.PAS`'s `_BClash`/`_BRes`/`_BWinner`/
+    `_BDie`/`_BPurs` dispatch table** (inside `Programma Pascal.zip`,
+    around lines 1092-1139) and the real `HostAK/TP/PROSE/*.X` template
+    files it names, not guessed. `_BClash` + `_BRes`: "`<army> fought
+    with <army> and <result>`", where the per-column result is bucketed
+    into 11 template files (MINUS5..MINUS1, ZERO, PLUS1..PLUS5) via
+    `CASE bres OF -32000..-5: minus5; ... 5..32000: plus5`. **This
+    project's archive has no surviving source for the formula that
+    produces `bres` itself** -- only the case boundaries are confirmed
+    -- so `margin_bucket()` derives an analogous margin from
+    `BattleColumnResult.attacker_win_probability` (the same 0.0-1.0
+    value `turn/battle_line.py estimate_win_probability` already
+    computes for that column) instead of guessing at `bres`'s own
+    scale, a documented, unsourced bucketing choice in the same style
+    `turn/aftermath.py`'s constants already established. `_BWinner`
+    picks WINNER.X on an attacker win, DEFWIN.X on a defender win; no
+    template exists anywhere in the archive for a tie, so
+    `render_battle_winner()` returns `None` rather than a guessed
+    sentence. `_BDie`/`_BPurs` give the destroyed-army and
+    pursuit-then-destroy sentences (KILLARMY.X, PURSUIT.X).
+  - **Real templates are transcribed in `PROSE.TXT`'s own
+    translator-facing notation (`^A`, `^S`, ...)**, the same convention
+    `report/prose.py`'s own tests already use -- not the compiled
+    `.X`/`.X2` files' raw single-byte control-character encoding.
+    Inspecting the actual file bytes (not just a printed preview, which
+    silently swallows control bytes) turned up a real discovery: Turbo
+    Pascal's story files encode `^A` as a literal `chr(1)` byte, `^S` as
+    `chr(19)`, etc. (`chr(1..26)` = "Ctrl + Nth letter"), confirmed
+    against `PROSE.TXT` line 65 ("`^S`: Province name #2") and line 34
+    ("`>`: first character possessive"). Converting that compiled
+    encoding back to source notation is a one-time transcription step
+    done here, not a runtime concern `prose.render()` needs to solve.
+  - **`<`/`<2`/`<3`/`[`/`[1`/`[3` (character references) and `>`
+    (possessive) stay caller-supplied literal text**, same
+    already-documented `report/prose.py` deferral (the full
+    narrator-perspective/pronoun system, `RUMORS.PAS Set_Person`/
+    `Set_Alt`, is a separate unbuilt piece) -- every person/tense
+    variant of a side collapses to the same literal name string, e.g.
+    `<` and `<2` both become the attacker's name; a true pronoun
+    ("he"/"his troops") is never produced.
+  - **"Army name" (e.g. "the 231st Bowmen") is never synthesized** --
+    there is no ordinal-numbering/naming system anywhere in this
+    project (`LNAMES.PAS`/`PRNAMES.PAS` territory, a separate, entirely
+    unbuilt subsystem). Every function takes caller-supplied
+    display-name strings for armies/provinces/kingdoms, the same
+    values-dict pattern `prose.render()` itself already uses --
+    `describe_battle()` silently skips a column/army whose id has no
+    entry in the caller-supplied name map, rather than inventing one.
+  - `parse_template_choices()` also gives this project its first
+    from-scratch `.X`/`.X2` file-format parser (header line
+    `"<choices> <blockdepth>"`, sourced from `RUMORS.PAS`'s own
+    `READLN(sf,choices,blockdepth)`), for future phases that want to
+    load real template files directly instead of hand-transcribing them.
+    Only `blockdepth == 1` is supported (true of every battle template
+    inspected this phase) -- raises `NotImplementedError` rather than
+    guessing at multi-line blocks.
+  - Non-breaking: full suite passed unchanged (1418 passed) before any
+    new tests were written. 21 new tests added (1439 passed total) in
+    `test_turn_report.py`, covering the template parser, the margin
+    bucketing, each render function's real-template output against
+    hand-verified rendering traces, and one full `describe_battle()`
+    integration case plus an all-skipped (tie, no army names) edge case.
 
 ## Setup
 
@@ -2655,6 +2728,15 @@ rulebook before being turned into named, typed fields:
   province contains is stochastic content generation tied to the game's
   monster/treasure tables and prose templates (see
   `HostAK/TP/PROSE/*.X*` in the original zip) — a much later phase.
+  ~~Battlefield reports~~ **the battle-outcome slice now renders as of
+  Phase 61** (`report/turn_report.py`) -- see that phase's own note
+  above for exactly which sentences (clash/winner/destroyed/pursued/
+  retreated) and which caller-supplied names it needs. Feature
+  discovery, monsters, treasures, and rumors are still entirely
+  unbuilt, and so is everything outside a fought battle: the
+  letter-report frame, financial report, and exploration narrative all
+  still need `GameState` data or a turn-events log this project doesn't
+  have yet.
 ## What's excluded from this phase
 
 - `SE3__T*.K1` files: same extension as the move files, but these are
