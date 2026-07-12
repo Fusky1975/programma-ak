@@ -52,9 +52,40 @@ from ak_engine.turn.exploration import ExploreResult, resolve_explore
 # Normal (non-Noble) map bounds, per CTBOTH.PAS `xcrange = 0..29`, `ycrange = 0..14`.
 NORMAL_MAP_BOUNDS = (30, 15)
 
+
+class Direction(IntEnum):
+    """CTBOTH.PAS `dirname` (~line 526, 6 entries, no unused extension slots
+    unlike most of this project's other transcribed enums) -- found
+    continuing to mine `CTBOTH.PAS` the way Phases 79-84/86-88 found
+    their own real data. Confirmed to be `PROSE.TXT`'s own documented
+    `"*: Direction"` marker via `RUMORS.PAS`'s own
+    `Say(dirname[_dir], spytype)`. Ordinal order matches
+    `_EVEN_ROW_OFFSETS`/`_ODD_ROW_OFFSETS` below exactly -- this
+    project's own comment already cited `dirname`'s ordering when those
+    offset tuples were first written, but never transcribed the actual
+    display strings until now.
+    """
+
+    NE = 0
+    E = 1
+    SE = 2
+    SW = 3
+    W = 4
+    NW = 5
+
+
+DIRECTION_NAME: dict[Direction, str] = {
+    Direction.NE: "northeast",
+    Direction.E: "east",
+    Direction.SE: "southeast",
+    Direction.SW: "southwest",
+    Direction.W: "west",
+    Direction.NW: "northwest",
+}
+
 # Neighbor offsets for an "odd-r" horizontal-offset hex grid, keyed by
 # whether the row (y) is even or odd, in NE, E, SE, SW, W, NW order to match
-# CTBOTH.PAS's `dirname` ordering.
+# CTBOTH.PAS's `dirname` ordering (see `Direction` above).
 _EVEN_ROW_OFFSETS = ((0, -1), (1, 0), (0, 1), (-1, 1), (-1, 0), (-1, -1))
 _ODD_ROW_OFFSETS = ((1, -1), (1, 0), (1, 1), (0, 1), (-1, 0), (0, -1))
 

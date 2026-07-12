@@ -3527,6 +3527,27 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     3 new tests added (1605 passed total) in a new
     `tests/test_fame_descriptor.py`, covering full 0-9 coverage and the
     6-9 collapse.
+- **Phase 89 (current)**: `turn/movement.py Direction`/`DIRECTION_NAME`
+  -- `CTBOTH.PAS`'s own `dirname` table (~line 526, 6 entries, unlike
+  most of this project's other transcribed enums there are no unused
+  extension slots here), found continuing to mine `CTBOTH.PAS` the way
+  Phases 79-84/86-88 found their own real data. This project's own
+  `_EVEN_ROW_OFFSETS`/`_ODD_ROW_OFFSETS` (Phase 2) already *cited*
+  `dirname`'s NE/E/SE/SW/W/NW ordering by comment to justify their own
+  neighbor-offset order, but never transcribed the actual display
+  strings until now.
+  - **Confirmed to be `PROSE.TXT`'s own documented `"*: Direction"`
+    marker** via `RUMORS.PAS`'s own `Say(dirname[_dir], spytype)`.
+  - `Direction`'s own ordinal values (`NE=0` through `NW=5`) are
+    deliberately declared in the exact same order as the pre-existing
+    offset tuples, so the two stay in sync; purely additive, the
+    offset tuples' own values are untouched.
+  - Non-breaking: full suite passed unchanged (1605 passed) before any
+    new tests were written -- a new enum/dict with no existing call
+    sites. 4 new tests added (1609 passed total) in
+    `tests/test_movement.py`, covering full 6-entry coverage, verbatim
+    strings, and the ordinal alignment with the offset tuples' own
+    order.
 
 ## Setup
 

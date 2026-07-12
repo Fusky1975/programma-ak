@@ -5,6 +5,8 @@ import pytest
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.movement import (
     NORMAL_MAP_BOUNDS,
+    DIRECTION_NAME,
+    Direction,
     HexOwnershipTier,
     MapBounds,
     NonAdjacentMoveError,
@@ -170,3 +172,32 @@ def test_hex_ownership_tier_priority_order_matches_rulebook_31():
         < HexOwnershipTier.HERO_OWNED
         < HexOwnershipTier.NEUTRAL
     )
+
+
+def test_direction_enum_has_6_declared_values():
+    assert len(Direction) == 6
+    assert Direction.NE.value == 0
+    assert Direction.NW.value == 5
+
+
+def test_direction_name_covers_every_enum_value():
+    assert set(DIRECTION_NAME.keys()) == set(Direction)
+
+
+def test_direction_name_matches_prose_txt_marker_verbatim():
+    # PROSE.TXT: "*: Direction"; RUMORS.PAS: Say(dirname[_dir], spytype).
+    assert DIRECTION_NAME[Direction.NE] == "northeast"
+    assert DIRECTION_NAME[Direction.E] == "east"
+    assert DIRECTION_NAME[Direction.SE] == "southeast"
+    assert DIRECTION_NAME[Direction.SW] == "southwest"
+    assert DIRECTION_NAME[Direction.W] == "west"
+    assert DIRECTION_NAME[Direction.NW] == "northwest"
+
+
+def test_direction_ordinal_order_matches_the_offset_tuples_ne_e_se_sw_w_nw_order():
+    # _EVEN_ROW_OFFSETS/_ODD_ROW_OFFSETS are declared in this exact NE, E,
+    # SE, SW, W, NW order (see their own comment) -- Direction's own
+    # ordinal values (0-5) must line up the same way for the two to stay
+    # in sync.
+    assert [d.value for d in Direction] == [0, 1, 2, 3, 4, 5]
+    assert [d.name for d in Direction] == ["NE", "E", "SE", "SW", "W", "NW"]
