@@ -4288,6 +4288,41 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_turn_report.py`, covering every function's variants,
     the `/S` sea marker, and the attack+miss concatenation forming one
     complete sentence.
+- **Phase 112 (current)**: `report/turn_report.py
+  render_attack_hit()`/`render_attack_devastating_hit()`/
+  `render_mortally_wounded()` -- closes the `_LInfl`/`_LDevast`/
+  `_LMortB` gap Phase 111 deliberately left open, completing the Fire
+  Arrow attack sequence.
+  - `_LInfl: FD2('andinfl',S_PCom,1)` -> `ANDINFL.X` (header `"5 1"`, 5
+    real templates): the hit continuation clause, parallel in shape to
+    `_LMisses`/`ANDMISS.X`. Carries `#` (`PROSE.TXT`'s "A number"
+    marker) for the damage dealt, matching `turn/encounter.py
+    roll_fire_arrow_attack()`'s own already-modeled return value.
+  - `_LDevast: Say(' and devastated/Rannihilated [.',S_PCom)` -- a
+    single, real, hardcoded template (no file), textually an obvious
+    parallel to `_LInfl` and listed immediately next to it in
+    `SAY.PAS`'s own `CASE` block. **Honestly flagged discrepancy**:
+    `RUMORS.PAS` declares `_LInfl`/`_LMortB` at 3018/3019 but
+    `_LDevast` at 3160, in the unrelated King-meeting/messaging
+    stretch (`_LSay`/`_LKMeet` neighbors) -- Pascal `CASE` branches
+    don't need constant-declaration order, so this doesn't contradict
+    `_LDevast` being real, dispatched, combat-flavored content, but it
+    does mean this project can't fully confirm it shares `_LInfl`'s own
+    call site. Modeled regardless, with the discrepancy documented.
+    This project has no source for what distinguishes an ordinary hit
+    from a devastating one -- the caller decides which to render.
+  - `_LMortB: FD2('mortwoun',S_PCom,5)` -> `MORTWOUN.X` (header
+    `"4 1"`, 4 real templates): a **standalone** sentence (capitalized
+    `[1`, complete on its own) appended *after* the attack+hit sentence
+    rather than concatenated onto it. Its own 4th variant describes a
+    stun, not a fatal wound, despite the file's own name -- transcribed
+    verbatim, not smoothed over.
+  - Non-breaking: full suite passed unchanged (1754 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 9 new tests added (1763 passed total) in
+    `tests/test_turn_report.py`, covering every function's variants,
+    the `/S` sea marker, the stun-not-death 4th `MORTWOUN.X` line, and
+    the attack+hit concatenation forming one complete sentence.
 
 ## Setup
 

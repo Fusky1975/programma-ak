@@ -394,6 +394,45 @@ Explore's own narrative to `resolve_explore()`.
   in the same `SAY.PAS` block) are confirmed real but deliberately not
   modeled this phase -- the user's own request scoped this phase to
   `_LToBow`/`_LToMel`/`_LFArr`/`_LMisses` only.
+
+**Phase 112 addendum -- the hit/devastate/mortal-wound continuations.**
+Closes the gap Phase 111 deliberately left open, completing the
+Fire Arrow attack sequence.
+
+- `_LInfl: FD2('andinfl',S_PCom,1)` -> `ANDINFL.X` (header `"5 1"`, 5
+  real templates): the hit continuation clause, parallel in shape to
+  `_LMisses`/`ANDMISS.X` (leading space, no capital, ends the sentence
+  `_LFArr`/a future `_LSwing` started). Carries `#` (`PROSE.TXT`'s "A
+  number" marker) for the damage dealt -- `render_attack_hit()` takes
+  ``damage_points`` directly from `turn/encounter.py roll_fire_arrow_
+  attack()`'s own already-modeled return value.
+- `_LDevast: Say(' and devastated/Rannihilated [.',S_PCom)` -- a
+  single, real, hardcoded template (no file), textually an obvious
+  parallel to `_LInfl` (same " and..." shape, references `[`) and
+  listed immediately next to it in `SAY.PAS`'s own `CASE` block.
+  **Worth flagging honestly**: `RUMORS.PAS`'s own `CONST` declares
+  `_LInfl`/`_LMortB` at 3018/3019 but `_LDevast` at 3160 (~line 105),
+  in the unrelated King-meeting/messaging stretch (`_LSay`/`_LKMeet`
+  neighbors) -- Pascal `CASE` branches don't need to be listed in
+  constant-declaration order, so this doesn't contradict `_LDevast`
+  being real, dispatched, combat-flavored content, but it does mean
+  this project can't fully confirm it shares `_LInfl`'s own combat
+  -sequence call site. Modeled as `render_attack_devastating_hit()`
+  regardless (real, confirmed content), with this discrepancy
+  documented rather than silently smoothed over. This project has no
+  source for what distinguishes an `_LInfl` hit from an `_LDevast` one
+  -- the caller decides which to render (e.g. an overkill/lethal-blow
+  fact it already has), the same caller-supplied-fact pattern
+  `SNEAKUP_RANGE_MELEE`/`BOW`/`SPELL` established (Phase 105).
+- `_LMortB: FD2('mortwoun',S_PCom,5)` -> `MORTWOUN.X` (header `"4 1"`,
+  4 real templates): a **standalone** sentence (capitalized `[1`,
+  complete on its own) marking the defender's fate, appended *after*
+  the attack+hit sentence rather than concatenated onto it -- unlike
+  `_LInfl`/`_LDevast`/`_LMisses`, which all continue the same sentence
+  `_LFArr` started. Its own 4th template ("staggered..., stunned by...
+  the deadly blow") describes a stun, not a fatal wound, despite the
+  file's own name -- transcribed verbatim, not smoothed into implying
+  every variant means death.
 """
 
 from __future__ import annotations
@@ -1244,6 +1283,74 @@ def render_attack_missed(
         ">": f"{attacker_name}'s",
         "^W": weapon,
     }
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/PROSE/ANDINFL.X -- the hit continuation clause, parallel to
+# ANDMISS.X's own miss clause. See module docstring's Phase 112 addendum.
+_ANDINFL_TEMPLATES: list[str] = [
+    " and inflicted # damage points.",
+    " and scorched/Rwalloped [ with # damage points.",
+    " and damaged [, scoring/Rinflicting # damage points.",
+    " and scored on [, inflicting/Rdoing # points of damage.",
+    " and scored/Rinflicted # damage points on [.",
+]
+
+
+def render_attack_hit(defender_name: str, damage_points: int, rng: random.Random) -> str:
+    """Renders ANDINFL.X's continuation clause for a successful hit --
+    concatenate directly after ``render_fire_arrow_attack()`` (or a
+    future Melee attack-action renderer). ``damage_points`` is
+    ``PROSE.TXT``'s own ``#`` marker, matching ``turn/encounter.py
+    roll_fire_arrow_attack()``'s own already-modeled return value.
+    """
+
+    variant = pick_variant(_ANDINFL_TEMPLATES, rng)
+    values = {"[": defender_name, "#": str(damage_points)}
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LDevast -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 112 addendum for the honest
+# discrepancy between this code's dispatched content and its own
+# declared RUMORS.PAS constant value.
+ATTACK_DEVASTATING_HIT_TEMPLATE = " and devastated/Rannihilated [."
+
+
+def render_attack_devastating_hit(defender_name: str, rng: random.Random) -> str:
+    """Renders ``_LDevast``'s continuation clause for a devastating/
+    lethal hit -- concatenate directly after ``render_fire_arrow_attack()``
+    the same way ``render_attack_hit()`` does. This project has no
+    source for what distinguishes an ordinary hit (``_LInfl``) from a
+    devastating one (``_LDevast``) -- the caller decides which to call.
+    """
+
+    values = {"[": defender_name}
+    return render(ATTACK_DEVASTATING_HIT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/PROSE/MORTWOUN.X -- a standalone sentence marking the
+# defender's fate, appended *after* the attack+hit sentence rather than
+# concatenated onto it. See module docstring's Phase 112 addendum.
+_MORTWOUN_TEMPLATES: list[str] = [
+    "[1 was mortally/Rfatally wounded.",
+    "[1 fell/Ssank_down, fatally/Rmortally injured.",
+    "[1 dropped/Ssank to the ground/Sbottom, fatally/Rmortally pierced.",
+    "[1 staggered/Sflailed_about, stunned by {the force of }the "
+    "deadly/Rmortal blow.",
+]
+
+
+def render_mortally_wounded(defender_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+    """Renders MORTWOUN.X's standalone sentence marking the defender's
+    fate after a lethal hit. ``is_sea`` (Phase 74) resolves the "/S"
+    marker two variants carry. Note the 4th variant describes a stun,
+    not a fatal wound, despite the file's own name (see module
+    docstring).
+    """
+
+    variant = pick_variant(_MORTWOUN_TEMPLATES, rng)
+    values = {"[1": defender_name}
     return render(variant, values, rng=rng, is_sea=is_sea)
 
 

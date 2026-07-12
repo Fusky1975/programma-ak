@@ -5,6 +5,7 @@ import pytest
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.report.turn_report import (
+    ATTACK_DEVASTATING_HIT_TEMPLATE,
     EXPLORE_ALREADY_MAXED_TEMPLATE,
     EXPLORE_NOT_PRESENT_PREFIX,
     NEMESIS_TEMPLATE,
@@ -15,10 +16,12 @@ from ak_engine.report.turn_report import (
     margin_bucket,
     parse_template_choices,
     pick_variant,
+    render_attack_devastating_hit,
+    render_attack_hit,
+    render_attack_missed,
     render_battle_winner,
     render_column_clash,
     render_destroyed_army,
-    render_attack_missed,
     render_explore_already_maxed,
     render_explore_continued,
     render_explore_progress,
@@ -27,6 +30,7 @@ from ak_engine.report.turn_report import (
     render_generic_encounter,
     render_magic_feature_discovery,
     render_march,
+    render_mortally_wounded,
     render_move_to_bow_range,
     render_move_to_melee_range,
     render_patrol_encounter,
@@ -852,3 +856,61 @@ def test_fire_arrow_attack_and_missed_concatenate_into_one_sentence():
     attack = render_fire_arrow_attack("Aldric", "Borin", rng)
     miss = render_attack_missed("Aldric", "Borin", "arrow", rng)
     assert attack + miss == "Aldric Fired an arrow at Borin and missed."
+
+
+# -- hit / devastate / mortal-wound continuations (Phase 112) ---------------
+
+
+def test_render_attack_hit_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_attack_hit("Borin", 4, rng)
+    assert result == " and inflicted 4 damage points."
+
+
+def test_render_attack_hit_second_variant_names_the_defender():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_attack_hit("Borin", 4, rng)
+    assert result == " and scorched Borin with 4 damage points."
+
+
+def test_render_attack_devastating_hit_left_branch():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_attack_devastating_hit("Borin", rng)
+    assert result == " and devastated Borin."
+
+
+def test_render_attack_devastating_hit_right_branch():
+    rng = ScriptedRandom([0.9] * 4)
+    result = render_attack_devastating_hit("Borin", rng)
+    assert result == " and annihilated Borin."
+
+
+def test_attack_devastating_hit_template_is_the_confirmed_hardcoded_say():
+    assert ATTACK_DEVASTATING_HIT_TEMPLATE == " and devastated/Rannihilated [."
+
+
+def test_render_mortally_wounded_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_mortally_wounded("Borin", rng)
+    assert result == "Borin was mortally wounded."
+
+
+def test_render_mortally_wounded_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_mortally_wounded("Borin", rng, is_sea=True)
+    assert result == "Borin sank down, fatally injured."
+
+
+def test_render_mortally_wounded_fourth_variant_describes_a_stun_not_death():
+    # MORTWOUN.X's own 4th line, despite the file's name -- transcribed
+    # verbatim rather than assumed to mean death (see module docstring).
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+    result = render_mortally_wounded("Borin", rng)
+    assert result == "Borin staggered, stunned by the deadly blow."
+
+
+def test_fire_arrow_attack_and_hit_concatenate_into_one_sentence():
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
+    attack = render_fire_arrow_attack("Aldric", "Borin", rng)
+    hit = render_attack_hit("Borin", 5, rng)
+    assert attack + hit == "Aldric Fired an arrow at Borin and inflicted 5 damage points."
