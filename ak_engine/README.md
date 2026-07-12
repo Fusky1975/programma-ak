@@ -3684,6 +3684,34 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     all three mechanics dicts, cross-checking every ability-bonus entry's
     description text against its dict value, verbatim samples, the
     1-2-3-4 revenue cycle, and the Spectacles discrepancy.
+- **Phase 94 (current)**: `models/weapon.py` extended with
+  `MONSTER_RANGED_WEAPON`/`MONSTER_MELEE_WEAPON` -- **closes a gap
+  `weapon.py`'s own docstring had explicitly documented since Phase 83**:
+  "the actual monster-to-weapon assignment tables `RUMORS.PAS` reads --
+  `mtrweap[_mtype]`/`mtweap1[_mtype]` -- are used but never declared
+  anywhere in this project's available source." They *are* declared --
+  in `CTME.PAS` (~line 60-88), the same file Phase 91's `Discovery` and
+  Phase 92's `MagicFeature` also found real data in, not `CTBOTH.PAS`.
+  The prior check simply hadn't looked there yet.
+  - Confirmed real and used, exactly as `weapon.py`'s own docstring
+    already stated: `RUMORS.PAS`'s own `Say(whit[mtrweap[_mtype]],
+    spytype)`/`Say(whit[mtweap1[_mtype]],spytype)` and `WW(wname[
+    mtrweap[_mtype]])`/`WW(wname[mtweap1[_mtype]])`.
+  - Both Pascal arrays are declared for the *full* `monster` type (71
+    slots: 61 real species + 10 unused `em1`-`em10` extension slots) --
+    only the first 61 are transcribed, matching `models/monster.py
+    Monster`'s own already-established range.
+  - `Weapon.NO_WEAP` is the common case for `MONSTER_RANGED_WEAPON` (49
+    of 61 monsters have no ranged attack at all) -- not a
+    missing/unresolved value, a real "no ranged weapon" fact.
+  - The module docstring's "confirmed structural gap" section is marked
+    fixed with a strikethrough, per this project's usual changelog
+    convention, rather than deleted outright.
+  - Non-breaking: full suite passed unchanged (1633 passed) before any
+    new tests were written -- two new dicts with no existing call sites.
+    6 new tests added (1639 passed total) in `tests/test_weapon.py`,
+    covering full 61-entry coverage for both dicts, verbatim samples, the
+    `NOMONSTER` sentinel, and the real ranged/melee split count.
 
 ## Setup
 
