@@ -75,6 +75,36 @@ fully-populated 13-entry range, while this stretch is 14 slots of
 unbroken blank space with no confirming context either side -- likely
 simply unfinished/unused content in the original file, not a
 confirmed "no text" design fact worth asserting.
+
+**`OFFICE_PERK_DESCRIPTION` (Phase 103)**: `HostAK/TP/PROSE/IONAME.X2`
+(header `"60 1"`, 52 real content lines) -- the exact file this module's
+own pre-existing docstring already cited (`FD('...ioname.x2', ...,
+1001+ord(office))`), now actually transcribed. Unlike `GANG_TEMPLATE`,
+this file has **full, gapless 1:1 coverage of all 52 `Office`
+members** -- only `NO_OFFICE`/`NO_TITLE` are blank, exactly the two
+sentinel members with no real title at all.
+
+Every entry reads `"TITLE: perk description"`. The title half is a
+near-duplicate of `OFFICE_NAME` (same text, different casing --
+`"WORLD EMPEROR"` here vs. `"World Emperor"` there), so only the perk
+half -- the genuinely new information, a specific mechanical benefit
+holding that office grants -- is modeled, as `OFFICE_PERK_DESCRIPTION`.
+The title half also cross-confirms two other already-transcribed tables
+at every one of their own populated positions: `models/race.py
+RACE_FANATICISM_TITLE`'s race-king titles appear here verbatim
+(`"SAVIOR OF HUMANKIND"`, `"FIRST ELDER OF ELVENKIND"`, `"KING UNDER
+THE MOUNTAIN"`, ...), and `GANG_TEMPLATE`'s own alignment-king titles do
+too (`"DIVINE ARCHANGEL"`/Thunderbird, `"MOST BLESSED OF GOOD
+KINGS"`/Knights Hospitaller, `"CAPTAIN OF THE IMPERIAL
+MUSKETEERS"`/`DUELLIST`) -- independent confirmation that both of those
+phases' own `Office` positional mappings were correct.
+
+`Office.NECRO_MAGE` has real content here (`"Imp Familiar, 25% Magic
+Resistance"`) despite being the one blank gap inside `GANG_TEMPLATE`'s
+own confirmed range -- no contradiction: `GANG.X2` is a separate,
+sparser file specific to `Check_BFace`'s alignment-title fanaticism
+narrative, and simply has nothing at that one position, while
+`NECRO_MAGE` is a perfectly real `Office` with its own real perk here.
 """
 
 from __future__ import annotations
@@ -418,4 +448,63 @@ GANG_TEMPLATE: dict[Office, str] = {
         "{the point of }fanaticism with their feats_of_derring-do/"
         "Runbelievable_panache."
     ),
+}
+
+# HostAK/TP/PROSE/IONAME.X2, the perk half of each "TITLE: perk" line,
+# verbatim, positional with every one of Office's own 52 ordinals (see
+# module docstring's Phase 103 addendum). NO_OFFICE/NO_TITLE are the
+# empty string -- the file's own two real sentinel gaps, not missing data.
+OFFICE_PERK_DESCRIPTION: dict[Office, str] = {
+    Office.EMPEROR: "Know Tax Bases",
+    Office.CHANCELLOR: "Crystal Ball Clairvoyance",
+    Office.TREASURER: "Know Treasuries",
+    Office.MARSHAL: "Recruit Extra Land Unit",
+    Office.ADMIRAL: "Recruit Extra Naval Unit",
+    Office.DEFENDER: "Reduce Damage 1 Point",
+    Office.PRIEST: "Sense Nearby Alignments",
+    Office.MAGE: "Sense Magic Items in Province",
+    Office.NO_OFFICE: "",
+    Office.HUMAN_KING: "20% Human Fanaticism",
+    Office.ELVEN_KING: "35% Elven Fanaticism",
+    Office.DWARVEN_KING: "40% Dwarven Fanaticism",
+    Office.ORC_LORD: "45% Orcish Fanaticism",
+    Office.DRAGON_LORD: "50% Dragon Fanaticism",
+    Office.EAGLE_KING: "50% Eagle Fanaticism",
+    Office.WHALE_KING: "50% Whale Fanaticism",
+    Office.ELE_MAGE: "Air Elemental, all Flee attempts succeed.",
+    Office.MERMAN_KING: "50% Mermen Fanaticism",
+    Office.ENT_KING: "50% Entish Fanaticism",
+    Office.TROLL_KING: "50% Troll Fanaticism",
+    Office.WERE_KING: "50% Were-Beast Fanaticism",
+    Office.ILLUS_MAGE: "Chameleon Familiar, always move first in combat.",
+    Office.DIVINE_KING: "Thunderbird; 1 fanatical unit, fight marauding monsters",
+    Office.GOOD_KING: "Knights Hospitaller; 1 fanatical unit, hospitals",
+    Office.DRUID_KING: "Circle of Druids; 1 fanatical unit, 100% exploration",
+    Office.NEUTRAL_KING: "Mercenaries Guild; 1 fanatical unit, attract mercenaries",
+    Office.PAGAN_KING: "Pagan Clerics; 1 fanatical unit, 10% White bonus",
+    Office.EVIL_KING: "Order of Black Knights; 1 fanatical unit, 5-gold bonus",
+    Office.NECRO_MAGE: "Imp Familiar, 25% Magic Resistance",
+    Office.UNDEAD_KING: "Circle of Wraiths; 1 fanatical unit, Plus 1 Skeletal Armies",
+    Office.PLAINS_KING: "Double Plains Exploration Rate",
+    Office.DESERT_KING: "Double Desert Exploration Rate",
+    Office.JUNGLE_KING: "Double Jungle Exploration Rate",
+    Office.FOREST_KING: "Double Forest Exploration Rate",
+    Office.MOUNTAIN_KING: "Double Moutain Exploration Rate",
+    Office.SEA_KING: "Double Sea Exploration Rate",
+    Office.THIEF_PRINCE: "Thieves Guild, 10-gold bonus",
+    Office.BATTLE_FOOL: "Increasing Tactical Aptitude",
+    Office.AIR_FORCE: "Improved Training",
+    Office.CHIEF_OF_STAFF: "Recruit Cost is -1 gold",
+    Office.CURATOR: "Research Magic Item",
+    Office.DIPLOMAT: "Monsters React Peacefully",
+    Office.TEACHER: "Students Plus-1 Aptitude",
+    Office.ASSASSIN: "Free Assassination Attempt",
+    Office.DUELLIST: "1 Fanatical Unit",
+    Office.PRAETOR: "Improved Training",
+    Office.PSYCHIC_MAGE: "Telepathic Weapon; knows alignments, monster's deal intentions",
+    Office.FLAGSHIP: "Improved Training",
+    Office.WINGMAN: "Recruit Extra Air Unit",
+    Office.CRAVENEST: "Improving Own Temper",
+    Office.BRAVEST: "Improve Temper, by using Talk tactic",
+    Office.NO_TITLE: "",
 }

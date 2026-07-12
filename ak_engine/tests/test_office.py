@@ -5,6 +5,7 @@ from ak_engine.models.office import (
     OFFICE_ENABLED_BY_DEFAULT,
     OFFICE_MIN_POINTS,
     OFFICE_NAME,
+    OFFICE_PERK_DESCRIPTION,
     OFFICE_VALUE,
     Office,
 )
@@ -99,3 +100,37 @@ def test_gang_template_excludes_the_unconfirmed_middle_stretch():
     # source file too, but isn't asserted here as confirmed blank data.
     assert Office.PLAINS_KING not in GANG_TEMPLATE
     assert Office.ASSASSIN not in GANG_TEMPLATE
+
+
+# -- Phase 103: IONAME.X2 --
+
+
+def test_office_perk_description_covers_every_office_gaplessly():
+    assert set(OFFICE_PERK_DESCRIPTION.keys()) == set(Office)
+
+
+def test_office_perk_description_no_office_and_no_title_are_blank():
+    assert OFFICE_PERK_DESCRIPTION[Office.NO_OFFICE] == ""
+    assert OFFICE_PERK_DESCRIPTION[Office.NO_TITLE] == ""
+
+
+def test_office_perk_description_verbatim_samples():
+    assert OFFICE_PERK_DESCRIPTION[Office.EMPEROR] == "Know Tax Bases"
+    assert OFFICE_PERK_DESCRIPTION[Office.MARSHAL] == "Recruit Extra Land Unit"
+    assert OFFICE_PERK_DESCRIPTION[Office.HUMAN_KING] == "20% Human Fanaticism"
+    assert OFFICE_PERK_DESCRIPTION[Office.PLAINS_KING] == "Double Plains Exploration Rate"
+
+
+def test_office_perk_description_necro_mage_has_real_content():
+    # The one blank gap in GANG_TEMPLATE's own confirmed range -- no
+    # contradiction, NECRO_MAGE is a real Office with its own real perk
+    # here, GANG.X2 is just a separate, sparser file.
+    assert OFFICE_PERK_DESCRIPTION[Office.NECRO_MAGE] == "Imp Familiar, 25% Magic Resistance"
+
+
+def test_office_perk_description_titles_cross_confirm_gang_template():
+    # GANG_TEMPLATE's own DUELLIST entry mentions "Imperial Musketeers" --
+    # IONAME.X2's own DUELLIST title is "CAPTAIN OF THE IMPERIAL
+    # MUSKETEERS", independently confirming the same Office mapping.
+    assert "Imperial Musketeers" in GANG_TEMPLATE[Office.DUELLIST]
+    assert OFFICE_PERK_DESCRIPTION[Office.DUELLIST] == "1 Fanatical Unit"

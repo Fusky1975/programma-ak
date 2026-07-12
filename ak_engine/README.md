@@ -3967,6 +3967,38 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     4 new tests added (1678 passed total) in `tests/test_office.py`,
     covering the 9-entry set, verbatim samples, the `NECRO_MAGE` blank,
     and the excluded unconfirmed middle stretch.
+- **Phase 103 (current)**: `models/office.py OFFICE_PERK_DESCRIPTION` --
+  `HostAK/TP/PROSE/IONAME.X2` (header `"60 1"`, 52 real content lines),
+  the exact file `models/office.py`'s own pre-existing docstring had
+  already cited (`FD('...ioname.x2', ..., 1001+ord(office))`), now
+  actually transcribed.
+  - Unlike `GANG_TEMPLATE`, this file has **full, gapless 1:1 coverage
+    of all 52 `Office` members** -- only `NO_OFFICE`/`NO_TITLE` are
+    blank, exactly the two sentinel members with no real title.
+  - Every entry reads `"TITLE: perk description"`. The title half
+    duplicates `OFFICE_NAME` (same text, different casing), so only the
+    perk half -- the genuinely new information, a specific mechanical
+    benefit holding that office grants (`"Recruit Extra Land Unit"`,
+    `"50% Human Fanaticism"`, `"Double Plains Exploration Rate"`, ...) --
+    is modeled as `OFFICE_PERK_DESCRIPTION`.
+  - The title half also **independently cross-confirms two other
+    already-transcribed tables at every one of their own populated
+    positions**: `models/race.py RACE_FANATICISM_TITLE`'s race-king
+    titles appear verbatim (`"SAVIOR OF HUMANKIND"`, `"FIRST ELDER OF
+    ELVENKIND"`, ...), and `GANG_TEMPLATE`'s own alignment-king titles do
+    too (`"DIVINE ARCHANGEL"`/Thunderbird, `"CAPTAIN OF THE IMPERIAL
+    MUSKETEERS"`/`DUELLIST`) -- confirming both of those phases' own
+    `Office` positional mappings were correct.
+  - `Office.NECRO_MAGE` has real content here (`"Imp Familiar, 25% Magic
+    Resistance"`) despite being `GANG_TEMPLATE`'s one blank gap -- no
+    contradiction: `GANG.X2` is a separate, sparser file specific to the
+    alignment-title fanaticism narrative, and simply has nothing at that
+    one position.
+  - Non-breaking: full suite passed unchanged (1678 passed) before any
+    new tests were written -- a new dict with no existing call sites.
+    5 new tests added (1683 passed total) in `tests/test_office.py`,
+    covering full gapless 52-entry coverage, the two blank sentinels,
+    verbatim samples, and the `GANG_TEMPLATE` cross-confirmation.
 
 ## Setup
 
