@@ -6,6 +6,8 @@ from ak_engine.models.power import (
     MCOND_TEMPLATE,
     PCOND_TEMPLATE,
     POWER_CONDITION_NAME,
+    POWER_CONDITION_REJECTION_INTRO,
+    POWER_CONDITION_REJECTION_MESSAGE,
     POWER_DESCRIPTION,
     POWER_NAME,
     Power,
@@ -118,3 +120,31 @@ def test_cast_spell_feature_description_illegal_spells_are_marked():
         assert "Illegal" in CAST_SPELL_FEATURE_DESCRIPTION[spell]
     legal_sample = set(CAST_SPELL_FEATURE_DESCRIPTION) - set(illegal)
     assert all("Illegal" not in CAST_SPELL_FEATURE_DESCRIPTION[s] for s in legal_sample)
+
+
+# -- Phase 101: SAY.PAS _NoMeet (inline, not .X2-sourced) --
+
+
+def test_power_condition_rejection_message_covers_exactly_three_conditions():
+    assert set(POWER_CONDITION_REJECTION_MESSAGE.keys()) == {
+        PowerCondition.SAME_ALIGN,
+        PowerCondition.NEED_KING,
+        PowerCondition.G_TURN,
+    }
+
+
+def test_power_condition_rejection_message_excludes_conditions_with_no_case():
+    for condition in (PowerCondition.PC_NONE, PowerCondition.PAY_UP,
+                       PowerCondition.DRAIN_SKILL, PowerCondition.DRAIN_COURAGE):
+        assert condition not in POWER_CONDITION_REJECTION_MESSAGE
+
+
+def test_power_condition_rejection_message_verbatim_samples():
+    assert POWER_CONDITION_REJECTION_MESSAGE[PowerCondition.SAME_ALIGN] == "You are not $o, so begone/Rgo_away!"
+    assert POWER_CONDITION_REJECTION_MESSAGE[PowerCondition.G_TURN] == (
+        "The power has already been used this turn, so go away!"
+    )
+
+
+def test_power_condition_rejection_intro_verbatim():
+    assert POWER_CONDITION_REJECTION_INTRO == "You don't meet the conditions for using the $\\."

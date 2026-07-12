@@ -86,6 +86,35 @@ _EDesc: BEGIN
   compact-encoding for `^A`, "a"/"an" depending on the next word) --
   transcribed as `^A` per `report/turn_report.py`'s own established
   source-notation convention for this exact byte.
+
+**Phase 101 addendum -- `POWMSG.X2` investigated, found not to map
+cleanly, and abandoned; `SAY.PAS`'s own `_NoMeet` block used instead.**
+`HostAK/TP/PROSE/POWMSG.X2` (header `"50 1"`) was the original target for
+this phase, since `SAY.PAS`'s own `_PowMsg` dispatches it
+(`FD('...powmsg.x2',S_PCom,1000+trint)`, `trint:= Rint`). Investigation
+found the file does **not** correspond to any single enum this project
+models: the header declares 50 choices, but only ~42 lines carry real
+distinct text (one blank line, one `"REM: no lists in files like this!"`
+comment line, and no consistent 1:1 fit against `Power`'s 25 members or
+anything else) -- individual entries read as unrelated situational
+messages (Oracle-of-Wealth errors, Gamble win/lose text, GrantWish
+success, NewSex flavor, RECHARGE errors, ...), evidently each hardcoded
+to its own specific `trint` value by call sites that live only in the
+missing main program. Modeling this as a formal `dict` would mean
+inventing an index scheme this project has no source for -- explicitly
+not attempted, per this project's standing sourcing discipline, rather
+than guessed.
+
+What *is* real and cleanly citable: the same `_EDesc`/`_MCond` block's
+neighboring `_NoMeet` procedure (~line 1266-1275), an inline (not
+`.X2`-sourced) `CASE fpowcon OF` dispatch with literal `Say(...)`
+messages for exactly 3 of `PowerCondition`'s 6 non-`PC_NONE` members
+(`SameAlign`, `NeedKing`, `GTurn`) -- `PayUp`/`DrainSkill`/
+`DrainCourage` have no case at all, correctly excluded rather than
+guessed at. `POWER_CONDITION_REJECTION_MESSAGE` transcribes these three;
+`POWER_CONDITION_REJECTION_INTRO` transcribes the one generic line said
+first regardless of which condition failed
+(`"You don't meet the conditions for using the $\\."`).
 """
 
 from __future__ import annotations
@@ -418,4 +447,21 @@ CAST_SPELL_FEATURE_DESCRIPTION: dict[Spell, str] = {
     Spell.ICE_SUSPEND: "  (Illegal: Ice_Suspend)",
     Spell.TELEK_STORM: "  (Illegal: Telek_Storm)",
     Spell.MIRROR_IMAGE: "  (Illegal: Mirror_Image)",
+}
+
+# SAY.PAS's own literal Say(...) message, said unconditionally before the
+# per-condition CASE below (see module docstring's Phase 101 addendum).
+POWER_CONDITION_REJECTION_INTRO = "You don't meet the conditions for using the $\\."
+
+# SAY.PAS `_NoMeet`'s own `CASE fpowcon OF` (~line 1270-1274), verbatim --
+# only 3 of `PowerCondition`'s 6 non-`PC_NONE` members have a case at all;
+# `PAY_UP`/`DRAIN_SKILL`/`DRAIN_COURAGE` are correctly excluded rather
+# than guessed at.
+POWER_CONDITION_REJECTION_MESSAGE: dict[PowerCondition, str] = {
+    PowerCondition.SAME_ALIGN: "You are not $o, so begone/Rgo_away!",
+    PowerCondition.NEED_KING: (
+        "You're just  lowly/Rirrelevant hero/Rlackey, so get out of "
+        "here/Rthis_&!"
+    ),
+    PowerCondition.G_TURN: "The power has already been used this turn, so go away!",
 }

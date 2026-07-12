@@ -3906,6 +3906,36 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     4 new tests added (1670 passed total) in `tests/test_race.py`,
     covering the 13-entry range, verbatim samples, the two blank
     entries, and the `VAMPISH`/`ROHAN` exclusion.
+- **Phase 101 (current)**: `models/power.py POWER_CONDITION_REJECTION_MESSAGE`/
+  `POWER_CONDITION_REJECTION_INTRO` -- `HostAK/TP/PROSE/POWMSG.X2`
+  (header `"50 1"`) was this phase's original target (`SAY.PAS`'s own
+  `_PowMsg` dispatches it: `FD('...powmsg.x2',S_PCom,1000+trint)`), but
+  **investigation found it doesn't map cleanly to any enum this project
+  models** -- the header declares 50 choices but only ~42 lines carry
+  real distinct text, and individual entries read as unrelated
+  situational messages (Oracle-of-Wealth errors, Gamble win/lose text,
+  GrantWish success, NewSex flavor, RECHARGE errors, ...), each
+  evidently hardcoded to its own specific `trint` value by call sites
+  that live only in the missing main program. Modeling this as a formal
+  dict would mean inventing an index scheme with no source -- explicitly
+  not attempted, per this project's sourcing discipline, rather than
+  guessed.
+  - What *is* real and cleanly citable, found while investigating the
+    same neighborhood of `SAY.PAS`: the `_NoMeet` procedure
+    (~line 1266-1275), an **inline** (not `.X2`-sourced) `CASE fpowcon
+    OF` dispatch with literal `Say(...)` messages for exactly 3 of
+    `PowerCondition`'s 6 non-`PC_NONE` members (`SameAlign`, `NeedKing`,
+    `GTurn`) -- `PayUp`/`DrainSkill`/`DrainCourage` have no case at all,
+    correctly excluded rather than guessed at.
+    `POWER_CONDITION_REJECTION_MESSAGE` transcribes these three;
+    `POWER_CONDITION_REJECTION_INTRO` transcribes the one generic line
+    said first regardless of which condition failed. Inline Pascal
+    source is, if anything, stronger evidence than a `.X2` file guess.
+  - Non-breaking: full suite passed unchanged (1670 passed) before any
+    new tests were written -- two new constants with no existing call
+    sites. 4 new tests added (1674 passed total) in
+    `tests/test_power.py`, covering the 3-entry range, the excluded
+    conditions, verbatim samples, and the intro line.
 
 ## Setup
 
