@@ -385,8 +385,11 @@ def dispatch_phase(
 
     Raises ``UnsupportedActionError`` for anything outside
     ``SUPPORTED_ACTIONS``, and propagates whatever ``execute_move``/
-    ``resolve_explore`` themselves raise (e.g. ``NonAdjacentMoveError``,
-    a ``KeyError`` for an unknown province or leader).
+    ``resolve_explore`` themselves raise (e.g. a ``KeyError`` for an
+    unknown province or leader). A non-adjacent LMOVE target no longer
+    raises ``NonAdjacentMoveError`` as of Phase 85 -- ``execute_move``
+    resolves it as a chase step instead; see that function's own
+    docstring.
     """
 
     action = phase.action

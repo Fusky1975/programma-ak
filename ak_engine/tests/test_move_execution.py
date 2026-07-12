@@ -171,8 +171,10 @@ def test_raises_when_armies_do_not_share_origin():
 def test_raises_for_unknown_target_province():
     state = base_state()
 
+    # HexCoord(1, 2) is a real neighbor of ORIGIN (adjacent, not a chase
+    # target) with no province data of its own in base_state().
     with pytest.raises(ValueError):
-        execute_move(state, kingdom_id=1, army_ids=[101], target=HexCoord(20, 10))
+        execute_move(state, kingdom_id=1, army_ids=[101], target=HexCoord(1, 2))
 
 
 def test_leader_can_move_alone_and_relocates():
@@ -237,4 +239,109 @@ def test_allowed_from_a_merely_neutral_owned_province_to_an_enemy_province():
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
 
     assert result.moved is True
-    assert state.armies[101].location == TARGET
+
+
+# --- Phase 85: non-adjacent Move chase (rulebook [3.1]) -----------------
+
+# CHASE_ORIGIN's own closest neighbor toward FAR_TARGET is uniquely
+# INTERMEDIATE (verified via turn/movement.py step_toward_non_adjacent_target
+# directly); INTERMEDIATE is itself adjacent to FAR_TARGET, so a second hop
+# from there reaches it. Distinct terrain from FAR_TARGET so exploration
+# tests can tell which province was actually explored.
+CHASE_ORIGIN = HexCoord(1, 1)
+INTERMEDIATE = HexCoord(1, 2)
+FAR_TARGET = HexCoord(0, 3)
+
+
+def chase_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_province(ProvinceState(CHASE_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(INTERMEDIATE, Terrain.FOREST, Race.HUMAN, explored_percent=0))
+    state.add_province(ProvinceState(FAR_TARGET, Terrain.PLAINS, Race.HUMAN, explored_percent=0))
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, CHASE_ORIGIN, movement_points=3))
+    return state
+
+
+def test_chase_step_lands_on_intermediate_hex_not_final_target():
+    state = chase_state()
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=FAR_TARGET)
+
+    assert result.moved is True
+    assert result.new_location == INTERMEDIATE
+    assert state.armies[101].location == INTERMEDIATE
+    assert result.reached_target is False
+
+
+def test_chase_step_resolves_exploration_against_the_intermediate_hex():
+    state = chase_state()
+
+    execute_move(state, kingdom_id=1, army_ids=[101], explorer_skill=1, target=FAR_TARGET)
+
+    # INTERMEDIATE (Forest, basic exploration number 15) actually explored...
+    assert state.provinces[INTERMEDIATE].explored_percent > 0
+    # ...FAR_TARGET (the ultimate, not-yet-reached target) is untouched.
+    assert state.provinces[FAR_TARGET].explored_percent == 0
+
+
+def test_second_chase_step_reaches_the_target():
+    state = chase_state()
+    state.armies[101].location = INTERMEDIATE
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=FAR_TARGET)
+
+    assert result.moved is True
+    assert result.new_location == FAR_TARGET
+    assert result.reached_target is True
+
+
+def test_stopped_chasing_when_no_closer_neighbor_exists():
+    # Mirrors turn/movement.py's own "stop chasing" test case: from (0,0),
+    # every reachable neighbor is farther from (-5,-5) than (0,0) itself.
+    state = GameState()
+    origin = HexCoord(0, 0)
+    unreachable_target = HexCoord(-5, -5)
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, origin))
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, origin, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=unreachable_target)
+
+    assert result.stopped_chasing is True
+    assert result.moved is False
+    assert result.exploration is None
+    assert result.new_location is None
+    assert state.armies[101].location == origin
+    assert state.armies[101].movement_points == 3
+
+
+def test_chase_step_breaks_ties_by_ownership_tier():
+    # Mirrors turn/movement.py's own tie-break test case: from (5,5) toward
+    # (5,0), (6,4) and (5,4) tie as the two strictly-closer candidates.
+    state = GameState()
+    origin = HexCoord(5, 5)
+    target = HexCoord(5, 0)
+    owned_candidate = HexCoord(6, 4)
+    enemy_candidate = HexCoord(5, 4)
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, origin))
+    state.add_kingdom(KingdomState(2, "Enemia", Race.HUMAN, Alignment.EVIL, enemy_candidate))
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(owned_candidate, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(enemy_candidate, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, origin, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=target)
+
+    assert result.new_location == owned_candidate
+
+
+def test_chase_step_triggers_battle_on_an_enemy_occupied_intermediate_hex():
+    state = chase_state()
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.EVIL, INTERMEDIATE))
+    state.provinces[INTERMEDIATE].owner_kingdom_id = 2
+    state.add_army(ArmyState(201, 2, ArmyType.AXEMEN, Quality.AVERAGE, INTERMEDIATE, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=FAR_TARGET, rng=ScriptedRandom([0.9] * 20))
+
+    assert result.battle_report is not None

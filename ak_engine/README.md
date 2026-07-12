@@ -3156,7 +3156,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     -- "stop chasing" -- when no neighbor is closer, quoting the
     rulebook's own sentence verbatim in the docstring. Returns
     `current` unchanged if already at `target`.
-  - **Deliberately not wired into `resolve_move()`/`execute_move()`/
+  - ~~**Deliberately not wired into `resolve_move()`/`execute_move()`/
     `plan_dispatch.py` this phase**: unlike Pursue/Trail's own
     catch-up (which always resolves against the *target*'s own data),
     a Move chase step lands on an *intermediate* hex whose
@@ -3165,11 +3165,13 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     hex's terrain/explored-percent, describing whichever hex will
     actually be entered. Wiring the chase in for real needs
     `execute_move()` to look up the *intermediate* hex's own province
-    data (not the target's) once the geometry decision is known, plus
-    the rulebook's own multi-phase persistence rule ("The movement
-    order will override orders in a subsequent phase only if the
-    character is practicing in that phase") -- both left for a real
-    follow-up phase, matching Phase 66's own precedent.
+    data (not the target's) once the geometry decision is known~~ --
+    **`execute_move()` wired this in as of Phase 85** -- see that
+    phase's own note below. The rulebook's own multi-phase persistence
+    rule ("The movement order will override orders in a subsequent
+    phase only if the character is practicing in that phase") is still
+    a separate, still-deferred follow-up, matching Phase 66's own
+    precedent for Pursue/Trail.
   - Also fixes a stale README bullet found while researching this
     phase: the "Not yet implemented" section's own note about
     contested-province forced rebattle was never struck through when
@@ -3402,6 +3404,66 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_spell_name.py`, covering full 35-entry coverage,
     Nospell's confirmed exclusion, and verbatim spot-checks including
     two of the newly-named secret spells.
+- **Phase 85 (current)**: `turn/move_execution.py execute_move()` wires
+  in the non-adjacent Move chase-step primitive Phase 78 built but
+  didn't connect, closing that phase's own deferred "wiring" note.
+  - **The chosen intermediate hex is, by construction, always adjacent
+    to `current`** (it's one of `current`'s own neighbors) -- so
+    `resolve_move()` itself needed **no changes at all**: it's simply
+    called with the intermediate hex as its own target, exactly as if
+    that had been the player's own literal order this phase. This is
+    what makes exploration correct for a chase step: it's resolved
+    against the *intermediate* hex's own real province data, never the
+    ultimate target's, avoiding the wrong-terrain bug Phase 78's own
+    note flagged as the reason wiring couldn't be a `resolve_move()`
+    -only fix.
+  - **`_classify_hex_ownership()`** feeds `step_toward_non_adjacent_target`'s
+    `tier_of` callback from real `GameState` data: Owned/Allied via
+    `state.is_allied()`, Enemy for an owned non-ally, Neutral
+    otherwise -- `HexOwnershipTier.HERO_OWNED` is never produced,
+    the same documented limitation Phase 78 already flagged
+    (`ProvinceState` can't distinguish a Hero-ruled province from a
+    genuinely wild one).
+  - **`MoveExecutionResult` gains `reached_target`/`stopped_chasing`**:
+    `reached_target` is a purely geometric fact (`actual_target ==
+    target`, "was this phase's own hop the final one"), independent of
+    whether the hop itself actually succeeds this phase.
+    `stopped_chasing` is `True` -- with `exploration=None`, no cost, no
+    relocation -- exactly when `step_toward_non_adjacent_target` itself
+    returns `None`, quoting the rulebook's own "stop chasing" sentence
+    verbatim. An enemy-occupied intermediate hex triggers a battle
+    exactly like any ordinary Move -- the rulebook's chase-toward-target
+    text doesn't address this case explicitly, so this project treats a
+    chase step as mechanically identical to a directly-ordered Move to
+    that same hex, a documented consistency choice, not a sourced
+    special case.
+  - **Multi-phase persistence still deliberately not wired in**: the
+    rulebook's own sentence -- "The movement order will override orders
+    in a subsequent phase only if the character is practicing in that
+    phase" -- is read narrowly here (a documented interpretation, not
+    the only possible one): an ongoing chase overrides *specifically* a
+    later Practice order, not every other order type the way
+    Pursue/Trail's own "for the rest of the turn" persistence (Phase
+    70) blanket-preempts a leader's entire remaining plan. The broader,
+    Pursue/Trail-style reading is also grammatically plausible from the
+    rulebook's own wording alone; this project found no way to
+    disambiguate it further from the available source, so wiring
+    *either* interpretation into `turn/turn_processor.py` is deferred to
+    a real follow-up phase -- mirroring the same primitive-now/
+    wiring-later split Phase 66 and 70 already used for Pursue/Trail.
+  - Non-breaking except one anticipated, fixed pre-existing test: full
+    suite passed with exactly one already-updated failure before new
+    tests were written -- `test_raises_for_unknown_target_province` had
+    used a far-away, non-adjacent, data-free target as a proxy for "no
+    province data," which now triggers chase resolution instead of an
+    immediate raise; switched to a genuinely adjacent, data-free
+    neighbor, which still hits the same immediate check exactly as
+    before. 6 new tests added (1594 passed total) in
+    `tests/test_move_execution.py`, covering the intermediate-hex
+    landing, exploration resolving against the intermediate hex (not
+    the target), a second hop reaching the target, the "stop chasing"
+    case, the ownership-tier tie-break, and a battle triggered by an
+    enemy-occupied intermediate hex.
 
 ## Setup
 
@@ -3569,10 +3631,18 @@ rulebook before being turned into named, typed fields:
 
 ## Not yet implemented (by design, this phase)
 
-- **Chasing a non-adjacent target** (rulebook [3.1]): moving towards a hex
-  that isn't adjacent, through friendly territory, with tie-break
+- ~~**Chasing a non-adjacent target** (rulebook [3.1]): moving towards a
+  hex that isn't adjacent, through friendly territory, with tie-break
   priorities and a "stop chasing" condition — needs a pathfinding
-  algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.
+  algorithm; `resolve_move()` raises `NonAdjacentMoveError` for now.~~
+  **The chase-step pathfinding is implemented (Phase 78) and wired into
+  `execute_move()` (Phase 85)** — see those phases' own notes above.
+  `resolve_move()` itself still raises `NonAdjacentMoveError` for a
+  direct, non-chase-aware call (unchanged, by design). Still open: the
+  rulebook's own multi-phase persistence rule ("overrides orders in a
+  subsequent phase only if the character is practicing") isn't wired
+  into `turn/turn_processor.py` yet — see Phase 85's own note for the
+  two plausible readings this project couldn't disambiguate further.
 - **`plan_dispatch.py` dispatches 21 of 22 `ActionCode`s without raising
   `UnsupportedActionError`** -- its practical maximum (see Phase 27's
   note above). LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT (Phase 15),
