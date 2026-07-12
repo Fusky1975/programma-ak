@@ -179,15 +179,56 @@ source notation per this module's own established convention (see the
 
 **More real, confirmed `.X`/`.X2` findings surfaced but deliberately
 deferred**, each needing more design work than this phase's scope:
-``RWENC.X`` (a "random encounter while traveling" narrative, `_LWEnc`);
-``TACTICS.X2`` (a 9-level tactical-superiority bucket, `FD('...tactics
-.x2',S_Batt,Max(1001,Min(1009,1000+battac)))` -- structurally analogous
-to this module's own `margin_bucket()`, but `battac`'s own formula isn't
-traced); ``NEMESIS.X2`` (`_ANem: FD('...nemesis.x2',S_Batt,1000+Rint)`
--- real and dispatched, but `Rint`'s own value isn't a formula this
-project can trace, and the file's own content mixes recognizable
-`ArmyType` nemesis pairs with unmodeled monster types like "Dinosaurs",
-so no clean index scheme is asserted here).
+``RWENC.X`` (a "random encounter while traveling" narrative, `_LWEnc`) --
+fixed in Phase 106. ~~`TACTICS.X2` (a 9-level tactical-superiority
+bucket, structurally analogous to this module's own `margin_bucket()`,
+but `battac`'s own formula isn't traced)~~ -- fixed in Phase 109 below
+(`battac`'s own formula is still untraced, but the bucket *scale* itself
+is now reproduced the same documented, unsourced way `margin_bucket()`
+already was). ``NEMESIS.X2`` (`_ANem: FD('...nemesis.x2',S_Batt,
+1000+Rint)` -- real and dispatched, but `Rint`'s own value isn't a
+formula this project can trace, and the file's own content mixes
+recognizable `ArmyType` nemesis pairs with unmodeled monster types like
+"Dinosaurs") -- raw content added in Phase 109 below, still with no
+render function or index-to-`ArmyType` mapping asserted.
+
+**Phase 109 addendum -- TACTICS.X2 and NEMESIS.X2.** Both confirmed
+real via `SAY.PAS`'s own `_BTac`/`_ANem` dispatch (~lines 1058-1064 and
+1084), both immediate siblings of `_BLuck`/`_CLuck` in the very same
+`Imp_Code` block already read for `_BRes`/`margin_bucket()`.
+
+- ``TACTICS.X2`` (header ``"9 1"``, exactly 9 real lines, matching the
+  file's own declared count) forms a **confirmed, monotonic 9-point
+  spectrum** once read end to end: template 1 ("[''s tactical strokes
+  of genius doubled ]'s strength") is total advantage for the *defender*
+  (`[`), template 5 ("neither leader could gain a tactical advantage")
+  is dead even, template 9 ("tactical supremacy... by <'s unmatched...
+  genius") is total advantage for the *attacker* (`<`) -- and the
+  `_BTac` dispatch's own `battac < 5`/`battac > 5` comparisons confirm 5
+  is the intended midpoint. `tactical_margin_bucket()` reuses this
+  confirmed scale, fed by `turn/battle_line.py`'s own real
+  `attacker_tactical_ability`/`defender_tactical_ability` (rulebook
+  [7.2]) -- the same "documented, unsourced bucketing choice" precedent
+  `margin_bucket()` already established for `bres`, not a recovered
+  formula for `battac` itself.
+- ``NEMESIS.X2`` (header ``"100 1"``, only 15 of the declared 100
+  choices populated) is modeled more conservatively: `NEMESIS_TEMPLATE`
+  stores all 15 real lines verbatim, keyed by their own raw file
+  position (1-15), with **no** `ArmyType`-keyed lookup or `render_*`
+  wrapper. Cross-checking against `models/army_type.py`'s own rulebook
+  -sourced `NEMESIS` dict finds unmistakable content matches for 7 of
+  the 15 lines (e.g. line 3's "unwieldy formation... tested by the
+  flexible Legionnaires" is `Phalanx`'s real `Legion` nemesis; line 7's
+  "and their mounts... the dreaded... screaming Eagles" is `Warg
+  Riders`' real `Eagle Wing` nemesis; line 10's "picked off... by
+  Mermen... barbed harpoons" is `Whales`' real `Mermen` nemesis) --
+  strong supporting evidence this is the genuine Nemesis-in-battle
+  narrative, not a coincidence. But 3 of the modeled `ArmyType` nemesis
+  pairs (`Dragon Wing`/`Eagle Wing`/`Mermen`, all -> `Bowmen`) share
+  exactly 3 candidate lines (8, 9, 11) with no further textual
+  distinction confirming which line belongs to which attacker, and
+  lines 2 and 15 both name unmodeled "Dinosaurs"/"Sauropods" -- so no
+  index scheme is asserted, per this project's sourcing discipline.
 
 **Phase 105 addendum -- Steal/Flee maneuver failure.**
 ``HostAK/TP/PROSE/FLEEFAIL.X`` and ``SNEAKUP.X``, both confirmed real,
@@ -484,6 +525,188 @@ def margin_bucket(attacker_win_probability: float) -> int:
 
     raw = (attacker_win_probability - 0.5) / _MARGIN_BUCKET_WIDTH
     return max(-5, min(5, round(raw)))
+
+
+# HostAK/TP/PROSE/TACTICS.X2, verbatim (mini-language intact, ^A control
+# byte transcribed). See module docstring's Phase 109 addendum.
+_TACTICS_TEMPLATE: dict[int, str] = {
+    1: (
+        "it was obvious/Rclear to all {observers }that ['s "
+        "tactical/Snaval strokes_of_genius/Rbrilliance doubled_]_strength"
+        "/Rguaranteed_tactical_supremacy."
+    ),
+    2: (
+        "it soon/Rrapidly became clear/Rapparent that < was tactically "
+        "outmatched/Routwitted by [.[1 maneuvered/Rutilized ] "
+        "forces/Sships brilliantly/Rwith_great_sagacity."
+    ),
+    3: (
+        "despite/Rin_spite_of > careful/Rindustrious leadership/Rplanning, "
+        "< was tactically outmaneuvered/Routfoxed {by [ }and {soon }"
+        "realized/Rsaw that it/Rthis_affair would_be/Rwas_becoming ^A "
+        "uphill/Rdifficult struggle/Rbattle."
+    ),
+    4: (
+        "<'s {meticulous/Rcareful }tactical plans/Rmaneuvers "
+        "did_not/Rfailed_to work_out/Rsucceed{ as expected}{ against "
+        "['s clever/Rprompt counterstrokes/Rremedies}, and > "
+        "forces/Rmen entered_battle/Rfought with a slight/Rsmall "
+        "tactical disadvantage."
+    ),
+    5: (
+        "as the {fierce/Rdesperate }battle/Rstruggle "
+        "developed/Rintensified, the tactical/Snaval wit/Rabilities of "
+        "[ and < seemed/Rappeared {to be }evenly/Rwell matched{ and "
+        "neither leader/Rgeneral could gain/Rachieve a tactical "
+        "advantage}."
+    ),
+    6: (
+        "in this {perilous/Snaval }chess/Rslugging match, < "
+        "seemed/Rappeared to have/Rgain the tactical upper_hand/Redge."
+    ),
+    7: (
+        "<'s wise/Rclever tactical/Snaval planning/Rmaneuvers "
+        "assured/Rgave > forces/Rside ^A clear/Rundeniable "
+        "advantage/Rsuperiority."
+    ),
+    8: (
+        "< maneuvered/Rdeployed > forces/Rtroops against [ with "
+        "excellent/Rgreat tactical/Sseamanship_and foresight/Rjudgement "
+        "and {consequently }enjoyed/Robtained ^A important/Rtremendous "
+        "tactical advantage/Rsuperiority."
+    ),
+    9: (
+        "tactical/Snaval supremacy/Rsuperiority was {clearly }"
+        "guaranteed/Rassured by <'s unmatched/Rpowerful tactical "
+        "mind/Rgenius."
+    ),
+}
+
+
+def tactical_margin_bucket(attacker_tactical_ability: int, defender_tactical_ability: int) -> int:
+    """Buckets a Tactical-ability differential into the ``battac``-style
+    1-9 scale ``SAY.PAS _BTac`` dispatches on (``Max(1001,Min(1009,
+    1000+battac))``), 5 = even. Structurally the same documented,
+    unsourced bucketing choice as ``margin_bucket()`` -- this project has
+    no surviving source for ``battac``'s own formula (only the 9-value
+    clamp and the confirmed, monotonic content of all 9 templates, from
+    "total defender advantage" at 1 to "total attacker advantage" at 9,
+    support this scale). Reuses ``turn/battle_line.py``'s own
+    ``attacker_tactical_ability``/``defender_tactical_ability`` inputs
+    (rulebook [7.2], already real and modeled by ``apply_tactical_
+    switches``) rather than inventing a new value to bucket.
+    """
+
+    return max(1, min(9, 5 + (attacker_tactical_ability - defender_tactical_ability)))
+
+
+def render_tactical_comparison(
+    attacker_name: str,
+    defender_name: str,
+    attacker_tactical_ability: int,
+    defender_tactical_ability: int,
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
+) -> str:
+    """Renders TACTICS.X2's sentence comparing the two sides' Tactical
+    ability (``SAY.PAS _BTac``). ``is_sea`` (Phase 74) resolves the "/S"
+    marker most variants carry. The "but/also" clause `_BTac` prefixes
+    this with (driven by a second unconfirmed replay value, ``batluck``)
+    is not reproduced here -- see module docstring.
+    """
+
+    bucket = tactical_margin_bucket(attacker_tactical_ability, defender_tactical_ability)
+    values = {
+        "<": attacker_name,
+        "[": defender_name,
+        "[1": defender_name,
+        ">": f"{attacker_name}'s",
+        "]": f"{defender_name}'s",
+    }
+    return render(_TACTICS_TEMPLATE[bucket], values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/PROSE/NEMESIS.X2, verbatim, keyed by the file's own 1-based
+# line number (the real dispatched ``Rint`` value has no traceable
+# formula -- see module docstring's Phase 109 addendum). No render_*
+# wrapper: unlike TACTICS.X2, this project cannot confirm which content
+# belongs to which ``ArmyType`` nemesis pair for every entry, so no
+# lookup key beyond the raw file position is asserted.
+NEMESIS_TEMPLATE: dict[int, str] = {
+    1: (
+        "= were frightened/Rdismayed by the{ sudden/Runexpected}"
+        "appearance_of/Rconfrontation_with their hated/Rdreaded nemesis."
+    ),
+    2: (
+        "the out-matched/Rill_prepared fortifications/Rdefenses of =, "
+        "were easily/Rruthlessly trampled/Rsquashed by the "
+        "{lumbering/Rhumongous }Dinosaurs."
+    ),
+    3: (
+        "the unwieldy/Rclumsy formation/Rmass of = was {severely }"
+        "tested/Rshaken by the flexible/Rmaneuverable Legionnaires."
+    ),
+    4: (
+        "the Heavy Cavalry squadrons/Rtroops bore_down_on/Rcharged = and "
+        "shook_them_with/Rthey_wavered_under the initial/Rterrible "
+        "shock/Rimpact."
+    ),
+    5: (
+        "the squadrons/Rhorsemen of = found_it/Rexperienced "
+        "tough_going/Ra_tough_challenge against/Rfighting the "
+        "easily_defensible/Rfortress-like Chariots."
+    ),
+    6: (
+        "the {poor/Rnervous }horses of = were frightened/Rspooked by "
+        "{the howls/Rnasty_smell of }the {terrible/Rfearsome }Beasts "
+        "they beheld/Rwere_faced_with."
+    ),
+    7: (
+        "= {and their mounts }howled/Rwere_paralyzed with_fear/Rterribly "
+        "when they realized/Rperceived they were_up_against/Rhad_to_fight "
+        "the_dreaded/Rthose_horrible_screaming Eagles."
+    ),
+    8: (
+        "= were staggered/Rdecimated by the arrows/Rbolts "
+        "fired/Rloosed by the/Rthose pesky/Rdangerous Bowmen."
+    ),
+    9: (
+        "= were riddled_with/Rbothered_by_the arrows_released_by/Rfire_of "
+        "their dangerous/Rfeared Bowmen nemesis/Renemy."
+    ),
+    10: (
+        "= were picked_off_one_by_one/Rrounded_up_and_slaughtered by "
+        "Mermen skilled_in_the_use_of/Rarmed_with {nets/Rspearguns and "
+        "}barbed/Rpoisoned harpoons."
+    ),
+    11: (
+        "the unarmored/Runshielded soldiers/Rtroops of = were "
+        "easy_targets/Rsitting_ducks for the lucky "
+        "{sharp-shooting/Rrapid-firing }Bowmen."
+    ),
+    12: (
+        "many/Rscores_of = were chopped/Rcut down/Rto_pieces by the "
+        "well-armed/Rstout Axemen."
+    ),
+    13: (
+        "the unlucky/Rterrified soldiers/Rtreants of = were "
+        "terribly/Rhideously scorched/Rcharcoaled by the "
+        "flameing_breath_of_the/Rfire-spitting Dragons."
+    ),
+    14: (
+        "= found_it_tough_going/Rmet_their_match against the "
+        "doughty/Rgrim Axemen, often_finding/Rtragically_unable_to_avoid"
+        "_having their very/Rlong legs cut/Rchopped out_from_under_them"
+        "/Rto_shreds."
+    ),
+    15: (
+        "= roared_with_agony/Rdanced_with_pain when the "
+        "Phalangites/RPhalanx_soldiers drove/Rspiked their spears/Rpikes "
+        "deep/Rruthlessly into {the bellies/Rthroats of }the_Sauropods"
+        "/Rthose_terrible_lizards."
+    ),
+}
 
 
 def render_column_clash(

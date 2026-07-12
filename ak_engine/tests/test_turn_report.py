@@ -5,6 +5,7 @@ import pytest
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.report.turn_report import (
+    NEMESIS_TEMPLATE,
     SNEAKUP_RANGE_BOW,
     SNEAKUP_RANGE_MELEE,
     SNEAKUP_RANGE_SPELL,
@@ -25,8 +26,10 @@ from ak_engine.report.turn_report import (
     render_retreat,
     render_sneak_detected,
     render_spy_report_opening,
+    render_tactical_comparison,
     render_uncontested_conquest,
     render_wandering_encounter,
+    tactical_margin_bucket,
 )
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import BattleReport
@@ -619,3 +622,92 @@ def test_render_patrol_encounter_fourth_variant():
         "name of Arthur.Arthur killed him in a duel, but the rogue's "
         "older brother was a marshal, and he came after Arthur!"
     )
+
+
+# -- tactical_margin_bucket / render_tactical_comparison (Phase 109) --------
+
+
+def test_tactical_margin_bucket_is_five_when_even():
+    assert tactical_margin_bucket(5, 5) == 5
+    assert tactical_margin_bucket(0, 0) == 5
+
+
+def test_tactical_margin_bucket_favors_attacker_when_higher():
+    assert tactical_margin_bucket(6, 5) == 6
+    assert tactical_margin_bucket(3, 0) == 8
+
+
+def test_tactical_margin_bucket_favors_defender_when_lower():
+    assert tactical_margin_bucket(4, 5) == 4
+    assert tactical_margin_bucket(0, 3) == 2
+
+
+def test_tactical_margin_bucket_clamps_at_nine():
+    assert tactical_margin_bucket(20, 0) == 9
+
+
+def test_tactical_margin_bucket_clamps_at_one():
+    assert tactical_margin_bucket(0, 20) == 1
+
+
+def test_render_tactical_comparison_bucket_one_defender_total_advantage():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_tactical_comparison("Aldric", "Borin", 0, 20, rng)
+    assert result == "it was obvious to all that Borin's tactical strokes of genius doubled Borin's strength."
+
+
+def test_render_tactical_comparison_bucket_one_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_tactical_comparison("Aldric", "Borin", 0, 20, rng, is_sea=True)
+    assert result == "it was obvious to all that Borin's naval strokes of genius doubled Borin's strength."
+
+
+def test_render_tactical_comparison_bucket_five_is_even():
+    rng = ScriptedRandom([0.1] * 15)
+    result = render_tactical_comparison("Aldric", "Borin", 5, 5, rng)
+    assert result == "as the battle developed, the tactical wit of Borin and Aldric seemed evenly matched."
+
+
+def test_render_tactical_comparison_bucket_nine_attacker_total_advantage():
+    rng = ScriptedRandom([0.1] * 15)
+    result = render_tactical_comparison("Aldric", "Borin", 20, 0, rng)
+    assert result == "tactical supremacy was guaranteed by Aldric's unmatched tactical mind."
+
+
+def test_render_tactical_comparison_bucket_three_favors_defender():
+    rng = ScriptedRandom([0.1] * 15)
+    result = render_tactical_comparison("Aldric", "Borin", 3, 5, rng)
+    assert result == "despite Aldric's careful leadership, Aldric was tactically outmaneuvered and realized that it would be an uphill struggle."
+
+
+# -- NEMESIS_TEMPLATE (Phase 109) --------------------------------------------
+
+
+def test_nemesis_template_has_15_real_entries():
+    assert len(NEMESIS_TEMPLATE) == 15
+    assert set(NEMESIS_TEMPLATE.keys()) == set(range(1, 16))
+
+
+def test_nemesis_template_verbatim_sample():
+    assert NEMESIS_TEMPLATE[1] == (
+        "= were frightened/Rdismayed by the{ sudden/Runexpected}"
+        "appearance_of/Rconfrontation_with their hated/Rdreaded nemesis."
+    )
+
+
+def test_nemesis_template_phalanx_vs_legion_matches_rulebook_nemesis():
+    # models/army_type.py's own rulebook-sourced NEMESIS dict confirms
+    # Legion is Phalanx's real nemesis -- cross-checked, not guessed.
+    assert "Legionnaires" in NEMESIS_TEMPLATE[3]
+
+
+def test_nemesis_template_whales_vs_mermen_matches_rulebook_nemesis():
+    assert "Mermen" in NEMESIS_TEMPLATE[10]
+
+
+def test_nemesis_template_renders_via_prose_render():
+    from ak_engine.report.prose import render
+
+    rng = ScriptedRandom([0.1] * 10)
+    result = render(NEMESIS_TEMPLATE[3], {"=": "144th Legion"}, rng=rng)
+    assert result == "the unwieldy formation of 144th Legion was tested by the flexible Legionnaires."

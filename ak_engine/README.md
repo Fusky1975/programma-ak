@@ -4157,6 +4157,51 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `^K`/`$a`/`^B`/`^E`/`^F`/`^S` marker transcription, and rendering
     two templates end-to-end through `report/prose.py render()` with
     scoped values.
+- **Phase 109 (current)**: `report/turn_report.py
+  tactical_margin_bucket()`/`render_tactical_comparison()`/
+  `NEMESIS_TEMPLATE` -- revisits `TACTICS.X2`/`NEMESIS.X2`, both
+  confirmed real and dispatched since Phase 106 but deliberately left
+  unmodeled at the time (`SAY.PAS _BTac`/`_ANem`, ~lines 1058-1064 and
+  1084, immediate siblings of `_BLuck`/`_CLuck` in the same `Imp_Code`
+  block already read for `_BRes`/`margin_bucket()`).
+  - ~~`TACTICS.X2` ... `battac`'s own formula isn't traced~~ Closed:
+    reading all 9 of `TACTICS.X2`'s own templates end to end (header
+    `"9 1"`, exactly 9 real lines) reveals a **confirmed, monotonic
+    9-point spectrum** -- template 1 is total advantage for the
+    defender, template 5 ("neither leader could gain a tactical
+    advantage") is dead even, template 9 is total advantage for the
+    attacker, and `_BTac`'s own `battac < 5`/`battac > 5` comparisons
+    confirm 5 is the intended midpoint. `tactical_margin_bucket()`
+    reuses this confirmed scale (still a documented, unsourced bucketing
+    *input*, the same precedent `margin_bucket()` already established
+    for `bres`), fed by `turn/battle_line.py`'s own real
+    `attacker_tactical_ability`/`defender_tactical_ability` (rulebook
+    [7.2]). `battac`'s own formula is still not traced -- nor is the
+    "but/also" clause `_BTac` prefixes this with, driven by a second
+    unconfirmed replay value (`batluck`).
+  - `NEMESIS.X2` (header `"100 1"`, only 15 of 100 declared choices
+    populated) is modeled more conservatively: `NEMESIS_TEMPLATE` stores
+    all 15 real lines verbatim, keyed only by their own raw file
+    position -- no `ArmyType`-keyed lookup, no `render_*` wrapper.
+    Cross-checking against `models/army_type.py`'s own rulebook-sourced
+    `NEMESIS` dict finds unmistakable content matches for 7 of the 15
+    lines (Phalanx/Legion, Legion/Heavy Cavalry, Light+Heavy
+    Cavalry/Chariots, Light+Heavy Cavalry/Beasts, Warg Riders/Eagle
+    Wing, Whales/Mermen, Trolls+Ents/Axemen) -- strong supporting
+    evidence this is the genuine battle-nemesis narrative table, not a
+    coincidence. 3 candidate lines (8, 9, 11) all point to the same 3
+    `ArmyType`s' shared `Bowmen` nemesis with no further textual
+    distinction, and 2 lines (2, 15) name an unmodeled "Dinosaurs"/
+    "Sauropods" type -- so `Rint`'s own dispatch formula and a full
+    index-to-`ArmyType` mapping both remain unasserted, per this
+    project's sourcing discipline.
+  - Non-breaking: full suite passed unchanged (1720 passed) before any
+    new tests were written -- new functions/data with no existing call
+    sites. 15 new tests added (1735 passed total) in
+    `tests/test_turn_report.py`, covering the bucket-clamping boundary
+    cases, three confirmed buckets' exact rendered text (including the
+    `/S` sea marker), and `NEMESIS_TEMPLATE`'s real entry count plus two
+    rulebook-cross-confirmed samples.
 
 ## Setup
 
