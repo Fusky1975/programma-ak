@@ -3712,6 +3712,38 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     6 new tests added (1639 passed total) in `tests/test_weapon.py`,
     covering full 61-entry coverage for both dicts, verbatim samples, the
     `NOMONSTER` sentinel, and the real ranged/melee split count.
+- **Phase 95 (current)**: new `models/power.py` -- the magical effect a
+  "Magic Feature" (`models/magic_feature.py`, Phase 92) can trigger, and
+  the condition gating whether it does. `CTME.PAS`'s own `power` enum
+  (~line 434, 25 members) and `powco` enum (~line 543, 7 members), plus
+  `YAK.PAS`'s own `powname`/`coname` display-name tables (~line 420-439)
+  -- this resolves the `power` enum Phase 92's own docstring had already
+  named but deliberately left undefined.
+  - **Confirmed real and player-facing** via `YAK.PAS`'s own `Set_Event`
+    procedure -- the actual code that fires a magic feature's effect when
+    a character visits it -- which writes both display strings straight
+    to the player's report file: `WRITE(playfile,powname[fpower])` and
+    (inside the nested `Set_FCon` condition-check)
+    `WRITE(playfile,coname[fpowcon])`.
+  - `POWER_NAME`'s own strings read as compact, abbreviated labels (`"+"`,
+    `"-"`, `"Cast "`, `"Orac/Align"`, capped at 17 chars), not full prose
+    -- most likely printed alongside a separately-computed number (a
+    skill delta, a gold amount) -- stored verbatim rather than expanded
+    into a guessed full sentence.
+  - **Two more confirmed-real findings, deliberately deferred**: `mfpow1`/
+    `mfpowf` (`array[MagicFeature] of power`, a primary/decoy pair
+    mirroring `mf1`/`mff`'s own split) and an entirely separate `comfeat`
+    enum (27 members: `Seaweed, Whirlpool, Trees, Cliff, LavaPool,
+    Stalacs, Mine, Quicksand, ...`) with its own three `array[FeatureType]
+    of comfeat` tables (`cfs`, `cf1`, `cff`) -- mundane, non-magical
+    decorative/hazard landmarks inside a `Feature`, structurally parallel
+    to `MagicFeature` but never magical. Both left to a real follow-up
+    phase, matching the module's own docstring.
+  - Non-breaking: full suite passed unchanged (1639 passed) before any
+    new tests were written -- two new enums/dicts with no existing call
+    sites. 7 new tests added (1646 passed total) in a new
+    `tests/test_power.py`, covering full coverage of both enums, verbatim
+    samples, and the `PC_NONE` empty-string quirk.
 
 ## Setup
 
