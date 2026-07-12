@@ -4078,17 +4078,17 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   pseudo-random scheme (Phase 104's own finding), so
   `render_wandering_encounter()` reuses `pick_variant()` the same way
   `render_march()`/`render_flee_failure()` do.
-  - **A larger, real "wandering/patrol encounter outcome" system was
-    found alongside it, deliberately left out of scope**: `SAY.PAS`'s
-    own `_LPass`/`_LBefr`/`_LTricks`/`_LDense`/`_LDona`/`_LHear`/
-    `_LNice`/`_LGreet` are plain, non-`.X`-sourced `Say(...)` calls
-    describing what happens *after* the RWENC.X opening (declining to
-    fight, exchanging tips, hearing rumors of a Feature, sharing a
-    drink, ...), and `_LEnc`/`_LSafe`/`_LPEnc` dispatch their own
-    sibling `.X` files (`enco.x`, `safpat.x`, `patenc.x`) for closely
-    related encounter variants (`_LPEnc` sets `randlevel:= 2` instead of
-    RWENC's `1`, suggesting a distinct danger-level tier). Modeling that
-    whole outcome tree is a real, standalone follow-up phase.
+  - ~~A larger, real "wandering/patrol encounter outcome" system was
+    found alongside it, deliberately left out of scope: `SAY.PAS`'s own
+    `_LPass`/`_LBefr`/`_LTricks`/`_LDense`/`_LDona`/`_LHear`/`_LNice`/
+    `_LGreet` are plain, non-`.X`-sourced `Say(...)` calls describing
+    what happens *after* the RWENC.X opening. Modeling that whole
+    outcome tree is a real, standalone follow-up phase.~~ Fixed in
+    Phase 108 (`models/local_encounter.py`). `_LEnc`/`_LSafe`/`_LPEnc`
+    dispatch their own sibling `.X` files (`enco.x`, `safpat.x`,
+    `patenc.x`) for closely related encounter variants (`_LPEnc` sets
+    `randlevel:= 2` instead of RWENC's `1`, suggesting a distinct
+    danger-level tier) -- fixed in Phase 107 below.
   - Non-breaking: full suite passed unchanged (1697 passed) before any
     new tests were written -- a new function with no existing call
     sites. 5 new tests added (1702 passed total) in
@@ -4118,6 +4118,45 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sites. 8 new tests added (1710 passed total) in
     `tests/test_turn_report.py`, covering all variants of all three
     functions, including the `^K`/`^A` marker resolution.
+- **Phase 108 (current)**: `models/local_encounter.py` -- the
+  "Local Encounter Table" gap Phase 106 flagged and deliberately left
+  open, now closed. Models the 10 confirmed `SAY.PAS` `Imp_Code`
+  branches (`_LHearInv`/`_LPass`/`_LBefr`/`_LTricks`/`_LDense`/
+  `_LDona`/`_LHear`/`_LNice`/`_LGreet`/`_LHearPat`, lines 458-459 and
+  906-913) as `LocalEncounterEvent` (a new enum, using the real integer
+  story-code values declared in `RUMORS.PAS`'s own `CONST` block --
+  `_LPass = 3310` etc., ~lines 86, 118-121, 140 -- not made-up
+  ordinals) plus `LOCAL_ENCOUNTER_TEMPLATE`, a raw-template dict in the
+  same style as `models/intro.py INTRO_TEMPLATE`/`models/power.py
+  POWER_DESCRIPTION` (no wrapper `render_*` function, since -- unlike
+  the `FD(...)`-dispatched `.X` files -- each of these 10 codes carries
+  exactly one confirmed literal `Say(...)` template, no per-code
+  variant list to pick from).
+  - Stronger evidence than `models/intro.py Intro` (Phase 99): here
+    both the named constant *and* its dispatched content are directly
+    confirmed in source, not just a positional/content-only match.
+    What's still unconfirmed and not guessed at: which game-state fact
+    picks one of these 10 codes over another for a given encounter (the
+    selection logic lives in the missing main program).
+  - Raw byte inspection (not just a printed preview) found real control
+    -byte markers in 2 of the 10 templates: `_LHearInv` ends in `\x13`
+    = `^S` ("Province name #2", the invaded province); `_LDona`
+    contains `\x0b` = `^K` ("King name and title") immediately followed
+    by a Pascal-escaped `''` (`^K's`); `_LHear` contains
+    `\x01 & \x02\x06 \x05` = `^A & ^B^F ^E` -- `^B`/`^E` is
+    `PROSE.TXT`'s own "excluded from the General Intelligence Reports
+    of other players" span, a marker `report/prose.py`'s own docstring
+    already documents and defers (King-exclusion markers, needing the
+    full narrator-perspective system) -- transcribed here verbatim,
+    left for the caller to supply literal values for, not resolved.
+  - Non-breaking: full suite passed unchanged (1710 passed) before any
+    new tests were written -- a new module with no existing call sites.
+    10 new tests added (1720 passed total) in
+    `tests/test_local_encounter.py`, covering every member's real
+    `RUMORS.PAS` integer value, verbatim template samples, the
+    `^K`/`$a`/`^B`/`^E`/`^F`/`^S` marker transcription, and rendering
+    two templates end-to-end through `report/prose.py render()` with
+    scoped values.
 
 ## Setup
 
