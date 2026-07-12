@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.report.turn_report import (
     describe_battle,
     margin_bucket,
@@ -11,6 +12,7 @@ from ak_engine.report.turn_report import (
     render_battle_winner,
     render_column_clash,
     render_destroyed_army,
+    render_magic_feature_discovery,
     render_pursuit_and_destroy,
     render_retreat,
     render_spy_report_opening,
@@ -364,4 +366,38 @@ def test_render_spy_report_opening_last_variant_resolves_possessive_and_optional
     assert result == (
         "Guerin utilized Guerin's fine spying skills to secretly keep track "
         "of happenings in Falkenheim and reported the following information."
+    )
+
+
+# -- Phase 96: render_magic_feature_discovery (MAGFEAT.X2) --
+
+
+def test_render_magic_feature_discovery_none():
+    result = render_magic_feature_discovery(MagicFeature.NONE, "Everhold", "Arthur")
+    assert result == "Arthur saw nothing special while scouting out the Everhold."
+
+
+def test_render_magic_feature_discovery_found_something():
+    result = render_magic_feature_discovery(MagicFeature.POOL, "Everhold", "Arthur")
+    assert result == (
+        "While scouting the Everhold, Arthur saw a Pool/FStream which "
+        "seemed to be of a magical nature."
+    )
+
+
+def test_render_magic_feature_discovery_any_non_none_non_itself_ordinal_renders_the_same_sentence_shape():
+    # 19 of MAGFEAT.X2's 20-line choice pool are textually identical --
+    # the specific MagicFeature only changes the substituted $\ value.
+    result = render_magic_feature_discovery(MagicFeature.CRYSTAL_BALL, "Everhold", "Arthur")
+    assert result == (
+        "While scouting the Everhold, Arthur saw a Crystal_Ball/FMagic_Mirror "
+        "which seemed to be of a magical nature."
+    )
+
+
+def test_render_magic_feature_discovery_itself():
+    result = render_magic_feature_discovery(MagicFeature.ITSELF, "Everhold", "Arthur")
+    assert result == (
+        "While scouting the Everhold, Arthur noticed that the Everhold "
+        "itself seems to be imbued with magical qualities."
     )

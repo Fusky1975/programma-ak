@@ -3744,6 +3744,40 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sites. 7 new tests added (1646 passed total) in a new
     `tests/test_power.py`, covering full coverage of both enums, verbatim
     samples, and the `PC_NONE` empty-string quirk.
+- **Phase 96 (current)**: `report/turn_report.py render_magic_feature_discovery()`
+  -- the first phase to mine the `PROSE/` `.X2` template files directly
+  (rather than the Pascal source that names them), the same way Phases
+  91/92/95 found real data outside `CTBOTH.PAS`. `HostAK/TP/PROSE/
+  MAGFEAT.X2` is Search discovering (or not) a `models/magic_feature.py
+  MagicFeature` inside the `Feature` being searched.
+  - The file's header (`"20 1"`) parses via `parse_template_choices`
+    (Phase 61) as 20 choices, 1 line each -- but the file has 21 real
+    content lines. Line 1 is the "found nothing" sentence
+    (`MagicFeature.NONE`); lines 2-20 are 19 *textually identical* "found
+    a magic item" filler sentences (positionally corresponding to
+    `MagicFeature` ordinals 1-19, but the sentence text never actually
+    varies by which one) -- together exactly the header's declared
+    20-line pool. Line 21, outside that pool, is a distinguished sentence
+    for `MagicFeature.ITSELF` (ordinal 20) -- selected here directly on
+    `magic_feature`, not via `pick_variant`.
+  - `render_magic_feature_discovery()` substitutes `MAGIC_FEATURE_NAME`'s
+    own raw string straight into the template's `$\` marker, unresolved
+    -- `MAGIC_FEATURE_NAME` already documents these as raw, unresolved
+    `/F`/`/S` compound templates (Phase 92), and they can't be resolved
+    by routing back through `report/prose.py render()`'s own `/F`/`/S`
+    support either: `render()`'s pipeline resolves choice markers
+    **before** substituting placeholder values, so a marker arriving
+    *inside* a substituted value is never revisited. A rendered sentence
+    therefore still shows the raw `"Pool/FStream"`-style text at the
+    substitution point -- a known, already-documented limitation carried
+    forward, not silently mis-resolved.
+  - No `rng` parameter, unlike every other `render_*` function in this
+    module -- the source has no real variation to pick from here.
+  - Non-breaking: full suite passed unchanged (1646 passed) before any
+    new tests were written -- a new function with no existing call
+    sites. 4 new tests added (1650 passed total) in
+    `tests/test_turn_report.py`, covering the `NONE`/found-something/
+    `ITSELF` cases and the raw unresolved `$\` substitution.
 
 ## Setup
 

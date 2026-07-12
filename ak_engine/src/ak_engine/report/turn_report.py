@@ -124,12 +124,46 @@ line.** Two more real, standalone templates, added the same way:
   `render_spy_report_opening()` elides both (substitutes empty string)
   rather than guessing what text a full narrator-perspective system
   would put there.
+
+**Phase 96 addendum -- Search discovering a Magic Feature.**
+``HostAK/TP/PROSE/MAGFEAT.X2``, found continuing to mine the ``PROSE/``
+``.X2`` template files directly (rather than just the Pascal source that
+names them), the same way Phases 91/92/95 found real data outside
+``CTBOTH.PAS``.
+
+- The file's header (``"20 1"``) parses via this module's own
+  ``parse_template_choices`` convention as 20 choices, 1 line per choice
+  -- but the file has 21 real content lines. Line 1 is the "no magic
+  feature found" sentence (``MagicFeature.NONE``); lines 2-20 are 19
+  *textually identical* "found a magic item" filler sentences
+  (positionally corresponding to ``MagicFeature`` ordinals 1-19,
+  ``POOL``-``SEALED_ENTRANCE``, but the sentence text never actually
+  varies by which one); together that's exactly the header's declared
+  20-line choice pool. Line 21, outside that pool, is a distinguished
+  sentence for ``MagicFeature.ITSELF`` (ordinal 20) -- not chosen by the
+  same random-pick mechanism the header describes, matched here by
+  selecting on ``magic_feature`` directly rather than via
+  ``pick_variant``.
+- ``render_magic_feature_discovery()`` substitutes ``models/
+  magic_feature.py MAGIC_FEATURE_NAME``'s own raw string straight into
+  the template's ``$\\`` marker, unresolved -- `MAGIC_FEATURE_NAME`'s own
+  docstring already documents these strings as raw, unresolved `/F`/`/S`
+  compound templates (Phase 92). They can't be resolved by routing back
+  through `report/prose.py render()`'s own `/F`/`/S` support either:
+  `render()`'s pipeline resolves choice markers **before** substituting
+  placeholder values (see `report/prose.py`'s own docstring), so a
+  marker arriving *inside* a substituted value is never revisited. A
+  sentence rendered by this function therefore still shows the raw
+  ``"Pool/FStream"``-style text at the substitution point -- a known,
+  already-documented limitation carried forward, not silently
+  mis-resolved.
 """
 
 from __future__ import annotations
 
 import random
 
+from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.report.prose import render
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
@@ -526,3 +560,38 @@ def describe_battle(
             lines.append(render_retreat(name, destination, rng, is_sea=is_sea))
 
     return lines
+
+
+# HostAK/TP/PROSE/MAGFEAT.X2 -- Search discovering (or not) a Magic
+# Feature. See the module docstring's Phase 96 addendum for the header
+# (20 choices, 1 line each) vs. the file's real 21 content lines.
+_MAGFEAT_NOTHING_TEMPLATE = "< saw nothing special while scouting out the &."
+_MAGFEAT_FOUND_TEMPLATE = "While scouting the &, < saw a $\\ which seemed to be of a magical nature."
+_MAGFEAT_ITSELF_TEMPLATE = (
+    "While scouting the &, < noticed that the & itself seems to be imbued with magical qualities."
+)
+
+
+def render_magic_feature_discovery(
+    magic_feature: MagicFeature, province_name: str, character_name: str
+) -> str:
+    """Renders MAGFEAT.X2's sentence for a Search discovering (or not)
+    the ``models/magic_feature.py MagicFeature`` inside ``province_name``
+    (the geographic ``Feature`` being searched). No ``rng`` parameter --
+    unlike every other function here, the source has no real variation
+    to pick from: 19 of the 20-line choice pool are textually identical
+    (see module docstring), so which one gets used never changes the
+    output.
+
+    See the module docstring's Phase 96 addendum for why the
+    ``MagicFeature.POOL``-``SEALED_ENTRANCE`` case's ``$\\`` substitution
+    still shows a raw, unresolved ``"Name/Falternate"``-style string.
+    """
+
+    values = {"&": province_name, "<": character_name}
+    if magic_feature is MagicFeature.NONE:
+        return render(_MAGFEAT_NOTHING_TEMPLATE, values)
+    if magic_feature is MagicFeature.ITSELF:
+        return render(_MAGFEAT_ITSELF_TEMPLATE, values)
+    values["$\\"] = MAGIC_FEATURE_NAME[magic_feature]
+    return render(_MAGFEAT_FOUND_TEMPLATE, values)
