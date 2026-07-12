@@ -3503,6 +3503,30 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_race.py`, covering full 15-entry coverage for both
     dicts, both PROSE.TXT example strings, and the non-obvious
     adjective divergences.
+- **Phase 88 (current)**: `models/enums.py FAME_DESCRIPTOR` -- a
+  character-fame descriptor table, found while researching Phase 87's
+  own `"^Y: Character Description"` marker. `PROSE.TXT`'s own example
+  for `^Y` ("A Pagan, Berserk nature") turned out to be the *already-
+  modeled* `Alignment`+`Temper` "nature/character" sentence
+  (`RUMORS.PAS`'s own `Say(Concat(' ', outname[_align], ', ',
+  tempername[_temper], ' nature/Rcharacter'), spytype)`), not new
+  content -- but researching it surfaced a genuinely separate, real,
+  unmodeled table: `RUMORS.PAS`'s own `Get_AbDesc` procedure (~line
+  481), which builds sentences like "(a Human, famous for
+  Necromancy)" from a character's *best* `Ability`'s own skill level.
+  - `FAME_DESCRIPTOR: dict[int, str]` (10 entries, skill levels 0-9)
+    transcribes its own `CASE` verbatim: "noted for" (0), "well known
+    for" (1), "famous for" (2), "renowned for" (3), "world-famous for"
+    (4), "revered for" (5), and "worshipped for" for the whole 6-9
+    range -- confirmed a real Pascal `CASE lev OF 6..9:` range, not a
+    transcription shortcut taken here. Confirmed real and used
+    (`REPORTS.PAS` ~line 733 too, not just `RUMORS.PAS`'s own
+    `Get_AbDesc` definition site).
+  - Non-breaking: full suite passed unchanged (1602 passed) before any
+    new tests were written -- a new dict with no existing call sites.
+    3 new tests added (1605 passed total) in a new
+    `tests/test_fame_descriptor.py`, covering full 0-9 coverage and the
+    6-9 collapse.
 
 ## Setup
 

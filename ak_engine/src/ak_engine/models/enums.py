@@ -55,6 +55,30 @@ class Ability(Enum):
     SAGE = 14
 
 
+# RUMORS.PAS `Get_AbDesc` (~line 481, found while researching Phase 87's own
+# "^Y: Character Description" marker -- that marker turned out to be the
+# already-modeled Alignment+Temper "nature/character" sentence, not this;
+# `Get_AbDesc` is a separate, unlabeled narrative helper, not itself a named
+# PROSE.TXT marker). Given a character's *best* Ability's own skill level
+# (0-9), produces the fame descriptor phrase used to build sentences like
+# "(a Human, famous for Necromancy)" -- confirmed real and used (also
+# REPORTS.PAS ~line 733). Levels 6-9 all collapse to the same "worshipped
+# for" string in the Pascal source itself (`6..9: s:= 'worshipped for '`),
+# not a transcription shortcut taken here.
+FAME_DESCRIPTOR: dict[int, str] = {
+    0: "noted for",
+    1: "well known for",
+    2: "famous for",
+    3: "renowned for",
+    4: "world-famous for",
+    5: "revered for",
+    6: "worshipped for",
+    7: "worshipped for",
+    8: "worshipped for",
+    9: "worshipped for",
+}
+
+
 def action_from_int(value: int) -> "ActionCode | int":
     """Map a raw action int to ``ActionCode`` where valid, else keep it raw.
 
