@@ -4582,6 +4582,44 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new tests were written -- new functions with no existing call
     sites. 5 new tests added (1833 passed total) in
     `tests/test_turn_report.py`.
+- **Phase 122 (current)**: `models/enums.py SPELL_CAST_ANNOUNCEMENT`
+  -- a new 25-entry `dict[Spell, str]`, verbatim from
+  `HostAK/TP/PROSE/SPNOTE.X2` (header `"25 1"`), discovered while
+  investigating the user's own literal next request (the Ice-Suspend
+  narrative cluster, `_LCIceS` et al.) -- `SAY.PAS`'s own `_LCIceS`
+  case dispatches `Sps(Ice_Suspend, S_PCom)`, and `Sps(sp: spell; fam:
+  integer)` (`SAY.PAS` ~line 241-242) is `FD('c:\tp\prose\spnote.x2',
+  fam, 1001+ord(sp))` -- the same confirmed-strongest `dex >= 1000`
+  deterministic-per-ordinal dispatch this project already established
+  for `MAGFEAT.X2`/`MCOND.X2`/`IONAME.X2`, here newly confirmed for a
+  dedicated `Sps()` helper rather than an inline `CASE`.
+  - `SPNOTE.X2`'s 25 real templates have a gapless, individually
+    content-confirmed 1:1 positional match to `Spell`'s own 25
+    documented base spells (`RESURRECTION` = ordinal 0 through
+    `MIRROR_IMAGE` = ordinal 24) -- the 10 undocumented "secret"
+    spells (ordinals 25-34) have no entry, since the file itself stops
+    at 25.
+  - Several entries use `^L=` (Phase 118's list-insertion), matching
+    `Sps()`'s callers that pass a family of affected characters (e.g.
+    `Skeletal_Army`, `Plague`, `Flood`, `Tornado` -- all "the army/they
+    arose/were struck/were slowed/were sucked up" narratives).
+  - `_LCast1` (`SAY.PAS` lines 599-602), the opening clause these
+    entries are meant to structurally follow via Pascal's own
+    sequential `Say()` writes, is exposed as two bare constants
+    (`CAST_SPELL_OPENING_COMPLETE_TEMPLATE`/
+    `CAST_SPELL_OPENING_CONTINUED_TEMPLATE`) plus
+    `CAST_SPELL_OPENING_COMPLETE_SPELLS` (the `{Tornado, Bless,
+    Plague}` set that gets the complete-sentence variant, all others
+    get the "...spell and " continuation) -- no wrapper function
+    stitches them together, since the `CONTROL_UNDEAD` entry is itself
+    genuinely truncated in the source (ends mid-word, "...mercilessly
+    and_", no continuation anywhere in the file) and grammatical
+    correctness of the concatenation was not independently verified
+    for all 25 spells.
+  - Non-breaking: full suite passed unchanged (1833 passed) before any
+    new tests were written -- new data with no existing call sites. 7
+    new tests added (1840 passed total) in
+    `tests/test_spell_cast_announcement.py`.
 
 ## Setup
 

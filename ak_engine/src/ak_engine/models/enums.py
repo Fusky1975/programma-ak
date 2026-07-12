@@ -243,6 +243,74 @@ SPELL_NAME: dict[Spell, str] = {
 }
 
 
+# HostAK/TP/SAY.PAS's `Sps(sp: spell; fam: integer)` (~line 241-242)
+# dispatches `FD('c:\\tp\\prose\\spnote.x2', fam, 1001+ord(sp))` -- a
+# deterministic `dex >= 1000` index directly on `Spell`'s own ordinal,
+# the same confirmed-strongest evidence tier `MAGFEAT.X2`/`MCOND.X2`/
+# `IONAME.X2` already established. `SPNOTE.X2` (header `"25 1"`) has
+# exactly 25 real templates, matching `Spell`'s own 25 documented base
+# spells (`RESURRECTION` = ordinal 0 through `MIRROR_IMAGE` = ordinal
+# 24, see this class's own docstring) with a gapless, individually
+# content-confirmed 1:1 positional match for every single entry (e.g.
+# index 0 mentions being "resurrected", index 22 forms "a shell of ice"
+# around the target for `ICE_SUSPEND`, index 24 mentions "a second
+# image" for `MIRROR_IMAGE`). Ordinals 25-34 (the 10 undocumented
+# "secret" spells) have no entry here -- `SPNOTE.X2` itself stops at 25.
+#
+# Many entries are real continuation clauses (leading space/comma/
+# period, no capital first letter), meant to follow `_LCast1`'s own
+# opening ("< cast a ~ spell." for `TORNADO`/`BLESS`/`PLAGUE`, "< cast
+# a ~ spell and " for every other spell, see `CAST_SPELL_OPENING_*`
+# below) -- documented here as the apparent intended relationship
+# (`Say(...)` calls write sequentially with no separator, the same
+# concatenation shape this project has confirmed many times), not
+# force-composed into a single verified sentence for all 25 cases: the
+# `CONTROL_UNDEAD` entry itself is genuinely truncated in the source
+# (ends mid-word, "...mercilessly and_", no further text anywhere in
+# the file), so no wrapper function asserts a always-grammatical
+# combined render. Raw templates only; the caller composes.
+SPELL_CAST_ANNOUNCEMENT: dict[Spell, str] = {
+    Spell.RESURRECTION: "[1 was resurrected by the spell cast by <2.",
+    Spell.PART_SEA: "the waters of @ were magically parted.",
+    Spell.BLESS: "@ was magically blessed and prospered.",
+    Spell.HOLY_SYMBOL: ".A golden mist in the shape of a cross formed around <2.",
+    Spell.SKELETAL_ARMY: "^L= arose from the graves of the dead!",
+    Spell.KILL_ENEMY: "[1 was magically killed by a dark Necromantic spell!",
+    Spell.PLAGUE: "the plague struck ^L= in @ and destroyed them.",
+    Spell.HAND_OF_DEATH: " and began making squeezing motions with > hands.",
+    Spell.FLOOD: "the Flood slowed ^L= in @, causing them to lose one movement point.",
+    Spell.TORNADO: "tornadoes sucked up ^L= in @ and destroyed them.",
+    Spell.EARTHQUAKE: "@ was devastated by an earthquake!",
+    Spell.FIREBALL: ", which proved useless in the underwater environs of the &.",
+    Spell.CHARM: ".< befriended/Rcharmed [ and used > respite/Rgood_luck to escape/Rget_away.",
+    Spell.ORATORY: "< cast a spell giving magical powers of oratory to [.",
+    Spell.CLAIRVOYANCE: "< cast a ~ spell and could see everything that happened to [.",
+    Spell.PSYCHIC_BLAST: ", projecting psychic waves of stunning force towards [.",
+    Spell.ILLUS_TERRAIN: "@ had an illusion cast upon it.It was actually a ` province.",
+    Spell.ILLUS_ARMIES: "illusory armies were formed for [.",
+    Spell.HIDE_FEATURE: "the & in @ was magically hidden.",
+    Spell.INVISIBILITY: ", fading into invisibility.",
+    Spell.SPIRITWRACK: ", to make [1 quake and shiver with spiritual convulsions.",
+    Spell.CONTROL_UNDEAD: (
+        ", and brought [ under > control.< used > control to attack [ mercilessly and_"
+    ),
+    Spell.ICE_SUSPEND: ", and a shell/Rcrust of {frigid }ice formed/Rthickened around [.",
+    Spell.TELEK_STORM: ", which proved useless in the underwater environs of the &.",
+    Spell.MIRROR_IMAGE: " and an/Ra_second image/Rillusion of [ sprang/Rflashed into existence/Rbeing!",
+}
+
+
+# HostAK/TP/SAY.PAS _LCast1 (~lines 599-602): the opening clause
+# SPELL_CAST_ANNOUNCEMENT's own entries are meant to follow (see its
+# comment above). Two real, hardcoded variants (no file).
+CAST_SPELL_OPENING_COMPLETE_TEMPLATE = "< cast a ~ spell."
+CAST_SPELL_OPENING_CONTINUED_TEMPLATE = "< cast a ~ spell and "
+# The 3 spells whose own SPNOTE.X2 entry is a separate sentence rather
+# than a continuation of "...spell and " -- CASE Tornado,Bless,Plague
+# in _LCast1's own source.
+CAST_SPELL_OPENING_COMPLETE_SPELLS = frozenset({Spell.TORNADO, Spell.BLESS, Spell.PLAGUE})
+
+
 def spell_from_int(value: int) -> "Spell | int":
     """Map a raw spell int to ``Spell`` where valid, else keep it raw."""
 
