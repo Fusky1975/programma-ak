@@ -4533,6 +4533,31 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new tests were written -- new functions with no existing call
     sites. 3 new tests added (1819 passed total) in
     `tests/test_turn_report.py`.
+- **Phase 120 (current)**: `report/turn_report.py
+  render_defensive_march()`/`render_caught_up()`/
+  `render_practice_tutored()`/`render_practice_already_maxed()` -- four
+  more real, single, hardcoded templates (no file), each tying
+  directly to an already-modeled `turn/*.py` mechanic rather than
+  being purely decorative, the same "narrative for existing mechanics"
+  pattern Phase 110 (Explore) and Phase 111 (Fire Arrow) established.
+  - `_LCMarch` (`RUMORS.PAS` `_LCMarch = 3111`) -- a defensive Move
+    (reinforcing a province under threat), distinct from `_LMarch`/
+    `MARCH.X`'s own regular Move narrative (Phase 104). `^S` (Province
+    name #2) is the origin province.
+  - `_LCatch: Say('< caught up with [ in @.',S_Adv)` -- the
+    Pursue/Trail catch-up moment itself, ties to
+    `turn/pursue_execution.py`/`turn/trail_execution.py`
+    (Phase 51/52/66/68).
+  - `_LTeach: Say('< was tutored/Rinstructed in{ the art of} ^ by
+    [.',S_Priv)` -- successful Practice tutoring, ties to
+    `turn/practice_execution.py` (Phase 44/46).
+  - `_LAlrMax` -- immediately follows `_LTeach` in `RUMORS.PAS`'s own
+    `CONST` block, narrates `turn/practice_execution.py`'s own
+    already-modeled max-skill-level rule.
+  - Non-breaking: full suite passed unchanged (1819 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 9 new tests added (1828 passed total) in
+    `tests/test_turn_report.py`.
 
 ## Setup
 

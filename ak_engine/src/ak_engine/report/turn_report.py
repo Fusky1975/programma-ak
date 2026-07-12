@@ -628,6 +628,31 @@ there.
   refer to the thief -- the same "one value, two marker spellings for
   the same person" shape `render_fire_hireling()`'s own `[`/`[1`
   (Phase 114) already established.
+
+**Phase 120 addendum -- Move/Pursue/Practice narrative.** Four more
+real, single, hardcoded templates (no file), each tying directly to
+an already-modeled `turn/*.py` mechanic rather than being purely
+decorative -- the same "narrative for existing mechanics" pattern
+Phase 110 (Explore) and Phase 111 (Fire Arrow) established.
+
+- `_LCMarch: BEGIN Start_BI; Say('< marched into @ from ^S to defend @
+  against its would-be conquerors.',S_Army); End_BI; END`
+  (`RUMORS.PAS` `_LCMarch = 3111`) -- a defensive Move (reinforcing a
+  province under threat), distinct from `_LMarch`/`MARCH.X`'s own
+  regular Move narrative (Phase 104). `^S` (Province name #2) is the
+  origin province. `render_defensive_march()`.
+- `_LCatch: Say('< caught up with [ in @.',S_Adv)` -- the Pursue/Trail
+  catch-up moment itself, ties to `turn/pursue_execution.py`/
+  `turn/trail_execution.py` (Phase 51/52/66/68). `render_caught_up()`.
+- `_LTeach: Say('< was tutored/Rinstructed in{ the art of} ^ by
+  [.',S_Priv)` -- successful Practice tutoring, `^` is `PROSE.TXT`'s
+  own "Ability name" marker, ties to `turn/practice_execution.py`
+  (Phase 44/46). `render_practice_tutored()`.
+- `_LAlrMax: Say('< practiced ^ even though < had already reached the
+  maximum skill level.',S_Red)` -- immediately follows `_LTeach` in
+  `RUMORS.PAS`'s own `CONST` block, narrates `turn/practice_execution
+  .py`'s own already-modeled max-skill-level rule.
+  `render_practice_already_maxed()`.
 """
 
 from __future__ import annotations
@@ -2070,6 +2095,70 @@ def render_march(
         ">": f"{character_name}'s",
     }
     return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/SAY.PAS _LCMarch -- a single, real, hardcoded template (no
+# file), a defensive Move (reinforcing a threatened province), distinct
+# from the regular Move narrative above. See module docstring's Phase
+# 120 addendum.
+DEFENSIVE_MARCH_TEMPLATE = "< marched into @ from ^S to defend @ against its would-be conquerors."
+
+
+def render_defensive_march(
+    character_name: str, province_name: str, origin_province_name: str, rng: random.Random
+) -> str:
+    """Renders ``_LCMarch``'s sentence for a defensive Move. ``^S``
+    (Province name #2) is the origin province.
+    """
+
+    values = {"<": character_name, "@": province_name, "^S": origin_province_name}
+    return render(DEFENSIVE_MARCH_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LCatch -- a single, real, hardcoded template (no
+# file), the Pursue/Trail catch-up moment. See module docstring's
+# Phase 120 addendum.
+CAUGHT_UP_TEMPLATE = "< caught up with [ in @."
+
+
+def render_caught_up(character_name: str, target_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders ``_LCatch``'s sentence for a Pursue/Trail catch-up."""
+
+    values = {"<": character_name, "[": target_name, "@": province_name}
+    return render(CAUGHT_UP_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LTeach -- a single, real, hardcoded template (no
+# file), successful Practice tutoring. See module docstring's Phase
+# 120 addendum.
+PRACTICE_TUTORED_TEMPLATE = "< was tutored/Rinstructed in{ the art of} ^ by [."
+
+
+def render_practice_tutored(character_name: str, ability_name: str, teacher_name: str, rng: random.Random) -> str:
+    """Renders ``_LTeach``'s sentence for successful Practice tutoring.
+    ``ability_name`` is ``PROSE.TXT``'s own ``^`` marker.
+    """
+
+    values = {"<": character_name, "^": ability_name, "[": teacher_name}
+    return render(PRACTICE_TUTORED_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LAlrMax -- a single, real, hardcoded template (no
+# file), immediately follows _LTeach in RUMORS.PAS's own CONST block.
+# See module docstring's Phase 120 addendum.
+PRACTICE_ALREADY_MAXED_TEMPLATE = (
+    "< practiced ^ even though < had already reached the maximum skill level."
+)
+
+
+def render_practice_already_maxed(character_name: str, ability_name: str, rng: random.Random) -> str:
+    """Renders ``_LAlrMax``'s sentence for Practice at an already-maxed
+    skill level (``turn/practice_execution.py``'s own already-modeled
+    rule).
+    """
+
+    values = {"<": character_name, "^": ability_name}
+    return render(PRACTICE_ALREADY_MAXED_TEMPLATE, values, rng=rng)
 
 
 # HostAK/TP/PROSE/FLEEFAIL.X -- a failed Flee maneuver. See module

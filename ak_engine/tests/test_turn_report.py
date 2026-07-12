@@ -7,12 +7,16 @@ from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.report.turn_report import (
     ALREADY_ALLIED_TEMPLATE,
     ATTACK_DEVASTATING_HIT_TEMPLATE,
+    CAUGHT_UP_TEMPLATE,
+    DEFENSIVE_MARCH_TEMPLATE,
     EXPLORE_ALREADY_MAXED_TEMPLATE,
     EXPLORE_NOT_PRESENT_PREFIX,
     FUNERAL_PYRE_TEMPLATE,
     HIRE_COUNTER_OFFER_TEMPLATE,
     INHERIT_TEMPLATE,
     NEMESIS_TEMPLATE,
+    PRACTICE_ALREADY_MAXED_TEMPLATE,
+    PRACTICE_TUTORED_TEMPLATE,
     SNEAKUP_RANGE_BOW,
     SNEAKUP_RANGE_MELEE,
     SNEAKUP_RANGE_SPELL,
@@ -30,7 +34,9 @@ from ak_engine.report.turn_report import (
     render_attack_hit,
     render_attack_missed,
     render_battle_winner,
+    render_caught_up,
     render_column_clash,
+    render_defensive_march,
     render_destroyed_army,
     render_explore_already_maxed,
     render_explore_continued,
@@ -53,6 +59,8 @@ from ak_engine.report.turn_report import (
     render_move_to_melee_range,
     render_patrol_encounter,
     render_patrol_release,
+    render_practice_already_maxed,
+    render_practice_tutored,
     render_pursuit_and_destroy,
     render_retreat,
     render_sneak_detected,
@@ -1263,4 +1271,55 @@ def test_render_steal_caught_and_ransomed_concatenates_both_sentences():
         "through Borin's things in a bungled attempt at thievery.Borin "
         "forced Aldric to pay Borin half Aldric's treasury in ransom "
         "before letting him go."
+    )
+
+
+# -- Move/Pursue/Practice narrative (Phase 120) ------------------------------
+
+
+def test_render_defensive_march():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_defensive_march("Aldric", "Greenfield", "Redhaven", rng)
+    assert result == "Aldric marched into Greenfield from Redhaven to defend Greenfield against its would-be conquerors."
+
+
+def test_defensive_march_template_is_the_confirmed_hardcoded_say():
+    assert DEFENSIVE_MARCH_TEMPLATE == "< marched into @ from ^S to defend @ against its would-be conquerors."
+
+
+def test_render_caught_up():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_caught_up("Aldric", "Borin", "Greenfield", rng)
+    assert result == "Aldric caught up with Borin in Greenfield."
+
+
+def test_caught_up_template_is_the_confirmed_hardcoded_say():
+    assert CAUGHT_UP_TEMPLATE == "< caught up with [ in @."
+
+
+def test_render_practice_tutored_left_branch():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_practice_tutored("Aldric", "Tactics", "Borin", rng)
+    assert result == "Aldric was tutored in Tactics by Borin."
+
+
+def test_render_practice_tutored_right_branch():
+    rng = ScriptedRandom([0.9] * 4)
+    result = render_practice_tutored("Aldric", "Tactics", "Borin", rng)
+    assert result == "Aldric was instructed in the art of Tactics by Borin."
+
+
+def test_practice_tutored_template_is_the_confirmed_hardcoded_say():
+    assert PRACTICE_TUTORED_TEMPLATE == "< was tutored/Rinstructed in{ the art of} ^ by [."
+
+
+def test_render_practice_already_maxed():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_practice_already_maxed("Aldric", "Tactics", rng)
+    assert result == "Aldric practiced Tactics even though Aldric had already reached the maximum skill level."
+
+
+def test_practice_already_maxed_template_is_the_confirmed_hardcoded_say():
+    assert PRACTICE_ALREADY_MAXED_TEMPLATE == (
+        "< practiced ^ even though < had already reached the maximum skill level."
     )
