@@ -49,11 +49,50 @@ satisfied; `PCOND_TEMPLATE` is the out-of-character description of what
 the condition requires. Both raw, unrendered prose templates -- matching
 how `WEAPON_HIT_VERB`/`TREASURE_LABEL`/`MAGIC_FEATURE_NAME` already store
 their own raw template text.
+
+**Phase 98 addendum**: `HostAK/TP/PROSE/FPDESC.X2` and `SPDESC.X2`,
+confirmed real and confirmed *together* via `SAY.PAS`'s own `_EDesc`
+procedure:
+
+```pascal
+_EDesc: BEGIN
+  IF needy THEN Say('The $\\ needs more information to perform its power.',S_PCom);
+  FD('c:\\tp\\prose\\fpdesc.x2',S_PCom,1001+ord(fpower));
+  IF ((fpower = AnsPrayer) or (fpower = CastSpell)) THEN
+    FD('c:\\tp\\prose\\spdesc.x2',S_PCom,1001+setval);
+  needy:= false;
+ END;
+```
+
+- `POWER_DESCRIPTION` (`FPDESC.X2`, header `"25 1"`) is shown *every*
+  time -- one full sentence per `Power` ordinal (1:1, confirmed by
+  `ord(fpower)` indexing it directly), describing exactly what that
+  power does in plain English.
+- `CAST_SPELL_FEATURE_DESCRIPTION` (`SPDESC.X2`, also header `"25 1"`) is
+  shown *additionally*, only when `fpower` is `CastSpell` or `AnsPrayer`
+  -- 1:1 with `models/enums.py Spell`'s own first 25 ordinals (indexed by
+  `setval`, confirmed the spell ordinal by every entry's own text: e.g.
+  index 0 reads `"  -(Illegal: Resurrection)"`, matching
+  `Spell.RESURRECTION`). 11 of the 25 spells are marked
+  `"(Illegal: <name>)"` -- not a real description, but the game's own
+  confirmation that this spell can never actually be granted as a Search
+  Feature's Cast-Spell power; stored verbatim rather than filtered out,
+  since the illegal markers are themselves real, sourced content.
+- `MCOND.X2`'s own confirmed indexing (`FD('...mcond.x2',S_PCom,
+  1001+ord(fpowcon))`, right after this same block in `SAY.PAS`) directly
+  matches Phase 97's own `MCOND_TEMPLATE` -- independent confirmation
+  that the Phase 97 positional mapping was correct.
+- The `CastSpell` entry's own raw byte is `\x01` (Turbo Pascal's `chr(1)`
+  compact-encoding for `^A`, "a"/"an" depending on the next word) --
+  transcribed as `^A` per `report/turn_report.py`'s own established
+  source-notation convention for this exact byte.
 """
 
 from __future__ import annotations
 
 from enum import Enum
+
+from ak_engine.models.enums import Spell
 
 
 class Power(Enum):
@@ -217,4 +256,166 @@ PCOND_TEMPLATE: dict[PowerCondition, str] = {
         "these terms, a character must give two Scout orders when Searching "
         "this feature."
     ),
+}
+
+# HostAK/TP/PROSE/FPDESC.X2 (header "25 1"), verbatim, positional with
+# `Power`'s own ordinals above -- shown every time a magic feature's
+# power is described (see module docstring's Phase 98 addendum).
+POWER_DESCRIPTION: dict[Power, str] = {
+    Power.PNONE: "This feature has no power.",
+    Power.NEW_SEX: "The $\\ changes your sex from male to female (or vice versa.)",
+    Power.NEW_TEMP: "The $\\ changes your temper to $T, if you are not already $T.",
+    Power.NEW_RACE: (
+        "The $\\ changes your race to $R, if you are not already of this "
+        "fine and superior race."
+    ),
+    Power.UP_SKILL: (
+        "The $\\ will try to increase your skill in ^ by 1 point per visit, "
+        "up to a maximum of 4.If you have low aptitude, your chance of "
+        "success is halved for every aptitude-level you are deficient in ^."
+    ),
+    Power.UP_APT: (
+        "The $\\ increases your aptitude in ^ by 1 point per visit, up to "
+        "a maximum of 4."
+    ),
+    Power.DN_SKILL: "The $\\ decreases your skill in ^ by 1 point, if it isn't zero already.",
+    Power.DN_APT: "The $\\ decreases your aptitude in ^ by 1 point, if it isn't zero already.",
+    Power.DAMP_COLLEGE: (
+        "The $\\ emits an anti-magic field which prevents the casting of any ^ spell."
+    ),
+    Power.DAMP_MAGIC: (
+        "The $\\ emits an anti-magic field which halves the chance of "
+        "casting any magic spell."
+    ),
+    Power.WARP_SPACE: (
+        "The $\\ generates a space-warp field which causes 75% of all "
+        "arrows to miss their mark, as well as 50% of all swings in Melee."
+    ),
+    Power.CAST_SPELL: "The $\\ gives you the magic power to cast ^A ~ spell.",
+    Power.ANS_PRAYER: (
+        "The $\\ will cast a ~ spell for a character who kneels before "
+        "the $\\ in prayer."
+    ),
+    Power.MAP_FEAT: (
+        "The $\\ will tell you of one previously unknown feature in your "
+        "Kingdom each time you scout it (but it will not give you any "
+        "points for the Chancellor office)."
+    ),
+    Power.MAP_PROV: (
+        "The $\\ helps you map unknown lands.Each time you scout it, it "
+        "will tell you of some unknown lands, it's inhabitants, location and ruler."
+    ),
+    Power.SAGE_DISC: (
+        "The $\\ knows every Sage Discovery!Each time it is scouted, it "
+        "will reveal one discovery which will benefit your Kingdom (but "
+        "it will not give you any points for the Chancellor office)."
+        "Usually, a lesser discovery will be revealed to you."
+    ),
+    Power.ORAC_ALIGN: (
+        "The $\\ is an Oracle of Alignment.When you scout it, just SA-y "
+        'the character number (not the name; e.g., "SA Tell me about '
+        'character 1.") and the character\'s alignment will become known to you.'
+    ),
+    Power.ORAC_POWER: (
+        "The $\\ is an Oracle of Power.When you scout it, just SA-y the "
+        'character number (not the name; e.g., "SA Tell what leader 1 '
+        'has.") and the Oracle will tell you the number and type of all '
+        "armies led by that character (but not the location)."
+    ),
+    Power.ORAC_OFFICE: (
+        "The $\\ is an Oracle of Office.When you scout it, just SA-y the "
+        'Office number (not the name; e.g., "SA Tell me who holds office '
+        '1.") and the leader for that office will be pronounced (0-Emp, '
+        "1-Chanc, 2-Treas, 3-Marsh, 4-Adm, 5-Def, 6-Priest, 7-Mage)."
+    ),
+    Power.ORAC_GOLD: (
+        "The $\\ is an Oracle of Wealth.When you scout it, just SA-y the "
+        'Kingdom number (not the King\'s name; e.g., "SA Tell me the '
+        'treasury of King 1.") and the Oracle will tell you the wealth '
+        "of the Kingdom's treasury."
+    ),
+    Power.ORAC_TREAS: (
+        "The $\\ is an Oracle of Treasure.Just SA-y a feature number (not "
+        'the feature name; e.g., "SA Tell me what\'s in feature 1.") and '
+        "the Oracle will tell you what treasure is hidden there."
+    ),
+    Power.RECHARGE: (
+        "The $\\ will recharge any magic item that can be used to cast a "
+        "spell.When you scout it, one charge will be restored to any "
+        'magic item in your position when you SA-y the item number (not '
+        'the item name; e.g., "SA Recharge item 1.").'
+    ),
+    Power.GRANT_WISH: (
+        "The $\\ will grant a minor Wish.When you scout it, you may "
+        "increase any ability by one, if your unmodified skill level is "
+        "less than your aptitude (maximum 4).SA-y the ability number "
+        "(0=Tactics, 1=March etc., the order is shown in your Character List)."
+    ),
+    Power.GAMBLE: (
+        "The $\\ will gamble with you for any amount of gold you have in "
+        "your Kingdom's treasury.When you scout it, SA-y how much you "
+        "wish to gamble, and whoever rolls the highest number with two "
+        "dice takes the gold.In case of a tie, the $\\ wins!"
+    ),
+    Power.CHANCE: (
+        "The effects of the $\\ are both good and bad!Chance will "
+        "determine the fate of <, good or ill.Care to take a chance?"
+    ),
+}
+
+# HostAK/TP/PROSE/SPDESC.X2 (header "25 1"), verbatim, positional with
+# `Spell`'s own first 25 ordinals -- shown additionally, alongside
+# `POWER_DESCRIPTION`, only when a magic feature's `Power` is
+# `CAST_SPELL` or `ANS_PRAYER` (see module docstring's Phase 98
+# addendum). 11 of the 25 entries read `"(Illegal: <name>)"` -- the
+# game's own confirmation that spell can never actually be granted this
+# way, kept verbatim rather than filtered out.
+CAST_SPELL_FEATURE_DESCRIPTION: dict[Spell, str] = {
+    Spell.RESURRECTION: "  -(Illegal: Resurrection)",
+    Spell.PART_SEA: (
+        'The "Part Sea" will take effect on this province (for a land '
+        "province, it can be used to cancel a Flood spell.)"
+    ),
+    Spell.BLESS: "The Bless spell will take effect on this province.",
+    Spell.HOLY_SYMBOL: "The spell takes effect as if a level-2 White Magician had cast it.",
+    Spell.SKELETAL_ARMY: "Skeletal armies will be raised for <2 if they exist in this province.",
+    Spell.KILL_ENEMY: (
+        "Name the character number (not the character name), and he "
+        "will be struck down if he is in this province."
+    ),
+    Spell.PLAGUE: (
+        "The Plague spell will take effect on this province as if a "
+        "level-2 Necromancer had cast it."
+    ),
+    Spell.HAND_OF_DEATH: "  (Illegal: Hand-of-Death.)",
+    Spell.FLOOD: "The Flood spell will take effect on this province.",
+    Spell.TORNADO: (
+        "The Tornado spell will take effect on this province as if a "
+        "level-2 Elemental Mage had cast it."
+    ),
+    Spell.EARTHQUAKE: "The Earthquake spell will take effect on this province.",
+    Spell.FIREBALL: "  (Illegal: Fireball)",
+    Spell.CHARM: "  (Illegal: Charm)",
+    Spell.ORATORY: "The Oratory spell will take effect on the character Searching the feature.",
+    Spell.CLAIRVOYANCE: (
+        "Name the character number (not the character name), and "
+        "everything he does for the rest of the turn will be known to you."
+    ),
+    Spell.PSYCHIC_BLAST: "  (Illegal: Psychic_Blast)",
+    Spell.ILLUS_TERRAIN: (
+        "The terrain of this province will appear as the terrain number "
+        "you SA-y (do not the terrain name):  0-Plains, 1-Desert, "
+        "2-Jungle, 3-Forest, 4-Mountains, 5-Sea."
+    ),
+    Spell.ILLUS_ARMIES: (
+        "Illusory armies will be formed for the Searching character "
+        "(the spell takes effect at level 2)."
+    ),
+    Spell.HIDE_FEATURE: "This feature will become magically hidden.",
+    Spell.INVISIBILITY: "  (Illegal: Invisibility)",
+    Spell.SPIRITWRACK: "  (Illegal: Spiritwrack)",
+    Spell.CONTROL_UNDEAD: "  (Illegal: Control_Undead)",
+    Spell.ICE_SUSPEND: "  (Illegal: Ice_Suspend)",
+    Spell.TELEK_STORM: "  (Illegal: Telek_Storm)",
+    Spell.MIRROR_IMAGE: "  (Illegal: Mirror_Image)",
 }

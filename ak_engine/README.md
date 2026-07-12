@@ -3810,6 +3810,35 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     6 new tests added (1656 passed total) in `tests/test_power.py`,
     covering full 7-entry coverage for both dicts, verbatim samples, and
     the shared `PC_NONE` text.
+- **Phase 98 (current)**: `models/power.py POWER_DESCRIPTION`/
+  `CAST_SPELL_FEATURE_DESCRIPTION` -- `HostAK/TP/PROSE/FPDESC.X2` and
+  `SPDESC.X2`, confirmed real and confirmed *together* via `SAY.PAS`'s
+  own `_EDesc` procedure (`FD('...fpdesc.x2',S_PCom,1001+ord(fpower))`
+  always, then `FD('...spdesc.x2',S_PCom,1001+setval)` additionally when
+  `fpower` is `CastSpell`/`AnsPrayer`) -- the same procedure whose
+  neighboring `FD('...mcond.x2',S_PCom,1001+ord(fpowcon))` call
+  independently confirms Phase 97's own `MCOND_TEMPLATE` indexing was
+  correct.
+  - `POWER_DESCRIPTION` (`FPDESC.X2`, header `"25 1"`) is 1:1 with
+    `Power`'s own 25 ordinals -- the full plain-English sentence for what
+    each power does, shown every time.
+  - `CAST_SPELL_FEATURE_DESCRIPTION` (`SPDESC.X2`, also header `"25 1"`)
+    is 1:1 with `Spell`'s own first 25 ordinals -- shown *additionally*
+    only for `CastSpell`/`AnsPrayer`. 11 of the 25 entries read
+    `"(Illegal: <name>)"` -- the game's own confirmation that spell can
+    never actually be granted this way -- kept verbatim rather than
+    filtered out.
+  - The `CastSpell` entry's own raw byte (`\x01`) is transcribed as `^A`
+    per `report/turn_report.py`'s own established source-notation
+    convention for that exact control byte.
+  - Both raw, unrendered prose templates, matching every other `*_NAME`/
+    `*_TEMPLATE`/`*_DESCRIPTION` dict in this project. Not wired into any
+    renderer this phase.
+  - Non-breaking: full suite passed unchanged (1656 passed) before any
+    new tests were written -- two new dicts with no existing call sites.
+    5 new tests added (1661 passed total) in `tests/test_power.py`,
+    covering full coverage of both dicts, verbatim samples, and the 11
+    illegal-spell markers.
 
 ## Setup
 
