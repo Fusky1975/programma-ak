@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from ak_engine.models.discovery import DISCOVERY_NAME, Discovery
+from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.discovery import (
+    DISCOVERY_ABILITY_BONUS,
+    DISCOVERY_ANTISPELL_TARGET,
+    DISCOVERY_DESCRIPTION,
+    DISCOVERY_NAME,
+    DISCOVERY_REVENUE_BONUS_PERCENT,
+    Discovery,
+)
 
 
 def test_discovery_has_64_declared_members():
@@ -35,3 +43,85 @@ def test_discovery_name_ordinal_boundaries_of_each_group():
     assert Discovery.INFRARED_GOGGLES.value == 35
     assert Discovery.PEANUT_BUTTER_SANDWICH.value == 36
     assert Discovery.VULCANIZED_RUBBER.value == 63
+
+
+# -- Phase 93: Discovery.txt (user-supplied design doc) --
+
+
+def test_discovery_description_covers_every_discovery():
+    assert set(DISCOVERY_DESCRIPTION.keys()) == set(Discovery)
+
+
+def test_discovery_description_verbatim_samples():
+    assert DISCOVERY_DESCRIPTION[Discovery.LAND_SHIP].startswith(
+        "The Land Ship is a galley on wheels"
+    )
+    assert "raise your revenue by an average of 2%" in DISCOVERY_DESCRIPTION[Discovery.SPECTACLES]
+
+
+def test_discovery_ability_bonus_covers_exactly_the_fix_and_wreck_groups():
+    covered = set(DISCOVERY_ABILITY_BONUS.keys())
+    expected = {Discovery(v) for v in range(0, 20)}
+    assert covered == expected
+
+
+def test_discovery_ability_bonus_matches_description_text_for_every_entry():
+    # Doubly confirmed: DISCOVERY_ABILITY_BONUS is derived from CTBOTH.PAS's
+    # own formula, but every DISCOVERY_DESCRIPTION paragraph in this group
+    # names the same ability in plain English -- cross-check both agree.
+    ability_words = {
+        Ability.TACTICAL: "Tactical",
+        Ability.MARCH: "March",
+        Ability.NAVAL: "Naval",
+        Ability.ARCHERY: "Archery",
+        Ability.MELEE: "Melee",
+        Ability.DRUID: "Druid",
+        Ability.THIEF: "Thief",
+        Ability.EXPLORER: "Explorer",
+        Ability.SPY: "Spy",
+        Ability.SAGE: "Sage",
+    }
+    for discovery, ability in DISCOVERY_ABILITY_BONUS.items():
+        assert f"{ability_words[ability]} ability" in DISCOVERY_DESCRIPTION[discovery]
+
+
+def test_discovery_antispell_target_covers_exactly_the_bild_group():
+    covered = set(DISCOVERY_ANTISPELL_TARGET.keys())
+    expected = {Discovery(v) for v in range(20, 36)}
+    assert covered == expected
+
+
+def test_discovery_antispell_target_verbatim_samples():
+    assert DISCOVERY_ANTISPELL_TARGET[Discovery.OSTEOPATHIC_GERM_WARFARE] == Spell.SKELETAL_ARMY
+    assert DISCOVERY_ANTISPELL_TARGET[Discovery.HIDDEN_TATTOOS] == Spell.KILL_ENEMY
+    assert DISCOVERY_ANTISPELL_TARGET[Discovery.INFRARED_GOGGLES] == Spell.INVISIBILITY
+
+
+def test_discovery_revenue_bonus_percent_covers_exactly_the_crunch_group():
+    covered = set(DISCOVERY_REVENUE_BONUS_PERCENT.keys())
+    expected = {Discovery(v) for v in range(36, 64)}
+    assert covered == expected
+
+
+def test_discovery_revenue_bonus_percent_cycles_1_2_3_4():
+    values = [DISCOVERY_REVENUE_BONUS_PERCENT[Discovery(v)] for v in range(36, 64)]
+    assert values == [1, 2, 3, 4] * 7
+
+
+def test_discovery_revenue_bonus_percent_spectacles_discrepancy_is_documented():
+    # CTBOTH.PAS's own formula gives 1% for SPECTACLES (crunch20), but
+    # Discovery.txt's design-doc text says 2% -- this dict follows the
+    # Pascal formula (the actual executable behavior), and the
+    # discrepancy is called out explicitly rather than silently resolved.
+    assert DISCOVERY_REVENUE_BONUS_PERCENT[Discovery.SPECTACLES] == 1
+    assert "2%" in DISCOVERY_DESCRIPTION[Discovery.SPECTACLES]
+
+
+def test_discovery_three_mechanics_dicts_partition_the_enum_without_overlap():
+    ability_keys = set(DISCOVERY_ABILITY_BONUS)
+    antispell_keys = set(DISCOVERY_ANTISPELL_TARGET)
+    revenue_keys = set(DISCOVERY_REVENUE_BONUS_PERCENT)
+    assert not (ability_keys & antispell_keys)
+    assert not (ability_keys & revenue_keys)
+    assert not (antispell_keys & revenue_keys)
+    assert ability_keys | antispell_keys | revenue_keys == set(Discovery)

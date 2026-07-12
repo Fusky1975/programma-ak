@@ -3646,6 +3646,44 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_magic_feature.py`, covering full 21-entry coverage, the
     PROSE.TXT marker confirmation, verbatim samples, and the `ITSELF`/`&`
     quirk.
+- **Phase 93 (current)**: `models/discovery.py` extended with the full
+  "Discoveries of the Sages" mechanics -- the user supplied
+  `Discovery.txt`, a design document giving the flavor/mechanics
+  paragraph for all 64 discoveries (Phase 91's own enum order), the first
+  phase this project to work from a user-supplied source document rather
+  than the Pascal source or the rulebook `.TXT`/`.AK` files.
+  - Every one of the 64 `Discovery.txt` paragraphs cross-checks exactly
+    against `REPORTS.PAS`'s own `CASE` statement (already quoted in the
+    Phase 91 docstring) -- all 20 ability-bonus paragraphs name the same
+    `Ability` the Pascal formula computes, all 16 anti-spell paragraphs
+    describe an effect on the same `Spell` the Pascal formula computes,
+    so **`DISCOVERY_ABILITY_BONUS`/`DISCOVERY_ANTISPELL_TARGET` are now
+    doubly confirmed**, not a guess from either source alone.
+  - **One real, explicitly-documented discrepancy** surfaced comparing
+    the 28 revenue paragraphs against the Pascal formula's 1-2-3-4 cycle:
+    `SPECTACLES` (`crunch20`) computes `1%` by formula, but `Discovery.txt`
+    states "2% each gameturn" -- every other of the 28 entries matches
+    exactly. `DISCOVERY_REVENUE_BONUS_PERCENT` follows the Pascal formula
+    (the actual executable behavior of the original engine) for this one
+    entry, with the discrepancy called out at the dict entry itself and
+    in the module docstring -- not silently resolved either way, per this
+    project's standing sourcing discipline.
+  - Added `DISCOVERY_DESCRIPTION` (all 64 paragraphs, verbatim),
+    `DISCOVERY_ABILITY_BONUS` (`dict[Discovery, Ability]`, the 20
+    `fix`/`wreck` entries), `DISCOVERY_ANTISPELL_TARGET` (`dict[Discovery,
+    Spell]`, the 16 `bild` entries), `DISCOVERY_REVENUE_BONUS_PERCENT`
+    (`dict[Discovery, int]`, the 28 `crunch` entries). Still deliberately
+    **not implemented**: applying any of this to actual gameplay (how a
+    kingdom earns a `Discovery`, how the ability bonus stacks with
+    `LeaderState.skills`, how the anti-spell wards modify
+    `turn/cast_execution.py`) remains a real follow-up phase.
+  - Non-breaking: full suite passed unchanged (1623 passed) before any
+    new tests were written -- three new dicts with no existing call
+    sites. 10 new tests added (1633 passed total) in
+    `tests/test_discovery.py`, covering full coverage and non-overlap of
+    all three mechanics dicts, cross-checking every ability-bonus entry's
+    description text against its dict value, verbatim samples, the
+    1-2-3-4 revenue cycle, and the Spectacles discrepancy.
 
 ## Setup
 

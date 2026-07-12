@@ -40,25 +40,48 @@ own four member groups (``fix0``-``fix9``, ``wreck0``-``wreck9``,
 - **Revenue bonus** (``crunch0``-``crunch27``, 28 discoveries): "+X%
   revenue", ``X`` cycling ``1,2,3,4`` by ``(ordinal-in-group) mod 4``.
 
-Only the *name* table is transcribed here -- matching how
-``models/office.py``/``models/weapon.py`` (Phases 81/83) started with
-vocabulary before any mechanical wiring. Computing/applying these bonuses
-(how a kingdom actually earns a ``Discovery``, and how each category's
-effect combines with the rest of the engine -- e.g. does the ability bonus
-stack additively with ``LeaderState.skills``, does the revenue bonus
-combine with ``Inv_Bonus`` the same report section prints right above it)
-is deliberately left to a real follow-up phase, not attempted here.
-
 ``discval`` (``CTBOTH.PAS`` ~line 766, also confirmed real via the same
 report loop) is a pure *display-order* key -- the loop above prints
 discoveries in descending ``discval`` order, grouped by identical value --
 not a difficulty/point score with any other confirmed meaning. Not
 modeled here since it has no use outside that one print loop.
+
+**Phase 93 addition**: the user supplied ``Discovery.txt``, a design
+document giving the full flavor/mechanics paragraph for all 64
+discoveries, in the same order as the Pascal ``discovery`` enum. Every
+single entry cross-checks exactly against the ``CASE`` statement quoted
+above -- all 20 ability-bonus paragraphs name the same ``Ability`` the
+Pascal formula computes, and all 16 anti-spell paragraphs describe an
+effect on the same ``Spell`` the Pascal formula computes -- so
+``DISCOVERY_ABILITY_BONUS``/``DISCOVERY_ANTISPELL_TARGET`` below are
+doubly confirmed, not a guess from either source alone.
+
+One real discrepancy surfaced comparing the 28 revenue paragraphs against
+the Pascal formula's own 1-2-3-4 cycle: ``SPECTACLES`` is the 21st
+``crunch`` discovery (``crunch20``), for which
+``1+((ord(d)-ord(crunch0)) and 3)`` computes ``1%``, but ``Discovery.txt``
+states "raise your revenue by an average of 2% each gameturn." Every
+other of the 28 revenue entries matches the formula exactly. This is kept
+as an explicitly documented discrepancy, not silently resolved either
+way: ``DISCOVERY_REVENUE_BONUS_PERCENT`` below follows the Pascal
+formula (the actual executable behavior of the original engine), and this
+one exception is called out at its own dict entry.
+
+Applying any of these bonuses to actual gameplay (how a kingdom earns a
+``Discovery``, how the ability bonus stacks with ``LeaderState.skills``,
+how the revenue bonus combines with ``Inv_Bonus`` the same report section
+prints right above it, how the anti-spell wards actually modify
+``turn/cast_execution.py``) is still deliberately left to a real
+follow-up phase -- this phase only models the confirmed *data*, matching
+how ``models/office.py``/``models/weapon.py`` (Phases 81/83) started with
+vocabulary before any mechanical wiring.
 """
 
 from __future__ import annotations
 
 from enum import Enum
+
+from ak_engine.models.enums import Ability, Spell
 
 
 class Discovery(Enum):
@@ -205,4 +228,163 @@ DISCOVERY_NAME: dict[Discovery, str] = {
     Discovery.TIMEPIECE: "Timepiece",
     Discovery.FIREWORKS_DISPLAY: "Fireworks Display",
     Discovery.VULCANIZED_RUBBER: "Vulcanized Rubber",
+}
+
+
+# `Discovery.txt` (user-supplied design document), verbatim, positional
+# with `Discovery`'s own ordinals above.
+DISCOVERY_DESCRIPTION: dict[Discovery, str] = {
+    Discovery.LAND_SHIP: "The Land Ship is a galley on wheels which can be used to charge enemy lines along a road or clearing in a battle.  They need not be recruited because is assumed to be a small Land Ship contingent at each battle. Its effect is to raise the Tactical ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.SCYTHED_CHARIOTS: "Scythed Chariots can be used to charge enemy lines along a road, plains area or clearing in a battle.  They need not be recruited because there is assumed to be a small Scythed Chariot contingent at each battle. Their effect is to raise the Tactical ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.PONY_EXPRESS: "The Pony Express enables the Kingdom to establish fast, consistent lines of communication between troops and characters, enabling faster movement of armies. Its effect is to raise the March ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.MACADAM_ROADS: "Macadam Roads are an improvement over the old dirt roads because they drain well and troops never get bogged down in mud, so they can move faster. Their effect is to raise the March ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.GREEK_FIRE: "Greek Fire is a special mixture of flammables which sets the wood of enemy ships on fire and is very difficult to put out. Its effect is to raise the Naval ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.SEXTANT: "The Sextant allows the determination of a ship's position at sea. Its effect is to raise the Naval ability of all of the generals of the Kingdom by 1 level.",
+    Discovery.COMPOSITE_BOW: "The Composite bow is a bow that is specially strung to deliver more force to an arrow without having to pull very hard on the bowstring. Its effect is to raise the Archery ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.TUNGSTEN_TIPPED_ARROW: "Tungsten-Tipped Arrows are arrows with their tips strengthed with steel-tungsten alloy. Their effect is to raise the Archery ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.STRENGTH_ELIXIR: "The Strength Elixir is a nutritious blend which enables the imbiber to maximize the strength gained through exercise. Its effect is to raise the Melee ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.MITHRIL_CHAINMAIL: "Mithril Chainmail is a specially strengthed armor which enables the wearer to swing and maneuver with greater agility in combat. Its effect is to raise the Melee ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.MEDITATION_INCENSE: "Meditation Incense is a fragrant, calming incense which allows the user to attain a state of mind that is closer to Nature. Its effect is to raise the Druid ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.CLASSIFICATION_OF_LIFE: "The Classification of Life is an index to all the races and species of the world. Its effect is to raise the Druid ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.MAGNETIZED_LOCK_PICKS: "Magnetized Lock Picks help a thief in picking locks to steal the treasure that lies within. Their effect is to raise the Thief ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.TRAP_FINDING_DUST: "Trap Finding Dust is a specially ground and colored dust which, when thrown onto a stone surface, helps to identify joints in the stone which may be traps or secret compartments. Its effect is to raise the Thief ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.COMPASS: "The compass helps an explorer find his way in a wilderness or at sea on a cloudy night. Its effect is to raise the Explorer ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.TELESCOPE: "The telescope helps an explorer see more territory from a given vantage point.  Its effect is to raise the Explorer ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.INVISIBLE_INK: "Invisible Ink helps a spy to keep notes without the risk of being exposed as a spy. Its effect is to raise the Spy ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.TWO_WAY_MIRRORS: "2-Way mirrors helps a spy to gather information from foreign officials who are caught in compromising situations. Their effect is to raise the Spy ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.HIEROGLYPHIC_TRANSLATION: "Hieroglyphic Translation helps a Sage in his researches of old manuscripts.  Its effect is to raise the Sage ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.SCIENTIFIC_METHOD: "The Scientific Method helps a Sage to conduct his researches systematically and efficiently. Its effect is to raise the Sage ability of all of the characters of the Kingdom by 1 level.",
+    Discovery.OSTEOPATHIC_GERM_WARFARE: "Osteopathic Germ Warfare can be used to infect Skeletal Armies raised by Necromancers with a disease that rots their bones. Its effect is to reduce the strength of Skeletal Armies in the opposing force by one quality level in any battle fought by the Kingdom. From now on, Osteopathic Germ Warfare will reduce the strength of Skeletal Armies in the opposing force by one quality level.",
+    Discovery.HIDDEN_TATTOOS: "Hidden Tattoos neutralize the Kill Enemy spell of Necromancers because they can't make a sufficiently accurate figurine of the character they want dead. All characters of the Kingdom are protected.  Instead of being killed, the target character will be sick for the remainder of the gameturn and will spend his time practicing abilities somewhat randomly. From now on, Hidden Tattoos will reduce the effect of the Kill Enemy spell: the target character will be sick for the remainder of the gameturn and will spend his time practicing abilities somewhat randomly.",
+    Discovery.PENICILLIN: "Penicillin protects the Kingdom from all effects of the Plague spell used by Necromancers. Your armies are protected wherever they go, and all armies (yours and your ally's) are protected in your provinces. Armies affected by Plague will have a 50% chance of losing one level of quality. From now on, Penicillin will reduce the effects of the Plague spell: affected armies will have a 50% chance of losing one level of quality.",
+    Discovery.ARTIFICIAL_ORGANS: 'Artificial Organs are installed in characters employed by the Kingdom, and they reduce the effect of the Hand of Death spell used by Necromancers to squeeze and crush the internal organs of their enemies. No damage is caused to the target, and archery can be used (but not spells.) From now on, Artificial Organs will reduce the effects of "Hand of Death": no damage is caused, and archery can be used (but not spells.)',
+    Discovery.FLOOD_DAMS: 'Flood Dams reduce the effects of the Flood spell used by Elemental Magicians. When it\'s cast on a province owned by your kingdom, affected armies currently in the target province will immediately lose one movement point. From now on, Flood Dams will reduce the effects of the "Flood" spell: when it\'s cast on a province owned by your kingdom, affected armies currently in the target province will immediately lose one movement point.',
+    Discovery.GIANT_FAN: 'A Giant Fan is transported by all armies of the Kingdom.  Whenever an Elemental Mage casts a Tornado spell, the soldiers just turn the fan on and it helps disperse the tornadoes. Armies hit by Tornadoes will have a 50% chance of losing one level of quality. From now on, the Giant Fan will reduce the effects of the "Tornado" spell: affected armies will have a 50% chance of losing one level of quality.',
+    Discovery.REINFORCED_CONCRETE: 'Reinforced Concrete is used to build and strengthen the structures of the Kingdom, reducing the effect of Earthquake spells cast by Elemental Mages. Income from the affected province will only decrease by 3 gold. From now on, Reinforced Concrete will reduce the effects of the "Earthquake" spell: income from the affected province will decrease by 3 gold.',
+    Discovery.ASBESTOS_CLOTHING: 'Asbestos Clothing is a fireproof clothing worn by all characters of the Kingdom which reduces the effects of fireball spells cast by Elemental Mages. From now on, Asbestos Clothing will reduce the effects of the "Fireball" spell: the damage caused will be reduced by 67%.',
+    Discovery.ANALYTICAL_PSYCHOLOGY: 'Analytical Psychology is taught to all characters employed by the Kingdom. Any Charm spell cast by a Psychic Mage on your character will work, but it wears off at the end of the turn, and the charmed character will never Search features or risk combat. From now on, Analytical Psychology will reduce the effects of the "Charm" spell: the "Charm" spell will work, but it wears off at the end of the turn, and the charmed character will never Search features or risk combat. Any armies traveling with the character will go with him when he returns to his master.',
+    Discovery.PROPAGANDA_MEGAPHONES: 'Propaganda Megaphones are used at a battle to reduce the effects of any Oratory spell cast by enemy Psychics on their forces.  The megaphones allow the Kingdom\'s generals to broadcast the lies and logical flaws in the enemy leader\'s speeches. Each opposing army will have only a 33% chance of being affected by their leader\'s Oratory ("you can fool some of the people all of the time..."). From now on, Propaganda Megaphones will reduce the effects of the "Oratory" spell: each opposing army will have only a 33% chance of being affected by their leader\'s Oratory ("you can fool some of the people all of the time...")',
+    Discovery.DRY_ICE_FOG: 'Dry Ice Fog reduces the effects of Clairvoyance spells cast on any character employed by the Kingdom. Information obtained will be limited to very large-scale activities, while more personal activities will be clouded (no more keyhole-peeping!) From now on, Dry Ice Fog will will reduce the effects of the "Clairvoyance" spell: information obtained will be limited to very large-scale activities, while more personal activities will be clouded (no more keyhole-peeping!)',
+    Discovery.LEAD_LINED_HELMET: 'The Lead-Lined Helmet reduces the effect of a Pyschic Blast spell cast by an enemy Psychic from having any effect on any character employed by the Kingdom. The spell will allow only 1-2 free attack rounds. From now on, the Lead-Lined Helmet will reduce the effect of the "Pyschic Blast" spell: the spell will allow only 1-2 free attack rounds.',
+    Discovery.ULTRAVIOLET_LENSES: "Ultraviolet Lenses are given to all characters employed by the Kingdom to enable them to see through an Illusory Terrain spell cast by an Illusionist. Ultraviolet Lenses will still have the same effect: characters will see through the Illusory terrain, but armies will still be affected.",
+    Discovery.OBSERVATION_BALLOONS: 'Observation Balloons are raised at a field of battle.  They enable the observers to perceive Phantasmal Armies formed by Illusionists for the two-dimensional images they are, thus reducing the effects of the spell at any battle which the Kingdom conducts: their army strength is increased by only 5% per skill level by the phantasms. From now on, Observation Balloons will reduce the effect of "Phantasmal Armies": army strength is increased by only 5% per skill level.',
+    Discovery.HAND_HELD_RADAR: "Hand-Held Radar sets are distributed to all characters employed by the Kingdom.  They enable characters to find features regardless of whether a Hide Feature spell has been cast on the feature by an Illusionist. Hand-Held Radar sets will still have the same effect.",
+    Discovery.INFRARED_GOGGLES: 'Infrared Goggles are distributed to all characters employed by the Kingdom.  They enable characters to help detect enemy Illusionists who have cast an Invisibility spell on themselves. The defensive protection will be only 20%, not 50%. From now on, Infrared Goggles will reduce the effect of the "Invisibility" spell: defensive protection will be only 20%, not 50%.',
+    Discovery.PEANUT_BUTTER_SANDWICH: "The invention of Peanut Butter Sandwiches vastly increases the morale of the younger population, and also makes the little rug rats cheaper to feed.  It has the effect of raising the revenue of the Kingdom by an average of 1% each gameturn.",
+    Discovery.ASPIRIN_PILL: "Aspirin helps increase revenue by keeping the populace feeling well and working hard for His Majesty's glory.  It also provides fast relief when your Royal Concubines are giving you a headache. Aspirin has the effect of raising the revenue of the Kingdom by an average of 2% each gameturn.",
+    Discovery.PEPPER_SPICE: "Congratulations, you have discovered the Pepper Corn!  All you have to do is grind up those little suckers, sell the spice at jacked-up Royal Monopoly prices and you will increase your Kingdom's revenue by an average of 3% each gameturn.",
+    Discovery.COTTON_GIN: "The Cotton Gin automates the separation of cotton from the seeds contained within the cotton bolls, thus freeing all your contented little slaves for other productive work.  It has the effect of raising the revenue of the Kingdom by an average of 4% each gameturn.",
+    Discovery.ICE_CREAM_CONE: "The Ice Cream Cone is a nice little Royal Monopoly which will also boost revenue from your Toothpaste Monopoly.  You can increase your Kingdom's revenue by an average of 1% each gameturn.",
+    Discovery.BLACK_LACE_TEDDY: "Black Lace raises the revenue of the Kingdom by an average of 2% each gameturn.  How?  Simple.  Women can now drive men even crazier than before.  Men will have to work harder to please them, which means they will have to produce more goods, which means more taxes flowing into your coffers.",
+    Discovery.SCREW: "The Screw helps your woodworking industry.  Its effect is to raise the revenue of the Kingdom by an average of 3% each gameturn.",
+    Discovery.REFORGING_OF_STEEL: "Steel Reforging helps your Royal Steelers make the finest possible steel products, and also insures that the King possesses the most finely-worked sword that money can buy. The sole effect is to raise the revenue of the Kingdom by an average of 4% each gameturn.",
+    Discovery.MAGNET: "The Magnet has many minor uses.  It has the effect of raising the revenue of the Kingdom by an average of 1% each gameturn.",
+    Discovery.MALPRACTICE_SUIT: "The Malpractice Suit helps increase revenue from your Insurance Monopoly.  The effect is to raise the revenue of the Kingdom by an average of 2% each gameturn.",
+    Discovery.GAMBLING_CASINO: "The Gambling Casino (complete with such wonderful innovations as marked cards, rigged roulette wheels, etc.  ) raises the revenue of the Kingdom by an average of 3% each gameturn.",
+    Discovery.PULLEY: "The Pulley helps raise bridges, buildings and other indispensable structures such as 100-foot high statues of Your Majesty.  Its effect is to raise the revenue of the Kingdom by an average of 4% each gameturn.",
+    Discovery.INK_STAMP: "The Ink Stamp helps increase the efficiency of all the pesky little bureaucrats you have running around your Palace.  Its effect is to raise the revenue of the Kingdom by an average of 1% each gameturn.",
+    Discovery.POSTAGE_STAMP: "The Postage Stamp helps establish and regulate communications in your Kingdom.  There's also a P.  R.  bonanza:  You get to put your portrait on every stamp. The effect is to raise the revenue of the Kingdom by 2% each turn.",
+    Discovery.GAME_OF_CHESS: "The Game of Chess helps everyone who plays it to sharpen their minds, enabling them to think and act with alacrity.  Its effect is to raise the revenue of the Kingdom by an average of 3% each gameturn.",
+    Discovery.WATER_WHEEL: "The Water Wheel enables greedy entrepreneurs to build factories to grind wheat, corn, axes, et cetera.  It raises the revenue of the Kingdom by an average of 4% each gameturn.",
+    Discovery.SOAP_BAR: "Soap helps people to work alongside each other without having to use one of their hands to hold their nose (before soap, people generally smelled something like a dead cow).  Its effect is to the revenue of the Kingdom by an average of 1% each gameturn.",
+    Discovery.PIPE_ORGAN: "The deep, sonorous tones of the Pipe Organ attract multitudes of people to your Churches, where they happily donate their hard-earned money.  And since you control the Church, guess who's raking in the bucks?  That's right, your revenues are increased by an average of 2% each gameturn.",
+    Discovery.REAPER: "Your peasants are grateful for the horse-drawn Reaper, which automatically harvests the wheat as it rolls along.  Its effect is to raise the revenue of the Kingdom by an average of 3% each gameturn.",
+    Discovery.COAL_MINE: "Coal Mines have many uses.  They produce fuel.  You can put coal in Christmas stockings.  You can exile your political enemies to work in the Mines.  Need I say more? Their effect is to raises the revenue of the Kingdom by an average of 4% each gameturn.",
+    Discovery.SPECTACLES: "Your Royal Monopoly on Spectacles enables you to miraculously help nearsighted people see clearly for the first tiime!  And if they don't want to pay your jacked-up prices, they can damn well stumble over pebbles and step in horse puckey for the rest of their lives!  The effect is to raise your revenue by an average of 2% each gameturn.",
+    Discovery.WINDMILL: "Windmills help drive machines, pump water for irrigation, et cetera.  They also are the favorite jousting partners for your intrepid knights.  The effect is to raise the revenue of the Kingdom by an average of 2% each gameturn.",
+    Discovery.GUITAR: "The Guitar helps spread folk music and rock 'n' roll to the farthest reaches of the Kingdom, greatly increasing the morale of your people.  Fortunately, punk rock hasn't been invented yet, or your civilization would be doomed. The effect is to raise the revenue of the Kingdom by an average of 3% each gameturn.",
+    Discovery.PAPER_MILL: "Paper has many, many uses. The most important usage is the printing of paper currency, so you can spend money that you don't really have.  The effect is to raise the revenue of the Kingdom by an average of 4% each gameturn.",
+    Discovery.UMBRELLA: "The Umbrella protects people from getting soaked in the rain, thus curbing pneumonia and other diseases.  Healthy people are working, tax-paying people.  Your revenues are raised by an average of 1% each gameturn.",
+    Discovery.TIMEPIECE: "Your peasants can't imagine how they ever got along without the Timepiece.  And your Royal Engineers have installed a built-in calendar which reminds the peasants of all the important tax deadlines. Now wasn't that nice of them? The effect of the Timepiece is to raise the revenue of the Kingdom by an average of 2% each gameturn.",
+    Discovery.FIREWORKS_DISPLAY: "Now you can put on a Fireworks display on every important patriotic holiday.  The peasants are greatly impressed, and their voluntary contributions raise your revenue by an average of 3% each gameturn.",
+    Discovery.VULCANIZED_RUBBER: "Rubber has a thousand uses.  Your 25-year-old heir is especially thankful for the rubber ducky made for him by the Royal Toymaker. The effect of this invention is to raise the revenue of the Kingdom by an average of 4% each gameturn.",
+}
+
+
+# Ability skill bonus group (fix0-fix9, wreck0-wreck9) -- CTBOTH.PAS's own
+# `ability(ord(d) Shr 1)` / `ability((ord(d)+10) Shr 1)` formula, confirmed
+# a second time by `DISCOVERY_DESCRIPTION`'s own "raise the <ability>
+# ability" text for every one of these 20 entries.
+DISCOVERY_ABILITY_BONUS: dict[Discovery, Ability] = {
+    Discovery.LAND_SHIP: Ability.TACTICAL,
+    Discovery.SCYTHED_CHARIOTS: Ability.TACTICAL,
+    Discovery.PONY_EXPRESS: Ability.MARCH,
+    Discovery.MACADAM_ROADS: Ability.MARCH,
+    Discovery.GREEK_FIRE: Ability.NAVAL,
+    Discovery.SEXTANT: Ability.NAVAL,
+    Discovery.COMPOSITE_BOW: Ability.ARCHERY,
+    Discovery.TUNGSTEN_TIPPED_ARROW: Ability.ARCHERY,
+    Discovery.STRENGTH_ELIXIR: Ability.MELEE,
+    Discovery.MITHRIL_CHAINMAIL: Ability.MELEE,
+    Discovery.MEDITATION_INCENSE: Ability.DRUID,
+    Discovery.CLASSIFICATION_OF_LIFE: Ability.DRUID,
+    Discovery.MAGNETIZED_LOCK_PICKS: Ability.THIEF,
+    Discovery.TRAP_FINDING_DUST: Ability.THIEF,
+    Discovery.COMPASS: Ability.EXPLORER,
+    Discovery.TELESCOPE: Ability.EXPLORER,
+    Discovery.INVISIBLE_INK: Ability.SPY,
+    Discovery.TWO_WAY_MIRRORS: Ability.SPY,
+    Discovery.HIEROGLYPHIC_TRANSLATION: Ability.SAGE,
+    Discovery.SCIENTIFIC_METHOD: Ability.SAGE,
+}
+
+# Anti-spell ward group (bild10-bild43) -- CTBOTH.PAS's own
+# `spell(ord(Skeletal_Army)+ord(d)-ord(bild10))` formula (Spell ordinals
+# 4-19), confirmed a second time by `DISCOVERY_DESCRIPTION`'s own named
+# spell for every one of these 16 entries.
+DISCOVERY_ANTISPELL_TARGET: dict[Discovery, Spell] = {
+    Discovery.OSTEOPATHIC_GERM_WARFARE: Spell.SKELETAL_ARMY,
+    Discovery.HIDDEN_TATTOOS: Spell.KILL_ENEMY,
+    Discovery.PENICILLIN: Spell.PLAGUE,
+    Discovery.ARTIFICIAL_ORGANS: Spell.HAND_OF_DEATH,
+    Discovery.FLOOD_DAMS: Spell.FLOOD,
+    Discovery.GIANT_FAN: Spell.TORNADO,
+    Discovery.REINFORCED_CONCRETE: Spell.EARTHQUAKE,
+    Discovery.ASBESTOS_CLOTHING: Spell.FIREBALL,
+    Discovery.ANALYTICAL_PSYCHOLOGY: Spell.CHARM,
+    Discovery.PROPAGANDA_MEGAPHONES: Spell.ORATORY,
+    Discovery.DRY_ICE_FOG: Spell.CLAIRVOYANCE,
+    Discovery.LEAD_LINED_HELMET: Spell.PSYCHIC_BLAST,
+    Discovery.ULTRAVIOLET_LENSES: Spell.ILLUS_TERRAIN,
+    Discovery.OBSERVATION_BALLOONS: Spell.ILLUS_ARMIES,
+    Discovery.HAND_HELD_RADAR: Spell.HIDE_FEATURE,
+    Discovery.INFRARED_GOGGLES: Spell.INVISIBILITY,
+}
+
+# Revenue bonus group (crunch0-crunch27) -- CTBOTH.PAS's own
+# `1+((ord(d)-ord(crunch0)) and 3)` formula (cycling 1,2,3,4). Matches
+# `DISCOVERY_DESCRIPTION`'s own stated percentage for 27 of these 28
+# entries; `SPECTACLES` is the one confirmed exception (formula: 1%,
+# `Discovery.txt`: "2%") -- see the module docstring. This dict follows
+# the Pascal formula, the actual executable behavior of the original
+# engine, not the design-doc text, for that one entry.
+DISCOVERY_REVENUE_BONUS_PERCENT: dict[Discovery, int] = {
+    Discovery.PEANUT_BUTTER_SANDWICH: 1,
+    Discovery.ASPIRIN_PILL: 2,
+    Discovery.PEPPER_SPICE: 3,
+    Discovery.COTTON_GIN: 4,
+    Discovery.ICE_CREAM_CONE: 1,
+    Discovery.BLACK_LACE_TEDDY: 2,
+    Discovery.SCREW: 3,
+    Discovery.REFORGING_OF_STEEL: 4,
+    Discovery.MAGNET: 1,
+    Discovery.MALPRACTICE_SUIT: 2,
+    Discovery.GAMBLING_CASINO: 3,
+    Discovery.PULLEY: 4,
+    Discovery.INK_STAMP: 1,
+    Discovery.POSTAGE_STAMP: 2,
+    Discovery.GAME_OF_CHESS: 3,
+    Discovery.WATER_WHEEL: 4,
+    Discovery.SOAP_BAR: 1,
+    Discovery.PIPE_ORGAN: 2,
+    Discovery.REAPER: 3,
+    Discovery.COAL_MINE: 4,
+    Discovery.SPECTACLES: 1,  # Discovery.txt says 2% -- see module docstring
+    Discovery.WINDMILL: 2,
+    Discovery.GUITAR: 3,
+    Discovery.PAPER_MILL: 4,
+    Discovery.UMBRELLA: 1,
+    Discovery.TIMEPIECE: 2,
+    Discovery.FIREWORKS_DISPLAY: 3,
+    Discovery.VULCANIZED_RUBBER: 4,
 }
