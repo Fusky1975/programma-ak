@@ -3999,6 +3999,42 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     5 new tests added (1683 passed total) in `tests/test_office.py`,
     covering full gapless 52-entry coverage, the two blank sentinels,
     verbatim samples, and the `GANG_TEMPLATE` cross-confirmation.
+- **Phase 104 (current)**: `report/turn_report.py render_march()` --
+  `HostAK/TP/PROSE/MARCH.X` (header `"3 1"`), confirmed real via
+  `SAY.PAS`'s own `_LMarch` dispatch: `FD('march',S_Admin,3)` -- the Move
+  action's own report line.
+  - The `dex` parameter (`3`, matching the file's own 3 declared choices)
+    is small enough to fall into `RUMORS.PAS FD`'s per-character-seed
+    pseudo-random selection scheme, not the deterministic `1001+X`
+    indexing every earlier `.X2`-sourced phase in this module used --
+    confirmed by reading `FD`'s own body (`RUMORS.PAS` ~line 2288-2333):
+    `dex < 100` routes through `fdcode`/`fdinc`/`Good_Inc`, the same
+    unrecoverable "story-code bytecode log" `pick_variant()`'s own
+    docstring already flagged for `CONQ.X`/`SPY.X` (Phase 63).
+    `render_march()` therefore reuses that same
+    `parse_template_choices`/`pick_variant` infrastructure, not a new
+    indexing scheme.
+  - The raw `\x10` control byte in `MARCH.X`'s own text is `PROSE.TXT`'s
+    `^P` marker ("Province number", e.g. `"0304"`) -- transcribed in
+    source notation per this module's own established convention.
+  - **More real, confirmed `.X`/`.X2` findings surfaced but deliberately
+    deferred**, each needing more design work than this phase's scope:
+    `SNEAKUP.X`/`FLEEFAIL.X` (Steal/Flee maneuver failure -- confirmed,
+    but each needs a trailing `CASE`-selected completion clause this
+    project doesn't model yet), `RWENC.X` (a "random encounter while
+    traveling" narrative), `TACTICS.X2` (a 9-level tactical-superiority
+    bucket, `FD('...tactics.x2',S_Batt,Max(1001,Min(1009,1000+battac)))`
+    -- structurally analogous to this module's own `margin_bucket()`,
+    but `battac`'s own formula isn't traced), `NEMESIS.X2` (real and
+    dispatched via `_ANem`, but its own index `Rint` isn't a formula this
+    project can trace, and the file's own content mixes recognizable
+    `ArmyType` nemesis pairs with unmodeled monster types like
+    "Dinosaurs", so no clean index scheme is asserted).
+  - Non-breaking: full suite passed unchanged (1683 passed) before any
+    new tests were written -- a new function with no existing call
+    sites. 5 new tests added (1688 passed total) in
+    `tests/test_turn_report.py`, covering all 3 variants, the `/S` sea
+    marker, and the `^P` substitution.
 
 ## Setup
 

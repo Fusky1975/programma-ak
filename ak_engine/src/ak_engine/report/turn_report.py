@@ -157,6 +157,41 @@ names them), the same way Phases 91/92/95 found real data outside
   ``"Pool/FStream"``-style text at the substitution point -- a known,
   already-documented limitation carried forward, not silently
   mis-resolved.
+
+**Phase 104 addendum -- the Move action's own report line.**
+``HostAK/TP/PROSE/MARCH.X`` (header ``"3 1"``), confirmed real via
+``SAY.PAS``'s own ``_LMarch`` dispatch: ``FD('march',S_Admin,3)``. The
+``dex`` parameter (``3``, matching the file's own 3 declared choices) is
+small enough to fall into ``RUMORS.PAS FD``'s per-character-seed
+pseudo-random selection scheme, not the deterministic ``1001+X``
+indexing every earlier `.X2`-sourced phase in this module used --
+confirmed by reading ``FD``'s own body (``RUMORS.PAS`` ~line 2288-2333):
+``dex < 100`` routes through ``fdcode``/``fdinc``/``Good_Inc``, the same
+unrecoverable "story-code bytecode log" `pick_variant()`'s own docstring
+already flagged for ``CONQ.X``/``SPY.X`` (Phase 63). `render_march()`
+therefore uses the same `parse_template_choices`/`pick_variant`
+infrastructure those two already established, not a new indexing scheme.
+
+The raw ``\\x10`` control byte in ``MARCH.X``'s own text is `PROSE.TXT`'s
+``^P`` marker ("Province number", e.g. `"0304"`) -- transcribed in
+source notation per this module's own established convention (see the
+``^S`` note above).
+
+**More real, confirmed `.X`/`.X2` findings surfaced but deliberately
+deferred**, each needing more design work than this phase's scope:
+``SNEAKUP.X``/``FLEEFAIL.X`` (Steal/Flee maneuver failure -- `SAY.PAS`
+confirms both, but each needs a trailing `CASE`-selected completion
+clause this project doesn't model yet: `_LSeen`'s own
+`CASE Rint OF 0: Say(' melee range.',...) ...` for `SNEAKUP.X`);
+``RWENC.X`` (a "random encounter while traveling" narrative, `_LWEnc`);
+``TACTICS.X2`` (a 9-level tactical-superiority bucket, `FD('...tactics
+.x2',S_Batt,Max(1001,Min(1009,1000+battac)))` -- structurally analogous
+to this module's own `margin_bucket()`, but `battac`'s own formula isn't
+traced); ``NEMESIS.X2`` (`_ANem: FD('...nemesis.x2',S_Batt,1000+Rint)`
+-- real and dispatched, but `Rint`'s own value isn't a formula this
+project can trace, and the file's own content mixes recognizable
+`ArmyType` nemesis pairs with unmodeled monster types like "Dinosaurs",
+so no clean index scheme is asserted here).
 """
 
 from __future__ import annotations
@@ -595,3 +630,38 @@ def render_magic_feature_discovery(
         return render(_MAGFEAT_ITSELF_TEMPLATE, values)
     values["$\\"] = MAGIC_FEATURE_NAME[magic_feature]
     return render(_MAGFEAT_FOUND_TEMPLATE, values)
+
+
+# HostAK/TP/PROSE/MARCH.X -- the Move action's own report line. See
+# module docstring's Phase 104 addendum for why this uses pick_variant
+# (a small `dex` value, RUMORS.PAS FD's own per-character-seed pseudo-
+# random scheme) rather than a deterministic index.
+_MARCH_TEMPLATES: list[str] = [
+    "< marched_on/Ssailed_into @ ^P with > {formidable }command/Rforces.",
+    "< {boldly }marched/Ssailed > forces/Rcommand into @ ^P.",
+    "< moved into @ ^P with > {redoubtable/Rhigh-spirited }army/SFleet.",
+]
+
+
+def render_march(
+    character_name: str,
+    province_name: str,
+    province_number: str,
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
+) -> str:
+    """Renders MARCH.X's sentence for a Move -- ``province_number`` is
+    ``PROSE.TXT``'s own ``^P`` marker ("Province number", e.g.
+    ``"0304"``), distinct from ``province_name`` (``@``). ``is_sea``
+    (Phase 74) resolves the "/S" marker every variant here carries.
+    """
+
+    variant = pick_variant(_MARCH_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "@": province_name,
+        "^P": province_number,
+        ">": f"{character_name}'s",
+    }
+    return render(variant, values, rng=rng, is_sea=is_sea)

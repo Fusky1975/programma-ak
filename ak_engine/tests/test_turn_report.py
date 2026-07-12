@@ -13,6 +13,7 @@ from ak_engine.report.turn_report import (
     render_column_clash,
     render_destroyed_army,
     render_magic_feature_discovery,
+    render_march,
     render_pursuit_and_destroy,
     render_retreat,
     render_spy_report_opening,
@@ -401,3 +402,36 @@ def test_render_magic_feature_discovery_itself():
         "While scouting the Everhold, Arthur noticed that the Everhold "
         "itself seems to be imbued with magical qualities."
     )
+
+
+# -- Phase 104: render_march (MARCH.X) --
+
+
+def test_render_march_first_variant_land():
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+    result = render_march("Arthur", "Numenor", "0304", rng)
+    assert result == "Arthur marched on Numenor 0304 with Arthur's command."
+
+
+def test_render_march_second_variant():
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[1])
+    result = render_march("Arthur", "Numenor", "0304", rng)
+    assert result == "Arthur marched Arthur's forces into Numenor 0304."
+
+
+def test_render_march_third_variant_land():
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[2])
+    result = render_march("Arthur", "Numenor", "0304", rng)
+    assert result == "Arthur moved into Numenor 0304 with Arthur's army."
+
+
+def test_render_march_resolves_sea_marker():
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+    result = render_march("Arthur", "Numenor", "0304", rng, is_sea=True)
+    assert result == "Arthur sailed into Numenor 0304 with Arthur's command."
+
+
+def test_render_march_resolves_optional_block_and_choice_marker():
+    rng = ScriptedRandom([0.9, 0.9], choice_indices=[2])
+    result = render_march("Arthur", "Numenor", "0304", rng)
+    assert result == "Arthur moved into Numenor 0304 with Arthur's high-spirited army."
