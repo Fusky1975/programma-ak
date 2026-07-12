@@ -353,6 +353,47 @@ HEAR_OF_FEATURE` used in Phase 108, transcribed verbatim here too.
 `dex` is `0`/`1` for the two files respectively -- both `< 100`, so
 both render functions use `pick_variant()` per the established `FD`
 litmus test, not deterministic indexing.
+
+**Phase 111 addendum -- the Fire Arrow attack sequence.** Continuing
+the 3000-3099 stretch of `RUMORS.PAS`'s story-code `CONST` block: the
+personal-combat narrative for closing to range and firing, ties
+directly to `turn/encounter.py`'s already-modeled Fire Arrow combat
+(`roll_fire_arrow_attack()`, Phase 48) the same way Phase 110 tied
+Explore's own narrative to `resolve_explore()`.
+
+- `_LToBow: FD2('gobow',S_PCom,2)` -> `GOBOW.X` (header `"3 1"`, 3 real
+  templates): closing to bow range. `render_move_to_bow_range()`.
+- `_LToMel: FD2('gomel',S_PCom,3)` -> `GOMEL.X` (header `"3 1"`, 3 real
+  templates): closing to melee range, requested alongside the above for
+  symmetry even though this phase only wires the Fire Arrow side of
+  combat -- `render_move_to_melee_range()`. Its own attack-action
+  sibling (`_LSwing: FD2('swangat',S_PCom,3)` -> `SWANGAT.X`, 11
+  templates, confirmed real while researching this phase) is left for a
+  Melee-combat follow-up phase, not modeled here.
+- `_LFArr: FD2('farr',S_PCom,4)` -> `FARR.X` (header `"6 1"`, 6 real
+  templates): the Fire Arrow attack action itself. Carries `\\x01` (`^A`,
+  article) and `\\x17` (`^W`, `PROSE.TXT`'s "Striking weapon" marker,
+  e.g. "arrow") alongside `$S` (`PROSE.TXT`'s "Attack method" marker,
+  e.g. "Fired") -- `render_fire_arrow_attack()` hardcodes `$S`="Fired"/
+  `^W`="arrow" since this file is unambiguously always about firing an
+  arrow, not a situational choice. Every template ends without
+  punctuation, mid-sentence -- meant to be immediately followed by a
+  hit/miss continuation clause (see below), the same "no trailing
+  punctuation, caller concatenates" shape `_BClash`/`_BRes` already
+  established (module docstring, top).
+- `_LMisses: FD2('andmiss',S_PCom,5)` -> `ANDMISS.X` (header `"5 1"`, 5
+  real templates): the miss continuation clause, each starting with a
+  leading space and no capital letter, confirming the concatenation
+  shape above. `render_attack_missed()` takes `weapon` as an explicit
+  parameter (not hardcoded) since `ANDMISS.X` is shared by both
+  `_LFArr` and `_LSwing` (`^W` appears referring back to whichever
+  weapon the preceding attack-action sentence named) -- a future
+  Melee-combat phase can reuse it unchanged.
+- `_LInfl`/`_LDevast`/`_LMortB` (the hit/overkill/mortal-wound
+  continuations, real and dispatched immediately alongside `_LMisses`
+  in the same `SAY.PAS` block) are confirmed real but deliberately not
+  modeled this phase -- the user's own request scoped this phase to
+  `_LToBow`/`_LToMel`/`_LFArr`/`_LMisses` only.
 """
 
 from __future__ import annotations
@@ -1092,6 +1133,118 @@ def render_explore_already_maxed(character_name: str, province_name: str, rng: r
 # clause (no trailing period -- the caller concatenates one of the three
 # templates above). See module docstring's Phase 110 addendum.
 EXPLORE_NOT_PRESENT_PREFIX = "< wasn't in @ so "
+
+
+# HostAK/TP/PROSE/GOBOW.X -- closing to bow range before a Fire Arrow
+# attack. See module docstring's Phase 111 addendum.
+_GOBOW_TEMPLATES: list[str] = [
+    "< {quickly/Rspeedily }moved {in}to bow range.",
+    "< loped/Sswam along smoothly/Rsteadily{, conserving > energy,} "
+    "and closed to bow range.",
+    "< {menacingly/Rcautiously }advanced to bow range.",
+]
+
+
+def render_move_to_bow_range(character_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+    """Renders GOBOW.X's sentence for closing to bow range before a Fire
+    Arrow attack (``turn/encounter.py``'s already-modeled combat, Phase
+    48). ``is_sea`` (Phase 74) resolves the "/S" marker one variant carries.
+    """
+
+    variant = pick_variant(_GOBOW_TEMPLATES, rng)
+    values = {"<": character_name, ">": f"{character_name}'s"}
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/PROSE/GOMEL.X -- closing to melee range. See module
+# docstring's Phase 111 addendum (requested for symmetry with GOBOW.X;
+# the Melee attack action itself, SWANGAT.X, is left for a follow-up).
+_GOMEL_TEMPLATES: list[str] = [
+    "< charged/Sdarted into the_melee/Rmelee_range.",
+    "< rushed/Sswam {eagerly/Rlustily }into melee combat.",
+    "< closed to melee range, seething/Rfilled with "
+    "{uncontrolled/Rmaniacal }blood-lust.",
+]
+
+
+def render_move_to_melee_range(character_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+    """Renders GOMEL.X's sentence for closing to melee range. ``is_sea``
+    (Phase 74) resolves the "/S" marker two variants carry.
+    """
+
+    variant = pick_variant(_GOMEL_TEMPLATES, rng)
+    values = {"<": character_name}
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/PROSE/FARR.X -- the Fire Arrow attack action itself. See
+# module docstring's Phase 111 addendum.
+_FARR_TEMPLATES: list[str] = [
+    "< {boldly }$S ^A ^W at [",
+    "< $S ^A {angry }^W at [",
+    "drawing back{ with all > strength}, < $S ^A ^W at [",
+    "< took {careful }aim and $S ^A ^W at [",
+    "< $S ^A hard/Rpowerful ^W at [",
+    "with steady/Runwavering strength, < readied ^A ^W and $S it at [",
+]
+
+
+def render_fire_arrow_attack(character_name: str, opponent_name: str, rng: random.Random) -> str:
+    """Renders FARR.X's sentence for the Fire Arrow attack action itself
+    -- no trailing punctuation, meant to be immediately followed by
+    ``render_attack_missed()`` (or a future hit/mortal-wound
+    continuation) to form one complete sentence.
+    """
+
+    variant = pick_variant(_FARR_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "[": opponent_name,
+        ">": f"{character_name}'s",
+        "$S": "Fired",
+        "^W": "arrow",
+    }
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/PROSE/ANDMISS.X -- the miss continuation clause, shared by
+# every attack-action sentence (Fire Arrow's FARR.X here; Melee's
+# SWANGAT.X in a future phase). See module docstring's Phase 111
+# addendum.
+_ANDMISS_TEMPLATES: list[str] = [
+    " and missed{ by_a_mile/Rbadly}.",
+    " but [1 dodged/Revaded the blow/R^W.",
+    " but > ^W whiffed/Sdarted {harmlessly }through the air/Smurky_water.",
+    " but > aim was just/Rslightly off{ the mark}.",
+    " and would have struck/Rhit [ if [1 hadn't ducked/Rsidestepped"
+    "{ just then}.",
+]
+
+
+def render_attack_missed(
+    attacker_name: str,
+    defender_name: str,
+    weapon: str,
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
+) -> str:
+    """Renders ANDMISS.X's continuation clause for a missed attack --
+    concatenate directly after ``render_fire_arrow_attack()`` (or a
+    future Melee attack-action renderer). ``weapon`` is ``PROSE.TXT``'s
+    own ``^W`` marker ("Striking weapon"), matching whichever weapon the
+    preceding attack-action sentence named (e.g. ``"arrow"``). ``is_sea``
+    (Phase 74) resolves the "/S" marker one variant carries.
+    """
+
+    variant = pick_variant(_ANDMISS_TEMPLATES, rng)
+    values = {
+        "[": defender_name,
+        "[1": defender_name,
+        ">": f"{attacker_name}'s",
+        "^W": weapon,
+    }
+    return render(variant, values, rng=rng, is_sea=is_sea)
 
 
 # HostAK/TP/PROSE/MARCH.X -- the Move action's own report line. See

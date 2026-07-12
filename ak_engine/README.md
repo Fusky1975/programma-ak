@@ -4246,6 +4246,48 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sites. 9 new tests added (1744 passed total) in
     `tests/test_turn_report.py`, covering both files' possessive/sea
     marker resolution and the two hardcoded templates verbatim.
+- **Phase 111 (current)**: `report/turn_report.py
+  render_move_to_bow_range()`/`render_move_to_melee_range()`/
+  `render_fire_arrow_attack()`/`render_attack_missed()` -- the Fire
+  Arrow attack sequence, continuing the 3000-3099 stretch of
+  `RUMORS.PAS`'s story-code `CONST` block. Ties directly to
+  `turn/encounter.py`'s already-modeled Fire Arrow combat
+  (`roll_fire_arrow_attack()`, Phase 48), the same way Phase 110 tied
+  Explore's own narrative to `resolve_explore()`.
+  - `_LToBow: FD2('gobow',S_PCom,2)` -> `GOBOW.X` (header `"3 1"`, 3
+    real templates): closing to bow range.
+  - `_LToMel: FD2('gomel',S_PCom,3)` -> `GOMEL.X` (header `"3 1"`, 3
+    real templates): closing to melee range, modeled for symmetry with
+    `GOBOW.X`. Its own attack-action sibling (`_LSwing:
+    FD2('swangat',S_PCom,3)` -> `SWANGAT.X`, 11 real templates,
+    confirmed real while researching this phase) is left for a
+    Melee-combat follow-up, not modeled here.
+  - `_LFArr: FD2('farr',S_PCom,4)` -> `FARR.X` (header `"6 1"`, 6 real
+    templates): the Fire Arrow attack action itself. Carries `\x01`
+    (`^A`, article) and `\x17` (`^W`, `PROSE.TXT`'s "Striking weapon"
+    marker) alongside `$S` (`PROSE.TXT`'s "Attack method" marker) --
+    `render_fire_arrow_attack()` hardcodes `$S`="Fired"/`^W`="arrow"
+    since this file is unambiguously always about firing an arrow.
+    Every template ends without punctuation, mid-sentence -- the same
+    "no trailing punctuation, caller concatenates" shape `_BClash`/
+    `_BRes` already established (Phase 61).
+  - `_LMisses: FD2('andmiss',S_PCom,5)` -> `ANDMISS.X` (header `"5 1"`,
+    5 real templates): the miss continuation clause, confirming the
+    concatenation shape (every line starts with a leading space, no
+    capital letter). `render_attack_missed()` takes `weapon` as an
+    explicit parameter (not hardcoded) since this file is shared by
+    both `_LFArr` and `_LSwing` -- a future Melee-combat phase can
+    reuse it unchanged.
+  - `_LInfl`/`_LDevast`/`_LMortB` (hit/overkill/mortal-wound
+    continuations, real and dispatched immediately alongside
+    `_LMisses`) are confirmed real but deliberately not modeled this
+    phase -- scoped to exactly the four codes requested.
+  - Non-breaking: full suite passed unchanged (1744 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 10 new tests added (1754 passed total) in
+    `tests/test_turn_report.py`, covering every function's variants,
+    the `/S` sea marker, and the attack+miss concatenation forming one
+    complete sentence.
 
 ## Setup
 

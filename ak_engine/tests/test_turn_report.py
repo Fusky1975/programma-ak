@@ -18,13 +18,17 @@ from ak_engine.report.turn_report import (
     render_battle_winner,
     render_column_clash,
     render_destroyed_army,
+    render_attack_missed,
     render_explore_already_maxed,
     render_explore_continued,
     render_explore_progress,
+    render_fire_arrow_attack,
     render_flee_failure,
     render_generic_encounter,
     render_magic_feature_discovery,
     render_march,
+    render_move_to_bow_range,
+    render_move_to_melee_range,
     render_patrol_encounter,
     render_patrol_release,
     render_pursuit_and_destroy,
@@ -784,3 +788,67 @@ def test_explore_not_present_prefix_is_the_confirmed_hardcoded_precursor():
     # No trailing period -- SAY.PAS concatenates one of the three Explore
     # templates above directly after this clause.
     assert EXPLORE_NOT_PRESENT_PREFIX == "< wasn't in @ so "
+
+
+# -- Fire Arrow attack sequence (Phase 111) ----------------------------------
+
+
+def test_render_move_to_bow_range_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_move_to_bow_range("Aldric", rng)
+    assert result == "Aldric moved to bow range."
+
+
+def test_render_move_to_bow_range_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_move_to_bow_range("Aldric", rng, is_sea=True)
+    assert result == "Aldric swam along smoothly and closed to bow range."
+
+
+def test_render_move_to_melee_range_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_move_to_melee_range("Aldric", rng)
+    assert result == "Aldric charged into the melee."
+
+
+def test_render_move_to_melee_range_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_move_to_melee_range("Aldric", rng, is_sea=True)
+    assert result == "Aldric darted into the melee."
+
+
+def test_render_fire_arrow_attack_first_variant_has_no_trailing_punctuation():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_fire_arrow_attack("Aldric", "Borin", rng)
+    assert result == "Aldric Fired an arrow at Borin"
+
+
+def test_render_fire_arrow_attack_second_variant():
+    rng = ScriptedRandom([0.9] * 10, choice_indices=[1])
+    result = render_fire_arrow_attack("Aldric", "Borin", rng)
+    assert result == "Aldric Fired an angry arrow at Borin"
+
+
+def test_render_attack_missed_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_attack_missed("Aldric", "Borin", "arrow", rng)
+    assert result == " and missed."
+
+
+def test_render_attack_missed_second_variant_names_the_weapon():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_attack_missed("Aldric", "Borin", "arrow", rng)
+    assert result == " but Borin dodged the blow."
+
+
+def test_render_attack_missed_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_attack_missed("Aldric", "Borin", "arrow", rng, is_sea=True)
+    assert result == " but Aldric's arrow darted through the murky water."
+
+
+def test_fire_arrow_attack_and_missed_concatenate_into_one_sentence():
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
+    attack = render_fire_arrow_attack("Aldric", "Borin", rng)
+    miss = render_attack_missed("Aldric", "Borin", "arrow", rng)
+    assert attack + miss == "Aldric Fired an arrow at Borin and missed."
