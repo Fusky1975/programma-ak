@@ -13,6 +13,8 @@ from ak_engine.report.turn_report import (
     SNEAKUP_RANGE_BOW,
     SNEAKUP_RANGE_MELEE,
     SNEAKUP_RANGE_SPELL,
+    SPY_GARRISON_APPROXIMATELY_TEMPLATE,
+    SPY_LEADS_APPROXIMATELY_TEMPLATE,
     describe_battle,
     margin_bucket,
     parse_template_choices,
@@ -44,7 +46,15 @@ from ak_engine.report.turn_report import (
     render_pursuit_and_destroy,
     render_retreat,
     render_sneak_detected,
+    render_spy_army_type,
+    render_spy_capital_province,
+    render_spy_character_here,
+    render_spy_elements_intro,
+    render_spy_no_characters,
+    render_spy_no_characters_or_forces,
+    render_spy_report_closing,
     render_spy_report_opening,
+    render_spy_tax_estimate,
     render_tactical_comparison,
     render_uncontested_conquest,
     render_wandering_encounter,
@@ -1014,3 +1024,70 @@ def test_render_hire_counter_offer():
 
 def test_hire_counter_offer_template_is_the_confirmed_hardcoded_say():
     assert HIRE_COUNTER_OFFER_TEMPLATE == "[1 informed <2 that [1 would not sell ] services for less than # gold."
+
+
+# -- ASpy report body (Phase 115) --------------------------------------------
+
+
+def test_render_spy_tax_estimate():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_spy_tax_estimate(250, rng)
+    assert result == "Approximate Taxation: 250"
+
+
+def test_render_spy_army_type():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_spy_army_type(1, "Bowmen", rng)
+    assert result == "Province Army Type 1: Bowmen"
+
+
+def test_render_spy_elements_intro_keeps_trailing_double_space():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_spy_elements_intro("Greenfield", rng)
+    assert result == "the following elements are present in Greenfield:  "
+
+
+def test_render_spy_character_here_defaults_title_to_empty():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_spy_character_here("Borin", rng)
+    assert result == "Borin  is here."
+
+
+def test_render_spy_character_here_with_explicit_title():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_spy_character_here("Borin", rng, title="General")
+    assert result == "Borin General is here."
+
+
+def test_render_spy_no_characters_or_forces():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_spy_no_characters_or_forces("Greenfield", rng)
+    assert result == "there were no conspicuous characters or forces in Greenfield."
+
+
+def test_render_spy_no_characters():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_spy_no_characters("Greenfield", rng)
+    assert result == "there were no conspicuous characters in Greenfield."
+
+
+def test_render_spy_capital_province():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_spy_capital_province("Greenfield", rng)
+    assert result == "Greenfield is the kingdom's capital province."
+
+
+def test_render_spy_report_closing():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_spy_report_closing("Aldric", "Greenfield", rng)
+    assert result == (
+        "Aldric also kept tabs on the characters in Greenfield and any "
+        "further news is in the General Intelligence Report."
+    )
+
+
+def test_spy_leads_and_garrison_templates_are_blocked_on_list_insertion():
+    # Real, confirmed content -- no render_* wrapper since ^L (list
+    # insertion) isn't implemented by report/prose.py yet.
+    assert SPY_LEADS_APPROXIMATELY_TEMPLATE == "[ leads approximately ^L^V."
+    assert SPY_GARRISON_APPROXIMATELY_TEMPLATE == "there is a garrison of approximately ^L^V."

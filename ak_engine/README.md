@@ -2444,12 +2444,14 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `SpyReport` needs. It doesn't -- `Set_Intel` computes cross-kingdom
     *report-visibility* levels (`intel_lev`, gating what *other* kings
     learn about a spying event in *their own* reports), a separate,
-    unbuilt system. No dedicated template for those specific facts
-    turned up anywhere in the available Pascal source (`SPDESC.X2`/
+    unbuilt system. ~~No dedicated template for those specific facts
+    turned up anywhere in the available Pascal source~~ (`SPDESC.X2`/
     `FPDESC.X2` looked promising by name but are Search Feature-power
-    descriptions, unrelated). **Rendering the rest of `SpyReport` stays
-    open** -- the same category of gap as Hide_Feature/Clairvoyance,
-    not force-composed from invented prose.
+    descriptions, unrelated) -- found in Phase 115, sitting in
+    `SAY.PAS` immediately after `_LSpy`'s own dispatch in the very same
+    procedure. **Rendering the rest of `SpyReport` is mostly closed as
+    of Phase 115** -- see its own entry below for the two facts still
+    genuinely blocked on an unbuilt capability.
   - **A real discovery while transcribing `CONQ.X`**: 2 of its 4 real
     variants use the `/S` (Sea-terrain) marker `report/prose.py`
     deliberately doesn't resolve (Phase 58's own documented gap).
@@ -4384,6 +4386,42 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sites. 8 new tests added (1776 passed total) in
     `tests/test_turn_report.py`, covering variant selection for all
     three `.X` files and the hardcoded `_LCounter` template verbatim.
+- **Phase 115 (current)**: `report/turn_report.py` -- the ASpy report
+  body (`SAY.PAS` ~lines 522-545, immediately after `_LSpy`'s own
+  dispatch in the same `Imp_Code` procedure). **Closes a gap Phase 63's
+  own docstring said didn't turn up anywhere** -- corrected there too.
+  Every code here is a single, real, hardcoded `Say(...)` (no `.X`
+  file), the line items `SPY.X`'s opening sentence introduces.
+  - `_LSTax`: `"Approximate Taxation: #"` -- `render_spy_tax_estimate()`.
+  - `_LSAT`: `"Province Army Type #: |"` -- `#` reads most naturally
+    as a 1-based index enumerating one of the province's
+    possibly-multiple recruitable Army Types. `render_spy_army_type()`.
+  - `_LSList`: `"the following elements are present in @:  "` (real
+    trailing double space, kept verbatim) -- the intro line for the
+    detail lines that follow. `render_spy_elements_intro()`.
+  - `_LSHere`: `"[ $ is here."` -- carries a bare `$` with **no
+    `PROSE.TXT`-documented meaning** (every real `$`-prefixed marker is
+    2 characters). Flagged honestly rather than guessed at (e.g.
+    assumed to mean `$O`, Office name) -- `render_spy_character_here()`
+    exposes it as an explicit `title` parameter defaulting to `""`.
+  - `_LSNone`/`_LSNoCh`: two distinct negative-result lines (with vs.
+    without forces mentioned). `render_spy_no_characters_or_forces()`/
+    `render_spy_no_characters()`.
+  - `_LSCap`: `"@ is the kingdom's capital province."` --
+    `render_spy_capital_province()`.
+  - `_LSEtc`: the report's own closing line, pointing further detail
+    to the General Intelligence Report. `render_spy_report_closing()`.
+  - `_LSLeads`/`_LSGarr`: `"[ leads approximately ^L^V."` / `"there is
+    a garrison of approximately ^L^V."` -- both real, both genuinely
+    **blocked**: `\x0c\x16` is `^L^V`, `PROSE.TXT`'s own list-insertion
+    marker applied to a list of Army names, and `report/prose.py`'s own
+    docstring already defers `^L` (Phase 58). Exposed as raw string
+    constants only -- no `render_*` wrapper.
+  - Non-breaking: full suite passed unchanged (1776 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 10 new tests added (1786 passed total) in
+    `tests/test_turn_report.py`, covering every render function and
+    the two blocked templates verbatim.
 
 ## Setup
 

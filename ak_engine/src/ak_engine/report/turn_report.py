@@ -111,13 +111,17 @@ line.** Two more real, standalone templates, added the same way:
   *report-visibility* levels (`intel_lev`, gating what *other* kings
   learn about a spying event in their own reports) -- a separate,
   unbuilt system, and not what actually composes the "owner / adjacent
-  owners / recruitable types / capital" sentences themselves. No
+  owners / recruitable types / capital" sentences themselves. ~~No
   dedicated PROSE template for those specific facts turned up anywhere
-  in the available Pascal source (`SPDESC.X2`/`FPDESC.X2` are Search
-  Feature-power descriptions, unrelated despite the similar name).
-  Rendering the rest of `turn/aspy_execution.py SpyReport` stays
-  explicitly open, the same category of gap as Hide_Feature/
-  Clairvoyance -- not force-composed from invented, unsourced prose.
+  in the available Pascal source~~ -- found in Phase 115 below, sitting
+  in `SAY.PAS` immediately after `_LSpy`'s own dispatch in the very same
+  procedure (`SPDESC.X2`/`FPDESC.X2` really are unrelated Search
+  Feature-power descriptions, despite the similar name -- that part of
+  the original note still holds). Rendering the rest of
+  `turn/aspy_execution.py SpyReport` is mostly closed as of Phase 115 --
+  see its own addendum for the two facts (`_LSLeads`/`_LSGarr`) still
+  genuinely blocked on an unbuilt capability, the same category of gap
+  as Hide_Feature/Clairvoyance.
 - ``SPY.X``'s own ``^B``/``^E`` markers are Turbo Pascal's
   King-exclusion narrator markers (`RUMORS.PAS Set_Person`/`Set_Alt`,
   already flagged out of scope by `report/prose.py`'s own docstring);
@@ -495,6 +499,49 @@ single template still goes through `pick_variant()` for consistency
 with every other `.X`-sourced renderer in this module (`ENCO.X`, Phase
 107, established the same "1-template file still uses pick_variant"
 convention).
+
+**Phase 115 addendum -- the ASpy report body.** `SAY.PAS` ~lines
+522-545, immediately after `_LSpy`'s own dispatch (Phase 63) in the
+same `Imp_Code` procedure -- closes the gap that phase's own docstring
+said didn't turn up anywhere (see the strikethrough above). Every code
+here is a single, real, hardcoded `Say(...)` (no `.X` file), the report
+-body line items `_LSpy`/`SPY.X`'s opening sentence introduces.
+
+- `_LSTax`: `"Approximate Taxation: #"` -- `render_spy_tax_estimate()`.
+- `_LSAT`: `"Province Army Type #: |"` -- `#` reads most naturally as a
+  1-based index enumerating one of the province's possibly-multiple
+  recruitable Army Types (`turn/recruit.py`'s own rulebook precedent
+  for provinces supporting more than one type), `|` is `PROSE.TXT`'s
+  own "Army type name" marker. `render_spy_army_type()`.
+- `_LSList`: `"the following elements are present in @:  "` (real
+  trailing double space, kept verbatim) -- the intro line for the
+  detail lines that follow (`_LSHere`/`_LSLeads`/`_LSGarr`/etc.).
+  `render_spy_elements_intro()`.
+- `_LSHere`: `"[ $ is here."` -- carries a bare `$` with **no
+  `PROSE.TXT`-documented meaning** (every real `$`-prefixed marker is
+  2 characters, e.g. `$O`/`$K`/`$R`; a lone `$` matches none of them).
+  Flagged honestly rather than guessed at (e.g. assumed to mean `$O`,
+  Office name) -- `render_spy_character_here()` exposes it as an
+  explicit `title` parameter defaulting to `""`, the same "caller may
+  supply literal text for an unresolved symbol" allowance
+  `report/prose.py`'s own docstring already established for `^B`/`^E`.
+- `_LSNone`/`_LSNoCh`: `"there were no conspicuous characters or forces
+  in @."` / `"there were no conspicuous characters in @."` -- two
+  distinct negative-result lines (with vs. without forces mentioned).
+  `render_spy_no_characters_or_forces()`/`render_spy_no_characters()`.
+- `_LSCap`: `"@ is the kingdom's capital province."` --
+  `render_spy_capital_province()`.
+- `_LSEtc`: the report's own closing line, pointing further detail to
+  the General Intelligence Report. `render_spy_report_closing()`.
+- `_LSLeads`/`_LSGarr`: `"[ leads approximately ^L^V."` / `"there is a
+  garrison of approximately ^L^V."` -- both real, both genuinely
+  **blocked**: `\\x0c\\x16` is `^L^V`, `PROSE.TXT`'s own list-insertion
+  marker applied to a list of Army names, and `report/prose.py`'s own
+  docstring already defers `^L` ("needs a caller-supplied *list* of
+  values... not attempted here", Phase 58). Exposed as raw string
+  constants only (`SPY_LEADS_APPROXIMATELY_TEMPLATE`/`SPY_GARRISON_
+  APPROXIMATELY_TEMPLATE`) -- no `render_*` wrapper, since `render()`
+  has nothing useful to do with an unresolved `^L^V` pair yet.
 """
 
 from __future__ import annotations
@@ -1008,6 +1055,120 @@ def render_spy_report_opening(spy_name: str, province_name: str, rng: random.Ran
     variant = pick_variant(_SPY_TEMPLATES, rng)
     values = {"<": spy_name, "@": province_name, ">": f"{spy_name}'s", "^B": "", "^E": ""}
     return render(variant, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LSTax -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 115 addendum.
+SPY_TAX_ESTIMATE_TEMPLATE = "Approximate Taxation: #"
+
+
+def render_spy_tax_estimate(tax_estimate: int, rng: random.Random) -> str:
+    """Renders ``_LSTax``'s line item in the ASpy report body."""
+
+    values = {"#": str(tax_estimate)}
+    return render(SPY_TAX_ESTIMATE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LSAT -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 115 addendum.
+SPY_ARMY_TYPE_TEMPLATE = "Province Army Type #: |"
+
+
+def render_spy_army_type(army_type_index: int, army_type_name: str, rng: random.Random) -> str:
+    """Renders ``_LSAT``'s line item in the ASpy report body.
+    ``army_type_index`` reads most naturally as a 1-based index
+    enumerating one of the province's possibly-multiple recruitable
+    Army Types (see module docstring).
+    """
+
+    values = {"#": str(army_type_index), "|": army_type_name}
+    return render(SPY_ARMY_TYPE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LSList -- a single, real, hardcoded intro line (no
+# file), real trailing double space kept verbatim. See module
+# docstring's Phase 115 addendum.
+SPY_ELEMENTS_INTRO_TEMPLATE = "the following elements are present in @:  "
+
+
+def render_spy_elements_intro(province_name: str, rng: random.Random) -> str:
+    """Renders ``_LSList``'s intro line for the ASpy report body's
+    detail lines that follow.
+    """
+
+    values = {"@": province_name}
+    return render(SPY_ELEMENTS_INTRO_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LSHere -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 115 addendum for why ``$`` is
+# left as an explicit, unresolved caller-supplied marker.
+SPY_CHARACTER_HERE_TEMPLATE = "[ $ is here."
+
+
+def render_spy_character_here(character_name: str, rng: random.Random, *, title: str = "") -> str:
+    """Renders ``_LSHere``'s line item in the ASpy report body. ``$``
+    has no confirmed ``PROSE.TXT`` meaning -- ``title`` defaults to
+    ``""`` rather than guessing (see module docstring).
+    """
+
+    values = {"[": character_name, "$": title}
+    return render(SPY_CHARACTER_HERE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LSNone/_LSNoCh -- two single, real, hardcoded
+# templates (no file). See module docstring's Phase 115 addendum.
+SPY_NO_CHARACTERS_OR_FORCES_TEMPLATE = "there were no conspicuous characters or forces in @."
+SPY_NO_CHARACTERS_TEMPLATE = "there were no conspicuous characters in @."
+
+
+def render_spy_no_characters_or_forces(province_name: str, rng: random.Random) -> str:
+    """Renders ``_LSNone``'s line item in the ASpy report body."""
+
+    values = {"@": province_name}
+    return render(SPY_NO_CHARACTERS_OR_FORCES_TEMPLATE, values, rng=rng)
+
+
+def render_spy_no_characters(province_name: str, rng: random.Random) -> str:
+    """Renders ``_LSNoCh``'s line item in the ASpy report body."""
+
+    values = {"@": province_name}
+    return render(SPY_NO_CHARACTERS_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LSCap -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 115 addendum.
+SPY_CAPITAL_PROVINCE_TEMPLATE = "@ is the kingdom's capital province."
+
+
+def render_spy_capital_province(province_name: str, rng: random.Random) -> str:
+    """Renders ``_LSCap``'s line item in the ASpy report body."""
+
+    values = {"@": province_name}
+    return render(SPY_CAPITAL_PROVINCE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LSEtc -- a single, real, hardcoded closing line
+# (no file). See module docstring's Phase 115 addendum.
+SPY_REPORT_CLOSING_TEMPLATE = (
+    "< also kept tabs on the characters in @ and any further news is "
+    "in the General Intelligence Report."
+)
+
+
+def render_spy_report_closing(character_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders ``_LSEtc``'s closing line for the ASpy report body."""
+
+    values = {"<": character_name, "@": province_name}
+    return render(SPY_REPORT_CLOSING_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LSLeads/_LSGarr -- both real, both genuinely
+# blocked on the not-yet-built ^L list-insertion capability. Exposed
+# as raw string constants only -- no render_* wrapper. See module
+# docstring's Phase 115 addendum.
+SPY_LEADS_APPROXIMATELY_TEMPLATE = "[ leads approximately ^L^V."
+SPY_GARRISON_APPROXIMATELY_TEMPLATE = "there is a garrison of approximately ^L^V."
 
 
 def describe_battle(
