@@ -4725,6 +4725,40 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new tests were written -- new functions with no existing call
     sites. 7 new tests added (1865 passed total) in
     `tests/test_turn_report.py`.
+- **Phase 126 (current)**: `report/turn_report.py` -- battle morale
+  narrative plus a vampiric bite entry. `RUMORS.PAS` groups `_BSpeech
+  = 4046`, `_BHome = 4047`, `_BNoDru = 4048`, `_BRWeap = 4049`,
+  `_BBluff = 4050`, `_BNoEx = 4051` contiguously; `_BFun = 3326` and
+  `_LChUnd = 3327` sit together in a separate, earlier block
+  (`SAY.PAS` lines 1160-1188). Covers every real, hardcoded (no-file)
+  entry from both groups; `_BNoDru`/`_BBluff` are file-dispatched
+  (`NODRU.X`/`BLUFF.X`) and deliberately deferred.
+  - `render_skeletal_army_fervor()` (`_BFun`) -- ties directly to
+    `Spell.SKELETAL_ARMY` (already `SPELL_CAST_ANNOUNCEMENT`, Phase
+    122).
+  - `render_oratory_speech()` (`_BSpeech`) -- a real two-`Say()` entry
+    concatenated with no separator (Phase 107, 116, 119, 121, 125),
+    ties to `Spell.ORATORY` (Phase 122).
+  - `render_homeland_defense_morale()` (`_BHome`) -- home-province
+    defensive morale.
+  - `render_weapon_rally()` (`_BRWeap`) -- a leader brandishes a magic
+    item to rally troops; `^R` (Race name) is the first use of
+    `models/race.py RACE_NAME` (Phase 87) inside this module, and the
+    `the/R>` alternation (a marker embedded inside a `/R` choice) is
+    resolved by `report/prose.py`'s existing `/R`-then-substitution
+    pipeline exactly as documented -- no new engine capability needed.
+  - `DUEL_NO_EXCUSE_TEMPLATE` (`_BNoEx`) -- a precursor clause (no
+    trailing period), exposed as a bare constant with no wrapper
+    function, the same shape `EXPLORE_NOT_PRESENT_PREFIX` (Phase 110)
+    already established; ties to `turn/duel.py`'s own Duel-avoidance
+    concept.
+  - `render_vampiric_bite()` (`_LChUnd`) -- a vampiric bite that
+    changes the victim's alignment; `$o` is the same Alignment/outlook
+    -name marker `models/power.py` already uses (Phase 95/101).
+  - Non-breaking: full suite passed unchanged (1865 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 10 new tests added (1875 passed total) in
+    `tests/test_turn_report.py`.
 
 ## Setup
 

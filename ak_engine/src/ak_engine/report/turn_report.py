@@ -806,6 +806,56 @@ executes an assassination attempt yet (the same narrative-precedes
 This project has no source for what determines success versus
 failure -- the caller decides, the same caller-supplied-fact pattern
 established throughout (`is_sea`, `weapon`, `_ADishK`/`_ADishF`).
+
+**Phase 126 addendum -- battle morale narrative + vampiric bite.**
+`RUMORS.PAS` groups `_BSpeech = 4046`, `_BHome = 4047`, `_BNoDru =
+4048`, `_BRWeap = 4049`, `_BBluff = 4050`, `_BNoEx = 4051`
+contiguously; `_BFun = 3326` and `_LChUnd = 3327` sit together in a
+separate, earlier block (`SAY.PAS` lines 1160-1188). This addendum
+covers every real, hardcoded (no-file) entry from both groups;
+`_BNoDru` (`FD('nodru',S_Batt,1000+Rint)`) and `_BBluff`
+(`FD('bluff',S_Batt,1)`) are file-dispatched and deliberately left for
+a future phase that extracts `NODRU.X`/`BLUFF.X`.
+
+- `_BFun: Say('The Skeletal Armies led by < marched into battle with a
+  fanatical fervor.',S_Batt)` -- ties directly to `Spell.SKELETAL_ARMY`
+  (already `SPELL_CAST_ANNOUNCEMENT`, Phase 122).
+  `render_skeletal_army_fervor()`.
+- `_BSpeech: BEGIN Set_Excldr; Say('using/Rcalling_upon > magical/Rarcane
+  powers/RSpell of Oratory, ',S_Priv); _excldr:= -1; Say('< gave/Rstarted_with
+  \x01 rousing/Rinspiring speech/Rharangue to > troops/Rarmy,
+  raising/Rwhich_bolstered their courage/Rmorale.',S_Batt); END` -- a
+  real two-`Say()` entry, concatenated with no separator (Phase 107,
+  116, 119, 121, 125); `\x01` is `PROSE.TXT`'s own `^A` (indefinite
+  article) marker. Ties to `Spell.ORATORY` (already
+  `SPELL_CAST_ANNOUNCEMENT`, Phase 122). `render_oratory_speech()`.
+- `_BHome: Say('<''s troops/Rsoldiers were_prepared/Rswore to
+  fight/Rstruggle desperately/Rlike_tigers for their
+  homeland/Rfatherland.',S_Batt)` -- home-province defensive morale.
+  `render_homeland_defense_morale()`.
+- `_BRWeap: Say('< waved/Rheld_aloft > \\ and the/R> \x12
+  cheered_wildly/Rwere_virtually_hypnotized{ with/Rin
+  admiration/Rit''s_enchanted_glow}!',S_Batt)` -- a leader rallies
+  troops by brandishing a magic item; `\\` is the Magic Item marker,
+  `\x12` is `PROSE.TXT`'s own `^R` (Race name) marker, already
+  established by `models/race.py RACE_NAME` (Phase 87). The `the/R>`
+  alternation picks between a bare article and the leader's own
+  possessive -- resolved by `report/prose.py`'s existing `/R`-then
+  -substitution pipeline exactly as documented (no new capability
+  needed). `render_weapon_rally()`.
+- `_BNoEx: Say('< couldn''t/Rfailed_to think_of/Rcome_up_with a
+  good/Rbelievable excuse/Rploy for_avoiding/Rto_get_out_of the duel,
+  so ',S_Batt)` -- a precursor clause (no trailing period, ends in
+  "so ") that `SAY.PAS` concatenates with further content, ties to
+  `turn/duel.py`'s own Duel-avoidance concept. Exposed as a bare
+  `DUEL_NO_EXCUSE_TEMPLATE` constant with no wrapper function, the
+  same shape `EXPLORE_NOT_PRESENT_PREFIX` (Phase 110) already
+  established for an unstitched precursor.
+- `_LChUnd: Say('< sank/Rbit > fangs into [ and drained/Rsucked_up
+  {all }] blood.[1 changed to $o alignment!',S_Prev)` -- a vampiric
+  bite that changes the victim's alignment; `$o` is `PROSE.TXT`'s own
+  Alignment/outlook-name marker, already established by
+  `models/power.py` (Phase 95/101). `render_vampiric_bite()`.
 """
 
 from __future__ import annotations
@@ -2834,3 +2884,120 @@ def render_assassination_failed(target_name: str, rng: random.Random) -> str:
     first = render(_ASSASSINATION_FAILED_TEMPLATES[0], values, rng=rng)
     second = render(_ASSASSINATION_FAILED_TEMPLATES[1], values, rng=rng)
     return first + second
+
+
+# HostAK/TP/SAY.PAS _BFun -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 126 addendum.
+SKELETAL_ARMY_FERVOR_TEMPLATE = (
+    "The Skeletal Armies led by < marched into battle with a fanatical fervor."
+)
+
+
+def render_skeletal_army_fervor(commander_name: str, rng: random.Random) -> str:
+    """Renders ``_BFun``'s sentence: Skeletal Armies march into battle
+    with fanatical fervor -- ties to ``Spell.SKELETAL_ARMY`` (Phase 122).
+    """
+
+    values = {"<": commander_name}
+    return render(SKELETAL_ARMY_FERVOR_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _BSpeech -- a real, two-``Say()`` entry (no file).
+# See module docstring's Phase 126 addendum.
+_ORATORY_SPEECH_TEMPLATES = (
+    "using/Rcalling_upon > magical/Rarcane powers/RSpell of Oratory, ",
+    "< gave/Rstarted_with ^A rousing/Rinspiring speech/Rharangue to "
+    "> troops/Rarmy, raising/Rwhich_bolstered their courage/Rmorale.",
+)
+
+
+def render_oratory_speech(commander_name: str, rng: random.Random) -> str:
+    """Renders ``_BSpeech``'s two sentences: a leader rouses their
+    troops via the Oratory spell (``Spell.ORATORY``, Phase 122).
+    Concatenates both rendered sentences with no separator, the same
+    shape established throughout this module (Phase 107, 116, 119,
+    121, 125).
+    """
+
+    values = {"<": commander_name, ">": f"{commander_name}'s"}
+    first = render(_ORATORY_SPEECH_TEMPLATES[0], values, rng=rng)
+    second = render(_ORATORY_SPEECH_TEMPLATES[1], values, rng=rng)
+    return first + second
+
+
+# HostAK/TP/SAY.PAS _BHome -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 126 addendum.
+HOMELAND_DEFENSE_MORALE_TEMPLATE = (
+    "<'s troops/Rsoldiers were_prepared/Rswore to fight/Rstruggle "
+    "desperately/Rlike_tigers for their homeland/Rfatherland."
+)
+
+
+def render_homeland_defense_morale(commander_name: str, rng: random.Random) -> str:
+    """Renders ``_BHome``'s sentence: troops defending their home
+    province fight with elevated morale.
+    """
+
+    values = {"<": commander_name}
+    return render(HOMELAND_DEFENSE_MORALE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _BRWeap -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 126 addendum.
+WEAPON_RALLY_TEMPLATE = (
+    "< waved/Rheld_aloft > \\ and the/R> ^R "
+    "cheered_wildly/Rwere_virtually_hypnotized{ with/Rin admiration/Rit's_enchanted_glow}!"
+)
+
+
+def render_weapon_rally(commander_name: str, weapon_name: str, race_name: str, rng: random.Random) -> str:
+    """Renders ``_BRWeap``'s sentence: a leader brandishes a magic
+    item to rally their troops. ``race_name`` is ``PROSE.TXT``'s own
+    ``^R`` marker (``models/race.py RACE_NAME``, Phase 87).
+    """
+
+    values = {
+        "<": commander_name,
+        ">": f"{commander_name}'s",
+        "\\": weapon_name,
+        "^R": race_name,
+    }
+    return render(WEAPON_RALLY_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _BNoEx -- a single, real, hardcoded precursor
+# clause (no file, no trailing period -- SAY.PAS concatenates further
+# content directly after it). See module docstring's Phase 126
+# addendum, and the same bare-constant shape
+# ``EXPLORE_NOT_PRESENT_PREFIX`` (Phase 110) already established.
+DUEL_NO_EXCUSE_TEMPLATE = (
+    "< couldn't/Rfailed_to think_of/Rcome_up_with a good/Rbelievable "
+    "excuse/Rploy for_avoiding/Rto_get_out_of the duel, so "
+)
+
+
+# HostAK/TP/SAY.PAS _LChUnd -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 126 addendum.
+VAMPIRIC_BITE_TEMPLATE = (
+    "< sank/Rbit > fangs into [ and drained/Rsucked_up {all }] blood."
+    "[1 changed to $o alignment!"
+)
+
+
+def render_vampiric_bite(
+    attacker_name: str, victim_name: str, alignment_name: str, rng: random.Random
+) -> str:
+    """Renders ``_LChUnd``'s sentence: a vampiric bite that changes the
+    victim's alignment. ``alignment_name`` is ``PROSE.TXT``'s own
+    ``$o`` marker (already used by ``models/power.py``, Phase 95/101).
+    """
+
+    values = {
+        "<": attacker_name,
+        ">": f"{attacker_name}'s",
+        "[": victim_name,
+        "]": f"{victim_name}'s",
+        "[1": victim_name,
+        "$o": alignment_name,
+    }
+    return render(VAMPIRIC_BITE_TEMPLATE, values, rng=rng)

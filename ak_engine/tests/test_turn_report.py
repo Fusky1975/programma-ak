@@ -9,6 +9,7 @@ from ak_engine.report.turn_report import (
     ATTACK_DEVASTATING_HIT_TEMPLATE,
     CAUGHT_UP_TEMPLATE,
     DEFENSIVE_MARCH_TEMPLATE,
+    DUEL_NO_EXCUSE_TEMPLATE,
     EXPLORE_ALREADY_MAXED_TEMPLATE,
     EXPLORE_NOT_PRESENT_PREFIX,
     FUNERAL_PYRE_TEMPLATE,
@@ -79,10 +80,13 @@ from ak_engine.report.turn_report import (
     render_move_to_melee_range,
     render_patrol_encounter,
     render_patrol_release,
+    render_homeland_defense_morale,
+    render_oratory_speech,
     render_practice_already_maxed,
     render_practice_tutored,
     render_pursuit_and_destroy,
     render_retreat,
+    render_skeletal_army_fervor,
     render_sneak_detected,
     render_spy_army_type,
     render_spy_capital_province,
@@ -100,7 +104,9 @@ from ak_engine.report.turn_report import (
     render_take_gold,
     render_take_items,
     render_uncontested_conquest,
+    render_vampiric_bite,
     render_wandering_encounter,
+    render_weapon_rally,
     render_will,
     tactical_margin_bucket,
 )
@@ -1558,4 +1564,84 @@ def test_render_assassination_failed_right_branch():
         "Fortunately, Bob survived the attempt and the assassin "
         "(apparently, a member of the Assassin's Guild) was killed."
         "Without delay, the guard throughout Bob's kingdom was immediately doubled."
+    )
+
+
+# -- battle morale narrative + vampiric bite (Phase 126) --
+
+
+def test_render_skeletal_army_fervor():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_skeletal_army_fervor("Aldric", rng)
+    assert result == "The Skeletal Armies led by Aldric marched into battle with a fanatical fervor."
+
+
+def test_render_oratory_speech_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_oratory_speech("Aldric", rng)
+    assert result == (
+        "using Aldric's magical powers of Oratory, Aldric gave a "
+        "rousing speech to Aldric's troops, raising their courage."
+    )
+
+
+def test_render_oratory_speech_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_oratory_speech("Aldric", rng)
+    assert result == (
+        "calling upon Aldric's arcane Spell of Oratory, Aldric started "
+        "with an inspiring harangue to Aldric's army, which bolstered "
+        "their morale."
+    )
+
+
+def test_render_homeland_defense_morale_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_homeland_defense_morale("Aldric", rng)
+    assert result == "Aldric's troops were prepared to fight desperately for their homeland."
+
+
+def test_render_homeland_defense_morale_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_homeland_defense_morale("Aldric", rng)
+    assert result == "Aldric's soldiers swore to struggle like tigers for their fatherland."
+
+
+def test_render_weapon_rally_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_weapon_rally("Aldric", "Sword of Flame", "Orcs", rng)
+    assert result == "Aldric waved Aldric's Sword of Flame and the Orcs cheered wildly!"
+
+
+def test_render_weapon_rally_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_weapon_rally("Aldric", "Sword of Flame", "Orcs", rng)
+    assert result == (
+        "Aldric held aloft Aldric's Sword of Flame and Aldric's Orcs "
+        "were virtually hypnotized in it's enchanted glow!"
+    )
+
+
+def test_duel_no_excuse_template_is_the_confirmed_hardcoded_say():
+    assert DUEL_NO_EXCUSE_TEMPLATE == (
+        "< couldn't/Rfailed_to think_of/Rcome_up_with a good/Rbelievable "
+        "excuse/Rploy for_avoiding/Rto_get_out_of the duel, so "
+    )
+
+
+def test_render_vampiric_bite_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_vampiric_bite("Countess", "Bob", "Evil", rng)
+    assert result == (
+        "Countess sank Countess's fangs into Bob and drained "
+        "Bob's blood.Bob changed to Evil alignment!"
+    )
+
+
+def test_render_vampiric_bite_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_vampiric_bite("Countess", "Bob", "Evil", rng)
+    assert result == (
+        "Countess bit Countess's fangs into Bob and sucked up all "
+        "Bob's blood.Bob changed to Evil alignment!"
     )
