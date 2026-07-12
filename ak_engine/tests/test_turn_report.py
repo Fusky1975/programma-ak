@@ -16,8 +16,11 @@ from ak_engine.report.turn_report import (
     render_column_clash,
     render_destroyed_army,
     render_flee_failure,
+    render_generic_encounter,
     render_magic_feature_discovery,
     render_march,
+    render_patrol_encounter,
+    render_patrol_release,
     render_pursuit_and_destroy,
     render_retreat,
     render_sneak_detected,
@@ -551,3 +554,68 @@ def test_render_wandering_encounter_fourth_variant():
     rng = ScriptedRandom([0.1] * 6, choice_indices=[3])
     result = render_wandering_encounter("Arthur", "Grendel", rng)
     assert result == "Arthur encountered Grendel."
+
+
+# -- Phase 107: render_generic_encounter (ENCO.X) + render_patrol_release
+# (SAFPAT.X) + render_patrol_encounter (PATENC.X) --
+
+
+def test_render_generic_encounter():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
+    result = render_generic_encounter("Arthur", "Grendel", rng)
+    assert result == "Arthur encountered Grendel."
+
+
+def test_render_patrol_release_first_variant():
+    rng = ScriptedRandom([0.1] * 8, choice_indices=[0])
+    result = render_patrol_release("Arthur", "King Harold the Bold", rng)
+    assert result == (
+        "but when Arthur was taken to the judge, Arthur showed him the "
+        "official seal of King Harold the Bold, and was let go."
+    )
+
+
+def test_render_patrol_release_second_variant():
+    rng = ScriptedRandom([0.1] * 12, choice_indices=[1])
+    result = render_patrol_release("Arthur", "King Harold the Bold", rng)
+    assert result == (
+        "but he was easily dazzled by Arthur's tales of Arthur's "
+        "heroism.he bowed before Arthur and marched away."
+    )
+
+
+def test_render_patrol_release_third_variant_resolves_indefinite_article():
+    rng = ScriptedRandom([0.1] * 8, choice_indices=[2])
+    result = render_patrol_release("Arthur", "King Harold the Bold", rng)
+    assert result == "but Arthur wasn't listed as an outlaw, and that got Arthur off the hook."
+
+
+def test_render_patrol_encounter_first_variant():
+    rng = ScriptedRandom([0.1] * 12, choice_indices=[0])
+    result = render_patrol_encounter("Arthur", "King Harold the Bold", rng)
+    assert result == (
+        "Arthur was ambushed, tied up and severely beaten by wild-eyed "
+        "soldiers.Arthur escaped.a King's Ranger tracked Arthur down."
+    )
+
+
+def test_render_patrol_encounter_second_variant():
+    rng = ScriptedRandom([0.1] * 8, choice_indices=[1])
+    result = render_patrol_encounter("Arthur", "King Harold the Bold", rng)
+    assert result == "Arthur was stopped by a patrol.Their commanding officer suspiciously challenged Arthur."
+
+
+def test_render_patrol_encounter_third_variant():
+    rng = ScriptedRandom([0.1] * 8, choice_indices=[2])
+    result = render_patrol_encounter("Arthur", "King Harold the Bold", rng)
+    assert result == "Arthur was challenged by a Royal bounty hunter who apparently thought Arthur was a spy."
+
+
+def test_render_patrol_encounter_fourth_variant():
+    rng = ScriptedRandom([0.1] * 12, choice_indices=[3])
+    result = render_patrol_encounter("Arthur", "King Harold the Bold", rng)
+    assert result == (
+        "Arthur was badgered by an officer who insulted the respected "
+        "name of Arthur.Arthur killed him in a duel, but the rogue's "
+        "older brother was a marshal, and he came after Arthur!"
+    )

@@ -4094,6 +4094,30 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sites. 5 new tests added (1702 passed total) in
     `tests/test_turn_report.py`, covering all 4 variants and the `/S`
     sea marker.
+- **Phase 107 (current)**: `report/turn_report.py
+  render_generic_encounter()`/`render_patrol_release()`/
+  `render_patrol_encounter()` -- `ENCO.X`, `SAFPAT.X` and `PATENC.X`,
+  the three sibling `.X` files found alongside `RWENC.X` in Phase 106,
+  all confirmed real via `SAY.PAS`'s own dispatch.
+  - `ENCO.X` (header `"1 1"`, `_LEnc: FD('enco',S_Adv,1)`) is the
+    simplest possible encounter opening, a single template.
+  - `SAFPAT.X` (header `"3 1"`, `_LSafe: FD('safpat',S_Adv,1)`) is
+    getting caught but then released (a convincing official seal, an
+    impressed judge, not actually being on a wanted list).
+  - `PATENC.X` (header `"4 1"`, `_LPEnc: BEGIN FD('patenc',S_Adv,4);
+    randlevel:= 2; END;`) is a more dangerous patrol/bounty-hunter
+    encounter (beaten and tracked down, challenged as a suspected spy,
+    killed a rogue in a duel only for his kin to come seeking revenge).
+  - All three `dex` values fall into `FD`'s own `dex < 100` pseudo-random
+    scheme (Phase 104's own finding), so every function here reuses
+    `pick_variant()`. The raw `\x0b` control byte both `SAFPAT.X` and
+    `PATENC.X` carry is `PROSE.TXT`'s own `^K` marker ("King name and
+    title"), transcribed in source notation.
+  - Non-breaking: full suite passed unchanged (1702 passed) before any
+    new tests were written -- three new functions with no existing call
+    sites. 8 new tests added (1710 passed total) in
+    `tests/test_turn_report.py`, covering all variants of all three
+    functions, including the `^K`/`^A` marker resolution.
 
 ## Setup
 

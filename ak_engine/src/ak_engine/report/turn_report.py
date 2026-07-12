@@ -245,6 +245,27 @@ tips, hearing rumors of a Feature, sharing a drink, ...), and
 variants (`_LPEnc` sets `randlevel:= 2` instead of RWENC's `1`,
 suggesting a distinct danger-level tier). Modeling that whole outcome
 tree is a real, standalone follow-up phase, not attempted here.
+
+**Phase 107 addendum -- the three sibling `.X` files themselves.**
+`ENCO.X`, `SAFPAT.X` and `PATENC.X`, all confirmed real via `SAY.PAS`'s
+own dispatch:
+
+- `ENCO.X` (header `"1 1"`) is `_LEnc: FD('enco',S_Adv,1)` -- the
+  simplest possible encounter opening, a single template.
+- `SAFPAT.X` (header `"3 1"`) is `_LSafe: FD('safpat',S_Adv,1)` --
+  getting caught but then released (a convincing official seal, an
+  impressed judge, not actually being on a wanted list).
+- `PATENC.X` (header `"4 1"`) is `_LPEnc: BEGIN FD('patenc',S_Adv,4);
+  randlevel:= 2; END;` -- a more dangerous patrol/bounty-hunter
+  encounter (beaten and tracked down, challenged as a suspected spy,
+  killed a rogue in a duel only for his kin to come seeking revenge).
+
+All three `dex` values are small enough to fall into `FD`'s own
+`dex < 100` pseudo-random scheme (Phase 104's own finding), so every
+render function here reuses `pick_variant()`. The raw `\\x0b` control
+byte both `SAFPAT.X` and `PATENC.X` carry is `PROSE.TXT`'s own `^K`
+marker ("King name and title", e.g. "King Harold the Bold") --
+transcribed in source notation per this module's established convention.
 """
 
 from __future__ import annotations
@@ -826,3 +847,85 @@ def render_wandering_encounter(
         "[1": other_name,
     }
     return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/PROSE/ENCO.X -- the simplest possible encounter opening. See
+# module docstring's Phase 107 addendum.
+_ENCO_TEMPLATES: list[str] = [
+    "< encountered [.",
+]
+
+
+def render_generic_encounter(character_name: str, other_name: str, rng: random.Random) -> str:
+    """Renders ENCO.X's sentence -- the simplest encounter opening, a
+    single template with no real variation to pick from.
+    """
+
+    variant = pick_variant(_ENCO_TEMPLATES, rng)
+    values = {"<": character_name, "[": other_name}
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/PROSE/SAFPAT.X -- caught, then released. See module
+# docstring's Phase 107 addendum.
+_SAFPAT_TEMPLATES: list[str] = [
+    "but when < was taken to the judge/Rlocal_sheriff, < "
+    "showed_him/Rheld_forth the official_seal/Rinsignia of ^K, and was "
+    "let_go/Rmerely_run_out_of_town.",
+    "but he was easily/Rjust dazzled/Rawed by <'s "
+    "{fantastic/Rwonderful }tales of > heroism/Radventures.he "
+    "{respectfully/Radmiringly }bowed_before/Rsaluted <2 and {then "
+    "}marched_away/Rdeparted.",
+    "but < wasn't_listed_as_^A/Rwas_obviously_no {wanted/Rrenegade "
+    "}outlaw/Rspy, and_that_got_<2/Rso_<_got off_the_hook/Rout_of_trouble.",
+]
+
+
+def render_patrol_release(character_name: str, king_name: str, rng: random.Random) -> str:
+    """Renders SAFPAT.X's sentence for getting caught but then released
+    (a convincing official seal, an impressed judge, not actually being
+    on a wanted list). ``king_name`` is ``PROSE.TXT``'s own ``^K``
+    marker ("King name and title", e.g. "King Harold the Bold").
+    """
+
+    variant = pick_variant(_SAFPAT_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "<2": character_name,
+        ">": f"{character_name}'s",
+        "^K": king_name,
+    }
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/PROSE/PATENC.X -- a more dangerous patrol/bounty-hunter
+# encounter. See module docstring's Phase 107 addendum.
+_PATENC_TEMPLATES: list[str] = [
+    "< was ambushed/Rchased, tied_up/Rpinned_down and "
+    "severely_beaten/Rbloodied_up by wild-eyed_soldiers/Rangry_vigilantes."
+    "< {finally }escaped/Rbroke_free.a King's/RRoyal Ranger/RMarshal "
+    "tracked_<2_down/Rcaught_up_with_<2.",
+    "< was stopped/Rspotted by a {local }patrol/Rband_of_militia.Their "
+    "commanding officer/Rcaptain suspiciously/Rthreateningly challenged <2.",
+    "< was challenged/Rconfronted by a Royal_bounty_hunter/Rlocal_sheriff "
+    "who apparently/Revidently thought/Rbelieved < was a spy/Rwanted_criminal.",
+    "< was badgered/Raccosted by ^A {drunken/Rboorish }officer/Rrogue who "
+    "insulted/Rridiculed the respected/Rproud name_of_</RKingdom_of_^K."
+    "< killed/Rslew him in a duel, but the rogue's older_brother/Rbest_friend "
+    "was a marshal/Rcolonel, and he came after <2!",
+]
+
+
+def render_patrol_encounter(character_name: str, king_name: str, rng: random.Random) -> str:
+    """Renders PATENC.X's sentence for a more dangerous patrol/bounty
+    -hunter encounter. ``king_name`` is ``PROSE.TXT``'s own ``^K`` marker
+    (see ``render_patrol_release()``).
+    """
+
+    variant = pick_variant(_PATENC_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "<2": character_name,
+        "^K": king_name,
+    }
+    return render(variant, values, rng=rng)
