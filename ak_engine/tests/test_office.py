@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ak_engine.models.office import (
+    GANG_TEMPLATE,
     OFFICE_ENABLED_BY_DEFAULT,
     OFFICE_MIN_POINTS,
     OFFICE_NAME,
@@ -60,3 +61,41 @@ def test_office_enabled_by_default_verbatim_samples():
     assert OFFICE_ENABLED_BY_DEFAULT[Office.EMPEROR] is True
     assert OFFICE_ENABLED_BY_DEFAULT[Office.NO_OFFICE] is False
     assert OFFICE_ENABLED_BY_DEFAULT[Office.ILLUS_MAGE] is False
+
+
+# -- Phase 102: GANG.X2 --
+
+
+def test_gang_template_covers_exactly_the_9_confirmed_offices():
+    assert set(GANG_TEMPLATE.keys()) == {
+        Office.DIVINE_KING,
+        Office.GOOD_KING,
+        Office.DRUID_KING,
+        Office.NEUTRAL_KING,
+        Office.PAGAN_KING,
+        Office.EVIL_KING,
+        Office.NECRO_MAGE,
+        Office.UNDEAD_KING,
+        Office.DUELLIST,
+    }
+
+
+def test_gang_template_verbatim_samples():
+    assert "Thunderbird" in GANG_TEMPLATE[Office.DIVINE_KING]
+    assert "League of Pagan Clerics" in GANG_TEMPLATE[Office.PAGAN_KING]
+    assert GANG_TEMPLATE[Office.DUELLIST].endswith(
+        "with their feats_of_derring-do/Runbelievable_panache."
+    )
+
+
+def test_gang_template_necro_mage_is_blank():
+    # Not an alignment "king" title -- a real gap in the source, sitting
+    # right between EVIL_KING and UNDEAD_KING's own confirmed content.
+    assert GANG_TEMPLATE[Office.NECRO_MAGE] == ""
+
+
+def test_gang_template_excludes_the_unconfirmed_middle_stretch():
+    # PLAINS_KING..ASSASSIN sits between UNDEAD_KING and DUELLIST in the
+    # source file too, but isn't asserted here as confirmed blank data.
+    assert Office.PLAINS_KING not in GANG_TEMPLATE
+    assert Office.ASSASSIN not in GANG_TEMPLATE

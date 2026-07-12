@@ -3936,6 +3936,37 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sites. 4 new tests added (1674 passed total) in
     `tests/test_power.py`, covering the 3-entry range, the excluded
     conditions, verbatim samples, and the intro line.
+- **Phase 102 (current)**: `models/office.py GANG_TEMPLATE` --
+  `HostAK/TP/PROSE/GANG.X2` (header `"28 1"`), confirmed real via
+  `SAY.PAS`'s own `Check_BFace` procedure, the `_ATFan` branch:
+  `FD('...gang.x2',S_Batt,1001+Rint-ord(Divineking))` -- a title-based
+  fanaticism narrative, sibling to Phase 100's own `RACE_FANATICISM_TITLE`
+  (both are branches of the same `Check_BFace CASE`).
+  - The index is an `Office` offset counted *from* `DIVINE_KING`, not a
+    separate enum -- confirmed real content sits at exactly `DIVINE_KING`
+    (offset 0), `GOOD_KING` (1), `DRUID_KING` (2), `NEUTRAL_KING` (3),
+    `PAGAN_KING` (4), `EVIL_KING` (5), `NECRO_MAGE` (6, blank -- not an
+    alignment "king" title), `UNDEAD_KING` (7), and one isolated entry
+    far later at `DUELLIST` (offset 22, "Imperial Musketeers"). Every one
+    of these 9 positions independently confirms the exact `Office`
+    ordinal arithmetic, since each entry's own content matches its
+    computed title exactly (offset 4 explicitly names "the League of
+    Pagan Clerics"; offset 22 lands precisely on `DUELLIST` and reads
+    "Imperial Musketeers").
+  - Only these 9 confirmed entries are transcribed. The large stretch
+    between `UNDEAD_KING` and `DUELLIST` (`PLAINS_KING` through
+    `ASSASSIN`, 14 slots) is blank in the source file too, but is
+    **not** asserted here as confirmed empty-string data, unlike
+    `RACE_FANATICISM_TITLE`'s own `NO_RACE`/`SAURIAN` (which sat inside a
+    short, fully-populated 13-entry range, flanked immediately by real
+    content on both sides) -- this stretch has no confirming context
+    either side and is more likely simply unfinished content in the
+    original file.
+  - Non-breaking: full suite passed unchanged (1674 passed) before any
+    new tests were written -- a new dict with no existing call sites.
+    4 new tests added (1678 passed total) in `tests/test_office.py`,
+    covering the 9-entry set, verbatim samples, the `NECRO_MAGE` blank,
+    and the excluded unconfirmed middle stretch.
 
 ## Setup
 

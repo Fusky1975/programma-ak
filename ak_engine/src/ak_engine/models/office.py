@@ -48,6 +48,33 @@ program, so nothing in this module can compute which office a real
 `KingdomState` currently holds -- this is a type/threshold catalog
 only, the same category of "real, sourced, but not a complete
 algorithm" as Phase 79's `MONSTER_GUARDED_FEATURE_TYPES`.
+
+**`GANG_TEMPLATE` (Phase 102)**: `HostAK/TP/PROSE/GANG.X2` (header
+`"28 1"`), confirmed real via `SAY.PAS`'s own `Check_BFace` procedure,
+the `_ATFan` branch: `FD('...gang.x2',S_Batt,1001+Rint-ord(Divineking))`
+-- a title-based fanaticism narrative, sibling to `models/race.py
+RACE_FANATICISM_TITLE`'s own race-based variant (both are branches of
+the same `Check_BFace CASE` this project's own Phase 100 docstring
+already quotes). The index is an `Office` offset counted *from*
+`DIVINE_KING`, not a separate enum -- confirmed real content sits at
+exactly `DIVINE_KING` (offset 0), `GOOD_KING` (1), `DRUID_KING` (2),
+`NEUTRAL_KING` (3), `PAGAN_KING` (4), `EVIL_KING` (5), `NECRO_MAGE`
+(6, blank -- not an alignment "king" title), `UNDEAD_KING` (7), and one
+isolated entry far later at `DUELLIST` (offset 22, "Imperial
+Musketeers") -- every single one of these 9 positions independently
+confirms the exact `Office` ordinal arithmetic, since each entry's own
+content matches its computed title exactly (e.g. offset 4 explicitly
+names "the League of Pagan Clerics", offset 22 lands precisely on
+`DUELLIST` and reads "Imperial Musketeers"). Only these 9 confirmed
+entries are transcribed -- the large stretch between `UNDEAD_KING` and
+`DUELLIST` (`PLAINS_KING` through `ASSASSIN`) is blank in the source
+file too, but isn't included here as explicit empty-string entries,
+unlike `RACE_FANATICISM_TITLE`'s own `NO_RACE`/`SAURIAN`: those two were
+flanked immediately on both sides by real content within a short,
+fully-populated 13-entry range, while this stretch is 14 slots of
+unbroken blank space with no confirming context either side -- likely
+simply unfinished/unused content in the original file, not a
+confirmed "no text" design fact worth asserting.
 """
 
 from __future__ import annotations
@@ -337,4 +364,58 @@ OFFICE_ENABLED_BY_DEFAULT: dict[Office, bool] = {
     Office.CRAVENEST: True,
     Office.BRAVEST: True,
     Office.NO_TITLE: False,
+}
+
+# HostAK/TP/PROSE/GANG.X2, verbatim, keyed by Office offset from
+# DIVINE_KING (see module docstring's Phase 102 addendum). Raw,
+# unrendered prose template, each meant to be appended directly after an
+# army-name clause (leading space is part of the real text).
+GANG_TEMPLATE: dict[Office, str] = {
+    Office.DIVINE_KING: (
+        " were aided/Rvisited by a {great/Rmighty }Thunderbird who "
+        "flew_down/Rdescended from the heavens/Rstars to aid their "
+        "{righteous/Rheroic }Divine/RHeavenly cause, and were "
+        "inspired/Relevated to fanaticism by its divine/Rthunderous "
+        "splendor/Rspectacle."
+    ),
+    Office.GOOD_KING: (
+        " were joined/Rled_into_battle by ^A troop/Rsquadron of the "
+        "Order of Knights_Hospitaller/Rthe_Knights_of_the_Hospital, who "
+        "inspired/Rexhorted them to fanaticism with their Good and "
+        "righteous/Rvaunted fury/Rleadership."
+    ),
+    Office.DRUID_KING: (
+        " were exhorted/Renchanted into a fanatical state/Rfury by a "
+        "circle/Rretinue of clerics/Rdruids from the Brotherhood of "
+        "Druids, using_their/Rwho_awed_the_soldiers_with magical/Rmystical "
+        "pyrotechnics/Rchanting."
+    ),
+    Office.NEUTRAL_KING: (
+        " were joined/Rstiffened by a hardened/Rtough band/Routfit of "
+        "mercenaries/Rfreedom_fighters of the Mercenaries Guild, who "
+        "exhorted_them_to/Rled_them_into a fanatical fervor/Rcharge "
+        "with/Rby_example_of their fearless/Rexperienced leadership/Relan."
+    ),
+    Office.PAGAN_KING: (
+        " were blessed/Raided_in_the_battle by a band/Rretinue of "
+        "medicine_men/Rpriests from/Rsent_by the League of Pagan "
+        "Clerics, which inspired/Raroused them to a fanatical zeal/Rfury."
+    ),
+    Office.EVIL_KING: (
+        " were egged_on/Raccompanied by a band/Rcompany of the Order of "
+        "Black Knights, who urged/Rwhipped them into a fanatical "
+        "terror/Rrage with their threats_and_curses/Rrabid_battle_lust."
+    ),
+    Office.NECRO_MAGE: "",
+    Office.UNDEAD_KING: (
+        " were overflown/Rdescended_upon by the Circle of Wraiths, who "
+        "urged/Rgoaded them into mindless/Rrabid fanatical "
+        "battle-lust/Rfury with their terrible_moaning/Rmaniacal_laughter."
+    ),
+    Office.DUELLIST: (
+        " were joined/Raccompanied by ^A adventuresome_party/Rmerry_band "
+        "of the Imperial Musketeers, who inspired/Rthrilled them to "
+        "{the point of }fanaticism with their feats_of_derring-do/"
+        "Runbelievable_panache."
+    ),
 }
