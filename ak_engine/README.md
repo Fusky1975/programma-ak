@@ -3479,6 +3479,30 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     3 new tests added (1597 passed total) in `tests/test_combat.py`,
     covering full 6-entry coverage and verbatim spot-checks including
     both PROSE.TXT example strings.
+- **Phase 87 (current)**: `models/race.py RACE_NAME`/`RACE_ADJECTIVE`
+  -- `Race` (Phase 4) finally gets real display names, found continuing
+  to mine `CTBOTH.PAS` the way Phases 79-84/86 found theirs.
+  `CTBOTH.PAS`'s own `rname`/`radj` tables (`rstrs` type, 23 entries
+  each -- 15 real + 8 unused `er3`-`er10` extension slots, the same
+  convention already used for every other enum's own unused tail).
+  - **`radj[_race]` confirmed to be `PROSE.TXT`'s own documented
+    `"$R: Race name ('Elven', 'Dwarven' etc.)"` marker** via
+    `RUMORS.PAS`'s own `WW(radj[_race])` -- both example strings
+    verbatim entries here. `rname[...]` is directly referenced too
+    (e.g. `Concat('(a ', rname[lrace[ldr]], ' ', ...)'` -- "a Human
+    warrior"), matching `PROSE.TXT`'s separate `"^R (): Race ('Humans',
+    'Dragons', etc.)"` marker -- modeled here as the singular noun form
+    `rname` actually stores, not a pluralized string.
+  - Some `RACE_ADJECTIVE` entries diverge meaningfully from the plain
+    noun (`RACE_NAME`): Dragons' own adjective is "serpentine", Eagles'
+    is "feather-brained", Whales' is "aquatic" -- flavor text, not
+    mechanical mistranscriptions, kept verbatim.
+  - Non-breaking: full suite passed unchanged (1597 passed) before any
+    new tests were written -- two new dicts with no existing call
+    sites. 5 new tests added (1602 passed total) in a new
+    `tests/test_race.py`, covering full 15-entry coverage for both
+    dicts, both PROSE.TXT example strings, and the non-obvious
+    adjective divergences.
 
 ## Setup
 
