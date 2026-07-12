@@ -3839,6 +3839,43 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     5 new tests added (1661 passed total) in `tests/test_power.py`,
     covering full coverage of both dicts, verbatim samples, and the 11
     illegal-spell markers.
+- **Phase 99 (current)**: new `models/intro.py` -- how a character
+  arrives at / discovers a geographic `Feature`, the narrative "intro"
+  scenario shown once before the encounter plays out. `CTME.PAS`'s own
+  `intro` enum (~line 520, 15 members) plus `HostAK/TP/PROSE/ENCSPEC.X2`
+  (header `"15 1"`, 15 templates).
+  - **Weaker evidence than Phases 96-98, documented honestly rather than
+    overstated**: every prior `.X2`-sourced phase confirmed its file via
+    a literal `FD(...)`/`Say(...)` dispatch call site. For `ENCSPEC.X2`,
+    no such call site exists anywhere in the 13 available library files
+    -- `YAK.PAS`'s own `Set_Event` computes and populates the value
+    (`fintro:= intro(ord(fintro1[ft]) + IRand MOD (...))`, from real,
+    populated `fintro1`/`fintrof` range tables) but nothing observable
+    ever reads it back -- the same "computed but no confirmed consumer"
+    gap category as `comfeat`/`fcomfeat` (`models/power.py`'s own Phase
+    95 docstring).
+  - What *does* support the positional mapping: `ENCSPEC.X2`'s own
+    declared choice count (15) matches `intro`'s own 15 members exactly,
+    and every individual template's content specifically and
+    unambiguously matches its corresponding Pascal identifier -- e.g.
+    template 6 ("eased_down ... the stairs ... leading ... down") is
+    `DownStairs`, template 13 ("swam ... into the &") is `Swim`. Stronger
+    than a coincidental fit (every one of the 15 lines is distinct and
+    on-point, unlike `MAGFEAT.X2`'s 19 identical filler lines), but still
+    inferred from internal consistency, not a dispatch citation.
+  - `Intro`'s own member names keep `CTME.PAS`'s own identifiers
+    (`MONK`, `VALET`, `DOWN_STAIRS`, `SWIM`, ...) rather than deriving
+    names from `INTRO_TEMPLATE`'s prose -- they're already meaningful
+    English words, matching `Monster`/`Race`'s own precedent.
+  - `fintro1`/`fintrof` (the per-`FeatureType` range tables that pick
+    which `Intro` values are possible for a given Feature) are confirmed
+    real but deliberately deferred, matching how `models/magic_feature.py`
+    (Phase 92) deferred its own analogous `mf1`/`mff` tables.
+  - Non-breaking: full suite passed unchanged (1661 passed) before any
+    new tests were written -- a new enum/dict with no existing call
+    sites. 5 new tests added (1666 passed total) in a new
+    `tests/test_intro.py`, covering full 15-entry coverage, verbatim
+    samples, and the distinct stair/water scenarios.
 
 ## Setup
 
