@@ -23,6 +23,7 @@ from ak_engine.report.turn_report import (
     render_sneak_detected,
     render_spy_report_opening,
     render_uncontested_conquest,
+    render_wandering_encounter,
 )
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import BattleReport
@@ -517,3 +518,36 @@ def test_render_sneak_detected_fourth_variant():
     rng = ScriptedRandom([0.1] * 8, choice_indices=[3])
     result = render_sneak_detected("Arthur", "Grendel", SNEAKUP_RANGE_BOW, rng)
     assert result == "Arthur hoped to steal the treasures of Grendel but Grendel spotted Arthur at bow range."
+
+
+# -- Phase 106: render_wandering_encounter (RWENC.X) --
+
+
+def test_render_wandering_encounter_first_variant_land():
+    rng = ScriptedRandom([0.1] * 6, choice_indices=[0])
+    result = render_wandering_encounter("Arthur", "Grendel", rng)
+    assert result == "Arthur was crossing an open field when Grendel spotted Arthur from a distance."
+
+
+def test_render_wandering_encounter_first_variant_sea():
+    rng = ScriptedRandom([0.1] * 6, choice_indices=[0])
+    result = render_wandering_encounter("Arthur", "Grendel", rng, is_sea=True)
+    assert result == "Arthur was swimming in a lagoon when Grendel spotted Arthur from a distance."
+
+
+def test_render_wandering_encounter_second_variant():
+    rng = ScriptedRandom([0.1] * 6, choice_indices=[1])
+    result = render_wandering_encounter("Arthur", "Grendel", rng)
+    assert result == "Arthur was approached by Grendel."
+
+
+def test_render_wandering_encounter_third_variant():
+    rng = ScriptedRandom([0.1] * 6, choice_indices=[2])
+    result = render_wandering_encounter("Arthur", "Grendel", rng)
+    assert result == "Grendel came at Arthur from out of nowhere."
+
+
+def test_render_wandering_encounter_fourth_variant():
+    rng = ScriptedRandom([0.1] * 6, choice_indices=[3])
+    result = render_wandering_encounter("Arthur", "Grendel", rng)
+    assert result == "Arthur encountered Grendel."

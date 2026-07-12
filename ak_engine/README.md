@@ -4067,6 +4067,33 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_turn_report.py`, covering all variants of both
     functions, the `/S`/`^A` markers in `FLEEFAIL.X`, and all three
     range-suffix completions in `SNEAKUP.X`.
+- **Phase 106 (current)**: `report/turn_report.py
+  render_wandering_encounter()` -- `HostAK/TP/PROSE/RWENC.X` (header
+  `"4 1"`), confirmed real via `SAY.PAS`'s own `_LWEnc` dispatch:
+  `BEGIN randlevel:= 1; FD('rwenc',S_Adv,3); END;` -- the opening/intro
+  sentence for stumbling into a wandering encounter while traveling,
+  distinct from Search's own `models/intro.py Intro` (Phase 99, which is
+  specifically about discovering a geographic `Feature`, not a chance
+  meeting on the road). `dex=3` again falls into `FD`'s own `dex < 100`
+  pseudo-random scheme (Phase 104's own finding), so
+  `render_wandering_encounter()` reuses `pick_variant()` the same way
+  `render_march()`/`render_flee_failure()` do.
+  - **A larger, real "wandering/patrol encounter outcome" system was
+    found alongside it, deliberately left out of scope**: `SAY.PAS`'s
+    own `_LPass`/`_LBefr`/`_LTricks`/`_LDense`/`_LDona`/`_LHear`/
+    `_LNice`/`_LGreet` are plain, non-`.X`-sourced `Say(...)` calls
+    describing what happens *after* the RWENC.X opening (declining to
+    fight, exchanging tips, hearing rumors of a Feature, sharing a
+    drink, ...), and `_LEnc`/`_LSafe`/`_LPEnc` dispatch their own
+    sibling `.X` files (`enco.x`, `safpat.x`, `patenc.x`) for closely
+    related encounter variants (`_LPEnc` sets `randlevel:= 2` instead of
+    RWENC's `1`, suggesting a distinct danger-level tier). Modeling that
+    whole outcome tree is a real, standalone follow-up phase.
+  - Non-breaking: full suite passed unchanged (1697 passed) before any
+    new tests were written -- a new function with no existing call
+    sites. 5 new tests added (1702 passed total) in
+    `tests/test_turn_report.py`, covering all 4 variants and the `/S`
+    sea marker.
 
 ## Setup
 

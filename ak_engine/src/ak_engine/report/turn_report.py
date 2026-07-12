@@ -221,6 +221,30 @@ found finishing the Phase 104 investigation.
   callers to pick from, rather than inventing a new enum with no Pascal
   source of its own (`Rint`'s own 0/1/2 values are a bare `CASE`, not a
   named type anywhere in the available source).
+
+**Phase 106 addendum -- a wandering encounter's opening sentence.**
+``HostAK/TP/PROSE/RWENC.X`` (header ``"4 1"``), confirmed real via
+`SAY.PAS`'s own `_LWEnc` dispatch: `BEGIN randlevel:= 1;
+FD('rwenc',S_Adv,3); END;` -- the opening/intro sentence for stumbling
+into a wandering encounter while traveling, distinct from Search's own
+`models/intro.py Intro` (Phase 99, which is specifically about
+discovering a geographic `Feature`, not a chance meeting on the road).
+`dex=3` again falls into `FD`'s own `dex < 100` pseudo-random scheme
+(Phase 104's own finding), so `render_wandering_encounter()` reuses
+`pick_variant()` the same way `render_march()`/`render_flee_failure()`
+do.
+
+**A larger, real "wandering/patrol encounter outcome" system was found
+alongside it, deliberately left out of scope**: `SAY.PAS`'s own
+`_LPass`/`_LBefr`/`_LTricks`/`_LDense`/`_LDona`/`_LHear`/`_LNice`/
+`_LGreet` are plain, non-`.X`-sourced `Say(...)` calls describing what
+happens *after* the RWENC.X opening (declining to fight, exchanging
+tips, hearing rumors of a Feature, sharing a drink, ...), and
+`_LEnc`/`_LSafe`/`_LPEnc` dispatch their own sibling `.X` files
+(`enco.x`, `safpat.x`, `patenc.x`) for closely related encounter
+variants (`_LPEnc` sets `randlevel:= 2` instead of RWENC's `1`,
+suggesting a distinct danger-level tier). Modeling that whole outcome
+tree is a real, standalone follow-up phase, not attempted here.
 """
 
 from __future__ import annotations
@@ -772,3 +796,33 @@ def render_sneak_detected(
         ">": f"{character_name}'s",
     }
     return render(variant, values, rng=rng) + range_suffix
+
+
+# HostAK/TP/PROSE/RWENC.X -- a wandering encounter's opening sentence.
+# See module docstring's Phase 106 addendum.
+_RWENC_TEMPLATES: list[str] = [
+    "< was crossing_an_open_field/Sswimming_in_a_lagoon when [1 spotted <2 from a distance.",
+    "< was {unexpectedly }approached_by/Rfaced_with [.",
+    "[1 {suddenly/Runexpectedly }came_at/Rrushed_at <2 from_out_of_nowhere/Rlike_a_bolt_from_the_blue.",
+    "< encountered/Rwas_confronted_by [.",
+]
+
+
+def render_wandering_encounter(
+    character_name: str, other_name: str, rng: random.Random, *, is_sea: bool = False
+) -> str:
+    """Renders RWENC.X's opening sentence for a wandering encounter while
+    traveling (distinct from Search's own ``models/intro.py Intro``,
+    Phase 99, which is about discovering a geographic ``Feature``, not a
+    chance meeting on the road). ``is_sea`` (Phase 74) resolves the "/S"
+    marker the first variant carries.
+    """
+
+    variant = pick_variant(_RWENC_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "<2": character_name,
+        "[": other_name,
+        "[1": other_name,
+    }
+    return render(variant, values, rng=rng, is_sea=is_sea)
