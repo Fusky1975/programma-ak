@@ -606,6 +606,28 @@ phase (see its module docstring) -- ``render_spy_leads()``/
 each simply passing its own list of item/army names through `render()`'s
 new `lists` parameter -- no new template content, no new sourcing,
 just closing gaps this project had already found and documented twice.
+
+**Phase 119 addendum -- funeral pyre and failed-Steal ransom.** Two
+more real, hardcoded templates (no file) found alongside `_LInher`/
+`_LTakeG` while researching Phase 117, deliberately left unmodeled
+there.
+
+- `_LBurn: Say('] possessions were burned with [3 on the funeral
+  pyre.',S_Priv)` (`RUMORS.PAS` `_LBurn = 3013`, immediately before
+  `_LInher = 3014`) -- the deceased's own possessive (`]`) and a second
+  character present at the pyre (`[3`, the same marker `ALLY.X`'s own
+  target-King reference used, Phase 116). `render_funeral_pyre()`.
+- `_LRans` (`RUMORS.PAS` `_LRans = 3039`, immediately after
+  `_LTakeG = 3038`) -- a real entry made of **two separate `Say(...)`
+  calls** (no file), narrating a failed Steal attempt: caught
+  red-handed, then ransomed for half the thief's own treasury.
+  `render_steal_caught_and_ransomed()` concatenates both rendered
+  sentences with no separator, the same shape `render_ally_refused()`
+  (Phase 116) already established for a two-`Say()` entry. `[`/`[1`
+  both refer to the character who caught the thief, `<`/`<2` both
+  refer to the thief -- the same "one value, two marker spellings for
+  the same person" shape `render_fire_hireling()`'s own `[`/`[1`
+  (Phase 114) already established.
 """
 
 from __future__ import annotations
@@ -1912,6 +1934,47 @@ def render_take_gold(character_name: str, victim_name: str, gold_amount: int, rn
         "#": str(gold_amount),
     }
     return render(variant, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LRans -- a single, real, hardcoded entry made of
+# two separate Say(...) calls (no file), a failed Steal attempt: caught
+# red-handed, then ransomed. See module docstring's Phase 119 addendum.
+_STEAL_RANSOM_TEMPLATES = (
+    "[1 caught <2 red-handed while < was rummaging through ] things "
+    "in a bungled attempt at thievery.",
+    "[1 forced <2 to pay [ half > treasury in ransom before letting him go.",
+)
+
+
+def render_steal_caught_and_ransomed(catcher_name: str, thief_name: str, rng: random.Random) -> str:
+    """Renders ``_LRans``'s two-sentence entry for a failed Steal
+    attempt, concatenated with no separator (see module docstring).
+    """
+
+    values = {
+        "[": catcher_name,
+        "[1": catcher_name,
+        "<": thief_name,
+        "<2": thief_name,
+        "]": f"{catcher_name}'s",
+        ">": f"{thief_name}'s",
+    }
+    first = render(_STEAL_RANSOM_TEMPLATES[0], values, rng=rng)
+    second = render(_STEAL_RANSOM_TEMPLATES[1], values, rng=rng)
+    return first + second
+
+
+# HostAK/TP/SAY.PAS _LBurn -- a single, real, hardcoded template (no
+# file), immediately before _LInher in RUMORS.PAS's own CONST block.
+# See module docstring's Phase 119 addendum.
+FUNERAL_PYRE_TEMPLATE = "] possessions were burned with [3 on the funeral pyre."
+
+
+def render_funeral_pyre(deceased_name: str, mourner_name: str, rng: random.Random) -> str:
+    """Renders ``_LBurn``'s sentence for a funeral pyre."""
+
+    values = {"]": f"{deceased_name}'s", "[3": mourner_name}
+    return render(FUNERAL_PYRE_TEMPLATE, values, rng=rng)
 
 
 # HostAK/TP/SAY.PAS _LInher -- a single, real, hardcoded template (no

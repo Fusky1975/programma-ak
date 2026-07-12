@@ -9,6 +9,7 @@ from ak_engine.report.turn_report import (
     ATTACK_DEVASTATING_HIT_TEMPLATE,
     EXPLORE_ALREADY_MAXED_TEMPLATE,
     EXPLORE_NOT_PRESENT_PREFIX,
+    FUNERAL_PYRE_TEMPLATE,
     HIRE_COUNTER_OFFER_TEMPLATE,
     INHERIT_TEMPLATE,
     NEMESIS_TEMPLATE,
@@ -37,6 +38,7 @@ from ak_engine.report.turn_report import (
     render_fire_arrow_attack,
     render_fire_hireling,
     render_flee_failure,
+    render_funeral_pyre,
     render_generic_encounter,
     render_hire_accepted,
     render_hire_counter_offer,
@@ -65,6 +67,7 @@ from ak_engine.report.turn_report import (
     render_spy_report_closing,
     render_spy_report_opening,
     render_spy_tax_estimate,
+    render_steal_caught_and_ransomed,
     render_tactical_comparison,
     render_take_gold,
     render_take_items,
@@ -1237,3 +1240,27 @@ def test_render_take_items_single_item_has_no_and():
     rng = ScriptedRandom([0.1] * 4)
     result = render_take_items("Aldric", ["Crystal Ball"], rng)
     assert "and" not in result
+
+
+# -- funeral pyre and failed-Steal ransom (Phase 119) ------------------------
+
+
+def test_render_funeral_pyre():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_funeral_pyre("Borin", "Aldric", rng)
+    assert result == "Borin's possessions were burned with Aldric on the funeral pyre."
+
+
+def test_funeral_pyre_template_is_the_confirmed_hardcoded_say():
+    assert FUNERAL_PYRE_TEMPLATE == "] possessions were burned with [3 on the funeral pyre."
+
+
+def test_render_steal_caught_and_ransomed_concatenates_both_sentences():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_steal_caught_and_ransomed("Borin", "Aldric", rng)
+    assert result == (
+        "Borin caught Aldric red-handed while Aldric was rummaging "
+        "through Borin's things in a bungled attempt at thievery.Borin "
+        "forced Aldric to pay Borin half Aldric's treasury in ransom "
+        "before letting him go."
+    )

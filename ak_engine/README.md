@@ -4512,6 +4512,27 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     both error cases, and that `^L` only consumes its own marker pair)
     plus 4 in `tests/test_turn_report.py` for the newly-unblocked
     renderers.
+- **Phase 119 (current)**: `report/turn_report.py
+  render_funeral_pyre()`/`render_steal_caught_and_ransomed()` -- two
+  more real, hardcoded templates (no file) found alongside `_LInher`/
+  `_LTakeG` while researching Phase 117, deliberately left unmodeled
+  there.
+  - `_LBurn: Say('] possessions were burned with [3 on the funeral
+    pyre.',S_Priv)` (`RUMORS.PAS` `_LBurn = 3013`, immediately before
+    `_LInher = 3014`) -- the deceased's own possessive (`]`) and a
+    second character present at the pyre (`[3`, the same marker
+    `ALLY.X`'s own target-King reference used, Phase 116).
+  - `_LRans` (`RUMORS.PAS` `_LRans = 3039`, immediately after
+    `_LTakeG = 3038`) -- a real entry made of two separate `Say(...)`
+    calls (no file), narrating a failed Steal attempt: caught
+    red-handed, then ransomed for half the thief's own treasury.
+    `render_steal_caught_and_ransomed()` concatenates both rendered
+    sentences with no separator, the same shape
+    `render_ally_refused()` (Phase 116) already established.
+  - Non-breaking: full suite passed unchanged (1816 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 3 new tests added (1819 passed total) in
+    `tests/test_turn_report.py`.
 
 ## Setup
 
