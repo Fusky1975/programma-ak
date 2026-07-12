@@ -5,6 +5,8 @@ import pytest
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.report.turn_report import (
+    EXPLORE_ALREADY_MAXED_TEMPLATE,
+    EXPLORE_NOT_PRESENT_PREFIX,
     NEMESIS_TEMPLATE,
     SNEAKUP_RANGE_BOW,
     SNEAKUP_RANGE_MELEE,
@@ -16,6 +18,9 @@ from ak_engine.report.turn_report import (
     render_battle_winner,
     render_column_clash,
     render_destroyed_army,
+    render_explore_already_maxed,
+    render_explore_continued,
+    render_explore_progress,
     render_flee_failure,
     render_generic_encounter,
     render_magic_feature_discovery,
@@ -711,3 +716,71 @@ def test_nemesis_template_renders_via_prose_render():
     rng = ScriptedRandom([0.1] * 10)
     result = render(NEMESIS_TEMPLATE[3], {"=": "144th Legion"}, rng=rng)
     assert result == "the unwieldy formation of 144th Legion was tested by the flexible Legionnaires."
+
+
+# -- render_explore_progress / render_explore_continued (Phase 110) ---------
+
+
+def test_render_explore_progress_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_explore_progress("Aldric", "Greenfield", 42, rng)
+    assert result == "Aldric explored Greenfield and now 42% of it has been explored."
+
+
+def test_render_explore_progress_first_variant_right_branch():
+    rng = ScriptedRandom([0.9] * 10, choice_indices=[0])
+    result = render_explore_progress("Aldric", "Greenfield", 42, rng)
+    assert result == "Aldric explored Greenfield well and now 42% of it has been explored."
+
+
+def test_render_explore_progress_resolves_possessive_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_explore_progress("Aldric", "Greenfield", 100, rng)
+    assert result == (
+        "Aldric travelled throughout Greenfield, exploring its features."
+        "After Aldric's efforts, 100% of it has been explored to date."
+    )
+
+
+def test_render_explore_progress_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+    result = render_explore_progress("Aldric", "Greenfield", 100, rng, is_sea=True)
+    assert result == (
+        "Aldric explored Greenfield, taking careful notes of the islands "
+        "and features, and now 100% of it has been explored."
+    )
+
+
+def test_render_explore_continued_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_explore_continued("Aldric", "Greenfield", 55, rng)
+    assert result == "Aldric observed the area while we were on the march and now 55% of Greenfield has been explored."
+
+
+def test_render_explore_continued_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+    result = render_explore_continued("Aldric", "Greenfield", 60, rng, is_sea=True)
+    assert result == (
+        "while on the move, Aldric took an interest in the islands of "
+        "Greenfield, exploring some unknown areas.We have now explored "
+        "60% of Greenfield."
+    )
+
+
+def test_render_explore_already_maxed():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_explore_already_maxed("Aldric", "Greenfield", rng)
+    assert result == "Aldric tried to explore Greenfield but it seemed that it had already been completely explored."
+
+
+def test_explore_already_maxed_template_is_the_confirmed_hardcoded_say():
+    assert EXPLORE_ALREADY_MAXED_TEMPLATE == (
+        "< tried to explore @ but it seemed that it had already been "
+        "completely explored."
+    )
+
+
+def test_explore_not_present_prefix_is_the_confirmed_hardcoded_precursor():
+    # No trailing period -- SAY.PAS concatenates one of the three Explore
+    # templates above directly after this clause.
+    assert EXPLORE_NOT_PRESENT_PREFIX == "< wasn't in @ so "

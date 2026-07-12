@@ -307,6 +307,52 @@ render function here reuses `pick_variant()`. The raw `\\x0b` control
 byte both `SAFPAT.X` and `PATENC.X` carry is `PROSE.TXT`'s own `^K`
 marker ("King name and title", e.g. "King Harold the Bold") --
 transcribed in source notation per this module's established convention.
+
+**Phase 110 addendum -- the Explore action's own report family.** Found
+scanning the wide `_LDies`..`_LTreas` (3000-3063) stretch of
+`RUMORS.PAS`'s story-code `CONST` block for the first time -- this
+module had so far only mined the 3300+ "encounter table" stretch. Ties
+directly to `turn/exploration.py resolve_explore()` (Phase 3) and
+`turn/move_execution.py`'s own partial-exploration side effect (also
+Phase 3), the first time a `.X`-sourced narrative in this module pairs
+with an already-modeled, already-numeric game mechanic (`ExploreResult
+.new_percent`) rather than being purely decorative.
+
+- `_LExpImp: FD('expmove',S_Adv,0)` -> `EXPMOVE.X` (header `"6 1"`, 6
+  real templates) is the Explore action's own progress report,
+  dispatched for a dedicated Explore. `render_explore_progress()`.
+- `_LExpCo: FD('coexp',S_Red,1)` -> `COEXP.X` (header `"6 1"`, 6 real
+  templates) is the same progress report but phrased as exploration
+  gained *while marching* -- matching `_LMove`'s own sibling `_LExpCo`
+  dispatch in `SAY.PAS` (~line 441, immediately after `_LExpDiff`) and
+  `move_execution.py`'s own already-modeled "Move's partial-exploration
+  side effect". `render_explore_continued()`.
+- `_LExpMax`: a single, real, hardcoded `Say(...)` (no file) for
+  "already fully explored" -- `EXPLORE_ALREADY_MAXED_TEMPLATE`,
+  `render_explore_already_maxed()`. Maps to `ExploreResult
+  .fully_explored` being already `True` before this Explore ran.
+- `_LExpDiff`: a single, real, hardcoded precursor clause ("< wasn't in
+  @ so ", no trailing period) that `SAY.PAS` prefixes onto one of the
+  three codes above when the exploring character wasn't actually
+  located in the target province -- `EXPLORE_NOT_PRESENT_PREFIX`, a
+  bare string constant (the caller concatenates it, the same "raw
+  template, no wrapper" choice `POWER_CONDITION_REJECTION_INTRO`
+  established in Phase 101).
+- `_LExpFail`: confirmed real in the `CASE` (`SAY.PAS` line 453) but is
+  a literal empty statement (`;`) -- produces no text at all. Documented
+  here, not modeled as a function, since there is nothing to render.
+- `_LExpAtt` (3002) is declared in `RUMORS.PAS`'s own `CONST` block but
+  has **no** dispatch anywhere in `SAY.PAS` -- an orphaned constant,
+  not pursued (no confirmed content to model).
+
+Both `EXPMOVE.X` and `COEXP.X` carry the `^B`/`^E` King-exclusion span
+around their own "...% has been explored" clause (`PROSE.TXT`'s
+"excluded from the General Intelligence Reports of other players") --
+the same already-documented, deferred marker `models/local_encounter.py
+HEAR_OF_FEATURE` used in Phase 108, transcribed verbatim here too.
+`dex` is `0`/`1` for the two files respectively -- both `< 100`, so
+both render functions use `pick_variant()` per the established `FD`
+litmus test, not deterministic indexing.
 """
 
 from __future__ import annotations
@@ -927,6 +973,125 @@ def render_magic_feature_discovery(
         return render(_MAGFEAT_ITSELF_TEMPLATE, values)
     values["$\\"] = MAGIC_FEATURE_NAME[magic_feature]
     return render(_MAGFEAT_FOUND_TEMPLATE, values)
+
+
+# HostAK/TP/PROSE/EXPMOVE.X -- the Explore action's own progress report.
+# See module docstring's Phase 110 addendum.
+_EXPMOVE_TEMPLATES: list[str] = [
+    "< explored @^B {well }and now #% of it has been explored^E.",
+    "< travelled/Ssailed throughout/Rabout @, exploring its "
+    "features/SIslands.^BAfter > {exploration }efforts, #% of it has "
+    "been explored to date.^E",
+    "< roamed/Scruised through/Raround_in @, exploring the "
+    "terrain/Schannels there^B, and now #% of it has been explored^E.",
+    "< explored @, taking careful/Rprecise notes of the "
+    "terrain/Sislands and features^B, and now #% of it has been "
+    "explored^E.",
+    "< wandered/Scruised freely/Rfar_and_wide in/Rabout @, "
+    "exploring/Runcovering its secrets/Rmysteries^B, and raising our "
+    "exploration level in @ to #%^E.",
+    "< explored/Snavigated @ carefully/Rthoroughly, leaving no "
+    "stone_unturned/Sisland_uncharted^B, and our exploration level "
+    "there has risen to #%^E.",
+]
+
+
+def render_explore_progress(
+    character_name: str,
+    province_name: str,
+    new_percent: int,
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
+) -> str:
+    """Renders EXPMOVE.X's sentence for a dedicated Explore action
+    (rulebook Explore, ``turn/exploration.py resolve_explore()``'s own
+    ``ExploreResult.new_percent``). ``is_sea`` (Phase 74) resolves the
+    "/S" marker most variants carry. The ``^B``/``^E`` King-exclusion
+    span (see module docstring) is stripped, not resolved.
+    """
+
+    variant = pick_variant(_EXPMOVE_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "@": province_name,
+        "#": str(new_percent),
+        ">": f"{character_name}'s",
+        "^B": "",
+        "^E": "",
+    }
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/PROSE/COEXP.X -- exploration gained as a side effect of a
+# Move. See module docstring's Phase 110 addendum.
+_COEXP_TEMPLATES: list[str] = [
+    "< observed the area/Rterrain while we were on_the_march/S"
+    "cruising_forward^B and now #% of @ has been explored^E.",
+    "< found some time to explore/Rinvestigate @ while "
+    "marching/Ssailing_ahead.^B#% of it has been explored to date.^E",
+    "< marched_along/Snavigated some previously/Rheretofore "
+    "unexplored paths/Schannels^B, raising our exploration knowledge "
+    "to #%^E.",
+    "while on_the_march/Son_the_move, < took ^A interest in the "
+    "terrain/Sislands of @, exploring some unknown areas/Rterritory."
+    "^BWe have now explored #% of @^E.",
+    "< made some side trips while marching/Ssailing through @^B and "
+    "now #% of @ has been explored^E.",
+    "< marched/Ssailed along ^A unusual/Runconventional "
+    "route/Scourse through @^B and raised our {level of }exploration "
+    "there to #%^E.",
+]
+
+
+def render_explore_continued(
+    character_name: str,
+    province_name: str,
+    new_percent: int,
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
+) -> str:
+    """Renders COEXP.X's sentence for exploration gained as a side
+    effect of a Move (``turn/move_execution.py``'s own already-modeled
+    partial-exploration side effect, Phase 3). ``is_sea`` (Phase 74)
+    resolves the "/S" marker most variants carry.
+    """
+
+    variant = pick_variant(_COEXP_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "@": province_name,
+        "#": str(new_percent),
+        ">": f"{character_name}'s",
+        "^B": "",
+        "^E": "",
+    }
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/SAY.PAS _LExpMax -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 110 addendum.
+EXPLORE_ALREADY_MAXED_TEMPLATE = (
+    "< tried to explore @ but it seemed that it had already been "
+    "completely explored."
+)
+
+
+def render_explore_already_maxed(character_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders ``_LExpMax``'s sentence for an Explore that found nothing
+    left to explore (``ExploreResult.fully_explored`` already ``True``
+    before this Explore ran).
+    """
+
+    values = {"<": character_name, "@": province_name}
+    return render(EXPLORE_ALREADY_MAXED_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LExpDiff -- a single, real, hardcoded precursor
+# clause (no trailing period -- the caller concatenates one of the three
+# templates above). See module docstring's Phase 110 addendum.
+EXPLORE_NOT_PRESENT_PREFIX = "< wasn't in @ so "
 
 
 # HostAK/TP/PROSE/MARCH.X -- the Move action's own report line. See

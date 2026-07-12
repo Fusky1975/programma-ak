@@ -4202,6 +4202,50 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     cases, three confirmed buckets' exact rendered text (including the
     `/S` sea marker), and `NEMESIS_TEMPLATE`'s real entry count plus two
     rulebook-cross-confirmed samples.
+- **Phase 110 (current)**: `report/turn_report.py
+  render_explore_progress()`/`render_explore_continued()`/
+  `render_explore_already_maxed()`/`EXPLORE_NOT_PRESENT_PREFIX` -- the
+  Explore action's own report family, found scanning the wide
+  `_LDies`..`_LTreas` (3000-3063) stretch of `RUMORS.PAS`'s story-code
+  `CONST` block for the first time (this module had so far only mined
+  the 3300+ "encounter table" stretch). The first `.X`-sourced
+  narrative in this module that pairs with an already-modeled, already
+  -numeric game mechanic (`turn/exploration.py resolve_explore()`'s own
+  `ExploreResult.new_percent`, Phase 3) rather than being purely
+  decorative.
+  - `_LExpImp: FD('expmove',S_Adv,0)` -> `EXPMOVE.X` (header `"6 1"`, 6
+    real templates): the Explore action's own progress report, for a
+    dedicated Explore.
+  - `_LExpCo: FD('coexp',S_Red,1)` -> `COEXP.X` (header `"6 1"`, 6 real
+    templates): the same progress report phrased as exploration gained
+    *while marching* -- ties to `turn/move_execution.py`'s own already
+    -modeled "Move's partial-exploration side effect" (also Phase 3).
+  - `_LExpMax`/`_LExpDiff`: two more real, single, hardcoded `Say(...)`
+    templates (no file) -- "already fully explored"
+    (`EXPLORE_ALREADY_MAXED_TEMPLATE`, maps to `ExploreResult
+    .fully_explored` already `True`) and a precursor clause for when
+    the exploring character wasn't actually in the target province
+    (`EXPLORE_NOT_PRESENT_PREFIX`, no trailing period -- a bare string
+    constant the caller concatenates, the same choice
+    `POWER_CONDITION_REJECTION_INTRO` established in Phase 101).
+  - `_LExpFail`: confirmed real in the `CASE` (`SAY.PAS` line 453) but
+    is a literal empty statement (`;`) -- produces no text at all,
+    documented rather than modeled as a function.
+  - `_LExpAtt` (3002): declared in `RUMORS.PAS`'s own `CONST` block but
+    has no dispatch anywhere in `SAY.PAS` -- an orphaned constant, not
+    pursued.
+  - Both `EXPMOVE.X` and `COEXP.X` wrap their own "...% has been
+    explored" clause in the `^B`/`^E` King-exclusion span
+    (`PROSE.TXT`'s "excluded from the General Intelligence Reports of
+    other players") -- the same already-documented, deferred marker
+    `models/local_encounter.py HEAR_OF_FEATURE` used in Phase 108. Both
+    files' `dex` (`0`/`1`) is `< 100`, so both render functions use
+    `pick_variant()` per the established `FD` litmus test.
+  - Non-breaking: full suite passed unchanged (1735 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 9 new tests added (1744 passed total) in
+    `tests/test_turn_report.py`, covering both files' possessive/sea
+    marker resolution and the two hardcoded templates verbatim.
 
 ## Setup
 
