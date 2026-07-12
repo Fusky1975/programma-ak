@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from ak_engine.models.power import (
+    MCOND_TEMPLATE,
+    PCOND_TEMPLATE,
     POWER_CONDITION_NAME,
     POWER_NAME,
     Power,
@@ -41,3 +43,38 @@ def test_power_condition_pc_none_is_empty_string():
     # YAK.PAS's own coname table gives PCNone the empty string, not a
     # missing value -- no condition text needed when there's no condition.
     assert POWER_CONDITION_NAME[PowerCondition.PC_NONE] == ""
+
+
+# -- Phase 97: MCOND.X2/PCOND.X2 --
+
+
+def test_mcond_template_covers_every_condition():
+    assert set(MCOND_TEMPLATE.keys()) == set(PowerCondition)
+
+
+def test_pcond_template_covers_every_condition():
+    assert set(PCOND_TEMPLATE.keys()) == set(PowerCondition)
+
+
+def test_mcond_and_pcond_share_the_same_pc_none_text():
+    assert MCOND_TEMPLATE[PowerCondition.PC_NONE] == "(No condition here.)"
+    assert PCOND_TEMPLATE[PowerCondition.PC_NONE] == "(No condition here.)"
+
+
+def test_mcond_template_verbatim_sample():
+    assert MCOND_TEMPLATE[PowerCondition.NEED_KING] == (
+        "Greetings/Rwelcome, my Kingly/RRoyal friend/Rguest.You honor me by "
+        "your coming/Rpresence."
+    )
+
+
+def test_pcond_template_verbatim_sample():
+    assert PCOND_TEMPLATE[PowerCondition.NEED_KING] == "Only a King may use the power of the $\\."
+
+
+def test_pcond_template_contains_the_magic_feature_marker():
+    # $\ (models/magic_feature.py's own confirmed PROSE.TXT marker) shows
+    # up across most PCOND_TEMPLATE entries -- the condition is always
+    # about *this* magic feature.
+    assert "$\\" in PCOND_TEMPLATE[PowerCondition.PAY_UP]
+    assert "$\\" in PCOND_TEMPLATE[PowerCondition.SAME_ALIGN]

@@ -3778,6 +3778,38 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sites. 4 new tests added (1650 passed total) in
     `tests/test_turn_report.py`, covering the `NONE`/found-something/
     `ITSELF` cases and the raw unresolved `$\` substitution.
+- **Phase 97 (current)**: `models/power.py MCOND_TEMPLATE`/
+  `PCOND_TEMPLATE` -- `HostAK/TP/PROSE/MCOND.X2` and `PCOND.X2` (both
+  header `"7 1"`), found continuing to mine the `PROSE/` `.X2` template
+  files directly, the same way Phase 96 found `MAGFEAT.X2`. Both map
+  exactly 1:1 to `PowerCondition`'s own 7 members.
+  - `MCOND_TEMPLATE` is the in-character message an NPC/feature "speaks"
+    once the condition is satisfied; `PCOND_TEMPLATE` is the
+    out-of-character description of what the condition requires (e.g.
+    printed up front alongside a magic feature's own power description).
+    Both share the identical `PC_NONE` text (`"(No condition here.)"`)
+    across both files -- confirming the positional alignment, not a
+    coincidence.
+  - Raw, unrendered prose templates -- matching how `WEAPON_HIT_VERB`/
+    `TREASURE_LABEL`/`MAGIC_FEATURE_NAME` already store their own raw
+    template text rather than a pre-resolved sentence. Not wired into
+    any renderer this phase.
+  - **More real `.X2` findings surfaced but deliberately deferred**:
+    `SPDESC.X2` (25 templates, 1:1 with `Spell`'s own first 25 ordinals
+    -- a Search Feature's "Cast Spell" power description), `ENCSPEC.X2`
+    (15 templates, 1:1 with `CTME.PAS`'s own `intro` enum -- not yet
+    modeled anywhere in this project -- the "how you arrived at this
+    Feature" narrative), `RACE.X2` (13 templates tied to the Fanaticism
+    mechanic `turn/battle_orchestrator.py` already implements, Phase 35),
+    and `POWMSG.X2` (a much larger, 44-real-line file backing the full
+    `Power` effect system, not yet mapped cleanly to `Power`'s own 25
+    ordinals). Each is a real, standalone follow-up phase, not attempted
+    here.
+  - Non-breaking: full suite passed unchanged (1650 passed) before any
+    new tests were written -- two new dicts with no existing call sites.
+    6 new tests added (1656 passed total) in `tests/test_power.py`,
+    covering full 7-entry coverage for both dicts, verbatim samples, and
+    the shared `PC_NONE` text.
 
 ## Setup
 

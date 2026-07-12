@@ -38,6 +38,17 @@ landmarks inside a `Feature`, parallel in structure to `MagicFeature` but
 never magical. Both are real findings for a future phase, not attempted
 here -- this phase only closes the specific `power`/`powco` vocabulary
 gap `models/magic_feature.py` had already flagged.
+
+**Phase 97 addendum**: `HostAK/TP/PROSE/MCOND.X2` and `PCOND.X2` (both
+header `"7 1"`), found continuing to mine the `PROSE/` `.X2` template
+files directly, the same way Phase 96's `report/turn_report.py
+render_magic_feature_discovery()` found `MAGFEAT.X2`. Both map exactly
+1:1 to `PowerCondition`'s own 7 members: `MCOND_TEMPLATE` is the
+in-character message an NPC/feature "speaks" once the condition is
+satisfied; `PCOND_TEMPLATE` is the out-of-character description of what
+the condition requires. Both raw, unrendered prose templates -- matching
+how `WEAPON_HIT_VERB`/`TREASURE_LABEL`/`MAGIC_FEATURE_NAME` already store
+their own raw template text.
 """
 
 from __future__ import annotations
@@ -131,4 +142,79 @@ POWER_CONDITION_NAME: dict[PowerCondition, str] = {
     PowerCondition.NEED_KING: "King",
     PowerCondition.G_TURN: "1/Turn",
     PowerCondition.DRAIN_COURAGE: "-Cour.",
+}
+
+
+# HostAK/TP/PROSE/MCOND.X2 (header "7 1"), verbatim, positional with
+# `PowerCondition`'s own ordinals above -- found continuing to mine the
+# `PROSE/` `.X2` template files directly, the same way Phase 96's
+# `report/turn_report.py render_magic_feature_discovery()` found
+# `MAGFEAT.X2`. The in-character message an NPC/feature "speaks" once
+# the condition is actually satisfied (contrast `PCOND_TEMPLATE` below,
+# the out-of-character description of what the condition *requires*).
+# Raw, unrendered prose templates -- matching how `WEAPON_HIT_VERB`/
+# `TREASURE_LABEL`/`MAGIC_FEATURE_NAME` already store their own raw
+# template text rather than a pre-resolved sentence.
+MCOND_TEMPLATE: dict[PowerCondition, str] = {
+    PowerCondition.PC_NONE: "(No condition here.)",
+    PowerCondition.PAY_UP: (
+        "< plunked_down/Roffered_up the gold/Rpayment.Spake/RSayeth <, "
+        '"I have brought_you/Rdelivered_the # gold, as you_have_asked"/Rwe_agreed", '
+        "and the gold immediately/Rmysteriously disappeared/Rvanished."
+    ),
+    PowerCondition.SAME_ALIGN: (
+        "I welcome/Rsalute you, my $o friend.Our_kind/Rthose_of_our_alignment "
+        "should_stick_together/Rare_the_noblest_of_beings."
+    ),
+    PowerCondition.DRAIN_SKILL: (
+        'Spake/RSayeth <, "I am_willing/Rhave_decided to give_up/Raccept_the_loss_of '
+        'the # skill/Rability levels{ you asked_for/Rrequested}".'
+    ),
+    PowerCondition.NEED_KING: (
+        "Greetings/Rwelcome, my Kingly/RRoyal friend/Rguest.You honor me by "
+        "your coming/Rpresence."
+    ),
+    PowerCondition.G_TURN: (
+        "Greetings/RHello, my_friend/Radventurer.You shall/Rwill now "
+        "{be the one to }receive/Rbe_blessed_with my favor/Rpower {for }this year."
+    ),
+    PowerCondition.DRAIN_COURAGE: (
+        'Spake/RSayeth <, "I agree/Ram_willing to lose/Rgive_you some of my '
+        'courage/Rtemper in exchange_for/Rorder_to_gain your favor"/Rhelp".'
+        "{Almost }immediately, < felt less_hot-tempered/Ra_drain_of_courage."
+    ),
+}
+
+# HostAK/TP/PROSE/PCOND.X2 (header "7 1"), verbatim, positional with
+# `PowerCondition`'s own ordinals above. The out-of-character description
+# of what the condition requires (e.g. printed once, up front, alongside
+# a magic feature's own power description) -- distinct from
+# `MCOND_TEMPLATE`'s in-character "it happened" message.
+PCOND_TEMPLATE: dict[PowerCondition, str] = {
+    PowerCondition.PC_NONE: "(No condition here.)",
+    PowerCondition.PAY_UP: (
+        "You must pay # gold each time the $\\ is used (to show that you accept "
+        "these terms, a character must give two Scout orders when he Searches "
+        "this feature.)"
+    ),
+    PowerCondition.SAME_ALIGN: (
+        "A character must be $o to use the $\\ (the Kingdom alignment does not matter.)"
+    ),
+    PowerCondition.DRAIN_SKILL: (
+        "# skill level(s), chosen at random, will be drained from the character "
+        "if the $\\ is scouted.You MUST have enough skill levels to meet the "
+        "$\\'s demand (to accept these terms, a character must give two Scout "
+        "orders when Searching this feature."
+    ),
+    PowerCondition.NEED_KING: "Only a King may use the power of the $\\.",
+    PowerCondition.G_TURN: (
+        "After the power of the $\\ is used in a gameturn, it may not be used "
+        "again until the next gameturn."
+    ),
+    PowerCondition.DRAIN_COURAGE: (
+        "When you use the $\\, it will drain away one level of courage (Brave "
+        "men become Cautious, etc.)A Coward may not use this feature!To accept "
+        "these terms, a character must give two Scout orders when Searching "
+        "this feature."
+    ),
 }
