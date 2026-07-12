@@ -3574,6 +3574,41 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_army_type.py`, covering full 19-entry coverage for both
     dicts, the PROSE.TXT example strings, verbatim designation samples,
     and the Whales name/designation divergence.
+- **Phase 91 (current)**: new `models/discovery.py` -- the kingdom-level
+  "Discoveries of the Sages" system, `CTBOTH.PAS`'s own `discovery` enum
+  (~line 743, 64 members) plus **`CTME.PAS`'s own `dname` table** (~line
+  4). This is the first phase to find real data in a Pascal file *other
+  than* `CTBOTH.PAS` -- a prior phase's search for a `dname`/`_discov`
+  pair came up empty because it only searched `CTBOTH.PAS` itself;
+  broadening the search to the full available Pascal source (`CTME.PAS`,
+  `YAK.PAS`, `SPEAK.PAS`, `AKT.PAS`, `TRANS.PAS`, alongside the four
+  already-trusted files) surfaced it.
+  - **Confirmed real and used** via `REPORTS.PAS`'s own "Discoveries of
+    the Sages" kingdom report section (~line 325-348), whose own `CASE`
+    statement also classifies the enum's four member groups into three
+    effect categories: **ability skill bonus** (`fix0`-`fix9`,
+    `wreck0`-`wreck9`, "+1 skill in \<ability\>"), **anti-spell ward**
+    (`bild10`-`bild43`, "Anti-spell: \<spell name\>", covering `Spell`
+    ordinals 4-19), and **revenue bonus** (`crunch0`-`crunch27`, "+X%
+    revenue", X cycling 1-4). Documented in the module docstring,
+    verbatim from the Pascal `CASE` statement, but deliberately **not
+    implemented** here -- only the name vocabulary is modeled this
+    phase, matching how `models/office.py`/`models/weapon.py` (Phases
+    81/83) started with vocabulary before any mechanical wiring.
+  - `Discovery`'s own 64 member names are derived from `DISCOVERY_NAME`'s
+    own display strings (e.g. `LAND_SHIP`, `MITHRIL_CHAINMAIL`), not the
+    Pascal source's internal `fix`/`wreck`/`bild`/`crunch` identifiers,
+    which carry no rulebook-facing meaning of their own -- same
+    convention `Weapon`/`Treasure` already established.
+  - `discval` (`CTBOTH.PAS` ~line 766, also confirmed real via the same
+    report loop) is documented as a pure display-order key, not modeled
+    as data since it has no use outside that one print loop.
+  - Non-breaking: full suite passed unchanged (1614 passed) before any
+    new tests were written -- a new enum/dict with no existing call
+    sites. 4 new tests added (1618 passed total) in a new
+    `tests/test_discovery.py`, covering full 64-entry coverage, verbatim
+    samples from each of the four groups, and every group boundary
+    ordinal.
 
 ## Setup
 
