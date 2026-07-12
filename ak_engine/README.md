@@ -4558,6 +4558,30 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new tests were written -- new functions with no existing call
     sites. 9 new tests added (1828 passed total) in
     `tests/test_turn_report.py`.
+- **Phase 121 (current)**: `report/turn_report.py
+  render_commander_died_demoralized()`/
+  `render_commander_fled_demoralized()` -- `_ADishK`/`_ADishF`
+  (`RUMORS.PAS` `_ADishK = 3101`/`_ADishF = 3102`, sitting between
+  `_LBenc = 3100` and `_LAssume = 3103`), both real entries made of
+  two separate `Say(...)` calls (no file), narrating rulebook [7.1]'s
+  "if the Supreme Commander is beaten... the losing side's forces...
+  will become demoralized and... reduced in strength by 25%" -- the
+  exact rule `turn/duel.py apply_duel_demoralization()` already
+  models. Two narrative framings of the same mechanical event (the
+  Supreme Commander's own defeat in the duel), not two different
+  rules:
+  - `_ADishK` -- the commander **died**.
+  - `_ADishF` -- the commander was **cowardly/fled**.
+  - This project has no source for which of the two narrations a
+    given duel loss picks -- the caller decides, the same
+    caller-supplied-fact pattern established throughout (`is_sea`,
+    `range_suffix`, `weapon`). Both concatenate their two rendered
+    sentences with no separator, matching every other multi-`Say()`
+    entry already found in this module (Phase 107, 116, 119).
+  - Non-breaking: full suite passed unchanged (1828 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 5 new tests added (1833 passed total) in
+    `tests/test_turn_report.py`.
 
 ## Setup
 

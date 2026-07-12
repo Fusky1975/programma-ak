@@ -36,6 +36,8 @@ from ak_engine.report.turn_report import (
     render_battle_winner,
     render_caught_up,
     render_column_clash,
+    render_commander_died_demoralized,
+    render_commander_fled_demoralized,
     render_defensive_march,
     render_destroyed_army,
     render_explore_already_maxed,
@@ -1323,3 +1325,36 @@ def test_practice_already_maxed_template_is_the_confirmed_hardcoded_say():
     assert PRACTICE_ALREADY_MAXED_TEMPLATE == (
         "< practiced ^ even though < had already reached the maximum skill level."
     )
+
+
+# -- duel demoralization narrative (Phase 121) -------------------------------
+
+
+def test_render_commander_died_demoralized_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_commander_died_demoralized("Borin", rng)
+    assert result == "The forces commanded by Borin were disheartened by Borin's death, but still they pressed forward with some hope of victory."
+
+
+def test_render_commander_died_demoralized_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_commander_died_demoralized("Borin", rng)
+    assert result == "The forces commanded by Borin were disheartened by Borin's demise, yet still they moved ahead with some hope of victory."
+
+
+def test_render_commander_fled_demoralized_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_commander_fled_demoralized("Borin", rng)
+    assert result == "The forces commanded by Borin were disappointed by Borin's cowardice.They marched on, though with lessened confidence."
+
+
+def test_render_commander_fled_demoralized_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_commander_fled_demoralized("Borin", rng)
+    assert result == "The forces commanded by Borin were dismayed by Borin's faint-heartedness.They steadfastly marched on, though with shaken confidence."
+
+
+def test_commander_died_and_fled_are_distinct_narrations():
+    rng1 = ScriptedRandom([0.1] * 10)
+    rng2 = ScriptedRandom([0.1] * 10)
+    assert render_commander_died_demoralized("Borin", rng1) != render_commander_fled_demoralized("Borin", rng2)

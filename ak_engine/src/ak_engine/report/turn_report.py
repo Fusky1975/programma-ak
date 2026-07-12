@@ -653,6 +653,33 @@ Phase 110 (Explore) and Phase 111 (Fire Arrow) established.
   `RUMORS.PAS`'s own `CONST` block, narrates `turn/practice_execution
   .py`'s own already-modeled max-skill-level rule.
   `render_practice_already_maxed()`.
+
+**Phase 121 addendum -- duel demoralization narrative.** `_ADishK`/
+`_ADishF` (`RUMORS.PAS` `_ADishK = 3101`/`_ADishF = 3102`, sitting
+between `_LBenc = 3100` and `_LAssume = 3103`), both real entries made
+of **two separate `Say(...)` calls** (no file), narrating rulebook
+[7.1]'s "if the Supreme Commander is beaten... the losing side's
+forces... will become demoralized and... reduced in strength by 25%"
+-- the exact rule `turn/duel.py apply_duel_demoralization()` already
+models. Two narrative framings of the same mechanical event (the
+Supreme Commander's own defeat in the duel), not two different rules:
+
+- `_ADishK` -- the commander **died**: `"The forces commanded by [3
+  were disheartened by ] death/Rdemise, but/Ryet still they pressed/
+  Rmoved forward/Rahead with some hope of victory."`
+  `render_commander_died_demoralized()`.
+- `_ADishF` -- the commander was **cowardly/fled**: `"The forces
+  commanded by <3 were disappointed/Rdismayed by > cowardice/
+  Rfaint-heartedness.They {grimly/Rsteadfastly }marched on, though
+  with lessened/Rshaken confidence."` `render_commander_fled_
+  demoralized()`.
+
+This project has no source for which of the two narrations a given
+duel loss picks -- the caller decides, the same caller-supplied-fact
+pattern established throughout (`is_sea`, `range_suffix`, `weapon`).
+Both concatenate their two rendered sentences with no separator,
+matching every other multi-`Say()` entry already found in this module
+(Phase 107, 116, 119).
 """
 
 from __future__ import annotations
@@ -2159,6 +2186,52 @@ def render_practice_already_maxed(character_name: str, ability_name: str, rng: r
 
     values = {"<": character_name, "^": ability_name}
     return render(PRACTICE_ALREADY_MAXED_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _ADishK -- a real entry made of two separate
+# Say(...) calls (no file): the Supreme Commander died, demoralizing
+# the losing side (rulebook [7.1], turn/duel.py apply_duel_
+# demoralization()). See module docstring's Phase 121 addendum.
+_COMMANDER_DIED_TEMPLATES = (
+    "The forces commanded by [3 were disheartened by ] death/Rdemise, ",
+    "but/Ryet still they pressed/Rmoved forward/Rahead with some hope of victory.",
+)
+
+
+def render_commander_died_demoralized(commander_name: str, rng: random.Random) -> str:
+    """Renders ``_ADishK``'s two-sentence entry: the Supreme Commander
+    died, demoralizing their own side. Concatenated with no separator
+    (see module docstring).
+    """
+
+    values = {"[3": commander_name, "]": f"{commander_name}'s"}
+    first = render(_COMMANDER_DIED_TEMPLATES[0], values, rng=rng)
+    second = render(_COMMANDER_DIED_TEMPLATES[1], values, rng=rng)
+    return first + second
+
+
+# HostAK/TP/SAY.PAS _ADishF -- a real entry made of two separate
+# Say(...) calls (no file): the Supreme Commander fled/was cowardly,
+# demoralizing the losing side (rulebook [7.1], the same mechanic
+# _ADishK narrates). See module docstring's Phase 121 addendum.
+_COMMANDER_FLED_TEMPLATES = (
+    "The forces commanded by <3 were disappointed/Rdismayed by > cowardice/Rfaint-heartedness.",
+    "They {grimly/Rsteadfastly }marched on, though with lessened/Rshaken confidence.",
+)
+
+
+def render_commander_fled_demoralized(commander_name: str, rng: random.Random) -> str:
+    """Renders ``_ADishF``'s two-sentence entry: the Supreme Commander
+    fled/was cowardly, demoralizing their own side. Concatenated with
+    no separator (see module docstring). This project has no source
+    for what decides between this narration and ``render_commander_
+    died_demoralized()`` -- the caller decides.
+    """
+
+    values = {"<3": commander_name, ">": f"{commander_name}'s"}
+    first = render(_COMMANDER_FLED_TEMPLATES[0], values, rng=rng)
+    second = render(_COMMANDER_FLED_TEMPLATES[1], values, rng=rng)
+    return first + second
 
 
 # HostAK/TP/PROSE/FLEEFAIL.X -- a failed Flee maneuver. See module
