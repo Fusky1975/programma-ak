@@ -30,6 +30,10 @@ from ak_engine.report.turn_report import (
     render_already_allied,
     render_ally_proposed,
     render_ally_refused,
+    render_assassination_attempt,
+    render_assassination_failed,
+    render_assassination_ordered,
+    render_assassination_success,
     render_attack_devastating_hit,
     render_attack_hit,
     render_attack_missed,
@@ -1493,3 +1497,65 @@ def test_render_finance_treasury():
     rng = ScriptedRandom([0.1] * 10)
     result = render_finance_treasury("Uga-Buga Makumb", 80, rng)
     assert result == "Uga-Buga Makumb was left with 80 gold in the treasury."
+
+
+# -- Assassination narrative (Phase 125) --
+
+
+def test_render_assassination_ordered():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_assassination_ordered("Malachar", "Bob", rng)
+    assert result == "Malachar ordered the assassination of Bob."
+
+
+def test_render_assassination_attempt_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_assassination_attempt("Bob", rng)
+    assert result == "While Bob was out for a stroll, suddenly an assassin launched himself at Bob!"
+
+
+def test_render_assassination_attempt_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_assassination_attempt("Bob", rng)
+    assert result == (
+        "While Bob was in meditation, suddenly an unknown assassin "
+        "launched himself from out of the dark at Bob!"
+    )
+
+
+def test_render_assassination_success_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_assassination_success("Bob", rng)
+    assert result == (
+        "Bob was wounded by a poisoned dagger!"
+        "Cursed be the Assassin's Guild and whoever heads it!"
+    )
+
+
+def test_render_assassination_success_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_assassination_success("Bob", rng)
+    assert result == (
+        "Bob was stabbed by his poisonous dagger!"
+        "Cursed be the Assassin's Guild and whoever heads it!"
+    )
+
+
+def test_render_assassination_failed_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_assassination_failed("Bob", rng)
+    assert result == (
+        "Fortunately, Bob survived the attempt and the assassin "
+        "(apparently, a member of the Assassin's Guild) was killed."
+        "Of course, the guard in Bob's kingdom was doubled."
+    )
+
+
+def test_render_assassination_failed_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_assassination_failed("Bob", rng)
+    assert result == (
+        "Fortunately, Bob survived the attempt and the assassin "
+        "(apparently, a member of the Assassin's Guild) was killed."
+        "Without delay, the guard throughout Bob's kingdom was immediately doubled."
+    )

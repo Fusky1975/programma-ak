@@ -4695,6 +4695,36 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new tests were written -- new functions with no existing call
     sites. 6 new tests added (1858 passed total) in
     `tests/test_turn_report.py`.
+- **Phase 125 (current)**: `report/turn_report.py` -- the
+  Assassination narrative cluster. `RUMORS.PAS` groups `_AKill =
+  3367`, `_ASeek = 3368`, `_AFail = 3369` contiguously (`SAY.PAS` lines
+  958-970); `_LOAss = 3392` sits separately but is the same topical
+  narrative (`SAY.PAS` line 958, immediately before `_ASeek`'s own
+  block starts). Ties to `models/office.py`'s own
+  `OFFICE_PERK_DESCRIPTION[Office.ASSASSIN] == "Free Assassination
+  Attempt"` (Phase 103) -- the first narrative content confirming that
+  perk's own real-game mechanic, even though no `turn/*.py` resolver
+  executes an assassination attempt yet (the same
+  narrative-precedes-execution stance already taken for the
+  Ice-Suspend cluster, Phase 123, and the unexecuted personal-combat
+  spells in `turn/cast_execution.py`).
+  - `render_assassination_ordered()` (`_LOAss`) -- the order/directive
+    itself.
+  - `render_assassination_attempt()` (`_ASeek`) -- the attempt begins.
+  - `render_assassination_success()` (`_AKill`) -- the attempt
+    succeeds.
+  - `render_assassination_failed()` (`_AFail`) -- the attempt fails, a
+    real two-`Say()` entry concatenated with no separator, the same
+    shape established throughout this module (Phase 107, 116, 119,
+    121).
+  - This project has no source for what determines success versus
+    failure -- the caller decides, the same caller-supplied-fact
+    pattern established throughout (`is_sea`, `weapon`,
+    `_ADishK`/`_ADishF`).
+  - Non-breaking: full suite passed unchanged (1858 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 7 new tests added (1865 passed total) in
+    `tests/test_turn_report.py`.
 
 ## Setup
 

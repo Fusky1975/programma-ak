@@ -772,6 +772,40 @@ No source stitches these five into one combined sentence -- `SAY.PAS`
 dispatches each as its own `Say()` call in sequence, so each is its
 own renderer here too, matching the plain sequential-report shape
 already established for `render_spy_*()` (Phase 115).
+
+**Phase 125 addendum -- Assassination narrative.** `RUMORS.PAS` groups
+`_AKill = 3367`, `_ASeek = 3368`, `_AFail = 3369` contiguously
+(`SAY.PAS` lines 958-970); `_LOAss = 3392` sits separately but is the
+same topical narrative (`SAY.PAS` line 958, immediately before
+`_ASeek`'s own block starts). Ties to `models/office.py`'s own
+`OFFICE_PERK_DESCRIPTION[Office.ASSASSIN] == "Free Assassination
+Attempt"` (Phase 103) -- the first narrative content confirming that
+perk's own real-game mechanic, even though no `turn/*.py` resolver
+executes an assassination attempt yet (the same narrative-precedes
+-execution stance already taken for the Ice-Suspend cluster, Phase
+123, and the unexecuted personal-combat spells in
+`turn/cast_execution.py`).
+
+- `_LOAss: Say('< ordered the assassination of [.',S_Priv)` -- the
+  order/directive itself. `render_assassination_ordered()`.
+- `_ASeek: Say('While [1 was out_for_a_stroll/Rin_meditation, suddenly
+  an{ unknown} assassin launched himself{ from out of the dark} at
+  [!',S_Adv)` -- the attempt begins. `render_assassination_attempt()`.
+- `_AKill: Say('[1 was wounded/Rstabbed by a_poisoned/Rhis_poisonous
+  dagger!Cursed be the Assassin''s Guild and whoever heads
+  it!',S_Adv)` -- the attempt **succeeds**.
+  `render_assassination_success()`.
+- `_AFail: BEGIN Say('Fortunately, [1 survived the attempt and the
+  assassin (apparently, a member of the Assassin''s Guild) was
+  killed.',S_Adv); Say('Of_course/RWithout_delay, the guard
+  in/Rthroughout [''s kingdom was {immediately }doubled.',S_Adv); END`
+  -- the attempt **fails**, a real two-`Say()` entry concatenated with
+  no separator, the same shape established throughout this module
+  (Phase 107, 116, 119, 121). `render_assassination_failed()`.
+
+This project has no source for what determines success versus
+failure -- the caller decides, the same caller-supplied-fact pattern
+established throughout (`is_sea`, `weapon`, `_ADishK`/`_ADishF`).
 """
 
 from __future__ import annotations
@@ -2733,3 +2767,70 @@ def render_finance_treasury(character_name: str, gold_amount: int, rng: random.R
 
     values = {"<": character_name, "#": str(gold_amount)}
     return render(FINANCE_TREASURY_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LOAss -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 125 addendum.
+ASSASSINATION_ORDERED_TEMPLATE = "< ordered the assassination of [."
+
+
+def render_assassination_ordered(character_name: str, target_name: str, rng: random.Random) -> str:
+    """Renders ``_LOAss``'s sentence: the order/directive to assassinate
+    a target.
+    """
+
+    values = {"<": character_name, "[": target_name}
+    return render(ASSASSINATION_ORDERED_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _ASeek -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 125 addendum.
+ASSASSINATION_ATTEMPT_TEMPLATE = (
+    "While [1 was out_for_a_stroll/Rin_meditation, suddenly an{ unknown} "
+    "assassin launched himself{ from out of the dark} at [!"
+)
+
+
+def render_assassination_attempt(target_name: str, rng: random.Random) -> str:
+    """Renders ``_ASeek``'s sentence: the assassination attempt begins."""
+
+    values = {"[1": target_name, "[": target_name}
+    return render(ASSASSINATION_ATTEMPT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _AKill -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 125 addendum.
+ASSASSINATION_SUCCESS_TEMPLATE = (
+    "[1 was wounded/Rstabbed by a_poisoned/Rhis_poisonous dagger!"
+    "Cursed be the Assassin's Guild and whoever heads it!"
+)
+
+
+def render_assassination_success(target_name: str, rng: random.Random) -> str:
+    """Renders ``_AKill``'s sentence: the assassination attempt succeeds."""
+
+    values = {"[1": target_name}
+    return render(ASSASSINATION_SUCCESS_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _AFail -- a real, two-``Say()`` entry (no file).
+# See module docstring's Phase 125 addendum.
+_ASSASSINATION_FAILED_TEMPLATES = (
+    "Fortunately, [1 survived the attempt and the assassin (apparently, "
+    "a member of the Assassin's Guild) was killed.",
+    "Of_course/RWithout_delay, the guard in/Rthroughout ['s kingdom was "
+    "{immediately }doubled.",
+)
+
+
+def render_assassination_failed(target_name: str, rng: random.Random) -> str:
+    """Renders ``_AFail``'s two sentences: the assassination attempt
+    fails, the assassin is killed, and the target's guard is doubled.
+    Concatenates both rendered sentences with no separator, the same
+    shape established throughout this module (Phase 107, 116, 119, 121).
+    """
+
+    values = {"[1": target_name, "[": target_name}
+    first = render(_ASSASSINATION_FAILED_TEMPLATES[0], values, rng=rng)
+    second = render(_ASSASSINATION_FAILED_TEMPLATES[1], values, rng=rng)
+    return first + second
