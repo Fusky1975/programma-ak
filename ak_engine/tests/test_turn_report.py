@@ -10,12 +10,14 @@ from ak_engine.report.turn_report import (
     EXPLORE_ALREADY_MAXED_TEMPLATE,
     EXPLORE_NOT_PRESENT_PREFIX,
     HIRE_COUNTER_OFFER_TEMPLATE,
+    INHERIT_TEMPLATE,
     NEMESIS_TEMPLATE,
     SNEAKUP_RANGE_BOW,
     SNEAKUP_RANGE_MELEE,
     SNEAKUP_RANGE_SPELL,
     SPY_GARRISON_APPROXIMATELY_TEMPLATE,
     SPY_LEADS_APPROXIMATELY_TEMPLATE,
+    WILL_TEMPLATE,
     describe_battle,
     margin_bucket,
     parse_template_choices,
@@ -39,6 +41,7 @@ from ak_engine.report.turn_report import (
     render_hire_accepted,
     render_hire_counter_offer,
     render_hire_refused,
+    render_inherit,
     render_magic_feature_discovery,
     render_march,
     render_melee_attack,
@@ -60,8 +63,10 @@ from ak_engine.report.turn_report import (
     render_spy_report_opening,
     render_spy_tax_estimate,
     render_tactical_comparison,
+    render_take_gold,
     render_uncontested_conquest,
     render_wandering_encounter,
+    render_will,
     tactical_margin_bucket,
 )
 from ak_engine.turn.battle_line import BattleUnit
@@ -1147,3 +1152,50 @@ def test_render_ally_refused_concatenates_both_sentences_with_no_separator():
         "Bold did not respond to Aldric's friendly noises.it is hoped "
         "that next year, both Kings will see the wisdom of Treating."
     )
+
+
+# -- Treasure/Steal narrative (Phase 117) ------------------------------------
+
+
+def test_render_take_gold_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_take_gold("Aldric", "Borin", 50, rng)
+    assert result == "Aldric stole 50 gold from Borin."
+
+
+def test_render_take_gold_second_variant_uses_victim_possessive():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_take_gold("Aldric", "Borin", 50, rng)
+    assert result == "Aldric stole 50 gold from Borin's treasure chest."
+
+
+def test_render_take_gold_third_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_take_gold("Aldric", "Borin", 50, rng)
+    assert result == "Aldric robbed Borin of 50 gold."
+
+
+def test_render_inherit():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_inherit("Borin", "Crystal Ball", rng)
+    assert result == "Borin inherited the Crystal Ball."
+
+
+def test_inherit_template_is_the_confirmed_hardcoded_say_else_branch():
+    assert INHERIT_TEMPLATE == "< inherited/Rgained the \\."
+
+
+def test_render_will_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_will("Borin", rng)
+    assert result == "Borin's will left Borin's possessions to Borin's compatriots."
+
+
+def test_render_will_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_will("Borin", rng)
+    assert result == "Borin's will left all Borin's worldly possessions to Borin's fellow adventurers."
+
+
+def test_will_template_is_the_confirmed_hardcoded_say():
+    assert WILL_TEMPLATE == "['s will left {all }] {worldly }possessions to ] compatriots/Rfellow_adventurers."

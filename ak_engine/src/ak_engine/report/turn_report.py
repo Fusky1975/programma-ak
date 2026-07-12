@@ -565,6 +565,34 @@ here is a single, real, hardcoded `Say(...)` (no `.X` file), the report
   directly abutting with no inserted space, Phase 107) -- Turbo
   Pascal's own `Say()` just writes sequentially to the same report
   position, adding nothing of its own between calls.
+
+**Phase 117 addendum -- Treasure/Steal narrative.** `SAY.PAS` ~lines
+562-575 and 712, requested as `_LSteal`/`_LTakeG`/`_LInher`/`_LWill`.
+
+- `_LSteal` (3037, `RUMORS.PAS` ~line 72) is declared but **has no
+  dispatch anywhere in `SAY.PAS`** -- an orphaned constant, the same
+  category as `_LExpAtt` (Phase 110). Only its `T_`/`G_`-prefixed
+  siblings (`T_LSteal`/`T_MSteal`/`G_LSteal`/`G_MSteal`, a larger
+  Steal-outcome cluster around lines 558-580 whose `T_`/`G_` prefix
+  semantics aren't confirmed by any comment in the available source)
+  are actually dispatched -- not pursued here, left for a future phase
+  once that prefix distinction can be sourced rather than guessed.
+- `_LTakeG: FD('takeg',S_PCom,2)` -> `TAKEG.X` (header `"3 1"`, 3 real
+  templates): a successful gold theft. `render_take_gold()`.
+- `_LInher` has a real `IF _attl = _defl THEN ... ELSE ...` branch:
+  the `THEN` branch is `'The heir of < inherited/gained the ^L\\.'` --
+  genuinely **blocked** on `^L` (list of magic items, the same
+  not-yet-built capability Phase 115 already deferred for `_LSLeads`/
+  `_LSGarr`). The `ELSE` branch, `'< inherited/gained the \\.'`, is a
+  single, clean, real template with one magic-item marker (`\\`, not
+  list-wrapped) -- `render_inherit()` renders only this confirmed
+  branch; the `THEN` branch is documented, not force-implemented.
+- `_LWill`: `"['s will left {all }] {worldly }possessions to ]
+  compatriots/fellow_adventurers."` -- a single, real, hardcoded
+  template (no file), the deceased's will being read.
+  `render_will()`. The Pascal-escaped `''` (a literal apostrophe) after
+  `[` is the same convention `REFHIRE.X`'s own transcription already
+  established (Phase 114).
 """
 
 from __future__ import annotations
@@ -1829,6 +1857,56 @@ def render_ally_refused(character_name: str, king_name: str, rng: random.Random)
     first = render(_ALLY_REFUSED_TEMPLATES[0], values, rng=rng)
     second = render(_ALLY_REFUSED_TEMPLATES[1], values, rng=rng)
     return first + second
+
+
+# HostAK/TP/PROSE/TAKEG.X -- a successful gold theft. See module
+# docstring's Phase 117 addendum.
+_TAKEG_TEMPLATES: list[str] = [
+    "< stole # gold from [.",
+    "< stole/Rpilfered # gold from ] treasure chest.",
+    "< robbed [ of # gold{ while [1 was sleeping}.",
+]
+
+
+def render_take_gold(character_name: str, victim_name: str, gold_amount: int, rng: random.Random) -> str:
+    """Renders TAKEG.X's sentence for a successful gold theft."""
+
+    variant = pick_variant(_TAKEG_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "[": victim_name,
+        "[1": victim_name,
+        "]": f"{victim_name}'s",
+        "#": str(gold_amount),
+    }
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LInher -- a single, real, hardcoded template (no
+# file), the confirmed ELSE branch only. See module docstring's Phase
+# 117 addendum for why the THEN branch is genuinely blocked on ^L.
+INHERIT_TEMPLATE = "< inherited/Rgained the \\."
+
+
+def render_inherit(character_name: str, item_name: str, rng: random.Random) -> str:
+    """Renders ``_LInher``'s ELSE-branch sentence for inheriting a
+    single magic item.
+    """
+
+    values = {"<": character_name, "\\": item_name}
+    return render(INHERIT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LWill -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 117 addendum.
+WILL_TEMPLATE = "['s will left {all }] {worldly }possessions to ] compatriots/Rfellow_adventurers."
+
+
+def render_will(deceased_name: str, rng: random.Random) -> str:
+    """Renders ``_LWill``'s sentence for the deceased's will being read."""
+
+    values = {"[": deceased_name, "]": f"{deceased_name}'s"}
+    return render(WILL_TEMPLATE, values, rng=rng)
 
 
 # HostAK/TP/PROSE/MARCH.X -- the Move action's own report line. See

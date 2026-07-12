@@ -4447,6 +4447,35 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sites. 6 new tests added (1792 passed total) in
     `tests/test_turn_report.py`, covering both `ALLY.X` variants, the
     dual-marker substitution, and the no-separator concatenation.
+- **Phase 117 (current)**: `report/turn_report.py
+  render_take_gold()`/`render_inherit()`/`render_will()` -- the
+  Treasure/Steal narrative (`SAY.PAS` ~lines 562-575 and 712),
+  requested as `_LSteal`/`_LTakeG`/`_LInher`/`_LWill`.
+  - `_LSteal` (3037) is declared in `RUMORS.PAS` but **has no dispatch
+    anywhere in `SAY.PAS`** -- an orphaned constant, the same category
+    as `_LExpAtt` (Phase 110). Only its `T_`/`G_`-prefixed siblings
+    (`T_LSteal`/`T_MSteal`/`G_LSteal`/`G_MSteal`, a larger
+    Steal-outcome cluster whose `T_`/`G_` prefix semantics aren't
+    confirmed by any comment in the available source) are actually
+    dispatched -- not pursued here, left for a future phase once that
+    prefix distinction can be sourced rather than guessed.
+  - `_LTakeG: FD('takeg',S_PCom,2)` -> `TAKEG.X` (header `"3 1"`, 3
+    real templates): a successful gold theft.
+  - `_LInher` has a real `IF _attl = _defl THEN ... ELSE ...` branch:
+    the `THEN` branch is genuinely **blocked** on `^L` (list of magic
+    items, the same not-yet-built capability Phase 115 already
+    deferred for `_LSLeads`/`_LSGarr`). The `ELSE` branch is a single,
+    clean, real template with one magic-item marker -- `render_
+    inherit()` renders only this confirmed branch.
+  - `_LWill`: the deceased's will being read, a single, real,
+    hardcoded template (no file). The Pascal-escaped `''` (a literal
+    apostrophe) is the same transcription convention `REFHIRE.X`
+    already established (Phase 114).
+  - Non-breaking: full suite passed unchanged (1792 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 8 new tests added (1800 passed total) in
+    `tests/test_turn_report.py`, covering all three `TAKEG.X` variants,
+    the confirmed `_LInher` ELSE branch, and both `_LWill` branches.
 
 ## Setup
 
