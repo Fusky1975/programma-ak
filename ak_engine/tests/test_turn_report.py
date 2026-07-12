@@ -8,6 +8,7 @@ from ak_engine.report.turn_report import (
     ATTACK_DEVASTATING_HIT_TEMPLATE,
     EXPLORE_ALREADY_MAXED_TEMPLATE,
     EXPLORE_NOT_PRESENT_PREFIX,
+    HIRE_COUNTER_OFFER_TEMPLATE,
     NEMESIS_TEMPLATE,
     SNEAKUP_RANGE_BOW,
     SNEAKUP_RANGE_MELEE,
@@ -26,8 +27,12 @@ from ak_engine.report.turn_report import (
     render_explore_continued,
     render_explore_progress,
     render_fire_arrow_attack,
+    render_fire_hireling,
     render_flee_failure,
     render_generic_encounter,
+    render_hire_accepted,
+    render_hire_counter_offer,
+    render_hire_refused,
     render_magic_feature_discovery,
     render_march,
     render_melee_attack,
@@ -949,3 +954,63 @@ def test_melee_attack_and_missed_concatenate_into_one_sentence():
     attack = render_melee_attack("Aldric", "Borin", "Thrust", rng)
     miss = render_attack_missed("Aldric", "Borin", "sword", rng)
     assert attack + miss == "Aldric Thrust Borin and missed."
+
+
+# -- Hire/Fire narrative (Phase 114) -----------------------------------------
+
+
+def test_render_hire_accepted_left_branch():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_hire_accepted("Aldric", "Borin", "King Harold the Bold", rng)
+    assert result == "Aldric spoke to Borin and convinced Borin to pledge Borin's allegiance to King Harold the Bold."
+
+
+def test_render_hire_accepted_right_branch():
+    rng = ScriptedRandom([0.9] * 10, choice_indices=[0])
+    result = render_hire_accepted("Aldric", "Borin", "King Harold the Bold", rng)
+    assert result == (
+        "Aldric spoke eloquently to Borin of the grandness of King "
+        "Harold the Bold's empire and convinced Borin to pledge Borin's "
+        "services to King Harold the Bold."
+    )
+
+
+def test_render_hire_refused_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_hire_refused("Aldric", "Borin", "King Harold the Bold", rng)
+    assert result == "Borin refused to join with King Harold the Bold, citing a clan enmity with King Harold the Bold's alignment."
+
+
+def test_render_hire_refused_third_variant_has_nested_quote():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_hire_refused("Aldric", "Borin", "King Harold the Bold", rng)
+    assert result == (
+        "Borin turned down employment, expressing Borin's disgust for "
+        "King Harold the Bold's alignment and criticizing King Harold "
+        'the Bold for "Holding a palace court staffed with buffoons!"'
+    )
+
+
+def test_render_fire_hireling_first_variant_uses_king_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_fire_hireling("Aldric", "Borin", "King Harold the Bold", rng)
+    assert result == (
+        "Aldric told Borin that Borin was no longer an useful employee "
+        "to King Harold the Bold, and relieved Borin of Borin's position."
+    )
+
+
+def test_render_fire_hireling_fourth_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+    result = render_fire_hireling("Aldric", "Borin", "King Harold the Bold", rng)
+    assert result == "Aldric fired Borin and told Borin to find employment elsewhere."
+
+
+def test_render_hire_counter_offer():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_hire_counter_offer("Aldric", "Borin", 50, rng)
+    assert result == "Borin informed Aldric that Borin would not sell Borin's services for less than 50 gold."
+
+
+def test_hire_counter_offer_template_is_the_confirmed_hardcoded_say():
+    assert HIRE_COUNTER_OFFER_TEMPLATE == "[1 informed <2 that [1 would not sell ] services for less than # gold."

@@ -4354,6 +4354,36 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_turn_report.py`, covering variant selection, the `$S`
     attack-method substitution, and concatenation with
     `render_attack_missed()` forming one complete sentence.
+- **Phase 114 (current)**: `report/turn_report.py
+  render_hire_accepted()`/`render_hire_refused()`/
+  `render_fire_hireling()`/`render_hire_counter_offer()` -- the
+  Hire/Fire narrative (`SAY.PAS` ~lines 501-504), ties to
+  `turn/hire_fire_decode.py`'s already-modeled `HireRequest`/
+  `FireRequest` (Phase 17).
+  - `_LHire: FD('acchire',S_Adv,6)` -> `ACCHIRE.X` (header `"1 1"`, 1
+    real template): a successful Hire.
+  - `_LHFail: FD('refhire',S_Adv,5)` -> `REFHIRE.X` (header `"3 1"`, 3
+    real templates): a Hire refused over alignment enmity/disdain for
+    the hiring King. Template 3's own raw text has a real, slightly odd
+    authoring quirk kept verbatim: `for "Holding/R"Keeping ^A palace
+    court...` -- the `/R` choice's right branch embeds its own literal
+    opening quote mark alongside the word "Keeping".
+  - `_LFire: FD('fireman',S_Adv,7)` -> `FIREMAN.X` (header `"4 1"`, 4
+    real templates): a Fire.
+  - `_LCounter: Say(...)` (sitting between `_LHFail` and `_LHire` in
+    `SAY.PAS`'s own `CASE` block) -- a single, real, hardcoded template
+    (no file) for a *different* Hire failure reason: a price rejection
+    rather than an alignment one. `HIRE_COUNTER_OFFER_TEMPLATE`.
+  - All four carry `\x0b` (`^K`, "King name and title") -- hiring/firing
+    is always narrated in service of a King. `render_hire_accepted()`'s
+    own single template still goes through `pick_variant()`, matching
+    `ENCO.X`'s (Phase 107) "1-template file still uses pick_variant"
+    convention.
+  - Non-breaking: full suite passed unchanged (1768 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 8 new tests added (1776 passed total) in
+    `tests/test_turn_report.py`, covering variant selection for all
+    three `.X` files and the hardcoded `_LCounter` template verbatim.
 
 ## Setup
 

@@ -466,6 +466,35 @@ attack types).
 - The raw `\\x1a` byte at the very end of the file's last line is DOS's
   own end-of-file marker (Ctrl-Z), not narrative content -- stripped
   during transcription, not preserved as if it were part of the prose.
+
+**Phase 114 addendum -- the Hire/Fire narrative.** `SAY.PAS` ~lines
+501-504, ties to `turn/hire_fire_decode.py`'s already-modeled
+`HireRequest`/`FireRequest` (Phase 17).
+
+- `_LHire: FD('acchire',S_Adv,6)` -> `ACCHIRE.X` (header `"1 1"`, 1 real
+  template): a successful Hire. `render_hire_accepted()`.
+- `_LHFail: FD('refhire',S_Adv,5)` -> `REFHIRE.X` (header `"3 1"`, 3
+  real templates): a refused Hire, each citing alignment
+  enmity/disdain for the hiring King as the reason. `render_hire_
+  refused()`. Template 3's own raw text has a real, slightly odd
+  authoring quirk kept verbatim rather than "fixed": `for "Holding/R
+  "Keeping ^A palace court...` -- the `/R` choice's right branch
+  embeds its own literal opening quote mark alongside the word
+  "Keeping", not just the word itself.
+- `_LFire: FD('fireman',S_Adv,7)` -> `FIREMAN.X` (header `"4 1"`, 4
+  real templates): a Fire. `render_fire_hireling()`.
+- `_LCounter: Say(...)` (immediately between `_LHFail` and `_LHire` in
+  `SAY.PAS`'s own `CASE` block) -- a single, real, hardcoded template
+  (no file) for a *different* Hire failure reason: a price rejection
+  rather than an alignment one. `HIRE_COUNTER_OFFER_TEMPLATE`,
+  `render_hire_counter_offer()`.
+
+All four carry `\\x0b` (`^K`, "King name and title") -- hiring/firing is
+always narrated in service of a King. `render_hire_accepted()`'s own
+single template still goes through `pick_variant()` for consistency
+with every other `.X`-sourced renderer in this module (`ENCO.X`, Phase
+107, established the same "1-template file still uses pick_variant"
+convention).
 """
 
 from __future__ import annotations
@@ -1435,6 +1464,115 @@ def render_melee_attack(
         "$S": attack_method,
     }
     return render(variant, values, rng=rng)
+
+
+# HostAK/TP/PROSE/ACCHIRE.X -- a successful Hire. See module
+# docstring's Phase 114 addendum.
+_ACCHIRE_TEMPLATES: list[str] = [
+    "< spoke {urgently/Reloquently }to [ {of the greatness/Rgrandness "
+    "of ^K's realm/Rempire }and convinced [ to pledge ] "
+    "allegiance/Rservices to ^K.",
+]
+
+
+def render_hire_accepted(character_name: str, hireling_name: str, king_name: str, rng: random.Random) -> str:
+    """Renders ACCHIRE.X's sentence for a successful Hire
+    (``turn/hire_fire_decode.py``'s already-modeled ``HireRequest``,
+    Phase 17). ``king_name`` is ``PROSE.TXT``'s own ``^K`` marker.
+    """
+
+    variant = pick_variant(_ACCHIRE_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "[": hireling_name,
+        "]": f"{hireling_name}'s",
+        "^K": king_name,
+    }
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/PROSE/REFHIRE.X -- a refused Hire (alignment/enmity
+# reasons). See module docstring's Phase 114 addendum.
+_REFHIRE_TEMPLATES: list[str] = [
+    "[1 refused to join/Rassociate with ^K, citing/Rtelling_of ^A "
+    "{long-held }clan/Rfamily enmity/Rfeud with ^K's alignment.",
+    "[1 rebuffed/Rrejected <'s offer of employment, "
+    "disdaining/Rridiculing ^K's alignment and saying \"That ^K is "
+    "the most infamous/Rtyrannical ruler/Rdespot in the land/Rworld!\"",
+    "[1 turned down {the offer of }employment, "
+    "expressing/Rtelling_of ] disgust/Rdisdain for ^K's alignment and "
+    "criticizing/Rberating ^K for \"Holding/R\"Keeping ^A palace court "
+    "staffed/Rfilled with buffoons/Rgoons{ and slimy/Robsequious "
+    "weasels/Rrodents}!\"",
+]
+
+
+def render_hire_refused(character_name: str, hireling_name: str, king_name: str, rng: random.Random) -> str:
+    """Renders REFHIRE.X's sentence for a Hire refused over alignment
+    -- distinct from ``render_hire_counter_offer()``'s own price
+    -based refusal below. ``king_name`` is ``PROSE.TXT``'s own ``^K``
+    marker.
+    """
+
+    variant = pick_variant(_REFHIRE_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "[1": hireling_name,
+        "]": f"{hireling_name}'s",
+        "^K": king_name,
+    }
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/PROSE/FIREMAN.X -- a Fire. See module docstring's Phase
+# 114 addendum.
+_FIREMAN_TEMPLATES: list[str] = [
+    "< told/Rinformed [ that [1 was no longer ^A useful "
+    "employee/Rasset to ^K, and relieved [ of ] position/Rduties.",
+    "< canned/Rfired [, saying_to/Rtelling [ that [1 \"was no longer "
+    "worth ] salt\".",
+    "< relieved [ of ] responsibilities/Rduties and released [ into "
+    "private life.",
+    "< fired/Rblackballed [ and told [ to find employment/Rwork elsewhere.",
+]
+
+
+def render_fire_hireling(character_name: str, hireling_name: str, king_name: str, rng: random.Random) -> str:
+    """Renders FIREMAN.X's sentence for a Fire
+    (``turn/hire_fire_decode.py``'s already-modeled ``FireRequest``,
+    Phase 17). ``king_name`` is ``PROSE.TXT``'s own ``^K`` marker (only
+    the first variant uses it).
+    """
+
+    variant = pick_variant(_FIREMAN_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "[": hireling_name,
+        "[1": hireling_name,
+        "]": f"{hireling_name}'s",
+        "^K": king_name,
+    }
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LCounter -- a single, real, hardcoded template (no
+# file), a price-based Hire refusal distinct from REFHIRE.X's own
+# alignment-based one. See module docstring's Phase 114 addendum.
+HIRE_COUNTER_OFFER_TEMPLATE = "[1 informed <2 that [1 would not sell ] services for less than # gold."
+
+
+def render_hire_counter_offer(
+    character_name: str, hireling_name: str, minimum_gold: int, rng: random.Random
+) -> str:
+    """Renders ``_LCounter``'s sentence for a Hire refused over price."""
+
+    values = {
+        "[1": hireling_name,
+        "<2": character_name,
+        "]": f"{hireling_name}'s",
+        "#": str(minimum_gold),
+    }
+    return render(HIRE_COUNTER_OFFER_TEMPLATE, values, rng=rng)
 
 
 # HostAK/TP/PROSE/MARCH.X -- the Move action's own report line. See
