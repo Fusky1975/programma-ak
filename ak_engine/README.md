@@ -4620,6 +4620,45 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new tests were written -- new data with no existing call sites. 7
     new tests added (1840 passed total) in
     `tests/test_spell_cast_announcement.py`.
+- **Phase 123 (current)**: `report/turn_report.py` -- the full
+  Ice-Suspend narrative cluster the user explicitly asked for
+  (`_LBIce`/`_LFIce`/`_LPIce`/`_LIceCr`/`_LIceGh`/`_LShIce`/`_LWMelt`/
+  `_LSFroz`, `SAY.PAS` lines 637-646, sitting immediately between
+  `_LSIBers` and `_LUndWF`). Eight real, single, hardcoded templates
+  (no file), each a distinct moment around `Spell.ICE_SUSPEND`'s own
+  effect: cast (already `SPELL_CAST_ANNOUNCEMENT[Spell.ICE_SUSPEND]`,
+  Phase 122) -> held in ice / breaks free -> fall damage or immunity
+  -> stalemate options.
+  - `render_ice_suspend_failed_to_hold()` (`_LPIce`) -- the ice fails
+    to fully hold the target, who begins breaking free immediately.
+  - `render_ice_break_out_attempt()` (`_LBIce`) -- the target's own
+    break-out *attempt*.
+  - `render_ice_break_out_success()` (`_LFIce`) -- the target's
+    *successful* break-out.
+  - `render_ice_fall_damage()` (`_LIceCr`) -- fall damage after the
+    ice releases/shatters; `#` is `PROSE.TXT`'s own damage-points
+    marker, the same convention `render_attack_hit()` (Phase 112)
+    already established.
+  - `render_ice_ghost_immune()` (`_LIceGh`) -- an incorporeal/
+    ghost-type target is immune to the ice entirely.
+  - `render_ice_immobilized()` (`_LShIce`) -- the immobilized *state*
+    itself, distinct from the cast announcement.
+  - `render_ice_wait_for_melt()` (`_LWMelt`) -- the opponent's own
+    tactical choice not to attack a frozen target and wait it out.
+  - `render_ice_steal_blocked()` (`_LSFroz`) -- a blocked Steal/
+    Take-item attempt against a frozen target, using `report/prose.py`
+    `^L` list insertion (Phase 118) over the `\` (Magic Item) marker,
+    the same shape `render_take_items()` (Phase 118) already
+    established.
+  - No source ties these eight moments into one fixed sequence -- each
+    is its own renderer, the caller sequences them according to the
+    encounter's own real outcome, the same caller-decides-the-sequence
+    stance already taken for `_ADishK`/`_ADishF` (Phase 121) and
+    `_LCast1`/`SPELL_CAST_ANNOUNCEMENT` (Phase 122).
+  - Non-breaking: full suite passed unchanged (1840 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 12 new tests added (1852 passed total) in
+    `tests/test_turn_report.py`.
 
 ## Setup
 

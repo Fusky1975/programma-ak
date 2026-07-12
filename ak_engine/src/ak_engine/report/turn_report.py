@@ -680,6 +680,55 @@ pattern established throughout (`is_sea`, `range_suffix`, `weapon`).
 Both concatenate their two rendered sentences with no separator,
 matching every other multi-`Say()` entry already found in this module
 (Phase 107, 116, 119).
+
+**Phase 123 addendum -- Ice-Suspend narrative cluster.** `SAY.PAS`
+lines 637-646, immediately following `_LSIBers` and immediately
+preceding `_LUndWF` (`Sps(Fireball,S_PCom)`): the full narrative
+sequence around `Spell.ICE_SUSPEND`'s own effect (the cast itself,
+`_LCIceS`, is already `SPELL_CAST_ANNOUNCEMENT[Spell.ICE_SUSPEND]`,
+Phase 122). Eight real, single, hardcoded templates (no file), each a
+distinct moment in the same encounter: cast -> held in ice / breaks
+free -> fall damage or immunity -> stalemate options.
+
+- `_LPIce: Say('but the shell/Rice was not strong/Rthick enough to
+  hold/Rstop [, and [1 began to break_out/Rcrack_through.',S_PCom)` --
+  the ice fails to fully hold the target, who begins breaking free
+  immediately after being cast on. `render_ice_suspend_failed_to_hold()`.
+- `_LBIce: Say('< struggled/Rattempted to break out of > {frosty
+  }shell/Rprison of {cold/Rfrigid }ice.',S_PCom)` -- the target's own
+  break-out *attempt* (not yet resolved). `render_ice_break_out_attempt()`.
+- `_LFIce: Say('with a mighty heave/Reffort, < broke out of > {frosty
+  }shell/Rprison of {cold/Rfrigid }ice.',S_PCom)` -- the target's
+  *successful* break-out. `render_ice_break_out_success()`.
+- `_LIceCr: Say('[1 dropped/Rcrashed, suffering/Rtaking # damage
+  points.',S_PCom)` -- fall damage after the ice releases/shatters,
+  `#` is `PROSE.TXT`'s own damage-points marker (same convention as
+  `render_attack_hit()`, Phase 112). `render_ice_fall_damage()`.
+- `_LIceGh: Say('but ['s translucent form easily glided through the
+  ice.',S_PCom)` -- an incorporeal/ghost-type target is immune to the
+  ice entirely. `render_ice_ghost_immune()`.
+- `_LShIce: Say('[1 was immobilized_by/Rlocked_in the {frosty
+  }shell/Rprison of {cold/Rfrigid }ice.',S_PCom)` -- the immobilized
+  *state* itself, distinct from the cast announcement.
+  `render_ice_immobilized()`.
+- `_LWMelt: Say('< stood away from [ and waited for the ice to
+  melt.',S_PCom)` -- the opponent's own tactical choice not to attack
+  a frozen target and instead wait it out. `render_ice_wait_for_melt()`.
+- `_LSFroz: Say('< could not take the ^L\\ because what [1 carried was
+  frozen in with [.',S_PCom)` -- a blocked Steal/Take-item attempt
+  against a frozen target; `^L\\` is `report/prose.py`'s own
+  list-insertion (Phase 118) over `PROSE.TXT`'s `\\` (Magic Item)
+  marker, the same shape `render_take_items()` (Phase 118) already
+  established. `render_ice_steal_blocked()`.
+
+No source ties these eight moments into a single fixed sequence (e.g.
+whether `_LBIce` always precedes `_LFIce`, or whether `_LPIce` is a
+same-turn alternative to `_LShIce` rather than a strict predecessor)
+-- each is exposed as its own renderer, the caller sequences them
+according to the encounter's own real outcome, the same
+caller-decides-the-sequence stance already taken for the
+`_ADishK`/`_ADishF` pair (Phase 121) and the `_LCast1`/
+`SPELL_CAST_ANNOUNCEMENT` pair (Phase 122).
 """
 
 from __future__ import annotations
@@ -2422,3 +2471,139 @@ def render_patrol_encounter(character_name: str, king_name: str, rng: random.Ran
         "^K": king_name,
     }
     return render(variant, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LPIce -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 123 addendum.
+ICE_SUSPEND_FAILED_TO_HOLD_TEMPLATE = (
+    "but the shell/Rice was not strong/Rthick enough to hold/Rstop [, "
+    "and [1 began to break_out/Rcrack_through."
+)
+
+
+def render_ice_suspend_failed_to_hold(target_name: str, rng: random.Random) -> str:
+    """Renders ``_LPIce``'s sentence: the Ice-Suspend shell fails to
+    fully hold the target, who begins breaking free immediately.
+    """
+
+    values = {"[": target_name, "[1": target_name}
+    return render(ICE_SUSPEND_FAILED_TO_HOLD_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LBIce -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 123 addendum.
+ICE_BREAK_OUT_ATTEMPT_TEMPLATE = (
+    "< struggled/Rattempted to break out of > {frosty }shell/Rprison "
+    "of {cold/Rfrigid }ice."
+)
+
+
+def render_ice_break_out_attempt(character_name: str, rng: random.Random) -> str:
+    """Renders ``_LBIce``'s sentence: the target's own attempt to
+    break free of the Ice-Suspend shell (not yet resolved).
+    """
+
+    values = {"<": character_name, ">": f"{character_name}'s"}
+    return render(ICE_BREAK_OUT_ATTEMPT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LFIce -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 123 addendum.
+ICE_BREAK_OUT_SUCCESS_TEMPLATE = (
+    "with a mighty heave/Reffort, < broke out of > {frosty }shell/Rprison "
+    "of {cold/Rfrigid }ice."
+)
+
+
+def render_ice_break_out_success(character_name: str, rng: random.Random) -> str:
+    """Renders ``_LFIce``'s sentence: the target successfully breaks
+    free of the Ice-Suspend shell.
+    """
+
+    values = {"<": character_name, ">": f"{character_name}'s"}
+    return render(ICE_BREAK_OUT_SUCCESS_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LIceCr -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 123 addendum.
+ICE_FALL_DAMAGE_TEMPLATE = "[1 dropped/Rcrashed, suffering/Rtaking # damage points."
+
+
+def render_ice_fall_damage(target_name: str, damage_points: int, rng: random.Random) -> str:
+    """Renders ``_LIceCr``'s sentence: fall damage after the
+    Ice-Suspend shell releases/shatters. ``damage_points`` is
+    ``PROSE.TXT``'s own ``#`` marker, the same convention
+    ``render_attack_hit()`` (Phase 112) already established.
+    """
+
+    values = {"[1": target_name, "#": str(damage_points)}
+    return render(ICE_FALL_DAMAGE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LIceGh -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 123 addendum.
+ICE_GHOST_IMMUNE_TEMPLATE = "but ['s translucent form easily glided through the ice."
+
+
+def render_ice_ghost_immune(target_name: str, rng: random.Random) -> str:
+    """Renders ``_LIceGh``'s sentence: an incorporeal/ghost-type
+    target is immune to the Ice-Suspend shell entirely.
+    """
+
+    values = {"[": target_name}
+    return render(ICE_GHOST_IMMUNE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LShIce -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 123 addendum.
+ICE_IMMOBILIZED_TEMPLATE = (
+    "[1 was immobilized_by/Rlocked_in the {frosty }shell/Rprison of "
+    "{cold/Rfrigid }ice."
+)
+
+
+def render_ice_immobilized(target_name: str, rng: random.Random) -> str:
+    """Renders ``_LShIce``'s sentence: the target's immobilized state
+    under the Ice-Suspend shell, distinct from the cast announcement
+    itself (``SPELL_CAST_ANNOUNCEMENT[Spell.ICE_SUSPEND]``, Phase 122).
+    """
+
+    values = {"[1": target_name}
+    return render(ICE_IMMOBILIZED_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LWMelt -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 123 addendum.
+ICE_WAIT_FOR_MELT_TEMPLATE = "< stood away from [ and waited for the ice to melt."
+
+
+def render_ice_wait_for_melt(character_name: str, target_name: str, rng: random.Random) -> str:
+    """Renders ``_LWMelt``'s sentence: the opponent's own tactical
+    choice not to attack a frozen target and instead wait for the ice
+    to melt.
+    """
+
+    values = {"<": character_name, "[": target_name}
+    return render(ICE_WAIT_FOR_MELT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LSFroz -- a single, real, hardcoded template (no
+# file), using ``report/prose.py``'s ``^L`` list insertion (Phase 118).
+# See module docstring's Phase 123 addendum.
+ICE_STEAL_BLOCKED_TEMPLATE = (
+    "< could not take the ^L\\ because what [1 carried was frozen in with [."
+)
+
+
+def render_ice_steal_blocked(
+    character_name: str, target_name: str, item_names: list[str], rng: random.Random
+) -> str:
+    """Renders ``_LSFroz``'s sentence: a blocked Steal/Take-item
+    attempt against a frozen target. ``item_names`` is ``PROSE.TXT``'s
+    own ``\\`` marker (Magic Item), joined via ``^L`` list insertion,
+    the same shape ``render_take_items()`` (Phase 118) already
+    established.
+    """
+
+    values = {"<": character_name, "[1": target_name, "[": target_name}
+    return render(ICE_STEAL_BLOCKED_TEMPLATE, values, rng=rng, lists={"\\": item_names})

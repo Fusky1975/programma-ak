@@ -51,6 +51,14 @@ from ak_engine.report.turn_report import (
     render_hire_accepted,
     render_hire_counter_offer,
     render_hire_refused,
+    render_ice_break_out_attempt,
+    render_ice_break_out_success,
+    render_ice_fall_damage,
+    render_ice_ghost_immune,
+    render_ice_immobilized,
+    render_ice_steal_blocked,
+    render_ice_suspend_failed_to_hold,
+    render_ice_wait_for_melt,
     render_inherit,
     render_inherit_as_heir,
     render_magic_feature_discovery,
@@ -1358,3 +1366,85 @@ def test_commander_died_and_fled_are_distinct_narrations():
     rng1 = ScriptedRandom([0.1] * 10)
     rng2 = ScriptedRandom([0.1] * 10)
     assert render_commander_died_demoralized("Borin", rng1) != render_commander_fled_demoralized("Borin", rng2)
+
+
+# -- Ice-Suspend narrative cluster (Phase 123) --
+
+
+def test_render_ice_suspend_failed_to_hold():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_ice_suspend_failed_to_hold("Bob", rng)
+    assert result == (
+        "but the shell was not strong enough to hold Bob, and Bob began to break out."
+    )
+
+
+def test_render_ice_break_out_attempt_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_ice_break_out_attempt("Bob", rng)
+    assert result == "Bob struggled to break out of Bob's shell of ice."
+
+
+def test_render_ice_break_out_attempt_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_ice_break_out_attempt("Bob", rng)
+    assert result == "Bob attempted to break out of Bob's frosty prison of frigid ice."
+
+
+def test_render_ice_break_out_success_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_ice_break_out_success("Bob", rng)
+    assert result == "with a mighty heave, Bob broke out of Bob's shell of ice."
+
+
+def test_render_ice_break_out_success_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_ice_break_out_success("Bob", rng)
+    assert result == "with a mighty effort, Bob broke out of Bob's frosty prison of frigid ice."
+
+
+def test_render_ice_fall_damage():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_ice_fall_damage("Bob", 12, rng)
+    assert result == "Bob dropped, suffering 12 damage points."
+
+
+def test_render_ice_ghost_immune():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_ice_ghost_immune("Bob", rng)
+    assert result == "but Bob's translucent form easily glided through the ice."
+
+
+def test_render_ice_immobilized_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_ice_immobilized("Bob", rng)
+    assert result == "Bob was immobilized by the shell of ice."
+
+
+def test_render_ice_immobilized_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_ice_immobilized("Bob", rng)
+    assert result == "Bob was locked in the frosty prison of frigid ice."
+
+
+def test_render_ice_wait_for_melt():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_ice_wait_for_melt("Alice", "Bob", rng)
+    assert result == "Alice stood away from Bob and waited for the ice to melt."
+
+
+def test_render_ice_steal_blocked_single_item():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_ice_steal_blocked("Alice", "Bob", ["a Ring of Fire"], rng)
+    assert result == (
+        "Alice could not take the a Ring of Fire because what Bob carried was frozen in with Bob."
+    )
+
+
+def test_render_ice_steal_blocked_multiple_items():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_ice_steal_blocked("Alice", "Bob", ["a Ring of Fire", "a Sword of Ice"], rng)
+    assert result == (
+        "Alice could not take the a Ring of Fire and a Sword of Ice "
+        "because what Bob carried was frozen in with Bob."
+    )
