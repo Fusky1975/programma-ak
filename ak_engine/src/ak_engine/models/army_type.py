@@ -234,3 +234,67 @@ ARMY_TYPE_BY_ORDINAL: dict[int, ArmyType] = {
 # CTBOTH.PAS `noleader = 255` -- used in Recruit phases' `obj` field to
 # mean "no specific leader" (e.g. assign to the garrison commander).
 NO_LEADER_SENTINEL = 255
+
+
+# CTBOTH.PAS `atname` (~line 1316), verbatim, positional with the `army`
+# enum -- confirmed real and used via RUMORS.PAS's own
+# `Say(Concat(tms,' ',atname[_atype]),spytype)`, matching PROSE.TXT's own
+# documented marker `"|: Army type name (\"Legion\", \"Fleet\" etc.)"`
+# (found continuing to mine CTBOTH.PAS the way Phases 79-89 found their
+# own real data). Ordinal 15 (`noarmy`, a sentinel) and ordinals 20+
+# (`dinosaurs`, `vampires`, `marauders`, `ea3`-`ea20`) are excluded, same
+# as `ARMY_TYPE_BY_ORDINAL` above.
+ARMY_TYPE_NAME: dict[ArmyType, str] = {
+    ArmyType.GARRISON: "Garrison",
+    ArmyType.BOWMEN: "Bowmen",
+    ArmyType.AXEMEN: "Axemen",
+    ArmyType.PHALANX: "Phalanx",
+    ArmyType.LEGION: "Legion",
+    ArmyType.LT_CAVALRY: "Light Cavalry",
+    ArmyType.HVY_CAVALRY: "Heavy Cavalry",
+    ArmyType.CHARIOTS: "Chariots",
+    ArmyType.ELEPHANTS: "Elephants",
+    ArmyType.CAMEL_CORPS: "Camel Corps",
+    ArmyType.WARG_RIDERS: "Warg Riders",
+    ArmyType.DRAGON_WING: "Dragons",
+    ArmyType.EAGLE_WING: "Eagles",
+    ArmyType.WHALES: "Whales",
+    ArmyType.FLEET: "Fleet",
+    ArmyType.MERMEN: "Mermen",
+    ArmyType.ENTS: "Ents",
+    ArmyType.TROLLS: "Trolls",
+    ArmyType.WEREBEASTS: "Were-Beasts",
+}
+
+# CTBOTH.PAS `atdesig` (~line 1288), verbatim, positional with the `army`
+# enum -- a shorter, 9-char-max form distinct from `atname` above.
+# Confirmed real and used via REPORTS.PAS's own army-listing line
+# (`IF astate[an] = Zomboid THEN strx:= Concat(s,' Skel ',
+# atdesig[Mod_AType(an)]) ELSE strx:= Concat(s,' ',atname[Mod_AType(an)])`
+# -- `atdesig` for the compact "Skel <desig>" skeletal-army case,
+# `atname` for the normal case) and SAY.PAS's own
+# `astring:= atdesig[Mod_LAType(an)]`. Note `WHALES` diverges from
+# `ARMY_TYPE_NAME` here (`'League'`, not `'Whales'`) -- a real, confirmed
+# quirk of the Pascal source table itself (`whaleleague`'s own designator
+# entry), not a transcription error.
+ARMY_TYPE_DESIGNATION: dict[ArmyType, str] = {
+    ArmyType.GARRISON: "Garrison",
+    ArmyType.BOWMEN: "Bowmen",
+    ArmyType.AXEMEN: "Axemen",
+    ArmyType.PHALANX: "Phalanx",
+    ArmyType.LEGION: "Legion",
+    ArmyType.LT_CAVALRY: "Lt Cav",
+    ArmyType.HVY_CAVALRY: "Hvy Cav",
+    ArmyType.CHARIOTS: "Chariots",
+    ArmyType.ELEPHANTS: "Elephants",
+    ArmyType.CAMEL_CORPS: "Camels",
+    ArmyType.WARG_RIDERS: "Wargs",
+    ArmyType.DRAGON_WING: "Dragons",
+    ArmyType.EAGLE_WING: "Eagles",
+    ArmyType.WHALES: "League",
+    ArmyType.FLEET: "Fleet",
+    ArmyType.MERMEN: "Mermen",
+    ArmyType.ENTS: "Ents",
+    ArmyType.TROLLS: "Trolls",
+    ArmyType.WEREBEASTS: "Weres",
+}

@@ -3548,6 +3548,32 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_movement.py`, covering full 6-entry coverage, verbatim
     strings, and the ordinal alignment with the offset tuples' own
     order.
+- **Phase 90 (current)**: `models/army_type.py ARMY_TYPE_NAME`/
+  `ARMY_TYPE_DESIGNATION` -- `CTBOTH.PAS`'s own `atname`/`atdesig`
+  tables (~lines 1288 and 1316, both positional with the `army` enum),
+  found continuing to mine `CTBOTH.PAS` the way Phases 79-89 found
+  their own real data.
+  - **`ARMY_TYPE_NAME` confirmed to be `PROSE.TXT`'s own documented
+    `"|: Army type name (\"Legion\", \"Fleet\" etc.)"` marker** via
+    `RUMORS.PAS`'s own `Say(Concat(tms,' ',atname[_atype]),spytype)`.
+  - **`ARMY_TYPE_DESIGNATION`** is a separate, shorter (9-char-max) form
+    -- confirmed real and used via `REPORTS.PAS`'s own army-listing line
+    (`atdesig` for the compact `"Skel <desig>"` skeletal-army case,
+    `atname` for the normal case) and `SAY.PAS`'s own
+    `astring:= atdesig[Mod_LAType(an)]`. `ArmyType.WHALES` diverges
+    between the two (`'Whales'` vs `'League'`, from `whaleleague`'s own
+    designator entry) -- a real quirk of the source table itself, kept
+    verbatim rather than "corrected."
+  - Both dicts cover exactly `ArmyType`'s existing 19 members; the
+    `noarmy` sentinel and the `dinosaurs`/`vampires`/`marauders`/
+    `ea3`-`ea20` extension slots are excluded, matching
+    `ARMY_TYPE_BY_ORDINAL`'s own precedent (Phase 12).
+  - Non-breaking: full suite passed unchanged (1609 passed) before any
+    new tests were written -- two new dicts with no existing call
+    sites. 5 new tests added (1614 passed total) in a new
+    `tests/test_army_type.py`, covering full 19-entry coverage for both
+    dicts, the PROSE.TXT example strings, verbatim designation samples,
+    and the Whales name/designation divergence.
 
 ## Setup
 
