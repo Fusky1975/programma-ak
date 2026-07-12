@@ -4659,6 +4659,42 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new tests were written -- new functions with no existing call
     sites. 12 new tests added (1852 passed total) in
     `tests/test_turn_report.py`.
+- **Phase 124 (current)**: `report/turn_report.py` -- the complete
+  end-of-turn Financial Report every kingdom receives. `RUMORS.PAS`
+  groups `_LRev = 3055`, `_LLCosts = 3056`, `_LACosts = 3057`,
+  `_LFinance = 3058`, and `_LTreas = 3063` contiguously (with
+  `_LCHoly`/`_LCHOD`/`_LCPsyBl`/`_LCInvis` -- already
+  `SPELL_CAST_ANNOUNCEMENT` entries, Phase 122 -- interleaved at
+  3059-3062); `_AUnpaid = 4013` sits in the separate "Army" 4000s block
+  but is the same topical narrative (`SAY.PAS` lines 835-840, all five
+  sentences physically adjacent). Five real, single, hardcoded
+  templates (no file) -- the first narrative in this module tied to
+  `GameState`'s own `KingdomState.treasury` field (Phase 9) and
+  `turn/recruit_execution.py`'s own already-modeled treasury spending
+  (Phase 15).
+  - `render_finance_report_opening()` (`_LFinance`) -- the section's
+    opening clause.
+  - `render_finance_revenue()` (`_LRev`) -- this turn's revenue
+    collected.
+  - `render_finance_leader_costs()` (`_LLCosts`) -- leader upkeep
+    cost.
+  - `render_finance_unpaid_armies()` (`_AUnpaid`) -- percentage of
+    armies that went unpaid; this project has no source for when this
+    sentence is included versus omitted, so the caller decides whether
+    to call it at all, the same stance `render_attack_devastating_hit()`
+    (Phase 112) already established for its own conditional sentence.
+  - `render_finance_army_costs()` (`_LACosts`) -- army upkeep cost.
+  - `render_finance_treasury()` (`_LTreas`) -- the closing balance,
+    ties directly to `KingdomState.treasury`'s own post-turn value.
+  - No source stitches these five into one combined sentence --
+    `SAY.PAS` dispatches each as its own `Say()` call in sequence, so
+    each is its own renderer here too, matching the plain
+    sequential-report shape already established for `render_spy_*()`
+    (Phase 115).
+  - Non-breaking: full suite passed unchanged (1852 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 6 new tests added (1858 passed total) in
+    `tests/test_turn_report.py`.
 
 ## Setup
 

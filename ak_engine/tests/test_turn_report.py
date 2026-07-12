@@ -43,6 +43,12 @@ from ak_engine.report.turn_report import (
     render_explore_already_maxed,
     render_explore_continued,
     render_explore_progress,
+    render_finance_army_costs,
+    render_finance_leader_costs,
+    render_finance_report_opening,
+    render_finance_revenue,
+    render_finance_treasury,
+    render_finance_unpaid_armies,
     render_fire_arrow_attack,
     render_fire_hireling,
     render_flee_failure,
@@ -1448,3 +1454,42 @@ def test_render_ice_steal_blocked_multiple_items():
         "Alice could not take the a Ring of Fire and a Sword of Ice "
         "because what Bob carried was frozen in with Bob."
     )
+
+
+# -- end-of-turn Financial Report (Phase 124) --
+
+
+def test_render_finance_report_opening():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_finance_report_opening("Uga-Buga Makumb", rng)
+    assert result == "here is the financial report for Uga-Buga Makumb's kingdom: "
+
+
+def test_render_finance_revenue():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_finance_revenue(500, rng)
+    assert result == "this turn, the Kingdom collected 500 gold in revenue."
+
+
+def test_render_finance_leader_costs():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_finance_leader_costs(120, rng)
+    assert result == "120 gold was expended to finance our leaders."
+
+
+def test_render_finance_unpaid_armies():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_finance_unpaid_armies(15, rng)
+    assert result == "unfortunately, 15% of your Majesty's armies had to go without pay."
+
+
+def test_render_finance_army_costs():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_finance_army_costs(300, rng)
+    assert result == "300 gold was expended to maintain our armies."
+
+
+def test_render_finance_treasury():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_finance_treasury("Uga-Buga Makumb", 80, rng)
+    assert result == "Uga-Buga Makumb was left with 80 gold in the treasury."

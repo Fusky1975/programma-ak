@@ -729,6 +729,49 @@ according to the encounter's own real outcome, the same
 caller-decides-the-sequence stance already taken for the
 `_ADishK`/`_ADishF` pair (Phase 121) and the `_LCast1`/
 `SPELL_CAST_ANNOUNCEMENT` pair (Phase 122).
+
+**Phase 124 addendum -- end-of-turn Financial Report.** `RUMORS.PAS`'s
+own story-code `CONST` block groups `_LRev = 3055`, `_LLCosts = 3056`,
+`_LACosts = 3057`, `_LFinance = 3058`, and `_LTreas = 3063`
+contiguously (with `_LCHoly`/`_LCHOD`/`_LCPsyBl`/`_LCInvis` -- already
+`SPELL_CAST_ANNOUNCEMENT` entries, Phase 122 -- interleaved at
+3059-3062); `_AUnpaid = 4013` sits in the separate "Army" 4000s block
+but is the same topical narrative (`SAY.PAS` lines 835-840, all five
+sentences physically adjacent). Five real, single, hardcoded templates
+(no file) making up the complete end-of-turn financial summary every
+kingdom receives -- the first narrative in this module tied to
+`GameState`'s own `KingdomState.treasury` field (Phase 9) and
+`turn/recruit_execution.py`'s own already-modeled treasury spending
+(Phase 15).
+
+- `_LFinance: Say('here is the financial report for <''s kingdom:
+  ',S_Red)` -- the section's opening clause.
+  `render_finance_report_opening()`.
+- `_LRev: Say('this turn, the Kingdom collected # gold in
+  revenue.',S_Red)` -- `#` is `PROSE.TXT`'s own numeric marker (same
+  convention as `render_attack_hit()`, Phase 112).
+  `render_finance_revenue()`.
+- `_LLCosts: Say('# gold was expended to finance our
+  leaders.',S_Red)` -- leader upkeep cost. `render_finance_leader_costs()`.
+- `_AUnpaid: Say('unfortunately, #% of your Majesty''s armies had to
+  go without pay.',S_Red)` -- `#%` is the same `#` marker, here a
+  percentage rather than a gold amount; this project has no source for
+  when this sentence is included versus omitted (it's presumably
+  conditional on at least one army actually going unpaid), so the
+  caller decides whether to call it at all, the same
+  caller-decides-inclusion stance `render_attack_devastating_hit()`
+  (Phase 112) already established for its own conditional sentence.
+  `render_finance_unpaid_armies()`.
+- `_LACosts: Say('# gold was expended to maintain our
+  armies.',S_Red)` -- army upkeep cost. `render_finance_army_costs()`.
+- `_LTreas: Say('< was left with # gold in the treasury.',S_Red)` --
+  the closing balance, ties directly to `KingdomState.treasury`'s own
+  post-turn value. `render_finance_treasury()`.
+
+No source stitches these five into one combined sentence -- `SAY.PAS`
+dispatches each as its own `Say()` call in sequence, so each is its
+own renderer here too, matching the plain sequential-report shape
+already established for `render_spy_*()` (Phase 115).
 """
 
 from __future__ import annotations
@@ -2607,3 +2650,86 @@ def render_ice_steal_blocked(
 
     values = {"<": character_name, "[1": target_name, "[": target_name}
     return render(ICE_STEAL_BLOCKED_TEMPLATE, values, rng=rng, lists={"\\": item_names})
+
+
+# HostAK/TP/SAY.PAS _LFinance -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 124 addendum.
+FINANCE_REPORT_OPENING_TEMPLATE = "here is the financial report for <'s kingdom: "
+
+
+def render_finance_report_opening(character_name: str, rng: random.Random) -> str:
+    """Renders ``_LFinance``'s sentence: the Financial Report section's
+    opening clause.
+    """
+
+    values = {"<": character_name}
+    return render(FINANCE_REPORT_OPENING_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LRev -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 124 addendum.
+FINANCE_REVENUE_TEMPLATE = "this turn, the Kingdom collected # gold in revenue."
+
+
+def render_finance_revenue(gold_amount: int, rng: random.Random) -> str:
+    """Renders ``_LRev``'s sentence: this turn's revenue collected."""
+
+    values = {"#": str(gold_amount)}
+    return render(FINANCE_REVENUE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LLCosts -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 124 addendum.
+FINANCE_LEADER_COSTS_TEMPLATE = "# gold was expended to finance our leaders."
+
+
+def render_finance_leader_costs(gold_amount: int, rng: random.Random) -> str:
+    """Renders ``_LLCosts``'s sentence: this turn's leader upkeep cost."""
+
+    values = {"#": str(gold_amount)}
+    return render(FINANCE_LEADER_COSTS_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _AUnpaid -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 124 addendum.
+FINANCE_UNPAID_ARMIES_TEMPLATE = (
+    "unfortunately, #% of your Majesty's armies had to go without pay."
+)
+
+
+def render_finance_unpaid_armies(percent: int, rng: random.Random) -> str:
+    """Renders ``_AUnpaid``'s sentence: the percentage of armies that
+    went unpaid this turn. This project has no source for when this
+    sentence is included versus omitted -- the caller decides whether
+    to call it at all.
+    """
+
+    values = {"#": str(percent)}
+    return render(FINANCE_UNPAID_ARMIES_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LACosts -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 124 addendum.
+FINANCE_ARMY_COSTS_TEMPLATE = "# gold was expended to maintain our armies."
+
+
+def render_finance_army_costs(gold_amount: int, rng: random.Random) -> str:
+    """Renders ``_LACosts``'s sentence: this turn's army upkeep cost."""
+
+    values = {"#": str(gold_amount)}
+    return render(FINANCE_ARMY_COSTS_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LTreas -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 124 addendum.
+FINANCE_TREASURY_TEMPLATE = "< was left with # gold in the treasury."
+
+
+def render_finance_treasury(character_name: str, gold_amount: int, rng: random.Random) -> str:
+    """Renders ``_LTreas``'s sentence: the closing treasury balance,
+    ties directly to ``GameState.KingdomState.treasury``'s own
+    post-turn value (Phase 9).
+    """
+
+    values = {"<": character_name, "#": str(gold_amount)}
+    return render(FINANCE_TREASURY_TEMPLATE, values, rng=rng)
