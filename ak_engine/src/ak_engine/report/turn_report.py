@@ -534,14 +534,13 @@ here is a single, real, hardcoded `Say(...)` (no `.X` file), the report
 - `_LSEtc`: the report's own closing line, pointing further detail to
   the General Intelligence Report. `render_spy_report_closing()`.
 - `_LSLeads`/`_LSGarr`: `"[ leads approximately ^L^V."` / `"there is a
-  garrison of approximately ^L^V."` -- both real, both genuinely
-  **blocked**: `\\x0c\\x16` is `^L^V`, `PROSE.TXT`'s own list-insertion
+  garrison of approximately ^L^V."` -- both real. ~~Both genuinely
+  blocked: `\\x0c\\x16` is `^L^V`, `PROSE.TXT`'s own list-insertion
   marker applied to a list of Army names, and `report/prose.py`'s own
-  docstring already defers `^L` ("needs a caller-supplied *list* of
-  values... not attempted here", Phase 58). Exposed as raw string
-  constants only (`SPY_LEADS_APPROXIMATELY_TEMPLATE`/`SPY_GARRISON_
-  APPROXIMATELY_TEMPLATE`) -- no `render_*` wrapper, since `render()`
-  has nothing useful to do with an unresolved `^L^V` pair yet.
+  docstring already defers `^L`. Exposed as raw string constants only,
+  no `render_*` wrapper.~~ Unblocked in Phase 118 (`render_spy_leads()`/
+  `render_spy_garrison()`) once `report/prose.py` gained its own `^L`
+  list-insertion capability.
 
 **Phase 116 addendum -- the Ally/Treat narrative.** `SAY.PAS` ~lines
 506-511, immediately after `_LFire` in the same `Imp_Code` block.
@@ -581,18 +580,32 @@ here is a single, real, hardcoded `Say(...)` (no `.X` file), the report
   templates): a successful gold theft. `render_take_gold()`.
 - `_LInher` has a real `IF _attl = _defl THEN ... ELSE ...` branch:
   the `THEN` branch is `'The heir of < inherited/gained the ^L\\.'` --
-  genuinely **blocked** on `^L` (list of magic items, the same
-  not-yet-built capability Phase 115 already deferred for `_LSLeads`/
-  `_LSGarr`). The `ELSE` branch, `'< inherited/gained the \\.'`, is a
-  single, clean, real template with one magic-item marker (`\\`, not
-  list-wrapped) -- `render_inherit()` renders only this confirmed
-  branch; the `THEN` branch is documented, not force-implemented.
+  ~~genuinely blocked on `^L` (list of magic items). The `ELSE` branch
+  ... `render_inherit()` renders only this confirmed branch.~~ The
+  `THEN` branch is unblocked in Phase 118 (`render_inherit_as_heir()`);
+  `render_inherit()` still renders only the `ELSE` branch (a single
+  magic item, not a list -- the two branches narrate genuinely
+  different situations, kept as two functions).
 - `_LWill`: `"['s will left {all }] {worldly }possessions to ]
   compatriots/fellow_adventurers."` -- a single, real, hardcoded
   template (no file), the deceased's will being read.
   `render_will()`. The Pascal-escaped `''` (a literal apostrophe) after
   `[` is the same convention `REFHIRE.X`'s own transcription already
   established (Phase 114).
+- `_MGain: Say('< took the ^L\\.',S_PCom)` -- a single, real, hardcoded
+  template (no file), real and dispatched immediately alongside
+  `_LInher`/`_LWill`. Also blocked on `^L` at the time, also unblocked
+  in Phase 118 (`render_take_items()`).
+
+**Phase 118 addendum -- ^L list insertion unblocks 3 templates.**
+`report/prose.py` gained its own `^L` list-insertion capability this
+phase (see its module docstring) -- ``render_spy_leads()``/
+``render_spy_garrison()`` (Phase 115's own `_LSLeads`/`_LSGarr`) and
+``render_inherit_as_heir()``/``render_take_items()`` (Phase 117's own
+`_LInher` `THEN` branch and `_MGain`) are the first real consumers,
+each simply passing its own list of item/army names through `render()`'s
+new `lists` parameter -- no new template content, no new sourcing,
+just closing gaps this project had already found and documented twice.
 """
 
 from __future__ import annotations
@@ -1214,12 +1227,31 @@ def render_spy_report_closing(character_name: str, province_name: str, rng: rand
     return render(SPY_REPORT_CLOSING_TEMPLATE, values, rng=rng)
 
 
-# HostAK/TP/SAY.PAS _LSLeads/_LSGarr -- both real, both genuinely
-# blocked on the not-yet-built ^L list-insertion capability. Exposed
-# as raw string constants only -- no render_* wrapper. See module
-# docstring's Phase 115 addendum.
+# HostAK/TP/SAY.PAS _LSLeads/_LSGarr -- both real. Deliberately left
+# blocked in Phase 115 (before report/prose.py's own ^L list-insertion
+# capability existed); unblocked in Phase 118 -- see module docstring's
+# addendum there.
 SPY_LEADS_APPROXIMATELY_TEMPLATE = "[ leads approximately ^L^V."
 SPY_GARRISON_APPROXIMATELY_TEMPLATE = "there is a garrison of approximately ^L^V."
+
+
+def render_spy_leads(character_name: str, army_names: list[str], rng: random.Random) -> str:
+    """Renders ``_LSLeads``'s line item in the ASpy report body --
+    ``army_names`` is ``PROSE.TXT``'s own ``^V`` marker ("Army name"),
+    joined via ``report/prose.py``'s ``^L`` list insertion (Phase 118).
+    """
+
+    values = {"[": character_name}
+    return render(SPY_LEADS_APPROXIMATELY_TEMPLATE, values, rng=rng, lists={"^V": army_names})
+
+
+def render_spy_garrison(army_names: list[str], rng: random.Random) -> str:
+    """Renders ``_LSGarr``'s line item in the ASpy report body --
+    ``army_names`` is ``PROSE.TXT``'s own ``^V`` marker, joined via
+    ``report/prose.py``'s ``^L`` list insertion (Phase 118).
+    """
+
+    return render(SPY_GARRISON_APPROXIMATELY_TEMPLATE, {}, rng=rng, lists={"^V": army_names})
 
 
 def describe_battle(
@@ -1883,8 +1915,8 @@ def render_take_gold(character_name: str, victim_name: str, gold_amount: int, rn
 
 
 # HostAK/TP/SAY.PAS _LInher -- a single, real, hardcoded template (no
-# file), the confirmed ELSE branch only. See module docstring's Phase
-# 117 addendum for why the THEN branch is genuinely blocked on ^L.
+# file), the confirmed ELSE branch. See module docstring's Phase 118
+# addendum for the THEN branch, unblocked there.
 INHERIT_TEMPLATE = "< inherited/Rgained the \\."
 
 
@@ -1895,6 +1927,39 @@ def render_inherit(character_name: str, item_name: str, rng: random.Random) -> s
 
     values = {"<": character_name, "\\": item_name}
     return render(INHERIT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LInher -- the THEN branch (``_attl = _defl``).
+# Deliberately left blocked in Phase 117 (before report/prose.py's own
+# ^L list-insertion capability existed); unblocked in Phase 118.
+INHERIT_AS_HEIR_TEMPLATE = "The heir of < inherited/Rgained the ^L\\."
+
+
+def render_inherit_as_heir(character_name: str, item_names: list[str], rng: random.Random) -> str:
+    """Renders ``_LInher``'s THEN-branch sentence, for inheriting
+    *multiple* magic items as an heir -- ``item_names`` is
+    ``PROSE.TXT``'s own ``\\`` marker ("Magic Item"), joined via
+    ``report/prose.py``'s ``^L`` list insertion (Phase 118).
+    """
+
+    values = {"<": character_name}
+    return render(INHERIT_AS_HEIR_TEMPLATE, values, rng=rng, lists={"\\": item_names})
+
+
+# HostAK/TP/SAY.PAS _MGain -- a single, real, hardcoded template (no
+# file), real and dispatched immediately alongside _LInher/_LWill.
+# Deliberately left blocked in Phase 117; unblocked in Phase 118.
+TAKE_ITEMS_TEMPLATE = "< took the ^L\\."
+
+
+def render_take_items(character_name: str, item_names: list[str], rng: random.Random) -> str:
+    """Renders ``_MGain``'s sentence for taking *multiple* magic items
+    -- ``item_names`` is ``PROSE.TXT``'s own ``\\`` marker, joined via
+    ``report/prose.py``'s ``^L`` list insertion (Phase 118).
+    """
+
+    values = {"<": character_name}
+    return render(TAKE_ITEMS_TEMPLATE, values, rng=rng, lists={"\\": item_names})
 
 
 # HostAK/TP/SAY.PAS _LWill -- a single, real, hardcoded template (no

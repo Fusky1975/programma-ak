@@ -151,3 +151,69 @@ def test_full_pipeline_renders_a_real_say_pas_template_no_choices_needed():
     template = "< patrolled @ and the surrounding provinces for enemy characters."
     result = render(template, {"@": "the Moonshine Sea"})
     assert result == "< patrolled the Moonshine Sea and the surrounding provinces for enemy characters."
+
+
+# -- ^L list insertion (Phase 118) -------------------------------------------
+
+
+def test_list_insertion_single_item_renders_bare():
+    result = render("^L=", lists={"=": ["241st Axemen"]})
+    assert result == "241st Axemen"
+
+
+def test_list_insertion_two_items_join_with_and_no_comma():
+    result = render("^L=", lists={"=": ["241st Axemen", "34th Legion"]})
+    assert result == "241st Axemen and 34th Legion"
+
+
+def test_list_insertion_three_items_matches_prose_txt_quoted_example():
+    # PROSE.TXT's own quoted example for ^L=.
+    result = render("^L=", lists={"=": ["241st Axemen", "34th Legion", "145th Fleet"]})
+    assert result == "241st Axemen, 34th Legion and 145th Fleet"
+
+
+def test_list_insertion_four_items():
+    result = render("^L=", lists={"=": ["A", "B", "C", "D"]})
+    assert result == "A, B, C and D"
+
+
+def test_list_insertion_works_inside_a_larger_template():
+    template = "< led ^L= into battle."
+    result = render(template, {"<": "Aldric"}, lists={"=": ["241st Axemen", "34th Legion"]})
+    assert result == "Aldric led 241st Axemen and 34th Legion into battle."
+
+
+def test_list_insertion_supports_two_character_markers():
+    # e.g. ^L^V ("^V" = Army name), the exact shape SAY.PAS's own
+    # _LSLeads/_LSGarr carry (report/turn_report.py Phase 115/118).
+    result = render("[ leads approximately ^L^V.", {"[": "Borin"}, lists={"^V": ["241st Axemen", "34th Legion"]})
+    assert result == "Borin leads approximately 241st Axemen and 34th Legion."
+
+
+def test_list_insertion_supports_backslash_marker():
+    # e.g. ^L\\ ("\\" = Magic Item), SAY.PAS's own _LInher THEN branch
+    # and _MGain (report/turn_report.py Phase 117/118).
+    result = render("The heir of < inherited the ^L\\.", {"<": "Aldric"}, lists={"\\": ["Crystal Ball", "Ring of Power"]})
+    assert result == "The heir of Aldric inherited the Crystal Ball and Ring of Power."
+
+
+def test_list_insertion_raises_on_empty_list():
+    with pytest.raises(ValueError, match="at least one item"):
+        render("^L=", lists={"=": []})
+
+
+def test_list_insertion_raises_when_no_matching_list_supplied():
+    with pytest.raises(ValueError, match="no matching list"):
+        render("^L=")
+
+
+def test_list_insertion_raises_when_lists_has_only_unrelated_markers():
+    with pytest.raises(ValueError, match="no matching list"):
+        render("^L=", lists={"^V": ["241st Axemen"]})
+
+
+def test_list_insertion_only_consumes_the_marker_pair_leaving_other_text_alone():
+    # A literal standalone "=" elsewhere in the template still resolves
+    # via the ordinary `values` substitution, unaffected by ^L=.
+    result = render("^L= vs =", lists={"=": ["241st Axemen", "34th Legion"]}, values={"=": "145th Fleet"})
+    assert result == "241st Axemen and 34th Legion vs 145th Fleet"

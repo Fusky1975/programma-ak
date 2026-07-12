@@ -4412,11 +4412,9 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - `_LSEtc`: the report's own closing line, pointing further detail
     to the General Intelligence Report. `render_spy_report_closing()`.
   - `_LSLeads`/`_LSGarr`: `"[ leads approximately ^L^V."` / `"there is
-    a garrison of approximately ^L^V."` -- both real, both genuinely
-    **blocked**: `\x0c\x16` is `^L^V`, `PROSE.TXT`'s own list-insertion
-    marker applied to a list of Army names, and `report/prose.py`'s own
-    docstring already defers `^L` (Phase 58). Exposed as raw string
-    constants only -- no `render_*` wrapper.
+    a garrison of approximately ^L^V."` -- both real. ~~Both genuinely
+    blocked on `^L`, exposed as raw string constants only, no
+    `render_*` wrapper.~~ Unblocked in Phase 118.
   - Non-breaking: full suite passed unchanged (1776 passed) before any
     new tests were written -- new functions with no existing call
     sites. 10 new tests added (1786 passed total) in
@@ -4462,20 +4460,58 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - `_LTakeG: FD('takeg',S_PCom,2)` -> `TAKEG.X` (header `"3 1"`, 3
     real templates): a successful gold theft.
   - `_LInher` has a real `IF _attl = _defl THEN ... ELSE ...` branch:
-    the `THEN` branch is genuinely **blocked** on `^L` (list of magic
-    items, the same not-yet-built capability Phase 115 already
-    deferred for `_LSLeads`/`_LSGarr`). The `ELSE` branch is a single,
-    clean, real template with one magic-item marker -- `render_
-    inherit()` renders only this confirmed branch.
+    the `THEN` branch was ~~genuinely blocked on `^L`~~, unblocked in
+    Phase 118 (`render_inherit_as_heir()`). The `ELSE` branch is a
+    single, clean, real template with one magic-item marker --
+    `render_inherit()` still renders only that branch (the two
+    situations are genuinely different, kept as two functions).
   - `_LWill`: the deceased's will being read, a single, real,
     hardcoded template (no file). The Pascal-escaped `''` (a literal
     apostrophe) is the same transcription convention `REFHIRE.X`
     already established (Phase 114).
+  - `_MGain: Say('< took the ^L\.',S_PCom)` -- a single, real,
+    hardcoded template (no file), also blocked on `^L` at the time,
+    also unblocked in Phase 118 (`render_take_items()`).
   - Non-breaking: full suite passed unchanged (1792 passed) before any
     new tests were written -- new functions with no existing call
     sites. 8 new tests added (1800 passed total) in
     `tests/test_turn_report.py`, covering all three `TAKEG.X` variants,
     the confirmed `_LInher` ELSE branch, and both `_LWill` branches.
+- **Phase 118 (current)**: `report/prose.py` gains its own `^L` list
+  -insertion capability -- real design work, not transcription, closing
+  a gap this project had found and deliberately left blocked *twice*
+  (Phase 115's `_LSLeads`/`_LSGarr`, Phase 117's `_LInher` `THEN`
+  branch and `_MGain`).
+  - `render()`'s new `lists: dict[str, Sequence[str]] | None = None`
+    keyword-only parameter maps the marker *following* `^L` (e.g.
+    `^V`, `\`) to the caller-supplied sequence of strings to join.
+    `^L<marker>` resolves to `PROSE.TXT`'s own quoted conjunction
+    format -- comma-separated, no comma before the final item, `" and
+    "` before the last one, matching the quoted example exactly
+    ("241st Axemen, 34th Legion and 145th Fleet" for 3 items). 1 item
+    renders bare; 2 items join as `"X and Y"`; 0 items raises
+    `ValueError` (an empty list was never a real possibility in the
+    original engine); a template needing `^L<marker>` with no matching
+    `lists` entry also raises, naming the template -- the same "no
+    sensible default" stance `/F`'s own missing-`feature_id` case
+    already takes.
+  - `^L` resolution runs as its own pipeline stage, right before the
+    generic `values` substitution pass -- a `^L<marker>` pair is fully
+    consumed as a unit; the same marker appearing elsewhere in the
+    template on its own still resolves normally via `values`.
+  - **Proved with 3 real consumers**, all in `report/turn_report.py`,
+    no new template content or sourcing -- just closing gaps already
+    found and documented: `render_spy_leads()`/`render_spy_garrison()`
+    (Phase 115's own `_LSLeads`/`_LSGarr`) and
+    `render_inherit_as_heir()`/`render_take_items()` (Phase 117's own
+    `_LInher` `THEN` branch and `_MGain`).
+  - Non-breaking: full suite passed unchanged (1800 passed) before any
+    new tests were written. 16 new tests added (1816 passed total) --
+    12 in `tests/test_prose.py` (single/two/three/four-item joins, the
+    `PROSE.TXT`-quoted 3-item example, both marker shapes `^V`/`\`,
+    both error cases, and that `^L` only consumes its own marker pair)
+    plus 4 in `tests/test_turn_report.py` for the newly-unblocked
+    renderers.
 
 ## Setup
 

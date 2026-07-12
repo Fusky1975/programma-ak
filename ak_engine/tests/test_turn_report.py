@@ -42,6 +42,7 @@ from ak_engine.report.turn_report import (
     render_hire_counter_offer,
     render_hire_refused,
     render_inherit,
+    render_inherit_as_heir,
     render_magic_feature_discovery,
     render_march,
     render_melee_attack,
@@ -57,6 +58,8 @@ from ak_engine.report.turn_report import (
     render_spy_capital_province,
     render_spy_character_here,
     render_spy_elements_intro,
+    render_spy_garrison,
+    render_spy_leads,
     render_spy_no_characters,
     render_spy_no_characters_or_forces,
     render_spy_report_closing,
@@ -64,6 +67,7 @@ from ak_engine.report.turn_report import (
     render_spy_tax_estimate,
     render_tactical_comparison,
     render_take_gold,
+    render_take_items,
     render_uncontested_conquest,
     render_wandering_encounter,
     render_will,
@@ -1199,3 +1203,37 @@ def test_render_will_right_branch():
 
 def test_will_template_is_the_confirmed_hardcoded_say():
     assert WILL_TEMPLATE == "['s will left {all }] {worldly }possessions to ] compatriots/Rfellow_adventurers."
+
+
+# -- ^L list insertion unblocks 3 templates (Phase 118) ----------------------
+
+
+def test_render_spy_leads():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_spy_leads("Borin", ["241st Axemen", "34th Legion"], rng)
+    assert result == "Borin leads approximately 241st Axemen and 34th Legion."
+
+
+def test_render_spy_garrison():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_spy_garrison(["241st Axemen"], rng)
+    assert result == "there is a garrison of approximately 241st Axemen."
+
+
+def test_render_inherit_as_heir():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_inherit_as_heir("Aldric", ["Crystal Ball", "Ring of Power"], rng)
+    assert result == "The heir of Aldric inherited the Crystal Ball and Ring of Power."
+
+
+def test_render_take_items():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_take_items("Aldric", ["Crystal Ball"], rng)
+    assert result == "Aldric took the Crystal Ball."
+
+
+def test_render_take_items_single_item_has_no_and():
+    # A single-item ^L list renders bare -- no "and" is inserted.
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_take_items("Aldric", ["Crystal Ball"], rng)
+    assert "and" not in result
