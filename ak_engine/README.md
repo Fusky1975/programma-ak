@@ -3464,6 +3464,21 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     the target), a second hop reaching the target, the "stop chasing"
     case, the ownership-tier tie-break, and a battle triggered by an
     enemy-occupied intermediate hex.
+- **Phase 86 (current)**: `turn/combat.py QUALITY_NAME` -- `Quality`
+  (Phase 5) finally gets real display names, found continuing to mine
+  `CTBOTH.PAS` the way Phases 79-84 found theirs. `CTBOTH.PAS`'s own
+  `qname` table (~line 1283: `'Depleted','Green','Average','Veteran',
+  'Crack','Elite'`), confirmed to be `PROSE.TXT`'s own documented
+  `"^Q: Quality ('Average', 'Elite' etc.)"` marker via `RUMORS.PAS`'s
+  own `WW(qname[_qual])`/`Say(qname[_qual], spytype)` -- both example
+  strings verbatim entries here, and the table lines up exactly,
+  positionally, with `Quality`'s own 6 ordinals (`DEPLETED=0`
+  through `ELITE=5`).
+  - Non-breaking: full suite passed unchanged (1594 passed) before any
+    new tests were written -- a new dict with no existing call sites.
+    3 new tests added (1597 passed total) in `tests/test_combat.py`,
+    covering full 6-entry coverage and verbatim spot-checks including
+    both PROSE.TXT example strings.
 
 ## Setup
 

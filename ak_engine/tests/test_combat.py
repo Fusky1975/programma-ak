@@ -6,6 +6,7 @@ from ak_engine.models.army_type import ArmyType, is_nemesis_of
 from ak_engine.turn.combat import (
     DEFENDER_BONUS,
     NEMESIS_PENALTY,
+    QUALITY_NAME,
     Quality,
     apply_defender_bonus,
     apply_nemesis_penalty,
@@ -21,6 +22,23 @@ def test_quality_multipliers_match_rulebook():
     assert Quality.VETERAN == 3
     assert Quality.CRACK == 4
     assert Quality.ELITE == 5
+
+
+def test_quality_name_covers_every_enum_value():
+    assert set(QUALITY_NAME.keys()) == set(Quality)
+
+
+def test_quality_name_matches_prose_txt_examples_verbatim():
+    # PROSE.TXT: "^Q (): Quality ('Average', 'Elite' etc.)"
+    assert QUALITY_NAME[Quality.AVERAGE] == "Average"
+    assert QUALITY_NAME[Quality.ELITE] == "Elite"
+
+
+def test_quality_name_remaining_verbatim_values():
+    assert QUALITY_NAME[Quality.DEPLETED] == "Depleted"
+    assert QUALITY_NAME[Quality.GREEN] == "Green"
+    assert QUALITY_NAME[Quality.VETERAN] == "Veteran"
+    assert QUALITY_NAME[Quality.CRACK] == "Crack"
 
 
 def test_line_contribution_halves_per_depth():

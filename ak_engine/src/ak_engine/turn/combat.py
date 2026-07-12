@@ -56,6 +56,21 @@ class Quality(IntEnum):
     ELITE = 5
 
 
+# CTBOTH.PAS `qname` (~line 1283), verbatim, positional with `Quality`'s own
+# ordinals above (Phase 86, found continuing to mine CTBOTH.PAS the way
+# Phases 79-84 found their own real data). Confirmed to be `PROSE.TXT`'s own
+# documented "^Q: Quality ('Average', 'Elite' etc.)" marker via `RUMORS.PAS`'s
+# own `WW(qname[_qual])`/`Say(qname[_qual], spytype)`.
+QUALITY_NAME: dict[Quality, str] = {
+    Quality.DEPLETED: "Depleted",
+    Quality.GREEN: "Green",
+    Quality.AVERAGE: "Average",
+    Quality.VETERAN: "Veteran",
+    Quality.CRACK: "Crack",
+    Quality.ELITE: "Elite",
+}
+
+
 def line_contribution(depth_index: int) -> float:
     """Strength fraction contributed from battle-line depth ``depth_index``.
 
