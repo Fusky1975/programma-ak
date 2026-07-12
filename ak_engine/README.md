@@ -3609,6 +3609,43 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_discovery.py`, covering full 64-entry coverage, verbatim
     samples from each of the four groups, and every group boundary
     ordinal.
+- **Phase 92 (current)**: new `models/magic_feature.py` -- the smaller
+  magical landmark found *inside* a geographic `Feature` (a "crystal
+  ball" inside a Pyramid, a "magic bell" inside a Temple, etc.).
+  `CTME.PAS`'s own `magfeat` enum (~line 448, 21 members) and `mfname`
+  table (~line 549), found the same way Phase 91's `models/discovery.py`
+  was: continuing to mine the wider Pascal source beyond `CTBOTH.PAS`.
+  - **Confirmed to be `PROSE.TXT`'s own documented `"$\\"` marker**:
+    `$\\: Magic feature name ("crystal ball", "magic bell", etc.)` --
+    `RUMORS.PAS`'s own `$`-prefixed marker dispatch resolves it via
+    `Say(mfname[_magfeat],spytype)`; also referenced in `REPORTS.PAS` and
+    `SAY.PAS`.
+  - `MAGIC_FEATURE_NAME`'s own strings are raw, unresolved compound
+    templates (`"<name>/F<alternate>"` / `"<name>/S<alternate>"`, e.g.
+    `"Pool/FStream"`, `"Gas_Trap/SElectric_Trap"`) -- this `F`/`S` prefix
+    convention is distinct from the already-confirmed `/R` choice marker
+    and isn't resolved by any source read so far, so it's stored
+    verbatim, matching how `models/weapon.py WEAPON_HIT_VERB` and
+    `models/treasure.py TREASURE_LABEL` (Phases 77/83) already store
+    their own raw template strings.
+  - `MagicFeature.ITSELF`'s own `mfname` entry is the literal string
+    `'&'`, not a normal name -- apparently a marker meaning "the
+    containing `Feature` counts as its own magic feature" -- kept
+    verbatim rather than guessed.
+  - **Confirmed real but deliberately out of scope**: `CTME.PAS` also
+    declares `mf1`/`mff` (two separate per-`FeatureType` magic-feature
+    assignment tables) and `mfpow1` (`array[magfeat] of power`, `power`
+    being `CTME.PAS`'s own rich effect-type enum: `NewSex, NewTemp,
+    NewRace, UpSkill, ..., CastSpell, SageDisc, ...`). Which magic
+    feature a given `Feature` actually has, and what visiting it does,
+    needs real design work and is left to a real follow-up phase --
+    matching how Phase 91 also stopped at vocabulary alone.
+  - Non-breaking: full suite passed unchanged (1618 passed) before any
+    new tests were written -- a new enum/dict with no existing call
+    sites. 5 new tests added (1623 passed total) in a new
+    `tests/test_magic_feature.py`, covering full 21-entry coverage, the
+    PROSE.TXT marker confirmation, verbatim samples, and the `ITSELF`/`&`
+    quirk.
 
 ## Setup
 
