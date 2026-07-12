@@ -5,6 +5,7 @@ import pytest
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.report.turn_report import (
+    ALREADY_ALLIED_TEMPLATE,
     ATTACK_DEVASTATING_HIT_TEMPLATE,
     EXPLORE_ALREADY_MAXED_TEMPLATE,
     EXPLORE_NOT_PRESENT_PREFIX,
@@ -19,6 +20,9 @@ from ak_engine.report.turn_report import (
     margin_bucket,
     parse_template_choices,
     pick_variant,
+    render_already_allied,
+    render_ally_proposed,
+    render_ally_refused,
     render_attack_devastating_hit,
     render_attack_hit,
     render_attack_missed,
@@ -1091,3 +1095,55 @@ def test_spy_leads_and_garrison_templates_are_blocked_on_list_insertion():
     # insertion) isn't implemented by report/prose.py yet.
     assert SPY_LEADS_APPROXIMATELY_TEMPLATE == "[ leads approximately ^L^V."
     assert SPY_GARRISON_APPROXIMATELY_TEMPLATE == "there is a garrison of approximately ^L^V."
+
+
+# -- Ally/Treat narrative (Phase 116) ----------------------------------------
+
+
+def test_render_ally_proposed_first_variant_left_branch():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_ally_proposed("Aldric", "King Harold the Bold", rng)
+    assert result == (
+        "Aldric urged King Harold the Bold to improve relations with "
+        "Aldric's Kingdom, speaking at length of the great advantages "
+        "of such an agreement.the offer was wisely accepted by King "
+        "Harold the Bold."
+    )
+
+
+def test_render_ally_proposed_first_variant_right_branch():
+    rng = ScriptedRandom([0.9] * 10, choice_indices=[0])
+    result = render_ally_proposed("Aldric", "King Harold the Bold", rng)
+    assert result == (
+        "Aldric asked King Harold the Bold to improve diplomatic "
+        "relations with Aldric's great Kingdom, speaking eloquently of "
+        "the great benefits of such an agreement.After some "
+        "deliberation, the proposal was graciously accepted by King "
+        "Harold the Bold."
+    )
+
+
+def test_render_ally_proposed_second_variant_uses_king_name_for_both_markers():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_ally_proposed("Aldric", "King Harold the Bold", rng)
+    assert result == "Aldric proposed a treaty with King Harold the Bold, and the offer was accepted."
+
+
+def test_render_already_allied():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_already_allied("Aldric", "King Harold the Bold", rng)
+    assert result == "Aldric treated with Aldric's ally King Harold the Bold."
+
+
+def test_already_allied_template_is_the_confirmed_hardcoded_say():
+    assert ALREADY_ALLIED_TEMPLATE == "< treated with > ally [3."
+
+
+def test_render_ally_refused_concatenates_both_sentences_with_no_separator():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_ally_refused("Aldric", "King Harold the Bold", rng)
+    assert result == (
+        "Aldric Treated with King Harold the Bold, but King Harold the "
+        "Bold did not respond to Aldric's friendly noises.it is hoped "
+        "that next year, both Kings will see the wisdom of Treating."
+    )

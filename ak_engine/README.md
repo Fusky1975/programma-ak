@@ -4422,6 +4422,31 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sites. 10 new tests added (1786 passed total) in
     `tests/test_turn_report.py`, covering every render function and
     the two blocked templates verbatim.
+- **Phase 116 (current)**: `report/turn_report.py
+  render_ally_proposed()`/`render_already_allied()`/
+  `render_ally_refused()` -- the Ally/Treat narrative (`SAY.PAS` ~lines
+  506-511, immediately after `_LFire` in the same `Imp_Code` block).
+  - `_LAlly: FD('ally',S_Admin,8)` -> `ALLY.X` (header `"2 1"`, 2 real
+    templates): a successful Ally proposal. Both `[3` and `[` refer to
+    the same target King within a single template (e.g. template 1
+    addresses `[3` in "urged `[3` to improve relations..." then names
+    `[` again in "...accepted by `[`") -- both substituted with the
+    same `king_name` value, not two different characters.
+  - `_LATreat: Say('< treated with > ally [3.',S_Admin)` -- a single,
+    real, hardcoded template (no file) for an *already-allied* notice
+    (a repeat-turn "we already have a treaty" line, distinct from the
+    first-time proposal `_LAlly` narrates). `render_already_allied()`.
+  - `_LRefA` -- a single, real, hardcoded entry made of **two separate
+    `Say(...)` calls** (no file) for a refused Ally proposal.
+    `render_ally_refused()` concatenates both rendered sentences with
+    no separator, matching every other multi-sentence entry already
+    found in this module's own templates (e.g. `PATENC.X`'s own
+    sentences directly abutting with no inserted space, Phase 107).
+  - Non-breaking: full suite passed unchanged (1786 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 6 new tests added (1792 passed total) in
+    `tests/test_turn_report.py`, covering both `ALLY.X` variants, the
+    dual-marker substitution, and the no-separator concatenation.
 
 ## Setup
 

@@ -542,6 +542,29 @@ here is a single, real, hardcoded `Say(...)` (no `.X` file), the report
   constants only (`SPY_LEADS_APPROXIMATELY_TEMPLATE`/`SPY_GARRISON_
   APPROXIMATELY_TEMPLATE`) -- no `render_*` wrapper, since `render()`
   has nothing useful to do with an unresolved `^L^V` pair yet.
+
+**Phase 116 addendum -- the Ally/Treat narrative.** `SAY.PAS` ~lines
+506-511, immediately after `_LFire` in the same `Imp_Code` block.
+
+- `_LAlly: FD('ally',S_Admin,8)` -> `ALLY.X` (header `"2 1"`, 2 real
+  templates): a successful Ally proposal. `render_ally_proposed()`.
+  Both `[3` and `[` refer to the same target King within a single
+  template (e.g. template 1 addresses `[3` in "urged `[3` to improve
+  relations..." then names `[` again in "...accepted by `[`") -- both
+  substituted with the same `king_name` value, not two different
+  characters.
+- `_LATreat: Say('< treated with > ally [3.',S_Admin)` -- a single,
+  real, hardcoded template (no file) for an *already-allied* notice
+  (a repeat-turn "we already have a treaty" line, distinct from the
+  first-time proposal `_LAlly` narrates). `render_already_allied()`.
+- `_LRefA` -- a single, real, hardcoded entry made of **two separate
+  `Say(...)` calls** (no file) for a refused Ally proposal.
+  `render_ally_refused()` concatenates both rendered sentences with no
+  separator, matching every other multi-sentence entry already found
+  in this module's own templates (e.g. `PATENC.X`'s own sentences
+  directly abutting with no inserted space, Phase 107) -- Turbo
+  Pascal's own `Say()` just writes sequentially to the same report
+  position, adding nothing of its own between calls.
 """
 
 from __future__ import annotations
@@ -1734,6 +1757,78 @@ def render_hire_counter_offer(
         "#": str(minimum_gold),
     }
     return render(HIRE_COUNTER_OFFER_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/PROSE/ALLY.X -- a successful Ally proposal. See module
+# docstring's Phase 116 addendum.
+_ALLY_TEMPLATES: list[str] = [
+    "< urged/Rasked [3 to improve {diplomatic }relations with > "
+    "{great }Kingdom, speaking at_length/Reloquently of the great "
+    "advantages/Rbenefits of such ^A agreement.{After some "
+    "deliberation, }the offer/Rproposal was wisely/Rgraciously "
+    "accepted by [.",
+    "< {formally }proposed ^A treaty with [{'s Kingdom}, and the "
+    "{magnanimous }offer was {graciously and wisely }accepted.{May "
+    "the treaty between < and [3 last forever/Rfor_eternity!}",
+]
+
+
+def render_ally_proposed(character_name: str, king_name: str, rng: random.Random) -> str:
+    """Renders ALLY.X's sentence for a successful Ally proposal. Both
+    ``[3`` and ``[`` refer to the same target King within a single
+    template -- both substituted with ``king_name``.
+    """
+
+    variant = pick_variant(_ALLY_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "[3": king_name,
+        "[": king_name,
+        ">": f"{character_name}'s",
+    }
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LATreat -- a single, real, hardcoded template (no
+# file), an already-allied notice distinct from render_ally_proposed()'s
+# own first-time proposal. See module docstring's Phase 116 addendum.
+ALREADY_ALLIED_TEMPLATE = "< treated with > ally [3."
+
+
+def render_already_allied(character_name: str, king_name: str, rng: random.Random) -> str:
+    """Renders ``_LATreat``'s repeat-turn "we already have a treaty"
+    notice.
+    """
+
+    values = {"<": character_name, ">": f"{character_name}'s", "[3": king_name}
+    return render(ALREADY_ALLIED_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LRefA -- a single, real, hardcoded entry made of
+# two separate Say(...) calls (no file). See module docstring's Phase
+# 116 addendum.
+_ALLY_REFUSED_TEMPLATES = (
+    "< Treated with [3, but [1 did not respond/Rreact {favorably }to "
+    "> friendly/Ramicable noises/Rovertures.",
+    "it is hoped that next year, both Kings will see the wisdom of Treating.",
+)
+
+
+def render_ally_refused(character_name: str, king_name: str, rng: random.Random) -> str:
+    """Renders ``_LRefA``'s two-sentence entry for a refused Ally
+    proposal, concatenated with no separator -- matching Turbo Pascal's
+    own sequential ``Say(...)`` writes (see module docstring).
+    """
+
+    values = {
+        "<": character_name,
+        "[3": king_name,
+        "[1": king_name,
+        ">": f"{character_name}'s",
+    }
+    first = render(_ALLY_REFUSED_TEMPLATES[0], values, rng=rng)
+    second = render(_ALLY_REFUSED_TEMPLATES[1], values, rng=rng)
+    return first + second
 
 
 # HostAK/TP/PROSE/MARCH.X -- the Move action's own report line. See
