@@ -3876,6 +3876,36 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sites. 5 new tests added (1666 passed total) in a new
     `tests/test_intro.py`, covering full 15-entry coverage, verbatim
     samples, and the distinct stair/water scenarios.
+- **Phase 100 (current)**: `models/race.py RACE_FANATICISM_TITLE` --
+  `HostAK/TP/PROSE/RACE.X2` (header `"13 1"`), confirmed real via
+  `SAY.PAS`'s own `Check_BFace` procedure, the `_ARFan` branch:
+  `FD('...race.x2',S_Batt,1001+trint)`, where `office(trint+ord(
+  Humanking))` looks up that race's own "king" `Office` title
+  (`Humanking`, `Elvenking`, `Dwarvenking`, `Orclord`, `Dragonlord`,
+  `Eagleking`, `Whaleking`, ..., `Mermanking`, `Entking`, `Trollking`,
+  `Wereking`) and `prevchar[...]` finds the character currently holding
+  it. `trint` positionally matches `Race`'s own first 13 ordinals
+  (`HUMAN`-`SAURIAN`), confirmed both by the exact count and by each
+  entry's own content (`DWARVEN`: "King Under the Mountain", `MERMISH`:
+  "Holy King of Atlantis", `ENTISH`: "Tsar of the Trees").
+  - `NO_RACE`/`SAURIAN` are the empty string -- no "king" `Office` exists
+    for either, a real fact rather than a missing value.
+    `VAMPISH`/`ROHAN` have no entry at all, outside the file's own
+    declared 13-choice range.
+  - This is a **race-based** fanaticism narrative, distinct from (and
+    not wired to) the already-implemented **alignment-based** roll
+    (`turn/strength.py roll_fanaticism`, Phase 35) -- `Check_BFace`'s own
+    surrounding `CASE` shows they're two of (at least) four sibling
+    variants (alignment-based via `Good_Fan`/`Evil_Fan`, title-based via
+    `GANG.X2`, race-based via `RACE.X2`), selected by a story-code value
+    this project doesn't decode. Only the raw template data is
+    transcribed here; wiring `_ARFan`'s own selection condition and
+    `GANG.X2`'s sibling table are left to a real follow-up phase.
+  - Non-breaking: full suite passed unchanged (1666 passed) before any
+    new tests were written -- a new dict with no existing call sites.
+    4 new tests added (1670 passed total) in `tests/test_race.py`,
+    covering the 13-entry range, verbatim samples, the two blank
+    entries, and the `VAMPISH`/`ROHAN` exclusion.
 
 ## Setup
 
