@@ -30,6 +30,7 @@ from ak_engine.report.turn_report import (
     render_generic_encounter,
     render_magic_feature_discovery,
     render_march,
+    render_melee_attack,
     render_mortally_wounded,
     render_move_to_bow_range,
     render_move_to_melee_range,
@@ -914,3 +915,37 @@ def test_fire_arrow_attack_and_hit_concatenate_into_one_sentence():
     attack = render_fire_arrow_attack("Aldric", "Borin", rng)
     hit = render_attack_hit("Borin", 5, rng)
     assert attack + hit == "Aldric Fired an arrow at Borin and inflicted 5 damage points."
+
+
+# -- render_melee_attack (Phase 113) -----------------------------------------
+
+
+def test_render_melee_attack_first_variant_left_branch():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_melee_attack("Aldric", "Borin", "Slashed", rng)
+    assert result == "Aldric assailed Borin"
+
+
+def test_render_melee_attack_first_variant_right_branch():
+    rng = ScriptedRandom([0.9] * 10, choice_indices=[0])
+    result = render_melee_attack("Aldric", "Borin", "Slashed", rng)
+    assert result == "Aldric circled left and violently attacked Borin"
+
+
+def test_render_melee_attack_resolves_attack_method_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_melee_attack("Aldric", "Borin", "Thrust", rng)
+    assert result == "Aldric Thrust Borin"
+
+
+def test_render_melee_attack_ninth_variant_has_no_trailing_punctuation():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[8])
+    result = render_melee_attack("Aldric", "Borin", "Slashed", rng)
+    assert result == "Aldric Slashed Borin"
+
+
+def test_melee_attack_and_missed_concatenate_into_one_sentence():
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[1, 0])
+    attack = render_melee_attack("Aldric", "Borin", "Thrust", rng)
+    miss = render_attack_missed("Aldric", "Borin", "sword", rng)
+    assert attack + miss == "Aldric Thrust Borin and missed."

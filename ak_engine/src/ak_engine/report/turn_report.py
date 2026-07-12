@@ -433,6 +433,39 @@ Fire Arrow attack sequence.
   the deadly blow") describes a stun, not a fatal wound, despite the
   file's own name -- transcribed verbatim, not smoothed into implying
   every variant means death.
+
+**Phase 113 addendum -- SWANGAT.X, the Melee attack action.**
+`_LSwing: FD2('swangat',S_PCom,3)` -> `SWANGAT.X` (header `"11 1"`, 11
+real templates) -- confirmed real while researching Phase 111 and
+deliberately deferred there; the Melee sibling to `_LFArr`/`FARR.X`
+(same "no trailing punctuation, caller concatenates" shape, meant to
+be immediately followed by `render_attack_missed()`/`render_attack_
+hit()`/`render_attack_devastating_hit()`, all already generic across
+attack types).
+
+- Uses `$S` (`PROSE.TXT`'s "Attack method" marker) but, unlike
+  `FARR.X`, **not** `^W` (weapon) -- `render_melee_attack()` takes
+  `attack_method` as an explicit caller-supplied parameter (e.g.
+  `"Slashed"`, `"Thrust"`, matching `PROSE.TXT`'s own documented
+  examples for `$S`) rather than hardcoding one value, since a Melee
+  weapon/verb genuinely varies by character, unlike Fire Arrow's fixed
+  "Fired". 1 of the 11 templates (the first) uses a literal
+  `assailed/Rattacked` verb choice instead of `$S` at all -- `$S` is
+  simply unused for that variant, not a special case to handle.
+- Templates 4 and 9 have real, slightly unusual phrasing worth noting
+  rather than "fixing": template 4 never names the opponent via `[` at
+  all, instead calling them "> {fearsome/vaunted }enemy/nemesis" (the
+  attacker's own possessive + a generic descriptor); template 9 writes
+  `['s defenses/Rprotection` -- `[` immediately followed by a literal
+  `'s` in the source text itself (not `PROSE.TXT`'s own `]` possessive
+  marker), so substituting `[` alone produces the correct
+  "Borin's defenses" without any special-casing.
+- No `/S` marker anywhere in this file (unlike `GOMEL.X`'s own
+  movement-to-melee-range templates, Phase 111, which do carry one) --
+  `render_melee_attack()` takes no `is_sea` parameter.
+- The raw `\\x1a` byte at the very end of the file's last line is DOS's
+  own end-of-file marker (Ctrl-Z), not narrative content -- stripped
+  during transcription, not preserved as if it were part of the prose.
 """
 
 from __future__ import annotations
@@ -1352,6 +1385,56 @@ def render_mortally_wounded(defender_name: str, rng: random.Random, *, is_sea: b
     variant = pick_variant(_MORTWOUN_TEMPLATES, rng)
     values = {"[1": defender_name}
     return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/PROSE/SWANGAT.X -- the Melee attack action itself, the
+# sibling to FARR.X's own Fire Arrow attack action. See module
+# docstring's Phase 113 addendum.
+_SWANGAT_TEMPLATES: list[str] = [
+    "< {circled right/Rleft and }{angrily/Rviolently }assailed/Rattacked [",
+    "{undaunted/Rshowing_no_fear, }< {moved in/Rcloser and }$S [",
+    "< {whirled around/Rabout and }{daringly/Raudaciously }$S [",
+    "< {summoned all > will/Rstrength and bravely/Rdesperately }$S > "
+    "{fearsome/Rvaunted }enemy/Rnemesis",
+    "< {feinted/Rfaked in_one_direction/Rone_way, then crossed/Rswitched "
+    "over and }{treacherously/Rviciously }$S [",
+    "< {acrobatically/Rflamboyantly flipped/Rvaulted over [ and }"
+    "{deftly/Rcontemptuously }$S [",
+    "< {feigned/Rpretended_to retreat/Rpanic, then pivoted/Rwhirled and }"
+    "{treacherously/Rarrogantly }$S [",
+    "{with amazing/Rsurprising speed/Rquickness, }< "
+    "{immediately/Renergetically }$S [",
+    "{seeking/Rhoping to exploit/Rtake_advantage_of ^A gap/Rweak_point "
+    "in ['s defenses/Rprotection, }< {skillfully/Rdeftly }$S [",
+    "{< maneuvered/Rshifted_over for/Rto a better/Rgood "
+    "attacking/Rdefensive position/Rvantage.then }< $S [{ with all > "
+    "might/Rstrength}",
+    "{< forced/Rturned back/Raway [ with > aggressive/Rspirited "
+    "assault/Rtactics.}< then $S [{ with terrific/Rmaximum force/Rstrength}",
+]
+
+
+def render_melee_attack(
+    character_name: str, opponent_name: str, attack_method: str, rng: random.Random
+) -> str:
+    """Renders SWANGAT.X's sentence for the Melee attack action itself
+    -- no trailing punctuation, meant to be immediately followed by
+    ``render_attack_missed()``/``render_attack_hit()``/
+    ``render_attack_devastating_hit()`` to form one complete sentence,
+    the same shape ``render_fire_arrow_attack()`` established. Unlike
+    Fire Arrow, Melee has no fixed weapon/verb, so ``attack_method`` is
+    an explicit caller-supplied parameter (``PROSE.TXT``'s own ``$S``
+    marker, e.g. ``"Slashed"``, ``"Thrust"``) rather than hardcoded.
+    """
+
+    variant = pick_variant(_SWANGAT_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "[": opponent_name,
+        ">": f"{character_name}'s",
+        "$S": attack_method,
+    }
+    return render(variant, values, rng=rng)
 
 
 # HostAK/TP/PROSE/MARCH.X -- the Move action's own report line. See

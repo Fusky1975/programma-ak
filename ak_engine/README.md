@@ -4323,6 +4323,37 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_turn_report.py`, covering every function's variants,
     the `/S` sea marker, the stun-not-death 4th `MORTWOUN.X` line, and
     the attack+hit concatenation forming one complete sentence.
+- **Phase 113 (current)**: `report/turn_report.py render_melee_attack()`
+  -- `_LSwing: FD2('swangat',S_PCom,3)` -> `SWANGAT.X` (header `"11 1"`,
+  11 real templates), confirmed real while researching Phase 111 and
+  deliberately deferred there; the Melee sibling to `_LFArr`/`FARR.X`
+  (same "no trailing punctuation, caller concatenates" shape, meant to
+  chain into `render_attack_missed()`/`render_attack_hit()`/
+  `render_attack_devastating_hit()`, all already generic across attack
+  types).
+  - Uses `$S` (`PROSE.TXT`'s "Attack method" marker) but, unlike
+    `FARR.X`, not `^W` (weapon) -- `render_melee_attack()` takes
+    `attack_method` as an explicit caller-supplied parameter (e.g.
+    `"Slashed"`, `"Thrust"`) rather than hardcoding one value, since a
+    Melee weapon/verb genuinely varies by character, unlike Fire
+    Arrow's fixed "Fired". 1 of the 11 templates uses a literal
+    `assailed/attacked` verb choice instead of `$S` at all.
+  - Two templates have real, slightly unusual phrasing kept as-is
+    rather than "fixed": one never names the opponent via `[`, instead
+    calling them "your fearsome enemy"; another writes `['s defenses`
+    -- `[` immediately followed by a literal `'s` in the source text
+    itself (not `PROSE.TXT`'s own `]` possessive marker).
+  - No `/S` marker anywhere in this file (unlike `GOMEL.X`'s own
+    movement-to-melee-range templates, Phase 111) -- no `is_sea`
+    parameter. The raw `\x1a` byte at the file's very end is DOS's own
+    end-of-file marker, stripped during transcription, not preserved
+    as prose.
+  - Non-breaking: full suite passed unchanged (1763 passed) before any
+    new tests were written -- a new function with no existing call
+    sites. 5 new tests added (1768 passed total) in
+    `tests/test_turn_report.py`, covering variant selection, the `$S`
+    attack-method substitution, and concatenation with
+    `render_attack_missed()` forming one complete sentence.
 
 ## Setup
 
