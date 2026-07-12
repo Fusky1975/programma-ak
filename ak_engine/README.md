@@ -4035,6 +4035,38 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sites. 5 new tests added (1688 passed total) in
     `tests/test_turn_report.py`, covering all 3 variants, the `/S` sea
     marker, and the `^P` substitution.
+- **Phase 105 (current)**: `report/turn_report.py render_flee_failure()`/
+  `render_sneak_detected()` -- `HostAK/TP/PROSE/FLEEFAIL.X` and
+  `SNEAKUP.X`, both confirmed real, found finishing the Phase 104
+  investigation.
+  - `FLEEFAIL.X` (header `"4 1"`) is dispatched via `SAY.PAS`'s own
+    `_LCot: FD2('fleefail',S_PCom,3)`. `FD2` is a thin wrapper
+    (`FD2(fn,spl,dex) = FD(fn,spl,dex+5*ord(_attl<>bestldr))`) that still
+    routes through `FD`'s own `dex < 100` per-character pseudo-random
+    scheme (Phase 104's own finding) regardless of the `+5` offset --
+    `render_flee_failure()` reuses `pick_variant()` exactly like
+    `render_march()`. Every template is a complete, self-contained
+    sentence -- no trailing completion clause needed, unlike `SNEAKUP.X`.
+  - `SNEAKUP.X` (header `"4 1"`) is dispatched via `_LSeen`:
+    `FD('sneakup',S_PCom,7)`, immediately followed by a **separate**
+    story-code read (`Rint`) selecting one of three literal completion
+    clauses: `CASE Rint OF 0: Say(' melee range.',...); 1: Say(' bow
+    range.',...); 2: Say(' spell range.',...); END;`. Every one of
+    `SNEAKUP.X`'s own 4 templates ends mid-sentence with "at",
+    confirming they're meant to be immediately followed by one of these.
+    `render_sneak_detected()` takes the completed clause as an explicit
+    `range_suffix` parameter rather than guessing which of the three
+    applies -- this project has no source for what decides melee/bow/
+    spell range, the same caller-supplied-fact pattern as `is_sea`. The
+    three confirmed clauses are exported as `SNEAKUP_RANGE_MELEE`/
+    `SNEAKUP_RANGE_BOW`/`SNEAKUP_RANGE_SPELL` rather than inventing a new
+    enum with no Pascal source of its own.
+  - Non-breaking: full suite passed unchanged (1688 passed) before any
+    new tests were written -- two new functions with no existing call
+    sites. 9 new tests added (1697 passed total) in
+    `tests/test_turn_report.py`, covering all variants of both
+    functions, the `/S`/`^A` markers in `FLEEFAIL.X`, and all three
+    range-suffix completions in `SNEAKUP.X`.
 
 ## Setup
 

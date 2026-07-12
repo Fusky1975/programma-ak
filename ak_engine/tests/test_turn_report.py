@@ -5,6 +5,9 @@ import pytest
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.report.turn_report import (
+    SNEAKUP_RANGE_BOW,
+    SNEAKUP_RANGE_MELEE,
+    SNEAKUP_RANGE_SPELL,
     describe_battle,
     margin_bucket,
     parse_template_choices,
@@ -12,10 +15,12 @@ from ak_engine.report.turn_report import (
     render_battle_winner,
     render_column_clash,
     render_destroyed_army,
+    render_flee_failure,
     render_magic_feature_discovery,
     render_march,
     render_pursuit_and_destroy,
     render_retreat,
+    render_sneak_detected,
     render_spy_report_opening,
     render_uncontested_conquest,
 )
@@ -435,3 +440,80 @@ def test_render_march_resolves_optional_block_and_choice_marker():
     rng = ScriptedRandom([0.9, 0.9], choice_indices=[2])
     result = render_march("Arthur", "Numenor", "0304", rng)
     assert result == "Arthur moved into Numenor 0304 with Arthur's high-spirited army."
+
+
+# -- Phase 105: render_flee_failure (FLEEFAIL.X) + render_sneak_detected (SNEAKUP.X) --
+
+
+def test_render_flee_failure_first_variant():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
+    result = render_flee_failure("Arthur", "Grendel", rng)
+    assert result == "Arthur attempted to flee from the fight, but Grendel cornered Arthur."
+
+
+def test_render_flee_failure_second_variant_resolves_control_byte():
+    rng = ScriptedRandom([0.1] * 8, choice_indices=[1])
+    result = render_flee_failure("Arthur", "Grendel", rng)
+    assert result == (
+        "Arthur turned to flee from Grendel, but found that Arthur's path "
+        "of retreat had been magically blocked by a wall of fire."
+    )
+
+
+def test_render_flee_failure_third_variant_land():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[2])
+    result = render_flee_failure("Arthur", "Grendel", rng)
+    assert result == (
+        "Arthur ran from the melee, but slipped and fell.Arthur injured "
+        "Arthur's leg and could not escape!"
+    )
+
+
+def test_render_flee_failure_third_variant_sea():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[2])
+    result = render_flee_failure("Arthur", "Grendel", rng, is_sea=True)
+    assert result == (
+        "Arthur swam away from the melee, but scraped against a submerged "
+        "rock.Arthur injured Arthur's leg and could not escape!"
+    )
+
+
+def test_render_flee_failure_fourth_variant():
+    rng = ScriptedRandom([0.1] * 8, choice_indices=[3])
+    result = render_flee_failure("Arthur", "Grendel", rng)
+    assert result == (
+        "desiring only to escape from Arthur's vicious opponent, Arthur "
+        "ran like the wind.But Arthur was too tired and could not gain "
+        "ground on Grendel."
+    )
+
+
+def test_render_sneak_detected_first_variant_melee_range():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
+    result = render_sneak_detected("Arthur", "Grendel", SNEAKUP_RANGE_MELEE, rng)
+    assert result == "Arthur tried to sneak by Grendel, but was seen at melee range."
+
+
+def test_render_sneak_detected_second_variant_bow_range():
+    rng = ScriptedRandom([0.1] * 8, choice_indices=[1])
+    result = render_sneak_detected("Arthur", "Grendel", SNEAKUP_RANGE_BOW, rng)
+    assert result == (
+        "despite Arthur's caution, Arthur was detected by Grendel and "
+        "engaged at bow range."
+    )
+
+
+def test_render_sneak_detected_third_variant_spell_range():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[2])
+    result = render_sneak_detected("Arthur", "Grendel", SNEAKUP_RANGE_SPELL, rng)
+    assert result == (
+        "Arthur stole quietly up to the treasure of Grendel, but "
+        "unfortunately Arthur was noticed.Arthur had to encounter Grendel "
+        "at spell range."
+    )
+
+
+def test_render_sneak_detected_fourth_variant():
+    rng = ScriptedRandom([0.1] * 8, choice_indices=[3])
+    result = render_sneak_detected("Arthur", "Grendel", SNEAKUP_RANGE_BOW, rng)
+    assert result == "Arthur hoped to steal the treasures of Grendel but Grendel spotted Arthur at bow range."

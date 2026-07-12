@@ -179,10 +179,6 @@ source notation per this module's own established convention (see the
 
 **More real, confirmed `.X`/`.X2` findings surfaced but deliberately
 deferred**, each needing more design work than this phase's scope:
-``SNEAKUP.X``/``FLEEFAIL.X`` (Steal/Flee maneuver failure -- `SAY.PAS`
-confirms both, but each needs a trailing `CASE`-selected completion
-clause this project doesn't model yet: `_LSeen`'s own
-`CASE Rint OF 0: Say(' melee range.',...) ...` for `SNEAKUP.X`);
 ``RWENC.X`` (a "random encounter while traveling" narrative, `_LWEnc`);
 ``TACTICS.X2`` (a 9-level tactical-superiority bucket, `FD('...tactics
 .x2',S_Batt,Max(1001,Min(1009,1000+battac)))` -- structurally analogous
@@ -192,6 +188,39 @@ traced); ``NEMESIS.X2`` (`_ANem: FD('...nemesis.x2',S_Batt,1000+Rint)`
 project can trace, and the file's own content mixes recognizable
 `ArmyType` nemesis pairs with unmodeled monster types like "Dinosaurs",
 so no clean index scheme is asserted here).
+
+**Phase 105 addendum -- Steal/Flee maneuver failure.**
+``HostAK/TP/PROSE/FLEEFAIL.X`` and ``SNEAKUP.X``, both confirmed real,
+found finishing the Phase 104 investigation.
+
+- ``FLEEFAIL.X`` (header ``"4 1"``) is dispatched via `SAY.PAS`'s own
+  `_LCot: FD2('fleefail',S_PCom,3)`. `FD2` is a thin wrapper
+  (`FD2(fn,spl,dex) = FD(fn,spl,dex+5*ord(_attl<>bestldr))`) that still
+  routes through `FD`'s own `dex < 100` per-character pseudo-random
+  scheme (see the Phase 104 addendum above) regardless of the `+5`
+  offset -- both `dex=3` and `dex=8` are independent pseudo-random state
+  slots picking among the *same* 4 real template lines, not a wider
+  choice pool. `render_flee_failure()` therefore uses `pick_variant()`
+  exactly like `render_march()` does. Every template here is a complete,
+  self-contained sentence -- unlike `SNEAKUP.X` below, no trailing
+  completion clause is needed.
+- ``SNEAKUP.X`` (header ``"4 1"``) is dispatched via `_LSeen`:
+  `FD('sneakup',S_PCom,7)`, immediately followed by a **separate** story
+  -code read (`Rint`, not the same value driving the `FD` call itself)
+  selecting one of three literal completion clauses: `CASE Rint OF 0:
+  Say(' melee range.',S_PCom); 1: Say(' bow range.',S_PCom); 2:
+  Say(' spell range.',S_PCom); END;`. Every one of `SNEAKUP.X`'s own 4
+  templates ends mid-sentence with the word "at", confirming they're
+  meant to be immediately followed by one of these three clauses.
+  `render_sneak_detected()` takes the completed clause as an explicit
+  parameter (`range_suffix`) rather than guessing which of the three
+  applies -- this project has no source for what decides melee/bow/spell
+  range, the same category of caller-supplied fact as `is_sea`. The
+  three confirmed clauses are exported as
+  `SNEAKUP_RANGE_MELEE`/`SNEAKUP_RANGE_BOW`/`SNEAKUP_RANGE_SPELL` for
+  callers to pick from, rather than inventing a new enum with no Pascal
+  source of its own (`Rint`'s own 0/1/2 values are a bare `CASE`, not a
+  named type anywhere in the available source).
 """
 
 from __future__ import annotations
@@ -665,3 +694,81 @@ def render_march(
         ">": f"{character_name}'s",
     }
     return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/PROSE/FLEEFAIL.X -- a failed Flee maneuver. See module
+# docstring's Phase 105 addendum.
+_FLEEFAIL_TEMPLATES: list[str] = [
+    "< attempted/Rtried to flee from the fight/Rcombat, but [1 {cleverly }cornered <2.",
+    "< turned {around so as }to flee from [, but found/Rsaw that > "
+    "path_of_retreat/Rretreat_route had been magically blocked by ^A "
+    "wall/Rcurtain of fire/Rshimmering_force.",
+    "< ran/Sswam_away from the melee/Rcombat, but "
+    "slipped_and_fell/Sscraped_against_a_submerged_rock.< injured > "
+    "leg/Rankle and could not escape/Rget_away!",
+    "desiring_only/RHoping to escape from > vicious/Rterrible "
+    "opponent/Rfoe, < ran/Sswam like the_wind/Sa_crazed_shark.But < was "
+    "too_tired/Rexhausted and{, even with great effort,} could not gain "
+    "{any }ground/Sdistance on [.",
+]
+
+
+def render_flee_failure(
+    fleeing_character: str, opponent_name: str, rng: random.Random, *, is_sea: bool = False
+) -> str:
+    """Renders FLEEFAIL.X's sentence for a failed Flee maneuver (an
+    encounter's ``Maneuver.FLEE``). ``is_sea`` (Phase 74) resolves the
+    "/S" marker 2 of the 4 variants carry.
+    """
+
+    variant = pick_variant(_FLEEFAIL_TEMPLATES, rng)
+    values = {
+        "<": fleeing_character,
+        "<2": fleeing_character,
+        "[": opponent_name,
+        "[1": opponent_name,
+        ">": f"{fleeing_character}'s",
+    }
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/PROSE/SNEAKUP.X -- a failed Steal maneuver, caught mid-theft.
+# Every template ends mid-sentence with "at", completed by one of these
+# three confirmed range clauses (see module docstring's Phase 105
+# addendum for why the choice among them isn't made here).
+SNEAKUP_RANGE_MELEE = " melee range."
+SNEAKUP_RANGE_BOW = " bow range."
+SNEAKUP_RANGE_SPELL = " spell range."
+
+_SNEAKUP_TEMPLATES: list[str] = [
+    "< tried to sneak by [, but was seen/Rdetected at",
+    "despite > {great/Rremarkable }caution/Rstealth, < was "
+    "detected/Rperceived by [ {before anything/Rany_treasure could be "
+    "stolen/Rtaken }and engaged at",
+    "< stole quietly/Rsilently up to the treasure of [, but "
+    "unfortunately < was noticed/Rseen.< had to encounter [ at",
+    "< hoped/Rtried to steal/Rtake the {great/Rvaluable }treasures of [ "
+    "{without being noticed/Rseen, }but [1 spotted/Rnoticed < at",
+]
+
+
+def render_sneak_detected(
+    character_name: str, opponent_name: str, range_suffix: str, rng: random.Random
+) -> str:
+    """Renders SNEAKUP.X's sentence for a failed Steal maneuver, caught
+    mid-theft. ``range_suffix`` completes the sentence -- pass one of
+    ``SNEAKUP_RANGE_MELEE``/``SNEAKUP_RANGE_BOW``/``SNEAKUP_RANGE_SPELL``
+    (the three confirmed clauses `SAY.PAS`'s own dispatch selects
+    between; this project has no source for which situational fact picks
+    one over the others, the same caller-supplied-fact pattern as
+    ``is_sea``).
+    """
+
+    variant = pick_variant(_SNEAKUP_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "[": opponent_name,
+        "[1": opponent_name,
+        ">": f"{character_name}'s",
+    }
+    return render(variant, values, rng=rng) + range_suffix
