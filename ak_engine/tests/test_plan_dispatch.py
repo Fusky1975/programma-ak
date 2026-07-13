@@ -13,6 +13,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.turn.army_list_decode import ArmyListRequest
 from ak_engine.turn.combat import Quality
@@ -36,7 +37,7 @@ from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
 from ak_engine.turn.trail_execution import TrailExecutionResult
-from ak_engine.turn.use_mi_decode import UseMIRequest
+from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
 BOARD_WIDTH = 10
@@ -339,15 +340,31 @@ def test_real_move_file_leader_cast_phase_dispatches():
     assert state.leaders[78].kingdom_id == 1
 
 
-def test_dispatch_use_mi_is_decode_only():
+def test_dispatch_use_mi_reports_an_unowned_item_id():
+    # Phase 141: USE_MI now actually executes -- an item id nobody in
+    # this GameState.items registry actually owns fails cleanly instead
+    # of just handing back the raw decoded request.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P0", action=ActionCode.USE_MI, obj=31, extra=[97])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, UseMIRequest)
-    assert result.item_instance_id == 31
-    assert result.target == 97
+    assert isinstance(result, UseMIExecutionResult)
+    assert result.applied is False
+    assert result.reason == "item not found"
+
+
+def test_dispatch_use_mi_reads_a_real_skill_book():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    item = state.add_item(Treasure.BOOK_MELEE, owner_leader_id=LEADER_ID)
+    phase = PlanPhase(label="P0", action=ActionCode.USE_MI, obj=item.item_id, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, UseMIExecutionResult)
+    assert result.applied is True
+    assert result.ability_boosted is Ability.MELEE
+    assert item.item_id not in state.items
 
 
 def test_dispatch_challenge_executes_and_reports_target_not_found():

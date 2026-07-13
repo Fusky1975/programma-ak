@@ -78,6 +78,20 @@ strength bonus): fall back to level 0 (no effect), the same "no data ->
 no numeric effect" convention ``turn/battle_orchestrator.py``'s
 ``compute_druidic_shortfall`` already uses, not a guessed level -- see
 ``_caster_level``.
+
+**``wand_skill_level`` (Phase 141)**: every one of the 20 spell-casting
+wands (``models/treasure.py Treasure.SPELL_WAND``) has its own
+``TREASAB.X2`` label reading ``"Cast '<Spell>' at skill-2"`` -- e.g.
+``Treasure.WAND_FIREBALL``'s own ``TREASURE_LABEL`` entry, transcribed
+verbatim in Phase 77. Combined with rulebook [3.11]'s "A spell cast
+from a magic item is automatically successful," a wand-triggered cast
+is a genuinely different mechanic from a real Cast order: no success
+roll at all, and every level-dependent magnitude computed as if the
+caster had exactly skill level 2 in the relevant ability, regardless of
+what (if anything) ``LeaderState.skills`` actually records. ``turn/
+use_mi_execution.py`` (Phase 141) is the only caller that ever passes
+this; every existing Cast caller/test leaves it ``None`` and gets the
+prior behavior unchanged.
 """
 
 from __future__ import annotations
@@ -151,6 +165,7 @@ def execute_cast(
     rng: random.Random | None = None,
     *,
     board_width: int = NORMAL_MAP_BOUNDS[0],
+    wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Apply a decoded Cast request to ``state``, for the spells this project can execute.
 
@@ -159,45 +174,55 @@ def execute_cast(
     data recorded (see the module docstring's success-roll section) --
     every existing caller/test that doesn't set it is unaffected.
     ``board_width`` only matters for the province-targeted spells; every
-    other spell ignores it.
+    other spell ignores it. ``wand_skill_level`` is Phase 141's own
+    Use_MI wand-cast override -- see the module docstring's own
+    "wand_skill_level" section; ``None`` (every existing caller) leaves
+    this function's prior behavior unchanged.
     """
 
     rng = rng if rng is not None else random.Random()
     spell = request.spell
 
     if spell is Spell.CHARM:
-        return _execute_charm(state, kingdom_id, leader_id, request, rng)
+        return _execute_charm(state, kingdom_id, leader_id, request, rng, wand_skill_level)
     if spell is Spell.KILL_ENEMY:
-        return _execute_kill_enemy(state, leader_id, request, rng)
+        return _execute_kill_enemy(state, leader_id, request, rng, wand_skill_level)
     if spell is Spell.RESURRECTION:
-        return _execute_resurrection(state, kingdom_id, leader_id, request, rng)
+        return _execute_resurrection(state, kingdom_id, leader_id, request, rng, wand_skill_level)
     if spell is Spell.PART_SEA:
-        return _execute_part_sea(state, leader_id, request, rng, board_width)
+        return _execute_part_sea(state, leader_id, request, rng, board_width, wand_skill_level)
     if spell is Spell.FLOOD:
-        return _execute_flood(state, leader_id, request, rng, board_width)
+        return _execute_flood(state, leader_id, request, rng, board_width, wand_skill_level)
     if spell is Spell.TORNADO:
-        return _execute_tornado(state, leader_id, request, rng, board_width)
+        return _execute_tornado(state, leader_id, request, rng, board_width, wand_skill_level)
     if spell is Spell.EARTHQUAKE:
-        return _execute_earthquake(state, leader_id, request, rng, board_width)
+        return _execute_earthquake(state, leader_id, request, rng, board_width, wand_skill_level)
     if spell is Spell.BLESS:
-        return _execute_bless(state, leader_id, request, rng, board_width)
+        return _execute_bless(state, leader_id, request, rng, board_width, wand_skill_level)
     if spell is Spell.ILLUS_TERRAIN:
-        return _execute_illus_terrain(state, leader_id, request, rng, board_width)
+        return _execute_illus_terrain(state, leader_id, request, rng, board_width, wand_skill_level)
     if spell is Spell.ILLUS_ARMIES:
-        return _execute_illus_armies(state, leader_id, request, rng)
+        return _execute_illus_armies(state, leader_id, request, rng, wand_skill_level)
     if spell is Spell.ORATORY:
-        return _execute_oratory(state, leader_id, request, rng)
+        return _execute_oratory(state, leader_id, request, rng, wand_skill_level)
     if spell is Spell.PLAGUE:
-        return _execute_plague(state, leader_id, request, rng, board_width)
+        return _execute_plague(state, leader_id, request, rng, board_width, wand_skill_level)
     if spell is Spell.SKELETAL_ARMY:
-        return _execute_skeletal_army(state, kingdom_id, leader_id, request, rng)
+        return _execute_skeletal_army(state, kingdom_id, leader_id, request, rng, wand_skill_level)
 
     return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
 
 
-def _roll_cast_success(caster: LeaderState, spell: Spell, rng: random.Random) -> tuple[bool, str | None]:
-    """Rulebook [3.10]: 15% + 15%/level, requiring skill >= 1. See module docstring for the ``skills is None`` fallback."""
+def _roll_cast_success(
+    caster: LeaderState, spell: Spell, rng: random.Random, wand_skill_level: int | None = None
+) -> tuple[bool, str | None]:
+    """Rulebook [3.10]: 15% + 15%/level, requiring skill >= 1. See module docstring for the
+    ``skills is None`` fallback and the ``wand_skill_level`` override
+    (rulebook [3.11]: a wand-triggered cast is always successful).
+    """
 
+    if wand_skill_level is not None:
+        return True, None
     if caster.skills is None:
         return True, None
 
@@ -211,11 +236,14 @@ def _roll_cast_success(caster: LeaderState, spell: Spell, rng: random.Random) ->
     return False, "spell failed"
 
 
-def _caster_level(caster: LeaderState, ability: Ability) -> int:
+def _caster_level(caster: LeaderState, ability: Ability, wand_skill_level: int | None = None) -> int:
     """Real skill level if recorded, else 0 -- see module docstring's "level-dependent
-    magnitudes" section.
+    magnitudes" section. ``wand_skill_level``, when given, overrides
+    unconditionally (Phase 141: a wand always casts "at skill-2").
     """
 
+    if wand_skill_level is not None:
+        return wand_skill_level
     if caster.skills is None:
         return 0
     return caster.skills.pair_for_ability(ability)[0]
@@ -241,7 +269,12 @@ def _resolve_province_target(state: GameState, caster: LeaderState, target_numbe
 
 
 def _execute_charm(
-    state: GameState, kingdom_id: int, leader_id: int, request: CastRequest, rng: random.Random
+    state: GameState,
+    kingdom_id: int,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Rulebook [4.22.1]: "a Hero in the same province" -- see module docstring for why
     this differs from Hire (no "must already be independent" requirement).
@@ -254,7 +287,7 @@ def _execute_charm(
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -263,7 +296,7 @@ def _execute_charm(
 
 
 def _execute_kill_enemy(
-    state: GameState, leader_id: int, request: CastRequest, rng: random.Random
+    state: GameState, leader_id: int, request: CastRequest, rng: random.Random, wand_skill_level: int | None = None
 ) -> CastExecutionResult:
     caster = state.leaders[leader_id]
     target = state.leaders.get(request.target)
@@ -272,7 +305,7 @@ def _execute_kill_enemy(
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -281,7 +314,12 @@ def _execute_kill_enemy(
 
 
 def _execute_resurrection(
-    state: GameState, kingdom_id: int, leader_id: int, request: CastRequest, rng: random.Random
+    state: GameState,
+    kingdom_id: int,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Rulebook [4.21.1]: "a character in the same province as a dead one can attempt to
     bring him back to life... with all his Talents but not the items he
@@ -302,7 +340,7 @@ def _execute_resurrection(
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -313,7 +351,12 @@ def _execute_resurrection(
 
 
 def _execute_part_sea(
-    state: GameState, leader_id: int, request: CastRequest, rng: random.Random, board_width: int
+    state: GameState,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    board_width: int,
+    wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Rulebook [4.21.2]: "a Sea province is transformed into a Plain for the rest of
     the turn... only the caster's own province, or one adjacent to it,
@@ -327,7 +370,7 @@ def _execute_part_sea(
     if province.terrain is not Terrain.SEA:
         return CastExecutionResult(request, applied=False, reason="target province is not Sea")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -336,7 +379,12 @@ def _execute_part_sea(
 
 
 def _execute_flood(
-    state: GameState, leader_id: int, request: CastRequest, rng: random.Random, board_width: int
+    state: GameState,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    board_width: int,
+    wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Rulebook [4.24.1]: "can only be cast on the non-mountain land province you're in,
     or one adjacent to it, turning it into Sea." The secondary "land
@@ -354,7 +402,7 @@ def _execute_flood(
     if province.terrain not in _FLOOD_ELIGIBLE_TERRAIN:
         return CastExecutionResult(request, applied=False, reason="target province is not a non-mountain land province")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -363,7 +411,12 @@ def _execute_flood(
 
 
 def _execute_tornado(
-    state: GameState, leader_id: int, request: CastRequest, rng: random.Random, board_width: int
+    state: GameState,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    board_width: int,
+    wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Rulebook [4.24.2]: "cast on an enemy province you're in or adjacent to it: every
     unit present (even your own or allied ones) has a 10%-per-mage-level
@@ -377,11 +430,11 @@ def _execute_tornado(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
-    chance = TORNADO_DESTROY_CHANCE_PER_LEVEL * _caster_level(caster, Ability.ELEMENTAL)
+    chance = TORNADO_DESTROY_CHANCE_PER_LEVEL * _caster_level(caster, Ability.ELEMENTAL, wand_skill_level)
     for army in list(state.armies_at(coord)):
         if rng.random() < chance:
             state.remove_army(army.army_id)
@@ -389,7 +442,12 @@ def _execute_tornado(
 
 
 def _execute_earthquake(
-    state: GameState, leader_id: int, request: CastRequest, rng: random.Random, board_width: int
+    state: GameState,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    board_width: int,
+    wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Rulebook [4.24.3]: "zeroes the tax revenue of an enemy land province you're in or
     adjacent to it, for one turn." "Not cumulative" -- stored as a
@@ -404,7 +462,7 @@ def _execute_earthquake(
     if province.terrain is Terrain.SEA:
         return CastExecutionResult(request, applied=False, reason="target province is not land")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -413,7 +471,12 @@ def _execute_earthquake(
 
 
 def _execute_bless(
-    state: GameState, leader_id: int, request: CastRequest, rng: random.Random, board_width: int
+    state: GameState,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    board_width: int,
+    wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Rulebook [4.21.3]: "the tax revenue of any province on the map (regardless of
     where the caster is) is increased 60% for one turn. Repeated casts
@@ -437,13 +500,13 @@ def _execute_bless(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
     province.tax_modifier_percent = BLESS_TAX_BONUS_PERCENT
 
-    cleanup_level = _caster_level(caster, Ability.WHITE)
+    cleanup_level = _caster_level(caster, Ability.WHITE, wand_skill_level)
     cleanup_chance = BLESS_GRAVEYARD_CLEAR_BASE_CHANCE + BLESS_GRAVEYARD_CLEAR_CHANCE_PER_LEVEL * cleanup_level
     if rng.random() < cleanup_chance:
         state.battle_graveyard.pop(coord, None)
@@ -452,7 +515,12 @@ def _execute_bless(
 
 
 def _execute_illus_terrain(
-    state: GameState, leader_id: int, request: CastRequest, rng: random.Random, board_width: int
+    state: GameState,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    board_width: int,
+    wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Rulebook [4.23.1]: "makes the province you're in (or one adjacent) appear to be a
     different terrain type of your choosing, to anyone examining it from
@@ -470,7 +538,7 @@ def _execute_illus_terrain(
     if not isinstance(request.terrain, Terrain):
         return CastExecutionResult(request, applied=False, reason="fake terrain not specified")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -478,7 +546,9 @@ def _execute_illus_terrain(
     return CastExecutionResult(request, applied=True)
 
 
-def _execute_illus_armies(state: GameState, leader_id: int, request: CastRequest, rng: random.Random) -> CastExecutionResult:
+def _execute_illus_armies(
+    state: GameState, leader_id: int, request: CastRequest, rng: random.Random, wand_skill_level: int | None = None
+) -> CastExecutionResult:
     """Rulebook [4.23.2] (Phantasmal Armies): "summons phantom armies that travel with
     him (or with a co-located character) for the rest of the turn,
     increasing the strength of the units he commands 15% per skill
@@ -495,15 +565,17 @@ def _execute_illus_armies(state: GameState, leader_id: int, request: CastRequest
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
-    target.phantasmal_armies_level = _caster_level(caster, Ability.ILLUSION)
+    target.phantasmal_armies_level = _caster_level(caster, Ability.ILLUSION, wand_skill_level)
     return CastExecutionResult(request, applied=True)
 
 
-def _execute_oratory(state: GameState, leader_id: int, request: CastRequest, rng: random.Random) -> CastExecutionResult:
+def _execute_oratory(
+    state: GameState, leader_id: int, request: CastRequest, rng: random.Random, wand_skill_level: int | None = None
+) -> CastExecutionResult:
     """Rulebook [4.22.2]: "cast on yourself or a co-located character: every unit he
     commands is heartened and its rank rises one level for the rest of
     the turn (Green becomes Average, Average becomes Veteran, and so
@@ -521,7 +593,7 @@ def _execute_oratory(state: GameState, leader_id: int, request: CastRequest, rng
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -533,7 +605,12 @@ def _execute_oratory(state: GameState, leader_id: int, request: CastRequest, rng
 
 
 def _execute_plague(
-    state: GameState, leader_id: int, request: CastRequest, rng: random.Random, board_width: int
+    state: GameState,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    board_width: int,
+    wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Rulebook [4.25.3]: "cast on a province you're in or adjacent to it: every unit
     there has a 10%+10%/level chance of being destroyed. Only the four
@@ -550,11 +627,13 @@ def _execute_plague(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
-    chance = PLAGUE_BASE_DESTROY_CHANCE + PLAGUE_DESTROY_CHANCE_PER_LEVEL * _caster_level(caster, Ability.NECROMANCY)
+    chance = PLAGUE_BASE_DESTROY_CHANCE + PLAGUE_DESTROY_CHANCE_PER_LEVEL * _caster_level(
+        caster, Ability.NECROMANCY, wand_skill_level
+    )
     for army in list(state.armies_at(coord)):
         if army.kingdom_id is None:
             continue
@@ -566,7 +645,12 @@ def _execute_plague(
 
 
 def _execute_skeletal_army(
-    state: GameState, kingdom_id: int, leader_id: int, request: CastRequest, rng: random.Random
+    state: GameState,
+    kingdom_id: int,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Rulebook [4.25.1] (Phase 60): "if the caster is in a province where a battle
     was previously fought and armies were destroyed, he can recruit a
@@ -598,11 +682,11 @@ def _execute_skeletal_army(
     if not graveyard:
         return CastExecutionResult(request, applied=False, reason="no dead units in this province to raise")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng)
+    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
-    raised_count = min(_caster_level(caster, Ability.NECROMANCY), len(graveyard))
+    raised_count = min(_caster_level(caster, Ability.NECROMANCY, wand_skill_level), len(graveyard))
     for _ in range(raised_count):
         entry = graveyard.pop()
         state.add_army(

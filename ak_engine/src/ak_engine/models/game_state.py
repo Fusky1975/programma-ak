@@ -349,6 +349,17 @@ class GameState:
 
         return [item for item in self.items.values() if item.owner_leader_id == leader_id]
 
+    def remove_item(self, item_id: int) -> None:
+        """Removes an item instance from play -- a self-consuming Skill Book's own fate
+        after ``turn/use_mi_execution.py`` reads it (rulebook [5.9]; the
+        Pascal source has no explicit "delete" analogue, but a consumed
+        book has no owner and no further use, so dropping it from the
+        registry entirely is the natural mirror of ``remove_army()``'s
+        own "gone, not just unowned" convention).
+        """
+
+        self.items.pop(item_id, None)
+
     def transfer_item(self, item_id: int, new_owner_leader_id: int | None) -> None:
         """Reassign an item instance's owner -- mirrors a direct Pascal ``trowner[tn]:=
         ...`` assignment (e.g. Give's item path, or ``REPORTS.PAS``'s own

@@ -5276,6 +5276,53 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     the `execute_give()` test rewrite from a caller-flag scenario to a
     real ownership one) before the new Phase 140 tests were written. 8
     new tests added (1999 passed total) in `tests/test_game_state.py`.
+- **Phase 141 (current)**: `turn/use_mi_execution.py` (new) --
+  `execute_use_mi()`, the real consumer Phase 140's item-ownership
+  registry unblocked (per that phase's own "still not attempted" note).
+  Resolves `UseMIRequest.item_instance_id` against `GameState.items`,
+  requires the acting leader to actually own it, and dispatches by
+  `TreasureCategory`:
+  - **The 20 spell-casting wands** dispatch into `turn/
+    cast_execution.py execute_cast()` for the mapped `Spell`
+    (`TREASURE_WAND_SPELL`), via a new `wand_skill_level` parameter
+    threaded through `execute_cast()` and all 13 of its `_execute_*`
+    spell helpers. Two real, sourced mechanical differences from an
+    ordinary Cast: rulebook [3.11] ("A spell cast from a magic item is
+    automatically successful" -- no roll at all), and `TREASAB.X2`'s
+    own label for every one of the 20 wands reading `"Cast '<Spell>' at
+    skill-2"` (Phase 77's own transcription) -- every level-dependent
+    magnitude (Tornado's/Plague's destroy chance, Illus_Armies'
+    strength bonus, Bless's graveyard-cleanup chance, Skeletal_Army's
+    raised-army count) uses a fixed skill level of 2 regardless of the
+    caster's own recorded `LeaderState.skills`. A wand isn't consumed
+    by a single cast -- `ItemInstance.charges` is read but not
+    decremented, since no Pascal source for the actual per-cast charge
+    spend is in the available archive either; an honest gap, not a
+    silent zero-cost assumption.
+  - **The 15 one-shot skill books** apply a direct, self-consuming +1
+    to the mapped `Ability` (`TREASURE_BOOK_ABILITY`) on the reader's
+    own `LeaderState.skills` (creating a fresh all-zero `SkillTable`
+    first if none was recorded, the same convention `turn/
+    practice_execution.py` already established), clamped to
+    `skillrange`'s own real ceiling of 9 (`CTBOTH.PAS`), then the item
+    is removed from `GameState.items` entirely via the new
+    `GameState.remove_item()` -- "self-consuming" read literally.
+  - **Every other category** (passive ability items, combat/leadership
+    weapons, anti-magic amulets, monster-command items, gold hoards,
+    quest items, the sentinel, named uniques, unused extension slots)
+    fails with a clear "operates automatically" reason -- never a
+    legitimate Use_MI target per [5.9].
+  - Wired into `turn/plan_dispatch.py` (`_dispatch_use_mi`), replacing
+    the previous bare `decode_use_mi_phase()` return. Zero real Use_MI
+    phases exist in any of the 10 sample files, so this stays
+    unvalidated against real data -- same situation Fire and Trade were
+    in before their own executors landed.
+  - Non-breaking: full suite passed unchanged (1999 passed, after
+    updating `test_plan_dispatch.py`'s own stale "decode-only" USE_MI
+    assertion to match the new real-execution return type) before the
+    new Phase 141 tests were written. 10 new tests added (2009 passed
+    total): 9 in `tests/test_use_mi_execution.py` (new file) plus 1
+    more real-dispatch test in `tests/test_plan_dispatch.py`.
 
 ## Setup
 

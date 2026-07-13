@@ -166,17 +166,22 @@ to dispatch automatically:
   turn** (Phase 32, see below) -- Resurrection's own embedded plans (real
   samples have some) now dispatch too whenever the revival actually
   succeeds, no longer unconditionally suppressed.
-- **USE_MI** is decode-only (Phase 24): ``obj`` decodes to a global
-  item-*instance* id via ``turn/use_mi_decode.py`` -- structurally
-  different from Cast's ``obj``, which is a self-describing ``Spell``
-  ordinal. Use_MI's ``obj`` can't be resolved to "what item this is"
-  from the move file alone: it's a lookup key into a per-game item
-  registry (which type each instance is, who holds it, its remaining
-  charges) that this project has no way to reconstruct, since the
-  Pascal source describing how item instances come into existence
-  (loot/world generation) isn't in the available source tree. Zero real
-  Use_MI phases exist in any of the 10 sample files either -- see that
-  module's docstring for the full reasoning.
+- **USE_MI now actually executes (decoded Phase 24, executed Phase
+  141)**: ``obj`` decodes to a global item-*instance* id via ``turn/
+  use_mi_decode.py`` -- structurally different from Cast's ``obj``,
+  which is a self-describing ``Spell`` ordinal. Phase 140's
+  ``GameState.items`` registry (``models/item.py ItemInstance``) closed
+  the "can't reconstruct which item this is" gap this paragraph used to
+  describe; ``turn/use_mi_execution.py execute_use_mi()`` resolves the
+  id against that registry, requires the acting leader to actually own
+  it, and dispatches the 20 spell-wand ordinals into ``turn/
+  cast_execution.py execute_cast()`` (automatically successful, cast
+  "at skill-2" per rulebook [3.11] and ``TREASAB.X2``'s own wand
+  labels) or the 15 skill-book ordinals into a direct, self-consuming
+  ``LeaderState.skills`` +1 -- see that module's own docstring for the
+  full mechanic. Zero real Use_MI phases exist in any of the 10 sample
+  files, so this stays unvalidated against real data (same situation as
+  Fire and Trade before their own executors landed).
 - **CHALLENGE** and **PURSUE** actually execute (decoded Phase 25,
   executed Phase 54): ``turn/challenge_pursue_decode.py`` decodes both
   from the exact same wire format as Search (``DEF2.PAS``'s shared
@@ -337,6 +342,7 @@ from ak_engine.turn.trade_execution import TradeExecutionResult, execute_give
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, execute_trail
 from ak_engine.turn.use_mi_decode import decode_use_mi_phase
+from ak_engine.turn.use_mi_execution import UseMIExecutionResult, execute_use_mi
 
 SUPPORTED_ACTIONS = frozenset(
     {
@@ -473,7 +479,7 @@ def dispatch_phase(
         return _dispatch_cast(phase, state, kingdom_id, leader_id, rng, board_width)
 
     if action is ActionCode.USE_MI:
-        return decode_use_mi_phase(phase)
+        return _dispatch_use_mi(phase, state, kingdom_id, leader_id, rng, board_width)
 
     if action is ActionCode.CHALLENGE:
         return _dispatch_challenge(phase, state, leader_id, rng)
@@ -515,6 +521,13 @@ def _dispatch_cast(
 ) -> CastExecutionResult:
     request = decode_cast_phase(phase)
     return execute_cast(state, kingdom_id, leader_id, request, rng, board_width=board_width)
+
+
+def _dispatch_use_mi(
+    phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int, rng: random.Random | None, board_width: int
+) -> UseMIExecutionResult:
+    request = decode_use_mi_phase(phase)
+    return execute_use_mi(state, kingdom_id, leader_id, request, rng, board_width=board_width)
 
 
 def _dispatch_challenge(
