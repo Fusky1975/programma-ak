@@ -105,6 +105,7 @@ from ak_engine.report.turn_report import (
     render_cast_announcement,
     render_practice_already_maxed,
     render_practice_tutored,
+    render_skill_book_read,
     render_pursuit_and_destroy,
     render_quest_errand_thanks,
     render_quest_fled_in_fear,
@@ -2237,15 +2238,34 @@ def test_describe_use_mi_renders_nothing_when_the_wand_cast_fizzled():
     assert line is None
 
 
-def test_describe_use_mi_renders_nothing_for_a_skill_book():
-    # No sourced SAY.PAS narrative exists for reading a skill book -- see
-    # describe_use_mi()'s own docstring.
+def test_describe_use_mi_renders_nothing_for_a_skill_book_without_names():
+    # No sourced SAY.PAS narrative exists for reading a skill book, and
+    # without book_name/ability_name there's nothing to fill the
+    # project-original template with either -- see describe_use_mi()'s
+    # own docstring.
     result = UseMIExecutionResult(applied=True, ability_boosted=Ability.MELEE)
     rng = ScriptedRandom([])
 
     line = describe_use_mi(result, caster_name="Aldric", rng=rng)
 
     assert line is None
+
+
+def test_describe_use_mi_renders_the_project_original_skill_book_sentence():
+    result = UseMIExecutionResult(applied=True, ability_boosted=Ability.MELEE)
+    rng = ScriptedRandom([])
+
+    line = describe_use_mi(
+        result, caster_name="Aldric", rng=rng, book_name="Hannibal's Grimoire", ability_name="Melee"
+    )
+
+    assert line == "Aldric read the Hannibal's Grimoire and Aldric's Melee increased by one level!"
+
+
+def test_render_skill_book_read():
+    rng = ScriptedRandom([])
+    result = render_skill_book_read("Aldric", "Hannibal's Grimoire", "Melee", rng)
+    assert result == "Aldric read the Hannibal's Grimoire and Aldric's Melee increased by one level!"
 
 
 def test_describe_use_mi_renders_nothing_on_failure():

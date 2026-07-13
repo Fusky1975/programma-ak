@@ -5489,7 +5489,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2041 passed) before the
     new Phase 146 tests were written. 4 new tests added (2045 passed
     total) in `tests/test_turn_report.py`.
-- **Phase 147 (current)**: `report/turn_report.py describe_pursue()` +
+- **Phase 147**: `report/turn_report.py describe_pursue()` +
   `describe_trail()` (both new) -- sixth and seventh slices of the
   report-assembler thread, consuming `turn/pursue_execution.py
   PursueExecutionResult` (Phase 51/53) and `turn/trail_execution.py
@@ -5518,6 +5518,33 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2045 passed) before the
     new Phase 147 tests were written. 6 new tests added (2051 passed
     total) in `tests/test_turn_report.py`.
+- **Phase 148 (current)**: `report/turn_report.py render_skill_book_read()`
+  (new), unblocking `describe_use_mi()`'s own skill-book branch, left
+  rendering `None` since Phase 146.
+  - **Project-original, not sourced from `SAY.PAS`/`RUMORS.PAS`**:
+    Phase 146's own research (see that entry above) confirmed no real
+    template exists anywhere in the available archive for the
+    skill-book-read moment. Per the user's own explicit request and
+    exact wording after that research came back empty ("legge il libro
+    e la sua abilità aumenta di un livello"), this phase adds one --
+    `SKILL_BOOK_READ_TEMPLATE = "< read the \\ and > ^ increased by one
+    level!"`, using the same `\\` (Magic Item)/`^` (Ability name)
+    markers `render_item_give()`/`render_practice_tutored()` already
+    use. Documented in both the template's own comment and
+    `describe_use_mi()`'s docstring as the one line in this module that
+    isn't a transcription of anything in `HostAK/TP/PROSE/` -- the same
+    "explicitly documented as an unsourced design choice" convention
+    this project's own standing instructions require whenever a gap is
+    filled without a source.
+  - `describe_use_mi()`'s skill-book branch now renders it, but only
+    when the caller supplies both new `book_name`/`ability_name`
+    keyword arguments -- without either, it still renders nothing (the
+    same "caller supplies what state can't determine" convention every
+    composer here already follows).
+  - Non-breaking: full suite passed unchanged (2051 passed) before the
+    new Phase 148 tests were written. 2 new tests added (one existing
+    Phase 146 test renamed for clarity, not counted as new) (2053
+    passed total) in `tests/test_turn_report.py`.
 
 ## Setup
 

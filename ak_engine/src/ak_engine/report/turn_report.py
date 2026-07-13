@@ -1926,6 +1926,32 @@ def describe_cast(
     )
 
 
+# **Project-original, not sourced from SAY.PAS/RUMORS.PAS** (Phase 148):
+# the skill-book-read moment (see ``describe_use_mi()``'s own docstring
+# for the full research trail confirming no real template exists
+# anywhere in the archive). Added on the user's own explicit request and
+# exact wording ("<character> legge il <book> e la sua abilità aumenta
+# di un livello!") after that research came back empty, the same
+# "explicitly documented as an unsourced design choice" convention this
+# project's own standing instructions require whenever a gap is filled
+# without a source -- unlike every other template in this module, this
+# one is *not* a transcription of anything in ``HostAK/TP/PROSE/``.
+SKILL_BOOK_READ_TEMPLATE = "< read the \\ and > ^ increased by one level!"
+
+
+def render_skill_book_read(character_name: str, book_name: str, ability_name: str, rng: random.Random) -> str:
+    """Renders the project-original skill-book-read sentence -- see
+    ``SKILL_BOOK_READ_TEMPLATE``'s own comment for why this one isn't a
+    real ``SAY.PAS``/``RUMORS.PAS`` transcription. ``book_name`` is
+    ``PROSE.TXT``'s own ``\\`` (Magic Item) marker; ``ability_name`` is
+    its own ``^`` (Ability name) marker, the same two markers
+    ``render_item_give()``/``render_practice_tutored()`` already use.
+    """
+
+    values = {"<": character_name, ">": f"{character_name}'s", "\\": book_name, "^": ability_name}
+    return render(SKILL_BOOK_READ_TEMPLATE, values, rng=rng)
+
+
 def describe_use_mi(
     result: UseMIExecutionResult,
     *,
@@ -1935,6 +1961,8 @@ def describe_use_mi(
     province_name: str | None = None,
     terrain_name: str | None = None,
     army_names: list[str] | None = None,
+    book_name: str | None = None,
+    ability_name: str | None = None,
 ) -> str | None:
     """Compose Use_MI's own turn-report line from an already-computed
     ``UseMIExecutionResult`` (Phase 141), fifth slice of the
@@ -1947,8 +1975,8 @@ def describe_use_mi(
     narrative a top-level Cast order gets (``wand_skill_level``, Phase
     141, only changes the *mechanics*, not which sentence is rendered).
 
-    Skill-book use (``result.ability_boosted is not None``) always
-    returns ``None`` -- confirmed no source in the available archive.
+    Skill-book use (``result.ability_boosted is not None``): Phase 146's
+    own research confirmed no real source exists for this moment.
     `TREASAB.X2`'s own book labels (e.g. "+1 Melee when read",
     ``models/treasure.py TREASURE_LABEL``) are terse inventory text, not
     a turn narrative; `TREASURE.X2`'s per-book flavor text is dispatched
@@ -1958,9 +1986,14 @@ def describe_use_mi(
     (`RUMORS.PAS` story code 5001, "it crumbled to dust...", the one
     candidate that *would* fit a "used up its last charge" moment) has
     no real emission site anywhere in the archive -- an orphaned
-    constant, not a live narrative path. The same "no real ``SAY.PAS``
-    text, so no rendered line" stance ``describe_cast()`` already takes
-    for its own 12 unexecuted spells.
+    constant, not a live narrative path. Phase 148, on the user's own
+    explicit request, fills this confirmed gap with
+    ``render_skill_book_read()``, a **project-original** sentence (see
+    ``SKILL_BOOK_READ_TEMPLATE``'s own comment) -- rendered only when
+    the caller supplies both ``book_name`` and ``ability_name``; without
+    either, this still renders nothing (the same "caller supplies what
+    state can't determine" convention every other composer here already
+    follows, e.g. ``describe_give()``'s own ``item_name``).
 
     Every other case (``result.applied is False``: item not found, not
     owned, or not a Use_MI target) also renders nothing.
@@ -1976,6 +2009,8 @@ def describe_use_mi(
             terrain_name=terrain_name,
             army_names=army_names,
         )
+    if result.ability_boosted is not None and book_name is not None and ability_name is not None:
+        return render_skill_book_read(caster_name, book_name, ability_name, rng)
     return None
 
 
