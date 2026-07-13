@@ -77,30 +77,28 @@ to dispatch automatically:
   with a reason rather than guessing. A win sets the feature's own
   ``looted`` flag; a loss kills the searching leader (personal combat's
   generic [5.0] rule, no Duel-style carve-out).
-- **TRADE stays decode-only here (Phase 20), still by design as of
-  Phase 132** and, unlike every other decoded action here, the decode
-  itself stays deliberately raw -- ``turn/trade_decode.py`` exposes
-  ``obj``/``extra`` uninterpreted rather than naming fields it can't
-  confirm. ``ActionCode.TRADE`` is the Pascal engine's internal name for
-  the rulebook's Give order ([3.18], [5.7]); see that module's docstring
-  for why its field mapping is this project's least-confirmed (no real
-  Trade phases in any sample file, no turn-execution engine present in
-  the available Pascal source, and the rulebook itself flags an
-  unresolved item-id/gold-amount ambiguity in ``obj``, plus **no
-  recipient field decoded at all** -- the rulebook requires "a
-  co-located character who will receive it," but nothing in the
-  available source names where that lands). **Phase 132 adds ``turn/
-  trade_execution.py execute_gold_give()``**, a real, sourced primitive
-  for [3.18]'s one unambiguous sub-rule ("no more than 10% of the size
-  of his treasury") -- but it is deliberately **not** wired in here: it
-  takes the recipient kingdom as an explicit caller-supplied parameter,
-  since ``TradeRequest`` has no decoded recipient to pass it. Search
-  ([3.3]) had a genuinely missing *resolver* (``turn/encounter.py``
-  didn't exist yet); Trade has a genuinely missing *decoded field* --
-  a different, harder kind of gap that wiring code can't paper over
-  without guessing. See that module's own docstring for the full
-  reasoning, including why a magic-item Give isn't attempted even at
-  this reduced scope (no item-ownership model exists at all).
+- **TRADE now actually executes (Phase 133)**: ``ActionCode.TRADE`` is
+  the Pascal engine's internal name for the rulebook's Give order
+  ([3.18], [5.7]). Phase 132 had left this decode-only because two
+  fields were unconfirmed -- ``obj``'s item-id/gold-amount ambiguity,
+  and (the harder gap) no recipient field decoded at all. **Both are
+  now resolved**, from real domain knowledge the user supplied directly
+  (2026-07-13) plus an independent structural cross-check against
+  ``HostAK/TP/DEF2.PAS`` -- see ``turn/trade_decode.py``'s own
+  docstring for the full quoted source and citations. ``obj`` is
+  disambiguated by checking whether the giver actually possesses an
+  item with that id (item takes priority if so); the recipient is
+  ``TradeRequest.target_leader_id`` (``extra[1]``/``n1``), required to
+  be co-located. ``turn/trade_execution.py execute_give()`` (Phase 133)
+  enforces co-location, that both giver *and* recipient are Kings for
+  the gold path (rulebook: "give... to *other Kings*"), and [3.18]'s
+  10% treasury cap -- but the item path itself stays honestly
+  unresolved (``giver_possesses_item`` defaults to ``False`` here,
+  since this project has no item-ownership registry to check real
+  possession, so every real dispatch falls through to the gold path,
+  the only one this project can actually execute against
+  ``GameState``). See that module's own docstring for why a real item
+  transfer still isn't modeled even now that the recipient is known.
 - **PRACTICE** actually executes (Phase 44): ``obj`` decodes to an
   ``Ability`` via ``turn/practice_decode.py``, then
   ``turn/practice_execution.py execute_practice()`` rolls the rulebook
@@ -331,6 +329,7 @@ from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_rec
 from ak_engine.turn.search_decode import decode_search_phase
 from ak_engine.turn.search_execution import SearchExecutionResult, execute_search
 from ak_engine.turn.trade_decode import decode_trade_phase
+from ak_engine.turn.trade_execution import TradeExecutionResult, execute_give
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, execute_trail
 from ak_engine.turn.use_mi_decode import decode_use_mi_phase
@@ -458,7 +457,7 @@ def dispatch_phase(
         return _dispatch_fire(phase, state, leader_id)
 
     if action is ActionCode.TRADE:
-        return decode_trade_phase(phase)
+        return _dispatch_trade(phase, state, leader_id)
 
     if action is ActionCode.PRACTICE:
         return _dispatch_practice(phase, state, leader_id, rng)
@@ -537,6 +536,19 @@ def _dispatch_pursue(
 
     request = decode_pursue_phase(phase)
     return execute_pursue(state, leader_id, request, rng)
+
+
+def _dispatch_trade(phase: PlanPhase, state: GameState, leader_id: int) -> TradeExecutionResult:
+    """Phase 133: TRADE now executes for real via ``turn/trade_execution.py
+    execute_give()``. ``giver_possesses_item`` stays at its default
+    (``False``) here -- this project has no item-ownership registry to
+    check real possession, so every dispatch resolves the gold path
+    (the only one this project can act on); see that module's own
+    docstring for the full reasoning.
+    """
+
+    request = decode_trade_phase(phase)
+    return execute_give(state, leader_id, request)
 
 
 def _dispatch_search(

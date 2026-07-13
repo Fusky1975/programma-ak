@@ -976,6 +976,31 @@ accomplished/Rcompleted.',S_PCom); END;` -- a single, real, hardcoded
 template, gated on the guarding monster's own `fstate` being `Bold`
 (`models/monster.py MonsterEngagementState.BOLD`, "Emboldened",
 Phase 130). `render_monster_offers_raid_truce()`.
+
+**Phase 133 addendum -- Trade/Give narrative cluster.** Found while
+verifying real domain knowledge the user supplied directly about the
+Give order's item-vs-gold disambiguation mechanic (see `turn/
+trade_decode.py`'s own Phase 133 correction) against the Pascal
+source: `SAY.PAS` ~lines 517-520, four single, real, hardcoded
+templates (no file), all previously unrendered:
+
+- `_LTrade: Say('< gave the \\ to [.',S_Priv)` -- a successful item
+  Give. `render_item_give()`.
+- `_LGGive: Say('< gave/Rdonated to [ # gold from > treasury/Rown_funds.',
+  S_Priv)` -- a successful gold Give (`turn/trade_execution.py
+  execute_give()`'s own success case). `render_gold_give()`.
+- `_LNHave: Say('< didn''t have on hand the full # gold requested, so ',
+  S_Red)` -- insufficient gold, matching the user's own described
+  failure case almost verbatim ("l'eroe #55 non aveva con se
+  abbastanza oro da darti"). Transcribed as-is, including its trailing
+  "so " -- the same honest-fragment-transcription convention as
+  `_LHaHa`/`_LWTake`/`_LWErrand` (Phase 129): no continuation is found
+  anywhere else in the available source, so none is invented.
+  `render_insufficient_gold()`.
+- `_LNDeal: Say('< could not strike a deal with [ for the \\.',S_Priv)`
+  -- a reciprocal two-way trade's condition not met (rulebook [3.18]:
+  "the gift will be made only if the recipient Gives you a specified
+  magic item... in the same phase"). `render_trade_deal_failed()`.
 """
 
 from __future__ import annotations
@@ -3505,3 +3530,66 @@ def render_monster_offers_raid_truce(monster_name: str, province_name: str, rng:
 
     values = {"[": monster_name, "@": province_name}
     return render(MONSTER_OFFERS_RAID_TRUCE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LTrade -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 133 addendum.
+ITEM_GIVE_TEMPLATE = "< gave the \\ to [."
+
+
+def render_item_give(giver_name: str, recipient_name: str, item_name: str, rng: random.Random) -> str:
+    """Renders ``_LTrade``'s sentence: a successful magic-item Give
+    (rulebook [3.18]), ``turn/trade_execution.py execute_give()``'s own
+    item path -- still unmodeled at the ``GameState`` level (no
+    item-ownership registry), but real once one exists.
+    """
+
+    values = {"<": giver_name, "[": recipient_name, "\\": item_name}
+    return render(ITEM_GIVE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LGGive -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 133 addendum.
+GOLD_GIVE_TEMPLATE = "< gave/Rdonated to [ # gold from > treasury/Rown_funds."
+
+
+def render_gold_give(giver_name: str, recipient_name: str, gold_amount: int, rng: random.Random) -> str:
+    """Renders ``_LGGive``'s sentence: a successful gold Give -- ``turn/
+    trade_execution.py execute_give()``'s own success case.
+    """
+
+    values = {"<": giver_name, "[": recipient_name, "#": str(gold_amount), ">": f"{giver_name}'s"}
+    return render(GOLD_GIVE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LNHave -- a single, real, hardcoded template (no
+# file). Transcribed as-is, including its trailing "so " -- no
+# continuation is found anywhere else in the available source, the
+# same honest-fragment-transcription convention as Phase 129's
+# _LHaHa/_LWTake/_LWErrand. See module docstring's Phase 133 addendum.
+INSUFFICIENT_GOLD_TEMPLATE = "< didn't have on hand the full # gold requested, so "
+
+
+def render_insufficient_gold(giver_name: str, gold_requested: int, rng: random.Random) -> str:
+    """Renders ``_LNHave``'s (fragment) sentence: the giver's treasury didn't hold
+    enough gold to cover the requested amount -- ``turn/
+    trade_execution.py execute_give()``'s own 10%-cap failure case.
+    """
+
+    values = {"<": giver_name, "#": str(gold_requested)}
+    return render(INSUFFICIENT_GOLD_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LNDeal -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 133 addendum.
+TRADE_DEAL_FAILED_TEMPLATE = "< could not strike a deal with [ for the \\."
+
+
+def render_trade_deal_failed(giver_name: str, recipient_name: str, item_name: str, rng: random.Random) -> str:
+    """Renders ``_LNDeal``'s sentence: a reciprocal two-way trade's condition wasn't met
+    (rulebook [3.18]: "the gift will be made only if the recipient
+    Gives you a specified magic item... in the same phase").
+    """
+
+    values = {"<": giver_name, "[": recipient_name, "\\": item_name}
+    return render(TRADE_DEAL_FAILED_TEMPLATE, values, rng=rng)

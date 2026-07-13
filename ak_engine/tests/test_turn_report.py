@@ -75,10 +75,13 @@ from ak_engine.report.turn_report import (
     render_ice_ghost_immune,
     render_ice_immobilized,
     render_ice_steal_blocked,
+    render_gold_give,
     render_ice_suspend_failed_to_hold,
     render_ice_wait_for_melt,
     render_inherit,
     render_inherit_as_heir,
+    render_insufficient_gold,
+    render_item_give,
     render_magic_feature_discovery,
     render_march,
     render_melee_attack,
@@ -124,6 +127,7 @@ from ak_engine.report.turn_report import (
     render_tactical_comparison,
     render_take_gold,
     render_take_items,
+    render_trade_deal_failed,
     render_uncontested_conquest,
     render_vampiric_bite,
     render_wandering_encounter,
@@ -1860,3 +1864,36 @@ def test_render_monster_offers_raid_truce_right_branch():
     rng = ScriptedRandom([0.9] * 10)
     result = render_monster_offers_raid_truce("the Ogre", "Greenfield", rng)
     assert result == "the Ogre also offered to stop plundering Greenfield if this quest were completed."
+
+
+# -- Trade/Give narrative cluster (Phase 133) --
+
+
+def test_render_item_give():
+    rng = ScriptedRandom([])
+    result = render_item_give("Aldric", "Borin", "Ring of Power", rng)
+    assert result == "Aldric gave the Ring of Power to Borin."
+
+
+def test_render_gold_give_left_branch():
+    rng = ScriptedRandom([0.1, 0.1])
+    result = render_gold_give("Aldric", "Borin", 100, rng)
+    assert result == "Aldric gave to Borin 100 gold from Aldric's treasury."
+
+
+def test_render_gold_give_right_branch():
+    rng = ScriptedRandom([0.9, 0.9])
+    result = render_gold_give("Aldric", "Borin", 100, rng)
+    assert result == "Aldric donated to Borin 100 gold from Aldric's own funds."
+
+
+def test_render_insufficient_gold():
+    rng = ScriptedRandom([])
+    result = render_insufficient_gold("Aldric", 100, rng)
+    assert result == "Aldric didn't have on hand the full 100 gold requested, so "
+
+
+def test_render_trade_deal_failed():
+    rng = ScriptedRandom([])
+    result = render_trade_deal_failed("Aldric", "Borin", "Ring of Power", rng)
+    assert result == "Aldric could not strike a deal with Borin for the Ring of Power."

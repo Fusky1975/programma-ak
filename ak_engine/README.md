@@ -5024,6 +5024,49 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     Phase 132 tests were written. 19 new tests added (1949 passed
     total) in `tests/test_encounter.py`, `tests/test_search_execution
     .py` (new file), and `tests/test_trade_execution.py` (new file).
+- **Phase 133 (current)**: closes Trade/Give's last real gap -- the
+  recipient -- from real domain knowledge the user supplied directly
+  (2026-07-13), quoted and cross-checked in full in `turn/trade_decode
+  .py`'s own docstring.
+  - **The item-vs-gold disambiguation and recipient field are both now
+    confirmed.** `obj` is resolved by checking whether the giver
+    actually possesses an item with that id (item takes priority if
+    so, matching the user's own "si passa l'oggetto e non l'oro"); if
+    not, `obj` is a gold amount, gated by [3.18]'s already-sourced 10%
+    cap -- independently cross-validated by the user's own example
+    (giving 3 gold requires >= 30 in the treasury, exactly 3 = 30 *
+    10%). The recipient is `TradeRequest.target_leader_id`
+    (`extra[1]`/`n1`), structurally confirmed against `HostAK/TP/
+    DEF2.PAS`'s `R_HPlan`/`W_HPlan` (Trade's own `CASE` branch reads
+    exactly one further value right after the standard triple) -- the
+    Pascal source proves *a* second field exists there; the user's own
+    description of the `GI <item_or_gold> <target>` order syntax is
+    what confirms *what it means*.
+  - **`turn/trade_execution.py execute_give()`** (new) resolves a real
+    `TradeRequest` end-to-end: co-location (the user's own "che si
+    trova nella stessa provincia"), that both giver *and* recipient are
+    Kings for the gold path (rulebook: "give... to *other* Kings", not
+    just "only a King may give"), and the 10% cap. The item path stays
+    honestly unresolved -- `giver_possesses_item` defaults to `False`
+    since this project still has no item-ownership registry to check
+    real possession (`models/item.py` remains an unpopulated stub), so
+    every real dispatch falls through to the gold path, the only one
+    this project can actually execute. **TRADE is now wired into
+    `plan_dispatch.py`** as real execution (previously blocked purely
+    by the missing recipient).
+  - **Real, previously-unrendered `SAY.PAS` corroboration**, found
+    while verifying the user's mechanic against the Pascal source
+    (~lines 517-520): `_LTrade` (item given), `_LGGive` (gold given),
+    and, matching the user's own described failure almost verbatim,
+    `_LNHave` ("< didn't have on hand the full # gold requested, so ")
+    plus `_LNDeal` (reciprocal-trade condition not met) -- four real
+    templates, all previously unrendered, now added to `report/
+    turn_report.py` as `render_item_give()`/`render_gold_give()`/
+    `render_insufficient_gold()`/`render_trade_deal_failed()`.
+  - Non-breaking: full suite passed unchanged (1951 passed) before the
+    new Phase 133 tests were written. 13 new tests added (1964 passed
+    total) in `tests/test_trade_decode.py`, `tests/test_trade_execution
+    .py`, `tests/test_plan_dispatch.py`, and `tests/test_turn_report.py`.
 
 ## Setup
 

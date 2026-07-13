@@ -34,7 +34,7 @@ from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
-from ak_engine.turn.trade_decode import TradeRequest
+from ak_engine.turn.trade_execution import TradeExecutionResult
 from ak_engine.turn.trail_execution import TrailExecutionResult
 from ak_engine.turn.use_mi_decode import UseMIRequest
 
@@ -208,15 +208,35 @@ def test_real_move_file_leader_search_phase_dispatches():
     assert result.reason == "feature not found"
 
 
-def test_dispatch_trade_is_decode_only():
+def test_dispatch_trade_reports_recipient_not_found():
+    # Phase 133: TRADE now actually executes via execute_give() -- with
+    # no leader 3 registered, it reports why rather than merely
+    # decoding the request (see turn/trade_execution.py).
     state, army_id = _state_with_army(HexCoord(3, 9), {})
-    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=42, extra=[7, 3])
+    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=42, extra=[0, 3])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, TradeRequest)
-    assert result.obj == 42
-    assert result.extra == [7, 3]
+    assert isinstance(result, TradeExecutionResult)
+    assert result.applied is False
+    assert result.reason == "recipient not found"
+
+
+def test_dispatch_trade_gold_give_succeeds_between_two_co_located_kings():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {}, treasury=1000)
+    recipient_id = 2
+    state.add_kingdom(KingdomState(2, "Recipient", Race.HUMAN, Alignment.GOOD, location, treasury=0))
+    state.add_leader(LeaderState(recipient_id, 2, "Recipient King", location, is_king=True))
+    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=100, extra=[0, recipient_id])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, TradeExecutionResult)
+    assert result.applied is True
+    assert result.gold_transferred == 100
+    assert state.kingdoms[1].treasury == 900
+    assert state.kingdoms[2].treasury == 100
 
 
 def test_dispatch_practice_executes_and_mutates_leader_skills():
