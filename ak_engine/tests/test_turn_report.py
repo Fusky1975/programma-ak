@@ -18,6 +18,7 @@ from ak_engine.report.turn_report import (
     NEMESIS_TEMPLATE,
     PRACTICE_ALREADY_MAXED_TEMPLATE,
     PRACTICE_TUTORED_TEMPLATE,
+    QUEST_BUT_THEN_TEMPLATE,
     SNEAKUP_RANGE_BOW,
     SNEAKUP_RANGE_MELEE,
     SNEAKUP_RANGE_SPELL,
@@ -88,9 +89,22 @@ from ak_engine.report.turn_report import (
     render_patrol_release,
     render_homeland_defense_morale,
     render_oratory_speech,
+    render_monster_threat_death,
     render_practice_already_maxed,
     render_practice_tutored,
     render_pursuit_and_destroy,
+    render_quest_errand_thanks,
+    render_quest_fled_in_fear,
+    render_quest_hero_not_tasty,
+    render_quest_insufficient_price,
+    render_quest_insufficient_skill,
+    render_quest_item_taken_anyway,
+    render_quest_mockery,
+    render_quest_no_agreement,
+    render_quest_progress_acknowledged,
+    render_quest_reward_already_given,
+    render_quest_service_not_performed,
+    render_quest_wrong_answer,
     render_retreat,
     render_skeletal_army_fervor,
     render_sneak_detected,
@@ -1699,4 +1713,134 @@ def test_render_illegal_move_mermen_air_transport():
     assert result == (
         "Aldric was ordered to move with Mermen from Greenfield to "
         "Redhaven, but had insufficient air-transport."
+    )
+
+
+# -- Monster Quest Fulfillment dialogue (Phase 129) --
+
+
+def test_render_quest_mockery():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_quest_mockery("the Ogre", rng)
+    assert result == 'snarleth the Ogre, "Ha!You fool, I\'ve tricked you!'
+
+
+def test_quest_but_then_template_is_the_confirmed_hardcoded_say():
+    assert QUEST_BUT_THEN_TEMPLATE == "But then "
+
+
+def test_render_monster_threat_death_concatenates_both_sentences():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_monster_threat_death("the Ogre", rng)
+    assert result == (
+        'the Ogre snarled, "You impudent fool!I\'ll teach YOU to show '
+        'some respect!now, prepare to die!"'
+    )
+
+
+def test_render_quest_item_taken_anyway_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_quest_item_taken_anyway("the Ogre", rng)
+    assert result == 'Sayeth the Ogre, "thank you.But I always TAKE what I want!'
+
+
+def test_render_quest_item_taken_anyway_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_quest_item_taken_anyway("the Ogre", rng)
+    assert result == (
+        'Sayeth the Ogre, "Ah, thank you very much.But I will wrest '
+        "for myself what I desire!"
+    )
+
+
+def test_render_quest_errand_thanks_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_quest_errand_thanks("the Ogre", rng)
+    assert result == 'Sayeth the Ogre, "You have done well.'
+
+
+def test_render_quest_errand_thanks_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_quest_errand_thanks("the Ogre", rng)
+    assert result == 'Sayeth the Ogre, "You have served me admirably, and you have my gratitude.'
+
+
+def test_render_quest_wrong_answer_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_quest_wrong_answer("the Ogre", rng)
+    assert result == 'Sayeth the Ogre, "No!That is not the answer I had in mind.Why don\'t you give up?"'
+
+
+def test_render_quest_wrong_answer_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_quest_wrong_answer("the Ogre", rng)
+    assert result == (
+        'Sayeth the Ogre, "No!That is not the answer I was thinking of.'
+        'Why don\'t you give up, you idiot?"'
+    )
+
+
+def test_render_quest_progress_acknowledged_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_quest_progress_acknowledged("the Ogre", rng)
+    assert result == 'Sayeth the Ogre, "You have served me well.I shall remember you."'
+
+
+def test_render_quest_progress_acknowledged_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_quest_progress_acknowledged("the Ogre", rng)
+    assert result == 'Sayeth the Ogre, "You have done well.I shall not forget your deed."'
+
+
+def test_render_quest_insufficient_skill():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_quest_insufficient_skill("the Ogre", rng)
+    assert result == 'Sayeth the Ogre, "You haven\'t the skill required to do as I\'ve asked!Go away!"'
+
+
+def test_render_quest_insufficient_price():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_quest_insufficient_price("the Ogre", rng)
+    assert result == 'Sayeth the Ogre, "You have not met my asking price!Go away!"'
+
+
+def test_render_quest_service_not_performed_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_quest_service_not_performed("the Ogre", rng)
+    assert result == 'Sayeth the Ogre, "You have not done as I asked!Go away!"'
+
+
+def test_render_quest_service_not_performed_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_quest_service_not_performed("the Ogre", rng)
+    assert result == 'Sayeth the Ogre, "You have not performed the service I wished at all!Go away!"'
+
+
+def test_render_quest_fled_in_fear():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_quest_fled_in_fear("Aldric", "the Ogre", rng)
+    assert result == "But as Aldric approached the Ogre, Aldric lost Aldric's courage and ran away from the Ogre."
+
+
+def test_render_quest_hero_not_tasty():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_quest_hero_not_tasty("the Ogre", rng)
+    assert result == (
+        'Sayeth the Ogre, "That one did not taste like a Hero!Next time '
+        'bring me something tastier.Now, go away!"'
+    )
+
+
+def test_render_quest_no_agreement():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_quest_no_agreement("the Ogre", rng)
+    assert result == 'Sayeth the Ogre, "Fulfill what?We have not talked over any agreement!Go away!"'
+
+
+def test_render_quest_reward_already_given():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_quest_reward_already_given("the Ogre", "Ring of Power", rng)
+    assert result == (
+        'Sayeth the Ogre, "I have already given away the Ring of Power '
+        'to a worthier adventurer.Go away!"'
     )

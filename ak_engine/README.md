@@ -4840,6 +4840,53 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new tests were written -- new module with no existing call sites.
     16 new tests added (1897 passed total) in
     `tests/test_advanced_ability.py`.
+- **Phase 129 (current)**: `report/turn_report.py` -- Monster Quest
+  Fulfillment dialogue. `RUMORS.PAS` groups `_LFRaid = 3166` through
+  `_LFRumor = 3193` contiguously (`SAY.PAS` lines 764-782) --
+  direct-speech ("Sayeth...") dialogue between a quest-giving monster
+  and the character trying to fulfill its quest, dispatched alongside
+  the file-routed `_LSpake -> FULFILL.X2`/`_MReply -> MTALK.X2`/
+  `_LRidAns -> RANS.X` (all keyed by `_qplotno`/`_qsubplot`, an
+  unmodeled Quest-plot system -- narrative modeled independently of
+  it, the same precedent already established for the Ice-Suspend
+  cluster, Phase 123, and Assassination, Phase 125). Ties to
+  `models/advanced_ability.py AdvancedAbility.DRUIDIC_TRADES`'s own
+  "GI-ve" order description, which already covers the mechanical side
+  of trading with a monster (Phase 128).
+  - Marker convention confirmed consistent across the whole cluster:
+    `<` is the character, `[`/`[1` is the quest-giving monster.
+  - `render_quest_mockery()` (`_LHaHa`) -- an unclosed quote,
+    transcribed honestly as the fragment it is (likely closed by
+    `_LRidAns`'s own file-dispatched `RANS.X`, not accessible to this
+    project).
+  - `QUEST_BUT_THEN_TEMPLATE` (`_LBThen`) -- a bare precursor clause,
+    the same shape `EXPLORE_NOT_PRESENT_PREFIX` (Phase 110) already
+    established.
+  - `render_monster_threat_death()` (`_LWGrr`/`_LPrDie`) -- a
+    confirmed real two-`Say()` pair: `_LWGrr` opens a quote it never
+    closes, and `_LPrDie` starts lowercase and ends with the missing
+    closing `"` -- the same concatenation evidence pattern already
+    used to confirm `SPELL_CAST_ANNOUNCEMENT` concatenates (Phase
+    122).
+  - `render_quest_item_taken_anyway()`/`render_quest_errand_thanks()`
+    (`_LWTake`/`_LWErrand`) -- each opens a quote with no visible
+    closing `"`, transcribed honestly as fragments.
+  - Eight complete, self-closing quoted sentences covering the
+    quest's own outcome states: `render_quest_wrong_answer()`,
+    `render_quest_progress_acknowledged()`,
+    `render_quest_insufficient_skill()`,
+    `render_quest_insufficient_price()`,
+    `render_quest_service_not_performed()`,
+    `render_quest_hero_not_tasty()`, `render_quest_no_agreement()`,
+    and `render_quest_reward_already_given()` (`\` is `PROSE.TXT`'s
+    own Magic Item marker).
+  - `render_quest_fled_in_fear()` (`_LFKOnly`) -- plain narration (no
+    quotes), the character's own courage fails during the quest
+    encounter.
+  - Non-breaking: full suite passed unchanged (1897 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 19 new tests added (1916 passed total) in
+    `tests/test_turn_report.py`.
 
 ## Setup
 

@@ -905,6 +905,64 @@ the documented "`_next <> 5`" condition) -- each is exposed as its own
 renderer, the caller composes them, the same caller-composes-the
 -sequence stance already taken for the Ice-Suspend cluster (Phase 123)
 and the Assassination cluster (Phase 125).
+
+**Phase 129 addendum -- Monster Quest Fulfillment dialogue.**
+`RUMORS.PAS` groups `_LFRaid = 3166` through `_LFRumor = 3193`
+contiguously (`SAY.PAS` lines 764-782) -- direct-speech ("Sayeth...")
+dialogue between a quest-giving monster and the character trying to
+fulfill its quest, dispatched alongside the file-routed `_LSpake
+-> FULFILL.X2`/`_MReply -> MTALK.X2`/`_LRidAns -> RANS.X` (all keyed
+by `_qplotno`/`_qsubplot`, an unmodeled Quest-plot system -- narrative
+modeled independently of it, the same precedent already established
+for the Ice-Suspend cluster, Phase 123, and Assassination, Phase 125).
+Ties to `models/advanced_ability.py AdvancedAbility.DRUIDIC_TRADES`'s
+own "GI-ve" order description, which already covers the mechanical
+side of trading with a monster (Phase 128).
+
+Marker convention confirmed consistent across the whole cluster:
+`<` is the character, `[`/`[1` is the quest-giving monster (e.g.
+`_LFKOnly: Say('But as < approached [, < lost > courage and ran away
+from [.',S_PCom)` unambiguously has `<` doing the approaching/
+fleeing and `[` being approached/fled-from).
+
+- `_LHaHa: Say('snarleth/Rchortled [1, "Ha!You fool/Rbumpkin,
+  I''ve tricked/Rdeceived you!',S_PCom)` -- opens a quote with no
+  visible closing `"` anywhere in this CASE block; transcribed
+  honestly as the fragment it is (likely closed by `_LRidAns`'s own
+  file-dispatched `RANS.X`, immediately below it and keyed by the
+  same `_qsubplot`, but this project has no access to that file's
+  content to confirm). `render_quest_mockery()`.
+- `_LBThen: Say('But then ',S_PCom)` -- a bare precursor clause (no
+  trailing period), exposed as `QUEST_BUT_THEN_TEMPLATE` with no
+  wrapper function, the same shape `EXPLORE_NOT_PRESENT_PREFIX`
+  (Phase 110) already established.
+- `_LWGrr`/`_LPrDie` -- a confirmed real two-`Say()` pair: `_LWGrr`
+  opens a quote it never closes ("...respect!"), and `_LPrDie`'s own
+  text starts lowercase and ends with the missing closing `"`
+  ('now, prepare/Rget_ready to die/Rmeet_your_maker!"') -- the same
+  concatenation evidence pattern (lowercase continuation + closing
+  punctuation) already used to confirm `_LCast1`/`SPELL_CAST_ANNOUNCEMENT`
+  concatenate (Phase 122). `render_monster_threat_death()`.
+- `_LWTake`/`_LWErrand` -- each opens a quote with no visible closing
+  `"` (unlike `_LWGrr`, no later CASE label in this block picks up
+  their own continuation) -- transcribed honestly as fragments.
+  `render_quest_item_taken_anyway()`/`render_quest_errand_thanks()`.
+- `_LFWrong`, `_LFProgr`, `_LFNQual`, `_LFNoPri`, `_LFTryAg`,
+  `_LFHero`, `_LFNoAg`, `_LQDone` -- eight complete, self-closing
+  quoted sentences (each has both an opening and closing `"`),
+  covering the quest's own outcome states: wrong answer, partial
+  progress acknowledged, insufficient skill, insufficient price,
+  service not performed, an unsatisfactory "Hero" offering, no prior
+  agreement existed, and the quest reward already given to someone
+  else (`_LQDone`'s own `\\` marker is `PROSE.TXT`'s Magic Item name).
+  `render_quest_wrong_answer()`/`render_quest_progress_acknowledged()`/
+  `render_quest_insufficient_skill()`/`render_quest_insufficient_price()`/
+  `render_quest_service_not_performed()`/`render_quest_hero_not_tasty()`/
+  `render_quest_no_agreement()`/`render_quest_reward_already_given()`.
+- `_LFKOnly: Say('But as < approached [, < lost > courage and ran
+  away from [.',S_PCom)` -- plain narration (no quotes), the
+  character's own courage fails during the quest encounter.
+  `render_quest_fled_in_fear()`.
 """
 
 from __future__ import annotations
@@ -3180,3 +3238,236 @@ def render_illegal_move_mermen_air_transport(
         "@": destination_province_name,
     }
     return render(ILLEGAL_MOVE_MERMEN_AIR_TRANSPORT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LHaHa -- a single, real, hardcoded template (no
+# file), an unclosed quote transcribed honestly. See module
+# docstring's Phase 129 addendum.
+QUEST_MOCKERY_TEMPLATE = (
+    'snarleth/Rchortled [1, "Ha!You fool/Rbumpkin, '
+    "I've tricked/Rdeceived you!"
+)
+
+
+def render_quest_mockery(monster_name: str, rng: random.Random) -> str:
+    """Renders ``_LHaHa``'s sentence: the quest-giving monster mocks
+    the character after tricking them.
+    """
+
+    values = {"[1": monster_name}
+    return render(QUEST_MOCKERY_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LBThen -- a single, real, hardcoded precursor
+# clause (no file, no trailing period). See module docstring's Phase
+# 129 addendum, and the same bare-constant shape
+# EXPLORE_NOT_PRESENT_PREFIX (Phase 110) already established.
+QUEST_BUT_THEN_TEMPLATE = "But then "
+
+
+# HostAK/TP/SAY.PAS _LWGrr/_LPrDie -- a real, two-``Say()`` entry (no
+# file). See module docstring's Phase 129 addendum.
+_MONSTER_THREAT_DEATH_TEMPLATES = (
+    '[1 snarled/Rgrowled, "You impudent fool!I\'ll teach YOU to show some respect!',
+    'now, prepare/Rget_ready to die/Rmeet_your_maker!"',
+)
+
+
+def render_monster_threat_death(monster_name: str, rng: random.Random) -> str:
+    """Renders ``_LWGrr``'s/``_LPrDie``'s two sentences: the monster's
+    angry retort followed by a closing death threat. Concatenates both
+    rendered sentences with no separator, the same shape established
+    throughout this module (Phase 107, 116, 119, 121, 125, 126).
+    """
+
+    values = {"[1": monster_name}
+    first = render(_MONSTER_THREAT_DEATH_TEMPLATES[0], values, rng=rng)
+    second = render(_MONSTER_THREAT_DEATH_TEMPLATES[1], values, rng=rng)
+    return first + second
+
+
+# HostAK/TP/SAY.PAS _LWTake -- a single, real, hardcoded template (no
+# file), an unclosed quote transcribed honestly. See module
+# docstring's Phase 129 addendum.
+QUEST_ITEM_TAKEN_ANYWAY_TEMPLATE = (
+    'Sayeth [1, "{Ah, }thank you{ very much}.But I {will }always_TAKE/Rwrest_for_myself '
+    "what I want/Rdesire!"
+)
+
+
+def render_quest_item_taken_anyway(monster_name: str, rng: random.Random) -> str:
+    """Renders ``_LWTake``'s sentence: the monster thanks the character
+    but takes what it wants anyway.
+    """
+
+    values = {"[1": monster_name}
+    return render(QUEST_ITEM_TAKEN_ANYWAY_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LWErrand -- a single, real, hardcoded template (no
+# file), an unclosed quote transcribed honestly. See module
+# docstring's Phase 129 addendum.
+QUEST_ERRAND_THANKS_TEMPLATE = (
+    'Sayeth [, "You have done/Rserved_me well/Radmirably{, and you have '
+    "my thanks/Rgratitude}."
+)
+
+
+def render_quest_errand_thanks(monster_name: str, rng: random.Random) -> str:
+    """Renders ``_LWErrand``'s sentence: the monster thanks the
+    character for a completed errand.
+    """
+
+    values = {"[": monster_name}
+    return render(QUEST_ERRAND_THANKS_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LFWrong -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 129 addendum.
+QUEST_WRONG_ANSWER_TEMPLATE = (
+    'Sayeth [, "No!That is not the answer I had_in_mind/Rwas_thinking_of.'
+    "Why don't you give up{, you fool/Ridiot}?\""
+)
+
+
+def render_quest_wrong_answer(monster_name: str, rng: random.Random) -> str:
+    """Renders ``_LFWrong``'s sentence: the character gave the wrong
+    answer to the monster's own quest riddle/challenge.
+    """
+
+    values = {"[": monster_name}
+    return render(QUEST_WRONG_ANSWER_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LFProgr -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 129 addendum.
+QUEST_PROGRESS_ACKNOWLEDGED_TEMPLATE = (
+    'Sayeth [1, "You have served_me/Rdone well.I shall remember/Rnot_forget '
+    'you{r kindness/Rdeed}."'
+)
+
+
+def render_quest_progress_acknowledged(monster_name: str, rng: random.Random) -> str:
+    """Renders ``_LFProgr``'s sentence: the monster acknowledges the
+    character's own quest progress.
+    """
+
+    values = {"[1": monster_name}
+    return render(QUEST_PROGRESS_ACKNOWLEDGED_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LFNQual -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 129 addendum.
+QUEST_INSUFFICIENT_SKILL_TEMPLATE = (
+    'Sayeth [1, "You haven\'t the skill required/Rnecessary to do as '
+    'I\'ve asked/Rrequested!Go away!"'
+)
+
+
+def render_quest_insufficient_skill(monster_name: str, rng: random.Random) -> str:
+    """Renders ``_LFNQual``'s sentence: the character lacks the skill
+    required for the quest.
+    """
+
+    values = {"[1": monster_name}
+    return render(QUEST_INSUFFICIENT_SKILL_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LFNoPri -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 129 addendum.
+QUEST_INSUFFICIENT_PRICE_TEMPLATE = (
+    'Sayeth [1, "You have not met/Rbrought_me my asking price{ at all}!Go away!"'
+)
+
+
+def render_quest_insufficient_price(monster_name: str, rng: random.Random) -> str:
+    """Renders ``_LFNoPri``'s sentence: the character did not meet the
+    monster's own asking price.
+    """
+
+    values = {"[1": monster_name}
+    return render(QUEST_INSUFFICIENT_PRICE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LFTryAg -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 129 addendum.
+QUEST_SERVICE_NOT_PERFORMED_TEMPLATE = (
+    'Sayeth [1, "You have not done_as/Rperformed_the_service I asked/Rwished'
+    '{ at all}!Go away!"'
+)
+
+
+def render_quest_service_not_performed(monster_name: str, rng: random.Random) -> str:
+    """Renders ``_LFTryAg``'s sentence: the character did not perform
+    the requested service.
+    """
+
+    values = {"[1": monster_name}
+    return render(QUEST_SERVICE_NOT_PERFORMED_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LFKOnly -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 129 addendum.
+QUEST_FLED_IN_FEAR_TEMPLATE = "But as < approached [, < lost > courage and ran away from [."
+
+
+def render_quest_fled_in_fear(character_name: str, monster_name: str, rng: random.Random) -> str:
+    """Renders ``_LFKOnly``'s sentence: the character's own courage
+    fails during the quest encounter and they flee.
+    """
+
+    values = {
+        "<": character_name,
+        "[": monster_name,
+        ">": f"{character_name}'s",
+    }
+    return render(QUEST_FLED_IN_FEAR_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LFHero -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 129 addendum.
+QUEST_HERO_NOT_TASTY_TEMPLATE = (
+    'Sayeth [1, "That one did not taste like a Hero!Next time bring me '
+    'something tastier.Now, go away!"'
+)
+
+
+def render_quest_hero_not_tasty(monster_name: str, rng: random.Random) -> str:
+    """Renders ``_LFHero``'s sentence: the monster rejects a Hero
+    offering as unsatisfactory."""
+
+    values = {"[1": monster_name}
+    return render(QUEST_HERO_NOT_TASTY_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LFNoAg -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 129 addendum.
+QUEST_NO_AGREEMENT_TEMPLATE = (
+    'Sayeth [1, "Fulfill what?We have not talked over any agreement!Go away!"'
+)
+
+
+def render_quest_no_agreement(monster_name: str, rng: random.Random) -> str:
+    """Renders ``_LFNoAg``'s sentence: no prior quest agreement ever
+    existed.
+    """
+
+    values = {"[1": monster_name}
+    return render(QUEST_NO_AGREEMENT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LQDone -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 129 addendum.
+QUEST_REWARD_ALREADY_GIVEN_TEMPLATE = (
+    'Sayeth [1, "I have already given away the \\ to a worthier adventurer.Go away!"'
+)
+
+
+def render_quest_reward_already_given(monster_name: str, item_name: str, rng: random.Random) -> str:
+    """Renders ``_LQDone``'s sentence: the quest reward was already
+    given to another adventurer. ``item_name`` is ``PROSE.TXT``'s own
+    ``\\`` (Magic Item) marker.
+    """
+
+    values = {"[1": monster_name, "\\": item_name}
+    return render(QUEST_REWARD_ALREADY_GIVEN_TEMPLATE, values, rng=rng)
