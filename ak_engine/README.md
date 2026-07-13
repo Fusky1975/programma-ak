@@ -4795,6 +4795,51 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new tests were written -- new functions with no existing call
     sites. 6 new tests added (1881 passed total) in
     `tests/test_turn_report.py`.
+- **Phase 128 (current)**: `models/advanced_ability.py` (new) --
+  Advanced Abilities, the special talents gained above skill level 4
+  in each of the 15 `Ability` categories, capped at level 9. **Source
+  provenance, stated honestly**: this content was supplied directly by
+  the user (a text file, "ABILITA SOPRA IL LIVELLO 4 OK.txt",
+  2026-07-13) -- checked against every rulebook file in `Programma
+  Pascal.zip` (`ADDEND.AK`, `RULES.AK`, `AKMAN.TXT`, `INFO.AK`,
+  `TIPS.AK`) and found in **none** of them, so it's documented here as
+  an external rulebook excerpt, not a Pascal-archive citation.
+  - **Closes the `spdex` gap flagged since Phase 23**: `Spell`'s own
+    docstring has said since Phase 23 that ordinals 25-34 (the 10
+    secret spells) are "gated behind a specific special ability
+    granted at skill 5+ (`CTBOTH.PAS`'s `spdex` lookup table)" with no
+    further detail available from the Pascal archive. This excerpt's
+    White/Necromancy/Elemental/Psychic/Illusion pools each contain
+    exactly two "New spell" Advanced Abilities, and **all 10 match 1:1
+    by name** against `SPELL_NAME` (Phase 84) for exactly `Spell`
+    ordinals 25-34 -- direct confirmation the excerpt describes the
+    same real system `spdex` implements, not an invented document.
+    `ADVANCED_ABILITY_GRANTS_SPELL`.
+  - **A second independent cross-check**: the "Gate Demon" spell's
+    d100 demon table (7 entries) and the "Lava Pool" spell's
+    monster-immunity list (29 entries) both name real creatures, and
+    every single name matches an existing `models/monster.py Monster`
+    member exactly (`MONSTER_NAMES`, Phase 75).
+    `GATE_DEMON_TABLE`/`LAVA_POOL_IMMUNE_MONSTERS`.
+  - `AdvancedAbility` (89 members, grouped by the 15 `Ability`
+    categories in source order), `ADVANCED_ABILITY_POOL` (the
+    random-draw pool per category -- sizes vary 5-8, **not** uniformly
+    5-per-level: Thievery's own 8-candidate pool means a character can
+    never gain every possible talent in that category),
+    `ADVANCED_ABILITY_INTRO` (the per-category explanatory paragraph,
+    e.g. what automatic per-level bonus gets discontinued),
+    `ADVANCED_ABILITY_NAME`/`ADVANCED_ABILITY_TAGLINE`/
+    `ADVANCED_ABILITY_DESCRIPTION` (title/short-tag/full-paragraph,
+    verbatim from the excerpt).
+  - This project has no source for the exact selection mechanic within
+    a pool (uniform random over the remaining candidates? weighted?)
+    -- deliberately left unmodeled; this phase only establishes the
+    vocabulary/description data, the same scope precedent already
+    established for `Discovery`/`MagicFeature`/`Weapon` (Phase 91-94).
+  - Non-breaking: full suite passed unchanged (1881 passed) before any
+    new tests were written -- new module with no existing call sites.
+    16 new tests added (1897 passed total) in
+    `tests/test_advanced_ability.py`.
 
 ## Setup
 

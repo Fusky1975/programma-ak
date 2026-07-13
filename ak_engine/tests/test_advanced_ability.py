@@ -1,0 +1,146 @@
+from __future__ import annotations
+
+from ak_engine.models.advanced_ability import (
+    ADVANCED_ABILITY_DESCRIPTION,
+    ADVANCED_ABILITY_GRANTS_SPELL,
+    ADVANCED_ABILITY_INTRO,
+    ADVANCED_ABILITY_NAME,
+    ADVANCED_ABILITY_POOL,
+    ADVANCED_ABILITY_TAGLINE,
+    GATE_DEMON_TABLE,
+    LAVA_POOL_IMMUNE_MONSTERS,
+    AdvancedAbility,
+)
+from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.monster import Monster
+
+
+def test_advanced_ability_has_89_members():
+    assert len(list(AdvancedAbility)) == 89
+
+
+def test_advanced_ability_pool_covers_all_15_ability_categories():
+    assert set(ADVANCED_ABILITY_POOL.keys()) == set(Ability)
+
+
+def test_advanced_ability_pool_covers_every_member_exactly_once():
+    all_pool_members = [m for pool in ADVANCED_ABILITY_POOL.values() for m in pool]
+    assert len(all_pool_members) == 89
+    assert set(all_pool_members) == set(AdvancedAbility)
+
+
+def test_advanced_ability_intro_covers_all_15_ability_categories():
+    assert set(ADVANCED_ABILITY_INTRO.keys()) == set(Ability)
+
+
+def test_advanced_ability_name_covers_all_members():
+    assert set(ADVANCED_ABILITY_NAME.keys()) == set(AdvancedAbility)
+
+
+def test_advanced_ability_tagline_covers_all_members():
+    assert set(ADVANCED_ABILITY_TAGLINE.keys()) == set(AdvancedAbility)
+
+
+def test_advanced_ability_description_covers_all_members():
+    assert set(ADVANCED_ABILITY_DESCRIPTION.keys()) == set(AdvancedAbility)
+
+
+def test_pool_sizes_vary_and_thievery_has_the_largest_pool():
+    # Pool sizes are not uniformly 5 (one per level 5-9) -- Thievery's
+    # own pool of 8 candidates is the largest, confirming a character
+    # can never gain every possible Advanced Ability in that category.
+    sizes = {ability: len(pool) for ability, pool in ADVANCED_ABILITY_POOL.items()}
+    assert sizes[Ability.THIEF] == 8
+    assert max(sizes.values()) == 8
+    assert sizes[Ability.MARCH] == 5
+    assert sizes[Ability.SAGE] == 5
+
+
+def test_advanced_ability_verbatim_samples():
+    assert ADVANCED_ABILITY_NAME[AdvancedAbility.TACTICAL_WARGAMES_MASTERY] == (
+        "Tactical Wargames Mastery"
+    )
+    assert ADVANCED_ABILITY_TAGLINE[AdvancedAbility.TACTICAL_WARGAMES_MASTERY] == (
+        "100% Training Bonus"
+    )
+    assert ADVANCED_ABILITY_DESCRIPTION[AdvancedAbility.TACTICAL_WARGAMES_MASTERY] == (
+        "The chance for a unit to increase in quality when Practicing "
+        "Tactics (or Naval) is increased by 100% (example: an Average "
+        "unit now has a 10% chance to improve per phase)."
+    )
+
+
+def test_druidic_dinosaurs_stat_block_transcribed():
+    description = ADVANCED_ABILITY_DESCRIPTION[AdvancedAbility.DRUIDIC_DINOSAURS]
+    assert "Strength: Unpredictable (5 to 10)" in description
+    assert "Nemesis: Phalanx" in description
+    assert "Race: Saurian" in description
+
+
+def test_thief_mastery_tiers_share_the_same_description_but_distinct_names():
+    # THIEF_MASTERY_I..V are 5 distinct enum members representing the
+    # same repeated "15% Stealing Bonus" entry in the source -- this
+    # project distinguishes them by ordinal (I..V) in the name so they
+    # remain individually addressable even though the rulebook itself
+    # gives them identical text.
+    tiers = [
+        AdvancedAbility.THIEF_MASTERY_I,
+        AdvancedAbility.THIEF_MASTERY_II,
+        AdvancedAbility.THIEF_MASTERY_III,
+        AdvancedAbility.THIEF_MASTERY_IV,
+        AdvancedAbility.THIEF_MASTERY_V,
+    ]
+    descriptions = {ADVANCED_ABILITY_DESCRIPTION[t] for t in tiers}
+    assert len(descriptions) == 1
+    assert len({ADVANCED_ABILITY_NAME[t] for t in tiers}) == 5
+
+
+# -- the spdex gap closure (Phase 23 -> Phase 128) --
+
+
+def test_advanced_ability_grants_spell_covers_exactly_the_10_secret_spells():
+    secret_spells = {s for s in Spell if 25 <= s.value <= 34}
+    assert len(ADVANCED_ABILITY_GRANTS_SPELL) == 10
+    assert set(ADVANCED_ABILITY_GRANTS_SPELL.values()) == secret_spells
+
+
+def test_advanced_ability_grants_spell_verbatim_sample():
+    assert ADVANCED_ABILITY_GRANTS_SPELL[AdvancedAbility.WORDS_OF_HEALING_SPELL] == Spell.HEAL
+    assert ADVANCED_ABILITY_GRANTS_SPELL[AdvancedAbility.GATE_ANGEL_SPELL] == Spell.GATE_ANGEL
+    assert ADVANCED_ABILITY_GRANTS_SPELL[AdvancedAbility.ILLUSORY_HERO_SPELL] == Spell.ILLUS_HERO
+
+
+def test_advanced_ability_grants_spell_only_contains_new_spell_abilities():
+    # Every key must actually be in its own Ability's pool.
+    for advanced_ability in ADVANCED_ABILITY_GRANTS_SPELL:
+        found = any(
+            advanced_ability in pool for pool in ADVANCED_ABILITY_POOL.values()
+        )
+        assert found
+
+
+# -- Gate Demon / Lava Pool Monster cross-references --
+
+
+def test_gate_demon_table_covers_full_d100_range_with_real_monsters():
+    assert len(GATE_DEMON_TABLE) == 7
+    monsters = [monster for _range, monster in GATE_DEMON_TABLE]
+    assert monsters == [
+        Monster.IMP,
+        Monster.SUCCUBUS,
+        Monster.BONE_DEVIL,
+        Monster.ICE_DEVIL,
+        Monster.MAR_DEMON,
+        Monster.RAKSHASHA,
+        Monster.BAL_DEMON,
+    ]
+
+
+def test_lava_pool_immune_monsters_has_29_real_monsters():
+    assert len(LAVA_POOL_IMMUNE_MONSTERS) == 29
+    assert Monster.BEHOLDER in LAVA_POOL_IMMUNE_MONSTERS
+    assert Monster.VAMPIRE in LAVA_POOL_IMMUNE_MONSTERS
+    assert Monster.GW_WHALE in LAVA_POOL_IMMUNE_MONSTERS
+    # A ground-dwelling, non-flying/underwater/anti-holy/ghostly
+    # monster should not be in the immunity list.
+    assert Monster.MEDUSA not in LAVA_POOL_IMMUNE_MONSTERS
