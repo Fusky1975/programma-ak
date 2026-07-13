@@ -165,6 +165,17 @@ hex-step never appears in ``move_targets``), matching
   duplicated from ``turn/move_execution.py execute_move()``**, not
   extracted into a shared helper -- deliberately, to avoid touching the
   heavily-tested single-attacker path for this phase.
+
+**Missed-deadline auto-fill (Phase 138)**: ``build_missed_deadline_turn_leaders()``
+wires ``turn/missed_deadline.py build_missed_deadline_plan()`` (Phase
+134) into this module's own ``TurnLeader`` shape -- a caller who
+already knows a kingdom submitted no move file this turn builds that
+kingdom's own ``Defend``/``Wait`` auto-fill leaders with it and merges
+them into the ``turn_leaders`` list passed to ``run_turn()``, exactly
+like any real, parsed plan. ``run_turn()`` itself has no "did this
+kingdom submit a move file" detection built in (``GameState`` tracks
+no such timestamp anywhere), so this stays a caller-invoked helper,
+not automatic behavior inside ``run_turn()``.
 """
 
 from __future__ import annotations
@@ -194,6 +205,7 @@ from ak_engine.turn.contested_province import (
     is_illegal_move_from_contested,
 )
 from ak_engine.turn.hex_numbering import decode_hex_number
+from ak_engine.turn.missed_deadline import build_missed_deadline_plan
 from ak_engine.turn.move_execution import MoveExecutionResult, record_kingdom_exploration
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, run_leader_plan
@@ -211,6 +223,29 @@ PHASE_LABELS = ("P0", "P1", "P2", "P3", "P4")
 class TurnLeader:
     leader: Leader
     kingdom_id: int
+
+
+def build_missed_deadline_turn_leaders(state: GameState, kingdom_id: int) -> list[TurnLeader]:
+    """Build a ``TurnLeader`` for every leader belonging to ``kingdom_id``, using
+    ``turn/missed_deadline.py build_missed_deadline_plan()`` -- the
+    ``REPORTS.PAS Set_Defend`` auto-fill (Phase 134) for a King who
+    missed the move-submission deadline entirely.
+
+    ``kingdom_id`` is caller-supplied, not auto-detected: ``GameState``
+    has no move-file-submission-timestamp concept anywhere (see ``turn/
+    missed_deadline.py``'s own docstring), so a caller who already knows
+    "no move file arrived for this kingdom this turn" merges this
+    function's own output into the ``turn_leaders`` list passed to
+    ``run_turn()``, exactly like any real, parsed plan.
+    """
+
+    turn_leaders: list[TurnLeader] = []
+    for leader_id, leader_state in state.leaders.items():
+        if leader_state.kingdom_id != kingdom_id:
+            continue
+        plan = build_missed_deadline_plan(state, leader_id)
+        turn_leaders.append(TurnLeader(Leader(leader_id, leader_state.name, plan), kingdom_id))
+    return turn_leaders
 
 
 @dataclass(slots=True)

@@ -16,7 +16,13 @@ from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.movement import neighbors as _neighbors
-from ak_engine.turn.turn_processor import MultiAttackerMoveResult, TurnLeader, run_turn
+from ak_engine.turn.plan_dispatch import NoOpResult
+from ak_engine.turn.turn_processor import (
+    MultiAttackerMoveResult,
+    TurnLeader,
+    build_missed_deadline_turn_leaders,
+    run_turn,
+)
 
 from _helpers import ScriptedRandom
 
@@ -1042,3 +1048,70 @@ def test_run_turn_defend_battle_win_does_not_block_a_later_redeclaration():
     # P2's Defend re-declaration re-arms coverage -- the P3 invasion
     # relocates the leader again.
     assert state.leaders[100].location == DL_SECOND_COVERED
+
+
+# -- build_missed_deadline_turn_leaders() (Phase 138) --
+
+
+def test_build_missed_deadline_turn_leaders_defends_the_army_commanding_leader():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=HexCoord(3, 3)))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, HexCoord(3, 3), commanded_by=10))
+
+    turn_leaders = build_missed_deadline_turn_leaders(state, 1)
+
+    assert len(turn_leaders) == 1
+    tl = turn_leaders[0]
+    assert tl.kingdom_id == 1
+    assert tl.leader.leader_id == 10
+    phases = tl.leader.plan.segments[0].phases
+    assert phases["P0"].action is ActionCode.DEFEND
+    for label in ("P1", "P2", "P3", "P4"):
+        assert phases[label].action is ActionCode.WAIT
+
+
+def test_build_missed_deadline_turn_leaders_waits_the_armyless_leader():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="Advisor", location=HexCoord(4, 4)))
+
+    turn_leaders = build_missed_deadline_turn_leaders(state, 1)
+
+    assert len(turn_leaders) == 1
+    phases = turn_leaders[0].leader.plan.segments[0].phases
+    for label in ("P0", "P1", "P2", "P3", "P4"):
+        assert phases[label].action is ActionCode.WAIT
+
+
+def test_build_missed_deadline_turn_leaders_only_includes_that_kingdoms_own_leaders():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otheria", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=HexCoord(3, 3)))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=HexCoord(4, 4)))
+    state.add_leader(LeaderState(30, kingdom_id=2, name="C", location=HexCoord(9, 9)))
+
+    turn_leaders = build_missed_deadline_turn_leaders(state, 1)
+
+    assert {tl.leader.leader_id for tl in turn_leaders} == {10, 20}
+    assert all(tl.kingdom_id == 1 for tl in turn_leaders)
+
+
+def test_build_missed_deadline_turn_leaders_dispatches_cleanly_through_run_turn():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=HexCoord(3, 3)))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, HexCoord(3, 3), commanded_by=10))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="Advisor", location=HexCoord(4, 4)))
+
+    turn_leaders = build_missed_deadline_turn_leaders(state, 1)
+    results = run_turn(turn_leaders, state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    assert len(results) == 10  # 2 leaders x 5 phases
+    assert all(r.error is None for r in results)
+    general_p0 = next(r for r in results if r.leader_id == 10 and r.phase_label == "P0")
+    advisor_p0 = next(r for r in results if r.leader_id == 20 and r.phase_label == "P0")
+    assert general_p0.action is ActionCode.DEFEND
+    assert advisor_p0.action is ActionCode.WAIT
+    assert isinstance(advisor_p0.result, NoOpResult)

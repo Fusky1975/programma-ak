@@ -5165,6 +5165,31 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   no code changes beyond that docstring addendum, no new tests needed.
   This closes out the full DEF2.PAS/REPORTS.PAS sweep the user
   requested (Phases 134-137).
+- **Phase 138 (current)**: wires `turn/missed_deadline.py` (Phase 134)
+  into `turn_processor.py`, per the user's own request to connect the
+  "orphan" modules left standalone after the DEF2.PAS/REPORTS.PAS
+  sweep. New `build_missed_deadline_turn_leaders(state, kingdom_id)`
+  builds a `TurnLeader` for every leader belonging to `kingdom_id`
+  using `build_missed_deadline_plan()`, so a caller who already knows
+  a kingdom submitted no move file this turn can merge that kingdom's
+  own Defend/Wait auto-fill leaders straight into the `turn_leaders`
+  list passed to `run_turn()`, dispatched exactly like any real,
+  parsed plan. `kingdom_id` stays caller-supplied -- `run_turn()`
+  itself still has no "did this kingdom submit a move file" detection
+  built in, since `GameState` tracks no such timestamp anywhere.
+  - `turn/intelligence_estimate.py` (Phase 136) stays unwired for now:
+    re-checking exactly where `REPORTS.PAS Align_Est`/`Temper_Est`
+    are actually called from turned up **zero call sites anywhere in
+    the available Pascal archive** -- they're declared and defined,
+    but never invoked from any accessible source. Wiring them into a
+    real consumer (e.g. extending `turn/aspy_execution.py`'s
+    `SpyReport` with a "characters spotted, with estimated
+    alignment/temper" section) would therefore be this project's own
+    design choice, not a sourced integration point -- flagged for the
+    user rather than invented unprompted.
+  - Non-breaking: full suite passed unchanged (1977 passed) before the
+    new Phase 138 tests were written. 4 new tests added (1981 passed
+    total) in `tests/test_turn_processor.py`.
 
 ## Setup
 
