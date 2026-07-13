@@ -5391,7 +5391,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new `FireExecutionResult` return type) before the new Phase 143
     tests were written. 4 new tests added (2019 passed total) in
     `tests/test_turn_report.py`.
-- **Phase 144 (current)**: `report/turn_report.py describe_practice()`
+- **Phase 144**: `report/turn_report.py describe_practice()`
   (new) -- third slice of the report-assembler thread, consuming
   `turn/practice_execution.py PracticeExecutionResult` (Phase 44/46).
   Only two of this project's Practice renderers are ever reachable,
@@ -5418,6 +5418,48 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `not_implemented_for_ability`) renders nothing.
   - Non-breaking: full suite passed unchanged (2019 passed) before the
     new Phase 144 tests were written. 6 new tests added (2025 passed
+    total) in `tests/test_turn_report.py`.
+- **Phase 145 (current)**: `report/turn_report.py render_cast_announcement()`
+  + `describe_cast()` (both new) -- fourth slice of the report-assembler
+  thread, and the first to consume `turn/cast_execution.py
+  CastExecutionResult` (Phase 29/59/60/141). Unlike the other
+  `describe_*` composers, Cast's own real narrative material
+  (`SPELL_CAST_ANNOUNCEMENT`, Phase 122) was already sourced but never
+  actually rendered by anything -- that phase's own docstring left it as
+  "raw templates only; the caller composes," so this phase is the first
+  real caller.
+  - `render_cast_announcement()` stitches `SAY.PAS _LCast1`'s own
+    opening clause (`CAST_SPELL_OPENING_COMPLETE_TEMPLATE` for
+    Tornado/Bless/Plague, `CAST_SPELL_OPENING_CONTINUED_TEMPLATE`
+    otherwise, keyed by `CAST_SPELL_OPENING_COMPLETE_SPELLS`) with the
+    matching `SPELL_CAST_ANNOUNCEMENT[spell]` continuation clause, then
+    renders the combined template through `report/prose.py render()`.
+    Covers all 25 `SPELL_CAST_ANNOUNCEMENT` entries generically (any
+    spell whose own entry needs a `target_name`/`province_name`/
+    `terrain_name`/`army_names` raises `ValueError` naming the spell if
+    it's missing), though `describe_cast()` only ever reaches one of the
+    13 spells `turn/cast_execution.py` can actually apply.
+  - **Two genuine, honestly-transcribed oddities surfaced by actually
+    stitching the two template halves together for the first time**,
+    neither silently "fixed": `Spell.ORATORY`'s own `SPNOTE.X2` entry
+    already reads as a complete sentence ("< cast a spell giving magical
+    powers of oratory to [.") yet `_LCast1`'s own `CASE` doesn't
+    special-case it as "complete" the way Tornado/Bless/Plague are, so
+    the real Pascal output redundantly says "cast a spell" twice in a
+    row. `Spell.CHARM`'s own entry (".< befriended/Rcharmed [...")
+    starts with a bare `.`, which lands mid-sentence right after the
+    opening clause's own trailing space, producing a real, jarring
+    ".< befriended..." mid-sentence full stop. Both transcribed as-is,
+    the same stance already taken for `CONTROL_UNDEAD`'s mid-word
+    truncation (Phase 122) and the Mermen "air-transport" wording (Phase
+    127).
+  - `describe_cast()` returns `None` when `result.applied` is `False`
+    (a fizzled roll, an invalid target, or one of the 12 unexecuted
+    spells) -- there is no real `SAY.PAS` narrative for a Cast order
+    that never took effect, mirroring `describe_practice()`'s own
+    "no narratable outcome" stance.
+  - Non-breaking: full suite passed unchanged (2025 passed) before the
+    new Phase 145 tests were written. 16 new tests added (2041 passed
     total) in `tests/test_turn_report.py`.
 
 ## Setup

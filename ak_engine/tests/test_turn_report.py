@@ -26,6 +26,7 @@ from ak_engine.report.turn_report import (
     SPY_LEADS_APPROXIMATELY_TEMPLATE,
     WILL_TEMPLATE,
     describe_battle,
+    describe_cast,
     describe_fire,
     describe_give,
     describe_hire,
@@ -98,6 +99,7 @@ from ak_engine.report.turn_report import (
     render_homeland_defense_morale,
     render_oratory_speech,
     render_monster_threat_death,
+    render_cast_announcement,
     render_practice_already_maxed,
     render_practice_tutored,
     render_pursuit_and_destroy,
@@ -139,9 +141,12 @@ from ak_engine.report.turn_report import (
     render_will,
     tactical_margin_bucket,
 )
+from ak_engine.models.enums import Spell
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
+from ak_engine.turn.cast_decode import CastRequest
+from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
@@ -2071,5 +2076,131 @@ def test_describe_give_renders_nothing_for_an_unsourced_failure_reason():
     rng = ScriptedRandom([])
 
     line = describe_give(result, giver_name="Aldric", recipient_name="Borin", gold_requested=100, rng=rng)
+
+    assert line is None
+
+
+# -- render_cast_announcement / describe_cast (Phase 145) --
+
+
+def test_render_cast_announcement_target_spell_continued():
+    rng = ScriptedRandom([])
+    result = render_cast_announcement(Spell.KILL_ENEMY, "Aldric", rng, target_name="Borin")
+    assert result == "Aldric cast a Kill Enemy spell and Borin was magically killed by a dark Necromantic spell!"
+
+
+def test_render_cast_announcement_province_spell_continued():
+    rng = ScriptedRandom([])
+    result = render_cast_announcement(Spell.EARTHQUAKE, "Aldric", rng, province_name="Province")
+    assert result == "Aldric cast a Earthquake spell and Province was devastated by an earthquake!"
+
+
+def test_render_cast_announcement_complete_sentence_spell():
+    # Bless is one of the 3 CAST_SPELL_OPENING_COMPLETE_SPELLS (_LCast1's own
+    # CASE Tornado,Bless,Plague) -- no "and" joiner, and no space is inserted
+    # either, matching _LCast1's literal source text.
+    rng = ScriptedRandom([])
+    result = render_cast_announcement(Spell.BLESS, "Aldric", rng, province_name="Province")
+    assert result == "Aldric cast a Bless spell.Province was magically blessed and prospered."
+
+
+def test_render_cast_announcement_army_list_and_province():
+    rng = ScriptedRandom([])
+    result = render_cast_announcement(
+        Spell.TORNADO, "Aldric", rng, province_name="Province", army_names=["1st Legion"]
+    )
+    assert result == "Aldric cast a Tornado spell.tornadoes sucked up 1st Legion in Province and destroyed them."
+
+
+def test_render_cast_announcement_illus_terrain_needs_terrain_name():
+    rng = ScriptedRandom([])
+    result = render_cast_announcement(
+        Spell.ILLUS_TERRAIN, "Aldric", rng, province_name="Province", terrain_name="Desert"
+    )
+    assert result == "Aldric cast a Illusory Terrain spell and Province had an illusion cast upon it.It was actually a Desert province."
+
+
+def test_render_cast_announcement_skeletal_army_list_only():
+    rng = ScriptedRandom([])
+    result = render_cast_announcement(Spell.SKELETAL_ARMY, "Aldric", rng, army_names=["1st Legion"])
+    assert result == "Aldric cast a Skeletal Army spell and 1st Legion arose from the graves of the dead!"
+
+
+def test_render_cast_announcement_resurrection_reuses_caster_and_target_markers():
+    # RESURRECTION's own SPELL_CAST_ANNOUNCEMENT entry references the caster
+    # a second time via <2 and the target via [1 -- same real duplicate-marker
+    # shape render_battle_winner() already established for <2 (Phase 61).
+    rng = ScriptedRandom([])
+    result = render_cast_announcement(Spell.RESURRECTION, "Aldric", rng, target_name="Borin")
+    assert result == "Aldric cast a Resurrection spell and Borin was resurrected by the spell cast by Aldric."
+
+
+def test_render_cast_announcement_oratory_double_cast_clause_is_transcribed_honestly():
+    # _LCast1's own CASE doesn't special-case Oratory as "complete" even
+    # though SPNOTE.X2's own entry already reads as a full sentence -- the
+    # real Pascal output really does redundantly say "cast a spell" twice.
+    rng = ScriptedRandom([])
+    result = render_cast_announcement(Spell.ORATORY, "Aldric", rng, target_name="Borin")
+    assert result == "Aldric cast a Oratory spell and Aldric cast a spell giving magical powers of oratory to Borin."
+
+
+def test_render_cast_announcement_charm_leading_period_and_r_choices():
+    # Charm's own SPNOTE.X2 entry starts with a bare "." (a real, honestly
+    # transcribed oddity, the same "transcribe verbatim, don't silently fix"
+    # stance already taken for CONTROL_UNDEAD's truncation and the Mermen
+    # "air-transport" wording, Phase 127). 3 "/R" choices, all scripted left.
+    rng = ScriptedRandom([0.1, 0.1, 0.1])
+    result = render_cast_announcement(Spell.CHARM, "Aldric", rng, target_name="Borin")
+    assert result == "Aldric cast a Charm spell and .Aldric befriended Borin and used Aldric's respite to escape."
+
+
+def test_render_cast_announcement_missing_target_name_raises():
+    rng = ScriptedRandom([])
+    with pytest.raises(ValueError, match="target_name"):
+        render_cast_announcement(Spell.KILL_ENEMY, "Aldric", rng)
+
+
+def test_render_cast_announcement_missing_province_name_raises():
+    rng = ScriptedRandom([])
+    with pytest.raises(ValueError, match="province_name"):
+        render_cast_announcement(Spell.EARTHQUAKE, "Aldric", rng)
+
+
+def test_render_cast_announcement_missing_army_names_raises():
+    rng = ScriptedRandom([])
+    with pytest.raises(ValueError, match="army_names"):
+        render_cast_announcement(Spell.SKELETAL_ARMY, "Aldric", rng)
+
+
+def test_render_cast_announcement_missing_terrain_name_raises():
+    rng = ScriptedRandom([])
+    with pytest.raises(ValueError, match="terrain_name"):
+        render_cast_announcement(Spell.ILLUS_TERRAIN, "Aldric", rng, province_name="Province")
+
+
+def test_render_cast_announcement_unmapped_spell_raises():
+    # Spell.GATE_ANGEL is one of the 10 "secret" spells SPNOTE.X2 never
+    # documented -- see SPELL_CAST_ANNOUNCEMENT's own docstring.
+    rng = ScriptedRandom([])
+    with pytest.raises(ValueError, match="no SPELL_CAST_ANNOUNCEMENT entry"):
+        render_cast_announcement(Spell.GATE_ANGEL, "Aldric", rng)
+
+
+def test_describe_cast_renders_the_announcement_when_applied():
+    result = CastExecutionResult(request=CastRequest(spell=Spell.KILL_ENEMY, target=0), applied=True)
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Aldric", rng=rng, target_name="Borin")
+
+    assert line == "Aldric cast a Kill Enemy spell and Borin was magically killed by a dark Necromantic spell!"
+
+
+def test_describe_cast_renders_nothing_when_not_applied():
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.KILL_ENEMY, target=0), applied=False, reason="cast roll failed"
+    )
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Aldric", rng=rng, target_name="Borin")
 
     assert line is None

@@ -1007,10 +1007,19 @@ from __future__ import annotations
 
 import random
 
+from ak_engine.models.enums import (
+    CAST_SPELL_OPENING_COMPLETE_SPELLS,
+    CAST_SPELL_OPENING_COMPLETE_TEMPLATE,
+    CAST_SPELL_OPENING_CONTINUED_TEMPLATE,
+    SPELL_CAST_ANNOUNCEMENT,
+    SPELL_NAME,
+    Spell,
+)
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.report.prose import render
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
+from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
@@ -1757,6 +1766,161 @@ def render_magic_feature_discovery(
         return render(_MAGFEAT_ITSELF_TEMPLATE, values)
     values["$\\"] = MAGIC_FEATURE_NAME[magic_feature]
     return render(_MAGFEAT_FOUND_TEMPLATE, values)
+
+
+# The 13 Spell members SPELL_CAST_ANNOUNCEMENT markers, per SPNOTE.X2's own
+# real entry text (see models/enums.py's own docstring above that dict).
+# Only the spells turn/cast_execution.py can actually apply are covered --
+# the other 12 SPELL_CAST_ANNOUNCEMENT entries stay unconsumed here, the
+# same "narrative-precedes-execution" stance already taken for Ice-Suspend
+# (Phase 123) and Assassination (Phase 125): a real caller for them would
+# need turn/cast_execution.py's own still-unmodeled spells built first.
+_CAST_ANNOUNCEMENT_TARGET_SPELLS = frozenset(
+    {Spell.KILL_ENEMY, Spell.RESURRECTION, Spell.ILLUS_ARMIES, Spell.ORATORY, Spell.CHARM}
+)
+_CAST_ANNOUNCEMENT_PROVINCE_SPELLS = frozenset(
+    {
+        Spell.PART_SEA,
+        Spell.BLESS,
+        Spell.EARTHQUAKE,
+        Spell.FLOOD,
+        Spell.TORNADO,
+        Spell.PLAGUE,
+        Spell.ILLUS_TERRAIN,
+    }
+)
+_CAST_ANNOUNCEMENT_ARMY_LIST_SPELLS = frozenset(
+    {Spell.FLOOD, Spell.TORNADO, Spell.PLAGUE, Spell.SKELETAL_ARMY}
+)
+
+
+def render_cast_announcement(
+    spell: Spell,
+    caster_name: str,
+    rng: random.Random,
+    *,
+    target_name: str | None = None,
+    province_name: str | None = None,
+    terrain_name: str | None = None,
+    army_names: list[str] | None = None,
+) -> str:
+    """Renders the Cast announcement sentence for one of the 13 spells
+    ``turn/cast_execution.py`` actually applies, stitching ``SAY.PAS``
+    ``_LCast1``'s own opening clause (``CAST_SPELL_OPENING_COMPLETE_
+    TEMPLATE``/``CAST_SPELL_OPENING_CONTINUED_TEMPLATE``, keyed by
+    ``CAST_SPELL_OPENING_COMPLETE_SPELLS``) with the matching
+    ``SPELL_CAST_ANNOUNCEMENT[spell]`` continuation clause -- exactly the
+    "``Say(...)`` calls write sequentially with no separator" relationship
+    ``models/enums.py``'s own docstring documents as the two entries'
+    "apparent intended relationship," not force-verified as grammatical
+    for every spell (that module's own docstring already flags
+    ``CONTROL_UNDEAD``'s mid-word truncation as one confirmed case where
+    it isn't). ``Spell.ORATORY`` is a second such honestly-transcribed
+    oddity: its own ``SPNOTE.X2`` entry ("< cast a spell giving magical
+    powers of oratory to [.") already reads as a complete sentence, yet
+    ``_LCast1``'s own ``CASE`` only special-cases Tornado/Bless/Plague as
+    "complete" -- so Oratory still gets the "< cast a ~ spell and "
+    prefix, producing a real, redundant "cast a spell and cast a
+    spell..." double statement. Transcribed as-is, not silently
+    smoothed over, the same stance already taken for the Mermen
+    "air-transport" wording (Phase 127) and ``_LCast1``'s own
+    ``Spell.CHARM`` entry, whose leading period (".< befriended...")
+    likewise concatenates into a mid-sentence full stop.
+
+    ``target_name``/``province_name``/``terrain_name``/``army_names``
+    are each required only for the spells whose own announcement text
+    actually needs them (see the three ``_CAST_ANNOUNCEMENT_*_SPELLS``
+    sets above) -- raises ``ValueError`` naming the spell if a needed one
+    is missing, the same fail-loud stance ``report/prose.py``'s own
+    ``render()`` already takes for a missing ``lists`` entry.
+
+    Works for any of the 25 ``SPELL_CAST_ANNOUNCEMENT`` entries, not
+    just the 13 ``turn/cast_execution.py`` can apply -- ``describe_cast()``
+    below is the only real caller, and it only ever reaches one of those
+    13 (the only spells that ever produce ``applied=True``), but this
+    function itself doesn't assume that narrower scope.
+    """
+
+    if spell not in SPELL_CAST_ANNOUNCEMENT:
+        raise ValueError(f"no SPELL_CAST_ANNOUNCEMENT entry for {spell!r}")
+
+    opening = (
+        CAST_SPELL_OPENING_COMPLETE_TEMPLATE
+        if spell in CAST_SPELL_OPENING_COMPLETE_SPELLS
+        else CAST_SPELL_OPENING_CONTINUED_TEMPLATE
+    )
+    template = opening + SPELL_CAST_ANNOUNCEMENT[spell]
+
+    values = {"<": caster_name, "<2": caster_name, "~": SPELL_NAME[spell]}
+    lists: dict[str, list[str]] = {}
+
+    if spell in _CAST_ANNOUNCEMENT_TARGET_SPELLS:
+        if target_name is None:
+            raise ValueError(f"{spell!r} needs target_name")
+        values["["] = target_name
+        values["[1"] = target_name
+        if spell is Spell.CHARM:
+            values[">"] = f"{caster_name}'s"
+
+    if spell in _CAST_ANNOUNCEMENT_PROVINCE_SPELLS:
+        if province_name is None:
+            raise ValueError(f"{spell!r} needs province_name")
+        values["@"] = province_name
+
+    if spell is Spell.ILLUS_TERRAIN:
+        if terrain_name is None:
+            raise ValueError(f"{spell!r} needs terrain_name")
+        values["`"] = terrain_name
+
+    if spell in _CAST_ANNOUNCEMENT_ARMY_LIST_SPELLS:
+        if not army_names:
+            raise ValueError(f"{spell!r} needs army_names")
+        lists["="] = army_names
+
+    return render(template, values, rng=rng, lists=lists or None)
+
+
+def describe_cast(
+    result: CastExecutionResult,
+    *,
+    caster_name: str,
+    rng: random.Random,
+    target_name: str | None = None,
+    province_name: str | None = None,
+    terrain_name: str | None = None,
+    army_names: list[str] | None = None,
+) -> str | None:
+    """Compose Cast's own turn-report line from an already-computed
+    ``CastExecutionResult``, the same ``describe_*`` composition pattern
+    ``describe_battle()``/``describe_give()``/``describe_hire()``/
+    ``describe_fire()``/``describe_practice()`` already established:
+    consumes the result, calls the one real sourced renderer in the
+    real Pascal order, using caller-supplied display names/context (this
+    project has no name-synthesis system anywhere).
+
+    Returns ``None`` when ``result.applied`` is ``False`` -- a fizzled
+    roll, an invalid target, or (``result.reason == "spell effect not
+    modeled"``) one of the 12 unexecuted spells -- there is no real
+    ``SAY.PAS`` narrative for a Cast order that never took effect,
+    mirroring ``describe_practice()``'s own "no narratable outcome"
+    stance for a solo, un-tutored practice attempt. See
+    ``render_cast_announcement()`` for which of ``target_name``/
+    ``province_name``/``terrain_name``/``army_names`` a given spell
+    actually needs.
+    """
+
+    if not result.applied:
+        return None
+    spell = result.request.spell
+    return render_cast_announcement(
+        spell,
+        caster_name,
+        rng,
+        target_name=target_name,
+        province_name=province_name,
+        terrain_name=terrain_name,
+        army_names=army_names,
+    )
 
 
 # HostAK/TP/PROSE/EXPMOVE.X -- the Explore action's own progress report.
