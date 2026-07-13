@@ -5391,6 +5391,34 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new `FireExecutionResult` return type) before the new Phase 143
     tests were written. 4 new tests added (2019 passed total) in
     `tests/test_turn_report.py`.
+- **Phase 144 (current)**: `report/turn_report.py describe_practice()`
+  (new) -- third slice of the report-assembler thread, consuming
+  `turn/practice_execution.py PracticeExecutionResult` (Phase 44/46).
+  Only two of this project's Practice renderers are ever reachable,
+  and both need caller-supplied context `PracticeExecutionResult`
+  alone doesn't carry, the same convention `describe_battle()`'s own
+  `army_names` and `describe_give()`'s own `item_name` already
+  established:
+  - `render_practice_already_maxed` (`_LAlrMax`) fires when
+    `result.new_skill == MAX_SKILL_LEVEL` (9, `CTBOTH.PAS`'s own
+    `skillrange` ceiling) coexists with `skill_rose is False` --
+    confirmed the *only* way that combination can occur:
+    `attempt_skill_rise()`'s own early-return short-circuits to
+    `new_skill` unchanged whenever the attempt started at 9 already; a
+    failed roll from any lower level leaves `new_skill` at that lower
+    level, never at 9.
+  - `render_practice_tutored` (`_LTeach`) fires when the skill
+    genuinely rose (`result.skill_rose`) *and* the caller supplies a
+    `teacher_name` -- rulebook [3.13]'s own group-practice rule (a
+    higher-skilled co-practicer), which `PracticeExecutionResult` has
+    no field for at all (it doesn't even record solo vs. group). A
+    solo rise with no `teacher_name` renders nothing: no sourced
+    narrative template exists for solo Practice success at all.
+  - Every other case (a normal failed roll, an aptitude-only rise,
+    `not_implemented_for_ability`) renders nothing.
+  - Non-breaking: full suite passed unchanged (2019 passed) before the
+    new Phase 144 tests were written. 6 new tests added (2025 passed
+    total) in `tests/test_turn_report.py`.
 
 ## Setup
 

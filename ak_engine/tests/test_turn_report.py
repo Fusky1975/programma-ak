@@ -29,6 +29,7 @@ from ak_engine.report.turn_report import (
     describe_fire,
     describe_give,
     describe_hire,
+    describe_practice,
     margin_bucket,
     parse_template_choices,
     pick_variant,
@@ -143,6 +144,7 @@ from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
+from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
 
 from _helpers import ScriptedRandom
@@ -1425,6 +1427,68 @@ def test_practice_already_maxed_template_is_the_confirmed_hardcoded_say():
     assert PRACTICE_ALREADY_MAXED_TEMPLATE == (
         "< practiced ^ even though < had already reached the maximum skill level."
     )
+
+
+# -- describe_practice (integration, Phase 144) --
+
+
+def test_describe_practice_renders_already_maxed():
+    # new_skill == MAX_SKILL_LEVEL (9) with skill_rose False is only
+    # reachable by starting the attempt already at the ceiling -- see
+    # describe_practice()'s own docstring.
+    result = PracticeExecutionResult(ability=0, skill_rose=False, new_skill=9, new_aptitude=5)
+    rng = ScriptedRandom([0.1] * 4)
+
+    line = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
+
+    assert line == "Aldric practiced Tactics even though Aldric had already reached the maximum skill level."
+
+
+def test_describe_practice_renders_tutored_when_a_teacher_is_supplied():
+    result = PracticeExecutionResult(ability=0, skill_rose=True, new_skill=3, new_aptitude=5)
+    rng = ScriptedRandom([0.1] * 4)
+
+    line = describe_practice(result, character_name="Aldric", ability_name="Tactics", teacher_name="Borin", rng=rng)
+
+    assert line == "Aldric was tutored in Tactics by Borin."
+
+
+def test_describe_practice_renders_nothing_for_a_solo_rise_with_no_teacher():
+    # No sourced narrative template exists for solo Practice success at
+    # all -- see describe_practice()'s own docstring.
+    result = PracticeExecutionResult(ability=0, skill_rose=True, new_skill=3, new_aptitude=5)
+    rng = ScriptedRandom([])
+
+    line = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
+
+    assert line is None
+
+
+def test_describe_practice_renders_nothing_for_a_normal_failed_roll():
+    result = PracticeExecutionResult(ability=0, skill_rose=False, new_skill=3, new_aptitude=5)
+    rng = ScriptedRandom([])
+
+    line = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
+
+    assert line is None
+
+
+def test_describe_practice_renders_nothing_for_an_aptitude_only_rise():
+    result = PracticeExecutionResult(ability=0, skill_rose=False, aptitude_rose=True, new_skill=3, new_aptitude=6)
+    rng = ScriptedRandom([])
+
+    line = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
+
+    assert line is None
+
+
+def test_describe_practice_renders_nothing_when_not_implemented_for_ability():
+    result = PracticeExecutionResult(ability=0, not_implemented_for_ability=True)
+    rng = ScriptedRandom([])
+
+    line = describe_practice(result, character_name="Aldric", ability_name="Tactical", rng=rng)
+
+    assert line is None
 
 
 # -- duel demoralization narrative (Phase 121) -------------------------------
