@@ -73,6 +73,25 @@ ever an order target, never its guardian directly). `CTBOTH.PAS`'s own
 which feature *type*, for world generation) are a separate, unrelated
 concern -- see ``models/feature.py``'s own docstring for why world
 generation itself stays unbuilt.
+
+**Phase 130 addendum -- monster engagement state.** Found while
+scanning `RUMORS.PAS` for un-mined narrative content past `SAY.PAS`'s
+own now-fully-scanned dispatch code: `RUMORS.PAS`'s `Check_Raid`
+procedure (~lines 2279-2286) references `fstate[_feat1-256] = Bold`
+(a guarding monster's own negotiation state), which is `CTBOTH.PAS`'s
+`state = (Dead,Hired,Mercenary,Zomboid,Bold,Sold,Loser,Calm)`
+(~line 1260), with real display names confirmed via `CTBOTH.PAS`'s own
+``statname: ststrs = ('Dead','Hired','Mercenary','Skeletal',
+'Emboldened','Sold Soul','Loser','Calmed')`` (~line 1527) -- an
+8-member enum tracking whether a monster guarding a feature has been
+Hired, become a Mercenary, turned Skeletal (Necromantic control),
+"Sold" its soul, become a sore Loser, been Calmed, or -- the one this
+narrative fragment cares about -- become `Bold`/"Emboldened" enough to
+negotiate a quest (`Check_Raid`'s own real `Say(...)` sentence:
+"[ also offered to stop raiding/Rplundering @ if this quest be/Rwere
+accomplished/Rcompleted.", dispatched only when the monster's own
+`fstate` is `Bold`). Ties directly to `report/turn_report.py`'s own
+Monster Quest Fulfillment cluster (Phase 129).
 """
 
 from __future__ import annotations
@@ -254,3 +273,33 @@ MONSTER_HP_BANDS: tuple[MonsterHitPointBand, ...] = (
     MonsterHitPointBand("Powerful", 30, 44),
     MonsterHitPointBand("Very Powerful", 45, None),
 )
+
+
+class MonsterEngagementState(Enum):
+    """Mirrors CTBOTH.PAS's own ``state`` enum (~line 1260) -- a
+    guarding monster's own negotiation/service status. See module
+    docstring's Phase 130 addendum.
+    """
+
+    DEAD = 0
+    HIRED = 1
+    MERCENARY = 2
+    ZOMBOID = 3
+    BOLD = 4
+    SOLD = 5
+    LOSER = 6
+    CALM = 7
+
+
+# CTBOTH.PAS `statname` (~line 1527), verbatim, positional with
+# `MonsterEngagementState`'s own ordinals above.
+MONSTER_ENGAGEMENT_STATE_NAME: dict[MonsterEngagementState, str] = {
+    MonsterEngagementState.DEAD: "Dead",
+    MonsterEngagementState.HIRED: "Hired",
+    MonsterEngagementState.MERCENARY: "Mercenary",
+    MonsterEngagementState.ZOMBOID: "Skeletal",
+    MonsterEngagementState.BOLD: "Emboldened",
+    MonsterEngagementState.SOLD: "Sold Soul",
+    MonsterEngagementState.LOSER: "Loser",
+    MonsterEngagementState.CALM: "Calmed",
+}

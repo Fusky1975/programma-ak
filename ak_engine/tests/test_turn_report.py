@@ -82,6 +82,7 @@ from ak_engine.report.turn_report import (
     render_magic_feature_discovery,
     render_march,
     render_melee_attack,
+    render_monster_offers_raid_truce,
     render_mortally_wounded,
     render_move_to_bow_range,
     render_move_to_melee_range,
@@ -1844,3 +1845,18 @@ def test_render_quest_reward_already_given():
         'Sayeth the Ogre, "I have already given away the Ring of Power '
         'to a worthier adventurer.Go away!"'
     )
+
+
+# -- monster raid-truce offer (Phase 130) --
+
+
+def test_render_monster_offers_raid_truce_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_monster_offers_raid_truce("the Ogre", "Greenfield", rng)
+    assert result == "the Ogre also offered to stop raiding Greenfield if this quest be accomplished."
+
+
+def test_render_monster_offers_raid_truce_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_monster_offers_raid_truce("the Ogre", "Greenfield", rng)
+    assert result == "the Ogre also offered to stop plundering Greenfield if this quest were completed."

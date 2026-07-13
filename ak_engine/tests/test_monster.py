@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from ak_engine.models.monster import (
+    MONSTER_ENGAGEMENT_STATE_NAME,
     MONSTER_HP_BANDS,
     MONSTER_NAMES,
     MONSTER_STATS,
     Monster,
+    MonsterEngagementState,
     MonsterSpeed,
     MonsterStats,
 )
@@ -57,3 +59,22 @@ def test_monster_hp_bands_cover_the_full_range_including_unlabeled_row():
     assert labels == ["Weak", "-", "Large/Strong", "Powerful", "Very Powerful"]
     assert (MONSTER_HP_BANDS[0].low, MONSTER_HP_BANDS[0].high) == (7, 12)
     assert MONSTER_HP_BANDS[-1].high is None
+
+
+# -- MonsterEngagementState (Phase 130) --
+
+
+def test_monster_engagement_state_has_8_members():
+    assert len(list(MonsterEngagementState)) == 8
+
+
+def test_monster_engagement_state_name_covers_all_members():
+    assert set(MONSTER_ENGAGEMENT_STATE_NAME.keys()) == set(MonsterEngagementState)
+
+
+def test_monster_engagement_state_name_verbatim_samples():
+    assert MONSTER_ENGAGEMENT_STATE_NAME[MonsterEngagementState.DEAD] == "Dead"
+    assert MONSTER_ENGAGEMENT_STATE_NAME[MonsterEngagementState.ZOMBOID] == "Skeletal"
+    assert MONSTER_ENGAGEMENT_STATE_NAME[MonsterEngagementState.BOLD] == "Emboldened"
+    assert MONSTER_ENGAGEMENT_STATE_NAME[MonsterEngagementState.SOLD] == "Sold Soul"
+    assert MONSTER_ENGAGEMENT_STATE_NAME[MonsterEngagementState.CALM] == "Calmed"

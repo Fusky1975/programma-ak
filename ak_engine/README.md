@@ -4887,6 +4887,37 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new tests were written -- new functions with no existing call
     sites. 19 new tests added (1916 passed total) in
     `tests/test_turn_report.py`.
+- **Phase 130 (current)**: `models/monster.py MonsterEngagementState`
+  (new) + `report/turn_report.py render_monster_offers_raid_truce()`
+  -- the last real narrative fragment found while sweeping the
+  remainder of `RUMORS.PAS` past `SAY.PAS`'s own now-fully-scanned
+  1402 lines. `RUMORS.PAS`'s `Check_Raid` procedure (~lines 2279-2286)
+  is dispatched inline within `FD`'s own `MTALK.X2` file-dispatch flow
+  (not the main `Say_Code` `CASE`) and references `fstate[_feat1-256]
+  = Bold` -- `CTBOTH.PAS`'s `state = (Dead,Hired,Mercenary,Zomboid,
+  Bold,Sold,Loser,Calm)` (~line 1260), with real display names from
+  `CTBOTH.PAS`'s own `statname` array (~line 1527): "Dead", "Hired",
+  "Mercenary", "Skeletal", "Emboldened", "Sold Soul", "Loser",
+  "Calmed". `render_monster_offers_raid_truce()` renders the one real
+  sentence gated on this state (`_ = Bold` = "Emboldened"): a
+  quest-giving monster offers to stop raiding a province if its own
+  quest is fulfilled -- ties directly to Phase 129's Monster Quest
+  Fulfillment cluster.
+  - **`RUMORS.PAS` is now fully swept for narrative content.** The
+    large remaining block this phase also inspected (~lines
+    1000-1673: `Write_MF`, `Check_PToo`, `Write_Entry`,
+    `Write_Standby`, `Check_News`/`Fin_News`, `Batch_Print`/
+    `Summ_Print`/`Batch_Copy`) turned out to be the original 1990s
+    play-by-mail operator's own billing/administrative infrastructure
+    (subscription invoicing, standby-player recruitment forms, a
+    news feed, batch-printing utilities) -- genuinely out of scope for
+    game-mechanics modeling, not a gap. Everything else in the file is
+    either the rendering engine itself (already reverse-engineered by
+    `report/prose.py`, Phase 58) or plumbing utilities.
+  - Non-breaking: full suite passed unchanged (1916 passed) before any
+    new tests were written -- new module/function with no existing
+    call sites. 5 new tests added (1921 passed total) in
+    `tests/test_monster.py`/`tests/test_turn_report.py`.
 
 ## Setup
 

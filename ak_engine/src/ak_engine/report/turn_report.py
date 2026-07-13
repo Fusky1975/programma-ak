@@ -963,6 +963,19 @@ fleeing and `[` being approached/fled-from).
   away from [.',S_PCom)` -- plain narration (no quotes), the
   character's own courage fails during the quest encounter.
   `render_quest_fled_in_fear()`.
+
+**Phase 130 addendum -- monster raid-truce offer.** `RUMORS.PAS`'s
+`Check_Raid` procedure (~lines 2279-2286), dispatched inline within
+`FD`'s own `MTALK.X2` file-dispatch flow (the same file `_MReply`
+routes to in the Phase 129 cluster) rather than from the main
+`Say_Code` `CASE`: `IF dex > 1000 THEN IF not offer_stop_raid THEN IF
+fn = 'mtalk' THEN IF fstate[_feat1-256]=Bold THEN IF ((ldesc = '') or
+(ldesc[1] = '(')) THEN BEGIN offer_stop_raid:= true; Say('[ also
+offered to stop raiding/Rplundering @ if this quest be/Rwere
+accomplished/Rcompleted.',S_PCom); END;` -- a single, real, hardcoded
+template, gated on the guarding monster's own `fstate` being `Bold`
+(`models/monster.py MonsterEngagementState.BOLD`, "Emboldened",
+Phase 130). `render_monster_offers_raid_truce()`.
 """
 
 from __future__ import annotations
@@ -3471,3 +3484,24 @@ def render_quest_reward_already_given(monster_name: str, item_name: str, rng: ra
 
     values = {"[1": monster_name, "\\": item_name}
     return render(QUEST_REWARD_ALREADY_GIVEN_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/RUMORS.PAS Check_Raid -- a single, real, hardcoded
+# template (no file), dispatched inline within FD's own MTALK.X2
+# file-dispatch flow rather than the main Say_Code CASE. See module
+# docstring's Phase 130 addendum.
+MONSTER_OFFERS_RAID_TRUCE_TEMPLATE = (
+    "[ also offered to stop raiding/Rplundering @ if this quest "
+    "be/Rwere accomplished/Rcompleted."
+)
+
+
+def render_monster_offers_raid_truce(monster_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders ``Check_Raid``'s sentence: a guarding monster whose own
+    ``fstate`` is ``Bold`` (``models/monster.py
+    MonsterEngagementState.BOLD``, "Emboldened", Phase 130) offers to
+    stop raiding a province if its quest is fulfilled.
+    """
+
+    values = {"[": monster_name, "@": province_name}
+    return render(MONSTER_OFFERS_RAID_TRUCE_TEMPLATE, values, rng=rng)
