@@ -46,18 +46,62 @@ uses) for "owners of adjacent provinces", and
 race-compatibility table Recruit itself already resolves against) for
 "army types recruitable there" -- rulebook [3.4]'s race-native-unit rule,
 not re-derived.
+
+**Spotted characters (Phase 139)** -- ``turn/intelligence_estimate.py``
+(Phase 136) implements ``REPORTS.PAS``'s real ``Align_Est``/``Temper_Est``
+imperfect-information formulas, but an exhaustive grep across all 14
+``.PAS`` files this project has turned up *zero call sites* for either
+function anywhere in the available Pascal archive -- there is no sourced
+integration point telling this project when a real report actually
+invokes them. Wiring them into ASpy's report (rather than, say, Cast or
+Challenge) is this project's own design choice: ASpy is the one action
+whose entire rulebook purpose ([3.14]) is "report on what's here," so a
+list of co-located leaders with the observer's best guess at their
+alignment/temper is a natural fit for the estimation formulas' actual
+shape, even without a Pascal citation pinning them to this specific spot.
+This is flagged here, not presented as sourced, per the user's own
+explicit go-ahead to build a consumer despite the missing call sites.
+
+The real formula asymmetry from ``intelligence_estimate.py`` carries
+through as two separate caller-supplied booleans, not one combined flag:
+``caster_holds_psychic_mage_office`` grants perfect detection for BOTH
+alignment and temper (``titchar[Psychic_Mage] = agent`` in both real
+conditions), while ``caster_has_detect_align`` only ever helps alignment
+(``Has_SA(agent,Detect_Align)`` -- temper detection has no such
+advanced-ability bypass in the Pascal source at all).
+
+A spotted leader's "true" alignment is read from their own kingdom's
+``KingdomState.alignment`` (the same per-kingdom field
+``turn/challenge_execution.py``'s Neutral-duelist-bonus check already
+treats as characterizing a leader in its service) -- ``None`` for an
+independent Hero with no kingdom. True temper is read from the new
+``LeaderState.temper`` field (Phase 139); ``None`` if not recorded, the
+same "no data" convention ``LeaderState.skills`` already established.
+Either being ``None`` means the corresponding estimate is also reported
+as ``None`` -- there's nothing to estimate away from.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.game_state import GameState
 from ak_engine.models.map import HexCoord
+from ak_engine.models.temper import Temper
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
+from ak_engine.turn.intelligence_estimate import estimate_alignment, estimate_temper
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.recruit import is_army_type_compatible_with_race
+
+
+@dataclass(slots=True)
+class SpottedCharacter:
+    leader_id: int
+    name: str
+    estimated_alignment: Alignment | None
+    estimated_temper: Temper | None
 
 
 @dataclass(slots=True)
@@ -67,6 +111,7 @@ class SpyReport:
     adjacent_owners: dict[HexCoord, int | None] = field(default_factory=dict)
     recruitable_army_types: list[ArmyType] = field(default_factory=list)
     is_capital: bool = False
+    spotted_characters: list[SpottedCharacter] = field(default_factory=list)
 
 
 def execute_aspy(
@@ -76,12 +121,20 @@ def execute_aspy(
     *,
     board_width: int = NORMAL_MAP_BOUNDS[0],
     board_height: int = NORMAL_MAP_BOUNDS[1],
+    caster_holds_psychic_mage_office: bool = False,
+    caster_has_detect_align: bool = False,
 ) -> SpyReport | None:
     """Builds the intelligence report for the caster's own current province.
 
     Returns ``None`` if the caster's location isn't a known province (no
     ``GameState`` in this project's tests populates every hex -- the same
     "insufficient data, not a guessed result" convention used throughout).
+
+    ``caster_holds_psychic_mage_office``/``caster_has_detect_align`` feed
+    ``turn/intelligence_estimate.py``'s ``estimate_alignment()``/
+    ``estimate_temper()`` for the ``spotted_characters`` list -- see the
+    module docstring's "Spotted characters (Phase 139)" section for why
+    these are two separate flags, not one.
     """
 
     del request  # see module docstring
@@ -106,10 +159,46 @@ def execute_aspy(
         kingdom = state.kingdoms.get(province.owner_kingdom_id)
         is_capital = kingdom is not None and kingdom.home_province == leader.location
 
+    perfect_alignment = caster_holds_psychic_mage_office or caster_has_detect_align
+    spotted_characters: list[SpottedCharacter] = []
+    for spotted in state.leaders_at(leader.location):
+        if spotted.leader_id == leader_id:
+            continue
+
+        estimated_alignment: Alignment | None = None
+        if spotted.kingdom_id is not None:
+            spotted_kingdom = state.kingdoms.get(spotted.kingdom_id)
+            if spotted_kingdom is not None:
+                estimated_alignment = estimate_alignment(
+                    spotted_kingdom.alignment,
+                    spotted.leader_id,
+                    leader_id,
+                    perfect=perfect_alignment,
+                )
+
+        estimated_temper: Temper | None = None
+        if spotted.temper is not None:
+            estimated_temper = estimate_temper(
+                spotted.temper,
+                spotted.leader_id,
+                leader.birth_x or 0,
+                perfect=caster_holds_psychic_mage_office,
+            )
+
+        spotted_characters.append(
+            SpottedCharacter(
+                leader_id=spotted.leader_id,
+                name=spotted.name,
+                estimated_alignment=estimated_alignment,
+                estimated_temper=estimated_temper,
+            )
+        )
+
     return SpyReport(
         province=leader.location,
         owner_kingdom_id=province.owner_kingdom_id,
         adjacent_owners=adjacent_owners,
         recruitable_army_types=recruitable,
         is_capital=is_capital,
+        spotted_characters=spotted_characters,
     )

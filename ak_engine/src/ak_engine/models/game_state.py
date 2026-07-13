@@ -163,6 +163,7 @@ from ak_engine.models.feature import Feature
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.turn.combat import Quality
 
 
@@ -207,6 +208,15 @@ class LeaderState:
     phantasmal_armies_level: int = 0
     # Oratory idempotency flag (Phase 59) -- see module docstring.
     oratory_boosted_this_turn: bool = False
+    # Phase 139: the leader's own Temper (models/temper.py, Phase 82).
+    # None = not recorded, the same "no data" convention as `skills`.
+    temper: Temper | None = None
+    # Phase 139: the leader's own birth x-coordinate (REPORTS.PAS
+    # `bornx[agent]`, Phase 136's own Temper_Est noise term) -- None =
+    # not recorded; this project has no character-creation/world-
+    # generation source for it, same category of gap as `skills`
+    # before Phase 30/31 gave it a real populating consumer.
+    birth_x: int | None = None
 
 
 @dataclass(slots=True)

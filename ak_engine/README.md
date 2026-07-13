@@ -5190,6 +5190,40 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (1977 passed) before the
     new Phase 138 tests were written. 4 new tests added (1981 passed
     total) in `tests/test_turn_processor.py`.
+- **Phase 139 (current)**: wires `turn/intelligence_estimate.py`
+  (Phase 136) into `turn/aspy_execution.py`'s `SpyReport`, per the
+  user's own explicit go-ahead to build a consumer despite Phase 138's
+  finding that `Align_Est`/`Temper_Est` have **zero call sites anywhere
+  in the available Pascal archive**. This is documented here as this
+  project's own design choice (ASpy is the one action whose entire
+  rulebook purpose, [3.14], is "report on what's here," making a
+  spotted-characters list a natural fit for the estimation formulas'
+  shape), not presented as a sourced integration point.
+  - `models/game_state.py LeaderState` gains two new optional fields,
+    `temper: Temper | None = None` and `birth_x: int | None = None`,
+    following the exact same "`None` = no data recorded" convention
+    `skills: SkillTable | None = None` already established (Phase 30).
+    Neither has a populating consumer yet -- the same category of gap
+    `skills` itself was in before Phase 31's `kingdom_bridge.py`.
+  - `SpyReport` gains `spotted_characters: list[SpottedCharacter]`
+    (new dataclass: `leader_id`, `name`, `estimated_alignment`,
+    `estimated_temper`), derived from `GameState.leaders_at()` at the
+    caster's own province, excluding the caster itself.
+  - A spotted leader's true alignment is read from their own
+    `KingdomState.alignment` (the same per-kingdom field
+    `turn/challenge_execution.py`'s Neutral-duelist-bonus check already
+    treats as characterizing a leader in that kingdom's service);
+    `None` for an independent Hero with no kingdom. True temper is read
+    from the new `LeaderState.temper` field; `None` if unrecorded.
+  - `execute_aspy()` gains two new caller-supplied keyword flags
+    matching the real formula's own asymmetry (documented in Phase
+    136): `caster_holds_psychic_mage_office` grants perfect detection
+    for **both** alignment and temper; `caster_has_detect_align` only
+    ever helps alignment -- the real `Temper_Est` source has no
+    advanced-ability bypass at all.
+  - Non-breaking: full suite passed unchanged (1981 passed) before the
+    new Phase 139 tests were written. 8 new tests added (1989 passed
+    total) in `tests/test_aspy_execution.py`.
 
 ## Setup
 
