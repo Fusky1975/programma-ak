@@ -26,6 +26,7 @@ from ak_engine.report.turn_report import (
     SPY_LEADS_APPROXIMATELY_TEMPLATE,
     WILL_TEMPLATE,
     describe_battle,
+    describe_give,
     margin_bucket,
     parse_template_choices,
     pick_variant,
@@ -138,6 +139,7 @@ from ak_engine.report.turn_report import (
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
+from ak_engine.turn.trade_execution import TradeExecutionResult
 
 from _helpers import ScriptedRandom
 
@@ -1897,3 +1899,64 @@ def test_render_trade_deal_failed():
     rng = ScriptedRandom([])
     result = render_trade_deal_failed("Aldric", "Borin", "Ring of Power", rng)
     assert result == "Aldric could not strike a deal with Borin for the Ring of Power."
+
+
+# -- describe_give (integration, Phase 142) --
+
+
+def test_describe_give_renders_a_successful_item_transfer():
+    result = TradeExecutionResult(applied=True, item_transferred=True)
+    rng = ScriptedRandom([])
+
+    line = describe_give(result, giver_name="Aldric", recipient_name="Borin", item_name="Ring of Power", rng=rng)
+
+    assert line == "Aldric gave the Ring of Power to Borin."
+
+
+def test_describe_give_item_transfer_without_a_name_renders_nothing():
+    # No item-instance display-name synthesis exists -- see describe_give()'s
+    # own docstring, same caller-supplies-names convention as describe_battle.
+    result = TradeExecutionResult(applied=True, item_transferred=True)
+    rng = ScriptedRandom([])
+
+    line = describe_give(result, giver_name="Aldric", recipient_name="Borin", rng=rng)
+
+    assert line is None
+
+
+def test_describe_give_renders_a_successful_gold_transfer():
+    result = TradeExecutionResult(applied=True, gold_transferred=100)
+    rng = ScriptedRandom([0.1, 0.1])
+
+    line = describe_give(result, giver_name="Aldric", recipient_name="Borin", rng=rng)
+
+    assert line == "Aldric gave to Borin 100 gold from Aldric's treasury."
+
+
+def test_describe_give_renders_insufficient_gold_on_the_10_percent_cap_failure():
+    result = TradeExecutionResult(applied=False, reason="exceeds 10% treasury cap (25)")
+    rng = ScriptedRandom([])
+
+    line = describe_give(result, giver_name="Aldric", recipient_name="Borin", gold_requested=100, rng=rng)
+
+    assert line == "Aldric didn't have on hand the full 100 gold requested, so "
+
+
+def test_describe_give_insufficient_gold_without_amount_renders_nothing():
+    result = TradeExecutionResult(applied=False, reason="exceeds 10% treasury cap (25)")
+    rng = ScriptedRandom([])
+
+    line = describe_give(result, giver_name="Aldric", recipient_name="Borin", rng=rng)
+
+    assert line is None
+
+
+def test_describe_give_renders_nothing_for_an_unsourced_failure_reason():
+    # e.g. "recipient not found", "not co-located", "gold Give recipient
+    # must be a King" -- no SAY.PAS template exists for these.
+    result = TradeExecutionResult(applied=False, reason="recipient not found")
+    rng = ScriptedRandom([])
+
+    line = describe_give(result, giver_name="Aldric", recipient_name="Borin", gold_requested=100, rng=rng)
+
+    assert line is None

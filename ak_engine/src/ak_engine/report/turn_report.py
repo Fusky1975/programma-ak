@@ -1011,6 +1011,7 @@ from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.report.prose import render
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
+from ak_engine.turn.trade_execution import TradeExecutionResult
 
 # HostAK/TP/PROSE/PLUS1.X .. PLUS5.X, MINUS1.X .. MINUS5.X, ZERO.X --
 # transcribed verbatim (mini-language intact), PROSE.TXT notation for the
@@ -3540,8 +3541,9 @@ ITEM_GIVE_TEMPLATE = "< gave the \\ to [."
 def render_item_give(giver_name: str, recipient_name: str, item_name: str, rng: random.Random) -> str:
     """Renders ``_LTrade``'s sentence: a successful magic-item Give
     (rulebook [3.18]), ``turn/trade_execution.py execute_give()``'s own
-    item path -- still unmodeled at the ``GameState`` level (no
-    item-ownership registry), but real once one exists.
+    item path -- real as of Phase 140's item-ownership registry. See
+    ``describe_give()`` below for the composer that actually consumes a
+    real ``TradeExecutionResult`` to decide when this renders.
     """
 
     values = {"<": giver_name, "[": recipient_name, "\\": item_name}
@@ -3589,7 +3591,67 @@ def render_trade_deal_failed(giver_name: str, recipient_name: str, item_name: st
     """Renders ``_LNDeal``'s sentence: a reciprocal two-way trade's condition wasn't met
     (rulebook [3.18]: "the gift will be made only if the recipient
     Gives you a specified magic item... in the same phase").
+
+    **Not called by ``describe_give()`` below**: the reciprocal
+    two-way-trade condition this renders has no execution-side
+    trigger anywhere in this project -- ``turn/trade_decode.py``'s own
+    docstring confirms only the giver's own single item-or-gold amount
+    is decoded, never a recipient-side reciprocal item id, so
+    ``execute_give()`` has no state from which to ever produce this
+    outcome. Kept here, rendered directly by a future caller, the same
+    way this project keeps other genuinely-sourced-but-unwired
+    renderers rather than deleting them.
     """
 
     values = {"<": giver_name, "[": recipient_name, "\\": item_name}
     return render(TRADE_DEAL_FAILED_TEMPLATE, values, rng=rng)
+
+
+def describe_give(
+    result: TradeExecutionResult,
+    *,
+    giver_name: str,
+    recipient_name: str,
+    item_name: str | None = None,
+    gold_requested: int | None = None,
+    rng: random.Random,
+) -> str | None:
+    """Assembles the one-sentence Give narrative from an already-computed
+    ``TradeExecutionResult`` (``turn/trade_execution.py execute_give()``,
+    Phase 133, item path closed Phase 140) -- the same "data first,
+    already-computed result in, prose out" pattern ``describe_battle()``
+    above already established for battle outcomes.
+
+    - A successful item transfer (``result.item_transferred``) renders
+      ``_LTrade`` -- needs a caller-supplied ``item_name`` (this project
+      has no item-instance display-name synthesis, the same
+      caller-supplies-names convention ``describe_battle()``'s own
+      ``army_names`` already uses); returns ``None`` without one rather
+      than guessing.
+    - A successful gold transfer (``result.gold_transferred > 0``)
+      renders ``_LGGive``.
+    - A failure specifically because the giver's treasury didn't cover
+      [3.18]'s 10%-cap (``execute_gold_give()``'s own
+      ``"exceeds 10% treasury cap"`` reason string) renders ``_LNHave``
+      -- needs a caller-supplied ``gold_requested`` (the original
+      decoded amount, not the cap itself); returns ``None`` without one.
+    - Every other failure reason (giver/recipient not found, not
+      co-located, recipient not a King, no recipient decoded) has no
+      sourced narrative template at all and renders nothing -- this
+      project doesn't invent administrative-error prose.
+    """
+
+    if result.applied and result.item_transferred:
+        if item_name is None:
+            return None
+        return render_item_give(giver_name, recipient_name, item_name, rng)
+
+    if result.applied and result.gold_transferred > 0:
+        return render_gold_give(giver_name, recipient_name, result.gold_transferred, rng)
+
+    if not result.applied and result.reason is not None and result.reason.startswith("exceeds 10% treasury cap"):
+        if gold_requested is None:
+            return None
+        return render_insufficient_gold(giver_name, gold_requested, rng)
+
+    return None

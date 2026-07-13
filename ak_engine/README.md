@@ -5323,6 +5323,41 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new Phase 141 tests were written. 10 new tests added (2009 passed
     total): 9 in `tests/test_use_mi_execution.py` (new file) plus 1
     more real-dispatch test in `tests/test_plan_dispatch.py`.
+- **Phase 142 (current)**: `report/turn_report.py describe_give()`
+  (new) -- the first slice of the "turn report assembler" thread
+  flagged since Phase 61's own scope note ("a turn-events log, a
+  separate, much larger follow-up"). Rather than a global events log,
+  this follows the exact composition pattern `describe_battle()`
+  (Phase 61) already established: a `describe_*` function that
+  consumes an already-computed `*ExecutionResult` dataclass and calls
+  the relevant `render_*` functions in the real dispatch order, with
+  caller-supplied display names (no name-synthesis system exists in
+  this project).
+  - Consumes `turn/trade_execution.py TradeExecutionResult` (Phase
+    133/140): a successful item transfer renders `_LTrade`
+    (`render_item_give`), a successful gold transfer renders `_LGGive`
+    (`render_gold_give`), and a failure specifically from [3.18]'s 10%
+    treasury-cap check renders `_LNHave` (`render_insufficient_gold`).
+    Every other failure reason (giver/recipient not found, not
+    co-located, recipient not a King, no recipient decoded) has no
+    sourced narrative template and renders nothing.
+  - **Corrects a now-stale docstring**: `render_item_give`'s own
+    comment used to say the item path was "still unmodeled at the
+    `GameState` level (no item-ownership registry)" -- true when
+    written (Phase 133), false since Phase 140's real registry.
+  - `render_trade_deal_failed` (`_LNDeal`) is deliberately **not**
+    called by `describe_give()`: it renders a reciprocal two-way
+    trade's failed condition, but `turn/trade_decode.py` never decodes
+    a recipient-side reciprocal item id at all, so `execute_give()` has
+    no state that could ever produce this outcome -- documented as a
+    genuinely sourced but currently-unwired renderer, not deleted.
+  - The other 100 of this project's 104 `render_*` functions still
+    have no `describe_*` composer -- explicitly left for future phases
+    of the same shape, one action/mechanic at a time, rather than
+    attempted all at once.
+  - Non-breaking: full suite passed unchanged (2009 passed) before the
+    new Phase 142 tests were written. 6 new tests added (2015 passed
+    total) in `tests/test_turn_report.py`.
 
 ## Setup
 
