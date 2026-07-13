@@ -5142,6 +5142,29 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (1967 passed) before
     the new Phase 136 tests were written. 10 new tests added (1977
     passed total) in `tests/test_intelligence_estimate.py` (new file).
+- **Phase 137 (current)**: researched `REPORTS.PAS Ofc_Pts`/`Rank`
+  (~lines 1128-1250) -- the real per-turn scoring formula deciding
+  who holds each office (Emperor, Chancellor, Treasurer, Priest, Mage,
+  and a dozen more), the last thread from the user's own DEF2.PAS/
+  REPORTS.PAS sweep. **Confirmed a permanent dead end, not merely
+  unattempted**: nearly every office's own formula reads at least one
+  of ten distinct per-leader statistics (`lgenp`/`ladmp`/`lmhpp`/
+  `lwmsp`/`oops`/`tipts`/`seatax`/`alltax`/`lfdisc`/`ldiscp`) that an
+  exhaustive grep of all 14 available `.PAS` files confirms are
+  declared nowhere in the archive -- the same missing compiled-only
+  `mboth`/`defines` units already responsible for `spabord`'s lost
+  data (Phase 131) and `Agent_Align`'s missing source (Phase 136), but
+  affecting eight-plus statistics simultaneously here instead of one.
+  A couple of individual formula terms are independently derivable
+  (`M_Skill` from `LeaderState.skills`; `Treasurer`'s own points are
+  plausibly just a King's `KingdomState.treasury`), but implementing
+  only the 1-2 offices that happen to dodge the missing arrays, while
+  the other 13+ stay permanently unimplementable, would misrepresent
+  partial coverage as a real system. Documented in `models/office.py`'s
+  own docstring so a future sweep doesn't re-open this dead end;
+  no code changes beyond that docstring addendum, no new tests needed.
+  This closes out the full DEF2.PAS/REPORTS.PAS sweep the user
+  requested (Phases 134-137).
 
 ## Setup
 

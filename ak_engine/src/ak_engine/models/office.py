@@ -105,6 +105,34 @@ own confirmed range -- no contradiction: `GANG.X2` is a separate,
 sparser file specific to `Check_BFace`'s alignment-title fanaticism
 narrative, and simply has nothing at that one position, while
 `NECRO_MAGE` is a perfectly real `Office` with its own real perk here.
+
+**Phase 137 research -- "who holds each office each turn" is a
+confirmed, permanent dead end, not merely unattempted.**
+``REPORTS.PAS``'s ``Ofc_Pts``/``Rank`` (~lines 1128-1250) is the real
+per-turn scoring formula deciding office-holders (a King's own
+Emperor/Chancellor/Treasurer/Priest/Mage/etc. points, with a
+deterministic gold/tax-base/leader-index tie-break in ``Rank``) --
+found while sweeping ``DEF2.PAS``/``REPORTS.PAS`` for further
+unmodeled mechanics, per the user's own request. Unlike every other
+formula recovered in that sweep, this one cannot be built: nearly
+every office's own points formula reads at least one of
+``lgenp``/``ladmp``/``lmhpp``/``lwmsp``/``oops``/``tipts``/``seatax``/
+``alltax``/``lfdisc``/``ldiscp`` -- confirmed, by an exhaustive grep of
+all 14 available ``.PAS`` files, to be **declared nowhere in the
+archive**, only ever read/written from ``REPORTS.PAS``/``DEF2.PAS``
+themselves. Their true declarations live in the same missing
+compiled-only ``mboth``/``defines`` units already responsible for
+``spabord``'s lost data (Phase 131) and ``Agent_Align``'s missing
+source (Phase 136) -- except here it's eight-plus distinct per-leader
+statistics simultaneously, not one. A handful of individual formula
+terms *are* independently derivable (`M_Skill` from
+``LeaderState.skills``; ``Treasurer``'s ``lgold[ldran]`` is plausibly
+just that King's own ``KingdomState.treasury``) -- but building only
+the 1-2 offices whose formulas happen to avoid the missing arrays,
+while silently ignoring that the other 13+ offices remain permanently
+unimplementable, would misrepresent partial coverage as a real office-
+holder system. Recorded here, deliberately not implemented, so a
+future sweep doesn't re-open this dead end.
 """
 
 from __future__ import annotations
