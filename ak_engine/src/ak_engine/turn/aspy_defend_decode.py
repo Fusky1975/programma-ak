@@ -19,7 +19,12 @@ not dead data**:
   Wait/No_Action -- rulebook: "the computer ordered Defend actions for
   your generals") explicitly *writes* it: ``lobjects[0]:= lx[l2]*XMULT
   +ly[l2]`` -- the general's own current province, in the host's
-  internal ``x*XMULT+y`` coordinate arithmetic.
+  internal ``x*XMULT+y`` coordinate arithmetic. **Phase 134 addendum**:
+  ``Set_Defend`` only assigns Defend at all when the leader commands an
+  army (``AA_Led(l2) > 0``); see ``turn/missed_deadline.py`` for the
+  real implementation, which needs no numeric decode of this field at
+  all (``turn/defend_execution.py`` already computes coverage from the
+  leader's own live ``HexCoord``, not from a dispatched phase's ``obj``).
 
 Rulebook [3.14] (quoted in full, ``RULES.AK`` ~line 500): "A character
 Spying on a province will report on its owner, owners of adjacent

@@ -130,8 +130,12 @@ to dispatch automatically:
   ``RULES.AK``/``AKMAN.TXT``/``ADDEND.AK``/``INFO.AK``). Wait and
   No_Action are, however, confirmed **engine-internal** values: the
   Pascal source auto-fills a missed-deadline king's leaders with Defend
-  (phase 0) then Wait (phases 1-4) (``REPORTS.PAS Set_Defend``), and
-  initializes/pads every unused phase slot outside a plan's
+  (phase 0) then Wait (phases 1-4) (``REPORTS.PAS Set_Defend``) --
+  **Phase 134 correction**: only if the leader actually commands an
+  army (``AA_Led(l2) > 0``); an armyless leader gets Wait in every
+  phase, phase 0 included. See ``turn/missed_deadline.py
+  build_missed_deadline_plan()``, which now implements this for real.
+  Initializes/pads every unused phase slot outside a plan's
   ``planstart..planend`` range to No_Action (``DEF2.PAS Clear_M``) --
   neither looks like a routine player-typed order. Move_Abort is the
   most speculative of the three: declared in the ``action`` enum purely

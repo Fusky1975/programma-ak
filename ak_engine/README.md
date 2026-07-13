@@ -5067,6 +5067,36 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new Phase 133 tests were written. 13 new tests added (1964 passed
     total) in `tests/test_trade_decode.py`, `tests/test_trade_execution
     .py`, `tests/test_plan_dispatch.py`, and `tests/test_turn_report.py`.
+- **Phase 134 (current)**: implements `REPORTS.PAS Set_Defend`'s real
+  missed-deadline auto-fill for the first time -- previously only cited
+  as background in `plan_dispatch.py`/`aspy_defend_decode.py`'s own
+  docstrings, never actually built. Found while sweeping `DEF2.PAS`/
+  `REPORTS.PAS` for remaining unmodeled mechanics, per the user's own
+  request.
+  - New `turn/missed_deadline.py build_missed_deadline_plan(state,
+    leader_id)` constructs the exact `ActionPlan` `Set_Defend` (~lines
+    2201-2211) assigns to a King's leader who missed the move
+    deadline: phase 0 is `Defend` only if the leader actually commands
+    an army (`AA_Led(l2) > 0`) -- a condition this project's own prior
+    citations had dropped, silently over-stating Defend as
+    unconditional; an armyless leader gets `Wait` in every phase,
+    phase 0 included. Every other phase is always `Wait`.
+    `lobjects[0]:= lx[l2]*XMULT+ly[l2]` (the Pascal source's own
+    numeric encoding of the leader's location) needs no decoding here:
+    `turn/defend_execution.py`/`turn/turn_processor.py`'s own DEFEND
+    handling already computes reactive coverage from the leader's live
+    `HexCoord`, never from a dispatched phase's `obj` -- so the
+    synthetic phase's `obj` stays an inert placeholder, dispatched
+    exactly like any real, player-submitted plan via `turn/
+    plan_dispatch.py run_leader_plan()`.
+  - Not itself a "missed the deadline" detector -- this project has no
+    move-file-submission-timestamp concept in `GameState` at all; the
+    precondition is caller-supplied, the same "caller supplies what
+    decode/state can't determine" pattern already used by Phase 132/133's
+    `execute_gold_give()`/`execute_search()`.
+  - Non-breaking: full suite passed unchanged (1964 passed) before the
+    new Phase 134 tests were written. 3 new tests added (1967 passed
+    total) in `tests/test_missed_deadline.py` (new file).
 
 ## Setup
 
