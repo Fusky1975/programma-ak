@@ -856,6 +856,55 @@ a future phase that extracts `NODRU.X`/`BLUFF.X`.
   bite that changes the victim's alignment; `$o` is `PROSE.TXT`'s own
   Alignment/outlook-name marker, already established by
   `models/power.py` (Phase 95/101). `render_vampiric_bite()`.
+
+**Phase 127 addendum -- illegal-move error narrative.** `SAY.PAS`'s
+main `Say_Code` `CASE` (~lines 1309-1325) also dispatches on raw
+numeric codes outside `RUMORS.PAS`'s named 3000-9999 story-code
+block -- `Say_Code` itself (`RUMORS.PAS` ~line 1685) confirms `code >=
+32500` as a real, valid dispatch range (`(code >= 32500) or ((code >=
+3000) and (code <= 9999))`), so codes `32500`/`32501` are dispatched
+system/validation-error narratives, not orphaned CASE labels. These
+tie directly to two already-built validation mechanics:
+`turn/contested_province.py is_illegal_move_from_contested()` (Phase
+36) and the non-adjacent-move chase concept (Phase 78/85, rulebook
+[3.1]).
+
+- `32500: Say('< tried to move from \x13 to @, a non-adjacent
+  province.This is illegal!',S_Priv)` -- `\x13` is `PROSE.TXT`'s own
+  `^S` (Province name #2) marker, the origin. `render_illegal_move_
+  non_adjacent()`.
+- `32501: BEGIN _next:= Rint; IF _next <> 5 THEN Say('< attempted an
+  illegal move.',S_Priv); CASE _next OF ... END; END` -- a generic
+  prefix (`render_illegal_move_attempted()`) followed by one of four
+  real sub-case sentences, keyed by `_next`'s own range:
+  - `-1: Say('< could not retreat into an occupied
+    province.',S_Priv)`. `render_illegal_move_occupied_retreat()`.
+  - `100..149: Say('< tried to use water-borne movement to move from
+    \x13 to @, but > transport was insufficent for the
+    task.',S_Priv)` (verbatim "insufficent", the source's own
+    misspelling, kept as transcribed). `render_illegal_move_
+    insufficient_water_transport()`.
+  - `150..199: Say('< tried to move from \x13 to @, but provincial
+    flooding and insufficient transport thwarted the
+    move.',S_Priv)`. `render_illegal_move_flooding_transport()`.
+  - `200..249: Say('< was ordered to move with Mermen from \x13 to @,
+    but had insufficient air-transport.',S_Priv)` -- "air-transport"
+    for Mermen is the source's own literal text (not "corrected" to
+    "water-transport"; this project transcribes verbatim, flags
+    honest oddities rather than silently fixing them, the same stance
+    already taken for `_LDevast`'s discrepancy, Phase 112).
+    `render_illegal_move_mermen_air_transport()`.
+  - The `ELSE` branch (`FD('c:\\tp\\prose\\illmove.x2', ...)`) is
+    file-dispatched and deliberately left for a future phase that
+    extracts `ILLMOVE.X2`.
+
+This project has no source for how `render_illegal_move_attempted()`
+and a specific sub-case sentence combine (e.g. whether both are always
+shown, or the generic prefix is skipped for some `_next` values beyond
+the documented "`_next <> 5`" condition) -- each is exposed as its own
+renderer, the caller composes them, the same caller-composes-the
+-sequence stance already taken for the Ice-Suspend cluster (Phase 123)
+and the Assassination cluster (Phase 125).
 """
 
 from __future__ import annotations
@@ -3001,3 +3050,133 @@ def render_vampiric_bite(
         "$o": alignment_name,
     }
     return render(VAMPIRIC_BITE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS code 32500 -- a single, real, hardcoded template
+# (no file). See module docstring's Phase 127 addendum.
+ILLEGAL_MOVE_NON_ADJACENT_TEMPLATE = (
+    "< tried to move from ^S to @, a non-adjacent province.This is illegal!"
+)
+
+
+def render_illegal_move_non_adjacent(
+    character_name: str, origin_province_name: str, destination_province_name: str, rng: random.Random
+) -> str:
+    """Renders code ``32500``'s sentence: an illegal non-adjacent Move
+    attempt -- ties to the non-adjacent-move chase concept (Phase
+    78/85, rulebook [3.1]).
+    """
+
+    values = {
+        "<": character_name,
+        "^S": origin_province_name,
+        "@": destination_province_name,
+    }
+    return render(ILLEGAL_MOVE_NON_ADJACENT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS code 32501's generic prefix -- a single, real,
+# hardcoded template (no file). See module docstring's Phase 127
+# addendum.
+ILLEGAL_MOVE_ATTEMPTED_TEMPLATE = "< attempted an illegal move."
+
+
+def render_illegal_move_attempted(character_name: str, rng: random.Random) -> str:
+    """Renders code ``32501``'s generic prefix sentence, dispatched
+    whenever ``_next <> 5`` -- precedes one of the sub-case sentences
+    below.
+    """
+
+    values = {"<": character_name}
+    return render(ILLEGAL_MOVE_ATTEMPTED_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS code 32501's ``_next = -1`` sub-case -- a single,
+# real, hardcoded template (no file). See module docstring's Phase 127
+# addendum. Ties to turn/contested_province.py is_illegal_move_from_
+# contested() (Phase 36).
+ILLEGAL_MOVE_OCCUPIED_RETREAT_TEMPLATE = "< could not retreat into an occupied province."
+
+
+def render_illegal_move_occupied_retreat(character_name: str, rng: random.Random) -> str:
+    """Renders code ``32501``'s ``_next = -1`` sentence: a retreat into
+    an occupied province was rejected.
+    """
+
+    values = {"<": character_name}
+    return render(ILLEGAL_MOVE_OCCUPIED_RETREAT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS code 32501's ``_next`` 100..149 sub-case -- a
+# single, real, hardcoded template (no file), the source's own
+# "insufficent" spelling kept verbatim. See module docstring's Phase
+# 127 addendum.
+ILLEGAL_MOVE_INSUFFICIENT_WATER_TRANSPORT_TEMPLATE = (
+    "< tried to use water-borne movement to move from ^S to @, "
+    "but > transport was insufficent for the task."
+)
+
+
+def render_illegal_move_insufficient_water_transport(
+    character_name: str, origin_province_name: str, destination_province_name: str, rng: random.Random
+) -> str:
+    """Renders code ``32501``'s ``_next`` 100..149 sentence: insufficient
+    water-borne transport capacity.
+    """
+
+    values = {
+        "<": character_name,
+        "^S": origin_province_name,
+        "@": destination_province_name,
+        ">": f"{character_name}'s",
+    }
+    return render(ILLEGAL_MOVE_INSUFFICIENT_WATER_TRANSPORT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS code 32501's ``_next`` 150..199 sub-case -- a
+# single, real, hardcoded template (no file). See module docstring's
+# Phase 127 addendum.
+ILLEGAL_MOVE_FLOODING_TRANSPORT_TEMPLATE = (
+    "< tried to move from ^S to @, but provincial flooding and "
+    "insufficient transport thwarted the move."
+)
+
+
+def render_illegal_move_flooding_transport(
+    character_name: str, origin_province_name: str, destination_province_name: str, rng: random.Random
+) -> str:
+    """Renders code ``32501``'s ``_next`` 150..199 sentence: provincial
+    flooding plus insufficient transport thwarted the Move.
+    """
+
+    values = {
+        "<": character_name,
+        "^S": origin_province_name,
+        "@": destination_province_name,
+    }
+    return render(ILLEGAL_MOVE_FLOODING_TRANSPORT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS code 32501's ``_next`` 200..249 sub-case -- a
+# single, real, hardcoded template (no file); "air-transport" for
+# Mermen is the source's own literal text, transcribed verbatim rather
+# than "corrected". See module docstring's Phase 127 addendum.
+ILLEGAL_MOVE_MERMEN_AIR_TRANSPORT_TEMPLATE = (
+    "< was ordered to move with Mermen from ^S to @, but had "
+    "insufficient air-transport."
+)
+
+
+def render_illegal_move_mermen_air_transport(
+    character_name: str, origin_province_name: str, destination_province_name: str, rng: random.Random
+) -> str:
+    """Renders code ``32501``'s ``_next`` 200..249 sentence: insufficient
+    (Pascal source's own literal) "air-transport" for a Mermen Move.
+    """
+
+    values = {
+        "<": character_name,
+        "^S": origin_province_name,
+        "@": destination_province_name,
+    }
+    return render(ILLEGAL_MOVE_MERMEN_AIR_TRANSPORT_TEMPLATE, values, rng=rng)

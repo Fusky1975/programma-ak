@@ -61,6 +61,12 @@ from ak_engine.report.turn_report import (
     render_generic_encounter,
     render_hire_accepted,
     render_hire_counter_offer,
+    render_illegal_move_attempted,
+    render_illegal_move_flooding_transport,
+    render_illegal_move_insufficient_water_transport,
+    render_illegal_move_mermen_air_transport,
+    render_illegal_move_non_adjacent,
+    render_illegal_move_occupied_retreat,
     render_hire_refused,
     render_ice_break_out_attempt,
     render_ice_break_out_success,
@@ -1644,4 +1650,53 @@ def test_render_vampiric_bite_right_branch():
     assert result == (
         "Countess bit Countess's fangs into Bob and sucked up all "
         "Bob's blood.Bob changed to Evil alignment!"
+    )
+
+
+# -- illegal-move error narrative (Phase 127) --
+
+
+def test_render_illegal_move_non_adjacent():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_illegal_move_non_adjacent("Aldric", "Greenfield", "Redhaven", rng)
+    assert result == "Aldric tried to move from Greenfield to Redhaven, a non-adjacent province.This is illegal!"
+
+
+def test_render_illegal_move_attempted():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_illegal_move_attempted("Aldric", rng)
+    assert result == "Aldric attempted an illegal move."
+
+
+def test_render_illegal_move_occupied_retreat():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_illegal_move_occupied_retreat("Aldric", rng)
+    assert result == "Aldric could not retreat into an occupied province."
+
+
+def test_render_illegal_move_insufficient_water_transport():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_illegal_move_insufficient_water_transport("Aldric", "Greenfield", "Redhaven", rng)
+    assert result == (
+        "Aldric tried to use water-borne movement to move from "
+        "Greenfield to Redhaven, but Aldric's transport was "
+        "insufficent for the task."
+    )
+
+
+def test_render_illegal_move_flooding_transport():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_illegal_move_flooding_transport("Aldric", "Greenfield", "Redhaven", rng)
+    assert result == (
+        "Aldric tried to move from Greenfield to Redhaven, but "
+        "provincial flooding and insufficient transport thwarted the move."
+    )
+
+
+def test_render_illegal_move_mermen_air_transport():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_illegal_move_mermen_air_transport("Aldric", "Greenfield", "Redhaven", rng)
+    assert result == (
+        "Aldric was ordered to move with Mermen from Greenfield to "
+        "Redhaven, but had insufficient air-transport."
     )

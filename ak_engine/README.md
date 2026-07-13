@@ -4759,6 +4759,42 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new tests were written -- new functions with no existing call
     sites. 10 new tests added (1875 passed total) in
     `tests/test_turn_report.py`.
+- **Phase 127 (current)**: `report/turn_report.py` -- illegal-move
+  error narrative. `SAY.PAS`'s main `Say_Code` `CASE` also dispatches
+  on raw numeric codes outside `RUMORS.PAS`'s named 3000-9999
+  story-code block -- `Say_Code` itself (`RUMORS.PAS` ~line 1685)
+  confirms `code >= 32500` as a real, valid dispatch range, so codes
+  `32500`/`32501` (`SAY.PAS` ~lines 1309-1325) are dispatched
+  system/validation-error narratives, not orphaned CASE labels. Ties
+  directly to two already-built validation mechanics:
+  `turn/contested_province.py is_illegal_move_from_contested()` (Phase
+  36) and the non-adjacent-move chase concept (Phase 78/85, rulebook
+  [3.1]).
+  - `render_illegal_move_non_adjacent()` (code `32500`).
+  - `render_illegal_move_attempted()` -- code `32501`'s generic prefix
+    (dispatched whenever `_next <> 5`), followed by one of four real
+    sub-case sentences keyed by `_next`'s own range:
+    `render_illegal_move_occupied_retreat()` (`_next = -1`),
+    `render_illegal_move_insufficient_water_transport()` (`_next`
+    100..149, keeps the source's own "insufficent" misspelling
+    verbatim), `render_illegal_move_flooding_transport()` (`_next`
+    150..199), `render_illegal_move_mermen_air_transport()` (`_next`
+    200..249, keeps the source's own literal "air-transport" for
+    Mermen rather than "correcting" it to "water-transport", the same
+    honest-transcription stance already taken for `_LDevast`'s
+    discrepancy, Phase 112).
+  - The `ELSE` branch (`FD('c:\tp\prose\illmove.x2', ...)`) is
+    file-dispatched and deliberately deferred pending `ILLMOVE.X2`
+    extraction.
+  - This project has no source for how the generic prefix and a
+    specific sub-case sentence combine -- each is its own renderer,
+    the caller composes them, the same caller-composes-the-sequence
+    stance already taken for the Ice-Suspend (Phase 123) and
+    Assassination (Phase 125) clusters.
+  - Non-breaking: full suite passed unchanged (1875 passed) before any
+    new tests were written -- new functions with no existing call
+    sites. 6 new tests added (1881 passed total) in
+    `tests/test_turn_report.py`.
 
 ## Setup
 
