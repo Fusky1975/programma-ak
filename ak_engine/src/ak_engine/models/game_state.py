@@ -245,6 +245,15 @@ class ProvinceState:
     # unable to answer "how much has *this* kingdom explored" for the
     # rulebook [6.3] exploration-advantage strength bonus).
     explored_percent_by_kingdom: dict[int, int] = field(default_factory=dict)
+    # Province display name (Phase 150) -- models DEF2.PAS's own
+    # `pname^[x,y]` global array directly. Never synthesized: the real
+    # host engine never generates a province name at runtime either (it
+    # reads one already baked into the world-generated map by
+    # `AKGEN.EXE`, whose own source isn't in this archive) -- `None`
+    # until a caller sets it, e.g. via `turn/rename_province.py
+    # rename_home_province()`, the one real, sourced runtime exception
+    # (`DEF2.PAS Read_T1Names`, turn-1 capital rename).
+    name: str | None = None
 
 
 @dataclass(slots=True)

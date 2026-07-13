@@ -5545,7 +5545,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new Phase 148 tests were written. 2 new tests added (one existing
     Phase 146 test renamed for clarity, not counted as new) (2053
     passed total) in `tests/test_turn_report.py`.
-- **Phase 149 (current)**: `models/army_naming.py` (new) -- closes the
+- **Phase 149**: `models/army_naming.py` (new) -- closes the
   exact gap `report/turn_report.py`'s own module docstring names ("Army
   name"... "LNAMES.PAS/PRNAMES.PAS territory, a separate, entirely
   unbuilt subsystem"). That citation turned out to misidentify the
@@ -5600,6 +5600,40 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2053 passed) before the
     new Phase 149 tests were written. 11 new tests added (2064 passed
     total) in `tests/test_army_naming.py`.
+- **Phase 150 (current)**: `models/game_state.py ProvinceState.name`
+  (new field) + `turn/rename_province.py rename_home_province()` (new
+  module) -- the province-naming half of the same gap Phase 149 closed
+  for armies.
+  - **Confirmed the real host engine never generates a province name at
+    runtime at all**: names are baked into the world-generated map by
+    `AKGEN.EXE` (source not present in the archive) and read once into
+    the global `pname^[x,y]` array, which `ProvinceState.name` models
+    directly. No formula exists to derive one from a `HexCoord` -- so,
+    unlike army names, this stays `None` by default with no synthesis
+    path at all, matching every other unmodeled-naming convention this
+    project already uses.
+  - **The one real, sourced runtime exception**: `DEF2.PAS
+    Read_T1Names` (~lines 706-737, `{$ELSE}` non-Moderator body, the
+    same real-host-engine branch already established Phase 79/149) --
+    on turn 1 a player may rename their own home/capital province
+    (`pname^[bornx[playkg],borny[playkg]]:= tmp`) and up to 2 starting
+    leaders. `rename_home_province(state, kingdom_id, new_name)`
+    implements exactly the province-rename half, using
+    `KingdomState.home_province` as the real equivalent of
+    `bornx[playkg],borny[playkg]`. The leader-rename half needs no new
+    code -- `LeaderState.name` is already a free-form string field a
+    caller can set directly.
+  - **Confirmed out of scope, not guessed at**: `Read_T1Names` reads
+    from `miscfile`, a separate input stream from the `AK3__T*.K1` move
+    files `parser/k1_moves.py` already handles -- no sample of
+    `miscfile`'s own format exists anywhere in this project's data, and
+    the archive documents it no further. This phase only implements the
+    mechanism itself (apply an already-known name); wiring a real
+    trigger from a submitted file is blocked on real `miscfile`-format
+    sample data this project doesn't have.
+  - Non-breaking: full suite passed unchanged (2064 passed) before the
+    new Phase 150 tests were written. 5 new tests added (2069 passed
+    total) in `tests/test_rename_province.py`.
 
 ## Setup
 
