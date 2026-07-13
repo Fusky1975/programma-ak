@@ -63,22 +63,44 @@ to dispatch automatically:
   alignment-based hire refusal -- see ``README.md``. **A successful
   Hire also dispatches the hired Hero's own embedded plan the same turn**
   (Phase 32, ``run_leader_plan``'s nested-plan handling -- see below).
-- **SEARCH** is decode-only (Phase 19), same status Recruit had before
-  Phase 15: ``obj``/``extra`` decode to a target feature id plus an
-  Encounter Plan tactic list via ``turn/search_decode.py``, but nothing
-  is applied to ``GameState`` -- Search resolves as personal combat
-  against a feature's guardian monster (rulebook [3.3], [5.0]), and this
-  project has no non-army Encounter resolver yet.
-- **TRADE** is decode-only (Phase 20) and, unlike every other decoded
-  action here, the decode itself stays deliberately raw --
-  ``turn/trade_decode.py`` exposes ``obj``/``extra`` uninterpreted rather
-  than naming fields it can't confirm. ``ActionCode.TRADE`` is the
-  Pascal engine's internal name for the rulebook's Give order ([3.18],
-  [5.7]); see that module's docstring for why its field mapping is this
-  project's least-confirmed (no real Trade phases in any sample file, no
-  turn-execution engine present in the available Pascal source, and the
-  rulebook itself flags an unresolved item-id/gold-amount ambiguity in
-  ``obj``).
+- **SEARCH** actually executes (decoded Phase 19, executed Phase 132):
+  ``turn/search_decode.py`` decodes ``obj``/``extra`` to a target feature
+  id plus an Encounter Plan tactic list; ``turn/search_execution.py
+  execute_search()`` (Phase 132, once ``turn/encounter.py``'s personal-
+  combat core existed to resolve it against) validates co-location and
+  runs a real Melee duel against the feature's guardian monster (rulebook
+  [3.3], [5.0]) *when* the guardian's combat stats are sourced
+  (``models/monster.py MONSTER_STATS`` only covers 6 of 61 real species)
+  *and* the decoded Encounter Plan actually contains a Melee tactic
+  (empirically the dominant real case -- see that module's own
+  docstring); otherwise it honestly reports ``combat_resolved=False``
+  with a reason rather than guessing. A win sets the feature's own
+  ``looted`` flag; a loss kills the searching leader (personal combat's
+  generic [5.0] rule, no Duel-style carve-out).
+- **TRADE stays decode-only here (Phase 20), still by design as of
+  Phase 132** and, unlike every other decoded action here, the decode
+  itself stays deliberately raw -- ``turn/trade_decode.py`` exposes
+  ``obj``/``extra`` uninterpreted rather than naming fields it can't
+  confirm. ``ActionCode.TRADE`` is the Pascal engine's internal name for
+  the rulebook's Give order ([3.18], [5.7]); see that module's docstring
+  for why its field mapping is this project's least-confirmed (no real
+  Trade phases in any sample file, no turn-execution engine present in
+  the available Pascal source, and the rulebook itself flags an
+  unresolved item-id/gold-amount ambiguity in ``obj``, plus **no
+  recipient field decoded at all** -- the rulebook requires "a
+  co-located character who will receive it," but nothing in the
+  available source names where that lands). **Phase 132 adds ``turn/
+  trade_execution.py execute_gold_give()``**, a real, sourced primitive
+  for [3.18]'s one unambiguous sub-rule ("no more than 10% of the size
+  of his treasury") -- but it is deliberately **not** wired in here: it
+  takes the recipient kingdom as an explicit caller-supplied parameter,
+  since ``TradeRequest`` has no decoded recipient to pass it. Search
+  ([3.3]) had a genuinely missing *resolver* (``turn/encounter.py``
+  didn't exist yet); Trade has a genuinely missing *decoded field* --
+  a different, harder kind of gap that wiring code can't paper over
+  without guessing. See that module's own docstring for the full
+  reasoning, including why a magic-item Give isn't attempted even at
+  this reduced scope (no item-ownership model exists at all).
 - **PRACTICE** actually executes (Phase 44): ``obj`` decodes to an
   ``Ability`` via ``turn/practice_decode.py``, then
   ``turn/practice_execution.py execute_practice()`` rolls the rulebook
@@ -307,6 +329,7 @@ from ak_engine.turn.pursue_execution import PursueExecutionResult, execute_pursu
 from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_recruit
 from ak_engine.turn.search_decode import decode_search_phase
+from ak_engine.turn.search_execution import SearchExecutionResult, execute_search
 from ak_engine.turn.trade_decode import decode_trade_phase
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, execute_trail
@@ -414,7 +437,7 @@ def dispatch_phase(
         return result
 
     if action is ActionCode.SEARCH:
-        return decode_search_phase(phase)
+        return _dispatch_search(phase, state, leader_id, rng)
 
     if action is ActionCode.RECRUIT:
         return _dispatch_recruit(phase, state, kingdom_id, leader_id)
@@ -514,6 +537,19 @@ def _dispatch_pursue(
 
     request = decode_pursue_phase(phase)
     return execute_pursue(state, leader_id, request, rng)
+
+
+def _dispatch_search(
+    phase: PlanPhase, state: GameState, leader_id: int, rng: random.Random | None
+) -> SearchExecutionResult:
+    """Phase 132: SEARCH now executes for real -- see ``turn/search_execution.py``'s
+    own docstring for exactly which cases resolve real Melee combat
+    (guardian stats sourced, Melee tactic present) versus honestly report
+    ``combat_resolved=False``.
+    """
+
+    request = decode_search_phase(phase)
+    return execute_search(state, leader_id, request, rng)
 
 
 def _dispatch_trail(

@@ -6,9 +6,11 @@ from pathlib import Path
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, ActionCode, Spell
+from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import Monster
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
 from ak_engine.parser.k1_moves import parse_k1_moves_file
@@ -31,7 +33,7 @@ from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
-from ak_engine.turn.search_decode import SearchRequest
+from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.trade_decode import TradeRequest
 from ak_engine.turn.trail_execution import TrailExecutionResult
 from ak_engine.turn.use_mi_decode import UseMIRequest
@@ -132,20 +134,66 @@ def test_dispatch_explore_also_records_the_kingdoms_own_exploration():
     assert state.provinces[location].explored_percent_by_kingdom[1] == 100
 
 
-def test_dispatch_search_is_decode_only():
+def test_dispatch_search_reports_feature_not_found():
+    # Phase 132: SEARCH now actually executes -- with no feature 20
+    # registered in GameState, execute_search() reports why rather than
+    # merely decoding the request (see turn/search_execution.py).
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P2", action=ActionCode.SEARCH, obj=20, extra=[0, 0, 11, 0, 22, 0, 7, 9, 13, -1])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, SearchRequest)
-    assert result.feature_id == 20
-    assert len(result.tactics) == 5
+    assert isinstance(result, SearchExecutionResult)
+    assert result.accepted is False
+    assert result.reason == "feature not found"
+
+
+def test_dispatch_search_resolves_real_melee_combat_against_a_sourced_guardian():
+    # A feature guarded by a Monster with real MONSTER_STATS + a Melee
+    # tactic in the Encounter Plan resolves a real duel via turn/
+    # encounter.py (Phase 132).
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_feature(Feature(feature_id=20, coord=location, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    phase = PlanPhase(label="P2", action=ActionCode.SEARCH, obj=20, extra=[0, 9, -1])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
+
+    assert isinstance(result, SearchExecutionResult)
+    assert result.accepted is True
+    assert result.combat_resolved is True
+    assert result.winner in ("leader", "monster")
+
+
+def test_dispatch_search_leader_victory_marks_feature_looted():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    feature = Feature(feature_id=20, coord=location, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    # Give the leader a strong Melee skill so a low-variance rng favors them.
+    state.leaders[LEADER_ID].skills = None
+    phase = PlanPhase(label="P2", action=ActionCode.SEARCH, obj=20, extra=[0, 9, -1])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=random.Random(1)
+    )
+
+    assert result.combat_resolved is True
+    if result.winner == "leader":
+        assert feature.looted is True
+        assert LEADER_ID in state.leaders
+    else:
+        assert LEADER_ID not in state.leaders
 
 
 def test_real_move_file_leader_search_phase_dispatches():
     # Leader 42 ("Garin") in AK3__T10.K1 has a real Search phase (P2):
-    # "P2 : 2 20 0 0 11 0 22 0 7 9 13 -1" -> Search feature 20.
+    # "P2 : 2 20 0 0 11 0 22 0 7 9 13 -1" -> Search feature 20. No
+    # feature 20 is registered in this bare test GameState (world
+    # generation isn't modeled -- see models/feature.py), so execution
+    # honestly reports it can't find the target.
     kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T10.K1")
     leader = next(leader for leader in kingdom.leaders if leader.leader_id == 42)
     search_phase = leader.plan.segments[0].phases["P2"]
@@ -155,8 +203,9 @@ def test_real_move_file_leader_search_phase_dispatches():
 
     result = dispatch_phase(search_phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, SearchRequest)
-    assert result.feature_id == 20
+    assert isinstance(result, SearchExecutionResult)
+    assert result.accepted is False
+    assert result.reason == "feature not found"
 
 
 def test_dispatch_trade_is_decode_only():

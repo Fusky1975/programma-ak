@@ -4973,6 +4973,57 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `advanced_ability.py` dict tests were written. 5 new tests added
     (1928 passed total) in `tests/test_advanced_ability.py`/
     `tests/test_prose.py`.
+- **Phase 132 (current)**: closes the two remaining decode-only
+  actions, SEARCH (Phase 19) and TRADE (Phase 20), each to the honest
+  limit its own real sourcing allows.
+  - **SEARCH now actually executes.** `turn/encounter.py` (Phase 48)
+    is extended with `Combatant.melee_damage_range` (default the
+    character-only 1-6 die, non-breaking for every existing
+    character-vs-character caller) so a monster combatant can fight
+    with its own species-specific die from `models/monster.py
+    MONSTER_STATS` (rulebook's own Monster Table: Giant 1-7, Gargoyle
+    1-6, etc. -- not the generic character rule). New `turn/
+    search_execution.py execute_search()` validates co-location and a
+    real Melee duel against the feature's guardian monster (rulebook
+    [3.3]/[5.0]) *when* the guardian's stats are sourced (only 6 of 61
+    real species have them -- the rulebook's own table is an explicit
+    "partial listing") *and* the decoded Encounter Plan actually
+    contains a Melee tactic (empirically the dominant real case per
+    `turn/search_decode.py`'s own docstring: "every real Search order
+    ends in Melee and/or Scout"); otherwise it honestly reports
+    `combat_resolved=False` with a reason rather than guessing at
+    unsourced monster stats or unrequested tactics. A win sets the
+    feature's own `looted` flag (`fstate[fn] = Dead`, "sacked &
+    looted"); a loss kills the searching leader -- personal combat's
+    generic [5.0] rule ("until one combatant is killed"), no
+    Duel-style [7.1] carve-out, the same reasoning already established
+    for a Challenge loser (Phase 50). Wired directly into
+    `plan_dispatch.py`'s SEARCH dispatch (no opt-in flag needed, since
+    there was no prior GameState-mutating behavior to preserve).
+  - **TRADE stays decode-only, still by design.** `turn/trade_decode
+    .py`'s own docstring already established Trade as this project's
+    least-confirmed decode module: `obj`'s item-id/gold-amount
+    ambiguity is unresolved, and -- the blocker that matters here --
+    **no recipient field is decoded at all**, even though the
+    rulebook requires "a co-located character who will receive it."
+    Rather than force a fake "execution" by guessing a recipient
+    position, Phase 132 adds `turn/trade_execution.py
+    execute_gold_give()`: a real, fully-sourced primitive for [3.18]'s
+    one unambiguous sub-rule -- "Only a King may use this 'Give Gold'
+    order... no more than 10% of the size of his treasury" -- taking
+    the recipient kingdom as an explicit caller-supplied parameter
+    rather than one decoded from `TradeRequest`. Deliberately **not**
+    wired into `plan_dispatch.py`: Search's gap was a missing
+    *resolver* (now built); Trade's gap is a missing *decoded field*,
+    which wiring code cannot paper over without inventing data. A
+    magic-item Give isn't attempted even at this reduced scope either
+    -- `models/item.py` is still an unpopulated stub, a second,
+    independent structural gap on top of the missing recipient.
+  - Non-breaking: full suite passed unchanged (1930 passed, including
+    updated `test_plan_dispatch.py` SEARCH assertions) before the new
+    Phase 132 tests were written. 19 new tests added (1949 passed
+    total) in `tests/test_encounter.py`, `tests/test_search_execution
+    .py` (new file), and `tests/test_trade_execution.py` (new file).
 
 ## Setup
 
