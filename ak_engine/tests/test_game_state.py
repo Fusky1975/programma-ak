@@ -7,6 +7,7 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 
 HOME = HexCoord(0, 0)
@@ -116,3 +117,67 @@ def test_features_at_returns_multiple_features_sharing_a_coordinate():
     state.add_feature(Feature(feature_id=1, coord=FIELD, kind=FeatureType.DUNGEON))
     state.add_feature(Feature(feature_id=2, coord=FIELD, kind=FeatureType.TOMB))
     assert {f.feature_id for f in state.features_at(FIELD)} == {1, 2}
+
+
+# -- Item-ownership registry (Phase 140) --
+
+
+def test_add_item_assigns_a_new_id_and_stores_the_instance():
+    state = make_state()
+    item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=1, charges=10)
+    assert item.item_id == 1
+    assert state.items[item.item_id] is item
+    assert item.treasure == Treasure.WAND_FIREBALL
+    assert item.owner_leader_id == 1
+    assert item.charges == 10
+
+
+def test_new_item_ids_do_not_collide():
+    state = make_state()
+    first = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=1)
+    second = state.add_item(Treasure.BOOK_MELEE, owner_leader_id=1)
+    assert second.item_id == first.item_id + 1
+
+
+def test_add_item_masks_charges_to_a_byte_like_the_pascal_source():
+    # RUMORS.PAS Add_Tr: "trcharges[trav]:= tch and 255"
+    state = make_state()
+    item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=1, charges=300)
+    assert item.charges == 300 & 255
+
+
+def test_add_item_allows_an_unowned_instance():
+    state = make_state()
+    item = state.add_item(Treasure.GOLD_HOARD_LARGE, owner_leader_id=None)
+    assert item.owner_leader_id is None
+
+
+def test_items_held_by_filters_correctly():
+    state = make_state()
+    mine = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=1)
+    state.add_item(Treasure.BOOK_MELEE, owner_leader_id=2)
+    assert [item.item_id for item in state.items_held_by(1)] == [mine.item_id]
+    assert state.items_held_by(3) == []
+
+
+def test_transfer_item_reassigns_the_owner():
+    state = make_state()
+    item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=1)
+    state.transfer_item(item.item_id, 2)
+    assert state.items[item.item_id].owner_leader_id == 2
+    assert state.items_held_by(1) == []
+    assert [i.item_id for i in state.items_held_by(2)] == [item.item_id]
+
+
+def test_transfer_item_to_none_makes_it_unowned():
+    # Mirrors REPORTS.PAS's own quest-fulfillment cleanup: "trowner[tn]:= noleader".
+    state = make_state()
+    item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=1)
+    state.transfer_item(item.item_id, None)
+    assert state.items[item.item_id].owner_leader_id is None
+
+
+def test_transfer_item_on_unknown_id_is_a_no_op():
+    state = make_state()
+    state.transfer_item(999, 1)  # must not raise
+    assert 999 not in state.items

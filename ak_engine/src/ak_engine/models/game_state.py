@@ -160,10 +160,12 @@ from dataclasses import dataclass, field
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.feature import Feature
+from ak_engine.models.item import ItemInstance
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 
 
@@ -270,6 +272,10 @@ class GameState:
     # not a per-province list (Pascal's own `fx`/`fy` arrays are keyed by
     # feature-instance number, not by province).
     features: dict[int, Feature] = field(default_factory=dict)
+    # Leader-held magic-item instances (Phase 140) -- see models/item.py's
+    # own docstring for the RUMORS.PAS Add_Tr/treaslist/trowner/trcharges
+    # source and its deliberate leader-only scope.
+    items: dict[int, ItemInstance] = field(default_factory=dict)
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
         self.kingdoms[kingdom.kingdom_id] = kingdom
@@ -315,6 +321,45 @@ class GameState:
 
     def add_feature(self, feature: Feature) -> None:
         self.features[feature.feature_id] = feature
+
+    def new_item_id(self) -> int:
+        """Next unused item-instance id (1 above the current highest, or 1 if none exist) --
+        mirrors ``new_army_id()``'s own monotonic allocation; see
+        ``models/item.py``'s own docstring for why this doesn't replicate
+        Pascal ``Add_Tr``'s free-slot-reuse scan.
+        """
+
+        return max((*self.items.keys(), 0)) + 1
+
+    def add_item(self, treasure: Treasure, owner_leader_id: int | None, charges: int = 0) -> ItemInstance:
+        """Create a new item instance, auto-assigning its id -- mirrors Pascal ``Add_Tr(tr,
+        tow, tch)`` (see ``models/item.py``'s own docstring). ``charges`` is
+        masked to a byte, matching the Pascal source's own ``tch and 255``.
+        """
+
+        item = ItemInstance(self.new_item_id(), treasure, owner_leader_id, charges & 255)
+        self.items[item.item_id] = item
+        return item
+
+    def items_held_by(self, leader_id: int) -> list[ItemInstance]:
+        """All item instances currently owned by ``leader_id`` -- mirrors Pascal's own
+        ``FOR tn:= 0 TO ntreasures-1 DO IF trowner[tn] = tro`` inventory
+        loop (``REPORTS.PAS``, ~line 540).
+        """
+
+        return [item for item in self.items.values() if item.owner_leader_id == leader_id]
+
+    def transfer_item(self, item_id: int, new_owner_leader_id: int | None) -> None:
+        """Reassign an item instance's owner -- mirrors a direct Pascal ``trowner[tn]:=
+        ...`` assignment (e.g. Give's item path, or ``REPORTS.PAS``'s own
+        quest-fulfillment cleanup setting ``trowner[tn]:= noleader``). A
+        missing ``item_id`` is silently a no-op, the same "nothing to do"
+        convention ``remove_army()`` already uses for an unknown id.
+        """
+
+        item = self.items.get(item_id)
+        if item is not None:
+            item.owner_leader_id = new_owner_leader_id
 
     def features_at(self, coord: HexCoord) -> list[Feature]:
         return [feature for feature in self.features.values() if feature.coord == coord]

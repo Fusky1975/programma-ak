@@ -92,13 +92,13 @@ to dispatch automatically:
   be co-located. ``turn/trade_execution.py execute_give()`` (Phase 133)
   enforces co-location, that both giver *and* recipient are Kings for
   the gold path (rulebook: "give... to *other Kings*"), and [3.18]'s
-  10% treasury cap -- but the item path itself stays honestly
-  unresolved (``giver_possesses_item`` defaults to ``False`` here,
-  since this project has no item-ownership registry to check real
-  possession, so every real dispatch falls through to the gold path,
-  the only one this project can actually execute against
-  ``GameState``). See that module's own docstring for why a real item
-  transfer still isn't modeled even now that the recipient is known.
+  10% treasury cap. **Phase 140 closes the item path too**: ``obj`` is
+  now checked against the real ``GameState.items`` ownership registry
+  (``models/item.py ItemInstance``, sourced from ``RUMORS.PAS``'s
+  ``Add_Tr``/``treaslist``/``trowner``/``trcharges``) and, when the
+  giver genuinely owns it, transferred via ``GameState.transfer_item()``
+  with no King/kingdom requirement on either side -- see that module's
+  own docstring for the full mechanic.
 - **PRACTICE** actually executes (Phase 44): ``obj`` decodes to an
   ``Ability`` via ``turn/practice_decode.py``, then
   ``turn/practice_execution.py execute_practice()`` rolls the rulebook
@@ -544,11 +544,11 @@ def _dispatch_pursue(
 
 def _dispatch_trade(phase: PlanPhase, state: GameState, leader_id: int) -> TradeExecutionResult:
     """Phase 133: TRADE now executes for real via ``turn/trade_execution.py
-    execute_give()``. ``giver_possesses_item`` stays at its default
-    (``False``) here -- this project has no item-ownership registry to
-    check real possession, so every dispatch resolves the gold path
-    (the only one this project can act on); see that module's own
-    docstring for the full reasoning.
+    execute_give()``. As of Phase 140, ``execute_give()`` checks
+    ``obj`` against the real ``GameState.items`` registry itself, so
+    this dispatcher needs no extra wiring for the item-vs-gold
+    disambiguation to work -- see that module's own docstring for the
+    full reasoning.
     """
 
     request = decode_trade_phase(phase)

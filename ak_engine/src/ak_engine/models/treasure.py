@@ -3,15 +3,19 @@ enum, ``HostAK/TP/PROSE/TREASURE.X2``/``TREASAB.X2``) -- Phase 77.
 
 This is the *type* catalog only (mirrors ``models/monster.py Monster``),
 not a physical item instance (that would mirror ``models/feature.py
-Feature`` -- see ``models/item.py MagicItem``'s own docstring for why an
-instance model isn't attempted here either: it's a *deeper* gap than
-Feature's "no world generation" problem, since there's no general
-item-instance-creation Pascal source at all, not even the partial
-per-turn population Feature's own world-gen gap implies might exist
-somewhere unseen -- confirmed in ``turn/use_mi_decode.py``'s own
+Feature`` -- see ``models/item.py ItemInstance``'s own docstring, Phase
+140, for the real ``trowner``/``treaslist``/``trcharges`` registry this
+project eventually built). **Automatic population is still a deeper gap
+than Feature's own "no world generation" problem**, though: there's no
+general item-instance-*creation* Pascal source at all, not even the
+partial per-turn population Feature's own world-gen gap implies might
+exist somewhere unseen -- confirmed in ``turn/use_mi_decode.py``'s own
 docstring, the only call site for ``Add_Tr`` (the one Pascal routine
 that ever creates an item instance) is a narrow Valhalla-visitor
-special case, not a general pipeline).
+special case, not a general pipeline. Phase 140 built the registry
+*structure* and its creation *primitive* (``GameState.add_item()``,
+mirroring ``Add_Tr`` directly) faithfully; nothing yet calls it
+automatically during world generation.
 
 **The Pascal `treasure` enum itself is 113 ordinals** (``CTBOTH.PAS``
 lines 606-637, programmatically counted and cross-checked against this

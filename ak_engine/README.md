@@ -5224,6 +5224,58 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (1981 passed) before the
     new Phase 139 tests were written. 8 new tests added (1989 passed
     total) in `tests/test_aspy_execution.py`.
+- **Phase 140 (current)**: `models/item.py ItemInstance` (rewritten
+  from the Phase 1 `MagicItem` stub) plus a real `GameState.items`
+  ownership registry, closing Trade/Give's own "no item-ownership
+  registry exists" gap (Phase 133) and `turn/use_mi_decode.py`'s
+  parallel "can't resolve an item-instance id" gap (Phase 24) at the
+  same time -- both were blocked on the exact same missing structure.
+  - Sourced from `RUMORS.PAS`'s `Add_Tr` procedure (~line 646) and the
+    `treaslist`/`trowner`/`trcharges` triple it populates: every
+    physical magic item in play is one slot across those three
+    parallel arrays (type, owning leader or `noleader`, charges
+    remaining). Confirmed, not guessed: `DEF2.PAS`'s `R_HPlan`/
+    `W_HPlan` index straight into `treaslist[lobjects[m]]` to resolve a
+    Use_MI phase's item, and `REPORTS.PAS`'s own per-leader inventory
+    listing (`FOR tn:= 0 TO ntreasures-1 DO IF trowner[tn] = tro`, ~line
+    540) prints `"<ItemName> (#<tn>): ..."` in a character's own turn
+    report -- the same instance id a Give order's item field refers to.
+  - `GameState.add_item(treasure, owner_leader_id, charges=0)` mirrors
+    `Add_Tr` directly (including masking `charges` to a byte, matching
+    the Pascal source's own `tch and 255`); `items_held_by(leader_id)`
+    mirrors the `trowner[tn] = tro` inventory loop; `transfer_item()`
+    mirrors a direct `trowner[tn]:= ...` assignment. Ids are allocated
+    monotonically (`new_item_id()`, mirroring `new_army_id()`) rather
+    than replicating `Add_Tr`'s own free-slot-reuse scan against the
+    still-missing `maxfeatures` constant -- the same simplification
+    already made for army/leader ids.
+  - **Deliberately scoped to leader-held items only**: the real Pascal
+    arrays also cover monster/feature-guarded treasure (slots
+    `0..maxfeatures`, owner-encoded via a `feature_id + 256`
+    convention, e.g. `REPORTS.PAS`'s `trowner[fn] <> fn+256`). That
+    range needs the still-missing `maxfeatures` constant and this
+    project's still-nonexistent monster/feature loot pipeline, neither
+    of which this phase attempts -- `ItemInstance.owner_leader_id` is
+    only ever a leader id or `None`, never a feature encoding.
+  - `turn/trade_execution.py execute_give()` now checks
+    `state.items.get(request.obj)` for real: if the giver genuinely
+    owns that instance, it's transferred via `transfer_item()` with no
+    King/kingdom requirement on either side (the user's own domain
+    knowledge: "Se l'eroe appartiene a un altro reame, l'oggetto passa
+    di mano"), replacing the previous `giver_possesses_item` caller
+    flag entirely -- there is no longer any case where the item path
+    silently can't be evaluated.
+  - **Still not attempted**: an automatic world-gen/loot trigger that
+    calls `add_item()` (no Pascal source describes how instances first
+    come into existence, beyond the single narrow Valhalla-visitor
+    `Add_Tr` call site already documented in Phase 24's own module), and
+    a real `execute_use_mi()` resolver that consumes the now-resolvable
+    `item_instance_id` (Use_MI still only decodes, per Phase 24 -- this
+    phase makes the id resolvable, not executed).
+  - Non-breaking: full suite passed unchanged (1991 passed, reflecting
+    the `execute_give()` test rewrite from a caller-flag scenario to a
+    real ownership one) before the new Phase 140 tests were written. 8
+    new tests added (1999 passed total) in `tests/test_game_state.py`.
 
 ## Setup
 

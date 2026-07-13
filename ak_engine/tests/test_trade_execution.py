@@ -4,6 +4,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.trade_decode import TradeRequest
 from ak_engine.turn.trade_execution import GOLD_GIVE_MAX_PERCENT, TradeExecutionResult, execute_give, execute_gold_give
 
@@ -114,17 +115,46 @@ def test_execute_give_gold_path_succeeds_between_co_located_kings():
     assert state.kingdoms[RECIPIENT_KINGDOM].treasury == 100
 
 
-def test_execute_give_item_path_reports_unmodeled():
-    # "si passa l'oggetto e non l'oro" -- item takes priority, but this
-    # project has no item-ownership registry to actually move it.
+def test_execute_give_item_path_transfers_a_genuinely_owned_item():
+    # "si passa l'oggetto e non l'oro" -- item takes priority whenever the
+    # giver genuinely owns an item with that id (Phase 140).
     state = _state_with_recipient()
-    request = TradeRequest(obj=3, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+    item = state.add_item(Treasure.WAND_FIREBALL, GIVER_LEADER, charges=5)
+    request = TradeRequest(obj=item.item_id, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
 
-    result = execute_give(state, GIVER_LEADER, request, giver_possesses_item=True)
+    result = execute_give(state, GIVER_LEADER, request)
 
-    assert result.applied is False
-    assert "item transfer not modeled" in result.reason
-    assert state.kingdoms[GIVER_KINGDOM].treasury == 1000  # untouched
+    assert result == TradeExecutionResult(applied=True, item_transferred=True)
+    assert state.items[item.item_id].owner_leader_id == RECIPIENT_LEADER
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 1000  # untouched -- item path, not gold
+
+
+def test_execute_give_item_path_ignores_an_item_the_giver_doesnt_own():
+    # obj resolves to a real item instance, but a *different* leader owns
+    # it -- falls through to the gold path instead of transferring.
+    state = _state_with_recipient()
+    item = state.add_item(Treasure.WAND_FIREBALL, RECIPIENT_LEADER, charges=5)
+    request = TradeRequest(obj=item.item_id, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
+    assert result == TradeExecutionResult(applied=True, gold_transferred=item.item_id)
+    assert state.items[item.item_id].owner_leader_id == RECIPIENT_LEADER  # untouched
+
+
+def test_execute_give_item_path_crosses_kingdoms_with_no_king_requirement():
+    # The user's own description: "Se l'eroe appartiene a un altro reame,
+    # l'oggetto passa di mano" -- no King status needed on either side for
+    # the item path, unlike the gold path.
+    state = _state_with_recipient(recipient_is_king=False)
+    state.leaders[GIVER_LEADER].is_king = False
+    item = state.add_item(Treasure.WAND_FIREBALL, GIVER_LEADER)
+    request = TradeRequest(obj=item.item_id, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
+    assert result == TradeExecutionResult(applied=True, item_transferred=True)
+    assert state.items[item.item_id].owner_leader_id == RECIPIENT_LEADER
 
 
 def test_execute_give_no_recipient_decoded():

@@ -42,10 +42,21 @@ available Pascal source is a narrow Valhalla-visitor special case
 (``RUMORS.PAS``); the general loot/world-gen pipeline that would assign
 a ``treasure`` type to a feature or grant it as combat loot isn't in
 this project's available source at all (no ``AK.PAS``/``DEF1.PAS``).
-So ``ak_engine`` has no way to build an item-instance registry the way
-it built a mercenary-army pool (Phase 16) or independent-hero pool
-(Phase 17) -- there's no Pascal source describing how instances come
-into existence in the first place.
+
+**Phase 140 update**: the registry *structure* itself -- the exact
+``treaslist``/``trowner``/``trcharges`` triple this paragraph names --
+is now built (``models/item.py ItemInstance``, ``GameState.items``),
+along with a faithful ``Add_Tr`` equivalent (``GameState.add_item()``).
+So an ``item_instance_id`` *can* now be resolved via
+``state.items.get(item_instance_id)`` once something has actually
+called ``add_item()`` for it. What's still missing is exactly what this
+paragraph originally said: an automatic world-gen/loot trigger that
+calls it -- ``ak_engine`` has no way to *auto-populate* the registry the
+way it auto-populates the mercenary-army pool (Phase 16) or
+independent-hero pool (Phase 17), since there's no Pascal source
+describing how instances come into existence in the first place. A real
+``execute_use_mi()`` resolver that consumes the now-resolvable id is
+also still a separate, not-yet-built follow-up.
 
 **The ``treasure`` type enum itself, though, is fully present and has
 been reconstructed** (``CTBOTH.PAS`` lines 605-645, cross-referenced
@@ -77,10 +88,9 @@ careful direct transcription of the prose files, not attempted here.~~
 (``models/treasure.py Treasure``/``TreasureCategory``, with
 ``USE_MI_TARGET_CATEGORIES`` marking exactly the wand/book split named
 above) -- see that phase's own README note for the transcription
-details. ``models/item.py MagicItem`` itself is untouched: it's a
-physical item *instance* shape (owner, charges), a different, still-
-unbuilt concept from the type catalog -- see the paragraph above this
-one for why an instance model isn't attempted either.
+details. ``models/item.py ItemInstance`` (Phase 140) is the physical
+item *instance* shape (owner, charges) built on top of that catalog --
+see the paragraph above for exactly what it does and doesn't close.
 
 **When the resolved item type is a wand, the exact same conditional
 sub-reads as Cast fire** (Illusory Terrain's extra fake-``Terrain``
