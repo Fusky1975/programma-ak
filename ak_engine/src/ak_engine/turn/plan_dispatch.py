@@ -60,7 +60,12 @@ to dispatch automatically:
   himself," since he's always in his own province). Neither models the
   rulebook's finer unsourced/undata-able details: a Hero's own "required
   pay" (may be less than the offer), recurring per-turn pay, or
-  alignment-based hire refusal -- see ``README.md``. **A successful
+  alignment-based hire refusal -- see ``README.md``. **Phase 143**:
+  ``_dispatch_fire`` returns a real ``FireExecutionResult`` (``fired``/
+  ``reason``) instead of a bare ``FireRequest`` -- the caller previously
+  had no signal at all for whether the Fire actually happened; see
+  ``report/turn_report.py describe_hire()``/``describe_fire()`` for the
+  new consumers this unblocks. **A successful
   Hire also dispatches the hired Hero's own embedded plan the same turn**
   (Phase 32, ``run_leader_plan``'s nested-plan handling -- see below).
 - **SEARCH** actually executes (decoded Phase 19, executed Phase 132):
@@ -390,6 +395,18 @@ class HireExecutionResult:
 
 
 @dataclass(slots=True)
+class FireExecutionResult:
+    """Phase 143: replaces ``_dispatch_fire()``'s previous bare ``FireRequest`` return, which
+    gave a caller no way to know whether the Fire actually happened --
+    see that function's own docstring.
+    """
+
+    request: FireRequest
+    fired: bool
+    reason: str | None = None  # set when fired is False
+
+
+@dataclass(slots=True)
 class PhaseDispatchResult:
     leader_id: int
     segment_index: int
@@ -694,22 +711,33 @@ def _dispatch_hire(phase: PlanPhase, state: GameState, kingdom_id: int, leader_i
     return HireExecutionResult(request, hired=True)
 
 
-def _dispatch_fire(phase: PlanPhase, state: GameState, leader_id: int) -> FireRequest:
+def _dispatch_fire(phase: PlanPhase, state: GameState, leader_id: int) -> FireExecutionResult:
+    """Phase 143: returns a real ``FireExecutionResult`` instead of the previous bare
+    ``FireRequest`` -- the caller now has a genuine ``fired``/``reason``
+    signal to build a report sentence from (``report/turn_report.py
+    describe_fire()``), where before it had no way to tell whether the
+    Fire actually happened at all.
+    """
+
     request = decode_fire_phase(phase)
     hero = state.leaders.get(request.hero_id)
+    if hero is None:
+        return FireExecutionResult(request, fired=False, reason="hero not found")
+
     acting_leader = state.leaders.get(leader_id)
-    if hero is not None:
-        # "Releases the Hero into private life... will wander around
-        # until hired by another King." (rulebook [3.7]: "A King may
-        # Fire a Hero at any time. A character can Fire a Hero only if
-        # he is in the same province.") A Hero must be co-located with
-        # the target (this also naturally covers "firing himself" --
-        # he's always in his own province); a King (Phase 40) bypasses
-        # that, same as Disband.
-        is_king = acting_leader is not None and acting_leader.is_king
-        if is_king or (acting_leader is not None and acting_leader.location == hero.location):
-            hero.kingdom_id = None
-    return request
+    # "Releases the Hero into private life... will wander around until
+    # hired by another King." (rulebook [3.7]: "A King may Fire a Hero
+    # at any time. A character can Fire a Hero only if he is in the
+    # same province.") A Hero must be co-located with the target (this
+    # also naturally covers "firing himself" -- he's always in his own
+    # province); a King (Phase 40) bypasses that, same as Disband.
+    is_king = acting_leader is not None and acting_leader.is_king
+    co_located = acting_leader is not None and acting_leader.location == hero.location
+    if not (is_king or co_located):
+        return FireExecutionResult(request, fired=False, reason="not co-located")
+
+    hero.kingdom_id = None
+    return FireExecutionResult(request, fired=True)
 
 
 def run_leader_plan(

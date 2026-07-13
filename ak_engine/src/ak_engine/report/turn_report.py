@@ -1011,6 +1011,7 @@ from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.report.prose import render
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
+from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
 
 # HostAK/TP/PROSE/PLUS1.X .. PLUS5.X, MINUS1.X .. MINUS5.X, ZERO.X --
@@ -2213,6 +2214,60 @@ def render_hire_counter_offer(
         "#": str(minimum_gold),
     }
     return render(HIRE_COUNTER_OFFER_TEMPLATE, values, rng=rng)
+
+
+def describe_hire(
+    result: HireExecutionResult,
+    *,
+    character_name: str,
+    hireling_name: str,
+    king_name: str,
+    rng: random.Random,
+) -> str | None:
+    """Assembles the one-sentence Hire narrative from an already-computed
+    ``HireExecutionResult`` (``turn/plan_dispatch.py _dispatch_hire()``,
+    Phase 17) -- the same ``describe_give()``-style composer (Phase 142).
+
+    Only ``render_hire_accepted`` (``ACCHIRE.X``) is ever reachable:
+    ``_dispatch_hire()``'s own docstring already documents that this
+    project always charges the full offer and always accepts a Hire
+    that's co-located and affordable ("Simplification: the rulebook's
+    Hero 'pay required'... isn't modeled"), so neither
+    ``render_hire_refused`` (``REFHIRE.X``, alignment-based) nor
+    ``render_hire_counter_offer`` (``_LCounter``, price-based) has any
+    real trigger in ``HireExecutionResult.reason`` -- every one of its
+    real failure strings ("hero not found", "cannot hire a King", "hero
+    already in service", "not co-located", "insufficient treasury") is
+    an administrative failure with no sourced narrative template,
+    exactly like most of ``describe_give()``'s own failure reasons.
+    """
+
+    if result.hired:
+        return render_hire_accepted(character_name, hireling_name, king_name, rng)
+    return None
+
+
+def describe_fire(
+    result: FireExecutionResult,
+    *,
+    character_name: str,
+    hireling_name: str,
+    king_name: str,
+    rng: random.Random,
+) -> str | None:
+    """Assembles the one-sentence Fire narrative from an already-computed
+    ``FireExecutionResult`` (``turn/plan_dispatch.py _dispatch_fire()``,
+    Phase 143 -- see that function's own docstring for why it now
+    returns a real result instead of a bare ``FireRequest``).
+
+    ``render_fire_hireling`` (``FIREMAN.X``) on success; both of
+    ``FireExecutionResult``'s real failure reasons ("hero not found",
+    "not co-located") have no sourced narrative template.
+    """
+
+    if result.fired:
+        return render_fire_hireling(character_name, hireling_name, king_name, rng)
+    return None
 
 
 # HostAK/TP/PROSE/ALLY.X -- a successful Ally proposal. See module

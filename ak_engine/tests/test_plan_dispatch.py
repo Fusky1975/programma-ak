@@ -17,9 +17,9 @@ from ak_engine.models.treasure import Treasure
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.turn.army_list_decode import ArmyListRequest
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.hire_fire_decode import FireRequest
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.plan_dispatch import (
+    FireExecutionResult,
     HireExecutionResult,
     NoOpResult,
     UnsupportedActionError,
@@ -649,18 +649,23 @@ def test_dispatch_fire_releases_hero_to_independent():
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, FireRequest)
-    assert result.hero_id == 32
+    assert isinstance(result, FireExecutionResult)
+    assert result.request.hero_id == 32
+    assert result.fired is True
     assert state.leaders[32].kingdom_id is None
 
 
-def test_dispatch_fire_unknown_hero_id_is_a_noop():
+def test_dispatch_fire_unknown_hero_id_reports_the_real_failure():
+    # Phase 143: previously a silent no-op with no signal at all --
+    # now an honest fired=False/reason.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=999, extra=[])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert result.hero_id == 999  # no exception, nothing to mutate
+    assert result.request.hero_id == 999
+    assert result.fired is False
+    assert result.reason == "hero not found"
 
 
 # --- King/Hero distinction (Phase 40) ------------------------------------
@@ -710,10 +715,12 @@ def test_dispatch_fire_by_a_hero_fails_when_not_colocated():
     state.add_leader(LeaderState(50, 1, "Acting Hero", HexCoord(1, 1), is_king=False))
     phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
 
-    dispatch_phase(phase, state, kingdom_id=1, leader_id=50, board_width=BOARD_WIDTH)
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=50, board_width=BOARD_WIDTH)
 
     # Rulebook [3.7]: "A character can Fire a Hero only if he is in the
     # same province." -- not co-located, so the Hero stays employed.
+    assert result.fired is False
+    assert result.reason == "not co-located"
     assert state.leaders[32].kingdom_id == 1
 
 
@@ -724,8 +731,9 @@ def test_dispatch_fire_by_a_hero_succeeds_when_colocated():
     state.add_leader(LeaderState(50, 1, "Acting Hero", location, is_king=False))
     phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
 
-    dispatch_phase(phase, state, kingdom_id=1, leader_id=50, board_width=BOARD_WIDTH)
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=50, board_width=BOARD_WIDTH)
 
+    assert result.fired is True
     assert state.leaders[32].kingdom_id is None
 
 
@@ -735,7 +743,8 @@ def test_dispatch_fire_by_a_king_bypasses_colocation():
     phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
 
     # LEADER_ID (from _state_with_army) is a King, not co-located with 32.
-    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+    assert result.fired is True
 
     assert state.leaders[32].kingdom_id is None
 

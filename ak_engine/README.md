@@ -5358,6 +5358,39 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2009 passed) before the
     new Phase 142 tests were written. 6 new tests added (2015 passed
     total) in `tests/test_turn_report.py`.
+- **Phase 143 (current)**: `report/turn_report.py describe_hire()`/
+  `describe_fire()` (new) -- the second slice of the report-assembler
+  thread, plus a genuine correctness fix found while building it.
+  - **`turn/plan_dispatch.py _dispatch_fire()` previously returned a
+    bare `FireRequest`, always** -- the caller had no way to tell
+    whether the Fire actually happened at all, unlike every other
+    dispatcher in this project (Hire's own `HireExecutionResult`
+    included). Phase 143 adds a real `FireExecutionResult` (`fired`/
+    `reason`), matching the `hired`/`reason` shape `HireExecutionResult`
+    already established, so `describe_fire()` has a real signal to
+    build a sentence from.
+  - `describe_hire()` consumes `HireExecutionResult` (Phase 17):
+    `render_hire_accepted` (`ACCHIRE.X`) on success. **Confirmed only
+    one of the three real Hire renderers is ever reachable at all**:
+    `_dispatch_hire()`'s own docstring already documents that this
+    project always charges the full offer and always accepts a Hire
+    that's co-located and affordable ("the rulebook's Hero 'pay
+    required'... isn't modeled"), so neither `render_hire_refused`
+    (`REFHIRE.X`, alignment-based) nor `render_hire_counter_offer`
+    (`_LCounter`, price-based) has any real trigger in
+    `HireExecutionResult.reason` -- every one of its real failure
+    strings ("hero not found", "cannot hire a King", "hero already in
+    service", "not co-located", "insufficient treasury") is an
+    administrative failure with no sourced narrative template.
+  - `describe_fire()` consumes the new `FireExecutionResult`:
+    `render_fire_hireling` (`FIREMAN.X`) on success; both real failure
+    reasons ("hero not found", "not co-located") have no sourced
+    template either.
+  - Non-breaking: full suite passed unchanged (2015 passed, after
+    updating `test_plan_dispatch.py`'s 4 existing Fire tests for the
+    new `FireExecutionResult` return type) before the new Phase 143
+    tests were written. 4 new tests added (2019 passed total) in
+    `tests/test_turn_report.py`.
 
 ## Setup
 

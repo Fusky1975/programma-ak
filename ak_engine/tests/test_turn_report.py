@@ -26,7 +26,9 @@ from ak_engine.report.turn_report import (
     SPY_LEADS_APPROXIMATELY_TEMPLATE,
     WILL_TEMPLATE,
     describe_battle,
+    describe_fire,
     describe_give,
+    describe_hire,
     margin_bucket,
     parse_template_choices,
     pick_variant,
@@ -139,6 +141,8 @@ from ak_engine.report.turn_report import (
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
+from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
+from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
 
 from _helpers import ScriptedRandom
@@ -1101,6 +1105,51 @@ def test_render_hire_counter_offer():
 
 def test_hire_counter_offer_template_is_the_confirmed_hardcoded_say():
     assert HIRE_COUNTER_OFFER_TEMPLATE == "[1 informed <2 that [1 would not sell ] services for less than # gold."
+
+
+# -- describe_hire / describe_fire (integration, Phase 143) --
+
+
+def test_describe_hire_renders_acceptance():
+    result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=2), hired=True)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    line = describe_hire(result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=rng)
+
+    assert line == "Aldric spoke to Borin and convinced Borin to pledge Borin's allegiance to King Harold the Bold."
+
+
+def test_describe_hire_renders_nothing_on_any_failure_reason():
+    # Every real HireExecutionResult failure reason is an administrative
+    # one with no sourced narrative -- see describe_hire()'s own
+    # docstring for why render_hire_refused/render_hire_counter_offer
+    # are never reachable at all.
+    for reason in ("hero not found", "cannot hire a King", "hero already in service", "not co-located", "insufficient treasury"):
+        result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=2), hired=False, reason=reason)
+        rng = ScriptedRandom([])
+
+        line = describe_hire(result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=rng)
+
+        assert line is None
+
+
+def test_describe_fire_renders_a_successful_release():
+    result = FireExecutionResult(FireRequest(hero_id=32), fired=True)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+
+    line = describe_fire(result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=rng)
+
+    assert line == "Aldric fired Borin and told Borin to find employment elsewhere."
+
+
+def test_describe_fire_renders_nothing_on_failure():
+    for reason in ("hero not found", "not co-located"):
+        result = FireExecutionResult(FireRequest(hero_id=32), fired=False, reason=reason)
+        rng = ScriptedRandom([])
+
+        line = describe_fire(result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=rng)
+
+        assert line is None
 
 
 # -- ASpy report body (Phase 115) --------------------------------------------
