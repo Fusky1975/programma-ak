@@ -1023,6 +1023,7 @@ from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
+from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 
 # HostAK/TP/PROSE/PLUS1.X .. PLUS5.X, MINUS1.X .. MINUS5.X, ZERO.X --
 # transcribed verbatim (mini-language intact), PROSE.TXT notation for the
@@ -1921,6 +1922,59 @@ def describe_cast(
         terrain_name=terrain_name,
         army_names=army_names,
     )
+
+
+def describe_use_mi(
+    result: UseMIExecutionResult,
+    *,
+    caster_name: str,
+    rng: random.Random,
+    target_name: str | None = None,
+    province_name: str | None = None,
+    terrain_name: str | None = None,
+    army_names: list[str] | None = None,
+) -> str | None:
+    """Compose Use_MI's own turn-report line from an already-computed
+    ``UseMIExecutionResult`` (Phase 141), fifth slice of the
+    report-assembler thread.
+
+    Wand use (``result.cast_result is not None``) is, per rulebook
+    [3.11] and ``turn/use_mi_execution.py``'s own docstring, a real Cast
+    under the hood -- so this just delegates straight to
+    ``describe_cast()``, the same sourced ``SPELL_CAST_ANNOUNCEMENT``
+    narrative a top-level Cast order gets (``wand_skill_level``, Phase
+    141, only changes the *mechanics*, not which sentence is rendered).
+
+    Skill-book use (``result.ability_boosted is not None``) always
+    returns ``None`` -- confirmed no source in the available archive.
+    `TREASAB.X2`'s own book labels (e.g. "+1 Melee when read",
+    ``models/treasure.py TREASURE_LABEL``) are terse inventory text, not
+    a turn narrative; `TREASURE.X2`'s per-book flavor text is dispatched
+    by `SAY.PAS Desc_Treas`/`_TrDesc` only from `REPORTS.PAS List_Treas`'s
+    own per-leader inventory listing (gated on a waiting/new king
+    browsing their kingdom), never from a Use_MI action; and `_TrDust`
+    (`RUMORS.PAS` story code 5001, "it crumbled to dust...", the one
+    candidate that *would* fit a "used up its last charge" moment) has
+    no real emission site anywhere in the archive -- an orphaned
+    constant, not a live narrative path. The same "no real ``SAY.PAS``
+    text, so no rendered line" stance ``describe_cast()`` already takes
+    for its own 12 unexecuted spells.
+
+    Every other case (``result.applied is False``: item not found, not
+    owned, or not a Use_MI target) also renders nothing.
+    """
+
+    if result.cast_result is not None:
+        return describe_cast(
+            result.cast_result,
+            caster_name=caster_name,
+            rng=rng,
+            target_name=target_name,
+            province_name=province_name,
+            terrain_name=terrain_name,
+            army_names=army_names,
+        )
+    return None
 
 
 # HostAK/TP/PROSE/EXPMOVE.X -- the Explore action's own progress report.

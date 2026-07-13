@@ -31,6 +31,7 @@ from ak_engine.report.turn_report import (
     describe_give,
     describe_hire,
     describe_practice,
+    describe_use_mi,
     margin_bucket,
     parse_template_choices,
     pick_variant,
@@ -141,7 +142,7 @@ from ak_engine.report.turn_report import (
     render_will,
     tactical_margin_bucket,
 )
-from ak_engine.models.enums import Spell
+from ak_engine.models.enums import Ability, Spell
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
@@ -151,6 +152,7 @@ from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
+from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 
 from _helpers import ScriptedRandom
 
@@ -2202,5 +2204,50 @@ def test_describe_cast_renders_nothing_when_not_applied():
     rng = ScriptedRandom([])
 
     line = describe_cast(result, caster_name="Aldric", rng=rng, target_name="Borin")
+
+    assert line is None
+
+
+# -- describe_use_mi (Phase 146) --
+
+
+def test_describe_use_mi_delegates_to_describe_cast_for_a_wand():
+    cast_result = CastExecutionResult(request=CastRequest(spell=Spell.KILL_ENEMY, target=0), applied=True)
+    result = UseMIExecutionResult(applied=True, cast_result=cast_result)
+    rng = ScriptedRandom([])
+
+    line = describe_use_mi(result, caster_name="Aldric", rng=rng, target_name="Borin")
+
+    assert line == "Aldric cast a Kill Enemy spell and Borin was magically killed by a dark Necromantic spell!"
+
+
+def test_describe_use_mi_renders_nothing_when_the_wand_cast_fizzled():
+    cast_result = CastExecutionResult(
+        request=CastRequest(spell=Spell.KILL_ENEMY, target=0), applied=False, reason="cast roll failed"
+    )
+    result = UseMIExecutionResult(applied=True, cast_result=cast_result)
+    rng = ScriptedRandom([])
+
+    line = describe_use_mi(result, caster_name="Aldric", rng=rng, target_name="Borin")
+
+    assert line is None
+
+
+def test_describe_use_mi_renders_nothing_for_a_skill_book():
+    # No sourced SAY.PAS narrative exists for reading a skill book -- see
+    # describe_use_mi()'s own docstring.
+    result = UseMIExecutionResult(applied=True, ability_boosted=Ability.MELEE)
+    rng = ScriptedRandom([])
+
+    line = describe_use_mi(result, caster_name="Aldric", rng=rng)
+
+    assert line is None
+
+
+def test_describe_use_mi_renders_nothing_on_failure():
+    result = UseMIExecutionResult(applied=False, reason="item not found")
+    rng = ScriptedRandom([])
+
+    line = describe_use_mi(result, caster_name="Aldric", rng=rng)
 
     assert line is None

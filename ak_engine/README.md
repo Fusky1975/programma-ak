@@ -5419,7 +5419,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2019 passed) before the
     new Phase 144 tests were written. 6 new tests added (2025 passed
     total) in `tests/test_turn_report.py`.
-- **Phase 145 (current)**: `report/turn_report.py render_cast_announcement()`
+- **Phase 145**: `report/turn_report.py render_cast_announcement()`
   + `describe_cast()` (both new) -- fourth slice of the report-assembler
   thread, and the first to consume `turn/cast_execution.py
   CastExecutionResult` (Phase 29/59/60/141). Unlike the other
@@ -5460,6 +5460,34 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     "no narratable outcome" stance.
   - Non-breaking: full suite passed unchanged (2025 passed) before the
     new Phase 145 tests were written. 16 new tests added (2041 passed
+    total) in `tests/test_turn_report.py`.
+- **Phase 146 (current)**: `report/turn_report.py describe_use_mi()`
+  (new) -- fifth slice of the report-assembler thread, consuming
+  `turn/use_mi_execution.py UseMIExecutionResult` (Phase 141).
+  - Wand use (`result.cast_result is not None`) delegates straight to
+    `describe_cast()` (Phase 145): per rulebook [3.11] and `turn/
+    use_mi_execution.py`'s own docstring, casting from a wand is a real
+    Cast under the hood, so it gets the exact same
+    `SPELL_CAST_ANNOUNCEMENT` narrative a top-level Cast order would --
+    `wand_skill_level`'s own override (Phase 141) only changes the
+    mechanics, not which sentence renders.
+  - Skill-book use (`result.ability_boosted is not None`) always
+    renders `None` -- researched and confirmed absent from the
+    available archive, not merely unfound: `TREASAB.X2`'s own book
+    labels (`models/treasure.py TREASURE_LABEL`, e.g. "+1 Melee when
+    read") are terse inventory text, not a turn narrative;
+    `TREASURE.X2`'s per-book flavor text is dispatched by `SAY.PAS
+    Desc_Treas`/`_TrDesc` only from `REPORTS.PAS List_Treas`'s own
+    per-leader inventory listing (a waiting/new king browsing their
+    kingdom), never from a Use_MI action; and `_TrDust` (`RUMORS.PAS`
+    story code 5001, "it crumbled to dust...", the one candidate that
+    would fit a book's last-charge moment) has no real emission site
+    anywhere in the archive -- an orphaned constant, not a live
+    narrative path.
+  - Every other case (`result.applied is False`: item not found, not
+    owned, or not a Use_MI target) also renders nothing.
+  - Non-breaking: full suite passed unchanged (2041 passed) before the
+    new Phase 146 tests were written. 4 new tests added (2045 passed
     total) in `tests/test_turn_report.py`.
 
 ## Setup
