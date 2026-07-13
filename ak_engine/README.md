@@ -4918,6 +4918,61 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new tests were written -- new module/function with no existing
     call sites. 5 new tests added (1921 passed total) in
     `tests/test_monster.py`/`tests/test_turn_report.py`.
+- **Phase 131 (current)**: sweeps every remaining `.PAS` file beyond
+  `SAY.PAS`/`RUMORS.PAS`/`CTBOTH.PAS` (`AKT.PAS`, `SPEAK.PAS`,
+  `TRANS.PAS`, `LNAMES.PAS`, `PRNAMES.PAS`, `CTME.PAS`, `YAK.PAS`,
+  `DEF2.PAS`, `REPORTS.PAS`), per the user's own "scandaglia tutti gli
+  altri file .PAS" request. Most are either already-covered
+  (`AKT.PAS`'s magic-item names duplicate `models/treasure.py`'s
+  independently-sourced `TREASURE_NAME`, Phase 77; `CTME.PAS`'s
+  `dname` array duplicates `models/discovery.py DISCOVERY_NAME`,
+  Phase 91/93) or out of scope (`LNAMES.PAS`/`PRNAMES.PAS` are
+  leader/province name pools for world generation, excluded per
+  `models/feature.py`'s own no-world-gen precedent; `TRANS.PAS` is a
+  file-conversion utility; most of `DEF2.PAS` is printer/shield-
+  graphic/file-I/O plumbing). Two genuine findings resulted:
+  - **`models/advanced_ability.py`**: (1) a docstring correction --
+    `SAY.PAS Imp_Spab` (~lines 1338-1351), `SPEAK.PAS PW_Spab` (~lines
+    33-40), and `REPORTS.PAS` (~line 643, `FD('c:\tp\prose\
+    saname.x2', S_Red, 1001+spabord[ab,skil-4])`) together confirm the
+    Advanced Ability pool-selection mechanic (`spabord[ability,
+    level-4]`) is a real, deterministic lookup table, not a dice roll
+    -- correcting Phase 128's "unsourced, possibly random" note. The
+    table's actual values remain unrecoverable since its declaring
+    units (`defines`, `mboth`, named in `SPEAK.PAS`'s own `uses`
+    clause) have no source anywhere in `Programma Pascal.zip`, only
+    compiled `.TPU` forms. (2) two new real, fully-recoverable dicts
+    from `SPEAK.PAS Check_MSpab`/`Check_DSpab` (~lines 66-90):
+    `UNIQUE_ITEM_ADVANCED_ABILITY_CHECKS` (6 named-unique `Treasure`
+    items -> the tuple of `Ability` values each re-checks while held,
+    e.g. Crown of Rohan -> March + Tactical) and
+    `DISCOVERY_ADVANCED_ABILITY_CHECKS` (the 20 `fix`/`wreck`
+    `Discovery` members -> one `Ability` each, derived via Pascal's
+    own `Shr 1` bit-shift arithmetic on the enum ordinal: `fix0`/
+    `fix1` -> Tactical ... `wreck8`/`wreck9` -> Sage). Both cross-
+    reference already-modeled `models/treasure.py Treasure` (Phase 77)
+    and `models/discovery.py Discovery` (Phase 91/93) member names
+    directly, with no new vocabulary invented.
+  - **`report/prose.py`**: found `YAK.PAS`'s real `End_Punct`
+    definition (`c='.' or c='?' or c='!'`) and confirmed, via Turbo
+    Pascal's own last-unit-wins `uses`-clause resolution
+    (`RUMORS.PAS`'s `uses dos,crt,defines,yak,map,mboth;` lists `yak`
+    after `defines`), that this is the version `RUMORS.PAS` actually
+    calls -- resolving a gap this module's docstring had flagged since
+    Phase 58 ("`End_Punct` ... compiled unit with no source available"). Combined with
+    `RUMORS.PAS`'s own real `Stop_Punct` definition (space, `{`, `}`,
+    `,`, plus `End_Punct`), the true `/R` word-boundary stop-character
+    set is exactly `{' ', '{', '}', ',', '.', '?', '!'}` -- no colon,
+    no semicolon. `_STOP_CHARACTERS` previously, wrongly, also
+    included `:`/`;`; corrected to the real set. Verified harmless in
+    practice before committing: the full suite passed unchanged with
+    the fix applied, confirming no already-tested template's `/R`
+    choice ever sat next to a colon or semicolon.
+  - Non-breaking: full suite passed unchanged (1923 passed, including
+    the 2 new `prose.py` boundary-character tests) before the new
+    `advanced_ability.py` dict tests were written. 5 new tests added
+    (1928 passed total) in `tests/test_advanced_ability.py`/
+    `tests/test_prose.py`.
 
 ## Setup
 

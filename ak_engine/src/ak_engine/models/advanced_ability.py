@@ -46,30 +46,76 @@ Monster`` member exactly (``MONSTER_NAMES``, Phase 75) -- see
 level up to the ``MAX_SKILL_LEVEL = 9`` cap,
 ``turn/practice_execution.py``) discontinues that ability's usual
 automatic per-level bonus (e.g. Tactical's 20%-per-level army-strength
-increase) and instead awards **one** Advanced Ability, drawn at random
-from that category's own pool, "that can be gained only once". Pool
-sizes are **not** uniformly 5 (one per level 5-9): Thievery's pool has
-8 candidates, most others have 5 or 6 -- meaning a character will
-never gain every possible Advanced Ability in a category whose pool
-exceeds 5. This project has no further source for the exact selection
-mechanic (uniform random over the remaining pool? weighted? does level
-9 get first pick of what's left?) -- deliberately left unmodeled here,
-this phase only establishes the vocabulary/description data.
+increase) and instead awards **one** Advanced Ability, drawn from that
+category's own pool, "that can be gained only once". Pool sizes are
+**not** uniformly 5 (one per level 5-9): Thievery's pool has 8
+candidates, most others have 5 or 6 -- meaning a character will never
+gain every possible Advanced Ability in a category whose pool exceeds
+5.
+
+**Phase 131 correction -- the selection is deterministic, not
+random.** This module originally said the exact selection mechanic was
+unsourced ("uniform random over the remaining pool? weighted?").
+Sweeping the remaining ``.PAS`` files (past ``SAY.PAS``/``RUMORS.PAS``,
+both now fully scanned) found the real mechanism: ``SAY.PAS``'s own
+``Imp_Spab`` (~line 1338-1351) and ``SPEAK.PAS``'s ``PW_Spab`` (~line
+33-40) both index a table, ``spabord[ability, level-4]``, to determine
+*which* pool entry is awarded -- a fixed lookup, not a dice roll.
+``REPORTS.PAS`` (~line 643) confirms the announcement is dispatched
+deterministically too: ``FD('c:\\tp\\prose\\saname.x2', S_Red,
+1001+spabord[ab,skil-4])``, the same `dex >= 1000` per-ordinal
+dispatch pattern already established for ``SPNOTE.X2``/``MAGFEAT.X2``
+(Phase 122/96). **The table's actual values are still unrecoverable**:
+`spabord` is never declared in any ``.PAS`` file in the archive --
+`SPEAK.PAS`'s own ``uses dos,crt,textseek,defines,yak,mboth,rumors,map``
+names two units, ``defines`` and ``mboth``, that don't exist anywhere
+in ``Programma Pascal.zip`` (only their compiled ``.TPU`` forms would
+have contained the array). So: the mechanic is now correctly described
+as deterministic-but-data-unavailable, not "possibly random" -- a real
+correction, not just an elaboration.
+
+**Two further real, fully-recoverable mechanics found in the same
+sweep** (``SPEAK.PAS Check_MSpab``/``Check_DSpab``, ~lines 66-90):
+
+- Six named-unique ``Treasure`` items each trigger an eligibility
+  *check* (not a free grant -- ``Check_ESpab`` only re-confirms/
+  re-announces a level the leader already has) across multiple
+  specific abilities while held. The other 15 ``ABILITY_ITEM``
+  treasures (``Treasure.ABILITY_TACTICAL``..``ABILITY_SAGE``) check
+  their own single already-implied ability via `Check_ESpab(ldr,
+  ability(ord(tr)))` -- independent confirmation of `models/treasure
+  .py`'s own already-established 1:1 ``ABILITY_ITEM``/``Ability``
+  positional mapping (Phase 77), not new data. See
+  ``UNIQUE_ITEM_ADVANCED_ABILITY_CHECKS`` below.
+- The 20 ``fix``/``wreck`` ``Discovery`` members (ordinals 0-19) each
+  trigger the same kind of check for one specific ``Ability``, two
+  discoveries per ability: ``fix0``/``fix1`` (`LAND_SHIP`/
+  `SCYTHED_CHARIOTS`) through ``fix8``/``fix9`` (`STRENGTH_ELIXIR`/
+  `MITHRIL_CHAINMAIL`) cover Tactical/March/Naval/Archery/Melee;
+  ``wreck0``/``wreck1`` (`MEDITATION_INCENSE`/`CLASSIFICATION_OF_LIFE`)
+  through ``wreck8``/``wreck9`` (`HIEROGLYPHIC_TRANSLATION`/
+  `SCIENTIFIC_METHOD`) cover Druid/Thief/Explorer/Spy/Sage (computed
+  directly from the Pascal source's own `ability(ord(d) Shr 1)` /
+  `ability(5+(ord(d) Shr 1))` arithmetic, not guessed). See
+  ``DISCOVERY_ADVANCED_ABILITY_CHECKS`` below.
 
 Ties directly to already-modeled mechanics without re-deriving them:
 ``models/enums.py Ability`` (the 15 skill categories, CTBOTH.PAS lines
 130-132), ``turn/practice_execution.py MAX_SKILL_LEVEL`` (the level 9
 cap), ``models/enums.py Spell``/``SPELL_NAME`` (the 10 secret spells,
-Phase 84), and ``models/monster.py Monster``/``MONSTER_NAMES``
-(Phase 75).
+Phase 84), ``models/monster.py Monster``/``MONSTER_NAMES`` (Phase 75),
+``models/treasure.py Treasure`` (Phase 77), and ``models/discovery.py
+Discovery`` (Phase 91/93).
 """
 
 from __future__ import annotations
 
 from enum import IntEnum
 
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.monster import Monster
+from ak_engine.models.treasure import Treasure
 
 
 class AdvancedAbility(IntEnum):
@@ -1372,3 +1418,51 @@ LAVA_POOL_IMMUNE_MONSTERS: frozenset[Monster] = frozenset(
         Monster.VAMPIRE,
     }
 )
+
+
+# Six named-unique Treasure items each re-check a specific set of
+# Abilities while held (SPEAK.PAS Check_MSpab, ~lines 66-78): each
+# holding leader gets Check_ESpab(ldr, ability) called once per
+# Ability in the tuple, re-confirming/re-announcing any level 5+
+# talent already earned in that Ability. Identifiers resolved via
+# CTBOTH.PAS lines 128-131 (ForcedMarch=Ability.MARCH,
+# Illusionist=Ability.ILLUSION).
+UNIQUE_ITEM_ADVANCED_ABILITY_CHECKS: dict[Treasure, tuple[Ability, ...]] = {
+    Treasure.NAMED_UNIQUE_CROWN_ROHAN: (Ability.MARCH, Ability.TACTICAL),
+    Treasure.NAMED_UNIQUE_AMULET_POWER: (Ability.PSYCHIC, Ability.WHITE, Ability.ELEMENTAL),
+    Treasure.NAMED_UNIQUE_SCEPTER_LIFE: (Ability.SAGE, Ability.ILLUSION, Ability.MELEE),
+    Treasure.NAMED_UNIQUE_MAP_MARAUDERS: (Ability.NAVAL,),
+    Treasure.NAMED_UNIQUE_FANG_VAMPIRE: (Ability.MELEE, Ability.NECROMANCY),
+    Treasure.NAMED_UNIQUE_HAMMER_POWER: (Ability.MELEE, Ability.DRUID),
+}
+
+
+# The 20 fix0-fix9/wreck0-wreck9 Discovery members each re-check a
+# single specific Ability (SPEAK.PAS Check_DSpab, ~lines 80-90): the
+# ordinal-to-Ability mapping is computed directly from the Pascal
+# source's own `Check_It(ability(ord(d) Shr 1))` (fix0-fix9, ordinals
+# 0-9) and `Check_It(ability(5+(ord(d) Shr 1)))` (wreck0-wreck9,
+# ordinals 10-19) -- i.e. two Discoveries share each Ability, in
+# Discovery-enum ordinal order.
+DISCOVERY_ADVANCED_ABILITY_CHECKS: dict[Discovery, Ability] = {
+    Discovery.LAND_SHIP: Ability.TACTICAL,
+    Discovery.SCYTHED_CHARIOTS: Ability.TACTICAL,
+    Discovery.PONY_EXPRESS: Ability.MARCH,
+    Discovery.MACADAM_ROADS: Ability.MARCH,
+    Discovery.GREEK_FIRE: Ability.NAVAL,
+    Discovery.SEXTANT: Ability.NAVAL,
+    Discovery.COMPOSITE_BOW: Ability.ARCHERY,
+    Discovery.TUNGSTEN_TIPPED_ARROW: Ability.ARCHERY,
+    Discovery.STRENGTH_ELIXIR: Ability.MELEE,
+    Discovery.MITHRIL_CHAINMAIL: Ability.MELEE,
+    Discovery.MEDITATION_INCENSE: Ability.DRUID,
+    Discovery.CLASSIFICATION_OF_LIFE: Ability.DRUID,
+    Discovery.MAGNETIZED_LOCK_PICKS: Ability.THIEF,
+    Discovery.TRAP_FINDING_DUST: Ability.THIEF,
+    Discovery.COMPASS: Ability.EXPLORER,
+    Discovery.TELESCOPE: Ability.EXPLORER,
+    Discovery.INVISIBLE_INK: Ability.SPY,
+    Discovery.TWO_WAY_MIRRORS: Ability.SPY,
+    Discovery.HIEROGLYPHIC_TRANSLATION: Ability.SAGE,
+    Discovery.SCIENTIFIC_METHOD: Ability.SAGE,
+}

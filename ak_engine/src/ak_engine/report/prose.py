@@ -44,16 +44,26 @@ still literal at that point. `render()` reproduces this exact staged
 order: resolve `/R` -> resolve `{...}` -> convert `_` to space ->
 substitute caller-supplied placeholder values -> resolve `^A`.
 
-**`/R`'s word-boundary scan uses an approximated stop-character set**:
-Pascal's own boundary test is `Stop_Punct(c) OR End_Punct(c)`; this
-project has `Stop_Punct`'s definition (space, `{`, `}`, `,`) directly
-from `Say_Options`, but `End_Punct` itself is defined in `DEFINES.TPU`,
-a *compiled* unit with no source in the available Pascal archive.
-`_STOP_CHARACTERS` approximates it with the standard set of
-sentence-ending/separating punctuation (`.`, `!`, `?`, `:`, `;`) -- a
-documented, reasonable guess, not a sourced fact, flagged here as the
-first place to revisit if real templates ever render with a word
-boundary in the wrong place.
+**`/R`'s word-boundary scan uses the exact real stop-character set --
+no longer an approximation (Phase 131)**: earlier phases could only
+find `Stop_Punct`'s own definition (`HostAK/TP/RUMORS.PAS` ~line
+1836-1840: space, `{`, `}`, `,`, plus `End_Punct(c)`) and had to guess
+at `End_Punct` itself, believed to live in a *compiled* unit
+(`DEFINES.TPU`) with no source in the archive. Phase 131's sweep of
+the remaining `.PAS` files found `End_Punct`'s real definition instead
+in `HostAK/TP/YAK.PAS` (~line 145-146: `(c = '.') or (c = '?') or (c =
+'!')`) -- and confirmed `RUMORS.PAS`'s own `uses` clause
+(`dos,crt,defines,yak,map,mboth`) imports `yak` *after* `defines`, so
+this is the real, live definition Pascal actually calls (Turbo
+Pascal's own last-unit-wins resolution for same-named cross-unit
+identifiers). The true combined stop-character set is therefore exactly `` {' ',
+'{', '}', ',', '.', '?', '!'} `` -- **no colon, no semicolon** --
+correcting this module's own previous approximation, which already had
+space/`{`/`}`/`,`/`.`/`!`/`?` right but wrongly also included `:`/`;`
+(neither one is a real Pascal word-boundary character). Confirmed
+harmless in practice: the full suite passes unchanged after the fix,
+so no already-tested template's `/R` choice ever sat next to a colon
+or semicolon.
 
 **`/S` (Phase 74)**: quoted in full above -- "The left choice is used
 in a land situation, the right choice is for a sea or underwater
@@ -155,7 +165,7 @@ from __future__ import annotations
 import random
 from collections.abc import Sequence
 
-_STOP_CHARACTERS = frozenset(" {},.!?:;")
+_STOP_CHARACTERS = frozenset(" {},.!?")
 _VOWELS = frozenset("aeiouAEIOU")
 _SUPPORTED_CHOICE_MARKERS = frozenset({"R", "S", "F"})
 

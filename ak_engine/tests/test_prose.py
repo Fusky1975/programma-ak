@@ -26,6 +26,22 @@ def test_random_choice_treats_an_underscore_joined_phrase_as_one_word():
     assert render("tired/Rbored_with", rng=ScriptedRandom([0.9])) == "bored with"
 
 
+def test_random_choice_word_boundary_scan_does_not_stop_at_colon_or_semicolon(
+) -> None:
+    # Phase 131: SAY.PAS's own real Stop_Punct/End_Punct (found in
+    # RUMORS.PAS/YAK.PAS) confirm the exact stop-character set is
+    # space/{/}/,/./!/? -- colon and semicolon are NOT boundaries, so a
+    # word containing one is still treated as a single unit on both
+    # sides of the scan.
+    assert render("foo:bar/Rbaz", rng=ScriptedRandom([0.9])) == "baz"
+    assert render("foo;bar/Rbaz", rng=ScriptedRandom([0.9])) == "baz"
+
+
+def test_random_choice_word_boundary_scan_still_stops_at_confirmed_real_characters():
+    assert render("foo bar/Rbaz", rng=ScriptedRandom([0.9])) == "foo baz"
+    assert render("foo,bar/Rbaz", rng=ScriptedRandom([0.9])) == "foo,baz"
+
+
 def test_random_choice_resolves_multiple_occurrences_left_to_right():
     rng = ScriptedRandom([0.1, 0.9])  # first: left; second: right
     assert render("ran/Rswam and jumped/Rflew", rng=rng) == "ran and flew"

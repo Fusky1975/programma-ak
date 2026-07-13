@@ -7,12 +7,16 @@ from ak_engine.models.advanced_ability import (
     ADVANCED_ABILITY_NAME,
     ADVANCED_ABILITY_POOL,
     ADVANCED_ABILITY_TAGLINE,
+    DISCOVERY_ADVANCED_ABILITY_CHECKS,
     GATE_DEMON_TABLE,
     LAVA_POOL_IMMUNE_MONSTERS,
+    UNIQUE_ITEM_ADVANCED_ABILITY_CHECKS,
     AdvancedAbility,
 )
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.monster import Monster
+from ak_engine.models.treasure import Treasure
 
 
 def test_advanced_ability_has_89_members():
@@ -144,3 +148,59 @@ def test_lava_pool_immune_monsters_has_29_real_monsters():
     # A ground-dwelling, non-flying/underwater/anti-holy/ghostly
     # monster should not be in the immunity list.
     assert Monster.MEDUSA not in LAVA_POOL_IMMUNE_MONSTERS
+
+
+# -- Advanced Ability trigger mappings from SPEAK.PAS (Phase 131) --
+
+
+def test_unique_item_advanced_ability_checks_covers_all_6_named_uniques():
+    assert set(UNIQUE_ITEM_ADVANCED_ABILITY_CHECKS.keys()) == {
+        Treasure.NAMED_UNIQUE_CROWN_ROHAN,
+        Treasure.NAMED_UNIQUE_AMULET_POWER,
+        Treasure.NAMED_UNIQUE_SCEPTER_LIFE,
+        Treasure.NAMED_UNIQUE_MAP_MARAUDERS,
+        Treasure.NAMED_UNIQUE_FANG_VAMPIRE,
+        Treasure.NAMED_UNIQUE_HAMMER_POWER,
+    }
+
+
+def test_unique_item_advanced_ability_checks_verbatim_samples():
+    assert UNIQUE_ITEM_ADVANCED_ABILITY_CHECKS[Treasure.NAMED_UNIQUE_CROWN_ROHAN] == (
+        Ability.MARCH,
+        Ability.TACTICAL,
+    )
+    assert UNIQUE_ITEM_ADVANCED_ABILITY_CHECKS[Treasure.NAMED_UNIQUE_MAP_MARAUDERS] == (Ability.NAVAL,)
+    assert UNIQUE_ITEM_ADVANCED_ABILITY_CHECKS[Treasure.NAMED_UNIQUE_FANG_VAMPIRE] == (
+        Ability.MELEE,
+        Ability.NECROMANCY,
+    )
+
+
+def test_discovery_advanced_ability_checks_covers_all_20_fix_wreck_discoveries():
+    assert len(DISCOVERY_ADVANCED_ABILITY_CHECKS) == 20
+    assert set(DISCOVERY_ADVANCED_ABILITY_CHECKS.keys()) == {
+        Discovery(ordinal) for ordinal in range(20)
+    }
+
+
+def test_discovery_advanced_ability_checks_two_discoveries_share_each_covered_ability():
+    # Only 10 of the 15 Ability categories are covered by a
+    # fix/wreck Discovery pair (Tactical/March/Naval/Archery/Melee/
+    # Druid/Thief/Explorer/Spy/Sage) -- White/Necromancy/Elemental/
+    # Psychic/Illusion have no Discovery check at all.
+    covered_abilities = set(DISCOVERY_ADVANCED_ABILITY_CHECKS.values())
+    assert len(covered_abilities) == 10
+    for ability in covered_abilities:
+        matching = [
+            discovery
+            for discovery, mapped_ability in DISCOVERY_ADVANCED_ABILITY_CHECKS.items()
+            if mapped_ability is ability
+        ]
+        assert len(matching) == 2
+
+
+def test_discovery_advanced_ability_checks_verbatim_samples():
+    assert DISCOVERY_ADVANCED_ABILITY_CHECKS[Discovery.LAND_SHIP] == Ability.TACTICAL
+    assert DISCOVERY_ADVANCED_ABILITY_CHECKS[Discovery.SCYTHED_CHARIOTS] == Ability.TACTICAL
+    assert DISCOVERY_ADVANCED_ABILITY_CHECKS[Discovery.SCIENTIFIC_METHOD] == Ability.SAGE
+    assert DISCOVERY_ADVANCED_ABILITY_CHECKS[Discovery.MITHRIL_CHAINMAIL] == Ability.MELEE
