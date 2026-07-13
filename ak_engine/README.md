@@ -5518,7 +5518,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2045 passed) before the
     new Phase 147 tests were written. 6 new tests added (2051 passed
     total) in `tests/test_turn_report.py`.
-- **Phase 148 (current)**: `report/turn_report.py render_skill_book_read()`
+- **Phase 148**: `report/turn_report.py render_skill_book_read()`
   (new), unblocking `describe_use_mi()`'s own skill-book branch, left
   rendering `None` since Phase 146.
   - **Project-original, not sourced from `SAY.PAS`/`RUMORS.PAS`**:
@@ -5545,6 +5545,61 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new Phase 148 tests were written. 2 new tests added (one existing
     Phase 146 test renamed for clarity, not counted as new) (2053
     passed total) in `tests/test_turn_report.py`.
+- **Phase 149 (current)**: `models/army_naming.py` (new) -- closes the
+  exact gap `report/turn_report.py`'s own module docstring names ("Army
+  name"... "LNAMES.PAS/PRNAMES.PAS territory, a separate, entirely
+  unbuilt subsystem"). That citation turned out to misidentify the
+  source: `LNAMES.PAS`/`PRNAMES.PAS` are flat, one-name-per-line
+  word-pool text files (leader names and province/geographic names
+  respectively -- confirmed by `HostAK/MS/AKMAN.TXT` lines 525-526),
+  consumed only by `AKGEN.EXE`, a separate offline world-generator whose
+  own source isn't present in the archive. Army naming has nothing to
+  do with either file.
+  - The real mechanism lives in `HostAK/TP/YAK.PAS` lines 49-85, fully
+    present in source (not compiled-unit territory): `Make_Des`
+    (ordinal suffix on an integer) and `Make_AName` (ordinal + optional
+    race tag + army type designation). `ordinal_suffix()` transcribes
+    `Make_Des`'s `{$ELSE}` (non-Moderator, i.e. real host-engine) body
+    -- this project already established `{$IFDEF Moderator}` marks the
+    game-master/world-generation-side build, never the player-facing
+    host this project reconstructs (`models/feature.py
+    MONSTER_GUARDED_FEATURE_TYPES`, Phase 79). That body has a real,
+    confirmed quirk of its own: **no 11/12/13 exception at all**, so
+    army 11 is genuinely "11st" in the real host engine, not "11th" --
+    transcribed as-is, not silently fixed.
+  - `an` (the army id `Make_Des`/`Make_AName` ordinal-suffix) is the
+    army's own array-slot index, confirmed by the routine indexing
+    straight off it with no kingdom/race scoping visible anywhere --
+    lines up exactly with `GameState.new_army_id()`'s own monotonic,
+    game-wide counter (Phase 15); `ArmyState.army_id` is the direct
+    equivalent, no translation needed.
+  - Only `caller=1` is ever actually invoked (`REPORTS.PAS` lines 1652,
+    1716, the only two call sites in the archive), matching
+    `PROSE.TXT`'s own documented examples exactly ("the 231st Bowmen",
+    "241st Axemen, 34th Legion and 145th Fleet" -- no full race
+    adjective anywhere). `make_army_name()` only builds that one real,
+    reachable shape.
+  - `RACE_SHORT_TAG` -- a genuine source oddity, transcribed as-is:
+    `CTBOTH.PAS` line 588's own `rab3` array literal has one fewer
+    non-Rohan blank entry than `rname`/`radj`/`rpname`'s own confirmed-
+    correct positional alignment (Phase 87), verified by parsing the
+    literal's exact raw bytes. `'Roh'` -- unmistakably meant as
+    Rohan's own short tag, given `'Elf'`/`'Dwf'`/`'Orc'` sit correctly
+    at their own indices 1/2/3 -- lands one slot late, on the unused
+    `er3` extension race (ordinal 15) instead of `Race.ROHAN` (ordinal
+    14). `Race` has no `er3` member to receive it, so under strict
+    positional transcription `RACE_SHORT_TAG[Race.ROHAN]` is empty --
+    matching the source exactly, not what was evidently intended.
+  - `Noid_Race(r)` -- a reconstruction assumption, not a directly-quoted
+    source: used (`YAK.PAS` line 81, `SAY.PAS` line 744) but never
+    defined anywhere in the available archive, the same compiled-unit
+    status `End_Punct` had before Phase 131's discovery. Read literally
+    ("no-[race-]id") and consistent with every real example never
+    showing a race tag on a presumably-Human army, this project takes
+    it to mean `r <> Human`.
+  - Non-breaking: full suite passed unchanged (2053 passed) before the
+    new Phase 149 tests were written. 11 new tests added (2064 passed
+    total) in `tests/test_army_naming.py`.
 
 ## Setup
 
