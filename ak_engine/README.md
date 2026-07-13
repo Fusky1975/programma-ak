@@ -5097,6 +5097,51 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (1964 passed) before the
     new Phase 134 tests were written. 3 new tests added (1967 passed
     total) in `tests/test_missed_deadline.py` (new file).
+- **Phase 135**: researched `REPORTS.PAS Rep_Econ`'s Discovery
+  effect-magnitude formulas (`fix`/`wreck` ability-skill bonus,
+  `bild` anti-spell targets, `crunch` revenue-bonus percentages) --
+  found, on inspection, that **all three were already fully modeled**
+  in Phase 93's own `models/discovery.py` (`DISCOVERY_ABILITY_BONUS`/
+  `DISCOVERY_ANTISPELL_TARGET`/`DISCOVERY_REVENUE_BONUS_PERCENT`,
+  sourced from the identical `Rep_Econ` `CASE` block, already quoted
+  verbatim in that module's own docstring). No new code needed --
+  recorded here so a future sweep doesn't re-flag it.
+- **Phase 136 (current)**: `turn/intelligence_estimate.py` (new) --
+  `REPORTS.PAS Align_Est`/`Temper_Est` (~lines 43-58), a real,
+  previously unmodeled imperfect-information mechanic found in the
+  same DEF2.PAS/REPORTS.PAS sweep, per the user's own request.
+  - `estimate_alignment()`/`estimate_temper()` implement the exact
+    ±1-ordinal noise formula: a perfect-detection agent (Psychic Mage
+    office-holder, or -- alignment only -- the `Detect_Align`
+    advanced ability, almost certainly this project's own
+    `AdvancedAbility.KNOW_ALIGNMENT_TALENT` by semantic match) sees
+    the true value; anyone else gets the true value nudged by exactly
+    one enum ordinal based on id parity, clamped to the enum's own
+    real range (`Alignment.SPECIAL`/`Temper.BERSERK` are each enum's
+    own highest ordinal, confirming the clamp bounds directly) --
+    deterministic from both ids' parity, not RNG-driven, exactly what
+    the Pascal source computes.
+  - **Temper's second parity term is the agent's own birth
+    x-coordinate** (`bornx[agent] and 1`), not the agent's id --
+    a real, distinct difference from `Align_Est`'s own formula, not
+    an oversight. This project has no `LeaderState` field for a
+    leader's birth coordinate (character-creation/world-generation
+    data, the same category of gap already declared unbuilt
+    elsewhere), so `estimate_temper()` takes it as an explicit
+    caller-supplied parameter.
+  - `perfect` is caller-supplied for both functions: neither
+    office-holding (Phase 137's own subject) nor per-leader advanced-
+    ability possession is tracked anywhere in `GameState` yet.
+  - Deliberately not modeled: the `ln < 256` character-vs-monster
+    branch (a monster's own implied alignment has no available
+    formula, `Agent_Align`'s own source is missing, same lost-unit
+    gap as `spabord`), and the `2880+`/`2896+` prose-dispatch-code
+    offsets (the target `.X2` prose file isn't in the available
+    archive) -- this module exposes the real estimated enum member
+    directly instead.
+  - Non-breaking: full suite passed unchanged (1967 passed) before
+    the new Phase 136 tests were written. 10 new tests added (1977
+    passed total) in `tests/test_intelligence_estimate.py` (new file).
 
 ## Setup
 
