@@ -1022,7 +1022,9 @@ from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
+from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
+from ak_engine.turn.trail_execution import TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 
 # HostAK/TP/PROSE/PLUS1.X .. PLUS5.X, MINUS1.X .. MINUS5.X, ZERO.X --
@@ -2749,6 +2751,66 @@ def render_caught_up(character_name: str, target_name: str, province_name: str, 
 
     values = {"<": character_name, "[": target_name, "@": province_name}
     return render(CAUGHT_UP_TEMPLATE, values, rng=rng)
+
+
+def describe_pursue(
+    result: PursueExecutionResult,
+    *,
+    pursuer_name: str,
+    target_name: str,
+    province_name: str,
+    rng: random.Random,
+) -> str | None:
+    """Compose Pursue's own turn-report line from an already-computed
+    ``PursueExecutionResult`` (Phase 51/53), sixth slice of the
+    report-assembler thread.
+
+    Renders ``render_caught_up()`` (``_LCatch``, confirmed a shared
+    Pursue/Trail sentence by its own docstring) whenever
+    ``result.caught_up`` is ``True`` -- covering all three real
+    catch-up shapes this project resolves (an army-vs-army battle via
+    ``result.battle_report``, an armyless personal duel via
+    ``result.combat_occurred``/``winner_leader_id``, or no combat intent
+    at all): the catch-up moment itself is a single narrative event, the
+    same "no source ties two moments into one combined sentence, the
+    caller composes" stance already taken for the Ice-Suspend cluster
+    (Phase 123) -- a caller with a real ``battle_report`` composes
+    further with ``describe_battle()`` separately, the same
+    caller-composes-the-sequence precedent, rather than this function
+    reaching into that unrelated subsystem's own army-naming
+    requirements.
+
+    Returns ``None`` when ``result.caught_up`` is ``False`` (a failed
+    catch-up roll, an army-leading mismatch, or the pursuer/target not
+    found) -- no catch-up happened, so there is nothing to narrate.
+    """
+
+    if not result.caught_up:
+        return None
+    return render_caught_up(pursuer_name, target_name, province_name, rng)
+
+
+def describe_trail(
+    result: TrailExecutionResult,
+    *,
+    trailer_name: str,
+    target_name: str,
+    province_name: str,
+    rng: random.Random,
+) -> str | None:
+    """Compose Trail's own turn-report line from an already-computed
+    ``TrailExecutionResult`` (Phase 52), sharing ``render_caught_up()``
+    with ``describe_pursue()`` above -- the same ``_LCatch`` sentence,
+    confirmed a real Pursue/Trail sibling by its own docstring.
+
+    Returns ``None`` when ``result.spied_on`` is ``False`` (a failed
+    catch-up roll, Trail's own no-army restriction rejecting the order,
+    or the trailer/target not found).
+    """
+
+    if not result.spied_on:
+        return None
+    return render_caught_up(trailer_name, target_name, province_name, rng)
 
 
 # HostAK/TP/SAY.PAS _LTeach -- a single, real, hardcoded template (no

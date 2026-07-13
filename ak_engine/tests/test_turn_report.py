@@ -31,6 +31,8 @@ from ak_engine.report.turn_report import (
     describe_give,
     describe_hire,
     describe_practice,
+    describe_pursue,
+    describe_trail,
     describe_use_mi,
     margin_bucket,
     parse_template_choices,
@@ -151,7 +153,9 @@ from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
+from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
+from ak_engine.turn.trail_execution import TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 
 from _helpers import ScriptedRandom
@@ -2249,5 +2253,64 @@ def test_describe_use_mi_renders_nothing_on_failure():
     rng = ScriptedRandom([])
 
     line = describe_use_mi(result, caster_name="Aldric", rng=rng)
+
+    assert line is None
+
+
+# -- describe_pursue / describe_trail (Phase 147) --
+
+
+def test_describe_pursue_renders_the_catch_up_sentence_on_an_army_battle():
+    result = PursueExecutionResult(caught_up=True, combat_occurred=True, battle_report=object())
+    rng = ScriptedRandom([])
+
+    line = describe_pursue(result, pursuer_name="Aldric", target_name="Borin", province_name="Eldoria", rng=rng)
+
+    assert line == "Aldric caught up with Borin in Eldoria."
+
+
+def test_describe_pursue_renders_the_catch_up_sentence_on_an_armyless_duel():
+    result = PursueExecutionResult(
+        caught_up=True, combat_occurred=True, winner_leader_id=1, loser_leader_id=2, loser_killed=True
+    )
+    rng = ScriptedRandom([])
+
+    line = describe_pursue(result, pursuer_name="Aldric", target_name="Borin", province_name="Eldoria", rng=rng)
+
+    assert line == "Aldric caught up with Borin in Eldoria."
+
+
+def test_describe_pursue_renders_the_catch_up_sentence_with_no_combat_intent():
+    result = PursueExecutionResult(caught_up=True, combat_occurred=False)
+    rng = ScriptedRandom([])
+
+    line = describe_pursue(result, pursuer_name="Aldric", target_name="Borin", province_name="Eldoria", rng=rng)
+
+    assert line == "Aldric caught up with Borin in Eldoria."
+
+
+def test_describe_pursue_renders_nothing_when_not_caught_up():
+    result = PursueExecutionResult(caught_up=False, reason="did not catch up this phase")
+    rng = ScriptedRandom([])
+
+    line = describe_pursue(result, pursuer_name="Aldric", target_name="Borin", province_name="Eldoria", rng=rng)
+
+    assert line is None
+
+
+def test_describe_trail_renders_the_catch_up_sentence():
+    result = TrailExecutionResult(spied_on=True)
+    rng = ScriptedRandom([])
+
+    line = describe_trail(result, trailer_name="Aldric", target_name="Borin", province_name="Eldoria", rng=rng)
+
+    assert line == "Aldric caught up with Borin in Eldoria."
+
+
+def test_describe_trail_renders_nothing_when_not_spied_on():
+    result = TrailExecutionResult(spied_on=False, reason="did not catch up this phase")
+    rng = ScriptedRandom([])
+
+    line = describe_trail(result, trailer_name="Aldric", target_name="Borin", province_name="Eldoria", rng=rng)
 
     assert line is None

@@ -5461,7 +5461,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2025 passed) before the
     new Phase 145 tests were written. 16 new tests added (2041 passed
     total) in `tests/test_turn_report.py`.
-- **Phase 146 (current)**: `report/turn_report.py describe_use_mi()`
+- **Phase 146**: `report/turn_report.py describe_use_mi()`
   (new) -- fifth slice of the report-assembler thread, consuming
   `turn/use_mi_execution.py UseMIExecutionResult` (Phase 141).
   - Wand use (`result.cast_result is not None`) delegates straight to
@@ -5488,6 +5488,35 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     owned, or not a Use_MI target) also renders nothing.
   - Non-breaking: full suite passed unchanged (2041 passed) before the
     new Phase 146 tests were written. 4 new tests added (2045 passed
+    total) in `tests/test_turn_report.py`.
+- **Phase 147 (current)**: `report/turn_report.py describe_pursue()` +
+  `describe_trail()` (both new) -- sixth and seventh slices of the
+  report-assembler thread, consuming `turn/pursue_execution.py
+  PursueExecutionResult` (Phase 51/53) and `turn/trail_execution.py
+  TrailExecutionResult` (Phase 52).
+  - Both share `render_caught_up()` (`_LCatch`, Phase 120), which its
+    own docstring already confirmed as "the Pursue/Trail catch-up
+    moment" -- a single real, hardcoded `SAY.PAS` template covering
+    both actions.
+  - `describe_pursue()` renders it whenever `result.caught_up` is
+    `True`, covering all three real catch-up shapes this project
+    resolves (an army-vs-army battle via `result.battle_report`, an
+    armyless personal duel via `result.combat_occurred`/
+    `winner_leader_id`, or no combat intent at all): the catch-up
+    moment is its own narrative event, independent of whatever combat
+    follows. A caller with a real `battle_report` composes further with
+    `describe_battle()` separately -- this function deliberately doesn't
+    reach into that unrelated subsystem's own army-naming requirements,
+    the same caller-composes-the-sequence stance already established
+    for the Ice-Suspend cluster (Phase 123).
+  - `describe_trail()` renders the same sentence whenever
+    `result.spied_on` is `True`.
+  - Both return `None` on failure (a failed catch-up roll, an
+    army-leading mismatch for Pursue, Trail's own no-army restriction,
+    or the leader/target not found) -- no catch-up happened, nothing to
+    narrate.
+  - Non-breaking: full suite passed unchanged (2045 passed) before the
+    new Phase 147 tests were written. 6 new tests added (2051 passed
     total) in `tests/test_turn_report.py`.
 
 ## Setup
