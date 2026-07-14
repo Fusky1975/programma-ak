@@ -5823,7 +5823,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new Phase 155 tests were written. 17 new tests added (2116 passed
     total) in `tests/test_encounter.py`, `tests/test_turn_report.py`,
     and `tests/test_search_execution.py`.
-- **Phase 156 (current)**: `report/turn_report.py describe_search()`
+- **Phase 156**: `report/turn_report.py describe_search()`
   (new) -- the last real-execution action (Hire/Fire/Cast/Use_MI/
   Practice/Give already had one, Phases 142-144) without its own report
   composer, even though `turn/search_execution.py execute_search()`
@@ -5858,6 +5858,48 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2116 passed) before the
     new Phase 156 tests were written. 9 new tests added (2125 passed
     total) in `tests/test_turn_report.py`.
+- **Phase 157 (current)**: Quote of the Week -- `models/quote.py` (new)
+  and `report/turn_report.py render_quote_of_the_week()` (new), the
+  first item on the report-narrator roadmap Phase 58's own docstring
+  laid out ("Quote of the Week first, since `PROSE/QUOTES.X2` needs no
+  game-state at all").
+  - Sourced from `HostAK/TP/PROSE/QUOTES.X2` (header `"94 2"`: 94
+    real-world historical quotes, each a 2-line block) and
+    `HostAK/TP/SAY.PAS`'s own `_SQuote` dispatch (~line 1231): prints a
+    "Quote of the Week:" header, then looks up block `dex-1000` via the
+    general `FD` block reader (`RUMORS.PAS`, ~line 2252, already
+    confirmed by Phase 58's own foundation) and prints its two lines as
+    separate paragraphs (`Pos('quotes',fn) > 0` is the one place `FD`
+    forces a paragraph break after *every* line of a block, not just
+    between blocks).
+  - **The week-selection formula (`qfact`) is real but not
+    reproducible**: it depends on `gdyear`/`gdmonth`/`gdday` (the real
+    calendar date the host program was run on) and `startfact[company]`
+    (a per-company offset) -- both host-only runtime state with no
+    representation in a parsed `AK3__T*.K1` move file and no available
+    source for how either is initialized. `models/quote.py` therefore
+    stops at the same boundary Phase 150's `rename_home_province()`
+    already established for `Read_T1Names`'s own real but unavailable
+    `miscfile` format: the quote table and the block-lookup mechanism
+    (`quote_of_the_week(index)`) are modeled and real; the caller
+    supplies the block index (0-93) directly instead of this project
+    guessing at a calendar-driven rotation it can't verify or
+    reconstruct.
+  - All 94 quote/attribution pairs transcribed verbatim from
+    `QUOTES.X2` (machine-diffed against the source file to confirm an
+    exact match, not just eyeballed), including source order quirks
+    (about a third of the blocks state the speaker before the quote
+    rather than as a trailing attribution) left as-is, not normalized.
+    These are centuries-old public-domain historical quotations (Louis
+    VII, Genghis Khan, Machiavelli, and similar) -- the game's own
+    flavor-text data file, not new project-original writing.
+  - `render_quote_of_the_week()` does not pass either line through
+    `report/prose.py render()`: confirmed empirically that none of the
+    94 blocks contain any of that engine's marker characters, so marker
+    resolution would be a pure no-op.
+  - Non-breaking: full suite passed unchanged (2125 passed) before the
+    new Phase 157 tests were written. 9 new tests added (2134 passed
+    total) in `tests/test_quote.py` (new) and `tests/test_turn_report.py`.
 
 ## Setup
 

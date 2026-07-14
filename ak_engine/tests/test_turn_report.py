@@ -116,6 +116,7 @@ from ak_engine.report.turn_report import (
     render_skill_book_read,
     render_pursuit_and_destroy,
     render_quest_errand_thanks,
+    render_quote_of_the_week,
     render_quest_fled_in_fear,
     render_quest_hero_not_tasty,
     render_quest_insufficient_price,
@@ -2492,3 +2493,31 @@ def test_describe_search_inconclusive_combat_renders_only_the_opening_line():
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
 
     assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+# -- Phase 157: Quote of the Week --
+
+
+def test_render_quote_of_the_week_first_block():
+    lines = render_quote_of_the_week(0)
+
+    assert lines == [
+        "Quote of the Week:",
+        '"The King of England has men, horses, silk, jewels, fruit, game and everything '
+        'else.  And we in France have nothing but bread and wine and gaiety!"',
+        "-Louis VII, King of France, 1179 A.D.",
+    ]
+
+
+def test_render_quote_of_the_week_returns_three_paragraphs():
+    # Header + the block's own two source lines, each a separate
+    # paragraph -- matching _SQuote's own per-line PR1 behavior.
+    lines = render_quote_of_the_week(1)
+
+    assert len(lines) == 3
+    assert lines[0] == "Quote of the Week:"
+
+
+def test_render_quote_of_the_week_out_of_range_raises_index_error():
+    with pytest.raises(IndexError):
+        render_quote_of_the_week(94)

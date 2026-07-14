@@ -1116,6 +1116,7 @@ from ak_engine.models.enums import (
 )
 from ak_engine.models.game_state import GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
+from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.weapon import Weapon
 from ak_engine.report.prose import render
 from ak_engine.turn.battle_orchestrator import BattleReport
@@ -4509,3 +4510,28 @@ def describe_search(
     if result.combat_resolved and result.winner == "monster" and result.leader_killed:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
     return lines
+
+
+# HostAK/TP/PROSE/QUOTES.X2 + HostAK/TP/SAY.PAS _SQuote. See
+# models/quote.py's own module docstring for the full sourcing and the
+# documented "real mechanism, uncomputable real-calendar trigger" split.
+def render_quote_of_the_week(index: int) -> list[str]:
+    """Renders the "Quote of the Week:" header plus the two source lines
+    of :func:`ak_engine.models.quote.quote_of_the_week`'s own block
+    ``index`` (0-93), as three separate paragraphs -- matching
+    ``_SQuote``'s own ``Say('Quote of the Week:',S_Red)`` header
+    followed by ``FD``'s per-line ``PR1`` paragraph break for a
+    ``quotes.x2`` block (see the module docstring cited above). Neither
+    line is passed through :func:`ak_engine.report.prose.render`: the
+    real source data contains none of that engine's marker characters
+    (confirmed empirically against all 94 blocks), so marker resolution
+    would be a pure no-op here.
+
+    The caller supplies ``index`` directly rather than this function
+    computing a calendar-driven rotation itself -- see
+    ``models/quote.py``'s own docstring for why ``_SQuote``'s real
+    ``qfact`` formula can't be reproduced from a parsed move file alone.
+    """
+
+    quote_line, attribution_line = quote_of_the_week(index)
+    return ["Quote of the Week:", quote_line, attribution_line]
