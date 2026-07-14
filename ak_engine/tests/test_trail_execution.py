@@ -7,6 +7,8 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
 from ak_engine.turn.trail_decode import TrailRequest
@@ -123,6 +125,67 @@ def test_execute_trail_uses_trailers_real_spy_skill():
     result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.99]))
 
     assert result.spied_on is True
+
+
+# -- Phase 159: temper/treasures_owned/armies_led intelligence payload -------
+
+
+def test_execute_trail_success_reports_targets_temper():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD, temper=Temper.BRAVE))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+
+    assert result.temper is Temper.BRAVE
+
+
+def test_execute_trail_success_reports_none_temper_when_not_recorded():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+
+    assert result.temper is None
+
+
+def test_execute_trail_success_reports_targets_treasures_owned():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+    state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=2)
+    state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=1)  # trailer's own, not reported
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+
+    assert len(result.treasures_owned) == 1
+    assert result.treasures_owned[0].owner_leader_id == 2
+
+
+def test_execute_trail_success_reports_targets_armies_led():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+    army = ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2)
+    state.add_army(army)
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+
+    assert result.armies_led == (army,)
+
+
+def test_execute_trail_failure_reports_no_payload():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FAR_AWAY, temper=Temper.BERSERK))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.99]))
+
+    assert result.spied_on is False
+    assert result.temper is None
+    assert result.treasures_owned == ()
+    assert result.armies_led == ()
 
 
 # -- advance_trail (Phase 68) -------------------------------------------------

@@ -28,32 +28,58 @@ False, reason=...)``, not an exception -- consistent with this
 project's existing convention that an invalid-per-rulebook order
 reports itself rather than crashing.
 
-**Deliberately narrow scope: catch-up only, no intelligence payload.**
-This function answers only "does the trail succeed in finding and
-spying on the target this phase" (``spied_on: bool``) -- it does *not*
-attempt to construct the actual "Actions, race, temper, alignment,
-treasures owned and armies led" (or, for a King target, "finances,
-alliances, enemies and controlled provinces") intelligence report.
-Two independent reasons, both already-declared project-wide gaps, not
-new ones invented for Trail specifically:
+**Phase 159 -- corrects a stale claim in this docstring and closes part
+of the intelligence-payload gap.** This module previously claimed
+``LeaderState`` had no ``race``, ``temper``, ``alignment``, or
+per-leader treasure/magic-item ownership field, and that ``Temper``
+itself had no model in this project at all -- both wrong as of this
+phase: ``Temper`` has had a real model since Phase 82
+(``models/temper.py``), ``LeaderState.temper`` has stored real
+per-leader values since Phase 139, and the leader-held item-ownership
+registry (``GameState.items_held_by()``) has existed since Phase 140.
+Left uncorrected, a future reader would have trusted a doc comment
+over the actual code -- the same self-correction policy Phase 55/153
+already established elsewhere in this project.
 
-1. This project has no report-generation system at all yet (see
-   ``ak_engine/README.md``'s own "Not yet implemented" list, and
-   ASpy's ([3.14]) identical "intelligence-report generation... needs
-   `GameState`/battle-orchestrator logic that doesn't exist yet" note)
-   -- there is nowhere to route a spied-on payload even if one were
-   assembled here.
-2. Several of the rulebook's own named fields don't exist anywhere in
-   this project's data model to report on in the first place:
-   ``LeaderState`` has no ``race``, ``temper``, ``alignment``, or
-   per-leader treasure/magic-item ownership field (``Temper`` has no
-   model in this project at all, confirmed in ``turn/encounter.py``'s
-   own docstring). Fabricating a payload shape for data this project
-   doesn't track would be guessing, not reconstruction.
+``TrailExecutionResult`` now carries three of [3.17]'s six named
+fields on a successful spy: ``temper`` (``target.temper``, ``None`` if
+never recorded for that leader -- the same "no data" convention the
+field itself already uses), ``treasures_owned``
+(``GameState.items_held_by(target.leader_id)``), and ``armies_led``
+(``GameState.armies_commanded_by(target.leader_id)``, already computed
+once for the catch-up-chance roll and reused here rather than queried
+twice).
 
-A future report-generation phase that adds those fields is the natural
-place to extend ``TrailExecutionResult`` with the actual intelligence
-payload -- not attempted here.
+**Still genuinely open, not attempted here**: [3.17]'s remaining three
+fields --
+
+- **Actions**: the target's own decoded orders for this phase.
+  ``PhaseDispatchResult`` (``turn/plan_dispatch.py``) discards the
+  original decoded request before storing a result (the same
+  structural gap Phase 151's own `describe_turn_results()` docstring
+  already names for PURSUE/TRAIL/TRADE/SEARCH) -- there is nothing to
+  read the target's Actions from without a separate, larger change.
+- **Race**: `LeaderState` still has no per-leader race field. A
+  kingdom-affiliated leader's race is inferable from
+  `KingdomState.race` (the same approximation `report/turn_report.py
+  describe_armies_report()`'s own Phase 158 note already uses for
+  `MONSTROUS_ARMY_RACE`-less army types), but an independent Hero has
+  no kingdom to infer from at all -- not attempted here to avoid a
+  half-correct payload for exactly the target type ([3.17] singles
+  out, "if the character is a King...") this feature cares most about.
+- **Alignment**: no per-leader alignment field exists anywhere in this
+  project (`KingdomState.alignment` is kingdom-level only, and
+  Phase 136's own `Align_Est` is an *estimate* formula, not a stored
+  real value).
+
+The King-target aggregate case ("finances, alliances, enemies and
+controlled provinces of the Kingdom") is also not attempted here --
+its own underlying data (`KingdomState.treasury`, `GameState.
+allied_kingdoms`, `ProvinceState.owner_kingdom_id`) does now exist,
+unlike when this docstring first scoped Trail out, but assembling and
+routing that aggregate view is a distinct, larger follow-up the user
+didn't ask for this phase -- flagged here for a future phase, not
+silently expanded into this one.
 
 **Phase 68 -- the same scoped multi-phase chase step Phase 66 added for
 Pursue.** [3.17] itself draws the parallel explicitly: "Like the Pursue
@@ -78,7 +104,9 @@ import random
 from dataclasses import dataclass
 
 from ak_engine.models.enums import Ability
-from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState
+from ak_engine.models.item import ItemInstance
+from ak_engine.models.temper import Temper
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
 from ak_engine.turn.pursue_execution import step_toward_target
 from ak_engine.turn.spy_table import pursue_catch_up_chance
@@ -95,14 +123,23 @@ def _spy_skill_of(leader: LeaderState) -> int:
 class TrailExecutionResult:
     spied_on: bool
     reason: str | None = None
+    # Phase 159: three of [3.17]'s six named intelligence fields, only
+    # populated when spied_on is True. See module docstring for why the
+    # other three (Actions, race, alignment) still aren't.
+    temper: Temper | None = None
+    treasures_owned: tuple[ItemInstance, ...] = ()
+    armies_led: tuple[ArmyState, ...] = ()
 
 
 def execute_trail(
     state: GameState, trailer_leader_id: int, request: TrailRequest, rng: random.Random | None = None
 ) -> TrailExecutionResult:
     """Resolve one phase of a Trail order: [3.17]'s no-army restriction, then a Spy
-    Table catch-up roll. See module docstring for why no intelligence
-    payload is assembled on success.
+    Table catch-up roll. On success, populates the ``temper``/
+    ``treasures_owned``/``armies_led`` slice of [3.17]'s intelligence
+    payload this project can source today -- see module docstring for
+    why the other three named fields (Actions, race, alignment) still
+    aren't attempted.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -117,19 +154,24 @@ def execute_trail(
             spied_on=False, reason="a character leading an army may not be ordered to Trail"
         )
 
-    target_leads_army = bool(state.armies_commanded_by(target.leader_id))
+    target_armies = state.armies_commanded_by(target.leader_id)
     same_kingdom = trailer.kingdom_id is not None and trailer.kingdom_id == target.kingdom_id
     distance = hex_distance(trailer.location, target.location)
     chance = pursue_catch_up_chance(
         _spy_skill_of(trailer),
-        target_leads_army=target_leads_army,
+        target_leads_army=bool(target_armies),
         distance_provinces=distance,
         same_kingdom=same_kingdom,
     )
     if rng.random() >= chance:
         return TrailExecutionResult(spied_on=False, reason="did not find the target this phase")
 
-    return TrailExecutionResult(spied_on=True)
+    return TrailExecutionResult(
+        spied_on=True,
+        temper=target.temper,
+        treasures_owned=tuple(state.items_held_by(target.leader_id)),
+        armies_led=tuple(target_armies),
+    )
 
 
 def advance_trail(

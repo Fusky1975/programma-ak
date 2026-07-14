@@ -5900,7 +5900,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2125 passed) before the
     new Phase 157 tests were written. 9 new tests added (2134 passed
     total) in `tests/test_quote.py` (new) and `tests/test_turn_report.py`.
-- **Phase 158 (current)**: ARMIES report -- `report/turn_report.py
+- **Phase 158**: ARMIES report -- `report/turn_report.py
   describe_armies_report()` (new), a deliberately narrower slice of
   `REPORTS.PAS Rep_Armies` (the real "ARMIES" section of the
   end-of-turn letter report).
@@ -5951,6 +5951,45 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2134 passed) before the
     new Phase 158 tests were written. 8 new tests added (2142 passed
     total) in `tests/test_turn_report.py`.
+- **Phase 159 (current)**: Trail's partial intelligence payload --
+  `turn/trail_execution.py TrailExecutionResult` gains `temper`,
+  `treasures_owned`, and `armies_led`, plus a correction of that
+  module's own stale docstring.
+  - **Self-correction, not new invention**: the module's docstring
+    claimed `LeaderState` had no `race`/`temper`/`alignment`/treasure-
+    ownership field and that `Temper` had no model at all in this
+    project -- all wrong as of this phase. `Temper` has had a real
+    model since Phase 82, `LeaderState.temper` has stored real values
+    since Phase 139, and the leader-held item registry
+    (`GameState.items_held_by()`) has existed since Phase 140. Left
+    uncorrected, a future reader would trust a doc comment over the
+    actual code -- the same self-correction policy Phase 55/153
+    already established elsewhere in this project.
+  - `execute_trail()` now populates, on a successful spy: `temper`
+    (`target.temper`, `None` if never recorded), `treasures_owned`
+    (`GameState.items_held_by(target.leader_id)`), and `armies_led`
+    (`GameState.armies_commanded_by(target.leader_id)`, already
+    computed once for the catch-up-chance roll and reused rather than
+    queried twice).
+  - **Still genuinely open, not attempted here**: [3.17]'s remaining
+    three named fields -- **Actions** (the target's decoded orders;
+    `PhaseDispatchResult` discards the original request before storing
+    a result, the same structural gap Phase 151 already named for
+    PURSUE/TRAIL/TRADE/SEARCH), **race** (no per-leader field; an
+    independent Hero has no kingdom to infer one from, unlike a
+    kingdom-affiliated leader), and **alignment** (no per-leader field
+    exists anywhere in this project; `KingdomState.alignment` is
+    kingdom-level only, and Phase 136's `Align_Est` is an estimate
+    formula, not a stored real value). The King-target aggregate case
+    ("finances, alliances, enemies and controlled provinces") is also
+    not attempted -- its underlying data now exists
+    (`KingdomState.treasury`, `GameState.allied_kingdoms`,
+    `ProvinceState.owner_kingdom_id`), but assembling and routing that
+    aggregate view is a distinct, larger follow-up flagged for a
+    future phase, not silently expanded into this one.
+  - Non-breaking: full suite passed unchanged (2142 passed) before the
+    new Phase 159 tests were written. 5 new tests added (2147 passed
+    total) in `tests/test_trail_execution.py`.
 
 ## Setup
 
