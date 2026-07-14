@@ -92,6 +92,57 @@ negotiate a quest (`Check_Raid`'s own real `Say(...)` sentence:
 accomplished/Rcompleted.", dispatched only when the monster's own
 `fstate` is `Bold`). Ties directly to `report/turn_report.py`'s own
 Monster Quest Fulfillment cluster (Phase 129).
+
+**Phase 154 addendum -- full combat-stats coverage, project-original.**
+`MONSTER_STATS` above covers only 6 of 60 real species because
+`RULES.AK`'s own "Monster Table" is explicitly "a partial listing".
+Closing that gap for the other 54 needs real stats no available source
+(rulebook, Pascal, or the 10 real move files) provides -- the same
+"explicitly out of scope" conclusion this module already reached above.
+The user closed it directly, the same "user authors replacement content
+for a confirmed-unsourced gap" pattern already used for Phase 148's
+skill-book narrative and Phase 152's province names: a self-compiled
+document (`Desktop/MOSTRI con statistiche.txt`, supplied 2026-07-15,
+confirmed by the user to be their own compilation, not a transcription
+of any Pascal or rulebook source) giving Hit Point *ranges*, Melee/
+Missile Skill and Damage, and Speed for all 60 real species.
+
+`MonsterCombatStats`/`MONSTER_COMBAT_STATS` model this new data as a
+separate table from the original, Pascal-sourced `MonsterStats`/
+`MONSTER_STATS` -- deliberately not merged into or overwriting it, so
+the one directly-cited RULES.AK quote above stays intact and
+independently verifiable. The two corroborate each other well: for 5 of
+the 6 species both tables cover, this table's own HP range has exactly
+the same midpoint as `MONSTER_STATS`'s "Average Hit Points" column
+(Gryphon/Giant/Gargoyle/Troll/Elasmosaurus: range midpoint == RULES.AK
+average, exactly). **Spectre is the one exception, transcribed as
+supplied rather than silently reconciled**: `MONSTER_STATS` gives 20,
+but this table's own 12-22 range midpoints to 17 -- a genuine
+cross-source discrepancy between the RULES.AK excerpt and the user's
+own compiled document, left as an open, documented disagreement rather
+than picked over the other.
+
+`turn/search_execution.py execute_search()` now draws from
+`MONSTER_COMBAT_STATS` (rolling actual hit points via
+``rng.randint(*stats.hit_points_range)`` at combat time, matching every
+other RNG-driven resolution already in this project) instead of the
+6-entry `MONSTER_STATS`, closing the "only 6 of 61 monster species
+have combat stats" limitation `search_execution.py`'s own docstring
+previously flagged.
+
+**Deliberately not modeled from this same source, out of scope for this
+phase**: the source document also gives, per species, an Alignment
+distribution (e.g. "Neutral (50%) / Pagan (50%)") and a count of Magic
+Abilities by school, plus flavor-text descriptions and four numbered
+combat footnotes -- Troll regenerates 1 HP/combat-round (negated by a
+Fireball spell), dragons/Chimera's missile attack is reskinned breath
+weapon narration, Giant/Treant/Titan's is a thrown-boulder narration,
+and Basilisk/Medusa's is a petrifying-gaze narration (all four are real
+mechanics/narrative hooks, not just flavor to discard, but each needs a
+change to `turn/encounter.py`'s own combat loop or `report/
+turn_report.py`'s own renderers beyond simple stat population -- left
+for a future phase, not lost; see `Desktop/MOSTRI con statistiche.txt`
+for the full table if that phase gets picked up).
 """
 
 from __future__ import annotations
@@ -255,6 +306,84 @@ MONSTER_STATS: dict[Monster, MonsterStats] = {
     Monster.TROLL: MonsterStats(25, 1, (1, 6), 0, None, MonsterSpeed.MEDIUM),
     Monster.SPECTRE: MonsterStats(20, 1, (1, 6), 0, None, MonsterSpeed.MEDIUM),
     Monster.ELASMOSAURUS: MonsterStats(25, 2, (1, 7), 0, None, MonsterSpeed.FAST),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class MonsterCombatStats:
+    hit_points_range: tuple[int, int]
+    melee_skill: int
+    melee_damage: tuple[int, int]
+    missile_skill: int
+    missile_damage: tuple[int, int] | None
+    speed: MonsterSpeed
+
+
+# Phase 154 -- project-original, user-compiled (Desktop/MOSTRI con
+# statistiche.txt, 2026-07-15), NOT a Pascal transcription. See module
+# docstring's Phase 154 addendum for full provenance, the Spectre
+# cross-source discrepancy, and what this table deliberately omits.
+MONSTER_COMBAT_STATS: dict[Monster, MonsterCombatStats] = {
+    Monster.GRYPHON: MonsterCombatStats((20, 30), 2, (1, 6), 0, None, MonsterSpeed.FAST),
+    Monster.GIANT: MonsterCombatStats((20, 30), 1, (1, 7), 1, (1, 7), MonsterSpeed.MEDIUM),
+    Monster.GARGOYLE: MonsterCombatStats((10, 20), 1, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.TROLL: MonsterCombatStats((20, 30), 1, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.SPECTRE: MonsterCombatStats((12, 22), 1, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.ELASMOSAURUS: MonsterCombatStats((20, 30), 2, (1, 7), 0, None, MonsterSpeed.FAST),
+    Monster.ROC: MonsterCombatStats((30, 35), 2, (1, 7), 0, None, MonsterSpeed.MEDIUM),
+    Monster.COUATL: MonsterCombatStats((15, 20), 0, (1, 7), 0, None, MonsterSpeed.FAST),
+    Monster.GI_EAGLE: MonsterCombatStats((15, 20), 1, (1, 6), 0, None, MonsterSpeed.FAST),
+    Monster.SPHINX: MonsterCombatStats((27, 35), 0, (1, 7), 0, None, MonsterSpeed.MEDIUM),
+    Monster.R_DRAGON: MonsterCombatStats((30, 50), 3, (1, 7), 2, (3, 10), MonsterSpeed.SLOW),
+    Monster.B_DRAGON: MonsterCombatStats((24, 40), 2, (1, 8), 2, (3, 10), MonsterSpeed.MEDIUM),
+    Monster.S_DRAGON: MonsterCombatStats((25, 35), 2, (1, 7), 2, (3, 10), MonsterSpeed.MEDIUM),
+    Monster.GO_DRAGON: MonsterCombatStats((32, 38), 2, (1, 7), 2, (3, 10), MonsterSpeed.MEDIUM),
+    Monster.GR_DRAGON: MonsterCombatStats((21, 31), 2, (1, 7), 1, (2, 9), MonsterSpeed.MEDIUM),
+    Monster.GI_WORM: MonsterCombatStats((28, 42), 1, (1, 7), 0, None, MonsterSpeed.SLOW),
+    Monster.TITAN: MonsterCombatStats((34, 50), 2, (1, 8), 2, (3, 8), MonsterSpeed.MEDIUM),
+    Monster.BIGFOOT: MonsterCombatStats((18, 25), 1, (1, 7), 0, None, MonsterSpeed.MEDIUM),
+    Monster.ARCHER: MonsterCombatStats((9, 12), 1, (1, 6), 3, (3, 9), MonsterSpeed.MEDIUM),
+    Monster.SWORDSMAN: MonsterCombatStats((9, 12), 3, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.WHITE_MAGE: MonsterCombatStats((9, 12), 0, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.NEC_MAGE: MonsterCombatStats((9, 12), 0, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.ELE_MAGE: MonsterCombatStats((8, 12), 0, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.PSY_MAGE: MonsterCombatStats((9, 12), 0, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.ILL_MAGE: MonsterCombatStats((9, 10), 0, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.WITCH: MonsterCombatStats((9, 15), 0, (1, 6), 0, None, MonsterSpeed.SLOW),
+    Monster.DRYAD: MonsterCombatStats((8, 10), 0, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.CENTAUR: MonsterCombatStats((10, 16), 1, (1, 6), 2, (3, 8), MonsterSpeed.MEDIUM),
+    Monster.GENIE: MonsterCombatStats((18, 23), 1, (1, 6), 0, None, MonsterSpeed.FAST),
+    Monster.GOLEM: MonsterCombatStats((22, 40), 3, (1, 6), 0, None, MonsterSpeed.SLOW),
+    Monster.BASILISK: MonsterCombatStats((16, 28), 1, (1, 6), 2, (3, 10), MonsterSpeed.SLOW),
+    Monster.MEDUSA: MonsterCombatStats((10, 15), 0, (1, 6), 3, (4, 11), MonsterSpeed.MEDIUM),
+    Monster.BAL_DEMON: MonsterCombatStats((30, 40), 2, (1, 7), 0, None, MonsterSpeed.MEDIUM),
+    Monster.MAR_DEMON: MonsterCombatStats((19, 30), 2, (1, 7), 0, None, MonsterSpeed.MEDIUM),
+    Monster.SUCCUBUS: MonsterCombatStats((15, 25), 0, (1, 6), 0, None, MonsterSpeed.FAST),
+    Monster.RAKSHASHA: MonsterCombatStats((18, 27), 1, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.ICE_DEVIL: MonsterCombatStats((28, 36), 2, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.BONE_DEVIL: MonsterCombatStats((18, 27), 3, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.IMP: MonsterCombatStats((12, 17), 0, (1, 6), 0, None, MonsterSpeed.FAST),
+    Monster.WEREWOLF: MonsterCombatStats((14, 18), 1, (1, 6), 0, None, MonsterSpeed.FAST),
+    Monster.CHIMERA: MonsterCombatStats((20, 35), 1, (1, 6), 3, (3, 10), MonsterSpeed.MEDIUM),
+    Monster.HYDRA: MonsterCombatStats((14, 25), 1, (1, 7), 0, None, MonsterSpeed.MEDIUM),
+    Monster.BEHOLDER: MonsterCombatStats((20, 25), 0, (1, 6), 0, None, MonsterSpeed.FAST),
+    Monster.MINOTAUR: MonsterCombatStats((15, 25), 2, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.GI_WOLVERINE: MonsterCombatStats((12, 17), 1, (1, 6), 0, None, MonsterSpeed.FAST),
+    Monster.TREANT: MonsterCombatStats((20, 30), 2, (1, 6), 2, (3, 9), MonsterSpeed.SLOW),
+    Monster.GI_AMOEBA: MonsterCombatStats((14, 20), 0, (1, 6), 0, None, MonsterSpeed.SLOW),
+    Monster.GI_P_MANTIS: MonsterCombatStats((12, 19), 2, (1, 6), 0, None, MonsterSpeed.FAST),
+    Monster.GI_SCORPION: MonsterCombatStats((10, 15), 0, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.GI_WASP: MonsterCombatStats((8, 9), 1, (1, 6), 0, None, MonsterSpeed.FAST),
+    Monster.GI_SPIDER: MonsterCombatStats((11, 12), 0, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.GHOST: MonsterCombatStats((14, 22), 1, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.VAMPIRE: MonsterCombatStats((12, 26), 1, (1, 6), 0, None, MonsterSpeed.FAST),
+    Monster.MUMMY: MonsterCombatStats((15, 30), 1, (1, 6), 0, None, MonsterSpeed.SLOW),
+    Monster.BANSHEE: MonsterCombatStats((10, 20), 1, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.LICH: MonsterCombatStats((22, 30), 0, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.GI_OCTOPUS: MonsterCombatStats((17, 18), 1, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+    Monster.GI_CLAM: MonsterCombatStats((14, 27), 0, (1, 6), 0, None, MonsterSpeed.SLOW),
+    Monster.GW_WHALE: MonsterCombatStats((25, 35), 2, (1, 8), 0, None, MonsterSpeed.MEDIUM),
+    Monster.MERMAID: MonsterCombatStats((8, 11), 0, (1, 6), 0, None, MonsterSpeed.MEDIUM),
 }
 
 

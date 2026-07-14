@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import GameState, LeaderState
@@ -66,13 +68,32 @@ def test_execute_search_not_co_located_rejected():
 
 
 def test_execute_search_unsourced_guardian_stats_reports_unresolved():
-    # Monster.ROC has no MONSTER_STATS entry (only 6 of 61 species do).
+    # Monster.NOMONSTER is the "no monster" sentinel, not a real species --
+    # it has no MONSTER_COMBAT_STATS entry by design (Phase 154 gave all
+    # 60 real species combat stats, so NOMONSTER is the one remaining
+    # guaranteed-unsourced case).
     state = _state_with_leader()
-    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PET_FOREST, guardian_monster=Monster.ROC))
+    state.add_feature(
+        Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PET_FOREST, guardian_monster=Monster.NOMONSTER)
+    )
     result = execute_search(state, LEADER_ID, _melee_request(1))
     assert result.accepted is True
     assert result.combat_resolved is False
-    assert "no sourced combat stats" in result.reason
+    assert "no combat stats" in result.reason
+
+
+def test_execute_search_previously_unsourced_species_now_resolves():
+    # Monster.ROC had no MONSTER_STATS entry before Phase 154; it now has
+    # a MONSTER_COMBAT_STATS entry (project-original data) and resolves
+    # real combat like any other species.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PET_FOREST, guardian_monster=Monster.ROC))
+
+    result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(1))
+
+    assert result.accepted is True
+    assert result.combat_resolved is True
+    assert result.reason is None
 
 
 def test_execute_search_no_melee_tactic_reports_unresolved():

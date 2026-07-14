@@ -5680,7 +5680,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2069 passed) before the
     new Phase 151 tests were written. 12 new tests added (2081 passed
     total) in `tests/test_describe_turn_results.py`.
-- **Phase 152 (current)**: `models/province_names.py` (new) +
+- **Phase 152**: `models/province_names.py` (new) +
   `turn/rename_province.py assign_province_name()` -- closes the
   non-capital half of the province-naming gap Phase 150 left open.
   - **Project-original, not a Pascal transcription, and explicitly
@@ -5714,6 +5714,72 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new Phase 152 tests were written. 9 new tests added (2090 passed
     total) in `tests/test_province_names.py` and
     `tests/test_rename_province.py`.
+- **Phase 153**: documentation-only correction, no code changed. While
+  investigating what became Phase 154, direct code inspection showed
+  `turn/search_execution.py execute_search()` (Phase 132) and
+  `turn/trade_execution.py execute_give()` (Phase 132/133) were already
+  real, `GameState`-mutating execution, but this file's own "Not yet
+  implemented" section had never been updated when either landed --
+  still listing SEARCH, TRADE, and (checking further) CAST's other
+  spells, USE_MI, CHALLENGE/PURSUE, ASPY, and TRAIL as decode-only.
+  Corrected the summary bullet and Search's/Trade's own sub-bullets to
+  reflect current status, striking through the stale claims rather than
+  leaving them to mislead a future reader (same policy as Phase 55's
+  own self-correction note above). Suite unchanged (2090 passed).
+- **Phase 154 (current)**: `models/monster.py MonsterCombatStats`/
+  `MONSTER_COMBAT_STATS` (new) -- closes the "only 6 of 61 monster
+  species have combat stats" limitation `search_execution.py`'s own
+  docstring flagged, the genuine remaining gap Phase 153's own
+  correction surfaced.
+  - **Project-original, user-compiled, not a Pascal transcription**:
+    `MONSTER_STATS` only covers 6 species because `RULES.AK`'s own
+    "Monster Table" is explicitly "a partial listing", and no other
+    available source (rulebook, Pascal, or the 10 real move files)
+    gives stats for the other 54. The user closed that gap directly --
+    the same "user authors replacement content for a confirmed-
+    unsourced gap" pattern already used for Phase 148's skill-book
+    narrative and Phase 152's province names -- supplying a self-
+    compiled document (`Desktop/MOSTRI con statistiche.txt`,
+    2026-07-15, confirmed by the user to be their own compilation) with
+    Hit Point *ranges*, Melee/Missile Skill and Damage, and Speed for
+    all 60 real species.
+  - Modeled as a **separate** table from the original, RULES.AK-sourced
+    `MonsterStats`/`MONSTER_STATS` -- deliberately not merged into or
+    overwriting it, so the one directly-cited Pascal quote stays intact
+    and independently verifiable. The two corroborate each other well:
+    for 5 of the 6 species both cover, this table's own HP range has
+    exactly the same midpoint as `MONSTER_STATS`'s "Average Hit Points"
+    (Gryphon/Giant/Gargoyle/Troll/Elasmosaurus). **Spectre is the one
+    exception, transcribed as supplied rather than silently
+    reconciled**: `MONSTER_STATS` gives 20, but this table's own 12-22
+    range midpoints to 17 -- a genuine cross-source discrepancy, left
+    open and documented rather than picked over the other.
+  - `turn/search_execution.py execute_search()` now draws from
+    `MONSTER_COMBAT_STATS` instead of the 6-entry `MONSTER_STATS`,
+    rolling actual hit points via
+    `rng.randint(*stats.hit_points_range)` at combat time -- the source
+    gives a range, not a fixed value, for every species, matching every
+    other RNG-driven resolution already in this project. Only
+    `Monster.NOMONSTER` (the "no monster" sentinel, not a real species)
+    still reports `combat_resolved=False` for missing stats now.
+  - **Deliberately not modeled from this same source, out of scope for
+    this phase**: the source document also gives, per species, an
+    Alignment distribution and a Magic Abilities count, plus flavor-text
+    descriptions and four numbered combat footnotes -- Troll regenerates
+    1 HP/combat-round (negated by Fireball), dragons/Chimera's missile
+    attack is reskinned breath-weapon narration, Giant/Treant/Titan's is
+    thrown-boulder narration, and Basilisk/Medusa's is petrifying-gaze
+    narration. All four are real mechanics/narrative hooks, not just
+    flavor to discard, but each needs a change to `turn/encounter.py`'s
+    own combat loop or `report/turn_report.py`'s own renderers beyond
+    simple stat population -- left for a future phase, not lost.
+  - Non-breaking: full suite passed unchanged (2090 passed) before the
+    new Phase 154 tests were written (one pre-existing test,
+    `test_execute_search_unsourced_guardian_stats_reports_unresolved`,
+    was updated in place -- `Monster.ROC` gained real stats this phase,
+    so the test now uses `Monster.NOMONSTER`, the one guaranteed-
+    unsourced case, instead). 9 new tests added (2099 passed total) in
+    `tests/test_monster.py` and `tests/test_search_execution.py`.
 
 ## Setup
 

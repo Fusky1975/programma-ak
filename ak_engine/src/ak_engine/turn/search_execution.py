@@ -20,12 +20,14 @@ instead of the character-only one.
 **Scope, and why it stays narrower than "every Search always
 resolves"**:
 
-- **Guardian combat stats.** ``models/monster.py MONSTER_STATS`` only
-  covers 6 of 61 real monster species (the rulebook's own "Monster
-  Table" is explicitly a "partial listing" -- see that module's
-  docstring for why the other 55 aren't guessed at). A feature guarded
-  by an unlisted species reports ``combat_resolved=False`` with a clear
-  reason, rather than inventing stats.
+- **Guardian combat stats.** Draws from ``models/monster.py
+  MONSTER_COMBAT_STATS`` (Phase 154), a project-original, user-compiled
+  table covering all 60 real monster species -- see that module's own
+  Phase 154 addendum for full provenance. Hit points are rolled per
+  encounter via ``rng.randint(*stats.hit_points_range)``, since the
+  source gives a range (not a fixed value) for every species. A feature
+  guarded by ``Monster.NOMONSTER`` (the sentinel, not a real species)
+  still reports ``combat_resolved=False`` rather than inventing stats.
 - **Encounter Plan tactic.** ``turn/search_decode.py``'s own docstring
   found, empirically, that "every real Search order ends in Melee
   and/or Scout" across all 12 real Search phases in the sample files.
@@ -77,7 +79,7 @@ from dataclasses import dataclass
 
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import GameState, LeaderState
-from ak_engine.models.monster import MONSTER_NAMES, MONSTER_STATS
+from ak_engine.models.monster import MONSTER_COMBAT_STATS, MONSTER_NAMES
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
 from ak_engine.turn.search_decode import SearchRequest
 
@@ -139,13 +141,13 @@ def execute_search(
     if leader.location != feature.coord:
         return SearchExecutionResult(accepted=False, reason="not co-located with feature")
 
-    stats = MONSTER_STATS.get(feature.guardian_monster)
+    stats = MONSTER_COMBAT_STATS.get(feature.guardian_monster)
     if stats is None:
         monster_name = MONSTER_NAMES.get(feature.guardian_monster, "guardian")
         return SearchExecutionResult(
             accepted=True,
             combat_resolved=False,
-            reason=f"no sourced combat stats for guardian ({monster_name}) -- see models/monster.py MONSTER_STATS",
+            reason=f"no combat stats for guardian ({monster_name}) -- see models/monster.py MONSTER_COMBAT_STATS",
         )
 
     if not any(tactic.maneuver is Maneuver.MELEE for tactic in request.tactics):
@@ -158,7 +160,7 @@ def execute_search(
     leader_combatant = _leader_combatant(leader)
     monster_combatant = Combatant(
         name=MONSTER_NAMES.get(feature.guardian_monster, "guardian"),
-        hit_points=stats.hit_points,
+        hit_points=rng.randint(*stats.hit_points_range),
         melee_skill=stats.melee_skill,
         melee_damage_range=stats.melee_damage,
     )
