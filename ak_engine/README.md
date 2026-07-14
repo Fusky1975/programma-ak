@@ -5951,7 +5951,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2134 passed) before the
     new Phase 158 tests were written. 8 new tests added (2142 passed
     total) in `tests/test_turn_report.py`.
-- **Phase 159 (current)**: Trail's partial intelligence payload --
+- **Phase 159**: Trail's partial intelligence payload --
   `turn/trail_execution.py TrailExecutionResult` gains `temper`,
   `treasures_owned`, and `armies_led`, plus a correction of that
   module's own stale docstring.
@@ -5990,6 +5990,25 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2142 passed) before the
     new Phase 159 tests were written. 5 new tests added (2147 passed
     total) in `tests/test_trail_execution.py`.
+- **Phase 160 (current)**: a second stale-docstring self-correction,
+  found immediately after Phase 159's own -- `turn/
+  intelligence_estimate.py` (Phase 136, before `LeaderState.birth_x`/
+  `LeaderState.temper` existed) still claimed both fields didn't
+  exist. Docstring-only; no code or test changes.
+  - `LeaderState.birth_x`'s own docstring correction: the module
+    previously said this project had no field for a leader's birth
+    coordinate at all. It's had one since Phase 139, and
+    `turn/aspy_execution.py`'s own real caller already passes
+    `leader.birth_x or 0` into `estimate_temper()`.
+  - `LeaderState.temper`'s own correction is only half a stale claim:
+    the field is real (Phase 139) and `aspy_execution.py` sources
+    `true_temper` straight from `spotted.temper`. But
+    `LeaderState.alignment` genuinely still doesn't exist (only
+    `KingdomState.alignment` does) -- `aspy_execution.py` approximates
+    a spotted leader's true alignment with their kingdom's own, a
+    real, still-open simplification distinct from "no field at all."
+  - Non-breaking: full suite passed unchanged (2147 passed) -- no new
+    tests, docstring-only change.
 
 ## Setup
 

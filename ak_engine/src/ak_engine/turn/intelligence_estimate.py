@@ -43,14 +43,18 @@ here.
 
 **Temper's second parity term is the agent's own birth
 x-coordinate, not the agent's id** -- ``bornx[agent] and 1``, a
-different, more specific value ``Align_Est`` doesn't use at all. This
-project has no ``LeaderState`` field for a leader's birth coordinate
-(character-creation/world-generation data, the same category of gap
-already declared unbuilt for hex adjacency and feature-instance
-creation) -- so ``estimate_temper()`` below takes it as an explicit,
-caller-supplied parameter rather than silently substituting the
-agent's own id (which would misrepresent the real formula) or
-inventing a value.
+different, more specific value ``Align_Est`` doesn't use at all.
+``estimate_temper()`` below still takes it as an explicit,
+caller-supplied parameter rather than reading it internally, so this
+module stays free of a ``GameState`` dependency -- but the value
+itself is no longer unsourced: ``LeaderState.birth_x`` (Phase 139)
+models exactly this field, and ``turn/aspy_execution.py``'s own real
+caller already passes ``leader.birth_x or 0`` (see that module's own
+Phase 139 wiring). **Phase 160 corrects this docstring's own earlier,
+now-stale claim** that this project had no field for a leader's birth
+coordinate at all -- left uncorrected, a future reader would trust the
+doc comment over the actual code, the same self-correction policy
+Phase 55/153/159 already established elsewhere in this project.
 
 **``ln < 256`` (character) vs. ``ln >= 256`` (a feature's guardian
 monster, ``ord(fmonst[ln-256])``) branch, and the ``2880+``/``2896+``
@@ -76,11 +80,20 @@ assigned immediately before the call, strongly suggesting
 real alignment (there is no plausible alternative reading of passing a
 value identical to the first argument as a second lookup key for a
 same-source value). This module's own callers therefore supply
-``true_alignment``/``true_temper`` directly -- this project has no
-``LeaderState.alignment``/``LeaderState.temper`` field to source it
-from automatically either (another structural gap, not attempted to
-be closed in this phase), so the true value is caller-supplied
-regardless of ``Agent_Align``'s own resolution.
+``true_alignment``/``true_temper`` directly, keeping this module
+``GameState``-free -- **updated as of Phase 160**: this docstring
+previously claimed neither ``LeaderState.alignment`` nor
+``LeaderState.temper`` existed to source them from, which is now only
+half true. ``LeaderState.temper`` is real (Phase 139), and
+``turn/aspy_execution.py``'s own real caller sources ``true_temper``
+straight from ``spotted.temper``. ``LeaderState.alignment`` genuinely
+still doesn't exist anywhere in this project (only
+``KingdomState.alignment``, kingdom-level) -- that caller instead
+passes the spotted leader's own kingdom alignment as an approximation
+of the character's true alignment, a real, still-open simplification
+(``Agent_Align``'s exact character-level resolution remains
+unavailable), not the "no field at all" gap this docstring claimed
+before.
 """
 
 from __future__ import annotations
