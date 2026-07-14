@@ -1008,6 +1008,8 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.enums import (
+    ActionCode,
+    Ability,
     CAST_SPELL_OPENING_COMPLETE_SPELLS,
     CAST_SPELL_OPENING_COMPLETE_TEMPLATE,
     CAST_SPELL_OPENING_CONTINUED_TEMPLATE,
@@ -1015,12 +1017,13 @@ from ak_engine.models.enums import (
     SPELL_NAME,
     Spell,
 )
+from ak_engine.models.game_state import GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.report.prose import render
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult
-from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
+from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
@@ -2846,6 +2849,130 @@ def describe_trail(
     if not result.spied_on:
         return None
     return render_caught_up(trailer_name, target_name, province_name, rng)
+
+
+# The Cast/Use_MI spells whose own SPELL_CAST_ANNOUNCEMENT entry needs a
+# target *character* (see render_cast_announcement()'s own
+# _CAST_ANNOUNCEMENT_TARGET_SPELLS) -- the only CastRequest.target shape
+# describe_turn_results() below can safely resolve automatically via
+# state.leaders, since CastRequest.target's own meaning (character id,
+# province id, or unused) is spell-dependent and this project has no
+# blanket way to tell them apart without checking spell membership first.
+_AUTO_RESOLVABLE_CAST_TARGET_SPELLS = frozenset(
+    {Spell.KILL_ENEMY, Spell.RESURRECTION, Spell.ILLUS_ARMIES, Spell.ORATORY, Spell.CHARM}
+)
+
+
+def _leader_name(state: GameState, leader_id: int | None) -> str | None:
+    if leader_id is None:
+        return None
+    leader = state.leaders.get(leader_id)
+    return leader.name if leader is not None else None
+
+
+def describe_turn_results(
+    results: list[PhaseDispatchResult],
+    state: GameState,
+    rng: random.Random,
+    *,
+    ability_names: dict[Ability, str] | None = None,
+) -> list[str]:
+    """Walks ``turn/turn_processor.py run_turn()``'s own output (a flat
+    ``list[PhaseDispatchResult]``, one entry per dispatched phase) and
+    calls the matching ``describe_*`` composer for each entry it can,
+    skipping the rest -- the first real caller of any ``describe_*``
+    function in this project (Phases 142-147 built nine composers, but
+    none had ever been wired to a real turn until now).
+
+    **Character/leader names are always resolved directly from
+    ``state.leaders[leader_id].name``** -- confirmed always available,
+    no gap here (unlike province/army naming, Phase 149/150).
+
+    **Confirmed, not guessed, why several actions aren't wired here at
+    all**: `HIRE`/`FIRE` (`describe_hire()`/`describe_fire()`) and
+    `CAST`/`USE_MI`'s wand path (`describe_cast()`/`describe_use_mi()`,
+    for the 5 character-targeted spells in
+    `_AUTO_RESOLVABLE_CAST_TARGET_SPELLS`) are wired because their own
+    result type retains a real target-leader id (`HireExecutionResult
+    .request.hero_id`, `FireExecutionResult.request.hero_id`,
+    `CastExecutionResult.request.target`) this function can resolve via
+    `state.leaders`. `PRACTICE` needs a caller-supplied ``ability_names``
+    entry (`PracticeExecutionResult.ability` is real, but no sourced
+    `Ability` display-name table exists in this project yet -- see
+    `models/army_naming.py`'s own Phase 149 precedent for why an
+    unverified table isn't invented here either); its own "tutored"
+    branch never fires through this function regardless, since
+    `PracticeExecutionResult` has no field recording who tutored
+    (Phase 144's own docstring). `PURSUE`/`TRAIL`/`TRADE`
+    (`describe_pursue()`/`describe_trail()`/`describe_give()`) are
+    **not wired at all**: verified their own result types
+    (`PursueExecutionResult`, `TrailExecutionResult`,
+    `TradeExecutionResult`) carry no target/recipient id whatsoever --
+    not merely an unresolved one -- because `PhaseDispatchResult` itself
+    only keeps `action`/`result`/`error`, discarding the original
+    decoded request. `describe_battle()` also stays out of this
+    dispatch -- it needs a `BattleReport` and multi-army name maps no
+    `PhaseDispatchResult` alone carries. Province/terrain/army-list
+    Cast spells and Use_MI's skill-book path are skipped the same way,
+    for the same reason Phase 150 already established: no general
+    province-naming system exists.
+    """
+
+    lines: list[str] = []
+    for entry in results:
+        if entry.error is not None:
+            continue
+        caster_name = _leader_name(state, entry.leader_id)
+        if caster_name is None:
+            continue
+
+        if entry.action is ActionCode.HIRE and isinstance(entry.result, HireExecutionResult):
+            hireling_name = _leader_name(state, entry.result.request.hero_id)
+            if hireling_name is None:
+                continue
+            line = describe_hire(
+                entry.result, character_name=caster_name, hireling_name=hireling_name, king_name=caster_name, rng=rng
+            )
+        elif entry.action is ActionCode.FIRE and isinstance(entry.result, FireExecutionResult):
+            hireling_name = _leader_name(state, entry.result.request.hero_id)
+            if hireling_name is None:
+                continue
+            line = describe_fire(
+                entry.result, character_name=caster_name, hireling_name=hireling_name, king_name=caster_name, rng=rng
+            )
+        elif entry.action is ActionCode.PRACTICE and isinstance(entry.result, PracticeExecutionResult):
+            ability = entry.result.ability
+            ability_name = None
+            if ability_names is not None and isinstance(ability, Ability):
+                ability_name = ability_names.get(ability)
+            if ability_name is None:
+                continue
+            line = describe_practice(entry.result, character_name=caster_name, ability_name=ability_name, rng=rng)
+        elif entry.action is ActionCode.CAST and isinstance(entry.result, CastExecutionResult):
+            spell = entry.result.request.spell
+            if spell not in _AUTO_RESOLVABLE_CAST_TARGET_SPELLS:
+                continue
+            target_name = _leader_name(state, entry.result.request.target)
+            if target_name is None:
+                continue
+            line = describe_cast(entry.result, caster_name=caster_name, rng=rng, target_name=target_name)
+        elif entry.action is ActionCode.USE_MI and isinstance(entry.result, UseMIExecutionResult):
+            cast_result = entry.result.cast_result
+            if cast_result is None:
+                continue
+            spell = cast_result.request.spell
+            if spell not in _AUTO_RESOLVABLE_CAST_TARGET_SPELLS:
+                continue
+            target_name = _leader_name(state, cast_result.request.target)
+            if target_name is None:
+                continue
+            line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, target_name=target_name)
+        else:
+            continue
+
+        if line is not None:
+            lines.append(line)
+    return lines
 
 
 # HostAK/TP/SAY.PAS _LTeach -- a single, real, hardcoded template (no

@@ -5600,7 +5600,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2053 passed) before the
     new Phase 149 tests were written. 11 new tests added (2064 passed
     total) in `tests/test_army_naming.py`.
-- **Phase 150 (current)**: `models/game_state.py ProvinceState.name`
+- **Phase 150**: `models/game_state.py ProvinceState.name`
   (new field) + `turn/rename_province.py rename_home_province()` (new
   module) -- the province-naming half of the same gap Phase 149 closed
   for armies.
@@ -5634,6 +5634,52 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2064 passed) before the
     new Phase 150 tests were written. 5 new tests added (2069 passed
     total) in `tests/test_rename_province.py`.
+- **Phase 151 (current)**: `report/turn_report.py describe_turn_results()`
+  (new) -- the missing link between the nine `describe_*()` composers
+  built across Phases 142-148 and real turn data. Before this phase,
+  every `describe_*()` call site anywhere in the project was test-only,
+  using hardcoded literal strings for character/hireling/target names --
+  none was ever invoked from `turn/turn_processor.py run_turn()`'s own
+  output.
+  - Iterates `list[PhaseDispatchResult]` (`turn/plan_dispatch.py`'s own
+    flat per-phase result list, `run_turn()`'s direct output), resolving
+    `leader_id` to a display name via `GameState.leaders` -- always
+    available, no gap -- and skipping any entry that already carries an
+    `error`.
+  - **Auto-wired**: HIRE and FIRE (`HireExecutionResult.request.hero_id`/
+    `FireExecutionResult.request.hero_id` resolve the hireling directly);
+    CAST and USE_MI's wand-cast path, but only for the subset of spells
+    already known (Phase 145's `_CAST_ANNOUNCEMENT_TARGET_SPELLS`) to
+    target a character id rather than a province --
+    `_AUTO_RESOLVABLE_CAST_TARGET_SPELLS = {KILL_ENEMY, RESURRECTION,
+    ILLUS_ARMIES, ORATORY, CHARM}`. Any other spell (e.g. EARTHQUAKE,
+    which needs a `province_name` this function has no way to resolve --
+    Phase 150's own confirmed province-naming gap) is skipped outright,
+    never passed to `describe_cast()` with a missing name.
+  - **Caller-supplied only**: PRACTICE requires an explicit
+    `ability_names: dict[Ability, str]` map parameter -- no
+    `Ability`-to-display-name table exists anywhere in this project yet
+    (the real `CTBOTH.PAS anoun`/`adesc` `abstrs` arrays at lines
+    143-149 were never verified against `RUMORS.PAS Say_Options` to
+    confirm which one is the real PROSE.TXT `^` marker, so this phase
+    doesn't invent an unverified table -- the same "don't guess" line
+    already held in Phases 142-150). Without the map, PRACTICE entries
+    are skipped.
+  - **Confirmed structurally unwireable, not merely deferred**: PURSUE,
+    TRAIL, and TRADE. Direct inspection of
+    `PursueExecutionResult`/`TrailExecutionResult`/`TradeExecutionResult`
+    shows none retains any target/recipient id at all, and
+    `PhaseDispatchResult` itself only keeps `action`/`result`/`error`
+    (the original decoded `PlanPhase`/request is discarded before this
+    function ever sees it) -- these three actions cannot be auto-wired
+    without a separate, larger change to `PhaseDispatchResult` or those
+    result types. Explicitly out of scope for this phase.
+  - `describe_battle()` stays out of this dispatch entirely, unchanged
+    from Phase 61 -- it needs a `BattleReport` and multi-army name maps
+    `PhaseDispatchResult` doesn't carry on its own.
+  - Non-breaking: full suite passed unchanged (2069 passed) before the
+    new Phase 151 tests were written. 12 new tests added (2081 passed
+    total) in `tests/test_describe_turn_results.py`.
 
 ## Setup
 
