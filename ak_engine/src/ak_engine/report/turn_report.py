@@ -1001,6 +1001,65 @@ templates (no file), all previously unrendered:
   -- a reciprocal two-way trade's condition not met (rulebook [3.18]:
   "the gift will be made only if the recipient Gives you a specified
   magic item... in the same phase"). `render_trade_deal_failed()`.
+
+**Phase 155 addendum -- monster missile-attack flavor text and Troll
+regeneration narration, project-original.** `Desktop/MOSTRI con
+statistiche.txt` (Phase 154's own combat-stats source, confirmed by the
+user to be their own compilation, not a Pascal transcription) gives
+four numbered footnotes describing narrative variants for specific
+monsters' Fire Arrow-equivalent missile attacks, quoted in full
+(translated from the user's own Italian) and implemented as six new,
+single-template renderers (no ``pick_variant`` list -- only one wording
+was supplied per case, unlike every sourced ``PROSE.TXT`` template in
+this module):
+
+- **Breath weapon** (dragons, Chimera): "The dragons' Fire Arrow is
+  comparable to the dragon's breath, but the effect is that of an arrow
+  with slightly boosted damage. The only difference is what gets
+  printed when the missile is loosed." Hit: "The (dragon type or
+  Chimera) breathes, and the impact deals X damage." Miss: "...breathes,
+  but (hero or King name) miraculously manages to evade it!"
+  `render_breath_weapon_hit()`/`render_breath_weapon_missed()`.
+- **Boulder throw** (Giant/Treant/Titan, per the footnote's own text):
+  "Giant, Treant, and Titan throw large boulders... same effect as an
+  arrow with slightly boosted damage." Hit: "The (giant type) hurls a
+  huge boulder, and the impact deals X damage." Miss: "...hurls a huge
+  boulder, but (name) dodges it." `render_boulder_throw_hit()`/
+  `render_boulder_throw_missed()`.
+- **Petrifying gaze** (Basilisk, Medusa): "Basilisk and Medusa petrify
+  with their gaze... same effect as an arrow with slightly boosted
+  damage." Hit: "The (petrifier type) casts a petrifying gaze, and
+  (hero or King) takes X damage." Miss: "...casts a gaze, but (name)
+  evades it." `render_petrifying_gaze_hit()`/
+  `render_petrifying_gaze_missed()`.
+- **Troll regeneration** (``turn/encounter.py``'s own Phase 155
+  addendum for the mechanical half): "The combat message reads:
+  'Horror! The Troll is regenerating its wounds.'"
+  `render_troll_regeneration()`.
+
+`missile_attack_flavor(weapon)` classifies a monster's own
+``models/weapon.py MONSTER_RANGED_WEAPON`` assignment (Phase 94,
+real, ``CTME.PAS``-sourced) into one of the three categories above --
+``Weapon.FLAME_BREATH``/``SPIT_ACID``/``POIS_BREATH`` -> breath weapon,
+``Weapon.BOULDER`` -> boulder throw, ``Weapon.GAZE`` -> petrifying gaze,
+``None`` for everything else (falls back to the generic
+``render_fire_arrow_attack()``/``render_attack_hit()``/
+``render_attack_missed()`` triplet, Phase 111-112).
+
+**A genuine, documented cross-source discrepancy, not resolved either
+way**: the footnote's own text says Giant, Treant, *and* Titan all
+throw boulders, but ``MONSTER_RANGED_WEAPON`` (real, ``CTME.PAS``-
+sourced, Phase 94) gives `Monster.TITAN` and `Monster.TREANT` both
+`Weapon.NO_WEAP` -- no ranged attack at all -- while only
+`Monster.GIANT` maps to `Weapon.BOULDER`. `missile_attack_flavor()`
+follows the confirmed Pascal-sourced weapon table, not the footnote's
+own broader claim, the same "don't let a less-rigorously-sourced
+document silently override already-cited Pascal data" policy `models/
+monster.py`'s own Phase 154 addendum used for the Spectre hit-point
+discrepancy. Titan and Treant's own `MONSTER_COMBAT_STATS` missile
+stats (Phase 154) stay populated but structurally unreachable through
+this dispatch, exactly like the rest of this module's already-documented
+unreachable-data cases.
 """
 
 from __future__ import annotations
@@ -1019,6 +1078,7 @@ from ak_engine.models.enums import (
 )
 from ak_engine.models.game_state import GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
+from ak_engine.models.weapon import Weapon
 from ak_engine.report.prose import render
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
@@ -2364,6 +2424,108 @@ def render_melee_attack(
         "$S": attack_method,
     }
     return render(variant, values, rng=rng)
+
+
+# Project-original, not sourced from PROSE.TXT (Phase 155) -- see module
+# docstring's own Phase 155 addendum for the user's exact footnote text
+# and provenance. Each is a single, complete sentence (unlike FARR.X's
+# own attack+continuation split) -- only one wording was supplied per
+# case, so there's no variant list to pick from.
+_BREATH_WEAPON_HIT_TEMPLATE = "The < breathes, and the impact deals # damage points."
+_BREATH_WEAPON_MISSED_TEMPLATE = "The < breathes, but [ miraculously manages to evade it!"
+
+
+def render_breath_weapon_hit(monster_type_name: str, defender_name: str, damage_points: int, rng: random.Random) -> str:
+    """Renders the project-original breath-weapon hit sentence (dragons,
+    Chimera -- see ``missile_attack_flavor()``). ``monster_type_name``
+    is the specific species' own display name (e.g. "Red Dragon").
+    """
+
+    values = {"<": monster_type_name, "[": defender_name, "#": str(damage_points)}
+    return render(_BREATH_WEAPON_HIT_TEMPLATE, values, rng=rng)
+
+
+def render_breath_weapon_missed(monster_type_name: str, defender_name: str, rng: random.Random) -> str:
+    """Renders the project-original breath-weapon miss sentence."""
+
+    values = {"<": monster_type_name, "[": defender_name}
+    return render(_BREATH_WEAPON_MISSED_TEMPLATE, values, rng=rng)
+
+
+_BOULDER_THROW_HIT_TEMPLATE = "The < hurls a huge boulder, and the impact deals # damage points."
+_BOULDER_THROW_MISSED_TEMPLATE = "The < hurls a huge boulder, but [ dodges it."
+
+
+def render_boulder_throw_hit(monster_type_name: str, defender_name: str, damage_points: int, rng: random.Random) -> str:
+    """Renders the project-original boulder-throw hit sentence (Giant --
+    see ``missile_attack_flavor()`` and module docstring's own note on
+    why Treant/Titan don't reach this renderer despite the footnote's
+    own text naming them too).
+    """
+
+    values = {"<": monster_type_name, "[": defender_name, "#": str(damage_points)}
+    return render(_BOULDER_THROW_HIT_TEMPLATE, values, rng=rng)
+
+
+def render_boulder_throw_missed(monster_type_name: str, defender_name: str, rng: random.Random) -> str:
+    """Renders the project-original boulder-throw miss sentence."""
+
+    values = {"<": monster_type_name, "[": defender_name}
+    return render(_BOULDER_THROW_MISSED_TEMPLATE, values, rng=rng)
+
+
+_PETRIFYING_GAZE_HIT_TEMPLATE = "The < casts a petrifying gaze, and [ takes # damage points."
+_PETRIFYING_GAZE_MISSED_TEMPLATE = "The < casts a gaze, but [ evades it."
+
+
+def render_petrifying_gaze_hit(monster_type_name: str, defender_name: str, damage_points: int, rng: random.Random) -> str:
+    """Renders the project-original petrifying-gaze hit sentence
+    (Basilisk, Medusa -- see ``missile_attack_flavor()``).
+    """
+
+    values = {"<": monster_type_name, "[": defender_name, "#": str(damage_points)}
+    return render(_PETRIFYING_GAZE_HIT_TEMPLATE, values, rng=rng)
+
+
+def render_petrifying_gaze_missed(monster_type_name: str, defender_name: str, rng: random.Random) -> str:
+    """Renders the project-original petrifying-gaze miss sentence."""
+
+    values = {"<": monster_type_name, "[": defender_name}
+    return render(_PETRIFYING_GAZE_MISSED_TEMPLATE, values, rng=rng)
+
+
+_TROLL_REGENERATION_TEMPLATE = "Horror! The < is regenerating its wounds."
+
+
+def render_troll_regeneration(monster_type_name: str, rng: random.Random) -> str:
+    """Renders the project-original Troll-regeneration combat message
+    (``turn/encounter.py``'s own Phase 155 addendum for the mechanical
+    half, ``Combatant.regenerates_hp``).
+    """
+
+    values = {"<": monster_type_name}
+    return render(_TROLL_REGENERATION_TEMPLATE, values, rng=rng)
+
+
+def missile_attack_flavor(weapon: Weapon) -> str | None:
+    """Classifies a monster's own ``models/weapon.py
+    MONSTER_RANGED_WEAPON`` assignment into one of Phase 155's three
+    project-original narration categories -- ``"breath_weapon"``,
+    ``"boulder_throw"``, ``"petrifying_gaze"`` -- or ``None`` for every
+    other weapon (the caller falls back to the generic
+    ``render_fire_arrow_attack()``/``render_attack_hit()``/
+    ``render_attack_missed()`` triplet, Phase 111-112). See module
+    docstring's own Phase 155 addendum for the Titan/Treant discrepancy
+    this classification deliberately does *not* paper over.
+    """
+
+    if weapon in (Weapon.FLAME_BREATH, Weapon.SPIT_ACID, Weapon.POIS_BREATH):
+        return "breath_weapon"
+    if weapon is Weapon.BOULDER:
+        return "boulder_throw"
+    if weapon is Weapon.GAZE:
+        return "petrifying_gaze"
+    return None
 
 
 # HostAK/TP/PROSE/ACCHIRE.X -- a successful Hire. See module

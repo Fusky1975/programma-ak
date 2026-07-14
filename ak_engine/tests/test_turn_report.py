@@ -48,6 +48,10 @@ from ak_engine.report.turn_report import (
     render_attack_hit,
     render_attack_missed,
     render_battle_winner,
+    render_boulder_throw_hit,
+    render_boulder_throw_missed,
+    render_breath_weapon_hit,
+    render_breath_weapon_missed,
     render_caught_up,
     render_column_clash,
     render_commander_died_demoralized,
@@ -99,6 +103,8 @@ from ak_engine.report.turn_report import (
     render_move_to_melee_range,
     render_patrol_encounter,
     render_patrol_release,
+    render_petrifying_gaze_hit,
+    render_petrifying_gaze_missed,
     render_homeland_defense_morale,
     render_oratory_speech,
     render_monster_threat_death,
@@ -138,14 +144,17 @@ from ak_engine.report.turn_report import (
     render_take_gold,
     render_take_items,
     render_trade_deal_failed,
+    render_troll_regeneration,
     render_uncontested_conquest,
     render_vampiric_bite,
     render_wandering_encounter,
     render_weapon_rally,
     render_will,
+    missile_attack_flavor,
     tactical_margin_bucket,
 )
 from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.weapon import Weapon
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
@@ -1052,6 +1061,70 @@ def test_render_melee_attack_ninth_variant_has_no_trailing_punctuation():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[8])
     result = render_melee_attack("Aldric", "Borin", "Slashed", rng)
     assert result == "Aldric Slashed Borin"
+
+
+# -- Phase 155: monster missile-attack flavor text + Troll regeneration --
+
+
+def test_render_breath_weapon_hit():
+    rng = ScriptedRandom([])
+    result = render_breath_weapon_hit("Red Dragon", "Aldric", 7, rng)
+    assert result == "The Red Dragon breathes, and the impact deals 7 damage points."
+
+
+def test_render_breath_weapon_missed():
+    rng = ScriptedRandom([])
+    result = render_breath_weapon_missed("Red Dragon", "Aldric", rng)
+    assert result == "The Red Dragon breathes, but Aldric miraculously manages to evade it!"
+
+
+def test_render_boulder_throw_hit():
+    rng = ScriptedRandom([])
+    result = render_boulder_throw_hit("Giant", "Aldric", 5, rng)
+    assert result == "The Giant hurls a huge boulder, and the impact deals 5 damage points."
+
+
+def test_render_boulder_throw_missed():
+    rng = ScriptedRandom([])
+    result = render_boulder_throw_missed("Giant", "Aldric", rng)
+    assert result == "The Giant hurls a huge boulder, but Aldric dodges it."
+
+
+def test_render_petrifying_gaze_hit():
+    rng = ScriptedRandom([])
+    result = render_petrifying_gaze_hit("Basilisk", "Aldric", 4, rng)
+    assert result == "The Basilisk casts a petrifying gaze, and Aldric takes 4 damage points."
+
+
+def test_render_petrifying_gaze_missed():
+    rng = ScriptedRandom([])
+    result = render_petrifying_gaze_missed("Basilisk", "Aldric", rng)
+    assert result == "The Basilisk casts a gaze, but Aldric evades it."
+
+
+def test_render_troll_regeneration():
+    rng = ScriptedRandom([])
+    result = render_troll_regeneration("Troll", rng)
+    assert result == "Horror! The Troll is regenerating its wounds."
+
+
+def test_missile_attack_flavor_breath_weapons():
+    assert missile_attack_flavor(Weapon.FLAME_BREATH) == "breath_weapon"
+    assert missile_attack_flavor(Weapon.SPIT_ACID) == "breath_weapon"
+    assert missile_attack_flavor(Weapon.POIS_BREATH) == "breath_weapon"
+
+
+def test_missile_attack_flavor_boulder():
+    assert missile_attack_flavor(Weapon.BOULDER) == "boulder_throw"
+
+
+def test_missile_attack_flavor_gaze():
+    assert missile_attack_flavor(Weapon.GAZE) == "petrifying_gaze"
+
+
+def test_missile_attack_flavor_none_for_unrelated_weapon():
+    assert missile_attack_flavor(Weapon.BOW) is None
+    assert missile_attack_flavor(Weapon.NO_WEAP) is None
 
 
 def test_melee_attack_and_missed_concatenate_into_one_sentence():

@@ -55,6 +55,13 @@ resolves"**:
   in full here, the same reasoning ``turn/challenge_execution.py``'s own
   docstring already gives for why a Challenge loser (unlike a Duel
   commander, [7.1]'s own special case) dies for real.
+- **Troll regeneration** (Phase 155, ``turn/encounter.py``'s own
+  addendum): a Troll's own monster combatant gets
+  ``regenerates_hp=TROLL_REGENERATION_PER_COMBAT_ROUND``, so
+  ``resolve_melee_duel()`` heals it 1 hit point at the end of every
+  round it survives. The FIREBALL-negates-regeneration clause stays
+  unwired here too, for the same reason ``turn/encounter.py``'s own
+  addendum gives (blocked on the Cast-tactic-spell-id gap).
 - **Co-location is enforced** (``leader.location == feature.coord``):
   not literally quoted in [3.3] (which is about *knowledge* of a
   feature's location/number, not physical presence), but single combat
@@ -79,9 +86,14 @@ from dataclasses import dataclass
 
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import GameState, LeaderState
-from ak_engine.models.monster import MONSTER_COMBAT_STATS, MONSTER_NAMES
+from ak_engine.models.monster import MONSTER_COMBAT_STATS, MONSTER_NAMES, Monster
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
 from ak_engine.turn.search_decode import SearchRequest
+
+# Desktop/MOSTRI con statistiche.txt footnote (*): "The Troll regenerates
+# 1 hit point every combat round." See turn/encounter.py's own Phase 155
+# addendum for the full quote and Combatant.regenerates_hp's own mechanics.
+TROLL_REGENERATION_PER_COMBAT_ROUND = 1
 
 
 def _leader_combatant(leader: LeaderState) -> Combatant:
@@ -163,6 +175,7 @@ def execute_search(
         hit_points=rng.randint(*stats.hit_points_range),
         melee_skill=stats.melee_skill,
         melee_damage_range=stats.melee_damage,
+        regenerates_hp=TROLL_REGENERATION_PER_COMBAT_ROUND if feature.guardian_monster is Monster.TROLL else 0,
     )
 
     combat_result = resolve_melee_duel(leader_combatant, monster_combatant, rng)

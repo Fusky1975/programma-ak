@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from unittest.mock import patch
 
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.feature import Feature, FeatureType
@@ -8,8 +9,9 @@ from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster
+from ak_engine.turn.encounter import EncounterCombatResult
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
-from ak_engine.turn.search_execution import SearchExecutionResult, execute_search
+from ak_engine.turn.search_execution import TROLL_REGENERATION_PER_COMBAT_ROUND, SearchExecutionResult, execute_search
 
 from _helpers import ScriptedRandom
 
@@ -152,3 +154,30 @@ def test_execute_search_leader_loses_is_removed_from_state():
     assert LEADER_ID not in state.leaders
     assert LEADER_ID in state.dead_leaders
     assert feature.looted is False
+
+
+# -- Phase 155: Troll regeneration wiring --
+
+
+def test_execute_search_sets_troll_regeneration_on_the_monster_combatant():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.TROLL))
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    monster_combatant = mock_resolve.call_args[0][1]
+    assert monster_combatant.regenerates_hp == TROLL_REGENERATION_PER_COMBAT_ROUND
+
+
+def test_execute_search_non_troll_guardian_has_no_regeneration():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    monster_combatant = mock_resolve.call_args[0][1]
+    assert monster_combatant.regenerates_hp == 0

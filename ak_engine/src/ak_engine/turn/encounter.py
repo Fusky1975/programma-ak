@@ -89,6 +89,31 @@ rulebook mechanic, just not attempted yet):
   eldest son taking over with *player-chosen* starting ability levels --
   the last of these needs interactive player choice this automated
   engine has no channel for at all, not just missing game-state logic.
+
+**Phase 155 addendum -- Troll regeneration, project-original.**
+`Desktop/MOSTRI con statistiche.txt` (Phase 154's own combat-stats
+source, confirmed by the user to be their own compilation) footnote
+``(*)`` reads, quoted in full (translated from the user's own Italian):
+"The Troll regenerates 1 hit point every combat round. The combat
+message reads: 'Horror! The Troll is regenerating its wounds.' A
+FIREBALL spell completely negates the regeneration ability."
+`Combatant.regenerates_hp` (default `0`, so every existing caller is
+unaffected) models the mechanical half: both `resolve_melee_duel()` and
+`resolve_fire_arrow_duel()` add it to a surviving combatant's hit points
+at the end of each round they're still alive, uncapped (the rule gives
+no maximum, and this project doesn't model a combatant's own "starting"
+hit points as a value distinct from its current one to cap against
+-- reading the literal text rather than inventing a ceiling). `turn/
+search_execution.py` sets it for a Troll's own monster combatant.
+
+**Deliberately not wired, a real but currently unreachable exception**:
+the FIREBALL-negates-regeneration clause. Applying it needs to know
+whether a FIREBALL was cast as part of the same Search encounter's own
+Encounter Plan -- but a Cast tactic's own spell id is, per this
+project's own confirmed gap (`turn/search_decode.py`'s own docstring),
+still just an unresolved raw int with no decoded `Spell` anywhere in a
+`SearchTactic`. Wiring the exception is blocked on that gap, not
+attempted here as a guess.
 """
 
 from __future__ import annotations
@@ -131,6 +156,12 @@ class Combatant:
     # combatant overrides it with its own species die from
     # `models/monster.py MONSTER_STATS` -- see Phase 132 addendum above.
     melee_damage_range: tuple[int, int] = MELEE_DAMAGE_RANGE
+    # Hit points regenerated at the end of each round this combatant
+    # survives -- 0 for every existing caller. Troll's own regeneration
+    # rule (Phase 155 addendum above) is the only real, sourced user so
+    # far; `turn/search_execution.py` sets it for a Troll's own
+    # monster combatant.
+    regenerates_hp: int = 0
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -219,7 +250,20 @@ def resolve_melee_duel(
             defender.hit_points -= roll_melee_attack(rng, damage_range=attacker.melee_damage_range)
             if defender.hit_points <= 0:
                 return EncounterCombatResult(winner=("a" if defender is b else "b"), rounds=round_number)
+        _apply_end_of_round_regeneration(a, b)
     return EncounterCombatResult(winner=None, rounds=max_rounds)
+
+
+def _apply_end_of_round_regeneration(a: Combatant, b: Combatant) -> None:
+    """Phase 155 addendum (module docstring): a surviving combatant with
+    ``regenerates_hp`` set (Troll's own rule -- 0 for everyone else)
+    heals that much at the end of each combat round, uncapped.
+    """
+
+    if a.hit_points > 0:
+        a.hit_points += a.regenerates_hp
+    if b.hit_points > 0:
+        b.hit_points += b.regenerates_hp
 
 
 def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> EncounterCombatResult:
@@ -262,6 +306,7 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
                 a.hit_points -= roll_fire_arrow_attack(skill_b, rng)
         if a.hit_points <= 0 or b.hit_points <= 0:
             break
+        _apply_end_of_round_regeneration(a, b)
 
     if b.hit_points <= 0:
         return EncounterCombatResult(winner="a", rounds=round_number)

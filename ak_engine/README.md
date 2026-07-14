@@ -5726,7 +5726,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   reflect current status, striking through the stale claims rather than
   leaving them to mislead a future reader (same policy as Phase 55's
   own self-correction note above). Suite unchanged (2090 passed).
-- **Phase 154 (current)**: `models/monster.py MonsterCombatStats`/
+- **Phase 154**: `models/monster.py MonsterCombatStats`/
   `MONSTER_COMBAT_STATS` (new) -- closes the "only 6 of 61 monster
   species have combat stats" limitation `search_execution.py`'s own
   docstring flagged, the genuine remaining gap Phase 153's own
@@ -5780,6 +5780,49 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     so the test now uses `Monster.NOMONSTER`, the one guaranteed-
     unsourced case, instead). 9 new tests added (2099 passed total) in
     `tests/test_monster.py` and `tests/test_search_execution.py`.
+- **Phase 155 (current)**: monster missile-attack flavor text (project-
+  original) + Troll regeneration (mechanics + narration) -- the four
+  numbered footnotes `Desktop/MOSTRI con statistiche.txt` (Phase 154's
+  own source) supplies, closing them all at once since none needed
+  further research: the exact wording and mechanic were already given.
+  - `turn/encounter.py Combatant.regenerates_hp` (new field, default 0
+    -- every existing caller unaffected): both `resolve_melee_duel()`
+    and `resolve_fire_arrow_duel()` heal a surviving combatant that
+    much at the end of each round, uncapped (the footnote gives no
+    maximum). `turn/search_execution.py TROLL_REGENERATION_PER_COMBAT_
+    ROUND = 1` sets it for a Troll's own monster combatant. **Real,
+    sourced, deliberately unwired**: the footnote's own
+    FIREBALL-negates-regeneration clause needs to know whether a
+    FIREBALL was cast as part of the same Search encounter's own
+    Encounter Plan -- blocked on `turn/search_decode.py`'s own confirmed
+    gap (a Cast tactic's spell id is still an unresolved raw int), not
+    attempted as a guess.
+  - `report/turn_report.py` -- six new, single-template (not
+    `pick_variant`-list) renderers, project-original, translated from
+    the user's own Italian: `render_breath_weapon_hit()`/`_missed()`
+    (dragons, Chimera), `render_boulder_throw_hit()`/`_missed()`
+    (Giant), `render_petrifying_gaze_hit()`/`_missed()` (Basilisk,
+    Medusa), plus `render_troll_regeneration()` for the combat message
+    the footnote itself specifies. `missile_attack_flavor(weapon)`
+    classifies a monster's own `models/weapon.py MONSTER_RANGED_WEAPON`
+    assignment (real, `CTME.PAS`-sourced, Phase 94) into one of the
+    three categories, or `None` (falls back to the generic Phase
+    111-112 `render_fire_arrow_attack()`/`render_attack_hit()`/
+    `render_attack_missed()` triplet).
+  - **A genuine, documented cross-source discrepancy, not resolved
+    either way**: the footnote says Giant, Treant, *and* Titan all
+    throw boulders, but `MONSTER_RANGED_WEAPON` (real, Pascal-sourced)
+    gives Titan and Treant both `Weapon.NO_WEAP` -- no ranged attack at
+    all -- while only Giant maps to `Weapon.BOULDER`.
+    `missile_attack_flavor()` follows the confirmed Pascal-sourced
+    weapon table over the footnote's own broader claim, the same
+    "don't let a less-rigorously-sourced document silently override
+    already-cited Pascal data" policy Phase 154's own Spectre
+    hit-point discrepancy used.
+  - Non-breaking: full suite passed unchanged (2099 passed) before the
+    new Phase 155 tests were written. 17 new tests added (2116 passed
+    total) in `tests/test_encounter.py`, `tests/test_turn_report.py`,
+    and `tests/test_search_execution.py`.
 
 ## Setup
 

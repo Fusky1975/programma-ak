@@ -178,3 +178,45 @@ def test_resolve_fire_arrow_duel_higher_skill_keeps_firing_solo_after_the_other_
     assert result.winner == "a"
     assert result.rounds == 2
     assert b.hit_points <= 0
+
+
+# -- Phase 155: Troll-style end-of-round regeneration --
+
+
+def test_combatant_defaults_regenerates_hp_to_zero():
+    assert Combatant("A").regenerates_hp == 0
+
+
+def test_resolve_melee_duel_regenerates_hp_after_a_surviving_round():
+    a = Combatant("A", hit_points=10)
+    b = Combatant("B", hit_points=10, regenerates_hp=1)
+    rng = ScriptedRandom([0.99] * 10)  # both always miss
+
+    result = resolve_melee_duel(a, b, rng, max_rounds=1)
+
+    assert result.winner is None
+    assert a.hit_points == 10
+    assert b.hit_points == 11
+
+
+def test_resolve_melee_duel_does_not_regenerate_a_combatant_killed_that_round():
+    a = Combatant("A", hit_points=10, melee_skill=1)
+    b = Combatant("B", hit_points=1, regenerates_hp=5)
+    rng = ScriptedRandom([0.1, 0.5])  # A hits (chance + damage roll), kills B outright
+
+    result = resolve_melee_duel(a, b, rng)
+
+    assert result.winner == "a"
+    assert b.hit_points <= 0
+
+
+def test_resolve_fire_arrow_duel_regenerates_hp_after_a_surviving_round():
+    a = Combatant("A", archery_skill=1, hit_points=10)
+    b = Combatant("B", archery_skill=1, hit_points=10, regenerates_hp=1)
+    rng = ScriptedRandom([0.5, 0.99, 0.99])  # tie-break, then both shots miss
+
+    result = resolve_fire_arrow_duel(a, b, rng)
+
+    assert result.winner is None
+    assert a.hit_points == 10
+    assert b.hit_points == 11
