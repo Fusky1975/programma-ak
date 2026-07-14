@@ -55,11 +55,28 @@ or acquiring real `miscfile`-format sample data; until then, callers
 supply the new name directly, the same "caller supplies what state/
 parsing can't determine" convention `report/turn_report.py`'s own
 `describe_*` composers already establish.
+
+**Phase 152 addendum**: ``assign_province_name`` below covers the other
+half of the naming gap -- every non-capital province, for which no
+``Read_T1Names``-style mechanism exists at all in the real host engine
+(the rulebook only ever lets a player rename their own capital). Since
+the real world-generation source (``AKGEN.EXE``) that would have picked
+these names isn't in the archive, this project draws from a
+project-original name pool the user supplied directly, organized by
+terrain (``models/province_names.py``) -- not a Pascal transcription,
+and not a reconstruction of ``AKGEN.EXE``'s own (unknown, unrecoverable)
+selection algorithm. Picking "an unused name from the matching terrain's
+pool" is this project's own, undocumented-in-any-source design choice
+for turning that static list into per-province names on demand.
 """
 
 from __future__ import annotations
 
+import random
+
 from ak_engine.models.game_state import GameState
+from ak_engine.models.map import HexCoord
+from ak_engine.models.province_names import PROVINCE_NAME_POOLS
 
 
 def rename_home_province(state: GameState, kingdom_id: int, new_name: str) -> None:
@@ -74,3 +91,41 @@ def rename_home_province(state: GameState, kingdom_id: int, new_name: str) -> No
     kingdom = state.kingdoms[kingdom_id]
     province = state.provinces[kingdom.home_province]
     province.name = new_name
+
+
+def assign_province_name(state: GameState, coord: HexCoord, rng: random.Random) -> str:
+    """Assigns ``coord``'s province a name drawn from its terrain's
+    project-original name pool (``models/province_names.py``), if it
+    doesn't already have one -- idempotent, so calling this again on an
+    already-named province just returns the existing name unchanged
+    rather than re-rolling it.
+
+    Prefers a name not already in use anywhere in ``state.provinces``,
+    falling back to allowing reuse only once a terrain's own pool is
+    fully exhausted (no real source documents how the original engine
+    avoided collisions, since it never generated names at runtime at
+    all -- this is this project's own tie-breaking choice, not a
+    transcription).
+
+    Raises ``KeyError`` if ``coord`` isn't in ``state.provinces``, and
+    ``ValueError`` if that province's terrain has no name pool (i.e.
+    ``Terrain.NO_TERRAIN``) -- both real modeling invariants, not
+    conditions to silently ignore.
+    """
+
+    province = state.provinces[coord]
+    if province.name is not None:
+        return province.name
+
+    pool = PROVINCE_NAME_POOLS.get(province.terrain)
+    if not pool:
+        raise ValueError(f"no province name pool for terrain {province.terrain!r}")
+
+    used = {p.name for p in state.provinces.values() if p.name is not None}
+    candidates = [name for name in pool if name not in used]
+    if not candidates:
+        candidates = list(pool)
+
+    name = rng.choice(candidates)
+    province.name = name
+    return name

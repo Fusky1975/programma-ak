@@ -5634,7 +5634,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2064 passed) before the
     new Phase 150 tests were written. 5 new tests added (2069 passed
     total) in `tests/test_rename_province.py`.
-- **Phase 151 (current)**: `report/turn_report.py describe_turn_results()`
+- **Phase 151**: `report/turn_report.py describe_turn_results()`
   (new) -- the missing link between the nine `describe_*()` composers
   built across Phases 142-148 and real turn data. Before this phase,
   every `describe_*()` call site anywhere in the project was test-only,
@@ -5680,6 +5680,40 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2069 passed) before the
     new Phase 151 tests were written. 12 new tests added (2081 passed
     total) in `tests/test_describe_turn_results.py`.
+- **Phase 152 (current)**: `models/province_names.py` (new) +
+  `turn/rename_province.py assign_province_name()` -- closes the
+  non-capital half of the province-naming gap Phase 150 left open.
+  - **Project-original, not a Pascal transcription, and explicitly
+    user-authorized**: Phase 150's own research confirmed the real host
+    engine never generates a province name at runtime at all -- names
+    were baked into the world-generated map by `AKGEN.EXE`, an offline
+    tool whose own source isn't in the archive, so there is no
+    algorithm anywhere to transcribe for the ~99% of provinces that
+    aren't a kingdom's own capital. The user supplied a real name list
+    directly (`Desktop/Nomi province.txt`), organized by terrain --
+    30 Desert, 50 Forest, 40 Jungle, 80 Sea, 50 Mountain, 50 Plains
+    names -- and asked for it to fill the gap, the same "user authors
+    replacement content for a confirmed-unsourced gap, explicitly
+    labeled as project-original" pattern already established for
+    Use_MI's skill-book-read narrative (Phase 148). Every name is
+    transcribed verbatim in the order supplied, including two
+    incidental repeats in the Sea pool ("Frog Sea", "Pocket Sea" each
+    appear twice) -- not deduplicated, since it's the user's own data.
+  - `PROVINCE_NAME_POOLS: dict[Terrain, tuple[str, ...]]` covers every
+    real `Terrain` member except `NO_TERRAIN` (nothing to name).
+  - `assign_province_name(state, coord, rng)` is idempotent (an
+    already-named province's name is returned unchanged, not re-rolled)
+    and prefers a name not already used anywhere in `state.provinces`,
+    falling back to reuse only once a terrain's own pool is exhausted --
+    this collision-avoidance rule is this project's own design choice,
+    not sourced from anywhere, since the real engine never had to make
+    this decision at runtime either. Raises `KeyError` for an unknown
+    coord and `ValueError` for `Terrain.NO_TERRAIN`, both real modeling
+    invariants.
+  - Non-breaking: full suite passed unchanged (2081 passed) before the
+    new Phase 152 tests were written. 9 new tests added (2090 passed
+    total) in `tests/test_province_names.py` and
+    `tests/test_rename_province.py`.
 
 ## Setup
 

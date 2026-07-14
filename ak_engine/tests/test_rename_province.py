@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.province_names import PROVINCE_NAME_POOLS
 from ak_engine.models.race import Race
-from ak_engine.turn.rename_province import rename_home_province
+from ak_engine.turn.rename_province import assign_province_name, rename_home_province
 
 
 def _state_with_kingdom(home_province: HexCoord) -> GameState:
@@ -62,3 +65,53 @@ def test_rename_home_province_raises_when_home_province_missing_from_state():
     )
     with pytest.raises(KeyError):
         rename_home_province(state, 1, "Candelaria")
+
+
+def test_assign_province_name_draws_from_the_matching_terrain_pool():
+    coord = HexCoord(7, 7)
+    state = GameState()
+    state.provinces[coord] = ProvinceState(coord=coord, terrain=Terrain.DESERT, race=Race.HUMAN)
+
+    name = assign_province_name(state, coord, random.Random(0))
+
+    assert name in PROVINCE_NAME_POOLS[Terrain.DESERT]
+    assert state.provinces[coord].name == name
+
+
+def test_assign_province_name_is_idempotent():
+    coord = HexCoord(8, 8)
+    state = GameState()
+    state.provinces[coord] = ProvinceState(
+        coord=coord, terrain=Terrain.PLAINS, race=Race.HUMAN, name="Already Named"
+    )
+
+    name = assign_province_name(state, coord, random.Random(0))
+
+    assert name == "Already Named"
+
+
+def test_assign_province_name_avoids_names_already_in_use():
+    a, b = HexCoord(9, 9), HexCoord(9, 10)
+    state = GameState()
+    state.provinces[a] = ProvinceState(coord=a, terrain=Terrain.DESERT, race=Race.HUMAN)
+    state.provinces[b] = ProvinceState(coord=b, terrain=Terrain.DESERT, race=Race.HUMAN)
+
+    first = assign_province_name(state, a, random.Random(1))
+    second = assign_province_name(state, b, random.Random(1))
+
+    assert first != second
+
+
+def test_assign_province_name_raises_for_unknown_coord():
+    state = GameState()
+    with pytest.raises(KeyError):
+        assign_province_name(state, HexCoord(0, 0), random.Random(0))
+
+
+def test_assign_province_name_raises_for_no_terrain():
+    coord = HexCoord(11, 11)
+    state = GameState()
+    state.provinces[coord] = ProvinceState(coord=coord, terrain=Terrain.NO_TERRAIN, race=Race.HUMAN)
+
+    with pytest.raises(ValueError):
+        assign_province_name(state, coord, random.Random(0))
