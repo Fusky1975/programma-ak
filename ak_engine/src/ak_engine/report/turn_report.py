@@ -1060,6 +1060,44 @@ discrepancy. Titan and Treant's own `MONSTER_COMBAT_STATS` missile
 stats (Phase 154) stay populated but structurally unreachable through
 this dispatch, exactly like the rest of this module's already-documented
 unreachable-data cases.
+
+**Phase 156 addendum -- Search's own report composer.** `describe_*()`
+existed for every other real-execution action (Hire/Fire/Cast/Use_MI/
+Practice/Give, Phases 142-144) except Search, even though `turn/
+search_execution.py execute_search()` (Phase 132) has run real combat
+since before any of them. Found by re-scanning `SAY.PAS` for
+Search-specific dispatch, past `RUMORS.PAS`'s own now-fully-mined
+`Say_Code` block: `_LSearch: FD('fsearch',S_Adv,10)` -> `FSEARCH.X`
+(5 real templates, the Search-attempt opening sentence -- "approached
+the &, intending to root out its mysteries", etc.) and `_LSacked: Say('<
+searched/Rscouted_out the & but it {apparently }had {already }been
+looted/Rsacked.',S_Adv)` (a single, real, hardcoded template for
+attempting to Search an already-looted feature) -- both real and
+declared, neither with a confirmed live dispatch site in the surviving
+`.PAS` files (the same "the calling main program is itself missing"
+status most templates in this module already carry, not a reason to
+discard them). `render_search_attempt()`/
+`render_search_feature_already_sacked()`, `describe_search()`.
+
+`describe_search()`'s own combat-outcome half reuses `render_
+mortally_wounded()` (Phase 112) for a fatal loss -- personal combat's
+generic [5.0] death rule, the same reasoning `turn/search_execution.py`'s
+own docstring already gives. A win or an inconclusive fight append
+nothing further: no sourced "you defeated the guardian, the treasure is
+yours" sentence exists anywhere in the available archive -- the same
+confirmed-absent conclusion Phase 148's own research already reached
+for the adjacent skill-book-read moment (`TREASAB.X2`/`TREASURE.X2` are
+inventory-view text, not a Search-victory narration).
+
+**Not wired into `describe_turn_results()`, joining PURSUE/TRAIL/TRADE
+as a fourth structurally unwireable action, for the identical reason
+that function's own docstring already gives for those three**:
+`SearchExecutionResult` carries no `feature_id`, and
+`PhaseDispatchResult` itself discards the original decoded
+`SearchRequest` (the only place a `feature_id` survives) before
+`describe_turn_results()` ever sees the entry. `describe_search()`
+stays directly callable by anyone who still has the original
+`SearchRequest`/`Feature` in hand.
 """
 
 from __future__ import annotations
@@ -1086,6 +1124,7 @@ from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
+from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
 from ak_engine.turn.trail_execution import TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
@@ -3072,7 +3111,9 @@ def describe_turn_results(
     `TradeExecutionResult`) carry no target/recipient id whatsoever --
     not merely an unresolved one -- because `PhaseDispatchResult` itself
     only keeps `action`/`result`/`error`, discarding the original
-    decoded request. `describe_battle()` also stays out of this
+    decoded request. `SEARCH` (`describe_search()`, Phase 156) joins
+    them for the identical reason: `SearchExecutionResult` carries no
+    `feature_id` either. `describe_battle()` also stays out of this
     dispatch -- it needs a `BattleReport` and multi-army name maps no
     `PhaseDispatchResult` alone carries. Province/terrain/army-list
     Cast spells and Use_MI's skill-book path are skipped the same way,
@@ -4360,3 +4401,111 @@ def describe_give(
         return render_insufficient_gold(giver_name, gold_requested, rng)
 
     return None
+
+
+# HostAK/TP/PROSE/FSEARCH.X -- the Search-attempt opening sentence. See
+# module docstring's Phase 156 addendum.
+_FSEARCH_TEMPLATES: list[str] = [
+    "< approached/Rinvestigated the &, intending/Rmeaning to root_out/Runcover its mysteries/Sdark_secrets.",
+    "< searched/Rapproached the & with every/Rthe intention of overcoming/Rprevailing_over it and whatever "
+    "{vile }guardian {beast }lay within{ it}.",
+    "< unsheathed/Rgirded > weapon and entered the & warily/Rcautiously.",
+    "< downed/Rtook ^A {deep/Rlarge, }nervous draught/Rgulp from > flask/Rbottle of {old }vodka/Rscotch, "
+    "and entered/Rapproached the &.",
+    "< gathered > courage {and > wits }and {cautiously/Rnervously }entered the &.",
+]
+
+
+def render_search_attempt(character_name: str, feature_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+    """Renders FSEARCH.X's sentence for the Search-attempt opening moment
+    (``SAY.PAS`` ``_LSearch: FD('fsearch',S_Adv,10)``). ``feature_name``
+    is ``PROSE.TXT``'s own ``&`` marker (Feature name -- ``report/
+    prose.py``'s own marker table). ``is_sea`` (Phase 74) resolves the
+    "/S" marker the first variant carries.
+    """
+
+    variant = pick_variant(_FSEARCH_TEMPLATES, rng)
+    values = {"<": character_name, ">": f"{character_name}'s", "&": feature_name}
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/SAY.PAS _LSacked -- a single, real, hardcoded template (no
+# file). See module docstring's Phase 156 addendum.
+SEARCH_FEATURE_ALREADY_SACKED_TEMPLATE = (
+    "< searched/Rscouted_out the & but it {apparently }had {already }been looted/Rsacked."
+)
+
+
+def render_search_feature_already_sacked(character_name: str, feature_name: str, rng: random.Random) -> str:
+    """Renders ``_LSacked``'s sentence for attempting to Search a feature
+    that's already been looted (``turn/search_execution.py
+    execute_search()``'s own ``"feature already looted"`` rejection).
+    """
+
+    values = {"<": character_name, "&": feature_name}
+    return render(SEARCH_FEATURE_ALREADY_SACKED_TEMPLATE, values, rng=rng)
+
+
+def describe_search(
+    result: SearchExecutionResult,
+    *,
+    character_name: str,
+    feature_name: str,
+    rng: random.Random,
+    is_sea: bool = False,
+) -> list[str]:
+    """Assembles Search's own turn-report lines from an already-computed
+    ``SearchExecutionResult`` (``turn/search_execution.py
+    execute_search()``, Phase 132/154/155), the same "data first,
+    already-computed result in, prose out" pattern every other
+    ``describe_*`` composer here already establishes.
+
+    - Rejected specifically because the feature was already looted
+      (``result.reason == "feature already looted"``) renders
+      ``_LSacked`` alone (``render_search_feature_already_sacked()``) --
+      the one rejection reason with a real sourced sentence. Every
+      other rejection (leader/feature not found, no guardian recorded,
+      not co-located) is an internal/engine-level state check, not a
+      narrative moment the rulebook describes -- renders nothing, same
+      "don't invent administrative-error prose" policy ``describe_give()``
+      already states explicitly.
+    - Every accepted attempt opens with ``_LSearch``/``FSEARCH.X``
+      (``render_search_attempt()``), regardless of whether combat ever
+      resolves -- the sentence describes *approaching* the feature, not
+      its outcome.
+    - A fatal loss (``combat_resolved and winner == "monster" and
+      leader_killed``) appends ``render_mortally_wounded()`` -- the same
+      already-sourced MORTWOUN.X sentence (Phase 112) every other
+      personal-combat death already uses, since [5.0]'s generic
+      "until one combatant is killed" rule applies here exactly as
+      ``turn/search_execution.py``'s own docstring already states.
+    - A win (``winner == "leader"``, ``feature_looted``) or an
+      inconclusive fight (``winner is None``) append nothing further:
+      no sourced sentence for "you defeated the guardian and the
+      treasure is yours" exists anywhere in the available archive --
+      confirmed absent by the same research that found Phase 148's own
+      skill-book-read gap (`TREASAB.X2`/`TREASURE.X2` are inventory-view
+      text, not a Search-victory narration), not merely unsearched.
+
+    **Not wired into ``describe_turn_results()``, for the same
+    structural reason PURSUE/TRAIL/TRADE aren't (that function's own
+    docstring)**: ``SearchExecutionResult`` carries no ``feature_id`` at
+    all, and ``PhaseDispatchResult`` itself discards the original
+    decoded ``SearchRequest`` (which alone would supply it) before
+    ``describe_turn_results()`` ever sees the entry -- so there is no
+    way to resolve ``feature_name`` from a dispatch-loop entry without a
+    separate, larger change to ``PhaseDispatchResult`` or
+    ``SearchExecutionResult``. Callers with direct access to the
+    original ``SearchRequest``/``Feature`` can call this composer
+    directly instead.
+    """
+
+    if not result.accepted:
+        if result.reason == "feature already looted":
+            return [render_search_feature_already_sacked(character_name, feature_name, rng)]
+        return []
+
+    lines = [render_search_attempt(character_name, feature_name, rng, is_sea=is_sea)]
+    if result.combat_resolved and result.winner == "monster" and result.leader_killed:
+        lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
+    return lines

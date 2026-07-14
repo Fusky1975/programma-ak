@@ -19,6 +19,7 @@ from ak_engine.report.turn_report import (
     PRACTICE_ALREADY_MAXED_TEMPLATE,
     PRACTICE_TUTORED_TEMPLATE,
     QUEST_BUT_THEN_TEMPLATE,
+    SEARCH_FEATURE_ALREADY_SACKED_TEMPLATE,
     SNEAKUP_RANGE_BOW,
     SNEAKUP_RANGE_MELEE,
     SNEAKUP_RANGE_SPELL,
@@ -32,6 +33,7 @@ from ak_engine.report.turn_report import (
     describe_hire,
     describe_practice,
     describe_pursue,
+    describe_search,
     describe_trail,
     describe_use_mi,
     margin_bucket,
@@ -126,6 +128,8 @@ from ak_engine.report.turn_report import (
     render_quest_service_not_performed,
     render_quest_wrong_answer,
     render_retreat,
+    render_search_attempt,
+    render_search_feature_already_sacked,
     render_skeletal_army_fervor,
     render_sneak_detected,
     render_spy_army_type,
@@ -164,6 +168,7 @@ from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
+from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
 from ak_engine.turn.trail_execution import TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
@@ -2407,3 +2412,83 @@ def test_describe_trail_renders_nothing_when_not_spied_on():
     line = describe_trail(result, trailer_name="Aldric", target_name="Borin", province_name="Eldoria", rng=rng)
 
     assert line is None
+
+
+# -- Phase 156: Search's own report composer --
+
+
+def test_render_search_attempt_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_search_attempt("Aldric", "Ancient Ruins", rng)
+    assert result == "Aldric approached the Ancient Ruins, intending to root out its mysteries."
+
+
+def test_render_search_attempt_resolves_sea_marker():
+    rng = ScriptedRandom([0.9] * 10, choice_indices=[0])
+    result = render_search_attempt("Aldric", "Ancient Ruins", rng, is_sea=True)
+    assert result == "Aldric investigated the Ancient Ruins, meaning to uncover its dark secrets."
+
+
+def test_render_search_feature_already_sacked():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_search_feature_already_sacked("Aldric", "Ancient Ruins", rng)
+    assert result == "Aldric searched the Ancient Ruins but it had been looted."
+
+
+def test_describe_search_rejected_already_looted_renders_sacked_line():
+    result = SearchExecutionResult(accepted=False, reason="feature already looted")
+    rng = ScriptedRandom([0.1] * 10)
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric searched the Ancient Ruins but it had been looted."]
+
+
+def test_describe_search_rejected_for_other_reasons_renders_nothing():
+    result = SearchExecutionResult(accepted=False, reason="not co-located with feature")
+    rng = ScriptedRandom([])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == []
+
+
+def test_describe_search_accepted_no_combat_renders_only_the_opening_line():
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, reason="no Melee tactic in encounter plan")
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+def test_describe_search_leader_killed_appends_mortally_wounded():
+    result = SearchExecutionResult(accepted=True, combat_resolved=True, winner="monster", leader_killed=True)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric was mortally wounded.",
+    ]
+
+
+def test_describe_search_leader_won_renders_only_the_opening_line():
+    # No sourced "you defeated the guardian" sentence exists -- see
+    # describe_search()'s own docstring.
+    result = SearchExecutionResult(accepted=True, combat_resolved=True, winner="leader", feature_looted=True)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+def test_describe_search_inconclusive_combat_renders_only_the_opening_line():
+    result = SearchExecutionResult(accepted=True, combat_resolved=True, winner=None)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]

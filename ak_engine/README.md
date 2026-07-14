@@ -5780,7 +5780,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     so the test now uses `Monster.NOMONSTER`, the one guaranteed-
     unsourced case, instead). 9 new tests added (2099 passed total) in
     `tests/test_monster.py` and `tests/test_search_execution.py`.
-- **Phase 155 (current)**: monster missile-attack flavor text (project-
+- **Phase 155**: monster missile-attack flavor text (project-
   original) + Troll regeneration (mechanics + narration) -- the four
   numbered footnotes `Desktop/MOSTRI con statistiche.txt` (Phase 154's
   own source) supplies, closing them all at once since none needed
@@ -5823,6 +5823,41 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     new Phase 155 tests were written. 17 new tests added (2116 passed
     total) in `tests/test_encounter.py`, `tests/test_turn_report.py`,
     and `tests/test_search_execution.py`.
+- **Phase 156 (current)**: `report/turn_report.py describe_search()`
+  (new) -- the last real-execution action (Hire/Fire/Cast/Use_MI/
+  Practice/Give already had one, Phases 142-144) without its own report
+  composer, even though `turn/search_execution.py execute_search()`
+  has run real combat since Phase 132.
+  - Found by re-scanning `SAY.PAS` for Search-specific dispatch past
+    `RUMORS.PAS`'s own now-fully-mined `Say_Code` block: `_LSearch:
+    FD('fsearch',S_Adv,10)` -> `FSEARCH.X` (5 real templates, the
+    Search-attempt opening sentence, e.g. "approached the &, intending
+    to root out its mysteries") and `_LSacked` (a single, real,
+    hardcoded template for attempting to Search an already-looted
+    feature) -- both real and declared, neither with a confirmed live
+    dispatch site in the surviving `.PAS` files, the same "the calling
+    main program is itself missing" status most templates in this
+    module already carry. `render_search_attempt()`/
+    `render_search_feature_already_sacked()`.
+  - `describe_search()`'s combat-outcome half reuses
+    `render_mortally_wounded()` (Phase 112) for a fatal loss --
+    personal combat's generic [5.0] death rule. A win or an
+    inconclusive fight append nothing further: no sourced "you defeated
+    the guardian, the treasure is yours" sentence exists anywhere in
+    the available archive -- the same confirmed-absent conclusion
+    Phase 148's own research already reached for the adjacent
+    skill-book-read moment.
+  - **Not wired into `describe_turn_results()`, joining PURSUE/TRAIL/
+    TRADE as a fourth structurally unwireable action, for the identical
+    reason**: `SearchExecutionResult` carries no `feature_id`, and
+    `PhaseDispatchResult` itself discards the original decoded
+    `SearchRequest` (the only place a `feature_id` survives) before
+    `describe_turn_results()` ever sees the entry. `describe_search()`
+    stays directly callable by anyone who still has the original
+    `SearchRequest`/`Feature` in hand.
+  - Non-breaking: full suite passed unchanged (2116 passed) before the
+    new Phase 156 tests were written. 9 new tests added (2125 passed
+    total) in `tests/test_turn_report.py`.
 
 ## Setup
 
