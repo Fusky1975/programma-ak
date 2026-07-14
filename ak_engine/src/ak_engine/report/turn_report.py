@@ -1114,14 +1114,17 @@ from ak_engine.models.enums import (
     SPELL_NAME,
     Spell,
 )
+from ak_engine.models.army_type import ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE
 from ak_engine.models.game_state import GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.quote import quote_of_the_week
+from ak_engine.models.race import RACE_NAME
 from ak_engine.models.weapon import Weapon
 from ak_engine.report.prose import render
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult
+from ak_engine.turn.combat import QUALITY_NAME
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
@@ -4535,3 +4538,91 @@ def render_quote_of_the_week(index: int) -> list[str]:
 
     quote_line, attribution_line = quote_of_the_week(index)
     return ["Quote of the Week:", quote_line, attribution_line]
+
+
+# HostAK/TP/REPORTS.PAS Rep_Armies (~lines 888-1091) and its own
+# Expand_Write('ARMIES',kng) opening (~line 1039). See
+# describe_armies_report()'s own docstring for the substantial scope
+# this project deliberately excludes from Rep_Armies's real behavior.
+_ARMIES_REPORT_OPENING = (
+    "Excellence, thy armies have trained hard and honed their weapons to a fine "
+    "edge.  Proudly they serve thy imperial majesty, and they await thy commands."
+)
+
+_ARMIES_REPORT_NONE_AT_PRESENT = "None at present"
+
+
+def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
+    """Lists every army this kingdom currently owns, grouped by province --
+    a deliberately narrower slice of ``REPORTS.PAS Rep_Armies`` (the real
+    "ARMIES" section of the end-of-turn letter report).
+
+    **Sourced, verbatim**: the "ARMIES" section header (``Expand_Write``)
+    and its own two-line opening flavor text, both hardcoded directly in
+    ``REPORTS.PAS`` (not a ``PROSE/*.X`` template) -- rejoined here as one
+    continuous sentence, the same "flowing prose split across two raw
+    ``WRITELN`` lines" shape the FINANCES/PROVINCES/STATE-OF-THE-NATION
+    section openings all share.
+
+    **What this deliberately does NOT reproduce, and why** (`Rep_Armies`
+    is one of the largest procedures in the available Pascal archive,
+    after `Rep_Leaders`/CHARACTERS and `List_Treas`):
+
+    - The real procedure makes two passes -- `Hired` (armies this kingdom
+      actually commands) and `Mercenary` (independent mercenaries visible
+      nearby that this kingdom *could* Recruit). Only the `Hired`-pass
+      concept is modeled here (armies with ``ArmyState.kingdom_id ==
+      kingdom_id``); the Mercenary pass needs `Known_Merc`/`Commanded`
+      eligibility state this project's `GameState` doesn't track.
+    - The real table's second "Modified Quality" column
+      (``Qual_Modfr``) has no surviving source in any of the 13 available
+      `.PAS` files -- confirmed absent (the same missing-main-program
+      category as `ACost`/`LCost`/`Tax_Base`, none of which are defined
+      anywhere in this project's Pascal archive either). Only the plain,
+      unmodified `Quality` is rendered.
+    - Skeletal-Army units get a distinct compact "Skel <designation>"
+      form (``astate[an] = Zomboid``) in the real table; `ArmyState` has
+      no equivalent per-army undead/skeletal flag, so every army renders
+      via the ordinary ``ARMY_TYPE_NAME`` designation.
+    - The real table's exact fixed-width column layout (province-name
+      truncation/suffix rules, per-army-per-leader grouping markers) is
+      not reproduced -- this composer emits one readable line per army
+      instead, a documented, unsourced formatting choice (matching the
+      project's own precedent of choosing a clear equivalent over
+      guessing at column-width semantics with no testable source of
+      truth, e.g. `turn/aftermath.py`'s own constants).
+
+    Each army's race is resolved via `models/army_type.py
+    MONSTROUS_ARMY_RACE` (the army type's fixed race for monstrous types,
+    else the owning kingdom's own race) -- the same interpretation
+    `plan_dispatch._dispatch_recruit`'s own
+    `is_army_type_compatible_with_race` already established (Phase
+    12/153's own note), not `Mod_ARace`'s own unavailable formula.
+    """
+
+    kingdom = state.kingdoms[kingdom_id]
+    lines = ["ARMIES", _ARMIES_REPORT_OPENING]
+
+    owned = [army for army in state.armies.values() if army.kingdom_id == kingdom_id]
+    if not owned:
+        lines.append(_ARMIES_REPORT_NONE_AT_PRESENT)
+        return lines
+
+    owned.sort(key=lambda army: (army.location.x, army.location.y, army.army_id))
+    for army in owned:
+        province = state.provinces.get(army.location)
+        if province is not None and province.name:
+            province_label = province.name
+        else:
+            province_label = f"({army.location.x}, {army.location.y})"
+        if army.commanded_by is not None and army.commanded_by in state.leaders:
+            leader_label = state.leaders[army.commanded_by].name
+        else:
+            leader_label = "Garrison"
+        designation = ARMY_TYPE_NAME[army.army_type]
+        race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race)
+        race_name = RACE_NAME[race]
+        quality_name = QUALITY_NAME[army.quality]
+        lines.append(f"{province_label} -- {leader_label}: {designation} ({race_name}, {quality_name})")
+
+    return lines

@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import pytest
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.magic_feature import MagicFeature
+from ak_engine.models.map import HexCoord
+from ak_engine.models.race import Race
 from ak_engine.report.turn_report import (
     ALREADY_ALLIED_TEMPLATE,
     ATTACK_DEVASTATING_HIT_TEMPLATE,
@@ -26,6 +30,7 @@ from ak_engine.report.turn_report import (
     SPY_GARRISON_APPROXIMATELY_TEMPLATE,
     SPY_LEADS_APPROXIMATELY_TEMPLATE,
     WILL_TEMPLATE,
+    describe_armies_report,
     describe_battle,
     describe_cast,
     describe_fire,
@@ -161,6 +166,7 @@ from ak_engine.report.turn_report import (
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.weapon import Weapon
 from ak_engine.turn.battle_line import BattleUnit
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
@@ -2521,3 +2527,94 @@ def test_render_quote_of_the_week_returns_three_paragraphs():
 def test_render_quote_of_the_week_out_of_range_raises_index_error():
     with pytest.raises(IndexError):
         render_quote_of_the_week(94)
+
+
+# -- Phase 158: ARMIES report (describe_armies_report) --
+
+
+def _armies_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), None, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    return state
+
+
+def test_describe_armies_report_opening_lines():
+    state = _armies_state()
+    lines = describe_armies_report(state, 1)
+
+    assert lines[0] == "ARMIES"
+    assert lines[1] == (
+        "Excellence, thy armies have trained hard and honed their weapons to a fine "
+        "edge.  Proudly they serve thy imperial majesty, and they await thy commands."
+    )
+
+
+def test_describe_armies_report_no_armies_renders_none_at_present():
+    state = _armies_state()
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == ["None at present"]
+
+
+def test_describe_armies_report_led_army_line():
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Sir Aldric", HexCoord(0, 0)))
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), commanded_by=1))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == ["Capital City -- Sir Aldric: Bowmen (Human, Average)"]
+
+
+def test_describe_armies_report_unled_army_shows_garrison():
+    state = _armies_state()
+    state.add_army(ArmyState(1, 1, ArmyType.PHALANX, Quality.VETERAN, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == ["Capital City -- Garrison: Phalanx (Human, Veteran)"]
+
+
+def test_describe_armies_report_monstrous_army_uses_its_own_fixed_race():
+    state = _armies_state()
+    state.add_army(ArmyState(1, 1, ArmyType.DRAGON_WING, Quality.ELITE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == ["Capital City -- Garrison: Dragons (Dragon, Elite)"]
+
+
+def test_describe_armies_report_excludes_other_kingdoms_armies():
+    state = _armies_state()
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_army(ArmyState(1, 2, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == ["None at present"]
+
+
+def test_describe_armies_report_unnamed_province_falls_back_to_coordinates():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(3, 4), None, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 4)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == ["(3, 4) -- Garrison: Bowmen (Human, Average)"]
+
+
+def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
+    state = _armies_state()
+    state.add_province(ProvinceState(HexCoord(1, 1), None, Race.HUMAN, owner_kingdom_id=1, name="Second Province"))
+    state.add_army(ArmyState(2, 1, ArmyType.AXEMEN, Quality.AVERAGE, HexCoord(1, 1)))
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == [
+        "Capital City -- Garrison: Bowmen (Human, Average)",
+        "Second Province -- Garrison: Axemen (Human, Average)",
+    ]

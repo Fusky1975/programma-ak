@@ -5858,7 +5858,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2116 passed) before the
     new Phase 156 tests were written. 9 new tests added (2125 passed
     total) in `tests/test_turn_report.py`.
-- **Phase 157 (current)**: Quote of the Week -- `models/quote.py` (new)
+- **Phase 157**: Quote of the Week -- `models/quote.py` (new)
   and `report/turn_report.py render_quote_of_the_week()` (new), the
   first item on the report-narrator roadmap Phase 58's own docstring
   laid out ("Quote of the Week first, since `PROSE/QUOTES.X2` needs no
@@ -5900,6 +5900,57 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2125 passed) before the
     new Phase 157 tests were written. 9 new tests added (2134 passed
     total) in `tests/test_quote.py` (new) and `tests/test_turn_report.py`.
+- **Phase 158 (current)**: ARMIES report -- `report/turn_report.py
+  describe_armies_report()` (new), a deliberately narrower slice of
+  `REPORTS.PAS Rep_Armies` (the real "ARMIES" section of the
+  end-of-turn letter report).
+  - **Research first identified the real remaining scope, then the
+    user confirmed proceeding with a narrower slice** (matching Phase
+    59's own precedent): the user asked for FINANCES/PROVINCES/
+    CHARACTERS/ARMIES together, but research found `ACost`/`LCost`/
+    `Tax_Base`/`Inv_Bonus` (the numeric engine behind FINANCES) and
+    `ptax` (the per-province tax rating PROVINCES needs) have **no
+    surviving source in any of the 13 available `.PAS` files** --
+    confirmed absent, the missing-main-program category. `CHARACTERS`
+    (`Rep_Leaders`) is the largest, most state-heavy procedure in the
+    archive (alignment-sensing noise formulas, a mercenary standby
+    state machine, `lspec` special-ability bitmasks), needing far more
+    modeling than a single phase could responsibly add. Only `ARMIES`
+    (`Rep_Armies`) turned out to be buildable on data this project
+    already fully has (`ArmyType`/`Quality`/`LeaderState.name`/
+    `ProvinceState.name`, plus `make_army_name`'s own Phase 149
+    designation work) -- confirmed with the user before implementing,
+    not silently downscoped.
+  - Sourced, verbatim: the "ARMIES" section header (`Expand_Write`)
+    and its own two-line opening flavor text, both hardcoded directly
+    in `REPORTS.PAS` (~line 1039), not a `PROSE/*.X` template --
+    rejoined here as one continuous sentence, the same "flowing prose
+    split across two raw `WRITELN` lines" shape the FINANCES/
+    PROVINCES/STATE-OF-THE-NATION section openings all share.
+  - **What this deliberately excludes from the real `Rep_Armies`, and
+    why**: the real procedure's second "Mercenary" pass (independent
+    mercenaries visible nearby that the kingdom *could* Recruit) needs
+    `Known_Merc`/`Commanded` eligibility state this project's
+    `GameState` doesn't track -- only the "Hired" pass (armies the
+    kingdom actually owns) is modeled. The real table's "Modified
+    Quality" column (`Qual_Modfr`) has no surviving source either
+    (same missing-main-program category as `ACost`/`LCost` above) --
+    only the plain `Quality` renders. Skeletal-Army units' distinct
+    "Skel <designation>" form (`astate[an] = Zomboid`) isn't
+    reproduced -- `ArmyState` has no per-army undead/skeletal flag.
+    The real table's exact fixed-width column layout isn't reproduced
+    either -- a documented, unsourced formatting choice (one readable
+    line per army) over guessing at column-width semantics with no
+    testable source of truth.
+  - Each army's race resolves via `models/army_type.py
+    MONSTROUS_ARMY_RACE` (the army type's own fixed race for
+    monstrous types, else the owning kingdom's race) -- the same
+    interpretation `plan_dispatch._dispatch_recruit`'s own
+    `is_army_type_compatible_with_race` already established (Phase
+    12/153's own note), not `Mod_ARace`'s own unavailable formula.
+  - Non-breaking: full suite passed unchanged (2134 passed) before the
+    new Phase 158 tests were written. 8 new tests added (2142 passed
+    total) in `tests/test_turn_report.py`.
 
 ## Setup
 
