@@ -5895,15 +5895,33 @@ rulebook before being turned into named, typed fields:
   two plausible readings this project couldn't disambiguate further.
 - **`plan_dispatch.py` dispatches 21 of 22 `ActionCode`s without raising
   `UnsupportedActionError`** -- its practical maximum (see Phase 27's
-  note above). LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT (Phase 15),
+  note above). ~~LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT (Phase 15),
   DISBAND (Phase 16), HIRE/FIRE (Phase 17), PRACTICE (Phase 44, always
   resolved as solo -- see that phase's note above), and (for
   Charm/Kill_Enemy only) CAST (Phase 29) run end-to-end with real
   `GameState` mutation; SEARCH (Phase 19), TRADE (Phase 20), CAST's
   other 10 spells (Phase 23/29), USE_MI (Phase 24), CHALLENGE/PURSUE
   (Phase 25), ASPY/DEFEND (Phase 26), and TRAIL (Phase 27) decode but
-  don't mutate `GameState` (see their notes above -- same decode-only
-  status Recruit had before Phase 15); WAIT, NO_ACTION, and MOVE_ABORT
+  don't mutate `GameState`~~ -- **stale as of Phase 153** (this bullet
+  was never updated as each of these gaps closed; corrected here rather
+  than left to mislead a future reader, the same policy Phase 55's own
+  self-correction note above established). Actually current: LMOVE,
+  EXPLORE, LEAVE, PICK_UP, RECRUIT (Phase 15), DISBAND (Phase 16),
+  HIRE/FIRE (Phase 17), PRACTICE (Phase 44, always resolved as solo),
+  SEARCH (executed Phase 132, see `turn/search_execution.py`'s own note
+  below), TRADE/Give (executed Phase 132/133), CAST (13 of 25 base
+  spells execute as of Phase 60, see that phase's own note above --
+  Charm/Kill_Enemy since Phase 29), USE_MI (executed Phase 141), CHALLENGE
+  and PURSUE (real combat/catch-up since Phases 50-54), ASPY (real
+  report data since Phase 62), and TRAIL (real catch-up since Phase 52,
+  dispatched since Phase 54) all run end-to-end with real `GameState`
+  mutation now. Only **DEFEND**'s own per-phase dispatch stays
+  decode-only (`decode_defend_phase(phase)`, no mutation) -- by design,
+  not an oversight: its actual effects (reactive reinforcement, Phase
+  57; battle-loss cancellation, Phase 72) are cross-leader rules applied
+  by `turn/turn_processor.py` once per turn, not something a single
+  phase's own dispatch call could apply in isolation. WAIT, NO_ACTION,
+  and MOVE_ABORT
   (Phase 22) dispatch as bare no-ops. Only **Succ_Trail** raises
   `UnsupportedActionError` -- deliberately, by design, not as an
   oversight (see Phase 27's note above).
@@ -5933,24 +5951,37 @@ rulebook before being turned into named, typed fields:
     `LeaderState` means co-location isn't enforced for anyone~~ **fixed
     in Phase 40** (see Phase 16's note above for context on the original
     gap, and Phase 40's note below for the fix).
-  - **Search's remaining gap** (see Phase 19's note above): decoded but
+  - ~~**Search's remaining gap** (see Phase 19's note above): decoded but
     entirely unapplied -- resolving it needs a personal, non-army
     Encounter/combat resolver (Steal/Melee/Fire/Flee/Scout tactic
     resolution, [5.2]-[5.8]) plus stochastic feature-content generation.
     `turn/encounter.py` (Phase 48) now provides a first slice of the
     former (Melee + Fire Arrow combat math only, not yet wired to
     Search itself -- see that phase's note below), so this gap is
-    narrower than it was, not closed. A Cast/Use_MI/Give tactic's
-    sub-object is also just a raw int -- no decoded spell-id or
-    magic-item-id table exists in this project yet to resolve it
-    further.
-  - **Trade's remaining gap** (see Phase 20's note above): the whole
+    narrower than it was, not closed.~~ -- **stale as of Phase 153**:
+    `turn/search_execution.py execute_search()` (Phase 132) closed this,
+    reusing `turn/encounter.py`'s Melee resolver directly. Genuinely
+    still open, by design, not oversight (see that module's own
+    docstring): only 6 of 61 real monster species have sourced combat
+    stats (`models/monster.py MONSTER_STATS`, RULES.AK's own "Monster
+    Table" is explicitly partial -- not guessed at further), only a
+    Melee-tactic Encounter Plan resolves (Fire Arrow needs an
+    unsourced monster hit-chance formula, Scout/Flee/Steal need their
+    own separate resolvers), and a win only sets `Feature.looted = True`
+    -- no treasure-instance/magic-item-ownership model exists yet for
+    [5.9]'s actual looting. A Cast/Use_MI/Give tactic's sub-object is
+    also still just a raw int -- no decoded spell-id or magic-item-id
+    table exists in this project yet to resolve it further.
+  - ~~**Trade's remaining gap** (see Phase 20's note above): the whole
     module, not just execution -- `obj`/`extra`'s field meanings aren't
     confirmed, so there's nothing yet to safely execute even if a
-    resolver existed. The Kingdom-level "Treat" diplomacy order
-    (scientific-discovery exchange between Allies, [8.4]) is a separate,
-    entirely unstarted system -- not parsed, not modeled, no real data
-    available yet either.
+    resolver existed.~~ -- **stale as of Phase 153**: Phase 132/133
+    confirmed `target_leader_id` and rewrote `turn/trade_execution.py
+    execute_give()` into the real Give mechanic, wired as real execution
+    in `plan_dispatch.py`. Still genuinely unstarted: the Kingdom-level
+    "Treat" diplomacy order (scientific-discovery exchange between
+    Allies, [8.4]) is a separate system -- not parsed, not modeled, no
+    real data available yet either.
   - ~~**Practice's remaining gap** (see Phase 21's note above):
     `GameState` now has a per-leader skill/aptitude table
     (`LeaderState.skills`, Phase 30), but nothing populates it from a
