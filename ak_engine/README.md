@@ -236,8 +236,10 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   nuances are explicitly not modeled here (no data/formula exists for
   them, same situation as other entries in the TODO section below): a
   Hero's own "required pay" (which may be lower than the offer and
-  depends on unmodeled per-Hero temper/race/alignment compatibility),
-  recurring per-gameturn pay (only the initial offer is charged, once).
+  depends on unmodeled per-Hero temper/race/alignment compatibility --
+  **Phase 161 confirmed no source for this formula survives at all**,
+  see that phase's own note below), recurring per-gameturn pay (only
+  the initial offer is charged, once).
   ~~"Can't Hire a Hero who rules his own province" (no King flag to
   check against)~~ **also fixed in Phase 40**.
   **A real, confirmed parser bug was found while researching this
@@ -5990,7 +5992,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - Non-breaking: full suite passed unchanged (2142 passed) before the
     new Phase 159 tests were written. 5 new tests added (2147 passed
     total) in `tests/test_trail_execution.py`.
-- **Phase 160 (current)**: a second stale-docstring self-correction,
+- **Phase 160**: a second stale-docstring self-correction,
   found immediately after Phase 159's own -- `turn/
   intelligence_estimate.py` (Phase 136, before `LeaderState.birth_x`/
   `LeaderState.temper` existed) still claimed both fields didn't
@@ -6009,6 +6011,31 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     real, still-open simplification distinct from "no field at all."
   - Non-breaking: full suite passed unchanged (2147 passed) -- no new
     tests, docstring-only change.
+- **Phase 161 (current)**: research-only -- confirmed Hire's own
+  "required pay" temper/race/alignment compatibility formula (open
+  since Phase 17) has no surviving source at all, and documented that
+  finding everywhere the gap was previously described as merely
+  "unmodeled."
+  - `LCost` -- the one Pascal identifier tied to a Hero's per-turn/
+    required pay, cited at four separate sites in `REPORTS.PAS` (the
+    FINANCES section total, the CHARACTERS section's own mercenary-
+    pay-mention line, and the per-leader ARMIES listing) -- is called
+    but never *defined* anywhere in the 13 available `.PAS` files.
+    Same missing-main-program category already confirmed for `ACost`/
+    `Tax_Base`/`Inv_Bonus` (Phase 158's own note above). No separate
+    `Hire`-specific procedure survives either -- only `_LHire`'s own
+    narrative dispatch code (`SAY.PAS` -> `acchire.x`, already modeled
+    as `render_hire_accepted()`, Phase 114) exists in the archive.
+  - Recurring per-gameturn pay and alignment-based hire refusal share
+    the same fate -- neither has any surviving source, not merely
+    still unsearched.
+  - Updated three sites that previously described this as "unmodeled"
+    without saying whether a source existed to model it from:
+    `turn/plan_dispatch.py`'s own HIRE/FIRE note, `models/temper.py`'s
+    own docstring, and this README's own Phase 17 entry and "Not yet
+    implemented" section.
+  - Docstring/README-only change; no code or test changes. Full suite
+    passed unchanged (2147 passed).
 
 ## Setup
 
@@ -6234,9 +6261,17 @@ rulebook before being turned into named, typed fields:
     "required pay" (may be less than the offer, depends on
     temper/race/alignment compatibility -- `models/temper.py Temper`
     now exists as of Phase 82, but the actual compatibility *formula*
-    is still unmodeled, no more than the enum itself), recurring
-    per-gameturn pay (only the one-time offer is charged), and
-    alignment-based hire refusal. ~~"Can't Hire a Hero who rules his
+    is still unmodeled, no more than the enum itself) -- **confirmed
+    genuinely absent as of Phase 161**, not merely still unmodeled:
+    `LCost`, the one Pascal identifier tied to a Hero's per-turn/
+    required pay, is called at four separate sites in `REPORTS.PAS`
+    but never *defined* anywhere in the 13 available `.PAS` files --
+    the same missing-main-program category as `ACost`/`Tax_Base`/
+    `Inv_Bonus` (Phase 158's own note above). No separate
+    `Hire`-specific procedure survives either. Recurring per-gameturn
+    pay (only the one-time offer is charged) and alignment-based hire
+    refusal share the same fate -- neither has any surviving source.
+    ~~"Can't Hire a Hero who rules his
     own province" (no King flag)~~ **fixed in Phase 40** -- see below.
     ~~`run_leader_plan` doesn't dispatch a `PlanPhase.nested_plan`'s own
     phases~~ **fixed in Phase 32** -- a newly-hired hero's own orders now

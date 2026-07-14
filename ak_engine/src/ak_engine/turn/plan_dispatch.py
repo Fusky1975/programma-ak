@@ -60,7 +60,20 @@ to dispatch automatically:
   himself," since he's always in his own province). Neither models the
   rulebook's finer unsourced/undata-able details: a Hero's own "required
   pay" (may be less than the offer), recurring per-turn pay, or
-  alignment-based hire refusal -- see ``README.md``. **Phase 143**:
+  alignment-based hire refusal. **Phase 161 confirmed these genuinely
+  absent, not merely unsearched**: `LCost` (the one Pascal identifier
+  tied to a Hero's per-turn/required pay, cited at four separate sites
+  in `REPORTS.PAS` -- the FINANCES section total, the CHARACTERS
+  section's own "who, we hear, desires to enter thy Majesty's service
+  for # gold per annum" mercenary-mention line, and the per-leader
+  ARMIES listing) is called but never *defined* anywhere in the 13
+  available `.PAS` files -- the same missing-main-program category
+  already confirmed for `ACost`/`Tax_Base`/`Inv_Bonus` (Phase 158's
+  own README note). No separate `Hire`-specific procedure survives
+  either; only `_LHire`'s own narrative dispatch code (`SAY.PAS` ->
+  `acchire.x`, already modeled as `render_hire_accepted()`, Phase 114)
+  exists in the archive. See ``README.md`` for the full research
+  trail. **Phase 143**:
   ``_dispatch_fire`` returns a real ``FireExecutionResult`` (``fired``/
   ``reason``) instead of a bare ``FireRequest`` -- the caller previously
   had no signal at all for whether the Fire actually happened; see

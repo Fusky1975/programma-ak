@@ -27,7 +27,12 @@ intelligence payload -- "Actions, race, temper, alignment, treasures,
 armies led" -- isn't assembled, and temper doesn't exist on
 `LeaderState` at all). This phase supplies the *enum*, closing the
 "we don't even have the vocabulary" half of both gaps -- neither gap's
-actual formula/logic is attempted here.
+actual formula/logic is attempted here. **Trail's gap has since
+narrowed** (`LeaderState.temper`, Phase 139; `turn/trail_execution.py`
+now reports it on a successful spy, Phase 159). **Hire's own formula
+turned out to have no surviving source at all** (Phase 161,
+`turn/plan_dispatch.py`'s own note) -- confirmed absent, not merely
+still unmodeled.
 
 **A ruled-out, closely-related trap found while researching this**: the
 same declaration block's `{$ELSE}` (Noble) branch also declares a
