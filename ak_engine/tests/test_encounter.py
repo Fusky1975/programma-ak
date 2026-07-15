@@ -11,6 +11,7 @@ from ak_engine.turn.encounter import (
     HOLY_SYMBOL_UNDEAD_HIT_CHANCE_REDUCTION_PER_LEVEL,
     MELEE_HIT_CHANCE,
     NEUTRAL_DUELIST_BONUS,
+    PERSONAL_COMBAT_SPELL_LEVEL_CAP,
     SPELL_DISRUPTION_CHANCE_CAP,
     SPELL_DISRUPTION_CHANCE_PER_HIT,
     Combatant,
@@ -374,13 +375,44 @@ def test_holy_symbol_hit_chance_undead_or_anti_holy_uses_the_20_percent_rate():
     assert holy_symbol_hit_chance(0.50, 1, target_is_undead_or_anti_holy=True) == pytest.approx(0.40)
 
 
-def test_holy_symbol_hit_chance_floors_at_zero_instead_of_going_negative():
-    assert holy_symbol_hit_chance(0.50, 100, target_is_undead_or_anti_holy=True) == 0.0
+def test_holy_symbol_hit_chance_caps_skill_level_at_4():
+    # Phase 181: "come tutti quelli di combattimento ha il CAP al
+    # livello 4" -- WH 5 (or higher) has exactly the same effect as
+    # WH 4, the confirmed cap on every Personal-Combat spell.
+    assert PERSONAL_COMBAT_SPELL_LEVEL_CAP == 4
+    at_cap = holy_symbol_hit_chance(0.50, 4, target_is_undead_or_anti_holy=True)
+    assert holy_symbol_hit_chance(0.50, 5, target_is_undead_or_anti_holy=True) == pytest.approx(at_cap)
+    assert holy_symbol_hit_chance(0.50, 100, target_is_undead_or_anti_holy=True) == pytest.approx(at_cap)
+
+
+def test_holy_symbol_hit_chance_stays_nonnegative_at_the_capped_maximum_reduction():
+    # 4 levels * 20%/level = 80% reduction -- the largest possible
+    # reduction now that levels beyond the cap no longer count -- still
+    # leaves a positive floor rather than reaching (or crossing) zero.
+    assert holy_symbol_hit_chance(0.50, 100, target_is_undead_or_anti_holy=True) == pytest.approx(0.10)
 
 
 def test_roll_holy_symbol_undead_damage_level_zero_returns_zero_without_a_roll():
     rng = ScriptedRandom([])
     assert roll_holy_symbol_undead_damage(0, rng) == 0
+
+
+def test_roll_holy_symbol_undead_damage_caps_skill_level_at_4():
+    # WH 5 (or higher) rolls exactly 4 dice, not 5 -- verified by
+    # counting the underlying random() draws.
+    rng = ScriptedRandom([0.0, 0.0, 0.0, 0.0])
+    call_count = 0
+    real_random = rng.random
+
+    def counting_random():
+        nonlocal call_count
+        call_count += 1
+        return real_random()
+
+    rng.random = counting_random
+    damage = roll_holy_symbol_undead_damage(5, rng)
+    assert call_count == 4
+    assert 4 <= damage <= 16
 
 
 def test_roll_holy_symbol_undead_damage_range_at_level_1():

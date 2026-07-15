@@ -249,6 +249,26 @@ is the first of an unknown-sized set of Personal-Combat spells the user
 is walking through "nelle prossime sessioni" (across future sessions) --
 wiring a real `CAST`-tactic combat engine before more of that set is
 known would mean redesigning it repeatedly as each new spell arrives.
+
+**Phase 181 addendum -- Holy Symbol's talent + the level-4 cap on every
+Personal-Combat spell.** Quoted in full: "E' un incantesimo legato al
+talento magia bianca (WH). Comunque questo incantesimo, come tutti
+quelli di combattimento ha il CAP al livello 4. Quindi se ha il talento
+WH a 5 questo incantesimo -- come tutti -- ha gli stessi effetti del
+livello 4." ("It's a spell tied to the White Magic talent [WH].
+However, this spell, like all combat spells, is capped at level 4. So
+if a character has WH at 5, this spell -- like all of them -- has the
+same effects as level 4.") Two confirmed facts: (1) Holy Symbol's own
+`skill_level` parameter is meant to be fed from `Ability.WHITE`
+(`models/enums.py`), not a generic ability; (2) **every** individual
+Personal-Combat spell effect -- not just Holy Symbol -- caps its own
+skill-level scaling at level 4, per the new `PERSONAL_COMBAT_SPELL_
+LEVEL_CAP` constant. `holy_symbol_hit_chance()` and `roll_holy_symbol_
+undead_damage()` both clamp their own `skill_level` input to this cap
+internally before using it, so a WH-5 (or higher) caster gets exactly
+the WH-4 result. Future Personal-Combat spells arriving in later
+sessions should apply this same cap, per the user's own "come tutti"
+("like all of them") wording.
 """
 
 from __future__ import annotations
@@ -326,9 +346,22 @@ def resolve_spell_disruption(hits_taken_this_round: int, rng: random.Random) -> 
 # Holy Symbol [HO], module docstring's own Phase 180 addendum -- project-
 # original, user-supplied. 10%/level normally, 20%/level against an
 # Undead or Anti-Holy target; 1-4 damage per level, Undead/Anti-Holy only.
+# Tied to `Ability.WHITE` (White Magic) -- callers supply that ability's
+# own skill level as `skill_level` below.
 HOLY_SYMBOL_HIT_CHANCE_REDUCTION_PER_LEVEL = 0.10
 HOLY_SYMBOL_UNDEAD_HIT_CHANCE_REDUCTION_PER_LEVEL = 0.20
 HOLY_SYMBOL_UNDEAD_DAMAGE_RANGE_PER_LEVEL = (1, 4)
+
+# Phase 181 addendum: every individual Personal-Combat spell effect caps
+# out at skill level 4 -- the user's own words: "questo incantesimo, come
+# tutti quelli di combattimento ha il CAP al livello 4. Quindi se ha il
+# talento WH a 5 questo incantesimo -- come tutti -- ha gli stessi effetti
+# del livello 4." ("this spell, like all combat spells, is capped at
+# level 4. So a character with WH at 5 gets the same effect as level 4.")
+# Stated as a rule covering *all* Personal-Combat spells, not just Holy
+# Symbol -- future spells in this same family should apply this same
+# cap, not just this one.
+PERSONAL_COMBAT_SPELL_LEVEL_CAP = 4
 
 
 def holy_symbol_hit_chance(
@@ -338,15 +371,18 @@ def holy_symbol_hit_chance(
     module docstring's Phase 180 addendum for the quoted source and the
     worked example this matches exactly (level 1 vs. a 50% base chance
     -> 45%). Floored at 0% so an unusually high skill level can't drive
-    the result negative.
+    the result negative. ``skill_level`` is capped at
+    ``PERSONAL_COMBAT_SPELL_LEVEL_CAP`` (Phase 181): a caster with WH 5
+    gets the exact same reduction as WH 4.
     """
 
+    effective_level = min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)
     rate = (
         HOLY_SYMBOL_UNDEAD_HIT_CHANCE_REDUCTION_PER_LEVEL
         if target_is_undead_or_anti_holy
         else HOLY_SYMBOL_HIT_CHANCE_REDUCTION_PER_LEVEL
     )
-    return max(0.0, base_hit_chance * (1.0 - rate * skill_level))
+    return max(0.0, base_hit_chance * (1.0 - rate * effective_level))
 
 
 def roll_holy_symbol_undead_damage(skill_level: int, rng: random.Random) -> int:
@@ -355,10 +391,13 @@ def roll_holy_symbol_undead_damage(skill_level: int, rng: random.Random) -> int:
     Phase 180 addendum: confirmed directly by the user). ``skill_level``
     0 returns 0 without consuming a roll, the same no-roll-when-the-
     outcome-is-fixed convention ``resolve_spell_disruption()`` above
-    already established.
+    already established. ``skill_level`` is capped at
+    ``PERSONAL_COMBAT_SPELL_LEVEL_CAP`` (Phase 181): a caster with WH 5
+    rolls exactly 4 dice, the same as WH 4.
     """
 
-    return sum(rng.randint(*HOLY_SYMBOL_UNDEAD_DAMAGE_RANGE_PER_LEVEL) for _ in range(skill_level))
+    effective_level = min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)
+    return sum(rng.randint(*HOLY_SYMBOL_UNDEAD_DAMAGE_RANGE_PER_LEVEL) for _ in range(effective_level))
 
 
 @dataclass(slots=True)

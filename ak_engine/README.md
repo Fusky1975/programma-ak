@@ -6758,7 +6758,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     no-roll case, the worked example's own exact 1-hit/20% boundary,
     and single-roll consumption. Full suite: 2277 passed (2271
     unchanged + 6 new).
-- **Phase 180 (current)**: Holy Symbol [HO], the first of an unknown-
+- **Phase 180**: Holy Symbol [HO], the first of an unknown-
   length series of individual Personal-Combat spell effects the user
   is walking through "nelle prossime sessioni" (across future
   sessions), project-original (user-supplied, project author). Quoted
@@ -6818,6 +6818,39 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     convention (verified by counting the underlying `random()` draws,
     not just checking the output range), and the damage range constant
     itself. Full suite: 2285 passed (2277 unchanged + 8 new).
+- **Phase 181 (current)**: two confirmed facts about Holy Symbol,
+  supplied directly by the user: it's tied to `Ability.WHITE` (White
+  Magic, the WH talent), and -- "come tutti quelli di combattimento" --
+  every individual Personal-Combat spell effect caps its own skill-
+  level scaling at level 4. Quoted in full: "E' un incantesimo legato
+  al talento magia bianca (WH). Comunque questo incantesimo, come tutti
+  quelli di combattimento ha il CAP al livello 4. Quindi se ha il
+  talento WH a 5 questo incantesimo -- come tutti -- ha gli stessi
+  effetti del livello 4."
+  - `turn/encounter.py`: new `PERSONAL_COMBAT_SPELL_LEVEL_CAP = 4`,
+    documented as covering *all* Personal-Combat spells, not just Holy
+    Symbol -- future spells in this same family should apply the same
+    cap. `holy_symbol_hit_chance()` and `roll_holy_symbol_undead_
+    damage()` both now clamp their own `skill_level` input to this cap
+    internally (`min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)`)
+    before using it, so a WH-5-or-higher caster gets exactly the WH-4
+    result/dice count.
+  - One pre-existing Phase 180 test (`test_holy_symbol_hit_chance_
+    floors_at_zero_instead_of_going_negative`) no longer held once the
+    cap capped the maximum possible reduction at 80% (4 levels x 20%) --
+    a positive base chance can no longer be driven all the way to zero
+    through skill-level scaling alone. Replaced with two tests: the cap
+    itself (`test_holy_symbol_hit_chance_caps_skill_level_at_4`, WH 5
+    and WH 100 both matching WH 4 exactly) and a renamed nonnegative-
+    floor check at the capped maximum reduction. The floor safeguard's
+    `max(0.0, ...)` code itself is untouched -- it's no longer reachable
+    through the public functions' own inputs, but stays as a cheap
+    defensive clamp.
+  - 3 new/changed tests in `tests/test_encounter.py`: the hit-chance cap
+    (WH 5 and WH 100 == WH 4), the renamed nonnegative-floor-at-the-cap
+    check, and the damage-roll cap (WH 5 rolls exactly 4 dice, verified
+    by counting `random()` draws). Full suite: 2287 passed (2285 base -
+    1 replaced + 3 new).
 
 ## Setup
 
