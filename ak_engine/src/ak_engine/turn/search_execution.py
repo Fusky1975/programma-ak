@@ -53,7 +53,15 @@ resolves"**:
   If no wired tactic is present at all, or the walk finishes without
   resolving (Fire Arrow's shots ran out and nothing else followed),
   ``combat_resolved`` reflects that honestly (see ``execute_search()``'s
-  own body).
+  own body). **Confirmed directly by the user (Phase 173, project
+  author)**: only a single Fire Arrow order can ever appear in an
+  Encounter Plan, and once its shots are exhausted "i combattenti
+  passano alla fase successiva che dipende dall'elenco di ordini messi
+  nel piano d'incontro" ("combatants move to the next phase, determined
+  by the tactic list in the Encounter Plan") -- exactly this walk's own
+  design, now sourced rather than inferred solely from [11.3]'s worked
+  examples. See ``turn/encounter.py``'s own Phase 173 addendum for the
+  full quote.
 - **Fire Arrow (Phase 170, rulebook [5.2]).** "The base chance to hit is
   30%, plus 10% per Archery level, and the damage is 1-6 hit points."
   Previously left unwired specifically because "nothing in any available

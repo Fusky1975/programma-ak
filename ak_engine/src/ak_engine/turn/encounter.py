@@ -73,13 +73,32 @@ rulebook mechanic, just not attempted yet):
   skill** ([5.2]): "if two characters with archery skill fight each
   other, they will both get about double their usual number of free
   attacks. However, there is some random chance involved" -- no
-  concrete formula given ("about double", "some random chance"), so
-  `resolve_fire_arrow_duel` always uses the plain `archery_skill` free-
-  attack count, never doubled.
+  concrete formula given ("about double", "some random chance"). **Not
+  a real gap** (confirmed by the user, project author, who supplied the
+  original rulebook design directly): only a single Fire Arrow (``FI``)
+  order can appear in an Encounter Plan at all, so this "if two
+  characters with archery skill fight each other" doubling clause never
+  actually applies to how a single ``FI`` tactic itself resolves --
+  `resolve_fire_arrow_duel` correctly uses each combatant's own,
+  undoubled `archery_skill` free-attack count regardless of the other
+  combatant's own skill, exactly as it already does.
 - **What happens after Fire Arrow's free attacks run out with nobody
-  dead**: real combat would presumably continue at Melee range;
-  `resolve_fire_arrow_duel` just stops and reports no winner
-  (`winner=None`) -- see its own docstring.
+  dead** ([5.2]) -- **confirmed, not a gap** (same user clarification):
+  "Si puo dare un solo ordine di FI durante un piano speciale di
+  incontro. Una volta usato, si esauriscono le frecce e i combattenti
+  passano alla fase successiva che dipende dall'elenco di ordini messi
+  nel piano d'incontro, che quindi puo essere un CA (cast a spell)
+  oppure ME oppure FL." ("Only one FI order can be given in a Special
+  Encounter Plan. Once used, the arrows run out and combatants move to
+  the next phase, determined by the tactic list in the Encounter Plan,
+  which can then be CA/Cast, ME/Melee, or FL/Flee.") `resolve_fire_arrow
+  _duel`'s own `winner=None` (both survived, shots exhausted) is exactly
+  the signal `turn/search_execution.py`'s own Phase 170 tactic-walk
+  already reads as "fall through to the plan's next tactic" -- this
+  module's own scope stays deliberately narrower (a single-tactic duel
+  primitive; see the "mixed-tactic range transitions" bullet above for
+  why), with the actual plan-level fall-through correctly living one
+  layer up, in the caller.
 - **Temper's effect on Melee** ("A character's Temper affects melee
   according to the Temper Table"): this project has no `Temper` model
   anywhere (no enum, no per-leader field) -- an entirely separate,
@@ -298,8 +317,11 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
     shots, interleaved round-by-round by initiative (higher Archery
     skill first, tie random -- see ``_acts_first``). Stops once one
     combatant dies, or once both have exhausted their free attacks with
-    neither dead (``winner=None`` -- real combat would presumably
-    continue at Melee range; not modeled here, see module docstring).
+    neither dead (``winner=None`` -- confirmed (module docstring's Phase
+    173 addendum) to mean "fall through to the Encounter Plan's next
+    tactic," resolved one layer up by the caller, not here -- only a
+    single Fire Arrow order can ever appear in a plan, so this duel
+    itself never needs to know what comes next).
 
     Mutates ``a``/``b`` in place. The round-by-round interleaving for
     *unequal* free-attack counts is itself a documented design choice

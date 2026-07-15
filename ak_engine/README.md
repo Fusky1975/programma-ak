@@ -6446,7 +6446,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     roll that would only succeed under the wrong one), and a non-Sage
     ability never consuming the extra roll at all. Full suite: 2208
     passed (2202 unchanged + 6 new).
-- **Phase 172 (current)**: implements Use_MI's wand charge decrement,
+- **Phase 172**: implements Use_MI's wand charge decrement,
   previously flagged as an honest "not modeled" gap in `turn/
   use_mi_execution.py`'s own docstring ("this project has no sourced
   per-cast decrement rule"). Closable now: `PROSE/TREASURE.X2`'s own
@@ -6474,6 +6474,44 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     untouched, and a wand becoming genuinely useless (its second Use_MI
     attempt rejected) immediately after its last charge is spent. Full
     suite: 2212 passed (2208 unchanged + 4 new).
+- **Phase 173 (current)**: closes `turn/encounter.py`'s own two
+  remaining flagged Fire Arrow gaps -- **documentation-only, no
+  behavior change** (both were already correctly implemented; the
+  design just lacked a citable source). Closed directly by the user
+  (project author), the same "author-supplied rulebook content"
+  pattern already used for Phase 162's Hire-pay formula and Phase 163's
+  temper-weight correction: "Si puo dare un solo ordine di FI durante
+  un piano speciale di incontro. Una volta usato, si esauriscono le
+  frecce e i combattenti passano alla fase successiva che dipende
+  dall'elenco di ordini messi nel piano d'incontro, che quindi puo
+  essere un CA (cast a spell) oppure ME oppure FL." ("Only one FI
+  order can be given in a Special Encounter Plan. Once used, the
+  arrows run out and combatants move to the next phase, determined by
+  the tactic list in the Encounter Plan, which can then be CA/Cast,
+  ME/Melee, or FL/Flee.")
+  - **"About double" free attacks when both combatants have Archery**
+    ([5.2]) -- confirmed not a real gap: since only a single Fire Arrow
+    order can ever appear in a plan, the "if two characters with
+    archery skill fight each other" doubling clause never actually
+    applies to how a single `FI` tactic resolves.
+    `resolve_fire_arrow_duel` already correctly uses each combatant's
+    own, undoubled `archery_skill` free-attack count.
+  - **What happens after Fire Arrow's free attacks run out with nobody
+    dead** ([5.2]) -- confirmed: `resolve_fire_arrow_duel`'s own
+    `winner=None` is exactly the "fall through to the plan's next
+    tactic" signal `turn/search_execution.py`'s own Phase 170
+    tactic-walk already reads it as. That design (built and tested in
+    Phase 170, before this confirmation existed) turns out to already
+    match the real rule exactly.
+  - `turn/encounter.py`'s module docstring and `resolve_fire_arrow_duel`'s
+    own docstring rewritten to cite this directly instead of describing
+    both as open, unsourced gaps; `turn/search_execution.py`'s own
+    "strict list order" section cross-references the same confirmation.
+  - No new tests: both mechanics were already exercised
+    (`test_resolve_fire_arrow_duel_no_kill_when_free_attacks_run_out`,
+    `test_execute_search_shoot_tactic_exhausted_falls_through_to_melee`)
+    -- only their surrounding documentation changed. Full suite: 2212
+    passed, unchanged.
 
 ## Setup
 
