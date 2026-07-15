@@ -147,12 +147,64 @@ project's own confirmed gap (`turn/search_decode.py`'s own docstring),
 still just an unresolved raw int with no decoded `Spell` anywhere in a
 `SearchTactic`. Wiring the exception is blocked on that gap, not
 attempted here as a guess.
+
+**Phase 179 addendum -- the three combat ranges, and spell disruption.**
+Confirmed directly by the user (project author), quoting the rulebook
+in full: "Ci sono tre distanze nel combattimento: portata d'incantesimo,
+portata d'arco e zona di mischia. La prima e' la distanza maggiore e
+consente solo l'uso di incantesimi o attacchi con armi da lancio. In
+zona di mischia solo incantesimi o attacchi corpo a corpo (quest'ultimi
+avranno comunque sempre la precedenza). Gli Incontri solitamente
+iniziano a portata di incantesimo. In combattimento tutti gli Eroi hanno
+10 Punti Ferita." ("There are three ranges in combat: spell range, bow
+range, and melee zone. The first is the greatest distance and allows
+only the use of spells or thrown-weapon attacks. In the melee zone,
+only spells or hand-to-hand attacks [the latter always take
+precedence]. Encounters usually begin at spell range. In combat, all
+Heroes have 10 hit points.") `CombatRange` below models the three-tier
+vocabulary this confirms, ordered farthest-to-closest -- matching both
+the confirmed default starting range and a real worked example's own
+progression ("Marzials loped along steadily and closed to bow range" /
+"Marzials charged into melee range", each its own narrated beat).
+
+The user also confirmed the exact formula for a second real mechanic
+glimpsed in that same worked example ("Marzials's spell was disrupted
+by the event" / "His spell was disrupted by the event"), quoted in
+full: "questo succede quando si subiscono dei danni prima di provare a
+lanciare un incantesimo. Ogni danno da' il 20% comulativo (95%
+massimo) di non riuscire a lanciare l'incantesimo perdendo il round di
+combattimento." ("This happens when you take damage before attempting
+to cast a spell. Each hit taken gives a cumulative 20% chance [95%
+maximum] of failing to cast the spell, losing that combat round.")
+`spell_disruption_chance()`/`resolve_spell_disruption()` model this
+formula directly, counting *hits landed*, not damage points -- "ogni
+danno" reads as "every hit", matching the worked example, where
+Ablamor's own cast attempt was disrupted immediately after taking
+exactly one landed hit (Marzials's own 8-point Melee attack) earlier
+that same round.
+
+**Deliberately not wired any further this phase, by the user's own
+explicit direction** ("progetta e implementa, poi nelle prossime
+sessioni ti illustrero' gli incantesimi" -- "design and implement,
+then in future sessions I'll walk you through the spells"): neither
+`CombatRange` nor the disruption roll is threaded into `turn/
+search_execution.py`'s own tactic walk yet. Wiring a real `CAST` tactic
+still needs to know what each of the 10 "Personal-Combat-only" spells
+actually *does* when it lands (`turn/cast_execution.py`'s own docstring
+already names this exact gap) -- disruption only ever matters as a
+precondition to a cast that, today, still has no effect to disrupt.
+Both are modeled now as clean, independently-testable primitives ready
+for that future phase, the same "confirmed mechanic modeled before its
+consuming pipeline exists" pattern `models/monster.py roll_monster_
+alignment()` (Phase 176) and `models/monster_encounter_plan.py roll_
+monster_encounter_plan()` (Phase 178) already established.
 """
 
 from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from enum import Enum
 
 # [5.0]: "In combat, all characters have 10 hit points. Monsters may
 # have anywhere from 7 to 50 hit points." -- this module's own
@@ -171,6 +223,53 @@ FIRE_ARROW_DAMAGE_RANGE = (1, 6)
 
 # [5.0]: Neutral Kingdom characters' "Order of Duelists" +1 Melee/Archery.
 NEUTRAL_DUELIST_BONUS = 1
+
+
+class CombatRange(Enum):
+    """Rulebook [5.0]'s three combat ranges -- see module docstring's own
+    Phase 179 addendum for the full quoted rulebook text. Ordered
+    farthest-to-closest, matching both "Encounters usually begin at
+    spell range" and a real worked example's own progression (spell
+    range -> "closed to bow range" -> "charged into melee range").
+    """
+
+    SPELL_RANGE = 0
+    BOW_RANGE = 1
+    MELEE_RANGE = 2
+
+
+# Rulebook [5.0], quoted in the module docstring's own Phase 179
+# addendum: spell disruption's cumulative-per-hit chance and its cap.
+SPELL_DISRUPTION_CHANCE_PER_HIT = 0.20
+SPELL_DISRUPTION_CHANCE_CAP = 0.95
+
+
+def spell_disruption_chance(hits_taken_this_round: int) -> float:
+    """The chance a spellcast attempt fails this round, per the user's own
+    confirmed formula (module docstring's Phase 179 addendum): 20% per
+    hit already landed on the caster this round, before the cast is
+    attempted, capped at 95%. Counts *hits*, not damage points -- "ogni
+    danno" ("every hit") -- matching the worked example, where a single
+    landed Melee hit alone was enough to disrupt the very next cast.
+    """
+
+    return min(hits_taken_this_round * SPELL_DISRUPTION_CHANCE_PER_HIT, SPELL_DISRUPTION_CHANCE_CAP)
+
+
+def resolve_spell_disruption(hits_taken_this_round: int, rng: random.Random) -> bool:
+    """Rolls whether a spellcast attempt is disrupted this round -- see
+    ``spell_disruption_chance()``'s own docstring for the formula.
+    Returns True if disrupted (the cast fails, the round is lost).
+
+    With zero hits taken this round, the chance is exactly 0% -- this
+    returns False directly without consuming a roll, the same no-roll-
+    when-the-outcome-is-fixed convention ``models/monster.py roll_
+    monster_alignment()`` (Phase 176) already established.
+    """
+
+    if hits_taken_this_round <= 0:
+        return False
+    return rng.random() < spell_disruption_chance(hits_taken_this_round)
 
 
 @dataclass(slots=True)

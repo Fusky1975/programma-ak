@@ -6653,7 +6653,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     the five Renegade-mage species' own school-matching names, and a
     positive-levels sanity sweep. Full suite: 2246 passed (2239
     unchanged + 7 new).
-- **Phase 178 (current)**: guardian-monster Special Encounter Plans,
+- **Phase 178**: guardian-monster Special Encounter Plans,
   plus two confirmed corrections to how an Encounter Plan's tactic list
   resolves. `Desktop/Piani speciali d'incontro dei mostri.txt` (supplied
   2026-07-16) gives all 60 real monster species their own percentage-
@@ -6718,6 +6718,46 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     resolution when both sides want Shoot, the leader's own Undead
     alignment threading into the guardian's own roll). Full suite: 2271
     passed (2246 unchanged + 25 new).
+- **Phase 179 (current)**: the three combat ranges, and the spell-
+  disruption formula. Authorized directly by the user ("progetta e
+  implementa, poi nelle prossime sessioni ti illustrero' gli
+  incantesimi" -- "design and implement, then in future sessions I'll
+  walk you through the spells"), following a real worked-example combat
+  log and two rulebook/mechanic quotes the user supplied directly.
+  - `turn/encounter.py`: new `CombatRange` enum (`SPELL_RANGE`,
+    `BOW_RANGE`, `MELEE_RANGE`, ordered farthest-to-closest), sourced
+    from rulebook [5.0] quoted in full: "Ci sono tre distanze nel
+    combattimento: portata d'incantesimo, portata d'arco e zona di
+    mischia. La prima e' la distanza maggiore e consente solo l'uso di
+    incantesimi o attacchi con armi da lancio. In zona di mischia solo
+    incantesimi o attacchi corpo a corpo (quest'ultimi avranno comunque
+    sempre la precedenza). Gli Incontri solitamente iniziano a portata
+    di incantesimo." Matches both the confirmed default starting range
+    and a real worked example's own progression ("closed to bow range"
+    / "charged into melee range", each its own narrated beat).
+  - New `spell_disruption_chance(hits_taken_this_round) -> float` and
+    `resolve_spell_disruption(hits_taken_this_round, rng) -> bool`,
+    sourced from the user's own confirmed formula: "questo succede
+    quando si subiscono dei danni prima di provare a lanciare un
+    incantesimo. Ogni danno da' il 20% comulativo (95% massimo) di non
+    riuscire a lanciare l'incantesimo perdendo il round di
+    combattimento." Counts hits landed, not damage points; a caster
+    who took zero hits this round never consumes a roll (always
+    succeeds), the same no-roll convention Phase 176's `roll_monster_
+    alignment()` established.
+  - **Deliberately not wired any further, by the user's own explicit
+    scoping**: neither primitive is threaded into `turn/
+    search_execution.py`'s own tactic walk yet -- a real `CAST` tactic
+    still needs to know what each of the 10 Personal-Combat-only spells
+    actually does before disruption has anything to disrupt. Both are
+    modeled now as clean, independently-testable primitives, the same
+    "confirmed mechanic modeled before its consuming pipeline exists"
+    pattern Phase 176/178 already established.
+  - 6 new tests in `tests/test_encounter.py`: `CombatRange` ordering,
+    the disruption formula's per-hit scaling and 95% cap, the zero-hits
+    no-roll case, the worked example's own exact 1-hit/20% boundary,
+    and single-roll consumption. Full suite: 2277 passed (2271
+    unchanged + 6 new).
 
 ## Setup
 

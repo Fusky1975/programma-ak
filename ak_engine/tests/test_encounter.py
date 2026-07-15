@@ -8,7 +8,10 @@ from ak_engine.turn.encounter import (
     FIRE_ARROW_HIT_CHANCE_PER_LEVEL,
     MELEE_HIT_CHANCE,
     NEUTRAL_DUELIST_BONUS,
+    SPELL_DISRUPTION_CHANCE_CAP,
+    SPELL_DISRUPTION_CHANCE_PER_HIT,
     Combatant,
+    CombatRange,
     _acts_first,
     effective_archery_skill,
     effective_melee_skill,
@@ -16,8 +19,10 @@ from ak_engine.turn.encounter import (
     fire_arrow_hit_chance,
     resolve_fire_arrow_duel,
     resolve_melee_duel,
+    resolve_spell_disruption,
     roll_fire_arrow_attack,
     roll_melee_attack,
+    spell_disruption_chance,
 )
 
 from _helpers import ScriptedRandom
@@ -299,3 +304,47 @@ def test_resolve_fire_arrow_duel_regenerates_hp_after_a_surviving_round():
     assert result.winner is None
     assert a.hit_points == 10
     assert b.hit_points == 11
+
+
+# -- Phase 179: the three combat ranges + spell disruption --
+
+
+def test_combat_range_is_ordered_farthest_to_closest():
+    assert CombatRange.SPELL_RANGE.value == 0
+    assert CombatRange.BOW_RANGE.value == 1
+    assert CombatRange.MELEE_RANGE.value == 2
+
+
+def test_spell_disruption_chance_matches_the_formula():
+    assert spell_disruption_chance(0) == 0.0
+    assert spell_disruption_chance(1) == pytest.approx(SPELL_DISRUPTION_CHANCE_PER_HIT)
+    assert spell_disruption_chance(2) == pytest.approx(2 * SPELL_DISRUPTION_CHANCE_PER_HIT)
+    assert spell_disruption_chance(3) == pytest.approx(3 * SPELL_DISRUPTION_CHANCE_PER_HIT)
+
+
+def test_spell_disruption_chance_caps_at_95_percent():
+    # 4 hits = 80%, not yet capped; 5 hits would be 100% uncapped, so
+    # that's the first value the 95% cap actually clips.
+    assert spell_disruption_chance(4) == pytest.approx(4 * SPELL_DISRUPTION_CHANCE_PER_HIT)
+    assert spell_disruption_chance(5) == pytest.approx(SPELL_DISRUPTION_CHANCE_CAP)
+    assert spell_disruption_chance(100) == pytest.approx(SPELL_DISRUPTION_CHANCE_CAP)
+
+
+def test_resolve_spell_disruption_zero_hits_never_consumes_a_roll():
+    # Matches the worked example's own implicit case: a caster who took
+    # no hits this round always gets to attempt the cast.
+    rng = ScriptedRandom([])
+    assert resolve_spell_disruption(0, rng) is False
+
+
+def test_resolve_spell_disruption_one_hit_matches_the_worked_example():
+    # Ablamor's own cast attempt was disrupted after exactly one landed
+    # hit (Marzials's own 8-point Melee attack) earlier the same round --
+    # a 20% chance, so 0.19 disrupts and 0.20 doesn't.
+    assert resolve_spell_disruption(1, ScriptedRandom([0.19])) is True
+    assert resolve_spell_disruption(1, ScriptedRandom([0.20])) is False
+
+
+def test_resolve_spell_disruption_consumes_exactly_one_roll_when_hits_taken():
+    rng = ScriptedRandom([0.99])  # a second .random() call would raise IndexError
+    resolve_spell_disruption(2, rng)
