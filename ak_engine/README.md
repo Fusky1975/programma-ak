@@ -6398,7 +6398,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     for the monster's hit-points draw now running before the flee roll)
     and the generalized "no wired tactic" reason string. Full suite:
     2202 passed (2192 unchanged + 10 new).
-- **Phase 171 (current)**: implements Practice's own Sageness
+- **Phase 171**: implements Practice's own Sageness
   device-discovery roll ([4.3.1], the rulebook's own heading is
   "CONOSCENZA -- Sageness [SA]", not the "[4.31]" citation this
   project's own research report used to flag the gap -- corrected here
@@ -6446,6 +6446,34 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     roll that would only succeed under the wrong one), and a non-Sage
     ability never consuming the extra roll at all. Full suite: 2208
     passed (2202 unchanged + 6 new).
+- **Phase 172 (current)**: implements Use_MI's wand charge decrement,
+  previously flagged as an honest "not modeled" gap in `turn/
+  use_mi_execution.py`'s own docstring ("this project has no sourced
+  per-cast decrement rule"). Closable now: `PROSE/TREASURE.X2`'s own
+  description, identical across all 20 spell-casting wands (e.g. the
+  Wand of Fire's own entry), gives exactly the rule that was missing:
+  "There is a certain number of charges in this item, and each time you
+  cast the spell you use up a charge. When all charges are used up, the
+  item becomes useless."
+  - `execute_use_mi()`'s `SPELL_WAND` branch: an item at `charges <= 0`
+    is rejected outright ("becomes useless"), *before* attempting the
+    cast at all -- `reason="item has no charges remaining"`. Otherwise
+    the cast proceeds as before (Phase 141's own automatic-success,
+    skill-2 wand rules), and `ItemInstance.charges` (`trcharges`, Phase
+    140) is decremented by exactly 1, but **only when the cast
+    genuinely happens** (`cast_result.applied is True`) -- a validation
+    failure ("target not found", out of range, etc.) never reaches the
+    spell's own success rule in the first place, so nothing was
+    actually "cast" and no charge is spent.
+  - 3 pre-existing tests updated to supply `charges=1` (they previously
+    relied on `ItemInstance.charges`' own default of `0`, which the new
+    zero-charges precondition now correctly rejects).
+  - 4 new tests in `tests/test_use_mi_execution.py`: a successful cast
+    decrementing charges by exactly 1, a zero-charge item rejected
+    before any cast is attempted, a validation failure leaving charges
+    untouched, and a wand becoming genuinely useless (its second Use_MI
+    attempt rejected) immediately after its last charge is spent. Full
+    suite: 2212 passed (2208 unchanged + 4 new).
 
 ## Setup
 

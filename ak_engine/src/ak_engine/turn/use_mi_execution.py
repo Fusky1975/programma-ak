@@ -39,12 +39,22 @@ own docstring and ``models/treasure.py USE_MI_TARGET_CATEGORIES``):
   Both are implemented as ``execute_cast()``'s new ``wand_skill_level``
   parameter (Phase 141, see that module's own docstring) rather than
   duplicating any of Cast's 13 real spell-effect implementations here.
-  A wand is **not consumed** by a single cast -- ``ItemInstance.charges``
-  (``trcharges``, Phase 140) tracks remaining uses, but this project has
-  no sourced per-cast decrement rule (the Pascal source for how charges
-  are actually spent isn't in the available archive either), so charges
-  are read but not mutated -- an honest "not modeled" gap, not a
-  silent 0-cost assumption disguised as correctness.
+
+  **Charge consumption (Phase 172).** ``TREASURE.X2``'s own description,
+  identical across all 20 wands (e.g. the Wand of Fire's own entry):
+  "There is a certain number of charges in this item, and each time you
+  cast the spell you use up a charge. When all charges are used up, the
+  item becomes useless." Two rules follow directly:
+
+  - An item at ``charges <= 0`` is rejected outright, *before* attempting
+    the cast at all ("becomes useless") -- ``reason="item has no charges
+    remaining"``.
+  - A charge is spent only when the cast genuinely happens
+    (``cast_result.applied is True``) -- not on a validation failure
+    ("target not found", out of range, etc.), since those never reach
+    the spell's own automatic-success rule in the first place and
+    nothing was actually "cast." ``ItemInstance.charges`` (``trcharges``,
+    Phase 140) is decremented by exactly 1 in that case.
 
 - **The 15 one-shot skill books** (``TreasureCategory.SKILL_BOOK``):
   "a one-shot, self-consuming +1 to one Ability when read"
@@ -119,6 +129,9 @@ def execute_use_mi(
     category = TREASURE_CATEGORY.get(item.treasure)
 
     if category is TreasureCategory.SPELL_WAND:
+        if item.charges <= 0:
+            return UseMIExecutionResult(applied=False, reason="item has no charges remaining")
+
         spell = TREASURE_WAND_SPELL[item.treasure]
         cast_request = CastRequest(spell=spell, target=request.target, terrain=request.terrain)
         cast_result = execute_cast(
@@ -130,6 +143,8 @@ def execute_use_mi(
             board_width=board_width,
             wand_skill_level=USE_MI_WAND_SKILL_LEVEL,
         )
+        if cast_result.applied:
+            item.charges -= 1
         return UseMIExecutionResult(applied=cast_result.applied, reason=cast_result.reason, cast_result=cast_result)
 
     if category is TreasureCategory.SKILL_BOOK:

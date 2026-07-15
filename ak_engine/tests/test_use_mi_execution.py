@@ -74,7 +74,7 @@ def test_execute_use_mi_rejects_a_category_that_operates_automatically():
 def test_execute_use_mi_wand_casts_the_mapped_spell():
     state = build_state()
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
-    item = state.add_item(Treasure.WAND_KILL_ENEMY, owner_leader_id=CASTER_ID)
+    item = state.add_item(Treasure.WAND_KILL_ENEMY, owner_leader_id=CASTER_ID, charges=1)
     request = UseMIRequest(item_instance_id=item.item_id, target=78)
 
     result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
@@ -96,7 +96,7 @@ def test_execute_use_mi_wand_bypasses_the_success_roll_even_with_no_recorded_ski
     raw_values[Ability.NECROMANCY.value * 2] = 0
     state.leaders[CASTER_ID].skills = SkillTable(raw_values=raw_values)
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
-    item = state.add_item(Treasure.WAND_KILL_ENEMY, owner_leader_id=CASTER_ID)
+    item = state.add_item(Treasure.WAND_KILL_ENEMY, owner_leader_id=CASTER_ID, charges=1)
     request = UseMIRequest(item_instance_id=item.item_id, target=78)
     rng = ScriptedRandom([])  # no .random() call should happen at all
 
@@ -115,7 +115,7 @@ def test_execute_use_mi_wand_uses_skill_level_2_regardless_of_casters_real_level
     raw_values = [0] * 30
     state.leaders[CASTER_ID].skills = SkillTable(raw_values=raw_values)  # Elemental level 0
     state.add_army(ArmyState(1, 2, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))
-    item = state.add_item(Treasure.WAND_TORNADO, owner_leader_id=CASTER_ID)
+    item = state.add_item(Treasure.WAND_TORNADO, owner_leader_id=CASTER_ID, charges=1)
     request = UseMIRequest(item_instance_id=item.item_id, target=_target(LOCATION))
     # No cast-success roll consumed (automatic) -- this is only the
     # per-army destroy roll. 0.15 destroys at skill-2's 20% chance but
@@ -170,3 +170,62 @@ def test_execute_use_mi_book_clamps_skill_at_the_real_ceiling_of_9():
 
     assert result.applied is True
     assert state.leaders[CASTER_ID].skills.pair_for_ability(Ability.MELEE) == (9, 0)
+
+
+# --- Wand charge consumption (Phase 172, TREASURE.X2's own wand descriptions) ---
+
+
+def test_execute_use_mi_wand_decrements_charges_on_a_successful_cast():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    item = state.add_item(Treasure.WAND_KILL_ENEMY, owner_leader_id=CASTER_ID, charges=3)
+    request = UseMIRequest(item_instance_id=item.item_id, target=78)
+
+    result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
+
+    assert result.applied is True
+    assert item.charges == 2
+
+
+def test_execute_use_mi_wand_rejects_an_item_with_zero_charges():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    item = state.add_item(Treasure.WAND_KILL_ENEMY, owner_leader_id=CASTER_ID, charges=0)
+    request = UseMIRequest(item_instance_id=item.item_id, target=78)
+
+    result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
+
+    assert result.applied is False
+    assert result.reason == "item has no charges remaining"
+    assert result.cast_result is None
+    assert 78 in state.leaders  # spell never actually cast
+
+
+def test_execute_use_mi_wand_does_not_decrement_charges_on_a_rejected_cast():
+    # An invalid target fails Cast's own validation before the wand's
+    # automatic-success rule is even reached -- nothing was "cast," so no
+    # charge should be spent.
+    state = build_state()
+    item = state.add_item(Treasure.WAND_KILL_ENEMY, owner_leader_id=CASTER_ID, charges=2)
+    request = UseMIRequest(item_instance_id=item.item_id, target=999)  # no such leader
+
+    result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
+
+    assert result.applied is False
+    assert item.charges == 2
+
+
+def test_execute_use_mi_wand_becomes_useless_after_its_last_charge():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    state.add_leader(LeaderState(79, 2, "Another Hero", LOCATION))
+    item = state.add_item(Treasure.WAND_KILL_ENEMY, owner_leader_id=CASTER_ID, charges=1)
+
+    first = execute_use_mi(state, KINGDOM_ID, CASTER_ID, UseMIRequest(item_instance_id=item.item_id, target=78))
+    second = execute_use_mi(state, KINGDOM_ID, CASTER_ID, UseMIRequest(item_instance_id=item.item_id, target=79))
+
+    assert first.applied is True
+    assert item.charges == 0
+    assert second.applied is False
+    assert second.reason == "item has no charges remaining"
+    assert 79 in state.leaders  # second cast never happened
