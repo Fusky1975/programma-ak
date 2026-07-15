@@ -31,16 +31,37 @@ resolves"**:
 - **Encounter Plan tactic.** ``turn/search_decode.py``'s own docstring
   found, empirically, that "every real Search order ends in Melee
   and/or Scout" across all 12 real Search phases in the sample files.
-  Only ``Maneuver.MELEE`` is wired here to a real combat resolution --
-  matching the empirically-dominant real case -- while Fire Arrow/Scout
-  /Flee/Steal-only plans report ``combat_resolved=False`` rather than
-  silently picking a tactic the plan didn't actually request. (Fire
-  Arrow specifically is left out for another reason too: [5.2]'s "30% +
-  10%/Archery level" hit-chance formula is written for a *character*
-  wielding a bow, and nothing in any available source says a monster's
-  own ``missile_skill`` drives an equivalent formula -- reusing it
-  without a source would be a guess this project avoids, unlike Melee's
-  flat, tactic-and-species-independent 50% rule.)
+  Only ``Maneuver.MELEE`` and ``Maneuver.FLEE`` are wired here to a real
+  resolution -- matching the empirically-dominant real case -- while
+  Fire Arrow/Scout/Steal-only plans report ``combat_resolved=False``
+  rather than silently picking a tactic the plan didn't actually
+  request. (Fire Arrow specifically is left out for another reason too:
+  [5.2]'s "30% + 10%/Archery level" hit-chance formula is written for a
+  *character* wielding a bow, and nothing in any available source says a
+  monster's own ``missile_skill`` drives an equivalent formula -- reusing
+  it without a source would be a guess this project avoids, unlike
+  Melee's flat, tactic-and-species-independent 50% rule.)
+- **Flee (Phase 169, rulebook [5.6]).** "The character can declare to
+  prefer flight over combat. The chance of fleeing from fast monsters is
+  20%, from medium-speed monsters or other characters 50%, and slow
+  monsters can be escaped from 80% of the time." Sourced verbatim,
+  including all three percentages, in ``models/monster.py``'s own [5.6]
+  quote (``FLEE_CHANCE`` below is keyed by the same ``MonsterSpeed`` tier
+  already sourced there). A ``Maneuver.FLEE`` tactic anywhere in the plan
+  is rolled *before* any Melee resolution -- matching how the rulebook's
+  own advice frames the tactic sequence ("follow it with a Flee order
+  and/or a [Scout] order", [5.8]): Flee is a first attempt to avoid the
+  fight, not a last resort after losing it. A successful roll ends the
+  Search with no combat and no loot; a failed roll falls through to
+  whatever the rest of the plan specifies (Melee, if present, exactly as
+  before this phase). **Deliberately excluded, not guessed**: the
+  Cauto/Codardo temperament's "+30% chance to flee" bonus ([5.6]'s own
+  "(NOVITA')" addendum, keyed off ``models/temper.py``) and Invisibility's
+  "+30% chance to flee" bonus (``turn/cast_execution.py``'s own
+  docstring, already flagged unmodeled since it needs the not-yet-built
+  Cast-tactic combat engine) -- both are real, sourced modifiers to this
+  same roll, but adding either now would be an under-tested compound
+  change; flagged here as a natural follow-up phase instead.
 - **Victory's own aftermath is minimal, by design**: rulebook [5.9]
   ("looting a vanquished foe's treasure, magic items changing hands")
   needs a treasure-*instance* and magic-item-ownership model this
@@ -86,7 +107,7 @@ from dataclasses import dataclass
 
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import GameState, LeaderState
-from ak_engine.models.monster import MONSTER_COMBAT_STATS, MONSTER_NAMES, Monster
+from ak_engine.models.monster import MONSTER_COMBAT_STATS, MONSTER_NAMES, Monster, MonsterSpeed
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
 from ak_engine.turn.search_decode import SearchRequest
 
@@ -94,6 +115,14 @@ from ak_engine.turn.search_decode import SearchRequest
 # 1 hit point every combat round." See turn/encounter.py's own Phase 155
 # addendum for the full quote and Combatant.regenerates_hp's own mechanics.
 TROLL_REGENERATION_PER_COMBAT_ROUND = 1
+
+# Rulebook [5.6] Flee, transcribed verbatim -- see this module's own
+# docstring addendum and models/monster.py's own [5.6] quote.
+FLEE_CHANCE: dict[MonsterSpeed, float] = {
+    MonsterSpeed.FAST: 0.20,
+    MonsterSpeed.MEDIUM: 0.50,
+    MonsterSpeed.SLOW: 0.80,
+}
 
 
 def _leader_combatant(leader: LeaderState) -> Combatant:
@@ -120,6 +149,7 @@ class SearchExecutionResult:
     winner: str | None = None  # "leader" / "monster" / None (both survived)
     feature_looted: bool = False
     leader_killed: bool = False
+    fled: bool = False
 
 
 def execute_search(
@@ -161,6 +191,10 @@ def execute_search(
             combat_resolved=False,
             reason=f"no combat stats for guardian ({monster_name}) -- see models/monster.py MONSTER_COMBAT_STATS",
         )
+
+    if any(tactic.maneuver is Maneuver.FLEE for tactic in request.tactics):
+        if rng.random() < FLEE_CHANCE[stats.speed]:
+            return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
 
     if not any(tactic.maneuver is Maneuver.MELEE for tactic in request.tactics):
         return SearchExecutionResult(

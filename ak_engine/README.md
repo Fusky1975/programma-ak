@@ -6260,7 +6260,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sourced tiers, untrainable tiers left alone, and armies commanded
     by someone else being ignored. Full suite: 2179 passed (2172
     unchanged + 7 new).
-- **Phase 168 (current)**: `ProvinceState.terrain_override` (Part Sea/
+- **Phase 168**: `ProvinceState.terrain_override` (Part Sea/
   Flood, Phase 59) had zero gameplay consumers anywhere in the codebase
   -- confirmed by an exhaustive grep sweep finding it was only ever
   written by the two spells that set it, never read by any real
@@ -6310,6 +6310,45 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `cast_execution.py` (Part Sea/Flood/Earthquake eligibility all
     reading the effective terrain). Full suite: 2188 passed (2179
     unchanged + 9 new).
+- **Phase 169 (current)**: implements Search's own [5.6] Flee tactic,
+  previously reported as an honest `combat_resolved=False` alongside
+  Fire Arrow/Scout/Steal-only plans. Research (an Explore-agent report on
+  candidate next phases) surfaced this as the recommended, narrowest-
+  scoped gap: no new data model needed, and the exact three percentages
+  were already sourced and transcribed in `models/monster.py`'s own
+  [5.6] quote, just never consumed anywhere.
+  - Rulebook [5.6], quoted in full in `turn/search_execution.py`'s own
+    new addendum: "The character can declare to prefer flight over
+    combat. The chance of fleeing from fast monsters is 20%, from
+    medium-speed monsters or other characters 50%, and slow monsters can
+    be escaped from 80% of the time." New `FLEE_CHANCE: dict[
+    MonsterSpeed, float]` (`turn/search_execution.py`) keyed by the same
+    `MonsterSpeed` tier `models/monster.py MONSTER_COMBAT_STATS` already
+    carries per species.
+  - `execute_search()`: a `Maneuver.FLEE` tactic anywhere in the
+    Encounter Plan is rolled *before* Melee -- matching the rulebook's
+    own tactic-sequencing advice ([5.8]: "follow it with a Flee order
+    and/or a [Scout] order"), i.e. Flee is a first attempt to avoid the
+    fight, not a last resort after losing it. A successful roll ends the
+    Search with no combat and no loot (`SearchExecutionResult` gained
+    `fled: bool = False`); a failed roll falls through to whatever the
+    rest of the plan specifies (Melee, if present), exactly as before
+    this phase.
+  - **Deliberately excluded, not guessed**: the Cauto/Codardo
+    temperament's "+30% chance to flee" bonus ([5.6]'s own "(NOVITA')"
+    addendum) and Invisibility's "+30% chance to flee" bonus
+    (`turn/cast_execution.py`'s own docstring, already flagged unmodeled
+    since it needs the not-yet-built Cast-tactic combat engine) -- both
+    are real, sourced modifiers to this same roll, but adding either now
+    would be an under-tested compound change; flagged as a natural
+    follow-up phase instead.
+  - 4 new tests (`tests/test_search_execution.py`): `FLEE_CHANCE`'s
+    exact three values cross-checked against real species (Gryphon/
+    Gargoyle/Golem), a successful flee ending the Search with no combat,
+    a failed flee falling through to Melee, and a Melee-only plan never
+    consuming a flee roll even when the very first scripted roll would
+    satisfy the chance. Full suite: 2192 passed (2188 unchanged + 4
+    new).
 
 ## Setup
 

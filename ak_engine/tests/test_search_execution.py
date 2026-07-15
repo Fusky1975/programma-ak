@@ -8,10 +8,15 @@ from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
-from ak_engine.models.monster import Monster
+from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
 from ak_engine.turn.encounter import EncounterCombatResult
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
-from ak_engine.turn.search_execution import TROLL_REGENERATION_PER_COMBAT_ROUND, SearchExecutionResult, execute_search
+from ak_engine.turn.search_execution import (
+    FLEE_CHANCE,
+    TROLL_REGENERATION_PER_COMBAT_ROUND,
+    SearchExecutionResult,
+    execute_search,
+)
 
 from _helpers import ScriptedRandom
 
@@ -181,3 +186,73 @@ def test_execute_search_non_troll_guardian_has_no_regeneration():
 
     monster_combatant = mock_resolve.call_args[0][1]
     assert monster_combatant.regenerates_hp == 0
+
+
+# -- Phase 169: Flee (rulebook [5.6]) --
+
+
+def test_flee_chance_matches_the_rulebooks_three_speed_tiers():
+    assert FLEE_CHANCE == {
+        MonsterSpeed.FAST: 0.20,
+        MonsterSpeed.MEDIUM: 0.50,
+        MonsterSpeed.SLOW: 0.80,
+    }
+    # Confirms the tiers line up with real species, not just the enum.
+    assert MONSTER_COMBAT_STATS[Monster.GRYPHON].speed is MonsterSpeed.FAST
+    assert MONSTER_COMBAT_STATS[Monster.GARGOYLE].speed is MonsterSpeed.MEDIUM
+    assert MONSTER_COMBAT_STATS[Monster.GOLEM].speed is MonsterSpeed.SLOW
+
+
+def test_execute_search_flee_tactic_success_ends_search_without_combat():
+    # Gryphon is Fast (20% flee chance) -- 0.1 < 0.20 succeeds.
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GRYPHON)
+    state.add_feature(feature)
+    request = SearchRequest(
+        feature_id=1, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.FLEE), SearchTactic(maneuver=Maneuver.MELEE)]
+    )
+
+    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1]))
+
+    assert result.accepted is True
+    assert result.combat_resolved is False
+    assert result.fled is True
+    assert result.winner is None
+    assert feature.looted is False
+    assert LEADER_ID in state.leaders
+
+
+def test_execute_search_flee_tactic_failure_falls_through_to_melee():
+    # Gryphon is Fast (20% flee chance) -- 0.99 >= 0.20 fails, so the plan's
+    # Melee tactic still runs afterward exactly as if Flee weren't there.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GRYPHON))
+    request = SearchRequest(
+        feature_id=1, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.FLEE), SearchTactic(maneuver=Maneuver.MELEE)]
+    )
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        # Padding beyond the flee roll: rng.randint() for the monster's hit
+        # points draws further from the same scripted queue.
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.99] + [0.5] * 10))
+
+    assert mock_resolve.called
+    assert result.accepted is True
+    assert result.combat_resolved is True
+    assert result.fled is False
+
+
+def test_execute_search_no_flee_tactic_never_rolls_for_it():
+    # A Melee-only plan against a Fast monster must not flee even though
+    # the very first scripted roll (0.1) would satisfy the 20% chance --
+    # confirms the roll is only consumed when Flee is actually in the plan.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GRYPHON))
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.1] + [0.5] * 10))
+
+    assert mock_resolve.called
+    assert result.fled is False
