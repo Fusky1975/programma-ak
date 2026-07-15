@@ -6349,7 +6349,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     consuming a flee roll even when the very first scripted roll would
     satisfy the chance. Full suite: 2192 passed (2188 unchanged + 4
     new).
-- **Phase 170 (current)**: implements Search's own [5.2] Fire Arrow
+- **Phase 170**: implements Search's own [5.2] Fire Arrow
   tactic, previously left unwired specifically because "nothing in any
   available source says a monster's own `missile_skill` drives an
   equivalent formula" -- reversing that exclusion, since `models/
@@ -6398,6 +6398,54 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     for the monster's hit-points draw now running before the flee roll)
     and the generalized "no wired tactic" reason string. Full suite:
     2202 passed (2192 unchanged + 10 new).
+- **Phase 171 (current)**: implements Practice's own Sageness
+  device-discovery roll ([4.3.1], the rulebook's own heading is
+  "CONOSCENZA -- Sageness [SA]", not the "[4.31]" citation this
+  project's own research report used to flag the gap -- corrected here
+  against the real section number). `turn/practice_execution.py`'s own
+  docstring had already flagged this as sourced-but-unimplemented,
+  blocked only because "this project has no data model for what a
+  discovered device even is or does" -- closable now as a flag with no
+  further consequence, the same pattern already used elsewhere in this
+  project for a roll whose downstream effect isn't modeled yet.
+  - Rulebook [4.3.1], quoted in full in the module's own new addendum:
+    "Permette la scoperta di nuovi strumenti o conoscenze. Quando si fa
+    pratica in questo Talento (Practice Sageness) c'e un 5% di
+    probabilita per livello di inventare o scoprire qualcosa di
+    utile... Se un personaggio con un livello di abilita 4 pratica il
+    Talento Sageness tutte le fasi, in media fara una scoperta ogni
+    turno." New `SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL = 0.05`.
+  - `execute_practice()`: for `Ability.SAGE`, an *independent* roll ("on
+    top of, not instead of" the ordinary [3.13] skill-rise roll this
+    module already resolves) against `current_skill *
+    SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL` sets a new
+    `PracticeExecutionResult.device_discovered` flag. Uses the
+    *pre*-attempt skill level (not any same-phase rise) -- the
+    rulebook's own worked example holds skill fixed at 4 throughout,
+    giving no basis to prefer the post-rise level. Rolled *after* the
+    ordinary skill-rise attempt -- an unsourced but inconsequential
+    ordering choice, since the two rolls are independent either way.
+  - **What the roll doesn't do**: the discovered device itself stays
+    entirely unmodeled -- no item/inventory/effect system exists
+    anywhere in this project (same gap `turn/search_execution.py`'s own
+    [5.9] addendum already documents for a Search's looted treasure).
+    **Not extended to `execute_practice_group`**: the multi-character
+    pooling path resolves a *shared* skill-rise outcome, but Sageness's
+    device-discovery roll is a per-character mechanic with no stated
+    group interaction -- flagged as a further future phase, the same
+    "don't silently expand scope" precedent Phase 167 set for
+    Tactical's own group-pooling gap.
+  - 3 pre-existing tests updated (`Ability.SAGE` was already used in them
+    as an arbitrary example ability; each now pads its `ScriptedRandom`
+    for the extra roll SAGE now consumes) plus 1 in
+    `tests/test_turn_processor.py` (same padding, for a co-located,
+    different-ability Practice pair). 6 new tests in
+    `tests/test_practice_execution.py`: the 5%-per-level constant, a
+    successful discovery, a failed one, the 0%-at-skill-0 edge case, the
+    pre-attempt-skill-level ordering (rejects the post-rise level via a
+    roll that would only succeed under the wrong one), and a non-Sage
+    ability never consuming the extra roll at all. Full suite: 2208
+    passed (2202 unchanged + 6 new).
 
 ## Setup
 

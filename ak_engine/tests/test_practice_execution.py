@@ -15,6 +15,7 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.practice_execution import (
     APT_RISE_CHANCE,
     MAX_SKILL_LEVEL,
+    SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL,
     SOLO_PRACTICE_CHANCE,
     TACTICAL_TRAINING_CHANCE,
     PracticeExecutionResult,
@@ -200,7 +201,9 @@ def _state_with_leader(skills: SkillTable | None) -> GameState:
 def test_execute_practice_attaches_a_fresh_skill_table_when_none_recorded():
     state = _state_with_leader(skills=None)
 
-    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01]))
+    # Second value pads Sage's own device-discovery roll (Phase 171) --
+    # moot here since current_skill=0 (pre-rise) gives it a 0% chance.
+    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01, 0.9]))
 
     assert isinstance(result, PracticeExecutionResult)
     assert result.skill_rose is True
@@ -216,7 +219,7 @@ def test_execute_practice_reuses_and_only_touches_the_practiced_abilitys_pair():
     raw[Ability.NECROMANCY.value * 2 + 1] = 5
     state = _state_with_leader(skills=SkillTable(raw))
 
-    execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01]))
+    execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01, 0.9]))
 
     # Sage rose from the fresh-zero baseline...
     assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (1, 0)
@@ -327,11 +330,11 @@ def test_execute_practice_raw_out_of_range_ability_is_not_implemented():
 
 
 def test_execute_practice_sages_own_skill_still_rises_normally():
-    # Sage's extra device-discovery roll isn't modeled, but its ordinary
-    # [3.13] skill rise still runs like any other ability.
+    # Sage's own ordinary [3.13] skill rise runs like any other ability,
+    # independent of its own extra device-discovery roll (Phase 171).
     state = _state_with_leader(skills=None)
 
-    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01]))
+    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01, 0.9]))
 
     assert result.not_implemented_for_ability is False
     assert result.skill_rose is True
@@ -449,3 +452,71 @@ def test_execute_practice_group_requires_at_least_two_leaders():
 
     with pytest.raises(ValueError):
         execute_practice_group(state, [1], Ability.SAGE, rng=random.Random(0))
+
+
+# -- Phase 171: Sage's own device-discovery roll ([4.3.1]) --
+
+
+def test_sage_device_discovery_chance_per_level_is_5_percent():
+    assert SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL == 0.05
+
+
+def test_execute_practice_sage_device_discovery_succeeds():
+    # Skill 4, aptitude 9 (unconstrained) -- the rulebook's own worked
+    # example ("a level-4 character... will average one discovery per
+    # turn"). Chance = 4 * 5% = 20%. First roll (0.99) fails the ordinary
+    # skill-rise attempt; second roll (0.15) succeeds the independent
+    # device-discovery roll.
+    state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=4, aptitude=9))
+
+    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15]))
+
+    assert result.skill_rose is False
+    assert result.device_discovered is True
+
+
+def test_execute_practice_sage_device_discovery_fails_above_chance():
+    # Same 20% chance as above; 0.25 >= 0.20 fails.
+    state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=4, aptitude=9))
+
+    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.25]))
+
+    assert result.device_discovered is False
+
+
+def test_execute_practice_sage_device_discovery_is_zero_chance_at_skill_zero():
+    # A fresh (skill=0, aptitude=0) Sageness practicer has a 0 * 5% = 0%
+    # discovery chance -- even an almost-zero roll must still fail. Three
+    # values: skill-rise roll (fails), the aptitude-rise roll it also
+    # triggers (aptitude 0 constrains skill-rise, see attempt_skill_rise),
+    # then the device-discovery roll itself.
+    state = _state_with_leader(skills=None)
+
+    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.99, 0.001]))
+
+    assert result.device_discovered is False
+
+
+def test_execute_practice_sage_device_discovery_uses_pre_attempt_skill():
+    # Skill 1 rises to 2 this same call (roll 0.01 < the unconstrained 5%
+    # solo chance), but the discovery roll must still use the *pre*-rise
+    # skill (1 * 5% = 5%), not the post-rise one (2 * 5% = 10%) -- 0.07 is
+    # below the wrong 10% chance but above the correct 5% one.
+    state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=1, aptitude=9))
+
+    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01, 0.07]))
+
+    assert result.skill_rose is True
+    assert result.new_skill == 2
+    assert result.device_discovered is False
+
+
+def test_execute_practice_non_sage_ability_never_sets_device_discovered():
+    # Only one scripted value is supplied -- proves no extra roll is
+    # consumed for a non-Sage ability (an IndexError would surface
+    # otherwise, same as Sage's own extra-roll tests above).
+    state = _state_with_leader(skills=None)
+
+    result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
+
+    assert result.device_discovered is False

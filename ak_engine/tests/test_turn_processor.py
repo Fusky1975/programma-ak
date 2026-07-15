@@ -314,11 +314,13 @@ def test_run_turn_does_not_group_different_abilities_even_when_co_located():
     # 0.07 is above the 5% solo chance (correct, independent behavior) but
     # below the 10% tied-group chance -- if these were incorrectly grouped
     # by location alone (ignoring ability), both would succeed instead.
+    # A third value pads leader_b's own Sage device-discovery roll (Phase
+    # 171) -- moot here since skill=0 gives it a 0% chance regardless.
     results = run_turn(
         [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)],
         state,
         board_width=BOARD_WIDTH,
-        rng=ScriptedRandom([0.07, 0.07]),
+        rng=ScriptedRandom([0.07, 0.07, 0.9]),
     )
 
     by_leader = {r.leader_id: r for r in results}

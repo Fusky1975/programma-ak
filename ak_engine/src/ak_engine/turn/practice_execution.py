@@ -120,13 +120,42 @@ phase's scope for each:
   its own pooling concept (co-located *characters* sharing one
   skill-rise roll) doesn't apply to Tactical's *army*-training
   mechanic at all.
-- **Sage** ([4.31]): practicing Sage rolls an *additional*, independent
-  "~5% per level of inventing/discovering a device" chance, "on top of
-  (not instead of)" the normal [3.13] skill-rise roll -- so Sage's own
-  skill *does* rise through the ordinary path here, but the extra
-  device-discovery roll is **not** implemented: this project has no
-  data model at all for what a discovered device even is or does
-  (no item/inventory/effect system exists anywhere in this codebase).
+- **Sage / Sageness** ([4.3.1], rulebook's own heading "CONOSCENZA --
+  Sageness [SA]"), quoted in full: "Permette la scoperta di nuovi
+  strumenti o conoscenze. Quando si fa pratica in questo Talento
+  (Practice Sageness) c'e un 5% di probabilita per livello di inventare
+  o scoprire qualcosa di utile... Se un personaggio con un livello di
+  abilita 4 pratica il Talento Sageness tutte le fasi, in media fara una
+  scoperta ogni turno." ("Allows the discovery of new tools or
+  knowledge. When practicing this Talent there is a 5% chance per level
+  of inventing or discovering something useful... A level-4 character
+  Practicing Sageness every phase will average one discovery per turn.")
+  This is an *additional*, independent roll -- "on top of (not instead
+  of)" the ordinary [3.13] skill-rise roll this module already resolves
+  for every ability, Sageness included. **Phase 171 wires the roll
+  itself**: ``execute_practice()`` rolls
+  ``current_skill * SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL`` (the
+  *pre*-attempt skill level -- the rulebook's own worked example uses a
+  fixed "level 4" throughout, giving no basis for whether a same-phase
+  rise should count towards this roll, so the more conservative,
+  already-established level is used) against a fresh
+  ``PracticeExecutionResult.device_discovered`` flag, rolled *after* the
+  ordinary skill-rise attempt (an unsourced but inconsequential
+  ordering choice, since the two rolls are independent either way).
+  **What the roll doesn't do**: the discovered *device itself* stays
+  entirely unmodeled -- this project has no item/inventory/effect system
+  anywhere (the rulebook's own examples, a compass or a war machine,
+  need a treasure/magic-item instance this codebase doesn't have --
+  same gap ``turn/search_execution.py``'s own [5.9] addendum already
+  documents). ``device_discovered=True`` is therefore a flag with no
+  further consequence yet, honestly reported rather than silently
+  dropped. **Not extended to ``execute_practice_group``**: the
+  multi-character pooling path resolves a *shared* skill-rise outcome
+  across co-practicers, but Sageness's own device-discovery roll is a
+  per-*character* mechanic with no stated interaction with group
+  practice at all -- flagged as a further future phase rather than
+  guessed at here, the same "don't silently expand scope" precedent
+  Phase 167 set for Tactical's own group-pooling gap.
 """
 
 from __future__ import annotations
@@ -152,6 +181,10 @@ APT_RISE_CHANCE: tuple[float, ...] = (0.0, 0.10, 0.25, 0.50, 1.0, 0.80, 0.60, 0.
 
 # SkillTable's documented range (Phase 21): each pair value is 0-9.
 MAX_SKILL_LEVEL = 9
+
+# Rulebook [4.3.1] Sageness: "un 5% di probabilita per livello di
+# inventare o scoprire qualcosa di utile" -- see module docstring.
+SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL = 0.05
 
 # turn/practice_decode.py's own [6.1] quote: "Green->Average 25%,
 # Crack->Elite 0.2%" -- the only two of Quality's five upward
@@ -291,6 +324,11 @@ class PracticeExecutionResult:
     # Quality tier rose this call. Empty (not None) whenever ability
     # isn't TACTICAL, or TACTICAL trained nothing this call.
     trained_army_ids: tuple[int, ...] = ()
+    # Phase 171: Ability.SAGE's own device-discovery roll ([4.3.1]) --
+    # True only when that independent roll succeeds. Always False for
+    # every other ability, and for TACTICAL (which never reaches the
+    # skill-rise branch this flag is set in).
+    device_discovered: bool = False
 
 
 def _get_or_create_skills(leader: LeaderState) -> SkillTable:
@@ -375,12 +413,20 @@ def execute_practice(
     outcome = resolve_practice_solo(current_skill, aptitude, rng)
     skills.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
 
+    device_discovered = False
+    if ability is Ability.SAGE:
+        # Independent of the skill-rise roll above ("on top of, not
+        # instead of") -- see module docstring for why current_skill
+        # (pre-attempt) drives the chance, not outcome.new_skill.
+        device_discovered = rng.random() < current_skill * SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL
+
     return PracticeExecutionResult(
         ability=ability,
         skill_rose=outcome.skill_rose,
         aptitude_rose=outcome.aptitude_rose,
         new_skill=outcome.new_skill,
         new_aptitude=outcome.new_aptitude,
+        device_discovered=device_discovered,
     )
 
 
