@@ -6526,7 +6526,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   Chimera breath; Giant/Treant/Titan boulder; Basilisk/Medusa
   petrifying gaze) remain genuinely unmodeled -- see Phase 175 below
   for the narrative-footnote half of that list.
-- **Phase 175 (current)**: wires the three species-specific missile-
+- **Phase 175**: wires the three species-specific missile-
   attack narration variants (dragon/Chimera breath weapon, Giant
   boulder throw, Basilisk/Medusa petrifying gaze) from `Desktop/MOSTRI
   con statistiche.txt`'s own four numbered footnotes into Search's Fire
@@ -6584,6 +6584,42 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     a flavored monster, the Titan discrepancy falling back to generic,
     and shot narration ordering before a fatal `render_mortally_wounded
     ()` line). Full suite: 2227 passed (2212 unchanged + 15 new).
+- **Phase 176 (current)**: closes `Desktop/MOSTRI con statistiche.txt`'s
+  Alignment-distribution column ("Neutral (50%) / Pagan (50%)") for all
+  60 real monster species. Authorized directly by the user: "Colmiamo
+  il gap: Distribuzione di Allineamento per specie... Ogni volta che si
+  crea il mondo e si piazzano i mostri per quelli che hanno due o tre
+  allineamenti si tirano le percentuali e si assegna l'allineamento"
+  ("Every time the world is created and monsters are placed, for those
+  with two or three alignments, the percentages are rolled and the
+  alignment is assigned").
+  - `models/monster.py`: new `AlignmentOption` (`{alignment, percent}`)
+    and `MONSTER_ALIGNMENT_DISTRIBUTION: dict[Monster, tuple[
+    AlignmentOption, ...]]`, covering all 60 real species (matching
+    `MONSTER_COMBAT_STATS`'s own coverage, `Monster.NOMONSTER` excluded)
+    with each species' own tuple summing to exactly 100.
+  - New `roll_monster_alignment(monster, rng) -> Alignment | None`. Per
+    the user's own wording, **the roll only happens for a 2-or-3-option
+    species** -- a single-option species (e.g. Gryphon: Neutral, no
+    percentage shown in the source) returns that one `Alignment`
+    directly without ever calling `rng.random()`. A 2-or-3-option
+    species consumes exactly one roll and walks its options via
+    cumulative percentage thresholds in the source's own listed order.
+    Returns `None` only for `Monster.NOMONSTER` (no distribution
+    recorded).
+  - **Deliberately not wired anywhere**: like Phase 150's province-
+    renaming mechanism, this is a pure, callable mechanism with no
+    connection to an actual world-generation pipeline, because this
+    project still has none (`models/feature.py`'s own docstring: "world
+    generation itself remains the blocking gap") -- nothing to wire it
+    to yet, not a gap in this phase's own scope.
+  - 12 new tests in `tests/test_monster.py`: full-coverage/sentinel-
+    exclusion/100%-sum checks across all 60 species, single/two/three-
+    option data samples, `roll_monster_alignment()`'s no-roll behavior
+    for single-option species, both sides of a two-option threshold,
+    all three segments of a three-option cumulative walk, and
+    confirmation that exactly one roll is ever consumed. Full suite:
+    2239 passed (2227 unchanged + 12 new).
 
 ## Setup
 

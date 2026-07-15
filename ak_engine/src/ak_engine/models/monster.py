@@ -142,13 +142,58 @@ mechanics/narrative hooks, not just flavor to discard, but each needs a
 change to `turn/encounter.py`'s own combat loop or `report/
 turn_report.py`'s own renderers beyond simple stat population -- left
 for a future phase, not lost; see `Desktop/MOSTRI con statistiche.txt`
-for the full table if that phase gets picked up).
+for the full table if that phase gets picked up). Troll regeneration and
+the three missile-narration footnotes were later closed (Phases 155 and
+175); Alignment distribution is closed below (Phase 176). Magic
+Abilities counts and flavor-text descriptions remain unmodeled.
+
+**Phase 176 addendum -- Alignment distribution, project-original,
+same source.** Every one of the 60 real species' own Alignment column
+in `Desktop/MOSTRI con statistiche.txt` is either a single fixed value
+("Evil") or 2-3 weighted options summing to 100% ("Neutral (50%) /
+Pagan (50%)", "Good (40%) / Druidic (30%) / Neutral (30%)"). Confirmed
+directly by the user: "Ogni volta che si crea il mondo e si piazzano i
+mostri per quelli che hanno due o tre allineamenti si tirano le
+percentuali e si assegna l'allineamento" ("Every time the world is
+created and monsters are placed, for those with two or three
+alignments, the percentages are rolled and the alignment is assigned").
+That statement fixes two design points directly:
+
+- **The roll only happens for a 2-or-3-option species.** A single-
+  option species (e.g. Gryphon: Neutral, no percentage shown) gets that
+  one Alignment directly -- `roll_monster_alignment()` below returns it
+  without ever calling `rng.random()`, mirroring how `resolve_fire_
+  arrow_duel()` only rolls a monster's own missile attack when its
+  `missile_skill` is nonzero (Phase 170) rather than always consuming a
+  roll regardless of whether one is meaningful.
+- **This is world-generation-time data, not a turn action.** The
+  rulebook itself never re-rolls a placed monster's Alignment mid-game
+  -- it's decided once, when "the world is created and monsters are
+  placed." Like Phase 150's province-renaming design (`turn/
+  rename_province.py`, mechanism-only, not connected to a parser this
+  project never built), `roll_monster_alignment()` is a pure, callable
+  mechanism with no wiring into an actual world-generation pipeline,
+  because this project still has none (`models/feature.py`'s own
+  docstring: "world generation itself remains the blocking gap") --
+  nothing to connect it to yet, not a gap in this phase's own scope.
+
+Every species' own alignment tuple sums to exactly 100 (`sum(o.percent
+for o in options) == 100`), verified by `tests/test_models.py`'s own
+Phase 176 coverage test rather than trusted by inspection alone.
+`AlignmentOption` percentages are listed in the same order the source
+table gives them, so `roll_monster_alignment()`'s cumulative-threshold
+walk reproduces the source's own ordering (matters only for which
+option the final fallback covers, since floating-point roundoff always
+resolves to *some* listed option, never an invented one).
 """
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from enum import Enum
+
+from ak_engine.models.alignment import Alignment
 
 
 class Monster(Enum):
@@ -385,6 +430,118 @@ MONSTER_COMBAT_STATS: dict[Monster, MonsterCombatStats] = {
     Monster.GW_WHALE: MonsterCombatStats((25, 35), 2, (1, 8), 0, None, MonsterSpeed.MEDIUM),
     Monster.MERMAID: MonsterCombatStats((8, 11), 0, (1, 6), 0, None, MonsterSpeed.MEDIUM),
 }
+
+
+@dataclass(frozen=True, slots=True)
+class AlignmentOption:
+    alignment: Alignment
+    percent: int  # e.g. 50 for "50%"; every species' own tuple sums to 100
+
+
+# Phase 176 -- project-original, same Desktop/MOSTRI con statistiche.txt
+# source as MONSTER_COMBAT_STATS (Phase 154). See module docstring's own
+# Phase 176 addendum for the user's exact quote and design rationale.
+MONSTER_ALIGNMENT_DISTRIBUTION: dict[Monster, tuple[AlignmentOption, ...]] = {
+    Monster.GRYPHON: (AlignmentOption(Alignment.NEUTRAL, 100),),
+    Monster.GIANT: (AlignmentOption(Alignment.NEUTRAL, 50), AlignmentOption(Alignment.PAGAN, 50)),
+    Monster.GARGOYLE: (AlignmentOption(Alignment.EVIL, 100),),
+    Monster.TROLL: (AlignmentOption(Alignment.EVIL, 100),),
+    Monster.SPECTRE: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.ELASMOSAURUS: (AlignmentOption(Alignment.NEUTRAL, 100),),
+    Monster.ROC: (AlignmentOption(Alignment.DRUID, 50), AlignmentOption(Alignment.NEUTRAL, 50)),
+    Monster.COUATL: (AlignmentOption(Alignment.DIVINE, 100),),
+    Monster.GI_EAGLE: (AlignmentOption(Alignment.DRUID, 50), AlignmentOption(Alignment.NEUTRAL, 50)),
+    Monster.SPHINX: (AlignmentOption(Alignment.EVIL, 100),),
+    Monster.R_DRAGON: (AlignmentOption(Alignment.EVIL, 100),),
+    Monster.B_DRAGON: (AlignmentOption(Alignment.EVIL, 100),),
+    Monster.S_DRAGON: (AlignmentOption(Alignment.GOOD, 50), AlignmentOption(Alignment.DRUID, 50)),
+    Monster.GO_DRAGON: (AlignmentOption(Alignment.GOOD, 100),),
+    Monster.GR_DRAGON: (AlignmentOption(Alignment.NEUTRAL, 50), AlignmentOption(Alignment.EVIL, 50)),
+    Monster.GI_WORM: (AlignmentOption(Alignment.NEUTRAL, 100),),
+    Monster.TITAN: (AlignmentOption(Alignment.DRUID, 100),),
+    Monster.BIGFOOT: (AlignmentOption(Alignment.EVIL, 50), AlignmentOption(Alignment.PAGAN, 50)),
+    Monster.ARCHER: (AlignmentOption(Alignment.EVIL, 100),),
+    Monster.SWORDSMAN: (AlignmentOption(Alignment.NEUTRAL, 50), AlignmentOption(Alignment.EVIL, 50)),
+    Monster.WHITE_MAGE: (
+        AlignmentOption(Alignment.GOOD, 40),
+        AlignmentOption(Alignment.DRUID, 30),
+        AlignmentOption(Alignment.NEUTRAL, 30),
+    ),
+    Monster.NEC_MAGE: (
+        AlignmentOption(Alignment.EVIL, 40),
+        AlignmentOption(Alignment.PAGAN, 30),
+        AlignmentOption(Alignment.NEUTRAL, 30),
+    ),
+    Monster.ELE_MAGE: (AlignmentOption(Alignment.NEUTRAL, 50), AlignmentOption(Alignment.DRUID, 50)),
+    Monster.PSY_MAGE: (AlignmentOption(Alignment.GOOD, 100),),
+    Monster.ILL_MAGE: (AlignmentOption(Alignment.DRUID, 100),),
+    Monster.WITCH: (AlignmentOption(Alignment.EVIL, 100),),
+    Monster.DRYAD: (AlignmentOption(Alignment.DRUID, 100),),
+    Monster.CENTAUR: (AlignmentOption(Alignment.GOOD, 50), AlignmentOption(Alignment.DRUID, 50)),
+    Monster.GENIE: (AlignmentOption(Alignment.GOOD, 100),),
+    Monster.GOLEM: (AlignmentOption(Alignment.NEUTRAL, 100),),
+    Monster.BASILISK: (AlignmentOption(Alignment.EVIL, 50), AlignmentOption(Alignment.PAGAN, 50)),
+    Monster.MEDUSA: (AlignmentOption(Alignment.NEUTRAL, 100),),
+    Monster.BAL_DEMON: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.MAR_DEMON: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.SUCCUBUS: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.RAKSHASHA: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.ICE_DEVIL: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.BONE_DEVIL: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.IMP: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.WEREWOLF: (AlignmentOption(Alignment.PAGAN, 100),),
+    Monster.CHIMERA: (AlignmentOption(Alignment.EVIL, 100),),
+    Monster.HYDRA: (AlignmentOption(Alignment.EVIL, 50), AlignmentOption(Alignment.PAGAN, 50)),
+    Monster.BEHOLDER: (AlignmentOption(Alignment.EVIL, 100),),
+    Monster.MINOTAUR: (AlignmentOption(Alignment.EVIL, 100),),
+    Monster.GI_WOLVERINE: (AlignmentOption(Alignment.NEUTRAL, 100),),
+    Monster.TREANT: (AlignmentOption(Alignment.DRUID, 100),),
+    Monster.GI_AMOEBA: (AlignmentOption(Alignment.NEUTRAL, 100),),
+    Monster.GI_P_MANTIS: (AlignmentOption(Alignment.EVIL, 100),),
+    Monster.GI_SCORPION: (AlignmentOption(Alignment.NEUTRAL, 100),),
+    Monster.GI_WASP: (AlignmentOption(Alignment.EVIL, 100),),
+    Monster.GI_SPIDER: (AlignmentOption(Alignment.NEUTRAL, 100),),
+    Monster.GHOST: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.VAMPIRE: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.MUMMY: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.BANSHEE: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.LICH: (AlignmentOption(Alignment.ANTI_HOLY, 100),),
+    Monster.GI_OCTOPUS: (AlignmentOption(Alignment.NEUTRAL, 50), AlignmentOption(Alignment.PAGAN, 50)),
+    Monster.GI_CLAM: (AlignmentOption(Alignment.NEUTRAL, 100),),
+    Monster.GW_WHALE: (AlignmentOption(Alignment.DRUID, 50), AlignmentOption(Alignment.NEUTRAL, 50)),
+    Monster.MERMAID: (AlignmentOption(Alignment.GOOD, 50), AlignmentOption(Alignment.DRUID, 50)),
+}
+
+
+def roll_monster_alignment(monster: Monster, rng: random.Random) -> Alignment | None:
+    """Assigns a placed monster's Alignment per ``MONSTER_ALIGNMENT_DISTRIBUTION``.
+
+    Returns ``None`` for a species with no recorded distribution (only
+    ``Monster.NOMONSTER``, the sentinel). For a single-option species,
+    returns that option directly **without consuming any roll** -- the
+    user's own confirmation (module docstring's Phase 176 addendum)
+    specifically scopes the roll to "quelli che hanno due o tre
+    allineamenti" (those with two or three alignments). For a 2-or-3-
+    option species, consumes exactly one ``rng.random()`` call and walks
+    the options in the source's own listed order via cumulative
+    percentage thresholds, so the last option always covers any
+    floating-point roundoff at the top of the range instead of falling
+    through to ``None``.
+    """
+
+    options = MONSTER_ALIGNMENT_DISTRIBUTION.get(monster)
+    if options is None:
+        return None
+    if len(options) == 1:
+        return options[0].alignment
+
+    roll = rng.random() * 100
+    cumulative = 0
+    for option in options[:-1]:
+        cumulative += option.percent
+        if roll < cumulative:
+            return option.alignment
+    return options[-1].alignment
 
 
 @dataclass(frozen=True, slots=True)

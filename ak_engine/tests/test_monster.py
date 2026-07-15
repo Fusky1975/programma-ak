@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.monster import (
+    MONSTER_ALIGNMENT_DISTRIBUTION,
     MONSTER_COMBAT_STATS,
     MONSTER_ENGAGEMENT_STATE_NAME,
     MONSTER_HP_BANDS,
     MONSTER_NAMES,
     MONSTER_STATS,
+    AlignmentOption,
     Monster,
     MonsterCombatStats,
     MonsterEngagementState,
     MonsterSpeed,
     MonsterStats,
+    roll_monster_alignment,
 )
+
+from _helpers import ScriptedRandom
 
 
 def test_monster_enum_has_61_declared_values():
@@ -129,3 +135,85 @@ def test_monster_engagement_state_name_verbatim_samples():
     assert MONSTER_ENGAGEMENT_STATE_NAME[MonsterEngagementState.BOLD] == "Emboldened"
     assert MONSTER_ENGAGEMENT_STATE_NAME[MonsterEngagementState.SOLD] == "Sold Soul"
     assert MONSTER_ENGAGEMENT_STATE_NAME[MonsterEngagementState.CALM] == "Calmed"
+
+
+# -- MONSTER_ALIGNMENT_DISTRIBUTION / roll_monster_alignment (Phase 176,
+# project-original, same Desktop/MOSTRI con statistiche.txt source as
+# MONSTER_COMBAT_STATS) --
+
+
+def test_monster_alignment_distribution_covers_every_real_species():
+    all_real = {m for m in Monster if m is not Monster.NOMONSTER}
+    assert set(MONSTER_ALIGNMENT_DISTRIBUTION.keys()) == all_real
+
+
+def test_monster_alignment_distribution_nomonster_sentinel_has_no_entry():
+    assert Monster.NOMONSTER not in MONSTER_ALIGNMENT_DISTRIBUTION
+
+
+def test_monster_alignment_distribution_every_species_sums_to_100_percent():
+    for monster, options in MONSTER_ALIGNMENT_DISTRIBUTION.items():
+        assert sum(option.percent for option in options) == 100, monster
+
+
+def test_monster_alignment_distribution_single_option_sample():
+    assert MONSTER_ALIGNMENT_DISTRIBUTION[Monster.GRYPHON] == (AlignmentOption(Alignment.NEUTRAL, 100),)
+
+
+def test_monster_alignment_distribution_two_option_sample():
+    assert MONSTER_ALIGNMENT_DISTRIBUTION[Monster.GIANT] == (
+        AlignmentOption(Alignment.NEUTRAL, 50),
+        AlignmentOption(Alignment.PAGAN, 50),
+    )
+
+
+def test_monster_alignment_distribution_three_option_sample():
+    # Renegade Priest -- Good (40%) / Druidic (30%) / Neutral (30%).
+    assert MONSTER_ALIGNMENT_DISTRIBUTION[Monster.WHITE_MAGE] == (
+        AlignmentOption(Alignment.GOOD, 40),
+        AlignmentOption(Alignment.DRUID, 30),
+        AlignmentOption(Alignment.NEUTRAL, 30),
+    )
+
+
+def test_roll_monster_alignment_returns_none_for_the_nomonster_sentinel():
+    assert roll_monster_alignment(Monster.NOMONSTER, ScriptedRandom([])) is None
+
+
+def test_roll_monster_alignment_single_option_species_never_consumes_a_roll():
+    # The user's own confirmation scopes the roll to species with "due o
+    # tre allineamenti" -- a single-option species must not call
+    # rng.random() at all (ScriptedRandom([]) raises IndexError if it does).
+    rng = ScriptedRandom([])
+    assert roll_monster_alignment(Monster.GRYPHON, rng) is Alignment.NEUTRAL
+
+
+def test_roll_monster_alignment_two_option_species_below_threshold():
+    # Giant: Neutral (50%) / Pagan (50%) -- 0.49*100 = 49 < 50 -> Neutral.
+    rng = ScriptedRandom([0.49])
+    assert roll_monster_alignment(Monster.GIANT, rng) is Alignment.NEUTRAL
+
+
+def test_roll_monster_alignment_two_option_species_at_and_above_threshold():
+    # 0.5*100 = 50, not < 50 -> falls through to the second option.
+    rng = ScriptedRandom([0.5])
+    assert roll_monster_alignment(Monster.GIANT, rng) is Alignment.PAGAN
+
+    rng = ScriptedRandom([0.99])
+    assert roll_monster_alignment(Monster.GIANT, rng) is Alignment.PAGAN
+
+
+def test_roll_monster_alignment_two_option_species_consumes_exactly_one_roll():
+    # A second .random() call would raise IndexError if consumed.
+    rng = ScriptedRandom([0.1])
+    roll_monster_alignment(Monster.GIANT, rng)
+
+
+def test_roll_monster_alignment_three_option_species_walks_cumulative_thresholds():
+    # Renegade Priest: Good (40%) / Druidic (30%) / Neutral (30%).
+    assert roll_monster_alignment(Monster.WHITE_MAGE, ScriptedRandom([0.0])) is Alignment.GOOD
+    assert roll_monster_alignment(Monster.WHITE_MAGE, ScriptedRandom([0.39])) is Alignment.GOOD
+    assert roll_monster_alignment(Monster.WHITE_MAGE, ScriptedRandom([0.40])) is Alignment.DRUID
+    assert roll_monster_alignment(Monster.WHITE_MAGE, ScriptedRandom([0.69])) is Alignment.DRUID
+    assert roll_monster_alignment(Monster.WHITE_MAGE, ScriptedRandom([0.70])) is Alignment.NEUTRAL
+    assert roll_monster_alignment(Monster.WHITE_MAGE, ScriptedRandom([0.99])) is Alignment.NEUTRAL
