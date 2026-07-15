@@ -6310,7 +6310,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `cast_execution.py` (Part Sea/Flood/Earthquake eligibility all
     reading the effective terrain). Full suite: 2188 passed (2179
     unchanged + 9 new).
-- **Phase 169 (current)**: implements Search's own [5.6] Flee tactic,
+- **Phase 169**: implements Search's own [5.6] Flee tactic,
   previously reported as an honest `combat_resolved=False` alongside
   Fire Arrow/Scout/Steal-only plans. Research (an Explore-agent report on
   candidate next phases) surfaced this as the recommended, narrowest-
@@ -6349,6 +6349,55 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     consuming a flee roll even when the very first scripted roll would
     satisfy the chance. Full suite: 2192 passed (2188 unchanged + 4
     new).
+- **Phase 170 (current)**: implements Search's own [5.2] Fire Arrow
+  tactic, previously left unwired specifically because "nothing in any
+  available source says a monster's own `missile_skill` drives an
+  equivalent formula" -- reversing that exclusion, since `models/
+  monster.py`'s own Monster Table quote sits directly beneath [5.2]'s
+  formula and gives every species an explicit Missile Skill/Damage
+  column, which *is* that source.
+  - **Encounter Plan tactics now execute in strict list order (a
+    correction to Phase 169's own design)**: Regolamento AK.txt's own
+    worked example ([11.3], "ESEMPI DI PIANI D'INCONTRO") -- "FI, FL.
+    Significato: Tirare con l'Arco, poi fuggire" ("Shoot with the bow,
+    then flee") -- proves tactics run in the order listed, each one
+    attempted until it resolves the encounter or exhausts, before
+    falling through to the next. Phase 169 had rolled `Maneuver.FLEE`
+    unconditionally *before* Melee regardless of its position in the
+    plan; that only ever matched by coincidence (every tested plan
+    happened to list Flee before Melee already). `execute_search()` is
+    rewritten to walk `request.tactics` in order; unwired tactics
+    (Steal, Talk, Say, Give, Fulfill, Scout, Cast, Use_MI, Beg) are
+    silently skipped mid-walk rather than aborting it, matching how real
+    plans mix wired and unwired tactics (e.g. [11.3]'s own
+    "ST, CA-FI, ME, SC").
+  - `turn/encounter.py`: new `Combatant.missile_damage_range` (default
+    `FIRE_ARROW_DAMAGE_RANGE`, mirroring `melee_damage_range`'s own
+    Phase 132 precedent) lets a monster combatant supply its own Fire
+    Arrow damage die from `models/monster.py MonsterCombatStats
+    .missile_damage`; `roll_fire_arrow_attack()`/`resolve_fire_arrow_duel()`
+    now read each attacker's own field instead of the module-level
+    constant.
+  - `turn/search_execution.py`: `_leader_combatant()` now also reads
+    `Ability.ARCHERY`; the monster `Combatant` gets
+    `archery_skill=stats.missile_skill` and `missile_damage_range=
+    stats.missile_damage` (falling back to `FIRE_ARROW_DAMAGE_RANGE`
+    when `None`, i.e. an unarmed species like Gargoyle). A monster with
+    `missile_skill=0` simply gets zero free attacks
+    (`fire_arrow_free_attacks(0) == 0`) -- a natural formula consequence,
+    not a special-cased exclusion.
+  - 3 new tests in `tests/test_encounter.py` (missile damage range
+    defaults, `roll_fire_arrow_attack`'s custom range, `resolve_fire_arrow
+    _duel` honoring each combatant's own die) and 7 new tests in
+    `tests/test_search_execution.py` (Fire Arrow win/loss, exhaustion
+    falling through to Melee, the real "Shoot then Flee" ordering
+    example, an unwired tactic being skipped mid-plan, and the monster
+    combatant correctly carrying `missile_skill`/`missile_damage` from
+    `MONSTER_COMBAT_STATS`, including the unarmed-species fallback). 2
+    pre-existing tests updated for the new tactic-walk order (padding
+    for the monster's hit-points draw now running before the flee roll)
+    and the generalized "no wired tactic" reason string. Full suite:
+    2202 passed (2192 unchanged + 10 new).
 
 ## Setup
 

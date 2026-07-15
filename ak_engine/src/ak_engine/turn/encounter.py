@@ -90,6 +90,20 @@ rulebook mechanic, just not attempted yet):
   the last of these needs interactive player choice this automated
   engine has no channel for at all, not just missing game-state logic.
 
+**Phase 170 addendum -- monster-specific missile damage, mirroring Phase
+132's melee precedent.** Wiring Fire Arrow into Search (see ``turn/
+search_execution.py``'s own Phase 170 addendum) needs a monster's own
+missile damage die too -- the Monster Table gives species-specific
+values (Giant `1-7`, Archer `3-9`, etc.) via ``models/monster.py
+MonsterCombatStats.missile_damage``, distinct from the character-only
+``FIRE_ARROW_DAMAGE_RANGE`` (`1-6`) from [5.2]. `Combatant
+.missile_damage_range` (default `FIRE_ARROW_DAMAGE_RANGE`, so every
+existing character-vs-character caller is unaffected) lets a monster
+combatant supply its own die; `roll_fire_arrow_attack` and
+`resolve_fire_arrow_duel` now read each attacker's own field instead of
+the module-level constant, the same pattern `roll_melee_attack`/
+`resolve_melee_duel` already established.
+
 **Phase 155 addendum -- Troll regeneration, project-original.**
 `Desktop/MOSTRI con statistiche.txt` (Phase 154's own combat-stats
 source, confirmed by the user to be their own compilation) footnote
@@ -156,6 +170,12 @@ class Combatant:
     # combatant overrides it with its own species die from
     # `models/monster.py MONSTER_STATS` -- see Phase 132 addendum above.
     melee_damage_range: tuple[int, int] = MELEE_DAMAGE_RANGE
+    # This combatant's own Fire Arrow damage die -- defaults to the
+    # character rule ([5.2]: "the damage is 1-6 hit points"). A monster
+    # combatant overrides it with its own species die from
+    # `models/monster.py MonsterCombatStats.missile_damage` -- see
+    # Phase 170 addendum above.
+    missile_damage_range: tuple[int, int] = FIRE_ARROW_DAMAGE_RANGE
     # Hit points regenerated at the end of each round this combatant
     # survives -- 0 for every existing caller. Troll's own regeneration
     # rule (Phase 155 addendum above) is the only real, sourced user so
@@ -197,11 +217,18 @@ def roll_melee_attack(rng: random.Random, damage_range: tuple[int, int] = MELEE_
     return 0
 
 
-def roll_fire_arrow_attack(archery_skill: int, rng: random.Random) -> int:
-    """Rulebook [5.2]: one Fire Arrow shot. Returns damage dealt (0 on a miss)."""
+def roll_fire_arrow_attack(
+    archery_skill: int, rng: random.Random, damage_range: tuple[int, int] = FIRE_ARROW_DAMAGE_RANGE
+) -> int:
+    """Rulebook [5.2]: one Fire Arrow shot. Returns damage dealt (0 on a miss).
+
+    ``damage_range`` defaults to the character rule; pass an attacker's
+    own ``Combatant.missile_damage_range`` for a species-specific die
+    (Phase 170 addendum, module docstring).
+    """
 
     if rng.random() < fire_arrow_hit_chance(archery_skill):
-        return rng.randint(*FIRE_ARROW_DAMAGE_RANGE)
+        return rng.randint(*damage_range)
     return 0
 
 
@@ -298,12 +325,12 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
                 if used_a >= shots_a:
                     continue
                 used_a += 1
-                b.hit_points -= roll_fire_arrow_attack(skill_a, rng)
+                b.hit_points -= roll_fire_arrow_attack(skill_a, rng, damage_range=a.missile_damage_range)
             else:
                 if used_b >= shots_b:
                     continue
                 used_b += 1
-                a.hit_points -= roll_fire_arrow_attack(skill_b, rng)
+                a.hit_points -= roll_fire_arrow_attack(skill_b, rng, damage_range=b.missile_damage_range)
         if a.hit_points <= 0 or b.hit_points <= 0:
             break
         _apply_end_of_round_regeneration(a, b)

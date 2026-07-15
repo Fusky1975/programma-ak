@@ -165,6 +165,34 @@ def test_resolve_melee_duel_uses_each_combatants_own_melee_damage_range():
     assert character.hit_points <= 0
 
 
+# -- Phase 170: monster-specific missile damage range --
+
+
+def test_combatant_defaults_missile_damage_range_to_the_character_rule():
+    assert Combatant("A").missile_damage_range == (1, 6)
+
+
+def test_roll_fire_arrow_attack_uses_the_supplied_damage_range():
+    rng = ScriptedRandom([0.1, 0.5])  # under the hit chance -> hit, then the damage roll
+    damage = roll_fire_arrow_attack(0, rng, damage_range=(3, 9))
+    assert 3 <= damage <= 9
+
+
+def test_resolve_fire_arrow_duel_uses_each_combatants_own_missile_damage_range():
+    # A monster combatant (Archer-style 3-9 die, skill 1 -> 1 free attack)
+    # always acts first (higher archery_skill) and always hits; the
+    # character combatant starts at 1 hit point, so any positive damage
+    # from the monster's own 3-9 die is lethal regardless of magnitude.
+    monster = Combatant("Archer", archery_skill=1, hit_points=12, missile_damage_range=(3, 9))
+    character = Combatant("Hero", archery_skill=0, hit_points=1)
+    rng = ScriptedRandom([0.1, 0.5])  # monster: hit-chance roll, then damage roll
+
+    result = resolve_fire_arrow_duel(monster, character, rng)
+
+    assert result.winner == "a"
+    assert character.hit_points <= 0
+
+
 def test_resolve_fire_arrow_duel_higher_skill_keeps_firing_solo_after_the_other_runs_out():
     # A(skill 2) gets 2 shots, B(skill 0) gets 0 -- B never fires at all,
     # so only A's shots can matter; confirmed via a miss-then-hit script

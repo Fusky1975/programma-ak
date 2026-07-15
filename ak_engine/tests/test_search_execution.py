@@ -9,7 +9,7 @@ from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
-from ak_engine.turn.encounter import EncounterCombatResult
+from ak_engine.turn.encounter import FIRE_ARROW_DAMAGE_RANGE, EncounterCombatResult
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.search_execution import (
     FLEE_CHANCE,
@@ -114,7 +114,7 @@ def test_execute_search_no_melee_tactic_reports_unresolved():
 
     assert result.accepted is True
     assert result.combat_resolved is False
-    assert "no Melee tactic" in result.reason
+    assert "no Melee or Fire Arrow tactic" in result.reason
 
 
 def test_execute_search_leader_wins_marks_feature_looted():
@@ -212,7 +212,11 @@ def test_execute_search_flee_tactic_success_ends_search_without_combat():
         feature_id=1, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.FLEE), SearchTactic(maneuver=Maneuver.MELEE)]
     )
 
-    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1]))
+    # Padding: the monster's own hit_points draw (rng.randint()) now runs
+    # before the tactic walk even starts, consuming an unknown number of
+    # randoms from the front of the queue -- every value here is 0.1 (< the
+    # 20% flee chance), so whichever one lands on the flee roll still succeeds.
+    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
 
     assert result.accepted is True
     assert result.combat_resolved is False
@@ -256,3 +260,137 @@ def test_execute_search_no_flee_tactic_never_rolls_for_it():
 
     assert mock_resolve.called
     assert result.fled is False
+
+
+# -- Phase 170: Fire Arrow (rulebook [5.2]) --
+
+
+def _shoot_request(feature_id: int, *maneuvers: Maneuver) -> SearchRequest:
+    tactics = [SearchTactic(maneuver=m) for m in maneuvers] or [SearchTactic(maneuver=Maneuver.SHOOT)]
+    return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=tactics)
+
+
+def test_execute_search_shoot_tactic_leader_wins_marks_feature_looted():
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, _shoot_request(1, Maneuver.SHOOT), random.Random(0))
+
+    assert mock_resolve.called
+    assert result.accepted is True
+    assert result.combat_resolved is True
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+    assert feature.looted is True
+    assert LEADER_ID in state.leaders
+
+
+def test_execute_search_shoot_tactic_monster_wins_removes_leader():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner="b", rounds=1)
+        result = execute_search(state, LEADER_ID, _shoot_request(1, Maneuver.SHOOT), random.Random(0))
+
+    assert mock_resolve.called
+    assert result.accepted is True
+    assert result.combat_resolved is True
+    assert result.winner == "monster"
+    assert result.leader_killed is True
+    assert LEADER_ID not in state.leaders
+    assert LEADER_ID in state.dead_leaders
+
+
+def test_execute_search_shoot_tactic_exhausted_falls_through_to_melee():
+    # Mirrors Regolamento AK.txt [11.3]'s own worked example ("FI, FL.
+    # Significato: Tirare con l'Arco, poi fuggire") -- Fire Arrow runs
+    # first; when it exhausts its free attacks with nobody dead, the
+    # plan's next tactic (here Melee, not Flee) still runs.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _shoot_request(1, Maneuver.SHOOT, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_shoot.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_shoot.called
+    assert mock_melee.called
+    assert result.combat_resolved is True
+    assert result.winner == "leader"
+
+
+def test_execute_search_shoot_then_flee_tries_shoot_first():
+    # Same real example as above, but this time Flee genuinely is the
+    # plan's second tactic -- confirms Fire Arrow is attempted before
+    # Flee, not the other way around (Phase 169's original bug).
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GRYPHON)
+    state.add_feature(feature)
+    request = _shoot_request(1, Maneuver.SHOOT, Maneuver.FLEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot:
+        mock_shoot.return_value = EncounterCombatResult(winner=None, rounds=1)
+        # Gryphon is Fast (20% flee chance); every padding value is 0.1 so
+        # whichever one lands on the flee roll still succeeds.
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert mock_shoot.called
+    assert result.combat_resolved is False
+    assert result.fled is True
+
+
+def test_execute_search_unwired_tactic_is_skipped_not_aborting():
+    # "ST, CA-FI, ME, SC" ([11.3]) mixes Steal and Cast (both unwired)
+    # with Melee -- an unwired tactic must be silently skipped, not treat
+    # the whole plan as unresolvable.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _shoot_request(1, Maneuver.STEAL, Maneuver.CAST, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert result.combat_resolved is True
+    assert result.winner == "leader"
+
+
+def test_execute_search_monster_combatant_carries_missile_skill_and_damage():
+    # Archer: missile_skill=3, missile_damage=(3, 9) -- both must reach
+    # the monster's own Combatant, not the character-default (1-6).
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, _shoot_request(1, Maneuver.SHOOT), random.Random(0))
+
+    monster_combatant = mock_resolve.call_args[0][1]
+    stats = MONSTER_COMBAT_STATS[Monster.ARCHER]
+    assert monster_combatant.archery_skill == stats.missile_skill == 3
+    assert monster_combatant.missile_damage_range == stats.missile_damage == (3, 9)
+
+
+def test_execute_search_monster_missile_damage_range_defaults_when_unarmed():
+    # Gargoyle has missile_skill=0 and missile_damage=None (no ranged
+    # attack at all) -- the Combatant must fall back to the character
+    # rule rather than crash on an unpacking of None.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _shoot_request(1, Maneuver.SHOOT), random.Random(0))
+
+    monster_combatant = mock_resolve.call_args[0][1]
+    assert monster_combatant.archery_skill == 0
+    assert monster_combatant.missile_damage_range == FIRE_ARROW_DAMAGE_RANGE
