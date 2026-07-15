@@ -6,6 +6,9 @@ from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_BASE_HIT_CHANCE,
     FIRE_ARROW_HIT_CHANCE_PER_LEVEL,
+    HOLY_SYMBOL_HIT_CHANCE_REDUCTION_PER_LEVEL,
+    HOLY_SYMBOL_UNDEAD_DAMAGE_RANGE_PER_LEVEL,
+    HOLY_SYMBOL_UNDEAD_HIT_CHANCE_REDUCTION_PER_LEVEL,
     MELEE_HIT_CHANCE,
     NEUTRAL_DUELIST_BONUS,
     SPELL_DISRUPTION_CHANCE_CAP,
@@ -17,10 +20,12 @@ from ak_engine.turn.encounter import (
     effective_melee_skill,
     fire_arrow_free_attacks,
     fire_arrow_hit_chance,
+    holy_symbol_hit_chance,
     resolve_fire_arrow_duel,
     resolve_melee_duel,
     resolve_spell_disruption,
     roll_fire_arrow_attack,
+    roll_holy_symbol_undead_damage,
     roll_melee_attack,
     spell_disruption_chance,
 )
@@ -348,3 +353,66 @@ def test_resolve_spell_disruption_one_hit_matches_the_worked_example():
 def test_resolve_spell_disruption_consumes_exactly_one_roll_when_hits_taken():
     rng = ScriptedRandom([0.99])  # a second .random() call would raise IndexError
     resolve_spell_disruption(2, rng)
+
+
+# -- Phase 180: Holy Symbol [HO] --
+
+
+def test_holy_symbol_hit_chance_matches_the_worked_example():
+    # Level 1 against a 50% base chance -> reduced by 5% (10% of 50%).
+    assert holy_symbol_hit_chance(0.50, 1) == pytest.approx(0.45)
+
+
+def test_holy_symbol_hit_chance_scales_with_skill_level():
+    assert holy_symbol_hit_chance(0.50, 2) == pytest.approx(0.50 * (1 - 2 * HOLY_SYMBOL_HIT_CHANCE_REDUCTION_PER_LEVEL))
+    assert holy_symbol_hit_chance(0.50, 0) == pytest.approx(0.50)
+
+
+def test_holy_symbol_hit_chance_undead_or_anti_holy_uses_the_20_percent_rate():
+    # Same level-1-vs-50% worked example, but against an Undead/Anti-Holy
+    # target the reduction rate doubles to 20% per level -> 40%, not 45%.
+    assert holy_symbol_hit_chance(0.50, 1, target_is_undead_or_anti_holy=True) == pytest.approx(0.40)
+
+
+def test_holy_symbol_hit_chance_floors_at_zero_instead_of_going_negative():
+    assert holy_symbol_hit_chance(0.50, 100, target_is_undead_or_anti_holy=True) == 0.0
+
+
+def test_roll_holy_symbol_undead_damage_level_zero_returns_zero_without_a_roll():
+    rng = ScriptedRandom([])
+    assert roll_holy_symbol_undead_damage(0, rng) == 0
+
+
+def test_roll_holy_symbol_undead_damage_range_at_level_1():
+    # ScriptedRandom overrides random() but not getrandbits(), so
+    # rng.randint() itself draws from the scripted queue via
+    # _randbelow_without_getrandbits (one random() draw per randint()
+    # call for a 4-wide range, since 4 evenly divides the float
+    # resolution) -- same mechanism the file's pre-existing
+    # roll_melee_attack tests already rely on.
+    rng = ScriptedRandom([0.0])
+    damage = roll_holy_symbol_undead_damage(1, rng)
+    assert 1 <= damage <= 4
+
+
+def test_roll_holy_symbol_undead_damage_sums_one_independent_roll_per_level():
+    # Level 2 -> two separate 1-4 rolls, summed (confirmed range 2-8),
+    # not a single roll scaled or multiplied by level -- verified by
+    # counting how many times the underlying random() draw is consumed.
+    rng = ScriptedRandom([0.0, 0.5])
+    call_count = 0
+    real_random = rng.random
+
+    def counting_random():
+        nonlocal call_count
+        call_count += 1
+        return real_random()
+
+    rng.random = counting_random
+    damage = roll_holy_symbol_undead_damage(2, rng)
+    assert call_count == 2
+    assert 2 <= damage <= 8
+
+
+def test_roll_holy_symbol_undead_damage_range_is_1_to_4_per_level():
+    assert HOLY_SYMBOL_UNDEAD_DAMAGE_RANGE_PER_LEVEL == (1, 4)

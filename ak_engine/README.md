@@ -6718,7 +6718,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     resolution when both sides want Shoot, the leader's own Undead
     alignment threading into the guardian's own roll). Full suite: 2271
     passed (2246 unchanged + 25 new).
-- **Phase 179 (current)**: the three combat ranges, and the spell-
+- **Phase 179**: the three combat ranges, and the spell-
   disruption formula. Authorized directly by the user ("progetta e
   implementa, poi nelle prossime sessioni ti illustrero' gli
   incantesimi" -- "design and implement, then in future sessions I'll
@@ -6758,6 +6758,66 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     no-roll case, the worked example's own exact 1-hit/20% boundary,
     and single-roll consumption. Full suite: 2277 passed (2271
     unchanged + 6 new).
+- **Phase 180 (current)**: Holy Symbol [HO], the first of an unknown-
+  length series of individual Personal-Combat spell effects the user
+  is walking through "nelle prossime sessioni" (across future
+  sessions), project-original (user-supplied, project author). Quoted
+  in full: "Holy Symbol [HO] (Incantesimo di Combattimento
+  Individuale): il Simbolo Sacro serve ad invocare la protezione
+  divina e riduce le probabilita' dell'avversario di colpire nel tiro
+  con l'arco e nel corpo a corpo del 10% per livello di abilita'. Ad
+  esempio, se un giocatore che e' al livello 1 combatte contro un
+  avversario che ha la probabilita' base di colpire pari al 50%, la
+  ridurra' del 5% (il 10% del 50% equivale al 5%). Se usato contro un
+  personaggio o un mostro Non-Morto, come un vampiro o un fantasma,
+  oppure contro un mostro anti-holy come un demone, questo incantesimo
+  riduce la probabilita' di colpire del 20% per livello di abilita' e
+  infligge 1-4 punti ferita di danno per livello di abilita'."
+  - `turn/encounter.py`: new `holy_symbol_hit_chance(base_hit_chance,
+    skill_level, *, target_is_undead_or_anti_holy=False) -> float`,
+    applying the reduction as a multiplier on the opponent's own base
+    hit chance (`base_hit_chance * (1 - rate * skill_level)`, matching
+    the worked example exactly: level 1 vs. a 50% base -> 45%), floored
+    at 0% as an engineering safeguard, not a guessed game-balance rule.
+    `rate` is `HOLY_SYMBOL_HIT_CHANCE_REDUCTION_PER_LEVEL` (0.10)
+    normally, or `HOLY_SYMBOL_UNDEAD_HIT_CHANCE_REDUCTION_PER_LEVEL`
+    (0.20) against an Undead or Anti-Holy target.
+  - New `roll_holy_symbol_undead_damage(skill_level, rng) -> int`: one
+    independent 1-4 die (`HOLY_SYMBOL_UNDEAD_DAMAGE_RANGE_PER_LEVEL`)
+    per skill level, summed -- **confirmed directly by the user** via
+    `AskUserQuestion`, since "1-4 punti ferita di danno per livello di
+    abilita'" was genuinely ambiguous between several real conventions
+    (a single roll scaled by level, a single roll multiplied by level,
+    or one independent roll per level summed). Level 2 rolls two
+    separate 1-4 dice and adds them (range 2-8). `skill_level` 0
+    returns 0 without consuming a roll, the same no-roll-when-the-
+    outcome-is-fixed convention `resolve_spell_disruption()` (Phase
+    179) already established.
+  - **Who counts as "Undead or Anti-Holy" is left to the caller**, not
+    computed inside these functions: `models/alignment.py Alignment.
+    ANTI_HOLY` already covers exactly this category in this project's
+    own data (`models/monster.py MONSTER_ALIGNMENT_DISTRIBUTION`,
+    Phase 176 -- every species the source names as an example, Ghost/
+    Vampire/Banshee/Mummy/Lich/Spectre and every demon, Balrog/
+    Marilith/Succubus/Rakshasha/Ice_Devil/Bone_Devil/Imp, is a 100%-
+    `ANTI_HOLY` species there), so a future wiring phase can pass
+    `target.alignment is Alignment.ANTI_HOLY` directly -- these pure
+    functions just take a `target_is_undead_or_anti_holy: bool` flag
+    rather than reaching into `GameState` themselves.
+  - **Not wired into `turn/search_execution.py`'s combat resolution
+    this phase either**, for the same reason as Phase 179's own
+    primitives: this is the first of an unknown-sized set of Personal-
+    Combat spells still to come, and wiring a real `CAST`-tactic combat
+    engine before more of that set is known would mean redesigning it
+    repeatedly as each new spell arrives.
+  - 8 new tests in `tests/test_encounter.py`: the worked-example hit-
+    chance case (level 1 vs. 50% -> 45%), per-level scaling, the
+    Undead/Anti-Holy 20%-per-level variant, a 0%-floor edge case at a
+    high skill level, the level-0 no-roll case, the damage-roll's 1-4
+    range at level 1, the confirmed one-roll-per-level-summed
+    convention (verified by counting the underlying `random()` draws,
+    not just checking the output range), and the damage range constant
+    itself. Full suite: 2285 passed (2277 unchanged + 8 new).
 
 ## Setup
 

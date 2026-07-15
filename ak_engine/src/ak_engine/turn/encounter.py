@@ -198,6 +198,57 @@ for that future phase, the same "confirmed mechanic modeled before its
 consuming pipeline exists" pattern `models/monster.py roll_monster_
 alignment()` (Phase 176) and `models/monster_encounter_plan.py roll_
 monster_encounter_plan()` (Phase 178) already established.
+
+**Phase 180 addendum -- Holy Symbol [HO], the first Personal-Combat
+spell effect, project-original (user-supplied, project author).**
+Quoted in full: "Holy Symbol [HO] (Incantesimo di Combattimento
+Individuale): il Simbolo Sacro serve ad invocare la protezione divina
+e riduce le probabilita' dell'avversario di colpire nel tiro con
+l'arco e nel corpo a corpo del 10% per livello di abilita'. Ad esempio,
+se un giocatore che e' al livello 1 combatte contro un avversario che
+ha la probabilita' base di colpire pari al 50%, la ridurra' del 5% (il
+10% del 50% equivale al 5%). Se usato contro un personaggio o un
+mostro Non-Morto, come un vampiro o un fantasma, oppure contro un
+mostro anti-holy come un demone, questo incantesimo riduce la
+probabilita' di colpire del 20% per livello di abilita' e infligge 1-4
+punti ferita di danno per livello di abilita'." ("Holy Symbol invokes
+divine protection, reducing the opponent's own chance to hit -- both
+Fire Arrow and Melee -- by 10% of that base chance per caster skill
+level [worked example: level 1 against a 50% base chance reduces it by
+5%, since 10% of 50% is 5%]. Against an Undead character or monster
+[e.g. a vampire or ghost] or an Anti-Holy monster [e.g. a demon], the
+reduction is 20% per level instead, and the spell also inflicts 1-4
+damage points per skill level.")
+
+`holy_symbol_hit_chance()` applies the reduction as a multiplier on the
+opponent's own base hit chance (`base_hit_chance * (1 - rate *
+skill_level)`, matching the worked example exactly), floored at 0% --
+an engineering safeguard against a level high enough to reduce the
+chance below zero, not a guessed game-balance rule. `roll_holy_symbol_
+undead_damage()` rolls the Undead/Anti-Holy bonus damage as one
+independent 1-4 die per skill level, summed -- **confirmed directly by
+the user** (asked directly, since "1-4 per level" is genuinely
+ambiguous between several real conventions): level 2 rolls two separate
+1-4 dice and adds them (range 2-8), not a single roll scaled or
+multiplied by level.
+
+**Who counts as "Undead or Anti-Holy" is left to the caller**, not
+computed inside these functions: `models/alignment.py Alignment.
+ANTI_HOLY` already covers exactly this category in this project's own
+data (`models/monster.py MONSTER_ALIGNMENT_DISTRIBUTION` -- every
+species the source names as an example, Ghost/Vampire/Banshee/Mummy/
+Lich/Spectre and every demon, Balrog/Marilith/Succubus/Rakshasha/Ice_
+Devil/Bone_Devil/Imp, is a 100%-`ANTI_HOLY` species there), so a future
+wiring phase can pass `target.alignment is Alignment.ANTI_HOLY`
+directly -- these pure functions just take a `target_is_undead_or_
+anti_holy: bool` flag rather than reaching into `GameState` themselves.
+
+**Not wired into `turn/search_execution.py`'s combat resolution this
+phase either**, for the same reason as Phase 179's own primitives: this
+is the first of an unknown-sized set of Personal-Combat spells the user
+is walking through "nelle prossime sessioni" (across future sessions) --
+wiring a real `CAST`-tactic combat engine before more of that set is
+known would mean redesigning it repeatedly as each new spell arrives.
 """
 
 from __future__ import annotations
@@ -270,6 +321,44 @@ def resolve_spell_disruption(hits_taken_this_round: int, rng: random.Random) -> 
     if hits_taken_this_round <= 0:
         return False
     return rng.random() < spell_disruption_chance(hits_taken_this_round)
+
+
+# Holy Symbol [HO], module docstring's own Phase 180 addendum -- project-
+# original, user-supplied. 10%/level normally, 20%/level against an
+# Undead or Anti-Holy target; 1-4 damage per level, Undead/Anti-Holy only.
+HOLY_SYMBOL_HIT_CHANCE_REDUCTION_PER_LEVEL = 0.10
+HOLY_SYMBOL_UNDEAD_HIT_CHANCE_REDUCTION_PER_LEVEL = 0.20
+HOLY_SYMBOL_UNDEAD_DAMAGE_RANGE_PER_LEVEL = (1, 4)
+
+
+def holy_symbol_hit_chance(
+    base_hit_chance: float, skill_level: int, *, target_is_undead_or_anti_holy: bool = False
+) -> float:
+    """Holy Symbol's own reduction of the *opponent's* hit chance -- see
+    module docstring's Phase 180 addendum for the quoted source and the
+    worked example this matches exactly (level 1 vs. a 50% base chance
+    -> 45%). Floored at 0% so an unusually high skill level can't drive
+    the result negative.
+    """
+
+    rate = (
+        HOLY_SYMBOL_UNDEAD_HIT_CHANCE_REDUCTION_PER_LEVEL
+        if target_is_undead_or_anti_holy
+        else HOLY_SYMBOL_HIT_CHANCE_REDUCTION_PER_LEVEL
+    )
+    return max(0.0, base_hit_chance * (1.0 - rate * skill_level))
+
+
+def roll_holy_symbol_undead_damage(skill_level: int, rng: random.Random) -> int:
+    """Holy Symbol's bonus damage against an Undead or Anti-Holy target --
+    one independent 1-4 roll per skill level, summed (module docstring's
+    Phase 180 addendum: confirmed directly by the user). ``skill_level``
+    0 returns 0 without consuming a roll, the same no-roll-when-the-
+    outcome-is-fixed convention ``resolve_spell_disruption()`` above
+    already established.
+    """
+
+    return sum(rng.randint(*HOLY_SYMBOL_UNDEAD_DAMAGE_RANGE_PER_LEVEL) for _ in range(skill_level))
 
 
 @dataclass(slots=True)
