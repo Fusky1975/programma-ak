@@ -243,6 +243,60 @@ SPELL_NAME: dict[Spell, str] = {
 }
 
 
+# CTBOTH.PAS `spab` (~lines 721-740), verbatim, positional with `Spell`'s
+# own 35 real ordinals (0-34) -- the two-letter mnemonic `RUMORS.PAS
+# Write_SEP` (~line 1019) writes after a `CA-` prefix when serializing an
+# Encounter Plan's own Cast tactic (`WRITE(playfile,'-',spab[spell(...)])`),
+# e.g. `CA-HA` = casting `HAND_OF_DEATH`. `NOSPELL` (35) is deliberately
+# excluded, the same table-misalignment reason `SPELL_NAME`'s own docstring
+# above already gives for excluding it there (`spab`'s own `'NS'` entry
+# sits at index 55, after the 20 unused `es1`-`es20` extension-slot
+# entries, not at index 35) -- never a real Cast target either way.
+# Phase 178 -- built to decode Desktop/Piani speciali d'incontro dei
+# mostri.txt's own `CA-XX` notation into `models/monster_encounter_plan.py
+# MONSTER_ENCOUNTER_PLANS`.
+SPELL_ABBREVIATION: dict[Spell, str] = {
+    Spell.RESURRECTION: "RE",
+    Spell.PART_SEA: "PA",
+    Spell.BLESS: "BL",
+    Spell.HOLY_SYMBOL: "HO",
+    Spell.SKELETAL_ARMY: "SK",
+    Spell.KILL_ENEMY: "KI",
+    Spell.PLAGUE: "PL",
+    Spell.HAND_OF_DEATH: "HA",
+    Spell.FLOOD: "FL",
+    Spell.TORNADO: "TO",
+    Spell.EARTHQUAKE: "EA",
+    Spell.FIREBALL: "FI",
+    Spell.CHARM: "CH",
+    Spell.ORATORY: "OR",
+    Spell.CLAIRVOYANCE: "CL",
+    Spell.PSYCHIC_BLAST: "PS",
+    Spell.ILLUS_TERRAIN: "IL",
+    Spell.ILLUS_ARMIES: "PH",
+    Spell.HIDE_FEATURE: "HI",
+    Spell.INVISIBILITY: "IN",
+    Spell.SPIRITWRACK: "SP",
+    Spell.CONTROL_UNDEAD: "CO",
+    Spell.ICE_SUSPEND: "IC",
+    Spell.TELEK_STORM: "TE",
+    Spell.MIRROR_IMAGE: "MI",
+    Spell.GATE_ANGEL: "GA",
+    Spell.HEAL: "WH",
+    Spell.SCAR_TERRAIN: "ST",
+    Spell.GATE_DEMON: "GD",
+    Spell.MYSTIC_WINDS: "MW",
+    Spell.LAVA_POOL: "LP",
+    Spell.LOCATE_OBJECT: "LO",
+    Spell.AUGUR_COMBAT: "AC",
+    Spell.ILLUS_FOG: "IF",
+    Spell.ILLUS_HERO: "IH",
+}
+
+# Reverse lookup -- every value above is unique, so this inverts cleanly.
+SPELL_BY_ABBREVIATION: dict[str, Spell] = {abbreviation: spell for spell, abbreviation in SPELL_ABBREVIATION.items()}
+
+
 # HostAK/TP/SAY.PAS's `Sps(sp: spell; fam: integer)` (~line 241-242)
 # dispatches `FD('c:\\tp\\prose\\spnote.x2', fam, 1001+ord(sp))` -- a
 # deterministic `dex >= 1000` index directly on `Spell`'s own ordinal,

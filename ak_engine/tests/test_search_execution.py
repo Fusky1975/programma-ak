@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 from unittest.mock import patch
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import GameState, LeaderState
@@ -446,16 +447,111 @@ def test_execute_search_melee_only_has_empty_fire_arrow_shots_but_still_sets_gua
     assert result.guardian_monster is Monster.GARGOYLE
 
 
-def test_execute_search_shoot_exhausted_with_no_further_tactic_still_carries_shots():
+def test_execute_search_shoot_exhausted_with_no_further_tactic_defaults_to_melee():
+    # Phase 178: a plan whose tactic list runs out without a winner no
+    # longer reports "inconclusive" -- it now defaults to Melee until
+    # someone dies, per the user's own confirmed default behavior.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
     shots = (FireArrowShot(shooter="a", hit=False, damage=0),)
 
-    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot:
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
         mock_shoot.return_value = EncounterCombatResult(winner=None, rounds=1, shots=shots)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
         result = execute_search(state, LEADER_ID, _shoot_request(1, Maneuver.SHOOT), random.Random(0))
 
+    assert mock_melee.called
     assert result.combat_resolved is True
-    assert result.winner is None
+    assert result.winner == "leader"
     assert result.fire_arrow_shots == shots
     assert result.guardian_monster is Monster.GARGOYLE
+
+
+# -- Phase 178: the guardian's own Special Encounter Plan --
+
+
+def test_execute_search_monster_wanting_shoot_fires_even_when_the_leaders_plan_never_does():
+    # Titan's own rolled plan always opens with Cast+Shoot -- the leader's
+    # own plan here is Melee-only, but Fire Arrow must still resolve
+    # first because the guardian's own plan wants it.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.TITAN))
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_shoot.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert mock_shoot.called
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_monster_not_wanting_shoot_never_triggers_fire_arrow():
+    # Gargoyle's own plan is "ME fino alla fine" only -- no Fire Arrow
+    # phase should happen even though the guardian's own plan is rolled.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert not mock_shoot.called
+    assert mock_melee.called
+
+
+def test_execute_search_monster_wanting_shoot_does_not_double_resolve_when_leader_plan_also_shoots():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.TITAN))
+    request = _shoot_request(1, Maneuver.SHOOT, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_shoot.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_shoot.call_count == 1
+    assert mock_melee.call_count == 1
+
+
+def test_execute_search_rolls_the_guardians_plan_with_the_leaders_own_undead_alignment():
+    state = GameState()
+    state.add_leader(LeaderState(LEADER_ID, 1, "Searcher", LOCATION, alignment=Alignment.UNDEAD))
+    state.add_feature(
+        Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.NEC_MAGE)
+    )
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (SearchTactic(maneuver=Maneuver.MELEE),)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    mock_roll.assert_called_once()
+    assert mock_roll.call_args.kwargs["attacker_is_undead"] is True
+
+
+def test_execute_search_non_undead_leader_rolls_the_guardians_plan_without_the_undead_override():
+    state = _state_with_leader()  # LeaderState default alignment is None
+    state.add_feature(
+        Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.NEC_MAGE)
+    )
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (SearchTactic(maneuver=Maneuver.MELEE),)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert mock_roll.call_args.kwargs["attacker_is_undead"] is False

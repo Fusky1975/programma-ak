@@ -6620,7 +6620,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     all three segments of a three-option cumulative walk, and
     confirmation that exactly one roll is ever consumed. Full suite:
     2239 passed (2227 unchanged + 12 new).
-- **Phase 177 (current)**: closes `Desktop/MOSTRI con statistiche.txt`'s
+- **Phase 177**: closes `Desktop/MOSTRI con statistiche.txt`'s
   Magic Abilities column ("1 NE", "3 WH, 3 PS, 3 EL, 2 IL") for the 29
   of 60 real monster species that have one. Authorized directly by the
   user: "altro gap da riempire sempre che riguarda i mostri: Conteggio
@@ -6653,6 +6653,71 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     the five Renegade-mage species' own school-matching names, and a
     positive-levels sanity sweep. Full suite: 2246 passed (2239
     unchanged + 7 new).
+- **Phase 178 (current)**: guardian-monster Special Encounter Plans,
+  plus two confirmed corrections to how an Encounter Plan's tactic list
+  resolves. `Desktop/Piani speciali d'incontro dei mostri.txt` (supplied
+  2026-07-16) gives all 60 real monster species their own percentage-
+  weighted plan (rolled on a d100), with 4 species (Gold Dragon, Titan,
+  Renegade Necromancer, Witch) getting one further variant used
+  unconditionally when the attacking hero/King is Undead-aligned.
+  Preceded by the user's own direct confirmation of the general
+  default-behavior rule, quoted in full in both new modules' own
+  docstrings: "Quando finiscono le azioni che vengono messe nel piano
+  d'incontro il personaggio inizia a usare automaticamente il comando
+  ME ... Il personaggio di default continua a usare il comando ME a
+  mischia finche' muore lui o il mostro."
+  - `models/enums.py`: new `SPELL_ABBREVIATION`/`SPELL_BY_ABBREVIATION`
+    (35 real spells, sourced verbatim from `CTBOTH.PAS`'s own `spab`
+    table) decode the source's own `CA-XX` Cast notation (e.g. `CA-HA`
+    = `Spell.HAND_OF_DEATH`) -- every one of the 11 tokens this source
+    uses resolves to one of the 10 "Personal-Combat-only" spells
+    `cast_execution.py`'s own docstring already names as unmodeled, or
+    to `Charm`, confirming this really is the personal-combat spell set.
+  - `models/monster_encounter_plan.py` (new): `MONSTER_ENCOUNTER_PLANS`
+    (all 60 species) and `roll_monster_encounter_plan()`. "ME fino alla
+    fine" is modeled as one plain trailing `Maneuver.MELEE` tactic --
+    `resolve_melee_duel()` already fights an entire Melee tactic to the
+    death in one call, so no special "repeat forever" marker is needed.
+    A single-variant species (or the Undead override) never consumes a
+    roll, the same no-roll convention Phase 176's `roll_monster_
+    alignment()` established. **Per the user's own explicit decision**,
+    a rolled `CAST` entry stays completely inert data this phase -- no
+    personal-combat spell-effect engine exists for any of these 11
+    spells yet, so it's skipped by the tactic walk exactly like a
+    player's own unwired `CAST` tactic always has been.
+  - `turn/search_execution.py` -- two corrections, both confirmed by the
+    user before the plan data was even supplied:
+    - **The guardian now gets its own Fire Arrow phase independent of
+      the leader's plan.** `execute_search()` rolls the guardian's own
+      plan (using `leader.alignment is Alignment.UNDEAD` for the
+      override condition) purely to check whether it contains a bare
+      `SHOOT` -- if so, Fire Arrow resolves even when the leader's own
+      submitted plan never lists `SHOOT` at all (species like Titan or
+      Red Dragon previously never got to use their signature ranged
+      attack unless the human player happened to also write `FI`).
+      Still resolves through the same single, symmetric
+      `resolve_fire_arrow_duel()` call, so the already-confirmed "only
+      one FI order per encounter" rule (Phase 173) still holds.
+    - **An exhausted tactic list now defaults to Melee instead of
+      reporting "inconclusive."** Previously, a plan whose Fire Arrow
+      tactic ran dry with nobody dead and no further tactic afterward
+      fell through to a `winner=None` fallback -- contradicting the
+      user's own confirmed default. The fallback now resolves one full
+      `resolve_melee_duel()` call instead. One pre-existing test
+      (`test_execute_search_shoot_exhausted_with_no_further_tactic_*`)
+      updated for this now-corrected behavior, the same "fix the
+      test to match the newly-confirmed real behavior" pattern Phase
+      170's own Flee-ordering correction already used.
+  - 25 new tests: `tests/test_spell_name.py` (+4, abbreviation table
+    coverage/inversion), `tests/test_monster_encounter_plan.py` (new,
+    19 tests -- full coverage, 100%-sum checks, the "ME fino alla fine"
+    trailing-tactic convention, Dryad's 5-discrete-round preservation,
+    Titan's 10-variant spread, the Undead-override bypass, threshold
+    boundaries), `tests/test_search_execution.py` (+5 -- guardian-wants-
+    Shoot firing independently of the leader's plan, no double
+    resolution when both sides want Shoot, the leader's own Undead
+    alignment threading into the guardian's own roll). Full suite: 2271
+    passed (2246 unchanged + 25 new).
 
 ## Setup
 

@@ -149,6 +149,51 @@ the Shoot tactic's own terminal outcome, a later Melee tactic's outcome
 (if Fire Arrow's shots ran out first without a winner), or the
 walk-exhausted fallback -- a shot fired earlier in the plan is still
 worth narrating even if it didn't end the fight.
+
+**Phase 178 addendum -- the guardian gets its own Special Encounter
+Plan too, and an exhausted tactic list now correctly defaults to
+Melee.** Two corrections, both confirmed directly by the user (project
+author) before ``models/monster_encounter_plan.py`` was even supplied:
+
+- **"When the list runs out, default to Melee until someone dies."**
+  Quoted in full: "Quando finiscono le azioni che vengono messe nel
+  piano d'incontro il personaggio inizia a usare automaticamente il
+  comando ME ... Il personaggio di default continua a usare il comando
+  ME a mischia finche' muore lui o il mostro." Previously, if the
+  leader's own plan resolved a ``SHOOT`` tactic that ran out of arrows
+  with nobody dead and had no further tactic afterward, the walk fell
+  through to the end-of-loop fallback and reported ``winner=None``
+  ("inconclusive") -- contradicting this confirmed default. The
+  fallback now resolves one full ``resolve_melee_duel()`` call (which
+  already fights to the death in a single call, Phase 48) instead of
+  reporting an inconclusive draw. This only changes behavior for a plan
+  that resolves *some* wired tactic (``combat_attempted=True``) without
+  ever reaching an explicit ``MELEE`` tactic of its own -- a plan with
+  no wired tactic at all still reports honestly unresolved, since no
+  combat was ever attempted in the first place.
+- **The guardian's own plan is independent of the leader's.** Per the
+  user's own confirmation, each side follows its own Special Encounter
+  Plan -- so ``models/monster_encounter_plan.py roll_monster_encounter_
+  plan()`` is rolled for the guardian (using ``leader.alignment is
+  Alignment.UNDEAD`` for the "attacker is Undead" override condition)
+  purely to answer one question: does the guardian's own plan contain a
+  bare ``SHOOT`` tactic before its own terminal Melee? If so, a Fire
+  Arrow phase happens even when the *leader's* own submitted plan never
+  lists ``SHOOT`` at all (previously, Fire Arrow only ever happened if
+  the leader's plan asked for it -- meaning species like Titan or Red
+  Dragon, whose entire identity is "shoots/breathes before closing to
+  melee," never got to use that attack unless the human player happened
+  to also write `FI` into their own plan). This still resolves through
+  the same single, symmetric ``resolve_fire_arrow_duel()`` call (Phase
+  170) -- at most one Fire Arrow phase per encounter either way, so the
+  already-confirmed "only a single FI order can ever appear" rule
+  (Phase 173) still holds; it's now triggered by *either* side wanting
+  it rather than only the leader's own plan. The guardian's own ``CAST``
+  entries (most species' plans open with 0-3 of them) are rolled but
+  never inspected here -- they remain exactly as unwired as a leader's
+  own ``CAST`` tactic always has been, per the user's own explicit
+  scoping decision this phase (no personal-combat spell-effect engine
+  exists yet for any of the 11 spells these plans reference).
 """
 
 from __future__ import annotations
@@ -156,9 +201,11 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, MONSTER_NAMES, Monster, MonsterSpeed
+from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_DAMAGE_RANGE,
@@ -271,6 +318,15 @@ def execute_search(
         regenerates_hp=TROLL_REGENERATION_PER_COMBAT_ROUND if feature.guardian_monster is Monster.TROLL else 0,
     )
 
+    # Phase 178: the guardian's own Special Encounter Plan, independent
+    # of the leader's -- only consulted for whether it wants to Shoot
+    # before Melee (its own CAST entries stay unwired). See module
+    # docstring's own Phase 178 addendum.
+    monster_plan = roll_monster_encounter_plan(
+        feature.guardian_monster, rng, attacker_is_undead=leader.alignment is Alignment.UNDEAD
+    )
+    monster_wants_shoot = monster_plan is not None and any(t.maneuver is Maneuver.SHOOT for t in monster_plan)
+
     def _outcome_from(combat_result: EncounterCombatResult) -> SearchExecutionResult | None:
         """Translate a resolved duel into a terminal result, or None if the
         encounter isn't over yet (only possible for Fire Arrow -- Melee
@@ -286,7 +342,20 @@ def execute_search(
         return None
 
     combat_attempted = False
+    fire_arrow_resolved = False
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
+
+    def _resolve_fire_arrow_phase() -> SearchExecutionResult | None:
+        nonlocal fire_arrow_shots, fire_arrow_resolved
+        fire_arrow_resolved = True
+        duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng)
+        fire_arrow_shots = duel_result.shots
+        outcome = _outcome_from(duel_result)
+        if outcome is not None:
+            outcome.fire_arrow_shots = fire_arrow_shots
+            outcome.guardian_monster = feature.guardian_monster
+        return outcome
+
     for tactic in request.tactics:
         if tactic.maneuver is Maneuver.FLEE:
             if rng.random() < FLEE_CHANCE[stats.speed]:
@@ -294,16 +363,17 @@ def execute_search(
             continue
         if tactic.maneuver is Maneuver.SHOOT:
             combat_attempted = True
-            duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng)
-            fire_arrow_shots = duel_result.shots
-            outcome = _outcome_from(duel_result)
+            outcome = _resolve_fire_arrow_phase()
             if outcome is not None:
-                outcome.fire_arrow_shots = fire_arrow_shots
-                outcome.guardian_monster = feature.guardian_monster
                 return outcome
             continue  # free attacks exhausted, nobody dead -- fall through
         if tactic.maneuver is Maneuver.MELEE:
             combat_attempted = True
+            if monster_wants_shoot and not fire_arrow_resolved:
+                outcome = _resolve_fire_arrow_phase()
+                if outcome is not None:
+                    return outcome
+                # nobody died from the guardian's own shots -- fall through to melee
             outcome = _outcome_from(resolve_melee_duel(leader_combatant, monster_combatant, rng))
             # Melee always ends in a winner (max_rounds is only a defensive
             # engineering cap), so `outcome` is never None here in practice.
@@ -321,13 +391,18 @@ def execute_search(
         # tactics (module docstring's own quoted examples).
 
     if combat_attempted:
-        return SearchExecutionResult(
-            accepted=True,
-            combat_resolved=True,
-            winner=None,
-            fire_arrow_shots=fire_arrow_shots,
-            guardian_monster=feature.guardian_monster,
+        # Phase 178: the plan's own tactic list ran out without a winner
+        # (only reachable when Fire Arrow exhausted its shots and no
+        # further tactic followed) -- default to Melee until someone
+        # dies, per the user's own confirmed default. See module
+        # docstring's own Phase 178 addendum.
+        outcome = _outcome_from(resolve_melee_duel(leader_combatant, monster_combatant, rng))
+        result = (
+            outcome if outcome is not None else SearchExecutionResult(accepted=True, combat_resolved=True, winner=None)
         )
+        result.fire_arrow_shots = fire_arrow_shots
+        result.guardian_monster = feature.guardian_monster
+        return result
     return SearchExecutionResult(
         accepted=True,
         combat_resolved=False,
