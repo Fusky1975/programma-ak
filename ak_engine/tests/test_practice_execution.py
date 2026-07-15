@@ -5,19 +5,23 @@ import random
 import pytest
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.practice_execution import (
     APT_RISE_CHANCE,
     MAX_SKILL_LEVEL,
     SOLO_PRACTICE_CHANCE,
+    TACTICAL_TRAINING_CHANCE,
     PracticeExecutionResult,
     attempt_skill_rise,
     execute_practice,
     execute_practice_group,
+    execute_practice_tactical,
     resolve_practice_group,
     resolve_practice_pair,
     resolve_practice_solo,
@@ -220,14 +224,96 @@ def test_execute_practice_reuses_and_only_touches_the_practiced_abilitys_pair():
     assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (3, 5)
 
 
-def test_execute_practice_tactical_is_not_implemented_and_does_not_mutate_state():
+def test_execute_practice_tactical_does_not_touch_personal_skill():
     state = _state_with_leader(skills=None)
 
     result = execute_practice(state, leader_id=1, ability=Ability.TACTICAL, rng=ScriptedRandom([]))
 
-    assert result.not_implemented_for_ability is True
+    assert result.not_implemented_for_ability is False
     assert result.skill_rose is False
-    assert state.leaders[1].skills is None  # never even attached a placeholder table
+    assert result.trained_army_ids == ()
+    assert state.leaders[1].skills is None  # [6.1] never touches personal skill at all
+
+
+# -- Phase 167: Ability.TACTICAL's own army-training mechanic ([6.1]) -------
+
+
+def _army(army_id: int, quality: Quality, *, commanded_by: int | None = 1) -> ArmyState:
+    return ArmyState(army_id, 1, ArmyType.BOWMEN, quality, LOCATION, commanded_by=commanded_by)
+
+
+def test_execute_practice_tactical_trains_a_green_army_when_a_higher_tier_army_is_present():
+    state = _state_with_leader(skills=None)
+    state.add_army(_army(1, Quality.GREEN))
+    state.add_army(_army(2, Quality.VETERAN))
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.0]))
+
+    assert trained == (1,)
+    assert state.armies[1].quality is Quality.AVERAGE
+    assert state.armies[2].quality is Quality.VETERAN  # untouched, not itself trainable
+
+
+def test_execute_practice_tactical_trains_a_crack_army_at_its_own_sourced_chance():
+    state = _state_with_leader(skills=None)
+    state.add_army(_army(1, Quality.CRACK))
+    state.add_army(_army(2, Quality.ELITE))
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.001]))
+
+    assert trained == (1,)
+    assert state.armies[1].quality is Quality.ELITE
+
+
+def test_execute_practice_tactical_requires_a_higher_quality_army_present():
+    state = _state_with_leader(skills=None)
+    state.add_army(_army(1, Quality.GREEN))
+    state.add_army(_army(2, Quality.GREEN))  # same tier, doesn't count as "higher"
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.0]))
+
+    assert trained == ()
+    assert state.armies[1].quality is Quality.GREEN
+
+
+def test_execute_practice_tactical_leaves_untrainable_tiers_alone():
+    # Depleted, Average, Veteran, and Elite have no sourced percentage --
+    # confirmed absent, not guessed at (see module docstring).
+    state = _state_with_leader(skills=None)
+    state.add_army(_army(1, Quality.AVERAGE))
+    state.add_army(_army(2, Quality.ELITE))
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.0]))
+
+    assert trained == ()
+    assert state.armies[1].quality is Quality.AVERAGE
+
+
+def test_execute_practice_tactical_ignores_armies_commanded_by_someone_else():
+    state = _state_with_leader(skills=None)
+    state.add_army(_army(1, Quality.GREEN, commanded_by=2))
+    state.add_army(_army(2, Quality.VETERAN, commanded_by=2))
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.0]))
+
+    assert trained == ()
+
+
+def test_execute_practice_tactical_fails_the_roll():
+    state = _state_with_leader(skills=None)
+    state.add_army(_army(1, Quality.GREEN))
+    state.add_army(_army(2, Quality.VETERAN))
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.99]))
+
+    assert trained == ()
+    assert state.armies[1].quality is Quality.GREEN
+
+
+def test_tactical_training_chance_only_has_green_and_crack():
+    assert set(TACTICAL_TRAINING_CHANCE) == {Quality.GREEN, Quality.CRACK}
+    assert TACTICAL_TRAINING_CHANCE[Quality.GREEN] == 0.25
+    assert TACTICAL_TRAINING_CHANCE[Quality.CRACK] == 0.002
 
 
 def test_execute_practice_raw_out_of_range_ability_is_not_implemented():

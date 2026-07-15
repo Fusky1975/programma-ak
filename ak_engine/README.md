@@ -6186,7 +6186,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `..._reports_none_race_for_an_independent_hero`); the existing
     failure-path test extended to also assert `race is None`. Full
     suite: 2170 passed (2168 unchanged + 2 new).
-- **Phase 166 (current)**: closes [3.17]'s King-target aggregate case
+- **Phase 166**: closes [3.17]'s King-target aggregate case
   in Trail -- "If the character is a King, some information may be
   gained concerning the finances, alliances, enemies and controlled
   provinces of the Kingdom." Unlike Actions (the one field that stays
@@ -6216,6 +6216,50 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     existing failure-path test extended to also assert
     `king_intelligence is None`. Full suite: 2172 passed (2170
     unchanged + 2 new).
+- **Phase 167 (current)**: implements Practice's own [6.1] Tactical
+  army-training mechanic, previously a bare
+  `not_implemented_for_ability=True` stub -- the user asked to continue
+  with whichever well-scoped gap this session judged best; research
+  identified this as closable now with two real sourced percentages
+  and a direct precedent (`cast_execution.py`'s own Oratory
+  quality-bump handler).
+  - `turn/practice_decode.py`'s own [6.1] quote gives exactly two of
+    `Quality`'s five upward transitions a real percentage:
+    Green->Average 25%, Crack->Elite 0.2%. **The other three
+    (Depleted->Green, Average->Veteran, Veteran->Crack) are
+    deliberately left unmodeled** -- interpolating three more
+    percentages from two anchors describing two *structurally
+    distinct* transitions (not two points on one curve, unlike
+    `win_probability`/`exploration_advantage_multiplier`'s own
+    accepted interpolations) would be a materially larger, far less
+    constrained guess than anything already accepted in this project.
+    New `TACTICAL_TRAINING_CHANCE` (`turn/practice_execution.py`) only
+    has entries for `Quality.GREEN`/`Quality.CRACK`.
+  - New `execute_practice_tactical(state, leader_id, rng)`: for each of
+    the practicing leader's own commanded armies (`GameState.
+    armies_commanded_by`) at a sourced tier, rolls it upward if gated
+    on the rulebook's own "if a higher-quality army is present to
+    'train and inspire' it" condition -- interpreted here as *any
+    other army under that same leader's command* having a strictly
+    higher *original* `Quality` (a snapshot taken before any rolls
+    this call, so results don't depend on iteration order) -- an
+    interpretation, not a literal quote, but grounded directly in the
+    condition's own wording.
+  - `execute_practice()`'s `Ability.TACTICAL` branch now routes here
+    instead of returning the old stub; `PracticeExecutionResult`
+    gained `trained_army_ids: tuple[int, ...] = ()`.
+    `execute_practice_group()`'s own TACTICAL branch is unchanged
+    (still `not_implemented_for_ability=True`) -- **multi-leader army
+    pooling stays out of scope**, since co-located *characters*
+    pooling their *personal skill* rolls (the existing group mechanic)
+    doesn't apply to Tactical's *army*-training mechanic at all;
+    flagged as a further future phase.
+  - 1 pre-existing test updated (Tactical no longer returns
+    `not_implemented_for_ability=True`) + 7 new tests covering the
+    training roll, the "no higher-quality army present" gate, the two
+    sourced tiers, untrainable tiers left alone, and armies commanded
+    by someone else being ignored. Full suite: 2179 passed (2172
+    unchanged + 7 new).
 
 ## Setup
 

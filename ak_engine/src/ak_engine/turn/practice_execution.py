@@ -88,15 +88,38 @@ phase's scope for each:
 
 - **Tactical** ([6.1]): Practicing Tactical does *not* raise personal
   skill via [3.13] at all -- it trains the leader's *armies* instead,
-  rolling each army's quality tier upward. A completely different
-  mechanic (touches ``ArmyState.quality`` across a leader's whole
-  command, with its own "needs an existing higher-tier army present to
-  train against" condition and multi-leader pooling) -- **out of scope
-  this phase**, flagged as its own future execution phase.
-  ``execute_practice`` recognizes ``Ability.TACTICAL`` and returns
-  ``PracticeExecutionResult(..., not_implemented_for_ability=True)``
-  rather than silently (and wrongly) running the generic skill-rise
-  roll against it.
+  rolling each army's quality tier upward. **Phase 167 implements the
+  two sourced transitions** (``turn/practice_decode.py``'s own quote:
+  "Green->Average 25%, Crack->Elite 0.2%") for a single leader's own
+  commanded armies (``GameState.armies_commanded_by``), gated on the
+  rulebook's own "if a higher-quality army is present to 'train and
+  inspire' it" condition -- interpreted here as *any other army under
+  that same leader's command* having a strictly higher original
+  ``Quality`` tier than the training candidate (checked against a
+  snapshot taken before any rolls this call, so results don't depend
+  on iteration order). **The other three transitions
+  (Depleted->Green, Average->Veteran, Veteran->Crack) are deliberately
+  left unmodeled** -- the rulebook gives only these two anchor
+  percentages, at opposite ends of a five-step tier ladder, and this
+  project's own convention (``win_probability``,
+  ``exploration_advantage_multiplier``) only interpolates *between* two
+  anchors describing the *same* underlying curve; inventing three more
+  percentages for three structurally distinct transitions from two
+  unrelated data points would be a materially larger, far less
+  constrained guess than any interpolation already accepted elsewhere
+  in this project. ``TACTICAL_TRAINING_CHANCE`` only has entries for
+  ``Quality.GREEN``/``Quality.CRACK``; an army at any other tier is
+  left untouched, honestly, rather than guessed at. **Multi-leader army
+  pooling stays out of scope**, same as before: this only trains the
+  single dispatching leader's own command, not co-located leaders'
+  combined forces the way the generic skill-rise mechanic pools
+  co-located *characters* -- flagged as a further future phase, not
+  silently expanded into this one. ``execute_practice_group`` (Phase
+  46's multi-character pooling entry point) still returns
+  ``not_implemented_for_ability=True`` for Tactical unchanged, since
+  its own pooling concept (co-located *characters* sharing one
+  skill-rise roll) doesn't apply to Tactical's *army*-training
+  mechanic at all.
 - **Sage** ([4.31]): practicing Sage rolls an *additional*, independent
   "~5% per level of inventing/discovering a device" chance, "on top of
   (not instead of)" the normal [3.13] skill-rise roll -- so Sage's own
@@ -114,6 +137,7 @@ from dataclasses import dataclass
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import SkillTable
+from ak_engine.turn.combat import Quality
 
 # Rulebook [3.13].
 SOLO_PRACTICE_CHANCE = 0.05
@@ -128,6 +152,15 @@ APT_RISE_CHANCE: tuple[float, ...] = (0.0, 0.10, 0.25, 0.50, 1.0, 0.80, 0.60, 0.
 
 # SkillTable's documented range (Phase 21): each pair value is 0-9.
 MAX_SKILL_LEVEL = 9
+
+# turn/practice_decode.py's own [6.1] quote: "Green->Average 25%,
+# Crack->Elite 0.2%" -- the only two of Quality's five upward
+# transitions with a real sourced percentage. See module docstring's
+# Phase 167 note for why the other three aren't guessed at.
+TACTICAL_TRAINING_CHANCE: dict[Quality, float] = {
+    Quality.GREEN: 0.25,
+    Quality.CRACK: 0.002,
+}
 
 
 @dataclass(slots=True)
@@ -253,6 +286,11 @@ class PracticeExecutionResult:
     new_skill: int | None = None
     new_aptitude: int | None = None
     not_implemented_for_ability: bool = False
+    # Phase 167: Ability.TACTICAL's own army-training mechanic -- the
+    # ids of the practicing leader's own commanded armies whose
+    # Quality tier rose this call. Empty (not None) whenever ability
+    # isn't TACTICAL, or TACTICAL trained nothing this call.
+    trained_army_ids: tuple[int, ...] = ()
 
 
 def _get_or_create_skills(leader: LeaderState) -> SkillTable:
@@ -271,6 +309,39 @@ def _get_or_create_skills(leader: LeaderState) -> SkillTable:
     return leader.skills
 
 
+def execute_practice_tactical(state: GameState, leader_id: int, rng: random.Random | None = None) -> tuple[int, ...]:
+    """[6.1]'s army-training mechanic for a single leader's own commanded armies.
+
+    Rolls each ``Quality.GREEN``/``Quality.CRACK`` army under
+    ``leader_id``'s command upward, gated on another of that leader's
+    armies having a strictly higher *original* (pre-roll) ``Quality``
+    tier -- see module docstring for the "train and inspire" condition
+    and why the other three tier transitions aren't attempted. Returns
+    the ids of every army that actually trained up.
+    """
+
+    rng = rng if rng is not None else random.Random()
+
+    armies = state.armies_commanded_by(leader_id)
+    original_qualities = {army.army_id: army.quality for army in armies}
+
+    trained_army_ids: list[int] = []
+    for army in armies:
+        chance = TACTICAL_TRAINING_CHANCE.get(army.quality)
+        if chance is None:
+            continue
+        has_higher_quality_army = any(
+            original_qualities[other.army_id] > army.quality for other in armies if other.army_id != army.army_id
+        )
+        if not has_higher_quality_army:
+            continue
+        if rng.random() < chance:
+            army.quality = Quality(army.quality + 1)
+            trained_army_ids.append(army.army_id)
+
+    return tuple(trained_army_ids)
+
+
 def execute_practice(
     state: GameState, leader_id: int, ability: Ability | int, rng: random.Random | None = None
 ) -> PracticeExecutionResult:
@@ -281,16 +352,21 @@ def execute_practice(
     from ``turn/turn_processor.py run_turn()`` rather than from this
     single-leader entry point.
 
-    ``Ability.TACTICAL`` (and any raw out-of-range ability value that
-    failed to decode to a real ``Ability``) is not resolved here -- see
-    module docstring -- and returns ``not_implemented_for_ability=True``
-    without mutating ``state``.
+    Any raw out-of-range ability value that failed to decode to a real
+    ``Ability`` is not resolved here and returns
+    ``not_implemented_for_ability=True`` without mutating ``state``.
+    ``Ability.TACTICAL`` instead routes to ``execute_practice_tactical``
+    -- see module docstring for its own, narrower scope.
     """
 
     rng = rng if rng is not None else random.Random()
 
-    if not isinstance(ability, Ability) or ability is Ability.TACTICAL:
+    if not isinstance(ability, Ability):
         return PracticeExecutionResult(ability=ability, not_implemented_for_ability=True)
+
+    if ability is Ability.TACTICAL:
+        trained_army_ids = execute_practice_tactical(state, leader_id, rng)
+        return PracticeExecutionResult(ability=ability, trained_army_ids=trained_army_ids)
 
     leader: LeaderState = state.leaders[leader_id]
     skills = _get_or_create_skills(leader)
