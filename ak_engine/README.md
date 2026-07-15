@@ -6216,7 +6216,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     existing failure-path test extended to also assert
     `king_intelligence is None`. Full suite: 2172 passed (2170
     unchanged + 2 new).
-- **Phase 167 (current)**: implements Practice's own [6.1] Tactical
+- **Phase 167**: implements Practice's own [6.1] Tactical
   army-training mechanic, previously a bare
   `not_implemented_for_ability=True` stub -- the user asked to continue
   with whichever well-scoped gap this session judged best; research
@@ -6260,6 +6260,56 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sourced tiers, untrainable tiers left alone, and armies commanded
     by someone else being ignored. Full suite: 2179 passed (2172
     unchanged + 7 new).
+- **Phase 168 (current)**: `ProvinceState.terrain_override` (Part Sea/
+  Flood, Phase 59) had zero gameplay consumers anywhere in the codebase
+  -- confirmed by an exhaustive grep sweep finding it was only ever
+  written by the two spells that set it, never read by any real
+  mechanics. The user picked this as the recommended next gap
+  ("terrain_override non collegato").
+  - New `ProvinceState.effective_terrain()` (`models/game_state.py`):
+    returns `terrain_override` if set, `terrain` otherwise -- the
+    province's real current terrain for gameplay mechanics.
+    Deliberately distinct from `illusory_terrain` (Illusory Terrain):
+    that field only deceives what an outside observer is *told*, and
+    must never feed into a real mechanics calculation -- conflating the
+    two would let a bluff spell silently change real movement costs or
+    combat outcomes. `illusory_terrain` is untouched by this phase.
+  - Wired into every real-mechanics call site found across two
+    successive grep sweeps (the second caught call sites the first
+    "obvious" pass missed):
+    - `turn/battle_orchestrator.py fight_battle()`: a local
+      `terrain = province.effective_terrain()` now feeds combat
+      ability selection, `_build_battle_units`, `_apply_pursuit`,
+      `_whale_forced_retreat_applies`, and `_fleet_avoids_elimination`
+      (previously all read `province.terrain` directly).
+    - `turn/move_execution.py`: `record_kingdom_exploration()`'s
+      terrain-dependent Basic Exploration Number, `execute_move()`'s
+      `target_terrain` for `resolve_move()`, and its `is_sea_province`
+      flag for `movement_cost_for_move()`.
+    - `turn/plan_dispatch.py`: the EXPLORE branch's `resolve_explore()`
+      call.
+    - `turn/turn_processor.py`: the same `target_terrain`/
+      `is_sea_province` pair as `move_execution.py`, for its own
+      `resolve_move()`/`movement_cost_for_move()` calls.
+    - `turn/cast_execution.py`: three eligibility checks that used to
+      read the raw base terrain -- `_execute_part_sea()` (now correctly
+      targetable on a province Flooded to Sea), `_execute_flood()` (now
+      correctly rejects a province already Flooded to Sea via
+      override), `_execute_earthquake()` (now correctly rejects a
+      province Flooded to Sea even though its base terrain is still
+      land).
+  - **Deliberately not touched**: `turn/rename_province.py` (reads
+    `province.terrain` for its name-pool lookup -- flavor/naming, not a
+    gameplay mechanic, out of scope for this phase).
+  - 3 new tests for `effective_terrain()` itself
+    (`tests/test_game_state.py`); 2 new tests for `move_execution.py`
+    (exploration's Basic Exploration Number and conquest's sea-battle
+    movement surcharge both honoring the override); 1 new test for
+    `battle_orchestrator.py` (Fleet's land-only Depleted carve-out
+    correctly not applying in an override-Sea battle); 3 new tests for
+    `cast_execution.py` (Part Sea/Flood/Earthquake eligibility all
+    reading the effective terrain). Full suite: 2188 passed (2179
+    unchanged + 9 new).
 
 ## Setup
 

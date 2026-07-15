@@ -713,7 +713,13 @@ def fight_battle(
     if not defender_armies:
         raise ValueError("no defending armies at this province to fight")
 
-    ability = _combat_ability_for_terrain(province.terrain)
+    # Phase 168: the province's real current terrain, honoring Part
+    # Sea/Flood's own terrain_override if set -- see ProvinceState.
+    # effective_terrain()'s own docstring for why every mechanics call
+    # site in this function uses this instead of the raw .terrain.
+    terrain = province.effective_terrain()
+
+    ability = _combat_ability_for_terrain(terrain)
     attacker_commander = _select_side_commander(attacker_armies, state, ability, allow_garrison_fallback=False)
     defender_commander = _select_side_commander(defender_armies, state, ability, allow_garrison_fallback=True)
     attacker_ability_level = attacker_commander.tactical_ability if attacker_commander is not None else 0
@@ -732,12 +738,12 @@ def fight_battle(
     )
 
     attacker_units = _build_battle_units(
-        attacker_armies, state, is_defender=False, terrain=province.terrain, province_coord=province_coord, rng=rng,
+        attacker_armies, state, is_defender=False, terrain=terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=attacker_ability_level, apply_fanaticism=apply_fanaticism,
         own_explored_percent=attacker_explored, enemy_explored_percent=defender_explored,
     )
     defender_units = _build_battle_units(
-        defender_armies, state, is_defender=True, terrain=province.terrain, province_coord=province_coord, rng=rng,
+        defender_armies, state, is_defender=True, terrain=terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=defender_ability_level, apply_fanaticism=apply_fanaticism,
         own_explored_percent=defender_explored, enemy_explored_percent=attacker_explored,
     )
@@ -769,12 +775,12 @@ def fight_battle(
     attacker_pursuit_destroyed: set[int] = set()
     if attacker_clean_swept and loser_retreats:
         attacker_pursuit_destroyed = _apply_pursuit(
-            attacker_armies, defender_units, state, province.terrain, report, rng
+            attacker_armies, defender_units, state, terrain, report, rng
         )
     defender_pursuit_destroyed: set[int] = set()
     if defender_clean_swept and loser_retreats:
         defender_pursuit_destroyed = _apply_pursuit(
-            defender_armies, attacker_units, state, province.terrain, report, rng
+            defender_armies, attacker_units, state, terrain, report, rng
         )
 
     for army in attacker_armies:
@@ -783,7 +789,7 @@ def fight_battle(
         if battle_result.winner == "attacker":
             army.quality = roll_quality_change(army.quality, rng, is_winner=True)
             report.quality_changes[army.army_id] = army.quality
-        elif attacker_clean_swept and _whale_forced_retreat_applies(army, province.terrain):
+        elif attacker_clean_swept and _whale_forced_retreat_applies(army, terrain):
             bounds = MapBounds(*NORMAL_MAP_BOUNDS)
             destination = _whale_sea_retreat_destination(army, state, bounds)
             _retreat_or_disband(army, state, report, rng, destination=destination)
@@ -796,9 +802,9 @@ def fight_battle(
                 destination = find_retreat_destination(army.location, bounds, friendly)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
-                avoid_elimination=_fleet_avoids_elimination(army, province.terrain),
+                avoid_elimination=_fleet_avoids_elimination(army, terrain),
             )
-        elif attacker_clean_swept and _fleet_avoids_elimination(army, province.terrain):
+        elif attacker_clean_swept and _fleet_avoids_elimination(army, terrain):
             army.quality = Quality.DEPLETED
             report.quality_changes[army.army_id] = army.quality
         elif attacker_clean_swept:
@@ -815,7 +821,7 @@ def fight_battle(
         if battle_result.winner == "defender":
             army.quality = roll_quality_change(army.quality, rng, is_winner=True)
             report.quality_changes[army.army_id] = army.quality
-        elif defender_clean_swept and _whale_forced_retreat_applies(army, province.terrain):
+        elif defender_clean_swept and _whale_forced_retreat_applies(army, terrain):
             bounds = MapBounds(*NORMAL_MAP_BOUNDS)
             destination = _whale_sea_retreat_destination(army, state, bounds)
             _retreat_or_disband(army, state, report, rng, destination=destination)
@@ -825,9 +831,9 @@ def fight_battle(
             destination = find_retreat_destination(army.location, bounds, friendly)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
-                avoid_elimination=_fleet_avoids_elimination(army, province.terrain),
+                avoid_elimination=_fleet_avoids_elimination(army, terrain),
             )
-        elif defender_clean_swept and _fleet_avoids_elimination(army, province.terrain):
+        elif defender_clean_swept and _fleet_avoids_elimination(army, terrain):
             army.quality = Quality.DEPLETED
             report.quality_changes[army.army_id] = army.quality
         elif defender_clean_swept:

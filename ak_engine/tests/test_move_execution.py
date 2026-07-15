@@ -61,6 +61,21 @@ def test_uncontested_move_also_records_the_movers_own_kingdom_exploration():
     assert 2 not in state.provinces[TARGET].explored_percent_by_kingdom
 
 
+def test_uncontested_move_exploration_honors_terrain_override():
+    # Phase 168: a province Part Sea'd/Flooded to Sea (terrain_override) must
+    # explore using Sea's own Basic Exploration Number (25), not the base
+    # terrain's (Plains=50) -- effective_terrain() is the real current
+    # terrain for every mechanics read, including this one.
+    state = base_state()
+    state.provinces[TARGET].terrain_override = Terrain.SEA
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], explorer_skill=1, target=TARGET)
+
+    # Sea basic exploration number 25, skill 1 -> full=50, halved (Move) = 25.
+    assert result.exploration.new_percent == 25
+    assert state.provinces[TARGET].explored_percent == 25
+
+
 def test_record_kingdom_exploration_seeds_from_that_kingdoms_own_prior_entry():
     province = ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2)
     province.explored_percent_by_kingdom[1] = 50  # kingdom 1 already at 50%
@@ -128,6 +143,26 @@ def test_move_triggers_battle_and_conquest_relocates_the_attacker():
     assert state.armies[101].movement_points == 1
     assert 201 in result.battle_report.retreated_army_ids
     assert state.armies[201].location == DEFENDER_HOME
+
+
+def test_move_conquest_sea_surcharge_honors_terrain_override():
+    # Phase 168: a province Part Sea'd to Sea (terrain_override) must incur
+    # the sea-battle movement surcharge on conquest, even though its base
+    # terrain is still Plains -- effective_terrain() is what movement_cost
+    # actually reads now.
+    state = base_state()
+    state.provinces[TARGET].terrain_override = Terrain.SEA
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))
+    state.armies[101].army_type = ArmyType.HVY_CAVALRY
+    state.armies[101].quality = Quality.ELITE
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
+
+    assert result.battle_report.conquered is True
+    # 1 base + 1 conquest + 1 sea-battle surcharge = 3 (vs. 2 without override).
+    assert result.movement_points_spent == 3
+    assert state.armies[101].movement_points == 0
 
 
 def test_move_that_fails_to_conquer_leaves_attacker_at_origin():

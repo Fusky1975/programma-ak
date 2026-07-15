@@ -176,7 +176,7 @@ def record_kingdom_exploration(
     """
 
     prior = province.explored_percent_by_kingdom.get(kingdom_id, 0)
-    result = resolve_explore(prior, province.terrain, explorer_skill, partial=partial)
+    result = resolve_explore(prior, province.effective_terrain(), explorer_skill, partial=partial)
     province.explored_percent_by_kingdom[kingdom_id] = result.new_percent
     return result.new_percent
 
@@ -268,7 +268,7 @@ def execute_move(
         current,
         actual_target,
         bounds,
-        target_terrain=target_province.terrain,
+        target_terrain=target_province.effective_terrain(),
         target_explored_percent=target_province.explored_percent,
         explorer_skill=explorer_skill,
         occupied_by_enemy=occupied_by_enemy,
@@ -294,7 +294,7 @@ def execute_move(
         moved = True
 
     cost = movement_cost_for_move(
-        is_sea_province=target_province.terrain == Terrain.SEA,
+        is_sea_province=target_province.effective_terrain() == Terrain.SEA,
         battle_occurred=occupied_by_enemy,
         conquered=conquered,
     )

@@ -261,6 +261,26 @@ class ProvinceState:
     # (`DEF2.PAS Read_T1Names`, turn-1 capital rename).
     name: str | None = None
 
+    def effective_terrain(self) -> Terrain:
+        """The province's real current terrain for gameplay mechanics --
+        Part Sea/Flood's own ``terrain_override`` (Phase 59) if set,
+        the base ``terrain`` otherwise.
+
+        Phase 168: every real-mechanics call site that used to read
+        ``.terrain`` directly (movement cost, exploration, combat
+        ability/strength/nemesis, Whale/Fleet retreat rules) now reads
+        this instead, so a cast Part Sea/Flood actually has gameplay
+        effect -- previously it mutated ``terrain_override`` with no
+        consumer anywhere, confirmed by grep before this phase.
+        Deliberately distinct from ``illusory_terrain`` (Illusory
+        Terrain): that field only deceives what an outside observer is
+        *told*, and must never feed into a real mechanics calculation
+        here -- conflating the two would let a bluff spell silently
+        change real movement costs or combat outcomes.
+        """
+
+        return self.terrain_override if self.terrain_override is not None else self.terrain
+
 
 @dataclass(slots=True)
 class GraveyardEntry:

@@ -957,7 +957,7 @@ def _dispatch_multi_attacker_lmove(
                 origin,
                 target,
                 bounds,
-                target_terrain=target_province.terrain,
+                target_terrain=target_province.effective_terrain(),
                 target_explored_percent=target_province.explored_percent,
                 explorer_skill=explorer_skill,
                 occupied_by_enemy=True,
@@ -993,7 +993,7 @@ def _dispatch_multi_attacker_lmove(
         battle = battle_by_leader[tl.leader.leader_id]
         conquered = battle.report.conquered
         cost = movement_cost_for_move(
-            is_sea_province=target_province.terrain == Terrain.SEA, battle_occurred=True, conquered=conquered
+            is_sea_province=target_province.effective_terrain() == Terrain.SEA, battle_occurred=True, conquered=conquered
         )
         moved = conquered
 

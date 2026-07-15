@@ -367,7 +367,7 @@ def _execute_part_sea(
     _coord, province = _resolve_province_target(state, caster, request.target, board_width)
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
-    if province.terrain is not Terrain.SEA:
+    if province.effective_terrain() is not Terrain.SEA:
         return CastExecutionResult(request, applied=False, reason="target province is not Sea")
 
     succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
@@ -399,7 +399,7 @@ def _execute_flood(
     _coord, province = _resolve_province_target(state, caster, request.target, board_width)
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
-    if province.terrain not in _FLOOD_ELIGIBLE_TERRAIN:
+    if province.effective_terrain() not in _FLOOD_ELIGIBLE_TERRAIN:
         return CastExecutionResult(request, applied=False, reason="target province is not a non-mountain land province")
 
     succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
@@ -459,7 +459,7 @@ def _execute_earthquake(
     _coord, province = _resolve_province_target(state, caster, request.target, board_width)
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
-    if province.terrain is Terrain.SEA:
+    if province.effective_terrain() is Terrain.SEA:
         return CastExecutionResult(request, applied=False, reason="target province is not land")
 
     succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)

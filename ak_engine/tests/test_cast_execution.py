@@ -297,6 +297,20 @@ def test_part_sea_succeeds_on_an_adjacent_province():
     assert state.provinces[adjacent].terrain_override is Terrain.PLAINS
 
 
+def test_part_sea_succeeds_on_a_province_flooded_to_sea_via_override():
+    # Phase 168: eligibility must read effective_terrain() -- a province
+    # whose base terrain is Plains but has been Flooded to Sea
+    # (terrain_override) is really Sea right now, so Part Sea can target it.
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, terrain_override=Terrain.SEA))
+    request = CastRequest(spell=Spell.PART_SEA, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].terrain_override is Terrain.PLAINS
+
+
 def test_part_sea_fails_when_target_province_is_unknown():
     state = build_state()
     request = CastRequest(spell=Spell.PART_SEA, target=_target(LOCATION))
@@ -337,6 +351,21 @@ def test_flood_fails_on_a_mountain_province():
 def test_flood_fails_on_an_already_sea_province():
     state = build_state()
     state.add_province(ProvinceState(LOCATION, Terrain.SEA, Race.HUMAN))
+    request = CastRequest(spell=Spell.FLOOD, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "target province is not a non-mountain land province"
+
+
+def test_flood_fails_on_a_province_already_flooded_to_sea_via_override():
+    # Phase 168: a province whose base terrain is still Plains but has
+    # already been Flooded to Sea (terrain_override) must be rejected the
+    # same as a genuinely Sea province -- effective_terrain() is what
+    # eligibility now reads.
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, terrain_override=Terrain.SEA))
     request = CastRequest(spell=Spell.FLOOD, target=_target(LOCATION))
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
@@ -399,6 +428,20 @@ def test_earthquake_zeroes_the_tax_modifier_on_a_land_province():
 def test_earthquake_fails_on_a_sea_province():
     state = build_state()
     state.add_province(ProvinceState(LOCATION, Terrain.SEA, Race.HUMAN))
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "target province is not land"
+
+
+def test_earthquake_fails_on_a_province_flooded_to_sea_via_override():
+    # Phase 168: Earthquake must refuse a province Flooded to Sea even
+    # though its base terrain is still land -- effective_terrain() is the
+    # real current terrain, not the frozen base field.
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, terrain_override=Terrain.SEA))
     request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(LOCATION))
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)

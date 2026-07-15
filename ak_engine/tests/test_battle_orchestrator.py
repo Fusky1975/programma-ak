@@ -273,6 +273,28 @@ def test_fleet_in_a_sea_battle_follows_ordinary_elimination_rules():
     assert 201 not in state.armies
 
 
+def test_fleet_in_a_sea_battle_honors_terrain_override():
+    # Phase 168: a province Part Sea'd to Sea (terrain_override) must fight
+    # as a real sea battle -- Fleet's land-only Depleted-instead-of-destroyed
+    # carve-out must NOT apply -- even though its base terrain is still
+    # Plains. Mirrors test_fleet_in_a_sea_battle_follows_ordinary_elimination_rules
+    # above, but via the override instead of the base terrain field.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, FIELD))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, terrain_override=Terrain.SEA))
+    state.add_army(ArmyState(101, 1, ArmyType.WHALES, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.FLEET, Quality.AVERAGE, FIELD))
+    rng = no_luck_overwhelming_attacker_rng()
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], loser_retreats=False, rng=rng
+    )
+
+    assert 201 in report.destroyed_army_ids
+    assert 201 not in state.armies
+
+
 def test_defender_becomes_unhireable_mercenary_when_average_quality_and_no_retreat():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))

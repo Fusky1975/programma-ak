@@ -181,3 +181,26 @@ def test_transfer_item_on_unknown_id_is_a_no_op():
     state = make_state()
     state.transfer_item(999, 1)  # must not raise
     assert 999 not in state.items
+
+
+# -- Phase 168: ProvinceState.effective_terrain() ---------------------------
+
+
+def test_effective_terrain_returns_base_terrain_when_no_override():
+    province = ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN)
+
+    assert province.effective_terrain() is Terrain.PLAINS
+
+
+def test_effective_terrain_returns_override_when_set():
+    province = ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, terrain_override=Terrain.SEA)
+
+    assert province.effective_terrain() is Terrain.SEA
+
+
+def test_effective_terrain_ignores_illusory_terrain():
+    # illusory_terrain (Illusory Terrain) only deceives what an outside
+    # observer is told -- it must never leak into a real mechanics read.
+    province = ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, illusory_terrain=Terrain.SEA)
+
+    assert province.effective_terrain() is Terrain.PLAINS
