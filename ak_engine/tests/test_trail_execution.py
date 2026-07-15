@@ -127,7 +127,8 @@ def test_execute_trail_uses_trailers_real_spy_skill():
     assert result.spied_on is True
 
 
-# -- Phase 159: temper/treasures_owned/armies_led intelligence payload -------
+# -- Phase 159 (temper/treasures_owned/armies_led) + Phase 164 (alignment)
+# intelligence payload -------------------------------------------------------
 
 
 def test_execute_trail_success_reports_targets_temper():
@@ -148,6 +149,26 @@ def test_execute_trail_success_reports_none_temper_when_not_recorded():
     result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
 
     assert result.temper is None
+
+
+def test_execute_trail_success_reports_targets_alignment():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD, alignment=Alignment.PAGAN))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+
+    assert result.alignment is Alignment.PAGAN
+
+
+def test_execute_trail_success_reports_none_alignment_when_not_recorded():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+
+    assert result.alignment is None
 
 
 def test_execute_trail_success_reports_targets_treasures_owned():
@@ -178,12 +199,15 @@ def test_execute_trail_success_reports_targets_armies_led():
 def test_execute_trail_failure_reports_no_payload():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
-    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FAR_AWAY, temper=Temper.BERSERK))
+    state.add_leader(
+        LeaderState(2, kingdom_id=2, name="Target", location=FAR_AWAY, temper=Temper.BERSERK, alignment=Alignment.EVIL)
+    )
 
     result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.99]))
 
     assert result.spied_on is False
     assert result.temper is None
+    assert result.alignment is None
     assert result.treasures_owned == ()
     assert result.armies_led == ()
 

@@ -6111,7 +6111,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `_dispatch_hire()` outcomes and `describe_hire()`'s two newly
     reachable renderers. Full suite: 2165 passed (2147 unchanged +
     18 new).
-- **Phase 163 (current)**: revises Phase 162's own temper weighting,
+- **Phase 163**: revises Phase 162's own temper weighting,
   per direct user feedback the same day: "il temperamento deve contare
   meno della differenza di allineamento -- direi della metà" (temper
   must count for less than alignment distance -- about half).
@@ -6136,6 +6136,35 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     effect at distance 0" behavior; one new test added confirming
     temper still adds +1 once real alignment friction exists (distance
     1). Full suite: 2166 passed (2165 unchanged + 1 new).
+- **Phase 164 (current)**: closes another slice of Trail's own
+  ``[3.17]`` intelligence-payload gap -- ``TrailExecutionResult.alignment``,
+  directly enabled by Phase 162's new ``LeaderState.alignment`` field
+  (added for ``turn/hire_pay.py``, not originally for Trail). When
+  Phase 159 first populated `temper`/`treasures_owned`/`armies_led`, no
+  per-leader alignment field existed anywhere in this project yet
+  (only kingdom-level ``KingdomState.alignment``, and Phase 136's own
+  ``Align_Est`` is an *estimate* formula, not a stored real value) --
+  that gap is now closed as a direct side effect of unrelated work,
+  the same "narrows a docstring-flagged gap in passing" pattern this
+  project has used repeatedly (e.g. Phase 159 itself, for Trail's own
+  temper field).
+  - ``execute_trail()`` now sets ``TrailExecutionResult.alignment =
+    target.alignment`` on a successful spy -- ``None`` if never
+    recorded, the same convention `temper` already uses. Deliberately
+    reads the target's *real* stored alignment, not Phase 136's
+    imperfect-information `Align_Est` estimate (a different, ASpy-only
+    mechanic for a different in-game situation -- a Trail spy learns
+    the truth, per [3.17]'s own wording, "gaining information on the
+    character's... alignment").
+  - Of [3.17]'s six named intelligence fields, only two remain
+    genuinely open: Actions (needs `PhaseDispatchResult` to retain the
+    target's own decoded request, a larger structural change) and race
+    (`LeaderState` still has no per-leader race field, and an
+    independent Hero has no kingdom to approximate it from).
+  - 2 new tests (`test_execute_trail_success_reports_targets_alignment`,
+    `..._reports_none_alignment_when_not_recorded`); the existing
+    failure-path test extended to also assert `alignment is None`.
+    Full suite: 2168 passed (2166 unchanged + 2 new).
 
 ## Setup
 

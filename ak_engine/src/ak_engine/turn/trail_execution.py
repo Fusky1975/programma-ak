@@ -50,7 +50,17 @@ field itself already uses), ``treasures_owned``
 once for the catch-up-chance roll and reused here rather than queried
 twice).
 
-**Still genuinely open, not attempted here**: [3.17]'s remaining three
+**Phase 164 closes the alignment field too.** ``LeaderState.alignment``
+(Phase 162, added for ``turn/hire_pay.py``'s required-pay formula) is
+now a real, stored per-leader value -- not the kingdom-level-only
+``KingdomState.alignment``, and not Phase 136's own ``Align_Est``
+*estimate* formula (a Trail spy learns the target's true alignment,
+not a fuzzy guess; ``turn/intelligence_estimate.py``'s imperfect-
+information model is a different, ASpy-only mechanic, not reused
+here). ``TrailExecutionResult.alignment`` mirrors ``temper``'s own
+"``None`` if never recorded" convention exactly.
+
+**Still genuinely open, not attempted here**: [3.17]'s remaining two
 fields --
 
 - **Actions**: the target's own decoded orders for this phase.
@@ -67,10 +77,6 @@ fields --
   no kingdom to infer from at all -- not attempted here to avoid a
   half-correct payload for exactly the target type ([3.17] singles
   out, "if the character is a King...") this feature cares most about.
-- **Alignment**: no per-leader alignment field exists anywhere in this
-  project (`KingdomState.alignment` is kingdom-level only, and
-  Phase 136's own `Align_Est` is an *estimate* formula, not a stored
-  real value).
 
 The King-target aggregate case ("finances, alliances, enemies and
 controlled provinces of the Kingdom") is also not attempted here --
@@ -103,6 +109,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.item import ItemInstance
@@ -123,10 +130,12 @@ def _spy_skill_of(leader: LeaderState) -> int:
 class TrailExecutionResult:
     spied_on: bool
     reason: str | None = None
-    # Phase 159: three of [3.17]'s six named intelligence fields, only
+    # Phase 159 (temper/treasures_owned/armies_led) + Phase 164
+    # (alignment): four of [3.17]'s six named intelligence fields, only
     # populated when spied_on is True. See module docstring for why the
-    # other three (Actions, race, alignment) still aren't.
+    # remaining two (Actions, race) still aren't.
     temper: Temper | None = None
+    alignment: Alignment | None = None
     treasures_owned: tuple[ItemInstance, ...] = ()
     armies_led: tuple[ArmyState, ...] = ()
 
@@ -136,10 +145,10 @@ def execute_trail(
 ) -> TrailExecutionResult:
     """Resolve one phase of a Trail order: [3.17]'s no-army restriction, then a Spy
     Table catch-up roll. On success, populates the ``temper``/
-    ``treasures_owned``/``armies_led`` slice of [3.17]'s intelligence
-    payload this project can source today -- see module docstring for
-    why the other three named fields (Actions, race, alignment) still
-    aren't attempted.
+    ``alignment``/``treasures_owned``/``armies_led`` slice of [3.17]'s
+    intelligence payload this project can source today -- see module
+    docstring for why the remaining two named fields (Actions, race)
+    still aren't attempted.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -169,6 +178,7 @@ def execute_trail(
     return TrailExecutionResult(
         spied_on=True,
         temper=target.temper,
+        alignment=target.alignment,
         treasures_owned=tuple(state.items_held_by(target.leader_id)),
         armies_led=tuple(target_armies),
     )
