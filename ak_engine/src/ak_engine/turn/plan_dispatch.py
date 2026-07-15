@@ -57,28 +57,40 @@ to dispatch automatically:
   (rulebook [3.7]); **King-vs-Hero co-location is enforced as of Phase
   40**, same pattern as Disband (a King bypasses it; a Hero must be
   co-located with the target -- which also naturally covers "firing
-  himself," since he's always in his own province). Neither models the
-  rulebook's finer unsourced/undata-able details: a Hero's own "required
-  pay" (may be less than the offer), recurring per-turn pay, or
-  alignment-based hire refusal. **Phase 161 confirmed these genuinely
-  absent, not merely unsearched**: `LCost` (the one Pascal identifier
-  tied to a Hero's per-turn/required pay, cited at four separate sites
-  in `REPORTS.PAS` -- the FINANCES section total, the CHARACTERS
-  section's own "who, we hear, desires to enter thy Majesty's service
-  for # gold per annum" mercenary-mention line, and the per-leader
-  ARMIES listing) is called but never *defined* anywhere in the 13
-  available `.PAS` files -- the same missing-main-program category
-  already confirmed for `ACost`/`Tax_Base`/`Inv_Bonus` (Phase 158's
-  own README note). No separate `Hire`-specific procedure survives
-  either; only `_LHire`'s own narrative dispatch code (`SAY.PAS` ->
-  `acchire.x`, already modeled as `render_hire_accepted()`, Phase 114)
-  exists in the archive. See ``README.md`` for the full research
-  trail. **Phase 143**:
-  ``_dispatch_fire`` returns a real ``FireExecutionResult`` (``fired``/
-  ``reason``) instead of a bare ``FireRequest`` -- the caller previously
-  had no signal at all for whether the Fire actually happened; see
-  ``report/turn_report.py describe_hire()``/``describe_fire()`` for the
-  new consumers this unblocks. **A successful
+  himself," since he's always in his own province). **Phase 161
+  confirmed the rulebook's own "required pay" mechanic genuinely
+  absent from the surviving Pascal source, not merely unsearched**:
+  `LCost` (the one Pascal identifier tied to a Hero's per-turn/required
+  pay, cited at four separate sites in `REPORTS.PAS` -- the FINANCES
+  section total, the CHARACTERS section's own "who, we hear, desires to
+  enter thy Majesty's service for # gold per annum" mercenary-mention
+  line, and the per-leader ARMIES listing) is called but never
+  *defined* anywhere in the 13 available `.PAS` files -- the same
+  missing-main-program category already confirmed for
+  `ACost`/`Tax_Base`/`Inv_Bonus` (Phase 158's own README note). No
+  separate `Hire`-specific procedure survives either; only `_LHire`'s
+  own narrative dispatch code (`SAY.PAS` -> `acchire.x`, already
+  modeled as `render_hire_accepted()`, Phase 114) exists in the
+  archive. **Phase 162 supplies a formula anyway**, not transcribed
+  from Pascal source (none survives) but designed from the player's
+  manual text the user quoted directly plus one real, hard data point
+  ("a Good King generally cannot hire a Pagan Hero") -- see
+  ``turn/hire_pay.py``'s own docstring for the full derivation.
+  ``_dispatch_hire`` now looks up the kingdom's own King
+  (``LeaderState.is_king``), computes ``required_pay(hero, king)``, and
+  charges *that* amount (not the raw offer) -- refusing outright when
+  the alignment gap is too wide (``pay >= 5``, unreachable via any
+  legal <=4-gold offer) or when the offer is below the computed pay
+  (a genuine, narratable price counter-offer). Recurring per-turn pay
+  (only the one-time hiring charge is modeled, matching Recruit's own
+  established simplification) remains unmodeled -- no sourced formula
+  for it exists either. See ``README.md`` for the full research trail.
+  **Phase 143**: ``_dispatch_fire`` returns a real
+  ``FireExecutionResult`` (``fired``/``reason``) instead of a bare
+  ``FireRequest`` -- the caller previously had no signal at all for
+  whether the Fire actually happened; see ``report/turn_report.py
+  describe_hire()``/``describe_fire()`` for the new consumers this
+  unblocks. **A successful
   Hire also dispatches the hired Hero's own embedded plan the same turn**
   (Phase 32, ``run_leader_plan``'s nested-plan handling -- see below).
 - **SEARCH** actually executes (decoded Phase 19, executed Phase 132):
@@ -347,6 +359,7 @@ from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decod
 from ak_engine.turn.exploration import resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
+from ak_engine.turn.hire_pay import required_pay
 from ak_engine.turn.move_execution import execute_move, record_kingdom_exploration
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import PracticeExecutionResult, execute_practice
@@ -405,6 +418,13 @@ class HireExecutionResult:
     request: HireRequest
     hired: bool
     reason: str | None = None  # set when hired is False
+    # Phase 162: the Hero's own real required pay (``turn/hire_pay.py
+    # required_pay()``), set whenever it was actually computed -- i.e.
+    # every case that reaches the co-location/treasury checks, hired or
+    # not. ``None`` for the earlier administrative failures (hero not
+    # found/is a King/already employed/not co-located), which never
+    # reach the pay computation.
+    minimum_gold: int | None = None
 
 
 @dataclass(slots=True)
@@ -710,18 +730,29 @@ def _dispatch_hire(phase: PlanPhase, state: GameState, kingdom_id: int, leader_i
         # same province."
         return HireExecutionResult(request, hired=False, reason="not co-located")
 
-    kingdom = state.kingdoms[kingdom_id]
-    if kingdom.treasury < request.gold_offer:
-        return HireExecutionResult(request, hired=False, reason="insufficient treasury")
+    king = next(
+        (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
+        None,
+    )
+    pay = required_pay(hero, king)
 
-    # Simplification: the rulebook's Hero "pay required" (which may be
-    # lower than the offer, and unrelated to ability -- see module
-    # docstring) isn't modeled, so the full offer is always charged and
-    # the Hero always accepts if co-located and affordable.
-    kingdom.treasury -= request.gold_offer
+    if pay >= 5:
+        # rulebook: "a Good King generally cannot hire a Pagan Hero" --
+        # an alignment gap this wide is refused outright, not merely
+        # priced out of reach (see turn/hire_pay.py's own docstring for
+        # why 5 is unreachable via a normal <=4-gold offer at all).
+        return HireExecutionResult(request, hired=False, reason="alignment gap too wide", minimum_gold=pay)
+    if request.gold_offer < pay:
+        return HireExecutionResult(request, hired=False, reason="offer below required pay", minimum_gold=pay)
+
+    kingdom = state.kingdoms[kingdom_id]
+    if kingdom.treasury < pay:
+        return HireExecutionResult(request, hired=False, reason="insufficient treasury", minimum_gold=pay)
+
+    kingdom.treasury -= pay
     hero.kingdom_id = kingdom_id
 
-    return HireExecutionResult(request, hired=True)
+    return HireExecutionResult(request, hired=True, minimum_gold=pay)
 
 
 def _dispatch_fire(phase: PlanPhase, state: GameState, leader_id: int) -> FireExecutionResult:

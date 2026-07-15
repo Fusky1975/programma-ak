@@ -33,6 +33,21 @@ enum-ordinal step, clamped to the enum's own real range
 (``Alignment.SPECIAL`` / ``Temper.BERSERK`` are each enum's own highest
 ordinal, confirming the clamp bounds directly).
 
+**Phase 162 fixes a genuine ordinal-order bug here**: the alignment
+"ordinal" this function nudges must be the real Pascal ``outlook``
+sequence (``Heavenly=0, Good=1, Druidic=2, Worldly=3, ...`` --
+``models/alignment.py``'s own ``ALIGNMENT_ORDINAL``/
+``ALIGNMENT_BY_ORDINAL``, added the same phase), not
+``models/alignment.py Alignment``'s own Python declaration order
+(chosen, Phase 4/80, to match display strings, not Pascal ordinals).
+This module used ``tuple(Alignment)`` -- the wrong, declaration-order
+sequence -- from Phase 136 until this fix; found while designing
+Hire's required-pay formula, which needed the *real* ordinal distance
+for an unrelated reason and exposed the mismatch by cross-checking a
+real rulebook data point (a Good King generally cannot hire a Pagan
+Hero -- true only at real ordinal distance 3, not at the
+declaration-order distance for the same pair).
+
 **The noise source is each id's own parity (odd/even), not a random
 roll** -- ``(ln and 1) - (agent and 1)``: the nudge is ``+1`` if the
 target's id is odd and the agent's is even, ``-1`` if reversed, ``0``
@@ -98,10 +113,9 @@ before.
 
 from __future__ import annotations
 
-from ak_engine.models.alignment import Alignment
+from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.temper import Temper
 
-_ALIGNMENT_ORDER: tuple[Alignment, ...] = tuple(Alignment)
 _TEMPER_ORDER: tuple[Temper, ...] = tuple(Temper)
 
 
@@ -130,10 +144,10 @@ def estimate_alignment(
 
     if perfect:
         return true_alignment
-    max_ordinal = len(_ALIGNMENT_ORDER) - 1
-    true_ordinal = _ALIGNMENT_ORDER.index(true_alignment)
+    max_ordinal = len(ALIGNMENT_BY_ORDINAL) - 1
+    true_ordinal = ALIGNMENT_ORDINAL[true_alignment]
     nudged = _nudge(true_ordinal, target_id, agent_id, max_ordinal)
-    return _ALIGNMENT_ORDER[nudged]
+    return ALIGNMENT_BY_ORDINAL[nudged]
 
 
 def estimate_temper(

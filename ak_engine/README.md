@@ -237,9 +237,13 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   them, same situation as other entries in the TODO section below): a
   Hero's own "required pay" (which may be lower than the offer and
   depends on unmodeled per-Hero temper/race/alignment compatibility --
-  **Phase 161 confirmed no source for this formula survives at all**,
-  see that phase's own note below), recurring per-gameturn pay (only
-  the initial offer is charged, once).
+  **Phase 161 confirmed no Pascal source for this formula survives at
+  all, and Phase 162 designs and implements one anyway** from the
+  player's manual text plus a real hard data point, see that phase's
+  own note below -- `_dispatch_hire` now charges the computed required
+  pay, not the raw offer), recurring per-gameturn pay (only the initial
+  charge is modeled, once -- still no sourced formula for the recurring
+  case).
   ~~"Can't Hire a Hero who rules his own province" (no King flag to
   check against)~~ **also fixed in Phase 40**.
   **A real, confirmed parser bug was found while researching this
@@ -6011,7 +6015,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     real, still-open simplification distinct from "no field at all."
   - Non-breaking: full suite passed unchanged (2147 passed) -- no new
     tests, docstring-only change.
-- **Phase 161 (current)**: research-only -- confirmed Hire's own
+- **Phase 161**: research-only -- confirmed Hire's own
   "required pay" temper/race/alignment compatibility formula (open
   since Phase 17) has no surviving source at all, and documented that
   finding everywhere the gap was previously described as merely
@@ -6036,6 +6040,77 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     implemented" section.
   - Docstring/README-only change; no code or test changes. Full suite
     passed unchanged (2147 passed).
+- **Phase 162 (current)**: designs and implements Hire's real
+  required-pay formula, closing the gap Phase 161 confirmed has no
+  surviving Pascal source -- authorized directly by the user, who
+  quoted the real player's manual text for Hire Hero ([3.5]) and
+  instructed this project to design an algorithm from alignment
+  distance and temperament, capped at 5 gold (unhireable without Charm
+  or Resurrection, since the Hire action's own offer ceiling is 4).
+  - **A pre-existing bug found and fixed along the way**:
+    `models/alignment.py`'s own `Alignment` enum declaration order
+    (`DIVINE, GOOD, NEUTRAL, EVIL, ANTI_HOLY, PAGAN, DRUID, UNDEAD,
+    MECHANICAL, SPECIAL` -- chosen, Phase 4/80, to match display
+    strings) does not match the real Pascal `outlook` ordinal sequence
+    (`Heavenly=0, Good=1, Druidic=2, Worldly=3, Animal=4, Evil=5,
+    Hellish=6, Undead=7, Mechanical=8, Special=9`, already quoted in
+    that module's own docstring). `turn/intelligence_estimate.py`'s
+    `estimate_alignment()` had used `tuple(Alignment)` -- the wrong,
+    declaration-order sequence -- for its own real `Align_Est`
+    ordinal-nudge formula since Phase 136. New `ALIGNMENT_ORDINAL`/
+    `ALIGNMENT_BY_ORDINAL` (`models/alignment.py`) supply the correct
+    mapping; `estimate_alignment()` now uses it. Confirmed load-bearing
+    by cross-checking the user's own hard data point: "a Good King
+    generally cannot hire a Pagan Hero" is only true (distance 3) at
+    the real ordinals, not the declaration-order ones.
+  - **`turn/hire_pay.py`** (new): `required_pay(hero, king) -> int`,
+    an integer 1-5. `align_distance` (real `ALIGNMENT_ORDINAL` gap,
+    0 if either side's alignment is unrecorded) maps to a base pay of
+    1/2/3 for distances 0/1/2, or straight to 5 for distance >= 3 --
+    deliberately skipping 4, so the anchor case (Good King, Pagan Hero,
+    distance 3) reproduces exactly as "generally cannot hire" rather
+    than merely "expensive." A temper mismatch (`LeaderState.temper`,
+    Phase 139) adds +1, capped at 5; missing temper data defaults to
+    "same" (the permissive case), the same convention this project
+    already uses for other unset per-leader fields.
+  - **`LeaderState.alignment: Alignment | None = None`** (new field,
+    `models/game_state.py`) -- mirrors `.temper`'s own Phase 139
+    precedent. Previously only `KingdomState.alignment` (kingdom-level)
+    existed; this is the first per-leader alignment field, and
+    `turn/hire_pay.py` is its first real consumer.
+  - **`turn/plan_dispatch.py _dispatch_hire()` rewritten**: looks up
+    the kingdom's own King (`LeaderState.is_king`, the same idiom
+    `battle_orchestrator.py` already uses), computes
+    `required_pay(hero, king)`, and charges *that* amount rather than
+    the raw `request.gold_offer`. Refuses outright
+    (`reason="alignment gap too wide"`) when `pay >= 5` -- unreachable
+    via any legal <=4-gold offer -- or issues a real price counter-offer
+    (`reason="offer below required pay"`) when the offer is below the
+    computed pay. `HireExecutionResult` gained `minimum_gold: int |
+    None`, set whenever pay was actually computed. Recurring per-turn
+    pay stays unmodeled (no sourced formula for it either, matching
+    Recruit's own established one-time-charge simplification).
+  - **`report/turn_report.py describe_hire()` unblocked**: the two
+    Phase 114 renderers that had no real trigger under the old
+    "always accept if affordable" simplification now have one --
+    `render_hire_refused` (`REFHIRE.X`) on `"alignment gap too wide"`,
+    `render_hire_counter_offer` (`_LCounter`) on `"offer below required
+    pay"`, using the new `minimum_gold`.
+  - Two pre-existing tests updated for the new charged-amount behavior
+    (`test_dispatch_hire_assigns_independent_hero_and_debits_treasury`:
+    treasury delta 3->1, since neither side had a recorded alignment/
+    temper in that fixture; `test_dispatch_hire_fails_on_insufficient_
+    treasury`: starting treasury lowered from 2 to 0, since 2 gold is
+    now enough to cover the default pay of 1). Two `test_intelligence_
+    estimate.py` expectations updated for the ordinal-order fix
+    (GOOD-nudged-up now lands on `DRUID`, the real next ordinal, not
+    `NEUTRAL`).
+  - 18 new tests: `ALIGNMENT_ORDINAL`/`ALIGNMENT_BY_ORDINAL`
+    (`tests/test_alignment.py`), `required_pay()`
+    (`tests/test_hire_pay.py`, new file), the three new
+    `_dispatch_hire()` outcomes and `describe_hire()`'s two newly
+    reachable renderers. Full suite: 2165 passed (2147 unchanged +
+    18 new).
 
 ## Setup
 
@@ -6260,17 +6335,28 @@ rulebook before being turned into named, typed fields:
   - **Hire's remaining gaps** (see Phase 17's note above): a Hero's own
     "required pay" (may be less than the offer, depends on
     temper/race/alignment compatibility -- `models/temper.py Temper`
-    now exists as of Phase 82, but the actual compatibility *formula*
-    is still unmodeled, no more than the enum itself) -- **confirmed
-    genuinely absent as of Phase 161**, not merely still unmodeled:
-    `LCost`, the one Pascal identifier tied to a Hero's per-turn/
-    required pay, is called at four separate sites in `REPORTS.PAS`
-    but never *defined* anywhere in the 13 available `.PAS` files --
-    the same missing-main-program category as `ACost`/`Tax_Base`/
-    `Inv_Bonus` (Phase 158's own note above). No separate
-    `Hire`-specific procedure survives either. Recurring per-gameturn
-    pay (only the one-time offer is charged) and alignment-based hire
-    refusal share the same fate -- neither has any surviving source.
+    now exists as of Phase 82) -- **confirmed genuinely absent from the
+    Pascal source as of Phase 161** (`LCost`, the one identifier tied
+    to a Hero's per-turn/required pay, is called at four separate sites
+    in `REPORTS.PAS` but never *defined* anywhere in the 13 available
+    `.PAS` files -- the same missing-main-program category as
+    `ACost`/`Tax_Base`/`Inv_Bonus`, Phase 158's own note above; no
+    separate `Hire`-specific procedure survives either) -- **and closed
+    anyway by Phase 162**, which designs and implements a formula from
+    the player's manual text (alignment distance + temper match, 1-5
+    gold) rather than transcribing Pascal source that doesn't exist --
+    see that phase's own note above for the full derivation and its
+    `turn/hire_pay.py required_pay()`. ~~Race compatibility~~ was
+    explicitly excluded from the formula per the user's own
+    instruction (only alignment distance and temperament), and
+    `LeaderState` still has no `.race` field to source it from anyway.
+    Recurring per-gameturn pay (only the one-time hiring charge is
+    modeled, matching Recruit's own established simplification) and a
+    genuine "rare exception" bypass for wide alignment gaps (the
+    rulebook: "In rare occasioni un Re può assoldare Eroi con un
+    Allineamento distante più di due posizioni" -- not modeled as a
+    random chance here, only as Charm/Resurrection's own already-real
+    bypass routes) remain open, with no sourced formula for either.
     ~~"Can't Hire a Hero who rules his
     own province" (no King flag)~~ **fixed in Phase 40** -- see below.
     ~~`run_leader_plan` doesn't dispatch a `PlanPhase.nested_plan`'s own

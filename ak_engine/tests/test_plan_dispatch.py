@@ -599,7 +599,11 @@ def test_dispatch_hire_assigns_independent_hero_and_debits_treasury():
     assert isinstance(result, HireExecutionResult)
     assert result.hired is True
     assert state.leaders[32].kingdom_id == 1
-    assert state.kingdoms[1].treasury == 97
+    # Neither the Hero nor Testia's King has a recorded alignment/temper
+    # (Phase 162's required_pay() default -- see turn/hire_pay.py), so
+    # required pay is the cheapest bucket (1), not the raw 3-gold offer.
+    assert state.kingdoms[1].treasury == 99
+    assert result.minimum_gold == 1
 
 
 def test_dispatch_hire_fails_when_hero_not_colocated():
@@ -630,7 +634,10 @@ def test_dispatch_hire_fails_when_hero_already_employed():
 
 def test_dispatch_hire_fails_on_insufficient_treasury():
     location = HexCoord(3, 9)
-    state, army_id = _state_with_army(location, {}, treasury=2)
+    # required_pay() defaults to 1 (no alignment/temper recorded on
+    # either side, Phase 162) -- treasury must be below *that*, not
+    # merely below the gold_offer, to genuinely exercise this path.
+    state, army_id = _state_with_army(location, {}, treasury=0)
     state.add_leader(LeaderState(32, None, "Wandering Hero", location))
     phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[3])
 
@@ -639,7 +646,62 @@ def test_dispatch_hire_fails_on_insufficient_treasury():
     assert result.hired is False
     assert result.reason == "insufficient treasury"
     assert state.leaders[32].kingdom_id is None
-    assert state.kingdoms[1].treasury == 2  # untouched
+    assert state.kingdoms[1].treasury == 0  # untouched
+
+
+# --- Hire's real required-pay formula (Phase 162) -------------------------
+
+
+def test_dispatch_hire_refuses_a_hero_with_too_wide_an_alignment_gap():
+    # Testia's King (_state_with_army) has no recorded alignment/temper,
+    # so give him one explicitly here: GOOD vs the Hero's PAGAN is real
+    # ordinal distance 3 -- "a Good King generally cannot hire a Pagan
+    # Hero" (the user's own rulebook-quoted anchor case).
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.leaders[LEADER_ID].alignment = Alignment.GOOD
+    state.add_leader(LeaderState(32, None, "Wandering Hero", location, alignment=Alignment.PAGAN))
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[4])  # max legal offer
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is False
+    assert result.reason == "alignment gap too wide"
+    assert result.minimum_gold == 5
+    assert state.leaders[32].kingdom_id is None
+    assert state.kingdoms[1].treasury == 100  # untouched
+
+
+def test_dispatch_hire_counter_offers_when_offer_is_below_required_pay():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.leaders[LEADER_ID].alignment = Alignment.GOOD
+    # DRUID is real ordinal distance 1 from GOOD -> required pay 2.
+    state.add_leader(LeaderState(32, None, "Wandering Hero", location, alignment=Alignment.DRUID))
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[1])  # below the required 2
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is False
+    assert result.reason == "offer below required pay"
+    assert result.minimum_gold == 2
+    assert state.leaders[32].kingdom_id is None
+    assert state.kingdoms[1].treasury == 100  # untouched
+
+
+def test_dispatch_hire_succeeds_and_charges_only_the_required_pay_not_the_offer():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.leaders[LEADER_ID].alignment = Alignment.GOOD
+    state.add_leader(LeaderState(32, None, "Wandering Hero", location, alignment=Alignment.GOOD))
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[4])  # offers more than required
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is True
+    assert result.minimum_gold == 1
+    assert state.leaders[32].kingdom_id == 1
+    assert state.kingdoms[1].treasury == 99  # only the required 1, not the offered 4
 
 
 def test_dispatch_fire_releases_hero_to_independent():

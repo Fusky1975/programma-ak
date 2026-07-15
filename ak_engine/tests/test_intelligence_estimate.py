@@ -11,15 +11,15 @@ def test_estimate_alignment_perfect_returns_exact_value():
 
 
 def test_estimate_alignment_nudges_up_when_target_odd_agent_even():
-    # GOOD is ordinal 1; target odd(3) contributes +1, agent even(2) contributes -0 -> +1 -> NEUTRAL(2)
+    # Real Pascal ordinal: GOOD=1; target odd(3) contributes +1, agent even(2) contributes -0 -> +1 -> DRUID(2)
     result = estimate_alignment(Alignment.GOOD, target_id=3, agent_id=2, perfect=False)
-    assert result is Alignment.NEUTRAL
+    assert result is Alignment.DRUID
 
 
 def test_estimate_alignment_nudges_down_when_target_even_agent_odd():
-    # NEUTRAL is ordinal 2; target even(4) contributes +0, agent odd(3) contributes -1 -> -1 -> GOOD(1)
+    # Real Pascal ordinal: NEUTRAL=3; target even(4) contributes +0, agent odd(3) contributes -1 -> -1 -> DRUID(2)
     result = estimate_alignment(Alignment.NEUTRAL, target_id=4, agent_id=3, perfect=False)
-    assert result is Alignment.GOOD
+    assert result is Alignment.DRUID
 
 
 def test_estimate_alignment_same_parity_is_unchanged():

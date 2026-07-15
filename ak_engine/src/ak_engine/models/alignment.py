@@ -53,6 +53,24 @@ A full kingdom alignment model (multi-tag combinations, alignment
 shifts, diplomacy effects, the `office`/rank-threshold system
 `REPORTS.PAS`'s own `lalign` comparison feeds into) is still a
 separate, much larger system this project hasn't built.
+
+**Phase 162 adds `ALIGNMENT_ORDINAL`/`ALIGNMENT_BY_ORDINAL`**, the real
+Pascal `outlook` ordinal sequence quoted above (`Heavenly=0, Good=1,
+Druidic=2, Worldly=3, Animal=4, Evil=5, Hellish=6, Undead=7,
+Mechanical=8, Special=9`) -- **deliberately NOT this module's own
+declaration order** (`DIVINE, GOOD, NEUTRAL, EVIL, ANTI_HOLY, PAGAN,
+DRUID, UNDEAD, MECHANICAL, SPECIAL`), which was chosen (Phase 4/80) to
+match the *display strings*' own historical listing order, not the
+real ordinal sequence. Found load-bearing while designing Hire's
+required-pay formula ([3.16], user-supplied manual quote): "a Good King
+generally cannot hire a Pagan Hero" only reproduces as ">2 ordinal
+positions apart" using these REAL ordinals (Good=1, Pagan=4, distance
+3) -- `tuple(Alignment)`'s declaration order gives a different (and, in
+general, wrong) distance for most pairs. `turn/intelligence_estimate.py`
+was discovered, while researching this, to have relied on
+`tuple(Alignment)` for its own `Align_Est` ordinal-distance formula
+since Phase 136 -- a genuine bug, fixed the same phase this mapping was
+added, using this table instead.
 """
 
 from __future__ import annotations
@@ -71,3 +89,24 @@ class Alignment(Enum):
     UNDEAD = "Undead"
     MECHANICAL = "Mechanical"
     SPECIAL = "Special"
+
+
+# CTBOTH.PAS `outlook = (Heavenly, Good, Druidic, Worldly, Animal, Evil,
+# Hellish, Undead, Mechanical, Special)` -- the real Pascal ordinal
+# sequence, distinct from this module's own declaration order above.
+ALIGNMENT_ORDINAL: dict[Alignment, int] = {
+    Alignment.DIVINE: 0,
+    Alignment.GOOD: 1,
+    Alignment.DRUID: 2,
+    Alignment.NEUTRAL: 3,
+    Alignment.PAGAN: 4,
+    Alignment.EVIL: 5,
+    Alignment.ANTI_HOLY: 6,
+    Alignment.UNDEAD: 7,
+    Alignment.MECHANICAL: 8,
+    Alignment.SPECIAL: 9,
+}
+
+ALIGNMENT_BY_ORDINAL: tuple[Alignment, ...] = tuple(
+    sorted(ALIGNMENT_ORDINAL, key=lambda member: ALIGNMENT_ORDINAL[member])
+)

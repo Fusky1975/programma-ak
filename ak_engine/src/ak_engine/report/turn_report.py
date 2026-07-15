@@ -2692,22 +2692,25 @@ def describe_hire(
     ``HireExecutionResult`` (``turn/plan_dispatch.py _dispatch_hire()``,
     Phase 17) -- the same ``describe_give()``-style composer (Phase 142).
 
-    Only ``render_hire_accepted`` (``ACCHIRE.X``) is ever reachable:
-    ``_dispatch_hire()``'s own docstring already documents that this
-    project always charges the full offer and always accepts a Hire
-    that's co-located and affordable ("Simplification: the rulebook's
-    Hero 'pay required'... isn't modeled"), so neither
-    ``render_hire_refused`` (``REFHIRE.X``, alignment-based) nor
-    ``render_hire_counter_offer`` (``_LCounter``, price-based) has any
-    real trigger in ``HireExecutionResult.reason`` -- every one of its
-    real failure strings ("hero not found", "cannot hire a King", "hero
-    already in service", "not co-located", "insufficient treasury") is
-    an administrative failure with no sourced narrative template,
-    exactly like most of ``describe_give()``'s own failure reasons.
+    **Phase 162 unblocks the other two renderers**: ``_dispatch_hire()``
+    now computes a real required pay (``turn/hire_pay.py
+    required_pay()``) instead of always accepting a co-located,
+    affordable offer, giving both ``render_hire_refused`` (``REFHIRE.X``,
+    reason ``"alignment gap too wide"``) and ``render_hire_counter_offer``
+    (``_LCounter``, reason ``"offer below required pay"``, using
+    ``result.minimum_gold``) their first real triggers. The remaining
+    failure strings ("hero not found", "cannot hire a King", "hero
+    already in service", "not co-located", "insufficient treasury") stay
+    administrative, with no sourced narrative template -- same as most
+    of ``describe_give()``'s own failure reasons.
     """
 
     if result.hired:
         return render_hire_accepted(character_name, hireling_name, king_name, rng)
+    if result.reason == "alignment gap too wide":
+        return render_hire_refused(character_name, hireling_name, king_name, rng)
+    if result.reason == "offer below required pay" and result.minimum_gold is not None:
+        return render_hire_counter_offer(character_name, hireling_name, result.minimum_gold, rng)
     return None
 
 

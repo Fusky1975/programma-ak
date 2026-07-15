@@ -1218,11 +1218,9 @@ def test_describe_hire_renders_acceptance():
     assert line == "Aldric spoke to Borin and convinced Borin to pledge Borin's allegiance to King Harold the Bold."
 
 
-def test_describe_hire_renders_nothing_on_any_failure_reason():
-    # Every real HireExecutionResult failure reason is an administrative
-    # one with no sourced narrative -- see describe_hire()'s own
-    # docstring for why render_hire_refused/render_hire_counter_offer
-    # are never reachable at all.
+def test_describe_hire_renders_nothing_on_administrative_failure_reasons():
+    # These five real HireExecutionResult failure reasons stay
+    # administrative, with no sourced narrative template.
     for reason in ("hero not found", "cannot hire a King", "hero already in service", "not co-located", "insufficient treasury"):
         result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=2), hired=False, reason=reason)
         rng = ScriptedRandom([])
@@ -1230,6 +1228,30 @@ def test_describe_hire_renders_nothing_on_any_failure_reason():
         line = describe_hire(result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=rng)
 
         assert line is None
+
+
+def test_describe_hire_renders_refusal_on_too_wide_an_alignment_gap():
+    # Phase 162 unblocks render_hire_refused (REFHIRE.X) via the real
+    # required-pay formula's "alignment gap too wide" reason.
+    result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=4), hired=False, reason="alignment gap too wide", minimum_gold=5)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    line = describe_hire(result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=rng)
+
+    assert line is not None
+    assert "Borin" in line
+    assert "King Harold the Bold" in line
+
+
+def test_describe_hire_renders_counter_offer_on_price_refusal():
+    # Phase 162 unblocks render_hire_counter_offer (_LCounter) via the
+    # real required-pay formula's "offer below required pay" reason.
+    result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=1), hired=False, reason="offer below required pay", minimum_gold=3)
+    rng = ScriptedRandom([0.1] * 10)
+
+    line = describe_hire(result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=rng)
+
+    assert line == "Borin informed Aldric that Borin would not sell Borin's services for less than 3 gold."
 
 
 def test_describe_fire_renders_a_successful_release():

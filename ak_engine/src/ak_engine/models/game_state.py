@@ -219,6 +219,12 @@ class LeaderState:
     # generation source for it, same category of gap as `skills`
     # before Phase 30/31 gave it a real populating consumer.
     birth_x: int | None = None
+    # Phase 162: the leader's own true Alignment (models/alignment.py),
+    # mirroring `temper`'s own Phase 139 precedent -- None = not
+    # recorded, the same "no data" convention. Previously only
+    # `KingdomState.alignment` existed; `turn/hire_pay.py`'s
+    # required-pay formula is this field's first real consumer.
+    alignment: Alignment | None = None
 
 
 @dataclass(slots=True)
