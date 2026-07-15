@@ -7,6 +7,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord
+from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.report.turn_report import (
     ALREADY_ALLIED_TEMPLATE,
@@ -171,6 +172,7 @@ from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
+from ak_engine.turn.encounter import FireArrowShot
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
@@ -2521,6 +2523,142 @@ def test_describe_search_inconclusive_combat_renders_only_the_opening_line():
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
 
     assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+# -- Phase 175: per-shot Fire Arrow narration, including the dragon-breath/
+# boulder-throw/petrifying-gaze species flavor --
+
+
+def test_describe_search_monster_breath_weapon_hit_uses_flavored_renderer():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner=None,
+        fire_arrow_shots=(FireArrowShot(shooter="b", hit=True, damage=7),),
+        guardian_monster=Monster.R_DRAGON,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "The Red Dragon breathes, and the impact deals 7 damage points.",
+    ]
+
+
+def test_describe_search_monster_breath_weapon_miss_uses_flavored_renderer():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner=None,
+        fire_arrow_shots=(FireArrowShot(shooter="b", hit=False, damage=0),),
+        guardian_monster=Monster.GR_DRAGON,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "The Green Dragon breathes, but Aldric miraculously manages to evade it!",
+    ]
+
+
+def test_describe_search_giant_boulder_throw_hit_uses_flavored_renderer():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner=None,
+        fire_arrow_shots=(FireArrowShot(shooter="b", hit=True, damage=6),),
+        guardian_monster=Monster.GIANT,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "The Giant hurls a huge boulder, and the impact deals 6 damage points.",
+    ]
+
+
+def test_describe_search_basilisk_petrifying_gaze_miss_uses_flavored_renderer():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner=None,
+        fire_arrow_shots=(FireArrowShot(shooter="b", hit=False, damage=0),),
+        guardian_monster=Monster.BASILISK,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "The Basilisk casts a gaze, but Aldric evades it.",
+    ]
+
+
+def test_describe_search_leader_shot_always_uses_the_generic_renderer_even_vs_a_flavored_monster():
+    # Only the guardian's own shots get species flavor -- the leader's
+    # never do, per the user's own footnote wording (module docstring's
+    # Phase 175 addendum).
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner=None,
+        fire_arrow_shots=(FireArrowShot(shooter="a", hit=True, damage=4),),
+        guardian_monster=Monster.R_DRAGON,
+    )
+    rng = ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert len(lines) == 2
+    assert "breathes" not in lines[1]
+    assert lines[1] == "Aldric Fired an arrow at Red Dragon and inflicted 4 damage points."
+
+
+def test_describe_search_titan_has_no_flavor_mapping_falls_back_to_generic():
+    # models/weapon.py's own deliberately-preserved discrepancy: Titan
+    # maps to Weapon.NO_WEAP, not Weapon.BOULDER, despite the user's own
+    # footnote naming Titan alongside Giant/Treant for the boulder throw.
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner=None,
+        fire_arrow_shots=(FireArrowShot(shooter="b", hit=False, damage=0),),
+        guardian_monster=Monster.TITAN,
+    )
+    rng = ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert len(lines) == 2
+    assert "hurls a huge boulder" not in lines[1]
+    assert lines[1] == "Titan Fired an arrow at Aldric and missed."
+
+
+def test_describe_search_shot_narration_appears_before_the_mortal_wound_line():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner="monster",
+        leader_killed=True,
+        fire_arrow_shots=(FireArrowShot(shooter="b", hit=True, damage=9),),
+        guardian_monster=Monster.R_DRAGON,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "The Red Dragon breathes, and the impact deals 9 damage points.",
+        "Aldric was mortally wounded.",
+    ]
 
 
 # -- Phase 157: Quote of the Week --

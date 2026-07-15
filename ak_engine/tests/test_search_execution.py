@@ -9,7 +9,7 @@ from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
-from ak_engine.turn.encounter import FIRE_ARROW_DAMAGE_RANGE, EncounterCombatResult
+from ak_engine.turn.encounter import FIRE_ARROW_DAMAGE_RANGE, EncounterCombatResult, FireArrowShot
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.search_execution import (
     FLEE_CHANCE,
@@ -394,3 +394,68 @@ def test_execute_search_monster_missile_damage_range_defaults_when_unarmed():
     monster_combatant = mock_resolve.call_args[0][1]
     assert monster_combatant.archery_skill == 0
     assert monster_combatant.missile_damage_range == FIRE_ARROW_DAMAGE_RANGE
+
+
+# -- Phase 175: carrying the Fire Arrow shot log + guardian species out to the report layer --
+
+
+def test_execute_search_shoot_tactic_carries_shots_and_guardian_monster_on_win():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    shots = (FireArrowShot(shooter="a", hit=True, damage=4),)
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner="a", rounds=1, shots=shots)
+        result = execute_search(state, LEADER_ID, _shoot_request(1, Maneuver.SHOOT), random.Random(0))
+
+    assert result.fire_arrow_shots == shots
+    assert result.guardian_monster is Monster.GARGOYLE
+
+
+def test_execute_search_shoot_exhausted_then_melee_still_carries_the_earlier_shots():
+    # The Fire Arrow phase's own shots must survive onto whichever later
+    # tactic actually ends the fight, since a shot fired earlier in the
+    # plan is still worth narrating even though it didn't decide the
+    # outcome (turn/search_execution.py's own Phase 175 addendum).
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _shoot_request(1, Maneuver.SHOOT, Maneuver.MELEE)
+    shots = (FireArrowShot(shooter="a", hit=False, damage=0), FireArrowShot(shooter="b", hit=False, damage=0))
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_shoot.return_value = EncounterCombatResult(winner=None, rounds=1, shots=shots)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+    assert result.fire_arrow_shots == shots
+    assert result.guardian_monster is Monster.GARGOYLE
+
+
+def test_execute_search_melee_only_has_empty_fire_arrow_shots_but_still_sets_guardian():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert result.fire_arrow_shots == ()
+    assert result.guardian_monster is Monster.GARGOYLE
+
+
+def test_execute_search_shoot_exhausted_with_no_further_tactic_still_carries_shots():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    shots = (FireArrowShot(shooter="a", hit=False, damage=0),)
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot:
+        mock_shoot.return_value = EncounterCombatResult(winner=None, rounds=1, shots=shots)
+        result = execute_search(state, LEADER_ID, _shoot_request(1, Maneuver.SHOOT), random.Random(0))
+
+    assert result.combat_resolved is True
+    assert result.winner is None
+    assert result.fire_arrow_shots == shots
+    assert result.guardian_monster is Monster.GARGOYLE

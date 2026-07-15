@@ -266,9 +266,28 @@ def _acts_first(skill_a: int, skill_b: int, rng: random.Random) -> bool:
 
 
 @dataclass(slots=True)
+class FireArrowShot:
+    """One Fire Arrow shot's outcome (Phase 175) -- ``shooter`` is ``"a"``/``"b"``,
+    matching ``EncounterCombatResult.winner``'s own convention.
+    ``damage`` is ``0`` on a miss. Only ``resolve_fire_arrow_duel()``
+    populates these; ``resolve_melee_duel()`` has no per-swing log and
+    always returns an empty ``shots`` tuple.
+    """
+
+    shooter: str  # "a" / "b"
+    hit: bool
+    damage: int
+
+
+@dataclass(slots=True)
 class EncounterCombatResult:
     winner: str | None  # "a" / "b" / None (both survived -- see each resolver's docstring)
     rounds: int
+    # Phase 175: per-shot Fire Arrow detail, for narrating each shot
+    # individually (see report/turn_report.py's own Phase 175 addendum).
+    # Empty for every Melee duel and for every existing caller before
+    # this phase.
+    shots: tuple[FireArrowShot, ...] = ()
 
 
 def resolve_melee_duel(
@@ -336,6 +355,7 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
     shots_a, shots_b = fire_arrow_free_attacks(skill_a), fire_arrow_free_attacks(skill_b)
     used_a = used_b = 0
     total_rounds = max(shots_a, shots_b)
+    shots: list[FireArrowShot] = []
 
     round_number = 0
     for round_number in range(1, total_rounds + 1):
@@ -347,18 +367,22 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
                 if used_a >= shots_a:
                     continue
                 used_a += 1
-                b.hit_points -= roll_fire_arrow_attack(skill_a, rng, damage_range=a.missile_damage_range)
+                damage = roll_fire_arrow_attack(skill_a, rng, damage_range=a.missile_damage_range)
+                shots.append(FireArrowShot(shooter="a", hit=damage > 0, damage=damage))
+                b.hit_points -= damage
             else:
                 if used_b >= shots_b:
                     continue
                 used_b += 1
-                a.hit_points -= roll_fire_arrow_attack(skill_b, rng, damage_range=b.missile_damage_range)
+                damage = roll_fire_arrow_attack(skill_b, rng, damage_range=b.missile_damage_range)
+                shots.append(FireArrowShot(shooter="b", hit=damage > 0, damage=damage))
+                a.hit_points -= damage
         if a.hit_points <= 0 or b.hit_points <= 0:
             break
         _apply_end_of_round_regeneration(a, b)
 
     if b.hit_points <= 0:
-        return EncounterCombatResult(winner="a", rounds=round_number)
+        return EncounterCombatResult(winner="a", rounds=round_number, shots=tuple(shots))
     if a.hit_points <= 0:
-        return EncounterCombatResult(winner="b", rounds=round_number)
-    return EncounterCombatResult(winner=None, rounds=round_number)
+        return EncounterCombatResult(winner="b", rounds=round_number, shots=tuple(shots))
+    return EncounterCombatResult(winner=None, rounds=round_number, shots=tuple(shots))

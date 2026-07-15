@@ -1117,14 +1117,16 @@ from ak_engine.models.enums import (
 from ak_engine.models.army_type import ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE
 from ak_engine.models.game_state import GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
+from ak_engine.models.monster import MONSTER_NAMES
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import RACE_NAME
-from ak_engine.models.weapon import Weapon
+from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
 from ak_engine.report.prose import render
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
+from ak_engine.turn.encounter import FireArrowShot
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
@@ -4480,6 +4482,26 @@ def describe_search(
       (``render_search_attempt()``), regardless of whether combat ever
       resolves -- the sentence describes *approaching* the feature, not
       its outcome.
+    - **Phase 175: each Fire Arrow shot in ``result.fire_arrow_shots`` is
+      narrated individually**, in order, right after the opening line.
+      Only the guardian's own shots (``shot.shooter == "b"``, matching
+      ``turn/encounter.py EncounterCombatResult``'s own "a"/"b" convention
+      where ``a``=leader/``b``=monster, ``turn/search_execution.py``'s own
+      Phase 175 addendum) are checked against ``missile_attack_flavor(
+      MONSTER_RANGED_WEAPON.get(result.guardian_monster))`` for a species-
+      specific dragon-breath/boulder-throw/petrifying-gaze sentence
+      (Phase 155's renderers, previously never called from anywhere); the
+      leader's own shots (``shooter == "a"``) always use the generic
+      ``render_fire_arrow_attack()``/``render_attack_hit()``/
+      ``render_attack_missed()`` triplet (Phase 111-112), per the user's
+      own footnote wording ("cosa viene scritto quando parte il missile
+      [del mostro]" -- what gets written when the monster's own missile
+      is fired) -- the flavor describes what the *monster* does, never
+      the character. A monster with no flavor mapping (``missile_attack_
+      flavor()`` returns ``None`` -- includes Titan/Treant, ``models/
+      weapon.py``'s own deliberately-preserved discrepancy, see that
+      module's Phase 94 addendum) also falls back to the generic triplet
+      for its own shots.
     - A fatal loss (``combat_resolved and winner == "monster" and
       leader_killed``) appends ``render_mortally_wounded()`` -- the same
       already-sourced MORTWOUN.X sentence (Phase 112) every other
@@ -4487,12 +4509,13 @@ def describe_search(
       "until one combatant is killed" rule applies here exactly as
       ``turn/search_execution.py``'s own docstring already states.
     - A win (``winner == "leader"``, ``feature_looted``) or an
-      inconclusive fight (``winner is None``) append nothing further:
-      no sourced sentence for "you defeated the guardian and the
-      treasure is yours" exists anywhere in the available archive --
-      confirmed absent by the same research that found Phase 148's own
-      skill-book-read gap (`TREASAB.X2`/`TREASURE.X2` are inventory-view
-      text, not a Search-victory narration), not merely unsearched.
+      inconclusive fight (``winner is None``) append nothing further
+      beyond any shot narration above: no sourced sentence for "you
+      defeated the guardian and the treasure is yours" exists anywhere
+      in the available archive -- confirmed absent by the same research
+      that found Phase 148's own skill-book-read gap (`TREASAB.X2`/
+      `TREASURE.X2` are inventory-view text, not a Search-victory
+      narration), not merely unsearched.
 
     **Not wired into ``describe_turn_results()``, for the same
     structural reason PURSUE/TRAIL/TRADE aren't (that function's own
@@ -4513,6 +4536,40 @@ def describe_search(
         return []
 
     lines = [render_search_attempt(character_name, feature_name, rng, is_sea=is_sea)]
+
+    monster_name = MONSTER_NAMES.get(result.guardian_monster, "guardian") if result.guardian_monster is not None else "guardian"
+    weapon = MONSTER_RANGED_WEAPON.get(result.guardian_monster) if result.guardian_monster is not None else None
+    flavor = missile_attack_flavor(weapon) if weapon is not None else None
+
+    for shot in result.fire_arrow_shots:
+        if shot.shooter == "b" and flavor == "breath_weapon":
+            lines.append(
+                render_breath_weapon_hit(monster_name, character_name, shot.damage, rng)
+                if shot.hit
+                else render_breath_weapon_missed(monster_name, character_name, rng)
+            )
+        elif shot.shooter == "b" and flavor == "boulder_throw":
+            lines.append(
+                render_boulder_throw_hit(monster_name, character_name, shot.damage, rng)
+                if shot.hit
+                else render_boulder_throw_missed(monster_name, character_name, rng)
+            )
+        elif shot.shooter == "b" and flavor == "petrifying_gaze":
+            lines.append(
+                render_petrifying_gaze_hit(monster_name, character_name, shot.damage, rng)
+                if shot.hit
+                else render_petrifying_gaze_missed(monster_name, character_name, rng)
+            )
+        else:
+            attacker_name, defender_name = (monster_name, character_name) if shot.shooter == "b" else (character_name, monster_name)
+            attack_line = render_fire_arrow_attack(attacker_name, defender_name, rng)
+            attack_line += (
+                render_attack_hit(defender_name, shot.damage, rng)
+                if shot.hit
+                else render_attack_missed(attacker_name, defender_name, "arrow", rng, is_sea=is_sea)
+            )
+            lines.append(attack_line)
+
     if result.combat_resolved and result.winner == "monster" and result.leader_killed:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
     return lines

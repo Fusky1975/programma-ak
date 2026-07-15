@@ -137,6 +137,57 @@ def test_resolve_fire_arrow_duel_no_kill_when_free_attacks_run_out():
     assert b.hit_points == 10
 
 
+# -- Phase 175: per-shot Fire Arrow log --
+
+
+def test_resolve_fire_arrow_duel_logs_every_shot_fired():
+    a = Combatant("A", archery_skill=2, hit_points=10)
+    b = Combatant("B", archery_skill=0, hit_points=1)
+    rng = ScriptedRandom([0.1, 0.5])  # A's one and only shot: hit-chance roll, then damage roll
+
+    result = resolve_fire_arrow_duel(a, b, rng)
+
+    assert len(result.shots) == 1
+    assert result.shots[0].shooter == "a"
+    assert result.shots[0].hit is True
+    assert 1 <= result.shots[0].damage <= 6
+
+
+def test_resolve_fire_arrow_duel_logs_a_miss_as_zero_damage():
+    a = Combatant("A", archery_skill=1, hit_points=10)
+    b = Combatant("B", archery_skill=1, hit_points=10)
+    rng = ScriptedRandom([0.99] * 10)  # every shot misses
+
+    result = resolve_fire_arrow_duel(a, b, rng)
+
+    assert len(result.shots) == 2  # one shot each (fire_arrow_free_attacks(1) == 1)
+    assert {shot.shooter for shot in result.shots} == {"a", "b"}
+    assert all(shot.hit is False and shot.damage == 0 for shot in result.shots)
+
+
+def test_resolve_fire_arrow_duel_shots_are_recorded_in_firing_order():
+    # A(skill=2) always acts first (no initiative roll needed, higher skill
+    # wins outright per _acts_first) and gets 2 free attacks vs B's 1, so
+    # the log should read a, b, a.
+    a = Combatant("A", archery_skill=2, hit_points=10)
+    b = Combatant("B", archery_skill=1, hit_points=10)
+    rng = ScriptedRandom([0.99] * 10)  # every shot misses -- nobody dies mid-log
+
+    result = resolve_fire_arrow_duel(a, b, rng)
+
+    assert [shot.shooter for shot in result.shots] == ["a", "b", "a"]
+
+
+def test_resolve_melee_duel_never_logs_shots():
+    a = Combatant("A", melee_skill=1, hit_points=10)
+    b = Combatant("B", melee_skill=0, hit_points=10)
+    rng = ScriptedRandom([0.1, 0.5, 0.9] * 15)
+
+    result = resolve_melee_duel(a, b, rng)
+
+    assert result.shots == ()
+
+
 # -- Phase 132: monster-specific melee damage range --
 
 

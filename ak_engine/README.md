@@ -6474,7 +6474,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     untouched, and a wand becoming genuinely useless (its second Use_MI
     attempt rejected) immediately after its last charge is spent. Full
     suite: 2212 passed (2208 unchanged + 4 new).
-- **Phase 173 (current)**: closes `turn/encounter.py`'s own two
+- **Phase 173**: closes `turn/encounter.py`'s own two
   remaining flagged Fire Arrow gaps -- **documentation-only, no
   behavior change** (both were already correctly implemented; the
   design just lacked a citable source). Closed directly by the user
@@ -6512,6 +6512,78 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `test_execute_search_shoot_tactic_exhausted_falls_through_to_melee`)
     -- only their surrounding documentation changed. Full suite: 2212
     passed, unchanged.
+- **Phase 174 (research only, no code changes)**: the user pointed out
+  a stale earlier survey's claim that `models/monster.py` had "55 of 61
+  species without combat stats." Direct re-reading of `Desktop/MOSTRI
+  con statistiche.txt` plus `grep -c` against `MONSTER_COMBAT_STATS`
+  confirmed that claim was simply wrong -- it conflated
+  `MONSTER_COMBAT_STATS` (60 real species, all present since Phase 154)
+  with the unrelated, deliberately-small `MONSTER_STATS` (6 entries).
+  No gap existed to close; nothing was implemented, no README entry's
+  own scope changed, no commit made. The same research did confirm the
+  file's Alignment/Magic-Abilities columns and four numbered combat
+  footnotes (Troll regeneration -- already wired, Phase 155; dragon/
+  Chimera breath; Giant/Treant/Titan boulder; Basilisk/Medusa
+  petrifying gaze) remain genuinely unmodeled -- see Phase 175 below
+  for the narrative-footnote half of that list.
+- **Phase 175 (current)**: wires the three species-specific missile-
+  attack narration variants (dragon/Chimera breath weapon, Giant
+  boulder throw, Basilisk/Medusa petrifying gaze) from `Desktop/MOSTRI
+  con statistiche.txt`'s own four numbered footnotes into Search's Fire
+  Arrow combat, closing the gap Phase 174 re-confirmed. Authorized by
+  the user: "procedi con le note narrative sul missile."
+  - **Orphaned-but-complete infrastructure discovery**: the six
+    renderer functions this phase needed (`render_breath_weapon_hit/
+    missed`, `render_boulder_throw_hit/missed`,
+    `render_petrifying_gaze_hit/missed`) and their dispatcher
+    (`missile_attack_flavor(weapon) -> str | None`) already existed,
+    fully implemented and documented, in `report/turn_report.py` since
+    Phase 155 -- but had no call site anywhere in `src/`. The real
+    missing piece was a per-shot Fire Arrow attack log, which nothing
+    in the project had ever built.
+  - `turn/encounter.py`: new `FireArrowShot` dataclass
+    (`{shooter: "a"/"b", hit: bool, damage: int}`) and a `shots: tuple
+    [FireArrowShot, ...] = ()` field on `EncounterCombatResult`
+    (empty for every Melee duel and every pre-Phase-175 caller).
+    `resolve_fire_arrow_duel()` now appends one `FireArrowShot` per
+    shot fired by either combatant, in real firing order, and returns
+    the full log in all three of its return paths.
+  - `turn/search_execution.py`: `SearchExecutionResult` gains
+    `fire_arrow_shots: tuple[FireArrowShot, ...] = ()` and
+    `guardian_monster: Monster | None = None`. `execute_search()`'s
+    tactic walk copies the Shoot tactic's own shot log out and attaches
+    both fields to whichever result the walk eventually returns --
+    the Shoot tactic's own terminal outcome, a later Melee tactic's
+    outcome (if Fire Arrow ran out first without a winner), or the
+    walk-exhausted fallback -- so a shot fired earlier in the plan is
+    still narrated even when it didn't decide the fight.
+  - `report/turn_report.py describe_search()`: now renders each shot in
+    `result.fire_arrow_shots`, in order, right after the opening
+    `_LSearch` line. Only the guardian's own shots (`shooter == "b"`)
+    are checked against `missile_attack_flavor(MONSTER_RANGED_WEAPON
+    .get(result.guardian_monster))` for a flavored renderer; the
+    leader's own shots (`shooter == "a"`) always use the generic
+    `render_fire_arrow_attack()`/`render_attack_hit()`/
+    `render_attack_missed()` triplet (Phase 111-112), matching the
+    user's own footnote wording ("cosa viene scritto quando parte il
+    missile [del mostro]" -- what gets written when the *monster's*
+    missile is fired). A monster with no flavor mapping (`missile_
+    attack_flavor()` returns `None`) also falls back to the generic
+    triplet for its own shots -- this includes Titan/Treant, `models/
+    weapon.py`'s own deliberately-preserved discrepancy (Phase 94):
+    both map to `Weapon.NO_WEAP`, not `Weapon.BOULDER`, even though the
+    user's own footnote names Giant/Treant/Titan together for the
+    boulder throw. That discrepancy is left exactly as-is, not "fixed"
+    by overriding the Pascal-sourced weapon table.
+  - 15 new tests: `tests/test_encounter.py` (+4, per-shot logging and
+    firing order, Melee never logs shots), `tests/test_search_execution
+    .py` (+4, the new fields surviving onto every terminal-result shape
+    the tactic walk can produce), `tests/test_turn_report.py` (+7,
+    each of the three flavored renderer families dispatching correctly,
+    the leader's own shot always using the generic triplet even against
+    a flavored monster, the Titan discrepancy falling back to generic,
+    and shot narration ordering before a fatal `render_mortally_wounded
+    ()` line). Full suite: 2227 passed (2212 unchanged + 15 new).
 
 ## Setup
 

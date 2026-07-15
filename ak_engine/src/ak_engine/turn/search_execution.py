@@ -131,6 +131,24 @@ dispatch *is* switched to real execution this phase (see ``turn/
 plan_dispatch.py``'s own updated docstring) -- there is no legacy
 decode-only consumer left to preserve, since Search was never wired to
 mutate ``GameState`` before.
+
+**Phase 175 addendum -- carrying the Fire Arrow shot log out to the
+report layer.** ``turn/encounter.py``'s own Phase 175 addendum gives
+``resolve_fire_arrow_duel()`` a per-shot log (``EncounterCombatResult
+.shots``) so ``report/turn_report.py`` can narrate each shot
+individually, including the dragon-breath/boulder-throw/petrifying-gaze
+flavor variants from ``Desktop/MOSTRI con statistiche.txt``'s own
+footnotes. ``SearchExecutionResult`` gains ``fire_arrow_shots`` (that
+same log, copied out of whichever ``EncounterCombatResult`` a Shoot
+tactic produced -- empty if the plan never fires an arrow) and
+``guardian_monster`` (the species fought, needed by the report layer to
+look up ``models/weapon.py MONSTER_RANGED_WEAPON`` and dispatch to a
+flavored renderer or the generic one). Both are attached to whichever
+``SearchExecutionResult`` this walk eventually returns, whether that's
+the Shoot tactic's own terminal outcome, a later Melee tactic's outcome
+(if Fire Arrow's shots ran out first without a winner), or the
+walk-exhausted fallback -- a shot fired earlier in the plan is still
+worth narrating even if it didn't end the fight.
 """
 
 from __future__ import annotations
@@ -146,6 +164,7 @@ from ak_engine.turn.encounter import (
     FIRE_ARROW_DAMAGE_RANGE,
     Combatant,
     EncounterCombatResult,
+    FireArrowShot,
     resolve_fire_arrow_duel,
     resolve_melee_duel,
 )
@@ -193,6 +212,12 @@ class SearchExecutionResult:
     feature_looted: bool = False
     leader_killed: bool = False
     fled: bool = False
+    # Phase 175: per-shot Fire Arrow detail (empty unless a Shoot tactic
+    # actually fired), plus the guardian's own species -- both needed by
+    # report/turn_report.py's own Phase 175 addendum to dispatch each shot
+    # to the right narrative renderer (species-flavored or generic).
+    fire_arrow_shots: tuple[FireArrowShot, ...] = ()
+    guardian_monster: Monster | None = None
 
 
 def execute_search(
@@ -261,6 +286,7 @@ def execute_search(
         return None
 
     combat_attempted = False
+    fire_arrow_shots: tuple[FireArrowShot, ...] = ()
     for tactic in request.tactics:
         if tactic.maneuver is Maneuver.FLEE:
             if rng.random() < FLEE_CHANCE[stats.speed]:
@@ -268,8 +294,12 @@ def execute_search(
             continue
         if tactic.maneuver is Maneuver.SHOOT:
             combat_attempted = True
-            outcome = _outcome_from(resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng))
+            duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng)
+            fire_arrow_shots = duel_result.shots
+            outcome = _outcome_from(duel_result)
             if outcome is not None:
+                outcome.fire_arrow_shots = fire_arrow_shots
+                outcome.guardian_monster = feature.guardian_monster
                 return outcome
             continue  # free attacks exhausted, nobody dead -- fall through
         if tactic.maneuver is Maneuver.MELEE:
@@ -277,16 +307,27 @@ def execute_search(
             outcome = _outcome_from(resolve_melee_duel(leader_combatant, monster_combatant, rng))
             # Melee always ends in a winner (max_rounds is only a defensive
             # engineering cap), so `outcome` is never None here in practice.
-            return outcome if outcome is not None else SearchExecutionResult(
-                accepted=True, combat_resolved=True, winner=None
+            result = (
+                outcome
+                if outcome is not None
+                else SearchExecutionResult(accepted=True, combat_resolved=True, winner=None)
             )
+            result.fire_arrow_shots = fire_arrow_shots
+            result.guardian_monster = feature.guardian_monster
+            return result
         # Every other maneuver (Steal, Talk, Say, Give, Fulfill, Scout,
         # Cast, Use_MI, Beg) isn't wired -- skip it and keep walking the
         # plan, matching how real Encounter Plans mix wired and unwired
         # tactics (module docstring's own quoted examples).
 
     if combat_attempted:
-        return SearchExecutionResult(accepted=True, combat_resolved=True, winner=None)
+        return SearchExecutionResult(
+            accepted=True,
+            combat_resolved=True,
+            winner=None,
+            fire_arrow_shots=fire_arrow_shots,
+            guardian_monster=feature.guardian_monster,
+        )
     return SearchExecutionResult(
         accepted=True,
         combat_resolved=False,
