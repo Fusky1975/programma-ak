@@ -6584,7 +6584,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     a flavored monster, the Titan discrepancy falling back to generic,
     and shot narration ordering before a fatal `render_mortally_wounded
     ()` line). Full suite: 2227 passed (2212 unchanged + 15 new).
-- **Phase 176 (current)**: closes `Desktop/MOSTRI con statistiche.txt`'s
+- **Phase 176**: closes `Desktop/MOSTRI con statistiche.txt`'s
   Alignment-distribution column ("Neutral (50%) / Pagan (50%)") for all
   60 real monster species. Authorized directly by the user: "Colmiamo
   il gap: Distribuzione di Allineamento per specie... Ogni volta che si
@@ -6620,6 +6620,39 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     all three segments of a three-option cumulative walk, and
     confirmation that exactly one roll is ever consumed. Full suite:
     2239 passed (2227 unchanged + 12 new).
+- **Phase 177 (current)**: closes `Desktop/MOSTRI con statistiche.txt`'s
+  Magic Abilities column ("1 NE", "3 WH, 3 PS, 3 EL, 2 IL") for the 29
+  of 60 real monster species that have one. Authorized directly by the
+  user: "altro gap da riempire sempre che riguarda i mostri: Conteggio
+  delle Abilità Magiche per scuola" ("another gap to fill, also about
+  monsters: count of Magic Abilities by school").
+  - `models/monster.py`: new `MONSTER_MAGIC_ABILITIES: dict[Monster,
+    dict[Ability, int]]`. The source's own `WH`/`NE`/`EL`/`PS`/`IL`
+    abbreviations map onto `models/enums.py Ability`'s 5 magic-school
+    members (`WHITE`/`NECROMANCY`/`ELEMENTAL`/`PSYCHIC`/`ILLUSION`) --
+    cross-checked directly against `Monster.WHITE_MAGE`/`NEC_MAGE`/
+    `ELE_MAGE`/`PSY_MAGE`/`ILL_MAGE`'s own species names, which name
+    their own primary school and use exactly these abbreviations for
+    it (e.g. Renegade Priest/`WHITE_MAGE` reads "3 WH, 2 NE, 2 IL").
+  - **Unlike Alignment, this is a fixed fact per species, not a
+    weighted roll** -- no new roll function needed. Only 29 of 60
+    species appear in the dict; the other 31 genuinely have no magic
+    abilities in the source (absent, not a hidden zero-everything row,
+    the same convention `MONSTER_STATS`'s own 6-of-60 coverage already
+    established).
+  - **Deliberately not wired anywhere**, for the same reason Phase
+    176's `roll_monster_alignment()` isn't: this is exactly the data a
+    future phase would need for a spellcasting monster guardian to use
+    its own `CAST` tactic in an Encounter Plan (already flagged
+    elsewhere as "blocked on the Cast-tactic-spell-id gap") -- the data
+    is now real and ready, but there is still no monster-side Cast-
+    tactic combat engine in this project to hand it to.
+  - 7 new tests in `tests/test_monster.py`: exact 29-species coverage
+    (with a subset of the blank-column species confirmed absent),
+    single-school and four-school data samples, a cross-check against
+    the five Renegade-mage species' own school-matching names, and a
+    positive-levels sanity sweep. Full suite: 2246 passed (2239
+    unchanged + 7 new).
 
 ## Setup
 

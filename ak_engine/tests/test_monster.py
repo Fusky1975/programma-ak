@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.enums import Ability
 from ak_engine.models.monster import (
     MONSTER_ALIGNMENT_DISTRIBUTION,
     MONSTER_COMBAT_STATS,
     MONSTER_ENGAGEMENT_STATE_NAME,
     MONSTER_HP_BANDS,
+    MONSTER_MAGIC_ABILITIES,
     MONSTER_NAMES,
     MONSTER_STATS,
     AlignmentOption,
@@ -217,3 +219,61 @@ def test_roll_monster_alignment_three_option_species_walks_cumulative_thresholds
     assert roll_monster_alignment(Monster.WHITE_MAGE, ScriptedRandom([0.69])) is Alignment.DRUID
     assert roll_monster_alignment(Monster.WHITE_MAGE, ScriptedRandom([0.70])) is Alignment.NEUTRAL
     assert roll_monster_alignment(Monster.WHITE_MAGE, ScriptedRandom([0.99])) is Alignment.NEUTRAL
+
+
+# -- MONSTER_MAGIC_ABILITIES (Phase 177, project-original, same Desktop/
+# MOSTRI con statistiche.txt source as MONSTER_COMBAT_STATS/MONSTER_
+# ALIGNMENT_DISTRIBUTION) --
+
+
+def test_monster_magic_abilities_covers_exactly_29_of_60_species():
+    # The other 31 real species genuinely have no magic abilities at
+    # all in the source -- absent, not a hidden zero-everything row.
+    assert len(MONSTER_MAGIC_ABILITIES) == 29
+    all_real = {m for m in Monster if m is not Monster.NOMONSTER}
+    assert set(MONSTER_MAGIC_ABILITIES.keys()) <= all_real
+
+
+def test_monster_magic_abilities_nomonster_sentinel_has_no_entry():
+    assert Monster.NOMONSTER not in MONSTER_MAGIC_ABILITIES
+
+
+def test_monster_magic_abilities_species_with_no_source_entry_are_absent():
+    # Sampled from species whose Magic Abilities column was blank in the
+    # source (Gryphon, Giant, Gargoyle, Troll -- the same four species
+    # MONSTER_STATS's own 6-of-60 table covers).
+    for monster in (Monster.GRYPHON, Monster.GIANT, Monster.GARGOYLE, Monster.TROLL):
+        assert monster not in MONSTER_MAGIC_ABILITIES
+
+
+def test_monster_magic_abilities_single_school_sample():
+    # Spectre -- 1 NE.
+    assert MONSTER_MAGIC_ABILITIES[Monster.SPECTRE] == {Ability.NECROMANCY: 1}
+
+
+def test_monster_magic_abilities_four_school_sample():
+    # Silver Dragon -- 3 WH, 3 PS, 3 EL, 2 IL.
+    assert MONSTER_MAGIC_ABILITIES[Monster.S_DRAGON] == {
+        Ability.WHITE: 3,
+        Ability.PSYCHIC: 3,
+        Ability.ELEMENTAL: 3,
+        Ability.ILLUSION: 2,
+    }
+
+
+def test_monster_magic_abilities_matches_the_renegade_mages_own_school_names():
+    # Each Renegade "mage" species' Monster enum name already names its
+    # own primary magic school (WHITE_MAGE, NEC_MAGE, ELE_MAGE, PSY_MAGE,
+    # ILL_MAGE) -- confirms the WH/NE/EL/PS/IL abbreviation mapping
+    # against an independent cross-check, not just visual inspection.
+    assert Ability.WHITE in MONSTER_MAGIC_ABILITIES[Monster.WHITE_MAGE]
+    assert Ability.NECROMANCY in MONSTER_MAGIC_ABILITIES[Monster.NEC_MAGE]
+    assert Ability.ELEMENTAL in MONSTER_MAGIC_ABILITIES[Monster.ELE_MAGE]
+    assert Ability.PSYCHIC in MONSTER_MAGIC_ABILITIES[Monster.PSY_MAGE]
+    assert Ability.ILLUSION in MONSTER_MAGIC_ABILITIES[Monster.ILL_MAGE]
+
+
+def test_monster_magic_abilities_levels_are_all_positive():
+    for monster, abilities in MONSTER_MAGIC_ABILITIES.items():
+        for ability, level in abilities.items():
+            assert level > 0, (monster, ability)

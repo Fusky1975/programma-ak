@@ -144,8 +144,9 @@ turn_report.py`'s own renderers beyond simple stat population -- left
 for a future phase, not lost; see `Desktop/MOSTRI con statistiche.txt`
 for the full table if that phase gets picked up). Troll regeneration and
 the three missile-narration footnotes were later closed (Phases 155 and
-175); Alignment distribution is closed below (Phase 176). Magic
-Abilities counts and flavor-text descriptions remain unmodeled.
+175); Alignment distribution is closed below (Phase 176); Magic
+Abilities counts are closed below (Phase 177). Flavor-text descriptions
+remain unmodeled.
 
 **Phase 176 addendum -- Alignment distribution, project-original,
 same source.** Every one of the 60 real species' own Alignment column
@@ -178,13 +179,44 @@ That statement fixes two design points directly:
   nothing to connect it to yet, not a gap in this phase's own scope.
 
 Every species' own alignment tuple sums to exactly 100 (`sum(o.percent
-for o in options) == 100`), verified by `tests/test_models.py`'s own
+for o in options) == 100`), verified by `tests/test_monster.py`'s own
 Phase 176 coverage test rather than trusted by inspection alone.
 `AlignmentOption` percentages are listed in the same order the source
 table gives them, so `roll_monster_alignment()`'s cumulative-threshold
 walk reproduces the source's own ordering (matters only for which
 option the final fallback covers, since floating-point roundoff always
 resolves to *some* listed option, never an invented one).
+
+**Phase 177 addendum -- Magic Abilities counts, project-original, same
+source.** The source document's own last column reads, per species,
+e.g. "1 NE" (Spectre), "3 WH, 3 PS, 3 EL, 2 IL" (Silver Dragon) -- a
+skill level (1-4 observed) in one or more of the 5 magic-school
+`Ability` members, abbreviated `WH`/`NE`/`EL`/`PS`/`IL`. Confirmed by
+direct comparison against `models/enums.py Ability`'s own 5 magic-
+school members (`WHITE`, `NECROMANCY`, `ELEMENTAL`, `PSYCHIC`,
+`ILLUSION`) -- the same 5 schools `Monster.WHITE_MAGE`/`NEC_MAGE`/
+`ELE_MAGE`/`PSY_MAGE`/`ILL_MAGE`'s own species names already echo, and
+exactly the abbreviations this table's own entries use for those exact
+species (e.g. Renegade Priest/`WHITE_MAGE` reads "3 WH, 2 NE, 2 IL").
+
+Unlike Alignment, this is a **fixed fact per species, not a weighted
+roll** -- every species either has one exact set of magic-ability
+levels or has none at all (most of the 60: no magic abilities column
+entry whatsoever, not a hidden zero-everything row). `MONSTER_MAGIC_
+ABILITIES` below is therefore a plain `dict[Monster, dict[Ability,
+int]]` covering only the 29 species the source actually lists a magic
+ability for -- absent species genuinely have none, the same "don't
+invent zero-rows" convention `MONSTER_STATS`'s own 6-of-60 coverage
+already established (module docstring, above).
+
+**Also deliberately not wired anywhere**, for the same reason Phase
+176's `roll_monster_alignment()` isn't: this is exactly the data a
+future phase would need to let a spellcasting monster guardian use its
+own `CAST` tactic in an Encounter Plan (`turn/encounter.py`'s own Troll-
+regeneration addendum already flags that whole mechanic as "blocked on
+the Cast-tactic-spell-id gap") -- the data is real and ready, but there
+is still no monster-side Cast-tactic combat engine in this project to
+hand it to.
 """
 
 from __future__ import annotations
@@ -194,6 +226,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.enums import Ability
 
 
 class Monster(Enum):
@@ -542,6 +575,44 @@ def roll_monster_alignment(monster: Monster, rng: random.Random) -> Alignment | 
         if roll < cumulative:
             return option.alignment
     return options[-1].alignment
+
+
+# Phase 177 -- project-original, same Desktop/MOSTRI con statistiche.txt
+# source as MONSTER_COMBAT_STATS (Phase 154) and MONSTER_ALIGNMENT_
+# DISTRIBUTION (Phase 176). See module docstring's own Phase 177
+# addendum for the WH/NE/EL/PS/IL abbreviation mapping and why only 29
+# of the 60 species appear here (the other 31 genuinely have none).
+MONSTER_MAGIC_ABILITIES: dict[Monster, dict[Ability, int]] = {
+    Monster.SPECTRE: {Ability.NECROMANCY: 1},
+    Monster.COUATL: {Ability.PSYCHIC: 3},
+    Monster.SPHINX: {Ability.NECROMANCY: 2},
+    Monster.B_DRAGON: {Ability.PSYCHIC: 2},
+    Monster.S_DRAGON: {Ability.WHITE: 3, Ability.PSYCHIC: 3, Ability.ELEMENTAL: 3, Ability.ILLUSION: 2},
+    Monster.GO_DRAGON: {Ability.WHITE: 4, Ability.NECROMANCY: 4},
+    Monster.GR_DRAGON: {Ability.PSYCHIC: 3, Ability.ILLUSION: 2, Ability.ELEMENTAL: 1},
+    Monster.TITAN: {Ability.WHITE: 4, Ability.ILLUSION: 3, Ability.ELEMENTAL: 3, Ability.NECROMANCY: 2},
+    Monster.SWORDSMAN: {Ability.ILLUSION: 1},
+    Monster.WHITE_MAGE: {Ability.WHITE: 3, Ability.NECROMANCY: 2, Ability.ILLUSION: 2},
+    Monster.NEC_MAGE: {Ability.NECROMANCY: 3},
+    Monster.ELE_MAGE: {Ability.ELEMENTAL: 3},
+    Monster.PSY_MAGE: {Ability.PSYCHIC: 3, Ability.WHITE: 2, Ability.ILLUSION: 2},
+    Monster.ILL_MAGE: {Ability.ILLUSION: 3, Ability.PSYCHIC: 2},
+    Monster.WITCH: {Ability.NECROMANCY: 3, Ability.PSYCHIC: 2},
+    Monster.DRYAD: {Ability.PSYCHIC: 3},
+    Monster.GENIE: {Ability.ILLUSION: 3, Ability.PSYCHIC: 2},
+    Monster.BAL_DEMON: {Ability.NECROMANCY: 3},
+    Monster.MAR_DEMON: {Ability.PSYCHIC: 4, Ability.ILLUSION: 2},
+    Monster.SUCCUBUS: {Ability.PSYCHIC: 3},
+    Monster.RAKSHASHA: {Ability.ILLUSION: 3, Ability.NECROMANCY: 2},
+    Monster.ICE_DEVIL: {Ability.PSYCHIC: 3, Ability.ELEMENTAL: 2},
+    Monster.BONE_DEVIL: {Ability.NECROMANCY: 3},
+    Monster.IMP: {Ability.ILLUSION: 2},
+    Monster.BEHOLDER: {Ability.NECROMANCY: 4, Ability.PSYCHIC: 4},
+    Monster.VAMPIRE: {Ability.PSYCHIC: 3},
+    Monster.BANSHEE: {Ability.PSYCHIC: 2},
+    Monster.LICH: {Ability.NECROMANCY: 4},
+    Monster.MERMAID: {Ability.ELEMENTAL: 1, Ability.PSYCHIC: 1, Ability.NECROMANCY: 1},
+}
 
 
 @dataclass(frozen=True, slots=True)
