@@ -6165,7 +6165,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `..._reports_none_alignment_when_not_recorded`); the existing
     failure-path test extended to also assert `alignment is None`.
     Full suite: 2168 passed (2166 unchanged + 2 new).
-- **Phase 165 (current)**: closes Trail's own race field too, per
+- **Phase 165**: closes Trail's own race field too, per
   direct user instruction ("continua con la razza in Trail") --
   `TrailExecutionResult.race`, the last field this project can source
   of [3.17]'s six named intelligence fields (only Actions remains
@@ -6186,6 +6186,36 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `..._reports_none_race_for_an_independent_hero`); the existing
     failure-path test extended to also assert `race is None`. Full
     suite: 2170 passed (2168 unchanged + 2 new).
+- **Phase 166 (current)**: closes [3.17]'s King-target aggregate case
+  in Trail -- "If the character is a King, some information may be
+  gained concerning the finances, alliances, enemies and controlled
+  provinces of the Kingdom." Unlike Actions (the one field that stays
+  genuinely open, see the module docstring), this data all already
+  existed on `GameState` -- `KingdomState.treasury`, `GameState.
+  is_allied()`, `ProvinceState.owner_kingdom_id` -- so no new data
+  model was needed, only a new result type to carry it.
+  - New `KingIntelligence` dataclass (`turn/trail_execution.py`):
+    `treasury`, `allied_kingdom_ids` (computed by checking every other
+    registered kingdom against `GameState.is_allied()` -- no bulk
+    "all allies of X" helper existed to reuse), `controlled_provinces`
+    (every `ProvinceState` whose `owner_kingdom_id` matches).
+    `TrailExecutionResult.king_intelligence` is populated only when
+    `target.is_king` is `True`, `None` otherwise -- matches the
+    rulebook's own "if the character is a King" conditional exactly.
+  - **"Enemies" is deliberately excluded from `KingIntelligence`.**
+    This project has no positive enemy/hostile-diplomacy registry --
+    only `GameState.allied_kingdoms`, a registry of *friendly* pairs.
+    Treating "not allied" as "enemy" would misclassify every
+    merely-unknown or neutral kingdom as hostile -- worse than
+    reporting nothing, since it would silently invent a diplomatic
+    stance with no source. Same reasoning already applied to `LCost`/
+    `Ofc_Pts` elsewhere in this project: confirmed absent, not
+    guessed at.
+  - 2 new tests (`test_execute_trail_success_reports_king_intelligence_for_a_king_target`,
+    `..._reports_none_king_intelligence_for_a_hero_target`); the
+    existing failure-path test extended to also assert
+    `king_intelligence is None`. Full suite: 2172 passed (2170
+    unchanged + 2 new).
 
 ## Setup
 

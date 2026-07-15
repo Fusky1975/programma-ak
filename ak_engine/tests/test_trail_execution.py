@@ -3,16 +3,16 @@ from __future__ import annotations
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
 from ak_engine.turn.trail_decode import TrailRequest
-from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail, execute_trail
+from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult, advance_trail, execute_trail
 
 from _helpers import ScriptedRandom
 
@@ -128,7 +128,7 @@ def test_execute_trail_uses_trailers_real_spy_skill():
 
 
 # -- Phase 159 (temper/treasures_owned/armies_led) + Phase 164 (alignment)
-# + Phase 165 (race) intelligence payload ------------------------------------
+# + Phase 165 (race) + Phase 166 (king_intelligence) intelligence payload ----
 
 
 def test_execute_trail_success_reports_targets_temper():
@@ -192,6 +192,35 @@ def test_execute_trail_success_reports_none_race_for_an_independent_hero():
     assert result.race is None
 
 
+def test_execute_trail_success_reports_king_intelligence_for_a_king_target():
+    state = _base_state()
+    state.add_kingdom(KingdomState(3, "Ally", Race.HUMAN, Alignment.GOOD, FIELD, treasury=42))
+    state.kingdoms[2].treasury = 77
+    state.allied_kingdoms.add(frozenset({2, 3}))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(FAR_AWAY, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target King", location=FIELD, is_king=True))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+
+    assert result.king_intelligence == KingIntelligence(
+        treasury=77,
+        allied_kingdom_ids=(3,),
+        controlled_provinces=(FIELD,),
+    )
+
+
+def test_execute_trail_success_reports_none_king_intelligence_for_a_hero_target():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target Hero", location=FIELD, is_king=False))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+
+    assert result.king_intelligence is None
+
+
 def test_execute_trail_success_reports_targets_treasures_owned():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
@@ -230,6 +259,7 @@ def test_execute_trail_failure_reports_no_payload():
     assert result.temper is None
     assert result.alignment is None
     assert result.race is None
+    assert result.king_intelligence is None
     assert result.treasures_owned == ()
     assert result.armies_led == ()
 

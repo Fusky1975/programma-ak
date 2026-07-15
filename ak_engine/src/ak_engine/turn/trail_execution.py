@@ -88,16 +88,39 @@ field --
   original decoded request before storing a result (the same
   structural gap Phase 151's own `describe_turn_results()` docstring
   already names for PURSUE/TRAIL/TRADE/SEARCH) -- there is nothing to
-  read the target's Actions from without a separate, larger change.
+  read the target's Actions from without a separate, larger change:
+  `execute_trail()` would need visibility into every leader's own
+  same-phase dispatch result for the current turn, which today only
+  `turn/turn_processor.py`'s own phase loop assembles, and doesn't
+  pass down this far.
 
-The King-target aggregate case ("finances, alliances, enemies and
-controlled provinces of the Kingdom") is also not attempted here --
-its own underlying data (`KingdomState.treasury`, `GameState.
-allied_kingdoms`, `ProvinceState.owner_kingdom_id`) does now exist,
-unlike when this docstring first scoped Trail out, but assembling and
-routing that aggregate view is a distinct, larger follow-up the user
-didn't ask for this phase -- flagged here for a future phase, not
-silently expanded into this one.
+**Phase 166 closes the King-target aggregate case** ("If the character
+is a King, some information may be gained concerning the finances,
+alliances, enemies and controlled provinces of the Kingdom"). Unlike
+Actions above, this data all genuinely exists on `GameState` already
+-- `KingdomState.treasury`, `GameState.is_allied()`, and
+`ProvinceState.owner_kingdom_id` -- so assembling it needed no new
+data model, only a new result type to carry it.
+``TrailExecutionResult.king_intelligence`` is a ``KingIntelligence``
+(``treasury``, ``allied_kingdom_ids``, ``controlled_provinces``),
+populated only when ``target.is_king`` is ``True`` and ``None``
+otherwise (a Hero's Trail result never carries one -- matches the
+rulebook's own "if the character is a King" conditional exactly).
+``allied_kingdom_ids`` is computed by checking every other registered
+kingdom against `GameState.is_allied()` -- no bulk "all allies of X"
+helper existed to reuse, so this walks `state.kingdoms` directly, the
+same shape `friendly_provinces_for()` already uses for provinces.
+
+**"Enemies" is deliberately left out of `KingIntelligence`, not
+silently mapped to "not allied."** This project has no positive
+enemy/hostile-diplomacy registry anywhere -- only `GameState.
+allied_kingdoms`, a registry of friendly pairs. Treating "not in
+`allied_kingdoms`" as "enemy" would misclassify every merely-unknown
+or neutral kingdom as hostile, which is worse than reporting nothing:
+it would silently invent a diplomatic stance this project has no data
+for. Same reasoning this project already applies elsewhere (`LCost`,
+`Ofc_Pts`) -- confirmed absent from the available source, not merely
+unmodeled, so not guessed at.
 
 **Phase 68 -- the same scoped multi-phase chase step Phase 66 added for
 Pursue.** [3.17] itself draws the parallel explicitly: "Like the Pursue
@@ -125,6 +148,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.item import ItemInstance
+from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
@@ -137,6 +161,17 @@ def _spy_skill_of(leader: LeaderState) -> int:
     if leader.skills is None:
         return 0
     return leader.skills.pair_for_ability(Ability.SPY)[0]
+
+
+@dataclass(slots=True, frozen=True)
+class KingIntelligence:
+    """[3.17]'s King-target aggregate case -- Phase 166. See module docstring
+    for why "enemies" has no field here.
+    """
+
+    treasury: int
+    allied_kingdom_ids: tuple[int, ...]
+    controlled_provinces: tuple[HexCoord, ...]
 
 
 @dataclass(slots=True)
@@ -155,6 +190,9 @@ class TrailExecutionResult:
     race: Race | None = None
     treasures_owned: tuple[ItemInstance, ...] = ()
     armies_led: tuple[ArmyState, ...] = ()
+    # Phase 166: [3.17]'s King-target aggregate case -- only set when
+    # the target is a King, None otherwise. See module docstring.
+    king_intelligence: KingIntelligence | None = None
 
 
 def execute_trail(
@@ -162,10 +200,10 @@ def execute_trail(
 ) -> TrailExecutionResult:
     """Resolve one phase of a Trail order: [3.17]'s no-army restriction, then a Spy
     Table catch-up roll. On success, populates the ``temper``/
-    ``alignment``/``race``/``treasures_owned``/``armies_led`` slice of
-    [3.17]'s intelligence payload this project can source today -- see
-    module docstring for why the remaining named field (Actions) still
-    isn't attempted.
+    ``alignment``/``race``/``treasures_owned``/``armies_led``/
+    ``king_intelligence`` slice of [3.17]'s intelligence payload this
+    project can source today -- see module docstring for why the
+    remaining named field (Actions) still isn't attempted.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -193,6 +231,9 @@ def execute_trail(
         return TrailExecutionResult(spied_on=False, reason="did not find the target this phase")
 
     race = state.kingdoms[target.kingdom_id].race if target.kingdom_id is not None else None
+    king_intelligence = (
+        _build_king_intelligence(state, target.kingdom_id) if target.is_king and target.kingdom_id is not None else None
+    )
 
     return TrailExecutionResult(
         spied_on=True,
@@ -201,6 +242,21 @@ def execute_trail(
         race=race,
         treasures_owned=tuple(state.items_held_by(target.leader_id)),
         armies_led=tuple(target_armies),
+        king_intelligence=king_intelligence,
+    )
+
+
+def _build_king_intelligence(state: GameState, kingdom_id: int) -> KingIntelligence:
+    allied_kingdom_ids = tuple(
+        other_id for other_id in state.kingdoms if other_id != kingdom_id and state.is_allied(kingdom_id, other_id)
+    )
+    controlled_provinces = tuple(
+        province.coord for province in state.provinces.values() if province.owner_kingdom_id == kingdom_id
+    )
+    return KingIntelligence(
+        treasury=state.kingdoms[kingdom_id].treasury,
+        allied_kingdom_ids=allied_kingdom_ids,
+        controlled_provinces=controlled_provinces,
     )
 
 
