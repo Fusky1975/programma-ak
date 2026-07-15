@@ -6040,7 +6040,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     implemented" section.
   - Docstring/README-only change; no code or test changes. Full suite
     passed unchanged (2147 passed).
-- **Phase 162 (current)**: designs and implements Hire's real
+- **Phase 162**: designs and implements Hire's real
   required-pay formula, closing the gap Phase 161 confirmed has no
   surviving Pascal source -- authorized directly by the user, who
   quoted the real player's manual text for Hire Hero ([3.5]) and
@@ -6111,6 +6111,31 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `_dispatch_hire()` outcomes and `describe_hire()`'s two newly
     reachable renderers. Full suite: 2165 passed (2147 unchanged +
     18 new).
+- **Phase 163 (current)**: revises Phase 162's own temper weighting,
+  per direct user feedback the same day: "il temperamento deve contare
+  meno della differenza di allineamento -- direi della metà" (temper
+  must count for less than alignment distance -- about half).
+  - Phase 162's original formula added a flat +1 gold for a temper
+    mismatch unconditionally, at every alignment distance -- the exact
+    same per-step weight as one full alignment-distance step, not
+    "half" of anything.
+  - Since a Hero's temper is a boolean match/mismatch (no intermediate
+    steps the way alignment distance has), there's no literal
+    fractional gold to charge for "half a step." Instead, `turn/
+    hire_pay.py required_pay()` now demotes temper to a *secondary
+    amplifier*: a mismatch only raises the price when some alignment
+    friction already exists (`align_distance >= 1`) -- it never moves
+    the price on its own when the Hero's alignment already matches the
+    King's exactly (`align_distance == 0`). This halves temper's
+    practical influence in the cleanest available integer-gold sense
+    (it now affects 2 of the 3 non-unhireable distance brackets instead
+    of all 3, each still by the same +1 as before) rather than trying
+    to approximate a literal "0.5 gold" through rounding.
+  - One pre-existing test's expectation flipped (same alignment,
+    different temper: 2 -> 1) and was renamed to reflect the new "no
+    effect at distance 0" behavior; one new test added confirming
+    temper still adds +1 once real alignment friction exists (distance
+    1). Full suite: 2166 passed (2165 unchanged + 1 new).
 
 ## Setup
 

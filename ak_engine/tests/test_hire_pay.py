@@ -20,11 +20,15 @@ def test_required_pay_same_alignment_same_temper_is_cheapest():
     assert required_pay(hero, king) == 1
 
 
-def test_required_pay_same_alignment_different_temper_adds_one():
+def test_required_pay_same_alignment_different_temper_has_no_effect():
+    # Phase 163: temper only amplifies an *existing* alignment gap --
+    # exact alignment match means a temper mismatch alone doesn't move
+    # the price (this is how temper's weight ends up "about half" of
+    # alignment's own, per the user's own feedback).
     hero = _leader(alignment=Alignment.GOOD, temper=Temper.BRAVE)
     king = _leader(alignment=Alignment.GOOD, temper=Temper.COWARDLY, is_king=True)
 
-    assert required_pay(hero, king) == 2
+    assert required_pay(hero, king) == 1
 
 
 def test_required_pay_distance_one_same_temper():
@@ -33,6 +37,15 @@ def test_required_pay_distance_one_same_temper():
     king = _leader(alignment=Alignment.DRUID, temper=Temper.BRAVE, is_king=True)
 
     assert required_pay(hero, king) == 2
+
+
+def test_required_pay_distance_one_different_temper_adds_one():
+    # Once some alignment friction exists (distance >= 1), a temper
+    # mismatch does amplify it, same +1 as Phase 162's original design.
+    hero = _leader(alignment=Alignment.GOOD, temper=Temper.BRAVE)
+    king = _leader(alignment=Alignment.DRUID, temper=Temper.COWARDLY, is_king=True)
+
+    assert required_pay(hero, king) == 3
 
 
 def test_required_pay_distance_two_different_temper_caps_at_four():

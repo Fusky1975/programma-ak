@@ -35,17 +35,35 @@ since Charm/Resurrection already exist as separate mechanics
 elsewhere in this project, ``turn/cast_execution.py``).
 
     base_pay = {0: 1, 1: 2, 2: 3}.get(align_distance, 5)
-    pay = min(5, base_pay + (0 if same_temper else 1))
+    pay = base_pay + (1 if align_distance >= 1 and not same_temper else 0)
+    pay = min(5, pay)
 
-Distance 0/1/2 step up by one gold per step (1, 2, 3), each optionally
-pushed up one more by a temper mismatch (2, 3, 4) -- but distance >=3
-jumps straight to 5 regardless of temper, deliberately skipping 4, so
-the real anchor case (distance 3) reproduces exactly as "generally
-cannot hire" (5 gold, above the 4-gold offer ceiling) rather than
-merely "expensive." A King's own real alignment/temper (``KingdomState.alignment``
-for alignment; there is no ``KingdomState.temper``, only per-leader
-``LeaderState.temper``, so the King's own ``LeaderState`` is looked up
-separately -- see ``turn/plan_dispatch.py``'s own King-lookup idiom,
+Distance 0/1/2 sets a base of 1/2/3 gold; distance >=3 jumps straight
+to 5 regardless of temper, deliberately skipping 4, so the real anchor
+case (distance 3) reproduces exactly as "generally cannot hire" (5
+gold, above the 4-gold offer ceiling) rather than merely "expensive."
+
+**Phase 163 revises temper's own weight** (user feedback, 2026-07-15:
+"il temperamento deve contare meno della differenza di allineamento...
+direi della metà" -- temperament must count for less than alignment
+distance, about half). Phase 162's original formula added a flat +1
+for a temper mismatch unconditionally, giving it the exact same
+per-step weight as one full alignment-distance step -- not "half" of
+anything. Since a Hero's temper is a boolean match/mismatch (not
+itself a distance with intermediate steps), there is no fractional
+gold to charge for "half a step"; instead, temper is demoted to a
+*secondary amplifier* that only matters when some alignment friction
+already exists (``align_distance >= 1``) -- a temper mismatch never
+raises the price on its own when alignment already matches exactly
+(``align_distance == 0``). This halves temper's practical influence
+in the cleanest available integer-gold sense: it now affects 2 of the
+3 non-unhireable distance brackets instead of all 3, and even then
+only by the same +1 as before, rather than trying to approximate a
+literal "0.5 gold" through rounding tricks. A King's own real
+alignment/temper (``KingdomState.alignment`` for alignment; there is
+no ``KingdomState.temper``, only per-leader ``LeaderState.temper``, so
+the King's own ``LeaderState`` is looked up separately -- see
+``turn/plan_dispatch.py``'s own King-lookup idiom,
 ``battle_orchestrator.py``'s ``is_king`` search) are compared against
 the Hero's own ``LeaderState.alignment``/``.temper``.
 
@@ -92,5 +110,7 @@ def required_pay(hero: LeaderState, king: LeaderState | None) -> int:
     same_temper = hero_temper is None or king_temper is None or hero_temper is king_temper
 
     base_pay = _BASE_PAY_BY_DISTANCE[distance]
-    penalty = 0 if same_temper else 1
+    # Temper only amplifies existing alignment friction (Phase 163) --
+    # a mismatch alone, with matching alignment, never raises the price.
+    penalty = 1 if distance >= 1 and not same_temper else 0
     return min(_UNHIREABLE_PAY, base_pay + penalty)
