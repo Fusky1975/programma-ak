@@ -6136,7 +6136,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     effect at distance 0" behavior; one new test added confirming
     temper still adds +1 once real alignment friction exists (distance
     1). Full suite: 2166 passed (2165 unchanged + 1 new).
-- **Phase 164 (current)**: closes another slice of Trail's own
+- **Phase 164**: closes another slice of Trail's own
   ``[3.17]`` intelligence-payload gap -- ``TrailExecutionResult.alignment``,
   directly enabled by Phase 162's new ``LeaderState.alignment`` field
   (added for ``turn/hire_pay.py``, not originally for Trail). When
@@ -6165,6 +6165,27 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `..._reports_none_alignment_when_not_recorded`); the existing
     failure-path test extended to also assert `alignment is None`.
     Full suite: 2168 passed (2166 unchanged + 2 new).
+- **Phase 165 (current)**: closes Trail's own race field too, per
+  direct user instruction ("continua con la razza in Trail") --
+  `TrailExecutionResult.race`, the last field this project can source
+  of [3.17]'s six named intelligence fields (only Actions remains
+  genuinely open, blocked on a separate structural gap -- see the
+  module docstring).
+  - No per-leader race field was added to `LeaderState` -- there is no
+    source distinguishing an individual character's race from their
+    Kingdom's own. Instead reuses the same approximation `report/
+    turn_report.py describe_armies_report()`'s own Phase 158 note
+    already established for `MONSTROUS_ARMY_RACE`-less army types:
+    `KingdomState.race`, looked up via the target's own `kingdom_id`.
+  - An independent Hero (`kingdom_id is None`) genuinely has no
+    kingdom to infer a race from -- reported as `None`, the same
+    convention every other field here uses, rather than guessing.
+    This does leave exactly the case [3.17] itself calls out most
+    ("if the character is a King...") with real data.
+  - 2 new tests (`test_execute_trail_success_reports_targets_race_via_kingdom`,
+    `..._reports_none_race_for_an_independent_hero`); the existing
+    failure-path test extended to also assert `race is None`. Full
+    suite: 2170 passed (2168 unchanged + 2 new).
 
 ## Setup
 

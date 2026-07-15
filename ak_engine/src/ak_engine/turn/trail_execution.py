@@ -60,8 +60,28 @@ information model is a different, ASpy-only mechanic, not reused
 here). ``TrailExecutionResult.alignment`` mirrors ``temper``'s own
 "``None`` if never recorded" convention exactly.
 
-**Still genuinely open, not attempted here**: [3.17]'s remaining two
-fields --
+**Phase 165 closes the race field too, per direct user instruction
+("continua con la razza in Trail").** `LeaderState` still has no
+per-leader race field, and none is added here -- there is no source
+distinguishing an individual character's race from their Kingdom's own
+(the rulebook's own [3.5] Hire text even treats a Hero's race as
+something that can coincidentally match or differ from the hiring
+King's, but never as separately recorded data this project's Pascal
+archive tracks per-character). ``TrailExecutionResult.race`` is instead
+sourced the same way `report/turn_report.py
+describe_armies_report()`'s own Phase 158 note already established for
+`MONSTROUS_ARMY_RACE`-less army types: `KingdomState.race`, looked up
+via the target's own `kingdom_id`. An **independent Hero
+(`kingdom_id is None`) genuinely has no kingdom to infer a race
+from** -- reported as `None`, the same "no data" convention every
+other field here already uses, rather than guessing. This does leave
+exactly the case [3.17] itself calls out most ("if the character is a
+King...") with real data, and the case this project can't source
+(an independent Hero) honestly reporting nothing, instead of a
+half-correct payload for one target type only.
+
+**Still genuinely open, not attempted here**: [3.17]'s remaining
+field --
 
 - **Actions**: the target's own decoded orders for this phase.
   ``PhaseDispatchResult`` (``turn/plan_dispatch.py``) discards the
@@ -69,14 +89,6 @@ fields --
   structural gap Phase 151's own `describe_turn_results()` docstring
   already names for PURSUE/TRAIL/TRADE/SEARCH) -- there is nothing to
   read the target's Actions from without a separate, larger change.
-- **Race**: `LeaderState` still has no per-leader race field. A
-  kingdom-affiliated leader's race is inferable from
-  `KingdomState.race` (the same approximation `report/turn_report.py
-  describe_armies_report()`'s own Phase 158 note already uses for
-  `MONSTROUS_ARMY_RACE`-less army types), but an independent Hero has
-  no kingdom to infer from at all -- not attempted here to avoid a
-  half-correct payload for exactly the target type ([3.17] singles
-  out, "if the character is a King...") this feature cares most about.
 
 The King-target aggregate case ("finances, alliances, enemies and
 controlled provinces of the Kingdom") is also not attempted here --
@@ -113,6 +125,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.item import ItemInstance
+from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
 from ak_engine.turn.pursue_execution import step_toward_target
@@ -131,11 +144,15 @@ class TrailExecutionResult:
     spied_on: bool
     reason: str | None = None
     # Phase 159 (temper/treasures_owned/armies_led) + Phase 164
-    # (alignment): four of [3.17]'s six named intelligence fields, only
-    # populated when spied_on is True. See module docstring for why the
-    # remaining two (Actions, race) still aren't.
+    # (alignment) + Phase 165 (race): five of [3.17]'s six named
+    # intelligence fields, only populated when spied_on is True. See
+    # module docstring for why the remaining one (Actions) still isn't.
     temper: Temper | None = None
     alignment: Alignment | None = None
+    # Phase 165: sourced from the target's own KingdomState.race (there
+    # is no per-leader race field) -- None for an independent Hero,
+    # who has no kingdom to infer a race from. See module docstring.
+    race: Race | None = None
     treasures_owned: tuple[ItemInstance, ...] = ()
     armies_led: tuple[ArmyState, ...] = ()
 
@@ -145,10 +162,10 @@ def execute_trail(
 ) -> TrailExecutionResult:
     """Resolve one phase of a Trail order: [3.17]'s no-army restriction, then a Spy
     Table catch-up roll. On success, populates the ``temper``/
-    ``alignment``/``treasures_owned``/``armies_led`` slice of [3.17]'s
-    intelligence payload this project can source today -- see module
-    docstring for why the remaining two named fields (Actions, race)
-    still aren't attempted.
+    ``alignment``/``race``/``treasures_owned``/``armies_led`` slice of
+    [3.17]'s intelligence payload this project can source today -- see
+    module docstring for why the remaining named field (Actions) still
+    isn't attempted.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -175,10 +192,13 @@ def execute_trail(
     if rng.random() >= chance:
         return TrailExecutionResult(spied_on=False, reason="did not find the target this phase")
 
+    race = state.kingdoms[target.kingdom_id].race if target.kingdom_id is not None else None
+
     return TrailExecutionResult(
         spied_on=True,
         temper=target.temper,
         alignment=target.alignment,
+        race=race,
         treasures_owned=tuple(state.items_held_by(target.leader_id)),
         armies_led=tuple(target_armies),
     )

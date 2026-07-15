@@ -128,7 +128,7 @@ def test_execute_trail_uses_trailers_real_spy_skill():
 
 
 # -- Phase 159 (temper/treasures_owned/armies_led) + Phase 164 (alignment)
-# intelligence payload -------------------------------------------------------
+# + Phase 165 (race) intelligence payload ------------------------------------
 
 
 def test_execute_trail_success_reports_targets_temper():
@@ -171,6 +171,27 @@ def test_execute_trail_success_reports_none_alignment_when_not_recorded():
     assert result.alignment is None
 
 
+def test_execute_trail_success_reports_targets_race_via_kingdom():
+    state = _base_state()
+    state.kingdoms[2].race = Race.ELVEN
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+
+    assert result.race is Race.ELVEN
+
+
+def test_execute_trail_success_reports_none_race_for_an_independent_hero():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=None, name="Wandering Hero", location=FIELD))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+
+    assert result.race is None
+
+
 def test_execute_trail_success_reports_targets_treasures_owned():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
@@ -208,6 +229,7 @@ def test_execute_trail_failure_reports_no_payload():
     assert result.spied_on is False
     assert result.temper is None
     assert result.alignment is None
+    assert result.race is None
     assert result.treasures_owned == ()
     assert result.armies_led == ()
 
