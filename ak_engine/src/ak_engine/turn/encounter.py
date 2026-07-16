@@ -777,21 +777,28 @@ monsters) -- recorded as a confirmed fact only; `models/game_state.py
 LeaderState` has no "is this leader Undead" field to check, so there is
 nothing to gate a function parameter on yet.
 
-**No success-chance formula is given anywhere in the source text** --
-unlike every numeric roll in this project, which always comes from a
+**No success-chance formula was given in the text quoted at the time**
+-- unlike every numeric roll in this project, which always comes from a
 directly quoted rulebook percentage or range, whether the control
-attempt succeeds is left entirely undetermined here. Inventing one
+attempt succeeds was left entirely undetermined here. Inventing one
 (e.g. reusing `turn/cast_execution.py`'s own `ACTION_SPELL_BASE_CHANCE`/
 `ACTION_SPELL_CHANCE_PER_LEVEL`, rulebook [3.10]'s general Action-Cast
-formula) would be exactly the kind of guess this project avoids -- that
-formula is textually scoped to top-level Action-Cast spells ([3.10]),
-not the Personal-Combat-only spells [4.2x.4]-[4.2x.5] documents
-separately, and nothing confirms the two share a formula. So, the same
-way Ice Suspension left "flee or wait" as "a tactical decision for
-whatever future orchestration layer calls this" (Phase 189) and
-Mirror-Image left its entire duel outcome tree unresolved (Phase 187),
-**this module models only the two branches' own confirmed magnitudes,
-not which branch is taken**:
+formula) would have been exactly the kind of guess this project avoids
+-- that formula is textually scoped to top-level Action-Cast spells
+([3.10]), not the Personal-Combat-only spells [4.2x.4]-[4.2x.5]
+documents separately, and nothing confirmed the two shared a formula
+*at the time*. **Corrected in Phase 192**: the user directly re-quoted
+[3.10] in full, confirming Personal-Combat spells have their own
+distinct success formula after all -- see the Phase 192 addendum below
+for `resolve_personal_combat_spell_cast()`, which now supplies exactly
+the roll this paragraph originally declined to invent. So, the same way
+Ice Suspension left "flee or wait" as "a tactical decision for whatever
+future orchestration layer calls this" (Phase 189) and Mirror-Image
+left its entire duel outcome tree unresolved (Phase 187), **this module
+still models only the two branches' own confirmed magnitudes, not which
+branch is taken** -- only the *success-chance roll itself* was the
+missing piece, now filled in generically for all ten Personal-Combat
+spells rather than added just here:
 
 - **Success**: `CONTROL_UNDEAD_SUCCESS_NEUTRALIZES_TARGET = True` --
   "per il tempo necessario a piantargli un paletto nel cuore" reads as
@@ -806,6 +813,60 @@ not which branch is taken**:
   far, since "50-100%" is a percentage, not a die. `control_undead_
   failure_new_hit_points(hit_points, rng)` applies it: `round(hit_points
   * (1 + increase))`.
+
+**Phase 192 addendum -- the general Personal-Combat spell cast success
+formula, retroactively confirmed for all ten Personal-Combat spells.**
+The user directly re-quoted Regolamento AK.txt [3.10] in full: "Un
+personaggio può lanciare un incantesimo solo se ha un livello di
+abilità di almeno 1 nel relativo Talento. La probabilità di riuscita di
+un Incantesimo d'Azione è del 15% più 15% per livello. Gli Incantesimi
+di Combattimento Individuale hanno una probabilità di riuscita del 30%
+più 15% per livello. Le probabilità di successo per incantesimi non
+possono mai superare il 95%. Se l'incantesimo fallisce non ci sono
+conseguenze dirette. Gli Incantesimi di Combattimento individuale
+funzionano esattamente nella maniera descritta e non hanno altre
+conseguenze di rilievo. Ad esempio l'incantesimo Raffica Psichica non
+accresce le probabilità di colpire in un combattimento corpo a corpo,
+né permette di abbandonare il combattimento. I Reami Pagani... sono
+coadiuvati da un Ordine di Maghi. Tutti i personaggi appartenenti a
+quel Reame hanno quindi un modificatore +10% nei loro tentativi di
+lanciare qualsiasi incantesimo fuorché quelli di Magia Bianca."
+
+This resolves Control Undead's own Phase 191 gap (above) and applies
+uniformly to Holy Symbol, Spiritwrack, Psychic Blast, Telekinetic
+Storm, Invisibility, Mirror-Image, Fireball, Ice Suspension, Hand of
+Death, and Control Undead alike -- none of them needed their own
+success-chance formula individually; this is the one shared roll that
+gates whether *any* of their already-modeled effects apply at all.
+
+`PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE = 0.30`,
+`PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL = 0.15`,
+`PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP = 0.95` (the same 95% ceiling
+`turn/cast_execution.py`'s own `ACTION_SPELL_CHANCE_CAP` uses for
+Action-Cast spells -- confirmed as one shared universal rule, but kept
+as its own citation-backed constant in each module rather than a
+cross-import, since the two modules serve genuinely different tactic
+layers). `personal_combat_spell_cast_chance(skill_level, *,
+caster_is_pagan=False)` computes the base+per-level chance, adds
+`PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS` (0.10) when
+`caster_is_pagan`, and clamps at the cap.
+`resolve_personal_combat_spell_cast(skill_level, rng, *,
+caster_is_pagan=False)` rolls it. Same "pure function, boolean-flag,
+not internal lookup" pattern every spell above uses: the caller decides
+`caster_is_pagan` (looking up the caster's own `KingdomState.alignment
+is Alignment.PAGAN`, mirroring `NEUTRAL_DUELIST_BONUS`'s own lookup)
+and must pass `False` for White Magic spells (Holy Symbol, Spiritwrack)
+regardless of the caster's own kingdom, since the bonus explicitly
+excludes Magia Bianca -- this module has no `Ability` parameter to
+gate that internally, by the same design choice already used
+throughout.
+
+**Also confirmed, not modeled**: the quoted text also describes
+per-turn Action-Cast quotas (1 cast/turn, 2 at skill level 3, 3 at
+level 4) and a per-encounter "not twice with the same Personal-Combat
+spell" limit -- see `turn/cast_execution.py`'s own Phase 192 addendum
+for why neither is wired in yet (no per-turn/per-encounter cast-count
+state exists anywhere in this project).
 """
 
 from __future__ import annotations
@@ -1367,6 +1428,46 @@ def control_undead_failure_new_hit_points(hit_points: int, rng: random.Random) -
 
     increase = roll_control_undead_failure_hp_increase(rng)
     return round(hit_points * (1 + increase))
+
+
+# Personal-Combat spell cast success chance, module docstring's own
+# Phase 192 addendum -- Regolamento AK.txt [3.10], retroactively
+# confirmed for all ten Personal-Combat spells.
+PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE = 0.30
+PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL = 0.15
+PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP = 0.95
+
+# "I Reami Pagani... un modificatore +10%... fuorché quelli di Magia
+# Bianca." Caller decides applicability (see docstring): pass
+# ``caster_is_pagan=False`` for White Magic spells regardless of the
+# caster's own kingdom.
+PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS = 0.10
+
+
+def personal_combat_spell_cast_chance(skill_level: int, *, caster_is_pagan: bool = False) -> float:
+    """"Gli Incantesimi di Combattimento Individuale hanno una
+    probabilità di riuscita del 30% più 15% per livello," capped at
+    ``PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP`` (95%). Adds
+    ``PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS`` when ``caster_is_pagan``
+    -- the caller must already have excluded White Magic spells from
+    setting this flag (see module docstring's Phase 192 addendum).
+    """
+
+    chance = PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE + PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL * skill_level
+    if caster_is_pagan:
+        chance += PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS
+    return min(chance, PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP)
+
+
+def resolve_personal_combat_spell_cast(skill_level: int, rng: random.Random, *, caster_is_pagan: bool = False) -> bool:
+    """Rolls whether a Personal-Combat spell attempt succeeds, using
+    ``personal_combat_spell_cast_chance()``'s own formula. Governs all
+    ten Personal-Combat spells above uniformly -- this is the missing
+    piece Control Undead's own Phase 191 addendum explicitly declined
+    to invent, now supplied generically rather than per-spell.
+    """
+
+    return rng.random() < personal_combat_spell_cast_chance(skill_level, caster_is_pagan=caster_is_pagan)
 
 
 @dataclass(slots=True)

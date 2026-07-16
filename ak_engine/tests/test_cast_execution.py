@@ -785,3 +785,82 @@ def test_skeletal_army_raises_nothing_when_caster_has_no_recorded_level():
     assert result.applied is True  # the cast itself still "succeeds"...
     assert len(state.armies) == 0  # ...but unknown level -> 0 raised, see module docstring
     assert len(state.battle_graveyard[LOCATION]) == 1  # graveyard untouched
+
+
+# ---------------------------------------------------------------------------
+# Phase 192: spell-cast success formula corrections (a direct re-quote of
+# Regolamento AK.txt [3.10] confirmed the 95% cap is real and Pagan
+# Kingdoms get a +10% bonus to every spell except White Magic)
+# ---------------------------------------------------------------------------
+
+
+def test_action_spell_chance_caps_at_95_percent_even_at_high_skill_level():
+    # Level 10: 15% + 15%*10 = 165% uncapped -- now clamped to 95%.
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 10)
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    rng = ScriptedRandom([0.94])  # under the 95% cap
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+
+
+def test_action_spell_can_fail_above_the_95_percent_cap_at_high_skill_level():
+    # Before Phase 192 this roll would have always succeeded (uncapped
+    # chance was 165%, and rng.random() never reaches 1.0).
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 10)
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    rng = ScriptedRandom([0.96])  # over the 95% cap
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+    assert 78 in state.leaders  # untouched
+
+
+def test_pagan_kingdom_caster_gets_a_10_percent_spell_cast_bonus():
+    # Level 1 Necromancy: 30% base, +10% Pagan = 40%.
+    state = build_state()
+    state.kingdoms[1].alignment = Alignment.PAGAN
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    rng = ScriptedRandom([0.35])  # over the un-bonused 30%, under the bonused 40%
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+
+
+def test_non_pagan_kingdom_caster_gets_no_bonus_at_the_same_roll():
+    state = build_state()
+    assert state.kingdoms[1].alignment is Alignment.GOOD
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    rng = ScriptedRandom([0.35])  # over the un-bonused 30% base chance
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_pagan_kingdom_bonus_does_not_apply_to_white_magic_spells():
+    # "un modificatore +10%... fuorche' quelli di Magia Bianca."
+    state = build_state()
+    state.kingdoms[1].alignment = Alignment.PAGAN
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 1)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
+    rng = ScriptedRandom([0.35])  # over the un-bonused 30% White Magic chance
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "spell failed"

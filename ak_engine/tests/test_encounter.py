@@ -39,6 +39,10 @@ from ak_engine.turn.encounter import (
     MIRROR_IMAGE_DISBELIEF_REDUCTION_PER_LEVEL,
     MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE,
     MIRROR_IMAGE_MASTER_DISBELIEF_BONUS,
+    PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS,
+    PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE,
+    PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP,
+    PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL,
     PSYCHIC_BLAST_STUN_ROUNDS_RANGE,
     SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER,
     SPIRITWRACK_MELEE_DAMAGE_REDUCTION_PER_LEVEL,
@@ -61,8 +65,10 @@ from ak_engine.turn.encounter import (
     ice_suspension_slowed_bonus_rounds,
     invisibility_reduced_hit_chance,
     mirror_image_disbelief_chance,
+    personal_combat_spell_cast_chance,
     resolve_fire_arrow_duel,
     resolve_melee_duel,
+    resolve_personal_combat_spell_cast,
     resolve_spell_disruption,
     roll_fire_arrow_attack,
     roll_holy_symbol_undead_damage,
@@ -930,3 +936,43 @@ def test_control_undead_failure_new_hit_points_at_the_high_end_of_the_range():
     # close to it instead.
     rng = ScriptedRandom([0.999999999])
     assert control_undead_failure_new_hit_points(10, rng) == 20
+
+
+# -- Phase 192: general Personal-Combat spell cast success formula --
+
+
+def test_personal_combat_spell_cast_chance_constants():
+    assert PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE == 0.30
+    assert PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL == 0.15
+    assert PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP == 0.95
+    assert PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS == 0.10
+
+
+def test_personal_combat_spell_cast_chance_scales_with_level():
+    assert personal_combat_spell_cast_chance(0) == pytest.approx(0.30)
+    assert personal_combat_spell_cast_chance(1) == pytest.approx(0.45)
+    assert personal_combat_spell_cast_chance(2) == pytest.approx(0.60)
+
+
+def test_personal_combat_spell_cast_chance_caps_at_95_percent():
+    # Level 5: 30% + 15%*5 = 105%, uncapped -- clamped to 95%.
+    assert personal_combat_spell_cast_chance(5) == pytest.approx(0.95)
+
+
+def test_personal_combat_spell_cast_chance_pagan_bonus():
+    assert personal_combat_spell_cast_chance(1, caster_is_pagan=True) == pytest.approx(0.55)
+
+
+def test_personal_combat_spell_cast_chance_pagan_bonus_still_capped():
+    # 30% + 15%*4 = 90%, +10% Pagan = 100%, clamped to 95%.
+    assert personal_combat_spell_cast_chance(4, caster_is_pagan=True) == pytest.approx(0.95)
+
+
+def test_resolve_personal_combat_spell_cast_succeeds_under_the_chance():
+    rng = ScriptedRandom([0.44])  # level 1 -> 45% chance
+    assert resolve_personal_combat_spell_cast(1, rng) is True
+
+
+def test_resolve_personal_combat_spell_cast_fails_over_the_chance():
+    rng = ScriptedRandom([0.99])
+    assert resolve_personal_combat_spell_cast(1, rng) is False

@@ -77,13 +77,60 @@ board, ``turn/movement.py NORMAL_MAP_BOUNDS``), the same value
 ``turn/plan_dispatch.py`` already threads through for Move's own hex
 decoding.
 
-**The success/failure roll (Phase 30, unchanged)**: rulebook [3.10],
-"The chance that an action spell will succeed is 15% plus 15% per
-level," and "A character may cast a spell in a Magical ability only if
-he has a skill level of 1 or higher in that ability." Resolved via
+**The success/failure roll (Phase 30, updated Phase 192)**: rulebook
+[3.10], "The chance that an action spell will succeed is 15% plus 15%
+per level," and "A character may cast a spell in a Magical ability only
+if he has a skill level of 1 or higher in that ability." Resolved via
 ``LeaderState.skills`` when the caster has it recorded; ``skills is
 None`` (no ability data at all) makes every cast succeed outright, same
 placeholder convention as Phase 29.
+
+**Phase 192 addendum -- the user directly re-quoted Regolamento AK.txt
+[3.10] in full, confirming two facts this module had gotten wrong or
+left unconfirmed:**
+
+1. **The 95% cap is universal, not just a theoretical ceiling.**
+   "Le probabilità di successo per incantesimi non possono mai superare
+   il 95%." Previously `_roll_cast_success()` computed `chance`
+   uncapped -- at skill level 6+ (15% + 15%*6 = 105%), `rng.random() <
+   chance` was *always* true since `random()` never reaches 1.0, so in
+   practice the cap was already 100% by accident, not the confirmed
+   95%. `ACTION_SPELL_CHANCE_CAP = 0.95` now clamps `chance` for real,
+   meaning a level-6+ caster now has a genuine (if small) 5% chance of
+   failure that didn't exist before this phase. No existing test
+   relied on the old uncapped behavior (every success-path test
+   already scripted an explicit roll rather than assuming a guaranteed,
+   no-roll outcome), confirmed non-breaking.
+2. **Pagan Kingdoms get +10% on every spell except White Magic.** "I
+   Reami Pagani... sono coadiuvati da un Ordine di Maghi. Tutti i
+   personaggi appartenenti a quel Reame hanno quindi un modificatore
+   +10% nei loro tentativi di lanciare qualsiasi incantesimo fuorché
+   quelli di Magia Bianca." `PAGAN_MAGE_ORDER_BONUS = 0.10`, applied
+   inside `_roll_cast_success()` via the new `_caster_kingdom_is_pagan()`
+   helper -- the same "look up ``state.kingdoms[caster.kingdom_id]``'s
+   own ``alignment``" pattern `turn/encounter.py`'s own
+   `NEUTRAL_DUELIST_BONUS` (Neutral Kingdoms' Order of Duelists, [5.0])
+   already established for a structurally identical rule, just for
+   spellcasting instead of Melee/Archery. `_roll_cast_success()` now
+   takes `state: GameState` as its own first parameter (every one of
+   its 13 call sites already had `state` in scope, since `execute_cast`
+   threads it through every `_execute_*` helper).
+
+**Not modeled this phase, confirmed facts only** (the same Regolamento
+AK.txt [3.10] excerpt also covers two turn-level quota mechanics this
+project has no state to enforce yet): "Si può usare un Talento magico
+per lanciare un Incantesimo di Azione per turno di gioco (al livello 3
+due, al livello 4 tre)... Un personaggio può usare un Talento Magico
+per lanciare un Incantesimo di Combattimento Individuale per qualsiasi
+numero di incontri... ma non può lanciare due volte lo stesso
+incantesimo nel medesimo incontro." Enforcing either limit needs a
+per-turn Action-Cast counter and a per-encounter Personal-Combat-cast
+history that neither `GameState` nor `turn/turn_processor.py` track
+today -- recorded here as a confirmed, sourced gap, not implemented.
+Likewise "Ogni Talento magico comprende cinque incantesimi di base" is
+descriptive flavor text with no new numeric fact to model (the five
+spells per Talent are exactly the ones `_SPELL_ABILITY`/`turn/
+encounter.py`'s own ten Personal-Combat spells already enumerate).
 
 **Level-dependent magnitudes with no recorded caster skill** (Tornado's
 per-unit destroy chance, Plague's per-unit destroy chance, Illus_Armies'
@@ -124,6 +171,16 @@ from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, is_adjacent
 
 ACTION_SPELL_BASE_CHANCE = 0.15
 ACTION_SPELL_CHANCE_PER_LEVEL = 0.15
+
+# Regolamento AK.txt [3.10] (Phase 192): "Le probabilita' di successo per
+# incantesimi non possono mai superare il 95%" -- a universal cap on every
+# spell-cast success chance, not just Action-Cast's own formula.
+ACTION_SPELL_CHANCE_CAP = 0.95
+
+# [3.10]: "I Reami Pagani... sono coadiuvati da un Ordine di Maghi... un
+# modificatore +10% nei loro tentativi di lanciare qualsiasi incantesimo
+# fuorche' quelli di Magia Bianca."
+PAGAN_MAGE_ORDER_BONUS = 0.10
 
 # Regolamento AK.txt [4.25.3]: "10% di probabilita' di essere distrutte, piu'
 # un 10% per livello dell'autore dell'incantesimo" (Plague).
@@ -240,12 +297,34 @@ def _spell_ability(caster: LeaderState, spell: Spell) -> Ability:
     return _SPELL_ABILITY[spell]
 
 
+def _caster_kingdom_is_pagan(state: GameState, caster: LeaderState) -> bool:
+    """Regolamento AK.txt [3.10]: "I Reami Pagani... sono coadiuvati da
+    un Ordine di Maghi. Tutti i personaggi appartenenti a quel Reame
+    hanno quindi un modificatore +10%..." -- True only when the
+    caster's own kingdom is recorded and its alignment is
+    ``Alignment.PAGAN``. Independent Heroes (``kingdom_id is None``) or
+    kingdoms not yet present in ``state.kingdoms`` never get the bonus.
+    """
+
+    if caster.kingdom_id is None:
+        return False
+    kingdom = state.kingdoms.get(caster.kingdom_id)
+    return kingdom is not None and kingdom.alignment is Alignment.PAGAN
+
+
 def _roll_cast_success(
-    caster: LeaderState, spell: Spell, rng: random.Random, wand_skill_level: int | None = None
+    state: GameState, caster: LeaderState, spell: Spell, rng: random.Random, wand_skill_level: int | None = None
 ) -> tuple[bool, str | None]:
-    """Rulebook [3.10]: 15% + 15%/level, requiring skill >= 1. See module docstring for the
-    ``skills is None`` fallback and the ``wand_skill_level`` override
-    (rulebook [3.11]: a wand-triggered cast is always successful).
+    """Rulebook [3.10]: 15% + 15%/level, requiring skill >= 1, capped at
+    ``ACTION_SPELL_CHANCE_CAP`` (95% -- "Le probabilità di successo per
+    incantesimi non possono mai superare il 95%," confirmed to be a
+    universal cap, not Action-Cast-specific). Pagan Kingdoms add a
+    further ``PAGAN_MAGE_ORDER_BONUS`` (+10%) to every spell except
+    White Magic ("un modificatore +10% nei loro tentativi di lanciare
+    qualsiasi incantesimo fuorché quelli di Magia Bianca"). See module
+    docstring for the ``skills is None`` fallback and the
+    ``wand_skill_level`` override (rulebook [3.11]: a wand-triggered
+    cast is always successful).
     """
 
     if wand_skill_level is not None:
@@ -253,11 +332,15 @@ def _roll_cast_success(
     if caster.skills is None:
         return True, None
 
-    level = caster.skills.pair_for_ability(_spell_ability(caster, spell))[0]
+    ability = _spell_ability(caster, spell)
+    level = caster.skills.pair_for_ability(ability)[0]
     if level < 1:
         return False, "insufficient skill"
 
     chance = ACTION_SPELL_BASE_CHANCE + ACTION_SPELL_CHANCE_PER_LEVEL * level
+    if ability is not Ability.WHITE and _caster_kingdom_is_pagan(state, caster):
+        chance += PAGAN_MAGE_ORDER_BONUS
+    chance = min(chance, ACTION_SPELL_CHANCE_CAP)
     if rng.random() < chance:
         return True, None
     return False, "spell failed"
@@ -348,7 +431,7 @@ def _execute_charm(
     if state.armies_commanded_by(request.target):
         return CastExecutionResult(request, applied=False, reason="target commands military units")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -366,7 +449,7 @@ def _execute_kill_enemy(
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -401,7 +484,7 @@ def _execute_resurrection(
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -431,7 +514,7 @@ def _execute_part_sea(
     if province.effective_terrain() is not Terrain.SEA:
         return CastExecutionResult(request, applied=False, reason="target province is not Sea")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -463,7 +546,7 @@ def _execute_flood(
     if province.effective_terrain() not in _FLOOD_ELIGIBLE_TERRAIN:
         return CastExecutionResult(request, applied=False, reason="target province is not a non-mountain land province")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -491,7 +574,7 @@ def _execute_tornado(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -523,7 +606,7 @@ def _execute_earthquake(
     if province.effective_terrain() is Terrain.SEA:
         return CastExecutionResult(request, applied=False, reason="target province is not land")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -561,7 +644,7 @@ def _execute_bless(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -599,7 +682,7 @@ def _execute_illus_terrain(
     if not isinstance(request.terrain, Terrain):
         return CastExecutionResult(request, applied=False, reason="fake terrain not specified")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -626,7 +709,7 @@ def _execute_illus_armies(
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -654,7 +737,7 @@ def _execute_oratory(
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -688,7 +771,7 @@ def _execute_plague(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -743,7 +826,7 @@ def _execute_skeletal_army(
     if not graveyard:
         return CastExecutionResult(request, applied=False, reason="no dead units in this province to raise")
 
-    succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 

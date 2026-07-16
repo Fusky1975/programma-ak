@@ -7294,7 +7294,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     zero-no-roll case, the victim hit-chance halving and its immune
     carve-out, and the renamed `blocks_cast_and_archery()`'s own
     behavior). Full suite: 2365 passed (2352 unchanged + 13 new).
-- **Phase 191 (current)**: Control Undead [CO], tied to `Ability.
+- **Phase 191**: Control Undead [CO], tied to `Ability.
   NECROMANCY` -- the second and final Necromancy Personal-Combat spell,
   completing the ten Personal-Combat-only spells `turn/cast_execution
   .py`'s own Phase 60 docstring already enumerated. Quoted in full:
@@ -7335,6 +7335,74 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     staying within [0.50, 1.00], its single-roll consumption, and the
     new-hit-points calculation at both ends of the range. Full suite:
     2371 passed (2365 unchanged + 6 new).
+- **Phase 192 (current)**: spell-cast success formula corrections. The
+  user directly re-quoted Regolamento AK.txt [3.10] in full: "Un
+  personaggio può lanciare un incantesimo solo se ha un livello di
+  abilità di almeno 1 nel relativo Talento. La probabilità di riuscita
+  di un Incantesimo d'Azione è del 15% più 15% per livello. Gli
+  Incantesimi di Combattimento Individuale hanno una probabilità di
+  riuscita del 30% più 15% per livello. Le probabilità di successo per
+  incantesimi non possono mai superare il 95%. Se l'incantesimo
+  fallisce non ci sono conseguenze dirette. Gli Incantesimi di
+  Combattimento individuale funzionano esattamente nella maniera
+  descritta e non hanno altre conseguenze di rilievo... I Reami
+  Pagani... sono coadiuvati da un Ordine di Maghi. Tutti i personaggi
+  appartenenti a quel Reame hanno quindi un modificatore +10% nei loro
+  tentativi di lanciare qualsiasi incantesimo fuorché quelli di Magia
+  Bianca." This confirmed two things this project had gotten wrong or
+  left unconfirmed:
+  - **`turn/cast_execution.py`'s own Action-Cast formula was uncapped**
+    -- at skill level 6+ (15% + 15%*6 = 105%), `rng.random() < chance`
+    was always true by accident (`random()` never reaches 1.0), not
+    because of the confirmed 95% cap. New `ACTION_SPELL_CHANCE_CAP =
+    0.95` fixes this for real -- a level-6+ caster now has a genuine 5%
+    failure chance that didn't exist before. Confirmed non-breaking:
+    no existing test relied on the old uncapped, always-succeeds
+    behavior at high levels.
+  - **Personal-Combat spells (Holy Symbol through Control Undead, all
+    ten from Phases 180-191) have their own success formula after
+    all** -- Control Undead's own Phase 191 addendum had explicitly
+    declined to invent one, since none was quoted at the time. New
+    `turn/encounter.py`: `PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE =
+    0.30`, `PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL = 0.15`,
+    `PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP = 0.95` (the same 95%
+    ceiling, kept as its own citation-backed constant rather than a
+    cross-import from `cast_execution.py`, since the two modules serve
+    different tactic layers). `personal_combat_spell_cast_chance(
+    skill_level, *, caster_is_pagan=False)` and `resolve_personal_
+    combat_spell_cast(skill_level, rng, *, caster_is_pagan=False)`
+    apply uniformly to all ten spells -- none needed a per-spell
+    formula individually, since this is the one shared roll gating
+    whether any of their already-modeled effects apply at all.
+  - **Pagan Kingdoms' Ordine di Maghi**: `PAGAN_MAGE_ORDER_BONUS =
+    0.10` (`cast_execution.py`) / `PERSONAL_COMBAT_PAGAN_MAGE_ORDER_
+    BONUS = 0.10` (`encounter.py`), +10% to every spell-cast attempt
+    except White Magic. `cast_execution.py`'s own `_roll_cast_success()`
+    now takes `state: GameState` as its first parameter (all 13 call
+    sites already had `state` in scope) and looks up the caster's own
+    kingdom alignment via a new `_caster_kingdom_is_pagan()` helper --
+    the same "look up `KingdomState.alignment`" pattern `turn/
+    encounter.py`'s own `NEUTRAL_DUELIST_BONUS` (Neutral Kingdoms'
+    Order of Duelists, [5.0]) already established, just for
+    spellcasting instead of Melee/Archery. `encounter.py`'s own
+    Personal-Combat version instead takes `caster_is_pagan` as a
+    caller-supplied bool (the usual "pure function, boolean-flag, not
+    internal lookup" pattern every spell above uses) -- the caller must
+    pass `False` for White Magic spells (Holy Symbol, Spiritwrack)
+    regardless of the caster's own kingdom.
+  - **Also confirmed, not modeled**: the same quoted text describes
+    per-turn Action-Cast quotas (1/turn, 2 at skill level 3, 3 at
+    level 4) and a per-encounter "not twice with the same
+    Personal-Combat spell" limit -- documented as confirmed facts in
+    both modules' own docstrings, not wired in, since no per-turn or
+    per-encounter cast-count state exists anywhere in this project yet.
+  - 12 new tests: `tests/test_encounter.py` (+7 -- the formula's level
+    scaling, its 95% cap with and without the Pagan bonus, and the
+    resolve roll's success/failure), `tests/test_cast_execution.py`
+    (+5 -- the Action-Cast cap being enforced for real at high skill
+    level, the Pagan bonus applying to a non-White spell, the same
+    roll failing without it, and the bonus being excluded for a White
+    Magic spell). Full suite: 2383 passed (2371 unchanged + 12 new).
 
 ## Setup
 
