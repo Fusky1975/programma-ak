@@ -754,6 +754,58 @@ suppressed uniformly when immune -- so it follows Telekinetic Storm/
 Fireball's style (Phase 185/188): `target_is_immune` threads through
 `roll_hand_of_death_damage()`, `blocks_cast_and_archery()` (already
 took this flag), and `hand_of_death_victim_hit_chance()`.
+
+**Phase 191 addendum -- Control Undead [CO], tied to Ability.
+NECROMANCY, project-original (user-supplied), the second and final
+Necromancy Personal-Combat spell** (completing the ten Personal-Combat-
+only spells `turn/cast_execution.py`'s own Phase 60 docstring already
+named: Holy_Symbol, Spiritwrack, Psychic_Blast, Telek_Storm,
+Invisibility, Mirror_Image, Fireball, Ice_Suspend, Hand_of_Death,
+Control_Undead). Quoted in full: "chi lancia questo incantesimo può
+tenere sotto controllo qualunque mostro (ma anche eroe o RE) Non-Morto
+(Spectre, Ghost, Vampire, Mummy, Banshee, Lich) per il tempo necessario
+a piantargli un paletto nel cuore (o neutralizzarlo in un altro modo).
+Se però l'incantesimo fallisce, nella vittima designata si scatenerà
+una furia omicida che farà aumentare i suoi Punti Ferita del 50-100%."
+
+**Targeting**: the same six species as `SPIRITWRACK_UNDEAD_MONSTERS`
+(Phase 182) -- reused directly, not duplicated under a new spell
+prefix (the same exact-species-match test Phase 188 established for
+`SUBMARINE_MONSTERS`). "(ma anche eroe o RE)" confirms the Undead
+qualifier extends to characters too (an Undead Hero or King, not just
+monsters) -- recorded as a confirmed fact only; `models/game_state.py
+LeaderState` has no "is this leader Undead" field to check, so there is
+nothing to gate a function parameter on yet.
+
+**No success-chance formula is given anywhere in the source text** --
+unlike every numeric roll in this project, which always comes from a
+directly quoted rulebook percentage or range, whether the control
+attempt succeeds is left entirely undetermined here. Inventing one
+(e.g. reusing `turn/cast_execution.py`'s own `ACTION_SPELL_BASE_CHANCE`/
+`ACTION_SPELL_CHANCE_PER_LEVEL`, rulebook [3.10]'s general Action-Cast
+formula) would be exactly the kind of guess this project avoids -- that
+formula is textually scoped to top-level Action-Cast spells ([3.10]),
+not the Personal-Combat-only spells [4.2x.4]-[4.2x.5] documents
+separately, and nothing confirms the two share a formula. So, the same
+way Ice Suspension left "flee or wait" as "a tactical decision for
+whatever future orchestration layer calls this" (Phase 189) and
+Mirror-Image left its entire duel outcome tree unresolved (Phase 187),
+**this module models only the two branches' own confirmed magnitudes,
+not which branch is taken**:
+
+- **Success**: `CONTROL_UNDEAD_SUCCESS_NEUTRALIZES_TARGET = True` --
+  "per il tempo necessario a piantargli un paletto nel cuore" reads as
+  the target being removed from combat outright; a confirmed,
+  qualitative fact with no numeric magnitude and no consuming combat
+  loop yet, the same scoping every other Personal-Combat spell above
+  received.
+- **Failure**: `CONTROL_UNDEAD_FAILURE_HP_INCREASE_RANGE = (0.50,
+  1.00)` (a fraction, "50-100%"). `roll_control_undead_failure_hp_
+  increase(rng)` uses `rng.uniform()` rather than `rng.randint()` --
+  the only continuous (non-integer-die) roll range in this project so
+  far, since "50-100%" is a percentage, not a die. `control_undead_
+  failure_new_hit_points(hit_points, rng)` applies it: `round(hit_points
+  * (1 + increase))`.
 """
 
 from __future__ import annotations
@@ -1286,6 +1338,35 @@ def hand_of_death_victim_hit_chance(base_hit_chance: float, *, target_is_immune:
     if target_is_immune:
         return base_hit_chance
     return base_hit_chance * HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER
+
+
+# Control Undead [CO], module docstring's own Phase 191 addendum --
+# project-original, user-supplied, the second and final Necromancy
+# Personal-Combat spell. See the module docstring for why no
+# success-chance formula is modeled: the source text never gives one.
+CONTROL_UNDEAD_SUCCESS_NEUTRALIZES_TARGET = True
+
+# "farà aumentare i suoi Punti Ferita del 50-100%" -- a fraction, not a die.
+CONTROL_UNDEAD_FAILURE_HP_INCREASE_RANGE = (0.50, 1.00)
+
+
+def roll_control_undead_failure_hp_increase(rng: random.Random) -> float:
+    """The failure branch's HP-increase fraction: "50-100%". Uses
+    ``rng.uniform()`` rather than ``rng.randint()`` -- a percentage, not
+    a die roll.
+    """
+
+    return rng.uniform(*CONTROL_UNDEAD_FAILURE_HP_INCREASE_RANGE)
+
+
+def control_undead_failure_new_hit_points(hit_points: int, rng: random.Random) -> int:
+    """Applies the failure branch's rage: the victim's hit points
+    increase by ``roll_control_undead_failure_hp_increase()``'s own
+    fraction, rounded to the nearest whole point.
+    """
+
+    increase = roll_control_undead_failure_hp_increase(rng)
+    return round(hit_points * (1 + increase))
 
 
 @dataclass(slots=True)

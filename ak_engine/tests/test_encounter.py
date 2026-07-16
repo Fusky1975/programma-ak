@@ -15,6 +15,8 @@ from ak_engine.turn.encounter import (
     SPELL_DISRUPTION_CHANCE_CAP,
     SPELL_DISRUPTION_CHANCE_PER_HIT,
     CHARM_FLEE_ALWAYS_SUCCEEDS,
+    CONTROL_UNDEAD_FAILURE_HP_INCREASE_RANGE,
+    CONTROL_UNDEAD_SUCCESS_NEUTRALIZES_TARGET,
     FIREBALL_DAMAGE_PER_LEVEL,
     FIREBALL_DAMAGE_RANGE,
     HAND_OF_DEATH_BASE_DAMAGE,
@@ -48,6 +50,7 @@ from ak_engine.turn.encounter import (
     _acts_first,
     effective_archery_skill,
     effective_melee_skill,
+    control_undead_failure_new_hit_points,
     fire_arrow_free_attacks,
     fire_arrow_hit_chance,
     hand_of_death_caster_melee_defense_skill,
@@ -64,6 +67,7 @@ from ak_engine.turn.encounter import (
     roll_fire_arrow_attack,
     roll_holy_symbol_undead_damage,
     resolve_mirror_image_disbelief,
+    roll_control_undead_failure_hp_increase,
     roll_fireball_damage,
     roll_hand_of_death_damage,
     roll_ice_suspension_flying_bonus_rounds,
@@ -891,3 +895,38 @@ def test_blocks_cast_and_archery_shared_with_spiritwrack():
     # confirmed to be Hand of Death's own victim effect too.
     assert blocks_cast_and_archery() is True
     assert blocks_cast_and_archery(target_is_immune=True) is False
+
+
+# -- Phase 191: Control Undead [CO] --
+
+
+def test_control_undead_success_neutralizes_target_constant():
+    assert CONTROL_UNDEAD_SUCCESS_NEUTRALIZES_TARGET is True
+
+
+def test_control_undead_failure_hp_increase_range_constant():
+    assert CONTROL_UNDEAD_FAILURE_HP_INCREASE_RANGE == (0.50, 1.00)
+
+
+def test_roll_control_undead_failure_hp_increase_stays_within_range():
+    for scripted in (0.0, 0.5, 0.999):
+        increase = roll_control_undead_failure_hp_increase(ScriptedRandom([scripted]))
+        assert 0.50 <= increase <= 1.00
+
+
+def test_roll_control_undead_failure_hp_increase_consumes_exactly_one_roll():
+    rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
+    roll_control_undead_failure_hp_increase(rng)
+
+
+def test_control_undead_failure_new_hit_points_at_the_low_end_of_the_range():
+    # 10 HP, +50% -> 15.
+    rng = ScriptedRandom([0.0])
+    assert control_undead_failure_new_hit_points(10, rng) == 15
+
+
+def test_control_undead_failure_new_hit_points_at_the_high_end_of_the_range():
+    # 10 HP, +100% -> 20. uniform() never returns exactly b, so pin very
+    # close to it instead.
+    rng = ScriptedRandom([0.999999999])
+    assert control_undead_failure_new_hit_points(10, rng) == 20

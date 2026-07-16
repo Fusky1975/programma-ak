@@ -7223,7 +7223,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     frozen-branch constants, the slowed-bonus-rounds formula against
     the user's own example plus boundary cases, and both flying-branch
     roll ranges). Full suite: 2352 passed (2337 unchanged + 15 new).
-- **Phase 190 (current)**: Hand of Death [HA], tied to `Ability.
+- **Phase 190**: Hand of Death [HA], tied to `Ability.
   NECROMANCY` -- the first Necromancy Personal-Combat spell. Quoted in
   full: "chi lancia questo incantesimo fa ripetutamente il gesto di
   stringere forte il pugno... Chi sta usando la Mano della Morte non
@@ -7294,6 +7294,47 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     zero-no-roll case, the victim hit-chance halving and its immune
     carve-out, and the renamed `blocks_cast_and_archery()`'s own
     behavior). Full suite: 2365 passed (2352 unchanged + 13 new).
+- **Phase 191 (current)**: Control Undead [CO], tied to `Ability.
+  NECROMANCY` -- the second and final Necromancy Personal-Combat spell,
+  completing the ten Personal-Combat-only spells `turn/cast_execution
+  .py`'s own Phase 60 docstring already enumerated. Quoted in full:
+  "chi lancia questo incantesimo può tenere sotto controllo qualunque
+  mostro (ma anche eroe o RE) Non-Morto (Spectre, Ghost, Vampire,
+  Mummy, Banshee, Lich) per il tempo necessario a piantargli un paletto
+  nel cuore (o neutralizzarlo in un altro modo). Se però l'incantesimo
+  fallisce, nella vittima designata si scatenerà una furia omicida che
+  farà aumentare i suoi Punti Ferita del 50-100%."
+  - **Targeting**: the same six species as `SPIRITWRACK_UNDEAD_
+    MONSTERS` (Phase 182) -- reused directly, no new monster.py set
+    needed this phase. "(ma anche eroe o RE)" confirms Undead-ness
+    extends to characters too, recorded as a confirmed fact only;
+    `LeaderState` has no "is this leader Undead" field to check yet.
+  - **No success-chance formula is modeled.** The source text never
+    gives one -- unlike every other numeric roll in this project, which
+    always traces back to a quoted percentage or range. Reusing `turn/
+    cast_execution.py`'s own `ACTION_SPELL_BASE_CHANCE`/`_CHANCE_PER_
+    LEVEL` (rulebook [3.10]'s *general* Action-Cast success formula)
+    would be exactly the kind of guess this project avoids: that
+    formula is textually scoped to top-level Action-Cast spells, not
+    the Personal-Combat-only spells [4.2x.4]-[4.2x.5] documents
+    separately, and nothing confirms the two share a rate. So, the same
+    way Ice Suspension left "flee or wait" to "a tactical decision for
+    whatever future orchestration layer calls this" (Phase 189), this
+    module models only the two branches' own confirmed magnitudes, not
+    which branch is taken.
+  - `turn/encounter.py`: **success** -- `CONTROL_UNDEAD_SUCCESS_
+    NEUTRALIZES_TARGET = True`, a confirmed qualitative fact ("piantargli
+    un paletto nel cuore"), no numeric magnitude, no consuming combat
+    loop yet. **Failure** -- `CONTROL_UNDEAD_FAILURE_HP_INCREASE_RANGE
+    = (0.50, 1.00)` ("50-100%"); `roll_control_undead_failure_hp_
+    increase(rng)` uses `rng.uniform()` rather than `rng.randint()` --
+    the first continuous (non-integer-die) roll in this project, since
+    a percentage isn't a die. `control_undead_failure_new_hit_points(
+    hit_points, rng)` applies it: `round(hit_points * (1 + increase))`.
+  - 6 new tests in `tests/test_encounter.py`: both constants, the roll
+    staying within [0.50, 1.00], its single-roll consumption, and the
+    new-hit-points calculation at both ends of the range. Full suite:
+    2371 passed (2365 unchanged + 6 new).
 
 ## Setup
 
