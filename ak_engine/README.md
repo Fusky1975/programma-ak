@@ -7155,7 +7155,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     behaves identically to level 4), and the immune-target
     zero-no-roll case. Full suite: 2337 passed (2331 unchanged + 6
     new).
-- **Phase 189 (current)**: Ice Suspension [IC], tied to `Ability.
+- **Phase 189**: Ice Suspension [IC], tied to `Ability.
   ELEMENTAL`. Quoted in full: "chi lo lancia rinchiude la sua vittima
   in un guscio magico di ghiaccio che lo blocca o lo rallenta per
   alcuni round. Può rimanere bloccato un mostro o un Eroe a cui restano
@@ -7223,6 +7223,77 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     frozen-branch constants, the slowed-bonus-rounds formula against
     the user's own example plus boundary cases, and both flying-branch
     roll ranges). Full suite: 2352 passed (2337 unchanged + 15 new).
+- **Phase 190 (current)**: Hand of Death [HA], tied to `Ability.
+  NECROMANCY` -- the first Necromancy Personal-Combat spell. Quoted in
+  full: "chi lancia questo incantesimo fa ripetutamente il gesto di
+  stringere forte il pugno... Chi sta usando la Mano della Morte non
+  può lanciare altri incantesimi né attaccare a mischia e si difende
+  nel combattimento a corpo a corpo al livello di abilità che ha in
+  Necromancy e non a quello che ha in Melee. Ogni attacco sferrato da
+  chi lancia l'incantesimo provoca 1 punto danno più ½ punto per
+  livello in magia nera. La vittima non può lanciare incantesimi né
+  tirare con l'arco e le sue probabilità di colpire nel combattimento
+  corpo a corpo sono dimezzate. Quando chi lancia l'incantesimo viene
+  colpito perde la concentrazione e l'incantesimo svanisce. La Mano
+  della Morte è inefficace contro mostri meccanici [Gargoyle, Golem],
+  Non-Morti [Spectre, Ghost, Vampire, Mummy, Banshee, Lich] o anti-holy
+  [Balrog Demon, Marilith Demon, Succubus, Rakshasha, Ice Devil, Bone
+  Devil, Imp]." ("Magia nera" = Necromancy in this project's own
+  established terminology -- `models/office.py`'s own `Office.
+  NECRO_MAGE: "Sorceror of Black Magic"` confirms the pairing.)
+  - **No level cap** -- unlike Holy Symbol/Spiritwrack/Fireball, the
+    user's own text states no maximum, so `roll_hand_of_death_damage()`
+    applies `HAND_OF_DEATH_DAMAGE_PER_LEVEL = 0.5` uncapped, same
+    treatment as Charm/Psychic Blast/Telekinetic Storm/Invisibility.
+  - `turn/encounter.py`: the caster's own three self-imposed
+    constraints while channeling are recorded as confirmed facts, not
+    wired into any combat loop -- `HAND_OF_DEATH_BLOCKS_CASTER_OTHER_
+    CASTS`/`HAND_OF_DEATH_BLOCKS_CASTER_MELEE_ATTACK = True`,
+    `hand_of_death_caster_melee_defense_skill()` (an identity
+    substitution documenting that the caster's own melee-defense
+    initiative uses their Necromancy skill in place of Melee),
+    `HAND_OF_DEATH_ENDS_WHEN_CASTER_IS_HIT = True`. The caster's own
+    attack: `roll_hand_of_death_damage(skill_level, rng, *,
+    target_is_immune=False)` -- `HAND_OF_DEATH_BASE_DAMAGE = 1` plus
+    `HAND_OF_DEATH_DAMAGE_PER_LEVEL = 0.5` per level, using the same
+    random-rounding-when-fractional convention Spiritwrack established
+    (Phase 182). The victim's own halved hit chance:
+    `hand_of_death_victim_hit_chance()` (`HAND_OF_DEATH_VICTIM_HIT_
+    CHANCE_MULTIPLIER = 0.5`) -- **not** the same mechanic as
+    Invisibility's own hit-chance halving (Phase 186), which halves
+    the chance of *being* hit rather than the victim's own chance of
+    *landing* a hit, so kept as its own spell-prefixed pair rather than
+    merged.
+  - **`spiritwrack_blocks_cast_and_archery()` renamed to
+    `blocks_cast_and_archery()`.** Hand of Death's "non può lanciare
+    incantesimi né tirare con l'arco" is the exact same restriction,
+    word for word, as Spiritwrack's own victim effect (Phase 182) --
+    confirmed as one shared game rule applied by two different spells,
+    the same "same real category" test Phase 188 used for
+    `SUBMARINE_MONSTERS`. All call sites and the one docstring
+    cross-reference were updated; behavior unchanged.
+  - `models/monster.py`: "mostri meccanici"/"Non-Morti" reuse
+    `SPIRITWRACK_MECHANICAL_MONSTERS`/`SPIRITWRACK_UNDEAD_MONSTERS`
+    directly (species-identical, same exception as `SUBMARINE_
+    MONSTERS`). New `HAND_OF_DEATH_ANTI_HOLY_MONSTERS` (7 species) is
+    a genuinely new set, kept spell-prefixed because it is a strict
+    subset of Phase 189's own `ICE_SUSPENSION_IMMUNE_MONSTERS` (not
+    identical -- that set also covers Spectre/Genie/Ghost/Banshee,
+    which the user classifies as "Non-Morti" here instead).
+    `HAND_OF_DEATH_IMMUNE_MONSTERS` is the union of all three.
+  - **Single `target_is_immune` flag, not caller-side branch
+    selection** -- unlike Ice Suspension (three different effects),
+    Hand of Death has one effect uniformly suppressed when immune, so
+    it follows Telekinetic Storm/Fireball's style instead.
+  - 13 new tests: `tests/test_monster.py` (+3 -- the new anti-holy set,
+    the three-way union, and the confirmed strict-subset relationship
+    with Ice Suspension's own immune set), `tests/test_encounter.py`
+    (+10 -- the three caster-constraint constants, the melee-defense
+    substitution, both damage constants, the whole-vs-fractional
+    rounding (including the no-roll case), the immune-target
+    zero-no-roll case, the victim hit-chance halving and its immune
+    carve-out, and the renamed `blocks_cast_and_archery()`'s own
+    behavior). Full suite: 2365 passed (2352 unchanged + 13 new).
 
 ## Setup
 

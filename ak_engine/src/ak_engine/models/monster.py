@@ -299,6 +299,25 @@ category yet, so there is nothing to unify with. The two sets are
 mutually exclusive (verified: no species appears in both), consistent
 with the spell's own three-way branch (immune / flying / everything
 else) never needing to resolve an overlap.
+
+**Phase 190 addendum -- Hand of Death [HA]'s immunity, two exact
+reuses and one new set.** `turn/encounter.py`'s Hand of Death spell
+(Phase 190 addendum there) is inefficace against three categories:
+"mostri meccanici" [Gargoyle, Golem] and "Non-Morti" [Spectre, Ghost,
+Vampire, Mummy, Banshee, Lich] are, species-for-species, *identical* to
+the existing `SPIRITWRACK_MECHANICAL_MONSTERS`/`SPIRITWRACK_UNDEAD_
+MONSTERS` (Phase 182) -- reused directly, the same "same real category"
+exception Phase 188 used for `SUBMARINE_MONSTERS`, rather than
+duplicated under a new spell prefix. "Anti-holy" [Balrog Demon,
+Marilith Demon, Succubus, Rakshasha, Ice Devil, Bone Devil, Imp] is a
+genuinely new seven-species set: new `HAND_OF_DEATH_ANTI_HOLY_
+MONSTERS`, spell-prefixed because it is a strict *subset* of Phase
+189's own `ICE_SUSPENSION_IMMUNE_MONSTERS` (which also includes
+Spectre/Genie/Ghost/Banshee -- species the user places under "Non-
+Morti" here instead), not identical to it, so reusing that set would
+silently misclassify four species. `HAND_OF_DEATH_IMMUNE_MONSTERS` is
+the union of all three (two reused, one new), provided as a single
+convenience set matching every other spell's own immune-set name.
 """
 
 from __future__ import annotations
@@ -791,6 +810,28 @@ ICE_SUSPENSION_FLYING_MONSTERS: frozenset[Monster] = frozenset(
         Monster.GARGOYLE,
         Monster.GRYPHON,
     }
+)
+
+
+# Phase 190 -- project-original, user-supplied while defining
+# turn/encounter.py's Hand of Death [HA] spell. See module docstring's
+# own Phase 190 addendum for why the Mechanical/Undead legs of Hand of
+# Death's own immunity reuse SPIRITWRACK_MECHANICAL_MONSTERS/
+# SPIRITWRACK_UNDEAD_MONSTERS directly instead of duplicating them here.
+HAND_OF_DEATH_ANTI_HOLY_MONSTERS: frozenset[Monster] = frozenset(
+    {
+        Monster.BAL_DEMON,
+        Monster.MAR_DEMON,
+        Monster.SUCCUBUS,
+        Monster.RAKSHASHA,
+        Monster.ICE_DEVIL,
+        Monster.BONE_DEVIL,
+        Monster.IMP,
+    }
+)
+
+HAND_OF_DEATH_IMMUNE_MONSTERS: frozenset[Monster] = (
+    SPIRITWRACK_MECHANICAL_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS | HAND_OF_DEATH_ANTI_HOLY_MONSTERS
 )
 
 

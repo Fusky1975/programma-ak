@@ -321,9 +321,10 @@ practice mostly moot, since none of the twelve Animal-Intelligence
 species listed actually cast spells or shoot bows anyway).
 `spiritwrack_melee_damage_reduction()`'s own `target_is_animal_
 intelligence` flag only affects its own numeric formula;
-`spiritwrack_blocks_cast_and_archery()` doesn't take that flag at all,
-by design -- only `target_is_immune` (Undead or Mechanical) suppresses
-it.
+`blocks_cast_and_archery()` (renamed from `spiritwrack_blocks_cast_
+and_archery()` in Phase 190, when Hand of Death was confirmed to share
+this exact same victim effect) doesn't take that flag at all, by
+design -- only `target_is_immune` (Undead or Mechanical) suppresses it.
 
 **Not wired into `turn/search_execution.py`'s combat resolution this
 phase either**, for the same reason as Holy Symbol (Phase 180): more
@@ -657,6 +658,102 @@ type*, not by a single roll:
      result is naturally in [0, 3], matching "da 1 a 3" as the typical
      non-zero case, with 0 explicitly allowed per "se questa divisione
      è 0 virgola non ci sono round supplementari d'attacco").
+
+**Phase 190 addendum -- Hand of Death [HA], tied to Ability.NECROMANCY,
+project-original (user-supplied), the first Necromancy Personal-Combat
+spell.** Quoted in full: "chi lancia questo incantesimo fa
+ripetutamente il gesto di stringere forte il pugno come se strizzasse
+qualcosa e, per magia, il suo avversario avrà la sensazione che il suo
+cuore (o un altro organo sensibile) venga ridotto in poltiglia. Chi sta
+usando la Mano della Morte non può lanciare altri incantesimi né
+attaccare a mischia e si difende nel combattimento a corpo a corpo al
+livello di abilità che ha in Necromancy e non a quello che ha in Melee.
+Ogni attacco sferrato da chi lancia l'incantesimo provoca 1 punto danno
+più ½ punto per livello in magia nera. La vittima non può lanciare
+incantesimi né tirare con l'arco e le sue probabilità di colpire nel
+combattimento corpo a corpo sono dimezzate. Quando chi lancia
+l'incantesimo viene colpito perde la concentrazione e l'incantesimo
+svanisce. La Mano della Morte è inefficace contro mostri meccanici
+[Gargoyle, Golem], Non-Morti [Spectre, Ghost, Vampire, Mummy, Banshee,
+Lich] o anti-holy [Balrog Demon, Marilith Demon, Succubus, Rakshasha,
+Ice Devil, Bone Devil, Imp]." ("Magia nera" is this project's own
+established synonym for Necromancy -- `models/office.py`'s own
+`Office.NECRO_MAGE: "Sorceror of Black Magic"` confirms the pairing.)
+
+**No level cap this time.** Unlike Holy Symbol/Spiritwrack (Phase
+180/182, capped at `PERSONAL_COMBAT_SPELL_LEVEL_CAP = 4`, confirmed
+Phase 181) or Fireball (Phase 188, explicitly stated "max 4" matching
+that same cap), the user's own text states no maximum at all for Hand
+of Death's damage formula -- so `roll_hand_of_death_damage()` applies
+`HAND_OF_DEATH_DAMAGE_PER_LEVEL` uncapped, the same uncapped treatment
+Charm/Psychic Blast/Telekinetic Storm/Invisibility already received
+for the same reason (no cap stated).
+
+**The caster's own three self-imposed constraints while channeling**
+are recorded as confirmed facts, not wired into any combat loop (this
+project has no CAST-tactic orchestration engine yet, same scoping as
+every Personal-Combat spell above): `HAND_OF_DEATH_BLOCKS_CASTER_
+OTHER_CASTS = True`, `HAND_OF_DEATH_BLOCKS_CASTER_MELEE_ATTACK = True`,
+and `hand_of_death_caster_melee_defense_skill(necromancy_skill_level)`
+(a documented identity substitution -- the caster's own melee-defense
+initiative uses their Necromancy skill level in place of their Melee
+skill level, per `_acts_first()`'s generic rule from [5.0]).
+`HAND_OF_DEATH_ENDS_WHEN_CASTER_IS_HIT = True` records "perde la
+concentrazione e l'incantesimo svanisce" -- a confirmed fact only, no
+consuming combat loop to end.
+
+**The caster's own attack**: `roll_hand_of_death_damage(skill_level,
+rng, *, target_is_immune=False)` -- `HAND_OF_DEATH_BASE_DAMAGE = 1`
+plus `HAND_OF_DEATH_DAMAGE_PER_LEVEL = 0.5` per level, using the same
+random-rounding-when-fractional convention Spiritwrack's own melee
+damage reduction established (Phase 182): a whole exact value resolves
+without a roll, a `.5` fractional part is a 50/50 coin flip. Returns 0
+without a roll when `target_is_immune`.
+
+**The victim's own two effects**: "non può lanciare incantesimi né
+tirare con l'arco" is the *exact same restriction, word for word*, as
+Spiritwrack's own victim effect (Phase 182 addendum: "the victim cannot
+cast spells nor shoot with a bow") -- confirmed as one shared game rule
+applied by two different spells, the same "same real category" test
+Phase 188 used for `SUBMARINE_MONSTERS`. `spiritwrack_blocks_cast_and_
+archery()` is therefore **renamed to `blocks_cast_and_archery()`** in
+this phase (dropping the spell prefix); Spiritwrack's own call sites
+and docstring cross-reference are updated to the new name, its
+behavior unchanged. Hand of Death's second victim effect -- "le sue
+probabilità di colpire nel combattimento corpo a corpo sono dimezzate"
+-- is **not** the same mechanic as Invisibility's own hit-chance
+halving (Phase 186): Invisibility halves the *chance of the invisible
+caster being hit*; here it is the *victim's own chance of landing a
+hit* that is halved. Same 0.5 multiplier, opposite direction and
+opposite party, so `hand_of_death_victim_hit_chance()` is kept as its
+own spell-prefixed constant/function pair (`HAND_OF_DEATH_VICTIM_HIT_
+CHANCE_MULTIPLIER = 0.5`) rather than reused or merged with
+Invisibility's -- conflating the two under one name would obscure
+which side of the combat each one actually modifies.
+
+**Immunity -- two exact reuses, one new set.** "Mostri meccanici"
+[Gargoyle, Golem] and "Non-Morti" [Spectre, Ghost, Vampire, Mummy,
+Banshee, Lich] are, species-for-species, *identical* to `models/
+monster.py`'s existing `SPIRITWRACK_MECHANICAL_MONSTERS`/
+`SPIRITWRACK_UNDEAD_MONSTERS` (Phase 182) -- reused directly rather
+than duplicated, the same reasoning as `SUBMARINE_MONSTERS` (Phase
+188). "Anti-holy" [Balrog Demon, Marilith Demon, Succubus, Rakshasha,
+Ice Devil, Bone Devil, Imp] is a genuinely new seven-species set --
+new `HAND_OF_DEATH_ANTI_HOLY_MONSTERS` (spell-prefixed, since it is a
+strict *subset* of Phase 189's own `ICE_SUSPENSION_IMMUNE_MONSTERS`,
+not identical to it -- that set also includes Spectre/Genie/Ghost/
+Banshee, which the user places under "Non-Morti" here instead, so
+reusing it would silently misclassify four species). `HAND_OF_DEATH_
+IMMUNE_MONSTERS` is the union of all three, provided as one convenience
+set matching every other spell's single immune-set name.
+
+**Single `target_is_immune` flag, not caller-side branch selection.**
+Unlike Ice Suspension (Phase 189), which has three *different* effects
+selected by monster type, Hand of Death has exactly one effect
+suppressed uniformly when immune -- so it follows Telekinetic Storm/
+Fireball's style (Phase 185/188): `target_is_immune` threads through
+`roll_hand_of_death_damage()`, `blocks_cast_and_archery()` (already
+took this flag), and `hand_of_death_victim_hit_chance()`.
 """
 
 from __future__ import annotations
@@ -796,15 +893,18 @@ SPIRITWRACK_MELEE_DAMAGE_REDUCTION_PER_LEVEL = 0.5
 SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER = 0.5
 
 
-def spiritwrack_blocks_cast_and_archery(*, target_is_immune: bool = False) -> bool:
+def blocks_cast_and_archery(*, target_is_immune: bool = False) -> bool:
     """Spiritwrack's own "the victim cannot cast spells nor shoot with a
-    bow" effect. Always True unless ``target_is_immune`` (an Undead or
-    Mechanical target -- see ``models/monster.py SPIRITWRACK_UNDEAD_
-    MONSTERS``/``SPIRITWRACK_MECHANICAL_MONSTERS``), in which case the
-    spell has no effect at all. Deliberately does **not** take an
+    bow" effect (Phase 182). Always True unless ``target_is_immune`` (an
+    Undead or Mechanical target -- see ``models/monster.py SPIRITWRACK_
+    UNDEAD_MONSTERS``/``SPIRITWRACK_MECHANICAL_MONSTERS``), in which case
+    the spell has no effect at all. Deliberately does **not** take an
     Animal-Intelligence flag: the user confirmed only the numeric Melee
     damage reduction is halved against those targets, not this block
-    (module docstring's Phase 182 addendum).
+    (module docstring's Phase 182 addendum). Renamed from
+    ``spiritwrack_blocks_cast_and_archery`` in Phase 190, when Hand of
+    Death was confirmed to share this exact same victim effect,
+    word for word.
     """
 
     return not target_is_immune
@@ -1117,6 +1217,75 @@ def roll_ice_suspension_flying_bonus_rounds(rng: random.Random) -> int:
     """
 
     return rng.randint(*ICE_SUSPENSION_FLYING_BONUS_ROUNDS_RANGE)
+
+
+# Hand of Death [HA], module docstring's own Phase 190 addendum --
+# project-original, user-supplied, the first Necromancy Personal-Combat
+# spell. The caster's own three self-imposed constraints while
+# channeling -- confirmed facts, no consuming combat loop yet.
+HAND_OF_DEATH_BLOCKS_CASTER_OTHER_CASTS = True
+HAND_OF_DEATH_BLOCKS_CASTER_MELEE_ATTACK = True
+HAND_OF_DEATH_ENDS_WHEN_CASTER_IS_HIT = True
+
+# "1 punto danno più ½ punto per livello in magia nera" -- no stated
+# cap this time (unlike Holy Symbol/Spiritwrack/Fireball), so applied
+# uncapped, same as Charm/Psychic Blast/Telekinetic Storm/Invisibility.
+HAND_OF_DEATH_BASE_DAMAGE = 1
+HAND_OF_DEATH_DAMAGE_PER_LEVEL = 0.5
+
+# "le sue probabilità di colpire nel combattimento corpo a corpo sono
+# dimezzate" -- the victim's own chance of landing a melee hit, halved.
+# Not the same direction as Invisibility's own hit-chance halving
+# (Phase 186, which halves the chance of *being* hit) -- kept as its
+# own spell-prefixed pair rather than merged, see module docstring.
+HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER = 0.5
+
+
+def hand_of_death_caster_melee_defense_skill(necromancy_skill_level: int) -> int:
+    """"si difende nel combattimento a corpo a corpo al livello di
+    abilità che ha in Necromancy e non a quello che ha in Melee" -- a
+    documented identity substitution: the caster's own melee-defense
+    initiative (``_acts_first()``'s generic [5.0] rule) uses this
+    Necromancy skill level in place of their Melee skill level while
+    channeling Hand of Death.
+    """
+
+    return necromancy_skill_level
+
+
+def roll_hand_of_death_damage(skill_level: int, rng: random.Random, *, target_is_immune: bool = False) -> int:
+    """Hand of Death's own attack: "1 punto danno più ½ punto per
+    livello in magia nera" -- ``HAND_OF_DEATH_BASE_DAMAGE`` (1) plus
+    ``HAND_OF_DEATH_DAMAGE_PER_LEVEL`` (0.5) per level, uncapped.
+    Uses the same random-rounding-when-fractional convention
+    Spiritwrack's own melee damage reduction established (Phase 182):
+    a whole exact value resolves without a roll, a 0.5 fractional part
+    is a 50/50 coin flip. Returns 0 without a roll when
+    ``target_is_immune`` (mechanical, Undead, or anti-holy -- see
+    ``models/monster.py HAND_OF_DEATH_IMMUNE_MONSTERS``).
+    """
+
+    if target_is_immune:
+        return 0
+
+    exact = HAND_OF_DEATH_BASE_DAMAGE + HAND_OF_DEATH_DAMAGE_PER_LEVEL * skill_level
+    whole = int(exact)
+    fraction = exact - whole
+    if fraction <= 0.0:
+        return whole
+    return whole + 1 if rng.random() < fraction else whole
+
+
+def hand_of_death_victim_hit_chance(base_hit_chance: float, *, target_is_immune: bool = False) -> float:
+    """Halves the victim's own chance of landing a melee hit while
+    ensnared by Hand of Death. Returns ``base_hit_chance`` unchanged
+    when ``target_is_immune`` -- the spell has no effect at all against
+    those targets.
+    """
+
+    if target_is_immune:
+        return base_hit_chance
+    return base_hit_chance * HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER
 
 
 @dataclass(slots=True)

@@ -17,6 +17,12 @@ from ak_engine.turn.encounter import (
     CHARM_FLEE_ALWAYS_SUCCEEDS,
     FIREBALL_DAMAGE_PER_LEVEL,
     FIREBALL_DAMAGE_RANGE,
+    HAND_OF_DEATH_BASE_DAMAGE,
+    HAND_OF_DEATH_BLOCKS_CASTER_MELEE_ATTACK,
+    HAND_OF_DEATH_BLOCKS_CASTER_OTHER_CASTS,
+    HAND_OF_DEATH_DAMAGE_PER_LEVEL,
+    HAND_OF_DEATH_ENDS_WHEN_CASTER_IS_HIT,
+    HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER,
     ICE_SUSPENSION_FLYING_BONUS_ROUNDS_RANGE,
     ICE_SUSPENSION_FLYING_CRASH_DAMAGE_RANGE,
     ICE_SUSPENSION_FREEZE_POINTS_PER_LEVEL,
@@ -44,6 +50,8 @@ from ak_engine.turn.encounter import (
     effective_melee_skill,
     fire_arrow_free_attacks,
     fire_arrow_hit_chance,
+    hand_of_death_caster_melee_defense_skill,
+    hand_of_death_victim_hit_chance,
     holy_symbol_hit_chance,
     ice_suspension_freeze_threshold,
     ice_suspension_is_frozen,
@@ -57,6 +65,7 @@ from ak_engine.turn.encounter import (
     roll_holy_symbol_undead_damage,
     resolve_mirror_image_disbelief,
     roll_fireball_damage,
+    roll_hand_of_death_damage,
     roll_ice_suspension_flying_bonus_rounds,
     roll_ice_suspension_flying_crash_damage,
     roll_melee_attack,
@@ -64,8 +73,8 @@ from ak_engine.turn.encounter import (
     roll_telekinetic_storm_caster_damage,
     roll_telekinetic_storm_victim_damage,
     spell_disruption_chance,
-    spiritwrack_blocks_cast_and_archery,
     spiritwrack_melee_damage_reduction,
+    blocks_cast_and_archery,
 )
 
 from _helpers import ScriptedRandom
@@ -490,12 +499,12 @@ def test_roll_holy_symbol_undead_damage_range_is_1_to_4_per_level():
 # -- Phase 182: Spiritwrack [SP] --
 
 
-def test_spiritwrack_blocks_cast_and_archery_by_default():
-    assert spiritwrack_blocks_cast_and_archery() is True
+def test_blocks_cast_and_archery_by_default():
+    assert blocks_cast_and_archery() is True
 
 
-def test_spiritwrack_blocks_cast_and_archery_never_applies_to_an_immune_target():
-    assert spiritwrack_blocks_cast_and_archery(target_is_immune=True) is False
+def test_blocks_cast_and_archery_never_applies_to_an_immune_target():
+    assert blocks_cast_and_archery(target_is_immune=True) is False
 
 
 def test_spiritwrack_melee_damage_reduction_immune_target_returns_zero_without_a_roll():
@@ -825,3 +834,60 @@ def test_roll_ice_suspension_flying_bonus_rounds_stays_within_range():
     for scripted in (0.0, 0.5, 0.999):
         rounds = roll_ice_suspension_flying_bonus_rounds(ScriptedRandom([scripted]))
         assert 1 <= rounds <= 3
+
+
+# -- Phase 190: Hand of Death [HA] --
+
+
+def test_hand_of_death_caster_constraint_constants():
+    assert HAND_OF_DEATH_BLOCKS_CASTER_OTHER_CASTS is True
+    assert HAND_OF_DEATH_BLOCKS_CASTER_MELEE_ATTACK is True
+    assert HAND_OF_DEATH_ENDS_WHEN_CASTER_IS_HIT is True
+
+
+def test_hand_of_death_caster_melee_defense_skill_substitutes_necromancy_for_melee():
+    assert hand_of_death_caster_melee_defense_skill(3) == 3
+    assert hand_of_death_caster_melee_defense_skill(0) == 0
+
+
+def test_hand_of_death_damage_constants():
+    assert HAND_OF_DEATH_BASE_DAMAGE == 1
+    assert HAND_OF_DEATH_DAMAGE_PER_LEVEL == 0.5
+
+
+def test_roll_hand_of_death_damage_whole_exact_value_never_consumes_a_roll():
+    # Level 2: 1 + 0.5*2 = 2, a whole number -- no coin-flip roll needed.
+    rng = ScriptedRandom([])
+    assert roll_hand_of_death_damage(2, rng) == 2
+
+
+def test_roll_hand_of_death_damage_fractional_value_is_a_coin_flip():
+    # Level 1: 1 + 0.5*1 = 1.5 -- rounds down to 1 or up to 2.
+    rng_low = ScriptedRandom([0.49])
+    assert roll_hand_of_death_damage(1, rng_low) == 2
+    rng_high = ScriptedRandom([0.50])
+    assert roll_hand_of_death_damage(1, rng_high) == 1
+
+
+def test_roll_hand_of_death_damage_immune_target_returns_zero_without_a_roll():
+    rng = ScriptedRandom([])
+    assert roll_hand_of_death_damage(4, rng, target_is_immune=True) == 0
+
+
+def test_hand_of_death_victim_hit_chance_multiplier_constant():
+    assert HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER == 0.5
+
+
+def test_hand_of_death_victim_hit_chance_halves_the_base_chance():
+    assert hand_of_death_victim_hit_chance(0.6) == pytest.approx(0.3)
+
+
+def test_hand_of_death_victim_hit_chance_immune_target_is_unaffected():
+    assert hand_of_death_victim_hit_chance(0.6, target_is_immune=True) == 0.6
+
+
+def test_blocks_cast_and_archery_shared_with_spiritwrack():
+    # Renamed from spiritwrack_blocks_cast_and_archery in Phase 190,
+    # confirmed to be Hand of Death's own victim effect too.
+    assert blocks_cast_and_archery() is True
+    assert blocks_cast_and_archery(target_is_immune=True) is False

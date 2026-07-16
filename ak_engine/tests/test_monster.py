@@ -10,6 +10,8 @@ from ak_engine.models.monster import (
     MONSTER_MAGIC_ABILITIES,
     MONSTER_NAMES,
     MONSTER_STATS,
+    HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
+    HAND_OF_DEATH_IMMUNE_MONSTERS,
     ICE_SUSPENSION_FLYING_MONSTERS,
     ICE_SUSPENSION_IMMUNE_MONSTERS,
     SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS,
@@ -396,3 +398,40 @@ def test_ice_suspension_flying_monsters_matches_the_user_supplied_list():
 
 def test_ice_suspension_immune_and_flying_monsters_are_mutually_exclusive():
     assert not (ICE_SUSPENSION_IMMUNE_MONSTERS & ICE_SUSPENSION_FLYING_MONSTERS)
+
+
+# -- Phase 190: Hand of Death's immunity (two exact reuses, one new set) --
+
+
+def test_hand_of_death_anti_holy_monsters_matches_the_user_supplied_list():
+    assert HAND_OF_DEATH_ANTI_HOLY_MONSTERS == {
+        Monster.BAL_DEMON,
+        Monster.MAR_DEMON,
+        Monster.SUCCUBUS,
+        Monster.RAKSHASHA,
+        Monster.ICE_DEVIL,
+        Monster.BONE_DEVIL,
+        Monster.IMP,
+    }
+
+
+def test_hand_of_death_immune_monsters_is_the_union_of_all_three_categories():
+    assert HAND_OF_DEATH_IMMUNE_MONSTERS == (
+        SPIRITWRACK_MECHANICAL_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS | HAND_OF_DEATH_ANTI_HOLY_MONSTERS
+    )
+    # Mechanical [Gargoyle, Golem] and Undead [Spectre, Ghost, Vampire,
+    # Mummy, Banshee, Lich] are exact reuses of the existing Spiritwrack
+    # sets, not duplicated.
+    assert Monster.GARGOYLE in HAND_OF_DEATH_IMMUNE_MONSTERS
+    assert Monster.GOLEM in HAND_OF_DEATH_IMMUNE_MONSTERS
+    assert Monster.SPECTRE in HAND_OF_DEATH_IMMUNE_MONSTERS
+    assert Monster.LICH in HAND_OF_DEATH_IMMUNE_MONSTERS
+
+
+def test_hand_of_death_anti_holy_monsters_is_a_strict_subset_of_ice_suspension_immune():
+    # A strict subset, not identical -- Ice Suspension's own immune set
+    # also includes Spectre/Genie/Ghost/Banshee, which Hand of Death
+    # classifies as "Non-Morti" instead, so the two sets cannot be
+    # merged without misclassifying those four species.
+    assert HAND_OF_DEATH_ANTI_HOLY_MONSTERS < ICE_SUSPENSION_IMMUNE_MONSTERS
+    assert HAND_OF_DEATH_ANTI_HOLY_MONSTERS != ICE_SUSPENSION_IMMUNE_MONSTERS
