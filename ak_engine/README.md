@@ -6818,7 +6818,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     convention (verified by counting the underlying `random()` draws,
     not just checking the output range), and the damage range constant
     itself. Full suite: 2285 passed (2277 unchanged + 8 new).
-- **Phase 181 (current)**: two confirmed facts about Holy Symbol,
+- **Phase 181**: two confirmed facts about Holy Symbol,
   supplied directly by the user: it's tied to `Ability.WHITE` (White
   Magic, the WH talent), and -- "come tutti quelli di combattimento" --
   every individual Personal-Combat spell effect caps its own skill-
@@ -6851,6 +6851,66 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     check, and the damage-roll cap (WH 5 rolls exactly 4 dice, verified
     by counting `random()` draws). Full suite: 2287 passed (2285 base -
     1 replaced + 3 new).
+- **Phase 182 (current)**: Spiritwrack [SP], the second White Magic
+  (WH) Personal-Combat spell effect, project-original (user-supplied).
+  Quoted in full: "Spiritwrack [SP] (Incantesimo di Combattimento
+  Individuale): chi lancia l'incantesimo pronuncia parole sacre che
+  provocano nell'avversario violenti spasimi che lo indeboliscono
+  nello spirito e nel corpo. La vittima non puo' lanciare incantesimi
+  ne' tirare con l'arco e il danno che procura nel corpo a corpo e'
+  ridotto di 1/2 punto danno per livello di abilita' di chi lancia
+  l'incantesimo, arrotondato casualmente per eccesso o per difetto.
+  Questo incantesimo e' inefficace contro mostri Non-Morti (questi
+  sono: Spectre, Ghost, Vampire, Mummy, Banshee, Lich) o meccanici (che
+  non hanno anima, questi sono: Golem, Gargoyle) e i suoi effetti sono
+  dimezzati contro mostri di intelligenza animale [Gryphon,
+  Elasmosaurus, Giant Worm, Giant Wolverine, Giant Amoeba, Giant
+  Praying Mantis, Giant Scorpion, Giant Wasp, Giant Spider, Giant
+  Octopus, Giant Clam, Great White Whale]." Same WH talent link and
+  level-4 cap as Holy Symbol (Phase 181).
+  - `models/monster.py`: new `SPIRITWRACK_UNDEAD_MONSTERS` (Spectre,
+    Ghost, Vampire, Mummy, Banshee, Lich), `SPIRITWRACK_MECHANICAL_
+    MONSTERS` (Golem, Gargoyle), and `SPIRITWRACK_ANIMAL_INTELLIGENCE_
+    MONSTERS` (the 12-species list above) -- confirmed, by direct grep
+    before adding, to be a genuinely separate classification axis from
+    `Alignment.UNDEAD`/`Alignment.MECHANICAL` (neither is actually used
+    anywhere in `MONSTER_ALIGNMENT_DISTRIBUTION`; e.g. the six Undead
+    species there are all 100%-`Alignment.ANTI_HOLY`, from the outlook/
+    kingdom-alignment axis, not this one). Kept as three separate sets
+    (Undead and Mechanical stay apart even though both produce the same
+    "ineffective" outcome) since a future spell might care about only
+    one of the two reasons.
+  - `turn/encounter.py`: new `spiritwrack_blocks_cast_and_archery(*,
+    target_is_immune=False)` (True unless the target is Undead or
+    Mechanical) and `spiritwrack_melee_damage_reduction(skill_level,
+    rng, *, target_is_immune=False, target_is_animal_intelligence=
+    False)` -- 1/2 point per level, randomly rounded up or down when
+    the exact value isn't whole (e.g. level 1's own 0.5 rounds up half
+    the time), 0 without a roll if immune, halved to 1/4 point per
+    level if Animal-Intelligence. Both cap `skill_level` at
+    `PERSONAL_COMBAT_SPELL_LEVEL_CAP` (Phase 181), same as Holy Symbol.
+  - **The "halved effects against Animal-Intelligence" ambiguity**
+    (a binary spell-block can't literally be halved) **resolved
+    directly with the user via `AskUserQuestion`**: only the numeric
+    Melee damage reduction is halved; `spiritwrack_blocks_cast_and_
+    archery()` doesn't take an Animal-Intelligence flag at all and
+    always applies at full strength unless the target is immune --
+    in practice mostly moot, since none of the twelve Animal-
+    Intelligence species actually cast spells or shoot bows.
+  - **Not wired into `turn/search_execution.py`'s combat resolution
+    this phase either**, same reason as Holy Symbol (Phase 180): more
+    Personal-Combat spells are still to come across future sessions.
+  - 15 new tests: `tests/test_monster.py` (+4 -- the three species
+    lists match the user's own lists exactly, and are pairwise
+    disjoint), `tests/test_encounter.py` (+11 -- the cast/archery block
+    default and immune bypass, the immune-target zero-no-roll case
+    (including when also flagged Animal-Intelligence), the level-0
+    case, the whole-number no-roll case at level 2, the random-rounding
+    behavior at levels 1 and 3, the level-4 cap (including levels 5 and
+    100 matching it exactly), the Animal-Intelligence halved-rate
+    rounding, the halved rate's own no-roll case at the capped level,
+    and the rate constants themselves). Full suite: 2302 passed (2287
+    unchanged + 15 new).
 
 ## Setup
 

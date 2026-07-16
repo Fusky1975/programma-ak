@@ -10,6 +10,9 @@ from ak_engine.models.monster import (
     MONSTER_MAGIC_ABILITIES,
     MONSTER_NAMES,
     MONSTER_STATS,
+    SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS,
+    SPIRITWRACK_MECHANICAL_MONSTERS,
+    SPIRITWRACK_UNDEAD_MONSTERS,
     AlignmentOption,
     Monster,
     MonsterCombatStats,
@@ -277,3 +280,47 @@ def test_monster_magic_abilities_levels_are_all_positive():
     for monster, abilities in MONSTER_MAGIC_ABILITIES.items():
         for ability, level in abilities.items():
             assert level > 0, (monster, ability)
+
+
+# -- Phase 182: Spiritwrack's Undead/Mechanical/Animal-Intelligence lists --
+
+
+def test_spiritwrack_undead_monsters_matches_the_user_supplied_list():
+    assert SPIRITWRACK_UNDEAD_MONSTERS == {
+        Monster.SPECTRE,
+        Monster.GHOST,
+        Monster.VAMPIRE,
+        Monster.MUMMY,
+        Monster.BANSHEE,
+        Monster.LICH,
+    }
+
+
+def test_spiritwrack_mechanical_monsters_matches_the_user_supplied_list():
+    assert SPIRITWRACK_MECHANICAL_MONSTERS == {Monster.GOLEM, Monster.GARGOYLE}
+
+
+def test_spiritwrack_animal_intelligence_monsters_matches_the_user_supplied_list():
+    assert SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS == {
+        Monster.GRYPHON,
+        Monster.ELASMOSAURUS,
+        Monster.GI_WORM,
+        Monster.GI_WOLVERINE,
+        Monster.GI_AMOEBA,
+        Monster.GI_P_MANTIS,
+        Monster.GI_SCORPION,
+        Monster.GI_WASP,
+        Monster.GI_SPIDER,
+        Monster.GI_OCTOPUS,
+        Monster.GI_CLAM,
+        Monster.GW_WHALE,
+    }
+
+
+def test_spiritwrack_species_lists_are_pairwise_disjoint():
+    # No species should appear in more than one of the three lists --
+    # each represents a mutually-exclusive reason for Spiritwrack's own
+    # effect to differ.
+    assert not (SPIRITWRACK_UNDEAD_MONSTERS & SPIRITWRACK_MECHANICAL_MONSTERS)
+    assert not (SPIRITWRACK_UNDEAD_MONSTERS & SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS)
+    assert not (SPIRITWRACK_MECHANICAL_MONSTERS & SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS)

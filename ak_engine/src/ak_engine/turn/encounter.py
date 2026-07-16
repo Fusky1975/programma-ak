@@ -269,6 +269,65 @@ internally before using it, so a WH-5 (or higher) caster gets exactly
 the WH-4 result. Future Personal-Combat spells arriving in later
 sessions should apply this same cap, per the user's own "come tutti"
 ("like all of them") wording.
+
+**Phase 182 addendum -- Spiritwrack [SP], the second White Magic (WH)
+Personal-Combat spell effect, project-original (user-supplied).**
+Quoted in full: "Spiritwrack [SP] (Incantesimo di Combattimento
+Individuale): chi lancia l'incantesimo pronuncia parole sacre che
+provocano nell'avversario violenti spasimi che lo indeboliscono nello
+spirito e nel corpo. La vittima non puo' lanciare incantesimi ne'
+tirare con l'arco e il danno che procura nel corpo a corpo e' ridotto
+di 1/2 punto danno per livello di abilita' di chi lancia l'incantesimo,
+arrotondato casualmente per eccesso o per difetto. Questo incantesimo
+e' inefficace contro mostri Non-Morti (questi sono: Spectre, Ghost,
+Vampire, Mummy, Banshee, Lich) o meccanici (che non hanno anima,
+questi sono: Golem, Gargoyle) e i suoi effetti sono dimezzati contro
+mostri di intelligenza animale." ("Spiritwrack: the caster speaks
+sacred words that provoke violent spasms in the opponent, weakening
+them in spirit and body. The victim cannot cast spells nor shoot with
+a bow, and the Melee damage they deal is reduced by 1/2 point per the
+caster's own skill level, randomly rounded up or down. This spell is
+ineffective against Undead monsters [Spectre/Ghost/Vampire/Mummy/
+Banshee/Lich] or mechanical ones [no soul: Golem/Gargoyle], and its
+effects are halved against Animal-Intelligence monsters" -- the full
+12-species list is quoted in `models/monster.py`'s own Phase 182
+addendum, alongside the new `SPIRITWRACK_UNDEAD_MONSTERS`/
+`SPIRITWRACK_MECHANICAL_MONSTERS`/`SPIRITWRACK_ANIMAL_INTELLIGENCE_
+MONSTERS` reference sets that back the `target_is_immune`/`target_is_
+animal_intelligence` flags below).
+
+Same WH talent link and level-4 cap as Holy Symbol (Phase 181):
+`spiritwrack_melee_damage_reduction()`'s own `skill_level` is capped at
+`PERSONAL_COMBAT_SPELL_LEVEL_CAP` internally, same as Holy Symbol.
+
+**The random-rounding formula**: `1/2 point per level` isn't always a
+whole number (level 1 = 0.5, level 3 = 1.5), so the exact reduction is
+rounded up or down at random, weighted by the fractional part -- e.g.
+level 1's own 0.5 rounds up to 1 exactly half the time and down to 0
+the other half; level 2's own exact 1.0 has no fractional part at all
+and always resolves to 1 without consuming a roll (the same no-roll-
+when-the-outcome-is-fixed convention this module's own `resolve_spell_
+disruption()` and `roll_holy_symbol_undead_damage()` already
+established).
+
+**The "halved effects against Animal-Intelligence" ambiguity, resolved
+directly with the user via `AskUserQuestion`**: Spiritwrack's other
+effect -- blocking spellcasting and archery -- is a binary yes/no, not
+a number, so "halved" can't apply to it literally. Three readings were
+offered; the user picked the recommended one: **only the numeric Melee
+damage reduction is halved against Animal-Intelligence targets; the
+spellcasting/archery block still applies at full strength** (in
+practice mostly moot, since none of the twelve Animal-Intelligence
+species listed actually cast spells or shoot bows anyway).
+`spiritwrack_melee_damage_reduction()`'s own `target_is_animal_
+intelligence` flag only affects its own numeric formula;
+`spiritwrack_blocks_cast_and_archery()` doesn't take that flag at all,
+by design -- only `target_is_immune` (Undead or Mechanical) suppresses
+it.
+
+**Not wired into `turn/search_execution.py`'s combat resolution this
+phase either**, for the same reason as Holy Symbol (Phase 180): more
+Personal-Combat spells are still to come across future sessions.
 """
 
 from __future__ import annotations
@@ -398,6 +457,61 @@ def roll_holy_symbol_undead_damage(skill_level: int, rng: random.Random) -> int:
 
     effective_level = min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)
     return sum(rng.randint(*HOLY_SYMBOL_UNDEAD_DAMAGE_RANGE_PER_LEVEL) for _ in range(effective_level))
+
+
+# Spiritwrack [SP], module docstring's own Phase 182 addendum -- project-
+# original, user-supplied. 1/2 point of Melee damage reduction per level
+# normally, 1/4 point per level (halved) against an Animal-Intelligence
+# target; no effect at all against an Undead or Mechanical target.
+SPIRITWRACK_MELEE_DAMAGE_REDUCTION_PER_LEVEL = 0.5
+SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER = 0.5
+
+
+def spiritwrack_blocks_cast_and_archery(*, target_is_immune: bool = False) -> bool:
+    """Spiritwrack's own "the victim cannot cast spells nor shoot with a
+    bow" effect. Always True unless ``target_is_immune`` (an Undead or
+    Mechanical target -- see ``models/monster.py SPIRITWRACK_UNDEAD_
+    MONSTERS``/``SPIRITWRACK_MECHANICAL_MONSTERS``), in which case the
+    spell has no effect at all. Deliberately does **not** take an
+    Animal-Intelligence flag: the user confirmed only the numeric Melee
+    damage reduction is halved against those targets, not this block
+    (module docstring's Phase 182 addendum).
+    """
+
+    return not target_is_immune
+
+
+def spiritwrack_melee_damage_reduction(
+    skill_level: int,
+    rng: random.Random,
+    *,
+    target_is_immune: bool = False,
+    target_is_animal_intelligence: bool = False,
+) -> int:
+    """Spiritwrack's own Melee damage reduction -- 1/2 point per skill
+    level, randomly rounded up or down when the exact reduction isn't a
+    whole number (see module docstring's Phase 182 addendum for the
+    worked cases). Returns 0 without consuming any roll if
+    ``target_is_immune`` (Undead or Mechanical -- fully ineffective).
+    Halved (1/4 point per level) if ``target_is_animal_intelligence``.
+    ``skill_level`` is capped at ``PERSONAL_COMBAT_SPELL_LEVEL_CAP``
+    (Phase 181), same as Holy Symbol.
+    """
+
+    if target_is_immune:
+        return 0
+
+    effective_level = min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)
+    rate = SPIRITWRACK_MELEE_DAMAGE_REDUCTION_PER_LEVEL
+    if target_is_animal_intelligence:
+        rate *= SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER
+
+    exact = rate * effective_level
+    whole = int(exact)
+    fraction = exact - whole
+    if fraction <= 0.0:
+        return whole
+    return whole + 1 if rng.random() < fraction else whole
 
 
 @dataclass(slots=True)

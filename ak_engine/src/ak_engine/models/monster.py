@@ -217,6 +217,38 @@ regeneration addendum already flags that whole mechanic as "blocked on
 the Cast-tactic-spell-id gap") -- the data is real and ready, but there
 is still no monster-side Cast-tactic combat engine in this project to
 hand it to.
+
+**Phase 182 addendum -- Spiritwrack's own Undead/Mechanical/Animal-
+Intelligence species lists, project-original, user-supplied.** Spelled
+out directly while defining `turn/encounter.py`'s Spiritwrack [SP]
+spell effect: "Questo incantesimo e' inefficace contro mostri Non-
+Morti (questi sono: Spectre, Ghost, Vampire, Mummy, Banshee, Lich) o
+meccanici (che non hanno anima, questi sono: Golem, Gargoyle) e i suoi
+effetti sono dimezzati contro mostri di intelligenza animale. Questi
+sono: Gryphon, Elasmosaurus, Giant Worm, Giant Wolverine, Giant Amoeba,
+Giant Praying Mantis, Giant Scorpion, Giant Wasp, Giant Spider, Giant
+Octopus, Giant Clam, Great White Whale."
+
+**Distinct from `Alignment.UNDEAD`/`Alignment.MECHANICAL`, confirmed
+by direct grep before adding this**: neither existing enum member is
+actually used anywhere in `MONSTER_ALIGNMENT_DISTRIBUTION` above (e.g.
+Ghost/Vampire/Mummy/Banshee/Lich/Spectre are all 100%-`Alignment.
+ANTI_HOLY` there, from the *outlook*/kingdom-alignment axis Phase 176
+modeled; Golem is `NEUTRAL`, Gargoyle is `EVIL`). This new list is a
+genuinely separate classification axis -- "is this species Undead-
+type/Mechanical-type/Animal-Intelligence-type" for spell-targeting
+purposes -- not a re-reading of the existing alignment/outlook data,
+so it's kept as its own dedicated set below rather than overloading
+`Alignment`.
+
+`SPIRITWRACK_UNDEAD_MONSTERS` and `SPIRITWRACK_MECHANICAL_MONSTERS` are
+kept as two separate frozensets (rather than merged into one "immune"
+set) since they're conceptually distinct reasons for the same
+Spiritwrack outcome (spirit-numbing magic finds no spirit to numb in
+either an Undead creature or a soulless construct) -- a future spell
+that only cares about one of the two reasons can still tell them
+apart. `SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS` is the third,
+independent list.
 """
 
 from __future__ import annotations
@@ -613,6 +645,47 @@ MONSTER_MAGIC_ABILITIES: dict[Monster, dict[Ability, int]] = {
     Monster.LICH: {Ability.NECROMANCY: 4},
     Monster.MERMAID: {Ability.ELEMENTAL: 1, Ability.PSYCHIC: 1, Ability.NECROMANCY: 1},
 }
+
+
+# Phase 182 -- project-original, user-supplied while defining
+# turn/encounter.py's Spiritwrack [SP] spell. See module docstring's
+# own Phase 182 addendum for the full quote and why this is kept
+# separate from `Alignment.UNDEAD`/`Alignment.MECHANICAL` (neither is
+# actually used in MONSTER_ALIGNMENT_DISTRIBUTION above).
+SPIRITWRACK_UNDEAD_MONSTERS: frozenset[Monster] = frozenset(
+    {
+        Monster.SPECTRE,
+        Monster.GHOST,
+        Monster.VAMPIRE,
+        Monster.MUMMY,
+        Monster.BANSHEE,
+        Monster.LICH,
+    }
+)
+
+SPIRITWRACK_MECHANICAL_MONSTERS: frozenset[Monster] = frozenset(
+    {
+        Monster.GOLEM,
+        Monster.GARGOYLE,
+    }
+)
+
+SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS: frozenset[Monster] = frozenset(
+    {
+        Monster.GRYPHON,
+        Monster.ELASMOSAURUS,
+        Monster.GI_WORM,
+        Monster.GI_WOLVERINE,
+        Monster.GI_AMOEBA,
+        Monster.GI_P_MANTIS,
+        Monster.GI_SCORPION,
+        Monster.GI_WASP,
+        Monster.GI_SPIDER,
+        Monster.GI_OCTOPUS,
+        Monster.GI_CLAM,
+        Monster.GW_WHALE,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)

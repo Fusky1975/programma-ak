@@ -14,6 +14,8 @@ from ak_engine.turn.encounter import (
     PERSONAL_COMBAT_SPELL_LEVEL_CAP,
     SPELL_DISRUPTION_CHANCE_CAP,
     SPELL_DISRUPTION_CHANCE_PER_HIT,
+    SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER,
+    SPIRITWRACK_MELEE_DAMAGE_REDUCTION_PER_LEVEL,
     Combatant,
     CombatRange,
     _acts_first,
@@ -29,6 +31,8 @@ from ak_engine.turn.encounter import (
     roll_holy_symbol_undead_damage,
     roll_melee_attack,
     spell_disruption_chance,
+    spiritwrack_blocks_cast_and_archery,
+    spiritwrack_melee_damage_reduction,
 )
 
 from _helpers import ScriptedRandom
@@ -448,3 +452,71 @@ def test_roll_holy_symbol_undead_damage_sums_one_independent_roll_per_level():
 
 def test_roll_holy_symbol_undead_damage_range_is_1_to_4_per_level():
     assert HOLY_SYMBOL_UNDEAD_DAMAGE_RANGE_PER_LEVEL == (1, 4)
+
+
+# -- Phase 182: Spiritwrack [SP] --
+
+
+def test_spiritwrack_blocks_cast_and_archery_by_default():
+    assert spiritwrack_blocks_cast_and_archery() is True
+
+
+def test_spiritwrack_blocks_cast_and_archery_never_applies_to_an_immune_target():
+    assert spiritwrack_blocks_cast_and_archery(target_is_immune=True) is False
+
+
+def test_spiritwrack_melee_damage_reduction_immune_target_returns_zero_without_a_roll():
+    rng = ScriptedRandom([])
+    assert spiritwrack_melee_damage_reduction(4, rng, target_is_immune=True) == 0
+    # Immune wins even if the target is also flagged Animal-Intelligence.
+    assert spiritwrack_melee_damage_reduction(4, rng, target_is_immune=True, target_is_animal_intelligence=True) == 0
+
+
+def test_spiritwrack_melee_damage_reduction_level_zero_returns_zero_without_a_roll():
+    rng = ScriptedRandom([])
+    assert spiritwrack_melee_damage_reduction(0, rng) == 0
+
+
+def test_spiritwrack_melee_damage_reduction_level_2_is_a_whole_point_no_roll_needed():
+    # 0.5 * 2 = 1.0 exactly -- no fractional part, no roll consumed.
+    rng = ScriptedRandom([])
+    assert spiritwrack_melee_damage_reduction(2, rng) == 1
+
+
+def test_spiritwrack_melee_damage_reduction_level_1_rounds_randomly():
+    # 0.5 * 1 = 0.5 -- rounds up to 1 half the time, down to 0 the rest.
+    assert spiritwrack_melee_damage_reduction(1, ScriptedRandom([0.49])) == 1
+    assert spiritwrack_melee_damage_reduction(1, ScriptedRandom([0.5])) == 0
+
+
+def test_spiritwrack_melee_damage_reduction_level_3_rounds_randomly_around_its_own_whole_part():
+    # 0.5 * 3 = 1.5 -- rounds up to 2 half the time, down to 1 the rest.
+    assert spiritwrack_melee_damage_reduction(3, ScriptedRandom([0.49])) == 2
+    assert spiritwrack_melee_damage_reduction(3, ScriptedRandom([0.5])) == 1
+
+
+def test_spiritwrack_melee_damage_reduction_caps_skill_level_at_4():
+    # 0.5 * 4 = 2.0 exactly -- level 5 (or higher) must match level 4
+    # exactly, and also needs no roll since the capped exact value has
+    # no fractional part.
+    rng = ScriptedRandom([])
+    assert spiritwrack_melee_damage_reduction(4, rng) == 2
+    assert spiritwrack_melee_damage_reduction(5, rng) == 2
+    assert spiritwrack_melee_damage_reduction(100, rng) == 2
+
+
+def test_spiritwrack_melee_damage_reduction_animal_intelligence_halves_the_rate():
+    # 0.25 * 1 = 0.25 -- rounds up to 1 a quarter of the time.
+    assert spiritwrack_melee_damage_reduction(1, ScriptedRandom([0.24]), target_is_animal_intelligence=True) == 1
+    assert spiritwrack_melee_damage_reduction(1, ScriptedRandom([0.25]), target_is_animal_intelligence=True) == 0
+
+
+def test_spiritwrack_melee_damage_reduction_animal_intelligence_at_capped_level_is_a_whole_point_no_roll():
+    # 0.25 * 4 (capped) = 1.0 exactly -- no fractional part, no roll.
+    rng = ScriptedRandom([])
+    assert spiritwrack_melee_damage_reduction(4, rng, target_is_animal_intelligence=True) == 1
+
+
+def test_spiritwrack_rate_constants():
+    assert SPIRITWRACK_MELEE_DAMAGE_REDUCTION_PER_LEVEL == 0.5
+    assert SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER == 0.5
