@@ -6851,7 +6851,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     check, and the damage-roll cap (WH 5 rolls exactly 4 dice, verified
     by counting `random()` draws). Full suite: 2287 passed (2285 base -
     1 replaced + 3 new).
-- **Phase 182 (current)**: Spiritwrack [SP], the second White Magic
+- **Phase 182**: Spiritwrack [SP], the second White Magic
   (WH) Personal-Combat spell effect, project-original (user-supplied).
   Quoted in full: "Spiritwrack [SP] (Incantesimo di Combattimento
   Individuale): chi lancia l'incantesimo pronuncia parole sacre che
@@ -6911,6 +6911,63 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     rounding, the halved rate's own no-roll case at the capped level,
     and the rate constants themselves). Full suite: 2302 passed (2287
     unchanged + 15 new).
+- **Phase 183 (current)**: Charm [CH], tied to `Ability.PSYCHIC` (PS)
+  normally. Charm is the first spell confirmed to have *both* an
+  Action-Cast form (already implemented, Phase 29) and a Personal-
+  Combat form -- unlike every Personal-Combat spell covered so far
+  (Holy Symbol, Spiritwrack), which are Personal-Combat-*only*. Real
+  `models/monster_encounter_plan.py` data already used `CA-CH` (the
+  Dryad's own encounter plan, Phase 178) before this dual nature was
+  explicitly confirmed. Quoted in full: "Charm [CH] (Incantesimo
+  d'Azione o di Combattimento Individuale): se lanciato su un Eroe che
+  si trova nella stessa provincia e che non comanda unita' militari
+  permette a chi lo usa di assoldare l'Eroe gratuitamente (fatti salvi
+  i costi di mantenimento che vanno comunque pagati). 'Altrimenti
+  consente a chi lancia l'incantesimo di ingraziarsi il suo avversario
+  e sfuggire incolume al combattimento'. Per i personaggi Non-Morti
+  questo incantesimo appartiene alla magia Negromantica (e non alla
+  magia Psichica). ... Praticamente se usato in combattimento equivale
+  a un comando FL che riesce sempre con la dicitura: (eroe o mostro)
+  incanta (eroe o mostro) e questo lo lascia andare via senza
+  problemi."
+  - `turn/encounter.py`: new `CHARM_FLEE_ALWAYS_SUCCEEDS = True` --
+    the entire Personal-Combat mechanic. Unlike a normal Flee attempt
+    (`turn/search_execution.py FLEE_CHANCE`, keyed by `MonsterSpeed`,
+    never guaranteed), a Charm-as-Flee always succeeds, no roll, no
+    skill-level-scaled magnitude at all (`PERSONAL_COMBAT_SPELL_
+    LEVEL_CAP` doesn't apply here, unlike Holy Symbol/Spiritwrack). Not
+    wired into `turn/search_execution.py`'s combat resolution this
+    phase either, same reason as every other Personal-Combat spell;
+    the narration itself belongs in `report/turn_report.py` alongside
+    `render_flee_failure()` once a real CAST-tactic engine exists.
+  - `turn/cast_execution.py _execute_charm` (Action-Cast form): two
+    real fixes/additions this phase. (1) A co-located Hero must now
+    command **no** armies to be a valid free-hire target -- the
+    source's own "che non comanda unita' militari" condition was
+    previously unchecked entirely; a Hero who commands armies is
+    instead the Personal-Combat scenario the "Altrimenti" sentence
+    describes, handled by `CHARM_FLEE_ALWAYS_SUCCEEDS` above, not this
+    function. (2) New `_spell_ability()` helper: an Undead caster's
+    Charm now draws on `Ability.NECROMANCY` instead of `Ability.
+    PSYCHIC` for both the success roll and any future level-dependent
+    magnitude -- `LeaderState.alignment` (Phase 162) already carries
+    the data this needed, no new field required.
+  - **The Undead-King "Seduzione" branch, confirmed but deliberately
+    not modeled**: when an Undead King (not a Hero) casts Charm on a
+    Hero purely as an Action Spell, it gradually turns the target
+    Undead instead of hiring them -- alignment shifts 1-3 ordinal
+    positions per successful cast (`models/alignment.py ALIGNMENT_
+    ORDINAL`, Phase 162), with the target's own resistance growing
+    with skill level even though the spell's base success chance isn't
+    reduced. Left unimplemented: the resistance formula itself isn't
+    specified precisely enough to model without guessing -- same
+    category of gap as this file's own Resurrection King-Heir case.
+  - 5 new tests: `tests/test_cast_execution.py` (+4 -- the new "target
+    commands military units" rejection, the Undead-caster Necromancy
+    override actually taking effect, that an Undead caster's own
+    Psychic skill no longer counts, and that a non-Undead caster is
+    unaffected), `tests/test_encounter.py` (+1 -- the guaranteed-Flee
+    constant). Full suite: 2307 passed (2302 unchanged + 5 new).
 
 ## Setup
 

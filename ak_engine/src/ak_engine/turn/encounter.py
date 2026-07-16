@@ -328,6 +328,48 @@ it.
 **Not wired into `turn/search_execution.py`'s combat resolution this
 phase either**, for the same reason as Holy Symbol (Phase 180): more
 Personal-Combat spells are still to come across future sessions.
+
+**Phase 183 addendum -- Charm [CH]'s Personal-Combat effect, tied to
+Ability.PSYCHIC (PS), project-original (user-supplied).** Charm is the
+first spell confirmed to have *both* an Action-Cast form (`turn/
+cast_execution.py _execute_charm`, Phase 29/183) and a Personal-Combat
+form -- unlike every spell already covered in this module's own
+addenda, which are Personal-Combat-*only*. Quoted in full: "Charm [CH]
+(Incantesimo d'Azione o di Combattimento Individuale): ... Altrimenti
+consente a chi lancia l'incantesimo di ingraziarsi il suo avversario e
+sfuggire incolume al combattimento. ... Praticamente se usato in
+combattimento equivale a un comando FL che riesce sempre con la
+dicitura: (eroe o mostro) incanta (eroe o mostro) e questo lo lascia
+andare via senza problemi." ("Charm [CH] (Action or Personal-Combat
+spell): ... Otherwise it lets the caster ingratiate himself with his
+opponent and escape unharmed from combat. ... In practice, used in
+combat it's equivalent to an FL [Flee] command that always succeeds,
+with the narration: (hero or monster) charms (hero or monster) and
+this lets them leave without trouble.")
+
+`CHARM_FLEE_ALWAYS_SUCCEEDS = True` is the entire mechanic: unlike a
+normal Flee attempt (`turn/search_execution.py FLEE_CHANCE`, keyed by
+`MonsterSpeed` and never guaranteed), a Charm-as-Flee always succeeds,
+no roll consumed. There is no skill-level-scaled numeric magnitude
+here at all -- `PERSONAL_COMBAT_SPELL_LEVEL_CAP` (Phase 181) doesn't
+apply to Charm's combat effect, unlike Holy Symbol/Spiritwrack.
+
+**Not wired into `turn/search_execution.py`'s combat resolution this
+phase either**, same reason as every other Personal-Combat spell above
+-- and the narration itself ("(eroe o mostro) incanta...") belongs in
+`report/turn_report.py` alongside `render_flee_failure()` when a real
+CAST-tactic engine exists to call it, not in this module (which never
+renders prose).
+
+**Two further confirmed Charm facts, both about the Action-Cast form,
+documented in `turn/cast_execution.py _execute_charm`'s own docstring
+instead of here** (that's where the mechanic actually lives): an
+Undead caster's Charm draws on Necromancy instead of Psychic, and a
+co-located Hero must command no armies to be a valid free-hire target
+(a real precondition this phase -- previously unchecked). The Undead-
+King "Seduzione" branch (gradually turning a Hero Undead via repeated
+casts) is confirmed but deliberately left unmodeled -- see that same
+docstring for exactly why.
 """
 
 from __future__ import annotations
@@ -512,6 +554,14 @@ def spiritwrack_melee_damage_reduction(
     if fraction <= 0.0:
         return whole
     return whole + 1 if rng.random() < fraction else whole
+
+
+# Charm [CH], module docstring's own Phase 183 addendum -- project-
+# original, user-supplied. Used mid-combat, Charm is unconditionally
+# equivalent to a Flee command that always succeeds -- no roll, no
+# skill-level-scaled magnitude, unlike every other Personal-Combat
+# spell above.
+CHARM_FLEE_ALWAYS_SUCCEEDS = True
 
 
 @dataclass(slots=True)

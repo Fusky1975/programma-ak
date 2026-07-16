@@ -2,8 +2,10 @@
 
 Of the 25 base ``Spell``s, 13 get real execution here as of Phase 60:
 
-- **Charm** and **Kill_Enemy** (Phase 29): see their own helpers below,
-  unchanged from Phase 29.
+- **Charm** and **Kill_Enemy** (Phase 29): see their own helpers below.
+  Charm gained a real "target must command no armies" precondition and
+  an Undead-caster Necromancy-instead-of-Psychic override in Phase 183
+  -- see ``_execute_charm``'s own docstring.
 - **Resurrect, Part_Sea, Bless, Flood, Tornado, Earthquake, Oratory,
   Plague, Illus_Terrain, Illus_Armies** (Phase 59): each spell's exact
   numeric mechanics were unavailable to this project until Regolamento
@@ -33,7 +35,7 @@ Of the 25 base ``Spell``s, 13 get real execution here as of Phase 60:
   event feed -- the "story event" model ``ak_engine/report/prose.py``'s
   own Phase 58 docstring already named as a distinct, not-yet-attempted
   future piece.
-- **The 10 Personal-Combat-only spells** (Holy_Symbol, Spiritwrack,
+- **The 10 Personal-Combat-*only* spells** (Holy_Symbol, Spiritwrack,
   Psychic_Blast, Telek_Storm, Invisibility, Mirror_Image, Fireball,
   Ice_Suspend, Hand_of_Death, Control_Undead -- [4.21.4]-[4.21.5],
   [4.22.4]-[4.22.5], [4.23.4]-[4.23.5], [4.24.4]-[4.24.5],
@@ -51,6 +53,17 @@ Of the 25 base ``Spell``s, 13 get real execution here as of Phase 60:
   **Invisibility's own addendum** ("now gives +30% chance to flee") stays
   unmodeled along with the base spell -- there is no Flee tactic
   resolver to apply the bonus to either.
+- **Charm is the one spell confirmed (Phase 183) to have *both* an
+  Action-Cast form (``_execute_charm`` above) and a Personal-Combat
+  form** -- unlike the ten spells above, which are Personal-Combat-
+  *only*. Real ``models/monster_encounter_plan.py`` data already used
+  ``CA-CH`` (e.g. the Dryad's own encounter plan, Phase 178) before this
+  dual nature was explicitly confirmed. The Personal-Combat form --
+  "praticamente se usato in combattimento equivale a un comando FL che
+  riesce sempre" (a guaranteed-success Flee) -- is modeled as
+  ``turn/encounter.py CHARM_FLEE_ALWAYS_SUCCEEDS``, not here, and is
+  equally unwired into any real tactic-walk engine for the same reason
+  as the ten Personal-Combat-only spells above.
 
 **Every province-targeted spell here shares one targeting mechanism**:
 ``CastRequest.target`` is a raw hex number (rulebook: "the province you
@@ -99,6 +112,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import Terrain
@@ -213,6 +227,19 @@ def execute_cast(
     return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
 
 
+def _spell_ability(caster: LeaderState, spell: Spell) -> Ability:
+    """``_SPELL_ABILITY[spell]``, with Charm's own Phase 183 addendum
+    override: "Per i personaggi Non-Morti questo incantesimo appartiene
+    alla magia Negromantica (e non alla magia Psichica)" -- an Undead
+    caster's Charm draws on Necromancy instead of Psychic. No other
+    spell here has a caster-dependent ability.
+    """
+
+    if spell is Spell.CHARM and caster.alignment is Alignment.UNDEAD:
+        return Ability.NECROMANCY
+    return _SPELL_ABILITY[spell]
+
+
 def _roll_cast_success(
     caster: LeaderState, spell: Spell, rng: random.Random, wand_skill_level: int | None = None
 ) -> tuple[bool, str | None]:
@@ -226,7 +253,7 @@ def _roll_cast_success(
     if caster.skills is None:
         return True, None
 
-    level = caster.skills.pair_for_ability(_SPELL_ABILITY[spell])[0]
+    level = caster.skills.pair_for_ability(_spell_ability(caster, spell))[0]
     if level < 1:
         return False, "insufficient skill"
 
@@ -276,8 +303,40 @@ def _execute_charm(
     rng: random.Random,
     wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
-    """Rulebook [4.22.1]: "a Hero in the same province" -- see module docstring for why
-    this differs from Hire (no "must already be independent" requirement).
+    """Rulebook [4.22.1] / Phase 183 addendum: "se lanciato su un Eroe che si trova
+    nella stessa provincia e che non comanda unita' militari permette a
+    chi lo usa di assoldare l'Eroe gratuitamente (fatti salvi i costi di
+    mantenimento che vanno comunque pagati)" -- a co-located Hero
+    commanding no armies is hired for free; this project has no
+    separate "free hire" flag, so upkeep is simply whatever the normal
+    per-turn treasury accounting already charges for that Hero's
+    commanded armies (there are none here) -- nothing extra to apply.
+    See module docstring for why this still differs from Hire in having
+    no "must already be independent" requirement.
+
+    **A co-located Hero who commands armies is not a free-hire target**
+    -- newly required this phase, since the source's own condition
+    ("che non comanda unita' militari") was previously unchecked. The
+    quoted text's own "Altrimenti" ("otherwise") branch -- "consente a
+    chi lancia l'incantesimo di ingraziarsi il suo avversario e sfuggire
+    incolume al combattimento" -- describes Charm's *other* usage mode
+    instead: a Personal-Combat cast against an armed opponent, modeled
+    separately in ``turn/encounter.py``'s own Phase 183 addendum
+    (``CHARM_FLEE_ALWAYS_SUCCEEDS``), not this Action-Cast function.
+
+    **Undead-King "Seduzione" branch, confirmed but not modeled here**:
+    when an Undead King (not a Hero) casts Charm on a Hero purely as an
+    Action Spell, the source says it gradually transforms the target
+    into Undead instead of hiring them (alignment shifts 1-3 ordinal
+    positions per successful cast, per ``models/alignment.py
+    ALIGNMENT_ORDINAL`` -- Phase 162's own table), with the target's
+    own resistance growing with skill level even though the spell's
+    base success chance itself doesn't drop. Left unimplemented: the
+    resistance formula (how skill level actually reduces the
+    transformation, distinct from -- and coexisting with -- the
+    unaffected base success roll) isn't specified precisely enough to
+    model without guessing, the same category of gap as this file's own
+    Resurrection King-Heir case above.
     """
 
     caster = state.leaders[leader_id]
@@ -286,6 +345,8 @@ def _execute_charm(
         return CastExecutionResult(request, applied=False, reason="target character not found")
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
+    if state.armies_commanded_by(request.target):
+        return CastExecutionResult(request, applied=False, reason="target commands military units")
 
     succeeded, reason = _roll_cast_success(caster, request.spell, rng, wand_skill_level)
     if not succeeded:

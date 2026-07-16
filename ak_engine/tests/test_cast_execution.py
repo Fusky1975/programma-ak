@@ -86,6 +86,67 @@ def test_charm_fails_when_target_does_not_exist():
     assert result.reason == "target character not found"
 
 
+def test_charm_fails_when_target_commands_military_units():
+    # Phase 183: "che non comanda unita' militari" -- a co-located Hero
+    # commanding an army is not a free-hire target.
+    state = build_state()
+    state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
+    state.add_army(ArmyState(1, None, ArmyType.LEGION, Quality.AVERAGE, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+    rng = ScriptedRandom([])  # precondition fails before any roll
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "target commands military units"
+    assert state.leaders[78].kingdom_id is None  # untouched
+
+
+def test_charm_undead_caster_uses_necromancy_instead_of_psychic():
+    # Phase 183: "Per i personaggi Non-Morti questo incantesimo
+    # appartiene alla magia Negromantica (e non alla magia Psichica)."
+    state = build_state()
+    state.leaders[CASTER_ID].alignment = Alignment.UNDEAD
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)
+    state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+    rng = ScriptedRandom([0.44])  # 15% + 15%*2 = 45% chance
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.leaders[78].kingdom_id == 1
+
+
+def test_charm_undead_caster_with_only_psychic_skill_has_insufficient_skill():
+    # Confirms the override is real -- an Undead caster's own Psychic
+    # skill no longer governs Charm at all.
+    state = build_state()
+    state.leaders[CASTER_ID].alignment = Alignment.UNDEAD
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 3)
+    state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+    rng = ScriptedRandom([])  # precondition fails first, no roll consumed
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "insufficient skill"
+
+
+def test_charm_non_undead_caster_still_uses_psychic():
+    state = build_state()
+    assert state.leaders[CASTER_ID].alignment is None
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 2)
+    state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+    rng = ScriptedRandom([0.44])  # 15% + 15%*2 = 45% chance
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+
+
 def test_kill_enemy_removes_a_colocated_target():
     state = build_state()
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))

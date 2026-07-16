@@ -14,6 +14,7 @@ from ak_engine.turn.encounter import (
     PERSONAL_COMBAT_SPELL_LEVEL_CAP,
     SPELL_DISRUPTION_CHANCE_CAP,
     SPELL_DISRUPTION_CHANCE_PER_HIT,
+    CHARM_FLEE_ALWAYS_SUCCEEDS,
     SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER,
     SPIRITWRACK_MELEE_DAMAGE_REDUCTION_PER_LEVEL,
     Combatant,
@@ -520,3 +521,12 @@ def test_spiritwrack_melee_damage_reduction_animal_intelligence_at_capped_level_
 def test_spiritwrack_rate_constants():
     assert SPIRITWRACK_MELEE_DAMAGE_REDUCTION_PER_LEVEL == 0.5
     assert SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER == 0.5
+
+
+# -- Phase 183: Charm [CH]'s Personal-Combat effect --
+
+
+def test_charm_flee_always_succeeds_constant():
+    # "Praticamente se usato in combattimento equivale a un comando FL
+    # che riesce sempre" -- no roll, no skill-level scaling at all.
+    assert CHARM_FLEE_ALWAYS_SUCCEEDS is True
