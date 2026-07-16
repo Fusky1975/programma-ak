@@ -48,16 +48,24 @@ def test_monster_aid_whale_gap_was_filled_from_this_roster():
     assert gelenor.fixed_item_name == "Horn of Neptune"
 
 
-def test_one_hero_has_no_resolved_treasure_item():
+def test_book_tactical_gap_was_filled_from_this_roster():
+    xerxes = VALHALLA_ROSTER[Alignment.PAGAN][17]
+    assert xerxes.name == "Xerxes"
+    assert xerxes.fixed_item is Treasure.BOOK_TACTICAL
+    assert xerxes.fixed_item_name == "Hannibal's Grimoire"
+
+
+def test_every_hero_has_a_resolved_treasure_item():
+    # Phase 198 closed the last of the 63 distinct VALHALLA item names
+    # (Hannibal's Grimoire -> BOOK_TACTICAL); no hero's fixed_item is
+    # None anymore.
     unresolved = [
         (align, hero.name, hero.fixed_item_name)
         for align, heroes in VALHALLA_ROSTER.items()
         for hero in heroes
         if hero.fixed_item is None
     ]
-    assert unresolved == [
-        (Alignment.PAGAN, "Xerxes", "Hannibal's Grimoire"),
-    ]
+    assert unresolved == []
 
 
 def test_undead_and_divine_heroes_appear_inside_good_and_evil_buckets():

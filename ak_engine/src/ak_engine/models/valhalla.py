@@ -35,27 +35,20 @@ cleanly); the EVIL file's Marius/Severius/Dietrich all read ``Race:
 Humam`` (a typo for "Human").
 
 **``fixed_item`` resolution against ``models/treasure.py``'s own
-``TREASURE_NAME``**: 62 of the 63 distinct item names transcribed here
-resolve directly (or via an obvious wording variant already present in
-this corpus, e.g. "Sword Excalibur" -> ``LEADERSHIP_HUMAN``'s own
-"Excalibur", "The True Cross" -> ``AMULET_ANTI_NECROMANCY``'s own "True
-Cross", "Quaagoth's Portable Laboratory" -> ``ABILITY_SAGE``'s own
-"Portable Laboratory of Qua'al Naggoth"). **"Feather of the Great
-Eagle" directly filled ``MONSTER_AID_EAGLE``'s own confirmed
-``TREASURE_NAME`` gap** (see that module's own docstring addendum) --
-this project's first real name for that ordinal, sourced from this
-VALHALLA data rather than ``TREASURE.X2``. **"Horn of Neptune" (Gelenor,
-PAGAN) filled ``MONSTER_AID_WHALE``'s own gap too (Phase 197)**, once
-the user supplied its ``TREASURE.X2``-equivalent row directly ("Balene"
-/ "33% di diserzione" match ``MONSTER_COMMAND_ITEM``'s own confirmed
-formula exactly -- see ``models/treasure.py``'s own docstring addendum).
-**One item still has no ``Treasure`` match at all and is left as
-``fixed_item=None``** (``fixed_item_name`` still carries the raw source
-text, so nothing is silently dropped): "Hannibal's Grimoire" (Xerxes,
-PAGAN) -- matches no named ordinal nor the one remaining confirmed-gap
-ordinal (``BOOK_TACTICAL``, which doesn't fit the name thematically) --
-recorded as a genuine, unresolved gap rather than guessed onto an
-unrelated ordinal.
+``TREASURE_NAME``**: all 63 distinct item names transcribed here now
+resolve, either directly, via an obvious wording variant already
+present in this corpus (e.g. "Sword Excalibur" -> ``LEADERSHIP_HUMAN``'s
+own "Excalibur", "The True Cross" -> ``AMULET_ANTI_NECROMANCY``'s own
+"True Cross", "Quaagoth's Portable Laboratory" -> ``ABILITY_SAGE``'s own
+"Portable Laboratory of Qua'al Naggoth"), or via three items the user
+confirmed directly once this project flagged them as unresolved:
+**"Feather of the Great Eagle" filled ``MONSTER_AID_EAGLE``'s own
+``TREASURE_NAME`` gap (Phase 196)**, **"Horn of Neptune" (Gelenor,
+PAGAN) filled ``MONSTER_AID_WHALE``'s own gap (Phase 197)**, and
+**"Hannibal's Grimoire" (Xerxes, PAGAN) filled ``BOOK_TACTICAL``'s own
+gap (Phase 198)** -- see ``models/treasure.py``'s own docstring
+addenda for each item's sourcing. No hero's own item is left
+unresolved anymore.
 
 **No new ``LeaderState`` is spawned by this module itself** -- see
 ``turn/valhalla_execution.py finalize_gate_angel_visit()`` for the
@@ -1063,7 +1056,7 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             temper=Temper.BRAVE,
             race=Race.DWARVEN,
             skills=SkillTable(raw_values=[2, 2, 1, 2, 2, 2, 1, 3, 3, 4, 4, 4, 3, 2, 2, 4, 5, 6, 1, 2, 0, 2, 0, 2, 1, 4, 0, 2, 1, 3]),
-            fixed_item=None,
+            fixed_item=Treasure.BOOK_TACTICAL,  # Phase 198: user-confirmed, see models/treasure.py's own gap note
             fixed_item_name="Hannibal's Grimoire",
         ),
         ValhallaHero(

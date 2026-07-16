@@ -85,16 +85,16 @@ def test_treasure_label_verbatim_samples():
 def test_treasure_name_has_confirmed_gaps():
     # Confirmed real gaps in TREASURE.X2 itself, not extraction bugs -- see
     # models/treasure.py's own module docstring. MONSTER_AID_EAGLE (Phase
-    # 196) and MONSTER_AID_WHALE (Phase 197) were both filled from
-    # independent sources outside TREASURE.X2 (models/valhalla.py's own
-    # roster data, plus a user-supplied translated table row for the
-    # Whale item), so neither is among the confirmed-missing ordinals
-    # anymore.
-    assert Treasure.BOOK_TACTICAL not in TREASURE_NAME
+    # 196), MONSTER_AID_WHALE (Phase 197), and BOOK_TACTICAL (Phase 198)
+    # were all filled from independent sources outside TREASURE.X2
+    # (models/valhalla.py's own roster data, plus user-supplied
+    # descriptions for the two Whale/Book items), so none of the three
+    # is among the confirmed-missing ordinals anymore. Only the three
+    # named uniques (94-96) remain genuinely unfilled.
     assert Treasure.NAMED_UNIQUE_AMULET_POWER not in TREASURE_NAME
     assert Treasure.NAMED_UNIQUE_SCEPTER_LIFE not in TREASURE_NAME
     assert Treasure.NAMED_UNIQUE_MAP_MARAUDERS not in TREASURE_NAME
-    assert len(TREASURE_NAME) == 95
+    assert len(TREASURE_NAME) == 96
 
 
 def test_treasure_name_verbatim_samples():
@@ -103,6 +103,7 @@ def test_treasure_name_verbatim_samples():
     assert TREASURE_NAME[Treasure.NAMED_UNIQUE_CROWN_ROHAN] == "Crown of Rohan"
     assert TREASURE_NAME[Treasure.MONSTER_AID_EAGLE] == "Feather of the Great Eagle"
     assert TREASURE_NAME[Treasure.MONSTER_AID_WHALE] == "Horn of Neptune"
+    assert TREASURE_NAME[Treasure.BOOK_TACTICAL] == "Hannibal's Grimoire"
 
 
 def test_named_uniques_have_no_pascal_obfuscation_and_no_treasab_label():

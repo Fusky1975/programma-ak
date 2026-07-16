@@ -146,9 +146,17 @@ at every boundary** (``15+20+5+4+5+3+15+3+22+1+6+14 == 113``):
   (Whales) and the "33% di diserzione" figure match
   ``MONSTER_COMMAND_ITEM``'s own confirmed "33% defections" formula
   exactly. Independently corroborated by ``models/valhalla.py``'s own
-  Gelenor (PAGAN), who carries this same item. ``BOOK_TACTICAL``
-  remains the sole genuinely unfilled ordinal below 93; no VALHALLA
-  hero carries it either.
+  Gelenor (PAGAN), who carries this same item.
+- **``BOOK_TACTICAL``'s own gap is now filled too (Phase 198), closing
+  the last one below ordinal 93**: the user supplied its own
+  description directly -- "Hannibal's Grimoire se letto aumenta il
+  talento Tattica (TA) di un livello" ("if read, raises the Tactical
+  talent by one level") -- matching ``SKILL_BOOK``'s own confirmed
+  "one-shot +1 Ability when read" mechanic and ``TREASURE_LABEL``'s own
+  "+1 Tactical when read" line for this exact ordinal. Independently
+  corroborated by ``models/valhalla.py``'s own Xerxes (PAGAN), who
+  carries this same item -- the last of the 63 distinct VALHALLA item
+  names to resolve; none remain unmatched.
 - ``TREASURE_ABILITY_ITEM``/``TREASURE_WAND_SPELL``/
   ``TREASURE_BOOK_ABILITY`` expose the three confirmed 1:1 positional
   mappings above as real ``Ability``/``Spell`` lookups, derived
@@ -531,7 +539,13 @@ TREASURE_NAME: dict[Treasure, str] = {
     # exactly. Independently corroborated by a VALHALLA hero (Gelenor,
     # PAGAN) carrying this same item -- see models/valhalla.py.
     Treasure.MONSTER_AID_WHALE: "Horn of Neptune",
-    # BOOK_TACTICAL: no TREASURE.X2 entry (confirmed gap, see module docstring)
+    # Phase 198: user-supplied directly -- "Hannibal's Grimoire se letto
+    # aumenta il talento Tattica (TA) di un livello" ("if read, raises
+    # Tactical by one level"), matching SKILL_BOOK's own "+1 Ability when
+    # read" mechanic and TREASURE_LABEL's own "+1 Tactical when read" for
+    # this exact ordinal. Corroborated by a VALHALLA hero (Xerxes, PAGAN)
+    # carrying this same item -- see models/valhalla.py.
+    Treasure.BOOK_TACTICAL: "Hannibal's Grimoire",
     Treasure.BOOK_MARCH: "Manual of Speedy Marches",
     Treasure.BOOK_NAVAL: "Ship's Log of Nautilus III",
     Treasure.BOOK_ARCHERY: "Manual of Archery",

@@ -7680,7 +7680,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_treasure.py` updated for the now-filled
     `MONSTER_AID_EAGLE` gap. Full suite: 2418 passed (2402 unchanged +
     16 new).
-- **Phase 197 (current)**: closed `MONSTER_AID_WHALE`'s own
+- **Phase 197**: closed `MONSTER_AID_WHALE`'s own
   `TREASURE_NAME` gap, the second of the two items Phase 196 had left
   unresolved. The user supplied its `TREASURE.X2`-equivalent row
   directly ("Horn of Neptune | Balene | Comando sulle Balene: la
@@ -7697,6 +7697,23 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   case moved to Xerxes, the one hero whose "Hannibal's Grimoire" still
   matches no ordinal at all). Full suite: 2419 passed (2418 unchanged +
   1 new).
+- **Phase 198 (current)**: closed `BOOK_TACTICAL`'s own `TREASURE_NAME`
+  gap, the last one below ordinal 93 -- and with it, the last of the
+  63 distinct VALHALLA item names left unresolved. The user supplied
+  its own description directly ("Hannibal's Grimoire se letto aumenta
+  il talento Tattica (TA) di un livello"), matching `SKILL_BOOK`'s own
+  confirmed "+1 Ability when read" mechanic and `TREASURE_LABEL`'s own
+  "+1 Tactical when read" line for this exact ordinal; independently
+  corroborated by `models/valhalla.py`'s own Xerxes (PAGAN hero), who
+  already carried this same item. `TREASURE_NAME` now has 96 entries
+  (was 95) -- only the three named uniques (94-96) remain genuinely
+  unfilled anywhere in the catalog. Since no real VALHALLA hero has an
+  unresolved `fixed_item` anymore, `test_valhalla_execution.py`'s
+  "grants no item" test was rewritten to use a `monkeypatch`-fabricated
+  `ValhallaHero` instead of a real roster entry, keeping
+  `finalize_gate_angel_visit()`'s still-real `fixed_item is None`
+  branch under test without asserting a false gap against real data.
+  Full suite: 2420 passed (2419 unchanged + 1 new).
 
 ## Setup
 

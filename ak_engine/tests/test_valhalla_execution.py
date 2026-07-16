@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
-from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID
+from ak_engine.models.temper import Temper
+from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID, ValhallaHero
 from ak_engine.turn.valhalla_execution import finalize_gate_angel_visit
 
 from _helpers import ScriptedRandom
@@ -89,11 +91,26 @@ def test_finalize_grants_the_visitors_fixed_item():
     assert items[0].treasure == VALHALLA_ROSTER[Alignment.GOOD][0].fixed_item
 
 
-def test_finalize_grants_no_item_when_the_heros_own_item_has_no_treasure_match():
+def test_finalize_grants_no_item_when_the_heros_own_item_is_unresolved(monkeypatch):
+    # Phase 198 closed the last real gap in VALHALLA_ROSTER (Hannibal's
+    # Grimoire -> BOOK_TACTICAL), so no real hero exercises the
+    # fixed_item=None branch anymore -- this uses a fabricated hero to
+    # keep that branch of finalize_gate_angel_visit under test.
+    synthetic_hero = ValhallaHero(
+        name="Nobody",
+        true_alignment=Alignment.PAGAN,
+        temper=Temper.CAUTIOUS,
+        race=Race.HUMAN,
+        skills=SkillTable(raw_values=[0] * 30),
+        fixed_item=None,
+        fixed_item_name="Unresolved Trinket",
+    )
+    monkeypatch.setattr(
+        "ak_engine.turn.valhalla_execution.VALHALLA_ROSTER",
+        {Alignment.PAGAN: (synthetic_hero,)},
+    )
     state = _state_with_winner(due_alignment=Alignment.PAGAN)
-    assert VALHALLA_ROSTER[Alignment.PAGAN][17].name == "Xerxes"
-    assert VALHALLA_ROSTER[Alignment.PAGAN][17].fixed_item is None
-    rng = ScriptedRandom([], choice_indices=[17])
+    rng = ScriptedRandom([], choice_indices=[0])
 
     visitor = finalize_gate_angel_visit(state, rng)
 
