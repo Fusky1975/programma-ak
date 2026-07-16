@@ -7029,7 +7029,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     for both victim and caster damage, and the caster damage roll at
     each of the three `CombatRange` values). Full suite: 2320 passed
     (2310 unchanged + 10 new).
-- **Phase 186 (current)**: Invisibility [IN], tied to `Ability.
+- **Phase 186**: Invisibility [IN], tied to `Ability.
   ILLUSION` (IL). Quoted in full: "Invisibility [IN] (Incantesimo di
   Combattimento Individuale): la probabilita' di essere colpiti con
   l'arco o nel corpo a corpo viene dimezzata per la durata del
@@ -7062,6 +7062,61 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     constant, the halving applied to both a flat base chance and Fire
     Arrow's own formula, and the Steal-bonus constant itself. Full
     suite: 2323 passed (2320 unchanged + 3 new).
+- **Phase 187 (current)**: Mirror-Image Phantasm (MI), tied to
+  `Ability.ILLUSION` (IL) -- by far the most elaborate Personal-Combat
+  spell covered so far, a genuine two-stage state machine rather than a
+  single formula. Quoted in full (English, project-original,
+  user-supplied): "The caster creates a mirror-image illusion of his
+  opponent and sends the phantasm into combat... Before each combat
+  round, there is a chance that the victim will disbelieve the
+  illusion... 15% per level of the spellcaster (max 60%) is subtracted
+  from the listed chance. Divine or Superhuman 120% / High Human 100%
+  / Medium Human 80% / Low Human 60% / Animal 40% / Mechanical 20%...
+  If the mirror image loses, the caster must continue the fight at the
+  current combat range. If it wins, the real monster is mentally slain
+  and falls to the ground. The illusion then turns on its master...
+  The illusion must be disbelieved (at a bonus of 25% above Medium
+  intelligence) or slain. If the illusion wins, ... the real monster
+  revives and slays the fallen illusionist. If the illusion loses, the
+  caster automatically finishes off the mentally-slain monster and
+  claims the treasure."
+  - `turn/encounter.py`: new `MirrorImageIntelligenceTier` enum (six
+    tiers), `MIRROR_IMAGE_DISBELIEF_BASE_CHANCE` (the six listed
+    percentages, several exceeding 100% before reduction),
+    `MIRROR_IMAGE_DISBELIEF_REDUCTION_PER_LEVEL`/`_CAP` (15%/level, max
+    60%), `mirror_image_disbelief_chance(base_chance, caster_skill_
+    level)` (subtracts the reduction, clamped to [0%, 100%]), and
+    `resolve_mirror_image_disbelief()` (the roll, no-roll-when-fixed
+    convention at 0%/100%). New `MIRROR_IMAGE_MASTER_DISBELIEF_BONUS =
+    0.25` and `MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE` (Medium
+    Human's 80% + 25% = 105%) for Stage 2 -- **confirmed directly by
+    the user via `AskUserQuestion`** that the same 15%/level reduction
+    applies there too, since the source text doesn't restate it.
+  - **Deliberately scoped to the two disbelief formulas only.** The
+    full outcome tree (illusion-vs-opponent duel, then a second
+    caster-vs-illusion duel if the illusion wins) is documented in full
+    in the module docstring but not executed: both duels could reuse
+    this module's own existing `Combatant`/`resolve_melee_duel()` (the
+    illusion is explicitly a stat-copy of the opponent), but
+    orchestrating the round-by-round disbelief-then-duel state machine
+    is a new mini-engine this phase doesn't build, same "not wired into
+    `turn/search_execution.py` yet" scoping as every Personal-Combat
+    spell above. The "double dissipation" rule (a second Mirror-Image
+    cast mid-fight cancels both illusions) is likewise documented only
+    -- no numeric magnitude to model.
+  - **Cross-referenced, not reused**: `MirrorImageIntelligenceTier.
+    ANIMAL`/`.MECHANICAL` describe the same real-world categories
+    `models/monster.py SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS`/
+    `SPIRITWRACK_MECHANICAL_MONSTERS` (Phase 182) already enumerate by
+    species, but the tier is taken as a caller-supplied enum value
+    rather than looked up internally -- the other four tiers (Divine/
+    Superhuman, High/Medium/Low Human) have no existing species
+    classification in this project at all.
+  - 8 new tests in `tests/test_encounter.py`: the base-chance table and
+    the Stage-2 base-chance derivation, the per-level reduction, the
+    60%-reduction cap, clamping at both 0% and 100%, and the no-roll
+    convention at both ends plus a real in-between roll. Full suite:
+    2331 passed (2323 unchanged + 8 new).
 
 ## Setup
 

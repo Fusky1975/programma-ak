@@ -458,6 +458,94 @@ Two independent effects, no skill-level scaling on either:
   branch was (Phase 183): a confirmed, sourced fact recorded now,
   ready for whichever future phase actually builds a real Steal-success
   formula to consume it.
+
+**Phase 187 addendum -- Mirror-Image Phantasm (MI), tied to Ability.
+ILLUSION (IL), project-original (user-supplied).** By far the most
+elaborate Personal-Combat spell covered so far -- a genuine two-stage
+state machine, not a single formula. Quoted in full: "The caster
+creates a mirror-image illusion of his opponent and sends the
+phantasm into combat. To his opponent, the phantasm is real and
+initially has exactly the same characteristics as when the spell was
+cast. The two mirror images then fight it out, while the caster must
+concentrate on his illusion, performing no other actions. If another
+Mirror-Image spell is cast while the illusion is fighting, both
+illusions will dissipate. Before each combat round, there is a chance
+that the victim will disbelieve the illusion, in which case the
+illusion loses its power. The chance of disbelief for each type of
+intelligence level is listed below. 15% per level of the spellcaster
+(max 60%) is subtracted from the listed chance. Divine or Superhuman
+120% / High Human 100% / Medium Human 80% / Low Human 60% / Animal
+40% / Mechanical 20%. If the mirror image loses, the caster must
+continue the fight at the current combat range. If it wins, the real
+monster is mentally slain and falls to the ground. The illusion then
+turns on its master, who is in such a deeply involved trance-state
+that his own sense of reality is distorted. The illusion must be
+disbelieved (at a bonus of 25% above Medium intelligence) or slain. If
+the illusion wins, it fades out, and the real monster revives and
+slays the fallen illusionist. If the illusion loses, the caster
+automatically finishes off the mentally-slain monster and claims the
+treasure."
+
+**The full outcome tree, for reference (not executed by this phase --
+see below for why):**
+
+1. Each round, roll disbelief (base % by the *opponent's own*
+   intelligence tier, minus `min(15%*IL_level, 60%)`).
+   - Disbelieved -> same outcome as "mirror image loses" (3a).
+   - Not disbelieved -> the illusion (an exact stat-copy of the
+     opponent) duels the real opponent for that round.
+2. If the illusion ever loses that duel -> (3a): the caster resumes
+   fighting for real, at whatever `CombatRange` the fictional duel had
+   reached.
+3. If the illusion wins the duel (3b): the real opponent is mentally
+   slain and falls; the illusion then turns on the caster himself.
+   - The caster must disbelieve his own illusion (base = Medium Human
+     80% + a flat 25% bonus = 105%, reduced by the *same*
+     `min(15%*IL_level, 60%)` formula -- **confirmed directly by the
+     user via `AskUserQuestion`**, since the source text doesn't
+     restate the reduction explicitly for this second roll) or slay it
+     in a second duel.
+   - Illusion disbelieved/slain (caster wins) -> caster automatically
+     finishes off the already-mentally-slain monster and claims the
+     treasure.
+   - Illusion wins (caster fails) -> the illusion fades, the real
+     monster revives, and it slays the caster.
+
+**What this phase actually models**: the two disbelief-chance formulas
+only (`MirrorImageIntelligenceTier`, `MIRROR_IMAGE_DISBELIEF_BASE_
+CHANCE`, `mirror_image_disbelief_chance()`, `resolve_mirror_image_
+disbelief()`, and the Stage-2 `MIRROR_IMAGE_MASTER_DISBELIEF_BASE_
+CHANCE`) -- these are the same "clean, testable primitive" shape every
+other spell in this file already uses. **Not modeled**: the actual
+duel resolution (illusion-vs-opponent, then caster-vs-illusion) and
+the round-by-round state transitions between the three outcome
+branches above. Both duels *could* reuse this module's own existing
+`Combatant`/`resolve_melee_duel()` (the illusion is explicitly "an
+exact stat-copy of the opponent," so a cloned `Combatant` and a normal
+`resolve_melee_duel()` call would resolve it faithfully), but
+orchestrating the actual round-by-round disbelief-then-duel state
+machine is a new mini-engine this phase doesn't attempt to build --
+same "not wired into `turn/search_execution.py` yet" scoping as every
+Personal-Combat spell above, and the same reasoning Phase 179 gave for
+not building a general CAST-tactic engine before more spells were
+known.
+
+**The "double dissipation" rule** ("if another Mirror-Image spell is
+cast while the illusion is fighting, both illusions will dissipate")
+is likewise left as a documented fact only, not code -- it has no
+numeric magnitude to model and no consuming engine to hook into yet.
+
+**Cross-reference, not reuse**: `MirrorImageIntelligenceTier.ANIMAL`/
+`.MECHANICAL` happen to describe the same real-world categories
+`models/monster.py SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS`/
+`SPIRITWRACK_MECHANICAL_MONSTERS` (Phase 182) already enumerate by
+species, but this module deliberately takes the tier as a caller-
+supplied enum value rather than importing `Monster` to look it up
+itself, the same "pure function, boolean-flag/enum-not-internal-
+lookup" pattern Holy Symbol established (Phase 180) -- and unlike
+those two Spiritwrack sets, this spell's other four tiers (Divine/
+Superhuman, High/Medium/Low Human) have no existing species
+classification in this project to draw on at all.
 """
 
 from __future__ import annotations
@@ -734,6 +822,81 @@ def invisibility_reduced_hit_chance(base_hit_chance: float) -> float:
     """
 
     return base_hit_chance * INVISIBILITY_HIT_CHANCE_MULTIPLIER
+
+
+class MirrorImageIntelligenceTier(Enum):
+    """The six intelligence tiers Mirror-Image Phantasm's own disbelief
+    table is keyed by. See module docstring's Phase 187 addendum for
+    the full quote and why this is a standalone enum rather than a
+    lookup against `Monster`/`Race` (only two of the six tiers --
+    Animal, Mechanical -- have any existing species classification in
+    this project at all).
+    """
+
+    DIVINE_OR_SUPERHUMAN = "Divine or Superhuman"
+    HIGH_HUMAN = "High Human"
+    MEDIUM_HUMAN = "Medium Human"
+    LOW_HUMAN = "Low Human"
+    ANIMAL = "Animal"
+    MECHANICAL = "Mechanical"
+
+
+# Mirror-Image Phantasm (MI), module docstring's own Phase 187
+# addendum -- project-original, user-supplied. Base disbelief chances
+# by intelligence tier -- note several exceed 100%; that's the source
+# text's own figures, clamped to [0, 1] only inside the roll function
+# below, never here.
+MIRROR_IMAGE_DISBELIEF_BASE_CHANCE: dict[MirrorImageIntelligenceTier, float] = {
+    MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN: 1.20,
+    MirrorImageIntelligenceTier.HIGH_HUMAN: 1.00,
+    MirrorImageIntelligenceTier.MEDIUM_HUMAN: 0.80,
+    MirrorImageIntelligenceTier.LOW_HUMAN: 0.60,
+    MirrorImageIntelligenceTier.ANIMAL: 0.40,
+    MirrorImageIntelligenceTier.MECHANICAL: 0.20,
+}
+
+MIRROR_IMAGE_DISBELIEF_REDUCTION_PER_LEVEL = 0.15
+MIRROR_IMAGE_DISBELIEF_REDUCTION_CAP = 0.60
+
+# Stage 2 (the illusion turning on its own caster): "a bonus of 25%
+# above Medium intelligence" -- Medium Human's own 80% base, plus a
+# flat 25 percentage points.
+MIRROR_IMAGE_MASTER_DISBELIEF_BONUS = 0.25
+MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE = (
+    MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.MEDIUM_HUMAN] + MIRROR_IMAGE_MASTER_DISBELIEF_BONUS
+)
+
+
+def mirror_image_disbelief_chance(base_chance: float, caster_skill_level: int) -> float:
+    """Mirror-Image's own per-round disbelief-chance formula: "15% per
+    level of the spellcaster (max 60%) is subtracted from the listed
+    chance." ``base_chance`` is one of `MIRROR_IMAGE_DISBELIEF_BASE_
+    CHANCE`'s own values for Stage 1, or `MIRROR_IMAGE_MASTER_
+    DISBELIEF_BASE_CHANCE` for Stage 2 (module docstring's Phase 187
+    addendum confirms the same reduction applies to both). Clamped to
+    [0%, 100%] -- several of the source's own base chances exceed 100%
+    before this reduction is applied.
+    """
+
+    reduction = min(MIRROR_IMAGE_DISBELIEF_REDUCTION_PER_LEVEL * caster_skill_level, MIRROR_IMAGE_DISBELIEF_REDUCTION_CAP)
+    return max(0.0, min(1.0, base_chance - reduction))
+
+
+def resolve_mirror_image_disbelief(base_chance: float, caster_skill_level: int, rng: random.Random) -> bool:
+    """Rolls whether the illusion is disbelieved this round -- see
+    ``mirror_image_disbelief_chance()``'s own docstring for the
+    formula. Returns True if disbelieved. No roll is consumed when the
+    chance is already fixed at 0% or 100% (the same no-roll-when-the-
+    outcome-is-fixed convention this module's own `resolve_spell_
+    disruption()` established).
+    """
+
+    chance = mirror_image_disbelief_chance(base_chance, caster_skill_level)
+    if chance <= 0.0:
+        return False
+    if chance >= 1.0:
+        return True
+    return rng.random() < chance
 
 
 @dataclass(slots=True)

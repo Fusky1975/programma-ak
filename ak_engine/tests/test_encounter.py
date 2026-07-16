@@ -17,6 +17,11 @@ from ak_engine.turn.encounter import (
     CHARM_FLEE_ALWAYS_SUCCEEDS,
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
     INVISIBILITY_STEAL_ATTEMPT_BONUS,
+    MIRROR_IMAGE_DISBELIEF_BASE_CHANCE,
+    MIRROR_IMAGE_DISBELIEF_REDUCTION_CAP,
+    MIRROR_IMAGE_DISBELIEF_REDUCTION_PER_LEVEL,
+    MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE,
+    MIRROR_IMAGE_MASTER_DISBELIEF_BONUS,
     PSYCHIC_BLAST_STUN_ROUNDS_RANGE,
     SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER,
     SPIRITWRACK_MELEE_DAMAGE_REDUCTION_PER_LEVEL,
@@ -24,6 +29,7 @@ from ak_engine.turn.encounter import (
     TELEKINETIC_STORM_VICTIM_DAMAGE_RANGE,
     Combatant,
     CombatRange,
+    MirrorImageIntelligenceTier,
     _acts_first,
     effective_archery_skill,
     effective_melee_skill,
@@ -31,11 +37,13 @@ from ak_engine.turn.encounter import (
     fire_arrow_hit_chance,
     holy_symbol_hit_chance,
     invisibility_reduced_hit_chance,
+    mirror_image_disbelief_chance,
     resolve_fire_arrow_duel,
     resolve_melee_duel,
     resolve_spell_disruption,
     roll_fire_arrow_attack,
     roll_holy_symbol_undead_damage,
+    resolve_mirror_image_disbelief,
     roll_melee_attack,
     roll_psychic_blast_stun_rounds,
     roll_telekinetic_storm_caster_damage,
@@ -632,3 +640,69 @@ def test_invisibility_steal_attempt_bonus_constant():
     # confirmed but not yet backed by any real Steal-success formula
     # anywhere in this project (module docstring's Phase 186 addendum).
     assert INVISIBILITY_STEAL_ATTEMPT_BONUS == 0.15
+
+
+# -- Phase 187: Mirror-Image Phantasm (MI) --
+
+
+def test_mirror_image_disbelief_base_chance_table():
+    assert MIRROR_IMAGE_DISBELIEF_BASE_CHANCE == {
+        MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN: 1.20,
+        MirrorImageIntelligenceTier.HIGH_HUMAN: 1.00,
+        MirrorImageIntelligenceTier.MEDIUM_HUMAN: 0.80,
+        MirrorImageIntelligenceTier.LOW_HUMAN: 0.60,
+        MirrorImageIntelligenceTier.ANIMAL: 0.40,
+        MirrorImageIntelligenceTier.MECHANICAL: 0.20,
+    }
+
+
+def test_mirror_image_master_disbelief_base_chance_is_medium_plus_25_percent():
+    # "a bonus of 25% above Medium intelligence" -- 80% + 25% = 105%.
+    assert MIRROR_IMAGE_MASTER_DISBELIEF_BONUS == 0.25
+    assert MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE == pytest.approx(1.05)
+
+
+def test_mirror_image_disbelief_chance_subtracts_15_percent_per_level():
+    base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.HIGH_HUMAN]  # 100%
+    assert mirror_image_disbelief_chance(base, 0) == pytest.approx(1.00)
+    assert mirror_image_disbelief_chance(base, 1) == pytest.approx(0.85)
+    assert mirror_image_disbelief_chance(base, 2) == pytest.approx(0.70)
+
+
+def test_mirror_image_disbelief_chance_reduction_caps_at_60_percent():
+    base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN]  # 120%
+    # 15%*4 = 60% (the cap itself); 15%*5 = 75% would exceed it uncapped.
+    assert mirror_image_disbelief_chance(base, 4) == pytest.approx(base - MIRROR_IMAGE_DISBELIEF_REDUCTION_CAP)
+    assert mirror_image_disbelief_chance(base, 5) == pytest.approx(base - MIRROR_IMAGE_DISBELIEF_REDUCTION_CAP)
+    assert MIRROR_IMAGE_DISBELIEF_REDUCTION_PER_LEVEL == 0.15
+    assert MIRROR_IMAGE_DISBELIEF_REDUCTION_CAP == 0.60
+
+
+def test_mirror_image_disbelief_chance_clamps_to_0_and_100_percent():
+    # Mechanical's own 20% base, fully reduced, floors at 0% rather
+    # than going negative.
+    low_base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.MECHANICAL]
+    assert mirror_image_disbelief_chance(low_base, 10) == 0.0
+    # Divine/Superhuman's own 120% base, unreduced, clamps to 100%.
+    high_base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN]
+    assert mirror_image_disbelief_chance(high_base, 0) == 1.0
+
+
+def test_resolve_mirror_image_disbelief_zero_percent_never_consumes_a_roll():
+    rng = ScriptedRandom([])
+    low_base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.MECHANICAL]
+    assert resolve_mirror_image_disbelief(low_base, 10, rng) is False
+
+
+def test_resolve_mirror_image_disbelief_hundred_percent_never_consumes_a_roll():
+    rng = ScriptedRandom([])
+    high_base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN]
+    assert resolve_mirror_image_disbelief(high_base, 0, rng) is True
+
+
+def test_resolve_mirror_image_disbelief_consumes_exactly_one_roll_in_between():
+    base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.MEDIUM_HUMAN]  # 80%
+    rng = ScriptedRandom([0.79])  # a second .random() call would raise IndexError
+    assert resolve_mirror_image_disbelief(base, 0, rng) is True
+    rng = ScriptedRandom([0.80])
+    assert resolve_mirror_image_disbelief(base, 0, rng) is False
