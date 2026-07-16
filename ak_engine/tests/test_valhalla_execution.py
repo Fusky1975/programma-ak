@@ -91,9 +91,9 @@ def test_finalize_grants_the_visitors_fixed_item():
 
 def test_finalize_grants_no_item_when_the_heros_own_item_has_no_treasure_match():
     state = _state_with_winner(due_alignment=Alignment.PAGAN)
-    assert VALHALLA_ROSTER[Alignment.PAGAN][9].name == "Gelenor"
-    assert VALHALLA_ROSTER[Alignment.PAGAN][9].fixed_item is None
-    rng = ScriptedRandom([], choice_indices=[9])
+    assert VALHALLA_ROSTER[Alignment.PAGAN][17].name == "Xerxes"
+    assert VALHALLA_ROSTER[Alignment.PAGAN][17].fixed_item is None
+    rng = ScriptedRandom([], choice_indices=[17])
 
     visitor = finalize_gate_angel_visit(state, rng)
 

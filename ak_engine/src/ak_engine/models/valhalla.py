@@ -35,7 +35,7 @@ cleanly); the EVIL file's Marius/Severius/Dietrich all read ``Race:
 Humam`` (a typo for "Human").
 
 **``fixed_item`` resolution against ``models/treasure.py``'s own
-``TREASURE_NAME``**: 61 of the 63 distinct item names transcribed here
+``TREASURE_NAME``**: 62 of the 63 distinct item names transcribed here
 resolve directly (or via an obvious wording variant already present in
 this corpus, e.g. "Sword Excalibur" -> ``LEADERSHIP_HUMAN``'s own
 "Excalibur", "The True Cross" -> ``AMULET_ANTI_NECROMANCY``'s own "True
@@ -44,15 +44,18 @@ Cross", "Quaagoth's Portable Laboratory" -> ``ABILITY_SAGE``'s own
 Eagle" directly filled ``MONSTER_AID_EAGLE``'s own confirmed
 ``TREASURE_NAME`` gap** (see that module's own docstring addendum) --
 this project's first real name for that ordinal, sourced from this
-VALHALLA data rather than ``TREASURE.X2``. **Two items have no
-``Treasure`` match at all and are left as ``fixed_item=None``**
-(``fixed_item_name`` still carries the raw source text, so nothing is
-silently dropped): "Horn of Neptune" (Gelenor, PAGAN) and "Hannibal's
-Grimoire" (Xerxes, PAGAN) -- neither matches any named ordinal nor any
-of the remaining confirmed-gap ordinals (``MONSTER_AID_WHALE``,
-``BOOK_TACTICAL``, or the three unfilled ``NAMED_UNIQUE`` slots, none
-of which fit either name thematically) -- recorded as a genuine,
-unresolved gap rather than guessed onto an unrelated ordinal.
+VALHALLA data rather than ``TREASURE.X2``. **"Horn of Neptune" (Gelenor,
+PAGAN) filled ``MONSTER_AID_WHALE``'s own gap too (Phase 197)**, once
+the user supplied its ``TREASURE.X2``-equivalent row directly ("Balene"
+/ "33% di diserzione" match ``MONSTER_COMMAND_ITEM``'s own confirmed
+formula exactly -- see ``models/treasure.py``'s own docstring addendum).
+**One item still has no ``Treasure`` match at all and is left as
+``fixed_item=None``** (``fixed_item_name`` still carries the raw source
+text, so nothing is silently dropped): "Hannibal's Grimoire" (Xerxes,
+PAGAN) -- matches no named ordinal nor the one remaining confirmed-gap
+ordinal (``BOOK_TACTICAL``, which doesn't fit the name thematically) --
+recorded as a genuine, unresolved gap rather than guessed onto an
+unrelated ordinal.
 
 **No new ``LeaderState`` is spawned by this module itself** -- see
 ``turn/valhalla_execution.py finalize_gate_angel_visit()`` for the
@@ -988,7 +991,7 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             temper=Temper.BERSERK,
             race=Race.HUMAN,
             skills=SkillTable(raw_values=[3, 2, 5, 4, 2, 2, 4, 3, 5, 4, 4, 3, 0, 2, 7, 6, 5, 5, 0, 2, 3, 2, 1, 2, 2, 4, 1, 2, 1, 3]),
-            fixed_item=None,
+            fixed_item=Treasure.MONSTER_AID_WHALE,  # Phase 197: user-confirmed, see models/treasure.py's own gap note
             fixed_item_name="Horn of Neptune",
         ),
         ValhallaHero(

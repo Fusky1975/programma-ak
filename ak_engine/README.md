@@ -7611,7 +7611,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sampling swap winning and losing, the 5-turn cycle resetting, and a
     failed roll touching no state. Full suite: 2402 passed (2393
     pre-Gate-Angel baseline + these 9).
-- **Phase 196 (current)**: real Valhalla hero spawning, unblocked once
+- **Phase 196**: real Valhalla hero spawning, unblocked once
   the user supplied all 5 per-alignment roster files (`VALHALLA
   GOOD.txt`/`DRUID.txt`/`NEUTRAL.txt`/`PAGAN.txt`/`EVIL.txt`), 137
   named legendary heroes total. New `models/valhalla.py`
@@ -7680,6 +7680,23 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     `tests/test_treasure.py` updated for the now-filled
     `MONSTER_AID_EAGLE` gap. Full suite: 2418 passed (2402 unchanged +
     16 new).
+- **Phase 197 (current)**: closed `MONSTER_AID_WHALE`'s own
+  `TREASURE_NAME` gap, the second of the two items Phase 196 had left
+  unresolved. The user supplied its `TREASURE.X2`-equivalent row
+  directly ("Horn of Neptune | Balene | Comando sulle Balene: la
+  Tattica determina la resa; 33% di probabilita' di diserzione") --
+  "Balene" (Whales) and the "33% di diserzione" figure match
+  `MONSTER_COMMAND_ITEM`'s own confirmed "33% defections" formula
+  exactly, and the name is independently corroborated by
+  `models/valhalla.py`'s own Gelenor (PAGAN hero), who already carried
+  this same item. `TREASURE_NAME` now has 95 entries (was 94);
+  `BOOK_TACTICAL` is the sole remaining genuinely unfilled ordinal
+  below 93. Updated `tests/test_treasure.py` (gap count, new verbatim
+  sample) and `tests/test_valhalla.py`/`test_valhalla_execution.py`
+  (Gelenor now resolves to a real item; the "no resolved item" test
+  case moved to Xerxes, the one hero whose "Hannibal's Grimoire" still
+  matches no ordinal at all). Full suite: 2419 passed (2418 unchanged +
+  1 new).
 
 ## Setup
 

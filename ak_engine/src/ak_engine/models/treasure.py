@@ -138,8 +138,17 @@ at every boundary** (``15+20+5+4+5+3+15+3+22+1+6+14 == 113``):
   item directly -- two different heroes (Otto, Fafnir) each carry
   "Feather of the Great Eagle" -- independently confirming both that
   this ordinal is real and its proper name, from a source outside
-  ``TREASURE.X2``. ``MONSTER_AID_WHALE``/``BOOK_TACTICAL`` remain
-  genuinely unfilled; no VALHALLA hero carries either.
+  ``TREASURE.X2``.
+- **``MONSTER_AID_WHALE``'s own gap is now filled too (Phase 197)**:
+  the user supplied its ``TREASURE.X2``-equivalent row directly --
+  "Horn of Neptune | Balene | Comando sulle Balene: la Tattica
+  determina la resa; 33% di probabilita' di diserzione" -- "Balene"
+  (Whales) and the "33% di diserzione" figure match
+  ``MONSTER_COMMAND_ITEM``'s own confirmed "33% defections" formula
+  exactly. Independently corroborated by ``models/valhalla.py``'s own
+  Gelenor (PAGAN), who carries this same item. ``BOOK_TACTICAL``
+  remains the sole genuinely unfilled ordinal below 93; no VALHALLA
+  hero carries it either.
 - ``TREASURE_ABILITY_ITEM``/``TREASURE_WAND_SPELL``/
   ``TREASURE_BOOK_ABILITY`` expose the three confirmed 1:1 positional
   mappings above as real ``Ability``/``Spell`` lookups, derived
@@ -514,7 +523,15 @@ TREASURE_NAME: dict[Treasure, str] = {
     # Phase 196: sourced from models/valhalla.py's VALHALLA_ROSTER (Otto,
     # Fafnir), not TREASURE.X2 -- see module docstring's own gap note above.
     Treasure.MONSTER_AID_EAGLE: "Feather of the Great Eagle",
-    # MONSTER_AID_WHALE, BOOK_TACTICAL: no TREASURE.X2 entry (confirmed gap, see module docstring)
+    # Phase 197: user-supplied directly (Italian TREASURE.X2-equivalent
+    # table row): "Horn of Neptune | Balene | Comando sulle Balene: la
+    # Tattica determina la resa; 33% di probabilita' di diserzione" --
+    # "Balene" = Whales, and "33% di diserzione" matches
+    # MONSTER_COMMAND_ITEM's own confirmed "33% defections" formula
+    # exactly. Independently corroborated by a VALHALLA hero (Gelenor,
+    # PAGAN) carrying this same item -- see models/valhalla.py.
+    Treasure.MONSTER_AID_WHALE: "Horn of Neptune",
+    # BOOK_TACTICAL: no TREASURE.X2 entry (confirmed gap, see module docstring)
     Treasure.BOOK_MARCH: "Manual of Speedy Marches",
     Treasure.BOOK_NAVAL: "Ship's Log of Nautilus III",
     Treasure.BOOK_ARCHERY: "Manual of Archery",

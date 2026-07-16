@@ -41,7 +41,14 @@ def test_monster_aid_eagle_gap_was_filled_from_this_roster():
     assert otto.fixed_item_name == "Feather of the Great Eagle"
 
 
-def test_two_heroes_have_no_resolved_treasure_item():
+def test_monster_aid_whale_gap_was_filled_from_this_roster():
+    gelenor = VALHALLA_ROSTER[Alignment.PAGAN][9]
+    assert gelenor.name == "Gelenor"
+    assert gelenor.fixed_item is Treasure.MONSTER_AID_WHALE
+    assert gelenor.fixed_item_name == "Horn of Neptune"
+
+
+def test_one_hero_has_no_resolved_treasure_item():
     unresolved = [
         (align, hero.name, hero.fixed_item_name)
         for align, heroes in VALHALLA_ROSTER.items()
@@ -49,7 +56,6 @@ def test_two_heroes_have_no_resolved_treasure_item():
         if hero.fixed_item is None
     ]
     assert unresolved == [
-        (Alignment.PAGAN, "Gelenor", "Horn of Neptune"),
         (Alignment.PAGAN, "Xerxes", "Hannibal's Grimoire"),
     ]
 
