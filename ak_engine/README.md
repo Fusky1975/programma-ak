@@ -6911,7 +6911,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     rounding, the halved rate's own no-roll case at the capped level,
     and the rate constants themselves). Full suite: 2302 passed (2287
     unchanged + 15 new).
-- **Phase 183 (current)**: Charm [CH], tied to `Ability.PSYCHIC` (PS)
+- **Phase 183**: Charm [CH], tied to `Ability.PSYCHIC` (PS)
   normally. Charm is the first spell confirmed to have *both* an
   Action-Cast form (already implemented, Phase 29) and a Personal-
   Combat form -- unlike every Personal-Combat spell covered so far
@@ -6968,6 +6968,27 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     Psychic skill no longer counts, and that a non-Undead caster is
     unaffected), `tests/test_encounter.py` (+1 -- the guaranteed-Flee
     constant). Full suite: 2307 passed (2302 unchanged + 5 new).
+- **Phase 184 (current)**: Psychic Blast [PS], tied to `Ability.
+  PSYCHIC` (PS). Quoted in full: "Psychic Blast [PS] (Incantesimo di
+  Combattimento Individuale): chi lancia l'incantesimo proietta una
+  raffica di energia mentale con cui stordisce il nemico guadagnando
+  da 2 a 5 round supplementari d'attacco." ("The caster projects a
+  burst of mental energy that stuns the enemy, gaining 2 to 5 bonus
+  attack rounds.") Unlike every spell modeled so far in this family,
+  there's no skill-level scaling at all -- a flat roll regardless of
+  the caster's own Psychic level, so `PERSONAL_COMBAT_SPELL_LEVEL_CAP`
+  doesn't apply here either (same as Charm, Phase 183).
+  - `turn/encounter.py`: new `PSYCHIC_BLAST_STUN_ROUNDS_RANGE = (2,
+    5)` and `roll_psychic_blast_stun_rounds(rng)` -- one uniform roll,
+    the entire mechanic. What a caller does with the returned round
+    count (extra Melee swings? a stun status the opponent can't act
+    during?) is left to a future tactic-walk engine, same "not wired
+    into `turn/search_execution.py` yet" scoping as every other
+    Personal-Combat spell.
+  - 3 new tests in `tests/test_encounter.py`: the range constant, the
+    roll staying within `[2, 5]` across the full probability spread,
+    and exactly one roll consumed per call. Full suite: 2310 passed
+    (2307 unchanged + 3 new).
 
 ## Setup
 

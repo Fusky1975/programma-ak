@@ -370,6 +370,23 @@ co-located Hero must command no armies to be a valid free-hire target
 King "Seduzione" branch (gradually turning a Hero Undead via repeated
 casts) is confirmed but deliberately left unmodeled -- see that same
 docstring for exactly why.
+
+**Phase 184 addendum -- Psychic Blast [PS], tied to Ability.PSYCHIC
+(PS), project-original (user-supplied).** Quoted in full: "Psychic
+Blast [PS] (Incantesimo di Combattimento Individuale): chi lancia
+l'incantesimo proietta una raffica di energia mentale con cui stordisce
+il nemico guadagnando da 2 a 5 round supplementari d'attacco." ("The
+caster projects a burst of mental energy that stuns the enemy, gaining
+2 to 5 bonus attack rounds.") Unlike every spell modeled so far in this
+family, there's no skill-level scaling at all -- a flat 2-5 roll
+regardless of the caster's own Psychic level, so
+`PERSONAL_COMBAT_SPELL_LEVEL_CAP` doesn't apply here either.
+`roll_psychic_blast_stun_rounds()` is the entire mechanic: one uniform
+roll in `PSYCHIC_BLAST_STUN_ROUNDS_RANGE = (2, 5)`. What a caller does
+with the returned round count (extra Melee swings? a stun status the
+opponent can't act during?) is left to a future tactic-walk engine --
+same "not wired into `turn/search_execution.py` yet" scoping as every
+other Personal-Combat spell above.
 """
 
 from __future__ import annotations
@@ -562,6 +579,22 @@ def spiritwrack_melee_damage_reduction(
 # skill-level-scaled magnitude, unlike every other Personal-Combat
 # spell above.
 CHARM_FLEE_ALWAYS_SUCCEEDS = True
+
+
+# Psychic Blast [PS], module docstring's own Phase 184 addendum --
+# project-original, user-supplied. A flat 2-5 bonus-attack-round roll,
+# no skill-level scaling at all.
+PSYCHIC_BLAST_STUN_ROUNDS_RANGE = (2, 5)
+
+
+def roll_psychic_blast_stun_rounds(rng: random.Random) -> int:
+    """Psychic Blast's own stun effect: "stordisce il nemico guadagnando
+    da 2 a 5 round supplementari d'attacco" -- one uniform roll in
+    ``PSYCHIC_BLAST_STUN_ROUNDS_RANGE``, unaffected by the caster's own
+    skill level (unlike Holy Symbol/Spiritwrack).
+    """
+
+    return rng.randint(*PSYCHIC_BLAST_STUN_ROUNDS_RANGE)
 
 
 @dataclass(slots=True)

@@ -15,6 +15,7 @@ from ak_engine.turn.encounter import (
     SPELL_DISRUPTION_CHANCE_CAP,
     SPELL_DISRUPTION_CHANCE_PER_HIT,
     CHARM_FLEE_ALWAYS_SUCCEEDS,
+    PSYCHIC_BLAST_STUN_ROUNDS_RANGE,
     SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER,
     SPIRITWRACK_MELEE_DAMAGE_REDUCTION_PER_LEVEL,
     Combatant,
@@ -31,6 +32,7 @@ from ak_engine.turn.encounter import (
     roll_fire_arrow_attack,
     roll_holy_symbol_undead_damage,
     roll_melee_attack,
+    roll_psychic_blast_stun_rounds,
     spell_disruption_chance,
     spiritwrack_blocks_cast_and_archery,
     spiritwrack_melee_damage_reduction,
@@ -530,3 +532,21 @@ def test_charm_flee_always_succeeds_constant():
     # "Praticamente se usato in combattimento equivale a un comando FL
     # che riesce sempre" -- no roll, no skill-level scaling at all.
     assert CHARM_FLEE_ALWAYS_SUCCEEDS is True
+
+
+# -- Phase 184: Psychic Blast [PS] --
+
+
+def test_psychic_blast_stun_rounds_range_constant():
+    assert PSYCHIC_BLAST_STUN_ROUNDS_RANGE == (2, 5)
+
+
+def test_roll_psychic_blast_stun_rounds_stays_within_range():
+    for scripted in (0.0, 0.25, 0.5, 0.75, 0.999):
+        rounds = roll_psychic_blast_stun_rounds(ScriptedRandom([scripted]))
+        assert 2 <= rounds <= 5
+
+
+def test_roll_psychic_blast_stun_rounds_consumes_exactly_one_roll():
+    rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
+    roll_psychic_blast_stun_rounds(rng)
