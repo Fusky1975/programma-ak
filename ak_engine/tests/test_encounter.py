@@ -18,6 +18,8 @@ from ak_engine.turn.encounter import (
     PSYCHIC_BLAST_STUN_ROUNDS_RANGE,
     SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER,
     SPIRITWRACK_MELEE_DAMAGE_REDUCTION_PER_LEVEL,
+    TELEKINETIC_STORM_CASTER_DAMAGE_RANGE_BY_COMBAT_RANGE,
+    TELEKINETIC_STORM_VICTIM_DAMAGE_RANGE,
     Combatant,
     CombatRange,
     _acts_first,
@@ -33,6 +35,8 @@ from ak_engine.turn.encounter import (
     roll_holy_symbol_undead_damage,
     roll_melee_attack,
     roll_psychic_blast_stun_rounds,
+    roll_telekinetic_storm_caster_damage,
+    roll_telekinetic_storm_victim_damage,
     spell_disruption_chance,
     spiritwrack_blocks_cast_and_archery,
     spiritwrack_melee_damage_reduction,
@@ -550,3 +554,55 @@ def test_roll_psychic_blast_stun_rounds_stays_within_range():
 def test_roll_psychic_blast_stun_rounds_consumes_exactly_one_roll():
     rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
     roll_psychic_blast_stun_rounds(rng)
+
+
+# -- Phase 185: Telekinetic Storm [TE] --
+
+
+def test_telekinetic_storm_victim_damage_range_constant():
+    assert TELEKINETIC_STORM_VICTIM_DAMAGE_RANGE == (4, 16)
+
+
+def test_telekinetic_storm_caster_damage_range_by_combat_range_constant():
+    assert TELEKINETIC_STORM_CASTER_DAMAGE_RANGE_BY_COMBAT_RANGE == {
+        CombatRange.MELEE_RANGE: (4, 16),
+        CombatRange.BOW_RANGE: (2, 8),
+        CombatRange.SPELL_RANGE: (1, 4),
+    }
+
+
+def test_roll_telekinetic_storm_victim_damage_stays_within_range():
+    for scripted in (0.0, 0.5, 0.999):
+        damage = roll_telekinetic_storm_victim_damage(ScriptedRandom([scripted]))
+        assert 4 <= damage <= 16
+
+
+def test_roll_telekinetic_storm_victim_damage_immune_target_returns_zero_without_a_roll():
+    rng = ScriptedRandom([])
+    assert roll_telekinetic_storm_victim_damage(rng, target_is_immune=True) == 0
+
+
+def test_roll_telekinetic_storm_caster_damage_at_melee_range():
+    for scripted in (0.0, 0.5, 0.999):
+        damage = roll_telekinetic_storm_caster_damage(CombatRange.MELEE_RANGE, ScriptedRandom([scripted]))
+        assert 4 <= damage <= 16
+
+
+def test_roll_telekinetic_storm_caster_damage_at_bow_range():
+    for scripted in (0.0, 0.5, 0.999):
+        damage = roll_telekinetic_storm_caster_damage(CombatRange.BOW_RANGE, ScriptedRandom([scripted]))
+        assert 2 <= damage <= 8
+
+
+def test_roll_telekinetic_storm_caster_damage_at_spell_range():
+    for scripted in (0.0, 0.5, 0.999):
+        damage = roll_telekinetic_storm_caster_damage(CombatRange.SPELL_RANGE, ScriptedRandom([scripted]))
+        assert 1 <= damage <= 4
+
+
+def test_roll_telekinetic_storm_caster_damage_immune_target_returns_zero_without_a_roll():
+    # Immune (submarine) means the storm never manifests, so the
+    # caster takes no self-damage either -- unlike Spiritwrack's own
+    # immunity, which only ever affected the target's side.
+    rng = ScriptedRandom([])
+    assert roll_telekinetic_storm_caster_damage(CombatRange.MELEE_RANGE, rng, target_is_immune=True) == 0

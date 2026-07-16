@@ -249,6 +249,25 @@ either an Undead creature or a soulless construct) -- a future spell
 that only cares about one of the two reasons can still tell them
 apart. `SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS` is the third,
 independent list.
+
+**Phase 185 addendum -- Telekinetic Storm's own submarine-monster
+list, project-original, user-supplied.** Spelled out directly while
+defining `turn/encounter.py`'s Telekinetic Storm [TE] spell effect:
+"La Tempesta Telecinetica e' inefficace contro i mostri sottomarini.
+Questi sono: Elasmosaurus, Giant Octopus, Giant Clam, Great White
+Whale, Mermaid." A fourth new classification axis, same rationale as
+Phase 182's own three: not a re-reading of `Alignment` (Mermaid alone
+is enough to prove it -- `MONSTER_ALIGNMENT_DISTRIBUTION` has Mermaid
+as 50% `GOOD`/50% `DRUID`, nothing about being submarine), and
+partially overlapping but not identical to `SPIRITWRACK_ANIMAL_
+INTELLIGENCE_MONSTERS` (Elasmosaurus/Giant Octopus/Giant Clam/Great
+White Whale appear in both lists, for unrelated reasons -- being
+animal-intelligence and being submarine are two independent facts
+about the same four species; Mermaid is submarine but *not* listed as
+animal-intelligence, confirming the lists are genuinely separate, not
+one mislabeled as the other). Kept as its own dedicated
+`TELEKINETIC_STORM_SUBMARINE_MONSTERS` set rather than merged into any
+existing one.
 """
 
 from __future__ import annotations
@@ -684,6 +703,21 @@ SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS: frozenset[Monster] = frozenset(
         Monster.GI_OCTOPUS,
         Monster.GI_CLAM,
         Monster.GW_WHALE,
+    }
+)
+
+
+# Phase 185 -- project-original, user-supplied while defining
+# turn/encounter.py's Telekinetic Storm [TE] spell. See module
+# docstring's own Phase 185 addendum for the full quote and why this
+# is a fourth, independent classification axis.
+TELEKINETIC_STORM_SUBMARINE_MONSTERS: frozenset[Monster] = frozenset(
+    {
+        Monster.ELASMOSAURUS,
+        Monster.GI_OCTOPUS,
+        Monster.GI_CLAM,
+        Monster.GW_WHALE,
+        Monster.MERMAID,
     }
 )
 

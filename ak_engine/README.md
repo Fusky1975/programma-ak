@@ -6968,7 +6968,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     Psychic skill no longer counts, and that a non-Undead caster is
     unaffected), `tests/test_encounter.py` (+1 -- the guaranteed-Flee
     constant). Full suite: 2307 passed (2302 unchanged + 5 new).
-- **Phase 184 (current)**: Psychic Blast [PS], tied to `Ability.
+- **Phase 184**: Psychic Blast [PS], tied to `Ability.
   PSYCHIC` (PS). Quoted in full: "Psychic Blast [PS] (Incantesimo di
   Combattimento Individuale): chi lancia l'incantesimo proietta una
   raffica di energia mentale con cui stordisce il nemico guadagnando
@@ -6989,6 +6989,46 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     roll staying within `[2, 5]` across the full probability spread,
     and exactly one roll consumed per call. Full suite: 2310 passed
     (2307 unchanged + 3 new).
+- **Phase 185 (current)**: Telekinetic Storm [TE], tied to `Ability.
+  PSYCHIC` (PS). Quoted in full: "Telekinetic Storm [TE] (Incantesimo
+  di Combattimento Individuale): chi lancia l'incantesimo provoca una
+  tempesta telecinetica, con epicentro vicino alla vittima, che
+  solleva in aria piccoli oggetti e li fa ruotare vorticosamente in
+  tutte le direzioni. L'incantesimo infligge da 4 a 16 punti danno
+  alla vittima. Alcuni oggetti colpiscono anche chi lancia
+  l'incantesimo: se egli si trova in zona di mischia, riceve da 4 a 16
+  punti danno; da 2 a 8 se e' a portata d'arco e da 1 a 4 se e' a
+  portata di incantesimo. La Tempesta Telecinetica e' inefficace
+  contro i mostri sottomarini [Elasmosaurus, Giant Octopus, Giant
+  Clam, Great White Whale, Mermaid]." No skill-level scaling at all,
+  same as Charm/Psychic Blast.
+  - `models/monster.py`: new `TELEKINETIC_STORM_SUBMARINE_MONSTERS` --
+    a fourth, independent classification axis (same rationale as
+    Phase 182's own three): not a re-reading of `Alignment` (Mermaid's
+    own 50%-`GOOD`/50%-`DRUID` entry has nothing to do with being
+    submarine), and only partially overlapping with `SPIRITWRACK_
+    ANIMAL_INTELLIGENCE_MONSTERS` (four species are both animal-
+    intelligence and submarine, two independent facts about them;
+    Mermaid is submarine but not animal-intelligence, proving the
+    lists are genuinely separate).
+  - `turn/encounter.py`: new `TELEKINETIC_STORM_VICTIM_DAMAGE_RANGE =
+    (4, 16)` and `TELEKINETIC_STORM_CASTER_DAMAGE_RANGE_BY_COMBAT_
+    RANGE` (keyed by this module's own `CombatRange`, Phase 179: melee
+    4-16, bow 2-8, spell 1-4). `roll_telekinetic_storm_victim_damage()`
+    and `roll_telekinetic_storm_caster_damage(caster_combat_range,
+    rng)` both take a `target_is_immune: bool` flag; when immune
+    (submarine), *both* the victim's damage and the caster's own self-
+    damage are suppressed together -- the storm never manifests at
+    all against them, unlike Spiritwrack's own immunity (Phase 182),
+    which only ever affected the target's side.
+  - 10 new tests: `tests/test_monster.py` (+2 -- the species list
+    matches the user's own list exactly, and the confirmed partial
+    overlap with `SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS`),
+    `tests/test_encounter.py` (+8 -- both range constants, the victim
+    damage roll staying in range, the immune-target zero-no-roll case
+    for both victim and caster damage, and the caster damage roll at
+    each of the three `CombatRange` values). Full suite: 2320 passed
+    (2310 unchanged + 10 new).
 
 ## Setup
 

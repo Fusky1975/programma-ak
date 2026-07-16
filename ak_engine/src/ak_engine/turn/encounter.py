@@ -387,6 +387,38 @@ with the returned round count (extra Melee swings? a stun status the
 opponent can't act during?) is left to a future tactic-walk engine --
 same "not wired into `turn/search_execution.py` yet" scoping as every
 other Personal-Combat spell above.
+
+**Phase 185 addendum -- Telekinetic Storm [TE], tied to Ability.
+PSYCHIC (PS), project-original (user-supplied).** Quoted in full:
+"Telekinetic Storm [TE] (Incantesimo di Combattimento Individuale):
+chi lancia l'incantesimo provoca una tempesta telecinetica, con
+epicentro vicino alla vittima, che solleva in aria piccoli oggetti e
+li fa ruotare vorticosamente in tutte le direzioni. L'incantesimo
+infligge da 4 a 16 punti danno alla vittima. Alcuni oggetti colpiscono
+anche chi lancia l'incantesimo: se egli si trova in zona di mischia,
+riceve da 4 a 16 punti danno; da 2 a 8 se e' a portata d'arco e da 1 a
+4 se e' a portata di incantesimo. La Tempesta Telecinetica e'
+inefficace contro i mostri sottomarini." ("The caster provokes a
+telekinetic storm, centered near the victim, that lifts small objects
+into the air and spins them wildly in every direction. The spell
+deals 4-16 damage to the victim. Some objects also strike the caster:
+4-16 damage if he's in the melee zone, 2-8 if at bow range, and 1-4 if
+at spell range. The spell has no effect against submarine monsters.")
+
+No skill-level scaling at all, same as Charm/Psychic Blast --
+`PERSONAL_COMBAT_SPELL_LEVEL_CAP` doesn't apply here either. The
+caster's own self-damage range is keyed directly by this module's own
+`CombatRange` (Phase 179): `roll_telekinetic_storm_caster_damage()`
+takes the caster's *own* current `CombatRange` (not the victim's) and
+looks up `TELEKINETIC_STORM_CASTER_DAMAGE_RANGE_BY_COMBAT_RANGE`.
+`roll_telekinetic_storm_victim_damage()` and `roll_telekinetic_storm_
+caster_damage()` both take a `target_is_immune: bool` flag (backed by
+the new `models/monster.py TELEKINETIC_STORM_SUBMARINE_MONSTERS`):
+"inefficace contro i mostri sottomarini" reads as the storm not
+manifesting at all against them, so both the victim's own damage *and*
+the caster's own self-damage are suppressed together when immune --
+unlike Spiritwrack's own Undead/Mechanical immunity (Phase 182), which
+only ever affected the target's side, never the caster's.
 """
 
 from __future__ import annotations
@@ -595,6 +627,51 @@ def roll_psychic_blast_stun_rounds(rng: random.Random) -> int:
     """
 
     return rng.randint(*PSYCHIC_BLAST_STUN_ROUNDS_RANGE)
+
+
+# Telekinetic Storm [TE], module docstring's own Phase 185 addendum --
+# project-original, user-supplied. Flat damage ranges, no skill-level
+# scaling at all.
+TELEKINETIC_STORM_VICTIM_DAMAGE_RANGE = (4, 16)
+
+# The caster's own self-damage range, keyed by the caster's own
+# current CombatRange (Phase 179) at the moment of casting.
+TELEKINETIC_STORM_CASTER_DAMAGE_RANGE_BY_COMBAT_RANGE: dict[CombatRange, tuple[int, int]] = {
+    CombatRange.MELEE_RANGE: (4, 16),
+    CombatRange.BOW_RANGE: (2, 8),
+    CombatRange.SPELL_RANGE: (1, 4),
+}
+
+
+def roll_telekinetic_storm_victim_damage(rng: random.Random, *, target_is_immune: bool = False) -> int:
+    """Telekinetic Storm's own damage to the victim -- "infligge da 4 a
+    16 punti danno alla vittima." Returns 0 without consuming a roll if
+    ``target_is_immune`` (a submarine monster -- see module docstring's
+    Phase 185 addendum and ``models/monster.py TELEKINETIC_STORM_
+    SUBMARINE_MONSTERS``).
+    """
+
+    if target_is_immune:
+        return 0
+    return rng.randint(*TELEKINETIC_STORM_VICTIM_DAMAGE_RANGE)
+
+
+def roll_telekinetic_storm_caster_damage(
+    caster_combat_range: CombatRange, rng: random.Random, *, target_is_immune: bool = False
+) -> int:
+    """Telekinetic Storm's own self-damage to the caster -- "se egli si
+    trova in zona di mischia, riceve da 4 a 16 punti danno; da 2 a 8 se
+    e' a portata d'arco e da 1 a 4 se e' a portata di incantesimo."
+    ``caster_combat_range`` is the *caster's own* current `CombatRange`
+    at the moment of casting, not the victim's. Returns 0 without
+    consuming a roll if ``target_is_immune`` -- the storm doesn't
+    manifest against a submarine monster at all, so the caster takes no
+    self-damage either (module docstring's Phase 185 addendum).
+    """
+
+    if target_is_immune:
+        return 0
+    return rng.randint(*TELEKINETIC_STORM_CASTER_DAMAGE_RANGE_BY_COMBAT_RANGE[caster_combat_range])
 
 
 @dataclass(slots=True)

@@ -13,6 +13,7 @@ from ak_engine.models.monster import (
     SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS,
     SPIRITWRACK_MECHANICAL_MONSTERS,
     SPIRITWRACK_UNDEAD_MONSTERS,
+    TELEKINETIC_STORM_SUBMARINE_MONSTERS,
     AlignmentOption,
     Monster,
     MonsterCombatStats,
@@ -324,3 +325,28 @@ def test_spiritwrack_species_lists_are_pairwise_disjoint():
     assert not (SPIRITWRACK_UNDEAD_MONSTERS & SPIRITWRACK_MECHANICAL_MONSTERS)
     assert not (SPIRITWRACK_UNDEAD_MONSTERS & SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS)
     assert not (SPIRITWRACK_MECHANICAL_MONSTERS & SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS)
+
+
+# -- Phase 185: Telekinetic Storm's submarine-monster list --
+
+
+def test_telekinetic_storm_submarine_monsters_matches_the_user_supplied_list():
+    assert TELEKINETIC_STORM_SUBMARINE_MONSTERS == {
+        Monster.ELASMOSAURUS,
+        Monster.GI_OCTOPUS,
+        Monster.GI_CLAM,
+        Monster.GW_WHALE,
+        Monster.MERMAID,
+    }
+
+
+def test_telekinetic_storm_submarine_monsters_overlaps_but_is_not_identical_to_animal_intelligence():
+    # Four species (Elasmosaurus/Giant Octopus/Giant Clam/Great White
+    # Whale) are both submarine and animal-intelligence -- two
+    # independent facts about the same species, not a mislabeled
+    # duplicate list. Mermaid is submarine but NOT animal-intelligence,
+    # proving the two lists are genuinely separate.
+    overlap = TELEKINETIC_STORM_SUBMARINE_MONSTERS & SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
+    assert overlap == {Monster.ELASMOSAURUS, Monster.GI_OCTOPUS, Monster.GI_CLAM, Monster.GW_WHALE}
+    assert Monster.MERMAID in TELEKINETIC_STORM_SUBMARINE_MONSTERS
+    assert Monster.MERMAID not in SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
