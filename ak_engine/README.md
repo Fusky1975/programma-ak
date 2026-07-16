@@ -6989,7 +6989,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     roll staying within `[2, 5]` across the full probability spread,
     and exactly one roll consumed per call. Full suite: 2310 passed
     (2307 unchanged + 3 new).
-- **Phase 185 (current)**: Telekinetic Storm [TE], tied to `Ability.
+- **Phase 185**: Telekinetic Storm [TE], tied to `Ability.
   PSYCHIC` (PS). Quoted in full: "Telekinetic Storm [TE] (Incantesimo
   di Combattimento Individuale): chi lancia l'incantesimo provoca una
   tempesta telecinetica, con epicentro vicino alla vittima, che
@@ -7029,6 +7029,39 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     for both victim and caster damage, and the caster damage roll at
     each of the three `CombatRange` values). Full suite: 2320 passed
     (2310 unchanged + 10 new).
+- **Phase 186 (current)**: Invisibility [IN], tied to `Ability.
+  ILLUSION` (IL). Quoted in full: "Invisibility [IN] (Incantesimo di
+  Combattimento Individuale): la probabilita' di essere colpiti con
+  l'arco o nel corpo a corpo viene dimezzata per la durata del
+  combattimento. Usato nel Piano d'Incontro prima di rubare, questo
+  incantesimo vale come un modificatore di +15% al tentativo di
+  furto." Two independent effects, no skill-level scaling on either.
+  - `turn/encounter.py`: new `INVISIBILITY_HIT_CHANCE_MULTIPLIER =
+    0.5` and `invisibility_reduced_hit_chance(base_hit_chance)` --
+    halves whatever base hit chance the opponent would otherwise have
+    against the invisible combatant, applying equally to Fire Arrow's
+    own hit-chance formula and the flat Melee hit chance. "Per la
+    durata del combattimento" reads as a persistent status rather than
+    a single-round effect, though no per-round status-tracking exists
+    in this project yet to actually carry that duration.
+  - New `INVISIBILITY_STEAL_ATTEMPT_BONUS = 0.15`: a flat +15
+    percentage-point bonus to a Steal attempt's own success chance.
+    **Confirmed to have no numeric formula to modify yet** -- a direct
+    search found `turn/search_execution.py` already documents
+    `Maneuver.STEAL` as decoded but entirely unwired, and the only
+    other Steal-related code in this project is narrative-only
+    (`report/turn_report.py render_take_gold()`/`render_steal_caught_
+    and_ransomed()`/`render_ice_steal_blocked()`) or purely descriptive
+    ability-tooltip text (`models/advanced_ability.py`'s own "the
+    Thief adds 15% to his chance to Steal", never backed by code). This
+    constant is recorded now, the same way Charm's own Undead-King
+    "Seduzione" branch was (Phase 183) -- a confirmed, sourced fact
+    ready for whichever future phase builds a real Steal-success
+    formula.
+  - 3 new tests in `tests/test_encounter.py`: the hit-chance multiplier
+    constant, the halving applied to both a flat base chance and Fire
+    Arrow's own formula, and the Steal-bonus constant itself. Full
+    suite: 2323 passed (2320 unchanged + 3 new).
 
 ## Setup
 

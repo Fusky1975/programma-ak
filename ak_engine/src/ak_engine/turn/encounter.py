@@ -419,6 +419,45 @@ manifesting at all against them, so both the victim's own damage *and*
 the caster's own self-damage are suppressed together when immune --
 unlike Spiritwrack's own Undead/Mechanical immunity (Phase 182), which
 only ever affected the target's side, never the caster's.
+
+**Phase 186 addendum -- Invisibility [IN], tied to Ability.ILLUSION
+(IL), project-original (user-supplied).** Quoted in full: "Invisibility
+[IN] (Incantesimo di Combattimento Individuale): la probabilita' di
+essere colpiti con l'arco o nel corpo a corpo viene dimezzata per la
+durata del combattimento. Usato nel Piano d'Incontro prima di rubare,
+questo incantesimo vale come un modificatore di +15% al tentativo di
+furto." ("Invisibility [IN] (Personal-Combat spell): the chance of
+being hit with a bow or in melee is halved for the duration of
+combat. Used in the Encounter Plan before stealing, this spell counts
+as a +15% modifier to the theft attempt.")
+
+Two independent effects, no skill-level scaling on either:
+
+- `INVISIBILITY_HIT_CHANCE_MULTIPLIER = 0.5` and
+  `invisibility_reduced_hit_chance(base_hit_chance)` halve *whatever*
+  base hit chance the opponent would otherwise have against the
+  invisible combatant -- applies equally to `fire_arrow_hit_chance()`
+  and the flat `MELEE_HIT_CHANCE`, "per la durata del combattimento"
+  ("for the duration of combat") reading as a persistent status rather
+  than a single-round effect, though no per-round status-tracking
+  exists in this project to actually carry that duration yet (same gap
+  as everywhere else in this file).
+- `INVISIBILITY_STEAL_ATTEMPT_BONUS = 0.15`: a flat +15 percentage-
+  point bonus to a Steal attempt's own success chance, when Invisibility
+  precedes a Steal tactic in the same Encounter Plan. **Confirmed to
+  have no numeric formula to modify yet**: `turn/search_execution.py`'s
+  own docstring already documents `Maneuver.STEAL` as decoded but
+  entirely unwired (no resolution function exists), and a direct search
+  confirms no Steal success-chance formula exists anywhere in this
+  project -- only narrative-only renderers (`report/turn_report.py
+  render_take_gold()`/`render_steal_caught_and_ransomed()`/
+  `render_ice_steal_blocked()`) and purely descriptive ability-tooltip
+  strings (`models/advanced_ability.py`'s own "the Thief adds 15% to
+  his chance to Steal" text, never backed by code). This constant is
+  therefore modeled the same way Charm's own Undead-King "Seduzione"
+  branch was (Phase 183): a confirmed, sourced fact recorded now,
+  ready for whichever future phase actually builds a real Steal-success
+  formula to consume it.
 """
 
 from __future__ import annotations
@@ -672,6 +711,29 @@ def roll_telekinetic_storm_caster_damage(
     if target_is_immune:
         return 0
     return rng.randint(*TELEKINETIC_STORM_CASTER_DAMAGE_RANGE_BY_COMBAT_RANGE[caster_combat_range])
+
+
+# Invisibility [IN], module docstring's own Phase 186 addendum --
+# project-original, user-supplied. No skill-level scaling on either of
+# its two independent effects.
+INVISIBILITY_HIT_CHANCE_MULTIPLIER = 0.5
+
+# A flat +15 percentage-point bonus to a Steal attempt's own success
+# chance -- confirmed but not yet backed by any real Steal-success
+# formula anywhere in this project (see module docstring's Phase 186
+# addendum for why).
+INVISIBILITY_STEAL_ATTEMPT_BONUS = 0.15
+
+
+def invisibility_reduced_hit_chance(base_hit_chance: float) -> float:
+    """Invisibility's own defensive effect: "la probabilita' di essere
+    colpiti con l'arco o nel corpo a corpo viene dimezzata" -- halves
+    whatever base hit chance the opponent would otherwise have against
+    the invisible combatant. Applies equally to `fire_arrow_hit_
+    chance()` and the flat `MELEE_HIT_CHANCE`.
+    """
+
+    return base_hit_chance * INVISIBILITY_HIT_CHANCE_MULTIPLIER
 
 
 @dataclass(slots=True)

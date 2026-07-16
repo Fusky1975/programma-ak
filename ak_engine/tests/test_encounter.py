@@ -15,6 +15,8 @@ from ak_engine.turn.encounter import (
     SPELL_DISRUPTION_CHANCE_CAP,
     SPELL_DISRUPTION_CHANCE_PER_HIT,
     CHARM_FLEE_ALWAYS_SUCCEEDS,
+    INVISIBILITY_HIT_CHANCE_MULTIPLIER,
+    INVISIBILITY_STEAL_ATTEMPT_BONUS,
     PSYCHIC_BLAST_STUN_ROUNDS_RANGE,
     SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER,
     SPIRITWRACK_MELEE_DAMAGE_REDUCTION_PER_LEVEL,
@@ -28,6 +30,7 @@ from ak_engine.turn.encounter import (
     fire_arrow_free_attacks,
     fire_arrow_hit_chance,
     holy_symbol_hit_chance,
+    invisibility_reduced_hit_chance,
     resolve_fire_arrow_duel,
     resolve_melee_duel,
     resolve_spell_disruption,
@@ -606,3 +609,26 @@ def test_roll_telekinetic_storm_caster_damage_immune_target_returns_zero_without
     # immunity, which only ever affected the target's side.
     rng = ScriptedRandom([])
     assert roll_telekinetic_storm_caster_damage(CombatRange.MELEE_RANGE, rng, target_is_immune=True) == 0
+
+
+# -- Phase 186: Invisibility [IN] --
+
+
+def test_invisibility_hit_chance_multiplier_constant():
+    assert INVISIBILITY_HIT_CHANCE_MULTIPLIER == 0.5
+
+
+def test_invisibility_reduced_hit_chance_halves_the_base_chance():
+    # "la probabilita' di essere colpiti con l'arco o nel corpo a
+    # mischia viene dimezzata" -- applies equally to Fire Arrow's own
+    # hit-chance formula and the flat Melee hit chance.
+    assert invisibility_reduced_hit_chance(0.50) == pytest.approx(0.25)
+    assert invisibility_reduced_hit_chance(fire_arrow_hit_chance(2)) == pytest.approx(fire_arrow_hit_chance(2) * 0.5)
+    assert invisibility_reduced_hit_chance(MELEE_HIT_CHANCE) == pytest.approx(0.25)
+
+
+def test_invisibility_steal_attempt_bonus_constant():
+    # "vale come un modificatore di +15% al tentativo di furto" --
+    # confirmed but not yet backed by any real Steal-success formula
+    # anywhere in this project (module docstring's Phase 186 addendum).
+    assert INVISIBILITY_STEAL_ATTEMPT_BONUS == 0.15
