@@ -104,7 +104,12 @@ PROVINCE_TARGET_SPELLS = frozenset(
         Spell.HIDE_FEATURE,
     }
 )
-NO_TARGET_SPELLS = frozenset({Spell.SKELETAL_ARMY})
+# Spell.GATE_ANGEL (Phase 194, one of the secret spells 25-34): the
+# user-supplied rule text names no target field at all ("the spellcaster
+# has no control over which hero arrives") -- no real sample data exists
+# to validate this against (see this module's own "Deliberately not
+# handled here" note on the secret-spell Trade->Cast rewrite).
+NO_TARGET_SPELLS = frozenset({Spell.SKELETAL_ARMY, Spell.GATE_ANGEL})
 
 # The only two spells whose Cast phase embeds a nested plan for the
 # character it creates (DEF2.PAS Read_More: "Charm, Resurrection:

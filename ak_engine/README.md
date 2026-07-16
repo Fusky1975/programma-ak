@@ -7403,7 +7403,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     level, the Pagan bonus applying to a non-White spell, the same
     roll failing without it, and the bonus being excluded for a White
     Magic spell). Full suite: 2383 passed (2371 unchanged + 12 new).
-- **Phase 193 (current)**: Clairvoyance [4.22.3] and Hide_Feature
+- **Phase 193**: Clairvoyance [4.22.3] and Hide_Feature
   [4.23.3] execution, closing 2 of the 12 previously-unexecuted spells
   (10 remain -- the Personal-Combat-only ten). The user asked directly
   which spells were still missing; both turned out to have stale or
@@ -7478,6 +7478,73 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     (+1 -- `magically_hidden`'s explicit-True case, plus a default-value
     assertion added to the existing defaults test). Full suite: 2393
     passed (2383 unchanged + 10 new).
+- **Phase 194 (current)**: Gate Angel -- the first of 10 "secret" spells
+  (ordinals 25-34, outside the 25 documented `Spell` members) to get
+  real execution, and the first spell text the user supplied directly
+  rather than via Regolamento AK.txt. Quoted in full: '"GATE ANGEL"
+  SPELL: Call Valhalla Hero... an extra-dimensional gate is opened to
+  Valhalla, through which a hero of the same alignment as the
+  spellcaster passes. The hero appears at the end of the current
+  gameturn. Only one Valhalla hero can visit the world during a turn...
+  Each alignment from Good to Evil can still be visited only once in
+  each 5-turn period (for this spell, Divine kingdoms are treated as
+  Good, and Undead as Evil). If more than one player casts the Gate
+  Angel spell, one of the spells will be nullified. The spellcaster has
+  no control over which hero arrives.' Already confirmed real and fully
+  described by `models/advanced_ability.py`'s own
+  `AdvancedAbility.GATE_ANGEL_SPELL` (White Magic pool, Phase 128) --
+  the user's text matches that entry's `ADVANCED_ABILITY_DESCRIPTION`
+  word for word.
+  - `Spell.GATE_ANGEL: Ability.WHITE` added to `cast_execution.py`'s
+    `_SPELL_ABILITY`; `Spell.GATE_ANGEL` added to `cast_decode.py`'s
+    `NO_TARGET_SPELLS` (the rule text names no target field at all,
+    matching Skeletal_Army's own precedent -- no real sample data
+    exists to validate this against, since the secret-spell Trade->Cast
+    rewrite this module's own docstring flags is "deliberately not
+    handled" anywhere in this project).
+  - Three new `GameState` fields model only the confirmed, sourced
+    mechanics: `last_gate_angel_turn`/`last_gate_angel_kingdom` (the
+    global once-per-turn Valhalla-visit lock -- unlike every other
+    per-turn flag in this project, which is scoped to one leader/army/
+    province) and `gate_angel_alignment_cooldown` (the per-alignment-
+    group 5-turn cooldown, via new `_gate_angel_alignment_group()`
+    folding `Alignment.DIVINE` into `GOOD` and `Alignment.UNDEAD` into
+    `EVIL` -- the only two foldings the rule states; every other
+    `Alignment` keeps its own bucket). `_execute_gate_angel` checks the
+    global lock, then the alignment cooldown, then rolls -- the usual
+    "check applicability first" order every spell here uses.
+  - **No new `LeaderState` hero is synthesized.** This project has no
+    character-generation system anywhere (name/race/skills/starting
+    stats are all unsourced -- `models/game_state.py`'s own docstring
+    already flags "populating a brand-new `GameState` from turn 0" as a
+    distinct, larger, unsourced future task). Only the confirmed lock/
+    cooldown state is modeled, the same "model the confirmed effect,
+    defer the consuming/generating system" pattern as Clairvoyance's
+    own `clairvoyance_watchers` (Phase 193).
+  - "Only one hero per turn, one cast nullified" is modeled as strict
+    first-come-first-served via this engine's own existing sequential
+    per-leader phase dispatch (`turn_processor.py`'s `run_turn()`
+    already processes each leader's Cast phase one at a time) --
+    `last_gate_angel_turn` is checked before, and set immediately after,
+    a successful roll, so any later Gate Angel cast the same turn fails
+    outright before it even rolls. Which caster "wins" a same-turn tie
+    is therefore whichever this engine's own dispatch order reaches
+    first; the rulebook names no tie-breaking rule of its own to
+    compare against, so no new end-of-turn batch-resolution machinery
+    was needed or built.
+  - "The spellcaster" reads as the acting Kingdom's own alignment
+    (`state.kingdoms[kingdom_id].alignment`), the same "which Kingdom
+    this cast concerns" convention `_execute_charm`'s own
+    `target.kingdom_id = kingdom_id` write already establishes -- not
+    `LeaderState.alignment`, which is frequently unrecorded (`None`)
+    and this rule names no fallback for.
+  - 7 new tests in `tests/test_cast_execution.py`: a successful cast
+    setting both the global lock and the alignment cooldown, a second
+    same-turn cast getting nullified, the alignment cooldown blocking a
+    cast within 5 turns and allowing one at exactly 5, Divine/Undead
+    each sharing the Good/Evil cooldown bucket, and a failed roll
+    touching no state at all. Full suite: 2400 passed (2393 unchanged +
+    7 new).
 
 ## Setup
 

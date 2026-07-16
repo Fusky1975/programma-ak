@@ -868,6 +868,98 @@ def test_hide_feature_fails_when_the_province_is_unknown():
 
 
 # ---------------------------------------------------------------------------
+# Gate Angel (Phase 194) -- user-supplied rule text, one of the 10 secret spells
+# ---------------------------------------------------------------------------
+
+
+def test_gate_angel_succeeds_and_sets_the_global_lock_and_alignment_cooldown():
+    state = build_state()
+    assert state.kingdoms[1].alignment is Alignment.GOOD
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.last_gate_angel_turn == state.turn_number
+    assert state.last_gate_angel_kingdom == 1
+    assert state.gate_angel_alignment_cooldown[Alignment.GOOD] == state.turn_number
+
+
+def test_gate_angel_second_cast_the_same_turn_is_nullified():
+    state = build_state()
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+    first = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+    assert first.applied is True
+
+    state.add_leader(LeaderState(78, 2, "Rival Caster", ELSEWHERE))
+    second = execute_cast(state, kingdom_id=2, leader_id=78, request=request)
+
+    assert second.applied is False
+    assert second.reason == "a Valhalla hero already visited this turn"
+
+
+def test_gate_angel_blocked_within_the_5_turn_alignment_cooldown():
+    state = build_state()
+    state.turn_number = 10
+    state.gate_angel_alignment_cooldown[Alignment.GOOD] = 7  # 3 turns ago
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "this alignment was visited by a Valhalla hero too recently"
+
+
+def test_gate_angel_alignment_cooldown_expires_after_5_turns():
+    state = build_state()
+    state.turn_number = 12
+    state.gate_angel_alignment_cooldown[Alignment.GOOD] = 7  # exactly 5 turns ago
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+
+
+def test_gate_angel_divine_kingdom_shares_the_good_cooldown_bucket():
+    state = build_state()
+    state.kingdoms[1].alignment = Alignment.DIVINE
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.gate_angel_alignment_cooldown[Alignment.GOOD] == state.turn_number
+    assert Alignment.DIVINE not in state.gate_angel_alignment_cooldown
+
+
+def test_gate_angel_undead_kingdom_shares_the_evil_cooldown_bucket():
+    state = build_state()
+    state.kingdoms[1].alignment = Alignment.UNDEAD
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.gate_angel_alignment_cooldown[Alignment.EVIL] == state.turn_number
+    assert Alignment.UNDEAD not in state.gate_angel_alignment_cooldown
+
+
+def test_gate_angel_failed_roll_does_not_touch_any_state():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 1)  # 30% chance
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+    rng = ScriptedRandom([0.96])  # over the un-bonused 30% White Magic chance
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert state.last_gate_angel_turn is None
+    assert state.last_gate_angel_kingdom is None
+    assert state.gate_angel_alignment_cooldown == {}
+
+
+# ---------------------------------------------------------------------------
 # Phase 192: spell-cast success formula corrections (a direct re-quote of
 # Regolamento AK.txt [3.10] confirmed the 95% cap is real and Pagan
 # Kingdoms get a +10% bonus to every spell except White Magic)

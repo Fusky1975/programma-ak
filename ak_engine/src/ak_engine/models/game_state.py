@@ -118,6 +118,32 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   a turn boundary, same "caller's job to reset" convention as
   ``oratory_boosted_this_turn``.
 
+**``GameState.last_gate_angel_turn``/``last_gate_angel_kingdom``/
+``gate_angel_alignment_cooldown`` (Gate Angel, Phase 194)**: a secret
+spell (``AdvancedAbility.GATE_ANGEL_SPELL``, ordinal 25, outside the 25
+documented ``Spell`` members) whose rule text the user supplied
+directly. "Only one Valhalla hero can visit the world during a turn" is
+a *global* lock (unlike every other per-turn flag in this dataclass,
+which is scoped to one leader/army/province) -- ``last_gate_angel_turn``
+records the turn number a hero last arrived, for any kingdom, and is
+self-cleaning by comparison against ``turn_number`` (no separate reset
+needed, unlike ``oratory_boosted_this_turn``). ``last_gate_angel_kingdom``
+records which kingdom received it, for reference only. "Each alignment
+from Good to Evil can still be visited only once in each 5-turn period"
+is modeled as ``gate_angel_alignment_cooldown``, keyed by
+``turn/cast_execution.py``'s own ``_gate_angel_alignment_group()``
+(folding ``Alignment.DIVINE`` into ``GOOD`` and ``Alignment.UNDEAD``
+into ``EVIL`` per the rule's own wording -- every other alignment keeps
+its own bucket), valued with the turn number of that group's last
+successful visit. **No new ``LeaderState`` is synthesized for the
+arriving hero** -- this project has no character-generation system
+(name/race/skills/starting stats all unsourced), so only the confirmed
+lock/cooldown state is modeled, the same "model the confirmed effect,
+defer the consuming/generating system" pattern as
+``clairvoyance_watchers`` above. See ``turn/cast_execution.py``'s own
+module docstring ("Secret spells" section) for the full rule text and
+design rationale.
+
 **``GameState.battle_graveyard`` (Phase 60)**: rulebook (Regolamento
 AK.txt [4.25.1]/addendum): Skeletal Army needs to know "an army was
 destroyed in a battle fought in this province," and the Bless addendum
@@ -330,6 +356,23 @@ class GameState:
     # own docstring for the RUMORS.PAS Add_Tr/treaslist/trowner/trcharges
     # source and its deliberate leader-only scope.
     items: dict[int, ItemInstance] = field(default_factory=dict)
+    # Gate Angel (Phase 194) -- see module docstring. The global
+    # once-per-turn Valhalla-visit lock: None = no hero has ever arrived;
+    # otherwise the turn_number a hero last arrived, for any kingdom.
+    # Self-cleaning via comparison against turn_number, unlike
+    # oratory_boosted_this_turn -- no separate reset needed.
+    last_gate_angel_turn: int | None = None
+    # Gate Angel (Phase 194): which kingdom received that hero, paired
+    # with the field above purely for report/debugging purposes -- not
+    # consumed by any other code yet.
+    last_gate_angel_kingdom: int | None = None
+    # Gate Angel (Phase 194): "Each alignment from Good to Evil can still
+    # be visited only once in each 5-turn period" -- keyed by the
+    # Gate-Angel alignment group (turn/cast_execution.py's
+    # _gate_angel_alignment_group(), which folds Divine into Good and
+    # Undead into Evil per the rule's own wording), valued with the turn
+    # number of that group's last successful visit.
+    gate_angel_alignment_cooldown: dict[Alignment, int] = field(default_factory=dict)
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
         self.kingdoms[kingdom.kingdom_id] = kingdom

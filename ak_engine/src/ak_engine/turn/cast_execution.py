@@ -189,6 +189,76 @@ enforces; Clairvoyance's own sourced text names no such restriction, so
 none was invented (unlike Kill_Enemy's own explicit "not co-located"
 check, which is Kill_Enemy-specific).
 
+**Secret spells (ordinals 25-34), outside the 25 documented ``Spell``
+members counted above**: 10 further spells ``models/advanced_ability.py``
+already confirmed real via its own ``ADVANCED_ABILITY_GRANTS_SPELL``
+table (Phase 128) -- each granted once a caster reaches skill 5+ in its
+base ``Ability`` (``AdvancedAbility``'s own skill-5-and-up mechanic),
+and none of them had any ``SPNOTE.X2``/rulebook text anywhere in this
+project's archive until the user began supplying each one's own rule
+text directly, one at a time.
+
+- **Gate Angel** (``AdvancedAbility.GATE_ANGEL_SPELL``, ``Ability.WHITE``,
+  Phase 194) -- the user's own quoted rule text (verbatim, matching
+  ``models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION`` word for
+  word): "a hero of the same alignment as the spellcaster passes
+  [through a gate to Valhalla]... The hero appears at the end of the
+  current gameturn. Only one Valhalla hero can visit the world during a
+  turn, so no other king will receive a visitor from Valhalla. Each
+  alignment from Good to Evil can still be visited only once in each
+  5-turn period (for this spell, Divine kingdoms are treated as Good,
+  and Undead as Evil). If more than one player casts the Gate Angel
+  spell, one of the spells will be nullified. The spellcaster has no
+  control over which hero arrives from Valhalla." Three judgment calls,
+  each also documented on ``_execute_gate_angel`` itself:
+
+  1. **"The spellcaster" reads as the acting Kingdom's own alignment**
+     (``state.kingdoms[kingdom_id].alignment``) -- the same "which
+     Kingdom this cast concerns" convention ``_execute_charm``'s
+     ``target.kingdom_id = kingdom_id`` write already establishes, not
+     ``LeaderState.alignment`` (frequently unrecorded/``None``, and this
+     rule names no fallback for that case).
+  2. **"Only one hero per turn, one cast nullified" is modeled as
+     strict first-come-first-served**, via this engine's own existing
+     sequential per-leader phase dispatch (``turn/turn_processor.py``'s
+     ``run_turn()`` already processes each leader's Cast phase one at a
+     time, in a deterministic order). ``GameState.last_gate_angel_turn``
+     is checked before, and set immediately after, a successful roll --
+     so a second Gate Angel cast later the same turn always fails with
+     "a Valhalla hero already visited this turn" before it even rolls.
+     Which specific caster "wins" when two cast the same turn is
+     therefore whichever this engine's own dispatch order processes
+     first; the rulebook names no tie-breaking rule of its own to
+     compare against, so this is a necessary implementation choice, not
+     a guessed game rule.
+  3. **No new ``LeaderState`` is synthesized for the arriving hero.**
+     This project has no character-generation system anywhere (name,
+     race, skills, starting stats) -- ``models/game_state.py``'s own
+     docstring already flags "populating a brand-new ``GameState`` from
+     turn 0, with no existing entries to enrich" as a distinct,
+     unsourced, larger future task, and a Valhalla hero's own stats are
+     equally unsourced. Only the confirmed state effects are modeled:
+     ``GameState.last_gate_angel_turn``/``last_gate_angel_kingdom`` (the
+     global once-per-turn lock) and ``GameState.
+     gate_angel_alignment_cooldown`` (the per-alignment-group 5-turn
+     cooldown, via the new ``_gate_angel_alignment_group()`` folding
+     Divine into Good and Undead into Evil -- the only two foldings the
+     rulebook itself states; every other ``Alignment`` keeps its own
+     independent bucket). The same "model the confirmed effect, defer
+     the consuming/generating system" pattern this project has used for
+     dozens of other spells/mechanics (e.g. ``clairvoyance_watchers``,
+     Phase 193).
+
+  ``Spell.GATE_ANGEL`` is added to ``turn/cast_decode.py``'s
+  ``NO_TARGET_SPELLS`` -- the rulebook text names no target field at all
+  ("the spellcaster has no control over which hero arrives"), matching
+  Skeletal_Army's own precedent. No real sample data exists to validate
+  this decode against (``cast_decode.py``'s own docstring already notes
+  the Trade->Cast rewrite for secret spells 25-34 is "deliberately not
+  handled" anywhere in this project), so this is a structural inference
+  from the rule text, not confirmed against real Cast phases the way the
+  25 documented spells are.
+
 **Level-dependent magnitudes with no recorded caster skill** (Tornado's
 per-unit destroy chance, Plague's per-unit destroy chance, Illus_Armies'
 strength bonus): fall back to level 0 (no effect), the same "no data ->
@@ -261,6 +331,10 @@ BLESS_GRAVEYARD_CLEAR_CHANCE_PER_LEVEL = 0.10
 # Mountain is explicitly excluded by the rulebook's own wording).
 _FLOOD_ELIGIBLE_TERRAIN = frozenset({Terrain.PLAINS, Terrain.DESERT, Terrain.JUNGLE, Terrain.FOREST})
 
+# Gate Angel (Phase 194, user-supplied): "Each alignment from Good to Evil
+# can still be visited only once in each 5-turn period."
+GATE_ANGEL_ALIGNMENT_COOLDOWN_TURNS = 5
+
 _SPELL_ABILITY: dict[Spell, Ability] = {
     Spell.CHARM: Ability.PSYCHIC,
     Spell.KILL_ENEMY: Ability.NECROMANCY,
@@ -277,6 +351,7 @@ _SPELL_ABILITY: dict[Spell, Ability] = {
     Spell.SKELETAL_ARMY: Ability.NECROMANCY,
     Spell.CLAIRVOYANCE: Ability.PSYCHIC,
     Spell.HIDE_FEATURE: Ability.ILLUSION,
+    Spell.GATE_ANGEL: Ability.WHITE,
 }
 
 
@@ -343,6 +418,8 @@ def execute_cast(
         return _execute_clairvoyance(state, kingdom_id, leader_id, request, rng, wand_skill_level)
     if spell is Spell.HIDE_FEATURE:
         return _execute_hide_feature(state, leader_id, request, rng, board_width, wand_skill_level)
+    if spell is Spell.GATE_ANGEL:
+        return _execute_gate_angel(state, kingdom_id, leader_id, request, rng, wand_skill_level)
 
     return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
 
@@ -980,4 +1057,61 @@ def _execute_hide_feature(
 
     for feature in features:
         feature.magically_hidden = True
+    return CastExecutionResult(request, applied=True)
+
+
+def _gate_angel_alignment_group(alignment: Alignment) -> Alignment:
+    """Gate Angel's own rule text (Phase 194, user-supplied): "for this
+    spell, Divine kingdoms are treated as Good, and Undead as Evil" --
+    the only two foldings the rule states. Every other ``Alignment``
+    keeps its own independent 5-turn cooldown bucket (see module
+    docstring's "Secret spells" section).
+    """
+
+    if alignment is Alignment.DIVINE:
+        return Alignment.GOOD
+    if alignment is Alignment.UNDEAD:
+        return Alignment.EVIL
+    return alignment
+
+
+def _execute_gate_angel(
+    state: GameState,
+    kingdom_id: int,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    wand_skill_level: int | None = None,
+) -> CastExecutionResult:
+    """``AdvancedAbility.GATE_ANGEL_SPELL`` (Phase 194, user-supplied rule
+    text -- see module docstring's "Secret spells" section for the full
+    quote and the three judgment calls this function makes).
+
+    Checks the global once-per-turn lock and the caster kingdom's own
+    alignment-group 5-turn cooldown *before* rolling (the same "check
+    applicability first" order every other spell here uses), then on a
+    successful roll records only the confirmed state effects -- no new
+    ``LeaderState`` hero is synthesized, since this project has no
+    character-generation data to draw from.
+    """
+
+    caster = state.leaders[leader_id]
+
+    if state.last_gate_angel_turn == state.turn_number:
+        return CastExecutionResult(request, applied=False, reason="a Valhalla hero already visited this turn")
+
+    group = _gate_angel_alignment_group(state.kingdoms[kingdom_id].alignment)
+    last_visit = state.gate_angel_alignment_cooldown.get(group)
+    if last_visit is not None and state.turn_number - last_visit < GATE_ANGEL_ALIGNMENT_COOLDOWN_TURNS:
+        return CastExecutionResult(
+            request, applied=False, reason="this alignment was visited by a Valhalla hero too recently"
+        )
+
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    if not succeeded:
+        return CastExecutionResult(request, applied=False, reason=reason)
+
+    state.last_gate_angel_turn = state.turn_number
+    state.last_gate_angel_kingdom = kingdom_id
+    state.gate_angel_alignment_cooldown[group] = state.turn_number
     return CastExecutionResult(request, applied=True)
