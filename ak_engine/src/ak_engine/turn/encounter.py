@@ -575,6 +575,88 @@ Spiritwrack's three classification sets (kept prefixed there because
 Undead/Mechanical/Animal-Intelligence are three conceptually distinct
 reasons for the same outcome) -- see `models/monster.py`'s own module
 docstring for the full rationale.
+
+**Phase 189 addendum -- Ice Suspension [IC], tied to Ability.ELEMENTAL,
+project-original (user-supplied).** Quoted in full: "chi lo lancia
+rinchiude la sua vittima in un guscio magico di ghiaccio che lo blocca
+o lo rallenta per alcuni round. Può rimanere bloccato un mostro o un
+Eroe a cui restano fino a 4 punti ferita per livello di magia
+elementare di chi lancia l'incantesimo. (max 16). In questo caso, il
+mago elementale si impossesserà di tutti gli oggetti magici che la
+vittima non porta con sé al momento e potrà scegliere tra fuggire (con
+successo automatico) o attendere che il ghiaccio si sciolga a
+sufficienza da permettere alla vittima di liberarsi. In questo caso
+guadagnerà 3 round supplementari d'attacco (partendo da qualsiasi
+distanza sia più conveniente per la successiva mossa di combattimento).
+Se l'incantesimo non blocca il bersaglio, quest'ultimo verrà
+rallentato. Il mago guadagnerà così da 1 a 3 round supplementari
+d'attacco, a seconda di quanta parte del corpo del mostro è racchiusa
+nel ghiaccio... Questo incantesimo è inefficace contro fantasmi, demoni
+e simili... perché queste creature esistono solo parzialmente nel
+mondo materiale e funziona in maniera differente contro mostri
+volanti... Contro questi provocherà da 5 a 10 punti danno (la creatura
+si schianta al suolo) e darà a chi ha lanciato l'incantesimo da 1 a 3
+round supplementari d'attacco (indipendentemente dal livello nella
+magia)."
+
+By far the most branching Personal-Combat spell modeled so far -- three
+mutually-exclusive outcome categories selected by the *target's own
+type*, not by a single roll:
+
+1. **Ghost/demon-like targets (`models/monster.py ICE_SUSPENSION_
+   IMMUNE_MONSTERS`: Spectre, Genie, Balrog Demon, Marilith Demon,
+   Succubus, Rakshasha, Ice Devil, Bone Devil, Imp, Ghost, Banshee) --
+   the spell has no effect at all** (these creatures "exist only
+   partially in the material world"). No function in this module is
+   meant to be called for this category; the caller filters on it
+   before dispatching to any of the two branches below, the same
+   caller-side branch-selection this module already uses for Melee's
+   monster-specific damage die (Phase 132 addendum) rather than a
+   `target_is_immune` flag threaded through every function -- there
+   isn't one shared formula to suppress here, there are two entirely
+   different ones (frozen/slowed vs. flying).
+2. **Flying monsters (`models/monster.py ICE_SUSPENSION_FLYING_
+   MONSTERS`: Vampire, Giant Wasp, Beholder, Green/Gold/Silver/Black/
+   Red Dragon, Giant Eagle, Couatl, Roc, Gargoyle, Gryphon) -- crash to
+   the ground instead of freezing/slowing.** `ICE_SUSPENSION_FLYING_
+   CRASH_DAMAGE_RANGE = (5, 10)` and `ICE_SUSPENSION_FLYING_BONUS_
+   ROUNDS_RANGE = (1, 3)`, both flat rolls "indipendentemente dal
+   livello" -- no skill-level scaling, unlike the ground case below.
+3. **Everything else -- freeze-or-slow, by an HP threshold.**
+   `ice_suspension_freeze_threshold(skill_level)` = `min(4 *
+   skill_level, 16)` ("fino a 4 punti ferita per livello... max 16").
+   `ice_suspension_is_frozen(victim_hit_points, skill_level)` is True
+   when the victim's remaining HP is at or below that threshold.
+   - **Frozen**: the caster seizes all magic items the victim isn't
+     currently carrying (`ICE_SUSPENSION_SEIZES_UNCARRIED_MAGIC_ITEMS
+     = True` -- a confirmed, sourced fact recorded with no consuming
+     code yet, the same "confirmed fact, no formula to hook into"
+     scoping Invisibility's own Steal bonus used, Phase 186; this
+     project's item-ownership registry, Phase 140, tracks *who holds
+     what* but has no "seize an item the holder isn't carrying"
+     transfer operation to wire this into). The caster then chooses
+     between fleeing (`ICE_SUSPENSION_FROZEN_FLEE_ALWAYS_SUCCEEDS =
+     True`, the same always-succeeds pattern Charm's own Flee
+     established, Phase 183) or waiting for the ice to melt
+     (`ICE_SUSPENSION_FROZEN_BONUS_ROUNDS = 3`, a fixed count, no
+     roll) -- which of the two the caster picks is a tactical
+     decision for whatever future orchestration layer calls this, not
+     something this module decides.
+   - **Slowed** (not frozen): `ice_suspension_slowed_bonus_rounds(
+     victim_hit_points, skill_level)` = `floor(4 * threshold /
+     victim_hit_points)`, where `threshold` is the same freeze
+     threshold above. **This formula was reverse-engineered from the
+     user's own worked example and confirmed directly via
+     `AskUserQuestion`** -- the example as literally written ("16
+     punti ferita... livello 1... 16 diviso 4, fa ovviamente 1") is
+     arithmetically inconsistent (16/4 = 4, not 1), but `floor(4 *
+     min(4*1, 16) / 16)` = `floor(16/16)` = `1` reproduces the stated
+     result exactly, and the user confirmed this is the intended
+     formula. Only meaningful when the victim is *not* frozen (the
+     precondition `victim_hit_points > threshold` guarantees the
+     result is naturally in [0, 3], matching "da 1 a 3" as the typical
+     non-zero case, with 0 explicitly allowed per "se questa divisione
+     è 0 virgola non ci sono round supplementari d'attacco").
 """
 
 from __future__ import annotations
@@ -952,6 +1034,89 @@ def roll_fireball_damage(skill_level: int, rng: random.Random, *, target_is_immu
 
     effective_level = min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)
     return rng.randint(*FIREBALL_DAMAGE_RANGE) + FIREBALL_DAMAGE_PER_LEVEL * effective_level
+
+
+# Ice Suspension [IC], module docstring's own Phase 189 addendum --
+# project-original, user-supplied. The ground-target freeze/slow
+# branch: "fino a 4 punti ferita per livello... (max 16)".
+ICE_SUSPENSION_FREEZE_POINTS_PER_LEVEL = 4
+ICE_SUSPENSION_FREEZE_THRESHOLD_CAP = 16
+
+# "potrà scegliere tra fuggire (con successo automatico)" -- same
+# always-succeeds pattern as CHARM_FLEE_ALWAYS_SUCCEEDS (Phase 183),
+# a separate constant since it is this spell's own confirmed fact.
+ICE_SUSPENSION_FROZEN_FLEE_ALWAYS_SUCCEEDS = True
+
+# "guadagnerà 3 round supplementari d'attacco" -- fixed, no roll.
+ICE_SUSPENSION_FROZEN_BONUS_ROUNDS = 3
+
+# "il mago elementale si impossesserà di tutti gli oggetti magici che
+# la vittima non porta con sé al momento" -- a confirmed, sourced fact
+# with no consuming code yet (this project's item-ownership registry,
+# Phase 140, has no "seize an item its holder isn't carrying" transfer
+# operation to hook into).
+ICE_SUSPENSION_SEIZES_UNCARRIED_MAGIC_ITEMS = True
+
+# The flying-monster branch: flat rolls, "indipendentemente dal
+# livello nella magia" -- no skill-level scaling.
+ICE_SUSPENSION_FLYING_CRASH_DAMAGE_RANGE = (5, 10)
+ICE_SUSPENSION_FLYING_BONUS_ROUNDS_RANGE = (1, 3)
+
+
+def ice_suspension_freeze_threshold(skill_level: int) -> int:
+    """"fino a 4 punti ferita per livello di magia elementare... (max
+    16)" -- the maximum remaining HP a target can have and still be
+    frozen solid, capped at 16 regardless of how high the caster's own
+    skill level climbs.
+    """
+
+    return min(ICE_SUSPENSION_FREEZE_POINTS_PER_LEVEL * skill_level, ICE_SUSPENSION_FREEZE_THRESHOLD_CAP)
+
+
+def ice_suspension_is_frozen(victim_hit_points: int, skill_level: int) -> bool:
+    """True when the victim's remaining HP is at or below this
+    caster's own ``ice_suspension_freeze_threshold()`` -- the target is
+    fully encased and helpless. False means the "slowed" branch
+    applies instead (see ``ice_suspension_slowed_bonus_rounds()``).
+    """
+
+    return victim_hit_points <= ice_suspension_freeze_threshold(skill_level)
+
+
+def ice_suspension_slowed_bonus_rounds(victim_hit_points: int, skill_level: int) -> int:
+    """The "rallentato" branch's bonus-attack-round count: ``floor(4 *
+    threshold / victim_hit_points)``, where ``threshold`` is this
+    caster's own ``ice_suspension_freeze_threshold()``. Reverse-
+    engineered from the user's own worked example (16 HP remaining,
+    skill level 1 -> 1 bonus round: ``floor(4 * 4 / 16)`` = 1) and
+    confirmed directly by the user via ``AskUserQuestion``, since the
+    example as literally stated ("16 diviso 4, fa ovviamente 1") is
+    arithmetically inconsistent taken at face value. Only meaningful
+    when ``ice_suspension_is_frozen()`` is False for the same inputs --
+    that precondition (``victim_hit_points > threshold``) is what keeps
+    the result naturally within [0, 3].
+    """
+
+    threshold = ice_suspension_freeze_threshold(skill_level)
+    return (ICE_SUSPENSION_FREEZE_POINTS_PER_LEVEL * threshold) // victim_hit_points
+
+
+def roll_ice_suspension_flying_crash_damage(rng: random.Random) -> int:
+    """The flying-monster branch's crash damage: "da 5 a 10 punti
+    danno (la creatura si schianta al suolo)" -- flat, no skill-level
+    scaling.
+    """
+
+    return rng.randint(*ICE_SUSPENSION_FLYING_CRASH_DAMAGE_RANGE)
+
+
+def roll_ice_suspension_flying_bonus_rounds(rng: random.Random) -> int:
+    """The flying-monster branch's bonus-attack-round count: "da 1 a 3
+    round supplementari d'attacco (indipendentemente dal livello nella
+    magia)" -- flat, no skill-level scaling.
+    """
+
+    return rng.randint(*ICE_SUSPENSION_FLYING_BONUS_ROUNDS_RANGE)
 
 
 @dataclass(slots=True)

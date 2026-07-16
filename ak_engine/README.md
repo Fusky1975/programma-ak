@@ -7117,7 +7117,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     60%-reduction cap, clamping at both 0% and 100%, and the no-roll
     convention at both ends plus a real in-between roll. Full suite:
     2331 passed (2323 unchanged + 8 new).
-- **Phase 188 (current)**: Fireball [FI], tied to `Ability.ELEMENTAL`.
+- **Phase 188**: Fireball [FI], tied to `Ability.ELEMENTAL`.
   Quoted in full: "Fireball [FI] (Incantesimo di Combattimento
   Individuale): se usato in un combattimento, provoca da 1 a 8 punti
   danno, più 1 punto danno per livello (max 4). Questo incantesimo è
@@ -7155,6 +7155,74 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     behaves identically to level 4), and the immune-target
     zero-no-roll case. Full suite: 2337 passed (2331 unchanged + 6
     new).
+- **Phase 189 (current)**: Ice Suspension [IC], tied to `Ability.
+  ELEMENTAL`. Quoted in full: "chi lo lancia rinchiude la sua vittima
+  in un guscio magico di ghiaccio che lo blocca o lo rallenta per
+  alcuni round. Può rimanere bloccato un mostro o un Eroe a cui restano
+  fino a 4 punti ferita per livello di magia elementare di chi lancia
+  l'incantesimo. (max 16)... il mago elementale si impossesserà di
+  tutti gli oggetti magici che la vittima non porta con sé al momento
+  e potrà scegliere tra fuggire (con successo automatico) o attendere
+  che il ghiaccio si sciolga a sufficienza da permettere alla vittima
+  di liberarsi. In questo caso guadagnerà 3 round supplementari
+  d'attacco... Se l'incantesimo non blocca il bersaglio, quest'ultimo
+  verrà rallentato. Il mago guadagnerà così da 1 a 3 round
+  supplementari d'attacco, a seconda di quanta parte del corpo del
+  mostro è racchiusa nel ghiaccio... Questo incantesimo è inefficace
+  contro fantasmi, demoni e simili [Spectre, Genie, Balrog Demon,
+  Marilith Demon, Succubus, Rakshasha, Ice Devil, Bone Devil, Imp,
+  Ghost, Banshee]... e funziona in maniera differente contro mostri
+  volanti [Vampire, Giant Wasp, Beholder, Green Dragon, Gold Dragon,
+  Silver Dragon, Black Dragon, Red Dragon, Giant Eagle, Couatl, Roc,
+  Gargoyle, Gryphon]. Contro questi provocherà da 5 a 10 punti danno
+  (la creatura si schianta al suolo) e darà a chi ha lanciato
+  l'incantesimo da 1 a 3 round supplementari d'attacco (indipendentemente
+  dal livello nella magia)." By far the most branching Personal-Combat
+  spell so far -- three mutually-exclusive outcomes selected by the
+  target's own type, not by a single roll.
+  - `models/monster.py`: new `ICE_SUSPENSION_IMMUNE_MONSTERS` (11
+    species, partial-materiality creatures) and `ICE_SUSPENSION_FLYING_
+    MONSTERS` (13 species) -- both kept spell-prefixed, unlike Phase
+    188's `SUBMARINE_MONSTERS` unification, since no other spell in
+    this project references "partial materiality" or "flying" yet.
+    Confirmed mutually exclusive (no species in both).
+  - `turn/encounter.py`: `ice_suspension_freeze_threshold(skill_level)`
+    = `min(4 * skill_level, 16)`; `ice_suspension_is_frozen(victim_hp,
+    skill_level)` checks whether the victim's remaining HP is at or
+    below that threshold. If frozen: `ICE_SUSPENSION_SEIZES_UNCARRIED_
+    MAGIC_ITEMS = True` (a confirmed fact with no consuming code yet --
+    this project's item-ownership registry, Phase 140, has no "seize
+    an item its holder isn't carrying" operation), and the caster picks
+    between `ICE_SUSPENSION_FROZEN_FLEE_ALWAYS_SUCCEEDS = True` (same
+    always-succeeds pattern as Charm's Flee, Phase 183) or waiting for
+    `ICE_SUSPENSION_FROZEN_BONUS_ROUNDS = 3` (fixed, no roll). If not
+    frozen ("rallentato"): `ice_suspension_slowed_bonus_rounds(
+    victim_hp, skill_level)` = `floor(4 * threshold / victim_hp)`. For
+    flying monsters: `roll_ice_suspension_flying_crash_damage()` (5-10)
+    and `roll_ice_suspension_flying_bonus_rounds()` (1-3), both flat,
+    no skill-level scaling.
+  - **The slowed-bonus-rounds formula was reverse-engineered and
+    confirmed via `AskUserQuestion`.** The user's own worked example
+    (16 HP remaining, skill level 1 -> 1 bonus round, "16 diviso 4, fa
+    ovviamente 1") is arithmetically inconsistent taken literally
+    (16/4 = 4, not 1). `floor(4 * threshold / victim_hp)` with
+    `threshold = min(4*1, 16) = 4` gives `floor(16/16) = 1`, reproducing
+    the stated result exactly; the user confirmed this is the intended
+    formula rather than a simpler level-only alternative also offered.
+  - **Caller-side branch selection, not a `target_is_immune` flag.**
+    Unlike Telekinetic Storm/Fireball (Phase 185/188), which each have
+    one damage formula with a boolean suppress flag, Ice Suspension has
+    three genuinely different formulas selected by monster type -- so
+    the immune/flying checks are meant to happen in the future calling
+    code (which function to call), not threaded through every
+    function's own signature.
+  - 15 new tests: `tests/test_monster.py` (+3 -- both species lists
+    match the user's own lists exactly, plus mutual-exclusivity),
+    `tests/test_encounter.py` (+12 -- the freeze threshold's level
+    scaling and cap, the frozen/not-frozen boundary, all four
+    frozen-branch constants, the slowed-bonus-rounds formula against
+    the user's own example plus boundary cases, and both flying-branch
+    roll ranges). Full suite: 2352 passed (2337 unchanged + 15 new).
 
 ## Setup
 

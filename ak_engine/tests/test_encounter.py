@@ -17,6 +17,13 @@ from ak_engine.turn.encounter import (
     CHARM_FLEE_ALWAYS_SUCCEEDS,
     FIREBALL_DAMAGE_PER_LEVEL,
     FIREBALL_DAMAGE_RANGE,
+    ICE_SUSPENSION_FLYING_BONUS_ROUNDS_RANGE,
+    ICE_SUSPENSION_FLYING_CRASH_DAMAGE_RANGE,
+    ICE_SUSPENSION_FREEZE_POINTS_PER_LEVEL,
+    ICE_SUSPENSION_FREEZE_THRESHOLD_CAP,
+    ICE_SUSPENSION_FROZEN_BONUS_ROUNDS,
+    ICE_SUSPENSION_FROZEN_FLEE_ALWAYS_SUCCEEDS,
+    ICE_SUSPENSION_SEIZES_UNCARRIED_MAGIC_ITEMS,
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
     INVISIBILITY_STEAL_ATTEMPT_BONUS,
     MIRROR_IMAGE_DISBELIEF_BASE_CHANCE,
@@ -38,6 +45,9 @@ from ak_engine.turn.encounter import (
     fire_arrow_free_attacks,
     fire_arrow_hit_chance,
     holy_symbol_hit_chance,
+    ice_suspension_freeze_threshold,
+    ice_suspension_is_frozen,
+    ice_suspension_slowed_bonus_rounds,
     invisibility_reduced_hit_chance,
     mirror_image_disbelief_chance,
     resolve_fire_arrow_duel,
@@ -47,6 +57,8 @@ from ak_engine.turn.encounter import (
     roll_holy_symbol_undead_damage,
     resolve_mirror_image_disbelief,
     roll_fireball_damage,
+    roll_ice_suspension_flying_bonus_rounds,
+    roll_ice_suspension_flying_crash_damage,
     roll_melee_attack,
     roll_psychic_blast_stun_rounds,
     roll_telekinetic_storm_caster_damage,
@@ -745,3 +757,71 @@ def test_roll_fireball_damage_immune_target_returns_zero_without_a_roll():
     # Immune (submarine monster) -- no roll consumed at all.
     rng = ScriptedRandom([])
     assert roll_fireball_damage(4, rng, target_is_immune=True) == 0
+
+
+# -- Phase 189: Ice Suspension [IC] --
+
+
+def test_ice_suspension_freeze_points_per_level_constant():
+    assert ICE_SUSPENSION_FREEZE_POINTS_PER_LEVEL == 4
+
+
+def test_ice_suspension_freeze_threshold_scales_with_level_up_to_the_cap():
+    assert ice_suspension_freeze_threshold(1) == 4
+    assert ice_suspension_freeze_threshold(2) == 8
+    assert ice_suspension_freeze_threshold(3) == 12
+    assert ice_suspension_freeze_threshold(4) == 16
+    assert ice_suspension_freeze_threshold(5) == 16  # capped
+    assert ICE_SUSPENSION_FREEZE_THRESHOLD_CAP == 16
+
+
+def test_ice_suspension_is_frozen_true_at_or_below_threshold():
+    assert ice_suspension_is_frozen(4, 1) is True  # exactly at threshold
+    assert ice_suspension_is_frozen(3, 1) is True  # below threshold
+    assert ice_suspension_is_frozen(5, 1) is False  # above threshold
+
+
+def test_ice_suspension_frozen_flee_always_succeeds_constant():
+    assert ICE_SUSPENSION_FROZEN_FLEE_ALWAYS_SUCCEEDS is True
+
+
+def test_ice_suspension_frozen_bonus_rounds_constant():
+    assert ICE_SUSPENSION_FROZEN_BONUS_ROUNDS == 3
+
+
+def test_ice_suspension_seizes_uncarried_magic_items_constant():
+    assert ICE_SUSPENSION_SEIZES_UNCARRIED_MAGIC_ITEMS is True
+
+
+def test_ice_suspension_slowed_bonus_rounds_matches_the_user_supplied_example():
+    # 16 HP remaining, caster skill level 1 -> 1 bonus round. Reverse-
+    # engineered and confirmed via AskUserQuestion (see module docstring).
+    assert ice_suspension_slowed_bonus_rounds(16, 1) == 1
+
+
+def test_ice_suspension_slowed_bonus_rounds_stays_within_zero_to_three():
+    # Just above the freeze threshold (16), the fraction approaches but
+    # never reaches 1, so floor(4*16/17) = 3 is the practical ceiling.
+    assert ice_suspension_slowed_bonus_rounds(17, 4) == 3
+    # A victim with far more HP than the threshold yields 0 (no bonus).
+    assert ice_suspension_slowed_bonus_rounds(1000, 1) == 0
+
+
+def test_ice_suspension_flying_crash_damage_range_constant():
+    assert ICE_SUSPENSION_FLYING_CRASH_DAMAGE_RANGE == (5, 10)
+
+
+def test_ice_suspension_flying_bonus_rounds_range_constant():
+    assert ICE_SUSPENSION_FLYING_BONUS_ROUNDS_RANGE == (1, 3)
+
+
+def test_roll_ice_suspension_flying_crash_damage_stays_within_range():
+    for scripted in (0.0, 0.5, 0.999):
+        damage = roll_ice_suspension_flying_crash_damage(ScriptedRandom([scripted]))
+        assert 5 <= damage <= 10
+
+
+def test_roll_ice_suspension_flying_bonus_rounds_stays_within_range():
+    for scripted in (0.0, 0.5, 0.999):
+        rounds = roll_ice_suspension_flying_bonus_rounds(ScriptedRandom([scripted]))
+        assert 1 <= rounds <= 3

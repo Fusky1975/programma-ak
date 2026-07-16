@@ -10,6 +10,8 @@ from ak_engine.models.monster import (
     MONSTER_MAGIC_ABILITIES,
     MONSTER_NAMES,
     MONSTER_STATS,
+    ICE_SUSPENSION_FLYING_MONSTERS,
+    ICE_SUSPENSION_IMMUNE_MONSTERS,
     SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS,
     SPIRITWRACK_MECHANICAL_MONSTERS,
     SPIRITWRACK_UNDEAD_MONSTERS,
@@ -353,3 +355,44 @@ def test_submarine_monsters_overlaps_but_is_not_identical_to_animal_intelligence
     assert overlap == {Monster.ELASMOSAURUS, Monster.GI_OCTOPUS, Monster.GI_CLAM, Monster.GW_WHALE}
     assert Monster.MERMAID in SUBMARINE_MONSTERS
     assert Monster.MERMAID not in SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
+
+
+# -- Phase 189: Ice Suspension's two classification axes --
+
+
+def test_ice_suspension_immune_monsters_matches_the_user_supplied_list():
+    assert ICE_SUSPENSION_IMMUNE_MONSTERS == {
+        Monster.SPECTRE,
+        Monster.GENIE,
+        Monster.BAL_DEMON,
+        Monster.MAR_DEMON,
+        Monster.SUCCUBUS,
+        Monster.RAKSHASHA,
+        Monster.ICE_DEVIL,
+        Monster.BONE_DEVIL,
+        Monster.IMP,
+        Monster.GHOST,
+        Monster.BANSHEE,
+    }
+
+
+def test_ice_suspension_flying_monsters_matches_the_user_supplied_list():
+    assert ICE_SUSPENSION_FLYING_MONSTERS == {
+        Monster.VAMPIRE,
+        Monster.GI_WASP,
+        Monster.BEHOLDER,
+        Monster.GR_DRAGON,
+        Monster.GO_DRAGON,
+        Monster.S_DRAGON,
+        Monster.B_DRAGON,
+        Monster.R_DRAGON,
+        Monster.GI_EAGLE,
+        Monster.COUATL,
+        Monster.ROC,
+        Monster.GARGOYLE,
+        Monster.GRYPHON,
+    }
+
+
+def test_ice_suspension_immune_and_flying_monsters_are_mutually_exclusive():
+    assert not (ICE_SUSPENSION_IMMUNE_MONSTERS & ICE_SUSPENSION_FLYING_MONSTERS)

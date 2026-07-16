@@ -278,6 +278,27 @@ outcome even when a future spell might care about only one), a single
 shared, non-prefixed `SUBMARINE_MONSTERS` is the right call here: two
 spells now genuinely mean the identical real-world category, not two
 merely-overlapping ones.
+
+**Phase 189 addendum -- Ice Suspension [IC]'s two classification axes.**
+`turn/encounter.py`'s Ice Suspension spell (Phase 189 addendum there)
+branches on target type before applying any freeze/slow formula:
+
+- `ICE_SUSPENSION_IMMUNE_MONSTERS`: "fantasmi, demoni e simili...
+  perché queste creature esistono solo parzialmente nel mondo
+  materiale" -- Spectre, Genie, Balrog Demon, Marilith Demon, Succubus,
+  Rakshasha, Ice Devil, Bone Devil, Imp, Ghost, Banshee.
+- `ICE_SUSPENSION_FLYING_MONSTERS`: "mostri volanti" -- Vampire, Giant
+  Wasp, Beholder, Green/Gold/Silver/Black/Red Dragon, Giant Eagle,
+  Couatl, Roc, Gargoyle, Gryphon.
+
+Both are spell-prefixed, following Phase 182's own convention (kept
+separate axes even where they might partially overlap with existing
+sets) rather than Phase 188's shared-set exception: no other spell in
+this project references "partial materiality" or "flying" as a
+category yet, so there is nothing to unify with. The two sets are
+mutually exclusive (verified: no species appears in both), consistent
+with the spell's own three-way branch (immune / flying / everything
+else) never needing to resolve an overlap.
 """
 
 from __future__ import annotations
@@ -730,6 +751,45 @@ SUBMARINE_MONSTERS: frozenset[Monster] = frozenset(
         Monster.GI_CLAM,
         Monster.GW_WHALE,
         Monster.MERMAID,
+    }
+)
+
+
+# Phase 189 -- project-original, user-supplied while defining
+# turn/encounter.py's Ice Suspension [IC] spell. See module docstring's
+# own Phase 189 addendum for why this stays spell-prefixed (unlike
+# Phase 188's SUBMARINE_MONSTERS unification).
+ICE_SUSPENSION_IMMUNE_MONSTERS: frozenset[Monster] = frozenset(
+    {
+        Monster.SPECTRE,
+        Monster.GENIE,
+        Monster.BAL_DEMON,
+        Monster.MAR_DEMON,
+        Monster.SUCCUBUS,
+        Monster.RAKSHASHA,
+        Monster.ICE_DEVIL,
+        Monster.BONE_DEVIL,
+        Monster.IMP,
+        Monster.GHOST,
+        Monster.BANSHEE,
+    }
+)
+
+ICE_SUSPENSION_FLYING_MONSTERS: frozenset[Monster] = frozenset(
+    {
+        Monster.VAMPIRE,
+        Monster.GI_WASP,
+        Monster.BEHOLDER,
+        Monster.GR_DRAGON,
+        Monster.GO_DRAGON,
+        Monster.S_DRAGON,
+        Monster.B_DRAGON,
+        Monster.R_DRAGON,
+        Monster.GI_EAGLE,
+        Monster.COUATL,
+        Monster.ROC,
+        Monster.GARGOYLE,
+        Monster.GRYPHON,
     }
 )
 
