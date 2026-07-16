@@ -7478,7 +7478,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     (+1 -- `magically_hidden`'s explicit-True case, plus a default-value
     assertion added to the existing defaults test). Full suite: 2393
     passed (2383 unchanged + 10 new).
-- **Phase 194 (current)**: Gate Angel -- the first of 10 "secret" spells
+- **Phase 194**: Gate Angel -- the first of 10 "secret" spells
   (ordinals 25-34, outside the 25 documented `Spell` members) to get
   real execution, and the first spell text the user supplied directly
   rather than via Regolamento AK.txt. Quoted in full: '"GATE ANGEL"
@@ -7545,6 +7545,72 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     each sharing the Good/Evil cooldown bucket, and a failed roll
     touching no state at all. Full suite: 2400 passed (2393 unchanged +
     7 new).
+- **Phase 195 (current)**: corrects Gate Angel's Phase 194 mechanic with
+  the real VALHALLA rules, which the user supplied in full in a
+  follow-up message (quoted in the module docstring's own "Phase 195
+  addendum"). Two Phase 194 design errors, both now fixed:
+  - **The "per-alignment independent 5-turn cooldown" was wrong.** The
+    real rule is a *rotating exclusion cycle* over exactly 5 alignments
+    -- "Ciascun allineamento da Buono a Malvagio (quindi non Divine o
+    Undead) riceverà una visita una volta ogni cinque turni." New
+    `GATE_ANGEL_ELIGIBLE_ALIGNMENTS = (GOOD, DRUID, NEUTRAL, PAGAN,
+    EVIL)` -- exactly the 5 `Alignment` members strictly between
+    `DIVINE` and `UNDEAD` in `models/alignment.py`'s own
+    `ALIGNMENT_ORDINAL` table. New `_gate_angel_due_alignment()` lazily
+    picks (and caches per `turn_number`, via new `GameState.
+    gate_angel_due_alignment`/`gate_angel_due_alignment_turn`) which
+    alignment is due the first time any Gate Angel cast is attempted
+    each turn, tracking already-used alignments in `GameState.
+    gate_angel_cycle_visited` (cleared once all 5 are used) -- matching
+    the user's own worked example turn-by-turn.
+  - **Divine and Undead kingdoms never receive a visit at all** -- "I re
+    Non-Morti e Divini possono entrare nel Vahlalla come Buoni o
+    Malvagi, ma non ricevono visite dal Vahlalla" is unconditional,
+    contradicting a literal reading of Gate Angel's own spell text
+    ("Divine kingdoms are treated as Good, and Undead as Evil") as
+    meaning they share the Good/Evil visit slot. That phrase instead
+    describes which Valhalla roster a Divine/Undead King's *own* future
+    legendary character joins if *they* personally achieve entry -- a
+    fact about Valhalla's membership, not about who can receive a
+    visit. Since `GATE_ANGEL_ELIGIBLE_ALIGNMENTS` never contains
+    `DIVINE`/`UNDEAD`, this falls out automatically (their casts always
+    fail with "not this alignment's turn for a Valhalla visit"), no
+    special-case needed. `_gate_angel_alignment_group()` (the Phase 194
+    folding helper) is removed.
+  - **Tie-breaking is now genuinely random**, via reservoir sampling
+    (new `_gate_angel_register_candidate()`): every due-alignment caster
+    whose own roll succeeds is a candidate, and each new candidate
+    replaces `GameState.last_gate_angel_kingdom`/`last_gate_angel_turn`
+    with probability `1/N` (`N` = candidates seen so far this turn) --
+    a single-pass algorithm giving a uniformly random winner among all
+    of a turn's candidates, honoring "se c'è più di un giocatore in un
+    allineamento, la scelta verrà fatta a caso" without needing new
+    end-of-turn batch-resolution machinery (superseding Phase 194's
+    "first-come-first-served" compromise). `CastExecutionResult.
+    applied=True` now means "this cast's own roll succeeded and it
+    entered the drawing," not necessarily "this kingdom's hero is the
+    one that arrived" -- the authoritative fact is `last_gate_angel_
+    kingdom` once the turn's whole dispatch completes, the same
+    distinction this project's contested-province Move orders already
+    draw.
+  - **Confirmed but still out of scope**, cited in the module docstring
+    for a future phase: the actual Valhalla hero roster (5 per-alignment
+    files of named heroes, not yet supplied -- the user's own plan),
+    the fixed leader id `#199` every visitor always gets, spawning
+    "beside the King" (`is_king=True` among the winning kingdom's
+    leaders), the visitor's fixed non-transferable magic item, the
+    escalating per-visit action allowance (this project has no
+    plan-authoring system to enforce it against), the one-Practice-
+    phase-only limit, spell-immunity except Resurrection, army hand-off
+    to the lowest-numbered leader (or adjacent garrison commander) on
+    departure, and turn-deadline voiding.
+  - Replaced all 7 of Phase 194's original Gate Angel tests in
+    `tests/test_cast_execution.py` with 9 matching the corrected
+    mechanic: matching/non-matching alignment, due-alignment caching
+    across same-turn casts, Divine/Undead never matching, reservoir-
+    sampling swap winning and losing, the 5-turn cycle resetting, and a
+    failed roll touching no state. Full suite: 2402 passed (2393
+    pre-Gate-Angel baseline + these 9).
 
 ## Setup
 

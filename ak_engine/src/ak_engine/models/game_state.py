@@ -118,31 +118,52 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   a turn boundary, same "caller's job to reset" convention as
   ``oratory_boosted_this_turn``.
 
-**``GameState.last_gate_angel_turn``/``last_gate_angel_kingdom``/
-``gate_angel_alignment_cooldown`` (Gate Angel, Phase 194)**: a secret
-spell (``AdvancedAbility.GATE_ANGEL_SPELL``, ordinal 25, outside the 25
-documented ``Spell`` members) whose rule text the user supplied
-directly. "Only one Valhalla hero can visit the world during a turn" is
-a *global* lock (unlike every other per-turn flag in this dataclass,
-which is scoped to one leader/army/province) -- ``last_gate_angel_turn``
-records the turn number a hero last arrived, for any kingdom, and is
-self-cleaning by comparison against ``turn_number`` (no separate reset
-needed, unlike ``oratory_boosted_this_turn``). ``last_gate_angel_kingdom``
-records which kingdom received it, for reference only. "Each alignment
-from Good to Evil can still be visited only once in each 5-turn period"
-is modeled as ``gate_angel_alignment_cooldown``, keyed by
-``turn/cast_execution.py``'s own ``_gate_angel_alignment_group()``
-(folding ``Alignment.DIVINE`` into ``GOOD`` and ``Alignment.UNDEAD``
-into ``EVIL`` per the rule's own wording -- every other alignment keeps
-its own bucket), valued with the turn number of that group's last
-successful visit. **No new ``LeaderState`` is synthesized for the
-arriving hero** -- this project has no character-generation system
-(name/race/skills/starting stats all unsourced), so only the confirmed
-lock/cooldown state is modeled, the same "model the confirmed effect,
-defer the consuming/generating system" pattern as
-``clairvoyance_watchers`` above. See ``turn/cast_execution.py``'s own
-module docstring ("Secret spells" section) for the full rule text and
-design rationale.
+**Gate Angel / VALHALLA fields (Phase 194, corrected Phase 195)**: a
+secret spell (``AdvancedAbility.GATE_ANGEL_SPELL``, ordinal 25, outside
+the 25 documented ``Spell`` members) whose rule text the user supplied
+directly, then substantially extended in a follow-up message describing
+the real VALHALLA mechanic it draws its hero from. See ``turn/
+cast_execution.py``'s own module docstring ("Secret spells" section)
+for the full rule text and design rationale; summarized here:
+
+- ``gate_angel_cycle_visited: set[Alignment]``: which of the 5
+  ``turn/cast_execution.py GATE_ANGEL_ELIGIBLE_ALIGNMENTS`` (Good,
+  Druid, Neutral, Pagan, Evil -- explicitly *not* Divine or Undead,
+  per "Ciascun allineamento da Buono a Malvagio (quindi non Divine o
+  Undead)... I re Non-Morti e Divini... non ricevono visite dal
+  Vahlalla") have already been visited in the current 5-turn rotation
+  cycle; cleared once all 5 have had their turn.
+- ``gate_angel_due_alignment``/``gate_angel_due_alignment_turn``: this
+  turn's randomly-chosen due alignment (see
+  ``_gate_angel_due_alignment()``), cached once per ``turn_number`` so
+  multiple same-turn casters all see the same answer -- **replaces**
+  Phase 194's original ``gate_angel_alignment_cooldown: dict[Alignment,
+  int]`` (an independent-per-alignment 5-turn cooldown), which modeled
+  the wrong mechanic; the real rule is a rotating *exclusion* cycle
+  over exactly 5 alignments, not an independent cooldown per alignment,
+  and Divine/Undead never participate at all (not "folded into"
+  Good/Evil's own slot, as Phase 194 had incorrectly modeled).
+- ``gate_angel_candidates_this_turn: int``: reservoir-sampling counter
+  (see ``_gate_angel_register_candidate()``) -- how many successful
+  due-alignment casters have been seen so far this turn, used to give
+  every one of them a uniformly random ``1/N`` chance of being *the*
+  visit, honoring "se c'è più di un giocatore in un allineamento, la
+  scelta verrà fatta a caso" / "If more than one player casts the Gate
+  Angel spell, one of the spells will be nullified" without new
+  end-of-turn batch-resolution machinery.
+- ``last_gate_angel_turn``/``last_gate_angel_kingdom``: the *current*
+  reservoir winner -- unlike every other per-turn flag in this
+  dataclass (each scoped to one leader/army/province), this is a
+  genuinely *global* fact, and may be overwritten more than once within
+  a single turn as later candidates win the reservoir swap; the value
+  after a turn's dispatch fully completes is authoritative.
+
+**No new ``LeaderState`` is synthesized for the arriving hero** -- this
+project has no character-generation system (name/race/skills/starting
+stats all unsourced; the user's own plan is 5 per-alignment roster
+files not yet supplied), so only the confirmed lock/rotation state is
+modeled, the same "model the confirmed effect, defer the consuming/
+generating system" pattern as ``clairvoyance_watchers`` above.
 
 **``GameState.battle_graveyard`` (Phase 60)**: rulebook (Regolamento
 AK.txt [4.25.1]/addendum): Skeletal Army needs to know "an army was
@@ -356,23 +377,25 @@ class GameState:
     # own docstring for the RUMORS.PAS Add_Tr/treaslist/trowner/trcharges
     # source and its deliberate leader-only scope.
     items: dict[int, ItemInstance] = field(default_factory=dict)
-    # Gate Angel (Phase 194) -- see module docstring. The global
-    # once-per-turn Valhalla-visit lock: None = no hero has ever arrived;
-    # otherwise the turn_number a hero last arrived, for any kingdom.
-    # Self-cleaning via comparison against turn_number, unlike
-    # oratory_boosted_this_turn -- no separate reset needed.
+    # Gate Angel / VALHALLA (Phase 194, corrected Phase 195) -- see module
+    # docstring. The current reservoir-sampling winner: which kingdom
+    # gets this turn's Valhalla visit, and when. May be overwritten
+    # more than once within a single turn as later candidates win the
+    # swap -- the value once a turn's dispatch fully completes is
+    # authoritative.
     last_gate_angel_turn: int | None = None
-    # Gate Angel (Phase 194): which kingdom received that hero, paired
-    # with the field above purely for report/debugging purposes -- not
-    # consumed by any other code yet.
     last_gate_angel_kingdom: int | None = None
-    # Gate Angel (Phase 194): "Each alignment from Good to Evil can still
-    # be visited only once in each 5-turn period" -- keyed by the
-    # Gate-Angel alignment group (turn/cast_execution.py's
-    # _gate_angel_alignment_group(), which folds Divine into Good and
-    # Undead into Evil per the rule's own wording), valued with the turn
-    # number of that group's last successful visit.
-    gate_angel_alignment_cooldown: dict[Alignment, int] = field(default_factory=dict)
+    # Which of the 5 GATE_ANGEL_ELIGIBLE_ALIGNMENTS have already had
+    # their turn in the current 5-turn rotation cycle -- cleared once
+    # all 5 have been used.
+    gate_angel_cycle_visited: set[Alignment] = field(default_factory=set)
+    # This turn's due alignment, decided (and cached) the first time any
+    # Gate Angel cast is attempted that turn.
+    gate_angel_due_alignment: Alignment | None = None
+    gate_angel_due_alignment_turn: int | None = None
+    # Reservoir-sampling counter: how many successful due-alignment
+    # candidates have been seen so far this turn.
+    gate_angel_candidates_this_turn: int = 0
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
         self.kingdoms[kingdom.kingdom_id] = kingdom

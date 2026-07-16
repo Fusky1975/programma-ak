@@ -868,95 +868,140 @@ def test_hide_feature_fails_when_the_province_is_unknown():
 
 
 # ---------------------------------------------------------------------------
-# Gate Angel (Phase 194) -- user-supplied rule text, one of the 10 secret spells
+# Gate Angel / VALHALLA (Phase 194, corrected Phase 195) -- user-supplied
+# rule text, one of the 10 secret spells. GATE_ANGEL_ELIGIBLE_ALIGNMENTS is
+# (GOOD, DRUID, NEUTRAL, PAGAN, EVIL) in that order, so choice_indices=[0]
+# picks GOOD, [1] picks DRUID, [4] picks EVIL, for the due-alignment draw.
 # ---------------------------------------------------------------------------
 
 
-def test_gate_angel_succeeds_and_sets_the_global_lock_and_alignment_cooldown():
+def test_gate_angel_matching_alignment_succeeds_and_records_the_winner():
     state = build_state()
     assert state.kingdoms[1].alignment is Alignment.GOOD
     request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+    rng = ScriptedRandom([], choice_indices=[0])  # GOOD due -- matches kingdom 1
 
-    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
     assert result.applied is True
-    assert state.last_gate_angel_turn == state.turn_number
+    assert state.gate_angel_due_alignment is Alignment.GOOD
     assert state.last_gate_angel_kingdom == 1
-    assert state.gate_angel_alignment_cooldown[Alignment.GOOD] == state.turn_number
+    assert state.last_gate_angel_turn == state.turn_number
 
 
-def test_gate_angel_second_cast_the_same_turn_is_nullified():
+def test_gate_angel_non_matching_alignment_fails_without_rolling():
     state = build_state()
+    assert state.kingdoms[1].alignment is Alignment.GOOD
     request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
-    first = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
-    assert first.applied is True
+    rng = ScriptedRandom([], choice_indices=[1])  # DRUID due -- not kingdom 1's GOOD
 
-    state.add_leader(LeaderState(78, 2, "Rival Caster", ELSEWHERE))
-    second = execute_cast(state, kingdom_id=2, leader_id=78, request=request)
-
-    assert second.applied is False
-    assert second.reason == "a Valhalla hero already visited this turn"
-
-
-def test_gate_angel_blocked_within_the_5_turn_alignment_cooldown():
-    state = build_state()
-    state.turn_number = 10
-    state.gate_angel_alignment_cooldown[Alignment.GOOD] = 7  # 3 turns ago
-    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
-
-    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
     assert result.applied is False
-    assert result.reason == "this alignment was visited by a Valhalla hero too recently"
+    assert result.reason == "not this alignment's turn for a Valhalla visit"
+    assert state.last_gate_angel_kingdom is None
 
 
-def test_gate_angel_alignment_cooldown_expires_after_5_turns():
+def test_gate_angel_due_alignment_is_cached_for_the_rest_of_the_turn():
     state = build_state()
-    state.turn_number = 12
-    state.gate_angel_alignment_cooldown[Alignment.GOOD] = 7  # exactly 5 turns ago
+    state.kingdoms[2].alignment = Alignment.DRUID
+    state.add_leader(LeaderState(78, 2, "Druid Caster", ELSEWHERE))
     request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+    # Only one choice_indices entry: the due-alignment draw. If the second
+    # cast this turn re-rolled it, ScriptedRandom would raise IndexError.
+    rng = ScriptedRandom([], choice_indices=[1])  # DRUID due
 
-    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+    first = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+    second = execute_cast(state, kingdom_id=2, leader_id=78, request=request, rng=rng)
 
-    assert result.applied is True
+    assert first.applied is False  # kingdom 1 is GOOD, not this turn's DRUID
+    assert second.applied is True  # kingdom 2 is DRUID, matches the cached due alignment
 
 
-def test_gate_angel_divine_kingdom_shares_the_good_cooldown_bucket():
+def test_gate_angel_divine_kingdom_never_receives_a_visit():
     state = build_state()
     state.kingdoms[1].alignment = Alignment.DIVINE
     request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+    rng = ScriptedRandom([], choice_indices=[0])  # GOOD due -- Divine is never eligible
 
-    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
-    assert result.applied is True
-    assert state.gate_angel_alignment_cooldown[Alignment.GOOD] == state.turn_number
-    assert Alignment.DIVINE not in state.gate_angel_alignment_cooldown
+    assert result.applied is False
+    assert result.reason == "not this alignment's turn for a Valhalla visit"
 
 
-def test_gate_angel_undead_kingdom_shares_the_evil_cooldown_bucket():
+def test_gate_angel_undead_kingdom_never_receives_a_visit():
     state = build_state()
     state.kingdoms[1].alignment = Alignment.UNDEAD
     request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+    rng = ScriptedRandom([], choice_indices=[4])  # EVIL due -- Undead is never eligible
 
-    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
-    assert result.applied is True
-    assert state.gate_angel_alignment_cooldown[Alignment.EVIL] == state.turn_number
-    assert Alignment.UNDEAD not in state.gate_angel_alignment_cooldown
+    assert result.applied is False
+    assert result.reason == "not this alignment's turn for a Valhalla visit"
+
+
+def test_gate_angel_reservoir_sampling_second_candidate_can_win():
+    state = build_state()
+    state.kingdoms[2].alignment = Alignment.GOOD
+    state.add_leader(LeaderState(78, 2, "Second Good King", ELSEWHERE))
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+    # [0] = GOOD due-alignment draw; [0] = reservoir swap for the 2nd
+    # candidate (rng.choice(range(2)) == 0 -> swap).
+    rng = ScriptedRandom([], choice_indices=[0, 0])
+
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+    assert state.last_gate_angel_kingdom == 1  # first candidate wins outright, no roll needed
+
+    execute_cast(state, kingdom_id=2, leader_id=78, request=request, rng=rng)
+    assert state.last_gate_angel_kingdom == 2  # the swap hands the visit to the 2nd candidate
+
+
+def test_gate_angel_reservoir_sampling_second_candidate_can_lose():
+    state = build_state()
+    state.kingdoms[2].alignment = Alignment.GOOD
+    state.add_leader(LeaderState(78, 2, "Second Good King", ELSEWHERE))
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+    # [0] = GOOD due-alignment draw; [1] = no swap (rng.choice(range(2)) == 1).
+    rng = ScriptedRandom([], choice_indices=[0, 1])
+
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+    execute_cast(state, kingdom_id=2, leader_id=78, request=request, rng=rng)
+
+    assert state.last_gate_angel_kingdom == 1  # first candidate keeps the win
+
+
+def test_gate_angel_cycle_resets_once_all_5_alignments_are_visited():
+    state = build_state()
+    state.gate_angel_cycle_visited = {
+        Alignment.GOOD,
+        Alignment.DRUID,
+        Alignment.NEUTRAL,
+        Alignment.PAGAN,
+        Alignment.EVIL,
+    }
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+    rng = ScriptedRandom([], choice_indices=[0])  # the sole survivor after the reset
+
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    # cleared (all 5 were already visited), then exactly one freshly consumed
+    assert len(state.gate_angel_cycle_visited) == 1
 
 
 def test_gate_angel_failed_roll_does_not_touch_any_state():
     state = build_state()
     state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 1)  # 30% chance
     request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
-    rng = ScriptedRandom([0.96])  # over the un-bonused 30% White Magic chance
+    rng = ScriptedRandom([0.96], choice_indices=[0])  # GOOD due (matches), roll fails
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
     assert result.applied is False
     assert state.last_gate_angel_turn is None
     assert state.last_gate_angel_kingdom is None
-    assert state.gate_angel_alignment_cooldown == {}
+    assert state.gate_angel_candidates_this_turn == 0
 
 
 # ---------------------------------------------------------------------------
