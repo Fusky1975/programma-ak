@@ -4,13 +4,14 @@ import random
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.enums import Ability, ActionCode
+from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
+from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.move_execution import MoveExecutionResult
@@ -1117,3 +1118,68 @@ def test_build_missed_deadline_turn_leaders_dispatches_cleanly_through_run_turn(
     assert general_p0.action is ActionCode.DEFEND
     assert advisor_p0.action is ActionCode.WAIT
     assert isinstance(advisor_p0.result, NoOpResult)
+
+
+# ---------------------------------------------------------------------------
+# Gate Angel / VALHALLA visit (Phase 199) -- finalize_gate_angel_visit()
+# (Phase 196) wired in after the PHASE_LABELS loop. GATE_ANGEL_ELIGIBLE_
+# ALIGNMENTS is (GOOD, DRUID, NEUTRAL, PAGAN, EVIL), so choice_indices=[0]
+# picks GOOD as the due alignment for turn/cast_execution.py's own draw.
+# ---------------------------------------------------------------------------
+
+
+def _cast_gate_angel_phase(label: str) -> PlanPhase:
+    return PlanPhase(label=label, action=ActionCode.CAST, obj=Spell.GATE_ANGEL.value, extra=[0])
+
+
+def test_run_turn_spawns_a_valhalla_visitor_after_a_successful_gate_angel_cast():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(3, 3)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Caster", location=HexCoord(3, 3), is_king=True))
+    turn_leaders = [TurnLeader(_leader_with_phase(10, "Caster", "P0", _cast_gate_angel_phase("P0")), 1)]
+    # [0] -> due alignment GOOD (matches kingdom 1); [0] -> first GOOD hero (Basil)
+    rng = ScriptedRandom([], choice_indices=[0, 0])
+
+    results = run_turn(turn_leaders, state, board_width=BOARD_WIDTH, rng=rng)
+
+    visit_results = [r for r in results if r.phase_label == "gate-angel-visit"]
+    assert len(visit_results) == 1
+    visitor = visit_results[0].result
+    assert visit_results[0].leader_id == VALHALLA_VISITOR_LEADER_ID
+    assert visit_results[0].action is None
+    assert visitor.leader_id == VALHALLA_VISITOR_LEADER_ID
+    assert visitor.name == VALHALLA_ROSTER[Alignment.GOOD][0].name
+    assert state.leaders[VALHALLA_VISITOR_LEADER_ID] is visitor
+    # Spawned beside kingdom 1's own King (leader 10), per the rulebook.
+    assert visitor.location == HexCoord(3, 3)
+    # The visitor's own fixed item is real ItemInstance state, not just the
+    # LeaderState -- confirms finalize_gate_angel_visit()'s own item grant
+    # flowed through run_turn() end to end.
+    items = state.items_held_by(VALHALLA_VISITOR_LEADER_ID)
+    assert len(items) == 1
+    assert items[0].treasure == VALHALLA_ROSTER[Alignment.GOOD][0].fixed_item
+
+
+def test_run_turn_produces_no_gate_angel_result_when_the_cast_targets_the_wrong_alignment():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(3, 3)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Caster", location=HexCoord(3, 3)))
+    turn_leaders = [TurnLeader(_leader_with_phase(10, "Caster", "P0", _cast_gate_angel_phase("P0")), 1)]
+    # [0] -> due alignment GOOD -- doesn't match kingdom 1's own NEUTRAL
+    rng = ScriptedRandom([], choice_indices=[0])
+
+    results = run_turn(turn_leaders, state, board_width=BOARD_WIDTH, rng=rng)
+
+    assert not [r for r in results if r.phase_label == "gate-angel-visit"]
+    assert VALHALLA_VISITOR_LEADER_ID not in state.leaders
+
+
+def test_run_turn_produces_no_gate_angel_result_when_no_leader_casts_it():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(3, 3)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Caster", location=HexCoord(3, 3)))
+
+    results = run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    assert not [r for r in results if r.phase_label == "gate-angel-visit"]
+    assert VALHALLA_VISITOR_LEADER_ID not in state.leaders

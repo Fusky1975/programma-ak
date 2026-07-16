@@ -7697,7 +7697,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   case moved to Xerxes, the one hero whose "Hannibal's Grimoire" still
   matches no ordinal at all). Full suite: 2419 passed (2418 unchanged +
   1 new).
-- **Phase 198 (current)**: closed `BOOK_TACTICAL`'s own `TREASURE_NAME`
+- **Phase 198**: closed `BOOK_TACTICAL`'s own `TREASURE_NAME`
   gap, the last one below ordinal 93 -- and with it, the last of the
   63 distinct VALHALLA item names left unresolved. The user supplied
   its own description directly ("Hannibal's Grimoire se letto aumenta
@@ -7714,6 +7714,27 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   `finalize_gate_angel_visit()`'s still-real `fixed_item is None`
   branch under test without asserting a false gap against real data.
   Full suite: 2420 passed (2419 unchanged + 1 new).
+- **Phase 199 (current)**: wired `turn/valhalla_execution.py
+  finalize_gate_angel_visit()` (Phase 196, deliberately left unwired at
+  the time) into `turn/turn_processor.py run_turn()` -- the last open
+  item the Gate Angel/Valhalla work had left. Called exactly once, after
+  the `PHASE_LABELS` (P0-P4) loop completes, never inside it: a Gate
+  Angel cast can succeed on any phase, and a later same-turn,
+  same-due-alignment cast can still steal the reservoir-sampling win
+  right up through the last phase (`turn/cast_execution.py`'s own
+  "Phase 195 addendum"), so calling any earlier risks spawning the
+  visitor for a kingdom a later phase's own cast displaces. When a
+  visitor is spawned, one sentinel `PhaseDispatchResult` is appended
+  (`segment_index=-1`, `phase_label="gate-angel-visit"`, `action=None`,
+  `result` the new `LeaderState`) -- the same not-tied-to-a-real-plan-
+  segment convention `_dispatch_contested_rebattles` already uses for
+  `"forced-rebattle"`. No result is appended when no Gate Angel cast
+  succeeded that turn. 3 new tests in `tests/test_turn_processor.py`:
+  a full end-to-end cast-to-visitor-to-granted-item run (confirming the
+  wiring reaches `GameState.items_held_by()`, not just the `LeaderState`
+  shape), a mismatched-alignment cast producing no visit, and an empty
+  turn producing no visit. Full suite: 2423 passed (2420 unchanged + 3
+  new).
 
 ## Setup
 

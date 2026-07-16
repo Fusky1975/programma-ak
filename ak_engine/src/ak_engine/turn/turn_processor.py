@@ -176,6 +176,22 @@ like any real, parsed plan. ``run_turn()`` itself has no "did this
 kingdom submit a move file" detection built in (``GameState`` tracks
 no such timestamp anywhere), so this stays a caller-invoked helper,
 not automatic behavior inside ``run_turn()``.
+
+**GATE ANGEL / VALHALLA VISIT (Phase 199)**: ``turn/valhalla_execution.py
+finalize_gate_angel_visit()`` (Phase 196, deliberately left unwired at
+the time) is now called exactly once, after the ``PHASE_LABELS`` loop
+completes -- never inside it. Its own docstring requires this: a Gate
+Angel cast can succeed on any of P0-P4, and a later same-turn,
+same-due-alignment cast can still steal the reservoir-sampling win
+(``turn/cast_execution.py``'s own "Phase 195 addendum") right up
+through the last phase, so calling it any earlier risks spawning the
+visitor for a kingdom that a later phase's own cast displaces. When a
+visitor is spawned, one sentinel ``PhaseDispatchResult`` is appended
+(``segment_index=-1``, ``phase_label="gate-angel-visit"``,
+``action=None``, ``result`` the new ``LeaderState``) -- the same
+not-tied-to-a-real-plan-segment convention ``_dispatch_contested_rebattles``
+already uses for "forced-rebattle". No result is appended when no Gate
+Angel cast succeeded this turn.
 """
 
 from __future__ import annotations
@@ -215,6 +231,7 @@ from ak_engine.turn.patrol_execution import execute_patrol
 from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail
+from ak_engine.turn.valhalla_execution import finalize_gate_angel_visit
 
 PHASE_LABELS = ("P0", "P1", "P2", "P3", "P4")
 
@@ -431,6 +448,24 @@ def run_turn(
                 target = move_targets.get(index)
                 if target is not None:
                     _apply_defend_battle_loss(defeated_while_defending, reinforced_by_target, target, dispatch_results)
+
+    visitor = finalize_gate_angel_visit(state, rng)
+    if visitor is not None:
+        # Sentinel result, same convention as _dispatch_contested_rebattles:
+        # not tied to any real plan segment. See module docstring's "GATE
+        # ANGEL / VALHALLA VISIT" section for why this runs here, after
+        # every phase, rather than inline with the CAST phase that
+        # triggered it.
+        results.append(
+            PhaseDispatchResult(
+                leader_id=visitor.leader_id,
+                segment_index=-1,
+                phase_label="gate-angel-visit",
+                action=None,
+                result=visitor,
+                error=None,
+            )
+        )
 
     return results
 
