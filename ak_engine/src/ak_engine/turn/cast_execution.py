@@ -1,6 +1,7 @@
 """Executing a Cast order end-to-end (rulebook [3.10]/[4.21]-[4.25]).
 
-Of the 25 base ``Spell``s, 13 get real execution here as of Phase 60:
+Of the 25 base ``Spell``s, 15 get real execution here as of Phase 193
+(13 as of Phase 60):
 
 - **Charm** and **Kill_Enemy** (Phase 29): see their own helpers below.
   Charm gained a real "target must command no armies" precondition and
@@ -23,8 +24,17 @@ Of the 25 base ``Spell``s, 13 get real execution here as of Phase 60:
   addendum rule** ("now also removes dead units from a province,
   10%+10%/level in White Magic") is implemented the same phase, for the
   same reason: it reads/clears the same registry.
+- **Hide_Feature** ([4.23.3]) and **Clairvoyance** ([4.22.3])** (Phase
+  193): see the "Phase 193 addendum" further down for exactly what
+  unblocked each -- the "Still unexecuted" bullets for both spells
+  immediately below are now stale, kept verbatim as the historical
+  record of what blocked them through Phase 192, not deleted, per this
+  project's own "correct via addendum, don't rewrite history"
+  convention.
 
-**Still unexecuted, each for its own documented reason** (12 of the 25):
+**Still unexecuted, each for its own documented reason** (10 of the 25
+as of Phase 193; see the note just above for why the Hide_Feature/
+Clairvoyance entries here are stale):
 
 - **Hide_Feature** ([4.23.3]): targets a "Special Location" in a
   province, but ``models/map.py``'s ``Feature`` is an unpopulated stub
@@ -132,6 +142,53 @@ descriptive flavor text with no new numeric fact to model (the five
 spells per Talent are exactly the ones `_SPELL_ABILITY`/`turn/
 encounter.py`'s own ten Personal-Combat spells already enumerate).
 
+**Phase 193 addendum -- Clairvoyance and Hide_Feature now execute,
+correcting two Phase 60-era blocker claims above:**
+
+1. **Hide_Feature's own "unpopulated `Feature` stub" claim above is
+   stale.** Phase 75 (long before this project reached Hide_Feature)
+   replaced `models/map.py`'s never-populated `Feature` stub with a
+   real, populated model (`models/feature.py`) plus a real
+   `GameState.features`/`features_at(coord)` registry -- nobody
+   circled back to re-attempt this spell once that landed. [4.23.3]'s
+   rulebook section maps to `Ability.ILLUSION` (confirmed by
+   cross-referencing `_SPELL_ABILITY`'s existing `Illus_Terrain`/
+   `Illus_Armies` entries, both drawn from the same [4.23] block).
+   `CastRequest.target` for Hide_Feature only ever decodes to a
+   *province* coordinate (`turn/cast_decode.py PROVINCE_TARGET_SPELLS`
+   -- confirmed against all 108 real sample Cast phases, none carries a
+   feature-instance id the way Illus_Terrain's own `phase.extra[1]`
+   does). Since [3.2] itself says "There can sometimes be more than 1
+   feature in a province," and nothing in the decode layer can name
+   *which* one, `_execute_hide_feature` hides **every** `Feature` at
+   the resolved coordinate -- a deliberate, unsourced judgment call
+   (documented on the function itself), not a guess at a
+   disambiguation mechanism this project has no data to build. Sets
+   the new `Feature.magically_hidden` flag; no consuming Explore/Search
+   discovery-roll reads it yet, the same "spell writes real state,
+   nothing reads it yet" situation as `ProvinceState.illusory_terrain`.
+2. **Clairvoyance's blocker is real, but the "`report/prose.py`'s own
+   Phase 58 docstring" citation above was never accurate** -- a direct
+   read of that docstring confirms the phrase "story event" appears
+   nowhere in it; the framing originated and stayed local to this
+   module. The underlying gap (no game-state mechanism recording "what
+   a character did this turn, visible to another kingdom") is still
+   real and still unbuilt this phase. [4.22.3] maps to
+   `Ability.PSYCHIC` (same cross-referencing method as Hide_Feature,
+   via `Charm`/`Oratory`'s existing [4.22]-block entries). What Phase
+   193 *does* model is only the confirmed half of the sentence -- see
+   `LeaderState.clairvoyance_watchers` in `models/game_state.py`'s own
+   docstring: a successful cast adds the caster's `kingdom_id` to the
+   target's watcher set. No event feed exists to actually surface
+   anything to that watcher yet.
+
+Neither spell gained a co-location/adjacency precondition beyond what
+was already sourced: Hide_Feature reuses the standard same-or-adjacent
+province rule every other province-targeted spell here already
+enforces; Clairvoyance's own sourced text names no such restriction, so
+none was invented (unlike Kill_Enemy's own explicit "not co-located"
+check, which is Kill_Enemy-specific).
+
 **Level-dependent magnitudes with no recorded caster skill** (Tornado's
 per-unit destroy chance, Plague's per-unit destroy chance, Illus_Armies'
 strength bonus): fall back to level 0 (no effect), the same "no data ->
@@ -218,6 +275,8 @@ _SPELL_ABILITY: dict[Spell, Ability] = {
     Spell.ILLUS_TERRAIN: Ability.ILLUSION,
     Spell.ILLUS_ARMIES: Ability.ILLUSION,
     Spell.SKELETAL_ARMY: Ability.NECROMANCY,
+    Spell.CLAIRVOYANCE: Ability.PSYCHIC,
+    Spell.HIDE_FEATURE: Ability.ILLUSION,
 }
 
 
@@ -280,6 +339,10 @@ def execute_cast(
         return _execute_plague(state, leader_id, request, rng, board_width, wand_skill_level)
     if spell is Spell.SKELETAL_ARMY:
         return _execute_skeletal_army(state, kingdom_id, leader_id, request, rng, wand_skill_level)
+    if spell is Spell.CLAIRVOYANCE:
+        return _execute_clairvoyance(state, kingdom_id, leader_id, request, rng, wand_skill_level)
+    if spell is Spell.HIDE_FEATURE:
+        return _execute_hide_feature(state, leader_id, request, rng, board_width, wand_skill_level)
 
     return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
 
@@ -839,4 +902,82 @@ def _execute_skeletal_army(
     if not graveyard:
         del state.battle_graveyard[caster.location]
 
+    return CastExecutionResult(request, applied=True)
+
+
+def _execute_clairvoyance(
+    state: GameState,
+    kingdom_id: int,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    wand_skill_level: int | None = None,
+) -> CastExecutionResult:
+    """Rulebook [4.22.3] (Phase 193): "for the rest of the turn, the caster
+    knows everything that happens to the target" -- see the module
+    docstring's "Phase 193 addendum" for exactly what this does and
+    doesn't model: only the confirmed "who gets to know" half, via
+    ``LeaderState.clairvoyance_watchers`` (``models/game_state.py``'s
+    own docstring) -- no event feed exists yet to surface anything to
+    that watcher. Records ``kingdom_id`` (the acting Kingdom, the same
+    parameter ``_execute_charm``'s own "target.kingdom_id = kingdom_id"
+    line uses), not ``caster.kingdom_id`` -- identical in every real
+    caller, but this is the value the rest of ``execute_cast`` already
+    threads through. No co-location/adjacency precondition -- the
+    sourced text names none, unlike ``_execute_kill_enemy``'s own
+    Kill_Enemy-specific "not co-located" check.
+    """
+
+    caster = state.leaders[leader_id]
+    target = state.leaders.get(request.target)
+    if target is None:
+        return CastExecutionResult(request, applied=False, reason="target character not found")
+
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    if not succeeded:
+        return CastExecutionResult(request, applied=False, reason=reason)
+
+    target.clairvoyance_watchers.add(kingdom_id)
+    return CastExecutionResult(request, applied=True)
+
+
+def _execute_hide_feature(
+    state: GameState,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    board_width: int,
+    wand_skill_level: int | None = None,
+) -> CastExecutionResult:
+    """Rulebook [4.23.3] (Phase 193): "This feature will become magically
+    hidden" (``models/power.py CAST_SPELL_FEATURE_DESCRIPTION`` corroborates
+    the same wording). ``CastRequest.target`` for Hide_Feature only ever
+    decodes to a *province* coordinate, never a specific feature-instance
+    id (``turn/cast_decode.py PROVINCE_TARGET_SPELLS`` -- confirmed
+    against all 108 real sample Cast phases, none carries a feature id
+    the way Illus_Terrain's own ``phase.extra[1]`` does). Since [3.2]
+    itself says "There can sometimes be more than 1 feature in a
+    province," and the decode layer gives no way to name which one,
+    this hides **every** ``Feature`` at the resolved coordinate -- a
+    deliberate, unsourced judgment call (see the module docstring's
+    "Phase 193 addendum"), not a guess at a disambiguation mechanism
+    this project has no data to build. An empty-features province fails
+    the same "check applicability first" way every other province spell
+    here does, before any success roll.
+    """
+
+    caster = state.leaders[leader_id]
+    coord, province = _resolve_province_target(state, caster, request.target, board_width)
+    if province is None:
+        return CastExecutionResult(request, applied=False, reason="province not found or not in range")
+    features = state.features_at(coord)
+    if not features:
+        return CastExecutionResult(request, applied=False, reason="no feature to hide")
+
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    if not succeeded:
+        return CastExecutionResult(request, applied=False, reason=reason)
+
+    for feature in features:
+        feature.magically_hidden = True
     return CastExecutionResult(request, applied=True)

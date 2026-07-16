@@ -3,6 +3,7 @@ from __future__ import annotations
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, GraveyardEntry, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
@@ -249,12 +250,12 @@ def test_cast_always_succeeds_when_caster_has_no_skills_recorded():
 
 
 def test_unmodeled_spells_report_a_reason_without_touching_state():
-    # Hide_Feature can't be executed -- see the module docstring (the
-    # Feature model is an unpopulated stub). Representative of every
-    # other real spell this project doesn't execute (see the module
-    # docstring's full list).
+    # Holy_Symbol is one of the ten Personal-Combat-only spells -- see the
+    # module docstring for why those still have no Action-Cast dispatch
+    # branch. Representative of every other real spell this project
+    # doesn't execute this way (see the module docstring's full list).
     state = build_state()
-    request = CastRequest(spell=Spell.HIDE_FEATURE, target=0)
+    request = CastRequest(spell=Spell.HOLY_SYMBOL, target=0)
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
 
@@ -785,6 +786,85 @@ def test_skeletal_army_raises_nothing_when_caster_has_no_recorded_level():
     assert result.applied is True  # the cast itself still "succeeds"...
     assert len(state.armies) == 0  # ...but unknown level -> 0 raised, see module docstring
     assert len(state.battle_graveyard[LOCATION]) == 1  # graveyard untouched
+
+
+# ---------------------------------------------------------------------------
+# Clairvoyance (Phase 193) -- Regolamento AK.txt [4.22.3]
+# ---------------------------------------------------------------------------
+
+
+def test_clairvoyance_adds_the_casters_kingdom_to_the_targets_watchers():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", ELSEWHERE))  # no co-location requirement
+    request = CastRequest(spell=Spell.CLAIRVOYANCE, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[78].clairvoyance_watchers == {1}
+
+
+def test_clairvoyance_fails_when_target_does_not_exist():
+    state = build_state()
+    request = CastRequest(spell=Spell.CLAIRVOYANCE, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "target character not found"
+
+
+def test_clairvoyance_does_not_touch_watchers_on_a_failed_roll():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 1)
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", ELSEWHERE))
+    request = CastRequest(spell=Spell.CLAIRVOYANCE, target=78)
+    rng = ScriptedRandom([0.96])  # over the 15%+15% = 30% Action-Cast chance
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert state.leaders[78].clairvoyance_watchers == set()
+
+
+# ---------------------------------------------------------------------------
+# Hide_Feature (Phase 193) -- Regolamento AK.txt [4.23.3]
+# ---------------------------------------------------------------------------
+
+
+def test_hide_feature_hides_every_feature_in_the_target_province():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.add_feature(Feature(1, LOCATION, FeatureType.SACRED_ROCK))
+    state.add_feature(Feature(2, LOCATION, FeatureType.ALTAR))
+    request = CastRequest(spell=Spell.HIDE_FEATURE, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.features[1].magically_hidden is True
+    assert state.features[2].magically_hidden is True
+
+
+def test_hide_feature_fails_when_the_province_has_no_feature():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.HIDE_FEATURE, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "no feature to hide"
+
+
+def test_hide_feature_fails_when_the_province_is_unknown():
+    state = build_state()
+    request = CastRequest(spell=Spell.HIDE_FEATURE, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "province not found or not in range"
 
 
 # ---------------------------------------------------------------------------

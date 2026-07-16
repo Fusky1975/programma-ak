@@ -7335,7 +7335,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     staying within [0.50, 1.00], its single-roll consumption, and the
     new-hit-points calculation at both ends of the range. Full suite:
     2371 passed (2365 unchanged + 6 new).
-- **Phase 192 (current)**: spell-cast success formula corrections. The
+- **Phase 192**: spell-cast success formula corrections. The
   user directly re-quoted Regolamento AK.txt [3.10] in full: "Un
   personaggio può lanciare un incantesimo solo se ha un livello di
   abilità di almeno 1 nel relativo Talento. La probabilità di riuscita
@@ -7403,6 +7403,81 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     level, the Pagan bonus applying to a non-White spell, the same
     roll failing without it, and the bonus being excluded for a White
     Magic spell). Full suite: 2383 passed (2371 unchanged + 12 new).
+- **Phase 193 (current)**: Clairvoyance [4.22.3] and Hide_Feature
+  [4.23.3] execution, closing 2 of the 12 previously-unexecuted spells
+  (10 remain -- the Personal-Combat-only ten). The user asked directly
+  which spells were still missing; both turned out to have stale or
+  imprecise blocker claims in `cast_execution.py`'s own Phase-60 module
+  docstring:
+  - **Hide_Feature's "unpopulated `Feature` stub" blocker was already
+    resolved back in Phase 75** (`models/feature.py`'s real model +
+    `GameState.features`/`features_at(coord)`), just never revisited.
+    [4.23.3] maps to `Ability.ILLUSION` (cross-referenced against
+    `Illus_Terrain`/`Illus_Armies`'s existing entries, same [4.23]
+    rulebook block). Since `CastRequest.target` for Hide_Feature only
+    ever decodes to a province coordinate -- never a specific
+    feature-instance id, confirmed against all 108 real sample Cast
+    phases -- and [3.2] itself says a province can hold more than one
+    feature, `_execute_hide_feature` hides **every** `Feature` at the
+    resolved coordinate via the new `Feature.magically_hidden: bool =
+    False` field. This is a deliberate, unsourced judgment call
+    (documented on the function and in the module docstring's own
+    "Phase 193 addendum"), not a guess at a disambiguation mechanism
+    this project has no data to build. An empty-features province
+    fails with `"no feature to hide"` before any success roll, the
+    same "check applicability first" order every province-targeted
+    spell here already uses. No consuming Explore/Search
+    discovery-roll reads the new flag yet.
+  - **Clairvoyance's blocker is real, but its citation wasn't**: the
+    old docstring attributed the "per-character event feed" framing to
+    `report/prose.py`'s own Phase 58 docstring, but a direct read
+    confirms the phrase "story event" never appears there -- it
+    originated and stayed local to `cast_execution.py` itself. [4.22.3]
+    maps to `Ability.PSYCHIC` (cross-referenced against `Charm`/
+    `Oratory`'s existing [4.22]-block entries). Only the confirmed half
+    of the rulebook sentence ("for the rest of the turn, the caster
+    knows everything that happens to the target") is modeled: a new
+    `LeaderState.clairvoyance_watchers: set[int] = field(default_factory=
+    set)` records which kingdom(s) currently watch a leader; a
+    successful cast adds the caster's own `kingdom_id`. No event feed
+    exists yet to actually surface anything to a watcher -- the same
+    "model the confirmed effect, defer the consuming system" pattern
+    this project has used for dozens of other spells/mechanics. No
+    co-location/adjacency precondition either -- the sourced text names
+    none, unlike `Kill_Enemy`'s own spell-specific "not co-located"
+    check.
+  - `report/turn_report.py`'s `render_cast_announcement()` gained
+    `Spell.CLAIRVOYANCE` in `_CAST_ANNOUNCEMENT_TARGET_SPELLS` (reuses
+    the existing `[`/`[1` character-name marker) and a brand-new `&`
+    (Feature name) marker for `Spell.HIDE_FEATURE` -- the first spell
+    whose own `SPELL_CAST_ANNOUNCEMENT` entry needs it, plus
+    `Spell.HIDE_FEATURE` added to `_CAST_ANNOUNCEMENT_PROVINCE_SPELLS`
+    for its `@` (province name) marker. Both `render_cast_announcement()`
+    and `describe_cast()` gained a new `feature_name` parameter. Wand
+    casting (`turn/use_mi_execution.py`) and the decode layer
+    (`turn/cast_decode.py`) needed zero changes -- both were already
+    spell-agnostic and fully ready for these two.
+  - Corrected `cast_execution.py`'s own module docstring rather than
+    silently rewriting it: the stale Hide_Feature/Clairvoyance
+    "still unexecuted" bullets stay in place as the historical record
+    of what blocked them through Phase 192, with a new "Phase 193
+    addendum" section spelling out exactly what changed and why -- the
+    same "correct via addendum, don't rewrite history" convention
+    Phase 190-192's own docstring corrections already established.
+  - Updated two pre-existing tests that had asserted Hide_Feature was
+    unmodeled (`test_unmodeled_spells_report_a_reason_without_touching_
+    state`, `test_dispatch_cast_hide_feature_is_not_executed`) to use
+    `Spell.HOLY_SYMBOL` instead -- one of the ten still-genuinely-
+    unmodeled Personal-Combat-only spells.
+  - New tests: `tests/test_cast_execution.py` (+6 -- Clairvoyance's
+    watcher-set success/missing-target/failed-roll cases, Hide_Feature's
+    hide-every-feature/no-feature/unknown-province cases), `tests/
+    test_turn_report.py` (+3 -- Clairvoyance's double-cast-clause
+    announcement, Hide_Feature's feature+province announcement, and its
+    missing-`feature_name` `ValueError` case), `tests/test_feature.py`
+    (+1 -- `magically_hidden`'s explicit-True case, plus a default-value
+    assertion added to the existing defaults test). Full suite: 2393
+    passed (2383 unchanged + 10 new).
 
 ## Setup
 

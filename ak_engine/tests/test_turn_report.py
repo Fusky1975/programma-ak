@@ -2270,6 +2270,28 @@ def test_render_cast_announcement_charm_leading_period_and_r_choices():
     assert result == "Aldric cast a Charm spell and .Aldric befriended Borin and used Aldric's respite to escape."
 
 
+def test_render_cast_announcement_clairvoyance_double_cast_clause_is_transcribed_honestly():
+    # Clairvoyance's own SPNOTE.X2 entry begins with "< cast a ~ spell
+    # and..." too, so it duplicates the CONTINUED_TEMPLATE's own opening
+    # the same way Oratory does (see the docstring's oddity list above) --
+    # transcribed honestly, not silently fixed.
+    rng = ScriptedRandom([])
+    result = render_cast_announcement(Spell.CLAIRVOYANCE, "Aldric", rng, target_name="Borin")
+    assert (
+        result
+        == "Aldric cast a Clairvoyance spell and Aldric cast a Clairvoyance spell "
+        "and could see everything that happened to Borin."
+    )
+
+
+def test_render_cast_announcement_hide_feature_needs_feature_and_province_name():
+    rng = ScriptedRandom([])
+    result = render_cast_announcement(
+        Spell.HIDE_FEATURE, "Aldric", rng, province_name="Province", feature_name="Sacred Rock"
+    )
+    assert result == "Aldric cast a Hide Feature spell and the Sacred Rock in Province was magically hidden."
+
+
 def test_render_cast_announcement_missing_target_name_raises():
     rng = ScriptedRandom([])
     with pytest.raises(ValueError, match="target_name"):
@@ -2292,6 +2314,12 @@ def test_render_cast_announcement_missing_terrain_name_raises():
     rng = ScriptedRandom([])
     with pytest.raises(ValueError, match="terrain_name"):
         render_cast_announcement(Spell.ILLUS_TERRAIN, "Aldric", rng, province_name="Province")
+
+
+def test_render_cast_announcement_missing_feature_name_raises():
+    rng = ScriptedRandom([])
+    with pytest.raises(ValueError, match="feature_name"):
+        render_cast_announcement(Spell.HIDE_FEATURE, "Aldric", rng, province_name="Province")
 
 
 def test_render_cast_announcement_unmapped_spell_raises():

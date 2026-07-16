@@ -25,6 +25,12 @@ def test_feature_defaults_to_undiscovered_and_not_looted():
     assert feature.looted is False
     assert feature.discovered_by_kingdom == {}
     assert feature.discovery_level(kingdom_id=1) == 0
+    assert feature.magically_hidden is False
+
+
+def test_feature_magically_hidden_flag():
+    feature = Feature(feature_id=1, coord=COORD, kind=FeatureType.SACRED_ROCK, magically_hidden=True)
+    assert feature.magically_hidden is True
 
 
 def test_feature_discovery_level_is_per_kingdom():

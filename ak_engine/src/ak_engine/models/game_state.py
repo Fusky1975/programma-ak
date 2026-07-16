@@ -101,6 +101,22 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   same turn is the required "not cumulative" no-op instead of bumping
   rank twice; not auto-cleared at a turn boundary, same convention as
   every other "caller's job to reset" field in this dataclass.
+- ``LeaderState.clairvoyance_watchers`` (Clairvoyance [4.22.3], Phase
+  193): the rulebook's own confirmed sentence ("for the rest of the
+  turn, the caster knows everything that happens to the target",
+  corroborated word-for-word by ``models/power.py
+  CAST_SPELL_FEATURE_DESCRIPTION``'s "everything he does for the rest
+  of the turn will be known to you") only ever names *who* gets to
+  know, never *how* that knowledge reaches them -- no per-character
+  event feed exists anywhere in this project to actually surface "what
+  the target did this turn" to a watching kingdom. This field records
+  only the confirmed half: which kingdom id(s) currently hold a
+  successful watch on this leader. A successful cast adds the caster's
+  own ``kingdom_id`` here; nothing yet reads the set (same "spell
+  writes real state, nothing reads it yet" situation as
+  ``terrain_override``/``illusory_terrain`` above). Not auto-cleared at
+  a turn boundary, same "caller's job to reset" convention as
+  ``oratory_boosted_this_turn``.
 
 **``GameState.battle_graveyard`` (Phase 60)**: rulebook (Regolamento
 AK.txt [4.25.1]/addendum): Skeletal Army needs to know "an army was
@@ -225,6 +241,9 @@ class LeaderState:
     # `KingdomState.alignment` existed; `turn/hire_pay.py`'s
     # required-pay formula is this field's first real consumer.
     alignment: Alignment | None = None
+    # Phase 193: kingdom ids currently watching this leader via a successful
+    # Clairvoyance cast -- see module docstring. Not auto-cleared.
+    clairvoyance_watchers: set[int] = field(default_factory=set)
 
 
 @dataclass(slots=True)

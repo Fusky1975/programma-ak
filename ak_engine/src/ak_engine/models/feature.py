@@ -220,6 +220,14 @@ class Feature:
     looted: bool = False  # fstate[fn] = Dead ("sacked & looted")
     # per-kingdom discovery level: 0 (default/undiscovered) .. 3 (fully known) -- see module docstring
     discovered_by_kingdom: dict[int, int] = field(default_factory=dict)
+    # Phase 193: Hide Feature [4.23.3] ("This feature will become magically
+    # hidden" -- models/power.py CAST_SPELL_FEATURE_DESCRIPTION corroborates
+    # the same wording). No sourced duration exists anywhere (permanent vs.
+    # "for the rest of the turn" vs. some other window is not stated), and
+    # no consuming Explore/Search discovery-roll reads this flag yet -- same
+    # "spell writes real state, nothing reads it yet" situation documented
+    # for several other fields in `models/game_state.py`'s own docstring.
+    magically_hidden: bool = False
 
     def discovery_level(self, kingdom_id: int) -> int:
         return self.discovered_by_kingdom.get(kingdom_id, 0)

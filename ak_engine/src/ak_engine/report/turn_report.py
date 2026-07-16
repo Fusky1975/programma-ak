@@ -1879,15 +1879,15 @@ def render_magic_feature_discovery(
     return render(_MAGFEAT_FOUND_TEMPLATE, values)
 
 
-# The 13 Spell members SPELL_CAST_ANNOUNCEMENT markers, per SPNOTE.X2's own
+# The 15 Spell members SPELL_CAST_ANNOUNCEMENT markers, per SPNOTE.X2's own
 # real entry text (see models/enums.py's own docstring above that dict).
 # Only the spells turn/cast_execution.py can actually apply are covered --
-# the other 12 SPELL_CAST_ANNOUNCEMENT entries stay unconsumed here, the
+# the other 10 SPELL_CAST_ANNOUNCEMENT entries stay unconsumed here, the
 # same "narrative-precedes-execution" stance already taken for Ice-Suspend
 # (Phase 123) and Assassination (Phase 125): a real caller for them would
 # need turn/cast_execution.py's own still-unmodeled spells built first.
 _CAST_ANNOUNCEMENT_TARGET_SPELLS = frozenset(
-    {Spell.KILL_ENEMY, Spell.RESURRECTION, Spell.ILLUS_ARMIES, Spell.ORATORY, Spell.CHARM}
+    {Spell.KILL_ENEMY, Spell.RESURRECTION, Spell.ILLUS_ARMIES, Spell.ORATORY, Spell.CHARM, Spell.CLAIRVOYANCE}
 )
 _CAST_ANNOUNCEMENT_PROVINCE_SPELLS = frozenset(
     {
@@ -1898,11 +1898,18 @@ _CAST_ANNOUNCEMENT_PROVINCE_SPELLS = frozenset(
         Spell.TORNADO,
         Spell.PLAGUE,
         Spell.ILLUS_TERRAIN,
+        Spell.HIDE_FEATURE,
     }
 )
 _CAST_ANNOUNCEMENT_ARMY_LIST_SPELLS = frozenset(
     {Spell.FLOOD, Spell.TORNADO, Spell.PLAGUE, Spell.SKELETAL_ARMY}
 )
+# Phase 193: Hide_Feature is the first spell whose own SPELL_CAST_ANNOUNCEMENT
+# entry uses the "&" (Feature name) marker -- "the & in @ was magically
+# hidden." No prior spell needed this marker, so there's no earlier
+# precedent to follow beyond the same required/raise-if-missing pattern
+# every other marker set below already uses.
+_CAST_ANNOUNCEMENT_FEATURE_SPELLS = frozenset({Spell.HIDE_FEATURE})
 
 
 def render_cast_announcement(
@@ -1914,8 +1921,9 @@ def render_cast_announcement(
     province_name: str | None = None,
     terrain_name: str | None = None,
     army_names: list[str] | None = None,
+    feature_name: str | None = None,
 ) -> str:
-    """Renders the Cast announcement sentence for one of the 13 spells
+    """Renders the Cast announcement sentence for one of the 15 spells
     ``turn/cast_execution.py`` actually applies, stitching ``SAY.PAS``
     ``_LCast1``'s own opening clause (``CAST_SPELL_OPENING_COMPLETE_
     TEMPLATE``/``CAST_SPELL_OPENING_CONTINUED_TEMPLATE``, keyed by
@@ -1938,17 +1946,18 @@ def render_cast_announcement(
     ``Spell.CHARM`` entry, whose leading period (".< befriended...")
     likewise concatenates into a mid-sentence full stop.
 
-    ``target_name``/``province_name``/``terrain_name``/``army_names``
-    are each required only for the spells whose own announcement text
-    actually needs them (see the three ``_CAST_ANNOUNCEMENT_*_SPELLS``
-    sets above) -- raises ``ValueError`` naming the spell if a needed one
-    is missing, the same fail-loud stance ``report/prose.py``'s own
-    ``render()`` already takes for a missing ``lists`` entry.
+    ``target_name``/``province_name``/``terrain_name``/``army_names``/
+    ``feature_name`` are each required only for the spells whose own
+    announcement text actually needs them (see the four
+    ``_CAST_ANNOUNCEMENT_*_SPELLS`` sets above) -- raises ``ValueError``
+    naming the spell if a needed one is missing, the same fail-loud
+    stance ``report/prose.py``'s own ``render()`` already takes for a
+    missing ``lists`` entry.
 
     Works for any of the 25 ``SPELL_CAST_ANNOUNCEMENT`` entries, not
-    just the 13 ``turn/cast_execution.py`` can apply -- ``describe_cast()``
+    just the 15 ``turn/cast_execution.py`` can apply -- ``describe_cast()``
     below is the only real caller, and it only ever reaches one of those
-    13 (the only spells that ever produce ``applied=True``), but this
+    15 (the only spells that ever produce ``applied=True``), but this
     function itself doesn't assume that narrower scope.
     """
 
@@ -1988,6 +1997,11 @@ def render_cast_announcement(
             raise ValueError(f"{spell!r} needs army_names")
         lists["="] = army_names
 
+    if spell in _CAST_ANNOUNCEMENT_FEATURE_SPELLS:
+        if feature_name is None:
+            raise ValueError(f"{spell!r} needs feature_name")
+        values["&"] = feature_name
+
     return render(template, values, rng=rng, lists=lists or None)
 
 
@@ -2000,6 +2014,7 @@ def describe_cast(
     province_name: str | None = None,
     terrain_name: str | None = None,
     army_names: list[str] | None = None,
+    feature_name: str | None = None,
 ) -> str | None:
     """Compose Cast's own turn-report line from an already-computed
     ``CastExecutionResult``, the same ``describe_*`` composition pattern
@@ -2011,13 +2026,13 @@ def describe_cast(
 
     Returns ``None`` when ``result.applied`` is ``False`` -- a fizzled
     roll, an invalid target, or (``result.reason == "spell effect not
-    modeled"``) one of the 12 unexecuted spells -- there is no real
+    modeled"``) one of the 10 unexecuted spells -- there is no real
     ``SAY.PAS`` narrative for a Cast order that never took effect,
     mirroring ``describe_practice()``'s own "no narratable outcome"
     stance for a solo, un-tutored practice attempt. See
     ``render_cast_announcement()`` for which of ``target_name``/
-    ``province_name``/``terrain_name``/``army_names`` a given spell
-    actually needs.
+    ``province_name``/``terrain_name``/``army_names``/``feature_name``
+    a given spell actually needs.
     """
 
     if not result.applied:
@@ -2031,6 +2046,7 @@ def describe_cast(
         province_name=province_name,
         terrain_name=terrain_name,
         army_names=army_names,
+        feature_name=feature_name,
     )
 
 
