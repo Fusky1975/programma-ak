@@ -7545,7 +7545,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     each sharing the Good/Evil cooldown bucket, and a failed roll
     touching no state at all. Full suite: 2400 passed (2393 unchanged +
     7 new).
-- **Phase 195 (current)**: corrects Gate Angel's Phase 194 mechanic with
+- **Phase 195**: corrects Gate Angel's Phase 194 mechanic with
   the real VALHALLA rules, which the user supplied in full in a
   follow-up message (quoted in the module docstring's own "Phase 195
   addendum"). Two Phase 194 design errors, both now fixed:
@@ -7611,6 +7611,75 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     sampling swap winning and losing, the 5-turn cycle resetting, and a
     failed roll touching no state. Full suite: 2402 passed (2393
     pre-Gate-Angel baseline + these 9).
+- **Phase 196 (current)**: real Valhalla hero spawning, unblocked once
+  the user supplied all 5 per-alignment roster files (`VALHALLA
+  GOOD.txt`/`DRUID.txt`/`NEUTRAL.txt`/`PAGAN.txt`/`EVIL.txt`), 137
+  named legendary heroes total. New `models/valhalla.py`
+  `VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]]`,
+  transcribed via a one-off parser script (not hand-typed, to eliminate
+  transcription risk across ~137 heroes x 32 numeric fields each) that
+  reads the source files directly and cross-references every hero's
+  own two skill/aptitude rows against `models/enums.py Ability`'s own
+  declared order (`Ta Ma Na Ar Me Wh Ne El Ps Il Dr Th Ex Sp Sa`,
+  confirmed to match exactly) and every `Oggetto:` item name against
+  `models/treasure.py TREASURE_NAME`.
+  - 61 of 63 distinct item names resolve directly (or via an obvious
+    wording variant already present in this corpus). **"Feather of the
+    Great Eagle" filled `MONSTER_AID_EAGLE`'s own confirmed
+    `TREASURE_NAME` gap** (Phase 77's own docstring had flagged this as
+    unfillable from `TREASURE.X2`) -- this project's first real name
+    for that ordinal, sourced from VALHALLA data instead. Two items
+    ("Horn of Neptune", "Hannibal's Grimoire", both on PAGAN heroes)
+    match no `Treasure` ordinal at all, named or gap; left as
+    `fixed_item=None` rather than guessed onto an unrelated slot --
+    `fixed_item_name` still carries the raw text.
+  - New `LeaderState.race: Race | None = None` -- the first field this
+    project has ever needed for an individual leader's own race
+    independent of their serving Kingdom's (`KingdomState.race`), since
+    a Valhalla visitor keeps their own race regardless of which Kingdom
+    they join.
+  - New `turn/valhalla_execution.py finalize_gate_angel_visit(state,
+    rng)`: once Gate Angel's own reservoir-sampling winner
+    (`GameState.last_gate_angel_kingdom`/`last_gate_angel_turn`, Phase
+    195) is final, picks a random hero from the winning turn's due-
+    alignment roster and builds a real `LeaderState` -- fixed
+    `leader_id=199` ("Il numero d'ordine del visitatore dal Vahlalla
+    sara' sempre #199"), spawned beside the winning Kingdom's own King
+    (`is_king=True`, falling back to the Kingdom's `home_province` if
+    no King is on record -- an unsourced but reasonable fallback), with
+    the hero's real skills/temper/alignment/race copied across, and the
+    hero's own fixed magic item granted via `GameState.add_item()` --
+    `models/treasure.py`'s own docstring already confirms this is the
+    *only* real Pascal call site `Add_Tr` (the routine `add_item()`
+    mirrors) is known to have: a narrow Valhalla-visitor special case,
+    not a general item-generation pipeline. Skipped for the 2 heroes
+    with `fixed_item=None`.
+  - **Deliberately not wired into `turn/turn_processor.py`'s own
+    `run_turn()` yet** -- `finalize_gate_angel_visit()` is a complete,
+    independently testable function; the caller must invoke it exactly
+    once per turn, after every leader's Cast phase has been dispatched
+    (an earlier call risks picking the wrong kingdom, since a later
+    same-turn candidate can still steal the reservoir-sampling win).
+    Mirrors the exact "implement the execution function, wire it into
+    the real dispatch loop in a later phase" split Phase 172/173
+    already used for Cast execution itself.
+  - **Still confirmed but out of scope**, cited in `turn/
+    cast_execution.py`'s own "Phase 195 addendum" for whichever future
+    phase builds turn-scoped visitor lifecycle tracking: the escalating
+    per-visit action allowance, the one-Practice-phase-only limit,
+    spell-immunity except Resurrection, the item's disappear-on-death
+    rule, army hand-off on departure, and turn-deadline voiding.
+  - 16 new tests: `tests/test_valhalla.py` (+8 -- roster coverage/
+    counts, every hero's 30-value skill table, the `MONSTER_AID_EAGLE`
+    fill, the 2 unresolved items, Divine/Undead heroes inside the
+    Good/Evil buckets, Arthur's own Excalibur matching the rulebook's
+    own example) and `tests/test_valhalla_execution.py` (+8 --
+    no-visit/stale-turn no-ops, the fixed leader id, spawning beside
+    the King, the home-province fallback, the item grant and its
+    no-item case, and copying skills/temper/alignment/race).
+    `tests/test_treasure.py` updated for the now-filled
+    `MONSTER_AID_EAGLE` gap. Full suite: 2418 passed (2402 unchanged +
+    16 new).
 
 ## Setup
 

@@ -133,6 +133,13 @@ at every boundary** (``15+20+5+4+5+3+15+3+22+1+6+14 == 113``):
   of that filler is transcribed here. The file's own literal typos
   (e.g. ``"Seamansip"`` for "Seamanship", ``"GOds Quest"``) are kept
   verbatim, not silently corrected.
+- **``MONSTER_AID_EAGLE``'s own gap is now filled (Phase 196)**: the
+  user's own VALHALLA hero roster (``models/valhalla.py``) names this
+  item directly -- two different heroes (Otto, Fafnir) each carry
+  "Feather of the Great Eagle" -- independently confirming both that
+  this ordinal is real and its proper name, from a source outside
+  ``TREASURE.X2``. ``MONSTER_AID_WHALE``/``BOOK_TACTICAL`` remain
+  genuinely unfilled; no VALHALLA hero carries either.
 - ``TREASURE_ABILITY_ITEM``/``TREASURE_WAND_SPELL``/
   ``TREASURE_BOOK_ABILITY`` expose the three confirmed 1:1 positional
   mappings above as real ``Ability``/``Spell`` lookups, derived
@@ -504,7 +511,10 @@ TREASURE_NAME: dict[Treasure, str] = {
     Treasure.AMULET_ANTI_PSYCHIC: "Helm of Psychic Dampening",
     Treasure.AMULET_ANTI_ILLUSION: "Crystal of True Seeing",
     Treasure.MONSTER_AID_DRAGON: "Crown of Dragon Command",
-    # MONSTER_AID_EAGLE, MONSTER_AID_WHALE, BOOK_TACTICAL: no TREASURE.X2 entry (confirmed gap, see module docstring)
+    # Phase 196: sourced from models/valhalla.py's VALHALLA_ROSTER (Otto,
+    # Fafnir), not TREASURE.X2 -- see module docstring's own gap note above.
+    Treasure.MONSTER_AID_EAGLE: "Feather of the Great Eagle",
+    # MONSTER_AID_WHALE, BOOK_TACTICAL: no TREASURE.X2 entry (confirmed gap, see module docstring)
     Treasure.BOOK_MARCH: "Manual of Speedy Marches",
     Treasure.BOOK_NAVAL: "Ship's Log of Nautilus III",
     Treasure.BOOK_ARCHERY: "Manual of Archery",

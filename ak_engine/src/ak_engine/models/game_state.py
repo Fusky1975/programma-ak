@@ -158,12 +158,15 @@ for the full rule text and design rationale; summarized here:
   a single turn as later candidates win the reservoir swap; the value
   after a turn's dispatch fully completes is authoritative.
 
-**No new ``LeaderState`` is synthesized for the arriving hero** -- this
-project has no character-generation system (name/race/skills/starting
-stats all unsourced; the user's own plan is 5 per-alignment roster
-files not yet supplied), so only the confirmed lock/rotation state is
-modeled, the same "model the confirmed effect, defer the consuming/
-generating system" pattern as ``clairvoyance_watchers`` above.
+**Phase 196 addendum -- the user supplied all 5 per-alignment roster
+files** (``models/valhalla.py VALHALLA_ROSTER``, 137 named heroes
+total), unblocking real hero synthesis: ``turn/valhalla_execution.py
+finalize_gate_angel_visit()`` now builds a genuine ``LeaderState`` (a
+random pick from the winning turn's due-alignment roster) once the
+reservoir-sampling winner is final. This is the reason
+``LeaderState.race`` exists (see that field's own comment below) -- a
+VALHALLA visitor's race is independent of the Kingdom they join, unlike
+every other leader in this project.
 
 **``GameState.battle_graveyard`` (Phase 60)**: rulebook (Regolamento
 AK.txt [4.25.1]/addendum): Skeletal Army needs to know "an army was
@@ -291,6 +294,13 @@ class LeaderState:
     # Phase 193: kingdom ids currently watching this leader via a successful
     # Clairvoyance cast -- see module docstring. Not auto-cleared.
     clairvoyance_watchers: set[int] = field(default_factory=set)
+    # Phase 196: the leader's own individual Race, mirroring `temper`'s own
+    # Phase 139 "None = not recorded" precedent. Unlike every other leader
+    # in this project (whose race is always implicitly their serving
+    # Kingdom's own `KingdomState.race`), a VALHALLA visitor (models/
+    # valhalla.py) keeps their own race independent of the Kingdom they're
+    # visiting -- the first real consumer that needs this field at all.
+    race: Race | None = None
 
 
 @dataclass(slots=True)
