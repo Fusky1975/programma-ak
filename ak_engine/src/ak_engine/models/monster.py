@@ -265,9 +265,19 @@ White Whale appear in both lists, for unrelated reasons -- being
 animal-intelligence and being submarine are two independent facts
 about the same four species; Mermaid is submarine but *not* listed as
 animal-intelligence, confirming the lists are genuinely separate, not
-one mislabeled as the other). Kept as its own dedicated
-`TELEKINETIC_STORM_SUBMARINE_MONSTERS` set rather than merged into any
-existing one.
+one mislabeled as the other).
+
+**Renamed from `TELEKINETIC_STORM_SUBMARINE_MONSTERS` to `SUBMARINE_
+MONSTERS` in Phase 188**, when Fireball [FI] was confirmed to reuse
+this exact same category ("mostri sottomarini," no new species list
+given -- the user's own phrasing pointed back at the same, already-
+established set rather than supplying a fresh one). Unlike Phase 182's
+own three Spiritwrack sets (each kept spell-prefixed on purpose, since
+"Undead"/"Mechanical" are conceptually distinct reasons for the same
+outcome even when a future spell might care about only one), a single
+shared, non-prefixed `SUBMARINE_MONSTERS` is the right call here: two
+spells now genuinely mean the identical real-world category, not two
+merely-overlapping ones.
 """
 
 from __future__ import annotations
@@ -710,8 +720,10 @@ SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS: frozenset[Monster] = frozenset(
 # Phase 185 -- project-original, user-supplied while defining
 # turn/encounter.py's Telekinetic Storm [TE] spell. See module
 # docstring's own Phase 185 addendum for the full quote and why this
-# is a fourth, independent classification axis.
-TELEKINETIC_STORM_SUBMARINE_MONSTERS: frozenset[Monster] = frozenset(
+# is a fourth, independent classification axis. Renamed from
+# TELEKINETIC_STORM_SUBMARINE_MONSTERS in Phase 188, when Fireball [FI]
+# was confirmed to reuse this exact same category.
+SUBMARINE_MONSTERS: frozenset[Monster] = frozenset(
     {
         Monster.ELASMOSAURUS,
         Monster.GI_OCTOPUS,

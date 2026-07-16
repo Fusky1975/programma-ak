@@ -15,6 +15,8 @@ from ak_engine.turn.encounter import (
     SPELL_DISRUPTION_CHANCE_CAP,
     SPELL_DISRUPTION_CHANCE_PER_HIT,
     CHARM_FLEE_ALWAYS_SUCCEEDS,
+    FIREBALL_DAMAGE_PER_LEVEL,
+    FIREBALL_DAMAGE_RANGE,
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
     INVISIBILITY_STEAL_ATTEMPT_BONUS,
     MIRROR_IMAGE_DISBELIEF_BASE_CHANCE,
@@ -44,6 +46,7 @@ from ak_engine.turn.encounter import (
     roll_fire_arrow_attack,
     roll_holy_symbol_undead_damage,
     resolve_mirror_image_disbelief,
+    roll_fireball_damage,
     roll_melee_attack,
     roll_psychic_blast_stun_rounds,
     roll_telekinetic_storm_caster_damage,
@@ -706,3 +709,39 @@ def test_resolve_mirror_image_disbelief_consumes_exactly_one_roll_in_between():
     assert resolve_mirror_image_disbelief(base, 0, rng) is True
     rng = ScriptedRandom([0.80])
     assert resolve_mirror_image_disbelief(base, 0, rng) is False
+
+
+# -- Phase 188: Fireball [FI] --
+
+
+def test_fireball_damage_range_constant():
+    assert FIREBALL_DAMAGE_RANGE == (1, 8)
+
+
+def test_fireball_damage_per_level_constant():
+    assert FIREBALL_DAMAGE_PER_LEVEL == 1
+
+
+def test_roll_fireball_damage_stays_within_range_at_level_zero():
+    for scripted in (0.0, 0.5, 0.999):
+        damage = roll_fireball_damage(0, ScriptedRandom([scripted]))
+        assert 1 <= damage <= 8
+
+
+def test_roll_fireball_damage_adds_one_point_per_level():
+    rng = ScriptedRandom([0.0])  # base roll pinned to the range floor: 1
+    assert roll_fireball_damage(3, rng) == 1 + FIREBALL_DAMAGE_PER_LEVEL * 3
+
+
+def test_roll_fireball_damage_caps_bonus_at_level_four():
+    # "max 4" -- level 5 behaves exactly like level 4 (PERSONAL_COMBAT_SPELL_LEVEL_CAP).
+    rng_level_4 = ScriptedRandom([0.0])
+    rng_level_5 = ScriptedRandom([0.0])
+    assert roll_fireball_damage(4, rng_level_4) == roll_fireball_damage(5, rng_level_5)
+    assert PERSONAL_COMBAT_SPELL_LEVEL_CAP == 4
+
+
+def test_roll_fireball_damage_immune_target_returns_zero_without_a_roll():
+    # Immune (submarine monster) -- no roll consumed at all.
+    rng = ScriptedRandom([])
+    assert roll_fireball_damage(4, rng, target_is_immune=True) == 0

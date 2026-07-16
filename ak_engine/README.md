@@ -7062,7 +7062,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     constant, the halving applied to both a flat base chance and Fire
     Arrow's own formula, and the Steal-bonus constant itself. Full
     suite: 2323 passed (2320 unchanged + 3 new).
-- **Phase 187 (current)**: Mirror-Image Phantasm (MI), tied to
+- **Phase 187**: Mirror-Image Phantasm (MI), tied to
   `Ability.ILLUSION` (IL) -- by far the most elaborate Personal-Combat
   spell covered so far, a genuine two-stage state machine rather than a
   single formula. Quoted in full (English, project-original,
@@ -7117,6 +7117,44 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     60%-reduction cap, clamping at both 0% and 100%, and the no-roll
     convention at both ends plus a real in-between roll. Full suite:
     2331 passed (2323 unchanged + 8 new).
+- **Phase 188 (current)**: Fireball [FI], tied to `Ability.ELEMENTAL`.
+  Quoted in full: "Fireball [FI] (Incantesimo di Combattimento
+  Individuale): se usato in un combattimento, provoca da 1 a 8 punti
+  danno, più 1 punto danno per livello (max 4). Questo incantesimo è
+  inefficace contro i mostri sottomarini." A single damage roll, no
+  multi-stage mechanic.
+  - `turn/encounter.py`: new `FIREBALL_DAMAGE_RANGE = (1, 8)` and
+    `FIREBALL_DAMAGE_PER_LEVEL = 1`. `roll_fireball_damage(skill_level,
+    rng, *, target_is_immune=False)` rolls the 1-8 range and adds
+    `min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)` bonus damage --
+    the user's own "max 4" phrasing matches the existing project-wide
+    cap (Phase 181) exactly, so this phase reuses it rather than
+    introducing a Fireball-specific cap constant. Returns 0 without a
+    roll when `target_is_immune`.
+  - **The `SUBMARINE_MONSTERS` rename.** Unlike Phase 185's Telekinetic
+    Storm, which supplied its five submarine species explicitly, the
+    user reused "mostri sottomarini" here without re-listing them --
+    read together, this confirms both spells mean the exact same
+    real-world category, not two coincidentally similar ones. So
+    `models/monster.py`'s own `TELEKINETIC_STORM_SUBMARINE_MONSTERS` is
+    renamed to `SUBMARINE_MONSTERS` in this phase (dropping the spell
+    prefix), and both spells' `target_is_immune` flags are meant to be
+    backed by this one shared set. This deliberately breaks the
+    spell-prefixed convention Phase 182 established for Spiritwrack's
+    three classification sets (kept prefixed there because Undead/
+    Mechanical/Animal-Intelligence are three conceptually distinct
+    reasons for the same outcome) -- here there is only one reason,
+    shared by two spells. All cross-references (`turn/encounter.py`'s
+    own Phase 185 docstring addendum, `tests/test_monster.py`'s import
+    and assertions) were updated to the new name; the rename alone was
+    confirmed non-breaking (2331 passed) before Fireball's own code was
+    written.
+  - 6 new tests in `tests/test_encounter.py`: the two range/per-level
+    constants, the roll staying in range at level 0, the per-level
+    bonus at a pinned roll, the level-4 cap being honored (level 5
+    behaves identically to level 4), and the immune-target
+    zero-no-roll case. Full suite: 2337 passed (2331 unchanged + 6
+    new).
 
 ## Setup
 

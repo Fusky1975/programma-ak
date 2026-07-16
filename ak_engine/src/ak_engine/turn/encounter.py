@@ -413,7 +413,9 @@ takes the caster's *own* current `CombatRange` (not the victim's) and
 looks up `TELEKINETIC_STORM_CASTER_DAMAGE_RANGE_BY_COMBAT_RANGE`.
 `roll_telekinetic_storm_victim_damage()` and `roll_telekinetic_storm_
 caster_damage()` both take a `target_is_immune: bool` flag (backed by
-the new `models/monster.py TELEKINETIC_STORM_SUBMARINE_MONSTERS`):
+the new `models/monster.py SUBMARINE_MONSTERS`, renamed from
+`TELEKINETIC_STORM_SUBMARINE_MONSTERS` in Phase 188 -- see that
+module's own docstring addendum for why):
 "inefficace contro i mostri sottomarini" reads as the storm not
 manifesting at all against them, so both the victim's own damage *and*
 the caster's own self-damage are suppressed together when immune --
@@ -546,6 +548,33 @@ lookup" pattern Holy Symbol established (Phase 180) -- and unlike
 those two Spiritwrack sets, this spell's other four tiers (Divine/
 Superhuman, High/Medium/Low Human) have no existing species
 classification in this project to draw on at all.
+
+**Phase 188 addendum -- Fireball [FI], tied to Ability.ELEMENTAL,
+project-original (user-supplied).** Quoted in full: "se usato in un
+combattimento, provoca da 1 a 8 punti danno, più 1 punto danno per
+livello (max 4). Questo incantesimo è inefficace contro i mostri
+sottomarini." A straightforward damage roll: `FIREBALL_DAMAGE_RANGE`
+(1-8) plus `FIREBALL_DAMAGE_PER_LEVEL` (1) per skill level, capped at
+`PERSONAL_COMBAT_SPELL_LEVEL_CAP` (Phase 181) -- the user's own "max 4"
+phrasing matches that existing project-wide cap exactly, so
+`roll_fireball_damage()` reuses it rather than introducing a
+Fireball-specific constant.
+
+**The submarine-monster immunity, and the `SUBMARINE_MONSTERS`
+rename.** The user reused "mostri sottomarini" here without re-listing
+species, unlike Phase 185's Telekinetic Storm, which supplied the five
+species explicitly (Elasmosaurus, Giant Octopus, Giant Clam, Great
+White Whale, Mermaid). Read together, this is the same real-world
+category referenced by a second spell, not a fresh list -- so
+`models/monster.py`'s own `TELEKINETIC_STORM_SUBMARINE_MONSTERS` is
+renamed to `SUBMARINE_MONSTERS` in this phase (dropping the spell
+prefix) and both Telekinetic Storm's and Fireball's `target_is_immune`
+flags are meant to be backed by this one shared set. This deliberately
+breaks the spell-prefixed convention Phase 182 established for
+Spiritwrack's three classification sets (kept prefixed there because
+Undead/Mechanical/Animal-Intelligence are three conceptually distinct
+reasons for the same outcome) -- see `models/monster.py`'s own module
+docstring for the full rationale.
 """
 
 from __future__ import annotations
@@ -897,6 +926,32 @@ def resolve_mirror_image_disbelief(base_chance: float, caster_skill_level: int, 
     if chance >= 1.0:
         return True
     return rng.random() < chance
+
+
+# Fireball [FI], module docstring's own Phase 188 addendum -- project-
+# original, user-supplied. 1-8 base damage, +1 per skill level, capped
+# at PERSONAL_COMBAT_SPELL_LEVEL_CAP (Phase 181) -- same cap as Holy
+# Symbol/Spiritwrack, this time reused rather than reinvented since the
+# user's own "max 4" phrasing matches it exactly.
+FIREBALL_DAMAGE_RANGE = (1, 8)
+FIREBALL_DAMAGE_PER_LEVEL = 1
+
+
+def roll_fireball_damage(skill_level: int, rng: random.Random, *, target_is_immune: bool = False) -> int:
+    """Fireball's own damage: "da 1 a 8 punti danno, più 1 punto danno
+    per livello (max 4)". Returns 0 without consuming a roll if
+    ``target_is_immune`` (a submarine monster -- see ``models/monster
+    .py SUBMARINE_MONSTERS``, shared with Telekinetic Storm since Phase
+    188 confirmed both spells mean the exact same real-world category).
+    ``skill_level`` is capped at ``PERSONAL_COMBAT_SPELL_LEVEL_CAP``
+    (Phase 181), same as Holy Symbol/Spiritwrack.
+    """
+
+    if target_is_immune:
+        return 0
+
+    effective_level = min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)
+    return rng.randint(*FIREBALL_DAMAGE_RANGE) + FIREBALL_DAMAGE_PER_LEVEL * effective_level
 
 
 @dataclass(slots=True)
