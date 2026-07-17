@@ -2444,12 +2444,38 @@ MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER: dict[Monster, MirrorImageIntelligenceTie
     Monster.GI_CLAM: MirrorImageIntelligenceTier.MECHANICAL,
 }
 
-# A leader/hero opponent has no sourced tier of their own -- this project
-# has no "character intelligence" concept at all. Medium Human is used as
-# the inferred default (a typical adult human, the table's own modal
-# case), not a value taken from any source; documented here rather than
-# guessed silently in the dispatcher.
-MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT = MirrorImageIntelligenceTier.MEDIUM_HUMAN
+# A King or Hero opponent's own intelligence tier for Mirror-Image's
+# Stage 1 disbelief roll -- confirmed directly by the user (project
+# author), not an inferred default: "L'intelligenza di RE ed eroi (per
+# quanto riguarda la difesa dall'incantesimo mirror image) e' sempre High
+# Human."
+MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT = MirrorImageIntelligenceTier.HIGH_HUMAN
+
+# On top of that fixed High Human base, a King or Hero's own real Sage
+# and Illusion skill levels add a further flat bonus to their own chance
+# of disbelieving the illusion -- confirmed by the user: "C'e' un bonus
+# di +2% sulla tabella per ogni livello in SA e +1% per ogni livello in
+# IL." Applied directly on top of the table value, before the caster's
+# own -15%/level (max 60%) reduction -- see ``resolve_mirror_image_
+# duel()``'s own ``opponent_disbelief_bonus`` parameter.
+MIRROR_IMAGE_LEADER_SAGE_DISBELIEF_BONUS_PER_LEVEL = 0.02
+MIRROR_IMAGE_LEADER_ILLUSION_DISBELIEF_BONUS_PER_LEVEL = 0.01
+
+
+def mirror_image_leader_disbelief_bonus(sage_level: int, illusion_level: int) -> float:
+    """A King or Hero's own flat bonus to their chance of disbelieving a
+    Mirror-Image illusion cast against them: +2% per Sage level, +1% per
+    Illusion level, added directly to the ``HIGH_HUMAN`` table value (see
+    ``MIRROR_IMAGE_LEADER_SAGE_DISBELIEF_BONUS_PER_LEVEL``/``MIRROR_
+    IMAGE_LEADER_ILLUSION_DISBELIEF_BONUS_PER_LEVEL``'s own docstring for
+    the source). Monster opponents don't get this bonus -- it's specific
+    to Kings/Heroes, confirmed by the user.
+    """
+
+    return (
+        MIRROR_IMAGE_LEADER_SAGE_DISBELIEF_BONUS_PER_LEVEL * sage_level
+        + MIRROR_IMAGE_LEADER_ILLUSION_DISBELIEF_BONUS_PER_LEVEL * illusion_level
+    )
 
 
 def resolve_mirror_image_duel(
@@ -2459,6 +2485,7 @@ def resolve_mirror_image_duel(
     skill_level: int,
     rng: random.Random,
     *,
+    opponent_disbelief_bonus: float = 0.0,
     max_rounds: int = 1000,
 ) -> EncounterCombatResult:
     """The full two-stage outcome tree quoted in the module docstring's
@@ -2468,14 +2495,18 @@ def resolve_mirror_image_duel(
     **Stage 1** -- a throwaway ``illusion`` (an exact stat-copy of
     ``opponent`` at cast time) fights the *real* ``opponent`` in Melee,
     one round at a time; before each round, ``resolve_mirror_image_
-    disbelief()`` (keyed by ``opponent_tier``) may end the illusion's
-    power outright. Only ``opponent``'s and the throwaway illusion's own
-    hit points change here -- ``caster`` isn't in the fight yet ("the
-    caster must concentrate on his illusion, performing no other
-    actions"). If the illusion is disbelieved or loses the duel, this
-    returns ``winner=None`` (3a: "the caster must continue the fight at
-    the current combat range") -- whatever damage the real opponent took
-    from the illusion before it lost carries over into that next fight.
+    disbelief()`` (keyed by ``opponent_tier``, plus ``opponent_
+    disbelief_bonus`` added directly onto the table value -- see
+    ``mirror_image_leader_disbelief_bonus()`` for a King/Hero opponent's
+    own Sage/Illusion-driven bonus, 0.0 for every other caller) may end
+    the illusion's power outright. Only ``opponent``'s and the throwaway
+    illusion's own hit points change here -- ``caster`` isn't in the
+    fight yet ("the caster must concentrate on his illusion, performing
+    no other actions"). If the illusion is disbelieved or loses the
+    duel, this returns ``winner=None`` (3a: "the caster must continue the
+    fight at the current combat range") -- whatever damage the real
+    opponent took from the illusion before it lost carries over into
+    that next fight.
 
     **Stage 2** -- only reached if the illusion *wins* Stage 1 (opponent
     mentally slain). The illusion now turns on the real caster; the same
@@ -2499,7 +2530,7 @@ def resolve_mirror_image_duel(
         melee_skill=opponent.melee_skill,
         melee_damage_range=opponent.melee_damage_range,
     )
-    base_chance = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[opponent_tier]
+    base_chance = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[opponent_tier] + opponent_disbelief_bonus
 
     total_rounds = 0
     stage1_resolved = False

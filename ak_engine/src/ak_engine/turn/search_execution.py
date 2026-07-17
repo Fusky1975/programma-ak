@@ -236,6 +236,7 @@ from ak_engine.turn.encounter import (
     holy_symbol_hit_chance,
     ice_suspension_is_frozen,
     ice_suspension_slowed_bonus_rounds,
+    mirror_image_leader_disbelief_bonus,
     resolve_fire_arrow_duel,
     resolve_hand_of_death_channel,
     resolve_melee_duel,
@@ -556,9 +557,21 @@ def execute_search(
         if spell is Spell.MIRROR_IMAGE:
             if target_is_monster:
                 opponent_tier = MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER[monster_species]
+                opponent_disbelief_bonus = 0.0
             else:
+                # Confirmed by the user: a King/Hero opponent is always
+                # High Human, plus a further +2%/Sage level + +1%/Illusion
+                # level bonus on top of the table -- monster opponents
+                # don't get this bonus.
                 opponent_tier = MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT
-            duel_result = resolve_mirror_image_duel(caster, target, opponent_tier, level, rng)
+                sage_level = leader.skills.pair_for_ability(Ability.SAGE)[0] if leader.skills is not None else 0
+                illusion_level = (
+                    leader.skills.pair_for_ability(Ability.ILLUSION)[0] if leader.skills is not None else 0
+                )
+                opponent_disbelief_bonus = mirror_image_leader_disbelief_bonus(sage_level, illusion_level)
+            duel_result = resolve_mirror_image_duel(
+                caster, target, opponent_tier, level, rng, opponent_disbelief_bonus=opponent_disbelief_bonus
+            )
             if duel_result.winner == "a":
                 # The caster disbelieves/slays their own illusion and
                 # finishes off the already-mentally-slain opponent.

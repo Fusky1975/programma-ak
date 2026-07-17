@@ -3,6 +3,8 @@ from __future__ import annotations
 import random
 from unittest.mock import patch
 
+import pytest
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
@@ -1002,11 +1004,14 @@ def test_execute_search_cast_mirror_image_monster_target_uses_the_sourced_tier()
     assert mock_duel.call_args[0][2] is MirrorImageIntelligenceTier.HIGH_HUMAN
 
 
-def test_execute_search_cast_mirror_image_leader_target_uses_the_default_tier():
+def test_execute_search_cast_mirror_image_leader_target_uses_high_human_plus_the_sage_illusion_bonus():
     # The guardian's own rolled plan casts Mirror-Image at the leader --
-    # opponent_tier falls back to the inferred Medium Human default, since
-    # this project has no sourced classification for leaders/heroes.
-    state = _state_with_leader()
+    # opponent_tier is always High Human for a King/Hero (confirmed by the
+    # user), plus a further bonus from the leader's own Sage/Illusion
+    # skill levels.
+    leader = _skilled_leader(Ability.SAGE, 3)  # 3*2% = 6% bonus, 0% Illusion
+    state = GameState()
+    state.add_leader(leader)
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _melee_request(1)
 
@@ -1022,7 +1027,8 @@ def test_execute_search_cast_mirror_image_leader_target_uses_the_default_tier():
 
     from ak_engine.turn.encounter import MirrorImageIntelligenceTier
 
-    assert mock_duel.call_args[0][2] is MirrorImageIntelligenceTier.MEDIUM_HUMAN
+    assert mock_duel.call_args[0][2] is MirrorImageIntelligenceTier.HIGH_HUMAN
+    assert mock_duel.call_args.kwargs["opponent_disbelief_bonus"] == pytest.approx(0.06)
 
 
 def test_execute_search_cast_mirror_image_caster_wins_instantly():

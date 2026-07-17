@@ -116,6 +116,7 @@ from ak_engine.turn.encounter import (
     PERSONAL_COMBAT_SPELL_ABILITY,
     MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT,
     MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER,
+    mirror_image_leader_disbelief_bonus,
     resolve_hand_of_death_channel,
     resolve_mirror_image_duel,
 )
@@ -1415,8 +1416,34 @@ def test_mirror_image_monster_intelligence_tier_diverges_from_spiritwrack_for_th
         assert species in SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
 
 
-def test_mirror_image_leader_intelligence_tier_default_is_medium_human():
-    assert MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT is MirrorImageIntelligenceTier.MEDIUM_HUMAN
+def test_mirror_image_leader_intelligence_tier_default_is_high_human():
+    # Confirmed by the user: a King or Hero's own intelligence, for
+    # Mirror-Image's own Stage 1 disbelief roll, is always High Human.
+    assert MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT is MirrorImageIntelligenceTier.HIGH_HUMAN
+
+
+def test_mirror_image_leader_disbelief_bonus_matches_the_confirmed_rates():
+    assert mirror_image_leader_disbelief_bonus(0, 0) == 0.0
+    assert mirror_image_leader_disbelief_bonus(3, 0) == pytest.approx(0.06)
+    assert mirror_image_leader_disbelief_bonus(0, 4) == pytest.approx(0.04)
+    assert mirror_image_leader_disbelief_bonus(2, 5) == pytest.approx(0.04 + 0.05)
+
+
+def test_resolve_mirror_image_duel_leader_bonus_applies_on_top_of_the_table_value():
+    # High Human (100%) + a leader's own +6% (Sage 3) bonus = 106%, still
+    # clamped to 100% by mirror_image_disbelief_chance -- guaranteed
+    # disbelief, no roll consumed.
+    caster = Combatant("Caster")
+    opponent = Combatant("Opponent")
+    rng = ScriptedRandom([])
+    bonus = mirror_image_leader_disbelief_bonus(3, 0)
+
+    result = resolve_mirror_image_duel(
+        caster, opponent, MirrorImageIntelligenceTier.HIGH_HUMAN, 0, rng, opponent_disbelief_bonus=bonus
+    )
+
+    assert result.winner is None
+    assert result.rounds == 1
 
 
 def test_resolve_mirror_image_duel_disbelieved_immediately_returns_no_winner_no_roll():

@@ -8316,10 +8316,19 @@ Augur Combat [AC] (205), Locate Object [LO] (206), Illusory Fog [IF]
     Giant Clam are Spiritwrack-Animal but Mirror-Image-Mechanical -- a
     real, sourced difference between the two classifications, not a
     reuse (the module docstring's own Phase 187 addendum had already
-    flagged this exact risk: "Cross-reference, not reuse"). A leader/hero
-    opponent has no sourced tier of their own -- `MIRROR_IMAGE_LEADER_
-    INTELLIGENCE_TIER_DEFAULT = MirrorImageIntelligenceTier.MEDIUM_HUMAN`
-    is an inferred default (a typical adult human), not a source value.
+    flagged this exact risk: "Cross-reference, not reuse"). **A King or
+    Hero opponent's own tier is confirmed by the user, corrected same-day
+    from this phase's own first pass**: always `MirrorImageIntelligenceTier
+    .HIGH_HUMAN` (not the inferred Medium Human default first shipped
+    here), plus a further flat bonus on top of that table value from the
+    leader's own real Sage/Illusion skill levels -- "C'e' un bonus di +2%
+    sulla tabella per ogni livello in SA e +1% per ogni livello in IL."
+    `mirror_image_leader_disbelief_bonus(sage_level, illusion_level)`
+    computes it; `resolve_mirror_image_duel()` gained an `opponent_
+    disbelief_bonus` keyword (default `0.0`, every other caller
+    unaffected) added directly to the table value before the caster's own
+    per-level reduction. Monster opponents don't get this bonus -- it's
+    specific to Kings/Heroes.
   - `turn/search_execution.py`'s own `_resolve_cast_tactic()` gained two
     more branches, same `PERSONAL_COMBAT_SPELL_ABILITY`-driven dispatch
     as every Phase 209 spell: Hand of Death computes `target_is_immune`
@@ -8341,16 +8350,17 @@ Augur Combat [AC] (205), Locate Object [LO] (206), Illusory Fog [IF]
     its own, so `roll_monster_encounter_plan` is mocked empty to isolate
     that test's own "Ice Suspend has no effect" concern from the
     guardian's own newly-live CAST dispatch.
-  - 11 new tests in `tests/test_encounter.py` (the channel resolver's
+  - 13 new tests in `tests/test_encounter.py` (the channel resolver's
     immunity/kill/break/max-rounds branches, the intelligence-tier
     table's full coverage and its confirmed Spiritwrack divergence, the
-    leader default, and the duel resolver's disbelief/stage-1-loss/
-    stage-2-win/stage-2-loss branches) plus 8 new tests in
+    leader default, the duel resolver's disbelief/stage-1-loss/
+    stage-2-win/stage-2-loss branches, plus the leader Sage/Illusion
+    bonus formula and its own effect on the duel) plus 8 new tests in
     `tests/test_search_execution.py` (immune-flag threading, instant win,
     broken-channel fallthrough, and the Necromancy skill-level lookup for
-    Hand of Death; sourced-tier/leader-default lookup, instant win, and
-    instant loss for Mirror-Image). Full suite: 2536 passed (2517
-    unchanged + 19 new).
+    Hand of Death; sourced-tier/leader-default-plus-bonus lookup, instant
+    win, and instant loss for Mirror-Image). Full suite: 2538 passed
+    (2517 unchanged + 21 new).
 
 **All ten Personal-Combat-only spells (Holy Symbol, Spiritwrack, Psychic
 Blast, Telekinetic Storm, Invisibility, Fireball, Ice Suspension, Control
