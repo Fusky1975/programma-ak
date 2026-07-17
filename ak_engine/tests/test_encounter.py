@@ -90,6 +90,11 @@ from ak_engine.turn.encounter import (
     resolve_words_of_healing_disruption,
     words_of_healing_disruption_chance,
     words_of_healing_heal,
+    GATE_DEMON_REFUSAL_CHANCE,
+    GATE_DEMON_WINNER_RETURNS_TO_ABYSS,
+    GATE_DEMON_LOSS_CASTER_RESUMES_FIGHT_AT_CURRENT_RANGE,
+    GATE_DEMON_NULLIFIED_BY_SIMULTANEOUS_MIRROR_IMAGE_OR_GATE_DEMON,
+    resolve_gate_demon_refusal,
 )
 
 from _helpers import ScriptedRandom
@@ -1042,6 +1047,31 @@ def test_words_of_healing_heal_uses_a_monster_supplied_max():
     words_of_healing_heal(combatant, max_hit_points=30)
 
     assert combatant.hit_points == 30
+
+
+# -- Phase 202: Gate Demon [GD] --
+
+
+def test_gate_demon_constants():
+    assert GATE_DEMON_REFUSAL_CHANCE == 0.5
+    assert GATE_DEMON_WINNER_RETURNS_TO_ABYSS is True
+    assert GATE_DEMON_LOSS_CASTER_RESUMES_FIGHT_AT_CURRENT_RANGE is True
+    assert GATE_DEMON_NULLIFIED_BY_SIMULTANEOUS_MIRROR_IMAGE_OR_GATE_DEMON is True
+
+
+def test_resolve_gate_demon_refusal_below_the_50_percent_threshold_refuses():
+    assert resolve_gate_demon_refusal(ScriptedRandom([0.0])) is True
+    assert resolve_gate_demon_refusal(ScriptedRandom([0.49])) is True
+
+
+def test_resolve_gate_demon_refusal_at_or_above_the_50_percent_threshold_fights():
+    assert resolve_gate_demon_refusal(ScriptedRandom([0.5])) is False
+    assert resolve_gate_demon_refusal(ScriptedRandom([0.99])) is False
+
+
+def test_resolve_gate_demon_refusal_consumes_exactly_one_roll():
+    rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
+    resolve_gate_demon_refusal(rng)
 
 
 def test_spell_disruption_chance_still_defaults_to_the_normal_rate():

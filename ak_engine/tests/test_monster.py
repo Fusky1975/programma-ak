@@ -10,6 +10,7 @@ from ak_engine.models.monster import (
     MONSTER_MAGIC_ABILITIES,
     MONSTER_NAMES,
     MONSTER_STATS,
+    GATE_DEMON_TYPE_PERCENT,
     HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
     HAND_OF_DEATH_IMMUNE_MONSTERS,
     ICE_SUSPENSION_FLYING_MONSTERS,
@@ -24,6 +25,7 @@ from ak_engine.models.monster import (
     MonsterEngagementState,
     MonsterSpeed,
     MonsterStats,
+    roll_gate_demon_type,
     roll_monster_alignment,
 )
 
@@ -227,6 +229,43 @@ def test_roll_monster_alignment_three_option_species_walks_cumulative_thresholds
     assert roll_monster_alignment(Monster.WHITE_MAGE, ScriptedRandom([0.69])) is Alignment.DRUID
     assert roll_monster_alignment(Monster.WHITE_MAGE, ScriptedRandom([0.70])) is Alignment.NEUTRAL
     assert roll_monster_alignment(Monster.WHITE_MAGE, ScriptedRandom([0.99])) is Alignment.NEUTRAL
+
+
+# -- roll_gate_demon_type (Phase 202) -- Gate Demon's own d100 table:
+# 1-20 Imp, 21-40 Succubus, 41-55 Bone Devil, 56-70 Ice Devil, 71-80
+# Marilith Demon, 81-90 Rakshasha, 91-100 Balrog Demon --
+
+
+def test_gate_demon_type_percent_sums_to_100():
+    assert sum(percent for _monster, percent in GATE_DEMON_TYPE_PERCENT) == 100
+
+
+def test_roll_gate_demon_type_walks_cumulative_thresholds():
+    assert roll_gate_demon_type(ScriptedRandom([0.0])) is Monster.IMP
+    assert roll_gate_demon_type(ScriptedRandom([0.19])) is Monster.IMP
+    assert roll_gate_demon_type(ScriptedRandom([0.20])) is Monster.SUCCUBUS
+    assert roll_gate_demon_type(ScriptedRandom([0.39])) is Monster.SUCCUBUS
+    assert roll_gate_demon_type(ScriptedRandom([0.40])) is Monster.BONE_DEVIL
+    assert roll_gate_demon_type(ScriptedRandom([0.54])) is Monster.BONE_DEVIL
+    assert roll_gate_demon_type(ScriptedRandom([0.55])) is Monster.ICE_DEVIL
+    assert roll_gate_demon_type(ScriptedRandom([0.69])) is Monster.ICE_DEVIL
+    assert roll_gate_demon_type(ScriptedRandom([0.70])) is Monster.MAR_DEMON
+    assert roll_gate_demon_type(ScriptedRandom([0.79])) is Monster.MAR_DEMON
+    assert roll_gate_demon_type(ScriptedRandom([0.80])) is Monster.RAKSHASHA
+    assert roll_gate_demon_type(ScriptedRandom([0.89])) is Monster.RAKSHASHA
+    assert roll_gate_demon_type(ScriptedRandom([0.90])) is Monster.BAL_DEMON
+    assert roll_gate_demon_type(ScriptedRandom([0.99])) is Monster.BAL_DEMON
+
+
+def test_roll_gate_demon_type_consumes_exactly_one_roll():
+    rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
+    roll_gate_demon_type(rng)
+
+
+def test_roll_gate_demon_type_every_result_is_one_of_the_seven_anti_holy_demons():
+    for percent_step in range(0, 100, 5):
+        rng = ScriptedRandom([percent_step / 100])
+        assert roll_gate_demon_type(rng) in HAND_OF_DEATH_ANTI_HOLY_MONSTERS
 
 
 # -- MONSTER_MAGIC_ABILITIES (Phase 177, project-original, same Desktop/

@@ -7775,7 +7775,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     engine exists yet to call it from.
   - 11 new tests in `tests/test_encounter.py`. Full suite: 2434 passed
     (2423 unchanged + 11 new).
-- **Phase 201 (current)**: modeled Scar Terrain [ST] (`Spell.SCAR_
+- **Phase 201**: modeled Scar Terrain [ST] (`Spell.SCAR_
   TERRAIN`), tied to `Ability.NECROMANCY` -- unlike every secret spell
   so far, an Action-Cast (province-targeted) spell, not a Personal-
   Combat one. User-supplied: "-2 Taxation, Change Race at 0... By the
@@ -7824,6 +7824,72 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     documented gap, not guessed).
   - 8 new tests in `tests/test_cast_execution.py`. Full suite: 2442
     passed (2434 unchanged + 8 new).
+- **Phase 202 (current)**: modeled Gate Demon [GD] (`Spell.GATE_
+  DEMON`), tied to `Ability.NECROMANCY` -- the second secret Personal-
+  Combat spell, similar in shape to Mirror Image. User-supplied: "Summon
+  Demon... an extra-dimensional gate is opened to the nether worlds,
+  from where a demon is summoned to fight in place of the spellcaster.
+  The caster has no control over what type of demon will appear. If the
+  Demon wins, it will return to the Abyss from whence it came. If it
+  loses, the caster must continue the fight at the current combat range.
+  If another Mirror Image or Gate Demon spell is cast against it, both
+  spells will be nullified. A Demon may refuse to fight an opponent of
+  Evil to Undead alignment (50% chance)." Both `Spell.GATE_DEMON`,
+  `AdvancedAbility.GATE_DEMON_SPELL`, and a display-label-only
+  `GATE_DEMON_TABLE` already existed in the codebase from an earlier
+  phase (pre-transcribed rule text, per this project's usual practice)
+  -- this phase adds the actual mechanic.
+  - `models/monster.py GATE_DEMON_TYPE_PERCENT`/`roll_gate_demon_type
+    (rng)` implements the rulebook's own d100 table (1-20 Imp, 21-40
+    Succubus, 41-55 Bone Devil, 56-70 Ice Devil, 71-80 Marilith Demon,
+    81-90 Rakshasha, 91-100 Balrog Demon) with the same cumulative-
+    percentage-walk style as `roll_monster_alignment()`. Lives in
+    `models/monster.py` rather than `models/advanced_ability.py`
+    (which is 100% declarative and already imports from `monster.py`,
+    so the reverse import would be circular). All seven demon species
+    (`Monster.IMP/SUCCUBUS/BONE_DEVIL/ICE_DEVIL/MAR_DEMON/RAKSHASHA/
+    BAL_DEMON`) already had `MONSTER_COMBAT_STATS` entries and are the
+    exact same seven-species set as `HAND_OF_DEATH_ANTI_HOLY_MONSTERS`
+    (Phase 190).
+  - `turn/encounter.py resolve_gate_demon_refusal(rng)` implements the
+    50% opponent-alignment-gated refusal roll (`GATE_DEMON_REFUSAL_
+    CHANCE = 0.5`) as a pure roll -- the caller is responsible for first
+    checking the opponent's alignment is Evil to Undead inclusive
+    (`{Alignment.EVIL, Alignment.ANTI_HOLY, Alignment.UNDEAD}`, ordinals
+    5-7 per the real Pascal `ALIGNMENT_ORDINAL` sequence, not `Alignment`'s
+    own declaration order) before calling this function, mirroring the
+    project's existing "pure roll, caller supplies the gating condition"
+    convention.
+  - Two real worked examples confirmed from this project's own sample
+    turn-report files: a refusal case in `SE3__T10.K1` (the summoned
+    demon declines to fight an Evil-aligned opponent) and a full-combat
+    case in `SE3__T11.K1` (a Rakshasha fights with its own stat block
+    "in place of" the caster, who still receives post-combat credit).
+  - `GATE_DEMON_WINNER_RETURNS_TO_ABYSS`, `GATE_DEMON_LOSS_CASTER_
+    RESUMES_FIGHT_AT_CURRENT_RANGE`, and `GATE_DEMON_NULLIFIED_BY_
+    SIMULTANEOUS_MIRROR_IMAGE_OR_GATE_DEMON` are recorded as confirmed
+    facts (`= True` sentinels with docstring citations), **not modeled
+    as executable mechanics** -- same "clean, testable primitives only"
+    boundary as every other Personal-Combat spell in this module: there
+    is no real duel-orchestration engine yet to consume a "demon fights
+    in place of the caster, then the caster resumes at the current
+    range" state machine, a spell-nullification check against a
+    simultaneously-cast opposing spell, or a "who gets credit" ledger.
+  - No skill-level scaling (so `PERSONAL_COMBAT_SPELL_LEVEL_CAP`
+    doesn't apply), matching Charm/Psychic Blast/Telekinetic Storm/
+    Invisibility/Words of Healing's own uncapped, non-scaling effects.
+  - The demon's own combat stat block is not synthesized by this
+    module -- `turn/search_execution.py`'s existing inline
+    Combatant-from-Monster construction pattern (`hit_points=rng.
+    randint(*stats.hit_points_range)`, etc., reading from
+    `MONSTER_COMBAT_STATS`) is cited in the docstring as the pattern a
+    future orchestrator should reuse, not duplicated or extracted here
+    since nothing yet consumes it.
+  - 4 new tests in `tests/test_monster.py` (table sums to 100 +
+    threshold walk + single-roll-consumption + anti-holy-membership),
+    4 new tests in `tests/test_encounter.py` (constants + refusal
+    threshold + single-roll-consumption). Full suite: 2450 passed
+    (2442 unchanged + 8 new).
 
 ## Setup
 

@@ -318,6 +318,22 @@ Morti" here instead), not identical to it, so reusing that set would
 silently misclassify four species. `HAND_OF_DEATH_IMMUNE_MONSTERS` is
 the union of all three (two reused, one new), provided as a single
 convenience set matching every other spell's own immune-set name.
+
+**Phase 202 addendum -- Gate Demon [GD]'s own d100 demon-roster roll,
+project-original, user-supplied.** `turn/encounter.py`'s Gate Demon
+spell (Phase 202 addendum there) summons one of the same seven
+Anti-Holy demon species `HAND_OF_DEATH_ANTI_HOLY_MONSTERS` (Phase 190)
+already enumerates, via a d100 table: "1-20 Imp, 20-40 Succubus, 41-55
+Bone Devil, 56-70 Ice Devil, 71-80 Marilith Demon, 81-90 Rakshasha,
+91-100 Balrog Demon." `models/advanced_ability.py GATE_DEMON_TABLE`
+already recorded this table as display-label strings (Phase 128,
+before the mechanic itself was known); `GATE_DEMON_TYPE_PERCENT` and
+`roll_gate_demon_type()` above restate it as a real, executable
+cumulative-percentage roll, the same `roll_monster_alignment()` shape
+this module already established (Phase 176) -- new here rather than in
+`advanced_ability.py` itself, since that module is deliberately kept
+100% declarative (no functions, no `random` import) and already
+imports from this one, so the reverse import would be circular.
 """
 
 from __future__ import annotations
@@ -676,6 +692,44 @@ def roll_monster_alignment(monster: Monster, rng: random.Random) -> Alignment | 
         if roll < cumulative:
             return option.alignment
     return options[-1].alignment
+
+
+# "Gate Demon" spell's own d100 roster table (Phase 202, user-supplied,
+# turn/encounter.py's own docstring addendum). Restates ``models/
+# advanced_ability.py GATE_DEMON_TABLE`` (a display-label-only string
+# table, e.g. ``("1-20", Monster.IMP)``) as cumulative percentages for
+# ``roll_gate_demon_type()`` below -- imported the other way around
+# would be circular (``advanced_ability.py`` already imports from this
+# module). ``GATE_DEMON_TABLE``'s own "20-40" label for Succubus (one
+# off from "21-40") is a source-text quirk, kept verbatim there per
+# this project's convention; this table uses the real, non-overlapping
+# 20/20/15/15/10/10/10 percentages the ranges actually describe, which
+# sum to exactly 100.
+GATE_DEMON_TYPE_PERCENT: tuple[tuple[Monster, float], ...] = (
+    (Monster.IMP, 20),
+    (Monster.SUCCUBUS, 20),
+    (Monster.BONE_DEVIL, 15),
+    (Monster.ICE_DEVIL, 15),
+    (Monster.MAR_DEMON, 10),
+    (Monster.RAKSHASHA, 10),
+    (Monster.BAL_DEMON, 10),
+)
+
+
+def roll_gate_demon_type(rng: random.Random) -> Monster:
+    """Which of the seven demon species Gate Demon summons -- same cumulative-
+    percentage-walk shape as ``roll_monster_alignment()`` above
+    (``rng.random() * 100``, strict ``<`` per step, last entry catches
+    any floating-point roundoff at the top of the range).
+    """
+
+    roll = rng.random() * 100
+    cumulative = 0.0
+    for monster, percent in GATE_DEMON_TYPE_PERCENT[:-1]:
+        cumulative += percent
+        if roll < cumulative:
+            return monster
+    return GATE_DEMON_TYPE_PERCENT[-1][0]
 
 
 # Phase 177 -- project-original, same Desktop/MOSTRI con statistiche.txt

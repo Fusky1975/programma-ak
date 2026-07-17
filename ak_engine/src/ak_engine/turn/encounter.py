@@ -923,6 +923,99 @@ non-scaling effects):
 phase either**, same reason as every other Personal-Combat spell
 above -- this project has no real `CAST`-tactic orchestration engine
 yet to call it from.
+
+**Phase 202 addendum -- Gate Demon [GD], tied to Ability.NECROMANCY,
+project-original (user-supplied), the second Necromancy secret spell
+and the twelfth Personal-Combat spell overall -- confirmed by the user
+to be structurally similar to Mirror-Image [MI] (Phase 187), and
+confirmed against real worked examples in this project's own sample
+turn reports (`SE3__T10.K1`, `SE3__T11.K1`).** Quoted in full: "By the
+dark power of this spell, an extra-dimensional gate is opened to the
+nether worlds, from where a demon is summoned to fight in place of the
+spellcaster. The caster has no control over what type of demon will
+appear. If the Demon wins, it will return to the Abyss from whence it
+came. If it loses, the caster must continue the fight at the current
+combat range. If another Mirror Image or Gate Demon spell is cast
+against it, both spells will be nullified. A Demon may refuse to fight
+an opponent of Evil to Undead alignment (50% chance)." The demon roster
+is the same seven Anti-Holy species `models/monster.py
+HAND_OF_DEATH_ANTI_HOLY_MONSTERS` (Phase 190) already enumerates
+(Balrog Demon, Marilith Demon, Succubus, Rakshasha, Ice Devil, Bone
+Devil, Imp), picked via `models/monster.py roll_gate_demon_type()`'s
+own d100 table (Phase 202 addendum there).
+
+**Two real worked examples, not just the rulebook's own generic
+description:**
+
+- `SE3__T10.K1` (refusal case): "I incanted my strange words of magic
+  and cast a Gate Demon spell but the Demon refused to fight against an
+  opponent of the Chimera's alignment." -- confirms the refusal check
+  is against the *opponent's* own alignment (the Chimera's, not the
+  demon's), matching the quoted rule's own "an opponent of Evil to
+  Undead alignment" wording exactly.
+- `SE3__T11.K1` (a full encounter): "Uga-Buga Makumb let fly a Gate
+  Demon spell and a flaming portal appeared, through which stepped a
+  horrible demon!" -- a Rakshasha, which then fights the entire rest of
+  the encounter *as the caster's own stand-in*: it casts Invisibility
+  and Mirror-Image Phantasm using its own magic (`models/monster.py
+  MONSTER_MAGIC_ABILITIES[Monster.RAKSHASHA] == {Ability.ILLUSION: 3,
+  Ability.NECROMANCY: 2}`), duels the Medusa across three combat
+  ranges, and finally wins: "The Rakshasha thrust at the Medusa with
+  all its strength and walloped the Medusa with 4 damage points. The
+  Medusa dropped to the ground, fatally pierced. The Rakshasha
+  disappeared to whence the Rakshasha came." ("returns to the Abyss," a
+  narrated instance of the rule's own win clause.) The caster, not the
+  demon, is credited with the loot afterward ("Uga-Buga Makumb sacked
+  the treasure of the Medusa") -- the demon fights *in place of* the
+  caster, but the caster remains the effective combatant of record.
+
+**What this phase actually models, the same "clean, testable
+primitives, not the orchestration engine" scope every Personal-Combat
+spell above uses:**
+
+1. **The demon-type roll** -- `models/monster.py
+   roll_gate_demon_type()`, not duplicated here (see that module's own
+   Phase 202 addendum).
+2. **The 50% refusal roll**: `GATE_DEMON_REFUSAL_CHANCE = 0.5` and
+   `resolve_gate_demon_refusal(rng)` -- a flat, unconditional coin
+   flip, no skill-level scaling (so `PERSONAL_COMBAT_SPELL_LEVEL_CAP`
+   doesn't apply). **The opponent's own alignment eligibility check is
+   the caller's job, not this function's** -- this module imports
+   nothing from `models.alignment` by design (every other spell here
+   keeps the same "caller supplies the otherwise-unavailable
+   precondition as a bool" pattern, e.g. Holy Symbol's own
+   `target_is_undead_or_anti_holy`). The real-worked-example match
+   above confirms "Evil to Undead" is `models/alignment.py
+   ALIGNMENT_ORDINAL`'s own inclusive ordinal range 5-7 (`Alignment.
+   EVIL`, `Alignment.ANTI_HOLY`, `Alignment.UNDEAD`) -- computed via
+   ordinals, never `tuple(Alignment)`'s own declaration order, per that
+   module's own documented Gate-Angel-adjacent warning about the two
+   orders diverging.
+
+**Confirmed facts, not modeled** (same category as Mirror-Image's own
+"double dissipation" and Charm's own "Undead-King Seduzione"):
+`GATE_DEMON_WINNER_RETURNS_TO_ABYSS = True`, `GATE_DEMON_LOSS_CASTER_
+RESUMES_FIGHT_AT_CURRENT_RANGE = True` (the *exact same* "3a" outcome
+Mirror-Image's own losing-illusion branch already describes -- "the
+caster must continue the fight at the current combat range," word for
+word), and `GATE_DEMON_NULLIFIED_BY_SIMULTANEOUS_MIRROR_IMAGE_OR_GATE_
+DEMON = True` (Mirror-Image's own "double dissipation" rule, extended
+to a Gate-Demon-vs-Gate-Demon or Gate-Demon-vs-Mirror-Image pairing).
+
+**Building the demon's own real `Combatant` is confirmed but not
+attempted here either** -- the worked example above shows a summoned
+demon fights with its own full stat block (melee, and its own
+`MONSTER_MAGIC_ABILITIES`-driven spellcasting), the same "clone a
+`Combatant` from `models/monster.py MONSTER_COMBAT_STATS`, rolling
+`hit_points` from its own `hit_points_range`" pattern `turn/
+search_execution.py`'s own guardian-monster construction already
+established (inline there, not extracted into a shared helper) -- no
+new reusable function is added here since, like every Personal-Combat
+spell above, nothing yet consumes it.
+
+**Not wired into `turn/search_execution.py`'s combat resolution this
+phase either**, same reason as every other Personal-Combat spell
+above.
 """
 
 from __future__ import annotations
@@ -1578,6 +1671,32 @@ def words_of_healing_heal(combatant: "Combatant", max_hit_points: int = CHARACTE
     """
 
     combatant.hit_points = max_hit_points
+
+
+# Gate Demon [GD], module docstring's own Phase 202 addendum -- tied to
+# Ability.NECROMANCY. No skill-level scaling (so PERSONAL_COMBAT_SPELL_
+# LEVEL_CAP doesn't apply), matching Charm/Psychic Blast/Telekinetic
+# Storm/Invisibility/Words of Healing's own uncapped effects.
+GATE_DEMON_REFUSAL_CHANCE = 0.5
+GATE_DEMON_WINNER_RETURNS_TO_ABYSS = True
+GATE_DEMON_LOSS_CASTER_RESUMES_FIGHT_AT_CURRENT_RANGE = True
+GATE_DEMON_NULLIFIED_BY_SIMULTANEOUS_MIRROR_IMAGE_OR_GATE_DEMON = True
+
+
+def resolve_gate_demon_refusal(rng: random.Random) -> bool:
+    """"A Demon may refuse to fight an opponent of Evil to Undead alignment (50%
+    chance)." Only call this when the opponent's own alignment is
+    eligible -- this module doesn't import ``models.alignment`` (see
+    module docstring's own Phase 202 addendum for the confirmed "Evil
+    to Undead" ordinal range, ``models/alignment.py ALIGNMENT_ORDINAL``
+    5-7), the same "caller supplies the otherwise-unavailable
+    precondition" pattern every other spell above uses. Returns True if
+    the demon refuses (matching the real worked example in
+    ``SE3__T10.K1``: "the Demon refused to fight against an opponent of
+    the Chimera's alignment").
+    """
+
+    return rng.random() < GATE_DEMON_REFUSAL_CHANCE
 
 
 @dataclass(slots=True)
