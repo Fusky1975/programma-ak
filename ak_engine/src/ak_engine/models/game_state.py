@@ -351,6 +351,12 @@ class ProvinceState:
     # not cumulative) -- this is an absolute gold amount that only ever
     # grows.
     scar_terrain_gold_reduction: int = 0
+    # Illusory Fog (Phase 207) -- see module docstring. Set by a
+    # successful cast (turn/cast_execution.py _execute_illus_fog); not
+    # auto-cleared at end of turn -- the same "spell writes real state,
+    # no consuming cleanup pass exists yet" convention already used by
+    # tax_modifier_percent/illusory_terrain above.
+    illusory_fog_active: bool = False
 
     def effective_terrain(self) -> Terrain:
         """The province's real current terrain for gameplay mechanics --

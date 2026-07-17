@@ -115,6 +115,10 @@ PROVINCE_TARGET_SPELLS = frozenset(
         # here. No real sample data exists to validate this against, same
         # caveat as Gate Angel's own entry below.
         Spell.SCAR_TERRAIN,
+        # Spell.ILLUS_FOG (Phase 207, one of the secret spells 25-34,
+        # user-supplied): "must be cast on an adjacent or co-located
+        # province" -- the same shape as Scar Terrain's own entry above.
+        Spell.ILLUS_FOG,
     }
 )
 # Spell.GATE_ANGEL (Phase 194, one of the secret spells 25-34): the

@@ -540,6 +540,60 @@ text directly, one at a time.
      `item.py` scope boundary this project already accepted for
      Trade/Give, Phase 133), not silently guessed at.
 
+- **Illusory Fog** (`AdvancedAbility.ILLUSORY_FOG_SPELL`,
+  `Ability.ILLUSION`, Phase 207) -- the user's own quoted rule text
+  (verbatim, matching `models/advanced_ability.py
+  ADVANCED_ABILITY_DESCRIPTION` word for word): "Slow and Weaken Air
+  Armies. By the murky power of the 'Illusory Fog' spell, the
+  Illusionist summons a dense fog to blanket a province, reaching up
+  to the very heavens. All air units (Dragon Wings, Eagle Wings and
+  those affected by 'Mystic Winds' Spell) have their strength halved
+  for any battle in the affected province, and must expend 1
+  additional movement point when entering or leaving it. The movement
+  point is deducted after the unit(s) have already moved. The spell
+  must be cast on an adjacent or co-located province, and it
+  dissipates at the end of the gameturn." Not a combat spell
+  (confirmed by the user's own framing), and a province target -- the
+  same shape Scar Terrain already established -- added to
+  `turn/cast_decode.py PROVINCE_TARGET_SPELLS`.
+
+  1. **The cast itself is fully modeled, the same "co-located or
+     adjacent province" pattern `_execute_scar_terrain` already
+     established**: `_execute_illus_fog` resolves the target via
+     `_resolve_province_target`, rolls cast success, and on success
+     sets the new `ProvinceState.illusory_fog_active = True` -- a
+     persistent flag, the same "spell writes real state, no consuming
+     pipeline exists yet" shape `illusory_terrain`/`scar_terrain_gold_
+     reduction` already use above.
+  2. **The strength-halving effect has a real, testable primitive, but
+     is not wired into the battle-strength pipeline this phase.**
+     `ILLUSORY_FOG_STRENGTH_MULTIPLIER = 0.5` and
+     `is_illusory_fog_affected_air_unit(army_type, mystic_winds_
+     active)` combine the static `models/army_type.py OVERFLIGHT_AIR`
+     membership with a caller-supplied Mystic Winds flag -- this
+     project has no per-army way to derive that flag itself, the exact
+     gap Mystic Winds' own Phase 204 addendum already flagged
+     (`MYSTIC_WINDS_MOVES_AS_AIR_UNIT`). `illusory_fog_strength(base_
+     strength, affected=...)` applies the halving. None of this is
+     called from `turn/strength.py`/`turn/battle_orchestrator.py`'s own
+     column-strength calculation yet, since neither consults
+     `ProvinceState.illusory_fog_active` or a per-army Mystic-Winds
+     flag anywhere today -- the same scale of cross-cutting wiring
+     Mystic Winds' own "ends before army battle" fact was deferred for.
+  3. **The movement surcharge and end-of-turn dissipation are
+     confirmed facts, not modeled.** `ILLUSORY_FOG_EXTRA_MOVEMENT_
+     COST = 1` records "must expend 1 additional movement point when
+     entering or leaving it... deducted after the unit(s) have already
+     moved" -- no movement pipeline in this project (`turn/movement.py`,
+     `turn/move_execution.py`) consults any per-province spell effect
+     at all, so there is nothing to hook this into yet.
+     `ILLUSORY_FOG_DISSIPATES_AT_END_OF_GAMETURN = True` records "it
+     dissipates at the end of the gameturn" -- the same unresolved
+     "when does a persistent province-level spell flag get cleared"
+     gap this project's own `tax_modifier_percent`/`illusory_terrain`
+     fields already carry, with no end-of-turn cleanup pass built for
+     any of them yet.
+
 **Level-dependent magnitudes with no recorded caster skill** (Tornado's
 per-unit destroy chance, Plague's per-unit destroy chance, Illus_Armies'
 strength bonus): fall back to level 0 (no effect), the same "no data ->
@@ -568,6 +622,7 @@ import random
 from dataclasses import dataclass
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_type import OVERFLIGHT_AIR, ArmyType
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
@@ -664,6 +719,7 @@ _SPELL_ABILITY: dict[Spell, Ability] = {
     Spell.SCAR_TERRAIN: Ability.NECROMANCY,
     Spell.MYSTIC_WINDS: Ability.ELEMENTAL,
     Spell.LOCATE_OBJECT: Ability.PSYCHIC,
+    Spell.ILLUS_FOG: Ability.ILLUSION,
 }
 
 
@@ -738,6 +794,8 @@ def execute_cast(
         return _execute_mystic_winds(state, leader_id, request, rng, wand_skill_level)
     if spell is Spell.LOCATE_OBJECT:
         return _execute_locate_object(state, leader_id, request, rng, wand_skill_level)
+    if spell is Spell.ILLUS_FOG:
+        return _execute_illus_fog(state, leader_id, request, rng, board_width, wand_skill_level)
 
     return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
 
@@ -1280,6 +1338,67 @@ def _execute_locate_object(
         return CastExecutionResult(request, applied=False, reason=reason)
 
     return CastExecutionResult(request, applied=True)
+
+
+# Illusory Fog [IF], module docstring's own Phase 207 addendum -- tied to
+# Ability.ILLUSION. No skill-level scaling given in the rule text.
+ILLUSORY_FOG_STRENGTH_MULTIPLIER = 0.5
+ILLUSORY_FOG_EXTRA_MOVEMENT_COST = 1
+ILLUSORY_FOG_DISSIPATES_AT_END_OF_GAMETURN = True
+
+
+def _execute_illus_fog(
+    state: GameState,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    board_width: int,
+    wand_skill_level: int | None = None,
+) -> CastExecutionResult:
+    """"the Illusionist summons a dense fog to blanket a province... The spell
+    must be cast on an adjacent or co-located province." See the module
+    docstring's own Phase 207 addendum for the full quoted rule text and
+    why the strength/movement effects below aren't wired into a
+    consuming pipeline from here.
+    """
+
+    caster = state.leaders[leader_id]
+    _coord, province = _resolve_province_target(state, caster, request.target, board_width)
+    if province is None:
+        return CastExecutionResult(request, applied=False, reason="province not found or not in range")
+
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    if not succeeded:
+        return CastExecutionResult(request, applied=False, reason=reason)
+
+    province.illusory_fog_active = True
+    return CastExecutionResult(request, applied=True)
+
+
+def is_illusory_fog_affected_air_unit(army_type: ArmyType, mystic_winds_active: bool) -> bool:
+    """"All air units (Dragon Wings, Eagle Wings and those affected by 'Mystic
+    Winds' Spell)..." -- combines the static per-``ArmyType``
+    ``models/army_type.py OVERFLIGHT_AIR`` membership with a caller-
+    supplied Mystic Winds flag, since this project has no per-army way
+    to derive that flag itself yet (see ``turn/cast_execution.py``'s own
+    Phase 204 addendum, ``MYSTIC_WINDS_MOVES_AS_AIR_UNIT``).
+    """
+
+    return army_type in OVERFLIGHT_AIR or mystic_winds_active
+
+
+def illusory_fog_strength(base_strength: float, *, affected: bool) -> float:
+    """"have their strength halved for any battle in the affected province."
+    ``affected`` is the caller's own ``is_illusory_fog_affected_air_
+    unit()`` result (and, implicitly, whether the battle's own province
+    has ``ProvinceState.illusory_fog_active`` set) -- neither
+    ``turn/strength.py`` nor ``turn/battle_orchestrator.py`` calls this
+    yet.
+    """
+
+    if not affected:
+        return base_strength
+    return base_strength * ILLUSORY_FOG_STRENGTH_MULTIPLIER
 
 
 def _execute_plague(

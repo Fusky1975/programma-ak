@@ -13,6 +13,9 @@ from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import (
+    ILLUSORY_FOG_DISSIPATES_AT_END_OF_GAMETURN,
+    ILLUSORY_FOG_EXTRA_MOVEMENT_COST,
+    ILLUSORY_FOG_STRENGTH_MULTIPLIER,
     MYSTIC_WINDS_ENDS_BEFORE_ARMY_BATTLE,
     MYSTIC_WINDS_MOVEMENT_POINTS,
     MYSTIC_WINDS_MOVES_AS_AIR_UNIT,
@@ -21,6 +24,8 @@ from ak_engine.turn.cast_execution import (
     SCAR_TERRAIN_TAX_REDUCTION,
     LocateObjectResult,
     execute_cast,
+    illusory_fog_strength,
+    is_illusory_fog_affected_air_unit,
     locate_object,
     scar_terrain_collapse,
     scar_terrain_is_exhausted,
@@ -1293,3 +1298,56 @@ def test_locate_object_returns_none_for_a_feature_or_monster_guarded_item():
     item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=None)
 
     assert locate_object(state, item.item_id) is None
+
+
+# ---------------------------------------------------------------------------
+# Illusory Fog (Phase 207) -- user-supplied, one of the secret spells 25-34
+# ---------------------------------------------------------------------------
+
+
+def test_illusory_fog_constants():
+    assert ILLUSORY_FOG_STRENGTH_MULTIPLIER == 0.5
+    assert ILLUSORY_FOG_EXTRA_MOVEMENT_COST == 1
+    assert ILLUSORY_FOG_DISSIPATES_AT_END_OF_GAMETURN is True
+
+
+def test_illusory_fog_cast_sets_the_province_flag():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.ILLUS_FOG, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].illusory_fog_active is True
+
+
+def test_illusory_fog_fails_when_the_province_is_out_of_range():
+    state = build_state()
+    request = CastRequest(spell=Spell.ILLUS_FOG, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "province not found or not in range"
+
+
+def test_is_illusory_fog_affected_air_unit_true_for_overflight_air_types():
+    assert is_illusory_fog_affected_air_unit(ArmyType.DRAGON_WING, mystic_winds_active=False) is True
+    assert is_illusory_fog_affected_air_unit(ArmyType.EAGLE_WING, mystic_winds_active=False) is True
+
+
+def test_is_illusory_fog_affected_air_unit_true_when_mystic_winds_active():
+    assert is_illusory_fog_affected_air_unit(ArmyType.LEGION, mystic_winds_active=True) is True
+
+
+def test_is_illusory_fog_affected_air_unit_false_for_ordinary_ground_units():
+    assert is_illusory_fog_affected_air_unit(ArmyType.LEGION, mystic_winds_active=False) is False
+
+
+def test_illusory_fog_strength_halves_when_affected():
+    assert illusory_fog_strength(20.0, affected=True) == 10.0
+
+
+def test_illusory_fog_strength_unchanged_when_not_affected():
+    assert illusory_fog_strength(20.0, affected=False) == 20.0

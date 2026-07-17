@@ -8036,7 +8036,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     Cowardly/Berserk threshold walks + single-roll-consumption + the
     composed function's win-never-rolls and loss-rolls-through cases).
     Full suite: 2469 passed (2462 unchanged + 7 new).
-- **Phase 206 (current)**: modeled Locate Object [LO] (`Spell.LOCATE_
+- **Phase 206**: modeled Locate Object [LO] (`Spell.LOCATE_
   OBJECT`), tied to `Ability.PSYCHIC` -- the second Psychic secret
   spell, not a combat spell (confirmed by the user's own framing).
   User-supplied: "By the enchanting power of this spell, the
@@ -8075,6 +8075,54 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     mutates nothing + finds a leader-held item + unknown item id +
     feature/monster-guarded item returns `None`). Full suite: 2473
     passed (2469 unchanged + 4 new).
+- **Phase 207 (current)**: modeled Illusory Fog [IF] (`Spell.ILLUS_
+  FOG`), tied to `Ability.ILLUSION` -- the first Illusory secret
+  spell, not a combat spell (confirmed by the user's own framing), a
+  province target the same shape Scar Terrain already established.
+  User-supplied: "Slow and Weaken Air Armies. By the murky power of
+  the 'Illusory Fog' spell, the Illusionist summons a dense fog to
+  blanket a province, reaching up to the very heavens. All air units
+  (Dragon Wings, Eagle Wings and those affected by 'Mystic Winds'
+  Spell) have their strength halved for any battle in the affected
+  province, and must expend 1 additional movement point when entering
+  or leaving it. The movement point is deducted after the unit(s) have
+  already moved. The spell must be cast on an adjacent or co-located
+  province, and it dissipates at the end of the gameturn." Added to
+  `turn/cast_decode.py PROVINCE_TARGET_SPELLS`.
+  - `turn/cast_execution.py _execute_illus_fog` mirrors `_execute_
+    scar_terrain`'s own "co-located or adjacent province" pattern
+    exactly: resolves the target, rolls cast success, and on success
+    sets the new `ProvinceState.illusory_fog_active = True` -- a
+    persistent flag, the same "spell writes real state, no consuming
+    pipeline exists yet" shape `illusory_terrain`/`scar_terrain_gold_
+    reduction` already use.
+  - **The strength-halving effect has real, testable primitives, not
+    yet wired into the battle-strength pipeline.**
+    `ILLUSORY_FOG_STRENGTH_MULTIPLIER = 0.5`,
+    `is_illusory_fog_affected_air_unit(army_type, mystic_winds_
+    active)` (combines `models/army_type.py OVERFLIGHT_AIR` membership
+    with a caller-supplied Mystic Winds flag, since this project has
+    no per-army way to derive that flag itself -- the same gap Mystic
+    Winds' own Phase 204 addendum already flagged), and
+    `illusory_fog_strength(base_strength, affected=...)`. None of this
+    is called from `turn/strength.py`/`turn/battle_orchestrator.py`
+    yet, since neither consults `ProvinceState.illusory_fog_active` or
+    a per-army Mystic-Winds flag anywhere today.
+  - **The movement surcharge and end-of-turn dissipation are confirmed
+    facts, not modeled.** `ILLUSORY_FOG_EXTRA_MOVEMENT_COST = 1`
+    ("1 additional movement point when entering or leaving it...
+    deducted after the unit(s) have already moved") has no movement
+    pipeline to hook into (`turn/movement.py`/`turn/move_execution.py`
+    consult no per-province spell effect at all).
+    `ILLUSORY_FOG_DISSIPATES_AT_END_OF_GAMETURN = True` records "it
+    dissipates at the end of the gameturn" -- the same unresolved
+    end-of-turn-cleanup gap `tax_modifier_percent`/`illusory_terrain`
+    already carry.
+  - 8 new tests in `tests/test_cast_execution.py` (constants + cast
+    sets the province flag + out-of-range failure + air-unit
+    classification for both Dragon/Eagle Wing and Mystic-Winds-active
+    cases + ordinary-unit exclusion + strength halving both ways).
+    Full suite: 2481 passed (2473 unchanged + 8 new).
 
 ## Setup
 
