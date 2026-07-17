@@ -1016,6 +1016,65 @@ spell above, nothing yet consumes it.
 **Not wired into `turn/search_execution.py`'s combat resolution this
 phase either**, same reason as every other Personal-Combat spell
 above.
+
+**Phase 203 addendum -- Lava Pool [LP], tied to Ability.ELEMENTAL,
+project-original (user-supplied), the first Elemental secret spell and
+the thirteenth Personal-Combat spell overall.** Quoted in full: "The
+'Lava Pool of Fiery Death' spell enables the Elemental Mage to call
+upon the elemental spirits of Fire and Earth to cause the magma
+beneath the earth's surface to rise up and break apart the earth
+beneath the victim, who is sucked into a fiery whirlpool of death and
+sucked down into the very bowels of the earth. The spell won't work
+against flying, underwater, ghostly or anti-holy monsters, and there
+is usually a chance to escape it (from 5% to 60%)." The user's own
+paraphrase of the escape-chance range was cross-checked against this
+project's own sample turn reports and found in `SE3__T9.K6` with the
+*exact* two percentages the rulebook itself quotes, in context (the
+level-6 Elemental Magic Advanced-Ability grant announcement): "there is
+usually a chance to escape it (30% chance for medium-speed opponents,
+60% for fast opponents)." That real source, not the user's own rounder
+paraphrase, is what `LAVA_POOL_ESCAPE_CHANCE` below transcribes.
+
+**The immune-species set is not new this phase** -- `models/
+advanced_ability.py LAVA_POOL_IMMUNE_MONSTERS` (29 species: 12 flying,
+5 underwater, 8 anti-holy, 4 ghostly) already existed from an earlier
+phase, pre-transcribed verbatim from the same rule text before this
+spell's mechanic was buildable, and matches the user's own list in
+this phase's request name-for-name. This module still imports nothing
+from it (same "caller supplies the otherwise-unavailable precondition
+as a bool" pattern as Holy Symbol/Gate Demon above) -- checking
+`target_is_immune` against that set is the caller's job.
+
+**What `SE3__T9.K6`'s own real source text does *not* state: a
+Slow-speed percentage.** Only "medium-speed" (30%) and "fast" (60%)
+are quoted; Slow is never mentioned at all, in either this project's
+sample text or the user's own paraphrase. `LAVA_POOL_ESCAPE_CHANCE`
+below deliberately models Slow as `0.0` -- **an inference, not a
+direct quote**: the source text's own framing ("there is usually a
+chance to escape it") introduces an escape chance only for the two
+speed tiers it goes on to name, so a Slow opponent (the one tier the
+text is silent on) is read as having none. This is flagged explicitly
+rather than left to look like a third sourced data point.
+
+**What this phase actually models:**
+
+1. `LAVA_POOL_ESCAPE_CHANCE: dict[MonsterSpeed, float]` and
+   `lava_pool_escape_chance(speed)`/`resolve_lava_pool_escape(speed,
+   rng)` -- the victim's own speed-keyed escape roll, no skill-level
+   scaling on the caster's side (so `PERSONAL_COMBAT_SPELL_LEVEL_CAP`
+   doesn't apply here either -- the rulebook ties this chance to the
+   *victim's* speed, not the caster's own skill level, unlike every
+   scaled spell above).
+2. `LAVA_POOL_KILLS_INSTANTLY = True` -- "Instant Death if successful"
+   (this spell's own one-line Advanced-Ability summary, `models/
+   advanced_ability.py ADVANCED_ABILITY_TAGLINE`), recorded as a
+   confirmed fact: a failed escape roll is a full, immediate kill, not
+   a damage roll of any kind -- there is no `LAVA_POOL_DAMAGE_*`
+   constant to invent.
+
+**Not wired into `turn/search_execution.py`'s combat resolution this
+phase either**, same reason as every other Personal-Combat spell
+above.
 """
 
 from __future__ import annotations
@@ -1023,6 +1082,8 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 from enum import Enum
+
+from ak_engine.models.monster import MonsterSpeed
 
 # [5.0]: "In combat, all characters have 10 hit points. Monsters may
 # have anywhere from 7 to 50 hit points." -- this module's own
@@ -1697,6 +1758,42 @@ def resolve_gate_demon_refusal(rng: random.Random) -> bool:
     """
 
     return rng.random() < GATE_DEMON_REFUSAL_CHANCE
+
+
+# Lava Pool [LP], module docstring's own Phase 203 addendum -- tied to
+# Ability.ELEMENTAL. FAST/MEDIUM sourced verbatim from SE3__T9.K6's own
+# in-game ability-grant text; SLOW is an inference (0.0), not a direct
+# quote -- see the docstring addendum for why. No skill-level scaling
+# (the chance is keyed to the *victim's* speed, not the caster's own
+# skill), so PERSONAL_COMBAT_SPELL_LEVEL_CAP doesn't apply here either.
+LAVA_POOL_ESCAPE_CHANCE: dict[MonsterSpeed, float] = {
+    MonsterSpeed.FAST: 0.60,
+    MonsterSpeed.MEDIUM: 0.30,
+    MonsterSpeed.SLOW: 0.0,
+}
+LAVA_POOL_KILLS_INSTANTLY = True
+
+
+def lava_pool_escape_chance(speed: MonsterSpeed) -> float:
+    """The victim's own chance to escape a successfully-cast Lava Pool,
+    keyed by its ``MonsterSpeed`` tier. See ``LAVA_POOL_ESCAPE_CHANCE``
+    above and the module docstring's own Phase 203 addendum for sourcing.
+    """
+
+    return LAVA_POOL_ESCAPE_CHANCE[speed]
+
+
+def resolve_lava_pool_escape(speed: MonsterSpeed, rng: random.Random) -> bool:
+    """Returns True if the victim escapes (survives); False means the
+    spell kills instantly (``LAVA_POOL_KILLS_INSTANTLY``). Only call this
+    once the spell's own cast-success roll has already succeeded and the
+    target is confirmed not immune (``models/advanced_ability.py
+    LAVA_POOL_IMMUNE_MONSTERS``) -- both are the caller's job, same
+    "caller supplies the otherwise-unavailable precondition" pattern
+    every other spell above uses.
+    """
+
+    return rng.random() < lava_pool_escape_chance(speed)
 
 
 @dataclass(slots=True)

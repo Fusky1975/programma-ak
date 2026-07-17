@@ -7824,7 +7824,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     documented gap, not guessed).
   - 8 new tests in `tests/test_cast_execution.py`. Full suite: 2442
     passed (2434 unchanged + 8 new).
-- **Phase 202 (current)**: modeled Gate Demon [GD] (`Spell.GATE_
+- **Phase 202**: modeled Gate Demon [GD] (`Spell.GATE_
   DEMON`), tied to `Ability.NECROMANCY` -- the second secret Personal-
   Combat spell, similar in shape to Mirror Image. User-supplied: "Summon
   Demon... an extra-dimensional gate is opened to the nether worlds,
@@ -7890,6 +7890,53 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     4 new tests in `tests/test_encounter.py` (constants + refusal
     threshold + single-roll-consumption). Full suite: 2450 passed
     (2442 unchanged + 8 new).
+- **Phase 203 (current)**: modeled Lava Pool [LP] (`Spell.LAVA_POOL`),
+  tied to `Ability.ELEMENTAL` -- the first Elemental secret spell,
+  Personal-Combat, the thirteenth overall. User-supplied: "Instant
+  Death if successful... The spell won't work against flying,
+  underwater, ghostly or anti-holy monsters, and there is usually a
+  chance to escape it (from 5% to 60%)," plus a 29-species immune list.
+  The immune-species set (`models/advanced_ability.py LAVA_POOL_
+  IMMUNE_MONSTERS`) already existed from an earlier pre-transcription
+  phase and matches the user's own list name-for-name -- no changes
+  needed there.
+  - **Real source found for the escape-chance range, more precise than
+    the user's own paraphrase**: this project's own sample turn report
+    `SE3__T9.K6` (Desktop root) contains the actual level-6 Elemental
+    Magic Advanced-Ability grant announcement, quoting "there is
+    usually a chance to escape it (30% chance for medium-speed
+    opponents, 60% for fast opponents)." `turn/encounter.py
+    LAVA_POOL_ESCAPE_CHANCE: dict[MonsterSpeed, float]` transcribes
+    that real source (`MonsterSpeed.MEDIUM: 0.30`, `MonsterSpeed.FAST:
+    0.60`), not the user's rounder "from 5% to 60%" summary.
+  - **`MonsterSpeed.SLOW: 0.0` is an inference, explicitly flagged, not
+    a direct quote** -- neither the rulebook text nor `SE3__T9.K6`'s
+    own real excerpt ever states a Slow percentage; only two tiers are
+    named. Modeled as 0.0 because the source's own framing ("there is
+    usually a chance to escape it") introduces an escape chance only
+    for the two tiers it goes on to name, so the tier it's silent on is
+    read as having none -- documented in the docstring as an inference
+    so it doesn't read as a third sourced data point.
+  - `lava_pool_escape_chance(speed)`/`resolve_lava_pool_escape(speed,
+    rng)` -- the victim's own speed-keyed escape roll. No skill-level
+    scaling on the caster's side (`PERSONAL_COMBAT_SPELL_LEVEL_CAP`
+    doesn't apply): the rulebook ties this chance to the *victim's*
+    speed, not the caster's own skill, unlike every scaled spell above.
+  - `LAVA_POOL_KILLS_INSTANTLY = True` records the spell's own
+    Advanced-Ability tagline ("Instant Death if successful",
+    `models/advanced_ability.py ADVANCED_ABILITY_TAGLINE`) as a
+    confirmed fact: a failed escape is a full, immediate kill, not a
+    damage roll -- no `LAVA_POOL_DAMAGE_*` constant was invented.
+  - Immunity itself (`target_is_immune`) and the base cast-success roll
+    stay the caller's job, same "caller supplies the otherwise-
+    unavailable precondition" pattern every Personal-Combat spell above
+    uses (this module imports nothing from `advanced_ability.py`).
+  - **Not wired into `turn/search_execution.py`'s combat resolution
+    this phase either**, same reason as every other Personal-Combat
+    spell above.
+  - 6 new tests in `tests/test_encounter.py` (constants + lookup +
+    Fast/Medium threshold walks + Slow-never-escapes + single-roll-
+    consumption). Full suite: 2456 passed (2450 unchanged + 6 new).
 
 ## Setup
 

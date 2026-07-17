@@ -95,6 +95,11 @@ from ak_engine.turn.encounter import (
     GATE_DEMON_LOSS_CASTER_RESUMES_FIGHT_AT_CURRENT_RANGE,
     GATE_DEMON_NULLIFIED_BY_SIMULTANEOUS_MIRROR_IMAGE_OR_GATE_DEMON,
     resolve_gate_demon_refusal,
+    LAVA_POOL_ESCAPE_CHANCE,
+    LAVA_POOL_KILLS_INSTANTLY,
+    lava_pool_escape_chance,
+    resolve_lava_pool_escape,
+    MonsterSpeed,
 )
 
 from _helpers import ScriptedRandom
@@ -1072,6 +1077,46 @@ def test_resolve_gate_demon_refusal_at_or_above_the_50_percent_threshold_fights(
 def test_resolve_gate_demon_refusal_consumes_exactly_one_roll():
     rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
     resolve_gate_demon_refusal(rng)
+
+
+# -- Phase 203: Lava Pool [LP] --
+
+
+def test_lava_pool_constants():
+    assert LAVA_POOL_KILLS_INSTANTLY is True
+    assert LAVA_POOL_ESCAPE_CHANCE[MonsterSpeed.FAST] == 0.60
+    assert LAVA_POOL_ESCAPE_CHANCE[MonsterSpeed.MEDIUM] == 0.30
+    assert LAVA_POOL_ESCAPE_CHANCE[MonsterSpeed.SLOW] == 0.0
+
+
+def test_lava_pool_escape_chance_looks_up_by_speed():
+    assert lava_pool_escape_chance(MonsterSpeed.FAST) == 0.60
+    assert lava_pool_escape_chance(MonsterSpeed.MEDIUM) == 0.30
+    assert lava_pool_escape_chance(MonsterSpeed.SLOW) == 0.0
+
+
+def test_resolve_lava_pool_escape_fast_speed_threshold():
+    assert resolve_lava_pool_escape(MonsterSpeed.FAST, ScriptedRandom([0.0])) is True
+    assert resolve_lava_pool_escape(MonsterSpeed.FAST, ScriptedRandom([0.59])) is True
+    assert resolve_lava_pool_escape(MonsterSpeed.FAST, ScriptedRandom([0.60])) is False
+    assert resolve_lava_pool_escape(MonsterSpeed.FAST, ScriptedRandom([0.99])) is False
+
+
+def test_resolve_lava_pool_escape_medium_speed_threshold():
+    assert resolve_lava_pool_escape(MonsterSpeed.MEDIUM, ScriptedRandom([0.0])) is True
+    assert resolve_lava_pool_escape(MonsterSpeed.MEDIUM, ScriptedRandom([0.29])) is True
+    assert resolve_lava_pool_escape(MonsterSpeed.MEDIUM, ScriptedRandom([0.30])) is False
+    assert resolve_lava_pool_escape(MonsterSpeed.MEDIUM, ScriptedRandom([0.99])) is False
+
+
+def test_resolve_lava_pool_escape_slow_speed_never_escapes():
+    assert resolve_lava_pool_escape(MonsterSpeed.SLOW, ScriptedRandom([0.0])) is False
+    assert resolve_lava_pool_escape(MonsterSpeed.SLOW, ScriptedRandom([0.99])) is False
+
+
+def test_resolve_lava_pool_escape_consumes_exactly_one_roll():
+    rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
+    resolve_lava_pool_escape(MonsterSpeed.MEDIUM, rng)
 
 
 def test_spell_disruption_chance_still_defaults_to_the_normal_rate():
