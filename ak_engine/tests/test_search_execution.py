@@ -4,7 +4,7 @@ import random
 from unittest.mock import patch
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.enums import Ability, Maneuver
+from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import SkillTable
@@ -475,13 +475,17 @@ def test_execute_search_shoot_exhausted_with_no_further_tactic_defaults_to_melee
 def test_execute_search_monster_wanting_shoot_fires_even_when_the_leaders_plan_never_does():
     # Titan's own rolled plan always opens with Cast+Shoot -- the leader's
     # own plan here is Melee-only, but Fire Arrow must still resolve
-    # first because the guardian's own plan wants it.
+    # first because the guardian's own plan wants it. Titan's own CAST
+    # tactics are real as of Phase 209 (real MONSTER_MAGIC_ABILITIES skill
+    # levels), so the generic cast-success roll is forced to fail here to
+    # isolate this test's own Fire-Arrow-ordering concern from the CAST
+    # dispatch behavior covered separately in the Phase 209 CAST tests.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.TITAN))
 
     with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
         "ak_engine.turn.search_execution.resolve_melee_duel"
-    ) as mock_melee:
+    ) as mock_melee, patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False):
         mock_shoot.return_value = EncounterCombatResult(winner=None, rounds=1)
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
         result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
@@ -514,7 +518,7 @@ def test_execute_search_monster_wanting_shoot_does_not_double_resolve_when_leade
 
     with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
         "ak_engine.turn.search_execution.resolve_melee_duel"
-    ) as mock_melee:
+    ) as mock_melee, patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False):
         mock_shoot.return_value = EncounterCombatResult(winner=None, rounds=1)
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
         execute_search(state, LEADER_ID, request, random.Random(0))
@@ -555,3 +559,355 @@ def test_execute_search_non_undead_leader_rolls_the_guardians_plan_without_the_u
         execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
 
     assert mock_roll.call_args.kwargs["attacker_is_undead"] is False
+
+
+# -- Phase 209: CAST orchestration engine (8 non-channeled Personal-Combat spells + Charm) --
+
+
+def _cast_request(feature_id: int, spell: Spell, *following: Maneuver) -> SearchRequest:
+    tactics = [SearchTactic(maneuver=Maneuver.CAST, sub_object=spell.value)]
+    tactics += [SearchTactic(maneuver=m) for m in following]
+    return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=tactics)
+
+
+def _skilled_leader(ability: Ability, level: int, **kwargs) -> LeaderState:
+    raw = [0] * 30
+    raw[ability.value * 2] = level
+    raw[ability.value * 2 + 1] = level
+    return LeaderState(LEADER_ID, 1, "Searcher", LOCATION, skills=SkillTable(raw_values=raw), **kwargs)
+
+
+def test_execute_search_cast_charm_success_makes_the_caster_flee():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _cast_request(1, Spell.CHARM, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.fled is True
+    assert result.combat_resolved is False
+    assert not mock_melee.called
+
+
+def test_execute_search_cast_charm_failure_falls_through_to_melee():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _cast_request(1, Spell.CHARM, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_charm_undead_caster_uses_necromancy_skill_level():
+    # Charm's own Phase 183 addendum: an Undead caster's Charm draws on
+    # Necromancy instead of Psychic -- replicated for monster casters via
+    # species classification, for leader casters via `LeaderState.alignment`.
+    leader = _skilled_leader(Ability.NECROMANCY, 5, alignment=Alignment.UNDEAD)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _cast_request(1, Spell.CHARM, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast_roll, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    mock_cast_roll.assert_called_once()
+    assert mock_cast_roll.call_args[0][0] == 5  # the Necromancy level, not the (0) Psychic level
+
+
+def test_execute_search_cast_holy_symbol_reduces_casters_own_hit_chance_taken():
+    leader = _skilled_leader(Ability.WHITE, 2)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HOLY_SYMBOL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    leader_combatant = mock_melee.call_args[0][0]
+    assert leader_combatant.defensive_hit_multiplier < 1.0
+
+
+def test_execute_search_cast_holy_symbol_bonus_damage_kills_undead_target_instantly():
+    leader = _skilled_leader(Ability.WHITE, 2)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    request = _cast_request(1, Spell.HOLY_SYMBOL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_holy_symbol_undead_damage", return_value=999
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.combat_resolved is True
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+    assert not mock_melee.called
+
+
+def test_execute_search_cast_spiritwrack_debuffs_the_target():
+    leader = _skilled_leader(Ability.WHITE, 2)  # exact reduction of 1, no rng consumed
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.SPIRITWRACK, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    monster_combatant = mock_melee.call_args[0][1]
+    assert monster_combatant.melee_damage_dealt_reduction == 1
+    assert monster_combatant.blocked_from_cast_and_archery is True
+
+
+def test_execute_search_cast_psychic_blast_bonus_swing_can_end_the_encounter():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.PSYCHIC_BLAST)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_psychic_blast_stun_rounds", return_value=2
+    ), patch("ak_engine.turn.search_execution.roll_melee_attack", return_value=999), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee, patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.combat_resolved is True
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+    assert not mock_melee.called
+    assert not mock_shoot.called
+
+
+def test_execute_search_cast_telekinetic_storm_kills_the_target():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.TELEK_STORM)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_telekinetic_storm_victim_damage", return_value=999
+    ), patch("ak_engine.turn.search_execution.roll_telekinetic_storm_caster_damage", return_value=0):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+
+
+def test_execute_search_cast_telekinetic_storm_can_kill_the_caster():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.TELEK_STORM)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_telekinetic_storm_victim_damage", return_value=0
+    ), patch("ak_engine.turn.search_execution.roll_telekinetic_storm_caster_damage", return_value=999):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "monster"
+    assert result.leader_killed is True
+
+
+def test_execute_search_cast_invisibility_halves_casters_own_hit_chance_taken():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.INVISIBILITY, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    leader_combatant = mock_melee.call_args[0][0]
+    assert leader_combatant.defensive_hit_multiplier == 0.5
+
+
+def test_execute_search_cast_fireball_kills_the_target():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.FIREBALL)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_fireball_damage", return_value=999
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_fireball_marks_submarine_targets_immune():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.MERMAID))
+    request = _cast_request(1, Spell.FIREBALL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_fireball_damage", return_value=0
+    ) as mock_fireball, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_fireball.call_args.kwargs["target_is_immune"] is True
+
+
+def test_execute_search_cast_ice_suspend_immune_species_has_no_effect():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPECTRE))
+    request = _cast_request(1, Spell.ICE_SUSPEND, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    leader_combatant = mock_melee.call_args[0][0]
+    assert leader_combatant.bonus_unanswered_attacks == 0
+
+
+def test_execute_search_cast_ice_suspend_frozen_branch_wins_instantly():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.ICE_SUSPEND)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.ice_suspension_is_frozen", return_value=True
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_ice_suspend_flying_branch_crash_damage_can_kill():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    request = _cast_request(1, Spell.ICE_SUSPEND)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.ice_suspension_is_frozen", return_value=False
+    ), patch("ak_engine.turn.search_execution.roll_ice_suspension_flying_crash_damage", return_value=999), patch(
+        "ak_engine.turn.search_execution.roll_ice_suspension_flying_bonus_rounds", return_value=0
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_ice_suspend_slowed_branch_grants_bonus_attacks():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.ICE_SUSPEND)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.ice_suspension_is_frozen", return_value=False
+    ), patch("ak_engine.turn.search_execution.ice_suspension_slowed_bonus_rounds", return_value=2), patch(
+        "ak_engine.turn.search_execution.roll_melee_attack", return_value=999
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_control_undead_ineligible_target_consumes_no_roll():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.CONTROL_UNDEAD, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_roll.called
+    assert mock_melee.called
+
+
+def test_execute_search_cast_control_undead_success_wins_instantly():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    request = _cast_request(1, Spell.CONTROL_UNDEAD)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+
+
+def test_execute_search_cast_control_undead_failure_applies_rage_buff():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    request = _cast_request(1, Spell.CONTROL_UNDEAD, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False), patch(
+        "ak_engine.turn.search_execution.control_undead_failure_new_hit_points", return_value=999
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    monster_combatant = mock_melee.call_args[0][1]
+    assert monster_combatant.hit_points == 999
+
+
+def test_execute_search_guardians_own_cast_resolves_before_the_first_real_combat_phase():
+    # The guardian's own CAST tactics are injected right before the first
+    # real combat phase (same point already established for
+    # monster_wants_shoot, Phase 178), independent of the leader's own
+    # plan -- here the leader's plan never casts anything at all.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ELE_MAGE))
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.roll_fireball_damage", return_value=999), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "monster"
+    assert result.leader_killed is True
+    assert not mock_melee.called
+
+
+def test_execute_search_blocked_from_cast_and_archery_skips_the_guardians_own_later_cast():
+    # The leader's own Spiritwrack lands on the guardian first (leader-CAST
+    # resolves when the walk reaches it, before any guardian-CAST
+    # injection); once the guardian is blocked, its own later Fireball
+    # tactic (from its own rolled plan) is skipped outright, never
+    # reaching the generic cast-success roll.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.SPIRITWRACK, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ) as mock_cast_roll, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_roll.return_value = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_cast_roll.call_count == 1
+    assert mock_melee.called

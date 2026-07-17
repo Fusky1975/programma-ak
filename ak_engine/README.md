@@ -8123,7 +8123,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     classification for both Dragon/Eagle Wing and Mystic-Winds-active
     cases + ordinary-unit exclusion + strength halving both ways).
     Full suite: 2481 passed (2473 unchanged + 8 new).
-- **Phase 208 (current)**: modeled Illusory Hero [IH] (`Spell.ILLUS_
+- **Phase 208**: modeled Illusory Hero [IH] (`Spell.ILLUS_
   HERO`), tied to `Ability.ILLUSION` -- the second and last Illusion
   secret spell, Personal-Combat, and the last of all ten secret spells
   (25-34), explicitly "similar to Mirror-Image Phantasm." User-
@@ -8173,6 +8173,98 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
 Gate Demon [GD] (202), Lava Pool [LP] (203), Mystic Winds [MW] (204),
 Augur Combat [AC] (205), Locate Object [LO] (206), Illusory Fog [IF]
 (207), and Illusory Hero [IH] (208).
+- **Phase 209 (current)**: built the CAST-tactic orchestration engine for
+  Search encounters -- `turn/search_execution.py`'s `execute_search()`
+  previously skipped every `Maneuver.CAST` tactic silently (both the
+  leader's own and the guardian's own, per `turn/cast_execution.py`'s
+  own long-standing docstring: "casting them requires the general
+  tactic-sequence combat engine... None of these ten can be attempted
+  without building that engine first"). This phase wires 8 of the 10
+  Personal-Combat-only spells -- Holy Symbol, Spiritwrack, Psychic
+  Blast, Telekinetic Storm, Invisibility, Fireball, Ice Suspension,
+  Control Undead -- plus Charm's own Personal-Combat form, into real
+  Search combat. Hand of Death and Mirror-Image/Illusory Hero are
+  deliberately deferred to a future Phase 210: both need a genuine
+  round-based sub-loop (channeled attack, or a cloned-illusion duel
+  with a per-round disbelief re-roll), unlike the eight spells here,
+  which each resolve with a single roll.
+  - `turn/encounter.py PERSONAL_COMBAT_SPELL_ABILITY: dict[Spell,
+    Ability]` -- sourced directly from `cast_execution.py`'s own
+    docstring citation grouping (`[4.21.4]-[4.21.5]` through
+    `[4.25.4]-[4.25.5]`, five Ability blocks of two spells each),
+    cross-referenced against `_SPELL_ABILITY`'s own confirmed entries
+    for the other spells sharing each block number: WHITE (Holy
+    Symbol, Spiritwrack), PSYCHIC (Psychic Blast, Telekinetic Storm),
+    ILLUSION (Invisibility, Mirror-Image), ELEMENTAL (Fireball, Ice
+    Suspension), NECROMANCY (Hand of Death, Control Undead).
+  - `Combatant` gains four new fields, all no-op by default:
+    `defensive_hit_multiplier` (Holy Symbol's self-buff, Invisibility's
+    halving), `melee_damage_dealt_reduction` (Spiritwrack, applied to
+    the *target*), `blocked_from_cast_and_archery` (Spiritwrack's own
+    victim effect), `bonus_unanswered_attacks` (Psychic Blast, Ice
+    Suspension's slowed/flying branches). `roll_melee_attack()`/
+    `roll_fire_arrow_attack()` gain an optional `hit_chance_multiplier`
+    parameter (default 1.0); `resolve_melee_duel()`/
+    `resolve_fire_arrow_duel()` now pass the defender's own multiplier
+    and subtract the attacker's own damage reduction automatically --
+    every pre-Phase-209 caller (including `challenge_execution.py`)
+    is unaffected by the new defaults.
+  - `search_execution.py`'s new `_resolve_cast_tactic()` rolls
+    `resolve_personal_combat_spell_cast()` (skill level from
+    `LeaderState.skills.pair_for_ability()` for a leader caster,
+    `models/monster.py MONSTER_MAGIC_ABILITIES` for a monster caster)
+    and dispatches each spell's own effect on success, reusing
+    `execute_search()`'s existing `_outcome_from()` for any
+    instant-resolution outcome (a synthetic zero-round
+    `EncounterCombatResult`). Three user-confirmed simplifications
+    (via `AskUserQuestion`, no source gives a mechanic for these):
+    Charm's own "equivalent to an FL that always succeeds" makes the
+    *caster* flee (not the target); Control Undead's "neutralizes"
+    success is treated as an outright win; Ice Suspension's own
+    "frozen" branch (the caster's fuga-con-bottino/attesa choice, with
+    no item-seizure system to hook into) is likewise simplified to an
+    outright win, leaving the "rallentato"/flying branches fully
+    modeled. "Bonus attack rounds" (Psychic Blast, Ice Suspension) are
+    interpreted as free unanswered Melee swings, consumed immediately
+    after the cast -- the source text names no specific tactic, and
+    Melee is the natural fit since Fire Arrow already has its own
+    separate free-shot cycle.
+  - **Wiring**: the leader's own `Maneuver.CAST` tactics resolve in
+    `request.tactics`'s own walk order (a new branch alongside
+    `FLEE`/`SHOOT`/`MELEE`, gated on `blocked_from_cast_and_archery`).
+    The guardian's own rolled-plan `CAST` tactics (`monster_plan`,
+    Phase 178) are collected once and resolved right before the first
+    real combat phase actually begins -- the same injection point
+    already established for `monster_wants_shoot`'s own Fire Arrow
+    check, so a leader's own earlier CAST always resolves before the
+    guardian's.
+  - **Known, documented limits, not addressed this phase**: the
+    Dryad/Mermaid encounter plans' own repeated-Melee-then-later-Charm
+    shape stays architecturally unreachable (`resolve_melee_duel()`
+    still fights an entire duel to the death in one call); no real
+    `CombatRange` transition state machine exists, so Telekinetic
+    Storm's own caster self-damage assumes `CombatRange.SPELL_RANGE`
+    fixed at cast time (every real CAST tactic precedes Arco/Mischia in
+    a plan); Ice Suspension's item-seizure clause remains unconsumed
+    (already true since Phase 189); Invisibility's Steal/Flee bonuses
+    stay out of scope (no Steal resolver; Flee-bonus stacking deferred).
+  - Two pre-existing tests (`test_search_execution.py`'s own
+    `test_execute_search_monster_wanting_shoot_fires_even_when_the_
+    leaders_plan_never_does`/`..._does_not_double_resolve_when_leader_
+    plan_also_shoots`) needed updating: Titan's own rolled plan opens
+    with real CAST tactics now, so the generic cast-success roll is
+    forced to fail in both to isolate their own Fire-Arrow-ordering
+    concern from CAST's newly-live behavior.
+  - 9 new tests in `tests/test_encounter.py` (the four new `Combatant`
+    field defaults, `PERSONAL_COMBAT_SPELL_ABILITY`'s full contents,
+    `hit_chance_multiplier` on both attack rollers at 0.0/very-high,
+    `resolve_melee_duel`/`resolve_fire_arrow_duel` respecting
+    `defensive_hit_multiplier`/`melee_damage_dealt_reduction`) plus 21
+    new tests in `tests/test_search_execution.py` (one per spell +
+    Charm across their own success/failure/eligibility branches, the
+    leader-CAST-before-guardian-CAST ordering, and
+    `blocked_from_cast_and_archery` skipping the guardian's own later
+    CAST tactic). Full suite: 2517 passed (2487 unchanged + 30 new).
 
 ## Setup
 

@@ -202,18 +202,49 @@ import random
 from dataclasses import dataclass
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.enums import Ability, Maneuver
+from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
-from ak_engine.models.monster import MONSTER_COMBAT_STATS, MONSTER_NAMES, Monster, MonsterSpeed
+from ak_engine.models.monster import (
+    HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
+    ICE_SUSPENSION_FLYING_MONSTERS,
+    ICE_SUSPENSION_IMMUNE_MONSTERS,
+    MONSTER_COMBAT_STATS,
+    MONSTER_MAGIC_ABILITIES,
+    MONSTER_NAMES,
+    SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS,
+    SPIRITWRACK_MECHANICAL_MONSTERS,
+    SPIRITWRACK_UNDEAD_MONSTERS,
+    SUBMARINE_MONSTERS,
+    Monster,
+    MonsterSpeed,
+)
 from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_DAMAGE_RANGE,
+    INVISIBILITY_HIT_CHANCE_MULTIPLIER,
+    PERSONAL_COMBAT_SPELL_ABILITY,
     Combatant,
+    CombatRange,
     EncounterCombatResult,
     FireArrowShot,
+    blocks_cast_and_archery,
+    control_undead_failure_new_hit_points,
+    holy_symbol_hit_chance,
+    ice_suspension_is_frozen,
+    ice_suspension_slowed_bonus_rounds,
     resolve_fire_arrow_duel,
     resolve_melee_duel,
+    resolve_personal_combat_spell_cast,
+    roll_fireball_damage,
+    roll_holy_symbol_undead_damage,
+    roll_ice_suspension_flying_bonus_rounds,
+    roll_ice_suspension_flying_crash_damage,
+    roll_melee_attack,
+    roll_psychic_blast_stun_rounds,
+    roll_telekinetic_storm_caster_damage,
+    roll_telekinetic_storm_victim_damage,
+    spiritwrack_melee_damage_reduction,
 )
 from ak_engine.turn.search_decode import SearchRequest
 
@@ -326,6 +357,11 @@ def execute_search(
         feature.guardian_monster, rng, attacker_is_undead=leader.alignment is Alignment.UNDEAD
     )
     monster_wants_shoot = monster_plan is not None and any(t.maneuver is Maneuver.SHOOT for t in monster_plan)
+    # Phase 209: the guardian's own CAST entries, resolved once, right
+    # before the first real combat phase -- same injection point already
+    # established for `monster_wants_shoot` above (Phase 178). See module
+    # docstring's own Phase 209 addendum.
+    monster_cast_tactics = tuple(t for t in monster_plan if t.maneuver is Maneuver.CAST) if monster_plan is not None else ()
 
     def _outcome_from(combat_result: EncounterCombatResult) -> SearchExecutionResult | None:
         """Translate a resolved duel into a terminal result, or None if the
@@ -341,6 +377,203 @@ def execute_search(
             return SearchExecutionResult(accepted=True, combat_resolved=True, winner="monster", leader_killed=True)
         return None
 
+    def _resolve_cast_tactic(tactic, *, caster_is_leader: bool) -> SearchExecutionResult | None:
+        """Phase 209: apply one of the 8 non-channeled Personal-Combat
+        spells (or Charm's combat form) to the encounter -- see module
+        docstring's own Phase 209 addendum for the full per-spell design
+        and the rulebook citations behind ``PERSONAL_COMBAT_SPELL_ABILITY``.
+        Hand of Death and Mirror-Image/Illusory Hero aren't dispatched here
+        (deferred to Phase 210 -- they need a real round-based sub-loop).
+        Returns a terminal ``SearchExecutionResult`` (a kill, a
+        neutralization, or Charm's own guaranteed Flee), or ``None`` if the
+        encounter continues (a failed cast, a stat-modifier effect, or a
+        spell whose target isn't eligible).
+        """
+
+        caster = leader_combatant if caster_is_leader else monster_combatant
+        target = monster_combatant if caster_is_leader else leader_combatant
+        if caster.blocked_from_cast_and_archery:
+            return None
+        try:
+            spell = Spell(tactic.sub_object)
+        except ValueError:
+            return None
+
+        target_is_monster = caster_is_leader
+        monster_species = feature.guardian_monster
+
+        # Charm's own Phase 183 addendum: an Undead caster draws on
+        # Necromancy instead of Psychic. Replicated here rather than
+        # imported from `cast_execution.py._spell_ability` (private, tied
+        # to `LeaderState`) -- same "duplicate the small lookup" precedent
+        # as `_leader_combatant()` above. For a monster caster, "Undead"
+        # means its own species is in `SPIRITWRACK_UNDEAD_MONSTERS`
+        # (monsters have no `alignment` field to check).
+        caster_is_undead = (
+            (leader.alignment is Alignment.UNDEAD)
+            if caster_is_leader
+            else (monster_species in SPIRITWRACK_UNDEAD_MONSTERS)
+        )
+        if spell is Spell.CHARM:
+            ability = Ability.NECROMANCY if caster_is_undead else Ability.PSYCHIC
+        elif spell in PERSONAL_COMBAT_SPELL_ABILITY:
+            ability = PERSONAL_COMBAT_SPELL_ABILITY[spell]
+        else:
+            return None  # not modeled this phase, incl. Hand of Death / Mirror-Image
+
+        # Control Undead's own eligibility precondition -- checked before
+        # any roll, same as every other spell's `target_is_immune` guard,
+        # except here an ineligible target means no roll at all rather
+        # than a roll that simply has no effect.
+        if spell is Spell.CONTROL_UNDEAD:
+            eligible = (
+                (monster_species in SPIRITWRACK_UNDEAD_MONSTERS) if target_is_monster else (leader.alignment is Alignment.UNDEAD)
+            )
+            if not eligible:
+                return None
+
+        if caster_is_leader:
+            level = leader.skills.pair_for_ability(ability)[0] if leader.skills is not None else 0
+            kingdom = state.kingdoms.get(leader.kingdom_id) if leader.kingdom_id is not None else None
+            # White Magic never gets the Pagan-Realm bonus (Phase 192).
+            caster_is_pagan = (
+                ability is not Ability.WHITE and kingdom is not None and kingdom.alignment is Alignment.PAGAN
+            )
+        else:
+            level = MONSTER_MAGIC_ABILITIES.get(monster_species, {}).get(ability, 0)
+            caster_is_pagan = False  # a monster has no Kingdom
+
+        succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan)
+
+        if spell is Spell.CONTROL_UNDEAD:
+            if succeeded:
+                # Confirmed by the user: "neutralizes" equals a win.
+                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            target.hit_points = control_undead_failure_new_hit_points(target.hit_points, rng)
+            return None
+
+        if not succeeded:
+            return None
+
+        if spell is Spell.CHARM:
+            # Confirmed by the user: the *caster* flees, same outcome as a
+            # successful Maneuver.FLEE.
+            return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
+
+        if spell is Spell.HOLY_SYMBOL:
+            if target_is_monster:
+                target_is_undead_or_anti_holy = monster_species in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS)
+            else:
+                target_is_undead_or_anti_holy = leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY)
+            caster.defensive_hit_multiplier *= holy_symbol_hit_chance(
+                1.0, level, target_is_undead_or_anti_holy=target_is_undead_or_anti_holy
+            )
+            if target_is_undead_or_anti_holy:
+                target.hit_points -= roll_holy_symbol_undead_damage(level, rng)
+                if target.hit_points <= 0:
+                    return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            return None
+
+        if spell is Spell.SPIRITWRACK:
+            if target_is_monster:
+                target_is_immune = monster_species in (SPIRITWRACK_UNDEAD_MONSTERS | SPIRITWRACK_MECHANICAL_MONSTERS)
+                target_is_animal = monster_species in SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
+            else:
+                target_is_immune = leader.alignment is Alignment.UNDEAD
+                target_is_animal = False
+            target.melee_damage_dealt_reduction += spiritwrack_melee_damage_reduction(
+                level, rng, target_is_immune=target_is_immune, target_is_animal_intelligence=target_is_animal
+            )
+            target.blocked_from_cast_and_archery = blocks_cast_and_archery(target_is_immune=target_is_immune)
+            return None
+
+        if spell is Spell.PSYCHIC_BLAST:
+            caster.bonus_unanswered_attacks += roll_psychic_blast_stun_rounds(rng)
+            return None
+
+        if spell is Spell.TELEK_STORM:
+            target_is_immune = target_is_monster and monster_species in SUBMARINE_MONSTERS
+            target.hit_points -= roll_telekinetic_storm_victim_damage(rng, target_is_immune=target_is_immune)
+            caster.hit_points -= roll_telekinetic_storm_caster_damage(
+                CombatRange.SPELL_RANGE, rng, target_is_immune=target_is_immune
+            )
+            if target.hit_points <= 0:
+                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            if caster.hit_points <= 0:
+                return _outcome_from(EncounterCombatResult(winner=("b" if target_is_monster else "a"), rounds=0))
+            return None
+
+        if spell is Spell.INVISIBILITY:
+            caster.defensive_hit_multiplier *= INVISIBILITY_HIT_CHANCE_MULTIPLIER
+            return None
+
+        if spell is Spell.FIREBALL:
+            target_is_immune = target_is_monster and monster_species in SUBMARINE_MONSTERS
+            target.hit_points -= roll_fireball_damage(level, rng, target_is_immune=target_is_immune)
+            if target.hit_points <= 0:
+                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            return None
+
+        if spell is Spell.ICE_SUSPEND:
+            if target_is_monster and monster_species in ICE_SUSPENSION_IMMUNE_MONSTERS:
+                return None
+            if ice_suspension_is_frozen(target.hit_points, level):
+                # Confirmed by the user: the frozen branch simplifies to a win.
+                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            if target_is_monster and monster_species in ICE_SUSPENSION_FLYING_MONSTERS:
+                target.hit_points -= roll_ice_suspension_flying_crash_damage(rng)
+                caster.bonus_unanswered_attacks += roll_ice_suspension_flying_bonus_rounds(rng)
+                if target.hit_points <= 0:
+                    return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                return None
+            caster.bonus_unanswered_attacks += ice_suspension_slowed_bonus_rounds(target.hit_points, level)
+            return None
+
+        return None
+
+    def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, *, defender_is_monster: bool) -> SearchExecutionResult | None:
+        """Phase 209: Psychic Blast's/Ice Suspension's own "bonus attack
+        rounds" -- free, unanswered Melee swings, resolved immediately
+        after the CAST tactic that granted them. Interpretation, not a
+        literal citation: the source text says only "supplementary attack
+        rounds," not Melee specifically -- Melee is the natural fit since
+        each bonus swing is immediate, unlike Fire Arrow's own separate
+        free-attack-count cycle. See module docstring's own Phase 209
+        addendum.
+        """
+
+        while attacker.bonus_unanswered_attacks > 0:
+            attacker.bonus_unanswered_attacks -= 1
+            damage = roll_melee_attack(
+                rng, damage_range=attacker.melee_damage_range, hit_chance_multiplier=defender.defensive_hit_multiplier
+            )
+            damage = max(0, damage - attacker.melee_damage_dealt_reduction)
+            defender.hit_points -= damage
+            if defender.hit_points <= 0:
+                return _outcome_from(EncounterCombatResult(winner=("a" if defender_is_monster else "b"), rounds=0))
+        return None
+
+    def _resolve_cast(tactic, *, caster_is_leader: bool) -> SearchExecutionResult | None:
+        outcome = _resolve_cast_tactic(tactic, caster_is_leader=caster_is_leader)
+        if outcome is not None:
+            return outcome
+        caster = leader_combatant if caster_is_leader else monster_combatant
+        target = monster_combatant if caster_is_leader else leader_combatant
+        return _consume_bonus_attacks(caster, target, defender_is_monster=caster_is_leader)
+
+    monster_cast_resolved = False
+
+    def _resolve_monster_casts() -> SearchExecutionResult | None:
+        nonlocal monster_cast_resolved
+        if monster_cast_resolved:
+            return None
+        monster_cast_resolved = True
+        for cast_tactic in monster_cast_tactics:
+            outcome = _resolve_cast(cast_tactic, caster_is_leader=False)
+            if outcome is not None:
+                return outcome
+        return None
+
     combat_attempted = False
     fire_arrow_resolved = False
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
@@ -348,6 +581,9 @@ def execute_search(
     def _resolve_fire_arrow_phase() -> SearchExecutionResult | None:
         nonlocal fire_arrow_shots, fire_arrow_resolved
         fire_arrow_resolved = True
+        outcome = _resolve_monster_casts()
+        if outcome is not None:
+            return outcome
         duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng)
         fire_arrow_shots = duel_result.shots
         outcome = _outcome_from(duel_result)
@@ -361,7 +597,14 @@ def execute_search(
             if rng.random() < FLEE_CHANCE[stats.speed]:
                 return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
             continue
+        if tactic.maneuver is Maneuver.CAST:
+            outcome = _resolve_cast(tactic, caster_is_leader=True)
+            if outcome is not None:
+                return outcome
+            continue
         if tactic.maneuver is Maneuver.SHOOT:
+            if leader_combatant.blocked_from_cast_and_archery:
+                continue
             combat_attempted = True
             outcome = _resolve_fire_arrow_phase()
             if outcome is not None:
@@ -374,6 +617,9 @@ def execute_search(
                 if outcome is not None:
                     return outcome
                 # nobody died from the guardian's own shots -- fall through to melee
+            outcome = _resolve_monster_casts()
+            if outcome is not None:
+                return outcome
             outcome = _outcome_from(resolve_melee_duel(leader_combatant, monster_combatant, rng))
             # Melee always ends in a winner (max_rounds is only a defensive
             # engineering cap), so `outcome` is never None here in practice.
@@ -386,9 +632,9 @@ def execute_search(
             result.guardian_monster = feature.guardian_monster
             return result
         # Every other maneuver (Steal, Talk, Say, Give, Fulfill, Scout,
-        # Cast, Use_MI, Beg) isn't wired -- skip it and keep walking the
-        # plan, matching how real Encounter Plans mix wired and unwired
-        # tactics (module docstring's own quoted examples).
+        # Use_MI, Beg) isn't wired -- skip it and keep walking the plan,
+        # matching how real Encounter Plans mix wired and unwired tactics
+        # (module docstring's own quoted examples).
 
     if combat_attempted:
         # Phase 178: the plan's own tactic list ran out without a winner
@@ -396,6 +642,9 @@ def execute_search(
         # further tactic followed) -- default to Melee until someone
         # dies, per the user's own confirmed default. See module
         # docstring's own Phase 178 addendum.
+        outcome = _resolve_monster_casts()
+        if outcome is not None:
+            return outcome
         outcome = _outcome_from(resolve_melee_duel(leader_combatant, monster_combatant, rng))
         result = (
             outcome if outcome is not None else SearchExecutionResult(accepted=True, combat_resolved=True, winner=None)

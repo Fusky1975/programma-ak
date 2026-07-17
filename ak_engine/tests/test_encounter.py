@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from ak_engine.turn.encounter import (
@@ -111,7 +113,9 @@ from ak_engine.turn.encounter import (
     ILLUSORY_HERO_TURNS_ON_MASTER_BY_DEFAULT,
     illusory_hero_disbelief_chance,
     resolve_illusory_hero_disbelief,
+    PERSONAL_COMBAT_SPELL_ABILITY,
 )
+from ak_engine.models.enums import Ability, Spell
 
 from _helpers import ScriptedRandom
 
@@ -1237,3 +1241,97 @@ def test_resolve_illusory_hero_disbelief_consumes_exactly_one_roll_in_between():
     assert resolve_illusory_hero_disbelief(base, 0, rng) is True
     rng = ScriptedRandom([0.65])
     assert resolve_illusory_hero_disbelief(base, 0, rng) is False
+
+
+# -- Phase 209: CAST orchestration engine (Combatant extensions + PERSONAL_COMBAT_SPELL_ABILITY) --
+
+
+def test_combatant_phase_209_fields_default_to_no_op():
+    c = Combatant("A")
+    assert c.defensive_hit_multiplier == 1.0
+    assert c.melee_damage_dealt_reduction == 0
+    assert c.blocked_from_cast_and_archery is False
+    assert c.bonus_unanswered_attacks == 0
+
+
+def test_personal_combat_spell_ability_covers_all_ten_base_spells():
+    # Sourced from turn/cast_execution.py's own [4.2X.4]-[4.2X.5] citation
+    # grouping (module docstring's Phase 209 addendum) -- five Ability
+    # blocks, two spells each.
+    assert PERSONAL_COMBAT_SPELL_ABILITY == {
+        Spell.HOLY_SYMBOL: Ability.WHITE,
+        Spell.SPIRITWRACK: Ability.WHITE,
+        Spell.PSYCHIC_BLAST: Ability.PSYCHIC,
+        Spell.TELEK_STORM: Ability.PSYCHIC,
+        Spell.INVISIBILITY: Ability.ILLUSION,
+        Spell.MIRROR_IMAGE: Ability.ILLUSION,
+        Spell.FIREBALL: Ability.ELEMENTAL,
+        Spell.ICE_SUSPEND: Ability.ELEMENTAL,
+        Spell.HAND_OF_DEATH: Ability.NECROMANCY,
+        Spell.CONTROL_UNDEAD: Ability.NECROMANCY,
+    }
+
+
+def test_roll_melee_attack_zero_hit_chance_multiplier_never_hits():
+    rng = ScriptedRandom([0.0, 0.0, 0.0])  # even the lowest possible roll still misses
+    assert roll_melee_attack(rng, hit_chance_multiplier=0.0) == 0
+    assert roll_melee_attack(rng, hit_chance_multiplier=0.0) == 0
+    assert roll_melee_attack(rng, hit_chance_multiplier=0.0) == 0
+
+
+def test_roll_melee_attack_high_hit_chance_multiplier_always_hits():
+    rng = ScriptedRandom([0.99, 0.5])  # even the highest possible roll still hits, then the damage roll
+    damage = roll_melee_attack(rng, hit_chance_multiplier=10.0)
+    assert 1 <= damage <= 6
+
+
+def test_roll_fire_arrow_attack_zero_hit_chance_multiplier_never_hits():
+    rng = ScriptedRandom([0.0])
+    assert roll_fire_arrow_attack(3, rng, hit_chance_multiplier=0.0) == 0
+
+
+def test_roll_fire_arrow_attack_high_hit_chance_multiplier_always_hits():
+    rng = ScriptedRandom([0.99, 0.5])
+    damage = roll_fire_arrow_attack(0, rng, hit_chance_multiplier=10.0)
+    assert 1 <= damage <= 6
+
+
+def test_resolve_melee_duel_defensive_hit_multiplier_prevents_defender_from_ever_being_hit():
+    # A can never be hit (multiplier 0.0); regardless of who acts first or
+    # how the dice fall, only A can ever land a blow, so A must eventually win.
+    a = Combatant("A", defensive_hit_multiplier=0.0)
+    b = Combatant("B")
+
+    result = resolve_melee_duel(a, b, random.Random(1))
+
+    assert result.winner == "a"
+    assert a.hit_points == CHARACTER_HIT_POINTS
+    assert b.hit_points <= 0
+
+
+def test_resolve_melee_duel_melee_damage_dealt_reduction_floors_at_zero():
+    # A's own outgoing damage is reduced far below zero -- every landed
+    # hit still deals 0. A is also unhittable (defensive_hit_multiplier=0)
+    # so B's own unaffected counter-attacks don't confound the assertion --
+    # nobody can die, no matter how many rounds are played.
+    a = Combatant("A", melee_skill=1, melee_damage_dealt_reduction=999, defensive_hit_multiplier=0.0)
+    b = Combatant("B", melee_skill=0)
+
+    result = resolve_melee_duel(a, b, random.Random(1), max_rounds=5)
+
+    assert result.winner is None
+    assert b.hit_points == CHARACTER_HIT_POINTS
+    assert a.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_resolve_fire_arrow_duel_defensive_hit_multiplier_prevents_hits():
+    # Only A has any free attacks (archery_skill=3 vs 0); B's own
+    # defensive_hit_multiplier=0.0 means none of A's shots can ever land.
+    a = Combatant("A", archery_skill=3)
+    b = Combatant("B", archery_skill=0, defensive_hit_multiplier=0.0)
+
+    result = resolve_fire_arrow_duel(a, b, random.Random(1))
+
+    assert result.winner is None
+    assert b.hit_points == CHARACTER_HIT_POINTS
+    assert all(shot.hit is False and shot.damage == 0 for shot in result.shots)

@@ -1206,6 +1206,7 @@ import random
 from dataclasses import dataclass
 from enum import Enum
 
+from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.monster import MonsterSpeed
 from ak_engine.models.temper import Temper
 
@@ -1846,6 +1847,40 @@ def resolve_personal_combat_spell_cast(skill_level: int, rng: random.Random, *, 
     return rng.random() < personal_combat_spell_cast_chance(skill_level, caster_is_pagan=caster_is_pagan)
 
 
+# Phase 209 -- the Spell -> Ability mapping for the ten Personal-Combat-only
+# spells, sourced directly from `turn/cast_execution.py`'s own docstring
+# (lines 48-52): "Holy_Symbol, Spiritwrack, Psychic_Blast, Telek_Storm,
+# Invisibility, Mirror_Image, Fireball, Ice_Suspend, Hand_of_Death,
+# Control_Undead -- [4.21.4]-[4.21.5], [4.22.4]-[4.22.5], [4.23.4]-[4.23.5],
+# [4.24.4]-[4.24.5], [4.25.4]-[4.25.5]" -- five citation blocks of two spells
+# each, in the same order as the name list. Cross-referencing each block
+# number against `cast_execution.py _SPELL_ABILITY`'s own confirmed entries
+# for the *other* spells sharing that same block ([4.21]=Resurrection/
+# Part_Sea/Bless/Gate_Angel=WHITE, [4.22]=Charm/Oratory/Clairvoyance/
+# Locate_Object=PSYCHIC, [4.23]=Illus_Terrain/Illus_Armies/Hide_Feature/
+# Illus_Fog=ILLUSION, [4.24]=Flood/Tornado/Earthquake/Mystic_Winds=ELEMENTAL,
+# [4.25]=Kill_Enemy/Plague/Skeletal_Army/Scar_Terrain=NECROMANCY) gives a
+# sequential pairing that is both unique and thematically obvious (Holy
+# Symbol/Spiritwrack -> White; Psychic Blast/Telekinetic Storm -> Psychic;
+# Invisibility/Mirror-Image -> Illusion; Fireball/Ice Suspension ->
+# Elemental; Hand of Death/Control Undead -> Necromancy). Mirror-Image and
+# Hand of Death are included here for completeness even though
+# `turn/search_execution.py`'s own Phase 209 dispatcher doesn't consume them
+# yet -- both are deferred to Phase 210 (channeled/illusion sub-loop).
+PERSONAL_COMBAT_SPELL_ABILITY: dict[Spell, Ability] = {
+    Spell.HOLY_SYMBOL: Ability.WHITE,
+    Spell.SPIRITWRACK: Ability.WHITE,
+    Spell.PSYCHIC_BLAST: Ability.PSYCHIC,
+    Spell.TELEK_STORM: Ability.PSYCHIC,
+    Spell.INVISIBILITY: Ability.ILLUSION,
+    Spell.MIRROR_IMAGE: Ability.ILLUSION,
+    Spell.FIREBALL: Ability.ELEMENTAL,
+    Spell.ICE_SUSPEND: Ability.ELEMENTAL,
+    Spell.HAND_OF_DEATH: Ability.NECROMANCY,
+    Spell.CONTROL_UNDEAD: Ability.NECROMANCY,
+}
+
+
 # Words of Healing [WH], module docstring's own Phase 200 addendum --
 # tied to `Ability.WHITE`, granted via `AdvancedAbility.WORDS_OF_
 # HEALING_SPELL` (White Magic skill 5+). No skill-level scaling on
@@ -2027,6 +2062,24 @@ class Combatant:
     # far; `turn/search_execution.py` sets it for a Troll's own
     # monster combatant.
     regenerates_hp: int = 0
+    # Phase 209 -- multiplies the chance an *opponent* lands a hit against
+    # this combatant, in either Melee or Fire Arrow. Composed
+    # multiplicatively when more than one Personal-Combat spell applies
+    # (Holy Symbol's own self-buff, Invisibility's flat halving) -- default
+    # 1.0 leaves every pre-Phase-209 caller's behavior unchanged.
+    defensive_hit_multiplier: float = 1.0
+    # Phase 209 -- subtracted from this combatant's own landed Melee damage
+    # (Spiritwrack's effect on its *target*, i.e. set on the victim, not the
+    # caster). Default 0 is a no-op for every existing caller.
+    melee_damage_dealt_reduction: int = 0
+    # Phase 209 -- Spiritwrack's "the victim cannot cast spells nor shoot
+    # with a bow" effect. `turn/search_execution.py`'s own CAST/SHOOT
+    # handling consults this before letting the affected side act.
+    blocked_from_cast_and_archery: bool = False
+    # Phase 209 -- free, unanswered Melee swings this combatant has banked
+    # from a successful Psychic Blast or Ice Suspension cast, consumed by
+    # `turn/search_execution.py` immediately after the CAST tactic resolves.
+    bonus_unanswered_attacks: int = 0
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -2049,30 +2102,42 @@ def fire_arrow_free_attacks(archery_skill: int) -> int:
     return archery_skill
 
 
-def roll_melee_attack(rng: random.Random, damage_range: tuple[int, int] = MELEE_DAMAGE_RANGE) -> int:
+def roll_melee_attack(
+    rng: random.Random, damage_range: tuple[int, int] = MELEE_DAMAGE_RANGE, *, hit_chance_multiplier: float = 1.0
+) -> int:
     """Rulebook [5.3]: one Melee swing. Returns damage dealt (0 on a miss).
 
     ``damage_range`` defaults to the character rule; pass an attacker's
     own ``Combatant.melee_damage_range`` for a species-specific die
-    (Phase 132 addendum, module docstring).
+    (Phase 132 addendum, module docstring). ``hit_chance_multiplier``
+    defaults to 1.0 (every pre-Phase-209 caller unaffected); pass a
+    defender's own ``Combatant.defensive_hit_multiplier`` (Phase 209) to
+    apply Holy Symbol's/Invisibility's own hit-chance reduction.
     """
 
-    if rng.random() < MELEE_HIT_CHANCE:
+    if rng.random() < MELEE_HIT_CHANCE * hit_chance_multiplier:
         return rng.randint(*damage_range)
     return 0
 
 
 def roll_fire_arrow_attack(
-    archery_skill: int, rng: random.Random, damage_range: tuple[int, int] = FIRE_ARROW_DAMAGE_RANGE
+    archery_skill: int,
+    rng: random.Random,
+    damage_range: tuple[int, int] = FIRE_ARROW_DAMAGE_RANGE,
+    *,
+    hit_chance_multiplier: float = 1.0,
 ) -> int:
     """Rulebook [5.2]: one Fire Arrow shot. Returns damage dealt (0 on a miss).
 
     ``damage_range`` defaults to the character rule; pass an attacker's
     own ``Combatant.missile_damage_range`` for a species-specific die
-    (Phase 170 addendum, module docstring).
+    (Phase 170 addendum, module docstring). ``hit_chance_multiplier``
+    defaults to 1.0 (every pre-Phase-209 caller unaffected); pass a
+    defender's own ``Combatant.defensive_hit_multiplier`` (Phase 209) to
+    apply Holy Symbol's/Invisibility's own hit-chance reduction.
     """
 
-    if rng.random() < fire_arrow_hit_chance(archery_skill):
+    if rng.random() < fire_arrow_hit_chance(archery_skill) * hit_chance_multiplier:
         return rng.randint(*damage_range)
     return 0
 
@@ -2130,6 +2195,13 @@ def resolve_melee_duel(
     1-6 damage against 10 hit points, a real duel ends in a handful of
     rounds; 1000 only guards against a pathological caller-supplied
     ``rng`` that never lands a hit.
+
+    Phase 209: each swing consults the *defender's* own
+    ``defensive_hit_multiplier`` (Holy Symbol/Invisibility) and the
+    *attacker's* own ``melee_damage_dealt_reduction`` (Spiritwrack,
+    floored at 0 -- a debuffed attacker can never deal negative damage).
+    Both default to a no-op (1.0 / 0), so every pre-Phase-209 caller is
+    unaffected.
     """
 
     skill_a, skill_b = effective_melee_skill(a), effective_melee_skill(b)
@@ -2138,7 +2210,11 @@ def resolve_melee_duel(
         for attacker, defender in ((first, second), (second, first)):
             if attacker.hit_points <= 0 or defender.hit_points <= 0:
                 continue
-            defender.hit_points -= roll_melee_attack(rng, damage_range=attacker.melee_damage_range)
+            damage = roll_melee_attack(
+                rng, damage_range=attacker.melee_damage_range, hit_chance_multiplier=defender.defensive_hit_multiplier
+            )
+            damage = max(0, damage - attacker.melee_damage_dealt_reduction)
+            defender.hit_points -= damage
             if defender.hit_points <= 0:
                 return EncounterCombatResult(winner=("a" if defender is b else "b"), rounds=round_number)
         _apply_end_of_round_regeneration(a, b)
@@ -2175,6 +2251,10 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
     "whoever still has shots left fires this round, in initiative
     order," which naturally lets the higher-Archery combatant keep
     firing solo once the other runs out.
+
+    Phase 209: each shot consults the *target's* own
+    ``defensive_hit_multiplier`` (Holy Symbol/Invisibility) -- defaults to
+    a no-op (1.0), so every pre-Phase-209 caller is unaffected.
     """
 
     skill_a, skill_b = effective_archery_skill(a), effective_archery_skill(b)
@@ -2193,14 +2273,18 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
                 if used_a >= shots_a:
                     continue
                 used_a += 1
-                damage = roll_fire_arrow_attack(skill_a, rng, damage_range=a.missile_damage_range)
+                damage = roll_fire_arrow_attack(
+                    skill_a, rng, damage_range=a.missile_damage_range, hit_chance_multiplier=b.defensive_hit_multiplier
+                )
                 shots.append(FireArrowShot(shooter="a", hit=damage > 0, damage=damage))
                 b.hit_points -= damage
             else:
                 if used_b >= shots_b:
                     continue
                 used_b += 1
-                damage = roll_fire_arrow_attack(skill_b, rng, damage_range=b.missile_damage_range)
+                damage = roll_fire_arrow_attack(
+                    skill_b, rng, damage_range=b.missile_damage_range, hit_chance_multiplier=a.defensive_hit_multiplier
+                )
                 shots.append(FireArrowShot(shooter="b", hit=damage > 0, damage=damage))
                 a.hit_points -= damage
         if a.hit_points <= 0 or b.hit_points <= 0:
