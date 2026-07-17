@@ -74,6 +74,13 @@ Clairvoyance entries here are stale):
   ``turn/encounter.py CHARM_FLEE_ALWAYS_SUCCEEDS``, not here, and is
   equally unwired into any real tactic-walk engine for the same reason
   as the ten Personal-Combat-only spells above.
+- **Words of Healing** (``Spell.HEAL``, one of the ten secret-ordinal
+  spells [2.0], Personal-Combat-only) was added in ``turn/encounter.py``'s
+  own Phase 200 addendum -- an eleventh Personal-Combat spell alongside
+  the ten above, granted via ``AdvancedAbility.WORDS_OF_HEALING_SPELL``
+  (White Magic skill 5+) rather than the base-skill-1+ gate the other
+  ten use. Equally unwired into any real tactic-walk engine, same
+  reason as every spell above.
 
 **Every province-targeted spell here shares one targeting mechanism**:
 ``CastRequest.target`` is a raw hex number (rulebook: "the province you

@@ -867,6 +867,62 @@ level 4) and a per-encounter "not twice with the same Personal-Combat
 spell" limit -- see `turn/cast_execution.py`'s own Phase 192 addendum
 for why neither is wired in yet (no per-turn/per-encounter cast-count
 state exists anywhere in this project).
+
+**Phase 200 addendum -- Words of Healing [WH], tied to Ability.WHITE,
+project-original (user-supplied), the eleventh Personal-Combat spell
+and the first of the ten secret-ordinal spells (`Spell.HEAL = 26`,
+[2.0]'s "secret special spells and capabilities... attainable at high
+levels of ability") to actually get its mechanic modeled.** Quoted in
+full: "WORDS OF HEALING SPELL: New Special Combat Heal (can be casted
+using the command CA-WH): A new Combat Spell is gained called "Words
+of Healing". With this spell, a White Magician is able to heal himself
+even in the heat of battle (before now, healing is not possible in
+combat situations). The character is completely healed when the Words
+of Healing are spoken, gaining back all lost hit points. The spell is
+also half as likely to be disrupted by your opponent's tactics as
+other spells."
+
+Unlike "the ten" Phase 60/191's own docstrings enumerate (Holy_Symbol
+through Control_Undead), Words of Healing is granted via
+`models/advanced_ability.py AdvancedAbility.WORDS_OF_HEALING_SPELL`
+(White Magic skill 5+) rather than the base-Ability-skill-1+ gate the
+other ten use -- already fully documented at the model/metadata layer
+(`Spell.HEAL`, `SPELL_NAME`/`SPELL_ABBREVIATION["WH"]`,
+`ADVANCED_ABILITY_GRANTS_SPELL[WORDS_OF_HEALING_SPELL] = Spell.HEAL`)
+before this phase; only the actual combat mechanic was missing.
+
+**Two independent effects, no skill-level scaling on either** (so
+`PERSONAL_COMBAT_SPELL_LEVEL_CAP` doesn't apply here, matching
+Charm/Psychic Blast/Telekinetic Storm/Invisibility's own uncapped,
+non-scaling effects):
+
+- **"Completely healed... gaining back all lost hit points."**
+  `words_of_healing_heal(combatant, max_hit_points)` sets
+  `combatant.hit_points = max_hit_points` outright. `Combatant` has
+  only a single `hit_points` field (the current value) with no
+  separate "starting/max" field to heal back up to -- the same gap
+  Troll regeneration's own Phase 155 addendum already flagged for the
+  identical reason -- so the caller supplies the combatant's own
+  known max explicitly (`CHARACTER_HIT_POINTS` for a normal character,
+  or a monster's own stat-block total), rather than this module
+  guessing at or silently adding a new persistent field.
+- **"Half as likely to be disrupted... as other spells."** A direct,
+  spell-specific override of `spell_disruption_chance()`'s own Phase
+  179 formula (20% cumulative per hit landed, capped at 95%) --
+  `spell_disruption_chance()`/`resolve_spell_disruption()` now both
+  take an optional `chance_per_hit` keyword (defaulting to
+  `SPELL_DISRUPTION_CHANCE_PER_HIT`, so every existing caller is
+  unaffected), and `words_of_healing_disruption_chance()`/`resolve_
+  words_of_healing_disruption()` call through with
+  `chance_per_hit=SPELL_DISRUPTION_CHANCE_PER_HIT *
+  WORDS_OF_HEALING_DISRUPTION_CHANCE_MULTIPLIER` (0.5) -- half the
+  per-hit rate, same 95% cap, rather than halving the already-computed
+  final chance (which would cap differently at high hit counts).
+
+**Not wired into `turn/search_execution.py`'s combat resolution this
+phase either**, same reason as every other Personal-Combat spell
+above -- this project has no real `CAST`-tactic orchestration engine
+yet to call it from.
 """
 
 from __future__ import annotations
@@ -913,19 +969,27 @@ SPELL_DISRUPTION_CHANCE_PER_HIT = 0.20
 SPELL_DISRUPTION_CHANCE_CAP = 0.95
 
 
-def spell_disruption_chance(hits_taken_this_round: int) -> float:
+def spell_disruption_chance(hits_taken_this_round: int, *, chance_per_hit: float = SPELL_DISRUPTION_CHANCE_PER_HIT) -> float:
     """The chance a spellcast attempt fails this round, per the user's own
     confirmed formula (module docstring's Phase 179 addendum): 20% per
     hit already landed on the caster this round, before the cast is
     attempted, capped at 95%. Counts *hits*, not damage points -- "ogni
     danno" ("every hit") -- matching the worked example, where a single
     landed Melee hit alone was enough to disrupt the very next cast.
+
+    ``chance_per_hit`` defaults to ``SPELL_DISRUPTION_CHANCE_PER_HIT``
+    (every existing caller unaffected); Words of Healing's own halved
+    rate (module docstring's Phase 200 addendum) overrides it via
+    ``words_of_healing_disruption_chance()`` rather than duplicating
+    this formula.
     """
 
-    return min(hits_taken_this_round * SPELL_DISRUPTION_CHANCE_PER_HIT, SPELL_DISRUPTION_CHANCE_CAP)
+    return min(hits_taken_this_round * chance_per_hit, SPELL_DISRUPTION_CHANCE_CAP)
 
 
-def resolve_spell_disruption(hits_taken_this_round: int, rng: random.Random) -> bool:
+def resolve_spell_disruption(
+    hits_taken_this_round: int, rng: random.Random, *, chance_per_hit: float = SPELL_DISRUPTION_CHANCE_PER_HIT
+) -> bool:
     """Rolls whether a spellcast attempt is disrupted this round -- see
     ``spell_disruption_chance()``'s own docstring for the formula.
     Returns True if disrupted (the cast fails, the round is lost).
@@ -938,7 +1002,7 @@ def resolve_spell_disruption(hits_taken_this_round: int, rng: random.Random) -> 
 
     if hits_taken_this_round <= 0:
         return False
-    return rng.random() < spell_disruption_chance(hits_taken_this_round)
+    return rng.random() < spell_disruption_chance(hits_taken_this_round, chance_per_hit=chance_per_hit)
 
 
 # Holy Symbol [HO], module docstring's own Phase 180 addendum -- project-
@@ -1468,6 +1532,52 @@ def resolve_personal_combat_spell_cast(skill_level: int, rng: random.Random, *, 
     """
 
     return rng.random() < personal_combat_spell_cast_chance(skill_level, caster_is_pagan=caster_is_pagan)
+
+
+# Words of Healing [WH], module docstring's own Phase 200 addendum --
+# tied to `Ability.WHITE`, granted via `AdvancedAbility.WORDS_OF_
+# HEALING_SPELL` (White Magic skill 5+). No skill-level scaling on
+# either effect, so `PERSONAL_COMBAT_SPELL_LEVEL_CAP` doesn't apply.
+WORDS_OF_HEALING_HEALS_TO_FULL = True
+WORDS_OF_HEALING_DISRUPTION_CHANCE_MULTIPLIER = 0.5
+
+
+def words_of_healing_disruption_chance(hits_taken_this_round: int) -> float:
+    """Words of Healing's own disruption chance -- "half as likely to be
+    disrupted... as other spells": half ``SPELL_DISRUPTION_CHANCE_PER_HIT``,
+    same 95% cap, per hit already landed this round. See module
+    docstring's Phase 200 addendum.
+    """
+
+    return spell_disruption_chance(
+        hits_taken_this_round,
+        chance_per_hit=SPELL_DISRUPTION_CHANCE_PER_HIT * WORDS_OF_HEALING_DISRUPTION_CHANCE_MULTIPLIER,
+    )
+
+
+def resolve_words_of_healing_disruption(hits_taken_this_round: int, rng: random.Random) -> bool:
+    """Rolls Words of Healing's own halved disruption chance -- see
+    ``words_of_healing_disruption_chance()``. Same no-roll-at-zero-hits
+    shortcut as ``resolve_spell_disruption()``.
+    """
+
+    if hits_taken_this_round <= 0:
+        return False
+    return rng.random() < words_of_healing_disruption_chance(hits_taken_this_round)
+
+
+def words_of_healing_heal(combatant: "Combatant", max_hit_points: int = CHARACTER_HIT_POINTS) -> None:
+    """"The character is completely healed when the Words of Healing are
+    spoken, gaining back all lost hit points." Sets ``combatant.hit_points``
+    to ``max_hit_points`` outright. ``Combatant`` has no separate "starting/
+    max" hit-points field distinct from its current one (the same gap
+    Troll regeneration's own Phase 155 addendum already flagged), so the
+    caller supplies the combatant's own known max explicitly --
+    ``CHARACTER_HIT_POINTS`` for a normal character, or a monster's own
+    stat-block total.
+    """
+
+    combatant.hit_points = max_hit_points
 
 
 @dataclass(slots=True)

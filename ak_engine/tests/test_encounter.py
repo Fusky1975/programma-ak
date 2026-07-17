@@ -85,6 +85,11 @@ from ak_engine.turn.encounter import (
     spell_disruption_chance,
     spiritwrack_melee_damage_reduction,
     blocks_cast_and_archery,
+    WORDS_OF_HEALING_DISRUPTION_CHANCE_MULTIPLIER,
+    WORDS_OF_HEALING_HEALS_TO_FULL,
+    resolve_words_of_healing_disruption,
+    words_of_healing_disruption_chance,
+    words_of_healing_heal,
 )
 
 from _helpers import ScriptedRandom
@@ -976,3 +981,75 @@ def test_resolve_personal_combat_spell_cast_succeeds_under_the_chance():
 def test_resolve_personal_combat_spell_cast_fails_over_the_chance():
     rng = ScriptedRandom([0.99])
     assert resolve_personal_combat_spell_cast(1, rng) is False
+
+
+# -- Phase 200: Words of Healing [WH] --
+
+
+def test_words_of_healing_constants():
+    assert WORDS_OF_HEALING_HEALS_TO_FULL is True
+    assert WORDS_OF_HEALING_DISRUPTION_CHANCE_MULTIPLIER == 0.5
+
+
+def test_words_of_healing_disruption_chance_is_half_the_normal_rate():
+    assert words_of_healing_disruption_chance(1) == pytest.approx(SPELL_DISRUPTION_CHANCE_PER_HIT * 0.5)
+    assert words_of_healing_disruption_chance(2) == pytest.approx(2 * SPELL_DISRUPTION_CHANCE_PER_HIT * 0.5)
+    assert words_of_healing_disruption_chance(0) == 0.0
+
+
+def test_words_of_healing_disruption_chance_still_caps_at_95_percent():
+    # 10 hits * (20%/2) = 100%, uncapped -- clamped to the same 95% cap.
+    assert words_of_healing_disruption_chance(10) == pytest.approx(SPELL_DISRUPTION_CHANCE_CAP)
+
+
+def test_resolve_words_of_healing_disruption_zero_hits_never_consumes_a_roll():
+    rng = ScriptedRandom([])
+    assert resolve_words_of_healing_disruption(0, rng) is False
+
+
+def test_resolve_words_of_healing_disruption_uses_the_halved_chance():
+    # 1 hit -> 10% (half of the normal 20%): 0.09 disrupts, 0.10 doesn't --
+    # a roll that would disrupt a normal spell (0.19) does not disrupt WH.
+    assert resolve_words_of_healing_disruption(1, ScriptedRandom([0.09])) is True
+    assert resolve_words_of_healing_disruption(1, ScriptedRandom([0.10])) is False
+    assert resolve_words_of_healing_disruption(1, ScriptedRandom([0.19])) is False
+
+
+def test_resolve_words_of_healing_disruption_consumes_exactly_one_roll_when_hits_taken():
+    rng = ScriptedRandom([0.99])  # a second .random() call would raise IndexError
+    resolve_words_of_healing_disruption(2, rng)
+
+
+def test_words_of_healing_heal_restores_to_full():
+    combatant = Combatant("Ablamor", hit_points=3)
+
+    words_of_healing_heal(combatant, CHARACTER_HIT_POINTS)
+
+    assert combatant.hit_points == CHARACTER_HIT_POINTS == 10
+
+
+def test_words_of_healing_heal_defaults_to_character_hit_points():
+    combatant = Combatant("Ablamor", hit_points=1)
+
+    words_of_healing_heal(combatant)
+
+    assert combatant.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_words_of_healing_heal_uses_a_monster_supplied_max():
+    combatant = Combatant("Troll", hit_points=5)
+
+    words_of_healing_heal(combatant, max_hit_points=30)
+
+    assert combatant.hit_points == 30
+
+
+def test_spell_disruption_chance_still_defaults_to_the_normal_rate():
+    # The new keyword-only chance_per_hit override doesn't change any
+    # existing caller's behavior.
+    assert spell_disruption_chance(1) == pytest.approx(SPELL_DISRUPTION_CHANCE_PER_HIT)
+
+
+def test_resolve_spell_disruption_still_defaults_to_the_normal_rate():
+    assert resolve_spell_disruption(1, ScriptedRandom([0.19])) is True
+    assert resolve_spell_disruption(1, ScriptedRandom([0.20])) is False

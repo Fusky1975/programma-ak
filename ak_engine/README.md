@@ -7714,7 +7714,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   `finalize_gate_angel_visit()`'s still-real `fixed_item is None`
   branch under test without asserting a false gap against real data.
   Full suite: 2420 passed (2419 unchanged + 1 new).
-- **Phase 199 (current)**: wired `turn/valhalla_execution.py
+- **Phase 199**: wired `turn/valhalla_execution.py
   finalize_gate_angel_visit()` (Phase 196, deliberately left unwired at
   the time) into `turn/turn_processor.py run_turn()` -- the last open
   item the Gate Angel/Valhalla work had left. Called exactly once, after
@@ -7735,6 +7735,46 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   shape), a mismatched-alignment cast producing no visit, and an empty
   turn producing no visit. Full suite: 2423 passed (2420 unchanged + 3
   new).
+- **Phase 200 (current)**: modeled Words of Healing [WH]
+  (`Spell.HEAL`), the eleventh Personal-Combat spell and the first of
+  the ten secret-ordinal spells ([2.0]) to get a real mechanic --
+  user-supplied: "New Special Combat Heal (can be casted using the
+  command CA-WH)... The character is completely healed when the Words
+  of Healing are spoken, gaining back all lost hit points. The spell
+  is also half as likely to be disrupted by your opponent's tactics as
+  other spells." Granted via `AdvancedAbility.WORDS_OF_HEALING_SPELL`
+  (White Magic skill 5+, already fully documented at the model layer
+  since an earlier phase) rather than the base-skill-1+ gate the other
+  ten Personal-Combat spells use -- only the combat mechanic itself was
+  missing.
+  - `turn/encounter.py words_of_healing_heal(combatant,
+    max_hit_points)` sets `Combatant.hit_points = max_hit_points`
+    outright. `Combatant` has no separate "starting/max" hit-points
+    field distinct from its current one (the same gap Troll
+    regeneration's own Phase 155 addendum already flagged), so the
+    caller supplies the combatant's own known max explicitly
+    (`CHARACTER_HIT_POINTS` for a character, or a monster's own
+    stat-block total) rather than a new field being invented.
+  - `spell_disruption_chance()`/`resolve_spell_disruption()` gained an
+    optional `chance_per_hit` keyword (default: the existing 20%
+    constant, every prior caller unaffected); `words_of_healing_
+    disruption_chance()`/`resolve_words_of_healing_disruption()` call
+    through with half that rate, same 95% cap -- halving the per-hit
+    rate rather than the final computed chance, so the cap still
+    engages at the correct hit count.
+  - No skill-level scaling on either effect (so
+    `PERSONAL_COMBAT_SPELL_LEVEL_CAP` doesn't apply), matching
+    Charm/Psychic Blast/Telekinetic Storm/Invisibility's own uncapped,
+    non-scaling Personal-Combat effects.
+  - `turn/cast_execution.py`'s own "the ten Personal-Combat-only
+    spells" docstring note updated with a cross-reference to this
+    eleventh one.
+  - **Not wired into `turn/search_execution.py`'s combat resolution
+    this phase either**, same reason as every other Personal-Combat
+    spell in `turn/encounter.py`: no real `CAST`-tactic orchestration
+    engine exists yet to call it from.
+  - 11 new tests in `tests/test_encounter.py`. Full suite: 2434 passed
+    (2423 unchanged + 11 new).
 
 ## Setup
 
