@@ -7937,7 +7937,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - 6 new tests in `tests/test_encounter.py` (constants + lookup +
     Fast/Medium threshold walks + Slow-never-escapes + single-roll-
     consumption). Full suite: 2456 passed (2450 unchanged + 6 new).
-- **Phase 204 (current)**: modeled Mystic Winds [MW] (`Spell.MYSTIC_
+- **Phase 204**: modeled Mystic Winds [MW] (`Spell.MYSTIC_
   WINDS`), tied to `Ability.ELEMENTAL` -- the second Elemental secret
   spell, but unlike Lava Pool (Personal-Combat) and every other secret
   spell so far, explicitly not a combat spell ("questo non è un
@@ -7990,6 +7990,52 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     set on every commanded army + self-target + not-co-located failure
     + target-not-found failure + repeated-cast non-cumulative check).
     Full suite: 2462 passed (2456 unchanged + 6 new).
+- **Phase 205 (current)**: modeled Augur Combat [AC] (`Spell.AUGUR_
+  COMBAT`), tied to `Ability.PSYCHIC` -- the first Psychic secret
+  spell, Personal-Combat, the fourteenth overall. User-supplied: "The
+  Psychic Mage performs a powerful augury (forecast), whereby he
+  divines the probable outcome of the combat. The computer will
+  estimate the percentage chance of victory, if combat were to occur.
+  If the plan following the spell is a combat-oriented plan, then if
+  the chances are too low for the character's courage, he will shirk
+  combat (Coward 80%, Cautious 60%, Brave 40%, Berserk 20%)... Usually
+  this spell should be the first tactic ordered, when it won't cost
+  you a combat round; if it comes later, then the result will be an
+  attempt to flee." Plus the user's own follow-up clarification
+  (Italian): the "estimate" is not a number shown to the player but a
+  binary internal outcome from a silent simulation -- only a simulated
+  *loss* ever triggers the courage-gated shirk roll.
+  - `turn/encounter.py AUGUR_COMBAT_SHIRK_CHANCE: dict[Temper, float]`
+    (Coward 80%, Cautious 60%, Brave 40%, Berserk 20%, `models/
+    temper.py Temper`, Phase 82) and `augur_combat_shirk_chance(temper)`/
+    `resolve_augur_combat_shirk(temper, rng)` -- the courage-gated roll
+    itself, monotonic with `Temper`'s own ordinal. No skill-level
+    scaling (the chance is keyed to Temper, not Psychic skill), so
+    `PERSONAL_COMBAT_SPELL_LEVEL_CAP` doesn't apply.
+  - `resolve_augur_combat(would_lose_simulated_combat, temper, rng)`
+    composes the two together: returns `False` immediately (never
+    consumes a roll) when the caller-supplied simulated outcome is a
+    win, otherwise rolls the shirk chance. **The silent battle
+    simulation itself is the caller's job, not this function's** --
+    this project already has real combat resolvers (`resolve_melee_
+    duel`, `turn/battle_orchestrator.py fight_battle`), but "simulate
+    the probable outcome of the combat" names no specific one of them,
+    and there is no Cast-tactic orchestration engine to make that
+    choice from real plan/state data -- the same "caller supplies the
+    otherwise-unavailable precondition" pattern every spell above uses,
+    for a richer precondition than a single boolean fact this time.
+  - **The "first tactic in the plan" position rule is a confirmed
+    fact, not modeled**: `AUGUR_COMBAT_FREE_WHEN_CAST_FIRST = True`
+    ("won't cost you a combat round") and `AUGUR_COMBAT_ACTS_AS_
+    FLEE_WHEN_CAST_LATER = True` ("the result will be an attempt to
+    flee"). Both need this cast's own position within a Special
+    Encounter Plan's tactic list, the same already-confirmed gap
+    `turn/search_execution.py`'s own docstring flags for every `CAST`
+    entry in a guardian's plan.
+  - 7 new tests in `tests/test_encounter.py` (constants + lookup +
+    Cowardly/Berserk threshold walks + single-roll-consumption + the
+    composed function's win-never-rolls and loss-rolls-through cases).
+    Full suite: 2469 passed (2462 unchanged + 7 new).
 
 ## Setup
 

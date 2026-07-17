@@ -100,6 +100,13 @@ from ak_engine.turn.encounter import (
     lava_pool_escape_chance,
     resolve_lava_pool_escape,
     MonsterSpeed,
+    AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER,
+    AUGUR_COMBAT_FREE_WHEN_CAST_FIRST,
+    AUGUR_COMBAT_SHIRK_CHANCE,
+    Temper,
+    augur_combat_shirk_chance,
+    resolve_augur_combat,
+    resolve_augur_combat_shirk,
 )
 
 from _helpers import ScriptedRandom
@@ -1117,6 +1124,60 @@ def test_resolve_lava_pool_escape_slow_speed_never_escapes():
 def test_resolve_lava_pool_escape_consumes_exactly_one_roll():
     rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
     resolve_lava_pool_escape(MonsterSpeed.MEDIUM, rng)
+
+
+# -- Phase 205: Augur Combat [AC] --
+
+
+def test_augur_combat_constants():
+    assert AUGUR_COMBAT_FREE_WHEN_CAST_FIRST is True
+    assert AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER is True
+    assert AUGUR_COMBAT_SHIRK_CHANCE[Temper.COWARDLY] == 0.80
+    assert AUGUR_COMBAT_SHIRK_CHANCE[Temper.CAUTIOUS] == 0.60
+    assert AUGUR_COMBAT_SHIRK_CHANCE[Temper.BRAVE] == 0.40
+    assert AUGUR_COMBAT_SHIRK_CHANCE[Temper.BERSERK] == 0.20
+
+
+def test_augur_combat_shirk_chance_looks_up_by_temper():
+    assert augur_combat_shirk_chance(Temper.COWARDLY) == 0.80
+    assert augur_combat_shirk_chance(Temper.CAUTIOUS) == 0.60
+    assert augur_combat_shirk_chance(Temper.BRAVE) == 0.40
+    assert augur_combat_shirk_chance(Temper.BERSERK) == 0.20
+
+
+def test_resolve_augur_combat_shirk_cowardly_threshold():
+    assert resolve_augur_combat_shirk(Temper.COWARDLY, ScriptedRandom([0.0])) is True
+    assert resolve_augur_combat_shirk(Temper.COWARDLY, ScriptedRandom([0.79])) is True
+    assert resolve_augur_combat_shirk(Temper.COWARDLY, ScriptedRandom([0.80])) is False
+    assert resolve_augur_combat_shirk(Temper.COWARDLY, ScriptedRandom([0.99])) is False
+
+
+def test_resolve_augur_combat_shirk_berserk_threshold():
+    assert resolve_augur_combat_shirk(Temper.BERSERK, ScriptedRandom([0.0])) is True
+    assert resolve_augur_combat_shirk(Temper.BERSERK, ScriptedRandom([0.19])) is True
+    assert resolve_augur_combat_shirk(Temper.BERSERK, ScriptedRandom([0.20])) is False
+    assert resolve_augur_combat_shirk(Temper.BERSERK, ScriptedRandom([0.99])) is False
+
+
+def test_resolve_augur_combat_shirk_consumes_exactly_one_roll():
+    rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
+    resolve_augur_combat_shirk(Temper.BRAVE, rng)
+
+
+def test_resolve_augur_combat_never_shirks_on_a_simulated_win():
+    rng = ScriptedRandom([])  # a simulated win must not consume a roll at all
+    assert resolve_augur_combat(would_lose_simulated_combat=False, temper=Temper.COWARDLY, rng=rng) is False
+
+
+def test_resolve_augur_combat_rolls_the_shirk_chance_on_a_simulated_loss():
+    assert (
+        resolve_augur_combat(would_lose_simulated_combat=True, temper=Temper.COWARDLY, rng=ScriptedRandom([0.79]))
+        is True
+    )
+    assert (
+        resolve_augur_combat(would_lose_simulated_combat=True, temper=Temper.COWARDLY, rng=ScriptedRandom([0.80]))
+        is False
+    )
 
 
 def test_spell_disruption_chance_still_defaults_to_the_normal_rate():

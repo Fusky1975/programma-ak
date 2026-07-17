@@ -1075,6 +1075,68 @@ rather than left to look like a third sourced data point.
 **Not wired into `turn/search_execution.py`'s combat resolution this
 phase either**, same reason as every other Personal-Combat spell
 above.
+
+**Phase 205 addendum -- Augur Combat [AC], tied to Ability.PSYCHIC,
+project-original (user-supplied), the first Psychic secret spell and
+the fourteenth Personal-Combat spell overall.** Quoted in full: "The
+Psychic Mage performs a powerful augury (forecast), whereby he divines
+the probable outcome of the combat. The computer will estimate the
+percentage chance of victory, if combat were to occur. If the plan
+following the spell is a combat-oriented plan, then if the chances are
+too low for the character's courage, he will shirk combat (Coward 80%,
+Cautious 60%, Brave 40%, Berserk 20%). Any encounter plan can be stated
+after casting this spell. Usually this spell should be the first
+tactic ordered, when it won't cost you a combat round; if it comes
+later, then the result will be an attempt to flee." The user's own
+follow-up clarification (Italian original): "Praticamente il programma
+simula la battaglia in maniera silenziosa poi se il risultato vede
+l'eroe che lancia l'incantesimo perdere (e quindi morire) questo può
+non partecipare allo scontro secondo le percentuali date" -- confirming
+the "estimate" is not a number shown to the player but a binary
+internal outcome from a silent simulation: only a *simulated loss*
+triggers the courage-gated shirk roll at all; a simulated win never
+does.
+
+**What this phase actually models:**
+
+1. `AUGUR_COMBAT_SHIRK_CHANCE: dict[Temper, float]` (Coward 80%,
+   Cautious 60%, Brave 40%, Berserk 20%, `models/temper.py`'s own
+   `Temper` enum, Phase 82) and `augur_combat_shirk_chance(temper)`/
+   `resolve_augur_combat_shirk(temper, rng)` -- the courage-gated roll
+   itself, monotonically decreasing with `Temper`'s own ordinal
+   (`COWARDLY=0` highest shirk chance, `BERSERK=3` lowest), no skill-
+   level scaling (so `PERSONAL_COMBAT_SPELL_LEVEL_CAP` doesn't apply):
+   the rulebook ties this chance to the caster's *Temper*, not to
+   Psychic skill level.
+2. `resolve_augur_combat(would_lose_simulated_combat, temper, rng)` --
+   the composed effect: returns `False` immediately (never shirks)
+   when the caller-supplied simulated outcome is a win, otherwise rolls
+   `resolve_augur_combat_shirk`. **The silent battle simulation itself
+   is the caller's job, not this function's** -- this project already
+   has real combat resolvers (`resolve_melee_duel`, `turn/
+   battle_orchestrator.py fight_battle`), but "simulate the probable
+   outcome of the combat" names no specific one of them (a single
+   personal duel? a full army battle? how many rounds?), and there is
+   no Cast-tactic orchestration engine anywhere in this project to make
+   that choice from real plan/state data -- the same "caller supplies
+   the otherwise-unavailable precondition" pattern every spell above
+   uses (e.g. Gate Demon's own opponent-alignment check), just for a
+   richer precondition than a single boolean fact about the world.
+3. **The "first tactic in the plan" position rule is a confirmed fact,
+   not modeled**: `AUGUR_COMBAT_FREE_WHEN_CAST_FIRST = True` records
+   "when it won't cost you a combat round," and
+   `AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER = True` records "the
+   result will be an attempt to flee" otherwise. Both require knowing
+   this cast's own position within a Special Encounter Plan's tactic
+   list (`models/monster_encounter_plan.py`) -- the same already-
+   confirmed gap `turn/search_execution.py`'s own docstring flags for
+   every `CAST` entry in a guardian's plan ("no personal-combat
+   spell-effect engine exists yet for any of the... spells these plans
+   reference").
+
+**Not wired into `turn/search_execution.py`'s combat resolution this
+phase either**, same reason as every other Personal-Combat spell
+above.
 """
 
 from __future__ import annotations
@@ -1084,6 +1146,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from ak_engine.models.monster import MonsterSpeed
+from ak_engine.models.temper import Temper
 
 # [5.0]: "In combat, all characters have 10 hit points. Monsters may
 # have anywhere from 7 to 50 hit points." -- this module's own
@@ -1794,6 +1857,51 @@ def resolve_lava_pool_escape(speed: MonsterSpeed, rng: random.Random) -> bool:
     """
 
     return rng.random() < lava_pool_escape_chance(speed)
+
+
+# Augur Combat [AC], module docstring's own Phase 205 addendum -- tied to
+# Ability.PSYCHIC. No skill-level scaling (the chance is keyed to the
+# caster's own Temper, not Psychic skill), so PERSONAL_COMBAT_SPELL_
+# LEVEL_CAP doesn't apply here either.
+AUGUR_COMBAT_SHIRK_CHANCE: dict[Temper, float] = {
+    Temper.COWARDLY: 0.80,
+    Temper.CAUTIOUS: 0.60,
+    Temper.BRAVE: 0.40,
+    Temper.BERSERK: 0.20,
+}
+AUGUR_COMBAT_FREE_WHEN_CAST_FIRST = True
+AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER = True
+
+
+def augur_combat_shirk_chance(temper: Temper) -> float:
+    """The caster's own chance to shirk combat after a simulated loss,
+    keyed by its ``Temper``. See ``AUGUR_COMBAT_SHIRK_CHANCE`` above and
+    the module docstring's own Phase 205 addendum for sourcing.
+    """
+
+    return AUGUR_COMBAT_SHIRK_CHANCE[temper]
+
+
+def resolve_augur_combat_shirk(temper: Temper, rng: random.Random) -> bool:
+    """Returns True if the caster shirks combat. Only call this once a
+    silent battle simulation (the caller's own job -- see the module
+    docstring's own Phase 205 addendum) has already predicted a loss;
+    ``resolve_augur_combat`` below composes that precondition in.
+    """
+
+    return rng.random() < augur_combat_shirk_chance(temper)
+
+
+def resolve_augur_combat(would_lose_simulated_combat: bool, temper: Temper, rng: random.Random) -> bool:
+    """"if the chances are too low for the character's courage, he will shirk
+    combat" -- only rolls at all when ``would_lose_simulated_combat`` is
+    True (the caller's own silent-simulation result); a simulated win
+    never shirks. Returns True if the caster shirks combat.
+    """
+
+    if not would_lose_simulated_combat:
+        return False
+    return resolve_augur_combat_shirk(temper, rng)
 
 
 @dataclass(slots=True)
