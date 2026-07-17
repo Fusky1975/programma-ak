@@ -7990,7 +7990,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     set on every commanded army + self-target + not-co-located failure
     + target-not-found failure + repeated-cast non-cumulative check).
     Full suite: 2462 passed (2456 unchanged + 6 new).
-- **Phase 205 (current)**: modeled Augur Combat [AC] (`Spell.AUGUR_
+- **Phase 205**: modeled Augur Combat [AC] (`Spell.AUGUR_
   COMBAT`), tied to `Ability.PSYCHIC` -- the first Psychic secret
   spell, Personal-Combat, the fourteenth overall. User-supplied: "The
   Psychic Mage performs a powerful augury (forecast), whereby he
@@ -8036,6 +8036,45 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     Cowardly/Berserk threshold walks + single-roll-consumption + the
     composed function's win-never-rolls and loss-rolls-through cases).
     Full suite: 2469 passed (2462 unchanged + 7 new).
+- **Phase 206 (current)**: modeled Locate Object [LO] (`Spell.LOCATE_
+  OBJECT`), tied to `Ability.PSYCHIC` -- the second Psychic secret
+  spell, not a combat spell (confirmed by the user's own framing).
+  User-supplied: "By the enchanting power of this spell, the
+  provincial location of any magic item will be revealed to the
+  spellcaster, as well as who is guarding the item, if anyone. If the
+  magic item was lost to a wandering monster, it will be seen as
+  guarded by a monster. The Psychic must specify the identifying
+  number of the magic item, not the treasure name itself... this is
+  because there is sometimes more than one of the same magic item in
+  the game." Unlike every spell above, this one targets an
+  item-instance id (`models/item.py ItemInstance.item_id`), not a
+  character/province/nothing -- added to `turn/cast_decode.py`'s new
+  `ITEM_TARGET_SPELLS`, a fourth target-shape category.
+  - `turn/cast_execution.py _execute_locate_object` gates the usual
+    cast-success roll but mutates nothing in `state` -- a pure
+    information query, unlike every mutating spell above.
+  - The real answer is a separate primitive, `locate_object(state,
+    item_id) -> LocateObjectResult | None`, deliberately outside
+    `CastExecutionResult`'s own shared applied/reason shape (that
+    dataclass carries no per-spell payload by design). Looks up
+    `GameState.items` (Phase 140's item-ownership registry) and, for a
+    leader-held item, returns `LocateObjectResult(location, holder_
+    leader_id)` -- the holder's own `LeaderState.location`.
+  - **Only the leader-held half of "who is guarding the item, if
+    anyone" is answerable at all -- confirmed absent, not guessed.**
+    `models/item.py`'s own module docstring already scoped
+    `ItemInstance` to leader-held items only when it was built: the
+    real Pascal structure also tracks feature/monster-guarded treasure
+    via a `feature_id + 256` owner-array convention, explicitly never
+    modeled here ("this project has no monster/feature loot-generation
+    pipeline at all"). `locate_object()` returns `None` for both an
+    unknown `item_id` and a known item with `owner_leader_id is None`
+    -- this project has no data to distinguish "lost to a wandering
+    monster" from any other unowned case.
+  - 4 new tests in `tests/test_cast_execution.py` (cast succeeds and
+    mutates nothing + finds a leader-held item + unknown item id +
+    feature/monster-guarded item returns `None`). Full suite: 2473
+    passed (2469 unchanged + 4 new).
 
 ## Setup
 

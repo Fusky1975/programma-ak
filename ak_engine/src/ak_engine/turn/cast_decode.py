@@ -129,6 +129,16 @@ NO_TARGET_SPELLS = frozenset({Spell.SKELETAL_ARMY, Spell.GATE_ANGEL})
 # Read_HPlan") -- also used by parser/k1_moves.py's nested-plan handling.
 NESTED_PLAN_SPELLS = frozenset({Spell.CHARM, Spell.RESURRECTION})
 
+# Spell.LOCATE_OBJECT (Phase 206, one of the secret spells 25-34,
+# user-supplied): "The Psychic must specify the identifying number of the
+# magic item, not the treasure name itself" -- a fourth target shape
+# alongside CHARACTER_TARGET_SPELLS/PROVINCE_TARGET_SPELLS/NO_TARGET_
+# SPELLS above: extra[0] is an item-instance id (`models/item.py
+# ItemInstance.item_id`), never a character or province id. No real
+# sample data exists to validate this decode against, same caveat as
+# every other secret spell's own entry above.
+ITEM_TARGET_SPELLS = frozenset({Spell.LOCATE_OBJECT})
+
 
 @dataclass(slots=True)
 class CastRequest:

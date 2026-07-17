@@ -494,6 +494,52 @@ text directly, one at a time.
      'Mystic Winds' Spell... have their strength halved") -- a second,
      still-unbuilt spell this flag will eventually feed too.
 
+- **Locate Object** (`AdvancedAbility.LOCATE_OBJECT_SPELL`,
+  `Ability.PSYCHIC`, Phase 206) -- the user's own quoted rule text
+  (verbatim, matching `models/advanced_ability.py
+  ADVANCED_ABILITY_DESCRIPTION` word for word): "By the enchanting
+  power of this spell, the provincial location of any magic item will
+  be revealed to the spellcaster, as well as who is guarding the item,
+  if anyone. If the magic item was lost to a wandering monster, it
+  will be seen as guarded by a monster. The Psychic must specify the
+  identifying number of the magic item, not the treasure name itself
+  -- this is because there is sometimes more than one of the same
+  magic item in the game." Not a combat spell (confirmed by the user's
+  own framing) and, unlike every spell above, its target is an
+  item-instance id (`models/item.py ItemInstance.item_id`) rather than
+  a character, province, or nothing -- added to `turn/cast_decode.py`'s
+  new `ITEM_TARGET_SPELLS`, the fourth target-shape category.
+
+  1. **The cast-success roll is fully modeled, the same as every other
+     spell** -- `_execute_locate_object` gates on
+     `_roll_cast_success()` and mutates nothing (this is a pure
+     information query, unlike every mutating spell above).
+  2. **The actual query is a separate primitive, `locate_object(state,
+     item_id)`, deliberately outside `CastExecutionResult`'s own
+     applied/reason shape** -- `CastExecutionResult` is shared across
+     every spell in this module and carries no per-spell payload field
+     by design; a successful cast is the gate a future report layer
+     would check before calling this query, mirroring how every other
+     "confirmed effect, not yet wired to the report layer" spell above
+     keeps its own real primitive separate from `execute_cast()`'s own
+     side-effect-free dispatch. Returns `LocateObjectResult(location,
+     holder_leader_id)` for a leader-held item, `None` otherwise.
+  3. **Only the leader-held half of "who is guarding the item, if
+     anyone" is answerable at all -- confirmed absent, not guessed.**
+     `models/item.py`'s own module docstring already scopes
+     `ItemInstance` to leader-held items only: the real Pascal
+     structure also tracks feature/monster-guarded treasure via a
+     `feature_id + 256` owner-array convention, but that half was
+     explicitly never modeled ("this project has no monster/feature
+     loot-generation pipeline at all"). So `locate_object()` returns
+     `None` for any `item_id` that doesn't exist in `GameState.items`
+     or whose `owner_leader_id` is `None` -- which covers both "unknown
+     item" and "guarded by a monster/lost to a wandering monster,"
+     since this project has no data to distinguish those two cases
+     from each other. Confirmed as a real, sourced gap (the same
+     `item.py` scope boundary this project already accepted for
+     Trade/Give, Phase 133), not silently guessed at.
+
 **Level-dependent magnitudes with no recorded caster skill** (Tornado's
 per-unit destroy chance, Plague's per-unit destroy chance, Illus_Armies'
 strength bonus): fall back to level 0 (no effect), the same "no data ->
@@ -524,7 +570,7 @@ from dataclasses import dataclass
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
-from ak_engine.models.map import Terrain
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.combat import Quality
@@ -617,6 +663,7 @@ _SPELL_ABILITY: dict[Spell, Ability] = {
     Spell.GATE_ANGEL: Ability.WHITE,
     Spell.SCAR_TERRAIN: Ability.NECROMANCY,
     Spell.MYSTIC_WINDS: Ability.ELEMENTAL,
+    Spell.LOCATE_OBJECT: Ability.PSYCHIC,
 }
 
 
@@ -689,6 +736,8 @@ def execute_cast(
         return _execute_gate_angel(state, kingdom_id, leader_id, request, rng, wand_skill_level)
     if spell is Spell.MYSTIC_WINDS:
         return _execute_mystic_winds(state, leader_id, request, rng, wand_skill_level)
+    if spell is Spell.LOCATE_OBJECT:
+        return _execute_locate_object(state, leader_id, request, rng, wand_skill_level)
 
     return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
 
@@ -1184,6 +1233,52 @@ def _execute_mystic_winds(
     target.mystic_winds_active = True
     for army in state.armies_commanded_by(request.target):
         army.movement_points = MYSTIC_WINDS_MOVEMENT_POINTS
+    return CastExecutionResult(request, applied=True)
+
+
+@dataclass(slots=True, frozen=True)
+class LocateObjectResult:
+    location: HexCoord
+    holder_leader_id: int
+
+
+def locate_object(state: GameState, item_id: int) -> LocateObjectResult | None:
+    """"the provincial location of any magic item will be revealed to the
+    spellcaster, as well as who is guarding the item, if anyone." Only
+    answerable for a currently leader-held item (``models/item.py
+    ItemInstance.owner_leader_id`` set) -- see the module docstring's
+    own Phase 206 addendum for why feature/monster-guarded items
+    (``item_id`` unknown, or known but ``owner_leader_id is None``)
+    return ``None`` here rather than a guess. A caller only reaches this
+    once the spell's own cast-success roll (``_execute_locate_object``)
+    has already succeeded.
+    """
+
+    item = state.items.get(item_id)
+    if item is None or item.owner_leader_id is None:
+        return None
+    holder = state.leaders.get(item.owner_leader_id)
+    if holder is None:
+        return None
+    return LocateObjectResult(location=holder.location, holder_leader_id=item.owner_leader_id)
+
+
+def _execute_locate_object(
+    state: GameState, leader_id: int, request: CastRequest, rng: random.Random, wand_skill_level: int | None = None
+) -> CastExecutionResult:
+    """A pure information spell -- mutates nothing in ``state``, unlike every
+    other spell above. Only gates the cast-success roll; the actual
+    "where is item X" answer is ``locate_object(state, request.target)``,
+    a separate query kept outside ``CastExecutionResult``'s own shared
+    applied/reason shape (see the module docstring's own Phase 206
+    addendum for why).
+    """
+
+    caster = state.leaders[leader_id]
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    if not succeeded:
+        return CastExecutionResult(request, applied=False, reason=reason)
+
     return CastExecutionResult(request, applied=True)
 
 

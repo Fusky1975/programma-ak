@@ -10,6 +10,7 @@ from ak_engine.models.game_state import ArmyState, GameState, GraveyardEntry, Ki
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import (
     MYSTIC_WINDS_ENDS_BEFORE_ARMY_BATTLE,
@@ -18,7 +19,9 @@ from ak_engine.turn.cast_execution import (
     MYSTIC_WINDS_USES_MOVEMENT_POINTS_NORMALLY,
     SCAR_TERRAIN_LAND_COLLAPSE_RACES,
     SCAR_TERRAIN_TAX_REDUCTION,
+    LocateObjectResult,
     execute_cast,
+    locate_object,
     scar_terrain_collapse,
     scar_terrain_is_exhausted,
 )
@@ -1250,3 +1253,43 @@ def test_mystic_winds_repeated_cast_stays_a_hard_set_not_cumulative():
     assert first.applied is True
     assert second.applied is True
     assert state.armies[1].movement_points == MYSTIC_WINDS_MOVEMENT_POINTS
+
+
+# ---------------------------------------------------------------------------
+# Locate Object (Phase 206) -- user-supplied, one of the secret spells 25-34
+# ---------------------------------------------------------------------------
+
+
+def test_locate_object_cast_succeeds_and_mutates_nothing():
+    state = build_state()
+    request = CastRequest(spell=Spell.LOCATE_OBJECT, target=1)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+
+
+def test_locate_object_finds_a_leader_held_item():
+    state = build_state()
+    state.add_leader(LeaderState(78, 1, "Field Commander", ELSEWHERE))
+    item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=78)
+
+    found = locate_object(state, item.item_id)
+
+    assert found == LocateObjectResult(location=ELSEWHERE, holder_leader_id=78)
+
+
+def test_locate_object_returns_none_for_an_unknown_item_id():
+    state = build_state()
+
+    assert locate_object(state, 999) is None
+
+
+def test_locate_object_returns_none_for_a_feature_or_monster_guarded_item():
+    # owner_leader_id=None models an item this project has no data for --
+    # feature/monster-guarded treasure is a confirmed, sourced gap (see
+    # models/item.py's own docstring), not distinguishable from "unknown".
+    state = build_state()
+    item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=None)
+
+    assert locate_object(state, item.item_id) is None
