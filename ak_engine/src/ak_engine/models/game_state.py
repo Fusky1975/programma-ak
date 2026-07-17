@@ -336,6 +336,14 @@ class ProvinceState:
     # rename_home_province()`, the one real, sourced runtime exception
     # (`DEF2.PAS Read_T1Names`, turn-1 capital rename).
     name: str | None = None
+    # Scar Terrain (Phase 201) -- see module docstring. Cumulative,
+    # permanent gold reduction the spell has inflicted on this
+    # province's own tax base so far, in `turn/cast_execution.py
+    # SCAR_TERRAIN_TAX_REDUCTION` (2) increments. Distinct from
+    # `tax_modifier_percent` above (a percent Bless/Earthquake *set*,
+    # not cumulative) -- this is an absolute gold amount that only ever
+    # grows.
+    scar_terrain_gold_reduction: int = 0
 
     def effective_terrain(self) -> Terrain:
         """The province's real current terrain for gameplay mechanics --

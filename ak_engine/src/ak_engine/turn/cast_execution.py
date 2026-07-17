@@ -346,6 +346,81 @@ text directly, one at a time.
   from the rule text, not confirmed against real Cast phases the way the
   25 documented spells are.
 
+- **Scar Terrain** (``AdvancedAbility.SCAR_TERRAIN_SPELL``,
+  ``Ability.NECROMANCY``, Phase 201) -- the user's own quoted rule text
+  (verbatim): "-2 Taxation, Change Race at 0. New spell (can be casted
+  using the command CA-ST): By the horrible power of this spell, a
+  co-located or adjacent province is scarred and mangled, and its tax
+  base is reduced by 2 gold immediately and permanently. When the tax
+  base reaches 0 gold, the province becomes incapable of supporting
+  normal life forms. If it's a land province, the racial type will
+  change to Orcs, Dragons or Trolls (usually by immigration from an
+  adjacent province) and the army type will change to something
+  suitable to the new racial type. Sea provinces will just lose
+  whatever provincial racial and army type they may have." Unlike Gate
+  Angel, this one names a real target ("a co-located or adjacent
+  province"), the same shape as every other province-targeted spell
+  here -- added to ``turn/cast_decode.py PROVINCE_TARGET_SPELLS``, not
+  ``NO_TARGET_SPELLS``.
+
+  1. **The -2 gold reduction is fully modeled**: ``_execute_scar_
+     terrain`` increments the new ``ProvinceState.scar_terrain_gold_
+     reduction`` field by ``SCAR_TERRAIN_TAX_REDUCTION`` (2) on every
+     successful cast, uncapped (no maximum is stated, the same
+     "uncapped when no cap is given" treatment ``turn/encounter.py
+     roll_hand_of_death_damage()`` established) and cumulative
+     ("immediately and permanently" -- an add, not a set, unlike
+     Earthquake's own ``tax_modifier_percent`` which is explicitly "not
+     cumulative"). No terrain restriction and no skill-level scaling --
+     the text gives neither, unlike Tornado's per-level destroy chance.
+  2. **"When the tax base reaches 0 gold" is a real, sourced trigger
+     this project genuinely cannot fire from real state yet.** This
+     project has no tax/revenue-collection system anywhere (same gap
+     ``ProvinceState.tax_modifier_percent``'s own docstring already
+     flags) -- no province anywhere carries a real starting gold-value
+     tax base to subtract ``scar_terrain_gold_reduction`` from, so
+     there is no way to know from real ``GameState`` data whether any
+     given province's tax base has actually reached zero.
+     ``scar_terrain_is_exhausted(remaining_tax_base)`` models the
+     *check itself* as a pure function (the same "caller supplies the
+     otherwise-unavailable precondition" pattern ``turn/encounter.py``
+     uses throughout, e.g. Ice Suspension's own ``victim_hit_points``
+     parameter) so a future revenue-system phase can call it directly
+     once a real remaining-tax-base value exists -- **not auto-invoked
+     inside ``_execute_scar_terrain`` itself**, since nothing in this
+     project can supply that value today.
+  3. **The collapse effect itself is modeled as a second pure
+     function, ``scar_terrain_collapse``, deliberately not
+     auto-triggered for the same reason.** Sea provinces ("will just
+     lose whatever provincial racial and army type they may have")
+     unconditionally become ``Race.NO_RACE`` -- the enum's own
+     dedicated "no race" member, confirmed to already suppress every
+     ``ArmyType``'s recruit-compatibility check (``turn/recruit.py
+     is_army_type_compatible_with_race`` returns ``False`` for every
+     ``ArmyType`` against a province race that's neither in
+     ``HUMANOID_RACES`` nor a ``MONSTROUS_ARMY_RACE`` key), so no
+     separate "clear the province's army type" state is needed at all.
+     Land provinces need a caller-chosen ``new_land_race`` from
+     ``SCAR_TERRAIN_LAND_COLLAPSE_RACES`` (``Race.ORCISH``,
+     ``Race.DRAGONS``, ``Race.TROLLISH``) -- **which of the three is
+     genuinely unspecified**: "usually by immigration from an adjacent
+     province" describes an external, caller-known fact (what races
+     border this province), not a formula this function can compute
+     from the province alone, so the choice is left to the caller
+     rather than guessed (e.g. via ``rng.choice``, which the text never
+     suggests). **"The army type will change to something suitable to
+     the new racial type" needs no new state either**, for Dragons and
+     Trolls specifically: ``models/army_type.py MONSTROUS_ARMY_RACE``
+     already maps ``Race.DRAGONS``/``Race.TROLLISH`` to exactly one
+     compatible ``ArmyType`` each (``DRAGON_WING``/``TROLLS``) via the
+     same recruit-compatibility check above -- changing
+     ``ProvinceState.race`` alone is sufficient, the existing recruit
+     machinery reflects the new eligibility automatically. Orcish has
+     no such single dedicated ``ArmyType`` (it's a ``HUMANOID_RACES``
+     member, compatible with every non-monstrous type at once) -- "the"
+     suitable army type for an Orc collapse is left unresolved, a
+     genuine gap with no formula given, not silently guessed.
+
 **Level-dependent magnitudes with no recorded caster skill** (Tornado's
 per-unit destroy chance, Plague's per-unit destroy chance, Illus_Armies'
 strength bonus): fall back to level 0 (no effect), the same "no data ->
@@ -375,9 +450,9 @@ from dataclasses import dataclass
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Spell
-from ak_engine.models.game_state import ArmyState, GameState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.map import Terrain
-from ak_engine.models.race import HUMANOID_RACES
+from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.hex_numbering import decode_hex_number
@@ -407,6 +482,17 @@ TORNADO_DESTROY_CHANCE_PER_LEVEL = 0.10
 # [4.22.1]: "+60% for one turn" (Bless) / [4.24.3]: zeroes revenue (Earthquake).
 BLESS_TAX_BONUS_PERCENT = 60
 EARTHQUAKE_TAX_MODIFIER_PERCENT = -100
+
+# Scar Terrain (Phase 201, secret spell, user-supplied): "-2 Taxation...
+# reduced by 2 gold immediately and permanently." An add, not a set --
+# see module docstring's own Scar Terrain addendum for why this differs
+# from Earthquake's own (not-cumulative) tax_modifier_percent.
+SCAR_TERRAIN_TAX_REDUCTION = 2
+
+# "the racial type will change to Orcs, Dragons or Trolls" -- which of
+# the three is left to the caller (see module docstring); this is only
+# the reference set of valid choices.
+SCAR_TERRAIN_LAND_COLLAPSE_RACES = (Race.ORCISH, Race.DRAGONS, Race.TROLLISH)
 
 # "NUOVE REGOLE E MODIFICHE": "L'incantesimo Benedizione (Bless) ora rimuove
 # le unita' morte in una provincia. La probabilita' e' del 10% + 10% per
@@ -447,6 +533,7 @@ _SPELL_ABILITY: dict[Spell, Ability] = {
     Spell.CLAIRVOYANCE: Ability.PSYCHIC,
     Spell.HIDE_FEATURE: Ability.ILLUSION,
     Spell.GATE_ANGEL: Ability.WHITE,
+    Spell.SCAR_TERRAIN: Ability.NECROMANCY,
 }
 
 
@@ -507,6 +594,8 @@ def execute_cast(
         return _execute_oratory(state, leader_id, request, rng, wand_skill_level)
     if spell is Spell.PLAGUE:
         return _execute_plague(state, leader_id, request, rng, board_width, wand_skill_level)
+    if spell is Spell.SCAR_TERRAIN:
+        return _execute_scar_terrain(state, leader_id, request, rng, board_width, wand_skill_level)
     if spell is Spell.SKELETAL_ARMY:
         return _execute_skeletal_army(state, kingdom_id, leader_id, request, rng, wand_skill_level)
     if spell is Spell.CLAIRVOYANCE:
@@ -1021,6 +1110,77 @@ def _execute_plague(
         if rng.random() < chance:
             state.remove_army(army.army_id)
     return CastExecutionResult(request, applied=True)
+
+
+def _execute_scar_terrain(
+    state: GameState,
+    leader_id: int,
+    request: CastRequest,
+    rng: random.Random,
+    board_width: int,
+    wand_skill_level: int | None = None,
+) -> CastExecutionResult:
+    """"a co-located or adjacent province is scarred and mangled, and its tax base
+    is reduced by 2 gold immediately and permanently." See module
+    docstring's own Scar Terrain addendum for the full quoted rule text
+    and why the "tax base reaches 0" collapse (``scar_terrain_is_
+    exhausted``/``scar_terrain_collapse`` below) is deliberately not
+    triggered from here.
+    """
+
+    caster = state.leaders[leader_id]
+    _coord, province = _resolve_province_target(state, caster, request.target, board_width)
+    if province is None:
+        return CastExecutionResult(request, applied=False, reason="province not found or not in range")
+
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    if not succeeded:
+        return CastExecutionResult(request, applied=False, reason=reason)
+
+    province.scar_terrain_gold_reduction += SCAR_TERRAIN_TAX_REDUCTION
+    return CastExecutionResult(request, applied=True)
+
+
+def scar_terrain_is_exhausted(remaining_tax_base: int) -> bool:
+    """"When the tax base reaches 0 gold, the province becomes incapable of
+    supporting normal life forms." True once the remaining tax base
+    (caller-supplied -- this project has no revenue system tracking a
+    real starting value yet, see module docstring) is at or below zero.
+    """
+
+    return remaining_tax_base <= 0
+
+
+def scar_terrain_collapse(province: ProvinceState, *, new_land_race: Race | None = None) -> None:
+    """Applies Scar Terrain's own tax-exhaustion collapse to ``province``, once a
+    future revenue-system phase determines ``scar_terrain_is_exhausted``
+    is True (never called automatically by this module -- see its own
+    docstring).
+
+    A Sea province ("will just lose whatever provincial racial and army
+    type they may have") unconditionally becomes ``Race.NO_RACE`` -- no
+    ``ArmyType`` is compatible with it (``turn/recruit.py
+    is_army_type_compatible_with_race`` returns False for every type
+    against a race that's neither in ``HUMANOID_RACES`` nor a
+    ``MONSTROUS_ARMY_RACE`` key), so nothing else needs clearing.
+
+    A land province needs ``new_land_race`` from ``SCAR_TERRAIN_LAND_
+    COLLAPSE_RACES`` -- which of the three ("usually by immigration from
+    an adjacent province") is the caller's own decision, not something
+    this function can determine from the province alone; raises
+    ``ValueError`` if omitted or invalid, rather than silently guessing.
+    Changing ``province.race`` alone is sufficient for Dragons/Trolls to
+    become the only recruitable ``ArmyType`` there too (``models/
+    army_type.py MONSTROUS_ARMY_RACE`` already ties each to exactly one
+    type) -- see module docstring for why Orcish has no single such type.
+    """
+
+    if province.effective_terrain() is Terrain.SEA:
+        province.race = Race.NO_RACE
+        return
+    if new_land_race not in SCAR_TERRAIN_LAND_COLLAPSE_RACES:
+        raise ValueError(f"new_land_race must be one of {SCAR_TERRAIN_LAND_COLLAPSE_RACES}, got {new_land_race!r}")
+    province.race = new_land_race
 
 
 def _execute_skeletal_army(

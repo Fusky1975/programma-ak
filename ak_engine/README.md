@@ -7735,7 +7735,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   shape), a mismatched-alignment cast producing no visit, and an empty
   turn producing no visit. Full suite: 2423 passed (2420 unchanged + 3
   new).
-- **Phase 200 (current)**: modeled Words of Healing [WH]
+- **Phase 200**: modeled Words of Healing [WH]
   (`Spell.HEAL`), the eleventh Personal-Combat spell and the first of
   the ten secret-ordinal spells ([2.0]) to get a real mechanic --
   user-supplied: "New Special Combat Heal (can be casted using the
@@ -7775,6 +7775,55 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     engine exists yet to call it from.
   - 11 new tests in `tests/test_encounter.py`. Full suite: 2434 passed
     (2423 unchanged + 11 new).
+- **Phase 201 (current)**: modeled Scar Terrain [ST] (`Spell.SCAR_
+  TERRAIN`), tied to `Ability.NECROMANCY` -- unlike every secret spell
+  so far, an Action-Cast (province-targeted) spell, not a Personal-
+  Combat one. User-supplied: "-2 Taxation, Change Race at 0... By the
+  horrible power of this spell, a co-located or adjacent province is
+  scarred and mangled, and its tax base is reduced by 2 gold
+  immediately and permanently. When the tax base reaches 0 gold, the
+  province becomes incapable of supporting normal life forms. If it's
+  a land province, the racial type will change to Orcs, Dragons or
+  Trolls (usually by immigration from an adjacent province) and the
+  army type will change to something suitable to the new racial type.
+  Sea provinces will just lose whatever provincial racial and army
+  type they may have." Added to `turn/cast_decode.py
+  PROVINCE_TARGET_SPELLS` (not `NO_TARGET_SPELLS` like Gate Angel,
+  since this spell names a real province target).
+  - `turn/cast_execution.py _execute_scar_terrain` increments the new
+    `ProvinceState.scar_terrain_gold_reduction` field by
+    `SCAR_TERRAIN_TAX_REDUCTION` (2) on every successful cast --
+    cumulative and uncapped (an add, not a set, unlike Earthquake's
+    own non-cumulative `tax_modifier_percent`). No terrain restriction,
+    no skill-level scaling.
+  - **"When the tax base reaches 0" is a real trigger this project
+    genuinely cannot fire from real state yet** -- no revenue system
+    anywhere tracks a province's own starting gold-value tax base to
+    subtract from (the same gap `tax_modifier_percent`'s own docstring
+    already flags). `scar_terrain_is_exhausted(remaining_tax_base)`
+    models the check as a pure function (caller supplies the
+    otherwise-unavailable remaining value, same pattern
+    `turn/encounter.py`'s Ice Suspension uses for `victim_hit_points`)
+    -- **not auto-invoked inside `_execute_scar_terrain`**.
+  - `scar_terrain_collapse(province, new_land_race=None)` models the
+    collapse effect itself, equally not auto-triggered. A Sea province
+    unconditionally becomes `Race.NO_RACE` -- confirmed to already
+    suppress every `ArmyType`'s recruit-compatibility check
+    (`turn/recruit.py is_army_type_compatible_with_race`), so no
+    separate army-type field is needed. A land province needs a
+    caller-chosen `new_land_race` from `SCAR_TERRAIN_LAND_COLLAPSE_
+    RACES` (Orcish/Dragons/Trollish) -- which of the three is left
+    unresolved ("usually by immigration from an adjacent province"
+    describes an external fact this function can't compute alone, not
+    a formula to guess at); raises `ValueError` if omitted or invalid.
+    For Dragons/Trolls, "the army type will change to something
+    suitable" needs no new state either -- `models/army_type.py
+    MONSTROUS_ARMY_RACE` already ties each to exactly one `ArmyType`
+    via the same compatibility check, so changing `province.race`
+    alone is sufficient; Orcish has no single such type (a genuine,
+    documented gap, not guessed).
+  - 8 new tests in `tests/test_cast_execution.py`. Full suite: 2442
+    passed (2434 unchanged + 8 new).
 
 ## Setup
 

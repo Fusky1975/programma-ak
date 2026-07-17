@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, Spell
@@ -9,7 +11,13 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.cast_decode import CastRequest
-from ak_engine.turn.cast_execution import execute_cast
+from ak_engine.turn.cast_execution import (
+    SCAR_TERRAIN_LAND_COLLAPSE_RACES,
+    SCAR_TERRAIN_TAX_REDUCTION,
+    execute_cast,
+    scar_terrain_collapse,
+    scar_terrain_is_exhausted,
+)
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
@@ -1081,3 +1089,87 @@ def test_pagan_kingdom_bonus_does_not_apply_to_white_magic_spells():
 
     assert result.applied is False
     assert result.reason == "spell failed"
+
+
+# ---------------------------------------------------------------------------
+# Scar Terrain (Phase 201) -- secret spell, user-supplied
+# ---------------------------------------------------------------------------
+
+
+def test_scar_terrain_reduces_the_provinces_tax_base_by_2():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].scar_terrain_gold_reduction == SCAR_TERRAIN_TAX_REDUCTION == 2
+
+
+def test_scar_terrain_reduction_is_cumulative_across_casts():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=_target(LOCATION))
+
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert state.provinces[LOCATION].scar_terrain_gold_reduction == 4
+
+
+def test_scar_terrain_works_on_a_sea_province_too():
+    # No terrain restriction: "Sea provinces will just lose whatever
+    # provincial racial and army type they may have" confirms Sea is a
+    # valid target, unlike Earthquake's own land-only restriction.
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.SEA, Race.NO_RACE))
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].scar_terrain_gold_reduction == 2
+
+
+def test_scar_terrain_fails_when_the_province_is_out_of_range():
+    state = build_state()
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "province not found or not in range"
+
+
+def test_scar_terrain_is_exhausted_at_or_below_zero():
+    assert scar_terrain_is_exhausted(0) is True
+    assert scar_terrain_is_exhausted(-5) is True
+    assert scar_terrain_is_exhausted(1) is False
+
+
+def test_scar_terrain_collapse_sea_province_becomes_no_race():
+    province = ProvinceState(LOCATION, Terrain.SEA, Race.MERMISH)
+
+    scar_terrain_collapse(province)
+
+    assert province.race is Race.NO_RACE
+
+
+def test_scar_terrain_collapse_land_province_uses_the_callers_chosen_race():
+    province = ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN)
+
+    scar_terrain_collapse(province, new_land_race=Race.TROLLISH)
+
+    assert province.race is Race.TROLLISH
+    assert Race.TROLLISH in SCAR_TERRAIN_LAND_COLLAPSE_RACES
+
+
+def test_scar_terrain_collapse_land_province_requires_a_valid_race():
+    province = ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN)
+
+    with pytest.raises(ValueError):
+        scar_terrain_collapse(province)
+
+    with pytest.raises(ValueError):
+        scar_terrain_collapse(province, new_land_race=Race.HUMAN)

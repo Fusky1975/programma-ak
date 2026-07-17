@@ -102,6 +102,13 @@ PROVINCE_TARGET_SPELLS = frozenset(
         Spell.EARTHQUAKE,
         Spell.ILLUS_TERRAIN,
         Spell.HIDE_FEATURE,
+        # Spell.SCAR_TERRAIN (Phase 201, one of the secret spells 25-34,
+        # user-supplied): "a co-located or adjacent province is scarred" --
+        # unlike Gate Angel (also a secret spell) this one names a real
+        # target, the same shape as every other province-affecting spell
+        # here. No real sample data exists to validate this against, same
+        # caveat as Gate Angel's own entry below.
+        Spell.SCAR_TERRAIN,
     }
 )
 # Spell.GATE_ANGEL (Phase 194, one of the secret spells 25-34): the
