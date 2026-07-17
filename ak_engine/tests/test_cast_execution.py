@@ -12,6 +12,10 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import (
+    MYSTIC_WINDS_ENDS_BEFORE_ARMY_BATTLE,
+    MYSTIC_WINDS_MOVEMENT_POINTS,
+    MYSTIC_WINDS_MOVES_AS_AIR_UNIT,
+    MYSTIC_WINDS_USES_MOVEMENT_POINTS_NORMALLY,
     SCAR_TERRAIN_LAND_COLLAPSE_RACES,
     SCAR_TERRAIN_TAX_REDUCTION,
     execute_cast,
@@ -1173,3 +1177,76 @@ def test_scar_terrain_collapse_land_province_requires_a_valid_race():
 
     with pytest.raises(ValueError):
         scar_terrain_collapse(province, new_land_race=Race.HUMAN)
+
+
+# ---------------------------------------------------------------------------
+# Mystic Winds (Phase 204) -- user-supplied, one of the secret spells 25-34
+# ---------------------------------------------------------------------------
+
+
+def test_mystic_winds_constants():
+    assert MYSTIC_WINDS_MOVEMENT_POINTS == 5
+    assert MYSTIC_WINDS_MOVES_AS_AIR_UNIT is True
+    assert MYSTIC_WINDS_USES_MOVEMENT_POINTS_NORMALLY is True
+    assert MYSTIC_WINDS_ENDS_BEFORE_ARMY_BATTLE is True
+
+
+def test_mystic_winds_sets_movement_to_5_for_every_army_the_target_commands():
+    state = build_state()
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION, movement_points=2, commanded_by=78))
+    state.add_army(ArmyState(2, 1, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, movement_points=1, commanded_by=78))
+    request = CastRequest(spell=Spell.MYSTIC_WINDS, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[78].mystic_winds_active is True
+    assert state.armies[1].movement_points == MYSTIC_WINDS_MOVEMENT_POINTS
+    assert state.armies[2].movement_points == MYSTIC_WINDS_MOVEMENT_POINTS
+
+
+def test_mystic_winds_can_target_the_caster_himself():
+    state = build_state()
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION, movement_points=0, commanded_by=CASTER_ID))
+    request = CastRequest(spell=Spell.MYSTIC_WINDS, target=CASTER_ID)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].mystic_winds_active is True
+    assert state.armies[1].movement_points == MYSTIC_WINDS_MOVEMENT_POINTS
+
+
+def test_mystic_winds_fails_when_target_is_not_colocated():
+    state = build_state()
+    state.add_leader(LeaderState(78, 1, "Field Commander", ELSEWHERE))
+    request = CastRequest(spell=Spell.MYSTIC_WINDS, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "not co-located"
+
+
+def test_mystic_winds_fails_when_target_character_not_found():
+    state = build_state()
+    request = CastRequest(spell=Spell.MYSTIC_WINDS, target=999)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "target character not found"
+
+
+def test_mystic_winds_repeated_cast_stays_a_hard_set_not_cumulative():
+    state = build_state()
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION, movement_points=5, commanded_by=CASTER_ID))
+    request = CastRequest(spell=Spell.MYSTIC_WINDS, target=CASTER_ID)
+
+    first = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+    second = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert first.applied is True
+    assert second.applied is True
+    assert state.armies[1].movement_points == MYSTIC_WINDS_MOVEMENT_POINTS

@@ -301,6 +301,13 @@ class LeaderState:
     # valhalla.py) keeps their own race independent of the Kingdom they're
     # visiting -- the first real consumer that needs this field at all.
     race: Race | None = None
+    # Phase 204: set by a successful Mystic Winds cast (turn/cast_execution.py
+    # _execute_mystic_winds) -- same "persistent for the rest of the turn,
+    # caller clears it" convention as oratory_boosted_this_turn/
+    # phantasmal_armies_level above. See that function's own docstring for
+    # what this flag is a marker for (three of the spell's own effects are
+    # confirmed facts, not yet wired to any consumer).
+    mystic_winds_active: bool = False
 
 
 @dataclass(slots=True)

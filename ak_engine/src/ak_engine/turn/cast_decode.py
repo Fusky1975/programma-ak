@@ -90,6 +90,12 @@ CHARACTER_TARGET_SPELLS = frozenset(
         Spell.ORATORY,
         Spell.CLAIRVOYANCE,
         Spell.ILLUS_ARMIES,
+        # Spell.MYSTIC_WINDS (Phase 204, one of the secret spells 25-34,
+        # user-supplied): "the mage or a co-located character" -- the same
+        # self-or-co-located-character target shape as Oratory/Illus_Armies
+        # above. No real sample data exists to validate this decode against,
+        # same caveat as Gate Angel/Scar Terrain's own entries.
+        Spell.MYSTIC_WINDS,
     }
 )
 PROVINCE_TARGET_SPELLS = frozenset(

@@ -421,6 +421,79 @@ text directly, one at a time.
      suitable army type for an Orc collapse is left unresolved, a
      genuine gap with no formula given, not silently guessed.
 
+- **Mystic Winds** (``AdvancedAbility.MYSTIC_WINDS_SPELL``,
+  ``Ability.ELEMENTAL``, Phase 204) -- the user's own quoted rule text
+  (verbatim, matching ``models/advanced_ability.py
+  ADVANCED_ABILITY_DESCRIPTION`` word for word): "Wind-Walking Armies.
+  By the mysterious power of the 'Mystic Winds' spell, the great Wind
+  Spirits of the heavens carry the mage or a co-located character into
+  the sky, his fleets propelled through the air by magic breezes, his
+  armies effortlessly wind-walking through the clouds. Each unit led
+  by the affected leader has its movement set at 5 while the spell
+  lasts and moves as an air unit. No fleet transport or air transport
+  takes place: that is, each unit will use up movement points while
+  under the effect of this spell. The spell ends just before the
+  leader gets involved in any military battle between armies." Unlike
+  Gate Angel/Scar Terrain (the two prior secret spells), this one is
+  explicitly not a combat spell ("questo non è un incantesimo da
+  combattimento," the user's own framing) and targets "the mage or a
+  co-located character" -- a character target, the same shape as
+  Oratory/Phantasmal Armies (``Spell.ILLUS_ARMIES``) above, not a
+  province or no-target spell. Added to ``turn/cast_decode.py
+  CHARACTER_TARGET_SPELLS``.
+
+  1. **The movement-points effect is fully modeled, mirroring Oratory's
+     own "direct persistent state write" precedent rather than a
+     strength-pipeline multiplier**: on a successful cast,
+     ``_execute_mystic_winds`` sets ``target.mystic_winds_active =
+     True`` and, for every ``ArmyState`` the target currently commands
+     (``state.armies_commanded_by``, evaluated once at cast time, the
+     same "currently commanded" snapshot Oratory/Phantasmal Armies
+     already use), sets ``ArmyState.movement_points =
+     MYSTIC_WINDS_MOVEMENT_POINTS`` (5) -- a hard *set*, matching "has
+     its movement set at 5" verbatim, not an addition. No idempotency
+     guard is needed (unlike Oratory's own ``oratory_boosted_this_turn``
+     check): setting an absolute value twice has the same effect as
+     once, so repeated casts are naturally non-cumulative without extra
+     state. An army the leader picks up *after* the cast is not
+     retroactively affected, the same "snapshot at cast time" reading
+     Oratory's own army-quality bump already established.
+  2. **"Moves as an air unit" is a confirmed fact, not modeled.** This
+     project's only existing "air unit" classification
+     (``models/army_type.py OVERFLIGHT_AIR``) is a static, per-
+     ``ArmyType`` property (Dragon Wing/Eagle Wing) consumed by combat
+     rear-targeting and ``turn/movement.py``'s own terrain-cost rules --
+     neither pipeline has a per-leader, per-cast override mechanism, and
+     mutating ``ArmyState.army_type`` itself to fake it would corrupt
+     every other lookup keyed by that field (quality, nemesis, recruit
+     eligibility). ``MYSTIC_WINDS_MOVES_AS_AIR_UNIT = True`` records the
+     fact for whichever future phase builds that override, the same
+     "confirmed, not modeled" treatment Gate Demon's own "double
+     dissipation" facts got.
+  3. **"No fleet transport or air transport takes place" is likewise
+     confirmed but has no subsystem to negate.** This project has never
+     built a fleet-transport or air-transport mechanic anywhere (the
+     term only otherwise appears in ``report/turn_report.py``'s own
+     Illegal-Move narration template, never as executable logic), so
+     this sentence is recorded as ``MYSTIC_WINDS_USES_MOVEMENT_POINTS_
+     NORMALLY = True`` with nothing left to actually disable.
+  4. **"The spell ends just before the leader gets involved in any
+     military battle between armies" is confirmed but deliberately not
+     wired this phase.** Doing so correctly would mean clearing
+     ``mystic_winds_active`` (and presumably re-deriving each affected
+     army's movement) at every one of this project's several distinct
+     battle-entry points (``fight_battle``, ``fight_multi_attacker_
+     battle``, the forced-rebattle and army-vs-army Pursue paths in
+     ``turn_processor.py``/``pursue_execution.py``) -- a genuinely
+     larger, cross-cutting change on the same footing as Defend's own
+     Phase 67/72 cancellation wiring, not a same-phase add-on.
+     ``MYSTIC_WINDS_ENDS_BEFORE_ARMY_BATTLE = True`` records the fact so
+     a future phase can wire it without re-deriving it from the rule
+     text. Also cross-referenced by ``models/advanced_ability.py``'s own
+     Illusory Fog description ("All air units... and those affected by
+     'Mystic Winds' Spell... have their strength halved") -- a second,
+     still-unbuilt spell this flag will eventually feed too.
+
 **Level-dependent magnitudes with no recorded caster skill** (Tornado's
 per-unit destroy chance, Plague's per-unit destroy chance, Illus_Armies'
 strength bonus): fall back to level 0 (no effect), the same "no data ->
@@ -516,6 +589,15 @@ GATE_ANGEL_ELIGIBLE_ALIGNMENTS = (
     Alignment.EVIL,
 )
 
+# Mystic Winds (Phase 204, user-supplied): "Each unit led by the affected
+# leader has its movement set at 5" -- a hard set, not a bonus. See the
+# module docstring's own Phase 204 addendum for the remaining three
+# confirmed-but-unmodeled facts.
+MYSTIC_WINDS_MOVEMENT_POINTS = 5
+MYSTIC_WINDS_MOVES_AS_AIR_UNIT = True
+MYSTIC_WINDS_USES_MOVEMENT_POINTS_NORMALLY = True
+MYSTIC_WINDS_ENDS_BEFORE_ARMY_BATTLE = True
+
 _SPELL_ABILITY: dict[Spell, Ability] = {
     Spell.CHARM: Ability.PSYCHIC,
     Spell.KILL_ENEMY: Ability.NECROMANCY,
@@ -534,6 +616,7 @@ _SPELL_ABILITY: dict[Spell, Ability] = {
     Spell.HIDE_FEATURE: Ability.ILLUSION,
     Spell.GATE_ANGEL: Ability.WHITE,
     Spell.SCAR_TERRAIN: Ability.NECROMANCY,
+    Spell.MYSTIC_WINDS: Ability.ELEMENTAL,
 }
 
 
@@ -604,6 +687,8 @@ def execute_cast(
         return _execute_hide_feature(state, leader_id, request, rng, board_width, wand_skill_level)
     if spell is Spell.GATE_ANGEL:
         return _execute_gate_angel(state, kingdom_id, leader_id, request, rng, wand_skill_level)
+    if spell is Spell.MYSTIC_WINDS:
+        return _execute_mystic_winds(state, leader_id, request, rng, wand_skill_level)
 
     return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
 
@@ -1069,6 +1154,36 @@ def _execute_oratory(
         for army in state.armies_commanded_by(request.target):
             army.quality = Quality(min(int(army.quality) + 1, Quality.ELITE))
         target.oratory_boosted_this_turn = True
+    return CastExecutionResult(request, applied=True)
+
+
+def _execute_mystic_winds(
+    state: GameState, leader_id: int, request: CastRequest, rng: random.Random, wand_skill_level: int | None = None
+) -> CastExecutionResult:
+    """"Each unit led by the affected leader has its movement set at 5 while the
+    spell lasts" -- cast on yourself or a co-located character, the same
+    target shape as Oratory/Illus_Armies above. Sets ``LeaderState.
+    mystic_winds_active`` and every currently-commanded army's
+    ``movement_points`` to ``MYSTIC_WINDS_MOVEMENT_POINTS``. See the
+    module docstring's own Phase 204 addendum for what "moves as an air
+    unit," "no fleet/air transport," and "ends before army battle" mean
+    and why none of the three is wired into a consuming system yet.
+    """
+
+    caster = state.leaders[leader_id]
+    target = state.leaders.get(request.target)
+    if target is None:
+        return CastExecutionResult(request, applied=False, reason="target character not found")
+    if target.location != caster.location:
+        return CastExecutionResult(request, applied=False, reason="not co-located")
+
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    if not succeeded:
+        return CastExecutionResult(request, applied=False, reason=reason)
+
+    target.mystic_winds_active = True
+    for army in state.armies_commanded_by(request.target):
+        army.movement_points = MYSTIC_WINDS_MOVEMENT_POINTS
     return CastExecutionResult(request, applied=True)
 
 

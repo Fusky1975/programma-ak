@@ -7890,7 +7890,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     4 new tests in `tests/test_encounter.py` (constants + refusal
     threshold + single-roll-consumption). Full suite: 2450 passed
     (2442 unchanged + 8 new).
-- **Phase 203 (current)**: modeled Lava Pool [LP] (`Spell.LAVA_POOL`),
+- **Phase 203**: modeled Lava Pool [LP] (`Spell.LAVA_POOL`),
   tied to `Ability.ELEMENTAL` -- the first Elemental secret spell,
   Personal-Combat, the thirteenth overall. User-supplied: "Instant
   Death if successful... The spell won't work against flying,
@@ -7937,6 +7937,59 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   - 6 new tests in `tests/test_encounter.py` (constants + lookup +
     Fast/Medium threshold walks + Slow-never-escapes + single-roll-
     consumption). Full suite: 2456 passed (2450 unchanged + 6 new).
+- **Phase 204 (current)**: modeled Mystic Winds [MW] (`Spell.MYSTIC_
+  WINDS`), tied to `Ability.ELEMENTAL` -- the second Elemental secret
+  spell, but unlike Lava Pool (Personal-Combat) and every other secret
+  spell so far, explicitly not a combat spell ("questo non è un
+  incantesimo da combattimento," the user's own framing). User-
+  supplied: "Wind-Walking Armies. By the mysterious power of the
+  'Mystic Winds' spell, the great Wind Spirits of the heavens carry
+  the mage or a co-located character into the sky... Each unit led by
+  the affected leader has its movement set at 5 while the spell lasts
+  and moves as an air unit. No fleet transport or air transport takes
+  place: that is, each unit will use up movement points while under
+  the effect of this spell. The spell ends just before the leader
+  gets involved in any military battle between armies." Targets "the
+  mage or a co-located character" -- a character-target spell, the
+  same shape as Oratory/Illus_Armies, added to `turn/cast_decode.py
+  CHARACTER_TARGET_SPELLS` rather than `NO_TARGET_SPELLS`/
+  `PROVINCE_TARGET_SPELLS`.
+  - `turn/cast_execution.py _execute_mystic_winds` mirrors Oratory's
+    own "direct persistent state write" precedent rather than a
+    strength-pipeline multiplier: on success it sets `LeaderState.
+    mystic_winds_active = True` and, for every `ArmyState` the target
+    currently commands (`state.armies_commanded_by`, a snapshot at
+    cast time), hard-sets `ArmyState.movement_points =
+    MYSTIC_WINDS_MOVEMENT_POINTS` (5) -- matching "has its movement
+    set at 5" verbatim (a set, not an addition). No idempotency guard
+    is needed, unlike Oratory's own `oratory_boosted_this_turn` flag:
+    setting an absolute value twice already has the same effect as
+    once, confirmed by a repeated-cast test.
+  - **Three of the spell's own clauses are confirmed facts, not
+    modeled, each for a different real reason**:
+    `MYSTIC_WINDS_MOVES_AS_AIR_UNIT = True` -- this project's only
+    "air unit" concept (`models/army_type.py OVERFLIGHT_AIR`) is a
+    static per-`ArmyType` property with no per-leader override
+    mechanism, and mutating `ArmyState.army_type` itself to fake it
+    would corrupt every other lookup keyed by that field.
+    `MYSTIC_WINDS_USES_MOVEMENT_POINTS_NORMALLY = True` -- this
+    project has never built a fleet-transport or air-transport
+    mechanic anywhere (the term appears only in a report-narration
+    template, never as executable logic), so there is nothing to
+    disable. `MYSTIC_WINDS_ENDS_BEFORE_ARMY_BATTLE = True` -- doing
+    this correctly needs clearing the flag at every one of this
+    project's several distinct battle-entry points (`fight_battle`,
+    `fight_multi_attacker_battle`, forced-rebattle, army-vs-army
+    Pursue), the same scale of cross-cutting change as Defend's own
+    Phase 67/72 cancellation wiring, deliberately deferred rather than
+    attempted as a same-phase add-on. Also cross-referenced by
+    `models/advanced_ability.py`'s own still-unbuilt Illusory Fog spell
+    ("air units... and those affected by 'Mystic Winds' Spell... have
+    their strength halved").
+  - 6 new tests in `tests/test_cast_execution.py` (constants + movement
+    set on every commanded army + self-target + not-co-located failure
+    + target-not-found failure + repeated-cast non-cumulative check).
+    Full suite: 2462 passed (2456 unchanged + 6 new).
 
 ## Setup
 
