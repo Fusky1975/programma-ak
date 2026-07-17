@@ -774,9 +774,13 @@ def test_execute_search_cast_ice_suspend_immune_species_has_no_effect():
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPECTRE))
     request = _cast_request(1, Spell.ICE_SUSPEND, Maneuver.MELEE)
 
+    # SPECTRE's own real rolled plan may include real CAST tactics of its
+    # own (Phase 210 wired Hand of Death/Mirror-Image); mocked empty here
+    # to isolate this test's own "Ice Suspend has no effect" concern from
+    # the guardian's own CAST dispatch, covered separately.
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
-        "ak_engine.turn.search_execution.resolve_melee_duel"
-    ) as mock_melee:
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
         execute_search(state, LEADER_ID, request, random.Random(0))
 
@@ -911,3 +915,141 @@ def test_execute_search_blocked_from_cast_and_archery_skips_the_guardians_own_la
 
     assert mock_cast_roll.call_count == 1
     assert mock_melee.called
+
+
+# -- Phase 210: Hand of Death + Mirror-Image Phantasm CAST dispatch --
+
+
+def test_execute_search_cast_hand_of_death_threads_the_immune_flag():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    request = _cast_request(1, Spell.HAND_OF_DEATH, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
+    ) as mock_channel, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_channel.return_value = EncounterCombatResult(winner=None, rounds=0)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    # Vampire is Undead (SPIRITWRACK_UNDEAD_MONSTERS), part of
+    # HAND_OF_DEATH_IMMUNE_MONSTERS.
+    assert mock_channel.call_args.kwargs["target_is_immune"] is True
+
+
+def test_execute_search_cast_hand_of_death_caster_wins_instantly():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=3)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_channel.call_args.kwargs["target_is_immune"] is False
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+
+
+def test_execute_search_cast_hand_of_death_broken_channel_falls_through_to_melee():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HAND_OF_DEATH, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
+    ) as mock_channel, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_channel.return_value = EncounterCombatResult(winner=None, rounds=2)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_hand_of_death_rolls_the_necromancy_skill_level():
+    leader = _skilled_leader(Ability.NECROMANCY, 4)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HAND_OF_DEATH)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ) as mock_cast_roll, patch("ak_engine.turn.search_execution.resolve_hand_of_death_channel") as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_cast_roll.call_args[0][0] == 4
+
+
+def test_execute_search_cast_mirror_image_monster_target_uses_the_sourced_tier():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPHINX))
+    request = _cast_request(1, Spell.MIRROR_IMAGE, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_mirror_image_duel"
+    ) as mock_duel, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    from ak_engine.turn.encounter import MirrorImageIntelligenceTier
+
+    assert mock_duel.call_args[0][2] is MirrorImageIntelligenceTier.HIGH_HUMAN
+
+
+def test_execute_search_cast_mirror_image_leader_target_uses_the_default_tier():
+    # The guardian's own rolled plan casts Mirror-Image at the leader --
+    # opponent_tier falls back to the inferred Medium Human default, since
+    # this project has no sourced classification for leaders/heroes.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_mirror_image_duel") as mock_duel, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.MIRROR_IMAGE.value),)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    from ak_engine.turn.encounter import MirrorImageIntelligenceTier
+
+    assert mock_duel.call_args[0][2] is MirrorImageIntelligenceTier.MEDIUM_HUMAN
+
+
+def test_execute_search_cast_mirror_image_caster_wins_instantly():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.MIRROR_IMAGE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_mirror_image_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=2)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+
+
+def test_execute_search_cast_mirror_image_caster_is_slain_by_own_illusion():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.MIRROR_IMAGE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_mirror_image_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="b", rounds=2)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "monster"
+    assert result.leader_killed is True

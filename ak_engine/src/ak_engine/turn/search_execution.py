@@ -206,6 +206,7 @@ from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.monster import (
     HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
+    HAND_OF_DEATH_IMMUNE_MONSTERS,
     ICE_SUSPENSION_FLYING_MONSTERS,
     ICE_SUSPENSION_IMMUNE_MONSTERS,
     MONSTER_COMBAT_STATS,
@@ -223,6 +224,8 @@ from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_DAMAGE_RANGE,
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
+    MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT,
+    MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER,
     PERSONAL_COMBAT_SPELL_ABILITY,
     Combatant,
     CombatRange,
@@ -234,7 +237,9 @@ from ak_engine.turn.encounter import (
     ice_suspension_is_frozen,
     ice_suspension_slowed_bonus_rounds,
     resolve_fire_arrow_duel,
+    resolve_hand_of_death_channel,
     resolve_melee_duel,
+    resolve_mirror_image_duel,
     resolve_personal_combat_spell_cast,
     roll_fireball_damage,
     roll_holy_symbol_undead_damage,
@@ -378,16 +383,22 @@ def execute_search(
         return None
 
     def _resolve_cast_tactic(tactic, *, caster_is_leader: bool) -> SearchExecutionResult | None:
-        """Phase 209: apply one of the 8 non-channeled Personal-Combat
-        spells (or Charm's combat form) to the encounter -- see module
-        docstring's own Phase 209 addendum for the full per-spell design
-        and the rulebook citations behind ``PERSONAL_COMBAT_SPELL_ABILITY``.
-        Hand of Death and Mirror-Image/Illusory Hero aren't dispatched here
-        (deferred to Phase 210 -- they need a real round-based sub-loop).
-        Returns a terminal ``SearchExecutionResult`` (a kill, a
-        neutralization, or Charm's own guaranteed Flee), or ``None`` if the
-        encounter continues (a failed cast, a stat-modifier effect, or a
-        spell whose target isn't eligible).
+        """Applies one of the ten Personal-Combat-only spells (or Charm's
+        combat form) to the encounter: the 8 non-channeled, one-roll
+        spells from Phase 209 (see that phase's own module docstring
+        addendum for the full per-spell design and the rulebook citations
+        behind ``PERSONAL_COMBAT_SPELL_ABILITY``), plus Hand of Death and
+        Mirror-Image Phantasm from Phase 210, both of which delegate their
+        own round-based sub-loop to ``resolve_hand_of_death_channel()``/
+        ``resolve_mirror_image_duel()`` (``turn/encounter.py``'s own
+        Phase 210 addendum). Illusory Hero stays unwired here -- it needs
+        the same illusion-duel engine as Mirror-Image plus its own
+        "whichever hero is currently visiting Valhalla" combatant source,
+        which nothing in this project builds yet. Returns a terminal
+        ``SearchExecutionResult`` (a kill, a neutralization, or Charm's
+        own guaranteed Flee), or ``None`` if the encounter continues (a
+        failed cast, a stat-modifier effect, or a spell whose target
+        isn't eligible).
         """
 
         caster = leader_combatant if caster_is_leader else monster_combatant
@@ -419,7 +430,7 @@ def execute_search(
         elif spell in PERSONAL_COMBAT_SPELL_ABILITY:
             ability = PERSONAL_COMBAT_SPELL_ABILITY[spell]
         else:
-            return None  # not modeled this phase, incl. Hand of Death / Mirror-Image
+            return None  # not modeled (Illusory Hero, or any spell outside the 11 named above)
 
         # Control Undead's own eligibility precondition -- checked before
         # any roll, same as every other spell's `target_is_immune` guard,
@@ -527,6 +538,34 @@ def execute_search(
                     return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
                 return None
             caster.bonus_unanswered_attacks += ice_suspension_slowed_bonus_rounds(target.hit_points, level)
+            return None
+
+        if spell is Spell.HAND_OF_DEATH:
+            if target_is_monster:
+                target_is_immune = monster_species in HAND_OF_DEATH_IMMUNE_MONSTERS
+            else:
+                target_is_immune = leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY)
+            channel_result = resolve_hand_of_death_channel(caster, target, level, rng, target_is_immune=target_is_immune)
+            if channel_result.winner is not None:
+                # "a" in resolve_hand_of_death_channel's own convention always
+                # means the caster -- translate to the leader/monster "a"/"b"
+                # convention _outcome_from() expects.
+                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            return None
+
+        if spell is Spell.MIRROR_IMAGE:
+            if target_is_monster:
+                opponent_tier = MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER[monster_species]
+            else:
+                opponent_tier = MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT
+            duel_result = resolve_mirror_image_duel(caster, target, opponent_tier, level, rng)
+            if duel_result.winner == "a":
+                # The caster disbelieves/slays their own illusion and
+                # finishes off the already-mentally-slain opponent.
+                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            if duel_result.winner == "b":
+                # The illusion kills the caster; the opponent "revives".
+                return _outcome_from(EncounterCombatResult(winner=("b" if target_is_monster else "a"), rounds=0))
             return None
 
         return None

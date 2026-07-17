@@ -8173,7 +8173,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
 Gate Demon [GD] (202), Lava Pool [LP] (203), Mystic Winds [MW] (204),
 Augur Combat [AC] (205), Locate Object [LO] (206), Illusory Fog [IF]
 (207), and Illusory Hero [IH] (208).
-- **Phase 209 (current)**: built the CAST-tactic orchestration engine for
+- **Phase 209**: built the CAST-tactic orchestration engine for
   Search encounters -- `turn/search_execution.py`'s `execute_search()`
   previously skipped every `Maneuver.CAST` tactic silently (both the
   leader's own and the guardian's own, per `turn/cast_execution.py`'s
@@ -8265,6 +8265,99 @@ Augur Combat [AC] (205), Locate Object [LO] (206), Illusory Fog [IF]
     leader-CAST-before-guardian-CAST ordering, and
     `blocked_from_cast_and_archery` skipping the guardian's own later
     CAST tactic). Full suite: 2517 passed (2487 unchanged + 30 new).
+- **Phase 210 (current)**: wired the last two Personal-Combat spells --
+  Hand of Death [HA] and Mirror-Image Phantasm [MI] -- completing all ten
+  of `turn/cast_execution.py`'s own "Personal-Combat-only" spells. Both
+  needed a genuine round-based sub-loop (Phase 209 deliberately deferred
+  them for exactly this reason): Hand of Death channels a repeated attack
+  exchange that ends the instant the caster is hit; Mirror-Image runs a
+  two-stage duel (a cloned illusion fights the real opponent, then, if it
+  wins, turns on its own caster) with a per-round disbelief re-roll
+  before each exchange.
+  - `turn/encounter.py resolve_hand_of_death_channel(caster, victim,
+    skill_level, rng, *, target_is_immune=False, max_rounds=1000)`: the
+    caster's own attack always lands (no hit-chance roll -- a psychic,
+    not physical, blow) for `roll_hand_of_death_damage()`'s own uncapped
+    `1 + 0.5*level`; the victim's own halved-chance Melee counter-attack
+    (`HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER`) ends the channel the
+    instant it lands, real damage and all -- "perde la concentrazione e
+    l'incantesimo svanisce." Initiative substitutes the caster's own
+    Necromancy skill level for Melee (`hand_of_death_caster_melee_
+    defense_skill()`, already built in Phase 190). Returns
+    `winner="a"` (caster) only if the victim dies outright; `winner=None`
+    the instant the channel breaks or `max_rounds` is exhausted --
+    either way the caller falls through to a normal tactic (typically
+    Melee), with both sides' hit points carrying over unchanged.
+  - `turn/encounter.py resolve_mirror_image_duel(caster, opponent,
+    opponent_tier, skill_level, rng, *, max_rounds=1000)`: Stage 1 clones
+    `opponent` into a throwaway `illusion` and duels it against the real
+    `opponent` (only their hit points change -- the caster "performs no
+    other actions"); a per-round disbelief roll (`resolve_mirror_image_
+    disbelief()`, already built Phase 187) can end this stage early.
+    If the illusion loses or is disbelieved, `winner=None` (3a: "the
+    caster must continue the fight at the current combat range") --
+    whatever damage the opponent already took carries into the next real
+    fight. If the illusion wins (opponent's hit points reach 0), Stage 2
+    has it turn on the real caster, using the same disbelief roll at
+    `MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE` (Medium Human's 80% + a
+    flat 25-point bonus) interleaved with a real caster-vs-illusion Melee
+    duel. `winner="a"` if the caster disbelieves or slays the illusion
+    (auto-claims the treasure); `winner="b"` if the illusion instead
+    kills the caster (the opponent's own "revival" has no stated
+    magnitude, so isn't modeled as a hit-points change -- it doesn't
+    change this function's reported winner either way).
+  - `turn/encounter.py MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER: dict[
+    Monster, MirrorImageIntelligenceTier]` -- all 60 real species,
+    project-original (user-supplied, a Desktop "Intelligenza mostri.txt"
+    file), since this project had no source at all for four of the six
+    tiers (only Animal/Mechanical existed via Spiritwrack's own Phase 182
+    sets). **Confirmed to diverge from Spiritwrack's own Animal-
+    Intelligence set for three species**: Giant Worm, Giant Amoeba, and
+    Giant Clam are Spiritwrack-Animal but Mirror-Image-Mechanical -- a
+    real, sourced difference between the two classifications, not a
+    reuse (the module docstring's own Phase 187 addendum had already
+    flagged this exact risk: "Cross-reference, not reuse"). A leader/hero
+    opponent has no sourced tier of their own -- `MIRROR_IMAGE_LEADER_
+    INTELLIGENCE_TIER_DEFAULT = MirrorImageIntelligenceTier.MEDIUM_HUMAN`
+    is an inferred default (a typical adult human), not a source value.
+  - `turn/search_execution.py`'s own `_resolve_cast_tactic()` gained two
+    more branches, same `PERSONAL_COMBAT_SPELL_ABILITY`-driven dispatch
+    as every Phase 209 spell: Hand of Death computes `target_is_immune`
+    from `models/monster.py HAND_OF_DEATH_IMMUNE_MONSTERS` (a monster
+    target) or `leader.alignment in {UNDEAD, ANTI_HOLY}` (a leader
+    target), then calls the new channel resolver; Mirror-Image looks up
+    `opponent_tier` from the new monster table (or the leader default)
+    and calls the new duel resolver, translating its own `"a"/"b"`
+    convention to the dispatcher's own `leader`/`monster` `"a"/"b"`
+    convention exactly like Telekinetic Storm's own dual-outcome handling
+    already does.
+  - Illusory Hero [IH] (Phase 208) stays unwired -- it needs the same
+    illusion-duel engine as Mirror-Image, plus its own "whichever hero is
+    currently visiting Valhalla" combatant source, which nothing in this
+    project builds yet.
+  - One pre-existing test needed updating
+    (`test_execute_search_cast_ice_suspend_immune_species_has_no_effect`):
+    Spectre's own real rolled plan can now include real CAST tactics of
+    its own, so `roll_monster_encounter_plan` is mocked empty to isolate
+    that test's own "Ice Suspend has no effect" concern from the
+    guardian's own newly-live CAST dispatch.
+  - 11 new tests in `tests/test_encounter.py` (the channel resolver's
+    immunity/kill/break/max-rounds branches, the intelligence-tier
+    table's full coverage and its confirmed Spiritwrack divergence, the
+    leader default, and the duel resolver's disbelief/stage-1-loss/
+    stage-2-win/stage-2-loss branches) plus 8 new tests in
+    `tests/test_search_execution.py` (immune-flag threading, instant win,
+    broken-channel fallthrough, and the Necromancy skill-level lookup for
+    Hand of Death; sourced-tier/leader-default lookup, instant win, and
+    instant loss for Mirror-Image). Full suite: 2536 passed (2517
+    unchanged + 19 new).
+
+**All ten Personal-Combat-only spells (Holy Symbol, Spiritwrack, Psychic
+Blast, Telekinetic Storm, Invisibility, Fireball, Ice Suspension, Control
+Undead, Hand of Death, Mirror-Image) plus Charm's own combat form are now
+wired into real Search combat** -- the CAST-tactic orchestration engine
+`turn/cast_execution.py`'s own docstring named as the blocking gap since
+Phase 60 is complete (Phases 209-210).
 
 ## Setup
 

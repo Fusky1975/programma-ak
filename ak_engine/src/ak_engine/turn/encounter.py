@@ -1207,7 +1207,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from ak_engine.models.enums import Ability, Spell
-from ak_engine.models.monster import MonsterSpeed
+from ak_engine.models.monster import Monster, MonsterSpeed
 from ak_engine.models.temper import Temper
 
 # [5.0]: "In combat, all characters have 10 hit points. Monsters may
@@ -2296,3 +2296,244 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
     if a.hit_points <= 0:
         return EncounterCombatResult(winner="b", rounds=round_number, shots=tuple(shots))
     return EncounterCombatResult(winner=None, rounds=round_number, shots=tuple(shots))
+
+
+# Phase 210 addendum -- Hand of Death [HA] and Mirror-Image Phantasm [MI],
+# the two Personal-Combat spells Phase 209 deliberately deferred because
+# each needs a genuine round-based sub-loop rather than a single roll.
+# Both new resolvers below follow `resolve_melee_duel()`'s own shape
+# exactly (mutate the real `Combatant`s in place, return an
+# `EncounterCombatResult`), so `turn/search_execution.py`'s dispatcher can
+# reuse the same `_outcome_from()` translation every other spell already
+# uses.
+
+
+def resolve_hand_of_death_channel(
+    caster: Combatant,
+    victim: Combatant,
+    skill_level: int,
+    rng: random.Random,
+    *,
+    target_is_immune: bool = False,
+    max_rounds: int = 1000,
+) -> EncounterCombatResult:
+    """Rulebook (module docstring's Phase 190 addendum), the channeled
+    Necromancy duel: the caster's own attack always lands (``roll_hand_
+    of_death_damage()`` has no hit-chance roll of its own -- it is a
+    psychic, not physical, blow) for ``1 + 0.5*level`` damage, uncapped;
+    the victim's own Melee counter-attack uses their normal damage die at
+    ``HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER`` (halved) hit chance.
+    Initiative uses the caster's own Necromancy skill level in place of
+    Melee (``hand_of_death_caster_melee_defense_skill()``, [5.0]'s
+    generic rule) against the victim's own real effective Melee skill.
+
+    ``winner="a"`` (the caster) only when the victim's hit points reach 0
+    -- "chi lancia questo incantesimo" wins outright, same convention as
+    every other instant-resolution Personal-Combat spell. Returns
+    ``winner=None`` the instant the victim lands *any* hit on the caster
+    ("quando chi lancia l'incantesimo viene colpito perde la
+    concentrazione e l'incantesimo svanisce") -- the caster still takes
+    that hit's real damage; the channel simply ends there and the caller
+    falls through to a normal tactic (typically Melee), the hit points
+    both sides have taken so far carrying over unchanged. Returns
+    ``winner=None, rounds=0`` without consuming any roll when
+    ``target_is_immune`` (``models/monster.py HAND_OF_DEATH_IMMUNE_
+    MONSTERS`` for a monster target, or ``leader.alignment in {UNDEAD,
+    ANTI_HOLY}`` for a leader target) -- "inefficace contro" mechanical/
+    Undead/anti-holy targets, the spell simply never engages.
+    """
+
+    if target_is_immune:
+        return EncounterCombatResult(winner=None, rounds=0)
+
+    caster_skill = hand_of_death_caster_melee_defense_skill(skill_level)
+    victim_skill = effective_melee_skill(victim)
+    round_number = 0
+    for round_number in range(1, max_rounds + 1):
+        order = (caster, victim) if _acts_first(caster_skill, victim_skill, rng) else (victim, caster)
+        for actor in order:
+            if caster.hit_points <= 0 or victim.hit_points <= 0:
+                continue
+            if actor is caster:
+                victim.hit_points -= roll_hand_of_death_damage(skill_level, rng)
+                if victim.hit_points <= 0:
+                    return EncounterCombatResult(winner="a", rounds=round_number)
+            else:
+                damage = roll_melee_attack(
+                    rng,
+                    damage_range=victim.melee_damage_range,
+                    hit_chance_multiplier=HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER,
+                )
+                if damage > 0:
+                    caster.hit_points -= damage
+                    return EncounterCombatResult(winner=None, rounds=round_number)
+        _apply_end_of_round_regeneration(caster, victim)
+    return EncounterCombatResult(winner=None, rounds=round_number)
+
+
+# Phase 210 -- Mirror-Image Phantasm [MI]'s own per-species intelligence
+# tier, all 60 real species, project-original (user-supplied, "Intelligenza
+# MOSTRI" via a Desktop text file). **Confirmed to diverge from Spiritwrack's
+# own `SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS`/`SPIRITWRACK_MECHANICAL_
+# MONSTERS` (Phase 182) for three species** -- Giant Worm, Giant Amoeba, and
+# Giant Clam are Spiritwrack-Animal but Mirror-Image-Mechanical -- so this is
+# a genuinely new, standalone table, not a reuse of those two sets (the
+# module docstring's own Phase 187 addendum already flagged this exact risk:
+# "Cross-reference, not reuse... this spell's other four tiers... have no
+# existing species classification in this project to draw on at all").
+MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER: dict[Monster, MirrorImageIntelligenceTier] = {
+    Monster.COUATL: MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN,
+    Monster.GO_DRAGON: MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN,
+    Monster.TITAN: MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN,
+    Monster.GENIE: MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN,
+    Monster.BAL_DEMON: MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN,
+    Monster.LICH: MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN,
+    Monster.SPHINX: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.R_DRAGON: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.B_DRAGON: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.S_DRAGON: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.GR_DRAGON: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.WHITE_MAGE: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.NEC_MAGE: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.ELE_MAGE: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.PSY_MAGE: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.ILL_MAGE: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.WITCH: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.MAR_DEMON: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.SUCCUBUS: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.RAKSHASHA: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.ICE_DEVIL: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.BONE_DEVIL: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.IMP: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.BEHOLDER: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.VAMPIRE: MirrorImageIntelligenceTier.HIGH_HUMAN,
+    Monster.SPECTRE: MirrorImageIntelligenceTier.MEDIUM_HUMAN,
+    Monster.GI_EAGLE: MirrorImageIntelligenceTier.MEDIUM_HUMAN,
+    Monster.ARCHER: MirrorImageIntelligenceTier.MEDIUM_HUMAN,
+    Monster.SWORDSMAN: MirrorImageIntelligenceTier.MEDIUM_HUMAN,
+    Monster.DRYAD: MirrorImageIntelligenceTier.MEDIUM_HUMAN,
+    Monster.CENTAUR: MirrorImageIntelligenceTier.MEDIUM_HUMAN,
+    Monster.MEDUSA: MirrorImageIntelligenceTier.MEDIUM_HUMAN,
+    Monster.TREANT: MirrorImageIntelligenceTier.MEDIUM_HUMAN,
+    Monster.GHOST: MirrorImageIntelligenceTier.MEDIUM_HUMAN,
+    Monster.MUMMY: MirrorImageIntelligenceTier.MEDIUM_HUMAN,
+    Monster.BANSHEE: MirrorImageIntelligenceTier.MEDIUM_HUMAN,
+    Monster.MERMAID: MirrorImageIntelligenceTier.MEDIUM_HUMAN,
+    Monster.GIANT: MirrorImageIntelligenceTier.LOW_HUMAN,
+    Monster.TROLL: MirrorImageIntelligenceTier.LOW_HUMAN,
+    Monster.GARGOYLE: MirrorImageIntelligenceTier.LOW_HUMAN,
+    Monster.BIGFOOT: MirrorImageIntelligenceTier.LOW_HUMAN,
+    Monster.WEREWOLF: MirrorImageIntelligenceTier.LOW_HUMAN,
+    Monster.MINOTAUR: MirrorImageIntelligenceTier.LOW_HUMAN,
+    Monster.GRYPHON: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.ELASMOSAURUS: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.ROC: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.BASILISK: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.CHIMERA: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.HYDRA: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.GI_WOLVERINE: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.GI_P_MANTIS: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.GI_SCORPION: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.GI_WASP: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.GI_SPIDER: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.GI_OCTOPUS: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.GW_WHALE: MirrorImageIntelligenceTier.ANIMAL,
+    Monster.GI_WORM: MirrorImageIntelligenceTier.MECHANICAL,
+    Monster.GOLEM: MirrorImageIntelligenceTier.MECHANICAL,
+    Monster.GI_AMOEBA: MirrorImageIntelligenceTier.MECHANICAL,
+    Monster.GI_CLAM: MirrorImageIntelligenceTier.MECHANICAL,
+}
+
+# A leader/hero opponent has no sourced tier of their own -- this project
+# has no "character intelligence" concept at all. Medium Human is used as
+# the inferred default (a typical adult human, the table's own modal
+# case), not a value taken from any source; documented here rather than
+# guessed silently in the dispatcher.
+MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT = MirrorImageIntelligenceTier.MEDIUM_HUMAN
+
+
+def resolve_mirror_image_duel(
+    caster: Combatant,
+    opponent: Combatant,
+    opponent_tier: MirrorImageIntelligenceTier,
+    skill_level: int,
+    rng: random.Random,
+    *,
+    max_rounds: int = 1000,
+) -> EncounterCombatResult:
+    """The full two-stage outcome tree quoted in the module docstring's
+    Phase 187 addendum, now actually executed rather than just
+    catalogued.
+
+    **Stage 1** -- a throwaway ``illusion`` (an exact stat-copy of
+    ``opponent`` at cast time) fights the *real* ``opponent`` in Melee,
+    one round at a time; before each round, ``resolve_mirror_image_
+    disbelief()`` (keyed by ``opponent_tier``) may end the illusion's
+    power outright. Only ``opponent``'s and the throwaway illusion's own
+    hit points change here -- ``caster`` isn't in the fight yet ("the
+    caster must concentrate on his illusion, performing no other
+    actions"). If the illusion is disbelieved or loses the duel, this
+    returns ``winner=None`` (3a: "the caster must continue the fight at
+    the current combat range") -- whatever damage the real opponent took
+    from the illusion before it lost carries over into that next fight.
+
+    **Stage 2** -- only reached if the illusion *wins* Stage 1 (opponent
+    mentally slain). The illusion now turns on the real caster; the same
+    per-round disbelief roll applies, this time at ``MIRROR_IMAGE_
+    MASTER_DISBELIEF_BASE_CHANCE`` (Medium Human's own 80% base + a flat
+    25-point bonus), interleaved with a real Melee duel between
+    ``caster`` and the illusion. ``winner="a"`` (the caster) if the
+    illusion is disbelieved or slain -- "the caster automatically
+    finishes off the already-mentally-slain monster and claims the
+    treasure." ``winner="b"`` if the illusion instead reduces the
+    caster's own hit points to 0 -- "the illusion fades out, and the real
+    monster revives and slays the fallen illusionist" (the *magnitude* of
+    the opponent's own revival isn't given anywhere in the source, and
+    doesn't change this function's own reported winner, so it isn't
+    modeled as a hit-points change here).
+    """
+
+    illusion = Combatant(
+        name=f"{opponent.name}'s Illusion",
+        hit_points=opponent.hit_points,
+        melee_skill=opponent.melee_skill,
+        melee_damage_range=opponent.melee_damage_range,
+    )
+    base_chance = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[opponent_tier]
+
+    total_rounds = 0
+    stage1_resolved = False
+    for round_number in range(1, max_rounds + 1):
+        total_rounds = round_number
+        if resolve_mirror_image_disbelief(base_chance, skill_level, rng):
+            return EncounterCombatResult(winner=None, rounds=total_rounds)
+        skill_a, skill_b = effective_melee_skill(illusion), effective_melee_skill(opponent)
+        first, second = (illusion, opponent) if _acts_first(skill_a, skill_b, rng) else (opponent, illusion)
+        for attacker, defender in ((first, second), (second, first)):
+            if attacker.hit_points <= 0 or defender.hit_points <= 0:
+                continue
+            defender.hit_points -= roll_melee_attack(rng, damage_range=attacker.melee_damage_range)
+        if illusion.hit_points <= 0:
+            return EncounterCombatResult(winner=None, rounds=total_rounds)
+        if opponent.hit_points <= 0:
+            stage1_resolved = True
+            break
+    if not stage1_resolved:
+        return EncounterCombatResult(winner=None, rounds=total_rounds)
+
+    master_chance = MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE
+    for _ in range(1, max_rounds + 1):
+        total_rounds += 1
+        if resolve_mirror_image_disbelief(master_chance, skill_level, rng):
+            return EncounterCombatResult(winner="a", rounds=total_rounds)
+        skill_a, skill_b = effective_melee_skill(caster), effective_melee_skill(illusion)
+        first, second = (caster, illusion) if _acts_first(skill_a, skill_b, rng) else (illusion, caster)
+        for attacker, defender in ((first, second), (second, first)):
+            if attacker.hit_points <= 0 or defender.hit_points <= 0:
+                continue
+            defender.hit_points -= roll_melee_attack(rng, damage_range=attacker.melee_damage_range)
+        if illusion.hit_points <= 0:
+            return EncounterCombatResult(winner="a", rounds=total_rounds)
+        if caster.hit_points <= 0:
+            return EncounterCombatResult(winner="b", rounds=total_rounds)
+    return EncounterCombatResult(winner=None, rounds=total_rounds)

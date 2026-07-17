@@ -114,8 +114,13 @@ from ak_engine.turn.encounter import (
     illusory_hero_disbelief_chance,
     resolve_illusory_hero_disbelief,
     PERSONAL_COMBAT_SPELL_ABILITY,
+    MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT,
+    MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER,
+    resolve_hand_of_death_channel,
+    resolve_mirror_image_duel,
 )
 from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.monster import Monster, SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
 
 from _helpers import ScriptedRandom
 
@@ -1335,3 +1340,144 @@ def test_resolve_fire_arrow_duel_defensive_hit_multiplier_prevents_hits():
     assert result.winner is None
     assert b.hit_points == CHARACTER_HIT_POINTS
     assert all(shot.hit is False and shot.damage == 0 for shot in result.shots)
+
+
+# -- Phase 210: Hand of Death channel + Mirror-Image duel --
+
+
+def test_resolve_hand_of_death_channel_immune_target_returns_immediately_no_roll():
+    caster = Combatant("Caster")
+    victim = Combatant("Victim")
+    rng = ScriptedRandom([])  # any .random() call here raises IndexError
+
+    result = resolve_hand_of_death_channel(caster, victim, 3, rng, target_is_immune=True)
+
+    assert result.winner is None
+    assert result.rounds == 0
+    assert victim.hit_points == CHARACTER_HIT_POINTS
+    assert caster.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_resolve_hand_of_death_channel_caster_kills_victim_without_ever_being_hit():
+    # Necromancy skill 2 -> caster's own attack always lands for an exact
+    # 2 damage (no coin-flip roll needed); caster's own initiative skill
+    # (2) beats the victim's real Melee skill (0), so the caster always
+    # acts first with no tie-break roll either. The victim's own halved
+    # counter-attacks are scripted to miss for the two rounds it survives.
+    caster = Combatant("Caster", hit_points=10)
+    victim = Combatant("Victim", hit_points=5, melee_skill=0)
+    rng = ScriptedRandom([0.9, 0.9])
+
+    result = resolve_hand_of_death_channel(caster, victim, 2, rng)
+
+    assert result.winner == "a"
+    assert victim.hit_points <= 0
+    assert caster.hit_points == 10
+
+
+def test_resolve_hand_of_death_channel_ends_the_instant_the_caster_is_hit():
+    caster = Combatant("Caster", hit_points=10)
+    victim = Combatant("Victim", hit_points=10, melee_skill=0)
+    rng = ScriptedRandom([0.1, 0.5])  # victim's halved-chance attack hits, then a damage roll
+
+    result = resolve_hand_of_death_channel(caster, victim, 2, rng)
+
+    assert result.winner is None
+    assert result.rounds == 1
+    assert caster.hit_points < 10
+    assert victim.hit_points == 10 - 2  # the caster's own round-1 attack still landed first
+
+
+def test_resolve_hand_of_death_channel_respects_max_rounds_cap():
+    caster = Combatant("Caster", hit_points=10)
+    victim = Combatant("Victim", hit_points=999999, melee_skill=0)
+    rng = ScriptedRandom([0.9, 0.9, 0.9])  # victim's own attack misses every round
+
+    result = resolve_hand_of_death_channel(caster, victim, 2, rng, max_rounds=3)
+
+    assert result.winner is None
+    assert result.rounds == 3
+    assert caster.hit_points == 10
+
+
+def test_mirror_image_monster_intelligence_tier_covers_every_real_species():
+    real_species = {m for m in Monster if m is not Monster.NOMONSTER}
+    assert set(MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER) == real_species
+
+
+def test_mirror_image_monster_intelligence_tier_diverges_from_spiritwrack_for_three_species():
+    # Confirmed by the user (Desktop "Intelligenza mostri.txt"): Giant
+    # Worm/Amoeba/Clam are Spiritwrack-Animal-Intelligence but Mirror-
+    # Image-Mechanical -- a genuine, sourced divergence between the two
+    # classifications, not an oversight or a reuse of the Spiritwrack set.
+    for species in (Monster.GI_WORM, Monster.GI_AMOEBA, Monster.GI_CLAM):
+        assert MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER[species] is MirrorImageIntelligenceTier.MECHANICAL
+        assert species in SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
+
+
+def test_mirror_image_leader_intelligence_tier_default_is_medium_human():
+    assert MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT is MirrorImageIntelligenceTier.MEDIUM_HUMAN
+
+
+def test_resolve_mirror_image_duel_disbelieved_immediately_returns_no_winner_no_roll():
+    caster = Combatant("Caster")
+    opponent = Combatant("Opponent")
+    rng = ScriptedRandom([])  # 120% base at level 0 clamps to a guaranteed disbelief -- no roll
+
+    result = resolve_mirror_image_duel(caster, opponent, MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN, 0, rng)
+
+    assert result.winner is None
+    assert result.rounds == 1
+    assert caster.hit_points == CHARACTER_HIT_POINTS
+    assert opponent.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_resolve_mirror_image_duel_stage1_illusion_dies_falls_through_to_real_combat():
+    # Mechanical tier (20% base) at level 2 clamps the per-round disbelief
+    # chance to 0% -- guaranteed *not* disbelieved, no roll consumed for
+    # that check. The opponent (1 hp) then kills the illusion outright on
+    # the very first exchange; the real caster is never touched, per the
+    # rule ("the caster must concentrate... performing no other actions").
+    caster = Combatant("Caster", hit_points=10, melee_skill=1)
+    opponent = Combatant("Opponent", hit_points=1, melee_skill=1)
+    rng = ScriptedRandom([0.9, 0.1, 0.5])  # tie-break -> opponent first, then a landed hit + damage
+
+    result = resolve_mirror_image_duel(caster, opponent, MirrorImageIntelligenceTier.MECHANICAL, 2, rng)
+
+    assert result.winner is None
+    assert result.rounds == 1
+    assert caster.hit_points == 10
+    assert opponent.hit_points == 1
+
+
+def test_resolve_mirror_image_duel_stage2_caster_disbelieves_and_wins():
+    caster = Combatant("Caster", hit_points=10, melee_skill=1)
+    opponent = Combatant("Opponent", hit_points=1, melee_skill=1)
+    rng = ScriptedRandom([0.1, 0.1, 0.5, 0.1])
+    # Stage 1: tie-break -> illusion acts first, lands a hit + damage roll,
+    # mentally slaying the (1 hp) opponent. Stage 2: at level 2, the 105%
+    # master base reduces to a real 75% chance -- 0.1 < 0.75 disbelieves.
+
+    result = resolve_mirror_image_duel(caster, opponent, MirrorImageIntelligenceTier.MECHANICAL, 2, rng)
+
+    assert result.winner == "a"
+    assert result.rounds == 2
+    assert caster.hit_points == 10
+
+
+def test_resolve_mirror_image_duel_stage2_illusion_kills_the_caster():
+    caster = Combatant("Caster", hit_points=1, melee_skill=1)
+    opponent = Combatant("Opponent", hit_points=1, melee_skill=1)
+    rng = ScriptedRandom([0.1, 0.1, 0.5, 0.9, 0.9, 0.1, 0.5])
+    # Stage 1: illusion mentally slays the opponent (same shape as above).
+    # Stage 2: the 0.9 roll fails to disbelieve (< 0.75 needed), so a real
+    # round happens; the second 0.9 is the tie-break -- in Stage 2 the
+    # roll's own True/False sense is flipped from Stage 1 (skill_a is now
+    # the caster's own skill, not the illusion's), so >= 0.5 puts the
+    # illusion first here -- and its landed hit finishes off the
+    # caster's own 1 hp.
+
+    result = resolve_mirror_image_duel(caster, opponent, MirrorImageIntelligenceTier.MECHANICAL, 2, rng)
+
+    assert result.winner == "b"
+    assert result.rounds == 2
