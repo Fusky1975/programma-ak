@@ -119,7 +119,11 @@ from ak_engine.turn.encounter import (
     mirror_image_leader_disbelief_bonus,
     resolve_hand_of_death_channel,
     resolve_mirror_image_duel,
+    ILLUSORY_HERO_HOSTILE_ALIGNMENT_PAIRS,
+    illusory_hero_alignments_are_implacably_hostile,
+    resolve_illusory_hero_duel,
 )
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.monster import Monster, SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
 
@@ -1505,6 +1509,125 @@ def test_resolve_mirror_image_duel_stage2_illusion_kills_the_caster():
     # caster's own 1 hp.
 
     result = resolve_mirror_image_duel(caster, opponent, MirrorImageIntelligenceTier.MECHANICAL, 2, rng)
+
+    assert result.winner == "b"
+    assert result.rounds == 2
+
+
+def test_illusory_hero_hostile_alignment_pairs_table():
+    assert ILLUSORY_HERO_HOSTILE_ALIGNMENT_PAIRS == {
+        frozenset({Alignment.DIVINE, Alignment.PAGAN}),
+        frozenset({Alignment.DIVINE, Alignment.EVIL}),
+        frozenset({Alignment.DIVINE, Alignment.UNDEAD}),
+        frozenset({Alignment.GOOD, Alignment.EVIL}),
+        frozenset({Alignment.GOOD, Alignment.UNDEAD}),
+        frozenset({Alignment.UNDEAD, Alignment.DRUID}),
+    }
+
+
+def test_illusory_hero_alignments_are_implacably_hostile_confirmed_pairs():
+    assert illusory_hero_alignments_are_implacably_hostile(Alignment.GOOD, Alignment.EVIL) is True
+    assert illusory_hero_alignments_are_implacably_hostile(Alignment.EVIL, Alignment.GOOD) is True  # symmetric
+    assert illusory_hero_alignments_are_implacably_hostile(Alignment.DIVINE, Alignment.PAGAN) is True
+    assert illusory_hero_alignments_are_implacably_hostile(Alignment.UNDEAD, Alignment.DRUID) is True
+
+
+def test_illusory_hero_alignments_are_implacably_hostile_false_for_unconfirmed_pairs():
+    assert illusory_hero_alignments_are_implacably_hostile(Alignment.GOOD, Alignment.DIVINE) is False
+    assert illusory_hero_alignments_are_implacably_hostile(Alignment.NEUTRAL, Alignment.EVIL) is False
+    assert illusory_hero_alignments_are_implacably_hostile(Alignment.DRUID, Alignment.GOOD) is False
+    assert illusory_hero_alignments_are_implacably_hostile(Alignment.MECHANICAL, Alignment.SPECIAL) is False
+
+
+def test_resolve_illusory_hero_duel_stage1_disbelieved_returns_no_winner_and_no_combat():
+    caster = Combatant("Caster", hit_points=10)
+    opponent = Combatant("Opponent", hit_points=10)
+    hero = Combatant("Hero", hit_points=10, melee_skill=5)
+    rng = ScriptedRandom([0.1])
+    # High Human base (100%) at level 0, minus the flat 15% Illusory Hero
+    # reduction, is 85% -- unlike Mirror-Image this never reaches a fixed
+    # 100%, so a real roll is consumed; 0.1 < 0.85 disbelieves on the very
+    # first round, before any melee exchange happens.
+
+    result = resolve_illusory_hero_duel(caster, opponent, hero, MirrorImageIntelligenceTier.HIGH_HUMAN, 0, rng)
+
+    assert result.winner is None
+    assert result.rounds == 1
+    assert caster.hit_points == 10
+    assert opponent.hit_points == 10
+
+
+def test_resolve_illusory_hero_duel_leader_bonus_applies_on_top_of_the_table_value():
+    caster = Combatant("Caster", hit_points=10)
+    opponent = Combatant("Opponent", hit_points=10)
+    hero = Combatant("Hero", hit_points=10)
+    bonus = mirror_image_leader_disbelief_bonus(5, 0)  # +10% (Sage level 5)
+    rng = ScriptedRandom([0.55])
+    # Medium Human base (80%) at level 1: without the bonus the real
+    # chance is 50% (0.55 would NOT disbelieve); with the +10% bonus it
+    # rises to 60%, so the same 0.55 roll DOES disbelieve.
+
+    result = resolve_illusory_hero_duel(
+        caster, opponent, hero, MirrorImageIntelligenceTier.MEDIUM_HUMAN, 1, rng, opponent_disbelief_bonus=bonus
+    )
+
+    assert result.winner is None
+    assert result.rounds == 1
+
+
+def test_resolve_illusory_hero_duel_stage1_win_without_turning_on_master_is_instant():
+    caster = Combatant("Caster", hit_points=10, melee_skill=0)
+    opponent = Combatant("Opponent", hit_points=1, melee_skill=0)
+    hero = Combatant("Hero", hit_points=10, melee_skill=5, melee_damage_range=(10, 10))
+    rng = ScriptedRandom([0.1, 0.5])
+    # Mechanical tier at level 2 clamps disbelief to 0% (no roll). The
+    # hero-illusion's higher skill (5 > 0) means no tie-break roll either
+    # -- it acts first and a guaranteed hit (10-10 damage range) kills
+    # the 1 hp opponent outright. With turns_on_master=False, Stage 1's
+    # win is an immediate caster victory -- no Stage 2 duel at all.
+
+    result = resolve_illusory_hero_duel(
+        caster, opponent, hero, MirrorImageIntelligenceTier.MECHANICAL, 2, rng, turns_on_master=False
+    )
+
+    assert result.winner == "a"
+    assert result.rounds == 1
+    assert caster.hit_points == 10
+
+
+def test_resolve_illusory_hero_duel_stage2_caster_disbelieves_and_wins():
+    caster = Combatant("Caster", hit_points=10, melee_skill=0)
+    opponent = Combatant("Opponent", hit_points=1, melee_skill=0)
+    hero = Combatant("Hero", hit_points=10, melee_skill=5, melee_damage_range=(10, 10))
+    rng = ScriptedRandom([0.1, 0.5, 0.1])
+    # Stage 1 as above kills the opponent outright. Stage 2 (only reached
+    # because turns_on_master=True): the master base (105%) minus 30%
+    # (level 2) minus a further flat 15% is 60% -- 0.1 < 0.6 disbelieves
+    # immediately, no Stage 2 combat round.
+
+    result = resolve_illusory_hero_duel(
+        caster, opponent, hero, MirrorImageIntelligenceTier.MECHANICAL, 2, rng, turns_on_master=True
+    )
+
+    assert result.winner == "a"
+    assert result.rounds == 2
+    assert caster.hit_points == 10
+
+
+def test_resolve_illusory_hero_duel_stage2_illusion_kills_the_caster():
+    caster = Combatant("Caster", hit_points=1, melee_skill=0)
+    opponent = Combatant("Opponent", hit_points=1, melee_skill=0)
+    hero = Combatant("Hero", hit_points=10, melee_skill=5, melee_damage_range=(10, 10))
+    rng = ScriptedRandom([0.1, 0.5, 0.9, 0.1, 0.5])
+    # Stage 1 kills the opponent outright (same shape as above). Stage 2:
+    # the 0.9 roll fails to disbelieve (needs < 0.6); the hero-illusion's
+    # higher skill (5 > 0) means it acts first with no tie-break roll,
+    # and its guaranteed hit (10-10 damage range) finishes off the
+    # caster's own 1 hp.
+
+    result = resolve_illusory_hero_duel(
+        caster, opponent, hero, MirrorImageIntelligenceTier.MECHANICAL, 2, rng, turns_on_master=True
+    )
 
     assert result.winner == "b"
     assert result.rounds == 2

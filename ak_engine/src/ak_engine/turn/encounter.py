@@ -1206,6 +1206,7 @@ import random
 from dataclasses import dataclass
 from enum import Enum
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.monster import Monster, MonsterSpeed
 from ak_engine.models.temper import Temper
@@ -2556,6 +2557,138 @@ def resolve_mirror_image_duel(
     for _ in range(1, max_rounds + 1):
         total_rounds += 1
         if resolve_mirror_image_disbelief(master_chance, skill_level, rng):
+            return EncounterCombatResult(winner="a", rounds=total_rounds)
+        skill_a, skill_b = effective_melee_skill(caster), effective_melee_skill(illusion)
+        first, second = (caster, illusion) if _acts_first(skill_a, skill_b, rng) else (illusion, caster)
+        for attacker, defender in ((first, second), (second, first)):
+            if attacker.hit_points <= 0 or defender.hit_points <= 0:
+                continue
+            defender.hit_points -= roll_melee_attack(rng, damage_range=attacker.melee_damage_range)
+        if illusion.hit_points <= 0:
+            return EncounterCombatResult(winner="a", rounds=total_rounds)
+        if caster.hit_points <= 0:
+            return EncounterCombatResult(winner="b", rounds=total_rounds)
+    return EncounterCombatResult(winner=None, rounds=total_rounds)
+
+
+# Phase 211 addendum -- Illusory Hero [IH] (module docstring's own Phase 208
+# addendum quoted the rule in full: "the Illusionist creates an image of
+# whatever Valhalla hero is currently in the world, to fight in his place.
+# It is similar to 'Mirror-Image Phantasm', except that 15% is subtracted
+# from the chance to disbelieve, and the illusory hero will usually not
+# turn on its master if the illusion wins (unless the alignments of the
+# illusion and the spellcaster are implacably hostile, for example Good
+# versus Evil)."). The last of the ten secret spells (25-34) to be wired
+# into real Search combat -- see `turn/search_execution.py`'s own
+# dispatcher for the ``AdvancedAbility.ILLUSORY_HERO_SPELL`` (Ability.
+# ILLUSION skill 5+) precondition and the Valhalla-visitor lookup
+# (`models/valhalla.py VALHALLA_VISITOR_LEADER_ID`).
+
+# The "implacably hostile" alignment pairs, project-original (user-
+# supplied) -- the rulebook itself only confirms one worked example
+# ("Good versus Evil"), and this module's own Phase 187 addendum already
+# declined to invent a general hostility classifier from a single
+# example. Stored as unordered pairs (symmetric: if A is hostile to B, B
+# is hostile to A) via `frozenset({a, b})` membership.
+ILLUSORY_HERO_HOSTILE_ALIGNMENT_PAIRS: frozenset[frozenset[Alignment]] = frozenset(
+    {
+        frozenset({Alignment.DIVINE, Alignment.PAGAN}),
+        frozenset({Alignment.DIVINE, Alignment.EVIL}),
+        frozenset({Alignment.DIVINE, Alignment.UNDEAD}),
+        frozenset({Alignment.GOOD, Alignment.EVIL}),
+        frozenset({Alignment.GOOD, Alignment.UNDEAD}),
+        frozenset({Alignment.UNDEAD, Alignment.DRUID}),
+    }
+)
+
+
+def illusory_hero_alignments_are_implacably_hostile(a: Alignment, b: Alignment) -> bool:
+    """True if ``a``/``b`` are one of the confirmed "implacably hostile"
+    alignment pairs -- see ``ILLUSORY_HERO_HOSTILE_ALIGNMENT_PAIRS``'s own
+    docstring for the source. Every other alignment combination (Anti-
+    Holy, Neutral, Mechanical, Special included) is not confirmed hostile
+    to anything, so this returns False for them.
+    """
+
+    return frozenset({a, b}) in ILLUSORY_HERO_HOSTILE_ALIGNMENT_PAIRS
+
+
+def resolve_illusory_hero_duel(
+    caster: Combatant,
+    opponent: Combatant,
+    hero: Combatant,
+    opponent_tier: MirrorImageIntelligenceTier,
+    skill_level: int,
+    rng: random.Random,
+    *,
+    opponent_disbelief_bonus: float = 0.0,
+    turns_on_master: bool = False,
+    max_rounds: int = 1000,
+) -> EncounterCombatResult:
+    """Mirror-Image Phantasm's own outcome tree (``resolve_mirror_image_
+    duel()``), with the two confirmed differences: the illusion is a
+    fresh image of ``hero`` (the current Valhalla visitor, at full
+    ``CHARACTER_HIT_POINTS`` -- an image, not a snapshot of the real
+    visitor's own current wounds) rather than a clone of ``opponent``,
+    and every disbelief roll uses ``resolve_illusory_hero_disbelief()``
+    (the same table plus caster-level reduction, minus a further flat
+    15%) instead of the base Mirror-Image formula.
+
+    **Stage 1** -- the hero-illusion fights the real ``opponent`` in
+    Melee, gated each round by the opponent's own chance to disbelieve
+    (``opponent_tier``, plus ``opponent_disbelief_bonus`` for a King/Hero
+    opponent's own Sage/Illusion bonus, same convention as ``resolve_
+    mirror_image_duel()``). Disbelieved or lost -> ``winner=None`` (the
+    caster resumes fighting for real).
+
+    **Stage 2** -- only reached if the illusion wins Stage 1 *and*
+    ``turns_on_master`` is True (the caller's own ``illusory_hero_
+    alignments_are_implacably_hostile()`` check -- "the illusory hero
+    will usually not turn on its master"). If ``turns_on_master`` is
+    False, winning Stage 1 is an outright ``winner="a"`` (caster) with no
+    further duel at all. If True, Stage 2 proceeds exactly like Mirror-
+    Image's own second stage (the same ``MIRROR_IMAGE_MASTER_DISBELIEF_
+    BASE_CHANCE``, since no separate number is given for Illusory Hero's
+    own version of this branch): ``winner="a"`` if the caster disbelieves
+    or slays the illusion, ``winner="b"`` if the illusion kills the
+    caster instead.
+    """
+
+    illusion = Combatant(
+        name=f"Illusory {hero.name}",
+        hit_points=CHARACTER_HIT_POINTS,
+        melee_skill=hero.melee_skill,
+        melee_damage_range=hero.melee_damage_range,
+    )
+    base_chance = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[opponent_tier] + opponent_disbelief_bonus
+
+    total_rounds = 0
+    stage1_resolved = False
+    for round_number in range(1, max_rounds + 1):
+        total_rounds = round_number
+        if resolve_illusory_hero_disbelief(base_chance, skill_level, rng):
+            return EncounterCombatResult(winner=None, rounds=total_rounds)
+        skill_a, skill_b = effective_melee_skill(illusion), effective_melee_skill(opponent)
+        first, second = (illusion, opponent) if _acts_first(skill_a, skill_b, rng) else (opponent, illusion)
+        for attacker, defender in ((first, second), (second, first)):
+            if attacker.hit_points <= 0 or defender.hit_points <= 0:
+                continue
+            defender.hit_points -= roll_melee_attack(rng, damage_range=attacker.melee_damage_range)
+        if illusion.hit_points <= 0:
+            return EncounterCombatResult(winner=None, rounds=total_rounds)
+        if opponent.hit_points <= 0:
+            stage1_resolved = True
+            break
+    if not stage1_resolved:
+        return EncounterCombatResult(winner=None, rounds=total_rounds)
+
+    if not turns_on_master:
+        return EncounterCombatResult(winner="a", rounds=total_rounds)
+
+    master_chance = MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE
+    for _ in range(1, max_rounds + 1):
+        total_rounds += 1
+        if resolve_illusory_hero_disbelief(master_chance, skill_level, rng):
             return EncounterCombatResult(winner="a", rounds=total_rounds)
         skill_a, skill_b = effective_melee_skill(caster), effective_melee_skill(illusion)
         first, second = (caster, illusion) if _acts_first(skill_a, skill_b, rng) else (illusion, caster)

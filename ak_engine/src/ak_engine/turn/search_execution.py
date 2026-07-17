@@ -220,6 +220,7 @@ from ak_engine.models.monster import (
     MonsterSpeed,
 )
 from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
+from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_DAMAGE_RANGE,
@@ -236,9 +237,11 @@ from ak_engine.turn.encounter import (
     holy_symbol_hit_chance,
     ice_suspension_is_frozen,
     ice_suspension_slowed_bonus_rounds,
+    illusory_hero_alignments_are_implacably_hostile,
     mirror_image_leader_disbelief_bonus,
     resolve_fire_arrow_duel,
     resolve_hand_of_death_channel,
+    resolve_illusory_hero_duel,
     resolve_melee_duel,
     resolve_mirror_image_duel,
     resolve_personal_combat_spell_cast,
@@ -258,6 +261,14 @@ from ak_engine.turn.search_decode import SearchRequest
 # 1 hit point every combat round." See turn/encounter.py's own Phase 155
 # addendum for the full quote and Combatant.regenerates_hp's own mechanics.
 TROLL_REGENERATION_PER_COMBAT_ROUND = 1
+
+# Phase 211: secret spells (ordinals 25-34) are granted once a caster
+# reaches skill 5+ in their own base Ability -- `turn/cast_execution.py`'s
+# own docstring and `models/advanced_ability.py
+# AdvancedAbility.ILLUSORY_HERO_SPELL` confirm this for Illusory Hero
+# specifically. Below this threshold, the leader simply doesn't know the
+# spell yet -- casting it has no effect at all, no roll consumed.
+ILLUS_HERO_KNOWN_ABILITY_LEVEL = 5
 
 # Rulebook [5.6] Flee, transcribed verbatim -- see this module's own
 # docstring addendum and models/monster.py's own [5.6] quote.
@@ -388,18 +399,20 @@ def execute_search(
         combat form) to the encounter: the 8 non-channeled, one-roll
         spells from Phase 209 (see that phase's own module docstring
         addendum for the full per-spell design and the rulebook citations
-        behind ``PERSONAL_COMBAT_SPELL_ABILITY``), plus Hand of Death and
-        Mirror-Image Phantasm from Phase 210, both of which delegate their
+        behind ``PERSONAL_COMBAT_SPELL_ABILITY``), Hand of Death and
+        Mirror-Image Phantasm from Phase 210 (both of which delegate their
         own round-based sub-loop to ``resolve_hand_of_death_channel()``/
-        ``resolve_mirror_image_duel()`` (``turn/encounter.py``'s own
-        Phase 210 addendum). Illusory Hero stays unwired here -- it needs
-        the same illusion-duel engine as Mirror-Image plus its own
-        "whichever hero is currently visiting Valhalla" combatant source,
-        which nothing in this project builds yet. Returns a terminal
-        ``SearchExecutionResult`` (a kill, a neutralization, or Charm's
-        own guaranteed Flee), or ``None`` if the encounter continues (a
-        failed cast, a stat-modifier effect, or a spell whose target
-        isn't eligible).
+        ``resolve_mirror_image_duel()``, ``turn/encounter.py``'s own
+        Phase 210 addendum), and Illusory Hero from Phase 211 (``resolve_
+        illusory_hero_duel()`` -- Mirror-Image's own duel shape, but the
+        illusion is built from whichever hero is currently visiting
+        Valhalla, ``models/valhalla.py VALHALLA_VISITOR_LEADER_ID``,
+        rather than a clone of the opponent, and Stage 2 only fires when
+        the hero's and caster's own alignments are confirmed "implacably
+        hostile"). Returns a terminal ``SearchExecutionResult`` (a kill, a
+        neutralization, or Charm's own guaranteed Flee), or ``None`` if
+        the encounter continues (a failed cast, a stat-modifier effect,
+        or a spell whose target isn't eligible).
         """
 
         caster = leader_combatant if caster_is_leader else monster_combatant
@@ -428,10 +441,16 @@ def execute_search(
         )
         if spell is Spell.CHARM:
             ability = Ability.NECROMANCY if caster_is_undead else Ability.PSYCHIC
+        elif spell is Spell.ILLUS_HERO:
+            # Phase 211: not in PERSONAL_COMBAT_SPELL_ABILITY (that table
+            # is only the ten base Personal-Combat spells) -- Illusory
+            # Hero is one of the ten secret spells, tied to Ability.
+            # ILLUSION (module docstring's own Phase 208/211 addenda).
+            ability = Ability.ILLUSION
         elif spell in PERSONAL_COMBAT_SPELL_ABILITY:
             ability = PERSONAL_COMBAT_SPELL_ABILITY[spell]
         else:
-            return None  # not modeled (Illusory Hero, or any spell outside the 11 named above)
+            return None  # not modeled (any spell outside the 12 named above)
 
         # Control Undead's own eligibility precondition -- checked before
         # any roll, same as every other spell's `target_is_immune` guard,
@@ -454,6 +473,13 @@ def execute_search(
         else:
             level = MONSTER_MAGIC_ABILITIES.get(monster_species, {}).get(ability, 0)
             caster_is_pagan = False  # a monster has no Kingdom
+
+        # Illusory Hero is exclusively leader-cast (never appears in any
+        # real monster_encounter_plan.py species plan) and requires
+        # ILLUS_HERO_KNOWN_ABILITY_LEVEL -- checked before the roll, same
+        # "ineligible means no roll at all" pattern as Control Undead.
+        if spell is Spell.ILLUS_HERO and level < ILLUS_HERO_KNOWN_ABILITY_LEVEL:
+            return None
 
         succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan)
 
@@ -578,6 +604,49 @@ def execute_search(
                 return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
             if duel_result.winner == "b":
                 # The illusion kills the caster; the opponent "revives".
+                return _outcome_from(EncounterCombatResult(winner=("b" if target_is_monster else "a"), rounds=0))
+            return None
+
+        if spell is Spell.ILLUS_HERO:
+            hero = state.leaders.get(VALHALLA_VISITOR_LEADER_ID)
+            if hero is None:
+                # No confirmed rule for casting this with nobody currently
+                # visiting Valhalla -- no effect, same "precondition can't
+                # be met" convention as every other spell above.
+                return None
+            hero_combatant = _leader_combatant(hero)
+            if target_is_monster:
+                opponent_tier = MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER[monster_species]
+                opponent_disbelief_bonus = 0.0
+            else:
+                opponent_tier = MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT
+                sage_level = leader.skills.pair_for_ability(Ability.SAGE)[0] if leader.skills is not None else 0
+                illusion_level = (
+                    leader.skills.pair_for_ability(Ability.ILLUSION)[0] if leader.skills is not None else 0
+                )
+                opponent_disbelief_bonus = mirror_image_leader_disbelief_bonus(sage_level, illusion_level)
+            # "Unless the alignments of the illusion and the spellcaster
+            # are implacably hostile" -- both alignments must be recorded
+            # for the check to ever fire; unrecorded (None) defaults to
+            # not-hostile, same as every other alignment gate above.
+            turns_on_master = (
+                hero.alignment is not None
+                and leader.alignment is not None
+                and illusory_hero_alignments_are_implacably_hostile(hero.alignment, leader.alignment)
+            )
+            duel_result = resolve_illusory_hero_duel(
+                caster,
+                target,
+                hero_combatant,
+                opponent_tier,
+                level,
+                rng,
+                opponent_disbelief_bonus=opponent_disbelief_bonus,
+                turns_on_master=turns_on_master,
+            )
+            if duel_result.winner == "a":
+                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            if duel_result.winner == "b":
                 return _outcome_from(EncounterCombatResult(winner=("b" if target_is_monster else "a"), rounds=0))
             return None
 

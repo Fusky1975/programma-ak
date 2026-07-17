@@ -8265,7 +8265,7 @@ Augur Combat [AC] (205), Locate Object [LO] (206), Illusory Fog [IF]
     leader-CAST-before-guardian-CAST ordering, and
     `blocked_from_cast_and_archery` skipping the guardian's own later
     CAST tactic). Full suite: 2517 passed (2487 unchanged + 30 new).
-- **Phase 210 (current)**: wired the last two Personal-Combat spells --
+- **Phase 210**: wired the last two Personal-Combat spells --
   Hand of Death [HA] and Mirror-Image Phantasm [MI] -- completing all ten
   of `turn/cast_execution.py`'s own "Personal-Combat-only" spells. Both
   needed a genuine round-based sub-loop (Phase 209 deliberately deferred
@@ -8361,13 +8361,74 @@ Augur Combat [AC] (205), Locate Object [LO] (206), Illusory Fog [IF]
     Hand of Death; sourced-tier/leader-default-plus-bonus lookup, instant
     win, and instant loss for Mirror-Image). Full suite: 2538 passed
     (2517 unchanged + 21 new).
+- **Phase 211 (current)**: wired Illusory Hero [IH] -- the last of the ten
+  secret spells (`AdvancedAbility.ILLUSORY_HERO_SPELL`, `Ability.ILLUSION`
+  level 5+) and the last spell in this project with zero prior real
+  execution. Module docstring's own Phase 208 addendum quotes the rule in
+  full: "the Illusionist creates an image of whatever Valhalla hero is
+  currently in the world, to fight in his place. It is similar to
+  'Mirror-Image Phantasm', except that 15% is subtracted from the chance
+  to disbelieve, and the illusory hero will usually not turn on its
+  master if the illusion wins (unless the alignments of the illusion and
+  the spellcaster are implacably hostile, for example Good versus Evil)."
+  Two structural differences from Mirror-Image drove the design: the
+  illusion is a fresh image of a *third party* (the current Valhalla
+  visitor) rather than a clone of the opponent, and Stage 2 (the illusion
+  turning on its own caster) is *conditional* on an alignment-hostility
+  check rather than unconditional.
+  - `turn/encounter.py resolve_illusory_hero_duel(caster, opponent, hero,
+    opponent_tier, skill_level, rng, *, opponent_disbelief_bonus=0.0,
+    turns_on_master=False, max_rounds=1000)`: reuses `resolve_mirror_
+    image_duel()`'s own two-stage shape, but the Stage 1 illusion is built
+    from `hero` at full `CHARACTER_HIT_POINTS` (an image, not a snapshot
+    of the real visitor's own current wounds) instead of cloning
+    `opponent`, and every disbelief roll uses `resolve_illusory_hero_
+    disbelief()` (already built Phase 208 -- the same table plus a
+    further flat 15% reduction) instead of the base Mirror-Image formula.
+    If Stage 1's illusion wins **and** `turns_on_master` is False, that's
+    an outright `winner="a"` with no Stage 2 duel at all -- the key
+    structural difference from Mirror-Image, whose Stage 2 always fires.
+    If `turns_on_master` is True, Stage 2 proceeds exactly like Mirror-
+    Image's own (same `MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE`, since
+    no separate number is given for Illusory Hero's own version of that
+    branch).
+  - `ILLUSORY_HERO_HOSTILE_ALIGNMENT_PAIRS: frozenset[frozenset[
+    Alignment]]` and `illusory_hero_alignments_are_implacably_hostile(a,
+    b)` -- project-original, user-supplied (the rulebook itself only
+    confirms one worked example, "Good versus Evil"; this module's own
+    Phase 187 addendum had already declined to invent a general hostility
+    classifier from a single example). The confirmed table, six symmetric
+    pairs: Divine vs Pagan/Evil/Undead, Good vs Evil/Undead, Undead vs
+    Druid.
+  - `turn/search_execution.py`'s own `_resolve_cast_tactic()` gained the
+    `Spell.ILLUS_HERO` branch: looks up the current Valhalla visitor via
+    `state.leaders.get(VALHALLA_VISITOR_LEADER_ID)` -- no visitor means no
+    effect, the same "precondition can't be met" convention as every
+    other spell above; a new `ILLUS_HERO_KNOWN_ABILITY_LEVEL = 5` gate
+    (checked before the generic cast-success roll, same "ineligible means
+    no roll at all" pattern as Control Undead) enforces the AdvancedAbility
+    skill threshold this project had never wired for any spell before.
+    `opponent_tier`/`opponent_disbelief_bonus` reuse Mirror-Image's own
+    monster-table/leader-default-plus-Sage/Illusion-bonus lookup exactly;
+    `turns_on_master` is computed from the hero's and caster's own
+    recorded `Alignment` (unrecorded on either side defaults to not-
+    hostile, same convention as every other alignment gate above).
+  - 14 new tests in `tests/test_encounter.py` (the hostile-alignment-pair
+    table and its symmetry, the duel resolver's disbelief/leader-bonus/
+    stage-1-instant-win/stage-2-win/stage-2-loss branches) plus 8 new
+    tests in `tests/test_search_execution.py` (no-visitor no-effect,
+    level-gate blocks no roll, sourced monster tier, leader-target tier
+    plus bonus, instant win/loss, and `turns_on_master` computed True/
+    False from alignment). Full suite: 2554 passed (2538 unchanged + 16
+    new).
 
 **All ten Personal-Combat-only spells (Holy Symbol, Spiritwrack, Psychic
 Blast, Telekinetic Storm, Invisibility, Fireball, Ice Suspension, Control
-Undead, Hand of Death, Mirror-Image) plus Charm's own combat form are now
-wired into real Search combat** -- the CAST-tactic orchestration engine
-`turn/cast_execution.py`'s own docstring named as the blocking gap since
-Phase 60 is complete (Phases 209-210).
+Undead, Hand of Death, Mirror-Image) plus Charm's own combat form and
+Illusory Hero (the last of the ten secret spells) are now wired into real
+Search combat** -- the CAST-tactic orchestration engine `turn/cast_
+execution.py`'s own docstring named as the blocking gap since Phase 60 is
+complete (Phases 209-211).
 
 ## Setup
 

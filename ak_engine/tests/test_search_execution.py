@@ -12,6 +12,7 @@ from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
+from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.encounter import FIRE_ARROW_DAMAGE_RANGE, EncounterCombatResult, FireArrowShot
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.search_execution import (
@@ -1059,3 +1060,154 @@ def test_execute_search_cast_mirror_image_caster_is_slain_by_own_illusion():
 
     assert result.winner == "monster"
     assert result.leader_killed is True
+
+
+def test_execute_search_cast_illusory_hero_no_valhalla_visitor_has_no_effect():
+    leader = _skilled_leader(Ability.ILLUSION, 5)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.ILLUS_HERO, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_illusory_hero_duel"
+    ) as mock_duel, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_duel.called
+    assert mock_melee.called
+
+
+def test_execute_search_cast_illusory_hero_level_gate_blocks_low_illusion_skill():
+    leader = _skilled_leader(Ability.ILLUSION, 4)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.ILLUS_HERO, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_cast_roll, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_cast_roll.called
+    assert mock_melee.called
+
+
+def test_execute_search_cast_illusory_hero_monster_target_uses_the_sourced_tier():
+    leader = _skilled_leader(Ability.ILLUSION, 5)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPHINX))
+    request = _cast_request(1, Spell.ILLUS_HERO, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_illusory_hero_duel"
+    ) as mock_duel, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    from ak_engine.turn.encounter import MirrorImageIntelligenceTier
+
+    assert mock_duel.call_args[0][2].melee_skill == 0  # the hero-illusion Combatant
+    assert mock_duel.call_args[0][3] is MirrorImageIntelligenceTier.HIGH_HUMAN
+    assert mock_duel.call_args.kwargs["opponent_disbelief_bonus"] == 0.0
+
+
+def test_execute_search_cast_illusory_hero_leader_target_uses_high_human_plus_bonus():
+    leader = _skilled_leader(Ability.SAGE, 3)  # 3*2% = 6% bonus, 0% Illusion
+    state = GameState()
+    state.add_leader(leader)
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch.dict(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.ARCHER: {Ability.ILLUSION: 5}}
+    ), patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_illusory_hero_duel"
+    ) as mock_duel, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_roll.return_value = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.ILLUS_HERO.value),)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    from ak_engine.turn.encounter import MirrorImageIntelligenceTier
+
+    assert mock_duel.call_args[0][3] is MirrorImageIntelligenceTier.HIGH_HUMAN
+    assert mock_duel.call_args.kwargs["opponent_disbelief_bonus"] == pytest.approx(0.06)
+
+
+def test_execute_search_cast_illusory_hero_caster_wins_instantly():
+    leader = _skilled_leader(Ability.ILLUSION, 5)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.ILLUS_HERO)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_illusory_hero_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=2)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+
+
+def test_execute_search_cast_illusory_hero_caster_is_slain_by_own_illusion():
+    leader = _skilled_leader(Ability.ILLUSION, 5)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.ILLUS_HERO)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_illusory_hero_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="b", rounds=2)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "monster"
+    assert result.leader_killed is True
+
+
+def test_execute_search_cast_illusory_hero_turns_on_master_when_alignments_are_hostile():
+    leader = _skilled_leader(Ability.ILLUSION, 5, alignment=Alignment.GOOD)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION, alignment=Alignment.EVIL))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.ILLUS_HERO)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_illusory_hero_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_duel.call_args.kwargs["turns_on_master"] is True
+
+
+def test_execute_search_cast_illusory_hero_turns_on_master_false_when_alignments_unset():
+    leader = _skilled_leader(Ability.ILLUSION, 5)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.ILLUS_HERO)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_illusory_hero_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_duel.call_args.kwargs["turns_on_master"] is False
