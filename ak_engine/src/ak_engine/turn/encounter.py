@@ -1137,6 +1137,67 @@ does.
 **Not wired into `turn/search_execution.py`'s combat resolution this
 phase either**, same reason as every other Personal-Combat spell
 above.
+
+**Phase 208 addendum -- Illusory Hero [IH], tied to Ability.ILLUSION,
+project-original (user-supplied), the second and last Illusion secret
+spell (Illusory Fog, Phase 207, was the first) and the last of all ten
+secret spells (25-34) -- Personal-Combat, explicitly "similar to
+Mirror-Image Phantasm."** Quoted in full: "By the wondrous magic power
+of this spell, the Illusionist creates an image of whatever Valhalla
+hero is currently in the world, to fight in his place. It is similar
+to 'Mirror-Image Phantasm', except that 15% is subtracted from the
+chance to disbelieve, and the illusory hero will usually not turn on
+its master if the illusion wins (unless the alignments of the illusion
+and the spellcaster are implacably hostile, for example Good versus
+Evil)."
+
+**What this phase actually models:**
+
+1. `ILLUSORY_HERO_DISBELIEF_REDUCTION = 0.15` and
+   `illusory_hero_disbelief_chance(base_chance, caster_skill_level)`/
+   `resolve_illusory_hero_disbelief(base_chance, caster_skill_level,
+   rng)` -- reuse `mirror_image_disbelief_chance()`'s own formula
+   verbatim (same `MIRROR_IMAGE_DISBELIEF_BASE_CHANCE` table, same
+   per-level reduction) and then subtract one further flat 15
+   percentage points, clamped to [0%, 100%] -- "except that 15% is
+   subtracted from the chance to disbelieve" reads as a modifier on top
+   of Mirror-Image's own already-computed chance, not a replacement
+   formula, so this module deliberately calls through to the existing
+   function rather than duplicating its table.
+2. `ILLUSORY_HERO_TURNS_ON_MASTER_BY_DEFAULT = False` -- "will usually
+   not turn on its master if the illusion wins" inverts Mirror-Image's
+   own unconditional Stage-2 "the illusion then turns on the caster
+   himself" rule (this module's own Mirror-Image section above). The
+   "unless... implacably hostile" exception (only one worked example
+   given, "Good versus Evil") is recorded as a confirmed exception, not
+   modeled as a general alignment-hostility classifier: `models/
+   alignment.py`'s own `Alignment`/`ALIGNMENT_ORDINAL` has no existing
+   "implacably hostile pair" table to draw on, and inventing one from a
+   single example would be guessing the boundary (is Good-vs-Anti-Holy
+   "implacably hostile" too? Neutral-vs-Evil?) rather than transcribing
+   a sourced rule.
+3. **"Whatever Valhalla hero is currently in the world" is a confirmed
+   fact, not a lookup this phase performs.** This project's own VALHALLA
+   subsystem (Phases 194-199) already establishes that at most one
+   visiting hero exists at a time, always as `LeaderState(leader_id=
+   models.valhalla.VALHALLA_VISITOR_LEADER_ID)` (199) once spawned by
+   `turn/valhalla_execution.py finalize_gate_angel_visit()` -- so "the"
+   current Valhalla hero, when one exists, is `state.leaders.get(199)`.
+   Building the illusion's own `Combatant` from that hero's stats is
+   the same "clone a `Combatant` from a real stat source" pattern this
+   module already leaves unbuilt for Gate Demon's own summoned monster
+   (Phase 202 addendum) -- no orchestration engine exists yet to
+   consume either clone.
+4. **The actual duel outcome tree is not modeled**, the same "clean,
+   testable primitives only" boundary as Mirror-Image's own three-stage
+   outcome tree above (disbelief -> duel -> possible Stage-2 duel) --
+   this spell only changes two of Mirror-Image's own numeric inputs
+   (the disbelief reduction and the master-disbelief precondition), it
+   doesn't add a new engine to execute.
+
+**Not wired into `turn/search_execution.py`'s combat resolution this
+phase either**, same reason as every other Personal-Combat spell
+above.
 """
 
 from __future__ import annotations
@@ -1497,6 +1558,40 @@ def resolve_mirror_image_disbelief(base_chance: float, caster_skill_level: int, 
     """
 
     chance = mirror_image_disbelief_chance(base_chance, caster_skill_level)
+    if chance <= 0.0:
+        return False
+    if chance >= 1.0:
+        return True
+    return rng.random() < chance
+
+
+# Illusory Hero [IH], module docstring's own Phase 208 addendum -- tied
+# to Ability.ILLUSION. "Similar to Mirror-Image Phantasm" -- reuses that
+# spell's own disbelief-chance formula/table rather than duplicating it.
+ILLUSORY_HERO_DISBELIEF_REDUCTION = 0.15
+ILLUSORY_HERO_TURNS_ON_MASTER_BY_DEFAULT = False
+
+
+def illusory_hero_disbelief_chance(base_chance: float, caster_skill_level: int) -> float:
+    """"similar to Mirror-Image Phantasm, except that 15% is subtracted from
+    the chance to disbelieve." Calls through to `mirror_image_disbelief_
+    chance()` for the base Mirror-Image formula, then subtracts one
+    further flat `ILLUSORY_HERO_DISBELIEF_REDUCTION`, clamped to [0%,
+    100%].
+    """
+
+    return max(0.0, min(1.0, mirror_image_disbelief_chance(base_chance, caster_skill_level) - ILLUSORY_HERO_DISBELIEF_REDUCTION))
+
+
+def resolve_illusory_hero_disbelief(base_chance: float, caster_skill_level: int, rng: random.Random) -> bool:
+    """Rolls whether the illusory hero is disbelieved -- see
+    ``illusory_hero_disbelief_chance()``'s own docstring for the
+    formula. Returns True if disbelieved. No roll is consumed when the
+    chance is already fixed at 0% or 100%, the same convention
+    ``resolve_mirror_image_disbelief()`` established.
+    """
+
+    chance = illusory_hero_disbelief_chance(base_chance, caster_skill_level)
     if chance <= 0.0:
         return False
     if chance >= 1.0:

@@ -107,6 +107,10 @@ from ak_engine.turn.encounter import (
     augur_combat_shirk_chance,
     resolve_augur_combat,
     resolve_augur_combat_shirk,
+    ILLUSORY_HERO_DISBELIEF_REDUCTION,
+    ILLUSORY_HERO_TURNS_ON_MASTER_BY_DEFAULT,
+    illusory_hero_disbelief_chance,
+    resolve_illusory_hero_disbelief,
 )
 
 from _helpers import ScriptedRandom
@@ -1189,3 +1193,47 @@ def test_spell_disruption_chance_still_defaults_to_the_normal_rate():
 def test_resolve_spell_disruption_still_defaults_to_the_normal_rate():
     assert resolve_spell_disruption(1, ScriptedRandom([0.19])) is True
     assert resolve_spell_disruption(1, ScriptedRandom([0.20])) is False
+
+
+# -- Phase 208: Illusory Hero [IH] --
+
+
+def test_illusory_hero_constants():
+    assert ILLUSORY_HERO_DISBELIEF_REDUCTION == 0.15
+    assert ILLUSORY_HERO_TURNS_ON_MASTER_BY_DEFAULT is False
+
+
+def test_illusory_hero_disbelief_chance_subtracts_a_further_15_percent():
+    base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.HIGH_HUMAN]  # 100%
+    # Mirror-Image's own formula at level 0 leaves 100%; Illusory Hero
+    # subtracts one further flat 15 percentage points on top of that.
+    assert illusory_hero_disbelief_chance(base, 0) == pytest.approx(0.85)
+    assert illusory_hero_disbelief_chance(base, 1) == pytest.approx(0.70)
+
+
+def test_illusory_hero_disbelief_chance_clamps_to_0_percent():
+    low_base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.MECHANICAL]  # 20%
+    assert illusory_hero_disbelief_chance(low_base, 10) == 0.0
+
+
+def test_illusory_hero_disbelief_chance_never_reaches_100_percent():
+    # Mirror-Image's own per-round chance is already clamped to 100%
+    # *before* Illusory Hero's flat -15% is applied, so the highest
+    # achievable chance here is 85%, never 100% -- unlike Mirror-Image
+    # itself, whose own Divine/Superhuman tier can hit 100% outright.
+    high_base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN]  # 120%
+    assert illusory_hero_disbelief_chance(high_base, 0) == pytest.approx(0.85)
+
+
+def test_resolve_illusory_hero_disbelief_zero_percent_never_consumes_a_roll():
+    rng = ScriptedRandom([])
+    low_base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.MECHANICAL]
+    assert resolve_illusory_hero_disbelief(low_base, 10, rng) is False
+
+
+def test_resolve_illusory_hero_disbelief_consumes_exactly_one_roll_in_between():
+    base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.MEDIUM_HUMAN]  # 80%, minus 15% = 65%
+    rng = ScriptedRandom([0.64])  # a second .random() call would raise IndexError
+    assert resolve_illusory_hero_disbelief(base, 0, rng) is True
+    rng = ScriptedRandom([0.65])
+    assert resolve_illusory_hero_disbelief(base, 0, rng) is False

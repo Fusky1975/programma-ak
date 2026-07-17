@@ -8075,7 +8075,7 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     mutates nothing + finds a leader-held item + unknown item id +
     feature/monster-guarded item returns `None`). Full suite: 2473
     passed (2469 unchanged + 4 new).
-- **Phase 207 (current)**: modeled Illusory Fog [IF] (`Spell.ILLUS_
+- **Phase 207**: modeled Illusory Fog [IF] (`Spell.ILLUS_
   FOG`), tied to `Ability.ILLUSION` -- the first Illusory secret
   spell, not a combat spell (confirmed by the user's own framing), a
   province target the same shape Scar Terrain already established.
@@ -8123,6 +8123,56 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     classification for both Dragon/Eagle Wing and Mystic-Winds-active
     cases + ordinary-unit exclusion + strength halving both ways).
     Full suite: 2481 passed (2473 unchanged + 8 new).
+- **Phase 208 (current)**: modeled Illusory Hero [IH] (`Spell.ILLUS_
+  HERO`), tied to `Ability.ILLUSION` -- the second and last Illusion
+  secret spell, Personal-Combat, and the last of all ten secret spells
+  (25-34), explicitly "similar to Mirror-Image Phantasm." User-
+  supplied: "By the wondrous magic power of this spell, the
+  Illusionist creates an image of whatever Valhalla hero is currently
+  in the world, to fight in his place. It is similar to 'Mirror-Image
+  Phantasm', except that 15% is subtracted from the chance to
+  disbelieve, and the illusory hero will usually not turn on its
+  master if the illusion wins (unless the alignments of the illusion
+  and the spellcaster are implacably hostile, for example Good versus
+  Evil)."
+  - `turn/encounter.py ILLUSORY_HERO_DISBELIEF_REDUCTION = 0.15` and
+    `illusory_hero_disbelief_chance(base_chance, caster_skill_level)`/
+    `resolve_illusory_hero_disbelief(...)` call through to Mirror-
+    Image's own `mirror_image_disbelief_chance()` (same base-chance
+    table, same per-level reduction) and then subtract one further
+    flat 15 percentage points, clamped to [0%, 100%] -- reusing the
+    existing formula rather than duplicating its table, since "except
+    that 15% is subtracted" reads as a modifier on Mirror-Image's own
+    already-computed chance. Confirmed: the two-stage clamp means this
+    chance can never actually reach 100%, unlike Mirror-Image itself.
+  - `ILLUSORY_HERO_TURNS_ON_MASTER_BY_DEFAULT = False` inverts Mirror-
+    Image's own unconditional Stage-2 "the illusion then turns on the
+    caster" rule. **The "unless... implacably hostile" exception is a
+    confirmed exception, not a general alignment-hostility classifier**
+    -- only one worked example is given ("Good versus Evil"), and
+    `models/alignment.py` has no existing "implacably hostile pair"
+    table to draw on; inventing a boundary from a single example would
+    be guessing, not transcribing a sourced rule.
+  - **"Whatever Valhalla hero is currently in the world" is a
+    confirmed fact, not a lookup performed here.** This project's own
+    VALHALLA subsystem (Phases 194-199) already establishes that the
+    current visiting hero, when one exists, is always
+    `state.leaders.get(models.valhalla.VALHALLA_VISITOR_LEADER_ID)`
+    (199). Building the illusion's own `Combatant` from that hero's
+    stats is left unbuilt, the same "clone a `Combatant` from a real
+    stat source" pattern Gate Demon's own summoned monster (Phase 202)
+    already leaves unbuilt -- no orchestration engine consumes either.
+  - 6 new tests in `tests/test_encounter.py` (constants + the extra
+    -15% reduction + clamps to 0% + never reaches 100% (a two-stage-
+    clamp consequence, not a direct source figure) + single-roll-
+    consumption at both bounds). Full suite: 2487 passed (2481
+    unchanged + 6 new).
+
+**All ten secret spells (25-34) are now modeled**: Gate Angel [GA]
+(Phase 194-199), Words of Healing [WH] (200), Scar Terrain [ST] (201),
+Gate Demon [GD] (202), Lava Pool [LP] (203), Mystic Winds [MW] (204),
+Augur Combat [AC] (205), Locate Object [LO] (206), Illusory Fog [IF]
+(207), and Illusory Hero [IH] (208).
 
 ## Setup
 
