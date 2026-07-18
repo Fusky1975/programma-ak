@@ -9009,7 +9009,7 @@ complete (Phases 209-211).
     `None` sentinel, a King's own capital resolving to his own id,
     3 more Race ordinals cross-checked, and a truncated-record parse
     error) -- 2653 passed total.
-- **Phase 223 (current)**: `parser/gw_world_bridge.py
+- **Phase 223**: `parser/gw_world_bridge.py
   bridge_gw_world_provinces()` (new) -- bridges `GWProvinceRecord`s into
   real `HexCoord`-keyed `ProvinceState`s, closing Phase 222's own
   "no coordinate field" known gap. Also adds `ProvinceState.tax: int |
@@ -9043,6 +9043,31 @@ complete (Phases 209-211).
     always `None`, and a not-a-multiple-of-height `ValueError`) plus
     2 new tests in `tests/test_game_state.py` for `ProvinceState.tax`
     (default `None`, and settable) -- 2660 passed total.
+- **Phase 224 (current)**: `parser/gw_world_bridge.py
+  resolve_province_owners()` (new) -- resolves Phase 223's own
+  deliberately-deferred `GWProvinceRecord.governor_leader_id` into a
+  real `ProvinceState.owner_kingdom_id`, via a `GameState` whose
+  `leaders` dict is already populated (e.g. `turn/kingdom_bridge.py
+  sync_leaders_from_kingdom()`).
+  - A King-governed province resolves directly (the King's own
+    `leader_id` equals his `kingdom_id`, the project-wide convention);
+    a Hero-governed province resolves via that Hero's own `LeaderState.
+    kingdom_id` (verified against the real "Philo(70)" cross-check --
+    Philo governs Transylvania, and a synthetic `LeaderState(leader_id=
+    70, kingdom_id=6, ...)` correctly resolves Transylvania's owner to
+    kingdom 6). An independent Hero (no kingdom) resolves to `None`
+    legitimately; a governor id absent from `state.leaders` (e.g. a
+    partially-bridged `GameState` missing that kingdom's own move file)
+    is left unresolved, not an error -- `resolve_province_owners()`
+    mutates `provinces` in place and returns the count of governors it
+    actually found in `state.leaders`.
+  - Non-breaking: full suite passed unchanged (2660 passed) before any
+    new tests were written (a wholly new function, no existing call
+    site reads it). 4 new tests added in `tests/test_gw_world_bridge.py`
+    (covering: a King's own capital resolving directly, a Hero-governed
+    province resolving to his own kingdom, unresolved governors staying
+    `None` with a partially-bridged `GameState`, and an independent
+    Hero resolving to `None`) -- 2664 passed total.
 
 ## Setup
 

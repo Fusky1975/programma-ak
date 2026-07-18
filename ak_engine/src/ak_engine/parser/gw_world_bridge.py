@@ -35,22 +35,36 @@ every world is plausible, but this hasn't been cross-checked against a
 second real `GW*` file (e.g. `GW6`) -- a `height` parameter is exposed
 below rather than hardcoding this as an unconditional constant.
 
-**Deliberately not attempted here**: `GWProvinceRecord.governor_leader_id`
-is not resolved to an owning kingdom id -- doing so needs a `GameState`-
-level leader/kingdom lookup this pure bridging function doesn't have
-(and doesn't need, for the coordinate-only work this phase covers). The
-returned `ProvinceState.owner_kingdom_id` is always `None`.
+**Phase 224 adds `resolve_province_owners()`**: `GWProvinceRecord.
+governor_leader_id` is a leader id, not a kingdom id (see `gw_world.py`'s
+own "Philo(70)" cross-check). Resolving it needs a `GameState` whose
+`leaders` dict is already populated (e.g. via `turn/kingdom_bridge.py
+sync_leaders_from_kingdom()` from the matching `AK3__T*.K1` files) --
+this project's own already-established real King's-own-leader_id-equals-
+kingdom_id convention means a King-governed province resolves directly,
+while a Hero-governed province resolves via that Hero's own `LeaderState.
+kingdom_id` (or stays unresolved if that Hero is an independent
+Valhalla visitor with no kingdom, or simply isn't in `state.leaders` at
+all -- e.g. because only a subset of kingdoms' move files were ever
+bridged). Unresolvable records are left at `owner_kingdom_id = None`
+rather than raising -- a partially-bridged `GameState` (not every
+kingdom's `AK3__T*.K1` available) is an expected, ordinary case, not an
+error condition.
 """
 
 from __future__ import annotations
 
-from ak_engine.models.game_state import ProvinceState
+from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.models.map import HexCoord
 from ak_engine.parser.gw_world import GWProvinceRecord
 
 # Rows per column, confirmed for GW3__T1 (see module docstring). 18
 # columns x 9 rows = 162, the confirmed real province count.
 CONFIRMED_BOARD_HEIGHT = 9
+
+
+def _coord_for_index(index: int, height: int) -> HexCoord:
+    return HexCoord(index // height, index % height)
 
 
 def bridge_gw_world_provinces(
@@ -76,7 +90,7 @@ def bridge_gw_world_provinces(
 
     provinces: dict[HexCoord, ProvinceState] = {}
     for index, record in enumerate(records):
-        coord = HexCoord(index // height, index % height)
+        coord = _coord_for_index(index, height)
         provinces[coord] = ProvinceState(
             coord=coord,
             terrain=record.terrain,
@@ -85,3 +99,38 @@ def bridge_gw_world_provinces(
             tax=record.tax,
         )
     return provinces
+
+
+def resolve_province_owners(
+    provinces: dict[HexCoord, ProvinceState],
+    records: list[GWProvinceRecord],
+    state: GameState,
+    *,
+    height: int = CONFIRMED_BOARD_HEIGHT,
+) -> int:
+    """Sets each bridged province's real `owner_kingdom_id`, resolved
+    from its own `GWProvinceRecord.governor_leader_id` via `state.
+    leaders` (see module docstring for exactly what "resolved" means for
+    a King vs. a Hero vs. an unknown leader id).
+
+    Mutates `provinces` in place (the same dict `bridge_gw_world_provinces()`
+    returned, keyed the same way via `records`' own index order) and
+    returns the count of provinces whose owner was actually resolved
+    (found in `state.leaders`) -- not the count set to a non-`None`
+    kingdom id, since a resolved independent Hero legitimately resolves
+    to `None`.
+    """
+
+    resolved = 0
+    for index, record in enumerate(records):
+        if record.governor_leader_id is None:
+            continue
+        leader = state.leaders.get(record.governor_leader_id)
+        if leader is None:
+            continue
+        province = provinces.get(_coord_for_index(index, height))
+        if province is None:
+            continue
+        province.owner_kingdom_id = leader.kingdom_id
+        resolved += 1
+    return resolved
