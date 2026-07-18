@@ -1,4 +1,4 @@
-from ak_engine.models.enums import Ability, ActionCode, action_from_int
+from ak_engine.models.enums import ABILITY_ABBREVIATION, Ability, ActionCode, action_from_int
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
@@ -39,3 +39,25 @@ def test_terrain_name_matches_sourced_display_names():
     assert TERRAIN_NAME[Terrain.MTNS] == "Mountain"
     assert TERRAIN_NAME[Terrain.SEA] == "Sea"
     assert TERRAIN_NAME[Terrain.NO_TERRAIN] == "No Terrain"
+
+
+def test_ability_abbreviation_covers_every_ability_member():
+    assert set(ABILITY_ABBREVIATION.keys()) == set(Ability)
+
+
+def test_ability_abbreviation_matches_sourced_column_header():
+    assert ABILITY_ABBREVIATION[Ability.TACTICAL] == "Ta"
+    assert ABILITY_ABBREVIATION[Ability.MARCH] == "Ma"
+    assert ABILITY_ABBREVIATION[Ability.NAVAL] == "Na"
+    assert ABILITY_ABBREVIATION[Ability.ARCHERY] == "Ar"
+    assert ABILITY_ABBREVIATION[Ability.MELEE] == "Me"
+    assert ABILITY_ABBREVIATION[Ability.WHITE] == "Wh"
+    assert ABILITY_ABBREVIATION[Ability.NECROMANCY] == "Ne"
+    assert ABILITY_ABBREVIATION[Ability.ELEMENTAL] == "El"
+    assert ABILITY_ABBREVIATION[Ability.PSYCHIC] == "Ps"
+    assert ABILITY_ABBREVIATION[Ability.ILLUSION] == "Il"
+    assert ABILITY_ABBREVIATION[Ability.DRUID] == "Dr"
+    assert ABILITY_ABBREVIATION[Ability.THIEF] == "Th"
+    assert ABILITY_ABBREVIATION[Ability.EXPLORER] == "Ex"
+    assert ABILITY_ABBREVIATION[Ability.SPY] == "Sp"
+    assert ABILITY_ABBREVIATION[Ability.SAGE] == "Sa"

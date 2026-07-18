@@ -55,6 +55,30 @@ class Ability(Enum):
     SAGE = 14
 
 
+# REPORTS.PAS `Rep_Leaders`'s own CHARACTERS-section column header
+# (~line 811-812): "Character      Loc Align  Temp M/F  Race Ini
+# TaMaNaArMe WhNeElPsIl DrThExSpSa" -- the last 30 characters are 15
+# two-letter ability abbreviations, positionally verbatim against this
+# module's own `Tactical..Sage` declaration order (Phase 220).
+ABILITY_ABBREVIATION: dict[Ability, str] = {
+    Ability.TACTICAL: "Ta",
+    Ability.MARCH: "Ma",
+    Ability.NAVAL: "Na",
+    Ability.ARCHERY: "Ar",
+    Ability.MELEE: "Me",
+    Ability.WHITE: "Wh",
+    Ability.NECROMANCY: "Ne",
+    Ability.ELEMENTAL: "El",
+    Ability.PSYCHIC: "Ps",
+    Ability.ILLUSION: "Il",
+    Ability.DRUID: "Dr",
+    Ability.THIEF: "Th",
+    Ability.EXPLORER: "Ex",
+    Ability.SPY: "Sp",
+    Ability.SAGE: "Sa",
+}
+
+
 # RUMORS.PAS `Get_AbDesc` (~line 481, found while researching Phase 87's own
 # "^Y: Character Description" marker -- that marker turned out to be the
 # already-modeled Alignment+Temper "nature/character" sentence, not this;

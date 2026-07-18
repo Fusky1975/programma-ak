@@ -1102,6 +1102,7 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.enums import (
+    ABILITY_ABBREVIATION,
     ActionCode,
     Ability,
     CAST_SPELL_OPENING_COMPLETE_SPELLS,
@@ -5169,6 +5170,128 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
     return lines
 
 
+# HostAK/TP/REPORTS.PAS Rep_Leaders (~lines 658-855) -- the real
+# "CHARACTERS" section's own sourced, verbatim opening, rejoined across
+# its 3 raw WRITELN lines (same convention as _ARMIES_REPORT_OPENING).
+# Quoted here even though this composer doesn't render everything the
+# opening itself describes ("shows pay and abilities... move precedence
+# and aptitude") -- the same "quote the real opening verbatim regardless
+# of what actually renders below" precedent _FINANCES_OPENING already
+# established.
+_CHARACTERS_OPENING = (
+    "My Lord, Great indeed are the leaders of our proud kingdom.  Though thee "
+    "knows them well, I list them here for thy consideration (the first line "
+    "shows pay and abilities; line 2 shows move precedence and aptitude.)"
+)
+
+_CHARACTERS_NONE_AT_PRESENT = "None at present"
+
+
+def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
+    """Assembles the "CHARACTERS" section (Phase 221) -- a deliberately
+    much narrower slice of `REPORTS.PAS Rep_Leaders`, one of the largest
+    procedures in the available Pascal archive (`compose_letter_report()`'s
+    own docstring already flagged it as such), the same "narrower than
+    the real procedure, documented why" precedent every other section
+    composer in this module already established.
+
+    **Only the real procedure's "impulse 1" pass is modeled**: a
+    kingdom's own leaders (`LKing(ldr) = kng`, i.e. `LeaderState.
+    kingdom_id == kingdom_id` here) -- the one pass with genuinely full
+    character data in the real table. The real procedure's other two
+    passes ("impulse 2": wandering Heroes/other Kings' leaders this
+    kingdom happens to know the location of; "impulse 3": leaders a
+    Priest-office-holding King can locate via `Was_Clairved`/religious
+    contact) both need data this project doesn't model at all --
+    `Known_Loc` (per-kingdom "have I seen this leader" tracking) and the
+    Priest office itself (the same IMPERIAL OFFICE REPORT gap
+    `compose_letter_report()`'s own docstring already names) -- so
+    neither pass is attempted here.
+
+    **Rendered, one readable two-line entry per owned leader** (not the
+    real fixed-width columns -- the same documented choice every other
+    section composer in this module already made): name, province
+    location (or a `(x, y)` coordinate fallback, the same convention
+    `describe_armies_report()` uses), Alignment (`LeaderState.alignment.
+    value`, already the real Pascal `outname` display string --
+    `models/alignment.py`'s own docstring confirms this), Temperament
+    (`TEMPER_NAME`), and Race (`LeaderState.race` if set, else the
+    kingdom's own `KingdomState.race` -- `LeaderState.race`'s own
+    docstring confirms this fallback is the real, general-case
+    behavior; only a Valhalla visitor keeps an independent race). A
+    leader with no recorded Alignment/Temperament renders "Unknown" for
+    that field -- a documented, unsourced placeholder for genuinely
+    missing data, not a guess at a real value (the real Pascal `lalign`/
+    `ltemper` arrays are always populated; this project's own "None =
+    not recorded" convention, `LeaderState.alignment`/`.temper`'s own
+    docstrings, allows a gap the real engine never has).
+
+    The second line lists this leader's skill level for all 15
+    `Ability` members, via `models/enums.py ABILITY_ABBREVIATION`
+    (sourced verbatim from this same procedure's own column header) and
+    `SkillTable.pair_for_ability(ability)[0]` -- 0 for every ability if
+    `LeaderState.skills` is `None`, the same "no ability data recorded"
+    fallback `turn/cast_execution.py _roll_cast_success` already
+    established.
+
+    **What this deliberately does NOT reproduce, and why**:
+    - **Pay** (`Ini`/`LCost(ldr,kng)`) is confirmed absent -- no
+      surviving formula exists anywhere in the available `.PAS` files,
+      the same citation `describe_armies_report()`'s own docstring and
+      `plan_dispatch.py`'s Phase 158 note already established.
+    - **Gender** (`M/F`) is confirmed absent -- no `Gender()` concept
+      or field exists anywhere in this project; nothing computes or
+      stores it.
+    - **The Discovery-based skill-modifier row** (`sk_mod`'s own `^`/
+      `^^` markers above each ability column, driven by `dknow[kng,
+      discovery]`) is confirmed absent for the same reason
+      `describe_finances_report()`'s own Discoveries list always
+      renders empty: no per-kingdom Discovery-tracking field exists
+      anywhere in this project.
+    - **Magic-item-ownership tick marks** (`'`/`"` suffixes on a skill
+      column, from `NT_Owned`) and the per-leader **treasure list**
+      (`List_Treas(ldr,false)`) are both left out of this composer,
+      even though Phase 140's item-ownership registry could in
+      principle answer "does this leader own an item of this type" --
+      a deliberately narrower scope for this phase, matching every
+      other section's own "readable line, not the full real table"
+      precedent, not a data gap.
+    - **Move precedence/aptitude** (the real line 2's other own
+      content, per `_CHARACTERS_OPENING`'s own text) isn't modeled;
+      this composer's own "line 2" is entirely the skill-level list
+      above instead.
+    - Fixed-width columns aren't reproduced -- the same documented
+      choice every other section composer in this module already made.
+    """
+
+    kingdom = state.kingdoms[kingdom_id]
+    lines = ["CHARACTERS", _CHARACTERS_OPENING]
+
+    owned = [leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id]
+    if not owned:
+        lines.append(_CHARACTERS_NONE_AT_PRESENT)
+        return lines
+
+    owned.sort(key=lambda leader: leader.leader_id)
+    for leader in owned:
+        province = state.provinces.get(leader.location)
+        location_label = province.name if province is not None and province.name else f"({leader.location.x}, {leader.location.y})"
+        alignment_label = leader.alignment.value if leader.alignment is not None else "Unknown"
+        temper_label = TEMPER_NAME[leader.temper] if leader.temper is not None else "Unknown"
+        race = leader.race if leader.race is not None else kingdom.race
+        race_label = RACE_NAME[race]
+        lines.append(f"{leader.name} -- {location_label}, {alignment_label}, {temper_label}, {race_label}")
+
+        skills = leader.skills
+        skill_tokens = []
+        for ability in Ability:
+            level = skills.pair_for_ability(ability)[0] if skills is not None else 0
+            skill_tokens.append(f"{ABILITY_ABBREVIATION[ability]}{level}")
+        lines.append(" ".join(skill_tokens))
+
+    return lines
+
+
 # HostAK/TP/REPORTS.PAS Rep_Armies (~lines 888-1091) and its own
 # Expand_Write('ARMIES',kng) opening (~line 1039). See
 # describe_armies_report()'s own docstring for the substantial scope
@@ -5504,11 +5627,11 @@ def compose_letter_report(
     so this real generated-output cross-reference is the sourced evidence
     used here, in place of the lost driver.
 
-    **7 of the 10 real sections are wired here as of Phase 220** --
+    **8 of the 10 real sections are wired here as of Phase 221** --
     ACTION REPORT, LETTER REPORTS, DIPLOMACY, FINANCES, PROVINCES,
-    ARMIES, and ADVENTURE. Every other section still needs data this
-    project's `GameState` doesn't model at all yet -- confirmed absent,
-    not merely unwired:
+    CHARACTERS, ARMIES, and ADVENTURE. Every other section still needs
+    data this project's `GameState` doesn't model at all yet --
+    confirmed absent, not merely unwired:
     - FINANCES itself is only partially wired -- see
       `describe_finances_report()`'s own docstring for exactly which
       of its real lines render (`"Gold in treasury"` only) and which
@@ -5520,8 +5643,13 @@ def compose_letter_report(
       are confirmed absent (`ptax`-derived tax/tier grouping, the
       `Mod_PAT`-derived recruiting-types columns, the `pt2`-derived
       Island parenthetical).
-    - CHARACTERS needs a full per-leader stat table (`Rep_Leaders`, one of
-      the largest procedures in the archive) -- no composer exists.
+    - CHARACTERS itself is only partially wired -- see
+      `describe_characters_report()`'s own docstring for exactly which
+      fields render (name, location, Alignment, Temperament, Race, and
+      15-ability skill levels for a kingdom's own leaders only) and
+      which are confirmed absent (pay, gender, Discovery-based skill
+      modifiers, magic-item ownership marks, the real procedure's
+      wandering-Hero/Priest-clairvoyance passes).
     - IMPERIAL OFFICE REPORT needs office-holder-per-kingdom data no
       `GameState` field tracks. This section renders between ARMIES and
       ADVENTURE in a real letter, so `compose_letter_report()`'s own
@@ -5551,14 +5679,15 @@ def compose_letter_report(
     `describe_letter_reports()` does its own per-other-leader filtering
     internally.
 
-    **DIPLOMACY**, **FINANCES**, **PROVINCES**, **ARMIES**, and
-    **ADVENTURE** wrap `describe_diplomacy_report()` (Phase 218)/
-    `describe_finances_report()` (Phase 219)/`describe_provinces_report()`
-    (Phase 220)/`describe_armies_report()`/`describe_adventure_report()`
-    as-is -- all five composers already return their own header as
-    their first line (the same Phase ~158 convention Phase 216/218/219/
-    220's own composers reuse), so no header is added here for any of
-    them; adding one would duplicate it.
+    **DIPLOMACY**, **FINANCES**, **PROVINCES**, **CHARACTERS**,
+    **ARMIES**, and **ADVENTURE** wrap `describe_diplomacy_report()`
+    (Phase 218)/`describe_finances_report()` (Phase 219)/
+    `describe_provinces_report()` (Phase 220)/
+    `describe_characters_report()` (Phase 221)/`describe_armies_report()`/
+    `describe_adventure_report()` as-is -- all six composers already
+    return their own header as their first line (the same Phase ~158
+    convention Phase 216/218/219/220/221's own composers reuse), so no
+    header is added here for any of them; adding one would duplicate it.
 
     A section is omitted entirely from the output when its own composer
     has nothing to say (`describe_turn_results()` returns an empty list
@@ -5596,6 +5725,10 @@ def compose_letter_report(
     provinces_lines = describe_provinces_report(state, kingdom_id)
     if provinces_lines:
         lines.extend(provinces_lines)
+
+    characters_lines = describe_characters_report(state, kingdom_id)
+    if characters_lines:
+        lines.extend(characters_lines)
 
     armies_lines = describe_armies_report(state, kingdom_id)
     if armies_lines:

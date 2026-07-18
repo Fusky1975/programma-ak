@@ -8831,7 +8831,7 @@ complete (Phases 209-211).
     non-zero treasury figure, a zero treasury figure, the Discoveries
     list always rendering "None at present", and reading only the
     given kingdom's own treasury (not another kingdom's).
-- **Phase 220 (current)**: `report/turn_report.py
+- **Phase 220**: `report/turn_report.py
   describe_provinces_report()` (new) -- the "PROVINCES" section,
   sourced from `Rep_Provs` (`~REPORTS.PAS` line 404-450), wired into
   `compose_letter_report()` between FINANCES and ARMIES (matching the
@@ -8887,6 +8887,57 @@ complete (Phases 209-211).
     tests in `tests/test_models.py` for `TERRAIN_NAME` (full-coverage
     of every `Terrain` member, and the exact sourced display strings) --
     2638 passed total.
+- **Phase 221 (current)**: `report/turn_report.py
+  describe_characters_report()` (new) -- the "CHARACTERS" section,
+  sourced from `Rep_Leaders` (`~REPORTS.PAS` line 658-855, one of the
+  largest procedures in the archive, as already flagged by this file's
+  own prior notes), wired into `compose_letter_report()` between
+  PROVINCES and ARMIES (matching the real letter's own relative order).
+  - **Only the real procedure's "impulse 1" pass is modeled**: a
+    kingdom's own leaders (`LeaderState.kingdom_id == kingdom_id`) --
+    the one pass with genuinely full character data. The real
+    procedure's other two passes (wandering Heroes/other Kings' known
+    leaders; leaders a Priest-office-holding King can locate via
+    clairvoyance) both need data this project doesn't model
+    (`Known_Loc` tracking, the Priest office itself -- the same
+    IMPERIAL OFFICE REPORT gap) and aren't attempted.
+  - **Rendered, one readable two-line entry per owned leader**: name,
+    province location (or coordinate fallback), Alignment
+    (`LeaderState.alignment.value`, already the real Pascal `outname`
+    string), Temperament (`TEMPER_NAME`), Race (`LeaderState.race` if
+    set, else the kingdom's own race -- the real, general-case
+    fallback per that field's own docstring), and a second line listing
+    skill level for all 15 `Ability` members via new `models/enums.py
+    ABILITY_ABBREVIATION` (sourced verbatim from this same procedure's
+    own column header, `"TaMaNaArMe WhNeElPsIl DrThExSpSa"`) and
+    `SkillTable.pair_for_ability(ability)[0]` (0 if `LeaderState.skills`
+    is `None`). A leader with no recorded Alignment/Temperament renders
+    "Unknown" -- a documented placeholder for genuinely missing data
+    (this project's own "None = not recorded" convention allows a gap
+    the real `lalign`/`ltemper` arrays never have).
+  - **Confirmed absent, not merely unwired**: Pay (`LCost`, same
+    citation as `describe_armies_report()`'s own gap); Gender (no
+    `Gender()` concept exists anywhere in this project); the
+    Discovery-based skill-modifier row (`dknow`-driven `^`/`^^`
+    markers, same gap as FINANCES' own empty Discoveries list);
+    magic-item-ownership tick marks and the per-leader treasure list
+    (`NT_Owned`/`List_Treas`) -- left out of this phase's scope even
+    though Phase 140's item-ownership registry could in principle
+    answer part of it, matching every other section's own "readable
+    line, not the full real table" precedent.
+  - Non-breaking: full suite passed unchanged (2638 passed) before any
+    new tests were written, after updating 2 pre-existing
+    `compose_letter_report()` tests (Phase 215/217/218/219/220) whose
+    expected output now needs the always-present CHARACTERS section
+    inserted -- mechanical updates, not behavior changes. 7 new tests
+    added in `tests/test_turn_report.py` (covering: an owned leader
+    with no recorded data, the no-leaders-owned fallback, ignoring
+    other kingdoms' leaders, the unnamed-province coordinate fallback,
+    recorded Alignment/Temperament/Race rendering, recorded skill
+    levels, and leader-id sort order) plus 2 new tests in
+    `tests/test_models.py` for `ABILITY_ABBREVIATION` (full coverage of
+    every `Ability` member, and the exact sourced abbreviations) --
+    2647 passed total.
 
 ## Setup
 

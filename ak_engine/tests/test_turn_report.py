@@ -8,6 +8,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.item import ItemInstance
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
@@ -39,6 +40,7 @@ from ak_engine.report.turn_report import (
     compose_letter_report,
     describe_adventure_report,
     describe_armies_report,
+    describe_characters_report,
     describe_diplomacy_report,
     describe_finances_report,
     describe_letter_reports,
@@ -3380,6 +3382,102 @@ def test_describe_provinces_report_uses_effective_terrain_not_illusory():
     assert lines[-1] == "Drowned Fen -- Human, Plain, 0% explored"
 
 
+# -- Phase 221: describe_characters_report() -- the "CHARACTERS" section --
+
+
+_CHARACTERS_OPENING = (
+    "My Lord, Great indeed are the leaders of our proud kingdom.  Though thee "
+    "knows them well, I list them here for thy consideration (the first line "
+    "shows pay and abilities; line 2 shows move precedence and aptitude.)"
+)
+
+_NO_SKILLS_LINE = "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0"
+
+
+def test_describe_characters_report_renders_own_leader_with_no_recorded_data():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines == [
+        "CHARACTERS",
+        _CHARACTERS_OPENING,
+        "Aldric -- Capital City, Unknown, Unknown, Human",
+        _NO_SKILLS_LINE,
+    ]
+
+
+def test_describe_characters_report_none_at_present_when_no_leaders_owned():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines == ["CHARACTERS", _CHARACTERS_OPENING, "None at present"]
+
+
+def test_describe_characters_report_ignores_other_kingdoms_leaders():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1)))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines == ["CHARACTERS", _CHARACTERS_OPENING, "None at present"]
+
+
+def test_describe_characters_report_falls_back_to_coordinate_when_unnamed_province():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(2, 3)))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[2] == "Aldric -- (2, 3), Unknown, Unknown, Human"
+
+
+def test_describe_characters_report_uses_recorded_alignment_temper_and_race():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    leader = LeaderState(1, 1, "Aldric", HexCoord(0, 0))
+    leader.alignment = Alignment.GOOD
+    leader.temper = Temper.BRAVE
+    leader.race = Race.ELVEN
+    state.add_leader(leader)
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[2] == "Aldric -- (0, 0), Good, Brave, Elf"
+
+
+def test_describe_characters_report_renders_recorded_skill_levels():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    leader = LeaderState(1, 1, "Aldric", HexCoord(0, 0))
+    leader.skills = SkillTable(raw_values=list(range(31)))
+    state.add_leader(leader)
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[3] == "Ta0 Ma2 Na4 Ar6 Me8 Wh10 Ne12 El14 Ps16 Il18 Dr20 Th22 Ex24 Sp26 Sa28"
+
+
+def test_describe_characters_report_sorts_by_leader_id():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(40, 1, "Elena", HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0)))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[2].startswith("Aldric")
+    assert lines[4].startswith("Elena")
+
+
 # -- Phase 216: describe_adventure_report() -- the "ADVENTURE" section --
 
 
@@ -3576,6 +3674,16 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "O superfluous one, I have kept well a list of all provinces which have had "
         "the wisdom to submit to thy yoke.  Here, then, are the lands of thy Empire:",
         "Capital City -- Human, Plain, 0% explored",
+        "CHARACTERS",
+        "My Lord, Great indeed are the leaders of our proud kingdom.  Though thee "
+        "knows them well, I list them here for thy consideration (the first line "
+        "shows pay and abilities; line 2 shows move precedence and aptitude.)",
+        "Aldric -- Capital City, Unknown, Unknown, Human",
+        "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
+        "Borin -- Capital City, Unknown, Unknown, Human",
+        "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
+        "Elena -- Capital City, Unknown, Unknown, Human",
+        "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
@@ -3641,6 +3749,11 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "O superfluous one, I have kept well a list of all provinces which have had "
         "the wisdom to submit to thy yoke.  Here, then, are the lands of thy Empire:",
         "Capital City -- Human, Plain, 0% explored",
+        "CHARACTERS",
+        "My Lord, Great indeed are the leaders of our proud kingdom.  Though thee "
+        "knows them well, I list them here for thy consideration (the first line "
+        "shows pay and abilities; line 2 shows move precedence and aptitude.)",
+        "None at present",
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
