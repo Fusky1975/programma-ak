@@ -9043,7 +9043,7 @@ complete (Phases 209-211).
     always `None`, and a not-a-multiple-of-height `ValueError`) plus
     2 new tests in `tests/test_game_state.py` for `ProvinceState.tax`
     (default `None`, and settable) -- 2660 passed total.
-- **Phase 224 (current)**: `parser/gw_world_bridge.py
+- **Phase 224**: `parser/gw_world_bridge.py
   resolve_province_owners()` (new) -- resolves Phase 223's own
   deliberately-deferred `GWProvinceRecord.governor_leader_id` into a
   real `ProvinceState.owner_kingdom_id`, via a `GameState` whose
@@ -9068,6 +9068,43 @@ complete (Phases 209-211).
     province resolving to his own kingdom, unresolved governors staying
     `None` with a partially-bridged `GameState`, and an independent
     Hero resolving to `None`) -- 2664 passed total.
+- **Phase 225 (current)**: `turn/tax_base.py` (new) -- `Tax_Base(kng)`
+  aggregation, the FINANCES section's own "Expected Revenues" gap
+  (`describe_finances_report()`'s own docstring, confirmed absent from
+  every available `.PAS` file, same citation as `ACost`/`LCost`/
+  `Inv_Bonus`). Phases 222-224 already recovered the missing input --
+  a real per-province base tax (`ProvinceState.tax`) and its real owning
+  kingdom (`owner_kingdom_id`) -- so what was left wasn't a data gap, it
+  was a summing formula, which is **project-original, not transcribed**
+  (flagged per the project's own standing rule for confirmed-absent
+  design choices, since no `.PAS` file ever defines `Tax_Base` itself).
+  - `province_tax_yield()` combines a province's real base `tax` with two
+    fields that already existed with **no consumer anywhere before this
+    phase** (their own docstrings said so): `scar_terrain_gold_reduction`
+    (Scar Terrain's cumulative, permanent -2 gold) is subtracted first
+    and floored at 0 gold; then `tax_modifier_percent` (Bless +60% /
+    Earthquake -100%, "for one turn," a set not an add) is applied
+    (`base * (100 + pct) / 100`, integer division) and floored at 0
+    again. Permanent damage before the turn's temporary modifier is the
+    natural reading of "permanently" vs. "for one turn" -- no source
+    orders the two explicitly.
+  - `compute_tax_base(state, kingdom_id)` sums `province_tax_yield()`
+    across every province this kingdom (not its allies -- `Tax_Base` is
+    real Pascal terminology for one kingdom's own revenue, unlike
+    `GameState.friendly_provinces_for()`'s broader owned-or-allied
+    military scope) owns with a *known* base tax. A province whose `tax`
+    was never bridged from a real `GW3` file contributes nothing and
+    isn't counted as 0 -- the same "no data isn't a true zero" stance
+    `turn/aspy_execution.py`'s own docstring already took for this exact
+    gap.
+  - Non-breaking: full suite passed unchanged (2664 passed) before any
+    new tests were written (a wholly new module, no existing call site
+    reads it). 11 new tests added in `tests/test_tax_base.py` (covering:
+    unrecorded tax, plain base tax, Scar Terrain reduction + its floor,
+    Bless's bonus, Earthquake's zeroing, the scar-then-Bless combination,
+    summing only owned provinces with known tax, ignoring unowned and
+    allied-but-not-owned provinces, and a kingdom with no provinces) --
+    2675 passed total.
 
 ## Setup
 
