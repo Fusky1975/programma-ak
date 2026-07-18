@@ -5044,3 +5044,85 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
         lines.append(f"{province_label} -- {leader_label}: {designation} ({race_name}, {quality_name})")
 
     return lines
+
+
+def compose_letter_report(
+    results: list[PhaseDispatchResult],
+    state: GameState,
+    kingdom_id: int,
+    rng: random.Random,
+    *,
+    ability_names: dict[Ability, str] | None = None,
+) -> list[str]:
+    """Assembles a single King's own end-of-turn letter report (Phase 215) by
+    stitching together this project's already-built section composers, in
+    the real section order -- confirmed directly against actual generated
+    turn-report output, not guessed: the Desktop's real `SE3__T*.K*` files
+    (e.g. `SE3__T2.K2`, section headers at lines 31/174/319/352/367/416/
+    450/471/491/506) show ACTION REPORT, LETTER REPORTS, DIPLOMACY,
+    FINANCES, PROVINCES, CHARACTERS, ARMIES, IMPERIAL OFFICE REPORT,
+    ADVENTURE, GENERAL INTELLIGENCE REPORT, in that order.
+    `REPORTS.PAS`'s own driver that calls these ten sections in sequence
+    lived in the missing main program -- the same "the caller is lost, not
+    the callees" situation as `turn/movement.py`'s hex adjacency scheme --
+    so this real generated-output cross-reference is the sourced evidence
+    used here, in place of the lost driver.
+
+    **Only two of the ten real sections are wired here.** Every other
+    section needs data this project's `GameState` doesn't model at all
+    yet -- confirmed absent, not merely unwired:
+    - LETTER REPORTS needs an inter-leader message queue (`Write_Letter`
+      in `REPORTS.PAS`) -- no concept of a stored message exists here.
+    - DIPLOMACY needs an Ally/War/Neutral relation table between
+      kingdoms -- `KingdomState` has no such field.
+    - FINANCES' real "Expected Revenues"/"Expected Expenses" figures need
+      `ACost`/`LCost`/`Tax_Base` -- confirmed absent from every available
+      `.PAS` file (`plan_dispatch.py`'s own Phase 158 note).
+    - PROVINCES needs a full per-province tax/race/terrain/exploration
+      table plus a neighboring-province narrative -- no table composer
+      exists.
+    - CHARACTERS needs a full per-leader stat table (`Rep_Leaders`, one of
+      the largest procedures in the archive) -- no composer exists.
+    - IMPERIAL OFFICE REPORT needs office-holder-per-kingdom data no
+      `GameState` field tracks.
+    - ADVENTURE needs a `Desc_Adventure`-equivalent per-province
+      monster/feature listing -- no composer exists (only the
+      single-encounter `describe_search()`/spell composers do).
+    - GENERAL INTELLIGENCE REPORT needs this turn's own compiled list of
+      every `SpyReport` gathered -- `describe_aspy()` renders one report
+      at a time, nothing aggregates them across a whole turn yet.
+
+    **ACTION REPORT** wraps `describe_turn_results()`, filtered here to
+    only this kingdom's own leaders' `PhaseDispatchResult` entries (that
+    function has no kingdom concept of its own to filter a heterogeneous
+    multi-kingdom `results` list). Its own header is added here, since
+    `describe_turn_results()` returns bare narrative lines with none.
+
+    **ARMIES** wraps `describe_armies_report()` as-is -- that composer
+    already returns its own `"ARMIES"` header as its first line (Phase
+    ~158's own convention), so no header is added here; adding one would
+    duplicate it.
+
+    A section is omitted entirely from the output when its own composer
+    has nothing to say (`describe_turn_results()` returns an empty list
+    for a kingdom with no dispatched phases) rather than emitting a
+    header with no body -- the same convention `describe_turn_results()`
+    itself already uses for individual phase entries.
+    """
+
+    lines: list[str] = []
+
+    kingdom_leader_ids = {
+        leader.leader_id for leader in state.leaders.values() if leader.kingdom_id == kingdom_id
+    }
+    kingdom_results = [entry for entry in results if entry.leader_id in kingdom_leader_ids]
+    action_lines = describe_turn_results(kingdom_results, state, rng, ability_names=ability_names)
+    if action_lines:
+        lines.append("ACTION REPORT")
+        lines.extend(action_lines)
+
+    armies_lines = describe_armies_report(state, kingdom_id)
+    if armies_lines:
+        lines.extend(armies_lines)
+
+    return lines

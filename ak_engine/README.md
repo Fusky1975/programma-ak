@@ -8557,7 +8557,7 @@ complete (Phases 209-211).
     `..._skips_pursue_trail_trade_entirely` test split into a
     TRADE-only version plus dedicated PURSUE/TRAIL/SEARCH/ASPY
     render/skip-without-a-request/skip-when-target-unknown cases).
-- **Phase 214 (current)**: closes the last of the five gaps
+- **Phase 214**: closes the last of the five gaps
   `describe_turn_results()`'s own docstring named since Phase 143 --
   `TRADE` is now wired in, using the exact same `request`-stamping
   pattern Phase 213 established for `PURSUE`/`TRAIL`/`SEARCH`.
@@ -8605,6 +8605,53 @@ complete (Phases 209-211).
     (`test_describe_turn_results_skips_trade_entirely` ->
     `..._skips_trade_without_a_request`, since the skip reason is now
     "no request stamped," not "no item-name synthesis").
+- **Phase 215 (current)**: `report/turn_report.py compose_letter_report()`
+  (new) -- the first top-level, per-kingdom letter-report assembler,
+  stitching together this project's own already-built section
+  composers.
+  - **Sourced section order, not guessed**: `REPORTS.PAS`'s own driver
+    that calls the ten real letter sections in sequence lived in the
+    missing main program (same "the caller is lost, not the callees"
+    situation as `turn/movement.py`'s hex adjacency scheme), so this
+    phase cross-references the Desktop's real, actually-generated
+    `SE3__T*.K*` turn-report output files instead (e.g. `SE3__T2.K2`,
+    section headers found at lines 31/174/319/352/367/416/450/471/
+    491/506): ACTION REPORT, LETTER REPORTS, DIPLOMACY, FINANCES,
+    PROVINCES, CHARACTERS, ARMIES, IMPERIAL OFFICE REPORT, ADVENTURE,
+    GENERAL INTELLIGENCE REPORT, in that order.
+  - **Only 2 of the 10 real sections are wired**: ACTION REPORT (wraps
+    `describe_turn_results()`, Phase 61/213/214, filtered here to only
+    the given kingdom's own leaders since that function has no
+    kingdom concept of its own) and ARMIES (wraps
+    `describe_armies_report()`, Phase 158, unchanged). Every other
+    section needs `GameState` data confirmed absent, not merely
+    unwired -- documented explicitly in the new function's own
+    docstring, section by section: LETTER REPORTS needs an
+    inter-leader message queue; DIPLOMACY needs an Ally/War/Neutral
+    relation table `KingdomState` doesn't have; FINANCES' real
+    "Expected Revenues/Expenses" figures need `ACost`/`LCost`/
+    `Tax_Base`, confirmed absent since Phase 158; PROVINCES and
+    CHARACTERS each need a full per-province/per-leader stat table no
+    composer builds yet; IMPERIAL OFFICE REPORT needs office-holder
+    data no field tracks; ADVENTURE needs a per-province monster/
+    feature listing (only the single-encounter `describe_search()`
+    exists); GENERAL INTELLIGENCE REPORT needs a whole-turn
+    aggregation of every `SpyReport`, and `describe_aspy()` only
+    renders one at a time.
+  - A section is omitted entirely (no header, no body) when its own
+    composer has nothing to say, rather than emitting an empty
+    section -- `describe_turn_results()`'s own existing per-phase
+    convention, reused here at the section level.
+  - Non-breaking: full suite passed unchanged (2599 passed) before any
+    new tests were written -- a pure new-function addition, no
+    existing caller touched. 4 new tests added (2603 passed total) in
+    `tests/test_turn_report.py`: section order/stitching, ACTION
+    REPORT omitted when this kingdom has no results, `results`
+    filtered to only this kingdom's own leaders (a `PhaseDispatchResult`
+    belonging to another kingdom's leader must not leak into this
+    kingdom's letter), and ARMIES always present (even with zero
+    armies, matching `describe_armies_report()`'s own "None at
+    present" behavior).
 
 ## Setup
 

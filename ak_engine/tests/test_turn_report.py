@@ -35,6 +35,7 @@ from ak_engine.report.turn_report import (
     SPY_GARRISON_APPROXIMATELY_TEMPLATE,
     SPY_LEADS_APPROXIMATELY_TEMPLATE,
     WILL_TEMPLATE,
+    compose_letter_report,
     describe_armies_report,
     describe_aspy,
     describe_battle,
@@ -182,7 +183,7 @@ from ak_engine.report.turn_report import (
     missile_attack_flavor,
     tactical_margin_bucket,
 )
-from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.weapon import Weapon
 from ak_engine.turn.aspy_execution import SpottedCharacter, SpyReport
 from ak_engine.turn.battle_line import BattleUnit
@@ -193,7 +194,7 @@ from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.encounter import FireArrowShot
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
-from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult
+from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
@@ -2989,6 +2990,70 @@ def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
     assert lines[2:] == [
         "Capital City -- Garrison: Bowmen (Human, Average)",
         "Second Province -- Garrison: Axemen (Human, Average)",
+    ]
+
+
+# -- Phase 215: compose_letter_report() -- top-level per-kingdom letter assembler --
+
+
+def test_compose_letter_report_stitches_action_report_and_armies_in_the_real_order():
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0)))
+    state.add_leader(LeaderState(32, 1, "Borin", HexCoord(0, 0)))
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+    result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=2), hired=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.HIRE, result=result, error=None)
+    ]
+
+    lines = compose_letter_report(results, state, 1, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines == [
+        "ACTION REPORT",
+        "Aldric spoke to Borin and convinced Borin to pledge Borin's allegiance to Aldric.",
+        "ARMIES",
+        "Excellence, thy armies have trained hard and honed their weapons to a fine "
+        "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
+        "Capital City -- Garrison: Bowmen (Human, Average)",
+    ]
+
+
+def test_compose_letter_report_omits_action_report_when_this_kingdom_has_no_results():
+    state = _armies_state()
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    assert lines[0] == "ARMIES"
+    assert "ACTION REPORT" not in lines
+
+
+def test_compose_letter_report_filters_results_to_only_this_kingdoms_own_leaders():
+    state = _armies_state()
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1)))
+    other_kingdom_result = FireExecutionResult(FireRequest(hero_id=9), fired=True)
+    results = [
+        PhaseDispatchResult(
+            leader_id=9, segment_index=0, phase_label="P0", action=ActionCode.FIRE, result=other_kingdom_result, error=None
+        )
+    ]
+
+    lines = compose_letter_report(results, state, 1, ScriptedRandom([]))
+
+    assert lines[0] == "ARMIES"
+    assert "ACTION REPORT" not in lines
+
+
+def test_compose_letter_report_armies_section_present_even_with_no_armies():
+    state = _armies_state()
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    assert lines == [
+        "ARMIES",
+        "Excellence, thy armies have trained hard and honed their weapons to a fine "
+        "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
+        "None at present",
     ]
 
 
