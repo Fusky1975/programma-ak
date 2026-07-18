@@ -126,14 +126,21 @@ cost and never trigger Defend reinforcement (a continuing pursuer's
 hex-step never appears in ``move_targets``), matching
 ``advance_pursuit``/``advance_trail``'s own already-documented scope.
 
-**PLAGUE SPREAD rule (Phase 233)**: ``turn/plague_spread.py resolve_
-plague_spread()`` runs at the same phase-boundary point as
-``_dispatch_contested_rebattles`` -- rulebook [4.25.3]'s own "the next
-phase, there is a 15% chance per adjacent province that the plague will
-spread" is, read literally, exactly this project's own phase-by-phase
-loop boundary. Produces no ``PhaseDispatchResult`` (it's not tied to
-any leader's own plan) -- a pure state mutation, the same category as
-``_apply_defend_reinforcements``.
+**PLAGUE SPREAD rule (Phase 233, extended Phase 234)**: ``turn/plague_
+spread.py resolve_plague_spread()`` runs at the same phase-boundary
+point as ``_dispatch_contested_rebattles`` -- rulebook [4.25.3]'s own
+"the next phase, there is a 15% chance per adjacent province that the
+plague will spread" is, read literally, exactly this project's own
+phase-by-phase loop boundary. Each newly-infected coordinate it returns
+is wrapped into its own ``PhaseDispatchResult`` (``leader_id=0``,
+``segment_index=-1``, ``phase_label="plague-spread"``, ``action=None``,
+``result=<the HexCoord itself>``) -- the same "not tied to any leader's
+own plan segment" sentinel convention ``_dispatch_contested_rebattles``
+already established for its own ``"forced-rebattle"`` entries -- so
+``report/turn_report.py record_plague_spread_world_events()`` (Phase
+234) can find them in ``run_turn()``'s own return value exactly the way
+``record_battle_world_events()``/``record_spell_world_events()``
+already read `results` for their own sources.
 
 **Explicitly out of scope, to keep this tractable**:
 
@@ -328,7 +335,13 @@ def run_turn(
     for phase_index, label in enumerate(PHASE_LABELS):
         if phase_index > 0:
             results.extend(_dispatch_contested_rebattles(state, rng))
-            resolve_plague_spread(state, rng, bounds)
+            newly_infected = resolve_plague_spread(state, rng, bounds)
+            results.extend(
+                PhaseDispatchResult(
+                    leader_id=0, segment_index=-1, phase_label="plague-spread", action=None, result=coord, error=None
+                )
+                for coord in newly_infected
+            )
 
         entries = _collect_phase_entries(turn_leaders, label)
         # A leader still mid-chase has this phase's own order preempted

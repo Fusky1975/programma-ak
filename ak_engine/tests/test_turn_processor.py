@@ -430,12 +430,23 @@ def test_run_turn_spreads_plague_to_adjacent_provinces_at_phase_boundaries():
     state = _base_state()
     state.provinces[TARGET].plague_active = True
 
-    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(42))
+    results = run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(42))
 
     # Deterministic under this fixed seed -- see turn/plague_spread.py's
     # own module docstring for the mechanic (rulebook [4.25.3]) this
     # exercises via run_turn()'s own per-phase-boundary dispatch.
     assert state.provinces[ORIGIN].plague_active is True
+
+    # Phase 234: each newly-infected coordinate is also surfaced as its
+    # own PhaseDispatchResult, the same sentinel convention
+    # "forced-rebattle" already uses, so report/turn_report.py's own
+    # record_plague_spread_world_events() can find it in run_turn()'s
+    # return value.
+    spread = [r for r in results if r.phase_label == "plague-spread"]
+    assert [r.result for r in spread] == [ORIGIN]
+    assert spread[0].leader_id == 0
+    assert spread[0].segment_index == -1
+    assert spread[0].action is None
     assert state.provinces[ORIGIN2].plague_active is False
 
 

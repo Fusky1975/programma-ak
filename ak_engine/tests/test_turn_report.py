@@ -64,6 +64,7 @@ from ak_engine.report.turn_report import (
     parse_template_choices,
     pick_variant,
     record_battle_world_events,
+    record_plague_spread_world_events,
     record_spell_world_events,
     render_illus_terrain_world_event,
     render_plague_world_event,
@@ -4247,6 +4248,56 @@ def test_record_spell_world_events_skips_non_cast_results():
     record_spell_world_events(state, results, ScriptedRandom([]))
 
     assert state.world_events == []
+
+
+# -- Phase 234: record_plague_spread_world_events() --
+
+
+def test_record_plague_spread_world_events_records_a_newly_infected_province():
+    state, battle_coord, _watcher_coord = _gir_state()
+    results = [
+        PhaseDispatchResult(
+            leader_id=0, segment_index=-1, phase_label="plague-spread", action=None, result=battle_coord, error=None
+        )
+    ]
+
+    record_plague_spread_world_events(state, results, ScriptedRandom([]))
+
+    assert len(state.world_events) == 1
+    event = state.world_events[0]
+    assert event.coord == battle_coord
+    assert event.lines == ["Border Fort was hit by a plague."]
+
+
+def test_record_plague_spread_world_events_ignores_other_phase_labels():
+    state, battle_coord, _watcher_coord = _gir_state()
+    results = [
+        PhaseDispatchResult(
+            leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=battle_coord, error=None
+        )
+    ]
+
+    record_plague_spread_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
+def test_describe_general_intelligence_report_shows_a_plague_spread_event():
+    state, battle_coord, _watcher_coord = _gir_state()
+    results = [
+        PhaseDispatchResult(
+            leader_id=0, segment_index=-1, phase_label="plague-spread", action=None, result=battle_coord, error=None
+        )
+    ]
+    record_plague_spread_world_events(state, results, ScriptedRandom([]))
+
+    lines = describe_general_intelligence_report(state, 3)
+
+    assert lines == [
+        "GENERAL INTELLIGENCE REPORT",
+        "Kingdom of Attackia (#1):",
+        "Border Fort was hit by a plague.",
+    ]
 
 
 def test_describe_general_intelligence_report_shows_a_recorded_plague():

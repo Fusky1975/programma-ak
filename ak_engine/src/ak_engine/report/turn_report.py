@@ -5913,6 +5913,36 @@ def record_spell_world_events(
             state.record_world_event(coord, [line])
 
 
+def record_plague_spread_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
+    """Populates ``state.world_events`` (Phase 234) from every province
+    Plague newly reached this turn via ``turn/plague_spread.py resolve_
+    plague_spread()`` -- the third real event *source* wired for GENERAL
+    INTELLIGENCE REPORT, alongside ``record_battle_world_events()``
+    (Phase 231, battles) and ``record_spell_world_events()`` (Phase 232,
+    the original Plague/Illusory Terrain casts). Same "call once per
+    turn, before any ``compose_letter_report()`` call" contract as
+    those two.
+
+    ``turn/turn_processor.py run_turn()`` wraps each newly-infected
+    coordinate ``resolve_plague_spread()`` returns into its own
+    ``PhaseDispatchResult`` (``phase_label="plague-spread"``, ``result``
+    = the bare ``HexCoord``) -- this function just filters `results` for
+    that label and renders the same real, `S_Comm`-tagged notice
+    ``record_spell_world_events()`` already uses for a direct cast
+    (`render_plague_world_event()`, `SAY.PAS` `_SPlague`): the rulebook
+    and the real fixture text draw no distinction between a province
+    afflicted by a direct cast versus one reached by the spread
+    mechanic -- both are simply "hit by a plague."
+    """
+
+    for entry in results:
+        if entry.phase_label != "plague-spread":
+            continue
+        coord = entry.result
+        province_name = _province_label(state, coord)
+        state.record_world_event(coord, [render_plague_world_event(province_name, rng)])
+
+
 _GENERAL_INTELLIGENCE_REPORT_HEADER = "GENERAL INTELLIGENCE REPORT"
 _GENERAL_INTELLIGENCE_REPORT_NONE = "None at present"
 
@@ -5926,9 +5956,10 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
 
     **Reads ``state.world_events`` -- already populated by separate,
     explicit ``record_battle_world_events()``/``record_spell_world_
-    events()`` calls for this whole turn** (see those functions' own
-    docstrings for why they can't be called from here, once per King).
-    This composer only filters and groups what's already there.
+    events()``/``record_plague_spread_world_events()`` calls for this
+    whole turn** (see those functions' own docstrings for why they
+    can't be called from here, once per King). This composer only
+    filters and groups what's already there.
 
     **Visibility**: `turn/world_events.py is_visible_to()` -- rulebook
     [1.4], a province this kingdom owns or one adjacent to it.
@@ -5958,10 +5989,15 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
     silent" precedent every other section composer here already
     follows.** The real letters show many distinct event types --
     movement ("X flew over to Y"), plagues, terrain illusions, Skeletal
-    Army risings, other cast-spell narrations -- and as of Phase 232
-    this project populates three of them: battle results
-    (`record_battle_world_events()`) and Plague/Illusory Terrain casts
-    (`record_spell_world_events()`). Movement stays deferred -- see
+    Army risings, other cast-spell narrations -- and as of Phase 234
+    this project populates three real sources across four call sites:
+    battle results (`record_battle_world_events()`), the original
+    Plague/Illusory Terrain casts (`record_spell_world_events()`), and
+    Plague's own spread-to-adjacent-provinces mechanic
+    (`record_plague_spread_world_events()`, Phase 234, reusing Plague's
+    own real notice text -- the rulebook draws no distinction between a
+    directly-cast and a spread-caused affliction). Movement stays
+    deferred -- see
     `record_spell_world_events()`'s own docstring for exactly why
     (`render_march()`'s own real MARCH.X templates need a `^P` "province
     number" marker this project has no honest synthesis for, and don't
@@ -6109,13 +6145,14 @@ def compose_letter_report(
     every leader in the game, not just this kingdom's own, so its output
     is identical across every King's own report.
 
-    **GENERAL INTELLIGENCE REPORT** (Phase 231, extended Phase 232) wraps
-    `describe_general_intelligence_report()` as-is, same no-extra-header
-    convention as the others -- but unlike every other section here, it
-    depends on `record_battle_world_events()`/`record_spell_world_
-    events()` having already been called once for this whole turn (not
-    per-King) before `compose_letter_report()` runs for *any* King; see
-    those functions' own docstrings for why.
+    **GENERAL INTELLIGENCE REPORT** (Phase 231, extended Phases 232/234)
+    wraps `describe_general_intelligence_report()` as-is, same
+    no-extra-header convention as the others -- but unlike every other
+    section here, it depends on `record_battle_world_events()`/
+    `record_spell_world_events()`/`record_plague_spread_world_events()`
+    having already been called once for this whole turn (not per-King)
+    before `compose_letter_report()` runs for *any* King; see those
+    functions' own docstrings for why.
 
     A section is omitted entirely from the output when its own composer
     has nothing to say (`describe_turn_results()` returns an empty list

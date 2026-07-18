@@ -9404,7 +9404,7 @@ complete (Phases 209-211).
     new tests were written. 8 new tests added to `tests/
     test_turn_report.py` -- 2755 passed total.
 
-- **Phase 233 (current)**: Plague's own spread-to-adjacent-provinces
+- **Phase 233**: Plague's own spread-to-adjacent-provinces
   mechanic -- rulebook [4.25.3]'s last unmodeled piece, on the user's
   own explicit request ("sviluppa la meccanica di diffusione della
   pestilenza tra province adiacenti"). Closes the exact gap `_execute_
@@ -9454,6 +9454,36 @@ complete (Phases 209-211).
     test_cast_execution.py` +7, `tests/test_plague_spread.py` new with
     6 tests, `tests/test_turn_processor.py` +1 integration test) --
     2769 passed total.
+
+- **Phase 234 (current)**: closes the loop Phase 233 deliberately left
+  open -- `resolve_plague_spread()` already returned its own newly-
+  infected coordinates "for a future caller to narrate if it chooses";
+  this phase is that caller, on the user's own explicit follow-up
+  request.
+  - `turn/turn_processor.py`: each coordinate `resolve_plague_spread()`
+    returns is now wrapped into its own `PhaseDispatchResult`
+    (`phase_label="plague-spread"`, `result=`the bare `HexCoord`,
+    `leader_id=0`, `segment_index=-1`) -- the exact sentinel convention
+    `_dispatch_contested_rebattles` already established for its own
+    `"forced-rebattle"` entries not tied to any leader's plan -- so
+    `run_turn()`'s own return value carries this the same way it
+    already carries battle/cast results for Phase 231/232's own
+    recorders.
+  - `report/turn_report.py record_plague_spread_world_events()` (new):
+    filters `results` for `phase_label == "plague-spread"` and renders
+    the *same* real `S_Comm` "@ was hit by a plague." notice
+    (`render_plague_world_event()`, Phase 232) a direct cast already
+    uses -- the rulebook and the real fixture text draw no distinction
+    between a directly-cast and a spread-caused affliction. The third
+    real GENERAL INTELLIGENCE REPORT event-source function, alongside
+    `record_battle_world_events()` (Phase 231) and
+    `record_spell_world_events()` (Phase 232); same "call once per
+    turn, before any `compose_letter_report()` call" contract.
+  - Non-breaking: full suite passed unchanged (2769 passed) before any
+    new tests were written. 3 new tests added to `tests/
+    test_turn_report.py`, plus `tests/test_turn_processor.py`'s own
+    Phase 233 plague-spread test extended to assert the new
+    `PhaseDispatchResult` entries -- 2772 passed total.
 
 ## Setup
 
