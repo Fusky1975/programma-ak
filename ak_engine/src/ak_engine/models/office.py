@@ -133,6 +133,19 @@ while silently ignoring that the other 13+ offices remain permanently
 unimplementable, would misrepresent partial coverage as a real office-
 holder system. Recorded here, deliberately not implemented, so a
 future sweep doesn't re-open this dead end.
+
+**Phase 227 update -- the dead end above is specifically about the
+missing *Pascal* globals; it is no longer the last word on the Merit
+Point formulas themselves.** The user supplied the rulebook's own
+printed "TABELLA DELLE CARICHE IMPERIALI" (page 51) -- a different, real
+source describing the same 8 formulas in the game's own official terms,
+not a Pascal transcription. `turn/merit_points.py` builds all 8 from it
+directly; see that module's own docstring for exactly which terms are
+live now (skills, treasury, Tax_Base, owned items) versus which still
+need cumulative game-long tracking this project has never had (per-leader
+battle outcomes, monster kills, successful Resurrection/Bless casts,
+discovery-first attribution) via the new `LeaderState.merit_tally`
+(`MeritTally`, `models/game_state.py`).
 """
 
 from __future__ import annotations

@@ -219,3 +219,31 @@ def test_province_tax_can_be_set():
     province = ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, tax=4)
 
     assert province.tax == 4
+
+
+# -- Phase 227: LeaderState.merit_tally -------------------------------------
+
+
+def test_leader_merit_tally_defaults_to_all_zero():
+    leader = LeaderState(1, 1, "Aldric", HexCoord(0, 0))
+
+    tally = leader.merit_tally
+    assert tally.land_battles_won_enemy_units == 0
+    assert tally.land_battles_lost_own_units == 0
+    assert tally.naval_battles_won_enemy_units == 0
+    assert tally.naval_battles_lost_own_units == 0
+    assert tally.monster_hp_defeated == 0
+    assert tally.monster_hp_neutralized == 0
+    assert tally.resurrection_bless_casts == 0
+    assert tally.features_discovered_first == 0
+    assert tally.discoveries_found_first == 0
+    assert tally.discoveries_via_espionage == 0
+
+
+def test_leader_merit_tally_is_independent_per_leader():
+    a = LeaderState(1, 1, "Aldric", HexCoord(0, 0))
+    b = LeaderState(2, 1, "Borin", HexCoord(0, 0))
+
+    a.merit_tally.monster_hp_defeated = 10
+
+    assert b.merit_tally.monster_hp_defeated == 0

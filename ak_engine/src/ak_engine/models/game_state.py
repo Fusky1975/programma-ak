@@ -263,6 +263,48 @@ class ArmyState:
 
 
 @dataclass(slots=True)
+class MeritTally:
+    """Cumulative, game-long inputs to the Imperial Office Merit Point
+    formulas (Phase 227, ``turn/merit_points.py`` -- rulebook page 51's
+    "TABELLA DELLE CARICHE IMPERIALI") that no action in this project is
+    wired to increment yet. All default to 0: a leader who has fought no
+    battles, killed no monsters, cast no Resurrection/Bless, or been the
+    first to find any Special Place/Discovery legitimately starts here,
+    the same "field exists, no populating consumer yet" convention this
+    project has used since Phase 59's own `tax_modifier_percent`/
+    `terrain_override` (only wired up 166+ phases later, Phase 225/226).
+
+    Two fields per office needing a win/loss split (Marshal, Admiral) are
+    kept as separate won/lost counters rather than a single running total,
+    so `turn/merit_points.py`'s own formula -- "+1 per enemy unit if won,
+    -1 per own unit if lost" -- can apply the sign itself; pre-signing here
+    would hide the raw counts a future battle-outcome wiring phase needs.
+    """
+
+    land_battles_won_enemy_units: int = 0
+    land_battles_lost_own_units: int = 0
+    naval_battles_won_enemy_units: int = 0
+    naval_battles_lost_own_units: int = 0
+    # Defender: monster Hit Points -- full for a kill, half (per the
+    # rulebook's own "metà dei punti se neutralizzato con trattative")
+    # for a monster talked/negotiated into stopping, applied by the
+    # formula function itself so this field stays a real, unhalved HP
+    # count.
+    monster_hp_defeated: int = 0
+    monster_hp_neutralized: int = 0
+    # Priest: successful Resurrection or Bless casts (either spell, same
+    # +1 each -- the rulebook doesn't distinguish between them).
+    resurrection_bless_casts: int = 0
+    # Chancellor: needs per-kingdom "who found this Special Place/
+    # Discovery first" attribution this project has never tracked (no
+    # Feature.discovered_by_kingdom_id, no Discovery-ownership registry
+    # at all -- see turn/merit_points.py's own module docstring).
+    features_discovered_first: int = 0
+    discoveries_found_first: int = 0
+    discoveries_via_espionage: int = 0
+
+
+@dataclass(slots=True)
 class LeaderState:
     leader_id: int
     kingdom_id: int | None  # None = independent Hero, not in any kingdom's service
@@ -308,6 +350,9 @@ class LeaderState:
     # what this flag is a marker for (three of the spell's own effects are
     # confirmed facts, not yet wired to any consumer).
     mystic_winds_active: bool = False
+    # Phase 227: this leader's own cumulative Merit Point inputs -- see
+    # MeritTally's own docstring and turn/merit_points.py.
+    merit_tally: MeritTally = field(default_factory=MeritTally)
 
 
 @dataclass(slots=True)

@@ -9105,7 +9105,7 @@ complete (Phases 209-211).
     summing only owned provinces with known tax, ignoring unowned and
     allied-but-not-owned provinces, and a kingdom with no provinces) --
     2675 passed total.
-- **Phase 226 (current)**: `report/turn_report.py describe_finances_report()`
+- **Phase 226**: `report/turn_report.py describe_finances_report()`
   now renders the real "Expected Revenues" line (`REPORTS.PAS` line 319,
   confirmed verbatim: `'  Expected Revenues: ',Tax_Base(kng):3`), calling
   Phase 225's `turn/tax_base.py compute_tax_base()` -- the one FINANCES
@@ -9123,6 +9123,46 @@ complete (Phases 209-211).
     (`test_describe_finances_report_expected_revenues_uses_compute_tax_
     base`, confirming only this kingdom's own owned provinces' tax is
     summed, not another kingdom's) -- 2676 passed total.
+- **Phase 227 (current)**: `turn/merit_points.py` (new) -- the 8 Imperial
+  Office Merit Point formulas, closing the formula half of Phase 137's
+  own "confirmed, permanent dead end" (that dead end was specifically
+  about `REPORTS.PAS Ofc_Pts`'s own missing Pascal globals, which are
+  still lost). The user supplied the rulebook's own printed "TABELLA
+  DELLE CARICHE IMPERIALI" (page 51, studied directly) -- a different,
+  real, sourced description of the same 8 formulas, not a Pascal
+  transcription. The table's own 20%/10%x7 Victory Point quotas already
+  matched `models/office.py OFFICE_VALUE` exactly, independent
+  cross-confirmation the two sources describe the same system.
+  - Fully live now (real `GameState` data, no new tracking needed):
+    Emperor (reuses Phase 225's `compute_tax_base()` directly),
+    Treasurer (`KingdomState.treasury`, confirming Phase 137's own
+    speculation), the skill-level terms for Chancellor/Priest/Mage/
+    Admiral, Mage's owned-Spell-Wand count, and Admiral's per-kingdom
+    "rich sea province" bonus (footnote 1: applies identically to every
+    leader of that kingdom, not just whoever found the province).
+  - New `models/game_state.py MeritTally` dataclass (`LeaderState.
+    merit_tally`) holds the raw, uninc­remented counters the remaining
+    terms need (land/naval battle won/lost units, monster HP defeated/
+    neutralized, Resurrection/Bless cast count, discovery-first
+    attribution) -- the same "field exists, no populating consumer yet"
+    convention as Phase 59's own `tax_modifier_percent` (only wired up
+    166+ phases later). No battle/encounter/cast call site increments
+    these yet; a future wiring phase.
+  - `legendary_item_victory_point_bonus_count()`: the table's own
+    closing "10 restanti Punti Merito" paragraph (10 named artifacts,
+    flat Victory Point share, explicitly *not* an 8-office Rank contest
+    and *not* reduced by Alignment-vs-Emperor distance) -- all 10 names
+    cross-checked 1:1 against this project's own pre-existing
+    `models/treasure.py TREASURE_NAME` with zero mismatches.
+  - `merit_point_tiebreak_key()`: footnote 3's treasury-then-tax-base
+    tie-break, both Kingdom-scoped; an independent Hero (no Kingdom)
+    falls back to `(0, 0)`, a documented gap.
+  - Non-breaking: full suite passed unchanged (2676 passed) before any
+    new tests were written (2 wholly new modules/fields, no existing
+    call site reads them). 18 new tests added (16 in `tests/
+    test_merit_points.py`, 2 in `tests/test_game_state.py` for
+    `MeritTally`'s all-zero default and per-leader independence) --
+    2694 passed total.
 
 ## Setup
 
