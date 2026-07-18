@@ -9123,7 +9123,7 @@ complete (Phases 209-211).
     (`test_describe_finances_report_expected_revenues_uses_compute_tax_
     base`, confirming only this kingdom's own owned provinces' tax is
     summed, not another kingdom's) -- 2676 passed total.
-- **Phase 227 (current)**: `turn/merit_points.py` (new) -- the 8 Imperial
+- **Phase 227**: `turn/merit_points.py` (new) -- the 8 Imperial
   Office Merit Point formulas, closing the formula half of Phase 137's
   own "confirmed, permanent dead end" (that dead end was specifically
   about `REPORTS.PAS Ofc_Pts`'s own missing Pascal globals, which are
@@ -9163,6 +9163,51 @@ complete (Phases 209-211).
     test_merit_points.py`, 2 in `tests/test_game_state.py` for
     `MeritTally`'s all-zero default and per-leader independence) --
     2694 passed total.
+- **Phase 228 (current)**: `turn/emperor_election.py` (new) -- the
+  Emperor election mechanic, rulebook [10.2] (the rulebook's own words:
+  this is literally "cosa si deve fare per mettere fine a una partita",
+  what must be done to end a game). Standing instruction respected: the
+  55%/50% thresholds below are the confirmed real rule; the 2%/4%
+  strings found in `AKGEN.EXE` are confirmed NOT the real rule and are
+  not used.
+  - `can_request_election()`: a single King or an "alleanza di Re" (one
+    connected component of `GameState.allied_kingdoms`) qualifies once
+    their combined `Tax_Base` (Phase 225) exceeds 55% of every kingdom's
+    `Tax_Base` summed. The rulebook's own "non è possibile tenere
+    votazioni per due turni consecutivi" ban is enforced via the new
+    `GameState.last_emperor_vote_turn`.
+  - `tally_emperor_vote()`/`resolve_emperor_election()`: `{voter_kingdom_
+    id: candidate_kingdom_id}` ballots, each weighted by that voter's own
+    `Tax_Base` at the voting turn; a candidate needs a strict majority
+    (>50%) of votes actually *cast* (an abstention isn't a vote for
+    nobody). `resolve_emperor_election()` records the outcome onto the
+    new `GameState.emperor_kingdom_id` -- a failed/no-quorum vote never
+    clears a still-standing previous Emperor, only `last_emperor_vote_
+    turn` always advances.
+  - `alignment_victory_point_reduction_percent()`: the rulebook's own
+    post-election paragraph -- every King's Victory Points drop by a
+    percentage proportional to their Alignment's ordinal distance
+    (`models/alignment.py ALIGNMENT_ORDINAL`, the same real Pascal
+    sequence `turn/hire_pay.py` already established as load-bearing for
+    an identical distance formula) from the new Emperor's Alignment,
+    using the user-supplied "TABELLA ALLINEAMENTI" reduction-per-step
+    column (7 of 10 `Alignment` members; Anti-Holy/Mechanical/Special a
+    confirmed gap). Reproduces the rulebook's own worked example exactly
+    (Pagan, 15%/step, distance 3 from Good -> 45%).
+  - **Explicitly out of scope**: determining the game's total available
+    Victory Points and attributing the other 7 Imperial Offices (needs
+    the full Merit Point Rank contest across every leader in the game,
+    Phase 227's own `merit_point_tiebreak_key()` included) -- a
+    separate, considerably larger follow-up.
+  - **Not decoded**: the "RICHIEDERE UNA VOTAZIONE" (Call for Vote) plan
+    action itself [1.3] -- no real `AK3__T*.K1` sample with this action
+    has been seen, the same "mechanic before the plan-file wiring" order
+    already used for `turn/tax_base.py`.
+  - Non-breaking: full suite passed unchanged (2694 passed) before any
+    new tests were written (a wholly new module + 2 new `GameState`
+    fields, no existing call site reads them). 16 new tests added (15 in
+    `tests/test_emperor_election.py`, 1 in `tests/test_game_state.py`
+    for the two new fields' `None` defaults) -- 2710 passed total.
 
 ## Setup
 

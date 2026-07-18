@@ -247,3 +247,13 @@ def test_leader_merit_tally_is_independent_per_leader():
     a.merit_tally.monster_hp_defeated = 10
 
     assert b.merit_tally.monster_hp_defeated == 0
+
+
+# -- Phase 228: GameState Emperor-election fields ----------------------------
+
+
+def test_game_state_emperor_fields_default_to_none():
+    state = GameState()
+
+    assert state.emperor_kingdom_id is None
+    assert state.last_emperor_vote_turn is None

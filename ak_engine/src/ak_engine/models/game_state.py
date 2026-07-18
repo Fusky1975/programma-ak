@@ -482,6 +482,14 @@ class GameState:
     # Reservoir-sampling counter: how many successful due-alignment
     # candidates have been seen so far this turn.
     gate_angel_candidates_this_turn: int = 0
+    # Emperor election (Phase 228, turn/emperor_election.py) -- rulebook
+    # [10.2]. `emperor_kingdom_id` persists once a vote actually elects
+    # someone (a failed/no-quorum vote never clears it -- see that
+    # module's own docstring); `last_emperor_vote_turn` records the turn
+    # a vote was last *held* (win or not), the state the "not two turns
+    # in a row" ban is checked against.
+    emperor_kingdom_id: int | None = None
+    last_emperor_vote_turn: int | None = None
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
         self.kingdoms[kingdom.kingdom_id] = kingdom
