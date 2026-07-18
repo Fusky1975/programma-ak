@@ -1089,14 +1089,11 @@ confirmed-absent conclusion Phase 148's own research already reached
 for the adjacent skill-book-read moment (`TREASAB.X2`/`TREASURE.X2` are
 inventory-view text, not a Search-victory narration).
 
-**Not wired into `describe_turn_results()`, joining PURSUE/TRAIL/TRADE
-as a fourth structurally unwireable action, for the identical reason
-that function's own docstring already gives for those three**:
-`SearchExecutionResult` carries no `feature_id`, and
-`PhaseDispatchResult` itself discards the original decoded
-`SearchRequest` (the only place a `feature_id` survives) before
-`describe_turn_results()` ever sees the entry. `describe_search()`
-stays directly callable by anyone who still has the original
+**Phase 213: now wired into `describe_turn_results()`**, alongside
+PURSUE/TRAIL/ASPY -- see that function's own Phase 213 note for how
+(a new `SearchExecutionResult.request` field, stamped by
+`plan_dispatch.py`'s own dispatcher). `describe_search()` stays
+directly callable by anyone who still has the original
 `SearchRequest`/`Feature` in hand.
 """
 
@@ -1119,7 +1116,7 @@ from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import RACE_NAME, Race
@@ -3388,21 +3385,44 @@ def describe_turn_results(
     unverified table isn't invented here either); its own "tutored"
     branch never fires through this function regardless, since
     `PracticeExecutionResult` has no field recording who tutored
-    (Phase 144's own docstring). `PURSUE`/`TRAIL`/`TRADE`
-    (`describe_pursue()`/`describe_trail()`/`describe_give()`) are
-    **not wired at all**: verified their own result types
-    (`PursueExecutionResult`, `TrailExecutionResult`,
-    `TradeExecutionResult`) carry no target/recipient id whatsoever --
-    not merely an unresolved one -- because `PhaseDispatchResult` itself
-    only keeps `action`/`result`/`error`, discarding the original
-    decoded request. `SEARCH` (`describe_search()`, Phase 156) joins
-    them for the identical reason: `SearchExecutionResult` carries no
-    `feature_id` either. `describe_battle()` also stays out of this
-    dispatch -- it needs a `BattleReport` and multi-army name maps no
-    `PhaseDispatchResult` alone carries. Province/terrain/army-list
-    Cast spells and Use_MI's skill-book path are skipped the same way,
-    for the same reason Phase 150 already established: no general
-    province-naming system exists.
+    (Phase 144's own docstring).
+
+    **Phase 213 closes `PURSUE`/`TRAIL`/`SEARCH`/`ASPY`** -- the four
+    actions this docstring previously said were unwireable because
+    their own result types carried no target/feature id at all.
+    `PursueExecutionResult`/`TrailExecutionResult`/
+    `SearchExecutionResult` each gained a `request` field (Phase 213),
+    stamped by `plan_dispatch.py`'s own `_dispatch_pursue()`/
+    `_dispatch_trail()`/`_dispatch_search()` -- the one real call site
+    every actual turn passes through -- rather than by the `execute_*()`
+    functions themselves (see those dispatchers' own Phase 213 notes for
+    why: avoids touching a combined ~30 early-return sites across three
+    modules for a field only this composer needs). A direct
+    `execute_pursue()`/`execute_trail()`/`execute_search()` call (every
+    existing unit test included) still gets `request=None`, so those
+    entries are skipped here (`continue`), not crashed on.
+    `TRAIL`'s own catch-up line (`describe_trail()`) and its
+    intelligence payload (`describe_trail_intelligence()`, Phase 212)
+    both render together, in that order. `ASPY` needed no such field --
+    `SpyReport.province` (a real `HexCoord`) was already enough.
+    `SEARCH`'s own `feature_name` has no sourced display-name system at
+    all (`Feature` carries no `name` field, unlike `ProvinceState`) --
+    resolved via a bare coordinate, the same fallback
+    `_province_label()`'s own Phase 158/212 precedent already
+    established for an unnamed province, not a new invented rule.
+
+    **`TRADE` (`describe_give()`) stays unwired, a narrower gap than
+    before**: `TradeExecutionResult` could get the same `request`
+    treatment, but `describe_give()`'s own successful-item-transfer
+    branch (`_LTrade`) still needs a caller-supplied `item_name` this
+    project has no synthesis for (`TradeExecutionResult` doesn't even
+    record *which* `ItemInstance` moved, only a bare `item_transferred:
+    bool`) -- a distinct, still-open gap, not attempted here.
+    `describe_battle()` also stays out of this dispatch -- it needs a
+    `BattleReport` and multi-army name maps no `PhaseDispatchResult`
+    alone carries. Province/terrain/army-list Cast spells and Use_MI's
+    skill-book path are skipped the same way, for the same reason Phase
+    150 already established: no general province-naming system exists.
     """
 
     lines: list[str] = []
@@ -3454,6 +3474,54 @@ def describe_turn_results(
             if target_name is None:
                 continue
             line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, target_name=target_name)
+        elif entry.action is ActionCode.PURSUE and isinstance(entry.result, PursueExecutionResult):
+            request = entry.result.request
+            if request is None:
+                continue
+            target_name = _leader_name(state, request.target_character_id)
+            if target_name is None:
+                continue
+            province_name = _province_label(state, state.leaders[entry.leader_id].location)
+            line = describe_pursue(
+                entry.result, pursuer_name=caster_name, target_name=target_name, province_name=province_name, rng=rng
+            )
+        elif entry.action is ActionCode.TRAIL and isinstance(entry.result, TrailExecutionResult):
+            request = entry.result.request
+            if request is None:
+                continue
+            target_name = _leader_name(state, request.target_character_id)
+            if target_name is None:
+                continue
+            province_name = _province_label(state, state.leaders[entry.leader_id].location)
+            catch_up_line = describe_trail(
+                entry.result, trailer_name=caster_name, target_name=target_name, province_name=province_name, rng=rng
+            )
+            if catch_up_line is not None:
+                lines.append(catch_up_line)
+            lines.extend(
+                describe_trail_intelligence(
+                    entry.result, state=state, trailer_name=caster_name, target_name=target_name, rng=rng
+                )
+            )
+            continue
+        elif entry.action is ActionCode.SEARCH and isinstance(entry.result, SearchExecutionResult):
+            request = entry.result.request
+            if request is None:
+                continue
+            feature = state.features.get(request.feature_id)
+            if feature is None:
+                continue
+            feature_name = _province_label(state, feature.coord)
+            province = state.provinces.get(feature.coord)
+            is_sea = province is not None and province.effective_terrain() is Terrain.SEA
+            lines.extend(
+                describe_search(entry.result, character_name=caster_name, feature_name=feature_name, rng=rng, is_sea=is_sea)
+            )
+            continue
+        elif entry.action is ActionCode.ASPY and isinstance(entry.result, SpyReport):
+            province_name = _province_label(state, entry.result.province)
+            lines.extend(describe_aspy(entry.result, spy_name=caster_name, province_name=province_name, rng=rng))
+            continue
         else:
             continue
 
@@ -4792,17 +4860,14 @@ def describe_search(
       `TREASURE.X2` are inventory-view text, not a Search-victory
       narration), not merely unsearched.
 
-    **Not wired into ``describe_turn_results()``, for the same
-    structural reason PURSUE/TRAIL/TRADE aren't (that function's own
-    docstring)**: ``SearchExecutionResult`` carries no ``feature_id`` at
-    all, and ``PhaseDispatchResult`` itself discards the original
-    decoded ``SearchRequest`` (which alone would supply it) before
-    ``describe_turn_results()`` ever sees the entry -- so there is no
-    way to resolve ``feature_name`` from a dispatch-loop entry without a
-    separate, larger change to ``PhaseDispatchResult`` or
-    ``SearchExecutionResult``. Callers with direct access to the
-    original ``SearchRequest``/``Feature`` can call this composer
-    directly instead.
+    **Phase 213: now wired into ``describe_turn_results()``.**
+    ``SearchExecutionResult`` gained a ``request`` field (stamped by
+    ``plan_dispatch.py _dispatch_search()``), resolving ``feature_id`` ->
+    ``GameState.features`` -> a coordinate-based ``feature_name`` (this
+    project has no per-feature display-name system, unlike provinces --
+    see ``describe_turn_results()``'s own Phase 213 note). Callers with
+    direct access to the original ``SearchRequest``/``Feature`` can still
+    call this composer directly instead.
     """
 
     if not result.accepted:

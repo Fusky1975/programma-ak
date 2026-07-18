@@ -193,6 +193,12 @@ class TrailExecutionResult:
     # Phase 166: [3.17]'s King-target aggregate case -- only set when
     # the target is a King, None otherwise. See module docstring.
     king_intelligence: KingIntelligence | None = None
+    # Phase 213: the originating request, so a caller (report/turn_report.py
+    # describe_turn_results()) can resolve the target's own display name.
+    # Set by plan_dispatch.py's own dispatcher, not by execute_trail()/
+    # advance_trail() themselves -- same convention/reasoning as
+    # PursueExecutionResult.request's own Phase 213 note.
+    request: TrailRequest | None = None
 
 
 def execute_trail(

@@ -8429,7 +8429,7 @@ Illusory Hero (the last of the ten secret spells) are now wired into real
 Search combat** -- the CAST-tactic orchestration engine `turn/cast_
 execution.py`'s own docstring named as the blocking gap since Phase 60 is
 complete (Phases 209-211).
-- **Phase 212 (current)**: closes the "render already-computed
+- **Phase 212**: closes the "render already-computed
   intelligence data into report prose" half of Trail's/ASpy's own
   long-flagged gap -- researched first and found the *data* layer for
   both was already fully complete (Trail's own five sourceable [3.17]
@@ -8502,6 +8502,61 @@ complete (Phases 209-211).
     `describe_aspy` across its no-characters-or-forces/forces-without-
     characters/characters-with-and-without-armies/capital/recruitable-
     types branches).
+- **Phase 213 (current)**: wires `PURSUE`/`TRAIL`/`SEARCH`/`ASPY` into
+  `describe_turn_results()` -- the "built but never invoked from a real
+  turn" gap that function's own docstring had named for those four
+  actions (plus `TRADE`, still open) since Phase 143/147/156.
+  - **`PursueExecutionResult`/`TrailExecutionResult`/
+    `SearchExecutionResult` each gain a `request: XRequest | None =
+    None` field**, populated by `plan_dispatch.py`'s own
+    `_dispatch_pursue()`/`_dispatch_trail()`/`_dispatch_search()` --
+    the one real call site every actual turn passes through -- rather
+    than by `execute_pursue()`/`execute_trail()`/`execute_search()`
+    themselves. **A deliberate, documented scope choice**: those three
+    functions have a combined ~30 early-return sites across three
+    modules; stamping the field at the dispatcher instead of at every
+    one of those sites keeps this phase's diff to 3 small dispatcher
+    edits, at the cost of `request` staying `None` for any direct
+    `execute_*()` caller (every existing unit test included) -- those
+    callers already had no way to get this data before this phase
+    either, so nothing regresses.
+  - **`describe_turn_results()`** gained four new branches:
+    `PURSUE` resolves `target_name` via `request.target_character_id`
+    and `province_name` via the caster's own current location (reusing
+    `_province_label()`); `TRAIL` does the same, then also appends
+    Phase 212's own `describe_trail_intelligence()` lines right after
+    the catch-up sentence; `SEARCH` resolves `feature_id` ->
+    `GameState.features` -> a `feature_name` via the exact same
+    `_province_label()` coordinate/name fallback (a `Feature`'s own
+    coordinate IS its containing province's coordinate, so this
+    doubles as "use the province name if one is recorded" rather than
+    inventing a separate feature-naming system this project has never
+    had); `ASPY` needed no new field at all -- `SpyReport.province`
+    (already a real `HexCoord`) was enough, resolved through
+    `describe_aspy()` (Phase 212).
+  - **`TRADE` stays unwired, a narrower gap than before**:
+    `TradeExecutionResult` could get the same `request` treatment, but
+    `describe_give()`'s own successful-item-transfer branch still needs
+    a caller-supplied `item_name` this project has no synthesis for
+    (`TradeExecutionResult` doesn't even record *which* `ItemInstance`
+    moved) -- a distinct, still-open gap, documented in both functions'
+    own docstrings, not attempted here.
+  - Two further stale docstring claims corrected in passing (this
+    project's own "don't let a doc comment outlive the code" policy):
+    `describe_search()`'s own docstring and this module's own top-level
+    docstring both still said SEARCH was structurally unwireable, for
+    the same reason PURSUE/TRAIL/TRADE were -- no longer true as of
+    this phase.
+  - Non-breaking: full suite passed unchanged (2584 passed) before any
+    new tests were written -- the new `request` fields default to
+    `None`, and the new `describe_turn_results()` branches are pure
+    additions no existing entry can reach. 11 new tests added (2595
+    passed total): 3 in `tests/test_plan_dispatch.py` (confirming each
+    dispatcher stamps `request`), 8 net-new in
+    `tests/test_describe_turn_results.py` (the old
+    `..._skips_pursue_trail_trade_entirely` test split into a
+    TRADE-only version plus dedicated PURSUE/TRAIL/SEARCH/ASPY
+    render/skip-without-a-request/skip-when-target-unknown cases).
 
 ## Setup
 

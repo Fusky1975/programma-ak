@@ -163,6 +163,15 @@ class PursueExecutionResult:
     loser_leader_id: int | None = None
     loser_killed: bool = False
     battle_report: BattleReport | None = None
+    # Phase 213: the originating request, for a caller (report/turn_report.py
+    # describe_turn_results()) that needs the target's own id to resolve a
+    # display name -- set by plan_dispatch.py's own dispatcher, not by this
+    # function itself (see that module's own Phase 213 note for why:
+    # avoids touching every one of this function's own early-return sites).
+    # None for any caller that invokes execute_pursue()/advance_pursuit()
+    # directly, bypassing dispatch -- the same "not populated outside its
+    # real consumer" convention already used elsewhere in this project.
+    request: PursueRequest | None = None
 
 
 def _fight_army_pursuit_battle(

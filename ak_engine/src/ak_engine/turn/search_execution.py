@@ -313,6 +313,12 @@ class SearchExecutionResult:
     # to the right narrative renderer (species-flavored or generic).
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
     guardian_monster: Monster | None = None
+    # Phase 213: the originating request, so a caller (report/turn_report.py
+    # describe_turn_results()) can resolve the searched feature's own id.
+    # Set by plan_dispatch.py's own dispatcher, not by execute_search()
+    # itself -- same convention/reasoning as PursueExecutionResult.request's
+    # own Phase 213 note.
+    request: SearchRequest | None = None
 
 
 def execute_search(

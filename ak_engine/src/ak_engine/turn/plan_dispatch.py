@@ -599,10 +599,22 @@ def _dispatch_challenge(
 def _dispatch_pursue(
     phase: PlanPhase, state: GameState, leader_id: int, rng: random.Random | None
 ) -> PursueExecutionResult:
-    """Same ``mutual_encounter=False`` default and reasoning as ``_dispatch_challenge``."""
+    """Same ``mutual_encounter=False`` default and reasoning as ``_dispatch_challenge``.
+
+    Phase 213: stamps the decoded ``request`` onto the returned result
+    here, at the dispatcher, rather than inside ``execute_pursue()``
+    itself -- ``report/turn_report.py describe_turn_results()`` needs
+    the target's own id to resolve a display name, and this is the one
+    real call site every actual turn passes through, without touching
+    ``execute_pursue()``'s own dozen internal early-return sites. Any
+    caller invoking ``execute_pursue()``/``advance_pursuit()`` directly
+    (every existing unit test included) still gets ``request=None``.
+    """
 
     request = decode_pursue_phase(phase)
-    return execute_pursue(state, leader_id, request, rng)
+    result = execute_pursue(state, leader_id, request, rng)
+    result.request = request
+    return result
 
 
 def _dispatch_trade(phase: PlanPhase, state: GameState, leader_id: int) -> TradeExecutionResult:
@@ -625,17 +637,28 @@ def _dispatch_search(
     own docstring for exactly which cases resolve real Melee combat
     (guardian stats sourced, Melee tactic present) versus honestly report
     ``combat_resolved=False``.
+
+    Phase 213: stamps ``request`` onto the result here, same reasoning
+    as ``_dispatch_pursue``'s own Phase 213 note.
     """
 
     request = decode_search_phase(phase)
-    return execute_search(state, leader_id, request, rng)
+    result = execute_search(state, leader_id, request, rng)
+    result.request = request
+    return result
 
 
 def _dispatch_trail(
     phase: PlanPhase, state: GameState, leader_id: int, rng: random.Random | None
 ) -> TrailExecutionResult:
+    """Phase 213: stamps ``request`` onto the result here, same reasoning
+    as ``_dispatch_pursue``'s own Phase 213 note.
+    """
+
     request = decode_trail_phase(phase)
-    return execute_trail(state, leader_id, request, rng)
+    result = execute_trail(state, leader_id, request, rng)
+    result.request = request
+    return result
 
 
 def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListRequest:

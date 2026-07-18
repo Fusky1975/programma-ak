@@ -149,6 +149,17 @@ def test_dispatch_search_reports_feature_not_found():
     assert result.reason == "feature not found"
 
 
+def test_dispatch_search_stamps_the_request_onto_the_result():
+    # Phase 213: same reasoning as test_dispatch_pursue_stamps_the_request_onto_the_result.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P2", action=ActionCode.SEARCH, obj=20, extra=[0, 0, 11, 0, 22, 0, 7, 9, 13, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.request is not None
+    assert result.request.feature_id == 20
+
+
 def test_dispatch_search_resolves_real_melee_combat_against_a_sourced_guardian():
     # A feature guarded by a Monster with real MONSTER_STATS + a Melee
     # tactic in the Encounter Plan resolves a real duel via turn/
@@ -414,6 +425,19 @@ def test_dispatch_pursue_executes_and_reports_target_not_found():
     assert result.reason == "pursuer or target not found"
 
 
+def test_dispatch_pursue_stamps_the_request_onto_the_result():
+    # Phase 213: report/turn_report.py describe_turn_results() needs the
+    # target's own id to resolve a display name -- the dispatcher (not
+    # execute_pursue() itself) stamps it.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P0", action=ActionCode.PURSUE, obj=88, extra=[0, 9, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.request is not None
+    assert result.request.target_character_id == 88
+
+
 def test_dispatch_aspy_executes_and_reports_the_casters_own_province():
     # Phase 62: ASPY now dispatches to execute_aspy, not just
     # decode_aspy_phase -- the report is always for the caster's own
@@ -451,6 +475,17 @@ def test_dispatch_trail_executes_and_reports_target_not_found():
     assert isinstance(result, TrailExecutionResult)
     assert result.spied_on is False
     assert result.reason == "trailer or target not found"
+
+
+def test_dispatch_trail_stamps_the_request_onto_the_result():
+    # Phase 213: same reasoning as test_dispatch_pursue_stamps_the_request_onto_the_result.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P0", action=ActionCode.TRAIL, obj=88, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.request is not None
+    assert result.request.target_character_id == 88
 
 
 def test_dispatch_succ_trail_is_deliberately_unsupported():
