@@ -9208,7 +9208,7 @@ complete (Phases 209-211).
     fields, no existing call site reads them). 16 new tests added (15 in
     `tests/test_emperor_election.py`, 1 in `tests/test_game_state.py`
     for the two new fields' `None` defaults) -- 2710 passed total.
-- **Phase 229 (current)**: `report/turn_report.py describe_alignment_
+- **Phase 229**: `report/turn_report.py describe_alignment_
   victory_point_reduction()` (new) -- surfaces Phase 228's rulebook
   [10.2] Alignment-distance Victory Point reduction inside the turn
   report, as a new `ALIGNMENT REDUCTION` section appended after
@@ -9244,6 +9244,42 @@ complete (Phases 209-211).
     rulebook's own Pagan/Good worked example, and the section's
     inclusion/omission in `compose_letter_report()`) -- 2715 passed
     total.
+- **Phase 230 (current)**: `turn/office_holder.py` (new) -- the office-
+  HOLDER resolution Phase 227/228 both explicitly deferred ("needs the
+  full Merit Point Rank contest across every leader in the game"), plus
+  the real `IMPERIAL OFFICE REPORT` section this project has skipped
+  since Phase 221 (`compose_letter_report()`'s own docstring: "needs
+  office-holder-per-kingdom data no `GameState` field tracks"). Now 9 of
+  the real letter's 10 sections are wired (only GENERAL INTELLIGENCE
+  REPORT remains).
+  - `resolve_office_holder()`/`resolve_all_office_holders()`: Emperor is
+    resolved by reading the real election result (`GameState.
+    emperor_kingdom_id`, Phase 228) directly, not a Merit Point
+    comparison. The other 7 offices are a genuine Rank contest across
+    every leader in the game (rulebook [10.1]: "Anche un Eroe può
+    aggiudicarsi una carica") -- each leader's own Merit Points come
+    from Phase 227's `turn/merit_points.py` formulas, gated by
+    `models/office.py OFFICE_MIN_POINTS` (real Pascal `minpts`,
+    Phase 81) and tied via `merit_point_tiebreak_key()` (rulebook
+    footnote 3).
+  - `report/turn_report.py describe_imperial_office_report()`: one
+    readable line per office (`models/office.py OFFICE_NAME`, the real
+    `ofcname` string) -- not the real procedure's own fixed-width/
+    percentage-vs-runner-up columns, the same "readable line" precedent
+    every other section here uses. Unlike every other section, it takes
+    no `kingdom_id` -- the real procedure loops over every leader in the
+    game, so the content is identical across every King's own report.
+    Wired into `compose_letter_report()` between ARMIES and ADVENTURE,
+    matching the real section order.
+  - Non-breaking: full suite passed unchanged (2715 passed) before any
+    new tests were written for the new module; wiring the new section
+    into `compose_letter_report()` did require updating the 2
+    pre-existing exact-line-list assertions that already enumerated its
+    full output (inserting the new 9-line block at its real position),
+    the same mechanical fix Phase 226/229 already established -- no
+    other existing test changed. 13 new tests added (9 in `tests/
+    test_office_holder.py`, 4 in `tests/test_turn_report.py`) -- 2728
+    passed total.
 
 ## Setup
 

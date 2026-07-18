@@ -40,6 +40,7 @@ from ak_engine.report.turn_report import (
     compose_letter_report,
     describe_adventure_report,
     describe_alignment_victory_point_reduction,
+    describe_imperial_office_report,
     describe_armies_report,
     describe_characters_report,
     describe_diplomacy_report,
@@ -3708,6 +3709,15 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
         "Capital City -- Garrison: Bowmen (Human, Average)",
+        "IMPERIAL OFFICE REPORT",
+        "World Emperor: None at present",
+        "Esteemed High Chancellor: None at present",
+        "Imperial Treasurer: None at present",
+        "Imperial Grand Marshal: None at present",
+        "Imperial Grand Admiral: None at present",
+        "Lord High Defender: None at present",
+        "High Priest Palatine: None at present",
+        "Arch-Mage Palatine: None at present",
         "ADVENTURE",
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
@@ -3779,6 +3789,15 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
         "None at present",
+        "IMPERIAL OFFICE REPORT",
+        "World Emperor: None at present",
+        "Esteemed High Chancellor: None at present",
+        "Imperial Treasurer: None at present",
+        "Imperial Grand Marshal: None at present",
+        "Imperial Grand Admiral: None at present",
+        "Lord High Defender: None at present",
+        "High Priest Palatine: None at present",
+        "Arch-Mage Palatine: None at present",
         "ADVENTURE",
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
@@ -3839,6 +3858,51 @@ def test_compose_letter_report_omits_alignment_reduction_before_any_emperor_elec
     lines = compose_letter_report([], state, 1, ScriptedRandom([]))
 
     assert "ALIGNMENT REDUCTION" not in lines
+
+
+# -- Phase 230: describe_imperial_office_report() -- IMPERIAL OFFICE REPORT --
+
+
+def test_describe_imperial_office_report_none_at_present_for_every_office_with_no_leaders():
+    state = _armies_state()
+
+    lines = describe_imperial_office_report(state)
+
+    assert lines[0] == "IMPERIAL OFFICE REPORT"
+    assert lines.count("World Emperor: None at present") == 1
+    assert lines.count("Arch-Mage Palatine: None at present") == 1
+    assert len(lines) == 9  # header + 8 offices
+
+
+def test_describe_imperial_office_report_shows_a_real_office_holder():
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.leaders[1].merit_tally.resurrection_bless_casts = 3
+
+    lines = describe_imperial_office_report(state)
+
+    assert "High Priest Palatine: Aldric (3 points)" in lines
+
+
+def test_describe_imperial_office_report_same_content_regardless_of_kingdom_id():
+    # Unlike every other section, this one takes no kingdom_id -- it's
+    # the same world-wide office standings for every King's own report.
+    state = _armies_state()
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+
+    assert describe_imperial_office_report(state) == describe_imperial_office_report(state)
+
+
+def test_compose_letter_report_includes_imperial_office_report_between_armies_and_adventure():
+    state = _armies_state()
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    armies_index = lines.index("ARMIES")
+    office_index = lines.index("IMPERIAL OFFICE REPORT")
+    adventure_index = lines.index("ADVENTURE")
+    assert armies_index < office_index < adventure_index
 
 
 # -- Phase 212: describe_aspy() -- real assembly of Phase 115/118's own SAY.PAS templates --

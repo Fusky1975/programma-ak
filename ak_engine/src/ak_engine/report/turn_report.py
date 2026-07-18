@@ -1120,6 +1120,7 @@ from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES, Monster
+from ak_engine.models.office import OFFICE_NAME
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import RACE_NAME, Race
 from ak_engine.models.temper import TEMPER_NAME
@@ -1133,6 +1134,7 @@ from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
 from ak_engine.turn.emperor_election import alignment_victory_point_reduction_percent
 from ak_engine.turn.encounter import FireArrowShot
+from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
@@ -5430,6 +5432,58 @@ def _adventure_monster_label(monster: Monster) -> str:
     return name
 
 
+_IMPERIAL_OFFICE_REPORT_HEADER = "IMPERIAL OFFICE REPORT"
+_IMPERIAL_OFFICE_REPORT_NONE = "None at present"
+
+
+def describe_imperial_office_report(state: GameState) -> list[str]:
+    """Assembles the "IMPERIAL OFFICE REPORT" section (Phase 230) --
+    real, sourced content (`REPORTS.PAS Rep_Office`'s own per-office
+    loop, ~line 1596-1730) this project could never render before Phase
+    227/228/230 gave it the pieces: real Merit Point formulas
+    (`turn/merit_points.py`), the real Emperor election result
+    (`turn/emperor_election.py`), and the Rank-contest resolution itself
+    (`turn/office_holder.py resolve_all_office_holders()`).
+
+    **This is the same content for every kingdom's own report** -- unlike
+    every other section here, the real procedure loops over *every*
+    leader in the game, not just this kingdom's own, so there's no
+    `kingdom_id` parameter.
+
+    One readable line per office (`models/office.py OFFICE_NAME`, the
+    real Pascal `ofcname` display string), not the real procedure's own
+    fixed-width columns/percentage-vs-runner-up layout -- the same
+    "readable line, not exact Pascal layout" precedent every other
+    section composer in this module already established. A holder's own
+    Merit Points are shown; an office nobody yet qualifies for (`models/
+    office.py OFFICE_MIN_POINTS`) renders `"None at present"`, not a
+    guess.
+
+    **Chancellor's own discovery-attribution Merit Point terms, and
+    Marshal/Admiral/Defender/Priest's own battle/monster/cast tally
+    counters, still read whatever `MeritTally` a caller has populated**
+    (possibly all zeros) -- see `turn/merit_points.py`'s and
+    `turn/office_holder.py`'s own docstrings for exactly which terms are
+    fully live today versus still waiting on a future wiring phase. This
+    section is not less real for that: it's the same "confirmed real
+    data, some inputs still unpopulated" situation every other
+    partially-wired section here already documents (e.g.
+    `describe_finances_report()`'s own "Expected Expenses" gap).
+    """
+
+    lines = [_IMPERIAL_OFFICE_REPORT_HEADER]
+    holders = resolve_all_office_holders(state)
+    for office in ALL_OFFICES:
+        office_name = OFFICE_NAME[office]
+        holder = holders[office]
+        if holder is None:
+            lines.append(f"{office_name}: {_IMPERIAL_OFFICE_REPORT_NONE}")
+            continue
+        holder_name = state.leaders[holder.leader_id].name
+        lines.append(f"{office_name}: {holder_name} ({holder.merit_points} points)")
+    return lines
+
+
 def describe_adventure_report(state: GameState, kingdom_id: int) -> list[str]:
     """Lists every ``Feature`` this kingdom has discovered (Phase 216) --
     a deliberately narrower slice of ``REPORTS.PAS Desc_Adventure`` (the
@@ -5690,16 +5744,16 @@ def compose_letter_report(
     so this real generated-output cross-reference is the sourced evidence
     used here, in place of the lost driver.
 
-    **8 of the 10 real sections are wired here as of Phase 221** --
+    **9 of the 10 real sections are wired here as of Phase 230** --
     ACTION REPORT, LETTER REPORTS, DIPLOMACY, FINANCES, PROVINCES,
-    CHARACTERS, ARMIES, and ADVENTURE. Every other section still needs
-    data this project's `GameState` doesn't model at all yet --
-    confirmed absent, not merely unwired:
+    CHARACTERS, ARMIES, IMPERIAL OFFICE REPORT, and ADVENTURE. Every
+    other section still needs data this project's `GameState` doesn't
+    model at all yet -- confirmed absent, not merely unwired:
     - FINANCES itself is only partially wired -- see
       `describe_finances_report()`'s own docstring for exactly which
-      of its real lines render (`"Gold in treasury"` only) and which
-      are confirmed absent (`Tax_Base`/`ACost`/`LCost`-derived figures,
-      per-kingdom Discovery tracking).
+      of its real lines render (`"Gold in treasury"`/`"Expected
+      Revenues"`) and which are confirmed absent (`ACost`/`LCost`-derived
+      figures, per-kingdom Discovery tracking).
     - PROVINCES itself is only partially wired -- see
       `describe_provinces_report()`'s own docstring for exactly which
       columns render (name, race, terrain, percent explored) and which
@@ -5713,11 +5767,11 @@ def compose_letter_report(
       which are confirmed absent (pay, gender, Discovery-based skill
       modifiers, magic-item ownership marks, the real procedure's
       wandering-Hero/Priest-clairvoyance passes).
-    - IMPERIAL OFFICE REPORT needs office-holder-per-kingdom data no
-      `GameState` field tracks. This section renders between ARMIES and
-      ADVENTURE in a real letter, so `compose_letter_report()`'s own
-      output skips straight from ARMIES to ADVENTURE, matching the real
-      order minus this one still-unwired section.
+    - IMPERIAL OFFICE REPORT (Phase 230) renders between ARMIES and
+      ADVENTURE, matching the real order -- see `describe_imperial_
+      office_report()`'s own docstring for exactly which Merit Point
+      terms are fully live today versus still waiting on a future
+      battle/encounter/cast wiring phase.
     - GENERAL INTELLIGENCE REPORT needs this turn's own compiled list of
       every `SpyReport` gathered -- `describe_aspy()` renders one report
       at a time, nothing aggregates them across a whole turn yet.
@@ -5755,14 +5809,19 @@ def compose_letter_report(
     internally.
 
     **DIPLOMACY**, **FINANCES**, **PROVINCES**, **CHARACTERS**,
-    **ARMIES**, and **ADVENTURE** wrap `describe_diplomacy_report()`
-    (Phase 218)/`describe_finances_report()` (Phase 219)/
-    `describe_provinces_report()` (Phase 220)/
+    **ARMIES**, **IMPERIAL OFFICE REPORT**, and **ADVENTURE** wrap
+    `describe_diplomacy_report()` (Phase 218)/`describe_finances_report()`
+    (Phase 219)/`describe_provinces_report()` (Phase 220)/
     `describe_characters_report()` (Phase 221)/`describe_armies_report()`/
-    `describe_adventure_report()` as-is -- all six composers already
+    `describe_imperial_office_report()` (Phase 230)/
+    `describe_adventure_report()` as-is -- all seven composers already
     return their own header as their first line (the same Phase ~158
     convention Phase 216/218/219/220/221's own composers reuse), so no
     header is added here for any of them; adding one would duplicate it.
+    Unlike the others, `describe_imperial_office_report()` takes no
+    `kingdom_id` -- the real procedure's own office-holder loop covers
+    every leader in the game, not just this kingdom's own, so its output
+    is identical across every King's own report.
 
     A section is omitted entirely from the output when its own composer
     has nothing to say (`describe_turn_results()` returns an empty list
@@ -5808,6 +5867,10 @@ def compose_letter_report(
     armies_lines = describe_armies_report(state, kingdom_id)
     if armies_lines:
         lines.extend(armies_lines)
+
+    imperial_office_lines = describe_imperial_office_report(state)
+    if imperial_office_lines:
+        lines.extend(imperial_office_lines)
 
     adventure_lines = describe_adventure_report(state, kingdom_id)
     if adventure_lines:
