@@ -5,6 +5,7 @@ import pytest
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.magic_feature import MagicFeature
@@ -36,6 +37,7 @@ from ak_engine.report.turn_report import (
     SPY_LEADS_APPROXIMATELY_TEMPLATE,
     WILL_TEMPLATE,
     compose_letter_report,
+    describe_adventure_report,
     describe_armies_report,
     describe_aspy,
     describe_battle,
@@ -2993,10 +2995,159 @@ def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
     ]
 
 
+# -- Phase 216: describe_adventure_report() -- the "ADVENTURE" section --
+
+
+_ADVENTURE_OPENING = (
+    "O Luminous One, adventure awaits thee and thy companions at every corner of "
+    "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
+    "terrorize the populace by night.  Here are these lairs:"
+)
+_ADVENTURE_COLUMN_HEADER = "Province             %Exp  Features and F#     Monster         Special"
+
+
+def test_describe_adventure_report_opening_lines():
+    state = GameState()
+
+    lines = describe_adventure_report(state, 1)
+
+    assert lines[0] == "ADVENTURE"
+    assert lines[1] == _ADVENTURE_OPENING
+    assert lines[2] == _ADVENTURE_COLUMN_HEADER
+
+
+def test_describe_adventure_report_no_discovered_features_renders_none_at_present():
+    state = GameState()
+    state.add_feature(Feature(1, HexCoord(0, 0), FeatureType.CAVE, guardian_monster=Monster.SWORDSMAN))
+
+    lines = describe_adventure_report(state, 1)
+
+    assert lines[3:] == ["None at present"]
+
+
+def test_describe_adventure_report_lists_a_discovered_feature():
+    state = GameState()
+    state.add_province(ProvinceState(HexCoord(3, 5), None, Race.HUMAN, name="Mongu"))
+    state.provinces[HexCoord(3, 5)].explored_percent_by_kingdom[1] = 100
+    state.add_feature(
+        Feature(
+            2,
+            HexCoord(3, 5),
+            FeatureType.CAVE,
+            guardian_monster=Monster.SWORDSMAN,
+            discovered_by_kingdom={1: 3},
+        )
+    )
+
+    lines = describe_adventure_report(state, 1)
+
+    assert lines[3:] == [
+        "Mongu (100% explored)",
+        "  Cave (F#2) -- Swordsman",
+    ]
+
+
+def test_describe_adventure_report_looted_feature_shows_sacked_and_looted():
+    state = GameState()
+    state.add_feature(
+        Feature(3, HexCoord(1, 1), FeatureType.CRYPT, guardian_monster=Monster.GARGOYLE, looted=True, discovered_by_kingdom={1: 3})
+    )
+
+    lines = describe_adventure_report(state, 1)
+
+    assert lines[3:] == [
+        "(1, 1) (0% explored)",
+        "  Crypt (F#3) -- sacked & looted",
+    ]
+
+
+def test_describe_adventure_report_discovery_level_1_renders_question_mark():
+    state = GameState()
+    state.add_feature(
+        Feature(4, HexCoord(2, 2), FeatureType.TOMB, guardian_monster=Monster.MUMMY, discovered_by_kingdom={1: 1})
+    )
+
+    lines = describe_adventure_report(state, 1)
+
+    assert lines[3:] == [
+        "(2, 2) (0% explored)",
+        "  Tomb (F#4) -- Mummy ?",
+    ]
+
+
+def test_describe_adventure_report_undiscovered_feature_is_excluded():
+    state = GameState()
+    state.add_feature(Feature(5, HexCoord(4, 4), FeatureType.DUNGEON, guardian_monster=Monster.TROLL))
+
+    lines = describe_adventure_report(state, 1)
+
+    assert lines[3:] == ["None at present"]
+
+
+def test_describe_adventure_report_only_shows_this_kingdoms_own_discovery():
+    state = GameState()
+    state.add_feature(
+        Feature(6, HexCoord(0, 0), FeatureType.CAVE, guardian_monster=Monster.GIANT, discovered_by_kingdom={2: 3})
+    )
+
+    lines = describe_adventure_report(state, 1)
+
+    assert lines[3:] == ["None at present"]
+
+
+def test_describe_adventure_report_monster_name_prefix_is_stripped():
+    state = GameState()
+    state.add_feature(
+        Feature(7, HexCoord(0, 0), FeatureType.PET_FOREST, guardian_monster=Monster.GI_EAGLE, discovered_by_kingdom={1: 3})
+    )
+
+    lines = describe_adventure_report(state, 1)
+
+    assert lines[3:] == [
+        "(0, 0) (0% explored)",
+        "  Petrified Forest (F#7) -- Eagle",
+    ]
+
+
+def test_describe_adventure_report_no_guardian_recorded_omits_monster_segment():
+    state = GameState()
+    state.add_feature(Feature(8, HexCoord(0, 0), FeatureType.CAVE, discovered_by_kingdom={1: 3}))
+
+    lines = describe_adventure_report(state, 1)
+
+    assert lines[3:] == [
+        "(0, 0) (0% explored)",
+        "  Cave (F#8)",
+    ]
+
+
+def test_describe_adventure_report_sorts_provinces_then_features_by_id():
+    state = GameState()
+    state.add_feature(
+        Feature(2, HexCoord(1, 1), FeatureType.CAVE, guardian_monster=Monster.GIANT, discovered_by_kingdom={1: 3})
+    )
+    state.add_feature(
+        Feature(1, HexCoord(0, 0), FeatureType.TOMB, guardian_monster=Monster.MUMMY, discovered_by_kingdom={1: 3})
+    )
+    state.add_feature(
+        Feature(3, HexCoord(0, 0), FeatureType.CRYPT, guardian_monster=Monster.GHOST, discovered_by_kingdom={1: 3})
+    )
+
+    lines = describe_adventure_report(state, 1)
+
+    assert lines[3:] == [
+        "(0, 0) (0% explored)",
+        "  Tomb (F#1) -- Mummy",
+        "  Crypt (F#3) -- Ghost",
+        "(1, 1) (0% explored)",
+        "  Cave (F#2) -- Giant",
+    ]
+
+
 # -- Phase 215: compose_letter_report() -- top-level per-kingdom letter assembler --
 
 
-def test_compose_letter_report_stitches_action_report_and_armies_in_the_real_order():
+def test_compose_letter_report_stitches_action_report_armies_and_adventure_in_the_real_order():
     state = _armies_state()
     state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0)))
     state.add_leader(LeaderState(32, 1, "Borin", HexCoord(0, 0)))
@@ -3015,6 +3166,12 @@ def test_compose_letter_report_stitches_action_report_and_armies_in_the_real_ord
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
         "Capital City -- Garrison: Bowmen (Human, Average)",
+        "ADVENTURE",
+        "O Luminous One, adventure awaits thee and thy companions at every corner of "
+        "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
+        "terrorize the populace by night.  Here are these lairs:",
+        "Province             %Exp  Features and F#     Monster         Special",
+        "None at present",
     ]
 
 
@@ -3044,7 +3201,7 @@ def test_compose_letter_report_filters_results_to_only_this_kingdoms_own_leaders
     assert "ACTION REPORT" not in lines
 
 
-def test_compose_letter_report_armies_section_present_even_with_no_armies():
+def test_compose_letter_report_armies_and_adventure_sections_present_even_when_empty():
     state = _armies_state()
 
     lines = compose_letter_report([], state, 1, ScriptedRandom([]))
@@ -3053,6 +3210,12 @@ def test_compose_letter_report_armies_section_present_even_with_no_armies():
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
+        "None at present",
+        "ADVENTURE",
+        "O Luminous One, adventure awaits thee and thy companions at every corner of "
+        "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
+        "terrorize the populace by night.  Here are these lairs:",
+        "Province             %Exp  Features and F#     Monster         Special",
         "None at present",
     ]
 

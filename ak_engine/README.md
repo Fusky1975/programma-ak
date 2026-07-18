@@ -8605,7 +8605,7 @@ complete (Phases 209-211).
     (`test_describe_turn_results_skips_trade_entirely` ->
     `..._skips_trade_without_a_request`, since the skip reason is now
     "no request stamped," not "no item-name synthesis").
-- **Phase 215 (current)**: `report/turn_report.py compose_letter_report()`
+- **Phase 215**: `report/turn_report.py compose_letter_report()`
   (new) -- the first top-level, per-kingdom letter-report assembler,
   stitching together this project's own already-built section
   composers.
@@ -8652,6 +8652,48 @@ complete (Phases 209-211).
     kingdom's letter), and ARMIES always present (even with zero
     armies, matching `describe_armies_report()`'s own "None at
     present" behavior).
+- **Phase 216 (current)**: `report/turn_report.py
+  describe_adventure_report()` (new) -- the "ADVENTURE" section,
+  wired into `compose_letter_report()` right after ARMIES (matching
+  the real letter's own relative order, skipping the still-unwired
+  IMPERIAL OFFICE REPORT that sits between them in a real letter).
+  - **Real double-gate this project doesn't model, and its own
+    substitute**: the real `Desc_Adventure`'s own province gate
+    (`provpres[px,py] and 16`, an undefined presence bitflag) and
+    per-feature gate (`fdis[fn] > 0`, confirmed by `models/feature.py`'s
+    own docstring to have an unresolved relationship to the per-kingdom
+    `fdisc`/`discovered_by_kingdom` array this project already models)
+    are both replaced by a single, documented interpretation:
+    `Feature.discovery_level(kingdom_id) > 0`. Every province on the
+    map is scanned, not just this kingdom's own -- feature discovery is
+    independent of province ownership, matching the real procedure's
+    own whole-board loop.
+  - Sourced verbatim: the section header, its 3-line opening flavor
+    text (rejoined, same convention as `_ARMIES_REPORT_OPENING`), the
+    column-header line, and the "Renegade "/"Giant "/"Great "
+    monster-name-prefix-stripping rule (`Desc_Adventure`'s own 4th
+    truncation case, tied to fixed-width columns this composer doesn't
+    reproduce, is dropped).
+  - **Deliberately not reproduced**: the real "Special" column's
+    richer cases (a magic-power hint at discovery level 2, a full
+    treasure listing at level 3) and the "Guarding unknown riches"
+    line -- both need a per-feature `MagicFeature` link and a
+    feature's own treasure *instance*, both confirmed still unmodeled
+    (`models/feature.py`'s own Phase 75/77 notes: world generation is
+    the blocking gap). Only level 1's real, single-character `"?"` is
+    rendered.
+  - Non-breaking: full suite passed unchanged (2603 passed) before any
+    new tests were written, after updating 2 pre-existing
+    `compose_letter_report()` tests (Phase 215) whose expected output
+    now needs the always-present ADVENTURE section appended -- a
+    mechanical update, not a behavior change, same situation as Phase
+    214's own two `test_trade_execution.py` fixes. 12 new tests added
+    (2613 passed total) in `tests/test_turn_report.py`, covering:
+    opening/header lines, empty-state "None at present", a discovered
+    feature rendering, a looted feature, discovery-level-1's `"?"`,
+    an undiscovered feature's exclusion, this-kingdom-only filtering,
+    the monster-name-prefix strip, a feature with no guardian recorded,
+    and province/feature sort order.
 
 ## Setup
 

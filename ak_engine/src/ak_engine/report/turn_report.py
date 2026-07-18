@@ -1114,10 +1114,11 @@ from ak_engine.models.enums import (
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE
+from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
-from ak_engine.models.monster import MONSTER_NAMES
+from ak_engine.models.monster import MONSTER_NAMES, Monster
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import RACE_NAME, Race
 from ak_engine.models.temper import TEMPER_NAME
@@ -5046,6 +5047,125 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
     return lines
 
 
+# HostAK/TP/REPORTS.PAS Desc_Adventure (~line 2008-2126) -- the real
+# "ADVENTURE" section's own opening flavor text, rejoined across its 3
+# raw WRITELN lines (same convention as _ARMIES_REPORT_OPENING above),
+# and its column-header line (verbatim, trailing spaces trimmed).
+_ADVENTURE_REPORT_OPENING = (
+    "O Luminous One, adventure awaits thee and thy companions at every corner of "
+    "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
+    "terrorize the populace by night.  Here are these lairs:"
+)
+
+_ADVENTURE_REPORT_COLUMN_HEADER = "Province             %Exp  Features and F#     Monster         Special"
+
+# Reuses the same real, sourced fallback phrase _ARMIES_REPORT_NONE_AT_PRESENT
+# already established (confirmed real output, e.g. the DIPLOMACY section's
+# own "None at present" in a real SE3__T*.K2 file) -- Desc_Adventure's own
+# empty-loop case isn't separately quoted in the available source, but this
+# project's own established convention for "nothing to list" is reused here
+# rather than inventing a different phrase.
+_ADVENTURE_REPORT_NONE_AT_PRESENT = "None at present"
+
+# REPORTS.PAS Desc_Adventure's own monster-name-prefix-stripping rule
+# (~line 2056-2059): "Renegade "/"Giant "/"Great " are dropped from the
+# monster's own display name before printing (a 4th case, truncating at
+# "Elemen[tal]", is part of that same procedure's fixed-width-column
+# truncation logic and isn't reproduced -- this composer doesn't reproduce
+# fixed-width columns at all, same precedent as describe_armies_report()'s
+# own docstring).
+_ADVENTURE_MONSTER_NAME_PREFIXES = ("Renegade ", "Giant ", "Great ")
+
+
+def _adventure_monster_label(monster: Monster) -> str:
+    name = MONSTER_NAMES[monster]
+    for prefix in _ADVENTURE_MONSTER_NAME_PREFIXES:
+        if name.startswith(prefix):
+            return name[len(prefix) :]
+    return name
+
+
+def describe_adventure_report(state: GameState, kingdom_id: int) -> list[str]:
+    """Lists every ``Feature`` this kingdom has discovered (Phase 216) --
+    a deliberately narrower slice of ``REPORTS.PAS Desc_Adventure`` (the
+    real "ADVENTURE" section of the end-of-turn letter report), the same
+    "narrower than the real procedure, documented why" precedent
+    ``describe_armies_report()`` already established for ARMIES.
+
+    **The real procedure's province gate is a double condition this
+    project doesn't model**: ``provpres[px,py] and 16`` (a per-province
+    presence bitflag with no surviving definition) and, per-feature,
+    ``fdis[fn] > 0`` (a *different* array from the per-kingdom
+    ``fdisc``/``discovered_by_kingdom`` this project already models --
+    ``models/feature.py``'s own docstring confirms its exact relationship
+    to ``fdisc`` "isn't fully resolved from the available source"). This
+    composer's own substitute, documented as an interpretation and not a
+    citation: a feature is listed whenever ``Feature.discovery_level(
+    kingdom_id) > 0`` -- the closest already-modeled analog, since a
+    feature this kingdom has never discovered at all can't sensibly
+    appear in its own letter regardless of the exact real gating rule.
+    Every province on the map is scanned (real Pascal loops the whole
+    board, not just this kingdom's own provinces -- feature discovery is
+    independent of province ownership), not just this kingdom's own.
+
+    **What this deliberately does NOT reproduce, and why**:
+    - The real "Special" column's fuller cases (``fdisc`` level 2's
+      magic-power hint, level 3's full ``List_Treas`` treasure listing)
+      need data this project doesn't have: a per-feature ``MagicFeature``
+      link, and a feature's own treasure *instance* -- ``models/
+      feature.py``'s own docstring confirms both are still unmodeled
+      (world generation is the blocking gap, same as Phase 77's own
+      note). Only level 1's real, single-character ``"?"`` is rendered.
+    - The "Guarding unknown riches" line (``last_line = 1``) depends on
+      an item-ownership condition (``trowner[fn] <> fn+256``) tied to
+      this same missing treasure-instance data -- not rendered either.
+    - Fixed-width columns aren't reproduced (one readable line per
+      province/feature instead), the same documented choice
+      ``describe_armies_report()``'s own docstring already made.
+
+    A feature with no ``guardian_monster`` recorded (a data gap this
+    project's own ``Feature`` model allows, unlike real Pascal's always-
+    populated ``fmonst`` array) renders no monster segment at all, rather
+    than guessing one.
+    """
+
+    lines = ["ADVENTURE", _ADVENTURE_REPORT_OPENING, _ADVENTURE_REPORT_COLUMN_HEADER]
+
+    by_province: dict[HexCoord, list[Feature]] = {}
+    for feature in state.features.values():
+        if feature.discovery_level(kingdom_id) <= 0:
+            continue
+        by_province.setdefault(feature.coord, []).append(feature)
+
+    if not by_province:
+        lines.append(_ADVENTURE_REPORT_NONE_AT_PRESENT)
+        return lines
+
+    for coord in sorted(by_province, key=lambda c: (c.x, c.y)):
+        province = state.provinces.get(coord)
+        if province is not None and province.name:
+            province_label = province.name
+        else:
+            province_label = f"({coord.x}, {coord.y})"
+        explored_percent = 0
+        if province is not None:
+            explored_percent = province.explored_percent_by_kingdom.get(kingdom_id, 0)
+        lines.append(f"{province_label} ({explored_percent}% explored)")
+
+        for feature in sorted(by_province[coord], key=lambda f: f.feature_id):
+            kind_name = FEATURE_TYPE_NAMES[feature.kind]
+            entry = f"  {kind_name} (F#{feature.feature_id})"
+            if feature.looted:
+                entry += " -- sacked & looted"
+            elif feature.guardian_monster is not None:
+                entry += f" -- {_adventure_monster_label(feature.guardian_monster)}"
+            if feature.discovery_level(kingdom_id) == 1:
+                entry += " ?"
+            lines.append(entry)
+
+    return lines
+
+
 def compose_letter_report(
     results: list[PhaseDispatchResult],
     state: GameState,
@@ -5068,8 +5188,9 @@ def compose_letter_report(
     so this real generated-output cross-reference is the sourced evidence
     used here, in place of the lost driver.
 
-    **Only two of the ten real sections are wired here.** Every other
-    section needs data this project's `GameState` doesn't model at all
+    **3 of the 10 real sections are wired here as of Phase 216** --
+    ACTION REPORT, ARMIES, and now ADVENTURE. Every other section
+    still needs data this project's `GameState` doesn't model at all
     yet -- confirmed absent, not merely unwired:
     - LETTER REPORTS needs an inter-leader message queue (`Write_Letter`
       in `REPORTS.PAS`) -- no concept of a stored message exists here.
@@ -5084,10 +5205,10 @@ def compose_letter_report(
     - CHARACTERS needs a full per-leader stat table (`Rep_Leaders`, one of
       the largest procedures in the archive) -- no composer exists.
     - IMPERIAL OFFICE REPORT needs office-holder-per-kingdom data no
-      `GameState` field tracks.
-    - ADVENTURE needs a `Desc_Adventure`-equivalent per-province
-      monster/feature listing -- no composer exists (only the
-      single-encounter `describe_search()`/spell composers do).
+      `GameState` field tracks. This section renders between ARMIES and
+      ADVENTURE in a real letter, so `compose_letter_report()`'s own
+      output skips straight from ARMIES to ADVENTURE, matching the real
+      order minus this one still-unwired section.
     - GENERAL INTELLIGENCE REPORT needs this turn's own compiled list of
       every `SpyReport` gathered -- `describe_aspy()` renders one report
       at a time, nothing aggregates them across a whole turn yet.
@@ -5098,10 +5219,11 @@ def compose_letter_report(
     multi-kingdom `results` list). Its own header is added here, since
     `describe_turn_results()` returns bare narrative lines with none.
 
-    **ARMIES** wraps `describe_armies_report()` as-is -- that composer
-    already returns its own `"ARMIES"` header as its first line (Phase
-    ~158's own convention), so no header is added here; adding one would
-    duplicate it.
+    **ARMIES** and **ADVENTURE** wrap `describe_armies_report()`/
+    `describe_adventure_report()` as-is -- both composers already return
+    their own header as their first line (the same Phase ~158 convention
+    Phase 216's `describe_adventure_report()` reuses), so no header is
+    added here for either; adding one would duplicate it.
 
     A section is omitted entirely from the output when its own composer
     has nothing to say (`describe_turn_results()` returns an empty list
@@ -5124,5 +5246,9 @@ def compose_letter_report(
     armies_lines = describe_armies_report(state, kingdom_id)
     if armies_lines:
         lines.extend(armies_lines)
+
+    adventure_lines = describe_adventure_report(state, kingdom_id)
+    if adventure_lines:
+        lines.extend(adventure_lines)
 
     return lines
