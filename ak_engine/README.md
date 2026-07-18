@@ -9281,7 +9281,7 @@ complete (Phases 209-211).
     test_office_holder.py`, 4 in `tests/test_turn_report.py`) -- 2728
     passed total.
 
-- **Phase 231 (current)**: GENERAL INTELLIGENCE REPORT -- the last of
+- **Phase 231**: GENERAL INTELLIGENCE REPORT -- the last of
   the real letter's 10 sections, closing the gap Phase 230 left open.
   Research first confirmed a prior phase's own assumption was wrong:
   `describe_aspy()`/`describe_trail_intelligence()` are already fully
@@ -9351,6 +9351,58 @@ complete (Phases 209-211).
     tests added (`tests/test_world_events.py` new, 5 tests; `tests/
     test_game_state.py` +3; `tests/test_battle_orchestrator.py` +1;
     `tests/test_turn_report.py` +11) -- 2747 passed total.
+
+- **Phase 232 (current)**: two more real GENERAL INTELLIGENCE REPORT
+  event sources -- Plague and Illusory Terrain casts -- on the user's
+  own explicit request to develop "movimenti, pestilenze, incantesimi"
+  (movement, plagues, spells). Research corrected a prior-phase
+  assumption along the way: Phase 231's own docstring had claimed "this
+  project has no plague mechanic modeled anywhere at all," but grepping
+  the Pascal archive for "plague" found it fully implemented already
+  (`Spell.PLAGUE`, `turn/cast_execution.py _execute_plague()`, wired
+  through `plan_dispatch.py` since Phase 59) -- the gap was never the
+  mechanic, only GIR's own recording of it.
+  - Reading `SAY.PAS` directly (not just `REPORTS.PAS`) surfaced a real,
+    previously-unseen distinction: every `Say(...)` call carries a
+    `spytype` severity tag (`S_Comm`, `S_PCom`, `S_AA`, `S_Batt`, ...).
+    `_SPlague: Say('@ was hit by a plague.',S_Comm)` and `_STerIl:
+    Say(Concat('the ',tername[...],' terrain of @ was magically made to
+    appear as \`.'),S_Comm)` are real, "commonly known" (`S_Comm`)
+    province-wide notices, textually distinct from and additional to
+    `SPELL_CAST_ANNOUNCEMENT[Spell.PLAGUE]`/`[Spell.ILLUS_TERRAIN]` (the
+    caster's own private, army-list-carrying first-person announcement
+    `describe_cast()` already renders into the caster's own LETTER
+    REPORTS entry). `_SPlague`'s own wording matches a real fixture
+    verbatim (`SE3__T1.K8`: "Transylvania was hit by a plague.").
+    `spytype` itself turned out to be a text-rendering severity marker
+    (feeding `report/prose.py render()`-style word-choice branches, not
+    a "which kingdoms receive this" recipient list) -- the real
+    broadcast-decision logic itself is still confirmed lost with the
+    main driver, so `turn/world_events.py is_visible_to()`'s own
+    rulebook [1.4] adjacency rule (Phase 231) stays the visibility test.
+  - `report/turn_report.py render_plague_world_event()`/
+    `render_illus_terrain_world_event()` (new) render the two `S_Comm`
+    templates; `record_spell_world_events()` (new) scans a turn's own
+    `list[PhaseDispatchResult]` for successful Plague/Illusory Terrain
+    `CastExecutionResult` entries and records a `WorldEvent` for each --
+    the second real event-*source* function alongside Phase 231's
+    `record_battle_world_events()`, sharing the same "call once per
+    turn before any `compose_letter_report()`" contract.
+  - **Movement stays explicitly deferred, with a sharper reason than
+    Phase 231 could give**: `render_march()` (Phase 104, MARCH.X) was
+    initially assumed to cover it, but its own real templates need a
+    `^P` "province number" marker this project has no honest synthesis
+    for (`turn/hex_numbering.py encode_hex_number()` encodes a
+    *different*, empirically-inferred move-file numbering scheme --
+    reusing it for `^P` would silently conflate two unrelated numbering
+    systems, a real correctness bug, not a shortcut). MARCH.X's own
+    wording ("marched into @ ^P with...") also doesn't textually match
+    the real fixtures' own "flew over to"/"flew into" phrasing in the
+    first place, so reusing it wouldn't have been an honest transcription
+    either way -- not attempted here.
+  - Non-breaking: full suite passed unchanged (2747 passed) before any
+    new tests were written. 8 new tests added to `tests/
+    test_turn_report.py` -- 2755 passed total.
 
 ## Setup
 

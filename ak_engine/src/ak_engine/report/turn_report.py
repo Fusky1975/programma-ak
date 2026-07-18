@@ -1134,6 +1134,7 @@ from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
 from ak_engine.turn.emperor_election import alignment_victory_point_reduction_percent
 from ak_engine.turn.encounter import FireArrowShot
+from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
@@ -5813,6 +5814,105 @@ def record_battle_world_events(state: GameState, results: list[PhaseDispatchResu
             state.record_world_event(coord, [winner_sentence])
 
 
+# HostAK/TP/SAY.PAS `_SPlague`/`_PPlague` (Phase 232) -- the province-
+# wide, "commonly known" (`S_Comm`) Plague notice, confirmed real and
+# distinct from `SPELL_CAST_ANNOUNCEMENT[Spell.PLAGUE]` (a private,
+# army-list-carrying first-person announcement `describe_cast()`
+# already renders into the *caster's own* LETTER REPORTS entry). Two
+# real, interchangeable templates were found in `SAY.PAS`
+# (`_SPlague: Say('@ was hit by a plague.',S_Comm)` and `_PPlague:
+# Say('plague ravaged the province of @.',S_Comm)`) -- `_SPlague`'s own
+# wording is used here since it matches the real fixture text verbatim
+# (`SE3__T1.K8`'s own GENERAL INTELLIGENCE REPORT: "Transylvania was
+# hit by a plague."); `_PPlague`'s own trigger condition (`_P`-prefixed
+# names elsewhere in `SAY.PAS` mark a distinct, more severe story path)
+# isn't recoverable from the available fragments, so it's transcribed
+# here as a documented alternative, not asserted as the one this project
+# actually uses.
+PLAGUE_WORLD_EVENT_TEMPLATE = "@ was hit by a plague."
+
+
+def render_plague_world_event(province_name: str, rng: random.Random) -> str:
+    """Renders `SAY.PAS` `_SPlague`'s own commonly-known Plague notice."""
+
+    return render(PLAGUE_WORLD_EVENT_TEMPLATE, {"@": province_name}, rng=rng)
+
+
+def render_illus_terrain_world_event(
+    real_terrain_name: str, province_name: str, fake_terrain_name: str, rng: random.Random
+) -> str:
+    """Renders `SAY.PAS` `_STerIl`'s own commonly-known (`S_Comm`) Illusory
+    Terrain notice (Phase 232) -- `Say(Concat('the ',
+    tername[pterr[_px,_py]],' terrain of @ was magically made to appear
+    as \\`.'),S_Comm)`. Distinct from `SPELL_CAST_ANNOUNCEMENT[Spell.
+    ILLUS_TERRAIN]` the same way Plague's two templates are (the
+    caster's own private announcement vs. this public one).
+    ``real_terrain_name`` is spliced in directly via Python
+    string-formatting rather than a `render()` marker -- the source
+    itself builds it via a raw Pascal `Concat`, not a `PROSE.TXT`-style
+    template marker, so `@`/`` are the only two real markers here,
+    matching `render_cast_announcement()`'s own province_name/
+    terrain_name pairing for the same spell.
+    """
+
+    template = f"the {real_terrain_name} terrain of @ was magically made to appear as `."
+    return render(template, {"@": province_name, "`": fake_terrain_name}, rng=rng)
+
+
+def record_spell_world_events(
+    state: GameState, results: list[PhaseDispatchResult], rng: random.Random, *, board_width: int = NORMAL_MAP_BOUNDS[0]
+) -> None:
+    """Populates ``state.world_events`` (Phase 232) from every successful
+    Plague/Illusory Terrain cast found in ``results`` -- the second real
+    event *source* wired for GENERAL INTELLIGENCE REPORT, alongside
+    ``record_battle_world_events()`` (Phase 231). Both functions share
+    the same "call once per turn, before any `compose_letter_report()`
+    call" contract -- see that function's own docstring for why.
+
+    **Why these two spells and not the other 8 this project can cast**:
+    both are real, `S_Comm`-tagged ("commonly known") province-effect
+    spells whose own `_execute_*()` function already stores everything
+    this needs directly on `ProvinceState` (`illusory_terrain`) or needs
+    nothing beyond the province itself (Plague has no state to read
+    back -- its own effect is which armies got removed, not modeled as
+    a per-province flag). Every other cast spell either has no `S_Comm`
+    analogue found in `SAY.PAS` (the personal-combat spells, already
+    covered by Phase 209/210's own encounter engine) or would need a
+    caller-supplied name/list this project has no synthesis for (e.g.
+    Skeletal Army's own `_ARises: Sps(Skeletal_Army,S_AA)` needs the
+    raised army's own display name -- the same "no army-naming system"
+    gap `record_battle_world_events()`'s own docstring already names).
+
+    ``CastExecutionResult`` itself carries no caster/coord -- ``leader_
+    id`` comes from the owning ``PhaseDispatchResult`` (each entry is
+    already stamped with which leader dispatched it), and the target
+    coord is re-decoded from ``request.target`` via the same
+    ``decode_hex_number()`` `turn/cast_execution.py _resolve_province_
+    target()` itself uses -- safe to redo here without re-validating
+    adjacency, since ``result.applied`` being `True` already proves the
+    original resolution succeeded.
+    """
+
+    for entry in results:
+        result = entry.result
+        if not isinstance(result, CastExecutionResult) or not result.applied:
+            continue
+        request = result.request
+        coord = decode_hex_number(request.target, board_width)
+        province = state.provinces.get(coord)
+        if province is None:
+            continue
+        province_name = _province_label(state, coord)
+
+        if request.spell is Spell.PLAGUE:
+            state.record_world_event(coord, [render_plague_world_event(province_name, rng)])
+        elif request.spell is Spell.ILLUS_TERRAIN and province.illusory_terrain is not None:
+            line = render_illus_terrain_world_event(
+                TERRAIN_NAME[province.terrain], province_name, TERRAIN_NAME[province.illusory_terrain], rng
+            )
+            state.record_world_event(coord, [line])
+
+
 _GENERAL_INTELLIGENCE_REPORT_HEADER = "GENERAL INTELLIGENCE REPORT"
 _GENERAL_INTELLIGENCE_REPORT_NONE = "None at present"
 
@@ -5824,11 +5924,11 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
     block per foreign kingdom whose activity this kingdom can see this
     turn, each followed by that kingdom's own narrative lines.
 
-    **Reads ``state.world_events`` -- already populated by a separate,
-    explicit ``record_battle_world_events()`` call for this whole turn**
-    (see that function's own docstring for why it can't be called from
-    here, once per King). This composer only filters and groups what's
-    already there.
+    **Reads ``state.world_events`` -- already populated by separate,
+    explicit ``record_battle_world_events()``/``record_spell_world_
+    events()`` calls for this whole turn** (see those functions' own
+    docstrings for why they can't be called from here, once per King).
+    This composer only filters and groups what's already there.
 
     **Visibility**: `turn/world_events.py is_visible_to()` -- rulebook
     [1.4], a province this kingdom owns or one adjacent to it.
@@ -5858,11 +5958,18 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
     silent" precedent every other section composer here already
     follows.** The real letters show many distinct event types --
     movement ("X flew over to Y"), plagues, terrain illusions, Skeletal
-    Army risings, cast-spell narrations -- but `record_battle_world_
-    events()` is this project's only populating call site so far,
-    covering battle results alone (the real fixtures' own richest,
-    first example). Every other event type is a confirmed-real,
-    deliberately-deferred follow-up -- see that function's own docstring.
+    Army risings, other cast-spell narrations -- and as of Phase 232
+    this project populates three of them: battle results
+    (`record_battle_world_events()`) and Plague/Illusory Terrain casts
+    (`record_spell_world_events()`). Movement stays deferred -- see
+    `record_spell_world_events()`'s own docstring for exactly why
+    (`render_march()`'s own real MARCH.X templates need a `^P` "province
+    number" marker this project has no honest synthesis for, and don't
+    even textually match the real fixtures' own "flew over to"/"flew
+    into" wording in the first place). Every other spell without an
+    `S_Comm`-tagged `SAY.PAS` notice (Skeletal Army, the personal-combat
+    spells already covered by the encounter engine, ...) is likewise a
+    confirmed-real, deliberately-deferred follow-up.
 
     Always returns at least the header + "None at present" fallback
     (the same convention `describe_diplomacy_report()`/`describe_
@@ -6002,12 +6109,13 @@ def compose_letter_report(
     every leader in the game, not just this kingdom's own, so its output
     is identical across every King's own report.
 
-    **GENERAL INTELLIGENCE REPORT** (Phase 231) wraps `describe_general_
-    intelligence_report()` as-is, same no-extra-header convention as the
-    others -- but unlike every other section here, it depends on
-    `record_battle_world_events()` having already been called once for
-    this whole turn (not per-King) before `compose_letter_report()` runs
-    for *any* King; see that function's own docstring for why.
+    **GENERAL INTELLIGENCE REPORT** (Phase 231, extended Phase 232) wraps
+    `describe_general_intelligence_report()` as-is, same no-extra-header
+    convention as the others -- but unlike every other section here, it
+    depends on `record_battle_world_events()`/`record_spell_world_
+    events()` having already been called once for this whole turn (not
+    per-King) before `compose_letter_report()` runs for *any* King; see
+    those functions' own docstrings for why.
 
     A section is omitted entirely from the output when its own composer
     has nothing to say (`describe_turn_results()` returns an empty list

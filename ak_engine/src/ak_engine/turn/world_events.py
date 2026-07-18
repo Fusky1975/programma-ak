@@ -26,8 +26,9 @@ bordering province changing hands, or any other event there). See
 ``report/turn_report.py describe_general_intelligence_report()``'s own
 docstring for how this feeds the real "Kingdom of X (#N):" grouped feed
 and for the deliberately narrow slice of event *sources* this project
-records today (battle results only -- see that module's docstring for
-the full list of confirmed-real, still-deferred event types).
+records today (battle results, Phase 231; Plague/Illusory Terrain casts,
+Phase 232 -- see that module's docstring for the full list of
+confirmed-real, still-deferred event types).
 """
 
 from __future__ import annotations

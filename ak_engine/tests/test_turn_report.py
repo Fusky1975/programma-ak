@@ -64,6 +64,9 @@ from ak_engine.report.turn_report import (
     parse_template_choices,
     pick_variant,
     record_battle_world_events,
+    record_spell_world_events,
+    render_illus_terrain_world_event,
+    render_plague_world_event,
     render_already_allied,
     render_ally_proposed,
     render_ally_refused,
@@ -205,6 +208,7 @@ from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.encounter import FireArrowShot
+from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
@@ -4151,3 +4155,114 @@ def test_describe_general_intelligence_report_skips_an_event_in_an_unowned_provi
     lines = describe_general_intelligence_report(state, 3)
 
     assert lines == ["GENERAL INTELLIGENCE REPORT", "None at present"]
+
+
+# -- Phase 232: render_plague_world_event() / render_illus_terrain_world_event() /
+# record_spell_world_events() --
+
+
+def test_render_plague_world_event():
+    rng = ScriptedRandom([])
+
+    assert render_plague_world_event("Transylvania", rng) == "Transylvania was hit by a plague."
+
+
+def test_render_illus_terrain_world_event():
+    rng = ScriptedRandom([])
+
+    result = render_illus_terrain_world_event("Plain", "Border Fort", "Mountain", rng)
+
+    assert result == "the Plain terrain of Border Fort was magically made to appear as Mountain."
+
+
+def test_record_spell_world_events_records_a_successful_plague():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    request = CastRequest(spell=Spell.PLAGUE, target=encode_hex_number(battle_coord, board_width))
+    result = CastExecutionResult(request, applied=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert len(state.world_events) == 1
+    event = state.world_events[0]
+    assert event.coord == battle_coord
+    assert event.lines == ["Border Fort was hit by a plague."]
+
+
+def test_record_spell_world_events_records_a_successful_illus_terrain():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.provinces[battle_coord].illusory_terrain = Terrain.MTNS
+    request = CastRequest(spell=Spell.ILLUS_TERRAIN, target=encode_hex_number(battle_coord, board_width), terrain=Terrain.MTNS)
+    result = CastExecutionResult(request, applied=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert len(state.world_events) == 1
+    event = state.world_events[0]
+    assert event.coord == battle_coord
+    assert event.lines == ["the Plain terrain of Border Fort was magically made to appear as Mountain."]
+
+
+def test_record_spell_world_events_skips_a_failed_cast():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    request = CastRequest(spell=Spell.PLAGUE, target=encode_hex_number(battle_coord, board_width))
+    result = CastExecutionResult(request, applied=False, reason="fizzled")
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert state.world_events == []
+
+
+def test_record_spell_world_events_skips_a_spell_with_no_world_event_source():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=1)
+    result = CastExecutionResult(request, applied=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert state.world_events == []
+
+
+def test_record_spell_world_events_skips_non_cast_results():
+    state, _battle_coord, _watcher_coord = _gir_state()
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.WAIT, result=None, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
+def test_describe_general_intelligence_report_shows_a_recorded_plague():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    request = CastRequest(spell=Spell.PLAGUE, target=encode_hex_number(battle_coord, board_width))
+    result = CastExecutionResult(request, applied=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    lines = describe_general_intelligence_report(state, 3)
+
+    assert lines == [
+        "GENERAL INTELLIGENCE REPORT",
+        "Kingdom of Attackia (#1):",
+        "Border Fort was hit by a plague.",
+    ]
