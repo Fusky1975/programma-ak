@@ -39,6 +39,7 @@ from ak_engine.report.turn_report import (
     compose_letter_report,
     describe_adventure_report,
     describe_armies_report,
+    describe_letter_reports,
     describe_aspy,
     describe_battle,
     describe_cast,
@@ -2995,6 +2996,152 @@ def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
     ]
 
 
+# -- Phase 217: describe_letter_reports() -- the "LETTER REPORTS" section --
+
+
+def _letter_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    return state
+
+
+def test_describe_letter_reports_no_other_leaders_renders_none():
+    state = _letter_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+
+    lines = describe_letter_reports([], state, 1, ScriptedRandom([]))
+
+    assert lines == ["LETTER REPORTS", "There are no letters from anyone at this time."]
+
+
+def test_describe_letter_reports_other_leader_with_no_results_renders_none():
+    state = _letter_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(32, 1, "Borin", HexCoord(0, 0)))
+
+    lines = describe_letter_reports([], state, 1, ScriptedRandom([]))
+
+    assert lines == ["LETTER REPORTS", "There are no letters from anyone at this time."]
+
+
+def test_describe_letter_reports_renders_a_letter_from_a_hero_to_the_king():
+    state = _letter_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(32, 1, "Borin", HexCoord(0, 0)))
+    state.add_leader(LeaderState(40, 1, "Elena", HexCoord(0, 0)))
+    result = HireExecutionResult(HireRequest(hero_id=40, gold_offer=1), hired=True)
+    results = [
+        PhaseDispatchResult(leader_id=32, segment_index=0, phase_label="P0", action=ActionCode.HIRE, result=result, error=None)
+    ]
+
+    lines = describe_letter_reports(results, state, 1, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines == [
+        "LETTER REPORTS",
+        "O King of Kings, thy heroes have travelled around the globe in "
+        "search of adventure and conquest.  I have faithfully kept their "
+        "correspondence, and now I present it to thee:",
+        "From: Borin",
+        "To: Aldric",
+        "Honored Sovereign,",
+        "Borin spoke to Elena and convinced Elena to pledge Elena's allegiance to Borin.",
+        "Thy humble servant,   Borin",
+    ]
+
+
+def test_describe_letter_reports_excludes_the_kings_own_results():
+    state = _letter_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(32, 1, "Borin", HexCoord(0, 0)))
+    king_result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=2), hired=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.HIRE, result=king_result, error=None)
+    ]
+
+    lines = describe_letter_reports(results, state, 1, ScriptedRandom([]))
+
+    assert lines == ["LETTER REPORTS", "There are no letters from anyone at this time."]
+
+
+def test_describe_letter_reports_multiple_heroes_each_get_their_own_letter():
+    state = _letter_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(32, 1, "Borin", HexCoord(0, 0)))
+    state.add_leader(LeaderState(50, 1, "Cyra", HexCoord(0, 0)))
+    state.add_leader(LeaderState(40, 1, "Elena", HexCoord(0, 0)))
+    state.add_leader(LeaderState(60, 1, "Finn", HexCoord(0, 0)))
+    borin_result = HireExecutionResult(HireRequest(hero_id=40, gold_offer=1), hired=True)
+    cyra_result = HireExecutionResult(HireRequest(hero_id=60, gold_offer=1), hired=True)
+    results = [
+        PhaseDispatchResult(
+            leader_id=32, segment_index=0, phase_label="P0", action=ActionCode.HIRE, result=borin_result, error=None
+        ),
+        PhaseDispatchResult(
+            leader_id=50, segment_index=0, phase_label="P0", action=ActionCode.HIRE, result=cyra_result, error=None
+        ),
+    ]
+
+    lines = describe_letter_reports(results, state, 1, ScriptedRandom([0.1] * 20, choice_indices=[0, 0]))
+
+    assert lines == [
+        "LETTER REPORTS",
+        "O King of Kings, thy heroes have travelled around the globe in "
+        "search of adventure and conquest.  I have faithfully kept their "
+        "correspondence, and now I present it to thee:",
+        "From: Borin",
+        "To: Aldric",
+        "Honored Sovereign,",
+        "Borin spoke to Elena and convinced Elena to pledge Elena's allegiance to Borin.",
+        "Thy humble servant,   Borin",
+        "From: Cyra",
+        "To: Aldric",
+        "Honored Sovereign,",
+        "Cyra spoke to Finn and convinced Finn to pledge Finn's allegiance to Cyra.",
+        "Thy humble servant,   Cyra",
+    ]
+
+
+def test_describe_letter_reports_excludes_other_kingdoms_leaders():
+    state = _letter_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1)))
+    other_kingdom_result = FireExecutionResult(FireRequest(hero_id=9), fired=True)
+    results = [
+        PhaseDispatchResult(
+            leader_id=9, segment_index=0, phase_label="P0", action=ActionCode.FIRE, result=other_kingdom_result, error=None
+        )
+    ]
+
+    lines = describe_letter_reports(results, state, 1, ScriptedRandom([]))
+
+    assert lines == ["LETTER REPORTS", "There are no letters from anyone at this time."]
+
+
+def test_describe_letter_reports_no_king_recorded_still_lists_other_leaders_letters():
+    state = _letter_state()
+    state.add_leader(LeaderState(32, 1, "Borin", HexCoord(0, 0)))
+    state.add_leader(LeaderState(40, 1, "Elena", HexCoord(0, 0)))
+    result = HireExecutionResult(HireRequest(hero_id=40, gold_offer=1), hired=True)
+    results = [
+        PhaseDispatchResult(leader_id=32, segment_index=0, phase_label="P0", action=ActionCode.HIRE, result=result, error=None)
+    ]
+
+    lines = describe_letter_reports(results, state, 1, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines == [
+        "LETTER REPORTS",
+        "O King of Kings, thy heroes have travelled around the globe in "
+        "search of adventure and conquest.  I have faithfully kept their "
+        "correspondence, and now I present it to thee:",
+        "From: Borin",
+        "To:",
+        "Honored Sovereign,",
+        "Borin spoke to Elena and convinced Elena to pledge Elena's allegiance to Borin.",
+        "Thy humble servant,   Borin",
+    ]
+
+
 # -- Phase 216: describe_adventure_report() -- the "ADVENTURE" section --
 
 
@@ -3147,21 +3294,33 @@ def test_describe_adventure_report_sorts_provinces_then_features_by_id():
 # -- Phase 215: compose_letter_report() -- top-level per-kingdom letter assembler --
 
 
-def test_compose_letter_report_stitches_action_report_armies_and_adventure_in_the_real_order():
+def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_order():
     state = _armies_state()
-    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
     state.add_leader(LeaderState(32, 1, "Borin", HexCoord(0, 0)))
+    state.add_leader(LeaderState(40, 1, "Elena", HexCoord(0, 0)))
     state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
-    result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=2), hired=True)
+    king_result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=2), hired=True)
+    hero_result = HireExecutionResult(HireRequest(hero_id=40, gold_offer=1), hired=True)
     results = [
-        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.HIRE, result=result, error=None)
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.HIRE, result=king_result, error=None),
+        PhaseDispatchResult(leader_id=32, segment_index=0, phase_label="P0", action=ActionCode.HIRE, result=hero_result, error=None),
     ]
 
-    lines = compose_letter_report(results, state, 1, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+    lines = compose_letter_report(results, state, 1, ScriptedRandom([0.1] * 20, choice_indices=[0, 0]))
 
     assert lines == [
         "ACTION REPORT",
         "Aldric spoke to Borin and convinced Borin to pledge Borin's allegiance to Aldric.",
+        "LETTER REPORTS",
+        "O King of Kings, thy heroes have travelled around the globe in "
+        "search of adventure and conquest.  I have faithfully kept their "
+        "correspondence, and now I present it to thee:",
+        "From: Borin",
+        "To: Aldric",
+        "Honored Sovereign,",
+        "Borin spoke to Elena and convinced Elena to pledge Elena's allegiance to Borin.",
+        "Thy humble servant,   Borin",
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
@@ -3175,17 +3334,18 @@ def test_compose_letter_report_stitches_action_report_armies_and_adventure_in_th
     ]
 
 
-def test_compose_letter_report_omits_action_report_when_this_kingdom_has_no_results():
+def test_compose_letter_report_omits_action_report_when_this_kingdom_has_no_king():
     state = _armies_state()
 
     lines = compose_letter_report([], state, 1, ScriptedRandom([]))
 
-    assert lines[0] == "ARMIES"
     assert "ACTION REPORT" not in lines
+    assert lines[0] == "LETTER REPORTS"
 
 
 def test_compose_letter_report_filters_results_to_only_this_kingdoms_own_leaders():
     state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
     state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
     state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1)))
     other_kingdom_result = FireExecutionResult(FireRequest(hero_id=9), fired=True)
@@ -3197,16 +3357,18 @@ def test_compose_letter_report_filters_results_to_only_this_kingdoms_own_leaders
 
     lines = compose_letter_report(results, state, 1, ScriptedRandom([]))
 
-    assert lines[0] == "ARMIES"
     assert "ACTION REPORT" not in lines
+    assert lines[0] == "LETTER REPORTS"
 
 
-def test_compose_letter_report_armies_and_adventure_sections_present_even_when_empty():
+def test_compose_letter_report_all_four_wired_sections_present_even_when_empty():
     state = _armies_state()
 
     lines = compose_letter_report([], state, 1, ScriptedRandom([]))
 
     assert lines == [
+        "LETTER REPORTS",
+        "There are no letters from anyone at this time.",
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",

@@ -5166,6 +5166,112 @@ def describe_adventure_report(state: GameState, kingdom_id: int) -> list[str]:
     return lines
 
 
+# HostAK/TP/REPORTS.PAS Letter_Reports/Write_Letter (~line 2364-2459) --
+# the real "LETTER REPORTS" section's own sourced, verbatim strings.
+_LETTER_REPORTS_OPENING = (
+    "O King of Kings, thy heroes have travelled around the globe in "
+    "search of adventure and conquest.  I have faithfully kept their "
+    "correspondence, and now I present it to thee:"
+)
+_LETTER_REPORTS_NONE = "There are no letters from anyone at this time."
+_LETTER_SALUTATION = "Honored Sovereign,"
+
+
+def _king_leader_id(state: GameState, kingdom_id: int) -> int | None:
+    for leader in state.leaders.values():
+        if leader.kingdom_id == kingdom_id and leader.is_king:
+            return leader.leader_id
+    return None
+
+
+def describe_letter_reports(
+    results: list[PhaseDispatchResult],
+    state: GameState,
+    kingdom_id: int,
+    rng: random.Random,
+    *,
+    ability_names: dict[Ability, str] | None = None,
+) -> list[str]:
+    """Assembles the "LETTER REPORTS" section (Phase 217) -- every other
+    leader in this kingdom's own turn narrated as a letter addressed to
+    the King.
+
+    **A real, sourced structural discovery, not a guess**: `REPORTS.PAS
+    Write_Letter(ldr,kng,non)` -- the real per-letter procedure --
+    doesn't read from any separate stored-message system. It calls
+    `Tell_Story(ldr,kng)`, the *exact same* story-buffer mechanism
+    `Basic_Report()` already uses to write the King's own "ACTION
+    REPORT" section. A "letter" is simply another leader's own turn
+    narrative, wrapped in a From/To/salutation/signature envelope --
+    this project already has that narrative, via `describe_turn_results()`
+    (Phase 213/214/216's own real caller), so this composer reuses it
+    directly rather than needing new state.
+
+    **Which leaders write a letter is an interpretation, not a
+    citation**: the real gate is `Either_King(ldr,kng,false)`, whose own
+    definition isn't in any of the 13 available `.PAS` files (confirmed
+    absent, same "missing main program" category as `turn/movement.py`'s
+    hex adjacency scheme). Modeled here as "every other leader recorded
+    in this kingdom, excluding the King himself" -- the natural reading
+    given `Letter_Reports(kng)` is called once per King and the
+    surrounding code frames each letter as a Hero's own correspondence
+    to his sovereign.
+
+    **Deliberately not reproduced**:
+    - `Check_Pigeons` -- a genuinely separate inter-player pigeon-message
+      system (`"M>>"` records in a per-turn `KM` file) `Write_Letter`
+      also calls partway through each letter. No message-store concept
+      exists anywhere in this project; confirmed absent, not unwired.
+    - The multi-turn backlog loop (`FOR lrt:= 0 TO gameturn DO ...
+      lrecturn^[ldr] = lrt`) -- only this turn's own dispatch results
+      render, the same single-turn scope `describe_turn_results()`
+      itself already has.
+    - The random "Squire to <leader>" alternate-authorship gimmick
+      (`Aud_Rand`/`bornx`/`Company`-mode-dependent) -- needs fields this
+      project doesn't track for this purpose; every letter is signed
+      with the leader's own real name.
+
+    A section header always renders (matching `Expand_Write('LETTER
+    REPORTS',kng)`'s own unconditional placement before the real loop);
+    the opening flavor text only appears once, before the first real
+    letter -- exactly mirroring `Write_Letter`'s own `IF non THEN`
+    guard -- and `_LETTER_REPORTS_NONE` (a real, sourced string) renders
+    instead when no leader has anything to report.
+    """
+
+    king_leader_id = _king_leader_id(state, kingdom_id)
+    king_name = state.leaders[king_leader_id].name if king_leader_id is not None else None
+
+    other_leader_ids = sorted(
+        leader.leader_id
+        for leader in state.leaders.values()
+        if leader.kingdom_id == kingdom_id and leader.leader_id != king_leader_id
+    )
+
+    lines = ["LETTER REPORTS"]
+    letter_lines: list[str] = []
+    for leader_id in other_leader_ids:
+        leader_results = [entry for entry in results if entry.leader_id == leader_id]
+        story_lines = describe_turn_results(leader_results, state, rng, ability_names=ability_names)
+        if not story_lines:
+            continue
+        leader_name = state.leaders[leader_id].name
+        if not letter_lines:
+            letter_lines.append(_LETTER_REPORTS_OPENING)
+        letter_lines.append(f"From: {leader_name}")
+        letter_lines.append(f"To: {king_name}" if king_name is not None else "To:")
+        letter_lines.append(_LETTER_SALUTATION)
+        letter_lines.extend(story_lines)
+        letter_lines.append(f"Thy humble servant,   {leader_name}")
+
+    if letter_lines:
+        lines.extend(letter_lines)
+    else:
+        lines.append(_LETTER_REPORTS_NONE)
+
+    return lines
+
+
 def compose_letter_report(
     results: list[PhaseDispatchResult],
     state: GameState,
@@ -5188,12 +5294,10 @@ def compose_letter_report(
     so this real generated-output cross-reference is the sourced evidence
     used here, in place of the lost driver.
 
-    **3 of the 10 real sections are wired here as of Phase 216** --
-    ACTION REPORT, ARMIES, and now ADVENTURE. Every other section
-    still needs data this project's `GameState` doesn't model at all
-    yet -- confirmed absent, not merely unwired:
-    - LETTER REPORTS needs an inter-leader message queue (`Write_Letter`
-      in `REPORTS.PAS`) -- no concept of a stored message exists here.
+    **4 of the 10 real sections are wired here as of Phase 217** --
+    ACTION REPORT, LETTER REPORTS, ARMIES, and ADVENTURE. Every other
+    section still needs data this project's `GameState` doesn't model
+    at all yet -- confirmed absent, not merely unwired:
     - DIPLOMACY needs an Ally/War/Neutral relation table between
       kingdoms -- `KingdomState` has no such field.
     - FINANCES' real "Expected Revenues"/"Expected Expenses" figures need
@@ -5214,10 +5318,24 @@ def compose_letter_report(
       at a time, nothing aggregates them across a whole turn yet.
 
     **ACTION REPORT** wraps `describe_turn_results()`, filtered here to
-    only this kingdom's own leaders' `PhaseDispatchResult` entries (that
-    function has no kingdom concept of its own to filter a heterogeneous
-    multi-kingdom `results` list). Its own header is added here, since
-    `describe_turn_results()` returns bare narrative lines with none.
+    only the King's own `PhaseDispatchResult` entries -- **narrowed as
+    of Phase 217**, from every leader in the kingdom down to just the
+    King, once `describe_letter_reports()`'s own research confirmed the
+    real `Basic_Report()`/`Tell_Story(kng,kng)` only ever narrates the
+    King's own turn; every *other* leader's turn belongs in their own
+    LETTER REPORTS entry instead (see that composer's own docstring).
+    Kingdoms with no `is_king`-flagged leader recorded get no ACTION
+    REPORT at all, rather than falling back to the old kingdom-wide
+    scope -- the real section is always about one specific King. Its
+    own header is added here, since `describe_turn_results()` returns
+    bare narrative lines with none.
+
+    **LETTER REPORTS** wraps `describe_letter_reports()` (Phase 217) as-is
+    -- it already returns its own `"LETTER REPORTS"` header, so no header
+    is added here. Reuses the same `kingdom_results` (every leader in the
+    kingdom, King included) rather than `king_results`, since
+    `describe_letter_reports()` does its own per-other-leader filtering
+    internally.
 
     **ARMIES** and **ADVENTURE** wrap `describe_armies_report()`/
     `describe_adventure_report()` as-is -- both composers already return
@@ -5238,10 +5356,17 @@ def compose_letter_report(
         leader.leader_id for leader in state.leaders.values() if leader.kingdom_id == kingdom_id
     }
     kingdom_results = [entry for entry in results if entry.leader_id in kingdom_leader_ids]
-    action_lines = describe_turn_results(kingdom_results, state, rng, ability_names=ability_names)
+
+    king_leader_id = _king_leader_id(state, kingdom_id)
+    king_results = [entry for entry in kingdom_results if entry.leader_id == king_leader_id]
+    action_lines = describe_turn_results(king_results, state, rng, ability_names=ability_names)
     if action_lines:
         lines.append("ACTION REPORT")
         lines.extend(action_lines)
+
+    letter_lines = describe_letter_reports(kingdom_results, state, kingdom_id, rng, ability_names=ability_names)
+    if letter_lines:
+        lines.extend(letter_lines)
 
     armies_lines = describe_armies_report(state, kingdom_id)
     if armies_lines:

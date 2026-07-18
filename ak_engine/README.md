@@ -8652,7 +8652,7 @@ complete (Phases 209-211).
     kingdom's letter), and ARMIES always present (even with zero
     armies, matching `describe_armies_report()`'s own "None at
     present" behavior).
-- **Phase 216 (current)**: `report/turn_report.py
+- **Phase 216**: `report/turn_report.py
   describe_adventure_report()` (new) -- the "ADVENTURE" section,
   wired into `compose_letter_report()` right after ARMIES (matching
   the real letter's own relative order, skipping the still-unwired
@@ -8694,6 +8694,60 @@ complete (Phases 209-211).
     an undiscovered feature's exclusion, this-kingdom-only filtering,
     the monster-name-prefix strip, a feature with no guardian recorded,
     and province/feature sort order.
+- **Phase 217 (current)**: `report/turn_report.py
+  describe_letter_reports()` (new) -- the "LETTER REPORTS" section.
+  - **A real, sourced structural discovery, not a guess**: reading
+    `Write_Letter(ldr,kng,non)` in full revealed it doesn't read from
+    any separate stored-message system at all -- it calls
+    `Tell_Story(ldr,kng)`, the *exact same* story-buffer mechanism
+    `Basic_Report()` already uses for the King's own "ACTION REPORT".
+    A "letter" is simply another leader's own turn narrative, wrapped
+    in a From/To/salutation/signature envelope. This project already
+    had that narrative available via `describe_turn_results()`, so
+    this composer reuses it directly rather than needing new state --
+    this closes a gap that was originally (Phase 215's own note)
+    thought to need a whole new inter-leader message queue.
+  - **Correctness fix to `compose_letter_report()`'s own ACTION
+    REPORT scope**: this research also surfaced that ACTION REPORT had
+    been wrongly scoped kingdom-wide since Phase 215 (every leader's
+    own results, not just the King's) -- which would have duplicated
+    a Hero's own turn narrative in both ACTION REPORT and their own
+    new LETTER REPORTS entry. Narrowed to just the `is_king`-flagged
+    leader's own results; a kingdom with no King recorded now gets no
+    ACTION REPORT at all (the real section is always about one
+    specific King), rather than the old fallback of using every leader.
+  - **Which leaders write a letter is an interpretation, not a
+    citation**: the real gate (`Either_King(ldr,kng,false)`) has no
+    surviving definition in any of the 13 available `.PAS` files.
+    Modeled as "every other leader recorded in this kingdom, excluding
+    the King himself" -- the natural reading given `Letter_Reports(kng)`
+    is called once per King.
+  - **Deliberately not reproduced**: `Check_Pigeons`'s own separate
+    inter-player pigeon-message system (confirmed absent, no
+    message-store concept exists anywhere in this project); the
+    multi-turn backlog loop (only this turn's own results render, the
+    same single-turn scope `describe_turn_results()` already has); the
+    random "Squire to `<leader>`" alternate-authorship gimmick (needs
+    fields this project doesn't track for this purpose -- every letter
+    is signed with the leader's own real name).
+  - A new shared `_king_leader_id(state, kingdom_id)` helper resolves
+    the `is_king`-flagged leader for a kingdom, used by both
+    `describe_letter_reports()` and `compose_letter_report()`'s own
+    narrowed ACTION REPORT scope.
+  - Non-breaking: full suite passed unchanged (2613 passed) before any
+    new tests were written, after updating 4 pre-existing
+    `compose_letter_report()` tests (Phase 215/216) whose expected
+    output now needs the always-present LETTER REPORTS section (and,
+    for the "real order" test, an explicit King leader plus a real
+    Hero-to-King letter) -- a mechanical update reflecting the new
+    section and the ACTION REPORT scope fix, not an unrelated behavior
+    change. 7 new tests added (2620 passed total) in
+    `tests/test_turn_report.py`, covering: no-other-leaders and
+    other-leader-with-no-results empty states, a real rendered letter,
+    the King's own results being excluded from his own letters,
+    multiple Heroes each getting their own separate letter, other
+    kingdoms' leaders being excluded, and the no-King-recorded
+    fallback (letters still render, addressed to a blank "To:").
 
 ## Setup
 
