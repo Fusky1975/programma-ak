@@ -251,6 +251,21 @@ def test_dispatch_trade_gold_give_succeeds_between_two_co_located_kings():
     assert state.kingdoms[2].treasury == 100
 
 
+def test_dispatch_trade_stamps_the_request_onto_the_result():
+    # Phase 214: same reasoning as test_dispatch_pursue_stamps_the_request_onto_the_result.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {}, treasury=1000)
+    recipient_id = 2
+    state.add_kingdom(KingdomState(2, "Recipient", Race.HUMAN, Alignment.GOOD, location, treasury=0))
+    state.add_leader(LeaderState(recipient_id, 2, "Recipient King", location, is_king=True))
+    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=100, extra=[0, recipient_id])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.request is not None
+    assert result.request.target_leader_id == recipient_id
+
+
 def test_dispatch_practice_executes_and_mutates_leader_skills():
     # Phase 44: PRACTICE now actually executes (always resolved as solo
     # practice -- see turn/practice_execution.py's module docstring).

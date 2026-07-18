@@ -624,10 +624,15 @@ def _dispatch_trade(phase: PlanPhase, state: GameState, leader_id: int) -> Trade
     this dispatcher needs no extra wiring for the item-vs-gold
     disambiguation to work -- see that module's own docstring for the
     full reasoning.
+
+    Phase 214: stamps ``request`` onto the result here, same reasoning
+    as ``_dispatch_pursue``'s own Phase 213 note.
     """
 
     request = decode_trade_phase(phase)
-    return execute_give(state, leader_id, request)
+    result = execute_give(state, leader_id, request)
+    result.request = request
+    return result
 
 
 def _dispatch_search(

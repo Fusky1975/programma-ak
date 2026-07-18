@@ -3,9 +3,11 @@ from __future__ import annotations
 from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import GameState, LeaderState, ProvinceState
+from ak_engine.models.item import ItemInstance
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import TREASURE_NAME, Treasure
 from ak_engine.report.turn_report import describe_turn_results
 from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.cast_decode import CastRequest
@@ -17,6 +19,7 @@ from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
 from ak_engine.turn.search_execution import SearchExecutionResult
+from ak_engine.turn.trade_decode import TradeRequest
 from ak_engine.turn.trade_execution import TradeExecutionResult
 from ak_engine.turn.trail_decode import TrailRequest
 from ak_engine.turn.trail_execution import TrailExecutionResult
@@ -154,10 +157,10 @@ def test_describe_turn_results_skips_practice_without_ability_names_map():
     assert lines == []
 
 
-def test_describe_turn_results_skips_trade_entirely():
-    # Confirmed (not guessed): TradeExecutionResult still carries no
-    # item-instance identity -- see describe_turn_results()'s own
-    # Phase 213 note (PURSUE/TRAIL/SEARCH/ASPY are now wired below).
+def test_describe_turn_results_skips_trade_without_a_request():
+    # A direct execute_give() caller (every existing unit test
+    # included) never gets .request stamped -- only plan_dispatch.py's
+    # own _dispatch_trade() does (Phase 214).
     state = _state_with_leaders(_leader(1, "Aldric"))
     results = [
         PhaseDispatchResult(
@@ -168,6 +171,49 @@ def test_describe_turn_results_skips_trade_entirely():
             result=TradeExecutionResult(applied=True, gold_transferred=10),
             error=None,
         ),
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_turn_results_renders_trade_gold_give():
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(2, "Borin"))
+    result = TradeExecutionResult(
+        applied=True, gold_transferred=10, request=TradeRequest(obj=10, target_leader_id=2, extra=[0, 2])
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.TRADE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10))
+
+    assert lines == ["Aldric gave to Borin 10 gold from Aldric's treasury."]
+
+
+def test_describe_turn_results_renders_trade_item_give():
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(2, "Borin"))
+    item = ItemInstance(item_id=7, treasure=Treasure.WAND_FIREBALL, owner_leader_id=2)
+    result = TradeExecutionResult(
+        applied=True, item_transferred=True, item=item, request=TradeRequest(obj=7, target_leader_id=2, extra=[0, 2])
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.TRADE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([]))
+
+    assert lines == [f"Aldric gave the {TREASURE_NAME[Treasure.WAND_FIREBALL]} to Borin."]
+
+
+def test_describe_turn_results_skips_trade_when_recipient_unknown():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    result = TradeExecutionResult(
+        applied=True, gold_transferred=10, request=TradeRequest(obj=10, target_leader_id=999, extra=[0, 999])
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.TRADE, result=result, error=None)
     ]
 
     lines = describe_turn_results(results, state, ScriptedRandom([]))

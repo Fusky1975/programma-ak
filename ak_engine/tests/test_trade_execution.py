@@ -124,7 +124,7 @@ def test_execute_give_item_path_transfers_a_genuinely_owned_item():
 
     result = execute_give(state, GIVER_LEADER, request)
 
-    assert result == TradeExecutionResult(applied=True, item_transferred=True)
+    assert result == TradeExecutionResult(applied=True, item_transferred=True, item=item)
     assert state.items[item.item_id].owner_leader_id == RECIPIENT_LEADER
     assert state.kingdoms[GIVER_KINGDOM].treasury == 1000  # untouched -- item path, not gold
 
@@ -153,7 +153,7 @@ def test_execute_give_item_path_crosses_kingdoms_with_no_king_requirement():
 
     result = execute_give(state, GIVER_LEADER, request)
 
-    assert result == TradeExecutionResult(applied=True, item_transferred=True)
+    assert result == TradeExecutionResult(applied=True, item_transferred=True, item=item)
     assert state.items[item.item_id].owner_leader_id == RECIPIENT_LEADER
 
 

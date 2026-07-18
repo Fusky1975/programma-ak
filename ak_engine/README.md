@@ -8502,7 +8502,7 @@ complete (Phases 209-211).
     `describe_aspy` across its no-characters-or-forces/forces-without-
     characters/characters-with-and-without-armies/capital/recruitable-
     types branches).
-- **Phase 213 (current)**: wires `PURSUE`/`TRAIL`/`SEARCH`/`ASPY` into
+- **Phase 213**: wires `PURSUE`/`TRAIL`/`SEARCH`/`ASPY` into
   `describe_turn_results()` -- the "built but never invoked from a real
   turn" gap that function's own docstring had named for those four
   actions (plus `TRADE`, still open) since Phase 143/147/156.
@@ -8557,6 +8557,54 @@ complete (Phases 209-211).
     `..._skips_pursue_trail_trade_entirely` test split into a
     TRADE-only version plus dedicated PURSUE/TRAIL/SEARCH/ASPY
     render/skip-without-a-request/skip-when-target-unknown cases).
+- **Phase 214 (current)**: closes the last of the five gaps
+  `describe_turn_results()`'s own docstring named since Phase 143 --
+  `TRADE` is now wired in, using the exact same `request`-stamping
+  pattern Phase 213 established for `PURSUE`/`TRAIL`/`SEARCH`.
+  - **The "no item-instance display-name synthesis" gap Phase 213's
+    own note claimed turns out to already be half-closed**:
+    `models/treasure.py TREASURE_NAME` has mapped every `Treasure`
+    type to a real display name since Phase 77 -- the only thing truly
+    missing was *which* `ItemInstance` moved, not how to name it once
+    known. `turn/trade_execution.py execute_give()` already resolves
+    the real transferred `ItemInstance` as a local variable at its
+    successful-item-transfer return site; it just never kept it.
+  - **`TradeExecutionResult` gains two fields**: `item:
+    ItemInstance | None = None` (the real transferred instance, `None`
+    unless `item_transferred` is `True`) and `request: TradeRequest |
+    None = None` (same dispatcher-stamped convention as
+    `PursueExecutionResult.request`'s Phase 213 note) -- populated by
+    `plan_dispatch.py`'s own `_dispatch_trade()`, not by
+    `execute_give()` itself, for the same reasoning.
+  - **`describe_turn_results()`** gained a `TRADE` branch: resolves
+    `recipient_name` via `request.target_leader_id`, resolves
+    `item_name` via `TREASURE_NAME[entry.result.item.treasure]` when
+    `entry.result.item is not None`, then calls the pre-existing
+    (Phase 142) `describe_give()` composer -- unlike the Phase 213
+    branches, this one returns `str | None` and falls through to the
+    loop's existing single-line `if line is not None: lines.append(line)`
+    logic rather than `lines.extend(...); continue`.
+  - `describe_give()`'s own docstring corrected in passing (stale
+    "this project has no item-instance display-name synthesis" claim,
+    same self-correction policy as Phase 213's two docstring fixes) --
+    now documents that `describe_turn_results()` resolves `item_name`
+    itself via `TREASURE_NAME`, and a direct caller only needs to
+    supply it manually if it has no `TradeExecutionResult.item`.
+  - Non-breaking: full suite passed unchanged (2595 passed) before any
+    new tests were written, after fixing two pre-existing
+    `test_trade_execution.py` equality assertions that predated the
+    new `item` field (dataclass `==` now includes it, so the two
+    successful-item-transfer tests needed `item=item` added to their
+    expected `TradeExecutionResult`s -- a mechanical update, not a
+    behavior change). 8 new tests added (2599 passed total): 1 in
+    `tests/test_plan_dispatch.py` (`_dispatch_trade()` stamps
+    `request`), 4 in `tests/test_describe_turn_results.py` (skip
+    without a request, render a gold Give, render an item Give, skip
+    when the recipient is unknown), plus the 2 corrected
+    `test_trade_execution.py` assertions and 1 renamed test
+    (`test_describe_turn_results_skips_trade_entirely` ->
+    `..._skips_trade_without_a_request`, since the skip reason is now
+    "no request stamped," not "no item-name synthesis").
 
 ## Setup
 

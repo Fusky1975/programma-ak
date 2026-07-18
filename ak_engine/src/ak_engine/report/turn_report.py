@@ -3474,6 +3474,22 @@ def describe_turn_results(
             if target_name is None:
                 continue
             line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, target_name=target_name)
+        elif entry.action is ActionCode.TRADE and isinstance(entry.result, TradeExecutionResult):
+            request = entry.result.request
+            if request is None:
+                continue
+            recipient_name = _leader_name(state, request.target_leader_id)
+            if recipient_name is None:
+                continue
+            item_name = TREASURE_NAME[entry.result.item.treasure] if entry.result.item is not None else None
+            line = describe_give(
+                entry.result,
+                giver_name=caster_name,
+                recipient_name=recipient_name,
+                item_name=item_name,
+                gold_requested=request.obj,
+                rng=rng,
+            )
         elif entry.action is ActionCode.PURSUE and isinstance(entry.result, PursueExecutionResult):
             request = entry.result.request
             if request is None:
@@ -4721,11 +4737,13 @@ def describe_give(
     above already established for battle outcomes.
 
     - A successful item transfer (``result.item_transferred``) renders
-      ``_LTrade`` -- needs a caller-supplied ``item_name`` (this project
-      has no item-instance display-name synthesis, the same
-      caller-supplies-names convention ``describe_battle()``'s own
-      ``army_names`` already uses); returns ``None`` without one rather
-      than guessing.
+      ``_LTrade`` -- needs a caller-supplied ``item_name``. As of Phase
+      214, ``describe_turn_results()`` resolves this itself via
+      ``models/treasure.py TREASURE_NAME[result.item.treasure]``
+      (``result.item`` is the real transferred ``ItemInstance``, now
+      kept on ``TradeExecutionResult``); a direct caller with no
+      ``TradeExecutionResult.item`` still needs to supply ``item_name``
+      itself, and gets ``None`` back without one rather than a guess.
     - A successful gold transfer (``result.gold_transferred > 0``)
       renders ``_LGGive``.
     - A failure specifically because the giver's treasury didn't cover

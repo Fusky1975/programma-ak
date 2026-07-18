@@ -44,6 +44,19 @@ verifying the user's description against the Pascal source, ~lines
 didn't have on hand the full # gold requested, so ...", matching the
 user's own described failure almost verbatim) are now rendered in
 ``report/turn_report.py``'s own Phase 133 addendum.
+
+**Phase 214 -- closes `report/turn_report.py describe_give()`'s own
+item-name gap, and wires TRADE into `describe_turn_results()`.**
+`TradeExecutionResult` gains two fields: `item` (the real
+`ItemInstance` that moved -- this function already resolves it, just
+never kept it) and `request` (stamped by `plan_dispatch.py`'s own
+`_dispatch_trade()`, same convention as `PursueExecutionResult
+.request`'s Phase 213 note). This project's own "no item-instance
+display-name synthesis" gap `describe_give()`'s docstring names turns
+out to already be closed one level up: `models/treasure.py
+TREASURE_NAME` maps every `Treasure` type (`item.treasure`) to a real
+display name -- the only thing missing was *which* item moved, not how
+to name it.
 """
 
 from __future__ import annotations
@@ -51,6 +64,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ak_engine.models.game_state import GameState
+from ak_engine.models.item import ItemInstance
 from ak_engine.turn.trade_decode import TradeRequest
 
 # Rulebook [3.18]: "no more than 10% of the size of his treasury."
@@ -63,6 +77,20 @@ class TradeExecutionResult:
     reason: str | None = None
     gold_transferred: int = 0
     item_transferred: bool = False
+    # Phase 214: the real transferred ItemInstance, so a caller
+    # (report/turn_report.py describe_turn_results()) can resolve an
+    # item_name via models/treasure.py TREASURE_NAME -- this project's
+    # own item-instance display-name gap turned out to already be
+    # closed at the Treasure-type level, only the identity of *which*
+    # item moved was ever missing. None unless item_transferred is True.
+    item: ItemInstance | None = None
+    # Phase 214: the originating request, so a caller can resolve the
+    # recipient's own display name and (for the insufficient-gold
+    # failure narrative) the originally-requested gold amount. Set by
+    # plan_dispatch.py's own _dispatch_trade(), not by execute_give()
+    # itself -- same convention/reasoning as PursueExecutionResult
+    # .request's own Phase 213 note.
+    request: TradeRequest | None = None
 
 
 def execute_gold_give(
@@ -148,7 +176,7 @@ def execute_give(
         # on either side (unlike the gold path below): "Se l'eroe
         # appartiene a un altro reame, l'oggetto passa di mano."
         state.transfer_item(request.obj, request.target_leader_id)
-        return TradeExecutionResult(applied=True, item_transferred=True)
+        return TradeExecutionResult(applied=True, item_transferred=True, item=item)
 
     if not recipient.is_king:
         # "You can give limited amounts of gold to other Kings" --
