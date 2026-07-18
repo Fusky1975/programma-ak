@@ -1117,7 +1117,7 @@ from ak_engine.models.army_type import ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
-from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES, Monster
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import RACE_NAME, Race
@@ -5085,6 +5085,90 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
     ]
 
 
+# HostAK/TP/REPORTS.PAS Rep_Provs (~lines 404-450) -- the real "PROVINCES"
+# section's own sourced, verbatim opening, rejoined across its 2 raw
+# WRITELN lines (same convention as _ARMIES_REPORT_OPENING/_FINANCES_OPENING).
+_PROVINCES_OPENING = (
+    "O superfluous one, I have kept well a list of all provinces which have had "
+    "the wisdom to submit to thy yoke.  Here, then, are the lands of thy Empire:"
+)
+
+_PROVINCES_NONE_AT_PRESENT = "None at present"
+
+
+def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
+    """Assembles the "PROVINCES" section (Phase 220) -- a deliberately
+    narrower slice of `REPORTS.PAS Rep_Provs`, the same "narrower than
+    the real procedure, documented why" precedent `describe_armies_report()`
+    and `describe_adventure_report()` already established.
+
+    **Sourced and rendered**: every province this kingdom owns
+    (`ProvinceState.owner_kingdom_id == kingdom_id`), one readable line
+    each -- name (or a `(x, y)` coordinate fallback, the same convention
+    `describe_armies_report()` already uses for an unnamed province),
+    race (`RACE_NAME`), terrain (`TERRAIN_NAME`, via
+    `effective_terrain()` so a cast Part Sea/Flood is reflected -- not
+    `illusory_terrain`, which only deceives *outside* observers and must
+    never leak into a kingdom's own report of its own land), and percent
+    explored (`explored_percent`; the real `pex[px,py]` is a single
+    per-province value, not per-kingdom, matching this project's
+    already-modeled scalar field rather than `explored_percent_by_kingdom`).
+    Provinces are sorted by coordinate, the same ordering
+    `describe_armies_report()`/`describe_adventure_report()` already use
+    in place of the real tax-tier grouping below.
+
+    **What this deliberately does NOT reproduce, and why**:
+    - The real table's **Tax** column and its whole "grouped by
+      descending effective tax tier" structure (`ptax[px,py]`, plus an
+      Min(11, tax + 8 for the King's own home province) tier
+      computation) needs a per-province base tax value. `ptax` is never
+      computed anywhere in the available `.PAS` archive -- it's baked
+      into the map at world-generation time by the lost `AKGEN.EXE`
+      (confirmed via `grep`: the only other reference, `RUMORS.PAS`
+      line 2140, reads it, never sets it) -- the same "world-gen-only,
+      no runtime formula" category as `ProvinceState.name`'s own
+      `pname` before Phase 150. Unlike `name`, no bridge in this project
+      ever populates a province's tax either, so this column is left
+      out entirely rather than rendering a permanent blank/guessed
+      figure.
+    - The real table's **Recruiting Types** columns (`Mod_PAT(px,py,0)`/
+      `Mod_PAT(px,py,1)`, the two `ArmyType`s recruitable in a province)
+      and the **Type 2 terrain "(... Island)"** parenthetical (`pt2`)
+      both depend on `Mod_PAT`/`pt2` -- neither function nor array is
+      defined anywhere in the available Pascal archive. Confirmed
+      absent, not merely unwired: `turn/recruit.py
+      is_army_type_compatible_with_race()` answers a *different*
+      question (can this army type be recruited here at all, given
+      race), not "which exactly two types does this table cell name."
+    - Fixed-width columns and the tax-tier subheadings themselves aren't
+      reproduced -- the same documented choice `describe_armies_report()`
+      and `describe_adventure_report()`'s own docstrings already made.
+    """
+
+    lines = ["PROVINCES", _PROVINCES_OPENING]
+
+    owned = [
+        (coord, province)
+        for coord, province in state.provinces.items()
+        if province.owner_kingdom_id == kingdom_id
+    ]
+    if not owned:
+        lines.append(_PROVINCES_NONE_AT_PRESENT)
+        return lines
+
+    owned.sort(key=lambda entry: (entry[0].x, entry[0].y))
+    for coord, province in owned:
+        province_label = province.name if province.name else f"({coord.x}, {coord.y})"
+        race_name = RACE_NAME[province.race]
+        terrain_name = TERRAIN_NAME[province.effective_terrain()]
+        lines.append(
+            f"{province_label} -- {race_name}, {terrain_name}, "
+            f"{province.explored_percent}% explored"
+        )
+
+    return lines
+
+
 # HostAK/TP/REPORTS.PAS Rep_Armies (~lines 888-1091) and its own
 # Expand_Write('ARMIES',kng) opening (~line 1039). See
 # describe_armies_report()'s own docstring for the substantial scope
@@ -5420,19 +5504,22 @@ def compose_letter_report(
     so this real generated-output cross-reference is the sourced evidence
     used here, in place of the lost driver.
 
-    **6 of the 10 real sections are wired here as of Phase 219** --
-    ACTION REPORT, LETTER REPORTS, DIPLOMACY, FINANCES, ARMIES, and
-    ADVENTURE. Every other section still needs data this project's
-    `GameState` doesn't model at all yet -- confirmed absent, not
-    merely unwired:
+    **7 of the 10 real sections are wired here as of Phase 220** --
+    ACTION REPORT, LETTER REPORTS, DIPLOMACY, FINANCES, PROVINCES,
+    ARMIES, and ADVENTURE. Every other section still needs data this
+    project's `GameState` doesn't model at all yet -- confirmed absent,
+    not merely unwired:
     - FINANCES itself is only partially wired -- see
       `describe_finances_report()`'s own docstring for exactly which
       of its real lines render (`"Gold in treasury"` only) and which
       are confirmed absent (`Tax_Base`/`ACost`/`LCost`-derived figures,
       per-kingdom Discovery tracking).
-    - PROVINCES needs a full per-province tax/race/terrain/exploration
-      table plus a neighboring-province narrative -- no table composer
-      exists.
+    - PROVINCES itself is only partially wired -- see
+      `describe_provinces_report()`'s own docstring for exactly which
+      columns render (name, race, terrain, percent explored) and which
+      are confirmed absent (`ptax`-derived tax/tier grouping, the
+      `Mod_PAT`-derived recruiting-types columns, the `pt2`-derived
+      Island parenthetical).
     - CHARACTERS needs a full per-leader stat table (`Rep_Leaders`, one of
       the largest procedures in the archive) -- no composer exists.
     - IMPERIAL OFFICE REPORT needs office-holder-per-kingdom data no
@@ -5464,13 +5551,14 @@ def compose_letter_report(
     `describe_letter_reports()` does its own per-other-leader filtering
     internally.
 
-    **DIPLOMACY**, **FINANCES**, **ARMIES**, and **ADVENTURE** wrap
-    `describe_diplomacy_report()` (Phase 218)/`describe_finances_report()`
-    (Phase 219)/`describe_armies_report()`/`describe_adventure_report()`
-    as-is -- all four composers already return their own header as
-    their first line (the same Phase ~158 convention Phase 216/218/219's
-    own composers reuse), so no header is added here for any of them;
-    adding one would duplicate it.
+    **DIPLOMACY**, **FINANCES**, **PROVINCES**, **ARMIES**, and
+    **ADVENTURE** wrap `describe_diplomacy_report()` (Phase 218)/
+    `describe_finances_report()` (Phase 219)/`describe_provinces_report()`
+    (Phase 220)/`describe_armies_report()`/`describe_adventure_report()`
+    as-is -- all five composers already return their own header as
+    their first line (the same Phase ~158 convention Phase 216/218/219/
+    220's own composers reuse), so no header is added here for any of
+    them; adding one would duplicate it.
 
     A section is omitted entirely from the output when its own composer
     has nothing to say (`describe_turn_results()` returns an empty list
@@ -5504,6 +5592,10 @@ def compose_letter_report(
     finances_lines = describe_finances_report(state, kingdom_id)
     if finances_lines:
         lines.extend(finances_lines)
+
+    provinces_lines = describe_provinces_report(state, kingdom_id)
+    if provinces_lines:
+        lines.extend(provinces_lines)
 
     armies_lines = describe_armies_report(state, kingdom_id)
     if armies_lines:

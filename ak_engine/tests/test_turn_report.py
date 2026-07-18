@@ -9,7 +9,7 @@ from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.magic_feature import MagicFeature
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
@@ -42,6 +42,7 @@ from ak_engine.report.turn_report import (
     describe_diplomacy_report,
     describe_finances_report,
     describe_letter_reports,
+    describe_provinces_report,
     describe_aspy,
     describe_battle,
     describe_cast,
@@ -2913,7 +2914,7 @@ def test_render_quote_of_the_week_out_of_range_raises_index_error():
 def _armies_state() -> GameState:
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
-    state.add_province(ProvinceState(HexCoord(0, 0), None, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
     return state
 
 
@@ -3297,6 +3298,88 @@ def test_describe_finances_report_reads_only_the_given_kingdoms_own_treasury():
     assert lines[2] == "Gold in treasury: 10"
 
 
+# -- Phase 220: describe_provinces_report() -- the "PROVINCES" section --
+
+
+_PROVINCES_OPENING = (
+    "O superfluous one, I have kept well a list of all provinces which have had "
+    "the wisdom to submit to thy yoke.  Here, then, are the lands of thy Empire:"
+)
+
+
+def test_describe_provinces_report_lists_owned_province():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(
+        ProvinceState(HexCoord(0, 0), Terrain.FOREST, Race.HUMAN, owner_kingdom_id=1, name="Capital City", explored_percent=75)
+    )
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines == [
+        "PROVINCES",
+        _PROVINCES_OPENING,
+        "Capital City -- Human, Forest, 75% explored",
+    ]
+
+
+def test_describe_provinces_report_none_at_present_when_no_provinces_owned():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines == ["PROVINCES", _PROVINCES_OPENING, "None at present"]
+
+
+def test_describe_provinces_report_ignores_other_kingdoms_provinces():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(5, 5)))
+    state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.ELVEN, owner_kingdom_id=2, name="Elftown"))
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines == ["PROVINCES", _PROVINCES_OPENING, "None at present"]
+
+
+def test_describe_provinces_report_falls_back_to_coordinate_when_unnamed():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(2, 3), Terrain.DESERT, Race.HUMAN, owner_kingdom_id=1))
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines[-1] == "(2, 3) -- Human, Desert, 0% explored"
+
+
+def test_describe_provinces_report_sorts_by_coordinate():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(3, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="South"))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="North"))
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines[2:] == [
+        "North -- Human, Plain, 0% explored",
+        "South -- Human, Plain, 0% explored",
+    ]
+
+
+def test_describe_provinces_report_uses_effective_terrain_not_illusory():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    province = ProvinceState(HexCoord(0, 0), Terrain.SEA, Race.HUMAN, owner_kingdom_id=1, name="Drowned Fen")
+    province.terrain_override = Terrain.PLAINS
+    province.illusory_terrain = Terrain.MTNS
+    state.add_province(province)
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines[-1] == "Drowned Fen -- Human, Plain, 0% explored"
+
+
 # -- Phase 216: describe_adventure_report() -- the "ADVENTURE" section --
 
 
@@ -3489,6 +3572,10 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Gold in treasury: 0",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
         "None at present",
+        "PROVINCES",
+        "O superfluous one, I have kept well a list of all provinces which have had "
+        "the wisdom to submit to thy yoke.  Here, then, are the lands of thy Empire:",
+        "Capital City -- Human, Plain, 0% explored",
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
@@ -3550,6 +3637,10 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "Gold in treasury: 0",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
         "None at present",
+        "PROVINCES",
+        "O superfluous one, I have kept well a list of all provinces which have had "
+        "the wisdom to submit to thy yoke.  Here, then, are the lands of thy Empire:",
+        "Capital City -- Human, Plain, 0% explored",
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",

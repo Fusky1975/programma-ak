@@ -1,7 +1,7 @@
 from ak_engine.models.enums import Ability, ActionCode, action_from_int
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.kingdom import SkillTable
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 
 
 def test_action_from_int_maps_known_codes():
@@ -25,3 +25,17 @@ def test_feature_defaults_to_undiscovered():
     assert feature.guardian_monster is None
     assert feature.looted is False
     assert feature.discovery_level(kingdom_id=7) == 0
+
+
+def test_terrain_name_covers_every_terrain_member():
+    assert set(TERRAIN_NAME.keys()) == set(Terrain)
+
+
+def test_terrain_name_matches_sourced_display_names():
+    assert TERRAIN_NAME[Terrain.PLAINS] == "Plain"
+    assert TERRAIN_NAME[Terrain.DESERT] == "Desert"
+    assert TERRAIN_NAME[Terrain.JUNGLE] == "Jungle"
+    assert TERRAIN_NAME[Terrain.FOREST] == "Forest"
+    assert TERRAIN_NAME[Terrain.MTNS] == "Mountain"
+    assert TERRAIN_NAME[Terrain.SEA] == "Sea"
+    assert TERRAIN_NAME[Terrain.NO_TERRAIN] == "No Terrain"

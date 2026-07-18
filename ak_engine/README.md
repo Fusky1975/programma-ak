@@ -8792,7 +8792,7 @@ complete (Phases 209-211).
     rendering empty regardless of allegiance state, the no-King-
     recorded fallback to `KingdomState.name`, and multiple kingdoms
     sorted by kingdom id.
-- **Phase 219 (current)**: `report/turn_report.py
+- **Phase 219**: `report/turn_report.py
   describe_finances_report()` (new) -- the "FINANCES" section, wired
   into `compose_letter_report()` between DIPLOMACY and ARMIES
   (matching the real letter's own relative order, skipping the still-
@@ -8831,6 +8831,62 @@ complete (Phases 209-211).
     non-zero treasury figure, a zero treasury figure, the Discoveries
     list always rendering "None at present", and reading only the
     given kingdom's own treasury (not another kingdom's).
+- **Phase 220 (current)**: `report/turn_report.py
+  describe_provinces_report()` (new) -- the "PROVINCES" section,
+  sourced from `Rep_Provs` (`~REPORTS.PAS` line 404-450), wired into
+  `compose_letter_report()` between FINANCES and ARMIES (matching the
+  real letter's own relative order, skipping the still-unwired
+  CHARACTERS that sits between PROVINCES and ARMIES in a real letter).
+  - **Rendered, one readable line per owned province** (not the real
+    fixed-width columns -- the same documented choice
+    `describe_armies_report()`/`describe_adventure_report()` already
+    made): province name (or a `(x, y)` coordinate fallback, the same
+    convention `describe_armies_report()` uses for an unnamed
+    province), race (`RACE_NAME`), terrain (new `models/map.py
+    TERRAIN_NAME` dict, sourced from `CTBOTH.PAS`'s own `tername`
+    array at ~line 1219 -- not the *other*, unrelated `tername` at
+    ~line 973, which belongs to a Russian-localization-only terrain
+    scheme), and percent explored (`ProvinceState.explored_percent`,
+    the real `pex[px,py]`'s own per-province, not per-kingdom, scalar).
+    Terrain is read via `effective_terrain()` (Part Sea/Flood-aware)
+    rather than `illusory_terrain`, which only deceives *outside*
+    observers and must never leak into a kingdom's own report of its
+    own land. Provinces are sorted by coordinate.
+  - **The real Tax column and its whole tax-tier-grouping structure are
+    confirmed absent, not merely unwired**: `ptax[px,py]` (the base
+    per-province tax value the real table groups and sorts by) is
+    never computed anywhere in the available `.PAS` archive -- the
+    only other reference (`RUMORS.PAS` line 2140) reads it, never sets
+    it -- confirming it's baked into the map at world-generation time
+    by the lost `AKGEN.EXE`, the same "world-gen-only, no runtime
+    formula" category `ProvinceState.name`'s own `pname` was in before
+    Phase 150. Unlike `name`, no bridge in this project ever populates
+    a province's tax, so no field was added for it and the column is
+    left out entirely.
+  - **The real Recruiting-Types columns and the Island parenthetical
+    are also confirmed absent**: both depend on `Mod_PAT(px,py,0/1)`
+    (the two `ArmyType`s recruitable in a province) and `pt2` (a
+    second terrain type marking an island), and neither function nor
+    array is defined anywhere in the available Pascal archive. `turn/
+    recruit.py is_army_type_compatible_with_race()` answers a
+    *different* question (can this army type be recruited here at
+    all, given race) than "which exactly two types does this table
+    cell name."
+  - Non-breaking: full suite passed unchanged (2630 passed) before any
+    new tests were written, after fixing the `_armies_state()` test
+    helper (it passed `terrain=None` positionally, never read by any
+    composer until this phase's `effective_terrain()` call) and
+    updating 2 pre-existing `compose_letter_report()` tests (Phase
+    215/217/218/219) whose expected output now needs the always-
+    present PROVINCES section inserted -- mechanical updates, not
+    behavior changes. 6 new tests added in `tests/test_turn_report.py`
+    (covering: an owned province's rendered line, the no-provinces-
+    owned fallback, ignoring other kingdoms' provinces, the unnamed-
+    province coordinate fallback, coordinate sort order, and
+    `effective_terrain()` vs. `illusory_terrain` precedence) plus 2 new
+    tests in `tests/test_models.py` for `TERRAIN_NAME` (full-coverage
+    of every `Terrain` member, and the exact sourced display strings) --
+    2638 passed total.
 
 ## Setup
 

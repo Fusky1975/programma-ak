@@ -58,6 +58,22 @@ TERRAIN_LINE_LENGTH_RANGE: dict[Terrain, tuple[int, int]] = {
     Terrain.SEA: (5, 10),
 }
 
+# Display names (CTBOTH.PAS `tername`, the second definition at ~line 1219 --
+# the one indexed by *this* module's own `terrain` enum order, distinct from
+# an earlier `tername` at ~line 973 that belongs to an unrelated Russian-
+# localization-only terrain scheme). Phase 220, following the same
+# "RACE_NAME/ARMY_TYPE_NAME sourced display-name dict" precedent (Phases
+# 87/90) already established elsewhere in this project.
+TERRAIN_NAME: dict[Terrain, str] = {
+    Terrain.PLAINS: "Plain",
+    Terrain.DESERT: "Desert",
+    Terrain.JUNGLE: "Jungle",
+    Terrain.FOREST: "Forest",
+    Terrain.MTNS: "Mountain",
+    Terrain.SEA: "Sea",
+    Terrain.NO_TERRAIN: "No Terrain",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class HexCoord:
