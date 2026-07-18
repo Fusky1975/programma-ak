@@ -8748,7 +8748,7 @@ complete (Phases 209-211).
     multiple Heroes each getting their own separate letter, other
     kingdoms' leaders being excluded, and the no-King-recorded
     fallback (letters still render, addressed to a blank "To:").
-- **Phase 218 (current)**: `report/turn_report.py
+- **Phase 218**: `report/turn_report.py
   describe_diplomacy_report()` (new) -- the "DIPLOMACY" section,
   wired into `compose_letter_report()` between LETTER REPORTS and
   ARMIES (matching the real letter's own relative order, skipping the
@@ -8792,6 +8792,45 @@ complete (Phases 209-211).
     rendering empty regardless of allegiance state, the no-King-
     recorded fallback to `KingdomState.name`, and multiple kingdoms
     sorted by kingdom id.
+- **Phase 219 (current)**: `report/turn_report.py
+  describe_finances_report()` (new) -- the "FINANCES" section, wired
+  into `compose_letter_report()` between DIPLOMACY and ARMIES
+  (matching the real letter's own relative order, skipping the still-
+  unwired PROVINCES/CHARACTERS that sit between FINANCES and ARMIES in
+  a real letter).
+  - **Only one real line renders**: `"Gold in treasury"` (real
+    `Rep_Econ`'s own `lgold[kng]`, directly `KingdomState.treasury`).
+    Every other real `Rep_Econ` line is confirmed absent, not merely
+    unpopulated: "Expected Revenues" needs `Tax_Base(kng)`, "Expected
+    Expenses" needs `ACost`/`LCost` summed across every army/leader
+    this kingdom pays for (both confirmed absent from every available
+    `.PAS` file, the same citation `describe_armies_report()`'s own
+    docstring and `plan_dispatch.py`'s Phase 158 note already
+    established), the optional "+Invention Bonus" line needs
+    `Inv_Bonus(kng)` derived from held Discoveries, and the optional
+    Evilking/ThiefPrince notes need office-holder tracking (the same
+    IMPERIAL OFFICE REPORT gap `compose_letter_report()`'s own
+    docstring already names).
+  - **The Discoveries of the Sages list always renders empty**: no
+    per-kingdom Discovery-tracking field exists anywhere in this
+    project -- `models/discovery.py`'s own `Discovery` enum and
+    `DISCOVERY_NAME`/effect-magnitude tables (Phase 91/135) model the
+    *vocabulary* only, never a "kingdom X holds discovery Y" record.
+    Confirmed absent, so the real, sourced `"None at present"` string
+    always renders here instead of a guess at zero discoveries.
+  - Sourced verbatim (`Rep_Econ`, `~REPORTS.PAS` line 272-320): the
+    section header, the opening sentence (rejoined across its own 2
+    raw `WRITELN` lines, same convention as `_ARMIES_REPORT_OPENING`),
+    the "Gold in treasury:" label, and the Discoveries intro sentence.
+  - Non-breaking: full suite passed unchanged (2626 passed) before any
+    new tests were written, after updating 2 pre-existing
+    `compose_letter_report()` tests (Phase 215/217/218) whose expected
+    output now needs the always-present FINANCES section inserted --
+    a mechanical update, not a behavior change. 4 new tests added
+    (2630 passed total) in `tests/test_turn_report.py`, covering: a
+    non-zero treasury figure, a zero treasury figure, the Discoveries
+    list always rendering "None at present", and reading only the
+    given kingdom's own treasury (not another kingdom's).
 
 ## Setup
 

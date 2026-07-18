@@ -5027,6 +5027,64 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
     return lines
 
 
+# HostAK/TP/REPORTS.PAS Rep_Econ (~line 272-403) -- the real
+# "FINANCES" section's own sourced, verbatim opening and Discoveries
+# intro (each rejoined across its own raw WRITELN lines, same
+# convention as _ARMIES_REPORT_OPENING).
+_FINANCES_OPENING = (
+    "O Great One, I submit for thy examination the following figures "
+    "concerning the finances of our great nation:"
+)
+_FINANCES_DISCOVERIES_INTRO = (
+    "Our Kingdom is also benefited by the following Discoveries of the Sages:"
+)
+_FINANCES_NONE_AT_PRESENT = "None at present"
+
+
+def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
+    """Assembles the "FINANCES" section (Phase 219) -- a deliberately
+    narrow slice of `REPORTS.PAS Rep_Econ`, rendering only the one
+    figure this project's `GameState` actually has real data for.
+
+    **Only "Gold in treasury" renders** (`KingdomState.treasury`,
+    `lgold[kng]` in the real source). Every other real line is
+    confirmed absent, not merely unpopulated:
+    - "Expected Revenues" needs `Tax_Base(kng)` -- confirmed absent
+      from every available `.PAS` file (the same citation
+      `describe_armies_report()`'s own docstring and `plan_dispatch.py`'s
+      Phase 158 note already established).
+    - "Expected Expenses" needs `ACost`/`LCost` summed across every
+      army and leader this kingdom pays for -- both confirmed absent
+      for the same reason.
+    - The optional "+Invention Bonus" line needs `Inv_Bonus(kng)`,
+      itself derived from this kingdom's own held Discoveries -- see
+      the Discoveries gap below.
+    - The optional "(Including +5 Black Knights)"/"(Including +10
+      Thieves Guild)" notes need Evilking/ThiefPrince office-holder
+      tracking -- the same IMPERIAL OFFICE REPORT gap this project's
+      own `compose_letter_report()` docstring already names.
+
+    **The Discoveries of the Sages list always renders empty**: no
+    per-kingdom Discovery-tracking field exists anywhere in this
+    project (`models/discovery.py`'s own `Discovery` enum and
+    `DISCOVERY_NAME`/effect-magnitude tables from Phase 91/135 model
+    the *vocabulary*, never a "kingdom X holds discovery Y" record) --
+    confirmed absent, so `_FINANCES_NONE_AT_PRESENT` (a real, sourced
+    string) always renders here rather than a guess at zero
+    discoveries.
+    """
+
+    kingdom = state.kingdoms[kingdom_id]
+
+    return [
+        "FINANCES",
+        _FINANCES_OPENING,
+        f"Gold in treasury: {kingdom.treasury}",
+        _FINANCES_DISCOVERIES_INTRO,
+        _FINANCES_NONE_AT_PRESENT,
+    ]
+
+
 # HostAK/TP/REPORTS.PAS Rep_Armies (~lines 888-1091) and its own
 # Expand_Write('ARMIES',kng) opening (~line 1039). See
 # describe_armies_report()'s own docstring for the substantial scope
@@ -5362,13 +5420,16 @@ def compose_letter_report(
     so this real generated-output cross-reference is the sourced evidence
     used here, in place of the lost driver.
 
-    **5 of the 10 real sections are wired here as of Phase 218** --
-    ACTION REPORT, LETTER REPORTS, DIPLOMACY, ARMIES, and ADVENTURE.
-    Every other section still needs data this project's `GameState`
-    doesn't model at all yet -- confirmed absent, not merely unwired:
-    - FINANCES' real "Expected Revenues"/"Expected Expenses" figures need
-      `ACost`/`LCost`/`Tax_Base` -- confirmed absent from every available
-      `.PAS` file (`plan_dispatch.py`'s own Phase 158 note).
+    **6 of the 10 real sections are wired here as of Phase 219** --
+    ACTION REPORT, LETTER REPORTS, DIPLOMACY, FINANCES, ARMIES, and
+    ADVENTURE. Every other section still needs data this project's
+    `GameState` doesn't model at all yet -- confirmed absent, not
+    merely unwired:
+    - FINANCES itself is only partially wired -- see
+      `describe_finances_report()`'s own docstring for exactly which
+      of its real lines render (`"Gold in treasury"` only) and which
+      are confirmed absent (`Tax_Base`/`ACost`/`LCost`-derived figures,
+      per-kingdom Discovery tracking).
     - PROVINCES needs a full per-province tax/race/terrain/exploration
       table plus a neighboring-province narrative -- no table composer
       exists.
@@ -5403,12 +5464,13 @@ def compose_letter_report(
     `describe_letter_reports()` does its own per-other-leader filtering
     internally.
 
-    **DIPLOMACY**, **ARMIES**, and **ADVENTURE** wrap
-    `describe_diplomacy_report()` (Phase 218)/`describe_armies_report()`/
-    `describe_adventure_report()` as-is -- all three composers already
-    return their own header as their first line (the same Phase ~158
-    convention Phase 216/218's own composers reuse), so no header is
-    added here for any of them; adding one would duplicate it.
+    **DIPLOMACY**, **FINANCES**, **ARMIES**, and **ADVENTURE** wrap
+    `describe_diplomacy_report()` (Phase 218)/`describe_finances_report()`
+    (Phase 219)/`describe_armies_report()`/`describe_adventure_report()`
+    as-is -- all four composers already return their own header as
+    their first line (the same Phase ~158 convention Phase 216/218/219's
+    own composers reuse), so no header is added here for any of them;
+    adding one would duplicate it.
 
     A section is omitted entirely from the output when its own composer
     has nothing to say (`describe_turn_results()` returns an empty list
@@ -5438,6 +5500,10 @@ def compose_letter_report(
     diplomacy_lines = describe_diplomacy_report(state, kingdom_id)
     if diplomacy_lines:
         lines.extend(diplomacy_lines)
+
+    finances_lines = describe_finances_report(state, kingdom_id)
+    if finances_lines:
+        lines.extend(finances_lines)
 
     armies_lines = describe_armies_report(state, kingdom_id)
     if armies_lines:

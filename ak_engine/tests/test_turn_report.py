@@ -40,6 +40,7 @@ from ak_engine.report.turn_report import (
     describe_adventure_report,
     describe_armies_report,
     describe_diplomacy_report,
+    describe_finances_report,
     describe_letter_reports,
     describe_aspy,
     describe_battle,
@@ -3243,6 +3244,59 @@ def test_describe_diplomacy_report_lists_multiple_kingdoms_sorted_by_id():
     assert lines[neutral_index + 1 :] == ["Bertha (#2)", "Cyrus (#3)"]
 
 
+# -- Phase 219: describe_finances_report() -- the "FINANCES" section --
+
+
+_FINANCES_OPENING = (
+    "O Great One, I submit for thy examination the following figures "
+    "concerning the finances of our great nation:"
+)
+_FINANCES_DISCOVERIES_INTRO = "Our Kingdom is also benefited by the following Discoveries of the Sages:"
+
+
+def test_describe_finances_report_shows_treasury():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0), treasury=250))
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines == [
+        "FINANCES",
+        _FINANCES_OPENING,
+        "Gold in treasury: 250",
+        _FINANCES_DISCOVERIES_INTRO,
+        "None at present",
+    ]
+
+
+def test_describe_finances_report_zero_treasury():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[2] == "Gold in treasury: 0"
+
+
+def test_describe_finances_report_discoveries_always_none_at_present():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0), treasury=999))
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[-2:] == [_FINANCES_DISCOVERIES_INTRO, "None at present"]
+
+
+def test_describe_finances_report_reads_only_the_given_kingdoms_own_treasury():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0), treasury=10))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1), treasury=999))
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[2] == "Gold in treasury: 10"
+
+
 # -- Phase 216: describe_adventure_report() -- the "ADVENTURE" section --
 
 
@@ -3429,6 +3483,12 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "None at present",
         "My lord, the following Kings are cautiously neutral with thy ever-victorious majesty:",
         "None at present",
+        "FINANCES",
+        "O Great One, I submit for thy examination the following figures "
+        "concerning the finances of our great nation:",
+        "Gold in treasury: 0",
+        "Our Kingdom is also benefited by the following Discoveries of the Sages:",
+        "None at present",
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
@@ -3483,6 +3543,12 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "My lord, the following Kings are foolishly at war with thy ever-victorious majesty:",
         "None at present",
         "My lord, the following Kings are cautiously neutral with thy ever-victorious majesty:",
+        "None at present",
+        "FINANCES",
+        "O Great One, I submit for thy examination the following figures "
+        "concerning the finances of our great nation:",
+        "Gold in treasury: 0",
+        "Our Kingdom is also benefited by the following Discoveries of the Sages:",
         "None at present",
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
