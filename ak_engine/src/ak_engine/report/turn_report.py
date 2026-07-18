@@ -1136,6 +1136,7 @@ from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResul
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
+from ak_engine.turn.tax_base import compute_tax_base
 from ak_engine.turn.trade_execution import TradeExecutionResult
 from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
@@ -5044,19 +5045,28 @@ _FINANCES_NONE_AT_PRESENT = "None at present"
 
 def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
     """Assembles the "FINANCES" section (Phase 219) -- a deliberately
-    narrow slice of `REPORTS.PAS Rep_Econ`, rendering only the one
-    figure this project's `GameState` actually has real data for.
+    narrow slice of `REPORTS.PAS Rep_Econ`, rendering only the figures
+    this project's `GameState` actually has real data for.
 
-    **Only "Gold in treasury" renders** (`KingdomState.treasury`,
-    `lgold[kng]` in the real source). Every other real line is
-    confirmed absent, not merely unpopulated:
-    - "Expected Revenues" needs `Tax_Base(kng)` -- confirmed absent
-      from every available `.PAS` file (the same citation
-      `describe_armies_report()`'s own docstring and `plan_dispatch.py`'s
-      Phase 158 note already established).
+    **"Gold in treasury"** (`KingdomState.treasury`, `lgold[kng]`) and,
+    as of Phase 225, **"Expected Revenues"** (`Tax_Base(kng)`, real
+    source text confirmed verbatim at `REPORTS.PAS` line 319: `'
+    Expected Revenues: ',Tax_Base(kng):3`) both render. `Tax_Base`
+    itself is never *defined* in any available `.PAS` file -- still
+    true, the same citation `describe_armies_report()`'s own docstring
+    and `plan_dispatch.py`'s Phase 158 note already established -- but
+    Phase 225's `turn/tax_base.py compute_tax_base()` supplies a
+    project-original aggregation over the real per-province tax data
+    Phases 222-224 recovered, closing this specific line's gap even
+    though the real formula's own Pascal source is still lost.
+
+    Every other real line remains confirmed absent, not merely
+    unpopulated:
     - "Expected Expenses" needs `ACost`/`LCost` summed across every
       army and leader this kingdom pays for -- both confirmed absent
-      for the same reason.
+      for the same reason `Tax_Base` itself was, and unlike `Tax_Base`
+      this project has no per-army/per-leader upkeep-cost data to
+      aggregate instead.
     - The optional "+Invention Bonus" line needs `Inv_Bonus(kng)`,
       itself derived from this kingdom's own held Discoveries -- see
       the Discoveries gap below.
@@ -5081,6 +5091,7 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
         "FINANCES",
         _FINANCES_OPENING,
         f"Gold in treasury: {kingdom.treasury}",
+        f"Expected Revenues: {compute_tax_base(state, kingdom_id)}",
         _FINANCES_DISCOVERIES_INTRO,
         _FINANCES_NONE_AT_PRESENT,
     ]

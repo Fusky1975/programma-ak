@@ -3267,6 +3267,7 @@ def test_describe_finances_report_shows_treasury():
         "FINANCES",
         _FINANCES_OPENING,
         "Gold in treasury: 250",
+        "Expected Revenues: 0",
         _FINANCES_DISCOVERIES_INTRO,
         "None at present",
     ]
@@ -3298,6 +3299,23 @@ def test_describe_finances_report_reads_only_the_given_kingdoms_own_treasury():
     lines = describe_finances_report(state, 1)
 
     assert lines[2] == "Gold in treasury: 10"
+
+
+def test_describe_finances_report_expected_revenues_uses_compute_tax_base():
+    # Phase 225: Expected Revenues sums this kingdom's own owned provinces'
+    # real tax, not the other kingdom's -- same scope test_describe_finances_
+    # report_reads_only_the_given_kingdoms_own_treasury already established
+    # for the treasury line.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=4))
+    state.add_province(ProvinceState(HexCoord(0, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=6))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, tax=99))
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[3] == "Expected Revenues: 10"
 
 
 # -- Phase 220: describe_provinces_report() -- the "PROVINCES" section --
@@ -3668,6 +3686,7 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "O Great One, I submit for thy examination the following figures "
         "concerning the finances of our great nation:",
         "Gold in treasury: 0",
+        "Expected Revenues: 0",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
         "None at present",
         "PROVINCES",
@@ -3743,6 +3762,7 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "O Great One, I submit for thy examination the following figures "
         "concerning the finances of our great nation:",
         "Gold in treasury: 0",
+        "Expected Revenues: 0",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
         "None at present",
         "PROVINCES",

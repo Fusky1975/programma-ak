@@ -9068,7 +9068,7 @@ complete (Phases 209-211).
     province resolving to his own kingdom, unresolved governors staying
     `None` with a partially-bridged `GameState`, and an independent
     Hero resolving to `None`) -- 2664 passed total.
-- **Phase 225 (current)**: `turn/tax_base.py` (new) -- `Tax_Base(kng)`
+- **Phase 225**: `turn/tax_base.py` (new) -- `Tax_Base(kng)`
   aggregation, the FINANCES section's own "Expected Revenues" gap
   (`describe_finances_report()`'s own docstring, confirmed absent from
   every available `.PAS` file, same citation as `ACost`/`LCost`/
@@ -9105,6 +9105,24 @@ complete (Phases 209-211).
     summing only owned provinces with known tax, ignoring unowned and
     allied-but-not-owned provinces, and a kingdom with no provinces) --
     2675 passed total.
+- **Phase 226 (current)**: `report/turn_report.py describe_finances_report()`
+  now renders the real "Expected Revenues" line (`REPORTS.PAS` line 319,
+  confirmed verbatim: `'  Expected Revenues: ',Tax_Base(kng):3`), calling
+  Phase 225's `turn/tax_base.py compute_tax_base()` -- the one FINANCES
+  line this project could close given the real per-province tax data
+  Phases 222-224 recovered. "Expected Expenses" (needs `ACost`/`LCost`,
+  still confirmed absent with no per-army/per-leader upkeep data to
+  aggregate instead) is unaffected and still doesn't render.
+  - Non-breaking: full suite passed unchanged (2675 passed) before any
+    new test was written -- the 4 pre-existing exact-line-list assertions
+    that already enumerated `describe_finances_report()`'s/
+    `compose_letter_report()`'s full output needed a one-line update each
+    (inserting the new `"Expected Revenues: 0"` line at its real position)
+    to keep matching the now-longer real output; no other existing test
+    changed. 1 new test added in `tests/test_turn_report.py`
+    (`test_describe_finances_report_expected_revenues_uses_compute_tax_
+    base`, confirming only this kingdom's own owned provinces' tax is
+    summed, not another kingdom's) -- 2676 passed total.
 
 ## Setup
 
