@@ -1134,6 +1134,7 @@ from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
 from ak_engine.turn.emperor_election import alignment_victory_point_reduction_percent
 from ak_engine.turn.encounter import FireArrowShot
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
@@ -1143,6 +1144,7 @@ from ak_engine.turn.tax_base import compute_tax_base
 from ak_engine.turn.trade_execution import TradeExecutionResult
 from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
+from ak_engine.turn.world_events import is_visible_to
 
 # HostAK/TP/PROSE/PLUS1.X .. PLUS5.X, MINUS1.X .. MINUS5.X, ZERO.X --
 # transcribed verbatim (mini-language intact), PROSE.TXT notation for the
@@ -5722,6 +5724,177 @@ def describe_alignment_victory_point_reduction(state: GameState) -> list[str]:
     return lines
 
 
+def _battle_reports_from_results(results: list[PhaseDispatchResult]) -> list[BattleReport]:
+    """Every ``BattleReport`` reachable from ``results`` -- a battle can
+    surface three different ways depending which real call site produced
+    it (``turn/turn_processor.py``'s own docstring lists all four:
+    ``move_execution.py execute_move()`` wraps it as
+    ``MoveExecutionResult.battle_report``, ``pursue_execution.py
+    execute_pursue()`` as ``PursueExecutionResult.battle_report``, the
+    Multiple Contingents fan-out as ``MultiAttackerMoveResult.battle.
+    report``, and ``_dispatch_contested_rebattles`` passes the
+    ``BattleReport`` itself as ``PhaseDispatchResult.result`` directly)
+    -- rather than depend on any one of those result types by name (a
+    layering a report-composer module shouldn't take on), this just
+    duck-types the three shapes.
+    """
+
+    reports: list[BattleReport] = []
+    for entry in results:
+        result = entry.result
+        if isinstance(result, BattleReport):
+            reports.append(result)
+            continue
+        battle_report = getattr(result, "battle_report", None)
+        if isinstance(battle_report, BattleReport):
+            reports.append(battle_report)
+            continue
+        battle = getattr(result, "battle", None)
+        nested_report = getattr(battle, "report", None) if battle is not None else None
+        if isinstance(nested_report, BattleReport):
+            reports.append(nested_report)
+    return reports
+
+
+def record_battle_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
+    """Populates ``state.world_events`` (Phase 231) from every battle
+    found in ``results`` (``turn/turn_processor.py run_turn()``'s own
+    return value) -- the one real event *source* this project wires for
+    GENERAL INTELLIGENCE REPORT so far. See ``describe_general_
+    intelligence_report()``'s own docstring for the full list of
+    confirmed-real, still-deferred event types (movement, plagues,
+    terrain illusions, cast spells...).
+
+    **Must be called exactly once per turn, before any
+    ``compose_letter_report()`` call for that turn** -- world events are
+    turn-global, not per-kingdom, so calling this once per King (the way
+    every other section composer here is called) would duplicate every
+    entry once per King. This mirrors ``run_turn()`` itself: a single
+    call whose output every King's own report composition then reads.
+
+    **Only the battle-winner sentence is recorded, not the fuller
+    per-column clash narrative** ``describe_battle()`` can also render.
+    This is a deliberate, narrower slice, not an oversight: the real
+    fixture text's own richest example (`SE3__T2.K2` line 506, "Circe
+    (#8)... invaded Big Sky... Big Sky was overrun by Circe (#8)'s men
+    in a hard-fought campaign") is exactly this outer summary sentence
+    (`render_battle_winner()`'s own template), built from King/province
+    names alone. The per-column clash sentences additionally need
+    per-army display names (`describe_battle()`'s own ``army_names``
+    parameter) -- this project has no army-naming system wired into any
+    real call site yet (`describe_battle()`'s own docstring, and
+    `compose_letter_report()`'s "TRADE... Province/terrain/army-list
+    Cast spells... skipped" note, both already document this as a
+    separate, still-open gap) -- not attempted here either.
+
+    A battle with no ``BattleReport.defender_kingdom_id`` (an unowned
+    province defended by some kingdom's stray garrison -- a real
+    possibility ``fight_battle()``'s own exploration-advantage comment
+    already allows for, see that module's docstring) is skipped: there
+    is no "Kingdom of X:" owner to attribute the event to, and inventing
+    one isn't warranted for what should be a rare edge case.
+    """
+
+    for battle_report in _battle_reports_from_results(results):
+        coord = battle_report.province_coord
+        if coord is None or battle_report.attacker_kingdom_id is None or battle_report.defender_kingdom_id is None:
+            continue
+        province = state.provinces.get(coord)
+        is_sea = province is not None and province.effective_terrain() == Terrain.SEA
+        winner_sentence = render_battle_winner(
+            battle_report.battle_result,
+            _diplomacy_entry(state, battle_report.attacker_kingdom_id),
+            _diplomacy_entry(state, battle_report.defender_kingdom_id),
+            _province_label(state, coord),
+            rng,
+            is_sea=is_sea,
+        )
+        if winner_sentence is not None:
+            state.record_world_event(coord, [winner_sentence])
+
+
+_GENERAL_INTELLIGENCE_REPORT_HEADER = "GENERAL INTELLIGENCE REPORT"
+_GENERAL_INTELLIGENCE_REPORT_NONE = "None at present"
+
+
+def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> list[str]:
+    """Assembles the "GENERAL INTELLIGENCE REPORT" section (Phase 231) --
+    the real cross-kingdom world-news feed, confirmed directly from
+    ~15 real `SE3__T*.K*` fixture files: one `Kingdom of <Name> (#<id>):`
+    block per foreign kingdom whose activity this kingdom can see this
+    turn, each followed by that kingdom's own narrative lines.
+
+    **Reads ``state.world_events`` -- already populated by a separate,
+    explicit ``record_battle_world_events()`` call for this whole turn**
+    (see that function's own docstring for why it can't be called from
+    here, once per King). This composer only filters and groups what's
+    already there.
+
+    **Visibility**: `turn/world_events.py is_visible_to()` -- rulebook
+    [1.4], a province this kingdom owns or one adjacent to it.
+
+    **Grouping key**: each visible event's own province's *current*
+    `owner_kingdom_id`, read at render time (after the whole turn's
+    battles have resolved) -- not the event's own recorded attacker/
+    defender. Confirmed against real fixture text: `SE3__T2.K2`'s own
+    "Kingdom of Circe (#8): ...Big Sky was overrun by Circe (#8)'s
+    men..." files the event under the post-battle *winner*'s name even
+    though the same paragraph identifies Aegir (#66) as Big Sky's
+    pre-battle owner; `SE3__T11.K6`'s own back-and-forth Rejaf paragraphs
+    (Giovanna (#7) conquers it, then Uga-Buga Makumb (#1) re-conquers it)
+    are filed entirely under "Kingdom of Uga-Buga Makumb (#1):" -- the
+    province's owner *by the end of that block*. Reading
+    `ProvinceState.owner_kingdom_id` fresh at render time reproduces both
+    examples directly, with no separate "who's this filed under" field
+    needed on `WorldEvent` itself.
+
+    A visible event whose province currently has no owner
+    (`owner_kingdom_id is None`, e.g. its own conqueror was later wiped
+    out) or is currently owned by ``kingdom_id`` itself (that's this
+    kingdom's *own* activity, already covered by its other sections, not
+    foreign news) is skipped, not force-filed anywhere.
+
+    **Deliberately narrow event-source scope, the same "documented, not
+    silent" precedent every other section composer here already
+    follows.** The real letters show many distinct event types --
+    movement ("X flew over to Y"), plagues, terrain illusions, Skeletal
+    Army risings, cast-spell narrations -- but `record_battle_world_
+    events()` is this project's only populating call site so far,
+    covering battle results alone (the real fixtures' own richest,
+    first example). Every other event type is a confirmed-real,
+    deliberately-deferred follow-up -- see that function's own docstring.
+
+    Always returns at least the header + "None at present" fallback
+    (the same convention `describe_diplomacy_report()`/`describe_
+    imperial_office_report()` already use), never a bare empty list --
+    the real section header appears in every real fixture file checked.
+    """
+
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    groups: dict[int, list[str]] = {}
+    order: list[int] = []
+    for event in state.world_events:
+        if not is_visible_to(state, kingdom_id, event.coord, bounds):
+            continue
+        province = state.provinces.get(event.coord)
+        owner = province.owner_kingdom_id if province is not None else None
+        if owner is None or owner == kingdom_id:
+            continue
+        if owner not in groups:
+            groups[owner] = []
+            order.append(owner)
+        groups[owner].extend(event.lines)
+
+    lines = [_GENERAL_INTELLIGENCE_REPORT_HEADER]
+    if not groups:
+        lines.append(_GENERAL_INTELLIGENCE_REPORT_NONE)
+        return lines
+    for owner in order:
+        lines.append(f"Kingdom of {_diplomacy_entry(state, owner)}:")
+        lines.extend(groups[owner])
+    return lines
+
+
 def compose_letter_report(
     results: list[PhaseDispatchResult],
     state: GameState,
@@ -5744,11 +5917,12 @@ def compose_letter_report(
     so this real generated-output cross-reference is the sourced evidence
     used here, in place of the lost driver.
 
-    **9 of the 10 real sections are wired here as of Phase 230** --
-    ACTION REPORT, LETTER REPORTS, DIPLOMACY, FINANCES, PROVINCES,
-    CHARACTERS, ARMIES, IMPERIAL OFFICE REPORT, and ADVENTURE. Every
-    other section still needs data this project's `GameState` doesn't
-    model at all yet -- confirmed absent, not merely unwired:
+    **All 10 real sections are wired here as of Phase 231** -- ACTION
+    REPORT, LETTER REPORTS, DIPLOMACY, FINANCES, PROVINCES, CHARACTERS,
+    ARMIES, IMPERIAL OFFICE REPORT, ADVENTURE, and GENERAL INTELLIGENCE
+    REPORT. "Wired" doesn't mean "complete" -- several sections still
+    only render a real subset of their own real content, confirmed
+    absent rather than merely unwired:
     - FINANCES itself is only partially wired -- see
       `describe_finances_report()`'s own docstring for exactly which
       of its real lines render (`"Gold in treasury"`/`"Expected
@@ -5772,9 +5946,14 @@ def compose_letter_report(
       office_report()`'s own docstring for exactly which Merit Point
       terms are fully live today versus still waiting on a future
       battle/encounter/cast wiring phase.
-    - GENERAL INTELLIGENCE REPORT needs this turn's own compiled list of
-      every `SpyReport` gathered -- `describe_aspy()` renders one report
-      at a time, nothing aggregates them across a whole turn yet.
+    - GENERAL INTELLIGENCE REPORT (Phase 231) only ever has battle-result
+      entries to show -- see `describe_general_intelligence_report()`'s
+      own docstring for the confirmed-real event types (movement,
+      plagues, terrain illusions, cast spells...) still deferred, and
+      `record_battle_world_events()`'s docstring for why this composer
+      needs that separate function called once per turn *before* this
+      one -- `state.world_events` isn't populated by anything in this
+      function's own call chain.
 
     **ALIGNMENT REDUCTION (Phase 229, appended after ADVENTURE)** is
     *not* one of the ten real sections above -- it's a project-original
@@ -5822,6 +6001,13 @@ def compose_letter_report(
     `kingdom_id` -- the real procedure's own office-holder loop covers
     every leader in the game, not just this kingdom's own, so its output
     is identical across every King's own report.
+
+    **GENERAL INTELLIGENCE REPORT** (Phase 231) wraps `describe_general_
+    intelligence_report()` as-is, same no-extra-header convention as the
+    others -- but unlike every other section here, it depends on
+    `record_battle_world_events()` having already been called once for
+    this whole turn (not per-King) before `compose_letter_report()` runs
+    for *any* King; see that function's own docstring for why.
 
     A section is omitted entirely from the output when its own composer
     has nothing to say (`describe_turn_results()` returns an empty list
@@ -5875,6 +6061,10 @@ def compose_letter_report(
     adventure_lines = describe_adventure_report(state, kingdom_id)
     if adventure_lines:
         lines.extend(adventure_lines)
+
+    general_intelligence_lines = describe_general_intelligence_report(state, kingdom_id)
+    if general_intelligence_lines:
+        lines.extend(general_intelligence_lines)
 
     alignment_reduction_lines = describe_alignment_victory_point_reduction(state)
     if alignment_reduction_lines:

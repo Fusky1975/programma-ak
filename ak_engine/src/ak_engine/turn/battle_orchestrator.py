@@ -197,6 +197,18 @@ class BattleReport:
     attacker_commander_leader_id: int | None = None
     defender_commander_leader_id: int | None = None
     duel_loser_side: str | None = None  # "attacker" / "defender" / None if no duel occurred
+    # Phase 231 -- GENERAL INTELLIGENCE REPORT's own raw material
+    # (`report/turn_report.py record_battle_world_events()`). Both are
+    # already computed locally in `fight_battle()` for its own
+    # exploration-advantage lookup (`province_coord`/`defender_kingdom_id`
+    # = `province.owner_kingdom_id` *before* any conquest this battle
+    # causes) and its own parameter (`attacker_kingdom_id`) -- stored
+    # here rather than re-derived, since a caller several layers away
+    # (turn_report.py) has no other way to recover which two kingdoms
+    # fought or where.
+    province_coord: HexCoord | None = None
+    attacker_kingdom_id: int | None = None
+    defender_kingdom_id: int | None = None
 
 
 def _build_battle_units(
@@ -770,6 +782,9 @@ def fight_battle(
         attacker_commander_leader_id=duel.attacker_commander_leader_id,
         defender_commander_leader_id=duel.defender_commander_leader_id,
         duel_loser_side=duel.loser_side,
+        province_coord=province_coord,
+        attacker_kingdom_id=attacker_kingdom_id,
+        defender_kingdom_id=defender_kingdom_id,
     )
 
     attacker_pursuit_destroyed: set[int] = set()

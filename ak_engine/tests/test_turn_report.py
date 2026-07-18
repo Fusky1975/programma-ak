@@ -40,6 +40,7 @@ from ak_engine.report.turn_report import (
     compose_letter_report,
     describe_adventure_report,
     describe_alignment_victory_point_reduction,
+    describe_general_intelligence_report,
     describe_imperial_office_report,
     describe_armies_report,
     describe_characters_report,
@@ -62,6 +63,7 @@ from ak_engine.report.turn_report import (
     margin_bucket,
     parse_template_choices,
     pick_variant,
+    record_battle_world_events,
     render_already_allied,
     render_ally_proposed,
     render_ally_refused,
@@ -204,6 +206,7 @@ from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.encounter import FireArrowShot
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
@@ -3724,6 +3727,8 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "terrorize the populace by night.  Here are these lairs:",
         "Province             %Exp  Features and F#     Monster         Special",
         "None at present",
+        "GENERAL INTELLIGENCE REPORT",
+        "None at present",
     ]
 
 
@@ -3803,6 +3808,8 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
         "terrorize the populace by night.  Here are these lairs:",
         "Province             %Exp  Features and F#     Monster         Special",
+        "None at present",
+        "GENERAL INTELLIGENCE REPORT",
         "None at present",
     ]
 
@@ -3984,3 +3991,163 @@ def test_describe_aspy_lists_recruitable_army_types_in_order():
     assert "Province Army Type 1: Bowmen" in lines
     assert "Province Army Type 2: Axemen" in lines
     assert lines.index("Province Army Type 1: Bowmen") < lines.index("Province Army Type 2: Axemen")
+
+
+# -- Phase 231: record_battle_world_events() / describe_general_intelligence_report() --
+
+_GIR_BOUNDS = MapBounds(*NORMAL_MAP_BOUNDS)
+
+
+def _gir_state() -> GameState:
+    home = HexCoord(5, 5)
+    battle_coord = neighbors(home, _GIR_BOUNDS)[0]
+    watcher_coord = neighbors(battle_coord, _GIR_BOUNDS)[1]
+
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, battle_coord))
+    state.add_kingdom(KingdomState(3, "Watchia", Race.HUMAN, Alignment.NEUTRAL, watcher_coord))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(battle_coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Border Fort"))
+    state.add_province(ProvinceState(watcher_coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+    return state, battle_coord, watcher_coord
+
+
+def test_record_battle_world_events_records_the_winner_sentence():
+    state, battle_coord, _watcher_coord = _gir_state()
+    battle_result = BattleResult(winner="attacker")
+    report = BattleReport(
+        battle_result=battle_result, conquered=True,
+        province_coord=battle_coord, attacker_kingdom_id=1, defender_kingdom_id=2,
+    )
+    results = [PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)]
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+
+    record_battle_world_events(state, results, rng)
+
+    assert len(state.world_events) == 1
+    event = state.world_events[0]
+    assert event.coord == battle_coord
+    assert event.lines == ["the forces of Attackia (#1) broke through and were victorious."]
+
+
+def test_record_battle_world_events_skips_a_tie():
+    state, battle_coord, _watcher_coord = _gir_state()
+    report = BattleReport(
+        battle_result=BattleResult(winner="tie"), conquered=False,
+        province_coord=battle_coord, attacker_kingdom_id=1, defender_kingdom_id=2,
+    )
+    results = [PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)]
+
+    record_battle_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
+def test_record_battle_world_events_skips_a_report_with_no_defender_kingdom():
+    state, battle_coord, _watcher_coord = _gir_state()
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker"), conquered=True,
+        province_coord=battle_coord, attacker_kingdom_id=1, defender_kingdom_id=None,
+    )
+    results = [PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)]
+
+    record_battle_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+
+    assert state.world_events == []
+
+
+def test_record_battle_world_events_finds_a_battle_report_nested_under_battle_report_attribute():
+    state, battle_coord, _watcher_coord = _gir_state()
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker"), conquered=True,
+        province_coord=battle_coord, attacker_kingdom_id=1, defender_kingdom_id=2,
+    )
+
+    class _FakeMoveExecutionResult:
+        def __init__(self, battle_report):
+            self.battle_report = battle_report
+
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.LMOVE,
+            result=_FakeMoveExecutionResult(report), error=None,
+        )
+    ]
+
+    record_battle_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+
+    assert len(state.world_events) == 1
+
+
+def test_record_battle_world_events_finds_a_battle_report_nested_under_battle_dot_report():
+    state, battle_coord, _watcher_coord = _gir_state()
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker"), conquered=True,
+        province_coord=battle_coord, attacker_kingdom_id=1, defender_kingdom_id=2,
+    )
+
+    class _FakeBattle:
+        def __init__(self, report):
+            self.report = report
+
+    class _FakeMultiAttackerMoveResult:
+        def __init__(self, report):
+            self.battle = _FakeBattle(report)
+
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.LMOVE,
+            result=_FakeMultiAttackerMoveResult(report), error=None,
+        )
+    ]
+
+    record_battle_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+
+    assert len(state.world_events) == 1
+
+
+def test_describe_general_intelligence_report_none_at_present_with_no_events():
+    state, _battle_coord, _watcher_coord = _gir_state()
+
+    lines = describe_general_intelligence_report(state, 1)
+
+    assert lines == ["GENERAL INTELLIGENCE REPORT", "None at present"]
+
+
+def test_describe_general_intelligence_report_groups_visible_battle_under_the_provinces_owner():
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.record_world_event(battle_coord, ["Border Fort was overrun."])
+
+    lines = describe_general_intelligence_report(state, 3)
+
+    assert lines == ["GENERAL INTELLIGENCE REPORT", "Kingdom of Attackia (#1):", "Border Fort was overrun."]
+
+
+def test_describe_general_intelligence_report_excludes_this_kingdoms_own_activity():
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.record_world_event(battle_coord, ["Border Fort was overrun."])
+
+    lines = describe_general_intelligence_report(state, 1)
+
+    assert lines == ["GENERAL INTELLIGENCE REPORT", "None at present"]
+
+
+def test_describe_general_intelligence_report_hides_events_outside_visibility():
+    state, battle_coord, watcher_coord = _gir_state()
+    state.record_world_event(battle_coord, ["Border Fort was overrun."])
+    state.kingdoms[4] = KingdomState(4, "Faraway", Race.HUMAN, Alignment.NEUTRAL, HexCoord(29, 14))
+
+    lines = describe_general_intelligence_report(state, 4)
+
+    assert lines == ["GENERAL INTELLIGENCE REPORT", "None at present"]
+
+
+def test_describe_general_intelligence_report_skips_an_event_in_an_unowned_province():
+    state, battle_coord, watcher_coord = _gir_state()
+    state.provinces[battle_coord].owner_kingdom_id = None
+    state.record_world_event(battle_coord, ["Border Fort was overrun."])
+
+    lines = describe_general_intelligence_report(state, 3)
+
+    assert lines == ["GENERAL INTELLIGENCE REPORT", "None at present"]

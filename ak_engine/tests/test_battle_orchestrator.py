@@ -73,6 +73,20 @@ def test_overwhelming_attacker_conquers_and_defender_retreats():
     assert 101 in state.armies  # attacker survives
 
 
+# -- Phase 231: BattleReport.province_coord/attacker_kingdom_id/defender_kingdom_id --
+
+
+def test_fight_battle_report_carries_the_provinces_own_battle_identity():
+    state = build_state()
+    rng = no_luck_overwhelming_attacker_rng()
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
+
+    assert report.province_coord == FIELD
+    assert report.attacker_kingdom_id == 1
+    assert report.defender_kingdom_id == 2
+
+
 def test_overwhelming_attacker_conquers_and_defender_is_destroyed_when_no_retreat_allowed():
     state = build_state()
     rng = no_luck_overwhelming_attacker_rng()

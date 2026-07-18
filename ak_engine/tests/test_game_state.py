@@ -257,3 +257,33 @@ def test_game_state_emperor_fields_default_to_none():
 
     assert state.emperor_kingdom_id is None
     assert state.last_emperor_vote_turn is None
+
+
+# -- Phase 231: GameState.world_events / record_world_event() ----------------
+
+
+def test_game_state_world_events_starts_empty():
+    state = GameState()
+
+    assert state.world_events == []
+
+
+def test_record_world_event_appends_a_world_event():
+    state = GameState()
+
+    state.record_world_event(FIELD, ["Something happened."])
+
+    assert len(state.world_events) == 1
+    event = state.world_events[0]
+    assert event.coord == FIELD
+    assert event.lines == ["Something happened."]
+
+
+def test_record_world_event_is_independent_per_call():
+    state = GameState()
+
+    state.record_world_event(HOME, ["First."])
+    state.record_world_event(FIELD, ["Second."])
+
+    assert [event.coord for event in state.world_events] == [HOME, FIELD]
+    assert [event.lines for event in state.world_events] == [["First."], ["Second."]]

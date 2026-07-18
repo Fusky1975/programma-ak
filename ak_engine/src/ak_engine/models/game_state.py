@@ -442,6 +442,25 @@ class GraveyardEntry:
 
 
 @dataclass(slots=True)
+class WorldEvent:
+    """One cross-kingdom-visible happening (Phase 231) -- the real raw
+    material for GENERAL INTELLIGENCE REPORT's own "Kingdom of X (#N):"
+    grouped feed (``report/turn_report.py describe_general_intelligence_
+    report()``). ``coord`` is where it happened -- both the visibility
+    test's own anchor (``turn/world_events.py is_visible_to()``) and the
+    grouping key (the province's *current* ``owner_kingdom_id`` at
+    render time, confirmed against real fixture text where a battle's
+    own province ends up owned by the side the letter groups it under,
+    win or lose -- see that composer's own docstring). ``lines`` is
+    already-rendered narrative text, reusing this project's own existing
+    renderers rather than storing raw event data to re-render later.
+    """
+
+    coord: HexCoord
+    lines: list[str]
+
+
+@dataclass(slots=True)
 class GameState:
     turn_number: int = 1
     kingdoms: dict[int, KingdomState] = field(default_factory=dict)
@@ -490,6 +509,13 @@ class GameState:
     # in a row" ban is checked against.
     emperor_kingdom_id: int | None = None
     last_emperor_vote_turn: int | None = None
+    # GENERAL INTELLIGENCE REPORT's own raw material (Phase 231) -- see
+    # WorldEvent's own docstring. Populated by a caller (``report/
+    # turn_report.py record_battle_world_events()`` today, the one real
+    # populating path so far) once per turn, *before* any
+    # ``compose_letter_report()`` call for that turn -- every King's own
+    # report reads the same shared list, filtered by ``is_visible_to()``.
+    world_events: list[WorldEvent] = field(default_factory=list)
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
         self.kingdoms[kingdom.kingdom_id] = kingdom
@@ -613,3 +639,11 @@ class GameState:
             for province in self.provinces.values()
             if province.owner_kingdom_id is not None and self.is_allied(province.owner_kingdom_id, kingdom_id)
         }
+
+    def record_world_event(self, coord: HexCoord, lines: list[str]) -> None:
+        """Appends one ``WorldEvent`` at ``coord`` -- see that class's own
+        docstring for GENERAL INTELLIGENCE REPORT's own real raw material
+        (Phase 231).
+        """
+
+        self.world_events.append(WorldEvent(coord, lines))

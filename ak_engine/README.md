@@ -9244,7 +9244,7 @@ complete (Phases 209-211).
     rulebook's own Pagan/Good worked example, and the section's
     inclusion/omission in `compose_letter_report()`) -- 2715 passed
     total.
-- **Phase 230 (current)**: `turn/office_holder.py` (new) -- the office-
+- **Phase 230**: `turn/office_holder.py` (new) -- the office-
   HOLDER resolution Phase 227/228 both explicitly deferred ("needs the
   full Merit Point Rank contest across every leader in the game"), plus
   the real `IMPERIAL OFFICE REPORT` section this project has skipped
@@ -9280,6 +9280,77 @@ complete (Phases 209-211).
     other existing test changed. 13 new tests added (9 in `tests/
     test_office_holder.py`, 4 in `tests/test_turn_report.py`) -- 2728
     passed total.
+
+- **Phase 231 (current)**: GENERAL INTELLIGENCE REPORT -- the last of
+  the real letter's 10 sections, closing the gap Phase 230 left open.
+  Research first confirmed a prior phase's own assumption was wrong:
+  `describe_aspy()`/`describe_trail_intelligence()` are already fully
+  consumed inside `describe_letter_reports()`, not free raw material for
+  this section. Real content, confirmed directly from ~15 real
+  `SE3__T*.K*` fixture files: a cross-kingdom world-news feed, one
+  `Kingdom of <Name> (#<id>):` block per foreign kingdom whose activity
+  this reader can see, each followed by that kingdom's own narrative
+  lines. No `Rep_Intel`-equivalent procedure survives anywhere in the
+  `.PAS` archive (only `Rep_Allies`/`Rep_Econ`/`Rep_Provs`/
+  `Rep_Leaders`/`Rep_Armies` exist) -- the same "the caller is lost, not
+  the callees" situation as `turn/movement.py`'s own hex adjacency
+  scheme. Presented three honestly-scoped options to the user (document
+  the gap and stop / minimal slice / build the full system); the user
+  chose the full system.
+  - `models/game_state.py WorldEvent` (new dataclass) + `GameState.
+    world_events`/`record_world_event()`: a turn-global, cross-kingdom
+    event log -- confirmed absent from `GameState` entirely before this
+    phase (no battle-occurrence log, no ownership-change history).
+  - `turn/world_events.py` (new): `is_visible_to()`, the rulebook [1.4]
+    visibility rule ("un giocatore viene informato quando una provincia
+    adiacente al suo Reame cambia di mano e può anche ricevere
+    informazioni sulle attività di personaggi controllati da un altro Re
+    quando agiscono entro i confini del suo Reame") read as one test: a
+    province this kingdom owns, or one adjacent to it.
+  - `turn/battle_orchestrator.py BattleReport` gained 3 new fields
+    (`province_coord`/`attacker_kingdom_id`/`defender_kingdom_id`), all
+    populated in `fight_battle()` from values it already computes
+    locally -- the only way a caller several layers away can recover
+    which two kingdoms fought and where.
+  - `report/turn_report.py record_battle_world_events()` (new): scans a
+    turn's own `list[PhaseDispatchResult]` for every reachable
+    `BattleReport` (duck-typed across the three real shapes a battle can
+    surface in -- direct, `.battle_report`, or `.battle.report` --
+    matching `turn_processor.py`'s own four real call sites) and records
+    just the battle-winner sentence (`render_battle_winner()`) as a
+    `WorldEvent`. **Deliberately narrow**: real letters also show
+    movement, plagues, terrain illusions, and cast-spell narrations, all
+    confirmed real and explicitly deferred -- this phase wires the one
+    event type (battle results) this project already has a full
+    narrative renderer for, matching the real fixtures' own richest,
+    first example (`SE3__T2.K2` line 506, Circe invading Big Sky). The
+    fuller per-column clash narrative (`describe_battle()`'s own
+    `army_names` parameter) stays out of scope -- this project has no
+    army-naming system wired into any real call site yet, a separate,
+    already-documented gap.
+  - `report/turn_report.py describe_general_intelligence_report()`
+    (new): groups every visible `WorldEvent` by its own province's
+    *current* `owner_kingdom_id` (read fresh at render time, not stored
+    on the event) -- confirmed against real fixture text where a
+    battle's own province files under the post-battle winner's name, and
+    a back-and-forth province's whole news thread files under whoever
+    owns it by the end (`SE3__T2.K2`'s Circe/Big Sky and `SE3__T11.K6`'s
+    Rejaf tug-of-war). Reuses `_diplomacy_entry()` (Phase 218) for the
+    `"Name (#id)"` formatting. Wired into `compose_letter_report()` as
+    the 10th and final real section, right after ADVENTURE -- **but
+    only after a caller has already run `record_battle_world_events()`
+    once for the whole turn**, since world events are turn-global, not
+    per-King (calling it once per `compose_letter_report()` call would
+    duplicate every entry once per King).
+  - Non-breaking: full suite passed unchanged (2728 passed) before any
+    new tests were written; wiring the new section into
+    `compose_letter_report()` did require updating the 2 pre-existing
+    exact-line-list assertions that already enumerated its full output
+    (appending the new 2-line block at the real position), the same
+    mechanical fix every prior section-adding phase has needed. 20 new
+    tests added (`tests/test_world_events.py` new, 5 tests; `tests/
+    test_game_state.py` +3; `tests/test_battle_orchestrator.py` +1;
+    `tests/test_turn_report.py` +11) -- 2747 passed total.
 
 ## Setup
 
