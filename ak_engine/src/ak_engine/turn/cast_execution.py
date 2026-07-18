@@ -1401,6 +1401,55 @@ def illusory_fog_strength(base_strength: float, *, affected: bool) -> float:
     return base_strength * ILLUSORY_FOG_STRENGTH_MULTIPLIER
 
 
+def _quality_one_level_down(quality: Quality) -> Quality:
+    """One quality level below ``quality``, clamped at ``Quality.DEPLETED``
+    -- rulebook [4.25.3]'s own "(it may instead drop a level in quality.)"
+    for a plague-immune army, Phase 233. Not the same mechanic as
+    ``turn/combat.py roll_quality_change()`` (a battle-outcome step
+    function with its own win/loss-conditioned odds) -- this is a flat
+    one-level drop, the plague rule's own entire description of the
+    effect.
+    """
+
+    return Quality(max(Quality.DEPLETED.value, quality.value - 1))
+
+
+def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng: random.Random) -> None:
+    """Tests every eligible army at ``coord`` against one Plague exposure --
+    rulebook [4.25.3], shared by the initial cast (``_execute_plague()``)
+    and the spread mechanic (``turn/plague_spread.py resolve_plague_
+    spread()``, Phase 233) so both apply the exact same army-eligibility
+    and immunity rules. "Only the four humanoid races can be infected" --
+    armies with no recorded ``kingdom_id`` (mercenaries) are skipped, the
+    same "no race to check" gap the original cast-only version already
+    had.
+
+    **Immunity** ("If a unit survives a plague, it's immunized from
+    dying in future plagues (it may instead drop a level in quality.)"):
+    an army not yet marked ``plague_immune`` rolls the ordinary destroy
+    chance -- destroyed on a hit, marked immune on a miss (it "survived
+    a plague"). An already-immune army instead rolls the *same* `chance`
+    for a one-level quality downgrade (`_quality_one_level_down()`) --
+    the rulebook names no separate probability for this "may instead"
+    clause, so reusing the destroy chance is a documented, unsourced
+    choice, not a recovered formula.
+    """
+
+    for army in list(state.armies_at(coord)):
+        if army.kingdom_id is None:
+            continue
+        if state.kingdoms[army.kingdom_id].race not in HUMANOID_RACES:
+            continue
+        if army.plague_immune:
+            if rng.random() < chance:
+                army.quality = _quality_one_level_down(army.quality)
+            continue
+        if rng.random() < chance:
+            state.remove_army(army.army_id)
+        else:
+            army.plague_immune = True
+
+
 def _execute_plague(
     state: GameState,
     leader_id: int,
@@ -1411,12 +1460,18 @@ def _execute_plague(
 ) -> CastExecutionResult:
     """Rulebook [4.25.3]: "cast on a province you're in or adjacent to it: every unit
     there has a 10%+10%/level chance of being destroyed. Only the four
-    humanoid races can be infected." The 15%/phase spread to an adjacent
-    province stays unmodeled: it needs the same per-phase scheduling
-    ``turn/turn_processor.py`` already uses for Defend's reinforcement
-    (Phase 57) -- a natural follow-up, not attempted this phase. Armies
-    with no recorded ``kingdom_id`` (mercenaries) are skipped: this
-    project has no way to know a mercenary army's race.
+    humanoid races can be infected."
+
+    **"Casting more than one Plague spell does not have a cumulative
+    effect" (Phase 233)**: if ``province.plague_active`` is already
+    ``True``, the cast still succeeds (``applied=True``) but skips
+    ``apply_plague_exposure()`` entirely -- the province is already
+    afflicted, so a second cast adds nothing. A fresh affliction sets
+    ``plague_active = True`` (the spread mechanic's own entry point --
+    see ``turn/plague_spread.py``'s module docstring for "the next
+    phase, 15%-per-adjacent-province" propagation this now feeds) and
+    applies the caster-level-boosted exposure chance via the shared
+    ``apply_plague_exposure()``.
     """
 
     caster = state.leaders[leader_id]
@@ -1428,16 +1483,14 @@ def _execute_plague(
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
+    if province.plague_active:
+        return CastExecutionResult(request, applied=True)
+
+    province.plague_active = True
     chance = PLAGUE_BASE_DESTROY_CHANCE + PLAGUE_DESTROY_CHANCE_PER_LEVEL * _caster_level(
         caster, Ability.NECROMANCY, wand_skill_level
     )
-    for army in list(state.armies_at(coord)):
-        if army.kingdom_id is None:
-            continue
-        if state.kingdoms[army.kingdom_id].race not in HUMANOID_RACES:
-            continue
-        if rng.random() < chance:
-            state.remove_army(army.army_id)
+    apply_plague_exposure(state, coord, chance, rng)
     return CastExecutionResult(request, applied=True)
 
 

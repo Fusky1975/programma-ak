@@ -23,6 +23,7 @@ from ak_engine.turn.cast_execution import (
     SCAR_TERRAIN_LAND_COLLAPSE_RACES,
     SCAR_TERRAIN_TAX_REDUCTION,
     LocateObjectResult,
+    apply_plague_exposure,
     execute_cast,
     illusory_fog_strength,
     is_illusory_fog_affected_air_unit,
@@ -692,6 +693,90 @@ def test_plague_skips_non_humanoid_and_mercenary_armies():
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
     assert result.applied is True
+    assert 1 in state.armies
+    assert 2 in state.armies
+
+
+def test_plague_marks_the_province_as_plague_active():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.PLAGUE, target=_target(LOCATION))
+    rng = ScriptedRandom([0.01])  # cast success; no armies present, no exposure roll
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].plague_active is True
+
+
+def test_plague_recast_on_an_already_active_province_is_a_no_op():
+    state = build_state()
+    province = ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, plague_active=True)
+    state.add_province(province)
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
+    request = CastRequest(spell=Spell.PLAGUE, target=_target(LOCATION))
+    rng = ScriptedRandom([0.01])  # only the cast-success roll -- a 2nd (exposure) roll would raise
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert 1 in state.armies  # untouched -- no cumulative effect
+
+
+def test_apply_plague_exposure_immunizes_a_survivor():
+    state = build_state()
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
+    rng = ScriptedRandom([0.5])  # misses a 0.2 destroy chance -- survives
+
+    apply_plague_exposure(state, LOCATION, 0.2, rng)
+
+    assert 1 in state.armies
+    assert state.armies[1].plague_immune is True
+
+
+def test_apply_plague_exposure_destroys_a_non_immune_army_on_a_hit():
+    state = build_state()
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
+    rng = ScriptedRandom([0.01])  # hits a 0.2 destroy chance
+
+    apply_plague_exposure(state, LOCATION, 0.2, rng)
+
+    assert 1 not in state.armies
+
+
+def test_apply_plague_exposure_drops_an_immune_armys_quality_instead_of_killing_it():
+    state = build_state()
+    army = ArmyState(1, 1, ArmyType.LEGION, Quality.VETERAN, LOCATION, plague_immune=True)
+    state.add_army(army)
+    rng = ScriptedRandom([0.01])  # hits the 0.2 chance -- but immune, so quality drops instead
+
+    apply_plague_exposure(state, LOCATION, 0.2, rng)
+
+    assert 1 in state.armies
+    assert state.armies[1].quality is Quality.AVERAGE  # one level below Veteran
+    assert state.armies[1].plague_immune is True
+
+
+def test_apply_plague_exposure_immune_army_at_depleted_stays_depleted():
+    state = build_state()
+    army = ArmyState(1, 1, ArmyType.LEGION, Quality.DEPLETED, LOCATION, plague_immune=True)
+    state.add_army(army)
+    rng = ScriptedRandom([0.01])  # hits the chance -- already at the floor
+
+    apply_plague_exposure(state, LOCATION, 0.2, rng)
+
+    assert state.armies[1].quality is Quality.DEPLETED
+
+
+def test_apply_plague_exposure_skips_mercenaries_and_non_humanoid_races():
+    state = build_state()
+    state.kingdoms[2] = KingdomState(2, "Rivalia2", Race.DRAGONS, Alignment.EVIL, ELSEWHERE)
+    state.add_army(ArmyState(1, 2, ArmyType.DRAGON_WING, Quality.AVERAGE, LOCATION))  # non-humanoid
+    state.add_army(ArmyState(2, None, ArmyType.LEGION, Quality.AVERAGE, LOCATION))  # mercenary
+    rng = ScriptedRandom([])  # no army is ever eligible for a roll
+
+    apply_plague_exposure(state, LOCATION, 1.0, rng)
+
     assert 1 in state.armies
     assert 2 in state.armies
 

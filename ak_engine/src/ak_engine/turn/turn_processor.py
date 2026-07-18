@@ -126,6 +126,15 @@ cost and never trigger Defend reinforcement (a continuing pursuer's
 hex-step never appears in ``move_targets``), matching
 ``advance_pursuit``/``advance_trail``'s own already-documented scope.
 
+**PLAGUE SPREAD rule (Phase 233)**: ``turn/plague_spread.py resolve_
+plague_spread()`` runs at the same phase-boundary point as
+``_dispatch_contested_rebattles`` -- rulebook [4.25.3]'s own "the next
+phase, there is a 15% chance per adjacent province that the plague will
+spread" is, read literally, exactly this project's own phase-by-phase
+loop boundary. Produces no ``PhaseDispatchResult`` (it's not tied to
+any leader's own plan) -- a pure state mutation, the same category as
+``_apply_defend_reinforcements``.
+
 **Explicitly out of scope, to keep this tractable**:
 
 - A "mixed" LMOVE group (some movers see the target as friendly, others
@@ -221,6 +230,7 @@ from ak_engine.turn.contested_province import (
     is_illegal_move_from_contested,
 )
 from ak_engine.turn.hex_numbering import decode_hex_number
+from ak_engine.turn.plague_spread import resolve_plague_spread
 from ak_engine.turn.missed_deadline import build_missed_deadline_plan
 from ak_engine.turn.move_execution import MoveExecutionResult, record_kingdom_exploration
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
@@ -318,6 +328,7 @@ def run_turn(
     for phase_index, label in enumerate(PHASE_LABELS):
         if phase_index > 0:
             results.extend(_dispatch_contested_rebattles(state, rng))
+            resolve_plague_spread(state, rng, bounds)
 
         entries = _collect_phase_entries(turn_leaders, label)
         # A leader still mid-chase has this phase's own order preempted

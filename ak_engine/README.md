@@ -9352,7 +9352,7 @@ complete (Phases 209-211).
     test_game_state.py` +3; `tests/test_battle_orchestrator.py` +1;
     `tests/test_turn_report.py` +11) -- 2747 passed total.
 
-- **Phase 232 (current)**: two more real GENERAL INTELLIGENCE REPORT
+- **Phase 232**: two more real GENERAL INTELLIGENCE REPORT
   event sources -- Plague and Illusory Terrain casts -- on the user's
   own explicit request to develop "movimenti, pestilenze, incantesimi"
   (movement, plagues, spells). Research corrected a prior-phase
@@ -9403,6 +9403,57 @@ complete (Phases 209-211).
   - Non-breaking: full suite passed unchanged (2747 passed) before any
     new tests were written. 8 new tests added to `tests/
     test_turn_report.py` -- 2755 passed total.
+
+- **Phase 233 (current)**: Plague's own spread-to-adjacent-provinces
+  mechanic -- rulebook [4.25.3]'s last unmodeled piece, on the user's
+  own explicit request ("sviluppa la meccanica di diffusione della
+  pestilenza tra province adiacenti"). Closes the exact gap `_execute_
+  plague()`'s own Phase 232-era docstring had flagged: "The 15%/phase
+  spread to an adjacent province stays unmodeled... a natural
+  follow-up, not attempted this phase."
+  - `models/game_state.py`: `ProvinceState.plague_active: bool` (new,
+    persistent -- never auto-cleared, the rulebook names no "the plague
+    dies out" end condition) and `ArmyState.plague_immune: bool` (new)
+    -- rulebook: "If a unit survives a plague, it's immunized from
+    dying in future plagues (it may instead drop a level in quality.)"
+  - `turn/cast_execution.py`: `apply_plague_exposure()` (new, public)
+    factors the army-eligibility/destroy/immunity logic out of
+    `_execute_plague()` so both the original cast and the new spread
+    mechanic share it exactly. `_execute_plague()` itself now sets
+    `province.plague_active = True` on a fresh affliction and is a
+    no-op beyond `applied=True` on an already-active province --
+    "casting more than one Plague spell does not have a cumulative
+    effect." `_quality_one_level_down()` (new) implements the "may
+    instead drop a level in quality" clause for an already-immune
+    army re-exposed -- a flat one-level drop, reusing the *same*
+    exposure chance the rulebook gives no separate probability for
+    (documented, unsourced choice).
+  - `turn/plague_spread.py` (new): `resolve_plague_spread()` snapshots
+    every currently-`plague_active` province, then rolls one 15%
+    spread attempt per unafflicted neighbor -- a newly-infected
+    province never itself spreads within the same call, only "the next
+    phase" (a direct reading of the rulebook's own wording as this
+    project's own phase-by-phase loop boundary, not a guessed
+    rate-limit). Spread exposure uses the base 10% chance with no
+    caster-level bonus -- documented, unsourced: no caster exists for a
+    natural spread event to draw a level from.
+  - `turn/turn_processor.py`: `resolve_plague_spread()` wired into
+    `run_turn()`'s own per-phase-boundary dispatch, the same call site
+    `_dispatch_contested_rebattles` (Phase 55) already established --
+    "the next phase" *is* this project's own phase loop boundary.
+    Produces no `PhaseDispatchResult` (not tied to any leader's plan),
+    the same category as `_apply_defend_reinforcements`.
+  - **Movement (GENERAL INTELLIGENCE REPORT wiring) intentionally left
+    untouched this phase** -- the user's own request was scoped to the
+    spread mechanic itself, not GIR narration of it; recording newly-
+    infected provinces as world events is a natural, separate future
+    follow-up (`resolve_plague_spread()` already returns the newly-
+    infected coordinates for exactly that purpose).
+  - Non-breaking: full suite passed unchanged (2755 passed) before any
+    new tests were written. 14 new tests added (`tests/
+    test_cast_execution.py` +7, `tests/test_plague_spread.py` new with
+    6 tests, `tests/test_turn_processor.py` +1 integration test) --
+    2769 passed total.
 
 ## Setup
 

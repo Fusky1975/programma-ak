@@ -423,6 +423,22 @@ def test_run_turn_does_not_force_a_rebattle_once_movement_points_run_out():
     assert [r for r in results if r.phase_label == "forced-rebattle"] == []
 
 
+# -- Plague spread (Phase 233) ----------------------------------------------
+
+
+def test_run_turn_spreads_plague_to_adjacent_provinces_at_phase_boundaries():
+    state = _base_state()
+    state.provinces[TARGET].plague_active = True
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(42))
+
+    # Deterministic under this fixed seed -- see turn/plague_spread.py's
+    # own module docstring for the mechanic (rulebook [4.25.3]) this
+    # exercises via run_turn()'s own per-phase-boundary dispatch.
+    assert state.provinces[ORIGIN].plague_active is True
+    assert state.provinces[ORIGIN2].plague_active is False
+
+
 def test_run_turn_does_not_force_a_rebattle_when_no_defender_remains():
     state = _base_state()
     state.provinces[TARGET].contested_by_kingdom_id = 1

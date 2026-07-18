@@ -260,6 +260,15 @@ class ArmyState:
     # also be unled, under the "garrison commander"). Set/cleared by
     # Leave/Pick_Up (turn/plan_dispatch.py); None means unled.
     commanded_by: int | None = None
+    # Plague immunity (Phase 233) -- rulebook [4.25.3]: "If a unit
+    # survives a plague, it's immunized from dying in future plagues (it
+    # may instead drop a level in quality.)" Set the first time this army
+    # is exposed to a Plague-destroy roll and survives
+    # (`turn/cast_execution.py apply_plague_exposure()`); every later
+    # exposure (a recast, or the spread mechanic reaching this army's own
+    # province again) rolls a quality-downgrade chance instead of a
+    # destroy chance.
+    plague_immune: bool = False
 
 
 @dataclass(slots=True)
@@ -412,6 +421,20 @@ class ProvinceState:
     # (currently `parser/gw_world_bridge.py bridge_gw_world_provinces()`,
     # the one real, sourced populating path).
     tax: int | None = None
+    # Plague spread (Phase 233) -- rulebook [4.25.3]: "the next phase,
+    # there is a 15% chance per adjacent province that the plague will
+    # spread, and it can spread further each phase after that." Set by
+    # a successful Plague cast (`turn/cast_execution.py _execute_plague()`)
+    # or by `turn/plague_spread.py resolve_plague_spread()` itself
+    # reaching this province from a neighbor; never cleared automatically
+    # -- the rulebook describes no "the plague dies out" end condition,
+    # so an afflicted province stays a spread source for the rest of the
+    # game, the same "no consuming cleanup pass exists" convention
+    # `illusory_terrain`/`scar_terrain_gold_reduction` above already use.
+    # Also doubles as the "casting more than one Plague spell does not
+    # have a cumulative effect" guard: a recast on an already-`True`
+    # province is a no-op beyond confirming `applied=True`.
+    plague_active: bool = False
 
     def effective_terrain(self) -> Terrain:
         """The province's real current terrain for gameplay mechanics --
