@@ -8938,7 +8938,7 @@ complete (Phases 209-211).
     `tests/test_models.py` for `ABILITY_ABBREVIATION` (full coverage of
     every `Ability` member, and the exact sourced abbreviations) --
     2647 passed total.
-- **Phase 222 (current)**: `parser/gw_world.py parse_gw_world()` (new) --
+- **Phase 222**: `parser/gw_world.py parse_gw_world()` (new) --
   a parser for the original engine's "world file" format (e.g. `GW3`,
   `GW3__T1`), the first step of a much larger arc the user is walking
   through by hand: unblocking IMPERIAL OFFICE REPORT's own confirmed
@@ -9009,6 +9009,40 @@ complete (Phases 209-211).
     `None` sentinel, a King's own capital resolving to his own id,
     3 more Race ordinals cross-checked, and a truncated-record parse
     error) -- 2653 passed total.
+- **Phase 223 (current)**: `parser/gw_world_bridge.py
+  bridge_gw_world_provinces()` (new) -- bridges `GWProvinceRecord`s into
+  real `HexCoord`-keyed `ProvinceState`s, closing Phase 222's own
+  "no coordinate field" known gap. Also adds `ProvinceState.tax: int |
+  None = None` (`models/game_state.py`), the real `ptax[px,py]` this
+  project has needed since Phase 220's own `describe_provinces_report()`
+  gap.
+  - **The coordinate mapping is empirically confirmed, not a lead
+    anymore**: collected every `(name, x, y)` triple findable across all
+    9 of game 3's real turn-1 letters' own ASCII map legends (`"<Name>
+    (<XXYY>)"`, e.g. `"Macondo(0205)"`), checked all 63 matchable names
+    against their own position in `GW3__T1`'s on-disk record order, and
+    got a **100% exact match, zero mismatches**, under: `x (1-indexed) =
+    index // 9 + 1`, `y (1-indexed) = index % 9 + 1` -- i.e. the file's
+    own record order is column-major (18 x-values outer, 9 y-values
+    inner, 18 x 9 = 162), mirroring `REPORTS.PAS Rep_Provs`'s own real
+    iteration order verbatim. Converts directly to this project's own
+    0-indexed `HexCoord(index // 9, index % 9)`, no offset arithmetic.
+  - **Deliberately not attempted**: `GWProvinceRecord.
+    governor_leader_id` is not resolved to an owning kingdom id here (a
+    `GameState`-level leader/kingdom lookup this pure bridging function
+    doesn't have) -- every bridged `ProvinceState.owner_kingdom_id` is
+    `None`. The 18x9 board size is confirmed for this one real fixture
+    (`GW3__T1`), not cross-checked against a second world file -- a
+    `height` parameter is exposed rather than hardcoded as universal.
+  - Non-breaking: full suite passed unchanged (2653 passed) before any
+    new tests were written (both the new bridge module and the new
+    `ProvinceState.tax` field are additive, no existing call site
+    reads either). 5 new tests added in `tests/test_gw_world_bridge.py`
+    (covering: the full 162-province bridge, Macondo's exact confirmed
+    coordinate + Tax/Race/Terrain, the origin province, `owner_kingdom_id`
+    always `None`, and a not-a-multiple-of-height `ValueError`) plus
+    2 new tests in `tests/test_game_state.py` for `ProvinceState.tax`
+    (default `None`, and settable) -- 2660 passed total.
 
 ## Setup
 

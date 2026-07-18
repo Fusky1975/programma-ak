@@ -204,3 +204,18 @@ def test_effective_terrain_ignores_illusory_terrain():
     province = ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, illusory_terrain=Terrain.SEA)
 
     assert province.effective_terrain() is Terrain.PLAINS
+
+
+# -- Phase 223: ProvinceState.tax -------------------------------------------
+
+
+def test_province_tax_defaults_to_none():
+    province = ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN)
+
+    assert province.tax is None
+
+
+def test_province_tax_can_be_set():
+    province = ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, tax=4)
+
+    assert province.tax == 4

@@ -357,6 +357,16 @@ class ProvinceState:
     # no consuming cleanup pass exists yet" convention already used by
     # tax_modifier_percent/illusory_terrain above.
     illusory_fog_active: bool = False
+    # Real per-province tax value (Phase 222 `parser/gw_world.py`'s own
+    # `GWProvinceRecord.tax` -- the real `ptax[px,py]` this project has
+    # needed since Phase 220's own `describe_provinces_report()` gap,
+    # confirmed absent from every surviving `.PAS` file since Phase 158).
+    # Baked into the world file at world-generation time by the lost
+    # `AKGEN.EXE`, the same "world-gen-only, no runtime formula" category
+    # as `name`'s own `pname` above -- `None` until a caller populates it
+    # (currently `parser/gw_world_bridge.py bridge_gw_world_provinces()`,
+    # the one real, sourced populating path).
+    tax: int | None = None
 
     def effective_terrain(self) -> Terrain:
         """The province's real current terrain for gameplay mechanics --
