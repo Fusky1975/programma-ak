@@ -39,6 +39,7 @@ from ak_engine.report.turn_report import (
     WILL_TEMPLATE,
     compose_letter_report,
     describe_adventure_report,
+    describe_alignment_victory_point_reduction,
     describe_armies_report,
     describe_characters_report,
     describe_diplomacy_report,
@@ -3785,6 +3786,59 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "Province             %Exp  Features and F#     Monster         Special",
         "None at present",
     ]
+
+
+# -- Phase 229: describe_alignment_victory_point_reduction() -- ALIGNMENT REDUCTION --
+
+
+def test_describe_alignment_reduction_empty_before_any_emperor_elected():
+    state = _armies_state()
+
+    assert describe_alignment_victory_point_reduction(state) == []
+
+
+def test_describe_alignment_reduction_lists_every_covered_alignment():
+    state = _armies_state()
+    state.kingdoms[1].alignment = Alignment.GOOD
+    state.emperor_kingdom_id = 1
+
+    lines = describe_alignment_victory_point_reduction(state)
+
+    assert lines[0] == "ALIGNMENT REDUCTION"
+    assert "Divine: -20%" in lines  # Divine=0, Good=1, distance 1 x 20%
+    assert "Good: -0%" in lines  # the Emperor's own alignment -- distance 0
+    assert "Druidic: -15%" in lines  # Druid=2, distance 1 x 15%
+    assert "Pagan: -45%" in lines  # Pagan=4, distance 3 x 15%
+    assert "Anti-Holy" not in "".join(lines)
+    assert "Mechanical" not in "".join(lines)
+    assert "Special" not in "".join(lines)
+
+
+def test_describe_alignment_reduction_matches_the_rulebooks_own_worked_example():
+    state = _armies_state()
+    state.kingdoms[1].alignment = Alignment.GOOD
+    state.emperor_kingdom_id = 1
+
+    lines = describe_alignment_victory_point_reduction(state)
+
+    assert "Pagan: -45%" in lines  # 15% x 3 ordinal positions from Good
+
+
+def test_compose_letter_report_includes_alignment_reduction_once_emperor_elected():
+    state = _armies_state()
+    state.emperor_kingdom_id = 1
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    assert "ALIGNMENT REDUCTION" in lines
+
+
+def test_compose_letter_report_omits_alignment_reduction_before_any_emperor_elected():
+    state = _armies_state()
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    assert "ALIGNMENT REDUCTION" not in lines
 
 
 # -- Phase 212: describe_aspy() -- real assembly of Phase 115/118's own SAY.PAS templates --

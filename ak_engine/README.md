@@ -9163,7 +9163,7 @@ complete (Phases 209-211).
     test_merit_points.py`, 2 in `tests/test_game_state.py` for
     `MeritTally`'s all-zero default and per-leader independence) --
     2694 passed total.
-- **Phase 228 (current)**: `turn/emperor_election.py` (new) -- the
+- **Phase 228**: `turn/emperor_election.py` (new) -- the
   Emperor election mechanic, rulebook [10.2] (the rulebook's own words:
   this is literally "cosa si deve fare per mettere fine a una partita",
   what must be done to end a game). Standing instruction respected: the
@@ -9208,6 +9208,42 @@ complete (Phases 209-211).
     fields, no existing call site reads them). 16 new tests added (15 in
     `tests/test_emperor_election.py`, 1 in `tests/test_game_state.py`
     for the two new fields' `None` defaults) -- 2710 passed total.
+- **Phase 229 (current)**: `report/turn_report.py describe_alignment_
+  victory_point_reduction()` (new) -- surfaces Phase 228's rulebook
+  [10.2] Alignment-distance Victory Point reduction inside the turn
+  report, as a new `ALIGNMENT REDUCTION` section appended after
+  ADVENTURE in `compose_letter_report()`.
+  - **The section itself is project-original, not a Pascal
+    transcription** -- `REPORTS.PAS`'s own "Final Standings" block
+    (~line 1665-1784) computes this reduction directly into each King's
+    own per-King standings row; the real engine never renders it as its
+    own separate, labeled table. The *formula and its numeric values*
+    are fully real and sourced (rulebook [10.2] + the user-supplied
+    "TABELLA ALLINEAMENTI"); only the choice to surface it as its own
+    standalone section -- rather than leaving it buried inside the
+    still-unbuilt Final Standings table, which needs the full Merit
+    Point Rank contest across every leader in the game -- is this
+    project's own design, clearly flagged per the project's standing
+    rule for unsourced presentation choices.
+  - One line per `Alignment` the rulebook's own reduction-per-step
+    column covers (7 of 10, ordered by the real Pascal `ALIGNMENT_
+    ORDINAL` sequence), each showing that Alignment's own reduction
+    percent relative to the newly-elected Emperor's Alignment.
+    Anti-Holy/Mechanical/Special are silently skipped (a confirmed
+    table gap, not a guessed 0%).
+  - Renders (and is included in `compose_letter_report()`) only once
+    `GameState.emperor_kingdom_id` is set -- empty/omitted before any
+    Emperor election, the same "no header with no body" convention
+    every other section here already uses.
+  - Non-breaking: full suite passed unchanged (2710 passed) before any
+    new tests were written (`emperor_kingdom_id` defaults to `None`, so
+    every pre-existing exact-line-list `compose_letter_report()`
+    assertion was unaffected). 5 new tests added to `tests/
+    test_turn_report.py` (covering: empty before any election, every
+    covered Alignment listed with the right reduction, reproducing the
+    rulebook's own Pagan/Good worked example, and the section's
+    inclusion/omission in `compose_letter_report()`) -- 2715 passed
+    total.
 
 ## Setup
 

@@ -1112,7 +1112,7 @@ from ak_engine.models.enums import (
     SPELL_NAME,
     Spell,
 )
-from ak_engine.models.alignment import Alignment
+from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature
@@ -1131,6 +1131,7 @@ from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
+from ak_engine.turn.emperor_election import alignment_victory_point_reduction_percent
 from ak_engine.turn.encounter import FireArrowShot
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
@@ -5616,6 +5617,57 @@ def describe_letter_reports(
     return lines
 
 
+# HostAK/TP/REPORTS.PAS's own "Final Standings" block (~line 1665-1690,
+# 1784) computes this reduction (`outred[kalign] * diff_steps`) directly
+# into each King's own per-King Final-Standings row -- the real engine
+# never renders it as its own separate, labeled table. **This section
+# header and framing are therefore project-original, not a Pascal
+# transcription** -- flagged per this project's own standing rule for
+# unsourced presentation choices. The *formula and its numeric values*
+# are real and fully sourced (rulebook [10.2], `turn/emperor_election.py
+# alignment_victory_point_reduction_percent()`, Phase 228); only the
+# choice to surface it as its own standalone report section, rather than
+# leaving it buried inside the still-unbuilt Final Standings table (which
+# needs the full Merit Point Rank contest across every leader in the
+# game -- explicitly out of scope, see that module's own docstring), is
+# this project's own design.
+_ALIGNMENT_REDUCTION_HEADER = "ALIGNMENT REDUCTION"
+_ALIGNMENT_REDUCTION_INTRO = (
+    "Since the Imperial election, every Kingdom's Victory Points are reduced by a "
+    "percentage proportional to how far their Alignment lies from the Emperor's own:"
+)
+
+
+def describe_alignment_victory_point_reduction(state: GameState) -> list[str]:
+    """Renders the rulebook [10.2] Alignment-distance Victory Point
+    reduction table (see the module-level comment above this function for
+    why the section itself is project-original even though the formula
+    and values are real) -- one line per `Alignment` the rulebook's own
+    "TABELLA ALLINEAMENTI" reduction-per-step column covers, ordered by
+    `models/alignment.py ALIGNMENT_ORDINAL` (the real Pascal ordinal
+    sequence).
+
+    Returns an empty list before any Emperor has been elected
+    (`GameState.emperor_kingdom_id is None`) -- there is no Alignment to
+    measure distance from yet, and the rulebook's own reduction only ever
+    applies "since the Imperial election."  Anti-Holy/Mechanical/Special
+    are silently skipped (the rulebook's own table doesn't cover them,
+    a confirmed gap, not a guessed 0%).
+    """
+
+    if state.emperor_kingdom_id is None:
+        return []
+
+    emperor_alignment = state.kingdoms[state.emperor_kingdom_id].alignment
+    lines = [_ALIGNMENT_REDUCTION_HEADER, _ALIGNMENT_REDUCTION_INTRO]
+    for alignment in ALIGNMENT_BY_ORDINAL:
+        reduction = alignment_victory_point_reduction_percent(alignment, emperor_alignment)
+        if reduction is None:
+            continue
+        lines.append(f"{alignment.value}: -{reduction}%")
+    return lines
+
+
 def compose_letter_report(
     results: list[PhaseDispatchResult],
     state: GameState,
@@ -5669,6 +5721,18 @@ def compose_letter_report(
     - GENERAL INTELLIGENCE REPORT needs this turn's own compiled list of
       every `SpyReport` gathered -- `describe_aspy()` renders one report
       at a time, nothing aggregates them across a whole turn yet.
+
+    **ALIGNMENT REDUCTION (Phase 229, appended after ADVENTURE)** is
+    *not* one of the ten real sections above -- it's a project-original
+    presentation of a real, sourced sub-computation (rulebook [10.2]'s
+    Alignment-distance Victory Point reduction, `turn/emperor_election.py
+    alignment_victory_point_reduction_percent()`) the real engine only
+    ever bakes into each King's own row of the still-unbuilt Final
+    Standings table (needs the full Merit Point Rank contest across
+    every leader in the game). See `describe_alignment_victory_point_
+    reduction()`'s own docstring. Empty (and therefore omitted, the same
+    convention every other section here uses) until `GameState.
+    emperor_kingdom_id` is set.
 
     **ACTION REPORT** wraps `describe_turn_results()`, filtered here to
     only the King's own `PhaseDispatchResult` entries -- **narrowed as
@@ -5748,5 +5812,9 @@ def compose_letter_report(
     adventure_lines = describe_adventure_report(state, kingdom_id)
     if adventure_lines:
         lines.extend(adventure_lines)
+
+    alignment_reduction_lines = describe_alignment_victory_point_reduction(state)
+    if alignment_reduction_lines:
+        lines.extend(alignment_reduction_lines)
 
     return lines
