@@ -8694,7 +8694,7 @@ complete (Phases 209-211).
     an undiscovered feature's exclusion, this-kingdom-only filtering,
     the monster-name-prefix strip, a feature with no guardian recorded,
     and province/feature sort order.
-- **Phase 217 (current)**: `report/turn_report.py
+- **Phase 217**: `report/turn_report.py
   describe_letter_reports()` (new) -- the "LETTER REPORTS" section.
   - **A real, sourced structural discovery, not a guess**: reading
     `Write_Letter(ldr,kng,non)` in full revealed it doesn't read from
@@ -8748,6 +8748,50 @@ complete (Phases 209-211).
     multiple Heroes each getting their own separate letter, other
     kingdoms' leaders being excluded, and the no-King-recorded
     fallback (letters still render, addressed to a blank "To:").
+- **Phase 218 (current)**: `report/turn_report.py
+  describe_diplomacy_report()` (new) -- the "DIPLOMACY" section,
+  wired into `compose_letter_report()` between LETTER REPORTS and
+  ARMIES (matching the real letter's own relative order, skipping the
+  still-unwired FINANCES/PROVINCES/CHARACTERS that sit between
+  DIPLOMACY and ARMIES in a real letter).
+  - **A real 3-state relation this project only half-models**:
+    `REPORTS.PAS`'s own `kallst[kng,k2]` tracks Allied/At War/Neutral
+    per kingdom pair, but `GameState.allied_kingdoms` (a flat
+    `set[frozenset[int]]`, Phase ~9's own `is_allied()`) only ever
+    modeled a 2-state relation -- confirmed absent, no war-declaration
+    mechanism exists anywhere in this project. AT WAR therefore always
+    renders the real, sourced `"None at present"` string rather than a
+    guess at zero wars; every other kingdom not in `allied_kingdoms`
+    is listed as NEUTRAL instead, since there's no way to distinguish
+    a genuine war from ordinary neutrality with the data available.
+  - Sourced verbatim (`Rep_Allies`/`Begin_List`, `~REPORTS.PAS`
+    line 104-119): the section header, all three intro sentences
+    (each rejoined across its own 2 raw `WRITELN` lines, same
+    convention as `_ARMIES_REPORT_OPENING`), and the empty-list
+    fallback -- reused directly since it's the same real string
+    `_ARMIES_REPORT_NONE_AT_PRESENT` already established.
+  - **Deliberately not reproduced**: `Write_List`'s own optional
+    per-entry enrichment (a known King's tax-base/treasury figure,
+    gated on the *reader* holding the Emperor/Treasurer office and
+    having met that King; an alignment note for Heavenly/Undead or
+    same-alignment Kings) -- needs office-holder tracking (IMPERIAL
+    OFFICE REPORT's own still-open gap) and per-King
+    alignment-visibility state this project doesn't model. Only the
+    bare `<name> (#<kingdom_id>)` entry renders.
+  - Each entry's King is resolved via `_king_leader_id()` (Phase 217);
+    a kingdom with no `is_king`-flagged leader recorded falls back to
+    its own `KingdomState.name` rather than guessing a King's name.
+  - Non-breaking: full suite passed unchanged (2620 passed) before any
+    new tests were written, after updating 2 pre-existing
+    `compose_letter_report()` tests (Phase 215/217) whose expected
+    output now needs the always-present DIPLOMACY section inserted --
+    a mechanical update, not a behavior change. 6 new tests added
+    (2626 passed total) in `tests/test_turn_report.py`, covering:
+    no-other-kingdoms all-empty state, an unallied kingdom listed as
+    Neutral, an allied kingdom listed as Allied, AT WAR always
+    rendering empty regardless of allegiance state, the no-King-
+    recorded fallback to `KingdomState.name`, and multiple kingdoms
+    sorted by kingdom id.
 
 ## Setup
 

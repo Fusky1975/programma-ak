@@ -4959,6 +4959,74 @@ def render_quote_of_the_week(index: int) -> list[str]:
     return ["Quote of the Week:", quote_line, attribution_line]
 
 
+# HostAK/TP/REPORTS.PAS Desc_Lands's own Rep_Allies/Begin_List (~line
+# 104-119) -- the real "DIPLOMACY" section's own sourced, verbatim
+# intro sentences (each rejoined across its own 2 raw WRITELN lines,
+# same convention as _ARMIES_REPORT_OPENING) and empty-list fallback.
+_DIPLOMACY_ALLIED_INTRO = (
+    "My lord, the following Kings have wisely allied with thy ever-victorious majesty:"
+)
+_DIPLOMACY_WAR_INTRO = (
+    "My lord, the following Kings are foolishly at war with thy ever-victorious majesty:"
+)
+_DIPLOMACY_NEUTRAL_INTRO = (
+    "My lord, the following Kings are cautiously neutral with thy ever-victorious majesty:"
+)
+_DIPLOMACY_NONE_AT_PRESENT = "None at present"
+
+
+def _diplomacy_entry(state: GameState, other_kingdom_id: int) -> str:
+    king_id = _king_leader_id(state, other_kingdom_id)
+    name = state.leaders[king_id].name if king_id is not None else state.kingdoms[other_kingdom_id].name
+    return f"{name} (#{other_kingdom_id})"
+
+
+def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
+    """Assembles the "DIPLOMACY" section (Phase 218) -- Allied/At War/
+    Neutral lists of every other kingdom, from this kingdom's own
+    point of view.
+
+    **The real procedure tracks a genuine 3-state relation per kingdom
+    pair** (`kallst[kng,k2]`, `Write_List(allstate)` called once per
+    state value) -- this project's own `GameState.allied_kingdoms`
+    (a flat `set[frozenset[int]]`, `is_allied()`) only ever models a
+    2-state relation (allied or not), confirmed absent for the third
+    "at war" state -- no war-declaration mechanism exists anywhere in
+    this project. **AT WAR therefore always renders empty** (real,
+    sourced `_DIPLOMACY_NONE_AT_PRESENT`, not a guess at zero wars);
+    every other kingdom not in `allied_kingdoms` is listed as NEUTRAL
+    instead, since this project has no way to distinguish a genuine
+    war from ordinary neutrality.
+
+    **What this deliberately does NOT reproduce**: the real
+    `Write_List`'s own optional per-entry enrichment (a known King's
+    tax-base/treasury figure, gated on the *reader* currently holding
+    the Emperor/Treasurer office and having met that King; an
+    alignment note for Heavenly/Undead or same-alignment Kings) needs
+    office-holder tracking (`IMPERIAL OFFICE REPORT`'s own still-open
+    gap) and per-King alignment-visibility state this project doesn't
+    model -- only the bare `<name> (#<kingdom_id>)` entry renders.
+
+    Each entry's own King is resolved via `_king_leader_id()`
+    (Phase 217); a kingdom with no `is_king`-flagged leader recorded
+    falls back to its own `KingdomState.name` rather than guessing a
+    King's name.
+    """
+
+    other_kingdom_ids = sorted(k for k in state.kingdoms if k != kingdom_id)
+    allied_ids = [k for k in other_kingdom_ids if state.is_allied(kingdom_id, k)]
+    neutral_ids = [k for k in other_kingdom_ids if not state.is_allied(kingdom_id, k)]
+
+    lines = ["DIPLOMACY", _DIPLOMACY_ALLIED_INTRO]
+    lines.extend([_diplomacy_entry(state, k) for k in allied_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
+    lines.append(_DIPLOMACY_WAR_INTRO)
+    lines.append(_DIPLOMACY_NONE_AT_PRESENT)
+    lines.append(_DIPLOMACY_NEUTRAL_INTRO)
+    lines.extend([_diplomacy_entry(state, k) for k in neutral_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
+
+    return lines
+
+
 # HostAK/TP/REPORTS.PAS Rep_Armies (~lines 888-1091) and its own
 # Expand_Write('ARMIES',kng) opening (~line 1039). See
 # describe_armies_report()'s own docstring for the substantial scope
@@ -5294,12 +5362,10 @@ def compose_letter_report(
     so this real generated-output cross-reference is the sourced evidence
     used here, in place of the lost driver.
 
-    **4 of the 10 real sections are wired here as of Phase 217** --
-    ACTION REPORT, LETTER REPORTS, ARMIES, and ADVENTURE. Every other
-    section still needs data this project's `GameState` doesn't model
-    at all yet -- confirmed absent, not merely unwired:
-    - DIPLOMACY needs an Ally/War/Neutral relation table between
-      kingdoms -- `KingdomState` has no such field.
+    **5 of the 10 real sections are wired here as of Phase 218** --
+    ACTION REPORT, LETTER REPORTS, DIPLOMACY, ARMIES, and ADVENTURE.
+    Every other section still needs data this project's `GameState`
+    doesn't model at all yet -- confirmed absent, not merely unwired:
     - FINANCES' real "Expected Revenues"/"Expected Expenses" figures need
       `ACost`/`LCost`/`Tax_Base` -- confirmed absent from every available
       `.PAS` file (`plan_dispatch.py`'s own Phase 158 note).
@@ -5337,11 +5403,12 @@ def compose_letter_report(
     `describe_letter_reports()` does its own per-other-leader filtering
     internally.
 
-    **ARMIES** and **ADVENTURE** wrap `describe_armies_report()`/
-    `describe_adventure_report()` as-is -- both composers already return
-    their own header as their first line (the same Phase ~158 convention
-    Phase 216's `describe_adventure_report()` reuses), so no header is
-    added here for either; adding one would duplicate it.
+    **DIPLOMACY**, **ARMIES**, and **ADVENTURE** wrap
+    `describe_diplomacy_report()` (Phase 218)/`describe_armies_report()`/
+    `describe_adventure_report()` as-is -- all three composers already
+    return their own header as their first line (the same Phase ~158
+    convention Phase 216/218's own composers reuse), so no header is
+    added here for any of them; adding one would duplicate it.
 
     A section is omitted entirely from the output when its own composer
     has nothing to say (`describe_turn_results()` returns an empty list
@@ -5367,6 +5434,10 @@ def compose_letter_report(
     letter_lines = describe_letter_reports(kingdom_results, state, kingdom_id, rng, ability_names=ability_names)
     if letter_lines:
         lines.extend(letter_lines)
+
+    diplomacy_lines = describe_diplomacy_report(state, kingdom_id)
+    if diplomacy_lines:
+        lines.extend(diplomacy_lines)
 
     armies_lines = describe_armies_report(state, kingdom_id)
     if armies_lines:

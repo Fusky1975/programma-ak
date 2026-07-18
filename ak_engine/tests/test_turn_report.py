@@ -39,6 +39,7 @@ from ak_engine.report.turn_report import (
     compose_letter_report,
     describe_adventure_report,
     describe_armies_report,
+    describe_diplomacy_report,
     describe_letter_reports,
     describe_aspy,
     describe_battle,
@@ -3142,6 +3143,106 @@ def test_describe_letter_reports_no_king_recorded_still_lists_other_leaders_lett
     ]
 
 
+# -- Phase 218: describe_diplomacy_report() -- the "DIPLOMACY" section --
+
+
+_DIPLOMACY_ALLIED_INTRO = "My lord, the following Kings have wisely allied with thy ever-victorious majesty:"
+_DIPLOMACY_WAR_INTRO = "My lord, the following Kings are foolishly at war with thy ever-victorious majesty:"
+_DIPLOMACY_NEUTRAL_INTRO = "My lord, the following Kings are cautiously neutral with thy ever-victorious majesty:"
+
+
+def test_describe_diplomacy_report_no_other_kingdoms_renders_all_none():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+
+    lines = describe_diplomacy_report(state, 1)
+
+    assert lines == [
+        "DIPLOMACY",
+        _DIPLOMACY_ALLIED_INTRO,
+        "None at present",
+        _DIPLOMACY_WAR_INTRO,
+        "None at present",
+        _DIPLOMACY_NEUTRAL_INTRO,
+        "None at present",
+    ]
+
+
+def test_describe_diplomacy_report_unallied_kingdom_is_neutral():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1), is_king=True))
+
+    lines = describe_diplomacy_report(state, 1)
+
+    assert lines == [
+        "DIPLOMACY",
+        _DIPLOMACY_ALLIED_INTRO,
+        "None at present",
+        _DIPLOMACY_WAR_INTRO,
+        "None at present",
+        _DIPLOMACY_NEUTRAL_INTRO,
+        "Kwoth (#2)",
+    ]
+
+
+def test_describe_diplomacy_report_allied_kingdom_is_listed_as_allied():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1), is_king=True))
+    state.allied_kingdoms.add(frozenset({1, 2}))
+
+    lines = describe_diplomacy_report(state, 1)
+
+    assert lines == [
+        "DIPLOMACY",
+        _DIPLOMACY_ALLIED_INTRO,
+        "Kwoth (#2)",
+        _DIPLOMACY_WAR_INTRO,
+        "None at present",
+        _DIPLOMACY_NEUTRAL_INTRO,
+        "None at present",
+    ]
+
+
+def test_describe_diplomacy_report_war_always_renders_none_at_present():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1), is_king=True))
+
+    lines = describe_diplomacy_report(state, 1)
+
+    war_index = lines.index(_DIPLOMACY_WAR_INTRO)
+    assert lines[war_index + 1] == "None at present"
+
+
+def test_describe_diplomacy_report_no_king_recorded_falls_back_to_kingdom_name():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+
+    lines = describe_diplomacy_report(state, 1)
+
+    assert lines[-1] == "Otherland (#2)"
+
+
+def test_describe_diplomacy_report_lists_multiple_kingdoms_sorted_by_id():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Bland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_kingdom(KingdomState(3, "Cland", Race.DWARVEN, Alignment.NEUTRAL, HexCoord(2, 2)))
+    state.add_leader(LeaderState(20, 2, "Bertha", HexCoord(1, 1), is_king=True))
+    state.add_leader(LeaderState(30, 3, "Cyrus", HexCoord(2, 2), is_king=True))
+
+    lines = describe_diplomacy_report(state, 1)
+
+    neutral_index = lines.index(_DIPLOMACY_NEUTRAL_INTRO)
+    assert lines[neutral_index + 1 :] == ["Bertha (#2)", "Cyrus (#3)"]
+
+
 # -- Phase 216: describe_adventure_report() -- the "ADVENTURE" section --
 
 
@@ -3321,6 +3422,13 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Honored Sovereign,",
         "Borin spoke to Elena and convinced Elena to pledge Elena's allegiance to Borin.",
         "Thy humble servant,   Borin",
+        "DIPLOMACY",
+        "My lord, the following Kings have wisely allied with thy ever-victorious majesty:",
+        "None at present",
+        "My lord, the following Kings are foolishly at war with thy ever-victorious majesty:",
+        "None at present",
+        "My lord, the following Kings are cautiously neutral with thy ever-victorious majesty:",
+        "None at present",
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
@@ -3369,6 +3477,13 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
     assert lines == [
         "LETTER REPORTS",
         "There are no letters from anyone at this time.",
+        "DIPLOMACY",
+        "My lord, the following Kings have wisely allied with thy ever-victorious majesty:",
+        "None at present",
+        "My lord, the following Kings are foolishly at war with thy ever-victorious majesty:",
+        "None at present",
+        "My lord, the following Kings are cautiously neutral with thy ever-victorious majesty:",
+        "None at present",
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
