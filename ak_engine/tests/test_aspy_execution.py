@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.aspy_execution import SpottedCharacter, SpyReport, execute_aspy
+from ak_engine.turn.combat import Quality
 
 LEADER_ID = 1
 HOME = HexCoord(3, 9)
@@ -194,3 +196,58 @@ def test_execute_aspy_reports_none_temper_when_not_recorded():
     report = execute_aspy(state, LEADER_ID, _request(), caster_holds_psychic_mage_office=True)
 
     assert report.spotted_characters[0].estimated_temper is None
+
+
+# --- Phase 212: real army display names for "leads"/garrison lines ---
+
+
+def test_execute_aspy_spotted_character_army_names_lists_armies_they_lead():
+    state = _state()
+    state.add_leader(LeaderState(2, 1, "Commander", HOME))
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=2))
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    expected = make_army_name(1, ArmyType.BOWMEN, Race.HUMAN)
+    assert report.spotted_characters[0].army_names == (expected,)
+
+
+def test_execute_aspy_spotted_character_no_army_names_when_unled_leader():
+    state = _state()
+    state.add_leader(LeaderState(2, 1, "Wanderer", HOME))
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.spotted_characters[0].army_names == ()
+
+
+def test_execute_aspy_garrison_army_names_lists_unled_armies_only():
+    state = _state()
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME))  # unled
+    state.add_leader(LeaderState(2, 1, "Commander", HOME))
+    state.add_army(ArmyState(2, 1, ArmyType.AXEMEN, Quality.AVERAGE, HOME, commanded_by=2))  # led
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    expected = make_army_name(1, ArmyType.BOWMEN, Race.HUMAN)
+    assert report.garrison_army_names == (expected,)
+
+
+def test_execute_aspy_garrison_army_names_empty_when_no_unled_armies():
+    state = _state()
+    state.add_leader(LeaderState(2, 1, "Commander", HOME))
+    state.add_army(ArmyState(1, 1, ArmyType.AXEMEN, Quality.AVERAGE, HOME, commanded_by=2))
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.garrison_army_names == ()
+
+
+def test_execute_aspy_mercenary_army_falls_back_to_human_race():
+    state = _state()
+    state.add_army(ArmyState(5, None, ArmyType.BOWMEN, Quality.AVERAGE, HOME))  # mercenary, unled
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    expected = make_army_name(5, ArmyType.BOWMEN, Race.HUMAN)
+    assert report.garrison_army_names == (expected,)

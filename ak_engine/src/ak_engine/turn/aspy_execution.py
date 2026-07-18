@@ -79,6 +79,21 @@ independent Hero with no kingdom. True temper is read from the new
 same "no data" convention ``LeaderState.skills`` already established.
 Either being ``None`` means the corresponding estimate is also reported
 as ``None`` -- there's nothing to estimate away from.
+
+**Phase 212 -- real army names for the "leads"/garrison line items.**
+``SAY.PAS``'s own ``_LSLeads``/``_LSGarr`` (Phase 115, unblocked Phase
+118) need a list of army display names, which this module's own data
+never carried before. ``SpottedCharacter.army_names`` (every army that
+spotted leader commands, via ``GameState.armies_commanded_by()``, the
+same lookup ``turn/trail_execution.py``'s own ``armies_led`` already
+uses) and ``SpyReport.garrison_army_names`` (every *unled* army at the
+spy's own province, ``GameState.armies_at()`` filtered on
+``commanded_by is None``) are both named via ``models/army_naming.py
+make_army_name()`` -- built Phase 149, never given a real caller until
+now. See ``_army_display_name()``'s own docstring for how an army's
+race (needed only to decide whether a short non-Human tag is appended)
+is resolved, including the explicit ``Race.HUMAN`` fallback for a
+mercenary army with no owning Kingdom.
 """
 
 from __future__ import annotations
@@ -86,14 +101,36 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ArmyType
-from ak_engine.models.game_state import GameState
+from ak_engine.models.army_naming import make_army_name
+from ak_engine.models.army_type import MONSTROUS_ARMY_RACE, ArmyType
+from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.map import HexCoord
+from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.intelligence_estimate import estimate_alignment, estimate_temper
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.recruit import is_army_type_compatible_with_race
+
+
+def _army_display_name(state: GameState, army: ArmyState) -> str:
+    """``models/army_naming.py make_army_name()``'s first real caller
+    (Phase 212) -- built Phase 149, never wired to a consumer before.
+    Race is resolved the same way ``describe_armies_report()``'s own
+    Phase 158 note already established: ``MONSTROUS_ARMY_RACE`` for a
+    fixed-race army type, else the owning kingdom's own race. A
+    mercenary army (``kingdom_id is None``) has no kingdom to fall back
+    to -- there is no per-army race field anywhere in this project, so
+    ``Race.HUMAN`` is used as an explicit, flagged default rather than
+    leaving the name unbuildable; ``make_army_name()`` only ever uses
+    the race to decide whether to append a short non-Human tag, so this
+    default is cosmetic (it can only ever suppress a tag that might
+    otherwise be real), never a fabricated fact reported elsewhere.
+    """
+
+    kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
+    race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else Race.HUMAN)
+    return make_army_name(army.army_id, army.army_type, race)
 
 
 @dataclass(slots=True)
@@ -102,6 +139,10 @@ class SpottedCharacter:
     name: str
     estimated_alignment: Alignment | None
     estimated_temper: Temper | None
+    # Phase 212: real army display names (``models/army_naming.py``) for
+    # every army this spotted character leads -- SAY.PAS's own
+    # ``_LSLeads`` line item needs this list, see module docstring.
+    army_names: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -112,6 +153,10 @@ class SpyReport:
     recruitable_army_types: list[ArmyType] = field(default_factory=list)
     is_capital: bool = False
     spotted_characters: list[SpottedCharacter] = field(default_factory=list)
+    # Phase 212: real army display names for every *unled* army sitting in
+    # this province -- SAY.PAS's own ``_LSGarr`` line item needs this
+    # list, see module docstring.
+    garrison_army_names: tuple[str, ...] = ()
 
 
 def execute_aspy(
@@ -185,14 +230,21 @@ def execute_aspy(
                 perfect=caster_holds_psychic_mage_office,
             )
 
+        army_names = tuple(_army_display_name(state, army) for army in state.armies_commanded_by(spotted.leader_id))
+
         spotted_characters.append(
             SpottedCharacter(
                 leader_id=spotted.leader_id,
                 name=spotted.name,
                 estimated_alignment=estimated_alignment,
                 estimated_temper=estimated_temper,
+                army_names=army_names,
             )
         )
+
+    garrison_army_names = tuple(
+        _army_display_name(state, army) for army in state.armies_at(leader.location) if army.commanded_by is None
+    )
 
     return SpyReport(
         province=leader.location,
@@ -201,4 +253,5 @@ def execute_aspy(
         recruitable_army_types=recruitable,
         is_capital=is_capital,
         spotted_characters=spotted_characters,
+        garrison_army_names=garrison_army_names,
     )

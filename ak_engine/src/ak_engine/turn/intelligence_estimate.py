@@ -98,17 +98,20 @@ same-source value). This module's own callers therefore supply
 ``true_alignment``/``true_temper`` directly, keeping this module
 ``GameState``-free -- **updated as of Phase 160**: this docstring
 previously claimed neither ``LeaderState.alignment`` nor
-``LeaderState.temper`` existed to source them from, which is now only
-half true. ``LeaderState.temper`` is real (Phase 139), and
+``LeaderState.temper`` existed to source them from, which was only
+half true even then. ``LeaderState.temper`` is real (Phase 139), and
 ``turn/aspy_execution.py``'s own real caller sources ``true_temper``
-straight from ``spotted.temper``. ``LeaderState.alignment`` genuinely
-still doesn't exist anywhere in this project (only
-``KingdomState.alignment``, kingdom-level) -- that caller instead
-passes the spotted leader's own kingdom alignment as an approximation
-of the character's true alignment, a real, still-open simplification
-(``Agent_Align``'s exact character-level resolution remains
-unavailable), not the "no field at all" gap this docstring claimed
-before.
+straight from ``spotted.temper``. **Phase 212 corrects a second stale
+claim this docstring carried past its own sell-by date**:
+``LeaderState.alignment`` (Phase 162, two phases after this note was
+first written) is now a real, stored per-leader field -- not only
+``KingdomState.alignment``, kingdom-level, as claimed here through
+Phase 211. ``turn/aspy_execution.py``'s own ``execute_aspy()`` still
+passes the spotted leader's own *kingdom* alignment into
+``estimate_alignment()``, not ``LeaderState.alignment`` directly --
+now a real, sourced-but-unswitched simplification worth revisiting in
+a future ASpy-focused phase, not the "no field exists at all" gap this
+docstring claimed before Phase 160, nor an oversight introduced here.
 """
 
 from __future__ import annotations

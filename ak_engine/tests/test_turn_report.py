@@ -3,12 +3,16 @@ from __future__ import annotations
 import pytest
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.item import ItemInstance
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import TREASURE_NAME, Treasure
 from ak_engine.report.turn_report import (
     ALREADY_ALLIED_TEMPLATE,
     ATTACK_DEVASTATING_HIT_TEMPLATE,
@@ -32,6 +36,7 @@ from ak_engine.report.turn_report import (
     SPY_LEADS_APPROXIMATELY_TEMPLATE,
     WILL_TEMPLATE,
     describe_armies_report,
+    describe_aspy,
     describe_battle,
     describe_cast,
     describe_fire,
@@ -41,6 +46,7 @@ from ak_engine.report.turn_report import (
     describe_pursue,
     describe_search,
     describe_trail,
+    describe_trail_intelligence,
     describe_use_mi,
     margin_bucket,
     parse_template_choices,
@@ -155,6 +161,18 @@ from ak_engine.report.turn_report import (
     render_take_gold,
     render_take_items,
     render_trade_deal_failed,
+    render_trail_alignment,
+    render_trail_armies_led,
+    render_trail_king_allies,
+    render_trail_king_finances,
+    render_trail_king_no_allies,
+    render_trail_king_no_provinces,
+    render_trail_king_provinces,
+    render_trail_no_armies_led,
+    render_trail_no_treasures,
+    render_trail_race,
+    render_trail_temper,
+    render_trail_treasures,
     render_troll_regeneration,
     render_uncontested_conquest,
     render_vampiric_bite,
@@ -166,6 +184,7 @@ from ak_engine.report.turn_report import (
 )
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.weapon import Weapon
+from ak_engine.turn.aspy_execution import SpottedCharacter, SpyReport
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.battle_orchestrator import BattleReport
@@ -179,7 +198,7 @@ from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
-from ak_engine.turn.trail_execution import TrailExecutionResult
+from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 
 from _helpers import ScriptedRandom
@@ -2473,6 +2492,171 @@ def test_describe_trail_renders_nothing_when_not_spied_on():
     assert line is None
 
 
+# -- Phase 212: Trail's own intelligence payload (project-original prose) --
+
+
+def test_render_trail_temper():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_temper("Aldric", "Borin", "Brave", rng)
+    assert result == "Aldric learned that Borin has temper Brave."
+
+
+def test_render_trail_alignment():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_alignment("Aldric", "Borin", "Good", rng)
+    assert result == "Aldric learned that Borin is Good in alignment."
+
+
+def test_render_trail_race():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_race("Aldric", "Borin", "Human", rng)
+    assert result == "Aldric learned that Borin is Human."
+
+
+def test_render_trail_treasures():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_treasures("Aldric", "Borin", ["Sword of Truth", "Shield of Faith"], rng)
+    assert result == "Aldric learned that Borin owns Sword of Truth and Shield of Faith."
+
+
+def test_render_trail_no_treasures():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_no_treasures("Aldric", "Borin", rng)
+    assert result == "Aldric learned that Borin owns no treasures."
+
+
+def test_render_trail_armies_led():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_armies_led("Aldric", "Borin", ["241st Axemen"], rng)
+    assert result == "Aldric learned that Borin leads 241st Axemen."
+
+
+def test_render_trail_no_armies_led():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_no_armies_led("Aldric", "Borin", rng)
+    assert result == "Aldric learned that Borin leads no armies."
+
+
+def test_render_trail_king_finances():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_king_finances("Aldric", "King Borin", 500, rng)
+    assert result == "Aldric learned that King Borin commands a treasury of 500 gold."
+
+
+def test_render_trail_king_allies():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_king_allies("Aldric", "King Borin", ["Alliedland"], rng)
+    assert result == "Aldric learned that King Borin is allied with Alliedland."
+
+
+def test_render_trail_king_no_allies():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_king_no_allies("Aldric", "King Borin", rng)
+    assert result == "Aldric learned that King Borin has no allies."
+
+
+def test_render_trail_king_provinces():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_king_provinces("Aldric", "King Borin", ["Greenfield"], rng)
+    assert result == "Aldric learned that King Borin controls Greenfield."
+
+
+def test_render_trail_king_no_provinces():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_king_no_provinces("Aldric", "King Borin", rng)
+    assert result == "Aldric learned that King Borin controls no provinces."
+
+
+def _trail_intel_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Alliedland", Race.HUMAN, Alignment.GOOD, HexCoord(5, 5)))
+    return state
+
+
+def test_describe_trail_intelligence_empty_when_not_spied_on():
+    result = TrailExecutionResult(spied_on=False, reason="did not catch up this phase")
+    rng = ScriptedRandom([0.1] * 4)
+
+    lines = describe_trail_intelligence(result, state=_trail_intel_state(), trailer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert lines == []
+
+
+def test_describe_trail_intelligence_omits_none_fields():
+    result = TrailExecutionResult(spied_on=True, temper=None, alignment=None, race=None)
+    rng = ScriptedRandom([0.1] * 20)
+
+    lines = describe_trail_intelligence(result, state=_trail_intel_state(), trailer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert lines == [
+        "Aldric learned that Borin owns no treasures.",
+        "Aldric learned that Borin leads no armies.",
+    ]
+
+
+def test_describe_trail_intelligence_renders_temper_alignment_race():
+    result = TrailExecutionResult(spied_on=True, temper=Temper.BRAVE, alignment=Alignment.GOOD, race=Race.ELVEN)
+    rng = ScriptedRandom([0.1] * 20)
+
+    lines = describe_trail_intelligence(result, state=_trail_intel_state(), trailer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert lines[:3] == [
+        "Aldric learned that Borin has temper Brave.",
+        "Aldric learned that Borin is Good in alignment.",
+        "Aldric learned that Borin is Elf.",
+    ]
+
+
+def test_describe_trail_intelligence_renders_treasures_and_armies_led():
+    item = ItemInstance(1, Treasure.ABILITY_TACTICAL, 2)
+    army = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0))
+    result = TrailExecutionResult(spied_on=True, treasures_owned=(item,), armies_led=(army,))
+    rng = ScriptedRandom([0.1] * 20)
+
+    lines = describe_trail_intelligence(result, state=_trail_intel_state(), trailer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert lines[0] == f"Aldric learned that Borin owns {TREASURE_NAME[Treasure.ABILITY_TACTICAL]}."
+    assert lines[1] == f"Aldric learned that Borin leads {make_army_name(1, ArmyType.BOWMEN, Race.HUMAN)}."
+
+
+def test_describe_trail_intelligence_no_king_lines_when_no_king_intelligence():
+    result = TrailExecutionResult(spied_on=True, king_intelligence=None)
+    rng = ScriptedRandom([0.1] * 20)
+
+    lines = describe_trail_intelligence(result, state=_trail_intel_state(), trailer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert not any("treasury" in line or "allied" in line or "controls" in line for line in lines)
+
+
+def test_describe_trail_intelligence_king_lines_with_allies_and_provinces():
+    state = _trail_intel_state()
+    state.add_province(ProvinceState(HexCoord(0, 0), None, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    king = KingIntelligence(treasury=500, allied_kingdom_ids=(2,), controlled_provinces=(HexCoord(0, 0),))
+    result = TrailExecutionResult(spied_on=True, king_intelligence=king)
+    rng = ScriptedRandom([0.1] * 20)
+
+    lines = describe_trail_intelligence(result, state=state, trailer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert "Aldric learned that Borin commands a treasury of 500 gold." in lines
+    assert "Aldric learned that Borin is allied with Alliedland." in lines
+    assert "Aldric learned that Borin controls Capital City." in lines
+
+
+def test_describe_trail_intelligence_king_lines_with_no_allies_or_provinces():
+    king = KingIntelligence(treasury=0, allied_kingdom_ids=(), controlled_provinces=())
+    result = TrailExecutionResult(spied_on=True, king_intelligence=king)
+    rng = ScriptedRandom([0.1] * 20)
+
+    lines = describe_trail_intelligence(
+        result, state=_trail_intel_state(), trailer_name="Aldric", target_name="Borin", rng=rng
+    )
+
+    assert "Aldric learned that Borin commands a treasury of 0 gold." in lines
+    assert "Aldric learned that Borin has no allies." in lines
+    assert "Aldric learned that Borin controls no provinces." in lines
+
+
 # -- Phase 156: Search's own report composer --
 
 
@@ -2806,3 +2990,84 @@ def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
         "Capital City -- Garrison: Bowmen (Human, Average)",
         "Second Province -- Garrison: Axemen (Human, Average)",
     ]
+
+
+# -- Phase 212: describe_aspy() -- real assembly of Phase 115/118's own SAY.PAS templates --
+
+
+def test_describe_aspy_no_characters_or_forces():
+    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1)
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+
+    assert lines[0] == render_spy_report_opening("Aldric", "Greenfield", ScriptedRandom([0.1] * 4, choice_indices=[0]))
+    assert "there were no conspicuous characters or forces in Greenfield." in lines
+    assert lines[-1] == (
+        "Aldric also kept tabs on the characters in Greenfield and any "
+        "further news is in the General Intelligence Report."
+    )
+
+
+def test_describe_aspy_forces_but_no_characters():
+    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1, garrison_army_names=("241st Axemen",))
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+
+    assert "the following elements are present in Greenfield:  " in lines
+    assert "there were no conspicuous characters in Greenfield." in lines
+    assert "there is a garrison of approximately 241st Axemen." in lines
+    assert "there were no conspicuous characters or forces in Greenfield." not in lines
+
+
+def test_describe_aspy_characters_with_and_without_armies():
+    report = SpyReport(
+        province=HexCoord(0, 0),
+        owner_kingdom_id=1,
+        spotted_characters=[
+            SpottedCharacter(1, "Borin", estimated_alignment=None, estimated_temper=None),
+            SpottedCharacter(
+                2, "Commander Vale", estimated_alignment=None, estimated_temper=None, army_names=("34th Legion",)
+            ),
+        ],
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0])
+
+    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+
+    assert "Borin  is here." in lines
+    assert "Commander Vale  is here." in lines
+    assert "Commander Vale leads approximately 34th Legion." in lines
+    assert not any("no conspicuous characters" in line for line in lines)
+
+
+def test_describe_aspy_includes_capital_notice_when_capital():
+    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1, is_capital=True)
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+
+    assert "Greenfield is the kingdom's capital province." in lines
+
+
+def test_describe_aspy_omits_capital_notice_when_not_capital():
+    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1, is_capital=False)
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+
+    assert "Greenfield is the kingdom's capital province." not in lines
+
+
+def test_describe_aspy_lists_recruitable_army_types_in_order():
+    report = SpyReport(
+        province=HexCoord(0, 0), owner_kingdom_id=1, recruitable_army_types=[ArmyType.BOWMEN, ArmyType.AXEMEN]
+    )
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+
+    assert "Province Army Type 1: Bowmen" in lines
+    assert "Province Army Type 2: Axemen" in lines
+    assert lines.index("Province Army Type 1: Bowmen") < lines.index("Province Army Type 2: Axemen")

@@ -1114,14 +1114,20 @@ from ak_engine.models.enums import (
     SPELL_NAME,
     Spell,
 )
+from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE
-from ak_engine.models.game_state import GameState
+from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
+from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import MONSTER_NAMES
 from ak_engine.models.quote import quote_of_the_week
-from ak_engine.models.race import RACE_NAME
+from ak_engine.models.race import RACE_NAME, Race
+from ak_engine.models.temper import TEMPER_NAME
+from ak_engine.models.treasure import TREASURE_NAME
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
 from ak_engine.report.prose import render
+from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult
@@ -1132,7 +1138,7 @@ from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecution
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
-from ak_engine.turn.trail_execution import TrailExecutionResult
+from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 
 # HostAK/TP/PROSE/PLUS1.X .. PLUS5.X, MINUS1.X .. MINUS5.X, ZERO.X --
@@ -1770,6 +1776,67 @@ def render_spy_garrison(army_names: list[str], rng: random.Random) -> str:
     """
 
     return render(SPY_GARRISON_APPROXIMATELY_TEMPLATE, {}, rng=rng, lists={"^V": army_names})
+
+
+def describe_aspy(report: SpyReport, *, spy_name: str, province_name: str, rng: random.Random) -> list[str]:
+    """Assembles ASpy's full report body from an already-computed
+    ``SpyReport`` (``turn/aspy_execution.py execute_aspy()``, Phase 62,
+    extended Phase 212) -- the first real assembly of the ``SAY.PAS``
+    line items Phase 115/118 already built but never called from
+    anywhere (``render_spy_report_opening()`` was this module's only
+    real ASpy caller before this phase).
+
+    **The assembly order below is this project's own reasoned choice,
+    not a directly quoted ``REPORTS.PAS`` call sequence** -- the
+    available archive gives each line item's own template
+    (``SAY.PAS``'s ``CONST`` declarations, Phase 115's own docstring),
+    not the surrounding ``Imp_Code`` control flow that decides which
+    fire in what order. Opening sentence, then the capital-province
+    notice (if any), then the province's recruitable Army Types, then
+    the characters/forces block (``_LSNone`` if neither characters nor
+    forces are present; ``_LSList`` + ``_LSNoCh`` if forces but no
+    characters; ``_LSList`` + one ``_LSHere`` per spotted character
+    (``_LSLeads`` immediately after any character who leads an army) +
+    ``_LSGarr`` if there's an unled garrison), then the closing line.
+
+    **Taxation (``_LSTax``) never renders** -- ``SpyReport`` carries no
+    tax estimate at all (see that module's own docstring: no
+    per-province tax-base model exists anywhere in this project), the
+    same "omit rather than guess" convention the data layer itself
+    already established.
+
+    ``SpottedCharacter.estimated_alignment``/``estimated_temper``
+    (Phase 139) are **not rendered here** -- ``_LSHere``'s own bare ``$``
+    marker has no confirmed ``PROSE.TXT`` meaning (Phase 115's own
+    docstring), so there is no sourced slot to put an alignment/temper
+    guess into; that estimated data remains available on the
+    ``SpyReport`` itself for a caller who wants it some other way.
+    """
+
+    lines = [render_spy_report_opening(spy_name, province_name, rng)]
+    if report.is_capital:
+        lines.append(render_spy_capital_province(province_name, rng))
+    for index, army_type in enumerate(report.recruitable_army_types, start=1):
+        lines.append(render_spy_army_type(index, ARMY_TYPE_NAME[army_type], rng))
+
+    has_characters = bool(report.spotted_characters)
+    has_forces = bool(report.garrison_army_names) or any(c.army_names for c in report.spotted_characters)
+    if not has_characters and not has_forces:
+        lines.append(render_spy_no_characters_or_forces(province_name, rng))
+    else:
+        lines.append(render_spy_elements_intro(province_name, rng))
+        if not has_characters:
+            lines.append(render_spy_no_characters(province_name, rng))
+        else:
+            for character in report.spotted_characters:
+                lines.append(render_spy_character_here(character.name, rng))
+                if character.army_names:
+                    lines.append(render_spy_leads(character.name, list(character.army_names), rng))
+        if report.garrison_army_names:
+            lines.append(render_spy_garrison(list(report.garrison_army_names), rng))
+
+    lines.append(render_spy_report_closing(spy_name, province_name, rng))
+    return lines
 
 
 def describe_battle(
@@ -3075,6 +3142,198 @@ def describe_trail(
     if not result.spied_on:
         return None
     return render_caught_up(trailer_name, target_name, province_name, rng)
+
+
+# Phase 212 -- [3.17]'s own intelligence payload (temper, alignment, race,
+# treasures owned, armies led, and a King's finances/allies/controlled
+# provinces) has no confirmed PROSE source anywhere in the available
+# archive, unlike the SAY.PAS-sourced ASpy templates above. These eleven
+# templates are project-original, written on direct user instruction
+# ("Prosa originale del progetto") after confirming no source exists --
+# see `turn/trail_execution.py`'s own module docstring for the data
+# layer these narrate (Phases 159/164/165/166), already fully computed
+# and simply never rendered before this phase.
+TRAIL_TEMPER_TEMPLATE = "< learned that [ has temper |."
+TRAIL_ALIGNMENT_TEMPLATE = "< learned that [ is | in alignment."
+TRAIL_RACE_TEMPLATE = "< learned that [ is |."
+TRAIL_TREASURES_TEMPLATE = "< learned that [ owns ^L^V."
+TRAIL_NO_TREASURES_TEMPLATE = "< learned that [ owns no treasures."
+TRAIL_ARMIES_LED_TEMPLATE = "< learned that [ leads ^L^V."
+TRAIL_NO_ARMIES_LED_TEMPLATE = "< learned that [ leads no armies."
+TRAIL_KING_FINANCES_TEMPLATE = "< learned that [ commands a treasury of # gold."
+TRAIL_KING_ALLIES_TEMPLATE = "< learned that [ is allied with ^L^V."
+TRAIL_KING_NO_ALLIES_TEMPLATE = "< learned that [ has no allies."
+TRAIL_KING_PROVINCES_TEMPLATE = "< learned that [ controls ^L^V."
+TRAIL_KING_NO_PROVINCES_TEMPLATE = "< learned that [ controls no provinces."
+
+
+def render_trail_temper(trailer_name: str, target_name: str, temper_name: str, rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": target_name, "|": temper_name}
+    return render(TRAIL_TEMPER_TEMPLATE, values, rng=rng)
+
+
+def render_trail_alignment(trailer_name: str, target_name: str, alignment_name: str, rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": target_name, "|": alignment_name}
+    return render(TRAIL_ALIGNMENT_TEMPLATE, values, rng=rng)
+
+
+def render_trail_race(trailer_name: str, target_name: str, race_name: str, rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": target_name, "|": race_name}
+    return render(TRAIL_RACE_TEMPLATE, values, rng=rng)
+
+
+def render_trail_treasures(
+    trailer_name: str, target_name: str, treasure_names: list[str], rng: random.Random
+) -> str:
+    values = {"<": trailer_name, "[": target_name}
+    return render(TRAIL_TREASURES_TEMPLATE, values, rng=rng, lists={"^V": treasure_names})
+
+
+def render_trail_no_treasures(trailer_name: str, target_name: str, rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": target_name}
+    return render(TRAIL_NO_TREASURES_TEMPLATE, values, rng=rng)
+
+
+def render_trail_armies_led(trailer_name: str, target_name: str, army_names: list[str], rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": target_name}
+    return render(TRAIL_ARMIES_LED_TEMPLATE, values, rng=rng, lists={"^V": army_names})
+
+
+def render_trail_no_armies_led(trailer_name: str, target_name: str, rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": target_name}
+    return render(TRAIL_NO_ARMIES_LED_TEMPLATE, values, rng=rng)
+
+
+def render_trail_king_finances(trailer_name: str, king_name: str, treasury: int, rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": king_name, "#": str(treasury)}
+    return render(TRAIL_KING_FINANCES_TEMPLATE, values, rng=rng)
+
+
+def render_trail_king_allies(trailer_name: str, king_name: str, ally_names: list[str], rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": king_name}
+    return render(TRAIL_KING_ALLIES_TEMPLATE, values, rng=rng, lists={"^V": ally_names})
+
+
+def render_trail_king_no_allies(trailer_name: str, king_name: str, rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": king_name}
+    return render(TRAIL_KING_NO_ALLIES_TEMPLATE, values, rng=rng)
+
+
+def render_trail_king_provinces(
+    trailer_name: str, king_name: str, province_names: list[str], rng: random.Random
+) -> str:
+    values = {"<": trailer_name, "[": king_name}
+    return render(TRAIL_KING_PROVINCES_TEMPLATE, values, rng=rng, lists={"^V": province_names})
+
+
+def render_trail_king_no_provinces(trailer_name: str, king_name: str, rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": king_name}
+    return render(TRAIL_KING_NO_PROVINCES_TEMPLATE, values, rng=rng)
+
+
+def _trail_army_name(state: GameState, army: ArmyState) -> str:
+    """Same race-resolution shape as ``turn/aspy_execution.py
+    _army_display_name()`` (Phase 212) -- kept as a separate, small
+    duplicate rather than imported, the same "don't share a four-line
+    helper across an unrelated module boundary" precedent
+    ``_leader_combatant()`` already established (Phase 209/210's own
+    module docstrings in ``turn/cast_execution.py``/``turn/
+    search_execution.py``).
+    """
+
+    kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
+    race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else Race.HUMAN)
+    return make_army_name(army.army_id, army.army_type, race)
+
+
+def _province_label(state: GameState, coord: HexCoord) -> str:
+    """Same ``ProvinceState.name`` else raw-coordinate fallback
+    ``describe_armies_report()``'s own Phase 158 note already
+    established, kept inline there since it only has the one call site.
+    """
+
+    province = state.provinces.get(coord)
+    if province is not None and province.name:
+        return province.name
+    return f"({coord.x}, {coord.y})"
+
+
+def describe_trail_intelligence(
+    result: TrailExecutionResult, *, state: GameState, trailer_name: str, target_name: str, rng: random.Random
+) -> list[str]:
+    """Renders [3.17]'s own intelligence payload from an already-computed
+    ``TrailExecutionResult`` (``turn/trail_execution.py execute_trail()``,
+    Phases 52/159/164/165/166) -- a separate function from
+    ``describe_trail()`` above (which only narrates the catch-up moment
+    itself, ``_LCatch``) rather than folding this in, so
+    ``describe_trail()``'s own existing signature/callers stay
+    untouched.
+
+    Returns ``[]`` when ``result.spied_on`` is ``False`` -- nothing was
+    learned. Each of the five sourced fields ([3.17]'s "Actions" stays
+    unrendered -- see ``turn/trail_execution.py``'s own module docstring
+    for why it's structurally unbuildable) renders exactly one line,
+    skipped only when the field itself is ``None`` (temper/alignment/
+    race, the same "no data recorded" convention the data layer already
+    uses) -- the list-shaped fields (treasures/armies led) always render
+    one line, choosing between a populated-list template and a
+    dedicated "none" template rather than skipping silently, since an
+    empty list is itself a real, learned fact ("Trailer learned Target
+    owns nothing"), not missing data.
+
+    ``result.king_intelligence`` (only set when the target is a King)
+    adds up to three further lines the same way: finances always
+    renders (a treasury of 0 gold is still a real fact); allies and
+    controlled provinces each choose between their populated/"none"
+    template pair. Kingdom names are resolved via
+    ``GameState.kingdoms``; province names via ``ProvinceState.name``,
+    falling back to a raw coordinate the same way
+    ``describe_armies_report()``'s own Phase 158 precedent already
+    does for an unnamed province.
+    """
+
+    if not result.spied_on:
+        return []
+
+    lines: list[str] = []
+    if result.temper is not None:
+        lines.append(render_trail_temper(trailer_name, target_name, TEMPER_NAME[result.temper], rng))
+    if result.alignment is not None:
+        lines.append(render_trail_alignment(trailer_name, target_name, result.alignment.value, rng))
+    if result.race is not None:
+        lines.append(render_trail_race(trailer_name, target_name, RACE_NAME[result.race], rng))
+
+    treasure_names = [TREASURE_NAME[item.treasure] for item in result.treasures_owned]
+    if treasure_names:
+        lines.append(render_trail_treasures(trailer_name, target_name, treasure_names, rng))
+    else:
+        lines.append(render_trail_no_treasures(trailer_name, target_name, rng))
+
+    army_names = [_trail_army_name(state, army) for army in result.armies_led]
+    if army_names:
+        lines.append(render_trail_armies_led(trailer_name, target_name, army_names, rng))
+    else:
+        lines.append(render_trail_no_armies_led(trailer_name, target_name, rng))
+
+    king = result.king_intelligence
+    if king is not None:
+        lines.append(render_trail_king_finances(trailer_name, target_name, king.treasury, rng))
+
+        ally_names = [
+            state.kingdoms[kid].name for kid in king.allied_kingdom_ids if kid in state.kingdoms
+        ]
+        if ally_names:
+            lines.append(render_trail_king_allies(trailer_name, target_name, ally_names, rng))
+        else:
+            lines.append(render_trail_king_no_allies(trailer_name, target_name, rng))
+
+        province_names = [_province_label(state, coord) for coord in king.controlled_provinces]
+        if province_names:
+            lines.append(render_trail_king_provinces(trailer_name, target_name, province_names, rng))
+        else:
+            lines.append(render_trail_king_no_provinces(trailer_name, target_name, rng))
+
+    return lines
 
 
 # The Cast/Use_MI spells whose own SPELL_CAST_ANNOUNCEMENT entry needs a

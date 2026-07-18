@@ -8361,7 +8361,7 @@ Augur Combat [AC] (205), Locate Object [LO] (206), Illusory Fog [IF]
     Hand of Death; sourced-tier/leader-default-plus-bonus lookup, instant
     win, and instant loss for Mirror-Image). Full suite: 2538 passed
     (2517 unchanged + 21 new).
-- **Phase 211 (current)**: wired Illusory Hero [IH] -- the last of the ten
+- **Phase 211**: wired Illusory Hero [IH] -- the last of the ten
   secret spells (`AdvancedAbility.ILLUSORY_HERO_SPELL`, `Ability.ILLUSION`
   level 5+) and the last spell in this project with zero prior real
   execution. Module docstring's own Phase 208 addendum quotes the rule in
@@ -8429,6 +8429,79 @@ Illusory Hero (the last of the ten secret spells) are now wired into real
 Search combat** -- the CAST-tactic orchestration engine `turn/cast_
 execution.py`'s own docstring named as the blocking gap since Phase 60 is
 complete (Phases 209-211).
+- **Phase 212 (current)**: closes the "render already-computed
+  intelligence data into report prose" half of Trail's/ASpy's own
+  long-flagged gap -- researched first and found the *data* layer for
+  both was already fully complete (Trail's own five sourceable [3.17]
+  fields since Phases 159/164/165/166; ASpy's own province facts and
+  `SAY.PAS` line items since Phases 62/115/118), just never assembled or
+  rendered.
+  - **`describe_aspy(report, *, spy_name, province_name, rng) ->
+    list[str]`** (`report/turn_report.py`, new): the first real assembly
+    of Phase 115/118's own `SAY.PAS`-sourced ASpy templates
+    (`render_spy_report_opening`/`_capital_province`/`_army_type`/
+    `_elements_intro`/`_character_here`/`_no_characters(_or_forces)`/
+    `_leads`/`_garrison`/`_report_closing`) -- every one of them already
+    real and sourced, simply never called from anywhere before this
+    phase. The assembly *order* itself is this project's own reasoned
+    choice, not a directly-quoted `REPORTS.PAS` call sequence (no
+    surrounding `Imp_Code` control-flow source survives, only the raw
+    `Say(...)` constants) -- documented as such in the function's own
+    docstring. Taxation (`_LSTax`) still never renders: `SpyReport`
+    still carries no tax estimate (no per-province tax-base model
+    exists anywhere in this project).
+  - **`turn/aspy_execution.py`** gains the army-name data
+    `describe_aspy()` needed but `SpyReport` never carried:
+    `SpottedCharacter.army_names` (every army a spotted character
+    leads) and `SpyReport.garrison_army_names` (every *unled* army at
+    the spy's own province), both named via `models/army_naming.py
+    make_army_name()` -- built Phase 149, never given a real caller
+    until now. Race (needed only to decide whether a short non-Human
+    tag is appended) resolves the same way `describe_armies_report()`'s
+    own Phase 158 precedent already established (`MONSTROUS_ARMY_RACE`
+    else the owning Kingdom's race), with an explicit `Race.HUMAN`
+    fallback, flagged in `_army_display_name()`'s own docstring, for a
+    mercenary army with no owning Kingdom to source a race from at all.
+  - **Trail's own [3.17] intelligence payload gets project-original
+    prose**, confirmed by direct user instruction ("Prosa originale del
+    progetto") after confirming no `PROSE`/`SAY.PAS` source exists for
+    these specific sentences anywhere in the available archive (unlike
+    ASpy's own templates above). Eleven new hardcoded templates
+    (`TRAIL_TEMPER_TEMPLATE` through `TRAIL_KING_NO_PROVINCES_TEMPLATE`)
+    plus their `render_trail_*()` wrappers, assembled by the new
+    **`describe_trail_intelligence(result, *, state, trailer_name,
+    target_name, rng) -> list[str]`** -- a separate function from the
+    pre-existing `describe_trail()` (which only narrates the catch-up
+    moment itself, `_LCatch`), so that function's own signature/callers
+    stay untouched. Narrates temper/alignment/race (skipped when `None`,
+    the data layer's own "not recorded" convention) and treasures
+    owned/armies led (always one line each, choosing a populated-list
+    template or a dedicated "owns/leads none" template rather than
+    skipping silently -- an empty list is itself a learned fact, not
+    missing data). `result.king_intelligence` (only set for a King
+    target) adds finances/allies/controlled-provinces the same way.
+    [3.17]'s remaining named field, Actions, still isn't rendered --
+    still structurally unbuildable, per `turn/trail_execution.py`'s own
+    already-standing note (no per-phase action log exists anywhere in
+    this project).
+  - **Two stale docstring claims corrected** (this project's own
+    "don't let a doc comment outlive the code" policy, Phase 55/153/159/
+    160's own precedent): `turn/intelligence_estimate.py`'s docstring
+    still said `LeaderState.alignment` didn't exist as of Phase 211,
+    two phases after Phase 162 actually added it; `turn/
+    search_execution.py _resolve_cast_tactic()`'s own docstring still
+    said Illusory Hero "stays unwired here," a full phase after Phase
+    211 wired it.
+  - Non-breaking: full suite passed unchanged (2554 passed) before any
+    new tests were written -- new fields/functions only, no existing
+    caller touched. 30 new tests added (2584 passed total) across
+    `tests/test_aspy_execution.py` (army-name data: leads, garrison,
+    the mercenary Human-race fallback), `tests/test_turn_report.py`
+    (every new `render_trail_*` function, `describe_trail_intelligence`
+    across its None-field/empty-list/populated-list/King branches, and
+    `describe_aspy` across its no-characters-or-forces/forces-without-
+    characters/characters-with-and-without-armies/capital/recruitable-
+    types branches).
 
 ## Setup
 
