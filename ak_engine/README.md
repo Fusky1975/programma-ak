@@ -8887,7 +8887,7 @@ complete (Phases 209-211).
     tests in `tests/test_models.py` for `TERRAIN_NAME` (full-coverage
     of every `Terrain` member, and the exact sourced display strings) --
     2638 passed total.
-- **Phase 221 (current)**: `report/turn_report.py
+- **Phase 221**: `report/turn_report.py
   describe_characters_report()` (new) -- the "CHARACTERS" section,
   sourced from `Rep_Leaders` (`~REPORTS.PAS` line 658-855, one of the
   largest procedures in the archive, as already flagged by this file's
@@ -8938,6 +8938,77 @@ complete (Phases 209-211).
     `tests/test_models.py` for `ABILITY_ABBREVIATION` (full coverage of
     every `Ability` member, and the exact sourced abbreviations) --
     2647 passed total.
+- **Phase 222 (current)**: `parser/gw_world.py parse_gw_world()` (new) --
+  a parser for the original engine's "world file" format (e.g. `GW3`,
+  `GW3__T1`), the first step of a much larger arc the user is walking
+  through by hand: unblocking IMPERIAL OFFICE REPORT's own confirmed
+  permanent dead end (`models/office.py`'s own Phase 137 docstring) by
+  supplying real rulebook material -- the "TABELLA DELLE CARICHE
+  IMPERIALI" (the 8 real Imperial Office merit-point formulas), the
+  "TABELLA DEGLI ALLINEAMENTI" (the real `outred[]` Alignment-reduction
+  percentages this project's own `REPORTS.PAS` reading had found but
+  never had values for), and the real Emperor-election voting rule
+  (55%/50% thresholds -- **not** the different 2%/4% strings found in
+  `AKGEN.EXE`, which the user explicitly confirmed are not the real
+  rule) -- plus asking for `AKGEN.EXE`/the real `GW*` world files to be
+  checked for corroboration. Almost every one of those formulas needs a
+  real per-province tax value (`ptax`/"Tax_Base"), confirmed absent
+  since Phase 158 and reconfirmed at every section composer since
+  (FINANCES, PROVINCES) -- this phase closes that gap for good, by
+  parsing it directly out of real world-file data instead of deriving
+  it from a formula (none survives).
+  - **No surviving Pascal source declares this file's format** -- it
+    was recovered empirically by cross-referencing known real per-
+    province Tax/Race/Terrain values quoted verbatim in a real King's
+    own turn-report letter (`SE3__T1.K2`'s "PROVINCES" section and its
+    own ASCII map legend) against the raw integers in the matching real
+    world-file snapshot (`GW3__T1`, same game, same turn). See
+    `parser/gw_world.py`'s own module docstring for the full recovery
+    with quoted evidence.
+  - **Confirmed record shape**: 4 lines per province (162 total,
+    confirmed twice -- a file-wide regex match count, and a clean
+    remainder-free line-count division) -- name, `"<tax> <terrain> 0
+    <race> 0 6"`, an undecoded 2-integer line, and a governing leader's
+    own id (`255` = unowned). `terrain`/`race` are the *exact* ordinal
+    values this project's own `Terrain`/`Race` enums already use --
+    confirmed across 20+ real records, no new mapping table needed.
+  - **A real naming correction made mid-phase**: the trailing id was
+    first assumed to be an owning kingdom id (matching the research
+    agent's own initial framing); cross-checking `SE3__T1.K2`'s own map
+    legend (`"Philo(70)"` governing Transylvania -- Philo is a Hero, not
+    a King) proved it's actually the *governing leader's own id*, not a
+    kingdom id -- `GWProvinceRecord.governor_leader_id`, not
+    `owner_kingdom_id`. For a King-governed province this id happens to
+    equal the kingdom id (the same project-wide "King's leader_id ==
+    kingdom_id" convention), but resolving it in general needs a
+    `GameState`-level leader/kingdom lookup this pure file parser
+    deliberately doesn't perform.
+  - **A bonus discovery, not consumed by this parser**: the same map
+    legend also prints each province's own real coordinate as
+    `"<Name>(<XXYY>)"` (e.g. `"Macondo(0205)"`) -- cross-referencing the
+    letter's own row layout against `GW3__T1`'s own on-disk record order
+    strongly suggests row-major ordering, a promising lead for a future
+    phase's coordinate-bridging work, not implemented here.
+  - **Known gaps, deliberately not attempted this phase**: no
+    coordinate field exists in a province's own record, so
+    `parse_gw_world()` returns file-order records, not `HexCoord`-keyed
+    `ProvinceState`s -- bridging into `GameState.provinces` is deferred.
+    The undecoded 2-integer middle line, `governor_leader_id`-to-
+    kingdom resolution, and everything outside the province-record block
+    (kingdom headers, a differently-shaped record format after the
+    block) are all out of scope here too.
+  - New fixture: `tests/fixtures/world/G3/GW3__T1` (44KB, real,
+    user-provided, read-only reference data -- the same precedent
+    `tests/fixtures/reports/G6/` already established).
+  - Non-breaking: full suite passed unchanged (2647 passed) before any
+    new tests were written (this phase adds a wholly new, previously
+    untouched module -- no existing call site could regress). 6 new
+    tests added in `tests/test_gw_world_parser.py` (covering: the full
+    162-province count, exact Tax/Race/Terrain match against real
+    letter-quoted ground truth for 3 provinces, the `255`-unowned-to-
+    `None` sentinel, a King's own capital resolving to his own id,
+    3 more Race ordinals cross-checked, and a truncated-record parse
+    error) -- 2653 passed total.
 
 ## Setup
 
