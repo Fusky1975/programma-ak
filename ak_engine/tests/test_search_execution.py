@@ -1211,3 +1211,181 @@ def test_execute_search_cast_illusory_hero_turns_on_master_false_when_alignments
         execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert mock_duel.call_args.kwargs["turns_on_master"] is False
+
+
+# -- Phase 214: Gate Demon / Lava Pool ----------------------------------------
+
+
+def test_execute_search_cast_gate_demon_refusal_only_rolled_for_eligible_alignment():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_DEMON)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_alignment", return_value=Alignment.GOOD
+    ), patch("ak_engine.turn.search_execution.resolve_gate_demon_refusal") as mock_refusal, patch(
+        "ak_engine.turn.search_execution.roll_gate_demon_type", return_value=Monster.ARCHER
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    # Alignment.GOOD is below the Evil-to-Undead eligibility floor -- the
+    # demon never even considers refusing.
+    assert not mock_refusal.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_gate_demon_refusal_prevents_the_demon_duel():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_DEMON, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_alignment", return_value=Alignment.EVIL
+    ), patch("ak_engine.turn.search_execution.resolve_gate_demon_refusal", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_gate_demon_type"
+    ) as mock_demon_type, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_demon_type.called  # refused -- no demon is ever summoned
+    assert mock_melee.called  # falls through to the plan's own following Melee tactic
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_gate_demon_win_credits_the_caster():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_DEMON)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_alignment", return_value=Alignment.GOOD
+    ), patch("ak_engine.turn.search_execution.roll_gate_demon_type", return_value=Monster.ARCHER), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=3)
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+
+
+def test_execute_search_cast_gate_demon_loss_lets_the_plan_continue():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_DEMON, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_alignment", return_value=Alignment.GOOD
+    ), patch("ak_engine.turn.search_execution.roll_gate_demon_type", return_value=Monster.ARCHER), patch(
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.side_effect = [
+            EncounterCombatResult(winner="b", rounds=2),  # the demon loses to the guardian
+            EncounterCombatResult(winner="a", rounds=1),  # the plan's own following Melee
+        ]
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.call_count == 2
+    assert result.winner == "leader"  # decided by the second (real) duel, not the demon's loss
+
+
+def test_execute_search_cast_gate_demon_missing_stats_has_no_effect():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_DEMON, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_alignment", return_value=Alignment.GOOD
+    ), patch(
+        "ak_engine.turn.search_execution.roll_gate_demon_type", return_value=Monster.NOMONSTER
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.call_count == 1  # only the plan's own Melee tactic -- no demon duel attempted
+
+
+def test_execute_search_cast_lava_pool_immune_species_has_no_effect():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPECTRE))
+    request = _cast_request(1, Spell.LAVA_POOL, Maneuver.MELEE)
+
+    # SPECTRE's own real rolled plan may include real CAST tactics of its
+    # own; mocked empty here for the same reason the Ice Suspend immune-
+    # species test above does.
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()
+    ), patch("ak_engine.turn.search_execution.resolve_lava_pool_escape") as mock_escape, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_escape.called
+
+
+def test_execute_search_cast_lava_pool_uses_the_monster_targets_own_speed():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.LAVA_POOL)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_lava_pool_escape", return_value=True
+    ) as mock_escape:
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    # MONSTER_COMBAT_STATS[Monster.ARCHER].speed is MonsterSpeed.MEDIUM.
+    assert mock_escape.call_args[0][0] is MonsterSpeed.MEDIUM
+
+
+def test_execute_search_cast_lava_pool_escape_has_no_effect():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.LAVA_POOL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_lava_pool_escape", return_value=True
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called  # no instant kill -- falls through to the plan's own Melee
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_lava_pool_failed_escape_kills_instantly():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.LAVA_POOL)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_lava_pool_escape", return_value=False
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+
+
+def test_execute_search_cast_lava_pool_on_a_leader_target_defaults_to_medium_speed():
+    # A leader target has no sourced speed of its own -- defaults to
+    # MonsterSpeed.MEDIUM, the same tier the rulebook's own [5.6] Flee
+    # text already groups "other characters" into. The MONSTER is the
+    # caster here (its own rolled plan carries the CAST tactic), the
+    # leader is the target -- the reverse of every other test above.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _melee_request(1)
+    monster_plan = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.LAVA_POOL.value),)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_lava_pool_escape", return_value=True
+    ) as mock_escape, patch(
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_escape.call_args[0][0] is MonsterSpeed.MEDIUM

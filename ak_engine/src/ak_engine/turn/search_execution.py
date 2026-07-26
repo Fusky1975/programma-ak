@@ -201,7 +201,8 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from ak_engine.models.alignment import Alignment
+from ak_engine.models.advanced_ability import LAVA_POOL_IMMUNE_MONSTERS
+from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.monster import (
@@ -218,6 +219,8 @@ from ak_engine.models.monster import (
     SUBMARINE_MONSTERS,
     Monster,
     MonsterSpeed,
+    roll_gate_demon_type,
+    roll_monster_alignment,
 )
 from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
@@ -240,8 +243,10 @@ from ak_engine.turn.encounter import (
     illusory_hero_alignments_are_implacably_hostile,
     mirror_image_leader_disbelief_bonus,
     resolve_fire_arrow_duel,
+    resolve_gate_demon_refusal,
     resolve_hand_of_death_channel,
     resolve_illusory_hero_duel,
+    resolve_lava_pool_escape,
     resolve_melee_duel,
     resolve_mirror_image_duel,
     resolve_personal_combat_spell_cast,
@@ -415,10 +420,14 @@ def execute_search(
         Valhalla, ``models/valhalla.py VALHALLA_VISITOR_LEADER_ID``,
         rather than a clone of the opponent, and Stage 2 only fires when
         the hero's and caster's own alignments are confirmed "implacably
-        hostile"). Returns a terminal ``SearchExecutionResult`` (a kill, a
-        neutralization, or Charm's own guaranteed Flee), or ``None`` if
-        the encounter continues (a failed cast, a stat-modifier effect,
-        or a spell whose target isn't eligible).
+        hostile"), and Gate Demon/Lava Pool from Phase 237 (a summoned
+        demon fights the opponent in Gate Demon's own place via a fresh
+        ``resolve_melee_duel()``; Lava Pool is a flat, speed-keyed
+        instant-kill-or-escape roll). Returns a terminal
+        ``SearchExecutionResult`` (a kill, a neutralization, or Charm's
+        own guaranteed Flee), or ``None`` if the encounter continues (a
+        failed cast, a stat-modifier effect, or a spell whose target
+        isn't eligible).
         """
 
         caster = leader_combatant if caster_is_leader else monster_combatant
@@ -453,6 +462,14 @@ def execute_search(
             # Hero is one of the ten secret spells, tied to Ability.
             # ILLUSION (module docstring's own Phase 208/211 addenda).
             ability = Ability.ILLUSION
+        elif spell is Spell.GATE_DEMON:
+            # Phase 237: secret spell, tied to Ability.NECROMANCY
+            # (`turn/encounter.py`'s own Phase 202 addendum).
+            ability = Ability.NECROMANCY
+        elif spell is Spell.LAVA_POOL:
+            # Phase 237: secret spell, tied to Ability.ELEMENTAL
+            # (`turn/encounter.py`'s own Phase 203 addendum).
+            ability = Ability.ELEMENTAL
         elif spell in PERSONAL_COMBAT_SPELL_ABILITY:
             ability = PERSONAL_COMBAT_SPELL_ABILITY[spell]
         else:
@@ -655,6 +672,73 @@ def execute_search(
             if duel_result.winner == "b":
                 return _outcome_from(EncounterCombatResult(winner=("b" if target_is_monster else "a"), rounds=0))
             return None
+
+        if spell is Spell.GATE_DEMON:
+            # "A Demon may refuse to fight an opponent of Evil to Undead
+            # alignment" -- the refusal roll is only even attempted
+            # against an eligible opponent (Alignment.EVIL/ANTI_HOLY/
+            # UNDEAD, ALIGNMENT_ORDINAL 5-7). A monster target has no
+            # persisted alignment anywhere in this project (`models/
+            # feature.py Feature` carries none) -- rolled fresh here via
+            # `roll_monster_alignment()`, the same real, sourced
+            # per-species distribution `models/monster.py` already uses
+            # for world generation, rather than guessed or left unusable.
+            target_alignment = (
+                roll_monster_alignment(monster_species, rng) if target_is_monster else leader.alignment
+            )
+            opponent_eligible_for_refusal = (
+                target_alignment is not None and ALIGNMENT_ORDINAL[target_alignment] >= ALIGNMENT_ORDINAL[Alignment.EVIL]
+            )
+            if opponent_eligible_for_refusal and resolve_gate_demon_refusal(rng):
+                return None  # the gate opened, but the demon refused to fight
+            demon_species = roll_gate_demon_type(rng)
+            demon_stats = MONSTER_COMBAT_STATS.get(demon_species)
+            if demon_stats is None:
+                return None
+            demon = Combatant(
+                name=MONSTER_NAMES.get(demon_species, "demon"),
+                hit_points=rng.randint(*demon_stats.hit_points_range),
+                melee_skill=demon_stats.melee_skill,
+                melee_damage_range=demon_stats.melee_damage,
+                archery_skill=demon_stats.missile_skill,
+                missile_damage_range=demon_stats.missile_damage
+                if demon_stats.missile_damage is not None
+                else FIRE_ARROW_DAMAGE_RANGE,
+            )
+            # "The Demon fights in place of the spellcaster" -- Melee
+            # only, the same "mixed tactics/range transitions aren't
+            # modeled" scope every duel in this module already carries
+            # (`resolve_melee_duel`'s own docstring). The demon's own
+            # spellcasting (real per the `SE3__T11.K1` worked example)
+            # would need this same CAST-tactic engine recursively --
+            # explicitly out of scope, the same "confirmed but not
+            # modeled" stance `turn/encounter.py`'s own Phase 202
+            # addendum already takes.
+            duel_result = resolve_melee_duel(demon, target, rng)
+            if duel_result.winner == "a":
+                # GATE_DEMON_WINNER_RETURNS_TO_ABYSS -- the caster is
+                # credited with the win, same as every other spell above.
+                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            # GATE_DEMON_LOSS_CASTER_RESUMES_FIGHT_AT_CURRENT_RANGE -- no
+            # direct penalty on the caster; the plan simply continues.
+            return None
+
+        if spell is Spell.LAVA_POOL:
+            if target_is_monster and monster_species in LAVA_POOL_IMMUNE_MONSTERS:
+                return None
+            if target_is_monster:
+                target_speed = MONSTER_COMBAT_STATS[monster_species].speed
+            else:
+                # Rulebook [5.6] (already quoted in `turn/encounter.py`'s
+                # own module docstring): "medium-speed monsters OR OTHER
+                # CHARACTERS is a 50-50 proposition" -- a character
+                # target defaults to MEDIUM, the same tier the rulebook's
+                # own Flee text already groups characters into.
+                target_speed = MonsterSpeed.MEDIUM
+            if resolve_lava_pool_escape(target_speed, rng):
+                return None  # escaped
+            # LAVA_POOL_KILLS_INSTANTLY -- a failed escape is a full kill.
+            return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
 
         return None
 

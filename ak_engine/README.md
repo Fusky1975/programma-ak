@@ -9522,7 +9522,7 @@ complete (Phases 209-211).
     new tests were written. 8 new tests added to `tests/
     test_turn_report.py` -- 2780 passed total.
 
-- **Phase 236 (current)**: two open-gap items the user chose from a
+- **Phase 236**: two open-gap items the user chose from a
   status report ("gap ancora aperti": army naming blocking
   `describe_battle()`, and other spells with known formulas but not
   executed) -- "vai col Gap 1, poi riprendi la Fase 209" -- this phase
@@ -9574,6 +9574,54 @@ complete (Phases 209-211).
     plus 3 updated `describe_battle()` tests in `tests/
     test_turn_report.py`, 1 new `is_skeletal` assertion in `tests/
     test_cast_execution.py`) -- 2792 passed total.
+
+- **Phase 237 (current)**: closes 2 of the 3 remaining "formula ready,
+  never dispatched" secret Personal-Combat spells identified in the
+  same Gap 2 status report as Phase 236's own Gap 1 -- Gate Demon and
+  Lava Pool, both wired into `turn/search_execution.py
+  _resolve_cast_tactic()` the same way Phases 209/210/211 wired every
+  other secret spell. (Augur Combat, the third, stays genuinely blocked
+  -- it needs a "silent battle simulation" whose own scope, per
+  `turn/encounter.py`'s own Phase 205 addendum, has no sourced answer
+  anywhere in this project.) First re-verified that Phases 209/210 --
+  the CAST-tactic orchestration engine itself -- were in fact already
+  complete and committed, correcting an earlier assumption in this same
+  conversation that they were still pending from an old plan-mode draft.
+  - **Gate Demon [GD]**: on a successful cast, rolls the summoned demon's
+    own species (`models/monster.py roll_gate_demon_type()`) and builds
+    it a real `Combatant` via the exact "clone from `MONSTER_COMBAT_
+    STATS`, roll `hit_points`" pattern the guardian monster itself
+    already uses. The 50% refusal roll (`resolve_gate_demon_refusal()`)
+    only fires when the opponent's alignment is Evil-to-Undead
+    (`ALIGNMENT_ORDINAL` 5-7) -- a monster opponent has no persisted
+    alignment anywhere in this project, so it's rolled fresh via
+    `models/monster.py roll_monster_alignment()`, the same real,
+    sourced per-species distribution world generation itself uses,
+    rather than guessed or left unusable. The demon then fights the
+    opponent via a plain `resolve_melee_duel()` (its own real
+    spellcasting, confirmed by the `SE3__T11.K1` worked example already
+    quoted in `turn/encounter.py`, stays out of scope -- it would need
+    this same CAST engine recursively). A win credits the caster
+    (`GATE_DEMON_WINNER_RETURNS_TO_ABYSS`); a loss has no direct penalty
+    and the plan simply continues (`GATE_DEMON_LOSS_CASTER_RESUMES_
+    FIGHT_AT_CURRENT_RANGE`).
+  - **Lava Pool [LP]**: a flat, target-speed-keyed escape roll
+    (`resolve_lava_pool_escape()`) after an immunity check
+    (`models/advanced_ability.py LAVA_POOL_IMMUNE_MONSTERS` -- flying/
+    underwater/anti-holy/ghostly species). A monster target's speed
+    comes straight from `MONSTER_COMBAT_STATS`; a leader target has no
+    sourced speed of its own, so it defaults to `MonsterSpeed.MEDIUM` --
+    the same tier `turn/encounter.py`'s own [5.6] Flee quote already
+    groups "other characters" into ("medium-speed monsters or other
+    characters is a 50-50 proposition"). A failed escape is a full,
+    instant kill (`LAVA_POOL_KILLS_INSTANTLY`).
+  - `turn/encounter.py`'s own "not wired into `turn/search_execution.py`"
+    confessions for both spells corrected to reflect the new wiring.
+  - Non-breaking: full suite passed unchanged (2792 passed) before any
+    new tests were written. 10 new tests added to `tests/
+    test_search_execution.py` (5 per spell: refusal/immunity gating,
+    win, loss/escape, and the leader-target speed default) -- 2802
+    passed total.
 
 ## Setup
 

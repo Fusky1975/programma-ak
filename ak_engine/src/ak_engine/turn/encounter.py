@@ -1013,9 +1013,13 @@ established (inline there, not extracted into a shared helper) -- no
 new reusable function is added here since, like every Personal-Combat
 spell above, nothing yet consumes it.
 
-**Not wired into `turn/search_execution.py`'s combat resolution this
-phase either**, same reason as every other Personal-Combat spell
-above.
+**Wired into `turn/search_execution.py`'s combat resolution as of
+Phase 237** (`_resolve_cast_tactic()`'s own `Spell.GATE_DEMON` branch):
+the demon's own `Combatant` is built there, using this exact "clone
+from `MONSTER_COMBAT_STATS`, roll `hit_points`" pattern. The demon's own
+spellcasting stays out of scope -- it fights Melee only, the same
+"mixed tactics aren't modeled" limit `resolve_melee_duel()` already
+carries for every other duel in this project.
 
 **Phase 203 addendum -- Lava Pool [LP], tied to Ability.ELEMENTAL,
 project-original (user-supplied), the first Elemental secret spell and
@@ -1072,9 +1076,13 @@ rather than left to look like a third sourced data point.
    a damage roll of any kind -- there is no `LAVA_POOL_DAMAGE_*`
    constant to invent.
 
-**Not wired into `turn/search_execution.py`'s combat resolution this
-phase either**, same reason as every other Personal-Combat spell
-above.
+**Wired into `turn/search_execution.py`'s combat resolution as of
+Phase 237** (`_resolve_cast_tactic()`'s own `Spell.LAVA_POOL` branch).
+A monster target's speed comes straight from `MONSTER_COMBAT_STATS`; a
+leader target has no sourced speed of its own, so it defaults to
+`MonsterSpeed.MEDIUM` -- the same tier this module's own [5.6] Flee
+quote above already groups "other characters" into ("medium-speed
+monsters or other characters is a 50-50 proposition").
 
 **Phase 205 addendum -- Augur Combat [AC], tied to Ability.PSYCHIC,
 project-original (user-supplied), the first Psychic secret spell and
