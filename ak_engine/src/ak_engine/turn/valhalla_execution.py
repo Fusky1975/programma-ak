@@ -11,20 +11,17 @@ that winner is truly final (i.e. every leader's Cast phase has been
 dispatched for the turn), pick a real hero from ``models/valhalla.py
 VALHALLA_ROSTER`` and materialize it as a genuine ``LeaderState``.
 
-**Deliberately not wired into ``turn/turn_processor.py``'s own
-``run_turn()`` yet.** ``finalize_gate_angel_visit()`` below is a
-complete, independently testable function -- the caller is responsible
-for invoking it exactly once per turn, after every leader's Cast phase
-has been dispatched (calling it any earlier risks picking the wrong
-kingdom's hero, since a later same-turn, same-due-alignment cast can
-still steal the reservoir-sampling win). This mirrors the exact
-"implement the execution function, wire it into the real dispatch loop
-in a later phase" split this project already used for Cast execution
-itself (Phase 172 implemented ``_execute_charm``/``_execute_kill_enemy``
-as standalone, tested functions; Phase 173 wired them into
-``plan_dispatch.py``) -- ``turn_processor.py`` is a large, heavily
-tested orchestrator, and deciding exactly *where* "the end of a turn"
-lives in its own phase loop is a distinct, scoped task of its own.
+**Wired into ``turn/turn_processor.py``'s own ``run_turn()`` as of
+Phase 199** (its own "GATE ANGEL / VALHALLA VISIT" docstring section):
+``finalize_gate_angel_visit()`` below is called exactly once per turn,
+after every leader's Cast phase has been dispatched -- calling it any
+earlier would risk picking the wrong kingdom's hero, since a later
+same-turn, same-due-alignment cast can still steal the reservoir-
+sampling win. This mirrors the "implement the execution function, wire
+it into the real dispatch loop in a later phase" split this project
+already used for Cast execution itself (Phase 172 implemented
+``_execute_charm``/``_execute_kill_enemy`` as standalone, tested
+functions; Phase 173 wired them into ``plan_dispatch.py``).
 
 **The recipient is the winning Kingdom's own King** ("I personaggi
 appariranno a fianco del Re" -- the visitor spawns at the King's own
