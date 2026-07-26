@@ -12,6 +12,7 @@ from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
+from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.encounter import FIRE_ARROW_DAMAGE_RANGE, EncounterCombatResult, FireArrowShot
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
@@ -1389,3 +1390,187 @@ def test_execute_search_cast_lava_pool_on_a_leader_target_defaults_to_medium_spe
         execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert mock_escape.call_args[0][0] is MonsterSpeed.MEDIUM
+
+
+# -- Phase 238: Augur Combat ---------------------------------------------------
+
+
+def test_execute_search_cast_augur_combat_monster_caster_has_no_effect():
+    # Confirmed by the user: never appears in any real
+    # monster_encounter_plan.py species plan and a monster has no Temper
+    # to shirk with, so a monster-cast Augur Combat is a documented
+    # no-effect.
+    state = _state_with_leader(skills=SkillTable(raw_values=[0] * 30))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _melee_request(1)
+    monster_plan = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.AUGUR_COMBAT.value),)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ) as mock_roll, patch(
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_roll.called  # the generic cast-success roll still happens...
+    assert result.winner == "leader"  # ...but the spell's own effect is a documented no-op
+
+
+def test_execute_search_cast_augur_combat_not_first_tactic_flee_succeeds():
+    # AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER -- Maneuver.TALK (unwired,
+    # no-op, no RNG consumed) stands in as a harmless "something else came
+    # first" tactic.
+    leader = _skilled_leader(Ability.PSYCHIC, 5, temper=Temper.COWARDLY)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(maneuver=Maneuver.TALK),
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.AUGUR_COMBAT.value),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        ],
+    )
+
+    # Archer is MEDIUM speed (50% flee chance). Padding: the monster's own
+    # hit_points draw (rng.randint()) runs first, consuming an unknown
+    # number of randoms from the front of the queue (same established
+    # pattern as test_execute_search_flee_tactic_success_ends_search_
+    # without_combat above) -- every value here is 0.01 (< 50%), so
+    # whichever one lands on the Flee-check roll still succeeds.
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.01] * 20))
+
+    assert result.fled is True
+    assert result.combat_resolved is False
+    assert not mock_melee.called
+
+
+def test_execute_search_cast_augur_combat_not_first_tactic_flee_fails_falls_through():
+    leader = _skilled_leader(Ability.PSYCHIC, 5, temper=Temper.COWARDLY)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(maneuver=Maneuver.TALK),
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.AUGUR_COMBAT.value),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        ],
+    )
+
+    # Archer is MEDIUM speed (50% flee chance). Padding: every value here is
+    # 0.99 (>= 50%), so whichever one lands on the Flee-check roll still
+    # fails, regardless of how many the monster's own hit_points draw
+    # consumes first (same rationale as the test above).
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.99] * 20))
+
+    assert result.fled is False
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_augur_combat_first_tactic_no_temper_has_no_effect():
+    state = _state_with_leader()  # no skills, no temper
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.AUGUR_COMBAT, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.call_count == 1  # only the plan's own Melee -- no simulated duel attempted
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_augur_combat_simulated_win_never_shirks():
+    leader = _skilled_leader(Ability.PSYCHIC, 5, temper=Temper.COWARDLY)  # highest shirk chance (80%)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.AUGUR_COMBAT, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.side_effect = [
+            EncounterCombatResult(winner="a", rounds=2),  # the silent simulation: caster wins
+            EncounterCombatResult(winner="a", rounds=1),  # the plan's own real, following Melee
+        ]
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.call_count == 2  # simulation always runs, real duel follows (never shirks)
+    assert result.fled is False
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_augur_combat_simulated_loss_shirks_and_flees():
+    leader = _skilled_leader(Ability.PSYCHIC, 5, temper=Temper.COWARDLY)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.AUGUR_COMBAT, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="b", rounds=2)
+    ) as mock_melee, patch("ak_engine.turn.search_execution.resolve_augur_combat", return_value=True) as mock_shirk:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_shirk.call_args[0][0] is True  # would_lose_simulated_combat
+    assert mock_shirk.call_args[0][1] is Temper.COWARDLY
+    assert mock_melee.call_count == 1  # only the simulation ran -- shirked before any real duel
+    assert result.fled is True
+    assert result.combat_resolved is False
+
+
+def test_execute_search_cast_augur_combat_simulated_loss_no_shirk_falls_through():
+    leader = _skilled_leader(Ability.PSYCHIC, 5, temper=Temper.BERSERK)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.AUGUR_COMBAT, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee, patch("ak_engine.turn.search_execution.resolve_augur_combat", return_value=False):
+        mock_melee.side_effect = [
+            EncounterCombatResult(winner="b", rounds=2),  # simulation: caster loses
+            EncounterCombatResult(winner="a", rounds=1),  # real Melee, unaffected by the loss
+        ]
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.call_count == 2
+    assert result.fled is False
+    assert result.winner == "leader"
+
+
+def test_execute_search_cast_augur_combat_simulation_does_not_mutate_real_combatants():
+    # `dataclasses.replace()` clones -- a real (unmocked) simulated duel
+    # must not leave the real leader/monster combatants damaged before
+    # the real duel actually runs.
+    leader = _skilled_leader(Ability.PSYCHIC, 5, temper=Temper.BRAVE)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.AUGUR_COMBAT, Maneuver.MELEE)
+
+    # Real resolve_melee_duel/resolve_augur_combat, real RNG -- if the
+    # simulation mutated the real combatants, this would either crash
+    # (fighting with 0 or negative hit points) or resolve the second,
+    # real duel deterministically wrong.
+    result = execute_search(state, LEADER_ID, request, random.Random(42))
+
+    assert result.combat_resolved is True or result.fled is True
+    assert result.winner in ("leader", "monster", None)

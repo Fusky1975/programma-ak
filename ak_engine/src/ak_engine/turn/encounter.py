@@ -1142,9 +1142,19 @@ does.
    spell-effect engine exists yet for any of the... spells these plans
    reference").
 
-**Not wired into `turn/search_execution.py`'s combat resolution this
-phase either**, same reason as every other Personal-Combat spell
-above.
+**Wired into `turn/search_execution.py`'s combat resolution as of
+Phase 238** (`_resolve_cast_tactic()`'s own `Spell.AUGUR_COMBAT`
+branch, threaded a new `is_first_tactic` parameter to answer point 3
+above from real plan data). The "silent battle simulation" itself is
+one throwaway `resolve_melee_duel()` call on cloned combatants,
+discarded after reading only its winner -- reusing the real mechanic
+rather than inventing a separate estimator. A caster with no recorded
+`LeaderState.temper` skips the courage-gated shirk roll entirely (no
+data, no effect, the same convention every other spell above uses for
+an unresolvable precondition); a monster caster is a documented
+no-effect, since Augur Combat never appears in any real
+`monster_encounter_plan.py` species plan and monsters have no Temper
+to shirk with.
 
 **Phase 208 addendum -- Illusory Hero [IH], tied to Ability.ILLUSION,
 project-original (user-supplied), the second and last Illusion secret

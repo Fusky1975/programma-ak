@@ -199,7 +199,7 @@ author) before ``models/monster_encounter_plan.py`` was even supplied:
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ak_engine.models.advanced_ability import LAVA_POOL_IMMUNE_MONSTERS
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
@@ -242,6 +242,7 @@ from ak_engine.turn.encounter import (
     ice_suspension_slowed_bonus_rounds,
     illusory_hero_alignments_are_implacably_hostile,
     mirror_image_leader_disbelief_bonus,
+    resolve_augur_combat,
     resolve_fire_arrow_duel,
     resolve_gate_demon_refusal,
     resolve_hand_of_death_channel,
@@ -388,8 +389,9 @@ def execute_search(
     # Phase 209: the guardian's own CAST entries, resolved once, right
     # before the first real combat phase -- same injection point already
     # established for `monster_wants_shoot` above (Phase 178). See module
-    # docstring's own Phase 209 addendum.
-    monster_cast_tactics = tuple(t for t in monster_plan if t.maneuver is Maneuver.CAST) if monster_plan is not None else ()
+    # docstring's own Phase 209 addendum. `_resolve_monster_casts()`
+    # below walks `monster_plan` directly (Phase 238) rather than a
+    # pre-filtered tuple, so Augur Combat can see its own true position.
 
     def _outcome_from(combat_result: EncounterCombatResult) -> SearchExecutionResult | None:
         """Translate a resolved duel into a terminal result, or None if the
@@ -405,7 +407,7 @@ def execute_search(
             return SearchExecutionResult(accepted=True, combat_resolved=True, winner="monster", leader_killed=True)
         return None
 
-    def _resolve_cast_tactic(tactic, *, caster_is_leader: bool) -> SearchExecutionResult | None:
+    def _resolve_cast_tactic(tactic, *, caster_is_leader: bool, is_first_tactic: bool = False) -> SearchExecutionResult | None:
         """Applies one of the ten Personal-Combat-only spells (or Charm's
         combat form) to the encounter: the 8 non-channeled, one-roll
         spells from Phase 209 (see that phase's own module docstring
@@ -420,10 +422,16 @@ def execute_search(
         Valhalla, ``models/valhalla.py VALHALLA_VISITOR_LEADER_ID``,
         rather than a clone of the opponent, and Stage 2 only fires when
         the hero's and caster's own alignments are confirmed "implacably
-        hostile"), and Gate Demon/Lava Pool from Phase 237 (a summoned
+        hostile"), Gate Demon/Lava Pool from Phase 237 (a summoned
         demon fights the opponent in Gate Demon's own place via a fresh
         ``resolve_melee_duel()``; Lava Pool is a flat, speed-keyed
-        instant-kill-or-escape roll). Returns a terminal
+        instant-kill-or-escape roll), and Augur Combat from Phase 238
+        (``is_first_tactic`` -- true position within the caster's own
+        full plan, not just among its own ``CAST`` entries -- decides
+        whether this runs the real "silent simulation" (a throwaway
+        ``resolve_melee_duel()`` on cloned combatants, discarded after
+        reading only its winner) or acts as an attempted Flee, per
+        ``turn/encounter.py``'s own Phase 205 addendum). Returns a terminal
         ``SearchExecutionResult`` (a kill, a neutralization, or Charm's
         own guaranteed Flee), or ``None`` if the encounter continues (a
         failed cast, a stat-modifier effect, or a spell whose target
@@ -470,10 +478,14 @@ def execute_search(
             # Phase 237: secret spell, tied to Ability.ELEMENTAL
             # (`turn/encounter.py`'s own Phase 203 addendum).
             ability = Ability.ELEMENTAL
+        elif spell is Spell.AUGUR_COMBAT:
+            # Phase 238: secret spell, tied to Ability.PSYCHIC
+            # (`turn/encounter.py`'s own Phase 205 addendum).
+            ability = Ability.PSYCHIC
         elif spell in PERSONAL_COMBAT_SPELL_ABILITY:
             ability = PERSONAL_COMBAT_SPELL_ABILITY[spell]
         else:
-            return None  # not modeled (any spell outside the 12 named above)
+            return None  # not modeled (any spell outside the 13 named above)
 
         # Control Undead's own eligibility precondition -- checked before
         # any roll, same as every other spell's `target_is_immune` guard,
@@ -740,6 +752,46 @@ def execute_search(
             # LAVA_POOL_KILLS_INSTANTLY -- a failed escape is a full kill.
             return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
 
+        if spell is Spell.AUGUR_COMBAT:
+            if not caster_is_leader:
+                # Never appears in any real `monster_encounter_plan.py`
+                # species plan (the same "not reachable" situation
+                # Illusory Hero's own docstring already documents), and
+                # no monster has a `Temper` to shirk with -- a documented
+                # no-effect, not a guess.
+                return None
+            if not is_first_tactic:
+                # AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER -- "if it
+                # comes later, then the result will be an attempt to
+                # flee," reusing the exact real Flee mechanic
+                # `Maneuver.FLEE` itself already uses.
+                if rng.random() < FLEE_CHANCE[stats.speed]:
+                    return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
+                return None
+            if leader.temper is None:
+                # No recorded Temper -- no basis to model the courage-
+                # gated shirk roll, so (the same "insufficient data, no
+                # effect" convention every spell above uses) nothing
+                # happens.
+                return None
+            # "The computer will estimate the percentage chance of
+            # victory, if combat were to occur" -- the user's own
+            # clarification confirms this is a silent, binary outcome,
+            # not a displayed percentage (module docstring's own Phase
+            # 205 addendum). Modeled here as one real, throwaway
+            # `resolve_melee_duel()` on cloned combatants -- reusing the
+            # exact mechanic that would actually decide the encounter,
+            # rather than inventing a separate estimator formula. The
+            # clones are discarded after reading only the winner; the
+            # real `caster`/`target` are untouched.
+            simulated_caster = replace(caster)
+            simulated_target = replace(target)
+            simulated_result = resolve_melee_duel(simulated_caster, simulated_target, rng)
+            would_lose_simulated_combat = simulated_result.winner == "b"
+            if resolve_augur_combat(would_lose_simulated_combat, leader.temper, rng):
+                return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
+            return None
+
         return None
 
     def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, *, defender_is_monster: bool) -> SearchExecutionResult | None:
@@ -764,8 +816,8 @@ def execute_search(
                 return _outcome_from(EncounterCombatResult(winner=("a" if defender_is_monster else "b"), rounds=0))
         return None
 
-    def _resolve_cast(tactic, *, caster_is_leader: bool) -> SearchExecutionResult | None:
-        outcome = _resolve_cast_tactic(tactic, caster_is_leader=caster_is_leader)
+    def _resolve_cast(tactic, *, caster_is_leader: bool, is_first_tactic: bool = False) -> SearchExecutionResult | None:
+        outcome = _resolve_cast_tactic(tactic, caster_is_leader=caster_is_leader, is_first_tactic=is_first_tactic)
         if outcome is not None:
             return outcome
         caster = leader_combatant if caster_is_leader else monster_combatant
@@ -779,8 +831,17 @@ def execute_search(
         if monster_cast_resolved:
             return None
         monster_cast_resolved = True
-        for cast_tactic in monster_cast_tactics:
-            outcome = _resolve_cast(cast_tactic, caster_is_leader=False)
+        if monster_plan is None:
+            return None
+        # Phase 238: walks the guardian's own *full* plan (not the
+        # pre-filtered `monster_cast_tactics`) so Augur Combat can know
+        # its own true position -- `AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_
+        # LATER` needs the real index within the whole plan, not just
+        # among its own CAST entries.
+        for plan_index, plan_tactic in enumerate(monster_plan):
+            if plan_tactic.maneuver is not Maneuver.CAST:
+                continue
+            outcome = _resolve_cast(plan_tactic, caster_is_leader=False, is_first_tactic=(plan_index == 0))
             if outcome is not None:
                 return outcome
         return None
@@ -803,13 +864,13 @@ def execute_search(
             outcome.guardian_monster = feature.guardian_monster
         return outcome
 
-    for tactic in request.tactics:
+    for tactic_index, tactic in enumerate(request.tactics):
         if tactic.maneuver is Maneuver.FLEE:
             if rng.random() < FLEE_CHANCE[stats.speed]:
                 return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
             continue
         if tactic.maneuver is Maneuver.CAST:
-            outcome = _resolve_cast(tactic, caster_is_leader=True)
+            outcome = _resolve_cast(tactic, caster_is_leader=True, is_first_tactic=(tactic_index == 0))
             if outcome is not None:
                 return outcome
             continue

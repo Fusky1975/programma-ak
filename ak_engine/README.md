@@ -9575,15 +9575,13 @@ complete (Phases 209-211).
     test_turn_report.py`, 1 new `is_skeletal` assertion in `tests/
     test_cast_execution.py`) -- 2792 passed total.
 
-- **Phase 237 (current)**: closes 2 of the 3 remaining "formula ready,
+- **Phase 237**: closes 2 of the 3 remaining "formula ready,
   never dispatched" secret Personal-Combat spells identified in the
   same Gap 2 status report as Phase 236's own Gap 1 -- Gate Demon and
   Lava Pool, both wired into `turn/search_execution.py
   _resolve_cast_tactic()` the same way Phases 209/210/211 wired every
-  other secret spell. (Augur Combat, the third, stays genuinely blocked
-  -- it needs a "silent battle simulation" whose own scope, per
-  `turn/encounter.py`'s own Phase 205 addendum, has no sourced answer
-  anywhere in this project.) First re-verified that Phases 209/210 --
+  other secret spell. (Augur Combat, the third, is closed separately in
+  Phase 238 below.) First re-verified that Phases 209/210 --
   the CAST-tactic orchestration engine itself -- were in fact already
   complete and committed, correcting an earlier assumption in this same
   conversation that they were still pending from an old plan-mode draft.
@@ -9622,6 +9620,63 @@ complete (Phases 209-211).
     test_search_execution.py` (5 per spell: refusal/immunity gating,
     win, loss/escape, and the leader-target speed default) -- 2802
     passed total.
+
+- **Phase 238 (current)**: wires Augur Combat [AC], the third and last
+  of the originally-identified "formula ready, never dispatched" secret
+  Personal-Combat spells (Gate Demon and Lava Pool closed in Phase
+  237) -- completing the full Gap 2 spell-wiring effort (Illusory Hero
+  was already separately confirmed complete in Phase 211). Its own
+  primitives (`AUGUR_COMBAT_SHIRK_CHANCE`, `augur_combat_shirk_chance()`,
+  `resolve_augur_combat_shirk()`, `resolve_augur_combat()`,
+  `AUGUR_COMBAT_FREE_WHEN_CAST_FIRST`,
+  `AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER`) were already built in
+  `turn/encounter.py`'s own Phase 205 addendum, which had explicitly
+  left the "silent battle simulation" itself as "the caller's job."
+  - **`is_first_tactic` threading**: `AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_
+    CAST_LATER` needs the spell's own true position within the caster's
+    *full* plan, not just among its own `CAST` entries -- threaded a new
+    `is_first_tactic` parameter through `_resolve_cast_tactic()`,
+    `_resolve_cast()`, the main leader tactic loop (now `enumerate()`),
+    and `_resolve_monster_casts()` (rewritten to walk `monster_plan`
+    directly instead of a pre-filtered `monster_cast_tactics` tuple,
+    which could no longer answer "true position").
+  - **The "silent battle simulation"**: modeled as one real, throwaway
+    `resolve_melee_duel()` call on `dataclasses.replace()`-cloned
+    combatants, discarded after reading only the winner -- reusing the
+    exact mechanic that would actually decide the encounter, rather
+    than inventing a separate win-probability estimator formula
+    (`estimate_win_probability` exists elsewhere but is a structurally
+    different army-Duel approximation, not applicable to personal
+    hit-points combat). The clones never touch the real caster/target.
+  - **Cast first** (`is_first_tactic=True`): runs the simulation, then
+    `resolve_augur_combat()` rolls the courage-gated shirk chance (only
+    if the simulation shows the caster losing) -- a shirk ends the
+    encounter as a Flee, matching `AUGUR_COMBAT_FREE_WHEN_CAST_FIRST`
+    ("Usually this spell should be the first tactic ordered, when it
+    won't cost you a combat round").
+  - **Cast later** (`is_first_tactic=False`): "if it comes later, then
+    the result will be an attempt to flee" -- reuses the exact real
+    `Maneuver.FLEE` roll (`rng.random() < FLEE_CHANCE[stats.speed]`), no
+    simulation attempted.
+  - **`LeaderState.temper is None`**: no basis to model the
+    courage-gated shirk roll, so (the same "insufficient data, no
+    effect" convention every spell in this dispatcher already uses for
+    an unresolvable precondition) the cast-first branch has no effect.
+  - **Monster caster**: a documented no-effect -- confirmed via grep
+    that Augur Combat never appears in any real `monster_encounter_
+    plan.py` species plan (the same "not reachable" situation Illusory
+    Hero's own docstring already documents), and a monster has no
+    `Temper` to shirk with regardless.
+  - `turn/encounter.py`'s own "not wired into `turn/search_execution.py`"
+    confession corrected to reflect the new wiring.
+  - Non-breaking: full suite passed unchanged (2802 passed) before any
+    new tests were written. 8 new tests added to `tests/
+    test_search_execution.py` (monster-caster no-effect, cast-later
+    flee success/failure, cast-first no-Temper no-effect, simulated
+    win never shirks, simulated loss shirks-and-flees, simulated loss
+    without shirk falls through, and an unmocked integration test
+    confirming the simulation doesn't mutate the real combatants) --
+    2810 passed total.
 
 ## Setup
 
