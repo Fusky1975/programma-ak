@@ -25,20 +25,17 @@ Sourced from ``HostAK/TP/CTBOTH.PAS:98-102`` (the ``action`` enum: ``Hire``
   alone, not independently confirmed by real data the way Hire's decoding
   is.
 
-**A structural complication this module deliberately does NOT handle**:
-when a Hire phase isn't a segment's last phase (``m < 4``), the Pascal
+**A structural complication this module itself does NOT handle**: when a
+Hire phase isn't a segment's last phase (``m < 4``), the Pascal
 writer/reader immediately embeds a full nested plan block for the
-newly-hired Hero's own future orders, spliced into the token
-stream right after the Hire phase's triple (``DEF2.PAS``'s
-``Read_HPlan``/``W_HPlan``, called from inside the ``Hire`` ``CASE``
-branch when ``m < 4``). This project's ``parser/k1_moves.py`` does not
-yet model that recursion (it treats every ``AP:`` block as one flat
-``PlanSegment``, keyed by phase label) -- confirmed, by inspecting a real
-parse of ``AK3__T2.K1``, to silently overwrite the nested Hero's P2-P4
-phases with the outer leader's own same-labeled phases. This module only
-decodes a single already-parsed ``PlanPhase``'s own ``obj``/``extra`` --
-fixing the underlying nested-plan parsing gap is a separate, not yet
-attempted, change to ``parser/k1_moves.py`` (see ``README.md``).
+newly-hired Hero's own future orders, spliced into the token stream right
+after the Hire phase's triple (``DEF2.PAS``'s ``Read_HPlan``/``W_HPlan``,
+called from inside the ``Hire`` ``CASE`` branch when ``m < 4``). This
+module only decodes a single already-parsed ``PlanPhase``'s own
+``obj``/``extra`` -- the recursion itself is ``parser/k1_moves.py``'s own
+job, via ``_maybe_parse_nested_plan()`` and ``PlanPhase.nested_plan``
+(fixed in Phase 18, dispatched in Phase 32; see ``models/plan.py``'s own
+"Nested plans (Phase 18)" docstring addendum).
 """
 
 from __future__ import annotations
