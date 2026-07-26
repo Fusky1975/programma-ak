@@ -230,11 +230,13 @@ from ak_engine.turn.encounter import (
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
     MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT,
     MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER,
+    MONSTER_STEAL_CUNNING,
     PERSONAL_COMBAT_SPELL_ABILITY,
     Combatant,
     CombatRange,
     EncounterCombatResult,
     FireArrowShot,
+    StealTargetCunning,
     blocks_cast_and_archery,
     control_undead_failure_new_hit_points,
     holy_symbol_hit_chance,
@@ -250,7 +252,10 @@ from ak_engine.turn.encounter import (
     resolve_lava_pool_escape,
     resolve_melee_duel,
     resolve_mirror_image_duel,
+    resolve_monster_hides_treasure,
     resolve_personal_combat_spell_cast,
+    resolve_steal_attempt,
+    resolve_steal_evasion,
     roll_fireball_damage,
     roll_holy_symbol_undead_damage,
     roll_ice_suspension_flying_bonus_rounds,
@@ -864,6 +869,49 @@ def execute_search(
             outcome.guardian_monster = feature.guardian_monster
         return outcome
 
+    def _resolve_steal() -> SearchExecutionResult | None:
+        """Steal [ST], rulebook [5.4] -- Phase 239 (``turn/encounter.py``'s
+        own Phase 239 addendum has the full quoted rulebook text and every
+        formula this calls). Search's target is always the guardian
+        monster, never a King/Hero, so only one of the rulebook's three
+        caught-thief consequences ever applies here: "si ha un
+        combattimento individuale, a una distanza scelta a caso" (personal
+        combat at a random range) -- and no ``target_leads_army`` halving
+        either, since a guardian monster never commands an army in this
+        project's model.
+        """
+
+        nonlocal combat_attempted
+        cunning = MONSTER_STEAL_CUNNING.get(feature.guardian_monster, StealTargetCunning.AVERAGE)
+        if resolve_monster_hides_treasure(cunning, rng):
+            return None  # this attempt found nothing -- plan continues
+        level = leader.skills.pair_for_ability(Ability.THIEF)[0] if leader.skills is not None else 0
+        if resolve_steal_attempt(level, rng):
+            return _outcome_from(EncounterCombatResult(winner="a", rounds=0))
+        if resolve_steal_evasion(level, rng):
+            return None  # failed, but not caught -- plan continues
+        # Caught. Spell range has no resolvable outcome (no spell-effect
+        # system exists anywhere in this project) -- a documented
+        # no-effect, not a silent substitution for one of the other two
+        # ranges, the same "unresolvable roll outcome, no guess"
+        # convention `_resolve_cast_tactic()`'s own AUGUR_COMBAT branch
+        # already uses above.
+        combat_range = rng.choice((CombatRange.SPELL_RANGE, CombatRange.BOW_RANGE, CombatRange.MELEE_RANGE))
+        if combat_range is CombatRange.SPELL_RANGE:
+            return None
+        combat_attempted = True
+        outcome = _resolve_monster_casts()
+        if outcome is not None:
+            return outcome
+        if combat_range is CombatRange.MELEE_RANGE:
+            return _outcome_from(resolve_melee_duel(leader_combatant, monster_combatant, rng))
+        duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng)
+        outcome = _outcome_from(duel_result)
+        if outcome is not None:
+            outcome.fire_arrow_shots = duel_result.shots
+            outcome.guardian_monster = feature.guardian_monster
+        return outcome
+
     for tactic_index, tactic in enumerate(request.tactics):
         if tactic.maneuver is Maneuver.FLEE:
             if rng.random() < FLEE_CHANCE[stats.speed]:
@@ -903,10 +951,15 @@ def execute_search(
             result.fire_arrow_shots = fire_arrow_shots
             result.guardian_monster = feature.guardian_monster
             return result
-        # Every other maneuver (Steal, Talk, Say, Give, Fulfill, Scout,
-        # Use_MI, Beg) isn't wired -- skip it and keep walking the plan,
-        # matching how real Encounter Plans mix wired and unwired tactics
-        # (module docstring's own quoted examples).
+        if tactic.maneuver is Maneuver.STEAL:
+            outcome = _resolve_steal()
+            if outcome is not None:
+                return outcome
+            continue
+        # Every other maneuver (Talk, Say, Give, Fulfill, Scout, Use_MI,
+        # Beg) isn't wired -- skip it and keep walking the plan, matching
+        # how real Encounter Plans mix wired and unwired tactics (module
+        # docstring's own quoted examples).
 
     if combat_attempted:
         # Phase 178: the plan's own tactic list ran out without a winner

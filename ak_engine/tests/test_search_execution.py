@@ -39,6 +39,12 @@ def _melee_request(feature_id: int) -> SearchRequest:
     return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.MELEE)])
 
 
+def _steal_request(feature_id: int, *following: Maneuver) -> SearchRequest:
+    tactics = [SearchTactic(maneuver=Maneuver.STEAL)]
+    tactics += [SearchTactic(maneuver=m) for m in following]
+    return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=tactics)
+
+
 def test_execute_search_leader_not_found():
     state = GameState()
     result = execute_search(state, LEADER_ID, _melee_request(1))
@@ -1574,3 +1580,120 @@ def test_execute_search_cast_augur_combat_simulation_does_not_mutate_real_combat
 
     assert result.combat_resolved is True or result.fled is True
     assert result.winner in ("leader", "monster", None)
+
+
+# -- Phase 239: Steal --
+
+
+def test_execute_search_steal_monster_hides_treasure_falls_through():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _steal_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=True
+    ) as mock_hides, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_hides.called
+    assert mock_melee.called  # nothing found -- the plan's own Melee still runs
+    assert result.winner == "leader"
+
+
+def test_execute_search_steal_success_loots_the_feature():
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    request = _steal_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
+    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+    assert feature.looted is True
+
+
+def test_execute_search_steal_failure_evades_falls_through():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _steal_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
+    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_steal_evasion", return_value=True
+    ) as mock_evasion, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_evasion.called
+    assert mock_melee.called  # evaded capture -- the plan's own Melee still runs
+    assert result.winner == "leader"
+
+
+def test_execute_search_steal_caught_spell_range_no_effect_falls_through():
+    # Archer is a multi-variant guardian: roll_monster_encounter_plan is
+    # mocked to () so it doesn't consume the scripted rng.choice queue
+    # meant for the caught-thief combat-range roll.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _steal_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
+    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_steal_evasion", return_value=False
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        rng = ScriptedRandom([0.5] * 20, choice_indices=[0])  # SPELL_RANGE
+        result = execute_search(state, LEADER_ID, request, rng)
+
+    assert mock_melee.called  # spell-range combat has no model -- the plan's own Melee still runs
+    assert result.winner == "leader"
+
+
+def test_execute_search_steal_caught_melee_range_resolves_melee_duel():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _steal_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
+    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_steal_evasion", return_value=False
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="b", rounds=1)
+    ) as mock_melee:
+        rng = ScriptedRandom([0.5] * 20, choice_indices=[2])  # MELEE_RANGE
+        result = execute_search(state, LEADER_ID, request, rng)
+
+    assert mock_melee.called
+    assert result.winner == "monster"
+    assert LEADER_ID not in state.leaders
+
+
+def test_execute_search_steal_caught_bow_range_resolves_fire_arrow_duel():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _steal_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
+    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_steal_evasion", return_value=False
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_fire:
+        rng = ScriptedRandom([0.5] * 20, choice_indices=[1])  # BOW_RANGE
+        result = execute_search(state, LEADER_ID, request, rng)
+
+    assert mock_fire.called
+    assert result.winner == "leader"
+    assert result.feature_looted is True

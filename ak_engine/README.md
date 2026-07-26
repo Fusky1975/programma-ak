@@ -9621,7 +9621,7 @@ complete (Phases 209-211).
     win, loss/escape, and the leader-target speed default) -- 2802
     passed total.
 
-- **Phase 238 (current)**: wires Augur Combat [AC], the third and last
+- **Phase 238**: wires Augur Combat [AC], the third and last
   of the originally-identified "formula ready, never dispatched" secret
   Personal-Combat spells (Gate Demon and Lava Pool closed in Phase
   237) -- completing the full Gap 2 spell-wiring effort (Illusory Hero
@@ -9677,6 +9677,73 @@ complete (Phases 209-211).
     without shirk falls through, and an unmocked integration test
     confirming the simulation doesn't mutate the real combatants) --
     2810 passed total.
+
+- **Phase 239 (current)**: Steal [ST] success formula (`turn/
+  encounter.py`), wired into `turn/search_execution.py`'s tactic walk
+  -- closing the codebase-wide gap audit's own concrete finding
+  ("Formula di successo Steal inesistente" / "8 tattiche di Search non
+  agganciate", of which Steal is the one with a real, sourced
+  formula). Quoted in full by the user (project author), rulebook
+  [5.4]: "La probabilita' base di riuscita e' del 15% piu' 15% per
+  livello di abilita' ... se il ladro prende di mira un personaggio che
+  e' alla guida di un esercito le sue probabilita' di riuscita sono
+  dimezzate ... le probabilita' di evitare la cattura sono in funzione
+  del livello di abilita' del ladro ... se si tenta di derubare un
+  mostro, questi tentera' di nascondere il suo tesoro ... 10% ... se e'
+  piu' furbo la probabilita' puo' salire fino al 25% o al 50%."
+  - `steal_success_chance()`: 15% base + 15%/level, halved against an
+    army-commanding target, capped at 95% (the Thief Mastery I-V
+    ability's own tooltip text: "the maximum chance is always 95%",
+    read as the cap on the overall formula, not just that ability's own
+    bonus).
+  - `steal_evasion_chance()`: the rulebook gives no numeric formula for
+    evading capture after a failed attempt ("in funzione del livello"
+    only) -- confirmed with the user directly as project-original,
+    structured like the sourced success formula (base + per-level) but
+    with distinct, unsourced numbers (30% base, +10%/level, capped at
+    90% -- deliberately different from the sourced 95% cap).
+  - `resolve_monster_hides_treasure()`/`STEAL_MONSTER_HIDE_TREASURE_
+    CHANCE`/`StealTargetCunning`: the monster's own countermeasure
+    roll, three buckets (10%/25%/50%, quoted verbatim above).
+    `MONSTER_STEAL_CUNNING` maps every real species to a bucket by
+    collapsing the existing, real per-species `MIRROR_IMAGE_MONSTER_
+    INTELLIGENCE_TIER` (Phase 187, six tiers) down to three -- an
+    interpretive collapsing (the Steal text gives no per-species
+    breakdown of its own), not a guess at the 10/25/50% figures
+    themselves.
+  - **Search wiring** (`_resolve_steal()`): Search's target is always
+    the guardian monster, never a King/Hero, so only one of the
+    rulebook's three caught-thief consequences applies -- "si ha un
+    combattimento individuale, a una distanza scelta a caso" (personal
+    combat at a random range). Spell range has no resolvable outcome
+    (no spell-effect system exists anywhere in this project) and is a
+    documented no-effect, not a silent substitution for one of the
+    other two ranges; Bow/Melee range reuse the exact real
+    `resolve_fire_arrow_duel()`/`resolve_melee_duel()` mechanics. No
+    `target_leads_army` halving either, since a guardian monster never
+    commands an army in this project's model. A successful theft loots
+    the feature exactly like a combat win (`_outcome_from()`, the same
+    machinery every other terminal Search outcome already uses).
+  - **Confirmed out of scope for this phase, not attempted**: the
+    King-gold-theft magnitude ("dipende da quanto ha nella tesoreria",
+    no formula given) and the King/Hero-target capture consequences
+    (execution, ransom) -- neither is reachable from Search, whose
+    target is always a monster; a future Challenge/Pursue-side Steal
+    wiring would still need them. `Talk`/`Say`/`Give`/`Fulfill`/
+    `Scout`/`Use_MI`/`Beg` remain unwired -- no rulebook text for their
+    own mechanics has been supplied yet.
+  - Two stale "not yet wired" docstring paragraphs corrected during the
+    same audit that motivated this phase (found to already be fixed,
+    Phase 18 and Phase 199 respectively): `turn/hire_fire_decode.py`'s
+    nested-plan-parsing paragraph, and `turn/valhalla_execution.py`'s
+    own Gate Angel/Valhalla-visit wiring paragraph.
+  - Non-breaking: full suite passed unchanged (2810 passed) before any
+    new tests were written. 15 new tests added (9 in `tests/
+    test_encounter.py` covering the success/evasion formulas, the
+    monster-hide table, and the cunning-tier mapping; 6 in `tests/
+    test_search_execution.py` covering hidden-treasure fall-through,
+    a successful loot, evaded-capture fall-through, and all three
+    caught-thief combat ranges) -- 2825 passed total.
 
 ## Setup
 

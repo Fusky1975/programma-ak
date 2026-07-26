@@ -122,6 +122,21 @@ from ak_engine.turn.encounter import (
     ILLUSORY_HERO_HOSTILE_ALIGNMENT_PAIRS,
     illusory_hero_alignments_are_implacably_hostile,
     resolve_illusory_hero_duel,
+    STEAL_ARMY_COMMANDER_TARGET_MULTIPLIER,
+    STEAL_BASE_SUCCESS_CHANCE,
+    STEAL_EVASION_BASE_CHANCE,
+    STEAL_EVASION_CHANCE_PER_LEVEL,
+    STEAL_EVASION_MAX_CHANCE,
+    STEAL_MAX_SUCCESS_CHANCE,
+    STEAL_MONSTER_HIDE_TREASURE_CHANCE,
+    STEAL_SUCCESS_CHANCE_PER_LEVEL,
+    MONSTER_STEAL_CUNNING,
+    StealTargetCunning,
+    resolve_monster_hides_treasure,
+    resolve_steal_attempt,
+    resolve_steal_evasion,
+    steal_evasion_chance,
+    steal_success_chance,
 )
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Spell
@@ -1631,3 +1646,74 @@ def test_resolve_illusory_hero_duel_stage2_illusion_kills_the_caster():
 
     assert result.winner == "b"
     assert result.rounds == 2
+
+
+# -- Phase 239: Steal --
+
+
+def test_steal_success_chance_base_and_per_level():
+    assert steal_success_chance(0) == pytest.approx(STEAL_BASE_SUCCESS_CHANCE) == pytest.approx(0.15)
+    assert steal_success_chance(1) == pytest.approx(0.30)
+    assert steal_success_chance(2) == pytest.approx(0.45)
+
+
+def test_steal_success_chance_caps_at_95_percent():
+    # 15% + 15%*10 = 165%, capped to the sourced 95% ceiling.
+    assert steal_success_chance(10) == pytest.approx(STEAL_MAX_SUCCESS_CHANCE) == pytest.approx(0.95)
+
+
+def test_steal_success_chance_halved_against_an_army_commander():
+    assert steal_success_chance(1, target_leads_army=True) == pytest.approx(0.15)
+    # Halving is applied before the 95% cap, not after.
+    assert steal_success_chance(10, target_leads_army=True) == pytest.approx(0.825)
+
+
+def test_resolve_steal_attempt_uses_the_success_chance():
+    rng = ScriptedRandom([0.29, 0.31])
+    # level 1 -> 30% chance: 0.29 succeeds, 0.31 fails.
+    assert resolve_steal_attempt(1, rng) is True
+    assert resolve_steal_attempt(1, rng) is False
+
+
+def test_steal_evasion_chance_base_and_per_level_and_cap():
+    assert steal_evasion_chance(0) == pytest.approx(STEAL_EVASION_BASE_CHANCE) == pytest.approx(0.30)
+    assert steal_evasion_chance(1) == pytest.approx(0.40)
+    # 30% + 10%*10 = 130%, capped to 90%.
+    assert steal_evasion_chance(10) == pytest.approx(STEAL_EVASION_MAX_CHANCE) == pytest.approx(0.90)
+
+
+def test_resolve_steal_evasion_uses_the_evasion_chance():
+    rng = ScriptedRandom([0.39, 0.41])
+    # level 1 -> 40% chance: 0.39 evades, 0.41 doesn't.
+    assert resolve_steal_evasion(1, rng) is True
+    assert resolve_steal_evasion(1, rng) is False
+
+
+def test_steal_monster_hide_treasure_chance_table():
+    assert STEAL_MONSTER_HIDE_TREASURE_CHANCE == {
+        StealTargetCunning.AVERAGE: 0.10,
+        StealTargetCunning.CLEVER: 0.25,
+        StealTargetCunning.MASTER: 0.50,
+    }
+
+
+def test_resolve_monster_hides_treasure_uses_the_cunning_table():
+    rng = ScriptedRandom([0.09, 0.11])
+    assert resolve_monster_hides_treasure(StealTargetCunning.AVERAGE, rng) is True
+    assert resolve_monster_hides_treasure(StealTargetCunning.AVERAGE, rng) is False
+
+
+def test_monster_steal_cunning_spans_all_three_tiers():
+    # Divine/Superhuman collapses to MASTER (50%).
+    assert MONSTER_STEAL_CUNNING[Monster.COUATL] is StealTargetCunning.MASTER
+    assert MONSTER_STEAL_CUNNING[Monster.LICH] is StealTargetCunning.MASTER
+    # High Human collapses to CLEVER (25%).
+    assert MONSTER_STEAL_CUNNING[Monster.SPHINX] is StealTargetCunning.CLEVER
+    assert MONSTER_STEAL_CUNNING[Monster.VAMPIRE] is StealTargetCunning.CLEVER
+    # Medium Human and everything below it collapses to AVERAGE (10%).
+    assert MONSTER_STEAL_CUNNING[Monster.ARCHER] is StealTargetCunning.AVERAGE
+    assert MONSTER_STEAL_CUNNING[Monster.GIANT] is StealTargetCunning.AVERAGE
+    assert MONSTER_STEAL_CUNNING[Monster.GRYPHON] is StealTargetCunning.AVERAGE
+    assert MONSTER_STEAL_CUNNING[Monster.GOLEM] is StealTargetCunning.AVERAGE
+    # Covers every real species MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER does.
+    assert MONSTER_STEAL_CUNNING.keys() == MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER.keys()
