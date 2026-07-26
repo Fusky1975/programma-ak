@@ -9455,7 +9455,7 @@ complete (Phases 209-211).
     6 tests, `tests/test_turn_processor.py` +1 integration test) --
     2769 passed total.
 
-- **Phase 234 (current)**: closes the loop Phase 233 deliberately left
+- **Phase 234**: closes the loop Phase 233 deliberately left
   open -- `resolve_plague_spread()` already returned its own newly-
   infected coordinates "for a future caller to narrate if it chooses";
   this phase is that caller, on the user's own explicit follow-up
@@ -9484,6 +9484,43 @@ complete (Phases 209-211).
     test_turn_report.py`, plus `tests/test_turn_processor.py`'s own
     Phase 233 plague-spread test extended to assert the new
     `PhaseDispatchResult` entries -- 2772 passed total.
+
+- **Phase 235 (current)**: the rest of the real `S_Comm` ("commonly
+  known") province-effect spells, on the user's own explicit request
+  to continue closing GENERAL INTELLIGENCE REPORT's own deliberately-
+  narrow event-source list -- specifically asked to revisit Skeletal
+  Army as an example candidate.
+  - Read every single `S_Comm`-tagged `Say()`/`Sps()` call in `SAY.PAS`
+    directly (not just the ones already known), confirming exactly
+    which real notices qualify: `_SFlood` (Flood, literal template)
+    and, via `PROCEDURE Sps(sp: spell; fam: integer); BEGIN
+    FD('c:\tp\prose\spnote.x2',fam,1001+ord(sp)); END;` (dispatches
+    through the *same* `SPNOTE.X2` file/index this project's own
+    `SPELL_CAST_ANNOUNCEMENT` dict was already extracted from, Phase
+    122) -- `_SPart` (Part Sea) and `_SQuake` (Earthquake), both of
+    whose real `SPELL_CAST_ANNOUNCEMENT` entries need only a province
+    name, confirming they're safe to render standalone (no "< cast a
+    spell and" opening clause -- `Sps(...)`'s own real call sites sit
+    in a separate dispatch section from the caster's own announcement
+    group).
+  - **Skeletal Army specifically checked and confirmed *not* eligible**
+    -- `_ARises: Sps(Skeletal_Army,S_AA)` is tagged `S_AA` ("kingdom-
+    only"), not `S_Comm`; a real, sourced negative result, not an
+    oversight. Also true of Tornado (`_STorn`, `S_AA`) and Illusory
+    Armies (`_SIllAr`, `S_AA`) -- every other `Sps(...)` dispatch was
+    checked and is either `S_AA`, `S_PCom`, `S_Adv`, or `S_Admin`
+    (Bless), none confirmed `S_Comm`.
+  - `report/turn_report.py`: `render_flood_world_event()`/
+    `render_bystander_spell_notice()` (new); `record_spell_world_
+    events()` extended to cover `Spell.FLOOD`/`Spell.PART_SEA`/
+    `Spell.EARTHQUAKE` alongside Plague/Illusory Terrain (Phase 232) --
+    all five spells' own `_execute_*()` functions were already fully
+    implemented (Phase 59), so this phase is purely the GIR-recording
+    layer, the same "mechanic already existed, only the recording was
+    missing" situation Phase 232 already found for Plague itself.
+  - Non-breaking: full suite passed unchanged (2772 passed) before any
+    new tests were written. 8 new tests added to `tests/
+    test_turn_report.py` -- 2780 passed total.
 
 ## Setup
 

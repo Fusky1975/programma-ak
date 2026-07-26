@@ -5859,29 +5859,95 @@ def render_illus_terrain_world_event(
     return render(template, {"@": province_name, "`": fake_terrain_name}, rng=rng)
 
 
+# HostAK/TP/SAY.PAS `_SFlood` (Phase 235) -- the commonly-known (`S_Comm`)
+# Flood notice, confirmed real and distinct from `SPELL_CAST_
+# ANNOUNCEMENT[Spell.FLOOD]` ("the Flood slowed ^L= in @, causing them
+# to lose one movement point.", the *army-slowing* side effect this
+# project doesn't model -- see `turn/cast_execution.py _execute_flood()`'s
+# own docstring). `_SFlood` is the separate, real, terrain-only bystander
+# notice matching what `_execute_flood()` actually does
+# (`province.terrain_override = Terrain.SEA`).
+FLOOD_WORLD_EVENT_TEMPLATE = "@ was magically flooded."
+
+
+def render_flood_world_event(province_name: str, rng: random.Random) -> str:
+    """Renders `SAY.PAS` `_SFlood`'s own commonly-known Flood notice."""
+
+    return render(FLOOD_WORLD_EVENT_TEMPLATE, {"@": province_name}, rng=rng)
+
+
+# HostAK/TP/SAY.PAS `_SPart`/`_SQuake` (Phase 235) -- confirmed real via
+# `PROCEDURE Sps(sp: spell; fam: integer); BEGIN FD('c:\\tp\\prose\\
+# spnote.x2',fam,1001+ord(sp)); END;` (line 241): `Sps(Part_Sea,S_Comm)`
+# and `Sps(Earthquake,S_Comm)` both dispatch through `SPNOTE.X2` at
+# `1001+ord(spell)` -- the *exact same* per-spell index this project's
+# own `SPELL_CAST_ANNOUNCEMENT` dict (Phase 122) was already extracted
+# from. Unlike `render_cast_announcement()`'s own call sites,
+# `Sps(sp,fam)` is dispatched with no preceding "< cast a ~ spell and"
+# opening clause -- confirmed by its own real call site sitting in a
+# separate section of `SAY.PAS`'s dispatch table from `_LCast1`'s own
+# caster-announcement group -- so a bystander sees only the bare effect
+# text. Only Part_Sea ("the waters of @ were magically parted.") and
+# Earthquake ("@ was devastated by an earthquake!") are used here: both
+# real `SPELL_CAST_ANNOUNCEMENT` entries need nothing but `@` (no
+# caster/army-list marker), confirming they're safe to render standalone
+# this way -- every other `Sps(...)`-dispatched spell either isn't
+# `S_Comm` (`Skeletal_Army`/`Tornado`/`Illus_Armies` are `S_AA`;
+# `Charm`/`Resurrection`/`Clairvoyance`/the personal-combat spells are
+# `S_PCom`; `Oratory`/`Hide_Feature`/`Kill_Enemy` are `S_Adv`) or would
+# need a marker this project can't supply standalone (`Bless` is
+# `S_Admin`, arguably commonly-visible in spirit, but not confirmed
+# `S_Comm` in the source, so not added here).
+_BYSTANDER_SPELL_NOTICE_SPELLS = frozenset({Spell.PART_SEA, Spell.EARTHQUAKE})
+
+
+def render_bystander_spell_notice(spell: Spell, province_name: str, rng: random.Random) -> str:
+    """Renders one of the `Sps(sp,S_Comm)`-dispatched bystander notices --
+    see the module-level comment above for which spells this covers and
+    why. Raises for any other spell, the same fail-loud stance
+    `render_cast_announcement()` already takes for a missing marker.
+    """
+
+    if spell not in _BYSTANDER_SPELL_NOTICE_SPELLS:
+        raise ValueError(f"{spell!r} has no confirmed S_Comm bystander notice")
+    return render(SPELL_CAST_ANNOUNCEMENT[spell], {"@": province_name}, rng=rng)
+
+
 def record_spell_world_events(
     state: GameState, results: list[PhaseDispatchResult], rng: random.Random, *, board_width: int = NORMAL_MAP_BOUNDS[0]
 ) -> None:
-    """Populates ``state.world_events`` (Phase 232) from every successful
-    Plague/Illusory Terrain cast found in ``results`` -- the second real
-    event *source* wired for GENERAL INTELLIGENCE REPORT, alongside
-    ``record_battle_world_events()`` (Phase 231). Both functions share
-    the same "call once per turn, before any `compose_letter_report()`
-    call" contract -- see that function's own docstring for why.
+    """Populates ``state.world_events`` (Phase 232, extended Phase 235)
+    from every successful province-effect cast found in ``results`` --
+    the second real event *source* wired for GENERAL INTELLIGENCE
+    REPORT, alongside ``record_battle_world_events()`` (Phase 231). Both
+    functions share the same "call once per turn, before any
+    `compose_letter_report()` call" contract -- see that function's own
+    docstring for why.
 
-    **Why these two spells and not the other 8 this project can cast**:
-    both are real, `S_Comm`-tagged ("commonly known") province-effect
-    spells whose own `_execute_*()` function already stores everything
-    this needs directly on `ProvinceState` (`illusory_terrain`) or needs
-    nothing beyond the province itself (Plague has no state to read
-    back -- its own effect is which armies got removed, not modeled as
-    a per-province flag). Every other cast spell either has no `S_Comm`
-    analogue found in `SAY.PAS` (the personal-combat spells, already
-    covered by Phase 209/210's own encounter engine) or would need a
-    caller-supplied name/list this project has no synthesis for (e.g.
-    Skeletal Army's own `_ARises: Sps(Skeletal_Army,S_AA)` needs the
-    raised army's own display name -- the same "no army-naming system"
-    gap `record_battle_world_events()`'s own docstring already names).
+    **Five spells covered as of Phase 235**: Plague, Illusory Terrain
+    (Phase 232), Flood, Part Sea, and Earthquake (Phase 235) -- every
+    real, `S_Comm`-tagged ("commonly known") province-effect spell found
+    in `SAY.PAS`, confirmed by directly reading every `S_Comm`-tagged
+    `Say()`/`Sps()` call in the file (not just the ones already known
+    about). Each one's own `_execute_*()` function already stores
+    everything this needs directly on `ProvinceState`
+    (`illusory_terrain`/`terrain_override`/`tax_modifier_percent`) or
+    needs nothing beyond the province itself (Plague/Flood/Part_Sea/
+    Earthquake all have no state to read back -- their own effect
+    *is* the notice, not a separately-flagged condition the way
+    Illusory Terrain's fake terrain choice is).
+
+    **Why not the other cast spells**: every other real `Sps(...)`
+    dispatch in `SAY.PAS` is tagged a narrower severity than `S_Comm`
+    -- confirmed by reading every `Sps(...)` call site directly, not
+    assumed: Skeletal Army/Tornado/Illusory Armies are `S_AA` (kingdom-
+    only, needing this project's still-missing army-naming system
+    besides), Charm/Resurrection/Clairvoyance/the personal-combat
+    spells are `S_PCom`, Oratory/Hide_Feature/Kill_Enemy are `S_Adv`,
+    Bless is `S_Admin` (plausibly commonly-visible in spirit, but not
+    confirmed `S_Comm` in the source, so not guessed here). See
+    `render_bystander_spell_notice()`'s own module-level comment for
+    the full breakdown.
 
     ``CastExecutionResult`` itself carries no caster/coord -- ``leader_
     id`` comes from the owning ``PhaseDispatchResult`` (each entry is
@@ -5911,6 +5977,10 @@ def record_spell_world_events(
                 TERRAIN_NAME[province.terrain], province_name, TERRAIN_NAME[province.illusory_terrain], rng
             )
             state.record_world_event(coord, [line])
+        elif request.spell is Spell.FLOOD:
+            state.record_world_event(coord, [render_flood_world_event(province_name, rng)])
+        elif request.spell in _BYSTANDER_SPELL_NOTICE_SPELLS:
+            state.record_world_event(coord, [render_bystander_spell_notice(request.spell, province_name, rng)])
 
 
 def record_plague_spread_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
@@ -5989,23 +6059,30 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
     silent" precedent every other section composer here already
     follows.** The real letters show many distinct event types --
     movement ("X flew over to Y"), plagues, terrain illusions, Skeletal
-    Army risings, other cast-spell narrations -- and as of Phase 234
-    this project populates three real sources across four call sites:
-    battle results (`record_battle_world_events()`), the original
-    Plague/Illusory Terrain casts (`record_spell_world_events()`), and
+    Army risings, other cast-spell narrations -- and as of Phase 235
+    this project populates three real sources across five call sites:
+    battle results (`record_battle_world_events()`), five real `S_Comm`
+    province-effect casts -- Plague, Illusory Terrain, Flood, Part Sea,
+    Earthquake (`record_spell_world_events()`, Phases 232/235) -- and
     Plague's own spread-to-adjacent-provinces mechanic
     (`record_plague_spread_world_events()`, Phase 234, reusing Plague's
     own real notice text -- the rulebook draws no distinction between a
     directly-cast and a spread-caused affliction). Movement stays
-    deferred -- see
-    `record_spell_world_events()`'s own docstring for exactly why
-    (`render_march()`'s own real MARCH.X templates need a `^P` "province
-    number" marker this project has no honest synthesis for, and don't
-    even textually match the real fixtures' own "flew over to"/"flew
-    into" wording in the first place). Every other spell without an
-    `S_Comm`-tagged `SAY.PAS` notice (Skeletal Army, the personal-combat
-    spells already covered by the encounter engine, ...) is likewise a
-    confirmed-real, deliberately-deferred follow-up.
+    deferred -- see `record_spell_world_events()`'s own docstring for
+    exactly why (`render_march()`'s own real MARCH.X templates need a
+    `^P` "province number" marker this project has no honest synthesis
+    for, and don't even textually match the real fixtures' own "flew
+    over to"/"flew into" wording in the first place). **Skeletal Army
+    specifically was checked and confirmed *not* eligible**, not merely
+    unconsidered: `SAY.PAS`'s own `_ARises: Sps(Skeletal_Army,S_AA)` is
+    tagged `S_AA` ("kingdom-only"), not `S_Comm` -- no real evidence
+    this project's own `S_Comm`-only visibility criterion should stretch
+    to cover it, so it stays out (Skeletal Army would also need this
+    project's still-missing army-naming system, a second, independent
+    reason). Every other spell without a confirmed `S_Comm` `SAY.PAS`
+    notice (the personal-combat spells already covered by the encounter
+    engine, Bless's plausible-but-unconfirmed `S_Admin`, ...) is
+    likewise a confirmed-real, deliberately-deferred follow-up.
 
     Always returns at least the header + "None at present" fallback
     (the same convention `describe_diplomacy_report()`/`describe_

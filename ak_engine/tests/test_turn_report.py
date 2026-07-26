@@ -66,6 +66,8 @@ from ak_engine.report.turn_report import (
     record_battle_world_events,
     record_plague_spread_world_events,
     record_spell_world_events,
+    render_bystander_spell_notice,
+    render_flood_world_event,
     render_illus_terrain_world_event,
     render_plague_world_event,
     render_already_allied,
@@ -4246,6 +4248,98 @@ def test_record_spell_world_events_skips_non_cast_results():
     ]
 
     record_spell_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
+# -- Phase 235: render_flood_world_event() / render_bystander_spell_notice() /
+# record_spell_world_events() (Flood/Part Sea/Earthquake) --
+
+
+def test_render_flood_world_event():
+    rng = ScriptedRandom([])
+
+    assert render_flood_world_event("Border Fort", rng) == "Border Fort was magically flooded."
+
+
+def test_render_bystander_spell_notice_part_sea():
+    rng = ScriptedRandom([])
+
+    result = render_bystander_spell_notice(Spell.PART_SEA, "Border Fort", rng)
+
+    assert result == "the waters of Border Fort were magically parted."
+
+
+def test_render_bystander_spell_notice_earthquake():
+    rng = ScriptedRandom([])
+
+    result = render_bystander_spell_notice(Spell.EARTHQUAKE, "Border Fort", rng)
+
+    assert result == "Border Fort was devastated by an earthquake!"
+
+
+def test_render_bystander_spell_notice_raises_for_an_unsupported_spell():
+    rng = ScriptedRandom([])
+
+    with pytest.raises(ValueError):
+        render_bystander_spell_notice(Spell.TORNADO, "Border Fort", rng)
+
+
+def test_record_spell_world_events_records_a_successful_flood():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    request = CastRequest(spell=Spell.FLOOD, target=encode_hex_number(battle_coord, board_width))
+    result = CastExecutionResult(request, applied=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].lines == ["Border Fort was magically flooded."]
+
+
+def test_record_spell_world_events_records_a_successful_part_sea():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    request = CastRequest(spell=Spell.PART_SEA, target=encode_hex_number(battle_coord, board_width))
+    result = CastExecutionResult(request, applied=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].lines == ["the waters of Border Fort were magically parted."]
+
+
+def test_record_spell_world_events_records_a_successful_earthquake():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=encode_hex_number(battle_coord, board_width))
+    result = CastExecutionResult(request, applied=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].lines == ["Border Fort was devastated by an earthquake!"]
+
+
+def test_record_spell_world_events_still_skips_tornado():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    request = CastRequest(spell=Spell.TORNADO, target=encode_hex_number(battle_coord, board_width))
+    result = CastExecutionResult(request, applied=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
 
     assert state.world_events == []
 
