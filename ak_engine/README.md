@@ -9485,7 +9485,7 @@ complete (Phases 209-211).
     Phase 233 plague-spread test extended to assert the new
     `PhaseDispatchResult` entries -- 2772 passed total.
 
-- **Phase 235 (current)**: the rest of the real `S_Comm` ("commonly
+- **Phase 235**: the rest of the real `S_Comm` ("commonly
   known") province-effect spells, on the user's own explicit request
   to continue closing GENERAL INTELLIGENCE REPORT's own deliberately-
   narrow event-source list -- specifically asked to revisit Skeletal
@@ -9521,6 +9521,59 @@ complete (Phases 209-211).
   - Non-breaking: full suite passed unchanged (2772 passed) before any
     new tests were written. 8 new tests added to `tests/
     test_turn_report.py` -- 2780 passed total.
+
+- **Phase 236 (current)**: two open-gap items the user chose from a
+  status report ("gap ancora aperti": army naming blocking
+  `describe_battle()`, and other spells with known formulas but not
+  executed) -- "vai col Gap 1, poi riprendi la Fase 209" -- this phase
+  is Gap 1 only (the Fase 209 CAST-orchestration resume is separate,
+  still-pending follow-up work).
+  - Ported `REPORTS.PAS:986-992`'s real Army List table name-column
+    builder (`turn/army_naming.py`, new: `make_army_ordinal()` =
+    `YAK.PAS Make_Des`'s Moderator/English branch with the real
+    11th/12th/13th exception; `make_army_display_name()` = the
+    ordinal + `" Skel "` + `atdesig` (Skeletal-Army-raised) / ordinal +
+    `atname` (normal) branch) -- verified directly against real letter
+    data (`SE3__T0.K1:135,137`: "108th Skel Bowmen" / "110th Bowmen").
+    `ArmyState.is_skeletal` (new field) is set by `turn/
+    cast_execution.py _execute_skeletal_army()` for every army it
+    raises -- the real `Zomboid` `astate` marker this table checks, with
+    no real `astate[an]:= Zomboid` assignment site anywhere in the
+    extracted source (another "lost with the missing main driver" gap,
+    reconstructed from `Zomboid`'s own name + the literal "Skel" text +
+    `RUMORS.PAS:354`'s adjacent `Undead` check).
+  - **Correction discovered along the way**: `report/turn_report.py`'s
+    own module docstring had claimed since early on that no
+    ordinal-numbering/naming system exists anywhere in this project
+    (citing `LNAMES.PAS`/`PRNAMES.PAS`, which are just name word-lists,
+    not naming logic) -- false. `models/army_naming.py make_army_name()`
+    (`YAK.PAS Make_AName`) has existed since Phase 149, and was already
+    this project's established general-purpose per-army-naming utility
+    (Phase 212's own `_army_display_name()`/`_trail_army_name()`) despite
+    its own docstring noting its only *directly* confirmed real Pascal
+    call site is an Imperial-Office-holder display line for offices this
+    project doesn't model. Asked the user whether to extend that same
+    precedent to `describe_battle()`; confirmed yes.
+  - `report/turn_report.py`: new `build_battle_army_names(state,
+    battle_report)` -- synthesizes the `army_names` map for every army
+    id in a battle (columns + destroyed/pursued/retreated lists) via
+    `make_army_name()`, preferring a still-live `ArmyState`'s own real
+    `kingdom_id` for race resolution, falling back to the column's own
+    `BattleUnit.army_type` + `BattleReport.attacker_kingdom_id`/
+    `defender_kingdom_id` (Phase 231) for an already-destroyed army.
+    `describe_battle()`'s own `army_names: dict[int, str]` parameter is
+    replaced with `state: GameState`, calling this internally -- no more
+    caller-supplied names for armies (province names, still unsourced,
+    stay caller-supplied via `destination_names`). Existing `describe_
+    battle()` tests updated: `make_army_name()` doesn't prepend "the"
+    (unlike the old placeholder test strings), matching its own real,
+    sourced output exactly.
+  - Non-breaking: full suite passed unchanged (2780 passed) before any
+    new tests were written. 16 new tests added (8 in new `tests/
+    test_army_list_naming.py`, 4 new `build_battle_army_names()` tests
+    plus 3 updated `describe_battle()` tests in `tests/
+    test_turn_report.py`, 1 new `is_skeletal` assertion in `tests/
+    test_cast_execution.py`) -- 2792 passed total.
 
 ## Setup
 

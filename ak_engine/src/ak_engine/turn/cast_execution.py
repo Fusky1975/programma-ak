@@ -1593,8 +1593,11 @@ def _execute_skeletal_army(
     every newly-recruited ``ArmyState`` gets (``turn/
     recruit_execution.py``) -- carrying over the exact remaining
     movement the original army had at the moment of its own death has no
-    precedent anywhere else in this project's state model. The global
-    350-unit world cap and ~10%/turn decomposition past it are
+    precedent anywhere else in this project's state model. Every raised
+    army gets ``is_skeletal=True`` (Phase 236) -- the real `Zomboid`
+    army-state marker (`turn/army_naming.py`'s own docstring), driving
+    the " Skel " tag in the real Army List table's own name column. The
+    global 350-unit world cap and ~10%/turn decomposition past it are
     unenforced -- see ``GameState.battle_graveyard``'s own docstring.
     """
 
@@ -1611,7 +1614,15 @@ def _execute_skeletal_army(
     for _ in range(raised_count):
         entry = graveyard.pop()
         state.add_army(
-            ArmyState(state.new_army_id(), kingdom_id, entry.army_type, entry.quality, caster.location, commanded_by=leader_id)
+            ArmyState(
+                state.new_army_id(),
+                kingdom_id,
+                entry.army_type,
+                entry.quality,
+                caster.location,
+                commanded_by=leader_id,
+                is_skeletal=True,
+            )
         )
     if not graveyard:
         del state.battle_graveyard[caster.location]

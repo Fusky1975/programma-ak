@@ -75,12 +75,25 @@ module always substitutes one literal name string for every person/tense
 variant of a given side (``<`` and ``<2`` both become the same attacker
 name); a true pronoun ("he"/"his troops") is never produced.
 
-**"Army name"** (rulebook example: "the 231st Bowmen") is never
-synthesized here -- there is no ordinal-numbering/naming system anywhere
-in this project (`LNAMES.PAS`/`PRNAMES.PAS` territory, a separate,
-entirely unbuilt subsystem). Every function below takes caller-supplied
-display-name strings for armies/provinces/kingdoms, the same
-values-dict pattern ``prose.render()`` itself already uses.
+**"Army name"** (rulebook example: "the 231st Bowmen"). **Correction
+(Phase 236):** a prior version of this docstring claimed no
+ordinal-numbering/naming system exists anywhere in this project, citing
+`LNAMES.PAS`/`PRNAMES.PAS` -- those are just leader/province first-name
+word lists, not the real naming code, and the claim was simply wrong:
+`models/army_naming.py make_army_name()` (`YAK.PAS Make_AName`, Phase
+149) has existed since long before this correction, and was already the
+project's established general-purpose per-army-naming utility (Phase
+212's own `_army_display_name()`/`_trail_army_name()`). `describe_battle()`
+below now uses it too, via its own `build_battle_army_names()` helper.
+There's also a second, distinct, real army-naming routine as of Phase
+236 (`turn/army_naming.py`, `REPORTS.PAS:986-992`'s own Army List table
+builder, verified against real letter data) -- a different report
+context (a tabular listing, not narrative prose) with its own real
+`" Skel "` marker for Skeletal-Army-raised units, not wired into any
+function below. Province-naming still has no real source at all; every
+function below still takes caller-supplied province display-name
+strings, the same values-dict pattern ``prose.render()`` itself already
+uses.
 
 **Phase 63 addendum -- uncontested conquest and the Spy report's opening
 line.** Two more real, standalone templates, added the same way:
@@ -1845,13 +1858,61 @@ def describe_aspy(report: SpyReport, *, spy_name: str, province_name: str, rng: 
     return lines
 
 
+def build_battle_army_names(state: GameState, battle_report: BattleReport) -> dict[int, str]:
+    """Synthesizes the ``army_names`` map ``describe_battle()`` needs, via
+    ``models/army_naming.py make_army_name()`` (Phase 149) -- Phase 236
+    wiring, following the same precedent already established by
+    ``turn/aspy_execution.py _army_display_name()`` (Phase 212) and this
+    module's own ``_trail_army_name()``: despite ``make_army_name()``'s
+    own docstring noting its only *directly* confirmed real Pascal call
+    site is an Imperial-Office-holder display line, this project has
+    already twice adopted it as the general-purpose per-army-naming
+    utility for any report needing one, and battle narrative is no
+    different.
+
+    Every army id appearing anywhere in the battle -- each column's own
+    front units, plus ``destroyed_army_ids``/``pursuit_destroyed_army_ids``/
+    ``retreated_army_ids`` -- gets an entry. An id whose ``ArmyState``
+    still exists in ``state.armies`` (not yet destroyed) uses that army's
+    own real ``kingdom_id`` for race resolution, the same ``MONSTROUS_
+    ARMY_RACE``-else-kingdom's-race-else-``Race.HUMAN`` rule ``_trail_
+    army_name()``/``_army_display_name()`` already use. An id already
+    destroyed and removed (``GameState.remove_army()`` runs during battle
+    resolution, before this function ever sees the state) falls back to
+    the column's own ``BattleUnit.army_type`` plus ``battle_report``'s
+    own ``attacker_kingdom_id``/``defender_kingdom_id`` (Phase 231,
+    stable data no destruction can remove) -- slightly less precise for
+    an allied/mercenary contingent fighting under someone else's banner,
+    but the only data still available for an army that's already gone.
+    """
+
+    names: dict[int, str] = {}
+    for column in battle_report.battle_result.columns:
+        sides = (
+            (column.attacker_units, battle_report.attacker_kingdom_id),
+            (column.defender_units, battle_report.defender_kingdom_id),
+        )
+        for units, side_kingdom_id in sides:
+            for unit in units:
+                if unit.source_id is None or unit.source_id in names:
+                    continue
+                army = state.armies.get(unit.source_id)
+                if army is not None:
+                    kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
+                else:
+                    kingdom = state.kingdoms.get(side_kingdom_id) if side_kingdom_id is not None else None
+                race = MONSTROUS_ARMY_RACE.get(unit.army_type, kingdom.race if kingdom is not None else Race.HUMAN)
+                names[unit.source_id] = make_army_name(unit.source_id, unit.army_type, race)
+    return names
+
+
 def describe_battle(
     battle_report: BattleReport,
     *,
     attacker_name: str,
     defender_name: str,
     province_name: str,
-    army_names: dict[int, str],
+    state: GameState,
     destination_names: dict[int, str],
     rng: random.Random,
     is_sea: bool = False,
@@ -1862,19 +1923,23 @@ def describe_battle(
     clashes, the winner sentence, destroyed armies, pursuit kills, then
     retreats.
 
-    ``army_names``/``destination_names`` map army ids (``BattleReport``'s
-    own id lists, and each column's ``BattleUnit.source_id``) to
-    caller-supplied display strings -- see module docstring: no army- or
-    province-naming system exists in this project yet, so nothing here is
-    synthesized. ``is_sea`` (Phase 74) is the caller-known fact of
-    whether ``province_name`` is a Sea province, threaded to every
-    sub-renderer whose own templates carry a "/S" marker.
+    ``army_names`` (Phase 236) is synthesized internally via
+    ``build_battle_army_names(state, battle_report)`` -- see that
+    function's own docstring for the sourcing and the established
+    precedent (Phase 212's ``_army_display_name()``/``_trail_army_name()``)
+    behind wiring ``models/army_naming.py make_army_name()`` in here.
+    ``destination_names`` still maps army ids to caller-supplied display
+    strings -- province-naming has no real source at all yet, so that one
+    map stays caller-supplied. ``is_sea`` (Phase 74) is the caller-known
+    fact of whether ``province_name`` is a Sea province, threaded to
+    every sub-renderer whose own templates carry a "/S" marker.
 
-    A battle column whose front unit(s) have no entry in ``army_names``
-    (a garrison/mercenary/unled stack this project's caller chose not to
-    name) is skipped for the per-column clash sentence -- not guessed.
+    A battle column whose front unit(s) have no ``source_id`` at all (a
+    pure combat calculation with no backing ``ArmyState``) is skipped for
+    the per-column clash sentence -- not guessed.
     """
 
+    army_names = build_battle_army_names(state, battle_report)
     lines: list[str] = []
 
     for column in battle_report.battle_result.columns:
@@ -5781,12 +5846,11 @@ def record_battle_world_events(state: GameState, results: list[PhaseDispatchResu
     in a hard-fought campaign") is exactly this outer summary sentence
     (`render_battle_winner()`'s own template), built from King/province
     names alone. The per-column clash sentences additionally need
-    per-army display names (`describe_battle()`'s own ``army_names``
-    parameter) -- this project has no army-naming system wired into any
-    real call site yet (`describe_battle()`'s own docstring, and
-    `compose_letter_report()`'s "TRADE... Province/terrain/army-list
-    Cast spells... skipped" note, both already document this as a
-    separate, still-open gap) -- not attempted here either.
+    per-army display names -- as of Phase 236, `describe_battle()`
+    synthesizes those itself (`build_battle_army_names()`, via
+    `models/army_naming.py make_army_name()`), so this dispatch's own
+    remaining gap is purely the missing `BattleReport` (see the note
+    above this one).
 
     A battle with no ``BattleReport.defender_kingdom_id`` (an unowned
     province defended by some kingdom's stray garrison -- a real

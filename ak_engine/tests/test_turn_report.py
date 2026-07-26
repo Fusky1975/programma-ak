@@ -37,6 +37,7 @@ from ak_engine.report.turn_report import (
     SPY_GARRISON_APPROXIMATELY_TEMPLATE,
     SPY_LEADS_APPROXIMATELY_TEMPLATE,
     WILL_TEMPLATE,
+    build_battle_army_names,
     compose_letter_report,
     describe_adventure_report,
     describe_alignment_victory_point_reduction,
@@ -438,14 +439,17 @@ def test_describe_battle_assembles_clash_winner_and_destroyed_sentences_in_order
         attacker_name="Attackia",
         defender_name="Defendia",
         province_name="the Dolphin Sea",
-        army_names={10: "the 260th Garrison", 20: "the 45th Orcs"},
+        state=GameState(),
         destination_names={},
         rng=rng,
     )
+    # Phase 236: army_names is now synthesized via build_battle_army_names()
+    # -- make_army_name(10, ArmyType.GARRISON, Race.HUMAN) / (20, LEGION,
+    # Race.HUMAN), the same names _column()'s own unit types/ids produce.
     assert lines == [
-        "the 260th Garrison fought the 45th Orcs and advanced at will.",
+        "10th Garrison fought 20th Legion and advanced at will.",
         "the forces of Attackia broke through and were victorious.",
-        "Attackia annihilated the 45th Orcs.",
+        "Attackia annihilated 20th Legion.",
     ]
 
 
@@ -463,19 +467,32 @@ def test_describe_battle_threads_is_sea_to_every_sub_renderer():
         attacker_name="Attackia",
         defender_name="Defendia",
         province_name="the Dolphin Sea",
-        army_names={10: "the 260th Garrison", 20: "the 45th Orcs"},
+        state=GameState(),
         destination_names={},
         rng=rng,
         is_sea=True,
     )
     assert lines == [
-        "the 260th Garrison fought the 45th Orcs and gradually was pushed back.",
+        "10th Garrison fought 20th Legion and gradually was pushed back.",
         "Attackia's fleets were beaten and chased out of the Dolphin Sea.",
     ]
 
 
 def test_describe_battle_skips_unnamed_armies_and_ties_without_erroring():
-    column = _column(attacker_win_probability=0.5, attacker_source_id=1, defender_source_id=2)
+    # A front unit with no source_id at all (no backing ArmyState, e.g. a
+    # pure combat calculation) is the one remaining "can't be named" case
+    # as of Phase 236 -- build_battle_army_names() can synthesize a name
+    # for any real id, but not for None.
+    column = BattleColumnResult(
+        attacker_strength=10.0,
+        defender_strength=10.0,
+        attacker_win_probability=0.5,
+        attacker_won=False,
+        attacker_column_luck=None,
+        defender_column_luck=None,
+        attacker_units=[BattleUnit(ArmyType.GARRISON, 10.0, source_id=None)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=2)],
+    )
     battle_result = BattleResult(winner="tie", columns=[column])
     report = BattleReport(battle_result=battle_result, conquered=False)
 
@@ -485,11 +502,85 @@ def test_describe_battle_skips_unnamed_armies_and_ties_without_erroring():
         attacker_name="Attackia",
         defender_name="Defendia",
         province_name="the Dolphin Sea",
-        army_names={},  # no display names supplied -- clash sentence skipped
+        state=GameState(),
         destination_names={},
         rng=rng,
     )
     assert lines == []
+
+
+# -- build_battle_army_names (Phase 236) --------------------------------------
+
+
+def test_build_battle_army_names_uses_the_armys_own_kingdom_when_still_present():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Elvenholt", Race.ELVEN, Alignment.GOOD, HexCoord(0, 0)))
+    # _column()'s own attacker unit is always ArmyType.GARRISON -- that's
+    # the type this function names by (the column's own BattleUnit), not
+    # whatever type the backing ArmyState happens to carry.
+    state.add_army(ArmyState(10, 1, ArmyType.GARRISON, Quality.AVERAGE, HexCoord(0, 0)))
+    column = _column(attacker_win_probability=0.8, attacker_source_id=10, defender_source_id=20)
+    report = BattleReport(battle_result=BattleResult(winner="attacker", columns=[column]), conquered=False)
+
+    names = build_battle_army_names(state, report)
+
+    assert names[10] == make_army_name(10, ArmyType.GARRISON, Race.ELVEN)
+    assert names[10] == "10th Elf Garrison"
+
+
+def test_build_battle_army_names_falls_back_to_battle_report_kingdom_when_army_already_destroyed():
+    state = GameState()
+    state.add_kingdom(KingdomState(2, "Orclund", Race.ORCISH, Alignment.EVIL, HexCoord(0, 0)))
+    # id 20 was destroyed and removed from state.armies before this runs --
+    # same "GameState.remove_army() already ran" ordering describe_battle()
+    # itself operates under.
+    column = _column(attacker_win_probability=0.8, attacker_source_id=10, defender_source_id=20)
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker", columns=[column]),
+        conquered=False,
+        destroyed_army_ids=[20],
+        defender_kingdom_id=2,
+    )
+
+    names = build_battle_army_names(state, report)
+
+    assert names[20] == make_army_name(20, ArmyType.LEGION, Race.ORCISH)
+    assert names[20] == "20th Orc Legion"
+
+
+def test_build_battle_army_names_uses_monstrous_army_race_over_kingdom_race():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_army(ArmyState(10, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, HexCoord(0, 0)))
+    column = BattleColumnResult(
+        attacker_strength=10.0,
+        defender_strength=10.0,
+        attacker_win_probability=0.8,
+        attacker_won=True,
+        attacker_column_luck=None,
+        defender_column_luck=None,
+        attacker_units=[BattleUnit(ArmyType.DRAGON_WING, 10.0, source_id=10)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+    )
+    report = BattleReport(battle_result=BattleResult(winner="attacker", columns=[column]), conquered=False)
+
+    names = build_battle_army_names(state, report)
+
+    # MONSTROUS_ARMY_RACE[DRAGON_WING] = Race.DRAGONS overrides Humania's
+    # own Race.HUMAN -- Dragon armies stay Dragon-race regardless of the
+    # Human kingdom that owns them.
+    assert names[10] == make_army_name(10, ArmyType.DRAGON_WING, Race.DRAGONS)
+
+
+def test_build_battle_army_names_defaults_to_human_with_no_kingdom_data_at_all():
+    state = GameState()
+    column = _column(attacker_win_probability=0.8, attacker_source_id=10, defender_source_id=20)
+    report = BattleReport(battle_result=BattleResult(winner="attacker", columns=[column]), conquered=False)
+
+    names = build_battle_army_names(state, report)
+
+    assert names[10] == "10th Garrison"
+    assert names[20] == "20th Legion"
 
 
 # -- render_uncontested_conquest (Phase 63) -----------------------------------

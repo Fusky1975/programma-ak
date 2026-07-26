@@ -850,6 +850,7 @@ def test_skeletal_army_raises_a_unit_from_the_casters_own_province_graveyard():
     assert raised[0].kingdom_id == 1  # joins the caster's kingdom
     assert raised[0].commanded_by == CASTER_ID
     assert raised[0].location == LOCATION
+    assert raised[0].is_skeletal is True
 
 
 def test_skeletal_army_fails_when_the_provinces_graveyard_is_empty():

@@ -269,6 +269,21 @@ class ArmyState:
     # province again) rolls a quality-downgrade chance instead of a
     # destroy chance.
     plague_immune: bool = False
+    # Raised-as-skeletons marker (Phase 236) -- `CTBOTH.PAS:1260`'s own
+    # `astate` enum (`Dead,Hired,Mercenary,Zomboid,Bold,Sold,Loser,Calm`)
+    # has a `Zomboid` value that `REPORTS.PAS:988-992`'s real Army List
+    # table checks to prepend " Skel " before the army-type designation
+    # (`turn/army_naming.py make_army_display_name()`) -- confirmed
+    # against real letter data (`SE3__T0.K1:135`, "108th Skel Bowmen").
+    # No real `astate[an]:= Zomboid` assignment site exists anywhere in
+    # the extracted source (grep across the full tree comes back empty,
+    # the same "lost with the missing main driver" gap this project has
+    # documented many times before) -- but `Zomboid`'s own name, the
+    # literal "Skel" text tied to it, and `RUMORS.PAS:354`'s own
+    # `lalign[armykng] = Undead` check alongside it all agree it marks an
+    # army raised via the Skeletal_Army spell, so `turn/cast_execution.py
+    # _execute_skeletal_army()` sets this field on every army it raises.
+    is_skeletal: bool = False
 
 
 @dataclass(slots=True)
