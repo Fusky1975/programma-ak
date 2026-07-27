@@ -11,6 +11,15 @@ falsification logic doesn't survive anywhere in the archive.)
 This is the *record* of one heard rumor -- see ``turn/rumor.py`` for the
 trigger/selection/falsification logic that creates one, all
 project-original and confirmed directly with the user (project author).
+
+**``leader_id`` (Phase 247)**: the specific character who heard the
+rumor, not just the kingdom -- needed once ``report/turn_report.py
+describe_turn_results()`` started narrating rumors, since ``describe_
+rumor()``'s own ``character_name`` argument (Phase 244) has to name
+someone, and ``kingdom_id`` alone can't (a kingdom can have several
+leaders). ``turn/plan_dispatch.py``'s own rumor-roll block already had
+the ordering leader in scope the whole time; this only threads it
+through to the stored record.
 """
 
 from __future__ import annotations
@@ -33,6 +42,7 @@ class RumorContent(Enum):
 class Rumor:
     rumor_id: int
     kingdom_id: int  # who heard it
+    leader_id: int  # which specific character heard it (Phase 247)
     source_action: ActionCode  # the order type that triggered it
     content: RumorContent
     feature_id: int  # the real feature this rumor is actually about

@@ -1148,6 +1148,7 @@ from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
 from ak_engine.turn.emperor_election import alignment_victory_point_reduction_percent
 from ak_engine.turn.encounter import FireArrowShot
+from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders
@@ -3433,6 +3434,7 @@ def describe_turn_results(
     rng: random.Random,
     *,
     ability_names: dict[Ability, str] | None = None,
+    board_width: int | None = None,
 ) -> list[str]:
     """Walks ``turn/turn_processor.py run_turn()``'s own output (a flat
     ``list[PhaseDispatchResult]``, one entry per dispatched phase) and
@@ -3498,6 +3500,33 @@ def describe_turn_results(
     alone carries. Province/terrain/army-list Cast spells and Use_MI's
     skill-book path are skipped the same way, for the same reason Phase
     150 already established: no general province-naming system exists.
+
+    **Phase 247 closes `EXPLORE` and rumor narration**, the two
+    `describe_*` composers (Phase 244/245) built but never reached from
+    here. `EXPLORE`'s own branch renders `describe_feature_discovery()`
+    for every `ExploreResult.discovered_features` entry -- the province
+    is always the discoverer's own current one, so `feature.coord`
+    resolves it directly.
+
+    **Rumors don't attach to any one `PhaseDispatchResult` entry** --
+    `turn/rumor.py resolve_rumor_generation()` is a side effect of
+    `dispatch_phase()` itself (Phase 243), decoupled from whatever
+    action-specific result it returns. Rendered as a separate pass
+    after the main walk instead: for every distinct `leader_id` present
+    in `results`, every `Rumor` in `state.rumors_heard_by(leader.
+    kingdom_id)` whose own `leader_id` (Phase 247) matches gets
+    narrated via `describe_rumor()`. **Opt-in via `board_width`**
+    (`None` by default) -- `describe_rumor()` needs it to encode the
+    described province's raw hex number, and every pre-Phase-247 caller
+    (this whole module's own test suite included) has no board width to
+    supply, so omitting it skips rumor narration entirely rather than
+    forcing one on every caller. Not threaded further up into
+    `describe_letter_reports()`/`compose_letter_report()` yet -- a
+    narrower follow-up gap, not attempted here. Reflects **whatever is
+    still in `state.rumors` when called**, not just this turn's own new
+    ones -- the same single-turn-scope assumption this function already
+    made before rumors existed; no multi-turn game loop exists yet for
+    it to matter.
     """
 
     lines: list[str] = []
@@ -3613,11 +3642,28 @@ def describe_turn_results(
             province_name = _province_label(state, entry.result.province)
             lines.extend(describe_aspy(entry.result, spy_name=caster_name, province_name=province_name, rng=rng))
             continue
+        elif entry.action is ActionCode.EXPLORE and isinstance(entry.result, ExploreResult):
+            for feature in entry.result.discovered_features:
+                province_name = _province_label(state, feature.coord)
+                lines.append(describe_feature_discovery(feature, caster_name, province_name, rng))
+            continue
         else:
             continue
 
         if line is not None:
             lines.append(line)
+
+    if board_width is not None:
+        heard_leader_ids = {entry.leader_id for entry in results}
+        for leader_id in sorted(heard_leader_ids):
+            leader = state.leaders.get(leader_id)
+            if leader is None or leader.kingdom_id is None:
+                continue
+            for rumor in state.rumors_heard_by(leader.kingdom_id):
+                if rumor.leader_id != leader_id:
+                    continue
+                lines.append(describe_rumor(rumor, state, leader.name, board_width, rng))
+
     return lines
 
 

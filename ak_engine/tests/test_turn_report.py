@@ -1762,6 +1762,7 @@ def test_describe_rumor_renders_feature_and_monster_content():
     rumor = Rumor(
         rumor_id=1,
         kingdom_id=1,
+        leader_id=1,
         source_action=ActionCode.EXPLORE,
         content=RumorContent.FEATURE_AND_MONSTER,
         feature_id=feature.feature_id,
@@ -1782,6 +1783,7 @@ def test_describe_rumor_renders_item_content():
     rumor = Rumor(
         rumor_id=1,
         kingdom_id=1,
+        leader_id=1,
         source_action=ActionCode.EXPLORE,
         content=RumorContent.ITEM,
         feature_id=feature.feature_id,
@@ -1806,6 +1808,7 @@ def test_describe_rumor_uses_the_described_coord_not_the_features_real_coord():
     rumor = Rumor(
         rumor_id=1,
         kingdom_id=1,
+        leader_id=1,
         source_action=ActionCode.LMOVE,
         content=RumorContent.FEATURE_AND_MONSTER,
         feature_id=feature.feature_id,
@@ -1827,6 +1830,7 @@ def test_describe_rumor_picks_the_selected_variant():
     rumor = Rumor(
         rumor_id=1,
         kingdom_id=1,
+        leader_id=1,
         source_action=ActionCode.EXPLORE,
         content=RumorContent.FEATURE_AND_MONSTER,
         feature_id=feature.feature_id,

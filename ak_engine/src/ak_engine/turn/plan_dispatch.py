@@ -494,7 +494,7 @@ def dispatch_phase(
     leader = state.leaders.get(leader_id)
     if leader is not None and action in RUMOR_CHANCE_BY_ACTION:
         rumor_rng = rng if rng is not None else random.Random()
-        rumor = resolve_rumor_generation(state, kingdom_id, leader.location, action, rumor_rng)
+        rumor = resolve_rumor_generation(state, kingdom_id, leader_id, leader.location, action, rumor_rng)
         if rumor is not None:
             state.add_rumor(rumor)
 

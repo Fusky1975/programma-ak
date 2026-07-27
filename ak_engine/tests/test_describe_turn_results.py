@@ -7,12 +7,14 @@ from ak_engine.models.item import ItemInstance
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
+from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.treasure import TREASURE_NAME, Treasure
 from ak_engine.report.turn_report import describe_turn_results
 from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
+from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
@@ -384,5 +386,103 @@ def test_describe_turn_results_skips_entries_for_unknown_leader():
     ]
 
     lines = describe_turn_results(results, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
+# -- Phase 247: EXPLORE discovery + rumor narration --
+
+
+def test_describe_turn_results_renders_explore_discovered_features():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    feature = Feature(feature_id=5, coord=HexCoord(3, 4), kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    result = ExploreResult(new_percent=100, delta_applied=50, fully_explored=True, discovered_features=[feature])
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert len(lines) == 1
+    assert "Aldric" in lines[0]
+    assert "(3, 4)" in lines[0]
+
+
+def test_describe_turn_results_omits_rumors_without_board_width():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    feature = Feature(feature_id=5, coord=HexCoord(3, 4), kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    rumor = Rumor(
+        rumor_id=state.new_rumor_id(),
+        kingdom_id=1,
+        leader_id=1,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=5,
+        is_true=True,
+        described_coord=HexCoord(3, 4),
+        described_monster=Monster.GARGOYLE,
+    )
+    state.add_rumor(rumor)
+    result = ExploreResult(new_percent=50, delta_applied=50, fully_explored=False)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_turn_results_renders_rumors_when_board_width_given():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    feature = Feature(feature_id=5, coord=HexCoord(3, 4), kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    rumor = Rumor(
+        rumor_id=state.new_rumor_id(),
+        kingdom_id=1,
+        leader_id=1,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=5,
+        is_true=True,
+        described_coord=HexCoord(3, 4),
+        described_monster=Monster.GARGOYLE,
+    )
+    state.add_rumor(rumor)
+    result = ExploreResult(new_percent=50, delta_applied=50, fully_explored=False)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]), board_width=10)
+
+    assert len(lines) == 1
+    assert "Aldric" in lines[0]
+
+
+def test_describe_turn_results_only_narrates_rumors_heard_by_that_leader():
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(2, "Borin"))
+    feature = Feature(feature_id=5, coord=HexCoord(3, 4), kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    rumor = Rumor(
+        rumor_id=state.new_rumor_id(),
+        kingdom_id=1,
+        leader_id=2,  # Borin heard it, not Aldric
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=5,
+        is_true=True,
+        described_coord=HexCoord(3, 4),
+        described_monster=Monster.GARGOYLE,
+    )
+    state.add_rumor(rumor)
+    result = ExploreResult(new_percent=50, delta_applied=50, fully_explored=False)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]), board_width=10)
 
     assert lines == []

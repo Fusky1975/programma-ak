@@ -89,7 +89,9 @@ def find_rumor_candidates(state: GameState, origin: HexCoord, kingdom_id: int) -
     ]
 
 
-def _build_rumor(state: GameState, kingdom_id: int, action: ActionCode, feature: Feature, rng: random.Random) -> Rumor:
+def _build_rumor(
+    state: GameState, kingdom_id: int, leader_id: int, action: ActionCode, feature: Feature, rng: random.Random
+) -> Rumor:
     if feature.guardian_monster is not None and feature.treasure is not None:
         content = RumorContent.FEATURE_AND_MONSTER if rng.random() < RUMOR_FEATURE_CONTENT_CHANCE else RumorContent.ITEM
     elif feature.guardian_monster is not None:
@@ -118,6 +120,7 @@ def _build_rumor(state: GameState, kingdom_id: int, action: ActionCode, feature:
     return Rumor(
         rumor_id=state.new_rumor_id(),
         kingdom_id=kingdom_id,
+        leader_id=leader_id,
         source_action=action,
         content=content,
         feature_id=feature.feature_id,
@@ -129,15 +132,15 @@ def _build_rumor(state: GameState, kingdom_id: int, action: ActionCode, feature:
 
 
 def resolve_rumor_generation(
-    state: GameState, kingdom_id: int, origin: HexCoord, action: ActionCode, rng: random.Random
+    state: GameState, kingdom_id: int, leader_id: int, origin: HexCoord, action: ActionCode, rng: random.Random
 ) -> Rumor | None:
-    """Roll whether ``action`` (issued from ``origin``, by ``kingdom_id``) generates a
-    rumor this turn, and build it if so. Returns ``None`` -- consuming no
-    randomness at all -- for any ``action`` outside ``RUMOR_CHANCE_BY_
-    ACTION`` or when no eligible feature exists nearby; only then rolls
-    the trigger chance itself. Does not add the result to ``state`` --
-    callers do that (``GameState.add_rumor()``) so they can inspect it
-    first.
+    """Roll whether ``action`` (issued from ``origin``, by ``leader_id`` of
+    ``kingdom_id``) generates a rumor this turn, and build it if so.
+    Returns ``None`` -- consuming no randomness at all -- for any
+    ``action`` outside ``RUMOR_CHANCE_BY_ACTION`` or when no eligible
+    feature exists nearby; only then rolls the trigger chance itself.
+    Does not add the result to ``state`` -- callers do that
+    (``GameState.add_rumor()``) so they can inspect it first.
     """
 
     chance = RUMOR_CHANCE_BY_ACTION.get(action)
@@ -149,4 +152,4 @@ def resolve_rumor_generation(
     if rng.random() >= chance:
         return None
     feature = rng.choice(candidates)
-    return _build_rumor(state, kingdom_id, action, feature, rng)
+    return _build_rumor(state, kingdom_id, leader_id, action, feature, rng)

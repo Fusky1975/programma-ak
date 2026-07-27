@@ -21,6 +21,7 @@ from _helpers import ScriptedRandom
 
 ORIGIN = HexCoord(5, 5)
 KINGDOM = 1
+LEADER = 1
 
 
 def _state_with_provinces(*coords: HexCoord) -> GameState:
@@ -102,7 +103,7 @@ def test_find_rumor_candidates_excludes_features_with_neither_monster_nor_treasu
 def test_resolve_rumor_generation_no_candidates_consumes_no_randomness():
     state = _state_with_provinces()
     rng = ScriptedRandom([])  # would raise IndexError if anything were consumed
-    result = resolve_rumor_generation(state, KINGDOM, ORIGIN, ActionCode.EXPLORE, rng)
+    result = resolve_rumor_generation(state, KINGDOM, LEADER, ORIGIN, ActionCode.EXPLORE, rng)
     assert result is None
 
 
@@ -111,7 +112,7 @@ def test_resolve_rumor_generation_unsupported_action_consumes_no_randomness():
     state = _state_with_provinces(nearby)
     _add_feature(state, 1, nearby, guardian_monster=Monster.ARCHER)
     rng = ScriptedRandom([])
-    result = resolve_rumor_generation(state, KINGDOM, ORIGIN, ActionCode.RECRUIT, rng)
+    result = resolve_rumor_generation(state, KINGDOM, LEADER, ORIGIN, ActionCode.RECRUIT, rng)
     assert result is None
 
 
@@ -121,12 +122,12 @@ def test_resolve_rumor_generation_trigger_boundary():
     _add_feature(state, 1, nearby, guardian_monster=Monster.ARCHER, treasure=Treasure.ABILITY_TACTICAL)
     # EXPLORE chance is 0.30 -- a roll exactly at the boundary fails (strict <).
     rng_fail = ScriptedRandom([0.30])
-    assert resolve_rumor_generation(state, KINGDOM, ORIGIN, ActionCode.EXPLORE, rng_fail) is None
+    assert resolve_rumor_generation(state, KINGDOM, LEADER, ORIGIN, ActionCode.EXPLORE, rng_fail) is None
 
     state2 = _state_with_provinces(nearby)
     _add_feature(state2, 1, nearby, guardian_monster=Monster.ARCHER, treasure=Treasure.ABILITY_TACTICAL)
     rng_succeed = ScriptedRandom([0.29] + [0.5] * 10, choice_indices=[0] * 5)
-    assert resolve_rumor_generation(state2, KINGDOM, ORIGIN, ActionCode.EXPLORE, rng_succeed) is not None
+    assert resolve_rumor_generation(state2, KINGDOM, LEADER, ORIGIN, ActionCode.EXPLORE, rng_succeed) is not None
 
 
 def test_resolve_rumor_generation_true_rumor_describes_the_real_feature():
@@ -136,8 +137,9 @@ def test_resolve_rumor_generation_true_rumor_describes_the_real_feature():
     # trigger succeeds (0.0 < 0.30), candidate chosen (index 0), content=FEATURE_AND_MONSTER
     # (0.0 < 0.70), is_true=True (0.0 < 0.50).
     rng = ScriptedRandom([0.0, 0.0, 0.0], choice_indices=[0])
-    rumor = resolve_rumor_generation(state, KINGDOM, ORIGIN, ActionCode.EXPLORE, rng)
+    rumor = resolve_rumor_generation(state, KINGDOM, LEADER, ORIGIN, ActionCode.EXPLORE, rng)
     assert rumor is not None
+    assert rumor.leader_id == LEADER
     assert rumor.feature_id == feature.feature_id
     assert rumor.is_true is True
     assert rumor.content is RumorContent.FEATURE_AND_MONSTER
@@ -151,7 +153,7 @@ def test_resolve_rumor_generation_item_content():
     feature = _add_feature(state, 1, nearby, guardian_monster=Monster.ARCHER, treasure=Treasure.ABILITY_TACTICAL)
     # trigger succeeds, candidate chosen, content roll 0.9 >= 0.70 -> ITEM, is_true roll 0.0 -> True.
     rng = ScriptedRandom([0.0, 0.9, 0.0], choice_indices=[0])
-    rumor = resolve_rumor_generation(state, KINGDOM, ORIGIN, ActionCode.EXPLORE, rng)
+    rumor = resolve_rumor_generation(state, KINGDOM, LEADER, ORIGIN, ActionCode.EXPLORE, rng)
     assert rumor.content is RumorContent.ITEM
     assert rumor.described_treasure is Treasure.ABILITY_TACTICAL
     assert rumor.described_monster is None
@@ -164,7 +166,7 @@ def test_resolve_rumor_generation_false_rumor_corrupts_the_subject():
     # trigger succeeds, content=FEATURE_AND_MONSTER, is_true=False (0.9 >= 0.50),
     # corrupt-subject roll 0.0 < 0.50 -> corrupt the monster, not the province.
     rng = ScriptedRandom([0.0, 0.0, 0.9, 0.0], choice_indices=[0, 0])
-    rumor = resolve_rumor_generation(state, KINGDOM, ORIGIN, ActionCode.EXPLORE, rng)
+    rumor = resolve_rumor_generation(state, KINGDOM, LEADER, ORIGIN, ActionCode.EXPLORE, rng)
     assert rumor.is_true is False
     assert rumor.described_coord == nearby  # province stays correct
     assert rumor.described_monster is not None
@@ -178,7 +180,7 @@ def test_resolve_rumor_generation_false_rumor_corrupts_the_province():
     # trigger succeeds, content=FEATURE_AND_MONSTER, is_true=False, corrupt-subject
     # roll 0.9 >= 0.50 -> corrupt the province instead.
     rng = ScriptedRandom([0.0, 0.0, 0.9, 0.9], choice_indices=[0, 0])
-    rumor = resolve_rumor_generation(state, KINGDOM, ORIGIN, ActionCode.EXPLORE, rng)
+    rumor = resolve_rumor_generation(state, KINGDOM, LEADER, ORIGIN, ActionCode.EXPLORE, rng)
     assert rumor.is_true is False
     assert rumor.described_monster is Monster.ARCHER  # monster stays correct
     assert rumor.described_coord != feature.coord
@@ -189,7 +191,7 @@ def test_resolve_rumor_generation_guardian_only_feature_always_uses_feature_cont
     state = _state_with_provinces(nearby)
     _add_feature(state, 1, nearby, guardian_monster=Monster.ARCHER)  # no treasure
     rng = ScriptedRandom([0.0, 0.0], choice_indices=[0])
-    rumor = resolve_rumor_generation(state, KINGDOM, ORIGIN, ActionCode.EXPLORE, rng)
+    rumor = resolve_rumor_generation(state, KINGDOM, LEADER, ORIGIN, ActionCode.EXPLORE, rng)
     assert rumor.content is RumorContent.FEATURE_AND_MONSTER
 
 
@@ -198,5 +200,5 @@ def test_resolve_rumor_generation_treasure_only_feature_always_uses_item_content
     state = _state_with_provinces(nearby)
     _add_feature(state, 1, nearby, treasure=Treasure.ABILITY_TACTICAL)  # no guardian
     rng = ScriptedRandom([0.0, 0.0], choice_indices=[0])
-    rumor = resolve_rumor_generation(state, KINGDOM, ORIGIN, ActionCode.EXPLORE, rng)
+    rumor = resolve_rumor_generation(state, KINGDOM, LEADER, ORIGIN, ActionCode.EXPLORE, rng)
     assert rumor.content is RumorContent.ITEM

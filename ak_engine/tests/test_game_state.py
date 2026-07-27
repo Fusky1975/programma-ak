@@ -192,6 +192,7 @@ def _dummy_rumor(rumor_id: int, kingdom_id: int = 1) -> Rumor:
     return Rumor(
         rumor_id=rumor_id,
         kingdom_id=kingdom_id,
+        leader_id=1,
         source_action=ActionCode.EXPLORE,
         content=RumorContent.FEATURE_AND_MONSTER,
         feature_id=1,

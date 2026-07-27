@@ -10099,7 +10099,7 @@ complete (Phases 209-211).
     test (`exploration.discovered_features == [feature]`) -- 2894
     passed total.
 
-- **Phase 246 (current)**: wires `models/monster.py
+- **Phase 246**: wires `models/monster.py
   roll_monster_alignment()` (Phase 176) into world generation --
   a pure, fully-tested mechanism that had nothing to wire it to
   when it was built ("this project still has none [of a world-
@@ -10136,6 +10136,50 @@ complete (Phases 209-211).
     prove the roll's outcome actually reaches `Feature.
     guardian_alignment`, not just that a call happens) -- 2895 passed
     total.
+
+- **Phase 247 (current)**: wires `EXPLORE` discovery and rumor
+  narration into `describe_turn_results()` -- the real top-level
+  per-turn assembler (Phase 142+), already calling `describe_*`
+  composers for HIRE/FIRE/PRACTICE/CAST/USE_MI/TRADE/PURSUE/TRAIL/
+  SEARCH/ASPY, but never reaching `describe_feature_discovery()`
+  (Phase 245) or `describe_rumor()` (Phase 244) despite both already
+  existing and being fully tested.
+  - **`EXPLORE`**: a new branch renders `describe_feature_discovery()`
+    for every `ExploreResult.discovered_features` entry -- the
+    province is always the discoverer's own current one, so
+    `feature.coord` resolves it directly via `_province_label()`.
+  - **Rumors needed a real, confirmed gap closed first**: `Rumor`
+    (Phase 243) recorded `kingdom_id` but not *which* leader heard it,
+    so `describe_rumor()`'s own `character_name` argument (Phase 244)
+    had nobody to name. New `Rumor.leader_id` field, threaded through
+    `turn/rumor.py resolve_rumor_generation()`/`_build_rumor()` from
+    `turn/plan_dispatch.py`'s own rumor-roll block, which already had
+    the ordering leader in scope the whole time.
+  - **Rumors don't attach to any one `PhaseDispatchResult` entry** --
+    `resolve_rumor_generation()` is a side effect of `dispatch_phase()`
+    itself, decoupled from whatever action-specific result it returns.
+    Rendered as a separate pass after the main walk: for every distinct
+    `leader_id` present in `results`, every `Rumor` in `state.
+    rumors_heard_by(leader.kingdom_id)` whose own `leader_id` matches
+    gets narrated.
+  - **Opt-in via a new `board_width: int | None = None` keyword-only
+    parameter** on `describe_turn_results()` -- `describe_rumor()`
+    needs it to encode the described province's raw hex number, and
+    every pre-Phase-247 caller (this whole module's own extensive test
+    suite included) has no board width to supply, so omitting it skips
+    rumor narration entirely rather than forcing a new required
+    parameter onto every existing caller. Not threaded further up into
+    `describe_letter_reports()`/`compose_letter_report()` yet -- a
+    narrower follow-up gap, not attempted here, to keep this phase's
+    own blast radius to the one function actually in scope.
+  - Non-breaking: full suite passed unchanged (2895 passed) before any
+    new tests were written -- both the `EXPLORE` branch and the
+    opt-in `board_width` default mean zero existing test scripts needed
+    touching. 4 new tests added to `tests/test_describe_turn_results.py`
+    (`EXPLORE` discovery narration; rumors omitted without
+    `board_width`; rumors rendered when supplied; a rumor heard by one
+    leader in a kingdom isn't narrated for a different leader's own
+    results) -- 2899 passed total.
 
 ## Setup
 
