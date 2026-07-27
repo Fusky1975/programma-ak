@@ -9949,7 +9949,7 @@ complete (Phases 209-211).
     exploration()`/dispatch wiring; 2 in `tests/test_search_execution.py`
     covering the treasure grant and its absence) -- 2867 passed total.
 
-- **Phase 243 (current)**: rumors (rulebook [3.2] -- "Sometimes you get
+- **Phase 243**: rumors (rulebook [3.2] -- "Sometimes you get
   rumours of previously unheard-of features in your turn reports.
   About half of these rumours are true, but the rest are false in some
   respect..."), the one piece of [3.2] Phase 242 explicitly deferred.
@@ -10008,6 +10008,54 @@ complete (Phases 209-211).
     covering the new registry; 2 in `tests/test_plan_dispatch.py`
     covering the dispatch wiring, including the no-features no-op) --
     2888 passed total.
+
+- **Phase 244 (current)**: renders a `Rumor` (Phase 243) into turn-report
+  prose -- the one gap Phase 243 explicitly left open ("nothing renders
+  a rumor into report prose yet"). `report/turn_report.py
+  describe_rumor()` (new), plus `_FRUMOR_MONSTER_TEMPLATES`/
+  `_FRUMOR_ITEM_TEMPLATES` (new, adapted from `HostAK/TP/PROSE/FRUMOR.X`,
+  quoted in full below).
+  - **A genuine conflict between the real Pascal template and Phase
+    243's own confirmed design, resolved directly with the user**:
+    `FRUMOR.X`'s real sentence always names *both* the guardian monster
+    and the treasure in one clause ("`& inhabited/Roccupied by +, who
+    guards/holds the \`"), but Phase 243's own confirmed design reveals
+    only *one* detail type per rumor (70% monster, 30% item -- the
+    other is never known). Asked the user directly rather than guessing
+    which side to bend; the user chose "adapt the sentence, omit the
+    missing detail" -- every clause that doesn't touch the omitted
+    detail stays verbatim (including the source's own double-space
+    idiosyncrasies), only the tail clause naming the omitted detail is
+    dropped/replaced. This produces **two** adapted 4-variant template
+    sets, not FRUMOR.X's own single 4-variant set reused unmodified.
+  - **`$#` marker, resolved from `report/prose.py`'s own marker table**:
+    the real template uses `$#` (not `@`, the resolved-province-name
+    marker) for the province, since the hearer hasn't actually visited
+    it -- `$` is a literal character (Pascal's own hex-literal notation
+    idiom, already visible unescaped elsewhere in the archive), `#` is
+    `report/prose.py`'s own "a number" marker. Rendered via
+    `turn/hex_numbering.py encode_hex_number()`, the exact inverse of
+    the `decode_hex_number()` every LMove order already uses -- not
+    previously imported into `turn_report.py`, added this phase.
+  - **`describe_rumor(rumor, state, character_name, board_width, rng)`
+    takes `state` directly**, matching `describe_bystander_spell_
+    notice()`'s own precedent, rather than only plain caller-supplied
+    strings like `describe_give()`/`describe_hire()`: the feature's own
+    *kind* is never falsified by Phase 243's own design (only the
+    guardian/treasure/province can be), so it's looked up straight from
+    `state.features[rumor.feature_id]`. Dispatches on `rumor.content`
+    to pick the monster-set or item-set templates; renders whatever
+    `rumor` says regardless of `rumor.is_true` -- a false rumor is
+    supposed to read exactly like a true one to the kingdom that heard
+    it, that's the entire point of it being false.
+  - Non-breaking: full suite passed unchanged (2888 passed) before any
+    new tests were written. 4 new tests added to `tests/test_turn_
+    report.py` covering the monster-content variant, the item-content
+    variant, that the rendered location comes from `rumor.
+    described_coord` (not the feature's real coordinate -- the false-
+    rumor-corrupts-the-province case), and that `pick_variant()`'s
+    selected index actually drives which of the 4 variants renders --
+    2892 passed total.
 
 ## Setup
 

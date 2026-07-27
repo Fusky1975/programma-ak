@@ -1136,6 +1136,7 @@ from ak_engine.models.monster import MONSTER_NAMES, Monster
 from ak_engine.models.office import OFFICE_NAME
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import RACE_NAME, Race
+from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.temper import TEMPER_NAME
 from ak_engine.models.treasure import TREASURE_NAME
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
@@ -1147,7 +1148,7 @@ from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
 from ak_engine.turn.emperor_election import alignment_victory_point_reduction_percent
 from ak_engine.turn.encounter import FireArrowShot
-from ak_engine.turn.hex_numbering import decode_hex_number
+from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
@@ -4845,6 +4846,78 @@ def describe_give(
         return render_insufficient_gold(giver_name, gold_requested, rng)
 
     return None
+
+
+# HostAK/TP/PROSE/FRUMOR.X -- the rumor narrative (Phase 243's own
+# resolve_rumor_generation()). The real Pascal sentence always names
+# *both* the guardian and the treasure in one clause ("& inhabited by
+# +, who guards the \") -- but Phase 243's own confirmed design reveals
+# only one of the two per rumor (70% monster, 30% item). Adapted per
+# the user's own confirmed resolution to this conflict: every clause
+# that doesn't touch the omitted detail stays verbatim (including the
+# source's own double-space idiosyncrasies), only the tail clause
+# naming the omitted detail is dropped/replaced. Two variant sets, not
+# one, as a result -- FRUMOR.X's own 4 sentences, each split in two.
+_FRUMOR_MONSTER_TEMPLATES: list[str] = [
+    "{While carousing/Rdrinking with fellow/Rother adventurers/Rtravellers in a bar/Rtavern, }< heard {mention/Rtell "
+    "}of a{n interesting} feature in  $#:  & inhabited/Roccupied by +.",
+    "{While }conversing/Rspeaking with {passing/Rfriendly }merchants/Radventurers, < heard/Rlearned a rumor about  "
+    "previously/Rheretofore unknown/Runheard_of & in  $#, held/Rinhabited by +.",
+    "< heard a rumor telling of  {perilous }feature in  $#{ previously unknown to us},  & inhabited_by/Rwhere_dwells +.",
+    "{while }talking/Rspeaking to some {friendly }locals/Rfarmers, < heard a rumor about  & in  $#, "
+    "occupied/Rinhabited by +.",
+]
+
+_FRUMOR_ITEM_TEMPLATES: list[str] = [
+    "{While carousing/Rdrinking with fellow/Rother adventurers/Rtravellers in a bar/Rtavern, }< heard {mention/Rtell "
+    "}of a{n interesting} feature in  $#:  & is said/Rrumored to hold the \\.",
+    "{While }conversing/Rspeaking with {passing/Rfriendly }merchants/Radventurers, < heard/Rlearned a rumor about  "
+    "previously/Rheretofore unknown/Runheard_of & in  $#, reputed/Rsaid to contain the \\.",
+    "< heard a rumor telling of  {perilous }feature in  $#{ previously unknown to us},  the & is reputed to "
+    "contain the \\.",
+    "{while }talking/Rspeaking to some {friendly }locals/Rfarmers, < heard a rumor about  & in  $#. "
+    "They/Rsome say/Rmaintain that the & holds the \\.",
+]
+
+
+def describe_rumor(rumor: Rumor, state: GameState, character_name: str, board_width: int, rng: random.Random) -> str:
+    """Assembles the one-sentence Rumor narrative from an already-generated
+    ``Rumor`` (``turn/rumor.py resolve_rumor_generation()``, Phase 243).
+
+    Unlike ``describe_give()``/``describe_hire()``, this takes ``state``
+    directly (matching ``describe_bystander_spell_notice()``'s own
+    "needs to re-resolve a coordinate" precedent) rather than plain
+    caller-supplied strings for every field: the feature's own *kind*
+    is never falsified by Phase 243's own design (only the guardian/
+    treasure/province can be), so it's always looked up straight from
+    ``state.features[rumor.feature_id]`` rather than threaded through
+    ``Rumor`` itself. ``#`` (`report/prose.py`'s own "a number" marker)
+    renders the raw hex location code FRUMOR.X's own ``$#`` uses for an
+    unvisited province (the ``$`` is a literal character already in the
+    template, matching Pascal's own hex-literal notation, not a second
+    marker) -- ``turn/hex_numbering.py encode_hex_number()``, the exact
+    inverse of the decode every LMOVE order already uses.
+
+    Dispatches on ``rumor.content`` (``RumorContent.FEATURE_AND_MONSTER``
+    -> ``MONSTER_NAMES[rumor.described_monster]``, ``RumorContent.ITEM``
+    -> ``TREASURE_NAME[rumor.described_treasure]``) -- exactly one of the
+    two ever gets named, per this module's own Phase 244 addendum above.
+    Prints whatever ``rumor`` says without regard to ``rumor.is_true``:
+    a false rumor is supposed to read exactly like a true one to the
+    kingdom that heard it, that's the entire point of it being false.
+    """
+
+    feature = state.features[rumor.feature_id]
+    feature_name = FEATURE_TYPE_NAMES[feature.kind]
+    location_code = str(encode_hex_number(rumor.described_coord, board_width))
+    values = {"<": character_name, "&": feature_name, "#": location_code}
+    if rumor.content is RumorContent.FEATURE_AND_MONSTER:
+        values["+"] = MONSTER_NAMES[rumor.described_monster]
+        variant = pick_variant(_FRUMOR_MONSTER_TEMPLATES, rng)
+    else:
+        values["\\"] = TREASURE_NAME[rumor.described_treasure]
+        variant = pick_variant(_FRUMOR_ITEM_TEMPLATES, rng)
+    return render(variant, values, rng=rng)
 
 
 # HostAK/TP/PROSE/FSEARCH.X -- the Search-attempt opening sentence. See

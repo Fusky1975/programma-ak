@@ -13,6 +13,7 @@ from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
+from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import TREASURE_NAME, Treasure
 from ak_engine.report.turn_report import (
@@ -57,6 +58,7 @@ from ak_engine.report.turn_report import (
     describe_hire,
     describe_practice,
     describe_pursue,
+    describe_rumor,
     describe_search,
     describe_trail,
     describe_trail_intelligence,
@@ -1741,6 +1743,101 @@ def test_describe_practice_renders_nothing_when_not_implemented_for_ability():
     line = describe_practice(result, character_name="Aldric", ability_name="Tactical", rng=rng)
 
     assert line is None
+
+
+# -- FRUMOR.X rumor narrative (Phase 244) -------------------------------
+
+
+def _rumor_state_with_feature(coord: HexCoord, **feature_kwargs) -> tuple[GameState, Feature]:
+    state = GameState()
+    feature = Feature(feature_id=1, coord=coord, kind=FeatureType.DUNGEON, **feature_kwargs)
+    state.add_feature(feature)
+    return state, feature
+
+
+def test_describe_rumor_renders_feature_and_monster_content():
+    coord = HexCoord(9, 9)
+    state, feature = _rumor_state_with_feature(coord, guardian_monster=Monster.ARCHER)
+    rumor = Rumor(
+        rumor_id=1,
+        kingdom_id=1,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=feature.feature_id,
+        is_true=True,
+        described_coord=coord,
+        described_monster=Monster.ARCHER,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
+
+    assert line == "Aldric heard of a feature in  $99:  Dungeon inhabited by Renegade Archer."
+
+
+def test_describe_rumor_renders_item_content():
+    coord = HexCoord(9, 9)
+    state, feature = _rumor_state_with_feature(coord, treasure=Treasure.ABILITY_TACTICAL)
+    rumor = Rumor(
+        rumor_id=1,
+        kingdom_id=1,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.ITEM,
+        feature_id=feature.feature_id,
+        is_true=True,
+        described_coord=coord,
+        described_treasure=Treasure.ABILITY_TACTICAL,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
+
+    assert line == "Aldric heard of a feature in  $99:  Dungeon is said to hold the Standard of Command."
+
+
+def test_describe_rumor_uses_the_described_coord_not_the_features_real_coord():
+    # A false rumor corrupts the province -- the rendered location must come
+    # from rumor.described_coord, not feature.coord (turn/rumor.py's own
+    # false-rumor-corrupts-the-province branch, Phase 243).
+    real_coord = HexCoord(1, 1)
+    corrupted_coord = HexCoord(4, 0)
+    state, feature = _rumor_state_with_feature(real_coord, guardian_monster=Monster.ARCHER)
+    rumor = Rumor(
+        rumor_id=1,
+        kingdom_id=1,
+        source_action=ActionCode.LMOVE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=feature.feature_id,
+        is_true=False,
+        described_coord=corrupted_coord,
+        described_monster=Monster.ARCHER,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
+
+    # encode_hex_number(HexCoord(4, 0), board_width=10) == 0 * 10 + 4 == 4
+    assert "$4:" in line
+
+
+def test_describe_rumor_picks_the_selected_variant():
+    coord = HexCoord(0, 0)
+    state, feature = _rumor_state_with_feature(coord, guardian_monster=Monster.ARCHER)
+    rumor = Rumor(
+        rumor_id=1,
+        kingdom_id=1,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=feature.feature_id,
+        is_true=True,
+        described_coord=coord,
+        described_monster=Monster.ARCHER,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+
+    line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
+
+    assert line == "Aldric heard a rumor telling of  feature in  $0,  Dungeon inhabited by Renegade Archer."
 
 
 # -- duel demoralization narrative (Phase 121) -------------------------------
