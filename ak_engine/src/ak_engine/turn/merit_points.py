@@ -86,9 +86,12 @@ these yet.
 ## Gran Sacerdote / Priest (10%)
 "Per ogni incantesimo Resurrection o Bless riuscito +1" (either spell,
 same +1 -- the table doesn't distinguish) plus "+2 per ciascun livello
-nei Talenti Druidico e Magia Bianca." The skill term is live; `turn/
-cast_execution.py`'s own `_execute_resurrection`/`_execute_bless` don't
-yet increment `MeritTally.resurrection_bless_casts` on success.
+nei Talenti Druidico e Magia Bianca." Both terms are live as of Phase
+251: `turn/cast_execution.py`'s own `_execute_resurrection`/
+`_execute_bless` each increment `MeritTally.resurrection_bless_casts`
+by 1 on success -- the project's first real `MeritTally` writer,
+closing the gap this dataclass's own Phase 227 docstring flagged
+("no action in this project is wired to increment yet").
 
 ## Arcimago di Palazzo / Mage (10%)
 "Per ogni livello in tutti i Talenti Magici +1" (the 5 spell-casting

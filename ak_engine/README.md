@@ -10238,7 +10238,7 @@ complete (Phases 209-211).
     Mystic-Winds-led ground unit halved like an air unit; no effect at
     all in an unfogged province) -- 2908 passed total.
 
-- **Phase 250 (current)**: wires Mystic Winds' own "the spell ends just
+- **Phase 250**: wires Mystic Winds' own "the spell ends just
   before the leader gets involved in any military battle between
   armies" clause (Phase 204 addendum), the fact Phase 249's own wiring
   cross-referenced but didn't itself clear. Turned out narrower than
@@ -10269,6 +10269,32 @@ complete (Phases 209-211).
     commander, clears for a real defending commander, and stays
     untouched for an uninvolved leader elsewhere in the same kingdom --
     2911 passed total.
+
+- **Phase 251 (current)**: wires `MeritTally.resurrection_bless_casts`
+  (Phase 227) -- the Imperial Office Merit Point system's first real
+  writer. `turn/merit_points.py`'s own "Gran Sacerdote / Priest"
+  section already computed `+1` per successful Resurrection/Bless cast,
+  but `turn/cast_execution.py`'s `_execute_resurrection`/`_execute_bless`
+  never incremented the tally -- confirmed via grep that no field of
+  `MeritTally` had any writer anywhere in the codebase before this
+  phase.
+  - Both functions now increment `caster.merit_tally.resurrection_
+    bless_casts` by 1 immediately before their own `applied=True`
+    return -- after `_roll_cast_success()` has already gated the call,
+    so a failed cast never counts. The rulebook doesn't distinguish
+    which of the two spells scores the point, so both feed the same
+    counter; Bless's own independent graveyard-cleanup roll has no
+    bearing on whether the cast itself counts.
+  - Every other `MeritTally` field (battle counts, monster HP,
+    discovery attribution) remains unwired -- this phase closes only
+    the one field with a ready consumer and no missing upstream data
+    model, not the whole dataclass.
+  - Non-breaking: full suite passed unchanged (2911 passed) before any
+    new tests were written. 2 new tests added to `tests/
+    test_cast_execution.py`: a successful Resurrection increments the
+    tally, a successful Bless increments the tally (plus a companion
+    assertion on an existing failure-path test confirming a failed
+    Resurrection leaves it at 0) -- 2913 passed total.
 
 ## Setup
 

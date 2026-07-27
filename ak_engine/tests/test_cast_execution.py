@@ -314,6 +314,17 @@ def test_resurrection_fails_when_target_is_not_a_dead_leader():
     assert result.reason == "target character not found"
 
 
+def test_resurrection_increments_the_casters_merit_tally_on_success():
+    state = build_state()
+    state.dead_leaders[78] = LeaderState(78, 2, "Fallen Hero", LOCATION)
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].merit_tally.resurrection_bless_casts == 1
+
+
 def test_resurrection_fails_when_dead_leader_died_elsewhere():
     state = build_state()
     state.dead_leaders[78] = LeaderState(78, 2, "Fallen Hero", ELSEWHERE)
@@ -322,6 +333,7 @@ def test_resurrection_fails_when_dead_leader_died_elsewhere():
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
 
     assert result.applied is False
+    assert state.leaders[CASTER_ID].merit_tally.resurrection_bless_casts == 0  # no cast on failure
     assert result.reason == "not co-located"
     assert 78 in state.dead_leaders  # untouched
 
@@ -547,6 +559,17 @@ def test_bless_sets_the_tax_bonus_on_any_province_regardless_of_distance():
 
     assert result.applied is True
     assert state.provinces[ELSEWHERE].tax_modifier_percent == 60
+
+
+def test_bless_increments_the_casters_merit_tally_on_success():
+    state = build_state()
+    state.add_province(ProvinceState(ELSEWHERE, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.BLESS, target=_target(ELSEWHERE))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].merit_tally.resurrection_bless_casts == 1
 
 
 def test_bless_fails_when_target_province_is_unknown():

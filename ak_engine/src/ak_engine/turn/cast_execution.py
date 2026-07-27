@@ -1003,6 +1003,12 @@ def _execute_resurrection(
     doesn't have -- out of scope here, not silently mishandled (a King
     in ``dead_leaders`` would incorrectly join the caster's Kingdom via
     this same path, a known, documented gap).
+
+    **Phase 251**: a successful cast increments the caster's own
+    ``LeaderState.merit_tally.resurrection_bless_casts`` -- see
+    ``turn/merit_points.py``'s own "Gran Sacerdote / Priest" section for
+    the +1-per-cast formula this feeds, previously never incremented by
+    any consumer.
     """
 
     caster = state.leaders[leader_id]
@@ -1019,6 +1025,7 @@ def _execute_resurrection(
     del state.dead_leaders[request.target]
     target.kingdom_id = kingdom_id
     state.leaders[request.target] = target
+    caster.merit_tally.resurrection_bless_casts += 1
     return CastExecutionResult(request, applied=True)
 
 
@@ -1165,6 +1172,13 @@ def _execute_bless(
     Army. On a miss, nothing happens to the graveyard, but the tax bonus
     still applies -- the two effects are independent, per the addendum's
     own wording ("also removes," not "instead of").
+
+    **Phase 251**: a successful cast increments the caster's own
+    ``LeaderState.merit_tally.resurrection_bless_casts`` -- see
+    ``_execute_resurrection``'s own Phase 251 note; the rulebook's Merit
+    Point table doesn't distinguish which of the two spells scores the
+    +1, and the graveyard-cleanup roll's own outcome has no bearing on
+    whether the cast itself counts.
     """
 
     caster = state.leaders[leader_id]
@@ -1183,6 +1197,7 @@ def _execute_bless(
     if rng.random() < cleanup_chance:
         state.battle_graveyard.pop(coord, None)
 
+    caster.merit_tally.resurrection_bless_casts += 1
     return CastExecutionResult(request, applied=True)
 
 
