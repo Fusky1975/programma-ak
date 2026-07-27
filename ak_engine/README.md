@@ -9810,7 +9810,7 @@ complete (Phases 209-211).
     Attack/Ignore/Deal outcomes, the Druidic bonus actually being
     wired, and Say's own no-op) -- 2836 passed total.
 
-- **Phase 241 (current)**: Beg [BE], wired into `turn/search_execution.
+- **Phase 241**: Beg [BE], wired into `turn/search_execution.
   py`'s tactic walk. No Pascal source and no rulebook text survive for
   this tactic -- exhaustively confirmed: `CBeg` appears only in
   `CTBOTH.PAS`'s own `maneuver` enum declaration, never referenced by
@@ -9862,6 +9862,92 @@ complete (Phases 209-211).
     undamaged no-effect, an Animal-tier monster's guaranteed refusal,
     and both the success and failure branches for a damaged leader) --
     2845 passed total.
+
+- **Phase 242 (current)**: world generation (`turn/world_generation.py`,
+  new) and Explore's own feature-discovery roll
+  (`turn/exploration.py discover_features()`), closing the two gaps
+  `models/feature.py`'s own docstring had flagged since Phase 75 --
+  "populating a game's feature roster (world generation)" and the
+  when/probability of discovering one during Explore. **No Pascal
+  source survives for either**: the real world-generator, `HostAK/TP/
+  AKGEN.EXE`, is compiled-only (confirmed by an exhaustive listing of
+  the whole archive -- every other `.EXE` there has a matching `.PAS`,
+  `AKGEN.EXE` doesn't), and the discovery-trigger logic lived
+  exclusively in the missing main turn-processor (`fdisc`/`nfeatures`
+  are only ever *read* by `REPORTS.PAS`, never written, anywhere in the
+  available source). Everything below is project-original, designed
+  collaboratively with the user (project author) via direct
+  confirmation, cross-referenced against the one real survivor
+  (`MONSTER_GUARDED_FEATURE_TYPES`, Phase 79) wherever possible.
+  - **World generation density, confirmed directly by the user**: land
+    provinces get a feature 60% of the time, and 20% of *those* get a
+    second, independently-generated feature; sea provinces get a
+    feature 10% of the time, always aquatic-guarded.
+    `Terrain.NO_TERRAIN` provinces never get one.
+  - **Terrain-gating, confirmed directly (yes)**: `SEA_FEATURE_TYPES`
+    reserves `MAG_POOL`/`MAELSTROM` for sea provinces -- sourced
+    directly, every monster `MONSTER_GUARDED_FEATURE_TYPES` ever pairs
+    with either type (`GI_OCTOPUS`, `GI_CLAM`, `ELASMOSAURUS`,
+    `GW_WHALE`, `MERMAID`) is one of this project's own aquatic
+    species -- plus `UND_CAVERN` ("Undersea Cavern"), added by name
+    evidence alone. All other 27 real `FeatureType` members are
+    land-only.
+  - **Guardian selection**: `FEATURE_TYPE_CANDIDATE_MONSTERS` inverts
+    `MONSTER_GUARDED_FEATURE_TYPES` (a monster's own primary/secondary
+    type both count). Only 16 of 30 real types have any sourced
+    candidate; the sea types are always covered (`UND_CAVERN` seeded
+    with the same aquatic candidates as `MAG_POOL`/`MAELSTROM`), and
+    the 14 uncovered land types fall back to a uniform draw over every
+    non-aquatic monster (`LAND_MONSTER_POOL`, 55 species) -- an
+    explicit, documented fallback, not a silent gap.
+  - **Treasure**: a uniform-random draw over the full 113-member
+    `Treasure` catalog (Phase 77) -- no source ties treasure to feature
+    type, monster, or any notion of "tier."
+  - **Discovery trigger, confirmed directly (use %-exploration as the
+    probability)**: `discover_features()` rolls, independently per
+    still-undiscovered feature, `exploration_percent` as a 0-100 chance
+    -- monotonically increasing and guaranteed once a kingdom's own
+    cumulative exploration of the province reaches 100%, directly
+    matching [3.2]'s own "must Explore 100%... to make sure everything
+    ...has been found." A successful roll sets full disclosure
+    (`discovery_level` 3, matching Explore's own "told the name...
+    treasure... and the monster guarding" text) rather than a partial
+    level. Also closes a previously-flagged gap in passing: `Feature.
+    magically_hidden` (Phase 193, Hide Feature) finally has its first
+    real consumer -- a hidden feature is skipped, not rerolled.
+  - **Wiring**: `record_kingdom_exploration()` (`turn/move_execution.py`,
+    the one choke point already shared by the Explore action, Move's
+    own partial-exploration side effect, and the multi-attacker LMOVE
+    path in `turn/turn_processor.py`) gained optional `state`/`rng`
+    parameters -- passing `state` rolls discovery using the newly-
+    updated percentage, `state=None` (the default) preserves every
+    pre-Phase-242 caller's exact behavior. All three real call sites
+    now pass `state`/`rng`.
+  - **Search's own win branch now grants the treasure**: `feature.
+    treasure` (new `Feature` field, `None` unless world generation set
+    one) is granted to the winning leader via the existing item
+    registry (`GameState.add_item()`, Phase 140) inside
+    `_outcome_from()`'s own `winner == "a"` branch, alongside the
+    pre-existing `looted = True` flip.
+  - **Confirmed out of scope, not attempted**: the [3.2] rumor
+    mechanic ("sometimes you get rumours of previously unheard-of
+    features... about half... are true") -- a separate discovery
+    channel from direct Explore, whose prose templates
+    (`HostAK/TP/PROSE/FRUMOR.X`) exist but whose selection/
+    falsification logic doesn't survive either. Deferred to a future
+    phase, same "documented gap, not a guess" treatment as everything
+    else here.
+  - Non-breaking: full suite passed unchanged (2845 passed) before any
+    new tests were written. 22 new tests added (11 in `tests/
+    test_world_generation.py`, new file, covering the land/sea type
+    partition, candidate-monster coverage, the density/double-feature/
+    guardian/treasure rolls, and sequential feature-id assignment; 6 in
+    `tests/test_exploration.py` covering `discover_features()`'s
+    success/failure/already-discovered/magically-hidden/per-kingdom/
+    boundary cases; 2 in `tests/test_move_execution.py` and 1 in
+    `tests/test_plan_dispatch.py` covering the `record_kingdom_
+    exploration()`/dispatch wiring; 2 in `tests/test_search_execution.py`
+    covering the treasure grant and its absence) -- 2867 passed total.
 
 ## Setup
 
@@ -10328,13 +10414,20 @@ rulebook before being turned into named, typed fields:
   retreated) and which caller-supplied names it needs. ~~Feature
   discovery, monsters~~ **`models/feature.py`/`models/monster.py` now
   give both a real type-and-instance shape as of Phase 75** -- see that
-  phase's own note above -- but actually populating a game's feature
+  phase's own note above. ~~but actually populating a game's feature
   roster (world generation), generating rumors, and resolving a Search
-  are all still entirely unbuilt, same as before. Treasures and rumors
-  are still entirely unbuilt, and so is everything outside a fought
-  battle: the letter-report frame, financial report, and exploration
-  narrative all still need `GameState` data or a turn-events log this
-  project doesn't have yet.
+  are all still entirely unbuilt~~ **Search resolution now exists as of
+  Phase 132, and world generation + the direct-discovery half of this
+  rule now exist as of Phase 242** (`turn/world_generation.py`,
+  `turn/exploration.py discover_features()`) -- see that phase's own
+  note above for the full density/terrain/guardian/treasure design.
+  Only the *rumor* half of [3.2] ("about half... are true") remains
+  unbuilt -- a separate discovery channel from direct Explore, whose
+  selection/falsification logic has no surviving source either.
+  Everything outside a fought battle besides Explore/Search is still
+  unbuilt: the letter-report frame, financial report, and general
+  exploration narrative all still need a turn-events log this project
+  doesn't have yet.
 ## What's excluded from this phase
 
 - `SE3__T*.K1` files: same extension as the move files, but these are

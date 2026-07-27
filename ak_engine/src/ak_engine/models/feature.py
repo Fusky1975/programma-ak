@@ -96,38 +96,31 @@ separate field; a future phase that needs it can revisit.
 
 **Explicitly out of scope, confirmed structural gaps, not choices**:
 
-- **World generation** -- populating a fresh ``GameState`` with a
-  realistic feature roster (which provinces get one, how many, what
-  kind, where, what treasure) has no surviving Pascal source at all,
-  the same category of gap as hex adjacency and item-instance
-  creation. ~~What guardian~~ is a partial exception, as of Phase 79
-  -- see ``MONSTER_GUARDED_FEATURE_TYPES`` below: one real piece of
-  the world-gen puzzle *does* survive, in a ``{$IFDEF Moderator}``
-  (world-generation-side, not player-turn-processing-side) compile
-  block, giving each monster's own preferred feature type to guard --
-  still not a full "assign a guardian to a fresh feature instance"
-  algorithm (nothing says how the *feature*'s own kind gets decided
-  first, or how ties/randomness among a feature's several eligible
-  guardians resolve), but a real, sourced building block for
-  whichever future phase attempts that.
+- ~~**World generation**~~ -- **populating a fresh ``GameState`` with a
+  feature roster now exists as of Phase 242** (``turn/world_generation.py
+  generate_world_features()``), project-original throughout (no Pascal
+  source survives -- ``AKGEN.EXE``, the real world-generator, is
+  compiled-only, confirmed by an exhaustive archive listing). Reuses
+  ``MONSTER_GUARDED_FEATURE_TYPES`` below (inverted) for guardian
+  selection wherever it has real coverage; see that module's own
+  docstring for the full density/terrain/guardian/treasure design and
+  which numbers were confirmed directly with the user (project author).
 - **Rumor generation** ([3.2]'s "about half... false" mechanic) --
-  the prose templates exist (``HostAK/TP/PROSE/FRUMOR.X``) but the
-  selection/falsification logic doesn't.
-- **Search resolution** (fighting the guardian, awarding treasure) --
-  needs the still-unbuilt personal/non-army Encounter-combat resolver
-  ``turn/encounter.py``'s own docstring already scopes out (a monster
-  HP/combat model, Steal/Flee/Scout tactic resolution).
+  still out of scope: the prose templates exist
+  (``HostAK/TP/PROSE/FRUMOR.X``) but the selection/falsification logic
+  doesn't, and Phase 242 only wired the *direct*-discovery half of
+  [3.2] (``turn/exploration.py discover_features()``), not the
+  separate "hear about a feature in another province" channel.
+- ~~**Search resolution**~~ **now exists as of Phase 132**
+  (``turn/search_execution.py``), including treasure being actually
+  granted to the winning leader as of Phase 242 (``GameState.
+  add_item()``, Phase 140's own registry) rather than just a
+  ``looted`` flag flip.
 - ~~**Treasure *instances***: a feature's own treasure content isn't
-  modeled here at all -- ``turn/use_mi_decode.py``'s own docstring
-  already reconstructed the full 113-member ``treasure`` type enum
-  from ``CTBOTH.PAS``, but promoting it into an actual Python model
-  (with the prose-file cross-referencing that needs) is a separate,
-  sizable follow-up, not attempted in this phase.~~ **The full
-  ``Treasure`` type catalog now exists as of Phase 77**
-  (``models/treasure.py``) -- see that phase's own README note. A
-  feature's own treasure *instance* (which specific ``Treasure`` a
-  given feature actually holds) is still unmodeled -- world generation
-  itself remains the blocking gap, not the type catalog anymore.
+  modeled here at all~~ **the full ``Treasure`` type catalog exists as
+  of Phase 77** (``models/treasure.py``), and a feature's own treasure
+  *instance* field (``Feature.treasure``) exists as of Phase 242,
+  populated by world generation and consumed by a Search win.
 """
 
 from __future__ import annotations
@@ -137,6 +130,7 @@ from enum import Enum
 
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster
+from ak_engine.models.treasure import Treasure
 
 
 class FeatureType(Enum):
@@ -220,6 +214,14 @@ class Feature:
     looted: bool = False  # fstate[fn] = Dead ("sacked & looted")
     # per-kingdom discovery level: 0 (default/undiscovered) .. 3 (fully known) -- see module docstring
     discovered_by_kingdom: dict[int, int] = field(default_factory=dict)
+    # Phase 242: the treasure this feature holds -- world-generation-side
+    # data (`turn/world_generation.py` assigns it), consumed by a
+    # successful Search (`turn/search_execution.py` grants it to the
+    # winning leader via `GameState.add_item()`, Phase 140's own
+    # registry). `None` for a feature created without going through
+    # world generation (e.g. most existing tests), matching this
+    # project's established "no source, no silent default" convention.
+    treasure: Treasure | None = None
     # Phase 193: Hide Feature [4.23.3] ("This feature will become magically
     # hidden" -- models/power.py CAST_SPELL_FEATURE_DESCRIPTION corroborates
     # the same wording). No sourced duration exists anywhere (permanent vs.

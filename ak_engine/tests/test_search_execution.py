@@ -13,6 +13,7 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, FIRE_ARROW_DAMAGE_RANGE, EncounterCombatResult, FireArrowShot
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
@@ -169,6 +170,50 @@ def test_execute_search_leader_wins_marks_feature_looted():
     assert result.feature_looted is True
     assert feature.looted is True
     assert LEADER_ID in state.leaders
+
+
+def test_execute_search_leader_wins_grants_the_features_own_treasure():
+    # Phase 242: a winning Search now actually grants the feature's own
+    # treasure (if world generation set one) via the item registry.
+    raw = [0] * 30
+    raw[Ability.MELEE.value * 2] = 9
+    raw[Ability.MELEE.value * 2 + 1] = 9
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.DUNGEON,
+        guardian_monster=Monster.GARGOYLE,
+        treasure=Treasure.ABILITY_TACTICAL,
+    )
+    state.add_feature(feature)
+    block = [0.1, 0.5, 0.9]
+    rng = ScriptedRandom(block * 20)
+
+    result = execute_search(state, LEADER_ID, _melee_request(1), rng)
+
+    assert result.winner == "leader"
+    granted = [item for item in state.items.values() if item.owner_leader_id == LEADER_ID]
+    assert len(granted) == 1
+    assert granted[0].treasure is Treasure.ABILITY_TACTICAL
+
+
+def test_execute_search_leader_wins_without_treasure_grants_nothing():
+    # A feature created without going through world generation (treasure=None,
+    # the default) grants no item -- confirmed no silent fabrication.
+    raw = [0] * 30
+    raw[Ability.MELEE.value * 2] = 9
+    raw[Ability.MELEE.value * 2 + 1] = 9
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    block = [0.1, 0.5, 0.9]
+    rng = ScriptedRandom(block * 20)
+
+    result = execute_search(state, LEADER_ID, _melee_request(1), rng)
+
+    assert result.winner == "leader"
+    assert state.items == {}
 
 
 def test_execute_search_leader_loses_is_removed_from_state():

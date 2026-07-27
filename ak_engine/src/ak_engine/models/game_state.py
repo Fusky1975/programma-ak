@@ -600,6 +600,15 @@ class GameState:
     def add_feature(self, feature: Feature) -> None:
         self.features[feature.feature_id] = feature
 
+    def new_feature_id(self) -> int:
+        """Next unused feature-instance id (1 above the current highest, or 1 if none
+        exist) -- mirrors ``new_army_id()``/``new_item_id()``'s own monotonic
+        allocation. Phase 242's own ``turn/world_generation.py`` is the first
+        caller.
+        """
+
+        return max((*self.features.keys(), 0)) + 1
+
     def new_item_id(self) -> int:
         """Next unused item-instance id (1 above the current highest, or 1 if none exist) --
         mirrors ``new_army_id()``'s own monotonic allocation; see

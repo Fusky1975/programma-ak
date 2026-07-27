@@ -1025,7 +1025,7 @@ def _dispatch_multi_attacker_lmove(
             # Phase 69: each mover's own kingdom gets its own tracked
             # percentage here, unlike the single shared exploration_new_percent
             # scalar above (which only the last mover in this loop wins).
-            record_kingdom_exploration(target_province, tl.kingdom_id, explorer_skill, partial=True)
+            record_kingdom_exploration(target_province, tl.kingdom_id, explorer_skill, partial=True, state=state, rng=rng)
         except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
             results.append(PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, None, exc))
             continue

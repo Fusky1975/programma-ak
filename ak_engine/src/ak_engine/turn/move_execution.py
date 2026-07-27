@@ -124,7 +124,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.contested_province import is_illegal_move_from_contested
-from ak_engine.turn.exploration import ExploreResult, resolve_explore
+from ak_engine.turn.exploration import ExploreResult, discover_features, resolve_explore
 from ak_engine.turn.movement import (
     NORMAL_MAP_BOUNDS,
     HexOwnershipTier,
@@ -166,18 +166,33 @@ def _classify_hex_ownership(state: GameState, kingdom_id: int, coord: HexCoord) 
 
 
 def record_kingdom_exploration(
-    province: ProvinceState, kingdom_id: int, explorer_skill: int, *, partial: bool
+    province: ProvinceState,
+    kingdom_id: int,
+    explorer_skill: int,
+    *,
+    partial: bool,
+    state: GameState | None = None,
+    rng: random.Random | None = None,
 ) -> int:
     """Advances ``kingdom_id``'s own cumulative exploration of ``province`` (Phase 69) --
     see ``models/game_state.py``'s own module docstring for why this is a
     separate, per-kingdom tracker from ``ProvinceState.explored_percent``.
     Seeded from that kingdom's own prior entry (0 if never recorded before),
     not the shared scalar. Returns the new percentage.
+
+    Phase 242: passing ``state`` also rolls feature discovery for this
+    province/kingdom (``turn/exploration.py discover_features()``) using
+    the newly-updated percentage. ``state=None`` (the default) skips
+    this entirely, preserving every pre-Phase-242 caller's exact
+    behavior -- discovery is opt-in, not silently added everywhere.
     """
 
     prior = province.explored_percent_by_kingdom.get(kingdom_id, 0)
     result = resolve_explore(prior, province.effective_terrain(), explorer_skill, partial=partial)
     province.explored_percent_by_kingdom[kingdom_id] = result.new_percent
+    if state is not None:
+        rng = rng if rng is not None else random.Random()
+        discover_features(state, province.coord, kingdom_id, result.new_percent, rng)
     return result.new_percent
 
 
@@ -274,7 +289,7 @@ def execute_move(
         occupied_by_enemy=occupied_by_enemy,
     )
     target_province.explored_percent = move_result.exploration.new_percent
-    record_kingdom_exploration(target_province, kingdom_id, explorer_skill, partial=True)
+    record_kingdom_exploration(target_province, kingdom_id, explorer_skill, partial=True, state=state, rng=rng)
 
     battle_report = None
     conquered = False

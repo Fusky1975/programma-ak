@@ -492,7 +492,7 @@ def dispatch_phase(
         province = state.provinces[state.leaders[leader_id].location]
         result = resolve_explore(province.explored_percent, province.effective_terrain(), explorer_skill)
         province.explored_percent = result.new_percent
-        record_kingdom_exploration(province, kingdom_id, explorer_skill, partial=False)
+        record_kingdom_exploration(province, kingdom_id, explorer_skill, partial=False, state=state, rng=rng)
         return result
 
     if action is ActionCode.SEARCH:

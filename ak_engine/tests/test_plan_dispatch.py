@@ -135,6 +135,30 @@ def test_dispatch_explore_also_records_the_kingdoms_own_exploration():
     assert state.provinces[location].explored_percent_by_kingdom[1] == 100
 
 
+def test_dispatch_explore_also_rolls_feature_discovery():
+    # Phase 242: EXPLORE dispatch now also rolls discover_features() for
+    # any feature already present in the province.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    feature = Feature(feature_id=1, coord=location, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    # Plains(50) * (skill 1 + 1) = 100% -- guaranteed discovery.
+    dispatch_phase(
+        phase,
+        state,
+        kingdom_id=1,
+        leader_id=LEADER_ID,
+        army_ids=[army_id],
+        board_width=BOARD_WIDTH,
+        explorer_skill=1,
+        rng=random.Random(0),
+    )
+
+    assert feature.discovery_level(1) == 3
+
+
 def test_dispatch_search_reports_feature_not_found():
     # Phase 132: SEARCH now actually executes -- with no feature 20
     # registered in GameState, execute_search() reports why rather than

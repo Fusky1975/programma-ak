@@ -6,17 +6,41 @@ terrain x (Explorer skill + 1))%, capped at 100% ("A character must
 Explore 100% of the province to make sure that everything in the province
 has been found").
 
-Feature discovery (dungeons, pyramids, guardian monsters, treasures),
-rumors, and battlefield reports are stochastic content generation tied to
-the game's monster/treasure tables and prose templates -- out of scope for
-this phase, which only implements the deterministic percentage math.
+Feature discovery (dungeons, pyramids, guardian monsters, treasures) is
+now wired below (``discover_features()``, Phase 242) once a feature
+roster exists (``turn/world_generation.py``). Rumors (the [3.2] "sometimes
+you get rumours of previously unheard-of features... about half of these
+rumours are true" mechanic -- a *separate* discovery channel from direct
+Explore) and battlefield reports remain out of scope: no selection/
+falsification logic for rumors survives anywhere in the archive (see
+``turn/world_generation.py``'s own docstring for the parallel "no
+surviving source" finding for world generation itself).
+
+**``discover_features()``, project-original, confirmed directly with the
+user (project author)**: no formula for *when* a feature gets discovered
+survives anywhere in the archive either (``models/feature.py``'s own
+docstring already confirmed this -- ``fdisc``/``nfeatures`` are only ever
+*read* by ``REPORTS.PAS``, never written, anywhere in the available
+source). The confirmed design: discovery chance for a still-undiscovered
+feature equals the kingdom's own cumulative exploration percentage of
+that province *as of this action* -- monotonically increasing, and
+guaranteed once that percentage reaches 100, directly matching the
+rulebook's own "must Explore 100%... to make sure everything... has been
+found" text quoted above. Each undiscovered feature in the province rolls
+independently. A feature already discovered by this kingdom
+(``discovery_level(kingdom_id) != 0``) or magically hidden (``Feature.
+magically_hidden``, Phase 193 -- confirmed as this flag's own first real
+consumer) is skipped, not rerolled.
 """
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 
-from ak_engine.models.map import TERRAIN_EXPLORATION_NUMBER, Terrain
+from ak_engine.models.feature import Feature
+from ak_engine.models.game_state import GameState
+from ak_engine.models.map import TERRAIN_EXPLORATION_NUMBER, HexCoord, Terrain
 
 MIN_EXPLORER_SKILL = 0
 MAX_EXPLORER_SKILL = 9  # CTBOTH.PAS `skillrange = 0..9`
@@ -60,3 +84,29 @@ def resolve_explore(
         delta_applied=new_percent - current_percent,
         fully_explored=new_percent >= 100,
     )
+
+
+def discover_features(
+    state: GameState, coord: HexCoord, kingdom_id: int, exploration_percent: int, rng: random.Random
+) -> list[Feature]:
+    """Roll discovery for every still-undiscovered feature at ``coord``, for
+    ``kingdom_id`` specifically, after its own cumulative exploration
+    of this province reached ``exploration_percent``. See module
+    docstring for the full design and its sourcing. A successful roll
+    sets full disclosure (``discovery_level`` 3 -- [3.2]'s own "told the
+    name of the feature, the treasure... and the monster guarding"),
+    matching Explore's own direct-find text rather than the partial
+    levels 1/2 (see ``models/feature.py``'s own docstring for what
+    those mean).
+    """
+
+    discovered: list[Feature] = []
+    for feature in state.features_at(coord):
+        if feature.magically_hidden:
+            continue
+        if feature.discovery_level(kingdom_id) != 0:
+            continue
+        if rng.random() * 100 < exploration_percent:
+            feature.discovered_by_kingdom[kingdom_id] = 3
+            discovered.append(feature)
+    return discovered

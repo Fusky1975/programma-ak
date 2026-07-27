@@ -412,6 +412,12 @@ def execute_search(
 
         if combat_result.winner == "a":
             feature.looted = True
+            # Phase 242: grant the feature's own treasure (if world
+            # generation set one -- `None` for features created outside
+            # that pipeline, e.g. most existing tests) to the winning
+            # leader via the existing item registry (Phase 140).
+            if feature.treasure is not None:
+                state.add_item(feature.treasure, leader_id)
             return SearchExecutionResult(accepted=True, combat_resolved=True, winner="leader", feature_looted=True)
         if combat_result.winner == "b":
             state.remove_leader(leader_id)

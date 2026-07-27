@@ -4,8 +4,10 @@ import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.move_execution import execute_move, record_kingdom_exploration
@@ -90,6 +92,28 @@ def test_record_kingdom_exploration_seeds_from_that_kingdoms_own_prior_entry():
     other_percent = record_kingdom_exploration(province, kingdom_id=2, explorer_skill=1, partial=True)
     assert other_percent == 50
     assert province.explored_percent_by_kingdom == {1: 100, 2: 50}
+
+
+def test_record_kingdom_exploration_without_state_skips_discovery():
+    # Phase 242: state=None (the default) is the pre-Phase-242 behavior --
+    # no discovery roll at all, even if a feature happens to be present.
+    province = ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2)
+    record_kingdom_exploration(province, kingdom_id=1, explorer_skill=9, partial=False)
+    # No assertion possible against a feature since none was ever created --
+    # this just confirms the call succeeds without a state argument.
+
+
+def test_record_kingdom_exploration_with_state_rolls_discovery():
+    state = GameState()
+    province = ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2)
+    state.provinces[TARGET] = province
+    feature = Feature(feature_id=1, coord=TARGET, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+
+    # Plains=50, skill 9 -> 50*10=500 capped at 100 -> guaranteed discovery.
+    record_kingdom_exploration(province, kingdom_id=1, explorer_skill=9, partial=False, state=state, rng=ScriptedRandom([0.99]))
+
+    assert feature.discovery_level(1) == 3
 
 
 def test_move_into_allied_territory_is_uncontested():
