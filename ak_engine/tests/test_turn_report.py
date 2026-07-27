@@ -31,6 +31,7 @@ from ak_engine.report.turn_report import (
     PRACTICE_ALREADY_MAXED_TEMPLATE,
     PRACTICE_TUTORED_TEMPLATE,
     QUEST_BUT_THEN_TEMPLATE,
+    SEASON_NAME,
     SEARCH_FEATURE_ALREADY_SACKED_TEMPLATE,
     SNEAKUP_RANGE_BOW,
     SNEAKUP_RANGE_MELEE,
@@ -68,10 +69,12 @@ from ak_engine.report.turn_report import (
     parse_template_choices,
     pick_variant,
     record_battle_world_events,
+    record_move_world_events,
     record_plague_spread_world_events,
     record_spell_world_events,
     render_bystander_spell_notice,
     render_flood_world_event,
+    render_fly_move_world_event,
     render_illus_terrain_world_event,
     render_plague_world_event,
     render_already_allied,
@@ -4527,7 +4530,7 @@ def test_record_spell_world_events_records_a_successful_plague():
     assert len(state.world_events) == 1
     event = state.world_events[0]
     assert event.coord == battle_coord
-    assert event.lines == ["Border Fort was hit by a plague."]
+    assert event.lines == ["In spring, Border Fort was hit by a plague."]
 
 
 def test_record_spell_world_events_records_a_successful_illus_terrain():
@@ -4545,7 +4548,7 @@ def test_record_spell_world_events_records_a_successful_illus_terrain():
     assert len(state.world_events) == 1
     event = state.world_events[0]
     assert event.coord == battle_coord
-    assert event.lines == ["the Plain terrain of Border Fort was magically made to appear as Mountain."]
+    assert event.lines == ["In spring, the Plain terrain of Border Fort was magically made to appear as Mountain."]
 
 
 def test_record_spell_world_events_skips_a_failed_cast():
@@ -4632,7 +4635,7 @@ def test_record_spell_world_events_records_a_successful_flood():
     record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
 
     assert len(state.world_events) == 1
-    assert state.world_events[0].lines == ["Border Fort was magically flooded."]
+    assert state.world_events[0].lines == ["In spring, Border Fort was magically flooded."]
 
 
 def test_record_spell_world_events_records_a_successful_part_sea():
@@ -4647,7 +4650,7 @@ def test_record_spell_world_events_records_a_successful_part_sea():
     record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
 
     assert len(state.world_events) == 1
-    assert state.world_events[0].lines == ["the waters of Border Fort were magically parted."]
+    assert state.world_events[0].lines == ["In spring, the waters of Border Fort were magically parted."]
 
 
 def test_record_spell_world_events_records_a_successful_earthquake():
@@ -4662,7 +4665,7 @@ def test_record_spell_world_events_records_a_successful_earthquake():
     record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
 
     assert len(state.world_events) == 1
-    assert state.world_events[0].lines == ["Border Fort was devastated by an earthquake!"]
+    assert state.world_events[0].lines == ["In spring, Border Fort was devastated by an earthquake!"]
 
 
 def test_record_spell_world_events_still_skips_tornado():
@@ -4744,5 +4747,122 @@ def test_describe_general_intelligence_report_shows_a_recorded_plague():
     assert lines == [
         "GENERAL INTELLIGENCE REPORT",
         "Kingdom of Attackia (#1):",
-        "Border Fort was hit by a plague.",
+        "In spring, Border Fort was hit by a plague.",
     ]
+
+
+# -- Phase 257: SEASON_NAME + _season_phrase_for_phase_label (via the season
+# prefix threaded into record_battle_world_events/record_spell_world_events)
+# + render_fly_move_world_event + record_move_world_events --
+
+
+def test_season_name_covers_all_five_real_phase_indices():
+    assert SEASON_NAME == {
+        0: "spring",
+        1: "early summer",
+        2: "late summer",
+        3: "fall",
+        4: "early winter",
+    }
+
+
+def test_record_battle_world_events_prefixes_the_season_for_a_real_phase_label():
+    state, battle_coord, _watcher_coord = _gir_state()
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker"), conquered=True,
+        province_coord=battle_coord, attacker_kingdom_id=1, defender_kingdom_id=2,
+    )
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE, result=report, error=None
+        )
+    ]
+
+    record_battle_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+
+    assert state.world_events[0].lines == ["In late summer, the forces of Attackia (#1) broke through and were victorious."]
+
+
+def test_render_fly_move_world_event_renders_the_lfly_template():
+    rng = ScriptedRandom([0.1, 0.1])
+
+    line = render_fly_move_world_event("Tlazolteotl", "Waterford", rng)
+
+    assert line == "Tlazolteotl flew into Waterford."
+
+
+def _fake_move_result(moved: bool, new_location: HexCoord | None):
+    class _FakeMoveResult:
+        pass
+
+    result = _FakeMoveResult()
+    result.moved = moved
+    result.new_location = new_location
+    return result
+
+
+def test_record_move_world_events_records_a_fly_event_for_an_all_overflight_army():
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Tlazolteotl", battle_coord))
+    state.add_army(ArmyState(10, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, battle_coord, commanded_by=1))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_move_result(True, battle_coord), error=None,
+        )
+    ]
+
+    record_move_world_events(state, results, ScriptedRandom([0.1, 0.1]))
+
+    assert len(state.world_events) == 1
+    event = state.world_events[0]
+    assert event.coord == battle_coord
+    assert event.lines == ["In late summer, Tlazolteotl flew into Border Fort."]
+
+
+def test_record_move_world_events_skips_a_mixed_overflight_and_ground_army():
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Tlazolteotl", battle_coord))
+    state.add_army(ArmyState(10, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, battle_coord, commanded_by=1))
+    state.add_army(ArmyState(11, 1, ArmyType.BOWMEN, Quality.AVERAGE, battle_coord, commanded_by=1))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_move_result(True, battle_coord), error=None,
+        )
+    ]
+
+    record_move_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
+def test_record_move_world_events_skips_a_mover_with_no_army_at_the_destination():
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Tlazolteotl", battle_coord))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_move_result(True, battle_coord), error=None,
+        )
+    ]
+
+    record_move_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
+def test_record_move_world_events_skips_a_result_that_did_not_move():
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Tlazolteotl", battle_coord))
+    state.add_army(ArmyState(10, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, battle_coord, commanded_by=1))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_move_result(False, battle_coord), error=None,
+        )
+    ]
+
+    record_move_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []

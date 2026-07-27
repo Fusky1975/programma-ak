@@ -10430,7 +10430,7 @@ complete (Phases 209-211).
     leaves `monster_hp_neutralized` untouched; a losing encounter
     credits nothing -- 2928 passed total.
 
-- **Phase 256 (current)**: wires the Chancellor Merit Point formula's
+- **Phase 256**: wires the Chancellor Merit Point formula's
   Feature half -- `MeritTally.features_discovered_first` ("+2 per
   Special Place discovered first", `turn/merit_points.py`) had the
   skill-level term live since Phase 227 but all three
@@ -10466,6 +10466,93 @@ complete (Phases 209-211).
     first to discover a feature; EXPLORE does not credit when a rival
     kingdom's own entry already sits in `discovered_by_kingdom` --
     2930 passed total.
+
+- **Phase 257 (current)**: adds a per-line season prefix to the
+  GENERAL INTELLIGENCE REPORT's world events, and wires Movement in as
+  a fourth real event source -- both sourced directly from `SAY.PAS`.
+  - `SEASON_NAME` (`report/turn_report.py`) transcribes `CTBOTH.PAS`'s
+    own `seastype`/`seasname` table (`Spring,ESummer,LSummer,Fall,
+    EWinter` -> `'spring','early summer','late summer','fall','early
+    winter'`, the live `{$IFNDEF Noble}` branch, confirmed against real
+    fixture text: 183 "In early winter," occurrences, zero bare
+    "winter"), doubly confirmed via `YAK.PAS`'s own real call site
+    (`Concat('In ', seasname[seastype(Max(0,Min(4,_rphase)))], ', ')`)
+    -- a direct ordinal index into the same 0-4 range this project's
+    own `turn_processor.py PHASE_LABELS = ("P0",...,"P4")` already
+    tracks. `_season_phrase_for_phase_label()` turns a `PhaseDispatch
+    Result.phase_label` into the `"In <season>, "` prefix (or `""` for
+    any synthetic, non-"P<N>" label -- `"plague-spread"`,
+    `"forced-rebattle"`, ...). `record_battle_world_events()`,
+    `record_spell_world_events()`, and (implicitly, since its own
+    `phase_label` never matches) `record_plague_spread_world_events()`
+    all now prefix every line they record. Deliberately simplified vs.
+    the real engine: `SAY.PAS`'s own `phasewrit[kng]` flag only prints
+    the season prefix once per (kingdom, phase) run of consecutive
+    entries -- reproducing that exactly would need re-deriving each
+    kingdom's own consecutive-run grouping at render time, which
+    `state.world_events` doesn't preserve (three separate, fixed-order
+    recorder passes, not one phase-ordered walk); this project instead
+    prefixes every line independently, documented as a real, narrower,
+    flagged gap.
+  - **Movement wired as a fourth event source, correcting a threshold
+    assumption from Phases 231-235**: `SAY.PAS`'s `_LFly` (`Say('<
+    flew/Rrode_>_flying_armies into/Rover_to @.',S_Army)`) was found
+    tagged `S_Army` -- one severity level *below* `S_Comm` on
+    `CTBOTH.PAS`'s own ordinal scale (`S_Prev=0...S_Admin=7,
+    S_Army=8,S_Comm=9,S_IDipl=10`), the level every earlier world-event
+    source was built against. Real fixture cross-check settled it:
+    `SE3__T10.K5:459`'s own GENERAL INTELLIGENCE REPORT reads "In late
+    summer, Tlazolteotl (#88) flew over to Waterford." -- third person,
+    "(#N)", grouped under "Kingdom of X (#N):", unmistakably GIR
+    content despite the lower tag. The true cutoff is therefore
+    "`S_Army` or higher," not "`S_Comm` only" -- Phases 231-235 weren't
+    wrong for what they covered, just untested against anything
+    `S_Army`-tagged until now.
+  - A full audit of every remaining `S_Army`/`S_Comm`-tagged `Say()`/
+    `Sps()` call in `SAY.PAS` found several other real candidates
+    (Scar Terrain's `_STZero`/`_STFite`, King succession's `_LSucc`,
+    public theft/ransom, Tidal Wave's `_SWave`, and a large per-battle
+    narrative cluster dispatching to unread `PROSE/*.X2` files) -- all
+    confirmed to have no real execution-layer trigger anywhere in this
+    project (no revenue system, no succession mechanic, no Steal
+    execution, no Tidal Wave mechanic, no per-army naming for the
+    battle cluster) and are deliberately left unwired, each a distinct,
+    separately-scoped follow-up.
+  - `render_fly_move_world_event()` renders `_LFly` verbatim.
+    `record_move_world_events()` walks `results` for any `moved`/
+    `new_location`-shaped entry (duck-typed the same way
+    `_battle_reports_from_results()` already duck-types battle shapes)
+    and fires the event only when *every* army the mover commands at
+    the destination is overflight-capable (`models/army_type.py
+    is_overflight_unit()`, Phase 31's existing table) -- **an
+    unsourced-but-reasonable heuristic, confirmed directly with the
+    user**: the real `Imp_Code` dispatch choosing "flew" vs. the
+    ordinary, private `_LMarch` narration lives in the missing main
+    program, the same "driver lost, callee kept" gap already documented
+    for hex adjacency and world generation. A mover with no armies at
+    the destination, or a mixed overflight/ground force, falls through
+    to the existing private march narration, untouched.
+  - `_LWWalk` (Mystic Winds wind-walking, the other `S_Army`-tagged
+    movement notice) stays deliberately unwired: its own trigger,
+    `LeaderState.mystic_winds_active`, is a single per-leader flag with
+    no record of *which* move set it, and by the time this recorder
+    runs (once, after the whole turn resolves) the flag may no longer
+    reflect the move being recorded -- attributing it to one specific
+    `PhaseDispatchResult` would risk misattribution. No real fixture
+    example of this wording was found either, giving nothing to
+    validate a design against.
+  - Non-breaking: full suite passed unchanged (2930 passed) before any
+    new tests were written, after 6 pre-existing tests were first
+    updated for the new season prefix they now receive (all five
+    `record_spell_world_events()` tests plus the recorded-Plague GIR
+    test, every one already using `phase_label="P0"` -> "In spring, ").
+    7 new tests added to `tests/test_turn_report.py`: `SEASON_NAME`'s
+    full 0-4 mapping; a season prefix on a `record_battle_world_
+    events()` line; `render_fly_move_world_event()`'s own template
+    rendering; `record_move_world_events()` for an all-overflight army
+    (event recorded, season-prefixed), a mixed overflight/ground army
+    (skipped), a mover with no army at the destination (skipped), and a
+    result that didn't move (skipped) -- 2937 passed total.
 
 ## Setup
 

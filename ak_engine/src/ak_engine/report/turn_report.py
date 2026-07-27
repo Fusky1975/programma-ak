@@ -1127,7 +1127,7 @@ from ak_engine.models.enums import (
 )
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.army_naming import make_army_name
-from ak_engine.models.army_type import ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE
+from ak_engine.models.army_type import ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE, is_overflight_unit
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
@@ -5974,9 +5974,67 @@ def describe_alignment_victory_point_reduction(state: GameState) -> list[str]:
     return lines
 
 
-def _battle_reports_from_results(results: list[PhaseDispatchResult]) -> list[BattleReport]:
-    """Every ``BattleReport`` reachable from ``results`` -- a battle can
-    surface three different ways depending which real call site produced
+# CTBOTH.PAS `seastype`/`seasname` (Phase 257) -- the `{$IFNDEF Noble}`
+# branch specifically: `(Spring,ESummer,LSummer,Fall,EWinter)` /
+# `('spring','early summer','late summer','fall','early winter')`.
+# Confirmed live (not the `{$ELSE}` "Noble" branch, which starts with
+# bare "winter" instead) by tallying every real "In <season>," phrase
+# across the Desktop's own `SE3__T*.K*` sample files: "early winter"
+# appears 183 times, bare "winter" never does. Doubly confirmed by
+# `YAK.PAS`'s own real call site (~line 306): ``ss:= Concat('In ',
+# seasname[seastype(Max(0,Min(4,_rphase)))],', ');`` -- a direct,
+# clamped ordinal index into this exact table, keyed by `_rphase`, the
+# same per-phase counter this project's own ``turn/turn_processor.py
+# PHASE_LABELS = ("P0","P1","P2","P3","P4")`` already tracks 1:1.
+SEASON_NAME: dict[int, str] = {
+    0: "spring",
+    1: "early summer",
+    2: "late summer",
+    3: "fall",
+    4: "early winter",
+}
+
+
+def _season_phrase_for_phase_label(phase_label: str) -> str:
+    """"In <season>, " prefix for one GENERAL INTELLIGENCE REPORT line,
+    keyed off the originating ``PhaseDispatchResult.phase_label``
+    ("P0".."P4") -- see ``SEASON_NAME``'s own docstring for the sourcing.
+
+    Returns ``""`` (no prefix, not a guess) for any label that isn't a
+    real "P<N>" phase -- the synthetic entries this project's own
+    ``turn_processor.py`` also produces (``"plague-spread"``,
+    ``"gate-angel-visit"``, ``"forced-rebattle"``, ...) have no real
+    originating phase index recoverable from this project's own data
+    model, the same "no data, no guess" convention used throughout.
+
+    **Deliberately simplified vs. the real Pascal engine, documented
+    here rather than silently diverging**: `SAY.PAS` resets a
+    per-kingdom `phasewrit` flag every time `_rphase` changes and only
+    prints the "In <season>," prefix once per (kingdom, phase) run of
+    consecutive entries, not once per entry. Reproducing that exactly
+    would require re-deriving each kingdom's own consecutive-run
+    grouping at render time from ``state.world_events``, which isn't
+    recorded in phase order to begin with (``record_battle_world_
+    events()``/``record_spell_world_events()``/``record_plague_spread_
+    world_events()`` run as three separate, fixed-order passes, not a
+    single phase-ordered walk) -- a real, but narrower, follow-up gap.
+    This project instead prefixes every recorded line independently,
+    which can occasionally show one extra "In <season>," line the real
+    engine would have suppressed as a repeat within the same phase --
+    the same category of accepted, flagged approximation this project's
+    own Duel/retreat-destination heuristics already carry.
+    """
+
+    if not phase_label.startswith("P") or not phase_label[1:].isdigit():
+        return ""
+    index = int(phase_label[1:])
+    season = SEASON_NAME.get(index)
+    return f"In {season}, " if season is not None else ""
+
+
+def _battle_reports_from_results(results: list[PhaseDispatchResult]) -> list[tuple[str, BattleReport]]:
+    """Every ``(phase_label, BattleReport)`` pair reachable from ``results``
+    -- a battle can surface three different ways depending which real call site produced
     it (``turn/turn_processor.py``'s own docstring lists all four:
     ``move_execution.py execute_move()`` wraps it as
     ``MoveExecutionResult.battle_report``, ``pursue_execution.py
@@ -5986,23 +6044,27 @@ def _battle_reports_from_results(results: list[PhaseDispatchResult]) -> list[Bat
     ``BattleReport`` itself as ``PhaseDispatchResult.result`` directly)
     -- rather than depend on any one of those result types by name (a
     layering a report-composer module shouldn't take on), this just
-    duck-types the three shapes.
+    duck-types the three shapes. **Phase 257**: now also returns each
+    report's own originating ``entry.phase_label``, so a caller can
+    resolve a season prefix for it (``_season_phrase_for_phase_label()``)
+    -- ``PhaseDispatchResult`` already stamps every entry with this, no
+    new data needed.
     """
 
-    reports: list[BattleReport] = []
+    reports: list[tuple[str, BattleReport]] = []
     for entry in results:
         result = entry.result
         if isinstance(result, BattleReport):
-            reports.append(result)
+            reports.append((entry.phase_label, result))
             continue
         battle_report = getattr(result, "battle_report", None)
         if isinstance(battle_report, BattleReport):
-            reports.append(battle_report)
+            reports.append((entry.phase_label, battle_report))
             continue
         battle = getattr(result, "battle", None)
         nested_report = getattr(battle, "report", None) if battle is not None else None
         if isinstance(nested_report, BattleReport):
-            reports.append(nested_report)
+            reports.append((entry.phase_label, nested_report))
     return reports
 
 
@@ -6042,9 +6104,14 @@ def record_battle_world_events(state: GameState, results: list[PhaseDispatchResu
     already allows for, see that module's docstring) is skipped: there
     is no "Kingdom of X:" owner to attribute the event to, and inventing
     one isn't warranted for what should be a rare edge case.
+
+    **Phase 257**: every recorded line is now prefixed with its own "In
+    <season>, " (``_season_phrase_for_phase_label()``) -- see that
+    function's own docstring for the sourcing and the documented
+    per-phase-dedup simplification.
     """
 
-    for battle_report in _battle_reports_from_results(results):
+    for phase_label, battle_report in _battle_reports_from_results(results):
         coord = battle_report.province_coord
         if coord is None or battle_report.attacker_kingdom_id is None or battle_report.defender_kingdom_id is None:
             continue
@@ -6059,7 +6126,8 @@ def record_battle_world_events(state: GameState, results: list[PhaseDispatchResu
             is_sea=is_sea,
         )
         if winner_sentence is not None:
-            state.record_world_event(coord, [winner_sentence])
+            prefix = _season_phrase_for_phase_label(phase_label)
+            state.record_world_event(coord, [prefix + winner_sentence])
 
 
 # HostAK/TP/SAY.PAS `_SPlague`/`_PPlague` (Phase 232) -- the province-
@@ -6205,6 +6273,10 @@ def record_spell_world_events(
     target()` itself uses -- safe to redo here without re-validating
     adjacency, since ``result.applied`` being `True` already proves the
     original resolution succeeded.
+
+    **Phase 257**: every recorded line is now prefixed with its own "In
+    <season>, " (``_season_phrase_for_phase_label()``), keyed off this
+    entry's own ``phase_label`` -- see that function's own docstring.
     """
 
     for entry in results:
@@ -6217,18 +6289,20 @@ def record_spell_world_events(
         if province is None:
             continue
         province_name = _province_label(state, coord)
+        prefix = _season_phrase_for_phase_label(entry.phase_label)
 
         if request.spell is Spell.PLAGUE:
-            state.record_world_event(coord, [render_plague_world_event(province_name, rng)])
+            state.record_world_event(coord, [prefix + render_plague_world_event(province_name, rng)])
         elif request.spell is Spell.ILLUS_TERRAIN and province.illusory_terrain is not None:
             line = render_illus_terrain_world_event(
                 TERRAIN_NAME[province.terrain], province_name, TERRAIN_NAME[province.illusory_terrain], rng
             )
-            state.record_world_event(coord, [line])
+            state.record_world_event(coord, [prefix + line])
         elif request.spell is Spell.FLOOD:
-            state.record_world_event(coord, [render_flood_world_event(province_name, rng)])
+            state.record_world_event(coord, [prefix + render_flood_world_event(province_name, rng)])
         elif request.spell in _BYSTANDER_SPELL_NOTICE_SPELLS:
-            state.record_world_event(coord, [render_bystander_spell_notice(request.spell, province_name, rng)])
+            line = render_bystander_spell_notice(request.spell, province_name, rng)
+            state.record_world_event(coord, [prefix + line])
 
 
 def record_plague_spread_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
@@ -6251,6 +6325,13 @@ def record_plague_spread_world_events(state: GameState, results: list[PhaseDispa
     and the real fixture text draw no distinction between a province
     afflicted by a direct cast versus one reached by the spread
     mechanic -- both are simply "hit by a plague."
+
+    **Phase 257**: unlike the other two recorders, this one's own lines
+    are never given an "In <season>, " prefix -- ``phase_label`` here is
+    always the synthetic ``"plague-spread"``, not a real "P<N>" phase,
+    so ``_season_phrase_for_phase_label()`` always returns ``""`` for it
+    (no originating phase index survives this synthetic pass; see that
+    function's own docstring).
     """
 
     for entry in results:
@@ -6259,6 +6340,131 @@ def record_plague_spread_world_events(state: GameState, results: list[PhaseDispa
         coord = entry.result
         province_name = _province_label(state, coord)
         state.record_world_event(coord, [render_plague_world_event(province_name, rng)])
+
+
+# HostAK/TP/SAY.PAS `_LFly` (Phase 257) -- a single, real, hardcoded
+# `S_Army`-tagged notice (no file): "< flew/Rrode_>_flying_armies
+# into/Rover_to @." Confirmed real and confirmed cross-kingdom-visible
+# directly against the Desktop's own sample files (e.g. `SE3__T10.K5`
+# line 459's own GENERAL INTELLIGENCE REPORT: "In late summer,
+# Tlazolteotl (#88) flew over to Waterford.") -- third person, "(#N)",
+# grouped under "Kingdom of X (#N):", the same shape every other world
+# event here already uses, confirming this is genuinely GIR content and
+# not just the mover's own private ACTION REPORT narration.
+#
+# **`S_Army` sits below this project's own established `S_Comm`
+# threshold** (`CTBOTH.PAS`'s own severity scale, `S_Prev=0 ...
+# S_Admin=7, S_Army=8, S_Comm=9, S_IDipl=10` -- confirmed ordinal, not
+# independent categories) that every other world-event source here
+# (Phases 231-235) was built against. The real fixture evidence above
+# is unambiguous, though: this content unmistakably reaches other
+# kingdoms' own GIR feeds. Read together, these confirm the true cutoff
+# for GIR visibility is "S_Army or higher," not "S_Comm only" -- the
+# earlier phases' own restriction was an incomplete generalization
+# (nothing S_Army-tagged had been checked against a real GIR fixture
+# until now), not a wrong one for what it *did* cover. **Not a full
+# resolution**: `SAY.PAS` has other `S_Army`-tagged notices (a much
+# larger real per-battle narrative cluster --
+# `FD('invas'/'conq'/'invwin'/'defwin'/'heavp', S_Army, ...)` -- plus
+# Scar Terrain's own bystander notice, `_STZero`/`_STFite`) that stay
+# unwired here, not because they fail this now-corrected threshold, but
+# because each still needs its own separate research (the battle
+# cluster dispatches to un-read `PROSE/*.X2` files and likely needs
+# per-army names, the same gap already flagged for `describe_battle()`;
+# Scar Terrain's own collapse effect is a pure function this project
+# never auto-invokes, since nothing here can supply its own real
+# precondition -- see `turn/cast_execution.py``_execute_scar_terrain``'s
+# own docstring). Movement is the one `S_Army` notice with both a
+# confirmed template *and* real execution-layer data already available
+# to trigger it correctly.
+#
+# **The trigger condition for `_LFly` over the ordinary, `S_Admin`-tagged
+# `_LMarch` is not recoverable from the available archive** -- the
+# `Imp_Code` dispatch that actually chooses between them lives in the
+# missing main program, the same "driver lost, callee kept" category
+# already documented for hex adjacency (`turn/movement.py`) and world
+# generation. **Confirmed directly with the user (project author)**: this
+# module instead uses a documented, unsourced-but-reasonable heuristic --
+# a move renders as "flew" when every army the mover brought to the
+# destination is an overflight type (`models/army_type.py
+# is_overflight_unit()`, the same table already used for rear-targeting
+# eligibility in battle), matching the real fixtures' own pattern of the
+# same character consistently "flying" turn after turn (a persistent
+# army-composition property, not a one-off random roll). A mover with no
+# overflight-only army at the destination (including one traveling with
+# no army at all) falls through to the ordinary, private `_LMarch`
+# narration this project already renders via `render_march()` --
+# unaffected by this addendum, and never itself GIR-visible.
+#
+# **`_LWWalk` (Mystic Winds wind-walking, the other `S_Army`-tagged
+# movement notice) is deliberately left unwired here.** Its own real
+# trigger, `LeaderState.mystic_winds_active` (Phase 204), is a single
+# per-leader flag with no record of *which* move it was set during --
+# by the time this recorder runs (once, after the whole turn's `results`
+# are complete), the flag reflects whatever the *last* relevant event
+# left it as, not necessarily this specific move, so attributing it to
+# one particular `PhaseDispatchResult` would risk misattributing it to
+# the wrong phase. No real fixture example of this wording was found in
+# any available sample file either, giving no way to validate a design
+# against real output. A real, sourced template with no reliable trigger
+# data -- the same category as the other deferred `S_Army` notices
+# above, not attempted here.
+_FLY_MOVE_TEMPLATE = "< flew/Rrode_>_flying_armies into/Rover_to @."
+
+
+def render_fly_move_world_event(character_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders `SAY.PAS` `_LFly`'s own notice for a Move -- see the
+    module-level comment above for the sourcing, the corrected `S_Army`
+    GIR-visibility threshold, and the documented overflight-army
+    heuristic that decides when this renders instead of the ordinary,
+    private `_LMarch` narration.
+    """
+
+    values = {"<": character_name, "@": province_name, ">": f"{character_name}'s"}
+    return render(_FLY_MOVE_TEMPLATE, values, rng=rng)
+
+
+def record_move_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
+    """Populates ``state.world_events`` (Phase 257) from every Move whose
+    entire arriving force is overflight-capable -- the fourth real event
+    *source* wired for GENERAL INTELLIGENCE REPORT, alongside
+    ``record_battle_world_events()``/``record_spell_world_events()``/
+    ``record_plague_spread_world_events()``. Same "call once per turn,
+    before any ``compose_letter_report()`` call" contract as those three.
+
+    Duck-types ``result.moved``/``result.new_location`` the same way
+    ``_battle_reports_from_results()`` duck-types battle shapes --
+    ``MoveExecutionResult`` and ``turn/turn_processor.py
+    MultiAttackerMoveResult`` both carry these two fields under the same
+    names. Reads each mover's own armies from ``GameState`` *after* the
+    whole turn has resolved (``state.armies_commanded_by(entry.leader_id)``,
+    filtered to ``new_location``) rather than from the move result itself
+    (neither result type stores which army ids moved) -- safe, since a
+    later phase reassigning command (Leave/Pick_Up) is a real, if rare,
+    possibility this reads around simply by asking "who commands what,
+    right now" rather than "what did this one phase's own army list say."
+
+    A mover with no armies at ``new_location``, or whose armies aren't
+    *all* overflight-capable, is skipped entirely -- no event, matching
+    the ordinary march staying private (see module-level comment).
+    """
+
+    for entry in results:
+        result = entry.result
+        moved = getattr(result, "moved", None)
+        new_location = getattr(result, "new_location", None)
+        if not moved or new_location is None:
+            continue
+        armies = [army for army in state.armies_commanded_by(entry.leader_id) if army.location == new_location]
+        if not armies or not all(is_overflight_unit(army.army_type) for army in armies):
+            continue
+        leader = state.leaders.get(entry.leader_id)
+        if leader is None:
+            continue
+        province_name = _province_label(state, new_location)
+        prefix = _season_phrase_for_phase_label(entry.phase_label)
+        line = render_fly_move_world_event(leader.name, province_name, rng)
+        state.record_world_event(new_location, [prefix + line])
 
 
 _GENERAL_INTELLIGENCE_REPORT_HEADER = "GENERAL INTELLIGENCE REPORT"
@@ -6307,30 +6513,40 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
     silent" precedent every other section composer here already
     follows.** The real letters show many distinct event types --
     movement ("X flew over to Y"), plagues, terrain illusions, Skeletal
-    Army risings, other cast-spell narrations -- and as of Phase 235
-    this project populates three real sources across five call sites:
-    battle results (`record_battle_world_events()`), five real `S_Comm`
-    province-effect casts -- Plague, Illusory Terrain, Flood, Part Sea,
-    Earthquake (`record_spell_world_events()`, Phases 232/235) -- and
-    Plague's own spread-to-adjacent-provinces mechanic
+    Army risings, other cast-spell narrations, and a much richer
+    per-battle narrative -- and as of Phase 257 this project populates
+    four real sources across six call sites: battle results
+    (`record_battle_world_events()`), five real `S_Comm` province-effect
+    casts -- Plague, Illusory Terrain, Flood, Part Sea, Earthquake
+    (`record_spell_world_events()`, Phases 232/235) -- Plague's own
+    spread-to-adjacent-provinces mechanic
     (`record_plague_spread_world_events()`, Phase 234, reusing Plague's
     own real notice text -- the rulebook draws no distinction between a
-    directly-cast and a spread-caused affliction). Movement stays
-    deferred -- see `record_spell_world_events()`'s own docstring for
-    exactly why (`render_march()`'s own real MARCH.X templates need a
-    `^P` "province number" marker this project has no honest synthesis
-    for, and don't even textually match the real fixtures' own "flew
-    over to"/"flew into" wording in the first place). **Skeletal Army
-    specifically was checked and confirmed *not* eligible**, not merely
-    unconsidered: `SAY.PAS`'s own `_ARises: Sps(Skeletal_Army,S_AA)` is
-    tagged `S_AA` ("kingdom-only"), not `S_Comm` -- no real evidence
-    this project's own `S_Comm`-only visibility criterion should stretch
-    to cover it, so it stays out (Skeletal Army would also need this
-    project's still-missing army-naming system, a second, independent
-    reason). Every other spell without a confirmed `S_Comm` `SAY.PAS`
+    directly-cast and a spread-caused affliction), and Movement
+    (`record_move_world_events()`, Phase 257 -- see that function's own
+    module-level comment for the corrected "`S_Army` or higher, not
+    `S_Comm`-only" GIR-visibility threshold this discovery required, the
+    documented overflight-army heuristic that decides "flew" vs. the
+    ordinary private march, and why Mystic Winds wind-walking's own
+    matching `S_Army` notice stays unwired).
+
+    **`S_AA`-tagged content (Skeletal Army risings, `_ARises:
+    Sps(Skeletal_Army,S_AA)`) is still correctly excluded even under
+    the corrected threshold**: `S_AA`'s own ordinal (6) sits below
+    `S_Army`'s (8) on `CTBOTH.PAS`'s own severity scale, so this was
+    never a false negative from the old "`S_Comm`-only" restriction --
+    genuinely narrower-than-`S_Army` content, confirmed, not merely
+    unconsidered (Skeletal Army would also need this project's
+    still-missing army-naming system, a second, independent reason).
+    Every other spell without a confirmed `S_Army`-or-higher `SAY.PAS`
     notice (the personal-combat spells already covered by the encounter
     engine, Bless's plausible-but-unconfirmed `S_Admin`, ...) is
-    likewise a confirmed-real, deliberately-deferred follow-up.
+    likewise a confirmed-real, deliberately-deferred follow-up -- as is
+    the much larger `S_Army`-tagged per-battle narrative cluster
+    (`FD('invas'/'conq'/'invwin'/'defwin'/'heavp', S_Army, ...)`) and
+    Scar Terrain's own bystander notice, both flagged but not attempted
+    in Phase 257 (see `record_move_world_events()`'s own module-level
+    comment for why).
 
     Always returns at least the header + "None at present" fallback
     (the same convention `describe_diplomacy_report()`/`describe_
