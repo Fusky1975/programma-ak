@@ -4312,6 +4312,29 @@ def test_describe_aspy_lists_recruitable_army_types_in_order():
     assert lines.index("Province Army Type 1: Bowmen") < lines.index("Province Army Type 2: Axemen")
 
 
+def test_describe_aspy_renders_taxation_between_army_types_and_characters():
+    report = SpyReport(
+        province=HexCoord(0, 0), owner_kingdom_id=1, recruitable_army_types=[ArmyType.BOWMEN], tax_estimate=250
+    )
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+
+    assert "Approximate Taxation: 250" in lines
+    tax_index = lines.index("Approximate Taxation: 250")
+    assert lines.index("Province Army Type 1: Bowmen") < tax_index
+    assert tax_index < lines.index("there were no conspicuous characters or forces in Greenfield.")
+
+
+def test_describe_aspy_omits_taxation_when_never_recorded():
+    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1)  # tax_estimate defaults to None
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+
+    assert not any("Taxation" in line for line in lines)
+
+
 # -- Phase 231: record_battle_world_events() / describe_general_intelligence_report() --
 
 _GIR_BOUNDS = MapBounds(*NORMAL_MAP_BOUNDS)

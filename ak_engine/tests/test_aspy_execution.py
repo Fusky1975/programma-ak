@@ -81,6 +81,21 @@ def test_execute_aspy_reports_recruitable_army_types_for_the_provinces_race():
     assert ArmyType.TROLLS not in report.recruitable_army_types  # Race.HUMAN isn't a monstrous race
 
 
+def test_execute_aspy_reports_the_provinces_tax_estimate():
+    state = _state()
+    state.provinces[HOME].tax = 5
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.tax_estimate == 5
+
+
+def test_execute_aspy_reports_none_tax_estimate_when_never_recorded():
+    state = _state()  # ProvinceState.tax defaults to None
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.tax_estimate is None
+
+
 def test_execute_aspy_reports_is_capital_true_at_the_kingdoms_home_province():
     state = _state(home_province=HOME, leader_location=HOME)
     report = execute_aspy(state, LEADER_ID, _request())

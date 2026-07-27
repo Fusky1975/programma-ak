@@ -10296,7 +10296,7 @@ complete (Phases 209-211).
     assertion on an existing failure-path test confirming a failed
     Resurrection leaves it at 0) -- 2913 passed total.
 
-- **Phase 252 (current)**: wires [3.17] Trail's sixth and last named
+- **Phase 252**: wires [3.17] Trail's sixth and last named
   field, Actions -- the target's own `ActionCode` for the same phase
   the Trail catches them. `turn/trail_execution.py TrailExecutionResult`
   previously had 5 of 6 named intelligence fields; `actions` was simply
@@ -10329,6 +10329,41 @@ complete (Phases 209-211).
     own same-phase action; the field is `None` when the target had no
     order that phase; a persistent Trail continuation (via
     `advance_trail()`) backfills it too -- 2916 passed total.
+
+- **Phase 253 (current)**: wires [3.14] ASpy's own "taxation of the
+  province" line item -- `SAY.PAS`'s `_LSTax` ("Approximate Taxation:
+  N"), templated back in Phase 115 (`render_spy_tax_estimate()`) but
+  never called from anywhere, and `turn/aspy_execution.py`'s own
+  module docstring long claimed outright required "a per-province
+  tax-base model this project doesn't have at all."
+  - That claim went stale at Phase 222-224: `turn/tax_base.py
+    province_tax_yield()` already computes exactly this figure (real
+    base `ProvinceState.tax`, minus Scar Terrain's permanent
+    reduction, times Bless/Earthquake's own turn modifier) -- the same
+    function `describe_finances_report()`'s own "Expected Revenues"
+    line already consumes at the kingdom level. Wiring this phase
+    needed no new formula, only a new consumer: `SpyReport.
+    tax_estimate: int | None` (new field, `execute_aspy()` populates
+    it via `province_tax_yield(province)`), and `describe_aspy()` now
+    renders `render_spy_tax_estimate()`'s line whenever it isn't
+    `None`.
+  - Placement confirmed against real Desktop sample files
+    (`SE3__T10.K3`/`SE3__T11.K7`): "Approximate Taxation: N" always
+    follows the province's own ownership/adjacency narration and
+    always precedes "The following elements are present..."/"There
+    were no conspicuous characters or forces...". `describe_aspy()`
+    renders it right after the recruitable-Army-Type lines and before
+    the characters/forces block, consistent with every confirmed
+    sample. `None` (base `tax` never recorded) omits the line
+    entirely -- the same "omit rather than guess" convention every
+    other optional ASpy line item already follows.
+  - Non-breaking: full suite passed unchanged (2916 passed) before any
+    new tests were written. 4 new tests added: 2 in `tests/
+    test_aspy_execution.py` (`tax_estimate` populated from a recorded
+    `ProvinceState.tax`; `None` when never recorded), 2 in `tests/
+    test_turn_report.py` (`describe_aspy()` renders the line between
+    Army Types and the characters/forces block; the line is omitted
+    entirely when `tax_estimate is None`) -- 2920 passed total.
 
 ## Setup
 

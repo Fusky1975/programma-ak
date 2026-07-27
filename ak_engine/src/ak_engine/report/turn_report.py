@@ -1814,17 +1814,23 @@ def describe_aspy(report: SpyReport, *, spy_name: str, province_name: str, rng: 
     not the surrounding ``Imp_Code`` control flow that decides which
     fire in what order. Opening sentence, then the capital-province
     notice (if any), then the province's recruitable Army Types, then
-    the characters/forces block (``_LSNone`` if neither characters nor
-    forces are present; ``_LSList`` + ``_LSNoCh`` if forces but no
-    characters; ``_LSList`` + one ``_LSHere`` per spotted character
-    (``_LSLeads`` immediately after any character who leads an army) +
-    ``_LSGarr`` if there's an unled garrison), then the closing line.
+    Taxation (``_LSTax``, Phase 253), then the characters/forces block
+    (``_LSNone`` if neither characters nor forces are present;
+    ``_LSList`` + ``_LSNoCh`` if forces but no characters; ``_LSList``
+    + one ``_LSHere`` per spotted character (``_LSLeads`` immediately
+    after any character who leads an army) + ``_LSGarr`` if there's an
+    unled garrison), then the closing line.
 
-    **Taxation (``_LSTax``) never renders** -- ``SpyReport`` carries no
-    tax estimate at all (see that module's own docstring: no
-    per-province tax-base model exists anywhere in this project), the
-    same "omit rather than guess" convention the data layer itself
-    already established.
+    **Taxation (``_LSTax``, Phase 253)**: "Approximate Taxation: N"
+    renders right after the recruitable-Army-Type lines and before the
+    characters/forces block -- confirmed against the real Desktop
+    sample files (e.g. `SE3__T10.K3`/`SE3__T11.K7`), where that line
+    always follows the province's own ownership/adjacency narration and
+    always precedes "The following elements are present..."/"There
+    were no conspicuous characters or forces...". Omitted entirely when
+    ``report.tax_estimate is None`` (this province's base ``tax`` was
+    never recorded) -- the same "omit rather than guess" convention
+    every other optional line here already follows.
 
     ``SpottedCharacter.estimated_alignment``/``estimated_temper``
     (Phase 139) are **not rendered here** -- ``_LSHere``'s own bare ``$``
@@ -1839,6 +1845,8 @@ def describe_aspy(report: SpyReport, *, spy_name: str, province_name: str, rng: 
         lines.append(render_spy_capital_province(province_name, rng))
     for index, army_type in enumerate(report.recruitable_army_types, start=1):
         lines.append(render_spy_army_type(index, ARMY_TYPE_NAME[army_type], rng))
+    if report.tax_estimate is not None:
+        lines.append(render_spy_tax_estimate(report.tax_estimate, rng))
 
     has_characters = bool(report.spotted_characters)
     has_forces = bool(report.garrison_army_names) or any(c.army_names for c in report.spotted_characters)

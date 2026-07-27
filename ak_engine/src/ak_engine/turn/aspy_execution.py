@@ -29,15 +29,17 @@ conservative choice this project has made before (e.g. Recruit and
 Practice already resolve against the acting leader's own location rather
 than a player-typed target).
 
-**Taxation of the province is not reported** -- there's still no
-per-province tax-base model anywhere in this project.
-``models/game_state.py ProvinceState.tax_modifier_percent`` is a
-*modifier* (Bless/Earthquake's spell effect, Phase 59), not a base tax
-figure; nothing computes an actual per-province gold amount the way
-``turn/recruit_execution.py`` computes kingdom-level treasury deltas.
-Reporting "no data" here would be indistinguishable from reporting a
-true zero, so ``SpyReport`` simply omits the field rather than guessing
-one.
+**Taxation of the province is reported as of Phase 253.** Wiring this
+required no new formula here -- ``turn/tax_base.py province_tax_yield()``
+(Phase 222-224) already computes exactly this figure (real base
+``ProvinceState.tax``, minus Scar Terrain's permanent reduction, times
+Bless/Earthquake's own turn modifier), the same one
+``describe_finances_report()``'s own "Expected Revenues" line already
+consumes at the kingdom level. ``SpyReport.tax_estimate`` is that
+function's own return value for this province, unchanged -- ``None``
+(not a guessed zero) whenever ``ProvinceState.tax`` was never recorded,
+the same "no data isn't a true zero" convention this module already
+uses everywhere else.
 
 Reuses ``turn/movement.py neighbors()`` (already the sourced hex-adjacency
 primitive every other module needing "provinces around here" already
@@ -111,6 +113,7 @@ from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.intelligence_estimate import estimate_alignment, estimate_temper
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.recruit import is_army_type_compatible_with_race
+from ak_engine.turn.tax_base import province_tax_yield
 
 
 def _army_display_name(state: GameState, army: ArmyState) -> str:
@@ -157,6 +160,10 @@ class SpyReport:
     # this province -- SAY.PAS's own ``_LSGarr`` line item needs this
     # list, see module docstring.
     garrison_army_names: tuple[str, ...] = ()
+    # Phase 253: this province's own real expected tax revenue this turn
+    # (``turn/tax_base.py province_tax_yield()``) -- ``None`` if its base
+    # ``ProvinceState.tax`` was never recorded. See module docstring.
+    tax_estimate: int | None = None
 
 
 def execute_aspy(
@@ -254,4 +261,5 @@ def execute_aspy(
         is_capital=is_capital,
         spotted_characters=spotted_characters,
         garrison_army_names=garrison_army_names,
+        tax_estimate=province_tax_yield(province),
     )
