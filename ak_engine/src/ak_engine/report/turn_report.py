@@ -4920,6 +4920,50 @@ def describe_rumor(rumor: Rumor, state: GameState, character_name: str, board_wi
     return render(variant, values, rng=rng)
 
 
+# HostAK/TP/PROSE/FINDFEAT.X -- the in-person discovery narrative
+# (Phase 245), FRUMOR.X's own sibling: a character physically standing
+# in the province, so the real template uses "@" (resolved province
+# name) rather than FRUMOR.X's "$#" (raw hex number for an unvisited
+# one). Unlike FRUMOR.X, the real sentence never mentions a treasure at
+# all -- only the feature and its guardian monster -- so this is a
+# straight, unmodified 4-variant transcription, no FRUMOR.X-style
+# adapt-and-split needed. Quoted in full:
+#   < discovered/Rfound a{n interesting} feature in @:  &  inhabited/Roccupied by +.
+#   < discovered/Rlocated  previously/Rheretofore unknown/Runheard_of &  in @, held/Rinhabited by +.
+#   < was informed/Rtold by some peasants/Rsheepherders of  {perilous }feature in @{ previously unknown to us},  &  inhabited_by/Rwhere_dwells +.
+#   < {also }found/Rdiscovered  &  in @, occupied/Rinhabited by +.
+_FINDFEAT_TEMPLATES: list[str] = [
+    "< discovered/Rfound a{n interesting} feature in @:  &  inhabited/Roccupied by +.",
+    "< discovered/Rlocated  previously/Rheretofore unknown/Runheard_of &  in @, held/Rinhabited by +.",
+    "< was informed/Rtold by some peasants/Rsheepherders of  {perilous }feature in @{ previously unknown to us},  "
+    "&  inhabited_by/Rwhere_dwells +.",
+    "< {also }found/Rdiscovered  &  in @, occupied/Rinhabited by +.",
+]
+
+
+def describe_feature_discovery(feature: Feature, character_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders FINDFEAT.X's sentence for a feature just found in person --
+    ``turn/exploration.py discover_features()`` (Phase 242), now surfaced
+    to a caller via ``turn/move_execution.py KingdomExplorationResult``/
+    ``report/turn_report.py ExploreResult.discovered_features`` (Phase
+    245, closing the "record exists, no consumer yet" gap the EXPLORE
+    dispatch branch left open since Phase 242).
+
+    Assumes ``feature.guardian_monster`` is set -- true for every
+    feature ``turn/world_generation.py`` ever creates (Phase 242
+    confirmed every generated feature always gets a guardian), and the
+    real template never has a treasure-only branch to fall back to
+    (unlike FRUMOR.X's own rumor sentence, Phase 244) -- a feature built
+    by a test or caller with no guardian isn't a valid input here.
+    """
+
+    feature_name = FEATURE_TYPE_NAMES[feature.kind]
+    monster_name = MONSTER_NAMES[feature.guardian_monster]
+    values = {"<": character_name, "@": province_name, "&": feature_name, "+": monster_name}
+    variant = pick_variant(_FINDFEAT_TEMPLATES, rng)
+    return render(variant, values, rng=rng)
+
+
 # HostAK/TP/PROSE/FSEARCH.X -- the Search-attempt opening sentence. See
 # module docstring's Phase 156 addendum.
 _FSEARCH_TEMPLATES: list[str] = [

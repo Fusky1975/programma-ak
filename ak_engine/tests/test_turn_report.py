@@ -47,6 +47,7 @@ from ak_engine.report.turn_report import (
     describe_armies_report,
     describe_characters_report,
     describe_diplomacy_report,
+    describe_feature_discovery,
     describe_finances_report,
     describe_letter_reports,
     describe_provinces_report,
@@ -1838,6 +1839,27 @@ def test_describe_rumor_picks_the_selected_variant():
     line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
 
     assert line == "Aldric heard a rumor telling of  feature in  $0,  Dungeon inhabited by Renegade Archer."
+
+
+# -- FINDFEAT.X in-person discovery narrative (Phase 245) -------------------
+
+
+def test_describe_feature_discovery_first_variant():
+    feature = Feature(feature_id=1, coord=HexCoord(0, 0), kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    line = describe_feature_discovery(feature, "Aldric", "Ancient Valley", rng)
+
+    assert line == "Aldric discovered a feature in Ancient Valley:  Dungeon  inhabited by Renegade Archer."
+
+
+def test_describe_feature_discovery_picks_the_selected_variant():
+    feature = Feature(feature_id=1, coord=HexCoord(0, 0), kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+
+    line = describe_feature_discovery(feature, "Aldric", "Ancient Valley", rng)
+
+    assert line == "Aldric found  Dungeon  in Ancient Valley, occupied by Renegade Archer."
 
 
 # -- duel demoralization narrative (Phase 121) -------------------------------

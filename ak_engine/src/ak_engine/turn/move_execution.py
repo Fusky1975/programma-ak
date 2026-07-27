@@ -119,6 +119,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
@@ -165,6 +166,12 @@ def _classify_hex_ownership(state: GameState, kingdom_id: int, coord: HexCoord) 
     return HexOwnershipTier.ENEMY
 
 
+@dataclass(slots=True)
+class KingdomExplorationResult:
+    new_percent: int
+    discovered_features: list[Feature]
+
+
 def record_kingdom_exploration(
     province: ProvinceState,
     kingdom_id: int,
@@ -173,27 +180,35 @@ def record_kingdom_exploration(
     partial: bool,
     state: GameState | None = None,
     rng: random.Random | None = None,
-) -> int:
+) -> KingdomExplorationResult:
     """Advances ``kingdom_id``'s own cumulative exploration of ``province`` (Phase 69) --
     see ``models/game_state.py``'s own module docstring for why this is a
     separate, per-kingdom tracker from ``ProvinceState.explored_percent``.
     Seeded from that kingdom's own prior entry (0 if never recorded before),
-    not the shared scalar. Returns the new percentage.
+    not the shared scalar.
 
     Phase 242: passing ``state`` also rolls feature discovery for this
     province/kingdom (``turn/exploration.py discover_features()``) using
     the newly-updated percentage. ``state=None`` (the default) skips
     this entirely, preserving every pre-Phase-242 caller's exact
     behavior -- discovery is opt-in, not silently added everywhere.
+
+    Phase 245: returns ``KingdomExplorationResult`` (``new_percent`` plus
+    ``discovered_features``, empty when ``state`` is ``None``) instead of
+    a bare ``int`` -- previously ``discover_features()``'s own return
+    value was computed and thrown away, leaving no way for a caller to
+    know *which* features were just found in order to narrate them
+    (``report/turn_report.py describe_feature_discovery()``, same phase).
     """
 
     prior = province.explored_percent_by_kingdom.get(kingdom_id, 0)
     result = resolve_explore(prior, province.effective_terrain(), explorer_skill, partial=partial)
     province.explored_percent_by_kingdom[kingdom_id] = result.new_percent
+    discovered: list[Feature] = []
     if state is not None:
         rng = rng if rng is not None else random.Random()
-        discover_features(state, province.coord, kingdom_id, result.new_percent, rng)
-    return result.new_percent
+        discovered = discover_features(state, province.coord, kingdom_id, result.new_percent, rng)
+    return KingdomExplorationResult(result.new_percent, discovered)
 
 
 def execute_move(

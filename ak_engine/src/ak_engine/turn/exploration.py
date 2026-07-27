@@ -36,7 +36,7 @@ consumer) is skipped, not rerolled.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import GameState
@@ -51,6 +51,11 @@ class ExploreResult:
     new_percent: int
     delta_applied: int
     fully_explored: bool
+    # Phase 245: populated by dispatch_phase()'s own EXPLORE branch from
+    # record_kingdom_exploration()'s own KingdomExplorationResult, not by
+    # resolve_explore() itself (a pure percent-only function that has no
+    # GameState/rng to roll discovery with) -- see turn/plan_dispatch.py.
+    discovered_features: list[Feature] = field(default_factory=list)
 
 
 def resolve_explore(

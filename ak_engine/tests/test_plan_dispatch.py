@@ -147,7 +147,7 @@ def test_dispatch_explore_also_rolls_feature_discovery():
     phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
 
     # Plains(50) * (skill 1 + 1) = 100% -- guaranteed discovery.
-    dispatch_phase(
+    result = dispatch_phase(
         phase,
         state,
         kingdom_id=1,
@@ -159,6 +159,10 @@ def test_dispatch_explore_also_rolls_feature_discovery():
     )
 
     assert feature.discovery_level(1) == 3
+    # Phase 245: the dispatch result now surfaces which features were
+    # just discovered, closing the "rolled but thrown away" gap so a
+    # report layer can narrate them (describe_feature_discovery()).
+    assert result.discovered_features == [feature]
 
 
 def test_dispatch_lmove_also_rolls_rumor_generation_for_a_nearby_feature():

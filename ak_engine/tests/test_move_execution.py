@@ -82,15 +82,16 @@ def test_record_kingdom_exploration_seeds_from_that_kingdoms_own_prior_entry():
     province = ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2)
     province.explored_percent_by_kingdom[1] = 50  # kingdom 1 already at 50%
 
-    new_percent = record_kingdom_exploration(province, kingdom_id=1, explorer_skill=1, partial=True)
+    exploration = record_kingdom_exploration(province, kingdom_id=1, explorer_skill=1, partial=True)
 
     # Plains=50, skill 1 -> 100, halved (partial) = 50 -> 50+50 = 100.
-    assert new_percent == 100
+    assert exploration.new_percent == 100
+    assert exploration.discovered_features == []
     assert province.explored_percent_by_kingdom[1] == 100
     # A different kingdom's own entry starts fresh from 0, independent of
     # kingdom 1's progress.
-    other_percent = record_kingdom_exploration(province, kingdom_id=2, explorer_skill=1, partial=True)
-    assert other_percent == 50
+    other = record_kingdom_exploration(province, kingdom_id=2, explorer_skill=1, partial=True)
+    assert other.new_percent == 50
     assert province.explored_percent_by_kingdom == {1: 100, 2: 50}
 
 
@@ -111,9 +112,12 @@ def test_record_kingdom_exploration_with_state_rolls_discovery():
     state.add_feature(feature)
 
     # Plains=50, skill 9 -> 50*10=500 capped at 100 -> guaranteed discovery.
-    record_kingdom_exploration(province, kingdom_id=1, explorer_skill=9, partial=False, state=state, rng=ScriptedRandom([0.99]))
+    exploration = record_kingdom_exploration(
+        province, kingdom_id=1, explorer_skill=9, partial=False, state=state, rng=ScriptedRandom([0.99])
+    )
 
     assert feature.discovery_level(1) == 3
+    assert exploration.discovered_features == [feature]
 
 
 def test_move_into_allied_territory_is_uncontested():

@@ -10009,7 +10009,7 @@ complete (Phases 209-211).
     covering the dispatch wiring, including the no-features no-op) --
     2888 passed total.
 
-- **Phase 244 (current)**: renders a `Rumor` (Phase 243) into turn-report
+- **Phase 244**: renders a `Rumor` (Phase 243) into turn-report
   prose -- the one gap Phase 243 explicitly left open ("nothing renders
   a rumor into report prose yet"). `report/turn_report.py
   describe_rumor()` (new), plus `_FRUMOR_MONSTER_TEMPLATES`/
@@ -10056,6 +10056,53 @@ complete (Phases 209-211).
     rumor-corrupts-the-province case), and that `pick_variant()`'s
     selected index actually drives which of the 4 variants renders --
     2892 passed total.
+
+- **Phase 245 (current)**: renders the in-person discovery half of [3.2]
+  -- `discover_features()`'s own results (Phase 242), rolled every
+  EXPLORE dispatch but thrown away ever since, are now surfaced and
+  narrated. `report/turn_report.py describe_feature_discovery()` (new),
+  from `HostAK/TP/PROSE/FINDFEAT.X` -- FRUMOR.X's own sibling template,
+  quoted in full above the new code. Unlike FRUMOR.X, the real sentence
+  never mentions a treasure at all, only the feature and its guardian
+  monster, so this is a straight 4-variant transcription -- no
+  FRUMOR.X-style adapt-and-split conflict to resolve here.
+  - **The actual gap closed, confirmed by direct code inspection, not
+    guessed**: `turn/move_execution.py record_kingdom_exploration()`
+    has called `discover_features()` and returned only the new
+    percentage since Phase 242 -- the `list[Feature]` it discovered was
+    computed and discarded every single call. None of its 3 real
+    callers (`execute_move()`, `turn/plan_dispatch.py`'s own EXPLORE
+    branch, `turn/turn_processor.py`) ever captured the return value at
+    all, confirmed by grep before touching the signature.
+  - **`record_kingdom_exploration()` now returns
+    `KingdomExplorationResult(new_percent, discovered_features)`**
+    instead of a bare `int` -- a small, typed, additive change (2
+    pre-existing test assertions updated from `x == int` to
+    `x.new_percent == int`, both already the only 2 places anywhere
+    that captured the old return value). `ExploreResult` (the pure,
+    state-free result of `resolve_explore()`) itself stays unchanged in
+    shape but gains a `discovered_features: list[Feature] = field(
+    default_factory=list)` field with a safe empty default -- filled in
+    by `dispatch_phase()`'s own EXPLORE branch after calling
+    `record_kingdom_exploration()`, not by `resolve_explore()` itself
+    (a pure percent-only function with no `GameState`/`rng` to roll
+    discovery with).
+  - `describe_feature_discovery(feature, character_name, province_name,
+    rng)` assumes `feature.guardian_monster` is set, matching every
+    feature `turn/world_generation.py` actually creates (Phase 242
+    confirmed every generated feature always gets a guardian) -- not
+    defensively guarded, same "trust the caller" stance already taken
+    elsewhere in this module (e.g. `describe_rumor()` doesn't guard a
+    `None` `described_monster` either).
+  - Non-breaking: full suite passed unchanged (2892 passed, after fixing
+    the 2 pre-existing assertions above) before any new tests were
+    written. 4 new tests added: 2 in `tests/test_turn_report.py`
+    (first-variant exact string, variant-selection), 1 assertion added
+    to the existing Phase 242 dispatch test in `tests/
+    test_plan_dispatch.py` (`result.discovered_features == [feature]`),
+    1 assertion added to an existing `tests/test_move_execution.py`
+    test (`exploration.discovered_features == [feature]`) -- 2894
+    passed total.
 
 ## Setup
 
@@ -10537,10 +10584,12 @@ rulebook before being turned into named, typed fields:
   above for the trigger-chance table and the content/truth design.
   ~~No report renderer consumes a `Rumor` yet~~ **`describe_rumor()`
   now renders a `Rumor` into prose as of Phase 244** -- see that
-  phase's own note above; `HostAK/TP/PROSE/FINDFEAT.X`, the sibling
+  phase's own note above. ~~`HostAK/TP/PROSE/FINDFEAT.X`, the sibling
   in-person-discovery template (as opposed to heard-by-rumor), is
-  still not wired to any renderer. Everything outside a fought battle
-  besides Explore/Search is still unbuilt: the
+  still not wired to any renderer.~~ **`describe_feature_discovery()`
+  now renders it as of Phase 245**, closing [3.2] in full on the report
+  side too -- see that phase's own note above. Everything outside a
+  fought battle besides Explore/Search is still unbuilt: the
   letter-report frame, financial report, and general exploration
   narrative all still need a turn-events log this project doesn't have
   yet.
