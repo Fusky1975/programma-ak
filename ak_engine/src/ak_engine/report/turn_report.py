@@ -3528,9 +3528,14 @@ def describe_turn_results(
     described province's raw hex number, and every pre-Phase-247 caller
     (this whole module's own test suite included) has no board width to
     supply, so omitting it skips rumor narration entirely rather than
-    forcing one on every caller. Not threaded further up into
-    `describe_letter_reports()`/`compose_letter_report()` yet -- a
-    narrower follow-up gap, not attempted here. Reflects **whatever is
+    forcing one on every caller. **Threaded all the way up as of Phase
+    248**: `describe_letter_reports()`/`compose_letter_report()` both
+    forward their own `board_width` straight into every
+    `describe_turn_results()` call they make (one per letter, plus the
+    King's own ACTION REPORT), so a real end-to-end letter report
+    narrates every leader's own heard rumors once a caller supplies a
+    real board width -- see those two composers' own docstrings.
+    Reflects **whatever is
     still in `state.rumors` when called**, not just this turn's own new
     ones -- the same single-turn-scope assumption this function already
     made before rumors existed; no multi-turn game loop exists yet for

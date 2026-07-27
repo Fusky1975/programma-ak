@@ -165,6 +165,55 @@ def test_dispatch_explore_also_rolls_feature_discovery():
     assert result.discovered_features == [feature]
 
 
+def test_dispatch_explore_credits_chancellor_merit_when_first_to_discover():
+    # Phase 256: nobody else has discovered this feature yet, so the
+    # acting leader's own Chancellor Merit Point tally is credited.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    feature = Feature(feature_id=1, coord=location, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    dispatch_phase(
+        phase,
+        state,
+        kingdom_id=1,
+        leader_id=LEADER_ID,
+        army_ids=[army_id],
+        board_width=BOARD_WIDTH,
+        explorer_skill=1,
+        rng=random.Random(0),
+    )
+
+    assert state.leaders[LEADER_ID].merit_tally.features_discovered_first == 1
+
+
+def test_dispatch_explore_does_not_credit_merit_when_another_kingdom_already_found_it():
+    # Phase 256: a rival kingdom's own entry already sits in
+    # Feature.discovered_by_kingdom -- this kingdom wasn't first, so no
+    # Merit Point credit, even though it does discover the feature too.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    feature = Feature(feature_id=1, coord=location, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    feature.discovered_by_kingdom[2] = 3
+    state.add_feature(feature)
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    dispatch_phase(
+        phase,
+        state,
+        kingdom_id=1,
+        leader_id=LEADER_ID,
+        army_ids=[army_id],
+        board_width=BOARD_WIDTH,
+        explorer_skill=1,
+        rng=random.Random(0),
+    )
+
+    assert feature.discovery_level(1) == 3  # this kingdom did discover it...
+    assert state.leaders[LEADER_ID].merit_tally.features_discovered_first == 0  # ...but wasn't first
+
+
 def test_dispatch_lmove_also_rolls_rumor_generation_for_a_nearby_feature():
     # Phase 243: LMOVE is one of the 7 rumor-eligible order types (20%
     # chance). A feature 1 hex away from the mover's own pre-move

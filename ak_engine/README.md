@@ -10404,7 +10404,7 @@ complete (Phases 209-211).
     end-to-end `fight_battle()` test confirming a led attacker's real
     Merit Point credit after a genuine conquest -- 2926 passed total.
 
-- **Phase 255 (current)**: wires the other half of Phase 254's own
+- **Phase 255**: wires the other half of Phase 254's own
   Defender Merit Point gap -- `MeritTally.monster_hp_defeated`
   (rulebook page 51's "Per ciascun mostro ucciso: totale Punti Ferita
   del mostro") had a real formula consumer (`defender_merit_points()`,
@@ -10429,6 +10429,43 @@ complete (Phases 209-211).
     guardian's own (independently re-derived) starting hit points and
     leaves `monster_hp_neutralized` untouched; a losing encounter
     credits nothing -- 2928 passed total.
+
+- **Phase 256 (current)**: wires the Chancellor Merit Point formula's
+  Feature half -- `MeritTally.features_discovered_first` ("+2 per
+  Special Place discovered first", `turn/merit_points.py`) had the
+  skill-level term live since Phase 227 but all three
+  discovery-attribution counters unwired.
+  - `models/feature.py Feature.discovered_by_kingdom` (a per-kingdom
+    dict, Phase 75) already exists and is written by `turn/
+    exploration.py discover_features()` every time a kingdom first
+    discovers a Special Place -- no new acquisition mechanic was
+    needed, only a new consumer. `turn/plan_dispatch.py`'s own
+    `ActionCode.EXPLORE` branch now checks, for each feature the
+    dispatch just discovered, whether that kingdom's own fresh entry
+    is still the *only* one in the dict (nobody beat them to it) and
+    credits the acting leader's own tally when so.
+  - `discoveries_found_first`/`discoveries_via_espionage` (the
+    Invention half) stay unwired -- unlike Features, this project has
+    **no acquisition mechanic for a `Discovery` at all**: nothing
+    anywhere ever grants a `KingdomState` a `Discovery` in the first
+    place (confirmed by an exhaustive search), so there is no event
+    yet to attribute "found first"/"via espionage" to. A materially
+    larger, still-unscoped gap than this phase's own Feature-side fix.
+  - Also fixes a stale docstring sentence found in passing:
+    `describe_turn_results()` still claimed rumor narration was "not
+    threaded further up into `describe_letter_reports()`/
+    `compose_letter_report()` yet" -- Phase 248 actually closed that
+    gap already (both composers already forward their own
+    `board_width` into every `describe_turn_results()` call they
+    make, confirmed by `tests/test_turn_report.py`'s own Phase 248
+    tests); only the docstring's own wording was out of date, no code
+    change needed.
+  - Non-breaking: full suite passed unchanged (2928 passed) before any
+    new tests were written. 2 new tests added to `tests/
+    test_plan_dispatch.py`: EXPLORE credits the acting leader when
+    first to discover a feature; EXPLORE does not credit when a rival
+    kingdom's own entry already sits in `discovered_by_kingdom` --
+    2930 passed total.
 
 ## Setup
 

@@ -13,7 +13,12 @@ to dispatch automatically:
   ``turn/hex_numbering.py`` (an empirical inference, not a certainty --
   see that module's docstring).
 - **EXPLORE**: no target decoding needed -- explores the mover's current
-  province.
+  province. **Phase 256**: when this reveals a feature no other kingdom
+  had discovered yet (``Feature.discovered_by_kingdom`` holds only this
+  kingdom's own fresh entry), the acting leader's own ``MeritTally.
+  features_discovered_first`` (Chancellor formula, ``turn/merit_points.py``)
+  is credited -- see the dispatch branch below for why this is the one
+  clean, reachable wiring point.
 - **RECRUIT** actually executes (Phase 15): ``obj``/``extra`` decoded via
   ``turn/recruit_decode.py``, priced per requested type via
   ``turn/recruit.py resolve_recruit()``, then ``turn/recruit_execution.py
@@ -512,6 +517,19 @@ def dispatch_phase(
             province, kingdom_id, explorer_skill, partial=False, state=state, rng=rng
         )
         result.discovered_features = exploration.discovered_features
+        # Phase 256: Chancellor Merit Points ("+2 per Special Place
+        # discovered first", turn/merit_points.py) -- a feature just
+        # entered discover_features()'s returned list means kingdom_id's
+        # own entry was *just* added to Feature.discovered_by_kingdom; if
+        # that's still the only entry, no other kingdom got there first.
+        # Move's own partial-exploration discovery path (execute_move()'s
+        # record_kingdom_exploration(..., partial=True) call) isn't
+        # credited here -- that call site discards its own return value
+        # entirely today, a separate, pre-existing gap this phase doesn't
+        # attempt to close.
+        for feature in exploration.discovered_features:
+            if len(feature.discovered_by_kingdom) == 1:
+                state.leaders[leader_id].merit_tally.features_discovered_first += 1
         return result
 
     if action is ActionCode.SEARCH:

@@ -36,15 +36,24 @@ reimplemented.
 - +2 per Invention (Discovery) found first
 - +1 per Invention obtained via espionage
 
-**Only the skill-level term is live.** The three discovery-attribution
-terms need "who found this Feature/Discovery first" tracking this
-project has never had (`models/feature.py Feature` carries no
-`discovered_by_kingdom_id`; there is no per-kingdom Discovery-ownership
-registry at all -- the same gap `describe_finances_report()`'s own
-Discoveries-always-empty stance already documents). `MeritTally`'s three
-`*_discovered_first`/`*_via_espionage` counters exist for this (Phase 59
-precedent: field exists, no populating consumer yet) but nothing in this
-project increments them.
+**The skill-level term and the Feature half are live; the Invention half
+still isn't.** `features_discovered_first` is live as of **Phase 256**:
+`models/feature.py Feature.discovered_by_kingdom` (a per-kingdom dict,
+Phase 75) already exists and is written by `turn/exploration.py
+discover_features()` every time a kingdom first discovers a Special
+Place; `turn/plan_dispatch.py`'s own `ActionCode.EXPLORE` branch now
+checks, for each newly-discovered feature, whether that kingdom's own
+entry is still the *only* one in the dict (nobody else got there
+first) and credits the acting leader's own `MeritTally.
+features_discovered_first` when so. `discoveries_found_first`/
+`discoveries_via_espionage` (Inventions) remain unwired -- unlike
+Features, this project has **no acquisition mechanic for a `Discovery`
+at all**: nothing anywhere ever grants a `KingdomState` a `Discovery`
+in the first place (confirmed by an exhaustive search, not merely
+unwired), so there is no event to attribute "found first" or "via
+espionage" to yet. That's a materially larger, still-unscoped gap
+(inventing the acquisition mechanic itself, not just attributing an
+existing one) than Phase 256's own Feature-side fix.
 
 ## Tesoriere Imperiale / Treasurer (10%)
 "Il tesoro più sostanzioso alla fine del gioco" -- the kingdom's own

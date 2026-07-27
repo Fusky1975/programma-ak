@@ -295,11 +295,15 @@ class MeritTally:
     (``turn/cast_execution.py``'s ``_execute_resurrection``/
     ``_execute_bless``, Phase 251), the four land/naval battle counters
     (``turn/battle_orchestrator.py _record_battle_merit()``, Phase 254),
-    and ``monster_hp_defeated`` (``turn/search_execution.py
-    execute_search()``'s ``_outcome_from()``, Phase 255) now have real
-    writers; the three discovery-attribution fields and
+    ``monster_hp_defeated`` (``turn/search_execution.py
+    execute_search()``'s ``_outcome_from()``, Phase 255), and
+    ``features_discovered_first`` (``turn/plan_dispatch.py``'s own
+    ``ActionCode.EXPLORE`` branch, Phase 256) now have real writers;
+    ``discoveries_found_first``/``discoveries_via_espionage`` and
     ``monster_hp_neutralized`` are still never incremented by any action
-    in this project -- the latter needs the Fulfill/Talk-Say negotiation
+    in this project -- the former pair needs an acquisition mechanic for
+    ``Discovery`` this project has never had at all (not merely
+    unattributed), the latter needs the Fulfill/Talk-Say negotiation
     mechanic ``turn/search_execution.py``'s own docstring already flags
     as unwired. All default to 0: a leader who has fought no battles,
     killed no monsters, cast no Resurrection/Bless, or been the first to
@@ -329,10 +333,12 @@ class MeritTally:
     # Priest: successful Resurrection or Bless casts (either spell, same
     # +1 each -- the rulebook doesn't distinguish between them).
     resurrection_bless_casts: int = 0
-    # Chancellor: needs per-kingdom "who found this Special Place/
-    # Discovery first" attribution this project has never tracked (no
-    # Feature.discovered_by_kingdom_id, no Discovery-ownership registry
-    # at all -- see turn/merit_points.py's own module docstring).
+    # Chancellor: features_discovered_first is live as of Phase 256 (see
+    # turn/plan_dispatch.py's own EXPLORE branch, keyed off Feature.
+    # discovered_by_kingdom, Phase 75). The two Discovery-attribution
+    # counters below stay unwired -- no acquisition mechanic for a
+    # Discovery exists anywhere in this project yet (see turn/
+    # merit_points.py's own module docstring).
     features_discovered_first: int = 0
     discoveries_found_first: int = 0
     discoveries_via_espionage: int = 0
