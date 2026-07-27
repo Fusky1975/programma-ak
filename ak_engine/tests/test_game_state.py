@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.enums import ActionCode
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
+from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 
@@ -181,6 +183,47 @@ def test_transfer_item_on_unknown_id_is_a_no_op():
     state = make_state()
     state.transfer_item(999, 1)  # must not raise
     assert 999 not in state.items
+
+
+# -- Rumor registry (Phase 243) --
+
+
+def _dummy_rumor(rumor_id: int, kingdom_id: int = 1) -> Rumor:
+    return Rumor(
+        rumor_id=rumor_id,
+        kingdom_id=kingdom_id,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=1,
+        is_true=True,
+        described_coord=FIELD,
+        described_monster=Monster.ARCHER,
+    )
+
+
+def test_add_rumor_stores_it_by_id():
+    state = make_state()
+    rumor = _dummy_rumor(state.new_rumor_id())
+    state.add_rumor(rumor)
+    assert state.rumors[rumor.rumor_id] is rumor
+
+
+def test_new_rumor_ids_do_not_collide():
+    state = make_state()
+    first = _dummy_rumor(state.new_rumor_id())
+    state.add_rumor(first)
+    second = _dummy_rumor(state.new_rumor_id())
+    assert second.rumor_id == first.rumor_id + 1
+
+
+def test_rumors_heard_by_filters_correctly():
+    state = make_state()
+    mine = _dummy_rumor(state.new_rumor_id(), kingdom_id=1)
+    state.add_rumor(mine)
+    other = _dummy_rumor(state.new_rumor_id(), kingdom_id=2)
+    state.add_rumor(other)
+    assert [r.rumor_id for r in state.rumors_heard_by(1)] == [mine.rumor_id]
+    assert state.rumors_heard_by(3) == []
 
 
 # -- Phase 168: ProvinceState.effective_terrain() ---------------------------

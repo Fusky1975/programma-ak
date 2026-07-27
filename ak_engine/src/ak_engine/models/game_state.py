@@ -230,6 +230,7 @@ from ak_engine.models.item import ItemInstance
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.rumor import Rumor
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
@@ -520,6 +521,11 @@ class GameState:
     # own docstring for the RUMORS.PAS Add_Tr/treaslist/trowner/trcharges
     # source and its deliberate leader-only scope.
     items: dict[int, ItemInstance] = field(default_factory=dict)
+    # Rumors heard (Phase 243) -- see models/rumor.py's own docstring
+    # and turn/rumor.py's own trigger/selection/falsification logic.
+    # Append-only, mirroring the battle-death graveyard's own "no
+    # turn-events log yet" registry pattern.
+    rumors: dict[int, Rumor] = field(default_factory=dict)
     # Gate Angel / VALHALLA (Phase 194, corrected Phase 195) -- see module
     # docstring. The current reservoir-sampling winner: which kingdom
     # gets this turn's Valhalla visit, and when. May be overwritten
@@ -661,6 +667,20 @@ class GameState:
 
     def features_at(self, coord: HexCoord) -> list[Feature]:
         return [feature for feature in self.features.values() if feature.coord == coord]
+
+    def new_rumor_id(self) -> int:
+        """Next unused rumor id (1 above the current highest, or 1 if none exist) --
+        mirrors ``new_army_id()``/``new_item_id()``/``new_feature_id()``'s
+        own monotonic allocation. ``turn/rumor.py`` is the one caller.
+        """
+
+        return max((*self.rumors.keys(), 0)) + 1
+
+    def add_rumor(self, rumor: Rumor) -> None:
+        self.rumors[rumor.rumor_id] = rumor
+
+    def rumors_heard_by(self, kingdom_id: int) -> list[Rumor]:
+        return [rumor for rumor in self.rumors.values() if rumor.kingdom_id == kingdom_id]
 
     def armies_commanded_by(self, leader_id: int) -> list[ArmyState]:
         return [army for army in self.armies.values() if army.commanded_by == leader_id]

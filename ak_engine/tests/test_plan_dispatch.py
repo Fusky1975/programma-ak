@@ -39,6 +39,8 @@ from ak_engine.turn.trade_execution import TradeExecutionResult
 from ak_engine.turn.trail_execution import TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 
+from _helpers import ScriptedRandom
+
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
 BOARD_WIDTH = 10
 LEADER_ID = 1
@@ -157,6 +159,45 @@ def test_dispatch_explore_also_rolls_feature_discovery():
     )
 
     assert feature.discovery_level(1) == 3
+
+
+def test_dispatch_lmove_also_rolls_rumor_generation_for_a_nearby_feature():
+    # Phase 243: LMOVE is one of the 7 rumor-eligible order types (20%
+    # chance). A feature 1 hex away from the mover's own pre-move
+    # location is eligible (distance 0 -- the destination itself --
+    # would just be found by Explore, not rumored about).
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)  # adjacent to origin
+    nearby = HexCoord(2, 9)  # 1 hex from origin, distinct from target
+    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS, nearby: Terrain.PLAINS})
+    feature = Feature(feature_id=1, coord=nearby, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    # trigger roll 0.0 < 0.20 -> succeeds; candidate choice index 0; content
+    # roll (guardian-only feature) is skipped; is_true roll 0.0 -> True.
+    rng = ScriptedRandom([0.0, 0.0], choice_indices=[0])
+    dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH, rng=rng
+    )
+
+    assert len(state.rumors) == 1
+    rumor = next(iter(state.rumors.values()))
+    assert rumor.feature_id == feature.feature_id
+    assert rumor.kingdom_id == 1
+
+
+def test_dispatch_lmove_without_nearby_features_generates_no_rumor():
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
+
+    assert state.rumors == {}
 
 
 def test_dispatch_search_reports_feature_not_found():

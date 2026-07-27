@@ -9863,7 +9863,7 @@ complete (Phases 209-211).
     and both the success and failure branches for a damaged leader) --
     2845 passed total.
 
-- **Phase 242 (current)**: world generation (`turn/world_generation.py`,
+- **Phase 242**: world generation (`turn/world_generation.py`,
   new) and Explore's own feature-discovery roll
   (`turn/exploration.py discover_features()`), closing the two gaps
   `models/feature.py`'s own docstring had flagged since Phase 75 --
@@ -9948,6 +9948,66 @@ complete (Phases 209-211).
     `tests/test_plan_dispatch.py` covering the `record_kingdom_
     exploration()`/dispatch wiring; 2 in `tests/test_search_execution.py`
     covering the treasure grant and its absence) -- 2867 passed total.
+
+- **Phase 243 (current)**: rumors (rulebook [3.2] -- "Sometimes you get
+  rumours of previously unheard-of features in your turn reports.
+  About half of these rumours are true, but the rest are false in some
+  respect..."), the one piece of [3.2] Phase 242 explicitly deferred.
+  `models/rumor.py` (new, the `Rumor` record + `RumorContent` enum) and
+  `turn/rumor.py` (new, the trigger/selection/falsification logic).
+  Same "prose templates survive (`HostAK/TP/PROSE/FRUMOR.X`), the logic
+  doesn't" finding as world generation itself -- everything below is
+  project-original, confirmed directly with the user (project author).
+  - **Trigger chance, by order type, confirmed directly**: Move/
+    Pursue/Trail 20%, Explore/ASpy 30%, Cast/Practice 5%. Resolved from
+    the user's own shorthand (MO/PU/TR, EX/SP, CA/PR) against this
+    project's own Pascal-sourced `actab` abbreviation table
+    (`CTBOTH.PAS`, positionally matched against the `action` enum --
+    unambiguous: MO=LMove, PU=Pursue, TR=Trail, EX=Explore, SP=ASpy,
+    CA=Cast, PR=Practice).
+  - **Eligibility, confirmed via `find_rumor_candidates()`**: only
+    features not yet discovered by the hearer's own kingdom ("previously
+    unheard-of"), not magically hidden (Phase 193's own first real
+    consumer), and within 2 hexes of the order's own province --
+    excluding that province itself (a feature right where the character
+    already is would just be found directly by Explore's own
+    `discover_features()`, Phase 242, not "heard about"). Checked
+    *before* rolling the trigger chance at all, so this is a true no-op
+    -- zero randomness touched -- for any `GameState` with no nearby
+    features, i.e. every pre-Phase-243 caller and test.
+  - **Content, confirmed directly**: 70% names the feature's own
+    guardian monster, 30% its own treasure item -- both always naming a
+    province too. A feature missing one of the two is only eligible for
+    whichever content type it actually has (a feature with neither
+    isn't a candidate at all).
+  - **Truth, confirmed directly**: 50/50, matching "about half... are
+    true." A false rumor corrupts exactly one detail (50/50 between the
+    two), matching "the treasure may not actually be there, and/or the
+    feature may be in a different province": either the monster/item
+    (replaced with a uniformly-random *different* one) or the province
+    (replaced with a uniformly-random *other* province on the map -- no
+    stated range for how wrong a false province can be).
+  - **Wiring**: a single choke point, `dispatch_phase()`
+    (`turn/plan_dispatch.py`), rolled once per dispatched phase whose
+    own `ActionCode` is rumor-eligible, using the leader's own
+    pre-order location. A new append-only `GameState.rumors` registry
+    (`add_rumor()`/`new_rumor_id()`/`rumors_heard_by()`) mirrors the
+    battle-death graveyard's own "no turn-events log yet" pattern --
+    nothing renders a rumor into report prose yet, the same "record
+    exists, no consumer yet" gap several earlier phases already
+    documented for their own new state.
+  - Non-breaking: full suite passed unchanged (2867 passed) before any
+    new tests were written -- the "no candidates, no randomness
+    touched" design meant zero pre-existing tests needed fixing, unlike
+    several earlier phases' own wiring work. 21 new tests added (16 in
+    `tests/test_rumor.py`, new file, covering the trigger-chance table,
+    every `find_rumor_candidates()` exclusion rule, and
+    `resolve_rumor_generation()`'s trigger boundary, true/false split,
+    content split, subject-vs-province corruption, and the guardian-
+    only/treasure-only fallback; 3 in `tests/test_game_state.py`
+    covering the new registry; 2 in `tests/test_plan_dispatch.py`
+    covering the dispatch wiring, including the no-features no-op) --
+    2888 passed total.
 
 ## Setup
 
@@ -10421,13 +10481,19 @@ rulebook before being turned into named, typed fields:
   rule now exist as of Phase 242** (`turn/world_generation.py`,
   `turn/exploration.py discover_features()`) -- see that phase's own
   note above for the full density/terrain/guardian/treasure design.
-  Only the *rumor* half of [3.2] ("about half... are true") remains
+  ~~Only the *rumor* half of [3.2] ("about half... are true") remains
   unbuilt -- a separate discovery channel from direct Explore, whose
-  selection/falsification logic has no surviving source either.
-  Everything outside a fought battle besides Explore/Search is still
-  unbuilt: the letter-report frame, financial report, and general
-  exploration narrative all still need a turn-events log this project
-  doesn't have yet.
+  selection/falsification logic has no surviving source either.~~ **The
+  rumor mechanic now exists as of Phase 243** (`models/rumor.py`,
+  `turn/rumor.py`), closing [3.2] in full -- see that phase's own note
+  above for the trigger-chance table and the content/truth design. No
+  report renderer consumes a `Rumor` yet (the same "record exists, no
+  consumer yet" gap several earlier phases already flag for their own
+  new state) -- that's the one piece still open. Everything outside a
+  fought battle besides Explore/Search is still unbuilt: the
+  letter-report frame, financial report, and general exploration
+  narrative all still need a turn-events log this project doesn't have
+  yet.
 ## What's excluded from this phase
 
 - `SE3__T*.K1` files: same extension as the move files, but these are

@@ -366,6 +366,7 @@ from ak_engine.turn.practice_execution import PracticeExecutionResult, execute_p
 from ak_engine.turn.pursue_execution import PursueExecutionResult, execute_pursue
 from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_recruit
+from ak_engine.turn.rumor import RUMOR_CHANCE_BY_ACTION, resolve_rumor_generation
 from ak_engine.turn.search_decode import decode_search_phase
 from ak_engine.turn.search_execution import SearchExecutionResult, execute_search
 from ak_engine.turn.trade_decode import decode_trade_phase
@@ -481,6 +482,21 @@ def dispatch_phase(
 
     if army_ids is None:
         army_ids = [army.army_id for army in state.armies_commanded_by(leader_id)]
+
+    # Phase 243: rumor generation, resolved before the order's own real
+    # effect (uses the leader's pre-order location, same as the order's
+    # own real effect would for a stationary action -- see turn/rumor.py's
+    # own docstring for why "before" vs. "after" doesn't matter for any
+    # of the 7 eligible order types except Move/Pursue/Trail, where it's
+    # a documented choice). A no-op, consuming no randomness, for every
+    # action outside RUMOR_CHANCE_BY_ACTION or when GameState has no
+    # eligible feature nearby -- i.e. every pre-Phase-243 caller.
+    leader = state.leaders.get(leader_id)
+    if leader is not None and action in RUMOR_CHANCE_BY_ACTION:
+        rumor_rng = rng if rng is not None else random.Random()
+        rumor = resolve_rumor_generation(state, kingdom_id, leader.location, action, rumor_rng)
+        if rumor is not None:
+            state.add_rumor(rumor)
 
     if action is ActionCode.LMOVE:
         target = decode_hex_number(phase.obj, board_width)
