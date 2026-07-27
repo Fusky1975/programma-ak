@@ -520,3 +520,58 @@ def test_execute_practice_non_sage_ability_never_sets_device_discovered():
     result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
 
     assert result.device_discovered is False
+
+
+# -- Phase 259: Practice clears a Royal Heir's resurrection eligibility --
+
+
+def test_execute_practice_clears_is_royal_heir_when_skill_rises():
+    state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
+    state.leaders[1].is_royal_heir = True
+
+    result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
+
+    assert result.skill_rose is True
+    assert state.leaders[1].is_royal_heir is False
+
+
+def test_execute_practice_leaves_is_royal_heir_when_nothing_rises():
+    state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
+    state.leaders[1].is_royal_heir = True
+
+    # skill=0, aptitude=0 -- both the skill roll and the aptitude-rise
+    # roll it triggers fail (APT_RISE_CHANCE[0] == 0.0 too).
+    result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.99, 0.99]))
+
+    assert result.skill_rose is False
+    assert result.aptitude_rose is False
+    assert state.leaders[1].is_royal_heir is True  # untouched -- nothing actually improved
+
+
+def test_execute_practice_non_heir_is_royal_heir_stays_false():
+    state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
+
+    result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
+
+    assert result.skill_rose is True
+    assert state.leaders[1].is_royal_heir is False  # was already False -- stays False
+
+
+def test_execute_practice_group_clears_is_royal_heir_only_for_the_leader_who_actually_rose():
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=9),
+            2: _skills_with(Ability.NECROMANCY, skill=3, aptitude=9),
+        },
+    )
+    state.leaders[1].is_royal_heir = True
+    state.leaders[2].is_royal_heir = True
+
+    results = execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.01]))
+
+    assert results[0].skill_rose is True
+    assert results[1].skill_rose is False
+    assert state.leaders[1].is_royal_heir is False  # rose -- cleared
+    assert state.leaders[2].is_royal_heir is True  # didn't rise -- untouched

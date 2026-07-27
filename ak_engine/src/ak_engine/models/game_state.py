@@ -393,6 +393,22 @@ class LeaderState:
     # Phase 227: this leader's own cumulative Merit Point inputs -- see
     # MeritTally's own docstring and turn/merit_points.py.
     merit_tally: MeritTally = field(default_factory=MeritTally)
+    # Phase 259: True for a Royal Heir automatically installed on the
+    # throne by remove_leader() when a King dies, until either a new
+    # King is created on top of it (a future phase) or a Resurrection
+    # cast restores the exact dead King instead -- see remove_leader()'s
+    # own Phase 259 addendum and turn/cast_execution.py
+    # _execute_resurrection()'s own Royal-Heir branch. Rulebook
+    # (RULES.AK [4.21.1]): "as soon as you assign your Heir his new
+    # skill levels, or improve any of his abilities by practice or
+    # experience, you lose the resurrection option" -- turn/
+    # practice_execution.py clears this flag the moment Practice
+    # actually raises a skill or aptitude level, the one real
+    # ability-improving mechanic this project has; "experience" has no
+    # separate skill-rise consumer anywhere in this project to also
+    # clear it from (same "no source, no consumer" gap already flagged
+    # for other under-modeled mechanics).
+    is_royal_heir: bool = False
 
 
 @dataclass(slots=True)
@@ -606,11 +622,56 @@ class GameState:
     def remove_leader(self, leader_id: int) -> None:
         """Removes a leader from play, archiving it into ``dead_leaders`` (Phase 59) so a
         later Resurrection has something to revive -- see module docstring.
+
+        **Phase 259 -- King succession**: sourced directly from RULES.AK
+        [2.1] "Kings" and [4.21.1] "Resurrect character" (also SAY.PAS
+        ``_LSucc``: "<3 was succeeded by > next-in-line (who will use >
+        predecessor's name until next turn)."). If the removed leader was
+        a King in active service (``is_king`` and ``kingdom_id is not
+        None``), a Royal Heir is installed on the throne immediately,
+        under the same ``leader_id`` (the "next-in-line" the quote
+        describes) -- the Kingdom is never left permanently Kingless the
+        way it silently was before this phase. The Heir starts with
+        ``skills`` fully zeroed (RULES.AK: "the Heir must have zero
+        Talents assigned"), keeps the dead King's own ``name`` (per the
+        quote above), ``location``, ``temper``, ``alignment``, and
+        ``race`` (race/alignment can't change across a succession -- the
+        Heir carries the same lineage), and is flagged
+        ``is_royal_heir=True`` -- see that field's own docstring for what
+        reads/clears it. **Deliberately deferred to a future phase, not
+        attempted here**: the player-facing order to actually assign the
+        new King's own name/temper/skill distribution (RULES.AK [2.1]'s
+        4-point allocation with its overlap-with-the-dead-King and
+        alignment-doubled-aptitude constraints) -- confirmed with the
+        user (project author) as a separate, later phase; until then, an
+        un-customized Heir simply holds the throne with zero Talents,
+        same as the real engine's own window between a King's death and
+        the player's next order sheet.
+
+        A King with no ``kingdom_id`` isn't a reachable state in this
+        project (``turn/kingdom_bridge.py`` only ever sets ``is_king``
+        alongside a real ``kingdom_id``) -- an ordinary Hero (or such a
+        King, if one somehow existed) simply vanishes, unchanged from
+        before this phase.
         """
 
         leader = self.leaders.pop(leader_id, None)
-        if leader is not None:
-            self.dead_leaders[leader_id] = leader
+        if leader is None:
+            return
+        self.dead_leaders[leader_id] = leader
+        if leader.is_king and leader.kingdom_id is not None:
+            self.leaders[leader_id] = LeaderState(
+                leader_id=leader_id,
+                kingdom_id=leader.kingdom_id,
+                name=leader.name,
+                location=leader.location,
+                skills=SkillTable(raw_values=[0] * 31),
+                is_king=True,
+                temper=leader.temper,
+                alignment=leader.alignment,
+                race=leader.race,
+                is_royal_heir=True,
+            )
 
     def armies_at(self, coord: HexCoord) -> list[ArmyState]:
         return [army for army in self.armies.values() if army.location == coord]

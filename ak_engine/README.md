@@ -10554,7 +10554,7 @@ complete (Phases 209-211).
     (skipped), a mover with no army at the destination (skipped), and a
     result that didn't move (skipped) -- 2937 passed total.
 
-- **Phase 258 (current)**: wires Fulfill [FU] (rulebook [5.7]) into
+- **Phase 258**: wires Fulfill [FU] (rulebook [5.7]) into
   `turn/search_execution.py`, the last unwired Search tactic with a real
   execution-layer path -- and closes the Defender Merit Point formula's
   own remaining gap, `MeritTally.monster_hp_neutralized` (Phase 255 had
@@ -10614,6 +10614,74 @@ complete (Phases 209-211).
     Fulfill honored ends the Search peacefully with the correct
     half-HP credit; Fulfill not honored falls through and still clears
     the pending flag) -- 2948 passed total.
+
+- **Phase 259 (current)**: King succession -- when a King dies, a
+  Royal Heir now takes the throne under the same `leader_id`, instead
+  of the Kingdom simply going permanently Kingless (a real,
+  confirmed-reachable gap: `GameState.remove_leader()` is called from
+  Duel/Search/Challenge/Pursue losses and Kill_Enemy with zero special
+  handling for `is_king`). Sourced directly from **RULES.AK** (not just
+  SAY.PAS's own `_LSucc`, confirmed too): [2.1] "Kings" (the King-
+  creation formula `models/kingdom.py SkillTable` already cited since
+  Phase 21) and [4.21.1] "Resurrect character"'s own Royal Heir
+  passage, quoted in full in the code.
+  - `LeaderState.is_royal_heir: bool` (`models/game_state.py`) marks a
+    throne-holding Heir still awaiting either a
+    new King's own skill assignment (a separate, later phase, confirmed
+    with the user/project author) or a Resurrection undoing the death.
+  - `GameState.remove_leader()`: a dying King (`is_king` and
+    `kingdom_id is not None`) still gets archived into `dead_leaders`
+    as before, but a fresh Royal Heir is installed into `state.leaders`
+    under the same `leader_id` -- same `kingdom_id`/`location`/
+    `temper`/`alignment`/`race` as the dead King, `name` unchanged too
+    (SAY.PAS `_LSucc`: "will use predecessor's name until next turn"),
+    `skills` a fully zeroed `SkillTable` ("the Heir must have zero
+    Talents assigned"), `is_king=True`, `is_royal_heir=True`. A Hero's
+    death (or a kingless King -- not a real reachable state via
+    `kingdom_bridge.py`) still just vanishes, unchanged.
+  - `turn/cast_execution.py _execute_resurrection()`: a new branch
+    fires when `request.target` is a *living* leader still flagged
+    `is_royal_heir` -- RULES.AK: "you can cast a Resurrection spell on
+    your Royal Heir and get your old King back... you're actually
+    casting the spell on the bones carried around by the Heir... If
+    another player casts a Resurrection spell on your Royal Heir, you
+    still get your old King back." On success, the exact archived King
+    (`dead_leaders`, same `leader_id`) is restored verbatim, keeping
+    his own original `kingdom_id` -- "resumes his own throne," not the
+    caster's, unlike an ordinary Hero revival, regardless of which
+    Kingdom's own priest casts it. Co-location and the merit-tally
+    credit both still apply exactly as before.
+  - `turn/practice_execution.py execute_practice()`/
+    `execute_practice_group()`: RULES.AK -- "as soon as you assign your
+    Heir his new skill levels, or improve any of his abilities by
+    practice or experience, you lose the resurrection option." Both
+    functions now clear `is_royal_heir` the instant Practice actually
+    raises a skill or aptitude level (not merely attempted) for that
+    leader -- the one real ability-improving mechanic this project has;
+    "experience" has no separate skill-rise consumer anywhere to also
+    clear it from, a documented, narrower gap.
+  - **Deliberately deferred, confirmed with the user**: the player-
+    facing order to actually create the new King (name/temper/skill
+    distribution under RULES.AK [2.1]'s own 4-point allocation, its
+    overlap-with-the-dead-King and doubled-Special-Aptitude
+    constraints) -- a separate, later phase. Until then, an
+    un-customized Heir simply holds the throne with zero Talents.
+  - Non-breaking: 4 pre-existing tests updated for the new, intended
+    behavior (a King's death no longer removes it from `state.leaders`
+    outright) -- `test_challenge_execution.py`,
+    `test_pursue_execution.py`, `test_plan_dispatch.py`,
+    `test_turn_processor.py`, each now asserting the archived death
+    plus the installed Heir instead of bare absence. 12 new tests: 4 in
+    `tests/test_game_state.py` (`remove_leader()`'s own Heir
+    installation, field-by-field, plus the Hero/kingless-King/unknown-
+    id no-op cases); 4 in `tests/test_cast_execution.py` (Resurrection-
+    on-Heir restores the exact King and his own `kingdom_id` regardless
+    of which Kingdom casts it, co-location still enforced, fails
+    without an archived King, credits the merit tally); 4 in
+    `tests/test_practice_execution.py` (`is_royal_heir` clears on an
+    actual rise, stays set when nothing rises, stays `False` for a
+    non-Heir, and `execute_practice_group()` only clears it for
+    whichever group member actually rose) -- 2960 passed total.
 
 ## Setup
 

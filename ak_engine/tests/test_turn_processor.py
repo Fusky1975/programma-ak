@@ -534,7 +534,10 @@ def test_run_turn_mutual_encounter_keeps_the_king_as_target_regardless_of_leader
     assert by_leader[5].result is by_leader[20].result
     assert by_leader[5].result.accepted is True  # guaranteed, no 50% roll -- King stayed the target
     assert by_leader[5].result.winner_leader_id == 20  # the Hero (challenger), higher melee skill
-    assert 5 not in state.leaders
+    # Phase 259: a King's death installs a Royal Heir under the same
+    # leader_id rather than leaving the Kingdom leaderless.
+    assert 5 in state.dead_leaders
+    assert state.leaders[5].is_royal_heir is True
 
 
 def test_run_turn_one_sided_challenge_dispatches_normally_not_as_mutual():

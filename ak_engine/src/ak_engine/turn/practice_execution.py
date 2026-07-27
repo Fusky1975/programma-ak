@@ -412,6 +412,13 @@ def execute_practice(
     current_skill, aptitude = skills.pair_for_ability(ability)
     outcome = resolve_practice_solo(current_skill, aptitude, rng)
     skills.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
+    if outcome.skill_rose or outcome.aptitude_rose:
+        # Phase 259: RULES.AK [4.21.1] -- a Royal Heir loses the
+        # Resurrection-restores-the-old-King option the instant Practice
+        # actually raises any of his abilities. See LeaderState.
+        # is_royal_heir's own docstring for the full quote and the other
+        # (Resurrection-based) way this flag gets consumed.
+        leader.is_royal_heir = False
 
     device_discovered = False
     if ability is Ability.SAGE:
@@ -459,8 +466,11 @@ def execute_practice_group(
     outcomes = resolve_practice_group(pairs, rng)
 
     results = []
-    for table, outcome in zip(skills_tables, outcomes):
+    for leader_id, table, outcome in zip(leader_ids, skills_tables, outcomes):
         table.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
+        if outcome.skill_rose or outcome.aptitude_rose:
+            # Phase 259: same is_royal_heir-clearing rule as execute_practice()'s own.
+            state.leaders[leader_id].is_royal_heir = False
         results.append(
             PracticeExecutionResult(
                 ability=ability,

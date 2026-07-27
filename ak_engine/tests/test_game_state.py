@@ -5,10 +5,12 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import ActionCode
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.models.rumor import Rumor, RumorContent
+from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 
@@ -331,3 +333,67 @@ def test_record_world_event_is_independent_per_call():
 
     assert [event.coord for event in state.world_events] == [HOME, FIELD]
     assert [event.lines for event in state.world_events] == [["First."], ["Second."]]
+
+
+# -- Phase 259: King succession (remove_leader's Royal Heir installation) --
+
+
+def test_remove_leader_installs_a_royal_heir_when_a_king_dies():
+    state = make_state()
+    king = LeaderState(
+        1, 1, "Aldric", FIELD, skills=SkillTable(raw_values=list(range(31))),
+        is_king=True, temper=Temper.BRAVE, alignment=Alignment.GOOD, race=Race.HUMAN,
+    )
+    state.add_leader(king)
+
+    state.remove_leader(1)
+
+    assert 1 in state.dead_leaders
+    dead_king = state.dead_leaders[1]
+    assert dead_king.name == "Aldric"
+    assert dead_king.skills.raw_values == list(range(31))  # the exact original, untouched
+
+    heir = state.leaders[1]
+    assert heir is not dead_king
+    assert heir.leader_id == 1
+    assert heir.kingdom_id == 1
+    assert heir.name == "Aldric"  # SAY.PAS _LSucc: "will use > predecessor's name"
+    assert heir.location == FIELD
+    assert heir.is_king is True
+    assert heir.is_royal_heir is True
+    assert heir.temper is Temper.BRAVE
+    assert heir.alignment is Alignment.GOOD
+    assert heir.race is Race.HUMAN
+    assert heir.skills.raw_values == [0] * 31  # "must have zero Talents assigned"
+
+
+def test_remove_leader_hero_death_leaves_no_heir():
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Hero", FIELD, is_king=False))
+
+    state.remove_leader(1)
+
+    assert 1 in state.dead_leaders
+    assert 1 not in state.leaders
+
+
+def test_remove_leader_kingless_king_leaves_no_heir():
+    # Not a reachable state via kingdom_bridge.py, but remove_leader()
+    # should still degrade gracefully rather than install a throne with
+    # no Kingdom to belong to.
+    state = make_state()
+    state.add_leader(LeaderState(1, None, "Wanderer", FIELD, is_king=True))
+
+    state.remove_leader(1)
+
+    assert 1 in state.dead_leaders
+    assert 1 not in state.leaders
+
+
+def test_remove_leader_unknown_leader_id_is_a_no_op():
+    state = make_state()
+
+    state.remove_leader(999)  # never raises, never touches dead_leaders
+
+    assert state.dead_leaders == {}
+    assert 999 not in state.leaders

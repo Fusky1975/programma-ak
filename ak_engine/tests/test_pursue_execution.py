@@ -207,7 +207,10 @@ def test_execute_pursue_mutual_king_encounter_can_result_in_combat():
 
     assert result.caught_up is True
     assert result.winner_leader_id == 1
-    assert 2 not in state.leaders
+    # Phase 259: a King's death installs a Royal Heir under the same
+    # leader_id rather than leaving the Kingdom leaderless.
+    assert 2 in state.dead_leaders
+    assert state.leaders[2].is_royal_heir is True
 
 
 # -- army-vs-army pursuit: caught up but not fought here -------------------

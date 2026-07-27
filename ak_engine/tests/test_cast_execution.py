@@ -339,6 +339,74 @@ def test_resurrection_fails_when_dead_leader_died_elsewhere():
 
 
 # ---------------------------------------------------------------------------
+# Resurrection on a Royal Heir (Phase 259) -- RULES.AK [4.21.1]
+# ---------------------------------------------------------------------------
+
+
+def test_resurrection_on_a_royal_heir_restores_the_exact_dead_king():
+    state = build_state()
+    dead_king = LeaderState(78, 2, "Old King", LOCATION, is_king=True, temper=None, alignment=Alignment.EVIL)
+    state.dead_leaders[78] = dead_king
+    heir = LeaderState(
+        78, 2, "Old King", LOCATION, is_king=True, is_royal_heir=True, skills=SkillTable(raw_values=[0] * 31)
+    )
+    state.add_leader(heir)
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert 78 not in state.dead_leaders
+    assert state.leaders[78] is dead_king  # the exact original, not a fresh copy
+    assert state.leaders[78].kingdom_id == 2  # resumes his own throne, not the caster's (kingdom 1)
+
+
+def test_resurrection_on_a_royal_heir_by_another_kingdoms_caster_still_resumes_his_own_throne():
+    # RULES.AK: "If another player casts a Resurrection spell on your
+    # Royal Heir, you still get your old King back."
+    state = build_state()
+    dead_king = LeaderState(78, 2, "Old King", ELSEWHERE, is_king=True)
+    state.dead_leaders[78] = dead_king
+    state.add_leader(LeaderState(78, 2, "Old King", ELSEWHERE, is_king=True, is_royal_heir=True))
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    # CASTER_ID (kingdom 1) casts on kingdom 2's own Royal Heir.
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False  # not co-located (Heir is ELSEWHERE) -- confirms co-location still checked
+    assert result.reason == "not co-located"
+
+    state.leaders[78].location = LOCATION
+    result2 = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result2.applied is True
+    assert state.leaders[78].kingdom_id == 2  # stays kingdom 2's King, despite kingdom 1 casting
+
+
+def test_resurrection_on_a_royal_heir_fails_without_an_archived_king():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Heir Only", LOCATION, is_king=True, is_royal_heir=True))
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "target character not found"
+
+
+def test_resurrection_on_a_royal_heir_increments_the_casters_merit_tally():
+    state = build_state()
+    state.dead_leaders[78] = LeaderState(78, 2, "Old King", LOCATION, is_king=True)
+    state.add_leader(LeaderState(78, 2, "Old King", LOCATION, is_king=True, is_royal_heir=True))
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].merit_tally.resurrection_bless_casts == 1
+
+
+# ---------------------------------------------------------------------------
 # Part Sea (Phase 59) -- Regolamento AK.txt [4.21.2]
 # ---------------------------------------------------------------------------
 

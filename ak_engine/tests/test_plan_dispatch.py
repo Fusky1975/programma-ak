@@ -315,7 +315,11 @@ def test_dispatch_search_leader_victory_marks_feature_looted():
         assert feature.looted is True
         assert LEADER_ID in state.leaders
     else:
-        assert LEADER_ID not in state.leaders
+        # Phase 259: this leader is a King (see _state_with_army's own
+        # comment) -- a King's death installs a Royal Heir under the
+        # same leader_id rather than leaving the Kingdom leaderless.
+        assert LEADER_ID in state.dead_leaders
+        assert state.leaders[LEADER_ID].is_royal_heir is True
 
 
 def test_real_move_file_leader_search_phase_dispatches():

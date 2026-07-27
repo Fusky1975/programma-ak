@@ -996,13 +996,23 @@ def _execute_resurrection(
     """Rulebook [4.21.1]: "a character in the same province as a dead one can attempt to
     bring him back to life... with all his Talents but not the items he
     owned... and joins the service of the Kingdom that resurrected him."
-    Only the ordinary-Hero case is modeled: the rulebook's separate
-    King-via-Heir revival (the Heir must have zero Talents assigned, and
-    a revived King resumes his own throne rather than joining the
-    reviver's Kingdom) needs a throne/heir-succession model this project
-    doesn't have -- out of scope here, not silently mishandled (a King
-    in ``dead_leaders`` would incorrectly join the caster's Kingdom via
-    this same path, a known, documented gap).
+
+    **Phase 259 -- the King-via-Heir case is now modeled too**, sourced
+    from the same [4.21.1] passage: "After your King dies, you can cast
+    a Resurrection spell on your Royal Heir and get your old King back
+    (you're actually casting the spell on the bones carried around by
+    the Heir.) If another player casts a Resurrection spell on your
+    Royal Heir, you still get your old King back." ``request.target``
+    referencing a *living* ``LeaderState`` still flagged
+    ``is_royal_heir`` (``GameState.remove_leader()``'s own Phase 259
+    addendum installs one under the dead King's own ``leader_id`` the
+    instant he dies) routes here instead of the ordinary dead-leader
+    path below: on success, the exact archived King (``dead_leaders``,
+    keyed by that same ``leader_id`` since the Heir never changed it) is
+    restored verbatim, with his own original ``kingdom_id`` intact --
+    "resumes his own throne," not the caster's Kingdom, unlike an
+    ordinary Hero revival, exactly matching the quote regardless of
+    which King's own priest casts it.
 
     **Phase 251**: a successful cast increments the caster's own
     ``LeaderState.merit_tally.resurrection_bless_casts`` -- see
@@ -1012,6 +1022,22 @@ def _execute_resurrection(
     """
 
     caster = state.leaders[leader_id]
+
+    heir = state.leaders.get(request.target)
+    if heir is not None and heir.is_royal_heir:
+        old_king = state.dead_leaders.get(request.target)
+        if old_king is None:
+            return CastExecutionResult(request, applied=False, reason="target character not found")
+        if heir.location != caster.location:
+            return CastExecutionResult(request, applied=False, reason="not co-located")
+        succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+        if not succeeded:
+            return CastExecutionResult(request, applied=False, reason=reason)
+        del state.dead_leaders[request.target]
+        state.leaders[request.target] = old_king
+        caster.merit_tally.resurrection_bless_casts += 1
+        return CastExecutionResult(request, applied=True)
+
     target = state.dead_leaders.get(request.target)
     if target is None:
         return CastExecutionResult(request, applied=False, reason="target character not found")
