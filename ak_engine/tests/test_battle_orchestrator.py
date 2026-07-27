@@ -120,6 +120,54 @@ def test_fight_battle_records_a_clean_swept_defenders_death_in_the_graveyard():
     assert entries[0].kingdom_id == 2
 
 
+# -- Phase 250: Mystic Winds ends before army battle --
+
+
+def _generously_padded_rng() -> ScriptedRandom:
+    # Clearing happens before any of fight_battle()'s own rng consumption
+    # starts, so these tests don't care about the battle's actual outcome --
+    # just that the function runs to completion without exhausting the
+    # script. 0.9 clears every documented trigger threshold in this
+    # project (column/battle luck at 0.75/0.55, etc.), so nothing fires.
+    return ScriptedRandom([0.9] * 30, choice_indices=[0] * 10)
+
+
+def test_fight_battle_clears_mystic_winds_for_the_attacking_commander():
+    state = build_state()
+    state.add_leader(
+        LeaderState(1, kingdom_id=1, name="Windwalker", location=FIELD, mystic_winds_active=True)
+    )
+    state.armies[101].commanded_by = 1
+
+    fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert state.leaders[1].mystic_winds_active is False
+
+
+def test_fight_battle_clears_mystic_winds_for_the_defending_commander():
+    state = build_state()
+    state.add_leader(
+        LeaderState(2, kingdom_id=2, name="Skyrider", location=FIELD, mystic_winds_active=True)
+    )
+    state.armies[201].commanded_by = 2
+
+    fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert state.leaders[2].mystic_winds_active is False
+
+
+def test_fight_battle_leaves_an_uninvolved_leaders_mystic_winds_untouched():
+    # Only leaders actually commanding an army *in this battle* get cleared --
+    # a leader elsewhere in the kingdom keeps the flag until their own battle.
+    state = build_state()
+    state.add_leader(LeaderState(3, kingdom_id=1, name="Elsewhere", location=HexCoord(9, 9), mystic_winds_active=True))
+    rng = no_luck_overwhelming_attacker_rng()
+
+    fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
+
+    assert state.leaders[3].mystic_winds_active is True
+
+
 def test_defender_disbands_when_no_friendly_province_to_retreat_to():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))

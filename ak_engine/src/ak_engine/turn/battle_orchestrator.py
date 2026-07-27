@@ -439,6 +439,39 @@ def _mystic_winds_active_for(army: ArmyState, state: GameState) -> bool:
     return commander.mystic_winds_active
 
 
+def _clear_mystic_winds_before_battle(armies: list[ArmyState], state: GameState) -> None:
+    """Phase 250: clears ``LeaderState.mystic_winds_active`` for every commander
+    of an army entering this battle -- "the spell ends just before the
+    leader gets involved in any military battle between armies," rulebook
+    text quoted in full in ``turn/cast_execution.py``'s own Phase 204
+    addendum. Called from ``fight_battle()`` itself, both sides, before
+    ``_build_battle_units()`` reads ``_mystic_winds_active_for()`` -- so a
+    leader whose own army is *in* this battle never gets Illusory Fog's
+    Mystic-Winds-affected treatment for it, even though the flag was true
+    a moment ago.
+
+    Deliberately does **not** touch ``ArmyState.movement_points`` --
+    "re-deriving each affected army's movement" (the Phase 204 addendum's
+    own words) has nothing to re-derive *to*: this project has no
+    per-``ArmyType`` base movement table anywhere (``GameState``'s own
+    module docstring already confirms ``ArmyState.movement_points`` has
+    no real consumer), so freshly recruited armies default it to 0, not
+    some army-type-specific normal value. Resetting it to any concrete
+    number here would be a guess, not a sourced fact -- the same
+    confirmed-absent boundary Part Sea's `terrain_override`/Bless's own
+    `tax_modifier_percent` already carry for their own unbuilt consumers.
+    """
+
+    seen_leader_ids: set[int] = set()
+    for army in armies:
+        if army.commanded_by is None or army.commanded_by in seen_leader_ids:
+            continue
+        seen_leader_ids.add(army.commanded_by)
+        commander = state.leaders.get(army.commanded_by)
+        if commander is not None:
+            commander.mystic_winds_active = False
+
+
 def _retreat_or_disband(
     army: ArmyState,
     state: GameState,
@@ -759,6 +792,17 @@ def fight_battle(
         raise ValueError("no attacking armies given")
     if not defender_armies:
         raise ValueError("no defending armies at this province to fight")
+
+    # Phase 250, Mystic Winds' own Phase 204 addendum: "The spell ends just
+    # before the leader gets involved in any military battle between
+    # armies." Every real army-vs-army battle in this project funnels
+    # through this one function -- move_execution.py, pursue_execution.py,
+    # turn_processor.py's forced-rebattle path, and fight_multi_attacker_
+    # battle() (which itself calls this function once per group) all call
+    # fight_battle() directly, so clearing here covers every entry point
+    # named in that addendum without needing to touch any of them.
+    _clear_mystic_winds_before_battle(attacker_armies, state)
+    _clear_mystic_winds_before_battle(defender_armies, state)
 
     # Phase 168: the province's real current terrain, honoring Part
     # Sea/Flood's own terrain_override if set -- see ProvinceState.

@@ -10208,7 +10208,7 @@ complete (Phases 209-211).
     LETTER REPORTS (a different leader's own heard rumor) in one call
     -- 2902 passed total.
 
-- **Phase 249 (current)**: wires Illusory Fog's strength-halving effect
+- **Phase 249**: wires Illusory Fog's strength-halving effect
   (`AdvancedAbility.ILLUSORY_FOG_SPELL`, Phase 207 addendum) into the
   real battle-strength pipeline -- `turn/cast_execution.py illusory_
   fog_strength()`/`is_illusory_fog_affected_air_unit()` had a fully
@@ -10237,6 +10237,38 @@ complete (Phases 209-211).
     province; a ground unit unaffected in the same fogged province; a
     Mystic-Winds-led ground unit halved like an air unit; no effect at
     all in an unfogged province) -- 2908 passed total.
+
+- **Phase 250 (current)**: wires Mystic Winds' own "the spell ends just
+  before the leader gets involved in any military battle between
+  armies" clause (Phase 204 addendum), the fact Phase 249's own wiring
+  cross-referenced but didn't itself clear. Turned out narrower than
+  the Phase 204 addendum originally estimated: grepping every real call
+  site confirmed every army-vs-army battle in this project (`turn/
+  move_execution.py`, `turn/pursue_execution.py`, `turn/turn_
+  processor.py`'s forced-rebattle path, and `fight_multi_attacker_
+  battle()`, which itself calls `fight_battle()` once per group) funnels
+  through the single real `turn/battle_orchestrator.py fight_battle()`
+  function -- so one clearing point covers every entry point the
+  addendum named, not four separate ones.
+  - New `_clear_mystic_winds_before_battle(armies, state)` helper,
+    called for both sides at the very top of `fight_battle()` --
+    *before* `_build_battle_units()` runs, so a leader whose
+    `mystic_winds_active` was true a moment ago no longer gets Illusory
+    Fog's Mystic-Winds-affected treatment (Phase 249) for the very
+    battle that ends the spell either -- the literal reading of "ends
+    just before," not a guess.
+  - Deliberately leaves `ArmyState.movement_points` untouched: "re-
+    deriving each affected army's movement" (the addendum's own words)
+    has nothing to re-derive *to* -- this project has no per-`ArmyType`
+    base movement table anywhere, so a freshly recruited army's own
+    `movement_points` defaults to 0, not some army-type-specific normal
+    value. Resetting it here to any concrete number would be a guess.
+  - Non-breaking: full suite passed unchanged (2908 passed) before any
+    new tests were written. 3 new tests added to `tests/
+    test_battle_orchestrator.py`: the flag clears for a real attacking
+    commander, clears for a real defending commander, and stays
+    untouched for an uninvolved leader elsewhere in the same kingdom --
+    2911 passed total.
 
 ## Setup
 

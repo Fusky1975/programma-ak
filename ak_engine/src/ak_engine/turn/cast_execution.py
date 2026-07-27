@@ -478,21 +478,31 @@ text directly, one at a time.
      this sentence is recorded as ``MYSTIC_WINDS_USES_MOVEMENT_POINTS_
      NORMALLY = True`` with nothing left to actually disable.
   4. **"The spell ends just before the leader gets involved in any
-     military battle between armies" is confirmed but deliberately not
-     wired this phase.** Doing so correctly would mean clearing
-     ``mystic_winds_active`` (and presumably re-deriving each affected
-     army's movement) at every one of this project's several distinct
-     battle-entry points (``fight_battle``, ``fight_multi_attacker_
-     battle``, the forced-rebattle and army-vs-army Pursue paths in
-     ``turn_processor.py``/``pursue_execution.py``) -- a genuinely
-     larger, cross-cutting change on the same footing as Defend's own
-     Phase 67/72 cancellation wiring, not a same-phase add-on.
-     ``MYSTIC_WINDS_ENDS_BEFORE_ARMY_BATTLE = True`` records the fact so
-     a future phase can wire it without re-deriving it from the rule
-     text. Also cross-referenced by ``models/advanced_ability.py``'s own
-     Illusory Fog description ("All air units... and those affected by
-     'Mystic Winds' Spell... have their strength halved") -- a second,
-     still-unbuilt spell this flag will eventually feed too.
+     military battle between armies" is wired as of Phase 250.** Every
+     real army-vs-army battle in this project turned out to funnel
+     through a single real function -- ``turn/battle_orchestrator.py
+     fight_battle()`` -- confirmed by grepping every call site
+     (``move_execution.py``, ``pursue_execution.py``, ``turn_
+     processor.py``'s forced-rebattle path, and ``fight_multi_attacker_
+     battle()``, which itself calls ``fight_battle()`` once per group),
+     so clearing ``mystic_winds_active`` there once, for both sides,
+     covers every one of those entry points without touching any of
+     them -- a much narrower fix than this addendum originally
+     estimated. See ``fight_battle()``'s own ``_clear_mystic_winds_
+     before_battle()`` helper docstring for the exact mechanics,
+     including why ``ArmyState.movement_points`` is deliberately left
+     untouched (nothing in this project derives a per-``ArmyType``
+     normal value to reset it to).
+     ``MYSTIC_WINDS_ENDS_BEFORE_ARMY_BATTLE = True`` still records the
+     underlying fact. Also cross-referenced by ``models/advanced_
+     ability.py``'s own Illusory Fog description ("All air units...
+     and those affected by 'Mystic Winds' Spell... have their strength
+     halved", wired Phase 249) -- since the flag is now cleared
+     *before* ``_build_battle_units()`` reads it for that very battle,
+     a leader entering combat this turn no longer gets Illusory Fog's
+     Mystic-Winds-affected treatment from an about-to-end cast, only
+     from being a naturally static air unit -- the literal reading of
+     "ends just before," not a guess.
 
 - **Locate Object** (`AdvancedAbility.LOCATE_OBJECT_SPELL`,
   `Ability.PSYCHIC`, Phase 206) -- the user's own quoted rule text
