@@ -14,7 +14,7 @@ from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
 from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
-from ak_engine.turn.encounter import FIRE_ARROW_DAMAGE_RANGE, EncounterCombatResult, FireArrowShot
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, FIRE_ARROW_DAMAGE_RANGE, EncounterCombatResult, FireArrowShot
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.search_execution import (
     FLEE_CHANCE,
@@ -49,6 +49,20 @@ def _talk_request(feature_id: int, *following: Maneuver) -> SearchRequest:
     tactics = [SearchTactic(maneuver=Maneuver.TALK)]
     tactics += [SearchTactic(maneuver=m) for m in following]
     return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=tactics)
+
+
+def _beg_request(feature_id: int, *following: Maneuver) -> SearchRequest:
+    # Beg only ever makes sense after taking a hit, so every wiring test
+    # opens with a Shoot tactic (mocked to damage the leader without
+    # ending the encounter) ahead of the Beg tactic under test.
+    tactics = [SearchTactic(maneuver=Maneuver.SHOOT), SearchTactic(maneuver=Maneuver.BEG)]
+    tactics += [SearchTactic(maneuver=m) for m in following]
+    return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=tactics)
+
+
+def _damage_leader_fire_arrow_duel(leader_combatant, monster_combatant, rng):
+    leader_combatant.hit_points -= 3
+    return EncounterCombatResult(winner=None, rounds=1)
 
 
 def test_execute_search_leader_not_found():
@@ -1819,6 +1833,88 @@ def test_execute_search_say_is_a_documented_noop_falls_through():
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ) as mock_melee:
         result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+# -- Phase 241: Beg --
+
+
+def test_execute_search_beg_undamaged_leader_falls_through():
+    # Full health -- nothing to beg about yet, no roll is even consulted.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[SearchTactic(maneuver=Maneuver.BEG), SearchTactic(maneuver=Maneuver.MELEE)],
+    )
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_beg_for_mercy"
+    ) as mock_beg, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_beg.called
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_beg_animal_tier_monster_never_succeeds():
+    # Gryphon is Animal-tier -- BEG_MERCY_CHANCE is 0.0, so even a roll of
+    # 0.0 (the most favorable possible) grants no mercy.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GRYPHON))
+    request = _beg_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", side_effect=_damage_leader_fire_arrow_duel
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.0] * 20))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_beg_success_flees_unharmed():
+    # Archer is Medium-Human tier -- BEG_MERCY_CHANCE is 0.30. A damaged
+    # leader rolling under that succeeds, ending the Search exactly like
+    # a successful Flee.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _beg_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", side_effect=_damage_leader_fire_arrow_duel
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert not mock_melee.called
+    assert result.accepted is True
+    assert result.combat_resolved is False
+    assert result.fled is True
+
+
+def test_execute_search_beg_failure_falls_through():
+    # Same setup as the success case, but a roll above the 30% threshold
+    # fails -- no mercy, the plan's own next tactic (Melee) still runs.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _beg_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", side_effect=_damage_leader_fire_arrow_duel
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
 
     assert mock_melee.called
     assert result.winner == "leader"

@@ -225,6 +225,7 @@ from ak_engine.models.monster import (
 from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.encounter import (
+    BEG_MERCY_CHANCE,
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_DAMAGE_RANGE,
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
@@ -236,6 +237,7 @@ from ak_engine.turn.encounter import (
     CombatRange,
     EncounterCombatResult,
     FireArrowShot,
+    MirrorImageIntelligenceTier,
     StealTargetCunning,
     TalkReaction,
     blocks_cast_and_archery,
@@ -247,6 +249,7 @@ from ak_engine.turn.encounter import (
     illusory_hero_alignments_are_implacably_hostile,
     mirror_image_leader_disbelief_bonus,
     resolve_augur_combat,
+    resolve_beg_for_mercy,
     resolve_fire_arrow_duel,
     resolve_gate_demon_refusal,
     resolve_hand_of_death_channel,
@@ -942,6 +945,33 @@ def execute_search(
             )
         return None  # Attack/Ignore -- no special effect, the plan continues
 
+    def _resolve_beg() -> SearchExecutionResult | None:
+        """Beg [BE] -- Phase 241, project-original (no Pascal source, no
+        rulebook text -- ``turn/encounter.py``'s own Phase 241 addendum
+        has the full "why nothing survives" account and the three design
+        decisions confirmed directly by the user/project author). Only
+        meaningful once the leader has already taken damage this same
+        encounter (``leader_combatant.hit_points < CHARACTER_HIT_POINTS``
+        -- every combatant starts at the flat rulebook value, so this
+        needs no new field); an undamaged leader has nothing to beg
+        about, a documented no-effect rather than an oversight. Only
+        monsters intelligent enough to understand a plea can grant mercy
+        -- reuses ``MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER`` (Phase 187)
+        directly, defaulting to ``ANIMAL`` (zero mercy) for any species
+        missing from that table, same "can't grant it" treatment as a
+        species explicitly mapped there. A successful plea ends the
+        Search exactly like a successful Flee.
+        """
+
+        if leader_combatant.hit_points >= CHARACTER_HIT_POINTS:
+            return None  # undamaged -- nothing to beg about yet
+        tier = MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER.get(
+            feature.guardian_monster, MirrorImageIntelligenceTier.ANIMAL
+        )
+        if resolve_beg_for_mercy(tier, rng):
+            return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
+        return None
+
     for tactic_index, tactic in enumerate(request.tactics):
         if tactic.maneuver is Maneuver.FLEE:
             if rng.random() < FLEE_CHANCE[stats.speed]:
@@ -996,6 +1026,11 @@ def execute_search(
             # a documented no-op, not an oversight (see `turn/
             # encounter.py`'s own Phase 240 addendum).
             continue
+        if tactic.maneuver is Maneuver.BEG:
+            outcome = _resolve_beg()
+            if outcome is not None:
+                return outcome
+            continue
         # Every other maneuver isn't wired -- skip it and keep walking
         # the plan, matching how real Encounter Plans mix wired and
         # unwired tactics (module docstring's own quoted examples). Per
@@ -1016,8 +1051,6 @@ def execute_search(
         #   `turn/search_decode.py`'s own docstring already flags for
         #   Cast's sub-object). Confirmed absent, skipped for now on
         #   the user's own direction.
-        # - **Beg**: no rulebook text supplied yet -- genuinely
-        #   unresearched, unlike the three above.
 
     if combat_attempted:
         # Phase 178: the plan's own tactic list ran out without a winner

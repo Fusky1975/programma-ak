@@ -144,6 +144,8 @@ from ak_engine.turn.encounter import (
     TalkReaction,
     can_talk_to_monster,
     resolve_talk_reaction,
+    BEG_MERCY_CHANCE,
+    resolve_beg_for_mercy,
 )
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Spell
@@ -1774,3 +1776,37 @@ def test_resolve_talk_reaction_druidic_shifts_attack_to_deal():
         resolve_talk_reaction(ScriptedRandom([TALK_DRUIDIC_ATTACK_CHANCE]), caster_is_druidic=True)
         is TalkReaction.IGNORE
     )
+
+
+# -- Phase 241: Beg --
+
+
+def test_beg_mercy_chance_covers_all_six_tiers():
+    assert BEG_MERCY_CHANCE.keys() == set(MirrorImageIntelligenceTier)
+
+
+def test_beg_mercy_chance_animal_and_mechanical_are_zero():
+    # Confirmed by the user: only monsters with sufficient intelligence can
+    # even understand a plea -- Animal/Mechanical can't grant mercy at all.
+    assert BEG_MERCY_CHANCE[MirrorImageIntelligenceTier.ANIMAL] == 0.0
+    assert BEG_MERCY_CHANCE[MirrorImageIntelligenceTier.MECHANICAL] == 0.0
+
+
+def test_beg_mercy_chance_increases_with_intelligence():
+    assert (
+        BEG_MERCY_CHANCE[MirrorImageIntelligenceTier.LOW_HUMAN]
+        < BEG_MERCY_CHANCE[MirrorImageIntelligenceTier.MEDIUM_HUMAN]
+        < BEG_MERCY_CHANCE[MirrorImageIntelligenceTier.HIGH_HUMAN]
+        < BEG_MERCY_CHANCE[MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN]
+    )
+
+
+def test_resolve_beg_for_mercy_boundary():
+    tier = MirrorImageIntelligenceTier.HIGH_HUMAN
+    chance = BEG_MERCY_CHANCE[tier]
+    assert resolve_beg_for_mercy(tier, ScriptedRandom([chance - 0.01])) is True
+    assert resolve_beg_for_mercy(tier, ScriptedRandom([chance])) is False
+
+
+def test_resolve_beg_for_mercy_animal_never_succeeds():
+    assert resolve_beg_for_mercy(MirrorImageIntelligenceTier.ANIMAL, ScriptedRandom([0.0])) is False

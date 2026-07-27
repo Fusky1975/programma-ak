@@ -2984,3 +2984,48 @@ def resolve_talk_reaction(rng: random.Random, *, caster_is_druidic: bool = False
 # treasure/monster/rumor content-generation system Explore's own
 # docstring already flags). Confirmed out of scope, not attempted --
 # Fulfill stays unwired.
+
+
+# Beg [BE], rulebook [5.8] -- Phase 241. No Pascal source and no
+# rulebook text survive for this tactic (confirmed: `CBeg` appears only
+# in `CTBOTH.PAS`'s own `maneuver` enum declaration, never referenced
+# by name anywhere else in the available archive). Designed
+# collaboratively with the user (project author), who confirmed the
+# concept directly: a Cowardly-tempered character (or any character, in
+# extremis) begging a monster or another Hero for mercy to avoid being
+# killed.
+#
+# Three design questions, all answered directly by the user:
+# 1. **Only meaningful after the character has already taken damage
+#    this same encounter** -- an undamaged character has nothing to
+#    beg about. Checked via `Combatant.hit_points < CHARACTER_HIT_
+#    POINTS` (every combatant starts at the flat rulebook value, [5.0]
+#    "In combat, all characters have 10 hit points" -- no per-leader
+#    starting-HP variation exists to complicate this check).
+# 2. **Only monsters intelligent enough to understand a plea can grant
+#    mercy** -- reuses the existing, real per-species `MIRROR_IMAGE_
+#    MONSTER_INTELLIGENCE_TIER` (Phase 187) directly rather than a new
+#    mapping, since all six of its tiers are meaningful here (not
+#    collapsed to three buckets the way Steal's own cunning table was
+#    -- see that table's own Phase 239 addendum for why that collapse
+#    was appropriate there but isn't needed here).
+# 3. **A successful plea ends the encounter exactly like a successful
+#    Flee** -- the character escapes unharmed, no further combat, no
+#    loot.
+#
+# The per-tier mercy chances themselves are project-original -- no
+# source gives numbers, only the qualitative "sufficiently intelligent"
+# gate above. Animal/Mechanical tiers get a flat 0%: they're confirmed
+# unable to even understand a plea, not merely unlikely to grant one.
+BEG_MERCY_CHANCE: dict[MirrorImageIntelligenceTier, float] = {
+    MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN: 0.60,
+    MirrorImageIntelligenceTier.HIGH_HUMAN: 0.45,
+    MirrorImageIntelligenceTier.MEDIUM_HUMAN: 0.30,
+    MirrorImageIntelligenceTier.LOW_HUMAN: 0.15,
+    MirrorImageIntelligenceTier.ANIMAL: 0.0,
+    MirrorImageIntelligenceTier.MECHANICAL: 0.0,
+}
+
+
+def resolve_beg_for_mercy(tier: MirrorImageIntelligenceTier, rng: random.Random) -> bool:
+    return rng.random() < BEG_MERCY_CHANCE[tier]

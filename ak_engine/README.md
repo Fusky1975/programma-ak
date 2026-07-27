@@ -9745,7 +9745,7 @@ complete (Phases 209-211).
     a successful loot, evaded-capture fall-through, and all three
     caught-thief combat ranges) -- 2825 passed total.
 
-- **Phase 240 (current)**: Talk [TA] and Say [SA], wired into `turn/
+- **Phase 240**: Talk [TA] and Say [SA], wired into `turn/
   search_execution.py`'s tactic walk; Fulfill [FU] researched and
   confirmed out of scope. Rulebook [5.5]-[5.7], quoted in full by the
   user (project author), from a file titled "TALK SAY FULFILL.txt"
@@ -9809,6 +9809,59 @@ complete (Phases 209-211).
     shift; 6 in `tests/test_search_execution.py` covering the DR gate,
     Attack/Ignore/Deal outcomes, the Druidic bonus actually being
     wired, and Say's own no-op) -- 2836 passed total.
+
+- **Phase 241 (current)**: Beg [BE], wired into `turn/search_execution.
+  py`'s tactic walk. No Pascal source and no rulebook text survive for
+  this tactic -- exhaustively confirmed: `CBeg` appears only in
+  `CTBOTH.PAS`'s own `maneuver` enum declaration, never referenced by
+  name anywhere else in the available archive (no table, no
+  `Plan_Intent()` entry, no narrative template). Designed
+  collaboratively with the user (project author), who proposed the
+  starting concept directly ("Quando un personaggio Codardo chiede
+  pietà a un mostro o a un altro eroe per evitare di essere ucciso?")
+  and then answered three design questions:
+  - **Timing**: only as a last resort after having taken a hit ("Solo
+    come ultima risorsa dopo un colpo subito"). Checked via
+    `Combatant.hit_points < CHARACTER_HIT_POINTS` -- every combatant
+    starts at the flat rulebook [5.0] value (10), so this needs no new
+    field, just a comparison against the character's own current
+    hit points.
+  - **Audience**: only monsters intelligent enough to understand a plea
+    can grant mercy ("Solo mostri con intelligenza sufficiente").
+    Reuses the existing, real per-species `MIRROR_IMAGE_MONSTER_
+    INTELLIGENCE_TIER` (Phase 187) directly rather than inventing a new
+    mapping, using all six of its tiers (not collapsed to three buckets
+    the way Steal's own cunning table was in Phase 239 -- that collapse
+    was appropriate there because the source text only gave three
+    numbers to bucket into; here there's no source numbers at all, so
+    the finer six-tier table was kept).
+  - **Outcome**: a successful plea ends the encounter exactly like a
+    successful Flee -- the character escapes unharmed ("Il personaggio
+    fugge illeso (come una Flee riuscita)").
+  - **Mercy chances, project-original** (`BEG_MERCY_CHANCE`): no source
+    gives numbers, only the qualitative "sufficiently intelligent" gate
+    above -- `DIVINE_OR_SUPERHUMAN: 60%, HIGH_HUMAN: 45%, MEDIUM_HUMAN:
+    30%, LOW_HUMAN: 15%, ANIMAL: 0%, MECHANICAL: 0%`. Animal/Mechanical
+    are a flat 0%, not just "unlikely" -- confirmed unable to even
+    understand a plea, matching the user's own "solo mostri con
+    intelligenza sufficiente" framing.
+  - **Search wiring** (`_resolve_beg()`): an undamaged leader gets no
+    effect at all, no roll consulted (a documented no-effect, not an
+    oversight). Once damaged, the guardian's own species is looked up
+    in `MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER` (defaulting to `ANIMAL`
+    -- zero mercy -- for any species missing from that table) and
+    `resolve_beg_for_mercy()` rolls once; success returns the same
+    `SearchExecutionResult(accepted=True, combat_resolved=False,
+    fled=True)` shape a successful Flee already uses, failure falls
+    through to the plan's own next tactic.
+  - Non-breaking: full suite passed unchanged (2836 passed) before any
+    new tests were written. 9 new tests added (5 in `tests/
+    test_encounter.py` covering the six-tier coverage, the Animal/
+    Mechanical zero, the monotonic increase by intelligence, and the
+    roll boundary; 4 in `tests/test_search_execution.py` covering the
+    undamaged no-effect, an Animal-tier monster's guaranteed refusal,
+    and both the success and failure branches for a damaged leader) --
+    2845 passed total.
 
 ## Setup
 
