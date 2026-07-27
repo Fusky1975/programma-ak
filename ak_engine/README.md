@@ -6607,12 +6607,10 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     cumulative percentage thresholds in the source's own listed order.
     Returns `None` only for `Monster.NOMONSTER` (no distribution
     recorded).
-  - **Deliberately not wired anywhere**: like Phase 150's province-
-    renaming mechanism, this is a pure, callable mechanism with no
-    connection to an actual world-generation pipeline, because this
-    project still has none (`models/feature.py`'s own docstring: "world
-    generation itself remains the blocking gap") -- nothing to wire it
-    to yet, not a gap in this phase's own scope.
+  - ~~Deliberately not wired anywhere~~ **wired into `turn/
+    world_generation.py _create_feature()` as of Phase 246**, once that
+    module's own Phase 242 existence closed this phase's own "nothing
+    to wire it to yet" gap -- see Phase 246's own note below.
   - 12 new tests in `tests/test_monster.py`: full-coverage/sentinel-
     exclusion/100%-sum checks across all 60 species, single/two/three-
     option data samples, `roll_monster_alignment()`'s no-roll behavior
@@ -6640,13 +6638,10 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
     abilities in the source (absent, not a hidden zero-everything row,
     the same convention `MONSTER_STATS`'s own 6-of-60 coverage already
     established).
-  - **Deliberately not wired anywhere**, for the same reason Phase
-    176's `roll_monster_alignment()` isn't: this is exactly the data a
-    future phase would need for a spellcasting monster guardian to use
-    its own `CAST` tactic in an Encounter Plan (already flagged
-    elsewhere as "blocked on the Cast-tactic-spell-id gap") -- the data
-    is now real and ready, but there is still no monster-side Cast-
-    tactic combat engine in this project to hand it to.
+  - ~~Deliberately not wired anywhere~~ **wired into `turn/
+    search_execution.py` as of Phase 209**, once that phase built the
+    CAST orchestration engine for Search encounters -- see that
+    phase's own note above.
   - 7 new tests in `tests/test_monster.py`: exact 29-species coverage
     (with a subset of the blank-column species confirmed absent),
     single-school and four-school data samples, a cross-check against
