@@ -128,6 +128,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster
 from ak_engine.models.treasure import Treasure
@@ -222,6 +223,16 @@ class Feature:
     # world generation (e.g. most existing tests), matching this
     # project's established "no source, no silent default" convention.
     treasure: Treasure | None = None
+    # Phase 246: the guardian's own Alignment -- `models/monster.py
+    # roll_monster_alignment()` (Phase 176) existed as a pure, callable,
+    # fully-tested mechanism with nothing to wire it to ("this project
+    # still has none" of a world-generation pipeline, per that phase's
+    # own note); `turn/world_generation.py` (Phase 242) closed that gap,
+    # so `_create_feature()` now calls it here. `None` for a feature with
+    # no guardian, or one created outside world generation (most existing
+    # tests) -- same "no source, no silent default" convention `treasure`
+    # above already established.
+    guardian_alignment: Alignment | None = None
     # Phase 193: Hide Feature [4.23.3] ("This feature will become magically
     # hidden" -- models/power.py CAST_SPELL_FEATURE_DESCRIPTION corroborates
     # the same wording). No sourced duration exists anywhere (permanent vs.

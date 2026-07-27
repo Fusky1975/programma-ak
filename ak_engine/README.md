@@ -10057,7 +10057,7 @@ complete (Phases 209-211).
     selected index actually drives which of the 4 variants renders --
     2892 passed total.
 
-- **Phase 245 (current)**: renders the in-person discovery half of [3.2]
+- **Phase 245**: renders the in-person discovery half of [3.2]
   -- `discover_features()`'s own results (Phase 242), rolled every
   EXPLORE dispatch but thrown away ever since, are now surfaced and
   narrated. `report/turn_report.py describe_feature_discovery()` (new),
@@ -10103,6 +10103,44 @@ complete (Phases 209-211).
     1 assertion added to an existing `tests/test_move_execution.py`
     test (`exploration.discovered_features == [feature]`) -- 2894
     passed total.
+
+- **Phase 246 (current)**: wires `models/monster.py
+  roll_monster_alignment()` (Phase 176) into world generation --
+  a pure, fully-tested mechanism that had nothing to wire it to
+  when it was built ("this project still has none [of a world-
+  generation pipeline]", that phase's own note), unblocked now
+  that `turn/world_generation.py` (Phase 242) *is* that pipeline.
+  `turn/world_generation.py _create_feature()` now rolls the
+  guardian's own Alignment right after picking it, stored in a new
+  `models/feature.py Feature.guardian_alignment: Alignment | None`
+  field (`None` for a feature with no guardian, or one built outside
+  world generation -- most existing tests -- same convention
+  `treasure` already established).
+  - **Also corrected two stale "deliberately not wired anywhere"
+    docstring claims found while touching this area**: `models/
+    monster.py`'s own `roll_monster_alignment()` docstring (Phase
+    176) and `MONSTER_MAGIC_ABILITIES` docstring (Phase 177) both
+    still said so, even though Phase 209 already wired
+    `MONSTER_MAGIC_ABILITIES` into `turn/search_execution.py`'s CAST
+    orchestration engine. Both struck through and corrected in place
+    rather than left to mislead a future reader, the same "fix stale
+    docs found in passing" practice used for Phase 244's own README
+    correction.
+  - Non-breaking check surfaced one real rng-consumption change (not a
+    bug, an expected side effect of adding a new roll):
+    `test_generate_world_features_sea_success_uses_aquatic_guardian`'s
+    scripted guardian (`Monster.GI_OCTOPUS`) has a 2-option alignment
+    distribution, so it now consumes one extra `rng.random()` call the
+    test's script didn't provide -- fixed by adding the missing
+    scripted value, not by changing behavior. Every other existing
+    `test_world_generation.py` test happened to pick a single-option
+    guardian (`Monster.R_DRAGON`, 100% Evil), so they were unaffected --
+    confirmed by checking each one's actual guardian pick rather than
+    assumed. 2 new tests added (1 confirming the single-option
+    zero-roll case, 1 driving both sides of a two-option 50/50 split to
+    prove the roll's outcome actually reaches `Feature.
+    guardian_alignment`, not just that a call happens) -- 2895 passed
+    total.
 
 ## Setup
 

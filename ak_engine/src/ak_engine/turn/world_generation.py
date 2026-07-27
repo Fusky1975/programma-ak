@@ -67,7 +67,7 @@ from ak_engine.models.feature import (
 )
 from ak_engine.models.game_state import GameState
 from ak_engine.models.map import HexCoord, Terrain
-from ak_engine.models.monster import Monster
+from ak_engine.models.monster import Monster, roll_monster_alignment
 from ak_engine.models.treasure import Treasure
 
 LAND_FEATURE_CHANCE = 0.60
@@ -125,7 +125,20 @@ def _create_feature(state: GameState, coord: HexCoord, *, sea: bool, rng: random
     candidates = FEATURE_TYPE_CANDIDATE_MONSTERS.get(feature_type, LAND_MONSTER_POOL)
     guardian = rng.choice(candidates)
     treasure = rng.choice(TREASURE_POOL)
-    feature = Feature(state.new_feature_id(), coord, feature_type, guardian_monster=guardian, treasure=treasure)
+    # Phase 246: models/monster.py roll_monster_alignment() (Phase 176)
+    # existed as a pure, tested mechanism with nothing to wire it to --
+    # that phase's own note: "nothing to wire it to yet... this project
+    # still has none [of a world-generation pipeline]". This module now
+    # is that pipeline, so the guardian's own Alignment is rolled here.
+    guardian_alignment = roll_monster_alignment(guardian, rng)
+    feature = Feature(
+        state.new_feature_id(),
+        coord,
+        feature_type,
+        guardian_monster=guardian,
+        treasure=treasure,
+        guardian_alignment=guardian_alignment,
+    )
     state.add_feature(feature)
     return feature
 

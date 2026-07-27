@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.feature import FeatureType
 from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
@@ -66,7 +67,9 @@ def test_generate_world_features_land_success_creates_one_feature():
     state.provinces[coord] = _province(coord, Terrain.PLAINS)
     # rng.random() sequence: land-roll (< 0.60 -> success), double-roll (>= 0.20 -> no
     # second). Each successful _create_feature() consumes 3 rng.choice() calls (feature
-    # type, guardian, treasure).
+    # type, guardian, treasure). choice_indices=[0,0,0] picks Monster.R_DRAGON as
+    # guardian, a single-option species (100% Evil), so roll_monster_alignment()
+    # (Phase 246) consumes zero further rng.random() calls -- no third value needed.
     rng = ScriptedRandom([0.1, 0.5], choice_indices=[0, 0, 0])
     created = generate_world_features(state, rng)
     assert len(created) == 1
@@ -74,6 +77,26 @@ def test_generate_world_features_land_success_creates_one_feature():
     assert created[0].kind in LAND_FEATURE_TYPES
     assert created[0].guardian_monster not in AQUATIC_MONSTERS
     assert created[0].treasure in TREASURE_POOL
+    assert created[0].guardian_alignment is Alignment.EVIL
+
+
+def test_generate_world_features_guardian_alignment_rolled_for_multi_option_species():
+    # Monster.GI_OCTOPUS (SEA_FEATURE_TYPES[0]'s first candidate) has a
+    # 50/50 Neutral/Pagan distribution -- the roll actually drives which
+    # one lands, proving Phase 246's wiring isn't a no-op.
+    low_coord, high_coord = HexCoord(7, 7), HexCoord(8, 8)
+
+    state_low = GameState()
+    state_low.provinces[low_coord] = _province(low_coord, Terrain.SEA)
+    rng_low = ScriptedRandom([0.05, 0.1], choice_indices=[0, 0, 0])
+    created_low = generate_world_features(state_low, rng_low)
+    assert created_low[0].guardian_alignment is Alignment.NEUTRAL
+
+    state_high = GameState()
+    state_high.provinces[high_coord] = _province(high_coord, Terrain.SEA)
+    rng_high = ScriptedRandom([0.05, 0.9], choice_indices=[0, 0, 0])
+    created_high = generate_world_features(state_high, rng_high)
+    assert created_high[0].guardian_alignment is Alignment.PAGAN
 
 
 def test_generate_world_features_land_double_feature():
@@ -101,11 +124,15 @@ def test_generate_world_features_sea_success_uses_aquatic_guardian():
     state = GameState()
     coord = HexCoord(5, 5)
     state.provinces[coord] = _province(coord, Terrain.SEA)
-    rng = ScriptedRandom([0.05], choice_indices=[0, 0, 0])
+    # Second rng.random() value feeds roll_monster_alignment() (Phase 246) --
+    # choice_indices=[0,0,0] picks Monster.GI_OCTOPUS (2 alignment options,
+    # so it consumes one roll, unlike the land tests' R_DRAGON pick below).
+    rng = ScriptedRandom([0.05, 0.1], choice_indices=[0, 0, 0])
     created = generate_world_features(state, rng)
     assert len(created) == 1
     assert created[0].kind in SEA_FEATURE_TYPES
     assert created[0].guardian_monster in AQUATIC_MONSTERS
+    assert created[0].guardian_alignment is not None
 
 
 def test_generate_world_features_sea_failure_creates_nothing():

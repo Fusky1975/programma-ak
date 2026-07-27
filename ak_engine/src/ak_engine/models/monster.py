@@ -170,13 +170,16 @@ That statement fixes two design points directly:
 - **This is world-generation-time data, not a turn action.** The
   rulebook itself never re-rolls a placed monster's Alignment mid-game
   -- it's decided once, when "the world is created and monsters are
-  placed." Like Phase 150's province-renaming design (`turn/
-  rename_province.py`, mechanism-only, not connected to a parser this
-  project never built), `roll_monster_alignment()` is a pure, callable
-  mechanism with no wiring into an actual world-generation pipeline,
-  because this project still has none (`models/feature.py`'s own
-  docstring: "world generation itself remains the blocking gap") --
-  nothing to connect it to yet, not a gap in this phase's own scope.
+  placed." At the time of this phase, `roll_monster_alignment()` was a
+  pure, callable mechanism with no wiring into an actual world-
+  generation pipeline, because this project still had none
+  (`models/feature.py`'s own docstring then: "world generation itself
+  remains the blocking gap") -- nothing to connect it to yet, not a gap
+  in this phase's own scope. ~~Deliberately not wired anywhere~~
+  **wired into `turn/world_generation.py _create_feature()` as of
+  Phase 246**, once that module's own Phase 242 existence closed the
+  "nothing to connect it to" gap -- see that phase's own note in
+  `ak_engine/README.md` for the wiring.
 
 Every species' own alignment tuple sums to exactly 100 (`sum(o.percent
 for o in options) == 100`), verified by `tests/test_monster.py`'s own
@@ -209,14 +212,17 @@ ability for -- absent species genuinely have none, the same "don't
 invent zero-rows" convention `MONSTER_STATS`'s own 6-of-60 coverage
 already established (module docstring, above).
 
-**Also deliberately not wired anywhere**, for the same reason Phase
-176's `roll_monster_alignment()` isn't: this is exactly the data a
-future phase would need to let a spellcasting monster guardian use its
-own `CAST` tactic in an Encounter Plan (`turn/encounter.py`'s own Troll-
-regeneration addendum already flags that whole mechanic as "blocked on
-the Cast-tactic-spell-id gap") -- the data is real and ready, but there
-is still no monster-side Cast-tactic combat engine in this project to
-hand it to.
+**At the time of this phase, also deliberately not wired anywhere**,
+for the same reason Phase 176's `roll_monster_alignment()` wasn't: this
+is exactly the data a future phase would need to let a spellcasting
+monster guardian use its own `CAST` tactic in an Encounter Plan
+(`turn/encounter.py`'s own Troll-regeneration addendum already flagged
+that whole mechanic as "blocked on the Cast-tactic-spell-id gap") -- the
+data was real and ready, but there was still no monster-side Cast-tactic
+combat engine in this project to hand it to. ~~Deliberately not wired
+anywhere~~ **wired into `turn/search_execution.py` as of Phase 209**,
+once that phase built the CAST orchestration engine for Search
+encounters -- see that phase's own note in `ak_engine/README.md`.
 
 **Phase 182 addendum -- Spiritwrack's own Undead/Mechanical/Animal-
 Intelligence species lists, project-original, user-supplied.** Spelled
