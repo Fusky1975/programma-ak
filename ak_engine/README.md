@@ -9678,7 +9678,7 @@ complete (Phases 209-211).
     confirming the simulation doesn't mutate the real combatants) --
     2810 passed total.
 
-- **Phase 239 (current)**: Steal [ST] success formula (`turn/
+- **Phase 239**: Steal [ST] success formula (`turn/
   encounter.py`), wired into `turn/search_execution.py`'s tactic walk
   -- closing the codebase-wide gap audit's own concrete finding
   ("Formula di successo Steal inesistente" / "8 tattiche di Search non
@@ -9744,6 +9744,71 @@ complete (Phases 209-211).
     test_search_execution.py` covering hidden-treasure fall-through,
     a successful loot, evaded-capture fall-through, and all three
     caught-thief combat ranges) -- 2825 passed total.
+
+- **Phase 240 (current)**: Talk [TA] and Say [SA], wired into `turn/
+  search_execution.py`'s tactic walk; Fulfill [FU] researched and
+  confirmed out of scope. Rulebook [5.5]-[5.7], quoted in full by the
+  user (project author), from a file titled "TALK SAY FULFILL.txt"
+  (their own paraphrase of the printed rulebook, plus a per-species
+  "DR" table).
+  - **Talk's DR gate**: `TALK_MONSTER_DRUID_LEVEL_REQUIRED`, sourced
+    from `HostAK/TP/CTME.PAS`'s own `talkdiff` table -- "DR" is that
+    table's column header, confirmed as the Druid ability's own
+    abbreviation (`CTBOTH.PAS` line 151: `'DR','TH','EX','SP','SA'`).
+    Cross-checked exhaustively against the user's own supplied table:
+    43 of 60 species agreed exactly; the 17 that disagreed (Beholder,
+    Black Dragon, Chimera, Elemental Sorceror, Gargoyle, Ghost, Giant,
+    Giant Clam, Giant Worm, Green Dragon, Hydra, Imp, Mermaid, Mummy,
+    Spectre, Troll, Werewolf) were resolved in the Pascal table's
+    favor, confirmed directly by the user.
+  - **The Attack/Ignore/Deal reaction**: no numeric split exists
+    anywhere in either source -- `Get_Reply`/`Check_RWish` (`DEF2.PAS`,
+    inside `{$IFDEF Moderator}`) turned out to be tooling for a *human*
+    moderator to manually judge pre-scripted quest content
+    (`_qplotno`), not an automated formula. Confirmed directly with the
+    user: project-original values (`resolve_talk_reaction()`, 40%
+    Attack / 35% Ignore / 25% Deal), with a Druidic-aligned caster's own
+    Attack chance nearly halved (20%) and the freed probability added
+    to Deal, per the rulebook's own "maggiormente disposto ad
+    aiutarlo" ("more inclined to help") text.
+  - **Search wiring**: Attack/Ignore both leave the encounter
+    unresolved (no special effect, the plan's own next tactic decides
+    what happens); Deal ends the Search honestly unresolved
+    (`combat_resolved=False`, no winner) rather than as a combat
+    win/loss, since Fulfill's own persistence doesn't exist (below). A
+    second rulebook case -- talking to an independent wandering Hero
+    reveals Alignment/Temperament/hire cost -- is confirmed out of
+    scope: Search's own target is always the guardian monster, never a
+    character.
+  - **Say**: "non fa consumare tempo di combattimento" ("doesn't
+    consume combat time") turned out to already be exactly what the
+    tactic walk's own "unwired maneuvers are silently skipped" fallback
+    does -- given its own explicit `Maneuver.SAY` branch purely to
+    document that this is deliberate, not incidental. No new behavior.
+  - **Fulfill, confirmed out of scope, not attempted**: "dopo aver
+    accettato le sue condizioni" ("after accepting its conditions"),
+    together with "Non è possibile usare sia la tattica Talk che
+    Fulfill nello stesso Piano d'Incontro" (Talk and Fulfill can't
+    share an Encounter Plan), reads as Fulfill honoring a deal a
+    *previous turn's* Talk already secured -- needing a "this Feature
+    has a pending deal with this leader" state persisted on
+    `Feature`/`GameState` across turns that doesn't exist anywhere in
+    this project (the same class of gap as the still-unbuilt treasure/
+    monster/rumor content-generation system).
+  - Two fixed-in-passing regressions in pre-existing Phase 238 tests:
+    both used `Maneuver.TALK` as an inert "something else came first"
+    placeholder tactic, which broke once Talk stopped being a no-op
+    (`Monster.ARCHER`'s own 0-level DR requirement meant the placeholder
+    now actually rolled a reaction). Swapped to `Maneuver.GIVE`, still
+    genuinely unwired.
+  - Non-breaking: full suite passed unchanged (2825 passed, after
+    fixing the two regressed Phase 238 tests above) before any new
+    tests were written. 11 new tests added (5 in `tests/
+    test_encounter.py` covering the DR-table coverage/spot-values, the
+    gate check, and the reaction-roll boundaries including the Druidic
+    shift; 6 in `tests/test_search_execution.py` covering the DR gate,
+    Attack/Ignore/Deal outcomes, the Druidic bonus actually being
+    wired, and Say's own no-op) -- 2836 passed total.
 
 ## Setup
 

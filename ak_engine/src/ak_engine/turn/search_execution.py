@@ -237,7 +237,9 @@ from ak_engine.turn.encounter import (
     EncounterCombatResult,
     FireArrowShot,
     StealTargetCunning,
+    TalkReaction,
     blocks_cast_and_archery,
+    can_talk_to_monster,
     control_undead_failure_new_hit_points,
     holy_symbol_hit_chance,
     ice_suspension_is_frozen,
@@ -256,6 +258,7 @@ from ak_engine.turn.encounter import (
     resolve_personal_combat_spell_cast,
     resolve_steal_attempt,
     resolve_steal_evasion,
+    resolve_talk_reaction,
     roll_fireball_damage,
     roll_holy_symbol_undead_damage,
     roll_ice_suspension_flying_bonus_rounds,
@@ -912,6 +915,33 @@ def execute_search(
             outcome.guardian_monster = feature.guardian_monster
         return outcome
 
+    def _resolve_talk() -> SearchExecutionResult | None:
+        """Talk [TA], rulebook [5.5] -- Phase 240 (``turn/encounter.py``'s
+        own Phase 240 addendum has the full quoted rulebook text, the DR
+        gate table, and the Attack/Ignore/Deal reaction roll). If the
+        leader's own Druid skill doesn't meet the guardian's own
+        ``talkdiff`` requirement, no effect -- the character simply can't
+        communicate with this species. Attack/Ignore both leave the
+        encounter unresolved (the plan's own next tactic decides what
+        happens next, same as any other no-effect tactic); Deal ends the
+        Search honestly unresolved rather than as a combat win/loss --
+        Fulfill's own persistence this would need doesn't exist yet (see
+        ``turn/encounter.py``'s own Fulfill addendum).
+        """
+
+        druid_level = leader.skills.pair_for_ability(Ability.DRUID)[0] if leader.skills is not None else 0
+        if not can_talk_to_monster(feature.guardian_monster, druid_level):
+            return None
+        caster_is_druidic = leader.alignment is Alignment.DRUID
+        reaction = resolve_talk_reaction(rng, caster_is_druidic=caster_is_druidic)
+        if reaction is TalkReaction.DEAL:
+            return SearchExecutionResult(
+                accepted=True,
+                combat_resolved=False,
+                reason="the guardian proposes a deal -- Fulfill isn't wired yet (see module docstring)",
+            )
+        return None  # Attack/Ignore -- no special effect, the plan continues
+
     for tactic_index, tactic in enumerate(request.tactics):
         if tactic.maneuver is Maneuver.FLEE:
             if rng.random() < FLEE_CHANCE[stats.speed]:
@@ -956,9 +986,19 @@ def execute_search(
             if outcome is not None:
                 return outcome
             continue
-        # Every other maneuver (Talk, Say, Give, Fulfill, Scout, Use_MI,
-        # Beg) isn't wired -- skip it and keep walking the plan, matching
-        # how real Encounter Plans mix wired and unwired tactics (module
+        if tactic.maneuver is Maneuver.TALK:
+            outcome = _resolve_talk()
+            if outcome is not None:
+                return outcome
+            continue
+        if tactic.maneuver is Maneuver.SAY:
+            # Phase 240: "non fa consumare tempo di combattimento" --
+            # a documented no-op, not an oversight (see `turn/
+            # encounter.py`'s own Phase 240 addendum).
+            continue
+        # Every other maneuver (Give, Fulfill, Scout, Use_MI, Beg) isn't
+        # wired -- skip it and keep walking the plan, matching how real
+        # Encounter Plans mix wired and unwired tactics (module
         # docstring's own quoted examples).
 
     if combat_attempted:

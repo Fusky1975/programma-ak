@@ -137,6 +137,13 @@ from ak_engine.turn.encounter import (
     resolve_steal_evasion,
     steal_evasion_chance,
     steal_success_chance,
+    TALK_ATTACK_CHANCE,
+    TALK_DRUIDIC_ATTACK_CHANCE,
+    TALK_IGNORE_CHANCE,
+    TALK_MONSTER_DRUID_LEVEL_REQUIRED,
+    TalkReaction,
+    can_talk_to_monster,
+    resolve_talk_reaction,
 )
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Spell
@@ -1717,3 +1724,53 @@ def test_monster_steal_cunning_spans_all_three_tiers():
     assert MONSTER_STEAL_CUNNING[Monster.GOLEM] is StealTargetCunning.AVERAGE
     # Covers every real species MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER does.
     assert MONSTER_STEAL_CUNNING.keys() == MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER.keys()
+
+
+# -- Phase 240: Talk / Say / Fulfill --
+
+
+def test_talk_monster_druid_level_required_covers_all_60_species():
+    all_real_species = set(Monster) - {Monster.NOMONSTER}
+    assert TALK_MONSTER_DRUID_LEVEL_REQUIRED.keys() == all_real_species
+
+
+def test_talk_monster_druid_level_required_spot_values():
+    # Sourced from HostAK/TP/CTME.PAS's own talkdiff table, per the user's
+    # own confirmation to prefer it over their supplied text where the two
+    # disagreed (see module docstring's own Phase 240 addendum).
+    assert TALK_MONSTER_DRUID_LEVEL_REQUIRED[Monster.ROC] == 1
+    assert TALK_MONSTER_DRUID_LEVEL_REQUIRED[Monster.COUATL] == 0
+    assert TALK_MONSTER_DRUID_LEVEL_REQUIRED[Monster.GOLEM] == 4
+    assert TALK_MONSTER_DRUID_LEVEL_REQUIRED[Monster.CHIMERA] == 4
+    assert TALK_MONSTER_DRUID_LEVEL_REQUIRED[Monster.ARCHER] == 0
+
+
+def test_can_talk_to_monster_gate():
+    assert can_talk_to_monster(Monster.GARGOYLE, 1) is False
+    assert can_talk_to_monster(Monster.GARGOYLE, 2) is True
+    assert can_talk_to_monster(Monster.ARCHER, 0) is True
+
+
+def test_resolve_talk_reaction_boundaries():
+    # Attack 0-0.40, Ignore 0.40-0.75, Deal 0.75-1.0.
+    assert resolve_talk_reaction(ScriptedRandom([0.0])) is TalkReaction.ATTACK
+    assert resolve_talk_reaction(ScriptedRandom([TALK_ATTACK_CHANCE - 0.01])) is TalkReaction.ATTACK
+    assert resolve_talk_reaction(ScriptedRandom([TALK_ATTACK_CHANCE])) is TalkReaction.IGNORE
+    assert (
+        resolve_talk_reaction(ScriptedRandom([TALK_ATTACK_CHANCE + TALK_IGNORE_CHANCE - 0.01]))
+        is TalkReaction.IGNORE
+    )
+    assert resolve_talk_reaction(ScriptedRandom([TALK_ATTACK_CHANCE + TALK_IGNORE_CHANCE])) is TalkReaction.DEAL
+    assert resolve_talk_reaction(ScriptedRandom([0.999])) is TalkReaction.DEAL
+
+
+def test_resolve_talk_reaction_druidic_shifts_attack_to_deal():
+    # A roll that reads Ignore/Deal for a non-Druidic caster (0.30 is above
+    # the Druidic 20% attack threshold) reads Attack for a Druidic one.
+    assert resolve_talk_reaction(ScriptedRandom([0.30]), caster_is_druidic=False) is TalkReaction.ATTACK
+    assert resolve_talk_reaction(ScriptedRandom([0.30]), caster_is_druidic=True) is TalkReaction.IGNORE
+    # Ignore's own boundary is unaffected by the Druidic bonus.
+    assert (
+        resolve_talk_reaction(ScriptedRandom([TALK_DRUIDIC_ATTACK_CHANCE]), caster_is_druidic=True)
+        is TalkReaction.IGNORE
+    )

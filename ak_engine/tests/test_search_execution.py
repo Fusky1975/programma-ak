@@ -45,6 +45,12 @@ def _steal_request(feature_id: int, *following: Maneuver) -> SearchRequest:
     return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=tactics)
 
 
+def _talk_request(feature_id: int, *following: Maneuver) -> SearchRequest:
+    tactics = [SearchTactic(maneuver=Maneuver.TALK)]
+    tactics += [SearchTactic(maneuver=m) for m in following]
+    return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=tactics)
+
+
 def test_execute_search_leader_not_found():
     state = GameState()
     result = execute_search(state, LEADER_ID, _melee_request(1))
@@ -1423,9 +1429,10 @@ def test_execute_search_cast_augur_combat_monster_caster_has_no_effect():
 
 
 def test_execute_search_cast_augur_combat_not_first_tactic_flee_succeeds():
-    # AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER -- Maneuver.TALK (unwired,
-    # no-op, no RNG consumed) stands in as a harmless "something else came
-    # first" tactic.
+    # AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER -- Maneuver.GIVE (still
+    # unwired, no-op, no RNG consumed as of Phase 240) stands in as a
+    # harmless "something else came first" tactic. Talk itself is no
+    # longer inert (Phase 240), so it can't be reused here.
     leader = _skilled_leader(Ability.PSYCHIC, 5, temper=Temper.COWARDLY)
     state = GameState()
     state.add_leader(leader)
@@ -1434,7 +1441,7 @@ def test_execute_search_cast_augur_combat_not_first_tactic_flee_succeeds():
         feature_id=1,
         unconfirmed_extra0=0,
         tactics=[
-            SearchTactic(maneuver=Maneuver.TALK),
+            SearchTactic(maneuver=Maneuver.GIVE),
             SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.AUGUR_COMBAT.value),
             SearchTactic(maneuver=Maneuver.MELEE),
         ],
@@ -1465,7 +1472,7 @@ def test_execute_search_cast_augur_combat_not_first_tactic_flee_fails_falls_thro
         feature_id=1,
         unconfirmed_extra0=0,
         tactics=[
-            SearchTactic(maneuver=Maneuver.TALK),
+            SearchTactic(maneuver=Maneuver.GIVE),
             SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.AUGUR_COMBAT.value),
             SearchTactic(maneuver=Maneuver.MELEE),
         ],
@@ -1697,3 +1704,121 @@ def test_execute_search_steal_caught_bow_range_resolves_fire_arrow_duel():
     assert mock_fire.called
     assert result.winner == "leader"
     assert result.feature_looted is True
+
+
+# -- Phase 240: Talk / Say --
+
+
+def test_execute_search_talk_dr_gate_not_met_falls_through():
+    # Gargoyle needs Druid level 2 -- a leader with no Druid skill can't
+    # even communicate, so the plan falls through to its own Melee.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_talk_attack_reaction_falls_through():
+    # Archer needs Druid level 0 -- any leader can talk to it. A low roll
+    # (below the 40% Attack threshold) reads Attack -- no special effect,
+    # the plan's own Melee still runs.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_talk_ignore_reaction_falls_through():
+    # A mid-range roll (between the 40% Attack and 75% Ignore boundaries)
+    # reads Ignore -- also no special effect.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5] * 20))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_talk_deal_reaction_ends_search_unresolved():
+    # A high roll (above the 75% Ignore boundary) reads Deal -- the
+    # guardian proposes a deal, ending the Search honestly unresolved
+    # (Fulfill isn't wired) rather than as a combat win/loss.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
+
+    assert not mock_melee.called
+    assert result.accepted is True
+    assert result.combat_resolved is False
+    assert result.winner is None
+
+
+def test_execute_search_talk_druidic_alignment_shifts_toward_ignore_and_deal():
+    # A 0.30 roll reads Attack for a non-Druidic caster (below the 40%
+    # threshold) but Ignore for a Druidic one (above the Druidic 20%
+    # threshold) -- confirms the alignment bonus is actually wired, not
+    # just present in encounter.py's own formula.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    non_druidic_leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION)
+    state.add_leader(non_druidic_leader)
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.30] * 20))
+    assert mock_melee.called  # Attack -- no special effect
+
+    state2 = GameState()
+    druidic_leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION, alignment=Alignment.DRUID)
+    state2.add_leader(druidic_leader)
+    state2.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee2:
+        result2 = execute_search(state2, LEADER_ID, request, ScriptedRandom([0.30] * 20))
+    assert mock_melee2.called  # Ignore -- also no special effect, but reached via a different branch
+    assert result2.winner == "leader"
+
+
+def test_execute_search_say_is_a_documented_noop_falls_through():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[SearchTactic(maneuver=Maneuver.SAY), SearchTactic(maneuver=Maneuver.MELEE)],
+    )
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert result.winner == "leader"

@@ -2824,3 +2824,163 @@ MONSTER_STEAL_CUNNING: dict[Monster, StealTargetCunning] = {
 
 def resolve_monster_hides_treasure(cunning: StealTargetCunning, rng: random.Random) -> bool:
     return rng.random() < STEAL_MONSTER_HIDE_TREASURE_CHANCE[cunning]
+
+
+# Talk [TA], rulebook [5.5] -- Phase 240. Quoted in full by the user
+# (project author): "Quando un personaggio parla (Talk) con un mostro
+# che difende un Luogo Speciale, il mostro o lo attaccherà, o lo
+# ignorerà, o gli proporrà un accordo come ad esempio una ricerca che
+# verrà ricompensata con il dono di un oggetto magico ... Quando un
+# personaggio di allineamento Druidico riesce a parlare con un mostro,
+# quest'ultimo può dimostrarsi maggiormente disposto ad aiutarlo di
+# quando non lo sarebbe nei confronti di personaggi di diverso
+# allineamento." A second case the user's own text also covers --
+# talking to an independent character (a wandering Hero) reveals their
+# Alignment/Temperament/hire cost -- is confirmed out of scope here:
+# Search's own target is always the guardian monster, never a
+# character (see `turn/search_execution.py`'s own Phase 240 addendum).
+#
+# **The DR (Druid-skill) gate**: `TALK_MONSTER_DRUID_LEVEL_REQUIRED`,
+# sourced from `HostAK/TP/CTME.PAS`'s own `talkdiff` table ("DR" is
+# that table's own column header, confirmed as the Druid ability's
+# abbreviation at `CTBOTH.PAS` line 151: `'DR','TH','EX','SP','SA'`).
+# Cross-checked against the user's own supplied rulebook table: 43 of
+# 60 species agreed exactly; where the two disagreed (17 species:
+# Beholder, Black Dragon, Chimera, Elemental Sorceror, Gargoyle, Ghost,
+# Giant, Giant Clam, Giant Worm, Green Dragon, Hydra, Imp, Mermaid,
+# Mummy, Spectre, Troll, Werewolf), the user (project author) confirmed
+# directly that the Pascal table wins.
+TALK_MONSTER_DRUID_LEVEL_REQUIRED: dict[Monster, int] = {
+    Monster.ROC: 1,
+    Monster.GRYPHON: 1,
+    Monster.COUATL: 0,
+    Monster.GI_EAGLE: 1,
+    Monster.SPHINX: 0,
+    Monster.R_DRAGON: 0,
+    Monster.B_DRAGON: 0,
+    Monster.GR_DRAGON: 0,
+    Monster.S_DRAGON: 0,
+    Monster.GO_DRAGON: 0,
+    Monster.GI_WORM: 3,
+    Monster.TITAN: 0,
+    Monster.GIANT: 0,
+    Monster.BIGFOOT: 1,
+    Monster.ARCHER: 0,
+    Monster.SWORDSMAN: 0,
+    Monster.WHITE_MAGE: 0,
+    Monster.NEC_MAGE: 0,
+    Monster.ELE_MAGE: 0,
+    Monster.PSY_MAGE: 0,
+    Monster.ILL_MAGE: 0,
+    Monster.WITCH: 0,
+    Monster.DRYAD: 0,
+    Monster.CENTAUR: 0,
+    Monster.GENIE: 0,
+    Monster.GOLEM: 4,
+    Monster.GARGOYLE: 2,
+    Monster.BASILISK: 2,
+    Monster.MEDUSA: 0,
+    Monster.BAL_DEMON: 0,
+    Monster.MAR_DEMON: 0,
+    Monster.SUCCUBUS: 0,
+    Monster.RAKSHASHA: 0,
+    Monster.ICE_DEVIL: 0,
+    Monster.BONE_DEVIL: 0,
+    Monster.IMP: 0,
+    Monster.WEREWOLF: 0,
+    Monster.CHIMERA: 4,
+    Monster.HYDRA: 4,
+    Monster.BEHOLDER: 2,
+    Monster.TROLL: 0,
+    Monster.MINOTAUR: 1,
+    Monster.GI_WOLVERINE: 1,
+    Monster.TREANT: 0,
+    Monster.GI_AMOEBA: 4,
+    Monster.GI_P_MANTIS: 3,
+    Monster.GI_SCORPION: 3,
+    Monster.GI_WASP: 3,
+    Monster.GI_SPIDER: 3,
+    Monster.GHOST: 0,
+    Monster.VAMPIRE: 0,
+    Monster.MUMMY: 0,
+    Monster.BANSHEE: 0,
+    Monster.LICH: 0,
+    Monster.SPECTRE: 0,
+    Monster.GI_OCTOPUS: 2,
+    Monster.GI_CLAM: 2,
+    Monster.ELASMOSAURUS: 2,
+    Monster.GW_WHALE: 2,
+    Monster.MERMAID: 0,
+}
+
+
+def can_talk_to_monster(monster_species: Monster, druid_level: int) -> bool:
+    """Whether a character's own Druid skill level meets `talkdiff`'s own
+    per-species requirement to communicate with this monster at all.
+    """
+
+    return druid_level >= TALK_MONSTER_DRUID_LEVEL_REQUIRED.get(monster_species, 0)
+
+
+class TalkReaction(Enum):
+    """The three outcomes the rulebook names for a successful Talk (DR
+    gate met): the monster attacks, ignores the character, or proposes
+    a deal.
+    """
+
+    ATTACK = "Attack"
+    IGNORE = "Ignore"
+    DEAL = "Deal"
+
+
+# No numeric split between Attack/Ignore/Deal is given anywhere --
+# confirmed directly with the user (project author): project-original
+# values, not sourced. A Druidic-aligned caster shifts probability mass
+# from Attack to Deal, per the rulebook's own "maggiormente disposto ad
+# aiutarlo" ("more inclined to help") text -- Ignore's own chance stays
+# fixed either way.
+TALK_ATTACK_CHANCE = 0.40
+TALK_IGNORE_CHANCE = 0.35
+TALK_DRUIDIC_ATTACK_CHANCE = 0.20
+
+
+def resolve_talk_reaction(rng: random.Random, *, caster_is_druidic: bool = False) -> TalkReaction:
+    attack_chance = TALK_DRUIDIC_ATTACK_CHANCE if caster_is_druidic else TALK_ATTACK_CHANCE
+    roll = rng.random()
+    if roll < attack_chance:
+        return TalkReaction.ATTACK
+    if roll < attack_chance + TALK_IGNORE_CHANCE:
+        return TalkReaction.IGNORE
+    return TalkReaction.DEAL
+
+
+# Say [SA] and Fulfill [FU], rulebook [5.6]/[5.7] -- Phase 240.
+#
+# **Say**: "Un personaggio può dire (Say) tutte le parole indicate dal
+# giocatore, entro un limite di 160 caratteri. Questa azione non fa
+# consumare tempo di combattimento. La successiva tattica del
+# personaggio è eseguita nello stesso round di combattimento della
+# tattica Say." A flat-out no-op for this project's own tactic walk --
+# already exactly what `turn/search_execution.py`'s existing "unwired
+# maneuvers are silently skipped, keep walking" fallback does (skipping
+# consumes no round and immediately proceeds to the next tactic, the
+# same behavior "doesn't consume combat time" describes). Given its own
+# explicit `Maneuver.SAY` branch as of this phase purely to document
+# that this is deliberate, not incidental.
+#
+# **Fulfill**: "Quando un mostro propone un accordo, il personaggio può
+# onorarlo (Fulfill) dopo aver accettato le sue condizioni ... Non
+# sempre però il mostro tiene fede al suo impegno, specialmente se è un
+# mostro Malvagio e/o se il suo Allineamento è molto differente da
+# quello del personaggio." "Dopo aver accettato le sue condizioni"
+# ("after accepting its conditions") -- together with "Non è possibile
+# usare sia la tattica Talk che Fulfill nello stesso Piano d'Incontro"
+# ("Talk and Fulfill can't both be used in the same Encounter Plan") --
+# reads as Fulfill honoring a deal a *previous turn's* Talk already
+# secured, not one from later in the same plan. That needs a "this
+# Feature has a pending deal with this leader" state persisted on
+# `Feature`/`GameState` across turns; no such state exists anywhere in
+# this project yet (the same class of gap as the still-unbuilt
+# treasure/monster/rumor content-generation system Explore's own
+# docstring already flags). Confirmed out of scope, not attempted --
+# Fulfill stays unwired.
