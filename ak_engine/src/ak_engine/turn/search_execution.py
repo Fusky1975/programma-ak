@@ -45,11 +45,16 @@ resolves"**:
   "every real Search order ends in Melee and/or Scout" across all 12
   real Search phases in the sample files -- ``Maneuver.MELEE``,
   ``Maneuver.FLEE``, and (as of this phase) ``Maneuver.SHOOT`` (Fire
-  Arrow) are wired to a real resolution; unwired tactics (Steal, Talk,
-  Say, Give, Fulfill, Scout, Cast, Use_MI, Beg) are silently skipped in
-  the walk rather than aborting it, since a plan mixing a wired and an
-  unwired tactic is exactly what the real examples above show
-  ("ST, CA-FI, ME, SC" mixes Steal and Cast, both unwired, with Melee).
+  Arrow) are wired to a real resolution; at the time, every other tactic
+  (Steal, Talk, Say, Give, Fulfill, Scout, Cast, Use_MI, Beg) was
+  silently skipped in the walk rather than aborting it, since a plan
+  mixing a wired and an unwired tactic is exactly what the real examples
+  above show ("ST, CA-FI, ME, SC" mixes Steal and Cast, both unwired at
+  the time, with Melee). **Since wired up through Phase 258**: Steal
+  (Phase 239), Cast (Phase 209/210/211/237/238), Talk/Say (Phase 240),
+  Beg (Phase 241), and Fulfill (Phase 258) all now resolve for real; the
+  "unwired tactic, keep walking" fallback below still applies to
+  whatever remains unwired (Give, Scout, Use_MI).
   If no wired tactic is present at all, or the walk finishes without
   resolving (Fire Arrow's shots ran out and nothing else followed),
   ``combat_resolved`` reflects that honestly (see ``execute_search()``'s
@@ -132,14 +137,11 @@ resolves"**:
   Arrow, or one of ``_resolve_cast_tactic()``'s own instant-kill spell
   branches -- now credits the guardian's own *starting* hit points
   (captured before combat mutates them) to ``monster_hp_defeated``.
-  **Only the "killed" half is wired here.** The rulebook's other half,
-  "metà dei punti se neutralizzato con trattative" (half credit for a
-  monster *negotiated* into standing down rather than killed), needs
-  the Fulfill/Talk-Say mechanic this module's own docstring already
-  flags as unwired (the "Say, Give, Fulfill... silently skipped"
-  paragraph above) -- ``monster_hp_neutralized`` stays at its Phase
-  59-style "field exists, no consumer yet" default until that mechanic
-  is built, not guessed at here.
+  **The other half -- "metà dei punti se neutralizzato con trattative"
+  (half credit for a monster *negotiated* into standing down rather
+  than killed) -- is wired as of Phase 258**: a successful Fulfill (see
+  ``_resolve_fulfill()`` below) credits ``monster_hp_neutralized`` with
+  half the guardian's own starting hit points instead.
 
 **Not wired into ``plan_dispatch.py``'s existing scripted-rng test
 suite as a silent behavior change without review**: unlike Challenge/
@@ -268,6 +270,7 @@ from ak_engine.turn.encounter import (
     resolve_augur_combat,
     resolve_beg_for_mercy,
     resolve_fire_arrow_duel,
+    resolve_fulfill_honored,
     resolve_gate_demon_refusal,
     resolve_hand_of_death_channel,
     resolve_illusory_hero_duel,
@@ -337,7 +340,10 @@ class SearchExecutionResult:
     accepted: bool
     reason: str | None = None
     combat_resolved: bool = False
-    winner: str | None = None  # "leader" / "monster" / None (both survived)
+    # "leader" / "monster" / None (both survived). Phase 258: "leader" with
+    # `combat_resolved=False` is now also possible -- a successful Fulfill
+    # ends the Search peacefully, with no duel ever fought.
+    winner: str | None = None
     feature_looted: bool = False
     leader_killed: bool = False
     fled: bool = False
@@ -970,10 +976,11 @@ def execute_search(
         ``talkdiff`` requirement, no effect -- the character simply can't
         communicate with this species. Attack/Ignore both leave the
         encounter unresolved (the plan's own next tactic decides what
-        happens next, same as any other no-effect tactic); Deal ends the
-        Search honestly unresolved rather than as a combat win/loss --
-        Fulfill's own persistence this would need doesn't exist yet (see
-        ``turn/encounter.py``'s own Fulfill addendum).
+        happens next, same as any other no-effect tactic); Deal records
+        this leader as the feature's own ``pending_deal_leader_id``
+        (Phase 258), for a later turn's Fulfill to honor -- see
+        ``_resolve_fulfill()`` and ``turn/encounter.py resolve_fulfill_
+        honored()``'s own module comment.
         """
 
         druid_level = leader.skills.pair_for_ability(Ability.DRUID)[0] if leader.skills is not None else 0
@@ -982,12 +989,42 @@ def execute_search(
         caster_is_druidic = leader.alignment is Alignment.DRUID
         reaction = resolve_talk_reaction(rng, caster_is_druidic=caster_is_druidic)
         if reaction is TalkReaction.DEAL:
+            feature.pending_deal_leader_id = leader_id
             return SearchExecutionResult(
                 accepted=True,
                 combat_resolved=False,
-                reason="the guardian proposes a deal -- Fulfill isn't wired yet (see module docstring)",
+                reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
             )
         return None  # Attack/Ignore -- no special effect, the plan continues
+
+    def _resolve_fulfill() -> SearchExecutionResult | None:
+        """Fulfill [FU], rulebook [5.7] -- Phase 258. Honors a deal a prior
+        turn's Talk secured on this feature (``Feature.pending_deal_
+        leader_id``) -- no effect if this leader holds no pending deal
+        here. The attempt (success or failure) always consumes the
+        pending flag -- rulebook [5.6]'s own "Talk and Fulfill can't both
+        be used in the same Encounter Plan" reads as a one-shot honor
+        attempt, not a repeatable check. See ``turn/encounter.py resolve_
+        fulfill_honored()``'s own module comment for the honor-roll
+        formula and its sourcing.
+
+        Success ends the Search peacefully -- the guardian is neutralized
+        via negotiation, not killed, so ``monster_hp_neutralized`` (the
+        rulebook's own "metà dei punti se neutralizzato con trattative"
+        half-credit) is credited instead of ``monster_hp_defeated``, and
+        no treasure is granted -- unlike a combat win, nothing in the
+        available source ties Fulfill's own success to looting the
+        feature. Failure leaves the encounter unresolved; the plan
+        continues to its next tactic, no combat forced.
+        """
+
+        if feature.pending_deal_leader_id != leader_id:
+            return None
+        feature.pending_deal_leader_id = None
+        if resolve_fulfill_honored(feature.guardian_alignment, leader.alignment, rng):
+            leader.merit_tally.monster_hp_neutralized += monster_starting_hit_points // 2
+            return SearchExecutionResult(accepted=True, combat_resolved=False, winner="leader")
+        return None  # not honored -- the plan continues to its next tactic
 
     def _resolve_beg() -> SearchExecutionResult | None:
         """Beg [BE] -- Phase 241, project-original (no Pascal source, no
@@ -1062,6 +1099,11 @@ def execute_search(
             continue
         if tactic.maneuver is Maneuver.TALK:
             outcome = _resolve_talk()
+            if outcome is not None:
+                return outcome
+            continue
+        if tactic.maneuver is Maneuver.FULFILL:
+            outcome = _resolve_fulfill()
             if outcome is not None:
                 return outcome
             continue

@@ -255,7 +255,8 @@ def test_execute_search_leader_win_credits_the_monsters_starting_hit_points():
 
     assert result.winner == "leader"
     assert state.leaders[LEADER_ID].merit_tally.monster_hp_defeated == expected_hp
-    # The negotiated half stays unwired -- see module docstring.
+    # A real combat win credits the "killed" half only -- the negotiated
+    # half is a separate, Fulfill-only path (Phase 258, see below).
     assert state.leaders[LEADER_ID].merit_tally.monster_hp_neutralized == 0
 
 
@@ -2000,3 +2001,114 @@ def test_execute_search_beg_failure_falls_through():
 
     assert mock_melee.called
     assert result.winner == "leader"
+
+
+# -- Phase 258: Fulfill --
+
+
+def _fulfill_request(feature_id: int, *following: Maneuver) -> SearchRequest:
+    tactics = [SearchTactic(maneuver=Maneuver.FULFILL)]
+    tactics += [SearchTactic(maneuver=m) for m in following]
+    return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=tactics)
+
+
+def test_execute_search_talk_deal_reaction_records_the_pending_deal():
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ):
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
+
+    assert feature.pending_deal_leader_id == LEADER_ID
+
+
+def test_execute_search_fulfill_no_pending_deal_falls_through():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+    request = _fulfill_request(1, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_fulfill_pending_deal_for_a_different_leader_falls_through():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.CAVE,
+        guardian_monster=Monster.GARGOYLE,
+        pending_deal_leader_id=99,
+    )
+    state.add_feature(feature)
+    request = _fulfill_request(1, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+    assert feature.pending_deal_leader_id == 99  # untouched -- not this leader's own deal
+
+
+def test_execute_search_fulfill_honored_ends_search_peacefully_and_credits_half_hp():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.CAVE,
+        guardian_monster=Monster.GARGOYLE,
+        pending_deal_leader_id=LEADER_ID,
+    )
+    state.add_feature(feature)
+    expected_hp = random.Random(0).randint(*MONSTER_COMBAT_STATS[Monster.GARGOYLE].hit_points_range)
+    request = _fulfill_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_melee.called  # honored -- the Search ends peacefully, no duel ever fought
+    assert result.accepted is True
+    assert result.combat_resolved is False
+    assert result.winner == "leader"
+    assert result.feature_looted is False
+    assert feature.looted is False  # nothing ties Fulfill's own success to looting -- see module docstring
+    assert feature.pending_deal_leader_id is None
+    assert state.leaders[LEADER_ID].merit_tally.monster_hp_neutralized == expected_hp // 2
+    assert state.leaders[LEADER_ID].merit_tally.monster_hp_defeated == 0
+
+
+def test_execute_search_fulfill_not_honored_falls_through_and_clears_the_deal():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.CAVE,
+        guardian_monster=Monster.GARGOYLE,
+        pending_deal_leader_id=LEADER_ID,
+    )
+    state.add_feature(feature)
+    request = _fulfill_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called  # not honored -- no forced combat, just the plan's own next tactic
+    assert result.winner == "leader"
+    assert feature.pending_deal_leader_id is None  # the attempt still consumes the pending flag
+    assert state.leaders[LEADER_ID].merit_tally.monster_hp_neutralized == 0

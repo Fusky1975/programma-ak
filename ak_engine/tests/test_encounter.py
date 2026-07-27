@@ -146,6 +146,10 @@ from ak_engine.turn.encounter import (
     resolve_talk_reaction,
     BEG_MERCY_CHANCE,
     resolve_beg_for_mercy,
+    FULFILL_ALIGNMENT_DISTANCE_PENALTY_PER_STEP,
+    FULFILL_BASE_HONOR_CHANCE,
+    FULFILL_EVIL_PENALTY,
+    resolve_fulfill_honored,
 )
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Spell
@@ -1810,3 +1814,61 @@ def test_resolve_beg_for_mercy_boundary():
 
 def test_resolve_beg_for_mercy_animal_never_succeeds():
     assert resolve_beg_for_mercy(MirrorImageIntelligenceTier.ANIMAL, ScriptedRandom([0.0])) is False
+
+
+# -- Phase 258: Fulfill --
+
+
+def test_resolve_fulfill_honored_boundary_at_the_base_chance_when_same_alignment_and_not_evil():
+    # Same alignment (distance 0), guardian not Evil -- chance is exactly
+    # FULFILL_BASE_HONOR_CHANCE, no penalty applied.
+    assert (
+        resolve_fulfill_honored(Alignment.GOOD, Alignment.GOOD, ScriptedRandom([FULFILL_BASE_HONOR_CHANCE - 0.01]))
+        is True
+    )
+    assert resolve_fulfill_honored(Alignment.GOOD, Alignment.GOOD, ScriptedRandom([FULFILL_BASE_HONOR_CHANCE])) is False
+
+
+def test_resolve_fulfill_honored_alignment_distance_reduces_the_chance():
+    # Divine (ordinal 0) vs Undead (ordinal 7): distance 7, Undead isn't
+    # Evil, so only the distance penalty applies.
+    expected_chance = FULFILL_BASE_HONOR_CHANCE - 7 * FULFILL_ALIGNMENT_DISTANCE_PENALTY_PER_STEP
+    assert resolve_fulfill_honored(Alignment.UNDEAD, Alignment.DIVINE, ScriptedRandom([expected_chance - 0.01])) is True
+    assert resolve_fulfill_honored(Alignment.UNDEAD, Alignment.DIVINE, ScriptedRandom([expected_chance])) is False
+
+
+def test_resolve_fulfill_honored_evil_guardian_gets_an_extra_flat_penalty():
+    # Same alignment as the character (distance 0) but the guardian is
+    # Evil -- only the flat Evil penalty applies.
+    expected_chance = FULFILL_BASE_HONOR_CHANCE - FULFILL_EVIL_PENALTY
+    assert resolve_fulfill_honored(Alignment.EVIL, Alignment.EVIL, ScriptedRandom([expected_chance - 0.01])) is True
+    assert resolve_fulfill_honored(Alignment.EVIL, Alignment.EVIL, ScriptedRandom([expected_chance])) is False
+
+
+def test_resolve_fulfill_honored_distance_and_evil_penalties_stack():
+    # Evil (ordinal 5) vs Good (ordinal 1): distance 4, plus the flat Evil
+    # penalty -- both terms apply together.
+    expected_chance = (
+        FULFILL_BASE_HONOR_CHANCE - 4 * FULFILL_ALIGNMENT_DISTANCE_PENALTY_PER_STEP - FULFILL_EVIL_PENALTY
+    )
+    assert resolve_fulfill_honored(Alignment.EVIL, Alignment.GOOD, ScriptedRandom([expected_chance - 0.01])) is True
+    assert resolve_fulfill_honored(Alignment.EVIL, Alignment.GOOD, ScriptedRandom([expected_chance])) is False
+
+
+def test_resolve_fulfill_honored_missing_alignment_skips_the_distance_term():
+    # No guardian alignment recorded -- the distance term is skipped
+    # entirely (not guessed at zero or any other substitute), so an Evil
+    # character alongside an unknown guardian still gets the full base
+    # chance (no Evil penalty either, since guardian_alignment isn't
+    # confirmed Alignment.EVIL).
+    assert resolve_fulfill_honored(None, Alignment.EVIL, ScriptedRandom([FULFILL_BASE_HONOR_CHANCE - 0.01])) is True
+    assert resolve_fulfill_honored(None, Alignment.EVIL, ScriptedRandom([FULFILL_BASE_HONOR_CHANCE])) is False
+
+
+def test_resolve_fulfill_honored_missing_character_alignment_still_applies_the_evil_penalty():
+    # No character alignment recorded, but the guardian is confirmed Evil
+    # -- the flat Evil penalty still applies; only the distance term
+    # (which needs both sides) is skipped.
+    expected_chance = FULFILL_BASE_HONOR_CHANCE - FULFILL_EVIL_PENALTY
+    assert resolve_fulfill_honored(Alignment.EVIL, None, ScriptedRandom([expected_chance - 0.01])) is True
+    assert resolve_fulfill_honored(Alignment.EVIL, None, ScriptedRandom([expected_chance])) is False

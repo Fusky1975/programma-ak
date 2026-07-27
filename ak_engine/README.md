@@ -10467,7 +10467,7 @@ complete (Phases 209-211).
     kingdom's own entry already sits in `discovered_by_kingdom` --
     2930 passed total.
 
-- **Phase 257 (current)**: adds a per-line season prefix to the
+- **Phase 257**: adds a per-line season prefix to the
   GENERAL INTELLIGENCE REPORT's world events, and wires Movement in as
   a fourth real event source -- both sourced directly from `SAY.PAS`.
   - `SEASON_NAME` (`report/turn_report.py`) transcribes `CTBOTH.PAS`'s
@@ -10553,6 +10553,67 @@ complete (Phases 209-211).
     (event recorded, season-prefixed), a mixed overflight/ground army
     (skipped), a mover with no army at the destination (skipped), and a
     result that didn't move (skipped) -- 2937 passed total.
+
+- **Phase 258 (current)**: wires Fulfill [FU] (rulebook [5.7]) into
+  `turn/search_execution.py`, the last unwired Search tactic with a real
+  execution-layer path -- and closes the Defender Merit Point formula's
+  own remaining gap, `MeritTally.monster_hp_neutralized` (Phase 255 had
+  only wired the "killed" half).
+  - `Feature.pending_deal_leader_id: int | None` (`models/feature.py`) --
+    a deal a prior turn's Talk secured, persisted across turns per
+    rulebook [5.6]/[5.7]'s own "dopo aver accettato le sue condizioni"
+    ("after accepting its conditions") and "Talk and Fulfill can't both
+    be used in the same Encounter Plan." `_resolve_talk()`'s own `DEAL`
+    branch now sets it instead of just returning an unresolved result;
+    `_resolve_fulfill()` (new) consumes and clears it (whether the
+    attempt succeeds or fails), no-opping if this leader holds no
+    pending deal on the feature.
+  - `resolve_fulfill_honored()` (`turn/encounter.py`) -- **project-
+    original, confirmed directly with the user (project author)**: the
+    rulebook's own text ("il mostro non sempre tiene fede al suo
+    impegno, specialmente se è Malvagio e/o se il suo Allineamento è
+    molto differente da quello del personaggio") is entirely
+    qualitative, with no numeric formula and no definition of what the
+    deal's own "conditions" concretely are -- so this models only the
+    abstract "was the deal honored" roll the quote actually describes,
+    not invented deal content. Reuses `models/alignment.py
+    ALIGNMENT_ORDINAL` (already load-bearing for Hire's ">2 ordinal
+    positions apart" rule and `Align_Est`) for the alignment-distance
+    penalty, plus a flat penalty when the guardian is confirmed Evil
+    (`Feature.guardian_alignment`, Phase 246) -- all three constants
+    (`FULFILL_BASE_HONOR_CHANCE=0.75`,
+    `FULFILL_ALIGNMENT_DISTANCE_PENALTY_PER_STEP=0.05`,
+    `FULFILL_EVIL_PENALTY=0.20`) are unsourced, confirmed design
+    choices, the same category `TALK_ATTACK_CHANCE`/`TALK_IGNORE_
+    CHANCE`/`TALK_DRUIDIC_ATTACK_CHANCE` already document for Talk's own
+    reaction roll. A missing alignment on either side skips the
+    distance term rather than guessing a substitute.
+  - Success ends the Search peacefully -- `combat_resolved=False`,
+    `winner="leader"`, no duel ever fought -- and credits half the
+    guardian's own starting hit points to `monster_hp_neutralized`
+    (the rulebook's own "metà dei punti se neutralizzato con
+    trattative"). No treasure is granted and `Feature.looted` stays
+    `False`: unlike a combat win, nothing in the available source ties
+    Fulfill's own success to looting the feature. Failure leaves the
+    Search unresolved -- the plan simply continues to its next tactic,
+    no combat forced.
+  - Fixed two stale docstring sentences found in passing while touching
+    this exact area: `turn/search_execution.py`'s own module docstring
+    still listed Steal/Talk/Say/Cast/Beg as "unwired" (all wired real
+    tactics since Phases 209-241) and claimed `monster_hp_neutralized`
+    "stays... until [Fulfill] is built" (now built) -- both corrected
+    to reflect current state, no code change needed for either.
+  - Non-breaking: full suite passed unchanged (2937 passed) before any
+    new tests were written. 11 new tests: 6 in `tests/test_encounter.py`
+    for `resolve_fulfill_honored()`'s own formula (base-chance boundary,
+    alignment-distance penalty, Evil penalty, both stacked, and each
+    penalty independently skipped when its own alignment side is
+    `None`); 5 in `tests/test_search_execution.py` (Talk's `DEAL`
+    reaction now records the pending deal; Fulfill with no pending deal,
+    or a pending deal belonging to a different leader, falls through;
+    Fulfill honored ends the Search peacefully with the correct
+    half-HP credit; Fulfill not honored falls through and still clears
+    the pending flag) -- 2948 passed total.
 
 ## Setup
 

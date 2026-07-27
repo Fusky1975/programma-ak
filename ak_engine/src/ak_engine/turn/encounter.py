@@ -1218,7 +1218,7 @@ import random
 from dataclasses import dataclass
 from enum import Enum
 
-from ak_engine.models.alignment import Alignment
+from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.monster import Monster, MonsterSpeed
 from ak_engine.models.temper import Temper
@@ -2977,13 +2977,52 @@ def resolve_talk_reaction(rng: random.Random, *, caster_is_druidic: bool = False
 # usare sia la tattica Talk che Fulfill nello stesso Piano d'Incontro"
 # ("Talk and Fulfill can't both be used in the same Encounter Plan") --
 # reads as Fulfill honoring a deal a *previous turn's* Talk already
-# secured, not one from later in the same plan. That needs a "this
-# Feature has a pending deal with this leader" state persisted on
-# `Feature`/`GameState` across turns; no such state exists anywhere in
-# this project yet (the same class of gap as the still-unbuilt
-# treasure/monster/rumor content-generation system Explore's own
-# docstring already flags). Confirmed out of scope, not attempted --
-# Fulfill stays unwired.
+# secured, not one from later in the same plan. Needed a "this Feature
+# has a pending deal with this leader" state persisted on `Feature`
+# across turns -- added as of Phase 258 (`Feature.pending_deal_leader_id`,
+# `models/feature.py`; set by `turn/search_execution.py`'s own Talk
+# `DEAL` branch, consumed and cleared by its new Fulfill branch).
+#
+# **`resolve_fulfill_honored()` below is project-original, confirmed
+# directly with the user (project author)**: the rulebook quote above
+# is entirely qualitative (no numeric formula, no definition of what
+# the deal's own "conditions" concretely are) -- so, rather than invent
+# deal *content* (an item, a gold amount, ...) with nothing to source it
+# from, this project models only the abstract "was the deal honored"
+# roll the quote actually describes, the same narrow-but-honest slice
+# `turn/plan_dispatch.py`'s own Recruit/Hire co-location checks already
+# take for similarly under-specified mechanics. The formula reuses
+# `models/alignment.py ALIGNMENT_ORDINAL` (already load-bearing for
+# Hire's ">2 ordinal positions apart" rule and `Align_Est`) for "how far
+# apart" the two alignments genuinely are, plus a flat penalty when the
+# guardian is Evil (`Feature.guardian_alignment`, Phase 246) -- both
+# constants (`FULFILL_BASE_HONOR_CHANCE`, `FULFILL_ALIGNMENT_DISTANCE
+# _PENALTY_PER_STEP`, `FULFILL_EVIL_PENALTY`) are unsourced, confirmed
+# design choices, the same "no numeric split given anywhere" category
+# `TALK_ATTACK_CHANCE`/`TALK_IGNORE_CHANCE`/`TALK_DRUIDIC_ATTACK_CHANCE`
+# above already document for Talk's own reaction roll. A `None`
+# alignment on either side (a guardian with no `guardian_alignment` set,
+# or a leader with no `LeaderState.alignment` recorded) skips the
+# distance term entirely rather than guessing a substitute value.
+FULFILL_BASE_HONOR_CHANCE = 0.75
+FULFILL_ALIGNMENT_DISTANCE_PENALTY_PER_STEP = 0.05
+FULFILL_EVIL_PENALTY = 0.20
+
+
+def resolve_fulfill_honored(
+    guardian_alignment: Alignment | None, character_alignment: Alignment | None, rng: random.Random
+) -> bool:
+    """Whether the guardian honors a deal a prior Talk secured -- see the
+    module comment above for the formula's own sourcing and constants.
+    """
+
+    chance = FULFILL_BASE_HONOR_CHANCE
+    if guardian_alignment is not None and character_alignment is not None:
+        distance = abs(ALIGNMENT_ORDINAL[guardian_alignment] - ALIGNMENT_ORDINAL[character_alignment])
+        chance -= distance * FULFILL_ALIGNMENT_DISTANCE_PENALTY_PER_STEP
+    if guardian_alignment is Alignment.EVIL:
+        chance -= FULFILL_EVIL_PENALTY
+    return rng.random() < max(0.0, min(1.0, chance))
 
 
 # Beg [BE], rulebook [5.8] -- Phase 241. No Pascal source and no

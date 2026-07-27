@@ -241,6 +241,17 @@ class Feature:
     # "spell writes real state, nothing reads it yet" situation documented
     # for several other fields in `models/game_state.py`'s own docstring.
     magically_hidden: bool = False
+    # Phase 258: which leader (if any) currently holds a Talk-secured
+    # "deal" with this feature's own guardian, pending a later turn's
+    # Fulfill -- rulebook [5.6]/[5.7]'s own "dopo aver accettato le sue
+    # condizioni" ("after accepting its conditions") reads as a deal
+    # persisting *across* turns, not within the same Encounter Plan
+    # ("Talk and Fulfill can't both be used in the same Encounter Plan").
+    # Set by `turn/search_execution.py`'s own Talk `DEAL` reaction branch,
+    # consumed (cleared either way) by its Fulfill branch -- see `turn/
+    # encounter.py resolve_fulfill_honored()`'s own module comment for
+    # the honor-roll formula. `None` means no deal is currently pending.
+    pending_deal_leader_id: int | None = None
 
     def discovery_level(self, kingdom_id: int) -> int:
         return self.discovered_by_kingdom.get(kingdom_id, 0)
