@@ -10330,7 +10330,7 @@ complete (Phases 209-211).
     order that phase; a persistent Trail continuation (via
     `advance_trail()`) backfills it too -- 2916 passed total.
 
-- **Phase 253 (current)**: wires [3.14] ASpy's own "taxation of the
+- **Phase 253**: wires [3.14] ASpy's own "taxation of the
   province" line item -- `SAY.PAS`'s `_LSTax` ("Approximate Taxation:
   N"), templated back in Phase 115 (`render_spy_tax_estimate()`) but
   never called from anywhere, and `turn/aspy_execution.py`'s own
@@ -10364,6 +10364,45 @@ complete (Phases 209-211).
     test_turn_report.py` (`describe_aspy()` renders the line between
     Army Types and the characters/forces block; the line is omitted
     entirely when `tax_estimate is None`) -- 2920 passed total.
+
+- **Phase 254 (current)**: wires rulebook page 51's Marshal/Admiral
+  Merit Point formula ("TABELLA DELLE CARICHE IMPERIALI",
+  `turn/merit_points.py`, Phase 227) into real battle outcomes --
+  `MeritTally.land_battles_won_enemy_units`/`lost_own_units` and
+  `naval_battles_won_enemy_units`/`lost_own_units` had every consumer
+  (the formula functions) and renderer (the Imperial Office report)
+  already in place, but nothing anywhere ever incremented them.
+  - `turn/battle_orchestrator.py _record_battle_merit()` (new) runs
+    once per `fight_battle()` call, right after `battle_result` and the
+    Duel's own commander selection are known: the winning side's own
+    Supreme Commander is credited `+1 per enemy unit` (the size of the
+    *opposing* army fielded, one `ArmyState` = one "unità", not just
+    casualties), the losing side's own commander is debited `-1 per own
+    unit`, keyed to land vs. naval counters via `terrain is Terrain.SEA`
+    (the same land/naval split `_combat_ability_for_terrain()` already
+    uses for Tactical vs. Naval ability). An unled side (`None`
+    commander -- e.g. the defender's own garrison-commander fallback,
+    rulebook [7.1]: "has no abilities") has no leader to credit/debit
+    for that side, since it isn't a "battaglia comandata" for anyone; a
+    `"tie"` result records nothing for either side, since the rulebook's
+    "vinta"/"persa" wording doesn't address one -- both documented
+    no-ops, not guesses.
+  - Deliberately scoped to just Marshal/Admiral: `MeritTally`'s three
+    discovery-attribution fields (Chancellor) and two monster-HP fields
+    (Defender) still have no writer anywhere -- the former needs a
+    "who found this first" attribution model this project has never
+    had, the latter needs its own separate wiring into
+    `turn/search_execution.py`'s monster-encounter resolution, a
+    meaningfully different call site left for a future phase, the same
+    "one field at a time" precedent Phase 251 already set for this same
+    dataclass.
+  - Non-breaking: full suite passed unchanged (2920 passed) before any
+    new tests were written. 6 new tests added to
+    `tests/test_battle_orchestrator.py`: `_record_battle_merit()`
+    exercised directly for a land win/loss, a naval win/loss, a tie
+    (no-op), an unled winning side, and an unled losing side; plus one
+    end-to-end `fight_battle()` test confirming a led attacker's real
+    Merit Point credit after a genuine conquest -- 2926 passed total.
 
 ## Setup
 

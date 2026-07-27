@@ -291,12 +291,14 @@ class ArmyState:
 class MeritTally:
     """Cumulative, game-long inputs to the Imperial Office Merit Point
     formulas (Phase 227, ``turn/merit_points.py`` -- rulebook page 51's
-    "TABELLA DELLE CARICHE IMPERIALI"). Only ``resurrection_bless_casts``
-    has a real writer so far (``turn/cast_execution.py``'s
-    ``_execute_resurrection``/``_execute_bless``, Phase 251); every
-    other field below is still never incremented by any action in this
-    project. All default to 0: a leader who has fought no battles,
-    killed no monsters, cast no Resurrection/Bless, or been the
+    "TABELLA DELLE CARICHE IMPERIALI"). ``resurrection_bless_casts``
+    (``turn/cast_execution.py``'s ``_execute_resurrection``/
+    ``_execute_bless``, Phase 251) and the four land/naval battle
+    counters (``turn/battle_orchestrator.py _record_battle_merit()``,
+    Phase 254) now have real writers; the three discovery-attribution
+    fields and both monster-HP fields are still never incremented by any
+    action in this project. All default to 0: a leader who has fought no
+    battles, killed no monsters, cast no Resurrection/Bless, or been the
     first to find any Special Place/Discovery legitimately starts here,
     the same "field exists, no populating consumer yet" convention this
     project has used since Phase 59's own `tax_modifier_percent`/

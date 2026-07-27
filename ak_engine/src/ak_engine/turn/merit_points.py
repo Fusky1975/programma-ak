@@ -56,21 +56,26 @@ treasury") is now confirmed by the rulebook's own text, not a guess.
 "Per ogni battaglia terrestre comandata: se vinta, per ciascuna unità
 dell'esercito nemico +1; se persa, per ciascuna unità nel proprio
 esercito -1." `MeritTally.land_battles_won_enemy_units`/
-`land_battles_lost_own_units` are the raw counters (Phase 59-style,
-uninc­remented); no battle-outcome call site in this project attributes
-a fought battle to a specific commanding leader's cumulative Merit
-Point history yet (`turn/battle_orchestrator.py` resolves a battle's
-winner, not a per-leader running tally) -- a future wiring phase.
+`land_battles_lost_own_units` are **live as of Phase 254**:
+`turn/battle_orchestrator.py _record_battle_merit()` credits/debits
+each side's own Supreme Commander (`None` for an unled side -- not a
+"battaglia comandata" for anyone) right after `fight_battle()` resolves
+`battle_result.winner`, counting the *entire* opposing army fielded
+(one `ArmyState` = one "unità", the project's own existing 1:1
+army<->`BattleUnit` correspondence), not just casualties. A `"tie"`
+records nothing for either side -- the rulebook's own "vinta"/"persa"
+wording doesn't address one.
 
 ## Grande Ammiraglio / Admiral (10%)
-Same won/lost-unit formula as Marshal but for naval battles, **plus**:
-"Per ogni livello di abilità Navale +1" (live -- `LeaderState.skills`)
-and "Per ogni provincia di mare con rendita di 2+ gold +1" -- footnote 1
-confirms this last term is a flat per-kingdom count applied to *every*
-character of that kingdom, not per-leader-owned territory, so
-`admiral_merit_points()` counts qualifying sea provinces once per
-`leader.kingdom_id` and adds the same figure for every leader who shares
-that kingdom.
+Same won/lost-unit formula as Marshal but for naval battles (also live
+as of Phase 254, same `_record_battle_merit()` call, keyed off
+`terrain is Terrain.SEA`), **plus**: "Per ogni livello di abilità
+Navale +1" (live -- `LeaderState.skills`) and "Per ogni provincia di
+mare con rendita di 2+ gold +1" -- footnote 1 confirms this last term
+is a flat per-kingdom count applied to *every* character of that
+kingdom, not per-leader-owned territory, so `admiral_merit_points()`
+counts qualifying sea provinces once per `leader.kingdom_id` and adds
+the same figure for every leader who shares that kingdom.
 
 ## Gran Difensore / Defender (10%)
 "Per ciascun mostro ucciso: totale Punti Ferita del mostro (metà dei

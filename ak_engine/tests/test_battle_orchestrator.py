@@ -17,10 +17,12 @@ from ak_engine.turn.battle_orchestrator import (
     _build_battle_units,
     _commander_combatant,
     _maybe_fight_duel,
+    _record_battle_merit,
     _select_side_commander,
     fight_battle,
     fight_multi_attacker_battle,
 )
+from ak_engine.turn.battle_resolution import BattleResult
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.duel import Commander, provincial_garrison_commander
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS
@@ -1431,3 +1433,96 @@ def test_fight_multi_attacker_battle_second_separate_group_claims_an_already_cle
     assert second_battle.leader_ids == [20]
     assert second_battle.report.conquered is True
     assert second_battle.report.battle_result.winner == "attacker"
+
+
+# --- Merit Point battle-outcome recording (rulebook page 51, Phase 254) ---
+
+
+def _merit_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(1, 1, "Attacker Commander", FIELD))
+    state.add_leader(LeaderState(2, 2, "Defender Commander", FIELD))
+    return state
+
+
+def test_record_battle_merit_credits_winning_land_commander_and_debits_losing_one():
+    state = _merit_state()
+
+    _record_battle_merit(
+        state, Terrain.PLAINS, BattleResult(winner="attacker"), 1, 2, attacker_unit_count=3, defender_unit_count=5
+    )
+
+    assert state.leaders[1].merit_tally.land_battles_won_enemy_units == 5
+    assert state.leaders[2].merit_tally.land_battles_lost_own_units == 5
+    assert state.leaders[1].merit_tally.land_battles_lost_own_units == 0
+    assert state.leaders[2].merit_tally.land_battles_won_enemy_units == 0
+
+
+def test_record_battle_merit_credits_winning_naval_commander():
+    state = _merit_state()
+
+    _record_battle_merit(
+        state, Terrain.SEA, BattleResult(winner="defender"), 1, 2, attacker_unit_count=4, defender_unit_count=2
+    )
+
+    assert state.leaders[2].merit_tally.naval_battles_won_enemy_units == 4
+    assert state.leaders[1].merit_tally.naval_battles_lost_own_units == 4
+    # Naval and land counters are kept fully separate.
+    assert state.leaders[2].merit_tally.land_battles_won_enemy_units == 0
+
+
+def test_record_battle_merit_records_nothing_for_a_tie():
+    state = _merit_state()
+
+    _record_battle_merit(
+        state, Terrain.PLAINS, BattleResult(winner="tie"), 1, 2, attacker_unit_count=3, defender_unit_count=5
+    )
+
+    assert state.leaders[1].merit_tally.land_battles_won_enemy_units == 0
+    assert state.leaders[2].merit_tally.land_battles_lost_own_units == 0
+
+
+def test_record_battle_merit_skips_an_unled_winning_side():
+    state = _merit_state()
+
+    # The winning side (defender) has no commander (garrison fallback,
+    # leader_id=None) -- no one to credit -- but the losing side (attacker,
+    # leader 1) is still a real "battaglia comandata" for its own leader.
+    _record_battle_merit(
+        state, Terrain.PLAINS, BattleResult(winner="defender"), 1, None, attacker_unit_count=3, defender_unit_count=5
+    )
+
+    assert state.leaders[1].merit_tally.land_battles_lost_own_units == 3
+    assert state.leaders[1].merit_tally.land_battles_won_enemy_units == 0
+
+
+def test_record_battle_merit_skips_an_unled_losing_side():
+    state = _merit_state()
+
+    # The losing side (defender) has no commander -- nothing to debit --
+    # but the winning side (attacker, leader 1) still earns its credit.
+    _record_battle_merit(
+        state, Terrain.PLAINS, BattleResult(winner="attacker"), 1, None, attacker_unit_count=3, defender_unit_count=5
+    )
+
+    assert state.leaders[1].merit_tally.land_battles_won_enemy_units == 5
+    assert state.leaders[1].merit_tally.land_battles_lost_own_units == 0
+
+
+def test_fight_battle_wires_merit_points_for_a_led_winning_attacker():
+    # Same fixture/rng shape as
+    # test_fight_battle_reads_a_led_attackers_real_tactical_skill_end_to_end:
+    # attacker leader 1 wins outright, defender falls back to an unled
+    # garrison commander (leader_id=None) -- only the attacker's own
+    # commander has a real leader to credit.
+    state = build_state()
+    state.add_leader(LeaderState(1, 1, "Skilled Commander", FIELD, skills=SkillTable(raw_values=[5] * 30 + [0])))
+    state.armies[101].commanded_by = 1
+    rng = ScriptedRandom([0.05, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+
+    fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
+
+    assert state.leaders[1].merit_tally.land_battles_won_enemy_units == 1  # the lone defending army (201)
+    assert state.leaders[1].merit_tally.land_battles_lost_own_units == 0

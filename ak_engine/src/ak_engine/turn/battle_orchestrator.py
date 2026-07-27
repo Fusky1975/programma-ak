@@ -754,6 +754,81 @@ def _apply_pursuit(
     return destroyed_ids
 
 
+def _record_battle_merit(
+    state: GameState,
+    terrain: Terrain,
+    battle_result: BattleResult,
+    attacker_commander_leader_id: int | None,
+    defender_commander_leader_id: int | None,
+    attacker_unit_count: int,
+    defender_unit_count: int,
+) -> None:
+    """Phase 254: rulebook page 51's Marshal/Admiral formula
+    (``turn/merit_points.py``'s own module docstring, "TABELLA DELLE
+    CARICHE IMPERIALI") -- "+1 per enemy unit for a battle *commanded*
+    and won, -1 per own unit for one commanded and lost." Closes the gap
+    that formula's own docstring flagged: "no battle-outcome call site
+    in this project attributes a fought battle to a specific commanding
+    leader's cumulative Merit Point history yet."
+
+    Only a side's own Supreme Commander (Phase 30/49's real duel-commander
+    selection -- ``None`` for an unled side, e.g. the defender's own
+    garrison-commander fallback, rulebook [7.1]: "has no abilities") has a
+    ``LeaderState.merit_tally`` to credit or debit; an unled side's
+    outcome simply isn't a "battaglia comandata" (a battle *commanded*)
+    for anyone, so nothing is recorded for it -- not a guess, the
+    rulebook phrase itself supplies the condition.
+
+    A ``"tie"`` result (``BattleResult.winner``, ``turn/battle_resolution.py``)
+    records nothing for either side: the rulebook's own "vinta"/"persa"
+    wording doesn't address a tie, so this stays a documented no-op
+    rather than a guessed reading -- the same category of gap
+    ``merit_point_tiebreak_key()``'s own kingdom-less-Hero ``(0, 0)``
+    fallback already documents.
+
+    "Unit" here is one committed ``ArmyState`` (this project's own
+    existing 1:1 army<->``BattleUnit`` correspondence, Phase 9) -- the
+    *entire* opposing side fielded in the battle, not just units
+    destroyed: the rulebook text credits the size of the army *fought*,
+    and double-counting against the battle's own separate quality-change/
+    elimination outcome would misread "unità dell'esercito nemico" as
+    "casualties inflicted," a different, unstated claim. The losing
+    side's own unit count and the winning side's "enemy unit" count are
+    the same list by construction (one side's army *is* the other's
+    enemy), so a single ``unit_count`` serves both the winner's credit
+    and the loser's debit below.
+    """
+
+    if battle_result.winner == "tie":
+        return
+
+    is_naval = terrain is Terrain.SEA
+    if battle_result.winner == "attacker":
+        winner_leader_id = attacker_commander_leader_id
+        loser_leader_id = defender_commander_leader_id
+        unit_count = defender_unit_count
+    else:
+        winner_leader_id = defender_commander_leader_id
+        loser_leader_id = attacker_commander_leader_id
+        unit_count = attacker_unit_count
+
+    if winner_leader_id is not None:
+        winner_leader = state.leaders.get(winner_leader_id)
+        if winner_leader is not None:
+            if is_naval:
+                winner_leader.merit_tally.naval_battles_won_enemy_units += unit_count
+            else:
+                winner_leader.merit_tally.land_battles_won_enemy_units += unit_count
+
+    if loser_leader_id is not None:
+        loser_leader = state.leaders.get(loser_leader_id)
+        if loser_leader is not None:
+            if is_naval:
+                loser_leader.merit_tally.naval_battles_lost_own_units += unit_count
+            else:
+                loser_leader.merit_tally.land_battles_lost_own_units += unit_count
+
+
 def fight_battle(
     state: GameState,
     attacker_kingdom_id: int,
@@ -864,6 +939,12 @@ def fight_battle(
         province_coord=province_coord,
         attacker_kingdom_id=attacker_kingdom_id,
         defender_kingdom_id=defender_kingdom_id,
+    )
+
+    _record_battle_merit(
+        state, terrain, battle_result,
+        duel.attacker_commander_leader_id, duel.defender_commander_leader_id,
+        len(attacker_armies), len(defender_armies),
     )
 
     attacker_pursuit_destroyed: set[int] = set()
