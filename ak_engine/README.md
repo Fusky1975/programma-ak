@@ -10534,11 +10534,13 @@ rulebook before being turned into named, typed fields:
   selection/falsification logic has no surviving source either.~~ **The
   rumor mechanic now exists as of Phase 243** (`models/rumor.py`,
   `turn/rumor.py`), closing [3.2] in full -- see that phase's own note
-  above for the trigger-chance table and the content/truth design. No
-  report renderer consumes a `Rumor` yet (the same "record exists, no
-  consumer yet" gap several earlier phases already flag for their own
-  new state) -- that's the one piece still open. Everything outside a
-  fought battle besides Explore/Search is still unbuilt: the
+  above for the trigger-chance table and the content/truth design.
+  ~~No report renderer consumes a `Rumor` yet~~ **`describe_rumor()`
+  now renders a `Rumor` into prose as of Phase 244** -- see that
+  phase's own note above; `HostAK/TP/PROSE/FINDFEAT.X`, the sibling
+  in-person-discovery template (as opposed to heard-by-rumor), is
+  still not wired to any renderer. Everything outside a fought battle
+  besides Explore/Search is still unbuilt: the
   letter-report frame, financial report, and general exploration
   narrative all still need a turn-events log this project doesn't have
   yet.
