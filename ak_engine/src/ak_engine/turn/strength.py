@@ -60,6 +60,7 @@ from ak_engine.models.army_type import (
 )
 from ak_engine.models.map import Terrain
 from ak_engine.models.race import Race
+from ak_engine.turn.cast_execution import illusory_fog_strength
 from ak_engine.turn.combat import DEFENDER_BONUS, NEMESIS_PENALTY, Quality
 
 # Rulebook: "Elephants are unpredictable in battle and can have a strength
@@ -232,6 +233,7 @@ def compute_effective_strength(
     phantasmal_armies_level: int = 0,
     opponent_army_type: ArmyType | None = None,
     base_strength_override: float | None = None,
+    illusory_fog_affected: bool = False,
 ) -> float:
     """Full effective-strength pipeline, in the rulebook's documented order.
 
@@ -247,6 +249,16 @@ def compute_effective_strength(
     first and short-circuits the rest of this pipeline (quality,
     defender bonus, etc. would all still multiply a nonzero base by
     something, and the rule says exactly zero, not "reduced").
+
+    **Illusory Fog** (Phase 207 addendum, wired Phase 249): "All air
+    units... have their strength halved for any battle in the affected
+    province." ``illusory_fog_affected`` is the caller's own combined
+    "is this unit an air unit (or Mystic-Winds-affected) AND is this
+    province's ``ProvinceState.illusory_fog_active`` set" answer -- see
+    ``turn/cast_execution.py illusory_fog_strength()``/``is_illusory_
+    fog_affected_air_unit()``, whose own docstrings note neither was
+    called from here until now. Defaults to ``False`` (no effect) for
+    every pre-Phase-249 caller.
     """
 
     if army_type is ArmyType.WHALES and terrain is not Terrain.SEA:
@@ -278,6 +290,7 @@ def compute_effective_strength(
     strength *= exploration_advantage_multiplier(own_explored_percent, enemy_explored_percent)
     strength *= combat_ability_multiplier(combat_ability_level)
     strength *= phantasmal_armies_multiplier(phantasmal_armies_level)
+    strength = illusory_fog_strength(strength, affected=illusory_fog_affected)
     if opponent_army_type is not None and is_nemesis_of(army_type, opponent_army_type):
         strength *= NEMESIS_PENALTY
 

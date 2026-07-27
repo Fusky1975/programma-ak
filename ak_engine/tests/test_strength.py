@@ -161,6 +161,22 @@ def test_phantasmal_armies_level_stacks_into_compute_effective_strength():
     assert boosted == pytest.approx(baseline * 1.3)
 
 
+def test_illusory_fog_affected_halves_effective_strength():
+    baseline = compute_effective_strength(ArmyType.DRAGON_WING, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    fogged = compute_effective_strength(
+        ArmyType.DRAGON_WING, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, illusory_fog_affected=True
+    )
+    assert fogged == pytest.approx(baseline * 0.5)
+
+
+def test_illusory_fog_unaffected_by_default():
+    baseline = compute_effective_strength(ArmyType.DRAGON_WING, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    unaffected = compute_effective_strength(
+        ArmyType.DRAGON_WING, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, illusory_fog_affected=False
+    )
+    assert unaffected == pytest.approx(baseline)
+
+
 def test_nemesis_penalty_applied_when_opponent_given():
     with_nemesis = compute_effective_strength(
         ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, opponent_army_type=ArmyType.LEGION

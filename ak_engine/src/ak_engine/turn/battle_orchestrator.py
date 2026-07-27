@@ -169,6 +169,7 @@ from ak_engine.models.race import Race
 from ak_engine.turn.aftermath import roll_quality_change
 from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
+from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
@@ -303,11 +304,23 @@ def _build_battle_units(
     Phase 34's Duel garrison-commander fallback (which really has no
     ability data to draw on), an unled army's Druidic exposure runs
     through its province's King, not the garrison commander itself.
+
+    **Illusory Fog** (Phase 207 addendum, wired Phase 249): looked up
+    once per side via ``state.provinces.get(province_coord).
+    illusory_fog_active`` (``False`` if the province is unknown), then
+    combined per-army with ``turn/cast_execution.py is_illusory_fog_
+    affected_air_unit(army.army_type, mystic_winds_active)`` --
+    ``mystic_winds_active`` resolved by ``_mystic_winds_active_for()``,
+    the same "derive from the commanding leader, ``False`` for an unled
+    army" pattern ``_phantasmal_armies_level_for()`` already
+    established. Fully deterministic, no ``rng`` involved.
     """
 
     desert_without_camels = terrain is Terrain.DESERT and not any(
         army.army_type is ArmyType.CAMEL_CORPS for army in armies
     )
+    province = state.provinces.get(province_coord)
+    illusory_fog_active = province is not None and province.illusory_fog_active
 
     units = []
     for army in armies:
@@ -319,6 +332,10 @@ def _build_battle_units(
         is_fanatical = apply_fanaticism and roll_fanaticism(kingdom.alignment, rng)
         druidic_shortfall = _druidic_shortfall_for(army, state, kingdom.race, province_coord)
         phantasmal_armies_level = _phantasmal_armies_level_for(army, state)
+        mystic_winds_active = _mystic_winds_active_for(army, state)
+        illusory_fog_affected = illusory_fog_active and is_illusory_fog_affected_air_unit(
+            army.army_type, mystic_winds_active
+        )
         strength = compute_effective_strength(
             army.army_type,
             kingdom.race,
@@ -334,6 +351,7 @@ def _build_battle_units(
             phantasmal_armies_level=phantasmal_armies_level,
             own_explored_percent=own_explored_percent,
             enemy_explored_percent=enemy_explored_percent,
+            illusory_fog_affected=illusory_fog_affected,
         )
         rear_targeting_blocked = is_overflight_unit(army.army_type) and druidic_shortfall > 0
         units.append(
@@ -402,6 +420,23 @@ def _phantasmal_armies_level_for(army: ArmyState, state: GameState) -> int:
     if commander is None:
         return 0
     return commander.phantasmal_armies_level
+
+
+def _mystic_winds_active_for(army: ArmyState, state: GameState) -> bool:
+    """Phase 249, Illusory Fog's "and those affected by 'Mystic Winds'" clause:
+    an unled army has no commander to carry the flag, so it's simply
+    ``False`` -- the same "no commander, no buff" shape ``_phantasmal_
+    armies_level_for()`` already established, since ``LeaderState.
+    mystic_winds_active`` (Phase 204) is only ever set on the leader a
+    Mystic Winds cast targets.
+    """
+
+    if army.commanded_by is None:
+        return False
+    commander = state.leaders.get(army.commanded_by)
+    if commander is None:
+        return False
+    return commander.mystic_winds_active
 
 
 def _retreat_or_disband(

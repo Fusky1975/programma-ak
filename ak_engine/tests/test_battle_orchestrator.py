@@ -635,6 +635,75 @@ def test_build_battle_units_unled_army_gets_no_phantasmal_armies_bonus():
     assert units[0].effective_strength == pytest.approx(expected)
 
 
+def test_build_battle_units_halves_air_unit_strength_in_illusory_fog():
+    # Phase 249: Dragon Wing is a static OVERFLIGHT_AIR member -- halved in any
+    # province with ProvinceState.illusory_fog_active, no Mystic Winds needed.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Draconia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.DRAGONS, illusory_fog_active=True))
+    army = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(
+        ArmyType.DRAGON_WING, Race.DRAGONS, Quality.AVERAGE, Terrain.PLAINS, illusory_fog_affected=True
+    )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_illusory_fog_does_not_affect_ground_units():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, illusory_fog_active=True))
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(ArmyType.LEGION, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_illusory_fog_halves_a_mystic_winds_led_ground_unit():
+    # "...and those affected by 'Mystic Winds' Spell..." -- a Legion led by a
+    # Mystic-Winds-active commander counts as an air unit for this purpose.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, illusory_fog_active=True))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Windrider", location=FIELD, mystic_winds_active=True))
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(
+        ArmyType.LEGION, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, illusory_fog_affected=True
+    )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_no_fog_effect_when_province_not_fogged():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Draconia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.DRAGONS))  # illusory_fog_active defaults False
+    army = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(ArmyType.DRAGON_WING, Race.DRAGONS, Quality.AVERAGE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
 def test_build_battle_units_marks_an_overflight_unit_rear_targeting_blocked_when_shortfall_is_positive():
     # Phase 43: same scenario as the test above (Dragon Wing shortfall of
     # 4) -- an overflight-type unit with a real shortfall also gets

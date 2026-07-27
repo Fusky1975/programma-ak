@@ -565,21 +565,23 @@ text directly, one at a time.
      persistent flag, the same "spell writes real state, no consuming
      pipeline exists yet" shape `illusory_terrain`/`scar_terrain_gold_
      reduction` already use above.
-  2. **The strength-halving effect has a real, testable primitive, but
-     is not wired into the battle-strength pipeline this phase.**
+  2. **The strength-halving effect has a real, testable primitive,
+     wired into the battle-strength pipeline as of Phase 249.**
      `ILLUSORY_FOG_STRENGTH_MULTIPLIER = 0.5` and
      `is_illusory_fog_affected_air_unit(army_type, mystic_winds_
      active)` combine the static `models/army_type.py OVERFLIGHT_AIR`
-     membership with a caller-supplied Mystic Winds flag -- this
-     project has no per-army way to derive that flag itself, the exact
-     gap Mystic Winds' own Phase 204 addendum already flagged
-     (`MYSTIC_WINDS_MOVES_AS_AIR_UNIT`). `illusory_fog_strength(base_
-     strength, affected=...)` applies the halving. None of this is
-     called from `turn/strength.py`/`turn/battle_orchestrator.py`'s own
-     column-strength calculation yet, since neither consults
-     `ProvinceState.illusory_fog_active` or a per-army Mystic-Winds
-     flag anywhere today -- the same scale of cross-cutting wiring
-     Mystic Winds' own "ends before army battle" fact was deferred for.
+     membership with a per-army Mystic Winds flag -- resolved, as of
+     Phase 249, by `turn/battle_orchestrator.py _mystic_winds_active_
+     for()` the same "derive from the commanding leader, 0/False for an
+     unled army" pattern `_phantasmal_armies_level_for()` already
+     established, closing the "no per-army way to derive that flag"
+     gap this addendum originally flagged. `illusory_fog_strength(base_
+     strength, affected=...)` applies the halving, called from
+     `turn/strength.py compute_effective_strength()`'s own new
+     `illusory_fog_affected` parameter. `_build_battle_units()` looks
+     up `state.provinces.get(province_coord).illusory_fog_active`
+     once per side and combines it with each army's own Mystic-Winds-
+     derived affected flag -- see that function's own docstring.
   3. **The movement surcharge and end-of-turn dissipation are
      confirmed facts, not modeled.** `ILLUSORY_FOG_EXTRA_MOVEMENT_
      COST = 1` records "must expend 1 additional movement point when
@@ -1391,9 +1393,10 @@ def illusory_fog_strength(base_strength: float, *, affected: bool) -> float:
     """"have their strength halved for any battle in the affected province."
     ``affected`` is the caller's own ``is_illusory_fog_affected_air_
     unit()`` result (and, implicitly, whether the battle's own province
-    has ``ProvinceState.illusory_fog_active`` set) -- neither
-    ``turn/strength.py`` nor ``turn/battle_orchestrator.py`` calls this
-    yet.
+    has ``ProvinceState.illusory_fog_active`` set). Called from
+    ``turn/strength.py compute_effective_strength()`` as of Phase 249,
+    via its own ``illusory_fog_affected`` parameter -- see that
+    function's own docstring.
     """
 
     if not affected:

@@ -10181,7 +10181,7 @@ complete (Phases 209-211).
     leader in a kingdom isn't narrated for a different leader's own
     results) -- 2899 passed total.
 
-- **Phase 248 (current)**: propagates `board_width` the rest of the way
+- **Phase 248**: propagates `board_width` the rest of the way
   up the call chain -- from `describe_turn_results()` (Phase 247) into
   its two real callers, `describe_letter_reports()` (Phase 217) and
   `compose_letter_report()` (Phase 215) -- so a full end-to-end King's
@@ -10207,6 +10207,36 @@ complete (Phases 209-211).
     reaches both ACTION REPORT (the King's own heard rumor) and
     LETTER REPORTS (a different leader's own heard rumor) in one call
     -- 2902 passed total.
+
+- **Phase 249 (current)**: wires Illusory Fog's strength-halving effect
+  (`AdvancedAbility.ILLUSORY_FOG_SPELL`, Phase 207 addendum) into the
+  real battle-strength pipeline -- `turn/cast_execution.py illusory_
+  fog_strength()`/`is_illusory_fog_affected_air_unit()` had a fully
+  tested primitive since Phase 207, but neither `turn/strength.py` nor
+  `turn/battle_orchestrator.py` ever called it, so `ProvinceState.
+  illusory_fog_active` had no real effect.
+  - `turn/strength.py compute_effective_strength()` gains a new
+    `illusory_fog_affected: bool = False` keyword-only parameter,
+    applying `illusory_fog_strength()` in the multiplier chain
+    alongside `phantasmal_armies_multiplier`/nemesis -- `False` by
+    default, so every pre-Phase-249 caller is unaffected.
+  - `turn/battle_orchestrator.py _build_battle_units()` looks up
+    `state.provinces.get(province_coord).illusory_fog_active` once per
+    side, then combines it per-army with a new `_mystic_winds_active_
+    for()` helper -- the same "derive from the commanding leader,
+    `False` for an unled army" pattern `_phantasmal_armies_level_for()`
+    already established -- closing the "no per-army way to derive that
+    [Mystic Winds] flag" gap the Phase 207 addendum had originally
+    flagged, since `LeaderState.mystic_winds_active` (Phase 204) was
+    already sitting right there on the commanding leader.
+  - Non-breaking: full suite passed unchanged (2902 passed) before any
+    new tests were written. 6 new tests added: 2 in `tests/
+    test_strength.py` (halving applied/not-applied at the
+    `compute_effective_strength()` level) and 4 in `tests/
+    test_battle_orchestrator.py` (a static air unit halved in a fogged
+    province; a ground unit unaffected in the same fogged province; a
+    Mystic-Winds-led ground unit halved like an air unit; no effect at
+    all in an unfogged province) -- 2908 passed total.
 
 ## Setup
 
