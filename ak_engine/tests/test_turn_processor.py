@@ -874,6 +874,78 @@ def test_run_turn_unresolved_trail_preempts_p1_and_continues_the_chase():
     assert p2_entry.action is ActionCode.WAIT
 
 
+# -- Trail's own "Actions" field (Phase 252) ---------------------------------
+
+
+def test_run_turn_trail_backfills_the_targets_own_action_this_phase():
+    state = _chase_state()
+    state.leaders[20].location = CHASE_START  # same province as trailer -> guaranteed catch
+    trailer = _leader_with_phase(10, "Trailer", "P0", _trail_phase("P0", 20))
+    target = Leader(
+        leader_id=20,
+        name="Target",
+        plan=ActionPlan(
+            leader_id=20,
+            segments=[PlanSegment(0, 0, (), {"P0": PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])})],
+        ),
+    )
+
+    results = run_turn(
+        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.1])
+    )
+
+    trail_result = next(r for r in results if r.leader_id == 10 and r.phase_label == "P0").result
+    assert trail_result.spied_on is True
+    assert trail_result.actions is ActionCode.WAIT
+
+
+def test_run_turn_trail_actions_is_none_when_target_has_no_order_this_phase():
+    state = _chase_state()
+    state.leaders[20].location = CHASE_START
+    trailer = _leader_with_phase(10, "Trailer", "P0", _trail_phase("P0", 20))
+    # Target has no P0 phase at all -- idle this phase.
+    target = Leader(leader_id=20, name="Target", plan=ActionPlan(leader_id=20, segments=[PlanSegment(0, 0, (), {})]))
+
+    results = run_turn(
+        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.1])
+    )
+
+    trail_result = next(r for r in results if r.leader_id == 10 and r.phase_label == "P0").result
+    assert trail_result.spied_on is True
+    assert trail_result.actions is None
+
+
+def test_run_turn_trail_continuation_backfills_the_targets_own_action():
+    # Same P0-miss/P1-continuation shape as
+    # test_run_turn_unresolved_trail_preempts_p1_and_continues_the_chase,
+    # but the target is now a real TurnLeader with its own P1 order, so
+    # the continuation's own backfill (via _continue_active_pursuits) has
+    # something real to find.
+    state = _chase_state()
+    p0 = _trail_phase("P0", 20)
+    p1 = _lmove_phase("P1", DECOY)
+    p2 = PlanPhase(label="P2", action=ActionCode.WAIT, obj=0, extra=[0])
+    trailer = _three_phase_leader(10, "Trailer", p0, p1, p2)
+    target = Leader(
+        leader_id=20,
+        name="Target",
+        plan=ActionPlan(
+            leader_id=20,
+            segments=[PlanSegment(0, 0, (), {"P1": PlanPhase(label="P1", action=ActionCode.WAIT, obj=0, extra=[0])})],
+        ),
+    )
+
+    results = run_turn(
+        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1])
+    )
+
+    by_label = {(r.leader_id, r.phase_label): r for r in results}
+    p1_entry = by_label[(10, "P1")]
+    assert p1_entry.segment_index == -1  # continuation, not a real plan segment
+    assert p1_entry.result.spied_on is True
+    assert p1_entry.result.actions is ActionCode.WAIT
+
+
 def test_run_turn_pursue_with_no_target_is_not_registered_for_continuation():
     # "pursuer or target not found" is a terminal reason, not "did not
     # catch up this phase" -- P1's own order must dispatch normally, not

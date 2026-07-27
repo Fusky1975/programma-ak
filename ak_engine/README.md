@@ -10270,7 +10270,7 @@ complete (Phases 209-211).
     untouched for an uninvolved leader elsewhere in the same kingdom --
     2911 passed total.
 
-- **Phase 251 (current)**: wires `MeritTally.resurrection_bless_casts`
+- **Phase 251**: wires `MeritTally.resurrection_bless_casts`
   (Phase 227) -- the Imperial Office Merit Point system's first real
   writer. `turn/merit_points.py`'s own "Gran Sacerdote / Priest"
   section already computed `+1` per successful Resurrection/Bless cast,
@@ -10295,6 +10295,40 @@ complete (Phases 209-211).
     tally, a successful Bless increments the tally (plus a companion
     assertion on an existing failure-path test confirming a failed
     Resurrection leaves it at 0) -- 2913 passed total.
+
+- **Phase 252 (current)**: wires [3.17] Trail's sixth and last named
+  field, Actions -- the target's own `ActionCode` for the same phase
+  the Trail catches them. `turn/trail_execution.py TrailExecutionResult`
+  previously had 5 of 6 named intelligence fields; `actions` was simply
+  absent, not merely unpopulated, because `execute_trail()`/
+  `advance_trail()` have no visibility into any other leader's own
+  same-phase order.
+  - Rather than thread that visibility all the way down through
+    `plan_dispatch.py dispatch_phase()`/`run_leader_plan()` (both
+    heavily-used, central functions many other callers depend on),
+    this is wired as a narrower post-dispatch backfill entirely inside
+    `turn/turn_processor.py run_turn()` -- the one place that already
+    assembles every leader's own `PlanPhase` for the current phase
+    label before dispatching any of them. A `leader_id -> ActionCode`
+    map is built once per phase from that list, then a new
+    `_backfill_trail_actions()` helper stamps the target's own entry
+    onto a freshly-dispatched `TrailExecutionResult.actions`
+    immediately after dispatch, and the same map is threaded into
+    `_continue_active_pursuits()` for `advance_trail()`'s own
+    persistent-chase continuation. `execute_trail()`/`advance_trail()`
+    themselves are untouched -- `actions`, like `request` before it
+    (Phase 213), is caller-populated, not derivable from the state and
+    arguments either function is given today.
+  - `None` whenever the target had no order this phase at all -- idle,
+    or itself mid-chase and excluded from this phase's own entries --
+    the same "no data" convention every other Trail field already
+    uses, not a guess.
+  - Non-breaking: full suite passed unchanged (2913 passed) before any
+    new tests were written. 3 new tests added to `tests/
+    test_turn_processor.py`: a fresh Trail catch backfills the target's
+    own same-phase action; the field is `None` when the target had no
+    order that phase; a persistent Trail continuation (via
+    `advance_trail()`) backfills it too -- 2916 passed total.
 
 ## Setup
 

@@ -344,11 +344,18 @@ def run_turn(
             )
 
         entries = _collect_phase_entries(turn_leaders, label)
+        # Phase 252, [3.17] Trail's own "Actions" field: every leader's own
+        # decoded action for this phase label, before any of the filtering
+        # below removes entries -- a leader with no entry here (mid-chase,
+        # or simply idle) has no action to report, the same "no data"
+        # convention trail_execution.py's own module docstring already
+        # uses for its other fields. See that docstring's Phase 252 note.
+        action_this_phase_by_leader = {tl.leader.leader_id: phase.action for tl, _segment_index, phase in entries}
         # A leader still mid-chase has this phase's own order preempted
         # entirely -- see "PERSISTENT PURSUE/TRAIL CHASE" in the module
         # docstring for why this is checked once, at the phase's start.
         entries = [entry for entry in entries if entry[0].leader.leader_id not in active_pursuits]
-        results.extend(_continue_active_pursuits(active_pursuits, label, state, rng))
+        results.extend(_continue_active_pursuits(active_pursuits, label, state, rng, action_this_phase_by_leader))
 
         # A self-targeting PURSUE phase is a Patrol declaration ("Characters
         # On Patrol", see turn/patrol_execution.py's own docstring) -- it
@@ -466,6 +473,8 @@ def run_turn(
                 continue
             dispatch_results = _dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng)
             results.extend(dispatch_results)
+            if phase.action is ActionCode.TRAIL:
+                _backfill_trail_actions(dispatch_results, action_this_phase_by_leader)
             if phase.action in (ActionCode.PURSUE, ActionCode.TRAIL):
                 _register_pursuit_continuation(active_pursuits, tl.leader.leader_id, phase, dispatch_results)
             if phase.action is ActionCode.LMOVE:
@@ -656,14 +665,22 @@ def _continue_active_pursuits(
     label: str,
     state: GameState,
     rng: random.Random,
+    action_this_phase_by_leader: dict[int, ActionCode] | None = None,
 ) -> list[PhaseDispatchResult]:
     """Dispatches one ``advance_pursuit``/``advance_trail`` step for every leader still
     mid-chase, and drops resolved (or terminally-failed) chases from
     ``active_pursuits``. See the module docstring's "PERSISTENT PURSUE/
     TRAIL CHASE" section for the ``segment_index=-1`` sentinel and why
     resolution is checked once, here, at the phase's own start.
+
+    ``action_this_phase_by_leader`` (Phase 252, default ``None`` -- every
+    pre-Phase-252 caller/test is unaffected) backfills a successful
+    Trail continuation's own ``TrailExecutionResult.actions`` from the
+    target's own entry in that map -- see ``turn/trail_execution.py``'s
+    own module docstring for why this is the only place that can.
     """
 
+    action_this_phase_by_leader = action_this_phase_by_leader or {}
     results: list[PhaseDispatchResult] = []
     for leader_id, active in list(active_pursuits.items()):
         if active.kind == "pursue":
@@ -674,6 +691,8 @@ def _continue_active_pursuits(
             result = advance_trail(state, leader_id, active.request, rng)
             action = ActionCode.TRAIL
             still_chasing = not result.spied_on and result.reason == _TRAIL_STILL_CHASING_REASON
+            if result.spied_on:
+                result.actions = action_this_phase_by_leader.get(active.request.target_character_id)
 
         if not still_chasing:
             del active_pursuits[leader_id]
@@ -689,6 +708,24 @@ def _continue_active_pursuits(
             )
         )
     return results
+
+
+def _backfill_trail_actions(
+    dispatch_results: list[PhaseDispatchResult], action_this_phase_by_leader: dict[int, ActionCode]
+) -> None:
+    """Phase 252, [3.17] Trail's own "Actions" field: for a freshly-dispatched Trail
+    order that caught its target, stamps the target's own entry in
+    ``action_this_phase_by_leader`` onto ``TrailExecutionResult.actions``
+    -- ``None`` if the target has no entry (idle, or itself mid-chase and
+    excluded from this phase's own entries). See ``turn/trail_execution.py``'s
+    own module docstring for why ``execute_trail()`` itself can't do this.
+    """
+
+    for entry in dispatch_results:
+        result = entry.result
+        if not isinstance(result, TrailExecutionResult) or not result.spied_on or result.request is None:
+            continue
+        result.actions = action_this_phase_by_leader.get(result.request.target_character_id)
 
 
 def _register_pursuit_continuation(

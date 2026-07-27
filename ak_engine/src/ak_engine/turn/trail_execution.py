@@ -1,6 +1,7 @@
 """Executing a Trail (rulebook [3.17]) order -- Phase 52, extended with a
 standalone multi-phase chase-step primitive in Phase 68 (``advance_trail``,
-not auto-wired anywhere yet -- see that section below).
+not auto-wired anywhere yet -- see that section below), and Actions
+backfilled from ``turn/turn_processor.py`` in Phase 252.
 
 **[3.17] Trail, quoted in full** (also quoted in ``turn/trail_decode.py``'s
 own docstring):
@@ -80,19 +81,26 @@ King...") with real data, and the case this project can't source
 (an independent Hero) honestly reporting nothing, instead of a
 half-correct payload for one target type only.
 
-**Still genuinely open, not attempted here**: [3.17]'s remaining
-field --
-
-- **Actions**: the target's own decoded orders for this phase.
-  ``PhaseDispatchResult`` (``turn/plan_dispatch.py``) discards the
-  original decoded request before storing a result (the same
-  structural gap Phase 151's own `describe_turn_results()` docstring
-  already names for PURSUE/TRAIL/TRADE/SEARCH) -- there is nothing to
-  read the target's Actions from without a separate, larger change:
-  `execute_trail()` would need visibility into every leader's own
-  same-phase dispatch result for the current turn, which today only
-  `turn/turn_processor.py`'s own phase loop assembles, and doesn't
-  pass down this far.
+**Phase 252 closes the sixth and last named field, Actions -- the
+target's own ``ActionCode`` for this same phase.** Rather than thread
+visibility into every leader's own same-phase dispatch result all the
+way down through `plan_dispatch.py dispatch_phase()`/`run_leader_plan()`
+(both heavily-used, central functions many other callers depend on),
+this is wired as a narrower post-dispatch backfill entirely inside
+`turn/turn_processor.py run_turn()` -- the one place that already
+assembles every leader's own `PlanPhase` for the current phase label
+(`_collect_phase_entries()`) before dispatching any of them. `run_turn()`
+builds a `leader_id -> ActionCode` map from that list once per phase,
+then -- immediately after dispatching a Trail order and again after
+`advance_trail()`'s own persistent-chase continuation -- looks up the
+target's own entry in that map and stamps it onto the fresh
+`TrailExecutionResult.actions`. `execute_trail()`/`advance_trail()`
+themselves are untouched: `actions`, like `request` before it, is a
+caller-populated field, not something either function can derive with
+the state and arguments it's given today. `None` whenever the target
+had no order this phase at all -- idle, or itself mid-chase and
+therefore excluded from this phase's own entries -- the same "no data"
+convention every other field here already uses, not a guess.
 
 **Phase 166 closes the King-target aggregate case** ("If the character
 is a King, some information may be gained concerning the finances,
@@ -145,7 +153,7 @@ import random
 from dataclasses import dataclass
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.enums import Ability
+from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.map import HexCoord
@@ -199,6 +207,14 @@ class TrailExecutionResult:
     # advance_trail() themselves -- same convention/reasoning as
     # PursueExecutionResult.request's own Phase 213 note.
     request: TrailRequest | None = None
+    # Phase 252: [3.17]'s sixth and last named field -- the target's own
+    # ActionCode for this same phase. Set by turn/turn_processor.py's
+    # own run_turn(), the only place with visibility into every leader's
+    # own phase entry for the current label -- see module docstring.
+    # None whenever the target had no order this phase (e.g. mid-chase
+    # themselves, or simply idle), the same "no data" convention every
+    # other field here already uses.
+    actions: ActionCode | None = None
 
 
 def execute_trail(
@@ -208,8 +224,9 @@ def execute_trail(
     Table catch-up roll. On success, populates the ``temper``/
     ``alignment``/``race``/``treasures_owned``/``armies_led``/
     ``king_intelligence`` slice of [3.17]'s intelligence payload this
-    project can source today -- see module docstring for why the
-    remaining named field (Actions) still isn't attempted.
+    function can source directly. ``actions`` is left ``None`` here --
+    see module docstring's Phase 252 note for why only
+    ``turn/turn_processor.py run_turn()`` can populate it.
     """
 
     rng = rng if rng is not None else random.Random()
