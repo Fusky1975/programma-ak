@@ -215,6 +215,7 @@ from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.encounter import FireArrowShot
+from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
@@ -3294,6 +3295,54 @@ def test_describe_letter_reports_excludes_the_kings_own_results():
     assert lines == ["LETTER REPORTS", "There are no letters from anyone at this time."]
 
 
+# -- Phase 248: board_width threading (rumor narration in a real letter) --
+
+
+def _rumor_letter_setup() -> tuple[GameState, list[PhaseDispatchResult]]:
+    state = _letter_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(32, 1, "Borin", HexCoord(0, 0)))
+    feature = Feature(feature_id=5, coord=HexCoord(3, 4), kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    rumor = Rumor(
+        rumor_id=state.new_rumor_id(),
+        kingdom_id=1,
+        leader_id=32,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=5,
+        is_true=True,
+        described_coord=HexCoord(3, 4),
+        described_monster=Monster.GARGOYLE,
+    )
+    state.add_rumor(rumor)
+    explore_result = ExploreResult(new_percent=50, delta_applied=50, fully_explored=False)
+    results = [
+        PhaseDispatchResult(
+            leader_id=32, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=explore_result, error=None
+        )
+    ]
+    return state, results
+
+
+def test_describe_letter_reports_omits_rumor_without_board_width():
+    state, results = _rumor_letter_setup()
+
+    lines = describe_letter_reports(results, state, 1, ScriptedRandom([]))
+
+    assert lines == ["LETTER REPORTS", "There are no letters from anyone at this time."]
+
+
+def test_describe_letter_reports_renders_rumor_when_board_width_given():
+    state, results = _rumor_letter_setup()
+
+    lines = describe_letter_reports(results, state, 1, ScriptedRandom([0.1] * 10, choice_indices=[0]), board_width=10)
+
+    assert lines[0] == "LETTER REPORTS"
+    assert any(line == "From: Borin" for line in lines)
+    assert any("heard" in line for line in lines)
+
+
 def test_describe_letter_reports_multiple_heroes_each_get_their_own_letter():
     state = _letter_state()
     state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
@@ -4033,6 +4082,55 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "GENERAL INTELLIGENCE REPORT",
         "None at present",
     ]
+
+
+def test_compose_letter_report_forwards_board_width_to_action_report_and_letters():
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(32, 1, "Borin", HexCoord(0, 0)))
+    feature = Feature(feature_id=5, coord=HexCoord(3, 4), kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    king_rumor = Rumor(
+        rumor_id=state.new_rumor_id(),
+        kingdom_id=1,
+        leader_id=1,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=5,
+        is_true=True,
+        described_coord=HexCoord(3, 4),
+        described_monster=Monster.GARGOYLE,
+    )
+    state.add_rumor(king_rumor)
+    hero_rumor = Rumor(
+        rumor_id=state.new_rumor_id(),
+        kingdom_id=1,
+        leader_id=32,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=5,
+        is_true=True,
+        described_coord=HexCoord(3, 4),
+        described_monster=Monster.GARGOYLE,
+    )
+    state.add_rumor(hero_rumor)
+    explore_result = ExploreResult(new_percent=50, delta_applied=50, fully_explored=False)
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=explore_result, error=None
+        ),
+        PhaseDispatchResult(
+            leader_id=32, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=explore_result, error=None
+        ),
+    ]
+
+    lines = compose_letter_report(results, state, 1, ScriptedRandom([0.1] * 20, choice_indices=[0, 0]), board_width=10)
+
+    action_start = lines.index("ACTION REPORT")
+    letters_start = lines.index("LETTER REPORTS")
+    assert any("heard" in line for line in lines[action_start:letters_start])
+    letters_end = lines.index("DIPLOMACY")
+    assert any("heard" in line for line in lines[letters_start:letters_end])
 
 
 # -- Phase 229: describe_alignment_victory_point_reduction() -- ALIGNMENT REDUCTION --

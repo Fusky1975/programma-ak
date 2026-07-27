@@ -5821,10 +5821,16 @@ def describe_letter_reports(
     rng: random.Random,
     *,
     ability_names: dict[Ability, str] | None = None,
+    board_width: int | None = None,
 ) -> list[str]:
     """Assembles the "LETTER REPORTS" section (Phase 217) -- every other
     leader in this kingdom's own turn narrated as a letter addressed to
     the King.
+
+    **`board_width` (Phase 248)**: forwarded as-is to `describe_turn_
+    results()`, whose own docstring explains the opt-in -- `None` by
+    default, so omitting it keeps every pre-Phase-248 caller's exact
+    behavior (no rumor narration in any letter).
 
     **A real, sourced structural discovery, not a guess**: `REPORTS.PAS
     Write_Letter(ldr,kng,non)` -- the real per-letter procedure --
@@ -5882,7 +5888,9 @@ def describe_letter_reports(
     letter_lines: list[str] = []
     for leader_id in other_leader_ids:
         leader_results = [entry for entry in results if entry.leader_id == leader_id]
-        story_lines = describe_turn_results(leader_results, state, rng, ability_names=ability_names)
+        story_lines = describe_turn_results(
+            leader_results, state, rng, ability_names=ability_names, board_width=board_width
+        )
         if not story_lines:
             continue
         leader_name = state.leaders[leader_id].name
@@ -6349,6 +6357,7 @@ def compose_letter_report(
     rng: random.Random,
     *,
     ability_names: dict[Ability, str] | None = None,
+    board_width: int | None = None,
 ) -> list[str]:
     """Assembles a single King's own end-of-turn letter report (Phase 215) by
     stitching together this project's already-built section composers, in
@@ -6463,6 +6472,12 @@ def compose_letter_report(
     for a kingdom with no dispatched phases) rather than emitting a
     header with no body -- the same convention `describe_turn_results()`
     itself already uses for individual phase entries.
+
+    **`board_width` (Phase 248)**: forwarded to both `describe_turn_
+    results()` (ACTION REPORT) and `describe_letter_reports()` (LETTER
+    REPORTS) -- `None` by default, so a full end-to-end letter report
+    still narrates zero rumors unless the caller opts in, matching
+    every pre-Phase-248 caller's exact existing output.
     """
 
     lines: list[str] = []
@@ -6474,12 +6489,14 @@ def compose_letter_report(
 
     king_leader_id = _king_leader_id(state, kingdom_id)
     king_results = [entry for entry in kingdom_results if entry.leader_id == king_leader_id]
-    action_lines = describe_turn_results(king_results, state, rng, ability_names=ability_names)
+    action_lines = describe_turn_results(king_results, state, rng, ability_names=ability_names, board_width=board_width)
     if action_lines:
         lines.append("ACTION REPORT")
         lines.extend(action_lines)
 
-    letter_lines = describe_letter_reports(kingdom_results, state, kingdom_id, rng, ability_names=ability_names)
+    letter_lines = describe_letter_reports(
+        kingdom_results, state, kingdom_id, rng, ability_names=ability_names, board_width=board_width
+    )
     if letter_lines:
         lines.extend(letter_lines)
 

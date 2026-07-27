@@ -10137,7 +10137,7 @@ complete (Phases 209-211).
     guardian_alignment`, not just that a call happens) -- 2895 passed
     total.
 
-- **Phase 247 (current)**: wires `EXPLORE` discovery and rumor
+- **Phase 247**: wires `EXPLORE` discovery and rumor
   narration into `describe_turn_results()` -- the real top-level
   per-turn assembler (Phase 142+), already calling `describe_*`
   composers for HIRE/FIRE/PRACTICE/CAST/USE_MI/TRADE/PURSUE/TRAIL/
@@ -10180,6 +10180,33 @@ complete (Phases 209-211).
     `board_width`; rumors rendered when supplied; a rumor heard by one
     leader in a kingdom isn't narrated for a different leader's own
     results) -- 2899 passed total.
+
+- **Phase 248 (current)**: propagates `board_width` the rest of the way
+  up the call chain -- from `describe_turn_results()` (Phase 247) into
+  its two real callers, `describe_letter_reports()` (Phase 217) and
+  `compose_letter_report()` (Phase 215) -- so a full end-to-end King's
+  letter report can actually narrate the rumors its own King and
+  fellow leaders heard this turn, not just a bare `describe_turn_
+  results()` call in isolation. This closes the exact follow-up gap
+  Phase 247's own docstring flagged as out of scope for itself.
+  - Both functions gain the same `board_width: int | None = None`
+    keyword-only parameter, forwarded as-is to their own internal
+    `describe_turn_results()` call(s) -- `compose_letter_report()`
+    forwards it to both of its calls (ACTION REPORT and, via
+    `describe_letter_reports()`, LETTER REPORTS).
+  - Same opt-in convention as Phase 247 (and, before that, Phase
+    242's `state=None`/`rng=None` and Phase 245's `discovered_
+    features` default): `None` by default, so every pre-Phase-248
+    caller -- including this module's own large existing test suite --
+    keeps its exact prior output with zero rumor narration.
+  - Non-breaking: full suite passed unchanged (2899 passed) before any
+    new tests were written. 3 new tests added to `tests/
+    test_turn_report.py`: `describe_letter_reports()` omits a heard
+    rumor without `board_width` and renders it when supplied; a
+    `compose_letter_report()`-level test confirms `board_width`
+    reaches both ACTION REPORT (the King's own heard rumor) and
+    LETTER REPORTS (a different leader's own heard rumor) in one call
+    -- 2902 passed total.
 
 ## Setup
 
