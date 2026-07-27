@@ -123,6 +123,23 @@ resolves"**:
   there -- the same "must be co-located to act in person" pattern this
   project already enforces for Challenge, Hire/Fire, and Recruit's
   target-leader check.
+- **A winning leader's Defender Merit Points are credited (Phase 255)**:
+  ``turn/merit_points.py``'s own "TABELLA DELLE CARICHE IMPERIALI"
+  formula had no writer anywhere in this project for
+  ``MeritTally.monster_hp_defeated``/``monster_hp_neutralized``.
+  ``_outcome_from()`` -- the single point every real "leader wins"
+  branch in this module funnels through, whether from Melee, Fire
+  Arrow, or one of ``_resolve_cast_tactic()``'s own instant-kill spell
+  branches -- now credits the guardian's own *starting* hit points
+  (captured before combat mutates them) to ``monster_hp_defeated``.
+  **Only the "killed" half is wired here.** The rulebook's other half,
+  "metà dei punti se neutralizzato con trattative" (half credit for a
+  monster *negotiated* into standing down rather than killed), needs
+  the Fulfill/Talk-Say mechanic this module's own docstring already
+  flags as unwired (the "Say, Give, Fulfill... silently skipped"
+  paragraph above) -- ``monster_hp_neutralized`` stays at its Phase
+  59-style "field exists, no consumer yet" default until that mechanic
+  is built, not guessed at here.
 
 **Not wired into ``plan_dispatch.py``'s existing scripted-rng test
 suite as a silent behavior change without review**: unlike Challenge/
@@ -388,6 +405,12 @@ def execute_search(
         missile_damage_range=stats.missile_damage if stats.missile_damage is not None else FIRE_ARROW_DAMAGE_RANGE,
         regenerates_hp=TROLL_REGENERATION_PER_COMBAT_ROUND if feature.guardian_monster is Monster.TROLL else 0,
     )
+    # Phase 255: the Defender Merit Point formula ([TABELLA DELLE CARICHE
+    # IMPERIALI], `turn/merit_points.py defender_merit_points()`) credits
+    # "il totale Punti Ferita del mostro" -- the monster's own *starting*
+    # hit points, not whatever's left when it dies (always <=0 by then).
+    # Captured once, right after roll, before any combat mutates it.
+    monster_starting_hit_points = monster_combatant.hit_points
 
     # Phase 178: the guardian's own Special Encounter Plan, independent
     # of the leader's -- only consulted for whether it wants to Shoot
@@ -408,6 +431,13 @@ def execute_search(
         """Translate a resolved duel into a terminal result, or None if the
         encounter isn't over yet (only possible for Fire Arrow -- Melee
         always ends in a winner, see resolve_melee_duel's own docstring).
+
+        Every real combat-resolution call site in this module always
+        passes the leader as side "a" and the guardian as side "b" (see
+        the module's own combat-call sites), so this is the single,
+        centralized point every kill/death in this module funnels
+        through -- including the instant-win/instant-death branches
+        ``_resolve_cast_tactic()`` synthesizes for its various spells.
         """
 
         if combat_result.winner == "a":
@@ -418,6 +448,14 @@ def execute_search(
             # leader via the existing item registry (Phase 140).
             if feature.treasure is not None:
                 state.add_item(feature.treasure, leader_id)
+            # Phase 255: every "a" win here is a real combat defeat of the
+            # guardian (melee, fire arrow, or a spell's own instant-kill
+            # branch) -- never the rulebook's separate "neutralized via
+            # negotiation" case, which needs Fulfill/Talk-Say's own
+            # not-yet-wired mechanic (see module docstring). Full HP
+            # credited, not the halved figure -- that halving is
+            # `defender_merit_points()`'s own job, not this raw tally's.
+            leader.merit_tally.monster_hp_defeated += monster_starting_hit_points
             return SearchExecutionResult(accepted=True, combat_resolved=True, winner="leader", feature_looted=True)
         if combat_result.winner == "b":
             state.remove_leader(leader_id)

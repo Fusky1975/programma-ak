@@ -84,9 +84,14 @@ Fulfilled quest agreement; a monster persuaded to stop raiding (rather
 than killed) via negotiation/damage scores half. `MeritTally.
 monster_hp_defeated`/`monster_hp_neutralized` store the raw, unhalved HP
 sums the caller observed; `defender_merit_points()` applies the halving
-(floor division) so the tally itself stays a faithful raw record. No
-consumer in `turn/encounter.py`/`turn/search_execution.py` populates
-these yet.
+(floor division) so the tally itself stays a faithful raw record.
+`monster_hp_defeated` is **live as of Phase 255**: `turn/
+search_execution.py execute_search()`'s own `_outcome_from()` credits
+the guardian's starting hit points whenever the leader wins the
+encounter (Melee, Fire Arrow, or a Cast-tactic instant kill). The
+negotiated half, `monster_hp_neutralized`, still has no writer -- it
+needs the Fulfill/Talk-Say mechanic `turn/search_execution.py`'s own
+docstring already flags as unwired.
 
 ## Gran Sacerdote / Priest (10%)
 "Per ogni incantesimo Resurrection o Bless riuscito +1" (either spell,

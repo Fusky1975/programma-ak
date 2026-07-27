@@ -293,15 +293,19 @@ class MeritTally:
     formulas (Phase 227, ``turn/merit_points.py`` -- rulebook page 51's
     "TABELLA DELLE CARICHE IMPERIALI"). ``resurrection_bless_casts``
     (``turn/cast_execution.py``'s ``_execute_resurrection``/
-    ``_execute_bless``, Phase 251) and the four land/naval battle
-    counters (``turn/battle_orchestrator.py _record_battle_merit()``,
-    Phase 254) now have real writers; the three discovery-attribution
-    fields and both monster-HP fields are still never incremented by any
-    action in this project. All default to 0: a leader who has fought no
-    battles, killed no monsters, cast no Resurrection/Bless, or been the
-    first to find any Special Place/Discovery legitimately starts here,
-    the same "field exists, no populating consumer yet" convention this
-    project has used since Phase 59's own `tax_modifier_percent`/
+    ``_execute_bless``, Phase 251), the four land/naval battle counters
+    (``turn/battle_orchestrator.py _record_battle_merit()``, Phase 254),
+    and ``monster_hp_defeated`` (``turn/search_execution.py
+    execute_search()``'s ``_outcome_from()``, Phase 255) now have real
+    writers; the three discovery-attribution fields and
+    ``monster_hp_neutralized`` are still never incremented by any action
+    in this project -- the latter needs the Fulfill/Talk-Say negotiation
+    mechanic ``turn/search_execution.py``'s own docstring already flags
+    as unwired. All default to 0: a leader who has fought no battles,
+    killed no monsters, cast no Resurrection/Bless, or been the first to
+    find any Special Place/Discovery legitimately starts here, the same
+    "field exists, no populating consumer yet" convention this project
+    has used since Phase 59's own `tax_modifier_percent`/
     `terrain_override` (only wired up 166+ phases later, Phase 225/226).
 
     Two fields per office needing a win/loss split (Marshal, Admiral) are

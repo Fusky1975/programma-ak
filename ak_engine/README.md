@@ -10365,7 +10365,7 @@ complete (Phases 209-211).
     Army Types and the characters/forces block; the line is omitted
     entirely when `tax_estimate is None`) -- 2920 passed total.
 
-- **Phase 254 (current)**: wires rulebook page 51's Marshal/Admiral
+- **Phase 254**: wires rulebook page 51's Marshal/Admiral
   Merit Point formula ("TABELLA DELLE CARICHE IMPERIALI",
   `turn/merit_points.py`, Phase 227) into real battle outcomes --
   `MeritTally.land_battles_won_enemy_units`/`lost_own_units` and
@@ -10403,6 +10403,32 @@ complete (Phases 209-211).
     (no-op), an unled winning side, and an unled losing side; plus one
     end-to-end `fight_battle()` test confirming a led attacker's real
     Merit Point credit after a genuine conquest -- 2926 passed total.
+
+- **Phase 255 (current)**: wires the other half of Phase 254's own
+  Defender Merit Point gap -- `MeritTally.monster_hp_defeated`
+  (rulebook page 51's "Per ciascun mostro ucciso: totale Punti Ferita
+  del mostro") had a real formula consumer (`defender_merit_points()`,
+  Phase 227) but no writer anywhere in this project.
+  - `turn/search_execution.py execute_search()`'s own `_outcome_from()`
+    -- the single point every real "leader wins" branch in that module
+    funnels through, whether from Melee, Fire Arrow, or one of
+    `_resolve_cast_tactic()`'s own instant-kill spell branches -- now
+    credits the guardian's own *starting* hit points (captured once,
+    right after the combat stats roll, before anything mutates them)
+    to `MeritTally.monster_hp_defeated`.
+  - Deliberately only the "killed" half: the rulebook's "metà dei
+    punti se neutralizzato con trattative" (half credit for a monster
+    negotiated into standing down) needs the Fulfill/Talk-Say
+    mechanic `turn/search_execution.py`'s own docstring already flags
+    as unwired ("Say, Give, Fulfill, ... silently skipped"), so
+    `MeritTally.monster_hp_neutralized` stays at its Phase 59-style
+    "field exists, no consumer yet" default -- not guessed at here.
+  - Non-breaking: full suite passed unchanged (2926 passed) before any
+    new tests were written. 2 new tests added to `tests/
+    test_search_execution.py`: a winning Melee encounter credits the
+    guardian's own (independently re-derived) starting hit points and
+    leaves `monster_hp_neutralized` untouched; a losing encounter
+    credits nothing -- 2928 passed total.
 
 ## Setup
 

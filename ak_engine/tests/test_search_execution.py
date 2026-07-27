@@ -237,6 +237,43 @@ def test_execute_search_leader_loses_is_removed_from_state():
     assert feature.looted is False
 
 
+# -- Phase 255: Defender Merit Points (rulebook page 51) --
+
+
+def test_execute_search_leader_win_credits_the_monsters_starting_hit_points():
+    # resolve_melee_duel is mocked so the win is instant -- the monster's
+    # own hit_points draw (the very first rng call execute_search makes,
+    # before the tactic walk even starts) is independently reproduced
+    # here from a freshly-seeded Random(0) for comparison.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+    expected_hp = random.Random(0).randint(*MONSTER_COMBAT_STATS[Monster.GARGOYLE].hit_points_range)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert result.winner == "leader"
+    assert state.leaders[LEADER_ID].merit_tally.monster_hp_defeated == expected_hp
+    # The negotiated half stays unwired -- see module docstring.
+    assert state.leaders[LEADER_ID].merit_tally.monster_hp_neutralized == 0
+
+
+def test_execute_search_leader_loss_credits_nothing():
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.TROLL)
+    state.add_feature(feature)
+    block = [0.1, 0.5, 0.9]  # Troll hits (chance+damage), leader misses
+    rng = ScriptedRandom(block * 20)
+
+    result = execute_search(state, LEADER_ID, _melee_request(1), rng)
+
+    assert result.winner == "monster"
+    # The leader is dead -- nothing left in state.leaders to credit, and
+    # the monster (the winner here) has no MeritTally of its own either.
+    assert LEADER_ID not in state.leaders
+
+
 # -- Phase 155: Troll regeneration wiring --
 
 
