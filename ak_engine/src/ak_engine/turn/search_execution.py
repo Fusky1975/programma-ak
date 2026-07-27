@@ -996,10 +996,28 @@ def execute_search(
             # a documented no-op, not an oversight (see `turn/
             # encounter.py`'s own Phase 240 addendum).
             continue
-        # Every other maneuver (Give, Fulfill, Scout, Use_MI, Beg) isn't
-        # wired -- skip it and keep walking the plan, matching how real
-        # Encounter Plans mix wired and unwired tactics (module
-        # docstring's own quoted examples).
+        # Every other maneuver isn't wired -- skip it and keep walking
+        # the plan, matching how real Encounter Plans mix wired and
+        # unwired tactics (module docstring's own quoted examples). Per
+        # spell/reason, confirmed directly by the user (project author):
+        # - **Give**: has exactly one real use -- passing an item to
+        #   another Hero or King (any realm), never to a monster.
+        #   Search's own target is always the guardian monster, so
+        #   Give is structurally inapplicable here, not merely
+        #   unresearched (Fulfill is the monster-facing counterpart --
+        #   see `turn/encounter.py`'s own Phase 240 addendum for why
+        #   that stays unwired too).
+        # - **Scout**: "non esiste" as a distinct mechanic -- the
+        #   pre-combat information-gathering role its own name suggests
+        #   is actually served by Talk (Phase 240), not a separate
+        #   tactic. Confirmed, not unresearched.
+        # - **Use_MI**: needs a magic-item-instance -> spell-effect
+        #   mapping this project doesn't model (the same gap
+        #   `turn/search_decode.py`'s own docstring already flags for
+        #   Cast's sub-object). Confirmed absent, skipped for now on
+        #   the user's own direction.
+        # - **Beg**: no rulebook text supplied yet -- genuinely
+        #   unresearched, unlike the three above.
 
     if combat_attempted:
         # Phase 178: the plan's own tactic list ran out without a winner
