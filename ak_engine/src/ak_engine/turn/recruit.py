@@ -4,9 +4,12 @@ Scope: the deterministic race-compatibility, per-turn recruit limit, and
 gold-cost rules only. Actually executing a Recruit order -- choosing a
 leader, updating a kingdom's treasury and army roster, checking whether an
 Average-or-better mercenary army is present to hire instead of levying from
-the populace, and the ally "Treat" order precondition -- needs kingdom/
-treasury/mercenary-pool state this phase doesn't model yet (see
-ak_engine/README.md).
+the populace -- needs kingdom/treasury/mercenary-pool state this module
+doesn't carry, and lives in ``turn/recruit_execution.py`` instead (Phase
+15/16). The ally "Treat" order precondition also lives there (Phase 261,
+``GameState.has_treat_permission()``) -- this module's own
+``in_ally_territory`` parameter only ever affects pricing/crediting, never
+whether recruiting is allowed to proceed at all.
 """
 
 from __future__ import annotations

@@ -549,6 +549,20 @@ class GameState:
     # Battle deaths only (Phase 60) -- see module docstring.
     battle_graveyard: dict[HexCoord, list[GraveyardEntry]] = field(default_factory=dict)
     allied_kingdoms: set[frozenset[int]] = field(default_factory=set)
+    # Phase 261: RULES.AK [3.4] "In order for you to Recruit in your
+    # ally's territory, he MUST issue a 'Treat' order with you (even
+    # though you may already be allied.)" -- a directed permission,
+    # separate from the alliance relationship itself: the territory
+    # *owner* grants a specific recruiter permission to recruit there
+    # this gameturn. Pairs are ``(owner_kingdom_id, recruiter_kingdom_id)``.
+    # No parser/decoder exists for a Treat order anywhere in this project
+    # (same "no real order-file shape ever seen" category as Break Treaty
+    # and Call-For-Vote -- see turn/emperor_election.py's own docstring),
+    # so this is populated directly by the caller, not decoded from a
+    # move file -- same "caller's job to clear at a turn boundary"
+    # convention already established for recruited_this_turn/
+    # ArmyState.movement_points, not auto-cleared by anything here.
+    treat_permissions: set[tuple[int, int]] = field(default_factory=set)
     # Feature instances (Phase 75) -- see models/feature.py's own docstring
     # for why this is a flat dict-by-id, mirroring `armies`/`provinces`,
     # not a per-province list (Pascal's own `fx`/`fy` arrays are keyed by
@@ -779,6 +793,13 @@ class GameState:
         if kingdom_a == kingdom_b:
             return True
         return frozenset({kingdom_a, kingdom_b}) in self.allied_kingdoms
+
+    def has_treat_permission(self, owner_kingdom_id: int, recruiter_kingdom_id: int) -> bool:
+        """Whether ``owner_kingdom_id`` has issued a Treat order this turn
+        permitting ``recruiter_kingdom_id`` to recruit in his territory --
+        see ``treat_permissions``'s own docstring."""
+
+        return (owner_kingdom_id, recruiter_kingdom_id) in self.treat_permissions
 
     def friendly_provinces_for(self, kingdom_id: int) -> set[HexCoord]:
         """Provinces owned by ``kingdom_id`` or one of its allies."""

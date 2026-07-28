@@ -44,6 +44,17 @@ costs the same ``unit_cost`` and still counts against
 ``recruited_this_turn`` -- the rulebook doesn't distinguish hiring from
 levying on price or the per-province limit, only on where the army comes
 from. Reported via ``RecruitedUnit.hired``.
+
+**The ally "Treat" order precondition (Phase 261)**: rulebook [3.4], "In
+order for you to Recruit in your ally's territory, he MUST issue a
+'Treat' order with you (even though you may already be allied.)" --
+being merely allied is not enough; the whole request is blocked
+(``RecruitExecutionResult.treat_blocked``, no partial recruiting) unless
+``GameState.has_treat_permission()`` confirms the territory's owner
+granted this specific recruiter permission this turn -- see that
+field's own docstring for why this is caller-populated rather than
+decoded from a move file. Recruiting in one's own territory (allied or
+not relevant) is never gated by this check.
 """
 
 from __future__ import annotations
@@ -72,6 +83,7 @@ class RecruitExecutionResult:
     limit_blocked: list[ArmyType] = field(default_factory=list)
     gold_blocked: list[ArmyType] = field(default_factory=list)
     incompatible: list[ArmyType] = field(default_factory=list)
+    treat_blocked: list[ArmyType] = field(default_factory=list)
     total_gold_spent: int = 0
 
 
@@ -108,6 +120,10 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
     )
 
     result = RecruitExecutionResult(request=request)
+
+    if in_ally_territory and not state.has_treat_permission(province.owner_kingdom_id, kingdom_id):
+        result.treat_blocked.extend(request.army_types)
+        return result
 
     for army_type in request.army_types:
         is_native = is_army_type_compatible_with_race(army_type, province.race)

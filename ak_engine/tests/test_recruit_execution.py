@@ -135,6 +135,7 @@ def test_recruiting_in_ally_territory_credits_the_ally():
     state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0), treasury=0))
     state.allied_kingdoms.add(frozenset({1, 2}))
     state.provinces[LOCATION].owner_kingdom_id = 2
+    state.treat_permissions.add((2, 1))  # owner (2) grants recruiter (1) permission
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])  # pay 2 + 1 ally fee
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -142,6 +143,59 @@ def test_recruiting_in_ally_territory_credits_the_ally():
     assert result.total_gold_spent == 3
     assert state.kingdoms[1].treasury == 97
     assert state.kingdoms[2].treasury == 1
+
+
+def test_recruiting_in_ally_territory_without_a_treat_order_is_blocked():
+    # Rulebook [3.4]: "In order for you to Recruit in your ally's
+    # territory, he MUST issue a 'Treat' order with you (even though
+    # you may already be allied.)" -- being merely allied isn't enough.
+    state = build_state(treasury=100)
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0), treasury=0))
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.provinces[LOCATION].owner_kingdom_id = 2
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN, ArmyType.AXEMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.treat_blocked == [ArmyType.BOWMEN, ArmyType.AXEMEN]
+    assert result.total_gold_spent == 0
+    assert state.kingdoms[1].treasury == 100
+    assert state.kingdoms[2].treasury == 0
+
+
+def test_treat_permission_is_directional_the_other_way_round_does_not_count():
+    state = build_state(treasury=100)
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0), treasury=0))
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.provinces[LOCATION].owner_kingdom_id = 2
+    state.treat_permissions.add((1, 2))  # wrong direction: recruiter granting himself
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.treat_blocked == [ArmyType.BOWMEN]
+
+
+def test_treat_permission_not_required_in_own_territory():
+    state = build_state(treasury=100)  # province owned by kingdom 1 itself
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.treat_blocked == []
+
+
+def test_has_treat_permission_helper():
+    state = GameState()
+
+    assert state.has_treat_permission(2, 1) is False
+
+    state.treat_permissions.add((2, 1))
+
+    assert state.has_treat_permission(2, 1) is True
+    assert state.has_treat_permission(1, 2) is False
 
 
 def test_incompatible_army_type_is_reported_not_recruited():

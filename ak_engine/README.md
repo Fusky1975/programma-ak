@@ -10683,7 +10683,7 @@ complete (Phases 209-211).
     non-Heir, and `execute_practice_group()` only clears it for
     whichever group member actually rose) -- 2960 passed total.
 
-- **Phase 260 (current)**: completes King succession -- the player-
+- **Phase 260**: completes King succession -- the player-
   facing act of actually creating a new King from the Phase 259 Royal
   Heir, `turn/succession.py create_king()`, sourced from RULES.AK
   [2.1] "Kings" (quoted in full in the module docstring) and [2.3]'s
@@ -10746,6 +10746,58 @@ complete (Phases 209-211).
     table's own five-alignment coverage; the special-vs-ordinary
     aptitude formulas' own documented numeric coincidence, checked
     directly -- 2977 passed total.
+
+- **Phase 261 (current)**: closes Recruit's own long-flagged "ally
+  Treat order precondition" gap (see Phase 15's/47's own notes above),
+  sourced from RULES.AK [3.4]: "A character is allowed to recruit an
+  army in a province belonging to his ally. The recruiter pays 1 gold
+  to his ally for each recruited army... In order for you to Recruit
+  in your ally's territory, he MUST issue a 'Treat' order with you
+  (even though you may already be allied.)" -- being merely allied was
+  never enough on its own.
+  - **New `GameState.treat_permissions: set[tuple[int, int]]`**
+    (directed `(owner_kingdom_id, recruiter_kingdom_id)` pairs) +
+    `has_treat_permission()` helper, mirroring `allied_kingdoms`/
+    `is_allied()`'s own raw-set-plus-helper shape (no wrapper "grant"
+    method either, same convention). **No parser/decoder for a Treat
+    order exists anywhere in this project** -- confirmed the same "no
+    real order-file shape ever seen" category `turn/
+    emperor_election.py`'s own docstring already established for Break
+    Treaty and Call-For-Vote -- so the field is populated directly by
+    the caller, not decoded from a move file. Not auto-cleared at a
+    turn boundary, the same "caller's job" convention already governing
+    `recruited_this_turn`/`ArmyState.movement_points`.
+  - `turn/recruit_execution.py execute_recruit()`: when the target
+    province is owned by an ally (`in_ally_territory`), the *entire*
+    request is now blocked (`RecruitExecutionResult.treat_blocked`, no
+    partial recruiting, no gold spent) unless the owner has granted
+    this specific recruiter permission this turn -- a strict
+    precondition on recruiting there at all, not merely on the ally-fee
+    pricing that already existed. Recruiting in one's own territory is
+    never gated by this check regardless of alliance status.
+  - **Deliberately out of scope, documented not modeled**: the
+    rulebook's separate "if you are recruiting in your former home
+    province which is now your ally's province, you can recruit 4
+    units" bonus (a different provision layered on top of the same
+    paragraph) -- `is_home_province` only ever checks *current*
+    ownership, so this specific case isn't distinguished from ordinary
+    ally-territory recruiting. Also unaddressed, pre-existing and
+    unrelated: this project still never blocks recruiting in a
+    non-owned, non-allied (enemy/neutral) province at all -- the
+    rulebook's own "You can never Recruit... in a non-player province"
+    line stays unenforced, same as before this phase.
+  - Non-breaking: full suite passed unchanged except for one
+    pre-existing test that (correctly) assumed mere alliance was
+    sufficient -- updated to grant `treat_permissions` explicitly,
+    matching the new precondition (the same "expected, not a
+    regression" pattern already established for Phase 259's own
+    `remove_leader()` test updates). 5 new tests in `tests/
+    test_recruit_execution.py`: granted permission still recruits and
+    credits the ally as before; missing permission blocks the whole
+    request with zero gold spent; the permission is directional (the
+    recruiter granting himself doesn't count); recruiting in one's own
+    territory is never gated; `has_treat_permission()`'s own direct
+    coverage -- 2981 passed total.
 
 ## Setup
 
@@ -10960,13 +11012,18 @@ rulebook before being turned into named, typed fields:
   - **Recruit's remaining gaps**: ~~the target leader who will command a
     newly recruited army isn't validated as co-located (or even as
     existing at all) before being assigned command~~ **fixed in Phase
-    47** -- see that phase's note below. Still open: the rulebook's more
-    specific "1-2 recruitable types per province" isn't tracked, only
-    approximated via race-compatibility (see Phase 12's note above); and
-    the ally "Treat" order precondition for recruiting in allied
-    territory isn't checked -- `in_ally_territory` pricing/crediting
-    applies whenever the province is simply owned by an ally, regardless
-    of whether that ally issued a Treat order permitting it.
+    47** -- see that phase's note below. ~~the ally "Treat" order
+    precondition for recruiting in allied territory isn't checked --
+    `in_ally_territory` pricing/crediting applies whenever the province
+    is simply owned by an ally, regardless of whether that ally issued
+    a Treat order permitting it~~ **fixed in Phase 261** -- see that
+    phase's own note above (`GameState.treat_permissions`/
+    `has_treat_permission()`). Still open: the rulebook's more specific
+    "1-2 recruitable types per province" isn't tracked, only
+    approximated via race-compatibility (see Phase 12's note above);
+    the "former home province, now an ally's" 4-unit bonus stays
+    unmodeled (Phase 261's own note above); and this project still
+    never blocks recruiting in a non-owned, non-allied province at all.
   - **Hire's remaining gaps** (see Phase 17's note above): a Hero's own
     "required pay" (may be less than the offer, depends on
     temper/race/alignment compatibility -- `models/temper.py Temper`
