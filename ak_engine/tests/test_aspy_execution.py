@@ -3,6 +3,7 @@ from __future__ import annotations
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
@@ -10,7 +11,13 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
-from ak_engine.turn.aspy_execution import SpottedCharacter, SpyReport, execute_aspy
+from ak_engine.turn.aspy_execution import (
+    ESPIONAGE_DISCOVERY_CHANCE_MULTIPLIER,
+    SpottedCharacter,
+    SpyReport,
+    _roll_espionage_discoveries,
+    execute_aspy,
+)
 from ak_engine.turn.combat import Quality
 
 from _helpers import ScriptedRandom
@@ -306,3 +313,123 @@ def test_execute_aspy_mercenary_army_falls_back_to_human_race():
 
     expected = make_army_name(5, ArmyType.BOWMEN, Race.HUMAN)
     assert report.garrison_army_names == (expected,)
+
+
+# -- Phase 267: espionage-obtained Discoveries (RULES.AK [3.14]) -----------
+
+
+def _kingdom(kingdom_id: int, *, discoveries: set[Discovery] | None = None) -> KingdomState:
+    kingdom = KingdomState(kingdom_id, f"Kingdom{kingdom_id}", Race.HUMAN, Alignment.GOOD, HOME)
+    if discoveries is not None:
+        kingdom.discoveries = discoveries
+    return kingdom
+
+
+def test_roll_espionage_discoveries_never_rolls_against_own_kingdom():
+    state = GameState()
+    state.add_kingdom(_kingdom(1, discoveries={Discovery.COMPASS}))
+
+    obtained = _roll_espionage_discoveries(state, 1, 1, spy_skill=9, rng=ScriptedRandom([]))
+
+    assert obtained == ()
+
+
+def test_roll_espionage_discoveries_never_rolls_with_no_kingdom_ids():
+    state = GameState()
+    state.add_kingdom(_kingdom(1, discoveries={Discovery.COMPASS}))
+
+    assert _roll_espionage_discoveries(state, None, 1, spy_skill=9, rng=ScriptedRandom([])) == ()
+    assert _roll_espionage_discoveries(state, 1, None, spy_skill=9, rng=ScriptedRandom([])) == ()
+
+
+def test_roll_espionage_discoveries_never_rolls_for_a_kingdom_missing_from_state():
+    state = GameState()
+    state.add_kingdom(_kingdom(1))
+
+    obtained = _roll_espionage_discoveries(state, 1, 2, spy_skill=9, rng=ScriptedRandom([]))
+
+    assert obtained == ()
+
+
+def test_roll_espionage_discoveries_only_considers_what_the_spy_kingdom_lacks():
+    state = GameState()
+    state.add_kingdom(_kingdom(1, discoveries={Discovery.COMPASS}))
+    state.add_kingdom(_kingdom(2, discoveries={Discovery.COMPASS, Discovery.SEXTANT}))
+
+    # Only SEXTANT is a real candidate (COMPASS is already owned) -- a
+    # single scripted value proves exactly one roll was consumed.
+    obtained = _roll_espionage_discoveries(state, 1, 2, spy_skill=9, rng=ScriptedRandom([0.0]))
+
+    assert obtained == (Discovery.SEXTANT,)
+    assert state.kingdoms[1].discoveries == {Discovery.COMPASS, Discovery.SEXTANT}
+
+
+def test_roll_espionage_discoveries_uses_twice_the_sage_chance():
+    # Skill 1 -> chance = 2 * 1 * 5% = 10%. 0.09 succeeds, 0.11 fails.
+    state = GameState()
+    state.add_kingdom(_kingdom(1))
+    state.add_kingdom(_kingdom(2, discoveries={Discovery.SEXTANT}))
+
+    assert _roll_espionage_discoveries(state, 1, 2, spy_skill=1, rng=ScriptedRandom([0.09])) == (Discovery.SEXTANT,)
+
+    state2 = GameState()
+    state2.add_kingdom(_kingdom(1))
+    state2.add_kingdom(_kingdom(2, discoveries={Discovery.SEXTANT}))
+    assert _roll_espionage_discoveries(state2, 1, 2, spy_skill=1, rng=ScriptedRandom([0.11])) == ()
+
+
+def test_roll_espionage_discoveries_chance_is_capped_at_100_percent():
+    assert ESPIONAGE_DISCOVERY_CHANCE_MULTIPLIER == 2.0
+    state = GameState()
+    state.add_kingdom(_kingdom(1))
+    state.add_kingdom(_kingdom(2, discoveries={Discovery.SEXTANT}))
+
+    # skill 20 -> raw formula is 200%, must still just barely succeed at 0.999.
+    obtained = _roll_espionage_discoveries(state, 1, 2, spy_skill=20, rng=ScriptedRandom([0.999]))
+
+    assert obtained == (Discovery.SEXTANT,)
+
+
+def test_execute_aspy_obtains_discoveries_via_espionage_and_credits_merit():
+    state = _state(owner_kingdom_id=2)
+    state.add_kingdom(_kingdom(2, discoveries={Discovery.SEXTANT}))
+    state.leaders[LEADER_ID].skills = SkillTable(raw_values=[0] * 30)
+    state.leaders[LEADER_ID].skills.set_pair_for_ability(Ability.SPY, 4, 0)  # chance = 2*4*5% = 40%
+
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.1]))
+
+    assert report.discoveries_obtained == (Discovery.SEXTANT,)
+    assert state.kingdoms[1].discoveries == {Discovery.SEXTANT}
+    assert state.leaders[LEADER_ID].merit_tally.discoveries_via_espionage == 1
+
+
+def test_execute_aspy_reports_no_discoveries_when_the_roll_fails():
+    state = _state(owner_kingdom_id=2)
+    state.add_kingdom(_kingdom(2, discoveries={Discovery.SEXTANT}))
+    state.leaders[LEADER_ID].skills = SkillTable(raw_values=[0] * 30)
+    state.leaders[LEADER_ID].skills.set_pair_for_ability(Ability.SPY, 4, 0)  # chance = 40%
+
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.9]))
+
+    assert report.discoveries_obtained == ()
+    assert state.kingdoms[1].discoveries == set()
+    assert state.leaders[LEADER_ID].merit_tally.discoveries_via_espionage == 0
+
+
+def test_execute_aspy_reports_no_discoveries_for_an_unowned_province():
+    state = _state(owner_kingdom_id=None)
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.discoveries_obtained == ()
+
+
+def test_execute_aspy_reports_no_discoveries_when_target_kingdom_has_none():
+    state = _state(owner_kingdom_id=2)
+    state.add_kingdom(_kingdom(2))
+
+    # No candidates -- no rng consumed at all beyond what the rest of the
+    # report needs (an empty script would raise IndexError otherwise).
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([]))
+
+    assert report.discoveries_obtained == ()

@@ -84,6 +84,42 @@ conditions), while ``caster_has_detect_align`` only ever helps alignment
 (``Has_SA(agent,Detect_Align)`` -- temper detection has no such
 advanced-ability bypass in the Pascal source at all).
 
+**Phase 267 -- espionage-obtained Discoveries.** RULES.AK [3.14], quoted
+in full: "There is also a chance of finding out what Sage Discoveries
+the spied-on Kingdom has, and obtaining them for the use of your
+Kingdom. Sage ability also has something to do with spying out
+inventions. If a spy sees an invention, some Sage ability will help him
+figure out how to get it for your kingdom. Sage level 1 will be more
+than enough to understand all common inventions, but higher ability may
+be needed for inventions of obscure design. The chance for discovering
+an invention by spying is limited to twice the chance of discovery by
+Sages." Reuses ``turn/practice_execution.py SAGE_DEVICE_DISCOVERY_
+CHANCE_PER_LEVEL`` (the same "5% per level" [4.3.1] figure the rulebook
+here explicitly ties its own "twice" multiplier to) rather than
+inventing a second constant. Every Discovery the province's owning
+kingdom has that the caster's own kingdom doesn't is rolled
+independently at ``2 * spy_skill * SAGE_DEVICE_DISCOVERY_CHANCE_PER_
+LEVEL`` (capped at 100%) -- an explicit, documented reading of "a
+chance of finding out what Discoveries... and obtaining them" as a
+per-invention roll, not one single roll unlocking the whole list; no
+sourced text distinguishes the two readings, and per-item independent
+rolls already match this project's own established shape for "roll
+each eligible X separately" (``turn/exploration.py discover_features()``,
+Phase 242). The rulebook's own "common vs. obscure design" difficulty
+distinction has no sourced weighting anywhere (``models/discovery.py``'s
+own confirmed data: ``discval`` is a pure display-order key, not a
+difficulty score) and is therefore not modeled -- every eligible
+Discovery shares the same roll. Espionage never targets the caster's
+own kingdom (``province.owner_kingdom_id == leader.kingdom_id`` skips
+entirely) and grants nothing when the caster has no kingdom of their
+own (an independent Hero) -- the same "nowhere to grant a kingdom-level
+Discovery to" edge case ``turn/practice_execution.py``'s own Phase 266
+note already established. Each discovery actually obtained credits the
+caster's own ``MeritTally.discoveries_via_espionage`` (rulebook page
+51's own Chancellor formula, "+1 per Invention obtained via
+espionage") -- previously never incremented by anything, per that
+field's own Phase 227 note.
+
 A spotted leader's "true" alignment is read from their own kingdom's
 ``KingdomState.alignment`` (the same per-kingdom field
 ``turn/challenge_execution.py``'s Neutral-duelist-bonus check already
@@ -118,6 +154,7 @@ from dataclasses import dataclass, field
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import MONSTROUS_ARMY_RACE, ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord
@@ -126,15 +163,44 @@ from ak_engine.models.temper import Temper
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.intelligence_estimate import estimate_alignment, estimate_temper
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
+from ak_engine.turn.practice_execution import SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL
 from ak_engine.turn.recruit import is_army_type_compatible_with_race
 from ak_engine.turn.spy_table import estimate_reported_value
 from ak_engine.turn.tax_base import province_tax_yield
+
+# RULES.AK [3.14]: "limited to twice the chance of discovery by Sages" -- see
+# module docstring's Phase 267 note.
+ESPIONAGE_DISCOVERY_CHANCE_MULTIPLIER = 2.0
 
 
 def _spy_skill_of(leader: LeaderState) -> int:
     if leader.skills is None:
         return 0
     return leader.skills.pair_for_ability(Ability.SPY)[0]
+
+
+def _roll_espionage_discoveries(
+    state: GameState, spy_kingdom_id: int | None, target_kingdom_id: int | None, spy_skill: int, rng: random.Random
+) -> tuple[Discovery, ...]:
+    """Rolls, independently, every ``Discovery`` the spied-on kingdom owns
+    that the caster's own kingdom doesn't -- see module docstring's Phase
+    267 note. Grants each success directly to ``spy_kingdom_id``'s own
+    ``KingdomState.discoveries``. Returns an empty tuple (no roll at all)
+    when either kingdom is missing or they're the same kingdom.
+    """
+
+    if spy_kingdom_id is None or target_kingdom_id is None or spy_kingdom_id == target_kingdom_id:
+        return ()
+    spy_kingdom = state.kingdoms.get(spy_kingdom_id)
+    target_kingdom = state.kingdoms.get(target_kingdom_id)
+    if spy_kingdom is None or target_kingdom is None:
+        return ()
+
+    chance = min(1.0, ESPIONAGE_DISCOVERY_CHANCE_MULTIPLIER * spy_skill * SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL)
+    candidates = sorted(target_kingdom.discoveries - spy_kingdom.discoveries, key=lambda d: d.value)
+    obtained = [discovery for discovery in candidates if rng.random() < chance]
+    spy_kingdom.discoveries.update(obtained)
+    return tuple(obtained)
 
 
 def _army_display_name(state: GameState, army: ArmyState) -> str:
@@ -187,6 +253,11 @@ class SpyReport:
     # estimate_reported_value()``) -- ``None`` if its base
     # ``ProvinceState.tax`` was never recorded. See module docstring.
     tax_estimate: int | None = None
+    # Phase 267: every Discovery obtained via espionage this call --
+    # already granted to the caster's own kingdom by the time this report
+    # is returned. Empty whenever nothing was obtained (including every
+    # pre-Phase-267 caller). See module docstring.
+    discoveries_obtained: tuple[Discovery, ...] = ()
 
 
 def execute_aspy(
@@ -278,10 +349,18 @@ def execute_aspy(
         _army_display_name(state, army) for army in state.armies_at(leader.location) if army.commanded_by is None
     )
 
+    spy_skill = _spy_skill_of(leader)
+
     exact_tax_yield = province_tax_yield(province)
     tax_estimate = (
-        estimate_reported_value(exact_tax_yield, _spy_skill_of(leader), rng) if exact_tax_yield is not None else None
+        estimate_reported_value(exact_tax_yield, spy_skill, rng) if exact_tax_yield is not None else None
     )
+
+    discoveries_obtained = _roll_espionage_discoveries(
+        state, leader.kingdom_id, province.owner_kingdom_id, spy_skill, rng
+    )
+    if discoveries_obtained:
+        leader.merit_tally.discoveries_via_espionage += len(discoveries_obtained)
 
     return SpyReport(
         province=leader.location,
@@ -292,4 +371,5 @@ def execute_aspy(
         spotted_characters=spotted_characters,
         garrison_army_names=garrison_army_names,
         tax_estimate=tax_estimate,
+        discoveries_obtained=discoveries_obtained,
     )

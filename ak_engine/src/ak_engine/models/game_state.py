@@ -305,16 +305,20 @@ class MeritTally:
     ``_execute_bless``, Phase 251), the four land/naval battle counters
     (``turn/battle_orchestrator.py _record_battle_merit()``, Phase 254),
     ``monster_hp_defeated`` (``turn/search_execution.py
-    execute_search()``'s ``_outcome_from()``, Phase 255), and
+    execute_search()``'s ``_outcome_from()``, Phase 255),
     ``features_discovered_first`` (``turn/plan_dispatch.py``'s own
-    ``ActionCode.EXPLORE`` branch, Phase 256) now have real writers;
-    ``discoveries_found_first``/``discoveries_via_espionage`` and
-    ``monster_hp_neutralized`` are still never incremented by any action
-    in this project -- the former pair needs an acquisition mechanic for
-    ``Discovery`` this project has never had at all (not merely
-    unattributed), the latter needs the Fulfill/Talk-Say negotiation
-    mechanic ``turn/search_execution.py``'s own docstring already flags
-    as unwired. All default to 0: a leader who has fought no battles,
+    ``ActionCode.EXPLORE`` branch, Phase 256), ``monster_hp_neutralized``
+    (a successful Fulfill, ``turn/search_execution.py
+    _resolve_fulfill()``, Phase 258), and ``discoveries_via_espionage``
+    (``turn/aspy_execution.py execute_aspy()``'s own espionage-Discovery
+    roll, Phase 267) now have real writers; ``discoveries_found_first``
+    alone is still never incremented by any action in this project --
+    unlike the espionage half, attributing "found first" needs a global
+    first-inventor registry across every kingdom (the same shape as
+    ``Feature.discovered_by_kingdom``, Phase 75/256), which the
+    acquisition mechanic itself (``KingdomState.discoveries``, Phase 266)
+    deliberately didn't build alongside it, to keep the two concerns
+    separate. All default to 0: a leader who has fought no battles,
     killed no monsters, cast no Resurrection/Bless, or been the first to
     find any Special Place/Discovery legitimately starts here, the same
     "field exists, no populating consumer yet" convention this project

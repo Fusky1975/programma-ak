@@ -10953,7 +10953,7 @@ complete (Phases 209-211).
     margin shrinking at Spy skill 4, the zero floor, and `None`
     staying unperturbed) -- 3011 passed total.
 
-- **Phase 266 (current)**: closes Sage's "Discoveries" acquisition gap --
+- **Phase 266**: closes Sage's "Discoveries" acquisition gap --
   `turn/merit_points.py`'s own module docstring had flagged this as "a
   materially larger, still-unscoped gap... this project has no
   acquisition mechanic for a `Discovery` at all," confirmed by an
@@ -11015,6 +11015,65 @@ complete (Phases 209-211).
     exhausted-kingdom returns `None`; end-to-end grant/no-kingdom/
     already-complete coverage in `practice_execution.py`; both new
     renderers' branches in `turn_report.py`) -- 3021 passed total.
+
+- **Between Phase 266 and 267 (docs-only)**: two stale docstring notes
+  found and corrected, no behavior changes. `turn/search_execution.py`
+  still claimed `models/item.py` was "a never-populated stub" and no
+  treasure-instance model existed, contradicted a few lines below by
+  its own `state.add_item()` call (Phase 140/242's own real fix, never
+  backported to this docstring's own copy of the note).
+  `models/feature.py` separately still called Rumor generation "out of
+  scope," even though `turn/rumor.py` (Phase 243) and its
+  `plan_dispatch.py` wiring already closed it. See commit `9a8637e`.
+
+- **Phase 267 (current)**: closes ASpy's own espionage-Discovery gap,
+  RULES.AK [3.14] (quoted in full in `turn/aspy_execution.py`'s own
+  module docstring): "There is also a chance of finding out what Sage
+  Discoveries the spied-on Kingdom has, and obtaining them for the use
+  of your Kingdom... The chance for discovering an invention by spying
+  is limited to twice the chance of discovery by Sages." A direct,
+  well-sourced follow-up to Phase 266's own acquisition mechanic.
+  - `turn/aspy_execution.py`: `_roll_espionage_discoveries()` rolls,
+    independently, every `Discovery` the spied-on kingdom (the
+    province's own `owner_kingdom_id`) has that the caster's own
+    kingdom doesn't, at `2 * spy_skill * SAGE_DEVICE_DISCOVERY_CHANCE_
+    PER_LEVEL` (capped at 100%) -- reusing `turn/practice_execution.py`'s
+    own Phase 266 constant rather than a second copy of "5% per level,"
+    since the rulebook here explicitly ties its own "twice" multiplier
+    to that exact figure. Each success is granted directly to the
+    caster's own kingdom and credits `MeritTally.
+    discoveries_via_espionage` (rulebook page 51's own Chancellor
+    formula, "+1 per Invention obtained via espionage" -- previously
+    never incremented by anything). `SpyReport.discoveries_obtained:
+    tuple[Discovery, ...]` records what was actually obtained. Espionage
+    never targets the caster's own kingdom, and grants nothing for an
+    independent Hero with no kingdom of their own -- the same "nowhere
+    to grant a kingdom-level Discovery to" edge case Phase 266 already
+    established.
+  - **Two explicit, documented, unsourced design choices**: reading "a
+    chance of finding out... and obtaining them" as one independent
+    roll *per* Discovery rather than one roll unlocking the whole list
+    (no source distinguishes the two readings; per-item independent
+    rolls already match this project's own established shape,
+    `turn/exploration.py discover_features()`); and not modeling the
+    rulebook's own "common vs. obscure design" difficulty distinction,
+    since `models/discovery.py`'s own confirmed data (`discval` is a
+    pure display-order key) gives no basis for weighting one Discovery
+    over another.
+  - `models/game_state.py MeritTally`'s own docstring corrected in
+    passing: it still claimed `monster_hp_neutralized` was "never
+    incremented by any action," stale since Phase 258's own Fulfill
+    wiring: closed alongside `discoveries_via_espionage`'s own new
+    writer, per this session's established self-correction policy.
+  - Non-breaking: full suite passed unchanged (3021 passed) before any
+    new tests were written -- the new roll only fires when a spied-on
+    kingdom actually owns a `Discovery` the caster's kingdom lacks,
+    something no existing test's `GameState` ever set up. 10 new tests
+    (`_roll_espionage_discoveries()`'s own same-kingdom/missing-kingdom/
+    not-yet-owned-only/chance-formula/capped-at-100%-behavior directly,
+    plus `execute_aspy()`'s end-to-end grant, merit credit, roll
+    failure, unowned province, and no-candidates coverage) -- 3031
+    passed total.
 
 ## Setup
 
