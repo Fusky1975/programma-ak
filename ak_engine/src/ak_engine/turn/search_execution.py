@@ -50,11 +50,17 @@ resolves"**:
   silently skipped in the walk rather than aborting it, since a plan
   mixing a wired and an unwired tactic is exactly what the real examples
   above show ("ST, CA-FI, ME, SC" mixes Steal and Cast, both unwired at
-  the time, with Melee). **Since wired up through Phase 258**: Steal
+  the time, with Melee). **Since wired up through Phase 274**: Steal
   (Phase 239), Cast (Phase 209/210/211/237/238), Talk/Say (Phase 240),
-  Beg (Phase 241), and Fulfill (Phase 258) all now resolve for real; the
-  "unwired tactic, keep walking" fallback below still applies to
-  whatever remains unwired (Give, Scout, Use_MI).
+  Beg (Phase 241), Fulfill (Phase 258), Use_MI (Phase 274, see that
+  phase's own addendum below), and Scout (Phase 274, resolved as a
+  post-processing step -- see ``_apply_scout()``'s own docstring) all
+  now resolve for real; the "unwired tactic, keep walking" fallback
+  below still applies to whatever remains unwired (**Give only** --
+  confirmed directly by the user, project author: Give has exactly one
+  real use, passing an item to another Hero or King, never to a
+  monster, so it's structurally inapplicable to Search's own
+  monster-only target, not merely unresearched).
   If no wired tactic is present at all, or the walk finishes without
   resolving (Fire Arrow's shots ran out and nothing else followed),
   ``combat_resolved`` reflects that honestly (see ``execute_search()``'s
@@ -221,6 +227,108 @@ author) before ``models/monster_encounter_plan.py`` was even supplied:
   own ``CAST`` tactic always has been, per the user's own explicit
   scoping decision this phase (no personal-combat spell-effect engine
   exists yet for any of the 11 spells these plans reference).
+
+**Phase 274 addendum -- Use_MI wired; Scout wired, project-original,
+Give re-confirmed still inapplicable.** The gap this project previously
+flagged for Use_MI -- "needs a magic-item-instance -> spell-effect
+mapping this project doesn't model" -- has been closed since Phase
+140/141 (``GameState.items``, ``models/treasure.py TREASURE_WAND_
+SPELL``); that note was simply never updated. Give's own note is
+re-confirmed accurate as-is (see above); Scout was re-examined directly
+against RULES.AK [5.8] and found real and distinct after all -- the
+project author's prior note calling it "'non esiste' as a distinct
+mechanic" is now corrected below.
+
+- **Use_MI [US], rulebook [5.1]/[3.11].** "Some magic items can cast
+  spells in combat... A spell cast from a magic item is automatically
+  successful." Only the 20 spell-casting wands
+  (``models/treasure.py TreasureCategory.SPELL_WAND``) are combat-
+  relevant -- reading a Skill Book mid-fight isn't a "cast," mirroring
+  ``turn/use_mi_execution.py``'s own two branches (only its wand one
+  applies here). ``tactic.sub_object`` is the item-instance id
+  (``turn/search_decode.py``'s own docstring: "a magic-item id"),
+  resolved through the same ``GameState.items`` registry Trade/Give's
+  own item path and ``turn/use_mi_execution.py`` both already read. An
+  id the leader doesn't actually own, isn't a spell wand, or is out of
+  charges is a documented no-op (the plan keeps walking) -- the same
+  "clear, honest reason" precedent ``execute_use_mi()`` itself already
+  established for an invalid target.
+
+  Reuses ``_resolve_cast_tactic()``'s own full 13-spell effect dispatch
+  directly via a new ``forced_level`` parameter -- ``SEARCH_USE_MI_
+  WAND_SKILL_LEVEL`` (2, ``TREASAB.X2``'s own "at skill-2" label on
+  every wand, matching ``turn/use_mi_execution.py``'s own
+  ``USE_MI_WAND_SKILL_LEVEL`` constant, duplicated rather than
+  cross-imported per this project's own established "same shared fact,
+  independent citation per consumer module" convention, e.g.
+  ``PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP``) instead of the caster's
+  real ability level, and no ``personal_combat_spell_cast_chance()``
+  roll at all ([3.11]'s own "automatically successful"). A charge is
+  spent only when the wand's own spell was actually eligible to be
+  attempted (the new ``cast_attempt_applied`` flag, set the instant
+  ``_resolve_cast_tactic()`` gets past every precondition check -- Spell
+  Undead-target eligibility, Illusory Hero's own known-level gate,
+  ``blocked_from_cast_and_archery`` -- regardless of the spell's own
+  further success/failure branches beyond that point), not on a
+  rejected/ineligible target -- the same "spend only on a genuine cast"
+  rule ``execute_use_mi()``'s own wand branch already follows.
+
+- **Scout [SC], rulebook [5.8], real and distinct after all.** "When
+  searching a feature, a character can use the Scout tactic to explore
+  the feature looking for any special function or event... It makes no
+  difference where you put the Scout tactic in your encounter plan...
+  the computer will simply do your Scout tactic after all other
+  encounter tactics are completed." Resolved as a genuine
+  post-processing step (``_apply_scout()``, called once by
+  ``execute_search()`` after the tactic-walk below settles its own
+  outcome) rather than at Scout's own position in the plan -- the
+  cleanest way to honor "position doesn't matter, always last" without
+  threading a post-hoc hook through this function's own dozen-plus
+  return sites. A dead leader can't Scout anything (not stated
+  explicitly, but structurally obvious).
+
+  **Success-chance gating, read directly from [5.8]'s own text**: "an
+  attempt will be made to discover" when the plan "calls for Talking,
+  Fulfilling, or Attacking" -- Melee and Fire Arrow are this project's
+  own two real "Attacking" Encounter Plan tactics, so both qualify.
+  That branch states no failure chance, so it's read as guaranteed.
+  "If you use some other type of tactical plan, you may be told that
+  the Special is there, but not find out what it does" -- only two
+  named exceptions give an actual percentage: Steal (33% chance of not
+  even that) and Flee (67%). A plan matching neither the guaranteed
+  branch nor one of these two named exceptions (a bare Scout, or
+  Give+Scout only) is left genuinely unresolved -- unsourced, not
+  guessed.
+
+  **Only the discovery *level* is modeled**
+  (``Feature.discovered_by_kingdom``, real since Phase 75/242): the
+  guaranteed branch reaches level 3 ("fully known"); a successful
+  partial branch (Steal's/Flee's own named chance) reaches level 2 ("a
+  magic-power hint is known," per that field's own docstring) --
+  matching "told... it is there, but not find out what it does"
+  literally. Never lowers an already-higher level. **What Scout would
+  actually reveal (the Special's own real content) is not modeled at
+  all**: no ``Feature`` in this project is ever assigned a ``Power``/
+  ``PowerCondition`` (``models/power.py``'s own vocabulary is never
+  wired to a real instance, and ``turn/world_generation.py`` never
+  assigns one) -- confirmed directly with the user (project author),
+  who chose this narrower scope explicitly rather than first building
+  that missing link.
+
+  **Two Scout orders, sourced from ``PROSE/PCOND.X2`` (user-supplied,
+  project-original)**: the game's own PowerCondition-rejection prose
+  confirms, for exactly 3 of ``PowerCondition``'s 6 real conditions --
+  ``PayUp``, ``DrainSkill``, ``DrainCourage``, the three that cost the
+  character something to use a feature's Power -- "to accept these
+  terms, a character must give two Scout orders when Searching this
+  feature" (quoted three times, once per condition, verbatim except for
+  the specific cost named). ``SearchExecutionResult.scout_orders_given``
+  records the real count (>=2 meaning "consent given") -- a confirmed,
+  sourced fact with nothing to consume it yet, the same "confirmed
+  mechanic, no consumer yet" scoping this module already uses elsewhere
+  (e.g. Invisibility's own Steal bonus, module docstring's Phase 186
+  note) -- since no ``Feature`` ever carries a ``Power``/
+  ``PowerCondition`` to actually consent to in the first place.
 """
 
 from __future__ import annotations
@@ -301,7 +409,8 @@ from ak_engine.turn.encounter import (
     roll_telekinetic_storm_victim_damage,
     spiritwrack_melee_damage_reduction,
 )
-from ak_engine.turn.search_decode import SearchRequest
+from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_WAND_SPELL, TreasureCategory
+from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 
 # Desktop/MOSTRI con statistiche.txt footnote (*): "The Troll regenerates
 # 1 hit point every combat round." See turn/encounter.py's own Phase 155
@@ -323,6 +432,22 @@ FLEE_CHANCE: dict[MonsterSpeed, float] = {
     MonsterSpeed.MEDIUM: 0.50,
     MonsterSpeed.SLOW: 0.80,
 }
+
+# TREASAB.X2: every one of the 20 wands' own label reads "Cast '<Spell>' at
+# skill-2" -- same real fact as turn/use_mi_execution.py's own USE_MI_WAND_
+# SKILL_LEVEL, duplicated per this project's own "independent citation per
+# consumer module" convention (module docstring's own Phase 274 addendum).
+SEARCH_USE_MI_WAND_SKILL_LEVEL = 2
+
+# Rulebook [5.8] Scout -- module docstring's own Phase 274 addendum has the
+# full quote and reasoning behind every constant below.
+SCOUT_GUARANTEED_MANEUVERS = frozenset({Maneuver.TALK, Maneuver.FULFILL, Maneuver.MELEE, Maneuver.SHOOT})
+SCOUT_STEAL_ONLY_SUCCESS_CHANCE = 1.0 - 0.33  # "if you Steal and Scout, there is a 33% chance of not finding out"
+SCOUT_FLEE_ONLY_SUCCESS_CHANCE = 1.0 - 0.67  # "if you Flee and Scout, this chance is 67%"
+# "you may be told that the Special is there, but not find out what it
+# does" -- models/feature.py's own fdisc=2 ("a magic-power hint is known").
+SCOUT_PARTIAL_DISCOVERY_LEVEL = 2
+SCOUT_FULL_DISCOVERY_LEVEL = 3  # "an attempt will be made to discover" -- no stated failure chance, read as guaranteed
 
 
 def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
@@ -366,6 +491,12 @@ class SearchExecutionResult:
     # itself -- same convention/reasoning as PursueExecutionResult.request's
     # own Phase 213 note.
     request: SearchRequest | None = None
+    # Phase 274: how many Scout tactics the plan actually listed -- set by
+    # `_apply_scout()` regardless of whether Scout itself found anything.
+    # >=2 is PCOND.X2's own confirmed "consent given" signal for a Power
+    # condition this project has nothing yet to apply it to -- see
+    # `_apply_scout()`'s own docstring.
+    scout_orders_given: int = 0
 
 
 def execute_search(
@@ -374,13 +505,133 @@ def execute_search(
     request: SearchRequest,
     rng: random.Random | None = None,
 ) -> SearchExecutionResult:
-    """Resolve a Search order end-to-end where the available sources allow it.
-
-    See module docstring for exactly which cases resolve real combat
-    and which honestly report ``combat_resolved=False`` instead.
+    """Resolve a Search order end-to-end, then apply Scout as a final
+    post-processing step (Phase 274) -- see `_apply_scout()`'s own
+    docstring for why Scout can't simply resolve inline at its own
+    position in the tactic walk like every other tactic below.
     """
 
     rng = rng if rng is not None else random.Random()
+    result = _resolve_search_encounter(state, leader_id, request, rng)
+    if result.accepted:
+        _apply_scout(state, leader_id, request, result, rng)
+    return result
+
+
+def _apply_scout(
+    state: GameState,
+    leader_id: int,
+    request: SearchRequest,
+    result: SearchExecutionResult,
+    rng: random.Random,
+) -> None:
+    """Scout [SC], rulebook [5.8] -- Phase 274, quoted in full:
+
+    "When searching a feature, a character can use the 'Scout' tactic to
+    explore the feature looking for any special function or event...
+    It makes no difference where you put the Scout tactic in your
+    encounter plan. The Scout tactic has no effect on the success of
+    your other tactics, and the computer will simply do your Scout
+    tactic after all other encounter tactics are completed. When the
+    Scout tactic is part of an encounter plan which calls for Talking,
+    Fulfilling or Attacking... an attempt will be made to discover any
+    special function or event... If you use some other type of tactical
+    plan, you may be told that the Special is there, but not find out
+    what it does. For example, if you Steal and Scout, there is a 33%
+    chance of not finding out. If you Flee and Scout, this chance is
+    67%."
+
+    This project has no "special function or event" system at all to
+    trigger ([5.8]'s own beneficial/detrimental Specials need the
+    Feature->Power link ``models/power.py``/``models/magic_feature.py``
+    flag as never wired anywhere, see those modules' own docstrings) --
+    the one real, already-modeled effect Scout can drive is [5.8]'s own
+    "gain information on what treasure is in the feature," i.e. a
+    discovery-level bump on ``Feature.discovered_by_kingdom`` (Phase 75)
+    from a partial "a magic-power hint is known" (2) to a full "fully
+    known" (3) reveal -- the exact two non-zero, non-"riches unknown"
+    levels that array's own docstring documents. Runs unconditionally
+    last (per the quote above), independent of every other tactic's own
+    return-early control flow -- which is exactly why this can't be just
+    another branch inside the main tactic walk above, and needs its own
+    post-processing pass in ``execute_search()`` instead.
+
+    **The success/failure split**, using ``request.tactics`` as a whole
+    (not just position, since the rulebook says position never matters):
+    a plan containing Talk, Fulfill, Melee, or Shoot ("Attacking" reads
+    as [3.12]'s own combat-intent tactics, ``challenge_execution.py
+    has_combat_intent()``'s own precedent) is a guaranteed reveal, no
+    roll. Otherwise a bare Steal is 67%, a bare Flee is 33% -- the
+    rulebook's own two named examples, both literal two-tactic plans
+    ("Steal and Scout" / "Flee and Scout"); a plan with both and neither
+    a guaranteed tactic resolves against Steal's own 67% first (the
+    rulebook lists Steal first, and both tactics still "match one of the
+    two named exceptions", just not disambiguated further). Every other
+    combination the rulebook doesn't literally name (Cast-only, Beg-only,
+    Say-only, or a bare Scout) matches *neither* the guaranteed branch
+    nor either named exception -- left genuinely unresolved (no
+    discovery-level change at all, not even a downgrade-safe partial),
+    per this project's own standing "no source, no guess" convention,
+    rather than inventing a percentage the rulebook never gave.
+
+    A dead leader can't scout anything afterward -- skipped outright
+    when ``result.leader_killed``. Also skipped for a kingdomless
+    (independent Hero) leader: discovery is tracked per-``kingdom_id``
+    (``Feature.discovered_by_kingdom``), so there's nowhere to record it.
+
+    ``result.scout_orders_given`` is set to how many Scout tactics the
+    plan actually listed (real Search phases only ever carry one, per
+    ``search_decode.py``'s own docstring, but nothing prevents encoding
+    more) regardless of whether this function finds anything -- PCOND.
+    X2's own confirmed reading is that *two* Scout orders on the same
+    feature is this game's explicit consent mechanism for a Power
+    condition ("PayUp"/"DrainSkill"/"DrainCourage") this project has no
+    Feature->Power wiring to actually apply yet. Recorded now, honestly,
+    as a fact the caller can act on later, rather than silently dropped.
+    """
+
+    scout_count = sum(1 for tactic in request.tactics if tactic.maneuver is Maneuver.SCOUT)
+    result.scout_orders_given = scout_count
+    if scout_count == 0 or result.leader_killed:
+        return
+
+    leader = state.leaders.get(leader_id)
+    feature = state.features.get(request.feature_id)
+    if leader is None or feature is None or leader.kingdom_id is None:
+        return
+
+    maneuvers = {tactic.maneuver for tactic in request.tactics}
+    if maneuvers & SCOUT_GUARANTEED_MANEUVERS:
+        discovered = True
+    elif Maneuver.STEAL in maneuvers:
+        discovered = rng.random() < SCOUT_STEAL_ONLY_SUCCESS_CHANCE
+    elif Maneuver.FLEE in maneuvers:
+        discovered = rng.random() < SCOUT_FLEE_ONLY_SUCCESS_CHANCE
+    else:
+        # Matches neither the guaranteed branch nor either of the
+        # rulebook's two named exceptions (Cast-only, Beg-only, a bare
+        # Scout, ...) -- genuinely unresolved by the source, so this
+        # attempt has no effect at all rather than guessing a percentage.
+        return
+
+    current_level = feature.discovery_level(leader.kingdom_id)
+    new_level = SCOUT_FULL_DISCOVERY_LEVEL if discovered else max(current_level, SCOUT_PARTIAL_DISCOVERY_LEVEL)
+    feature.discovered_by_kingdom[leader.kingdom_id] = new_level
+
+
+def _resolve_search_encounter(
+    state: GameState,
+    leader_id: int,
+    request: SearchRequest,
+    rng: random.Random,
+) -> SearchExecutionResult:
+    """The real Search-encounter resolution body -- see module docstring
+    for exactly which cases resolve real combat and which honestly
+    report ``combat_resolved=False`` instead. Split out from
+    ``execute_search()`` (Phase 274) so Scout's own "always resolves
+    last, whatever else happened" rule can wrap this function's result
+    without threading a post-hoc hook through every return site below.
+    """
 
     leader = state.leaders.get(leader_id)
     if leader is None:
@@ -475,7 +726,11 @@ def execute_search(
             return SearchExecutionResult(accepted=True, combat_resolved=True, winner="monster", leader_killed=True)
         return None
 
-    def _resolve_cast_tactic(tactic, *, caster_is_leader: bool, is_first_tactic: bool = False) -> SearchExecutionResult | None:
+    cast_attempt_applied = False
+
+    def _resolve_cast_tactic(
+        tactic, *, caster_is_leader: bool, is_first_tactic: bool = False, forced_level: int | None = None
+    ) -> SearchExecutionResult | None:
         """Applies one of the ten Personal-Combat-only spells (or Charm's
         combat form) to the encounter: the 8 non-channeled, one-roll
         spells from Phase 209 (see that phase's own module docstring
@@ -504,7 +759,23 @@ def execute_search(
         own guaranteed Flee), or ``None`` if the encounter continues (a
         failed cast, a stat-modifier effect, or a spell whose target
         isn't eligible).
+
+        **``forced_level`` (Phase 274)**: when given, skips
+        ``resolve_personal_combat_spell_cast()``'s own roll entirely
+        (automatic success, [3.11]/[5.1]'s own rule for a wand-cast
+        spell) and uses this value instead of the caster's real ability
+        level -- ``turn/search_execution.py``'s own ``_resolve_use_mi_
+        tactic()`` is the only caller. ``cast_attempt_applied`` (an
+        enclosing-scope flag, not a return value, since most of this
+        function's own real spell effects return ``None`` on a genuine
+        success too) is set the instant every precondition check below
+        is passed, letting a Use_MI caller know whether to spend a
+        charge regardless of which further branch the spell's own
+        effect takes.
         """
+
+        nonlocal cast_attempt_applied
+        cast_attempt_applied = False
 
         caster = leader_combatant if caster_is_leader else monster_combatant
         target = monster_combatant if caster_is_leader else leader_combatant
@@ -566,7 +837,14 @@ def execute_search(
             if not eligible:
                 return None
 
-        if caster_is_leader:
+        if forced_level is not None:
+            # Phase 274: a wand-cast spell -- TREASAB.X2's own fixed
+            # "at skill-2" label overrides the caster's real ability
+            # level entirely, and there's no Pagan-Realm concept to
+            # apply to an item's own automatic success.
+            level = forced_level
+            caster_is_pagan = False
+        elif caster_is_leader:
             level = effective_skill_level(state, leader, ability)
             kingdom = state.kingdoms.get(leader.kingdom_id) if leader.kingdom_id is not None else None
             # White Magic never gets the Pagan-Realm bonus (Phase 192).
@@ -584,7 +862,11 @@ def execute_search(
         if spell is Spell.ILLUS_HERO and level < ILLUS_HERO_KNOWN_ABILITY_LEVEL:
             return None
 
-        succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan)
+        cast_attempt_applied = True  # every real precondition above is now passed
+        if forced_level is not None:
+            succeeded = True  # [3.11]/[5.1]: "a spell cast from a magic item is automatically successful"
+        else:
+            succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan)
 
         if spell is Spell.CONTROL_UNDEAD:
             if succeeded:
@@ -888,6 +1170,62 @@ def execute_search(
         target = monster_combatant if caster_is_leader else leader_combatant
         return _consume_bonus_attacks(caster, target, defender_is_monster=caster_is_leader)
 
+    def _resolve_use_mi_tactic(tactic) -> SearchExecutionResult | None:
+        """Use_MI [UM], rulebook [5.1]/[3.11] -- Phase 274. ``tactic.sub_
+        object`` is a magic-item-instance id (``search_decode.py``'s own
+        docstring, sourced from ``DEF2.PAS``'s ``W_List`` -- the same
+        opaque-id shape Phase 141's top-level Use_MI ACTION already reads
+        via ``GameState.items``), looked up directly; a missing item, one
+        this leader doesn't own, or one with no charges left is a
+        documented no-effect (same "can't use what you don't have/it's
+        empty" rejections Phase 141's own ``execute_use_mi()`` uses),
+        never a guess at what the player meant.
+
+        Only the 20 ``TreasureCategory.SPELL_WAND`` items are meaningful
+        inside a personal Encounter -- the other 15 legitimate Use_MI
+        targets (the skill books) "operate automatically" outside combat
+        per [5.9] and have no Encounter-Plan role at all, so any other
+        category is a documented no-effect here too (this tactic, unlike
+        the top-level ACTION, never reads/mutates ``LeaderState.skills``).
+
+        A wand's spell is dispatched through ``_resolve_cast_tactic()``
+        itself (``forced_level=SEARCH_USE_MI_WAND_SKILL_LEVEL``, TREASAB.
+        X2's own fixed "at skill-2" label) rather than duplicating any of
+        its 13 Personal-Combat spell effects here -- this is the same
+        "reuse the real dispatcher" precedent ``_resolve_monster_casts()``
+        already established for the guardian's own CAST entries. A wand
+        holding a spell outside those 13 (``cast_attempt_applied`` stays
+        ``False``) is a documented no-effect, not a charge-consuming
+        misfire -- nothing was actually cast. Charge consumption always
+        follows ``cast_attempt_applied`` regardless of the spell's own
+        success/failure, same rule as Phase 141's own charge rule ("spent
+        only when the cast genuinely happens").
+
+        A wand-cast miss (no terminal outcome, no free attacks landed)
+        still spends the leader's own bonus-archery-attack budget for
+        this tactic, same as an ordinary hand-cast spell falling through
+        to ``_consume_bonus_attacks()`` in ``_resolve_cast()`` above.
+        """
+
+        item = state.items.get(tactic.sub_object)
+        if item is None or item.owner_leader_id != leader_id:
+            return None
+        if TREASURE_CATEGORY.get(item.treasure) is not TreasureCategory.SPELL_WAND:
+            return None
+        if item.charges <= 0:
+            return None
+
+        spell = TREASURE_WAND_SPELL[item.treasure]
+        synthetic_tactic = SearchTactic(maneuver=Maneuver.CAST, sub_object=spell.value)
+        outcome = _resolve_cast_tactic(
+            synthetic_tactic, caster_is_leader=True, is_first_tactic=False, forced_level=SEARCH_USE_MI_WAND_SKILL_LEVEL
+        )
+        if cast_attempt_applied:
+            item.charges -= 1
+        if outcome is not None:
+            return outcome
+        return _consume_bonus_attacks(leader_combatant, monster_combatant, defender_is_monster=True)
+
     monster_cast_resolved = False
 
     def _resolve_monster_casts() -> SearchExecutionResult | None:
@@ -1120,26 +1458,25 @@ def execute_search(
             if outcome is not None:
                 return outcome
             continue
+        if tactic.maneuver is Maneuver.USE_MI:
+            outcome = _resolve_use_mi_tactic(tactic)
+            if outcome is not None:
+                return outcome
+            continue
         # Every other maneuver isn't wired -- skip it and keep walking
         # the plan, matching how real Encounter Plans mix wired and
-        # unwired tactics (module docstring's own quoted examples). Per
-        # spell/reason, confirmed directly by the user (project author):
-        # - **Give**: has exactly one real use -- passing an item to
-        #   another Hero or King (any realm), never to a monster.
-        #   Search's own target is always the guardian monster, so
-        #   Give is structurally inapplicable here, not merely
-        #   unresearched (Fulfill is the monster-facing counterpart --
-        #   see `turn/encounter.py`'s own Phase 240 addendum for why
-        #   that stays unwired too).
-        # - **Scout**: "non esiste" as a distinct mechanic -- the
-        #   pre-combat information-gathering role its own name suggests
-        #   is actually served by Talk (Phase 240), not a separate
-        #   tactic. Confirmed, not unresearched.
-        # - **Use_MI**: needs a magic-item-instance -> spell-effect
-        #   mapping this project doesn't model (the same gap
-        #   `turn/search_decode.py`'s own docstring already flags for
-        #   Cast's sub-object). Confirmed absent, skipped for now on
-        #   the user's own direction.
+        # unwired tactics (module docstring's own quoted examples).
+        # - **Give** (Phase 274, re-confirmed): has exactly one real use
+        #   -- passing an item to another Hero or King (any realm), never
+        #   to a monster. Search's own target is always the guardian
+        #   monster, so Give is structurally inapplicable here, not
+        #   merely unresearched (Fulfill is the monster-facing
+        #   counterpart -- see `turn/encounter.py`'s own Phase 240
+        #   addendum for why that stays unwired too).
+        # - **Scout** (Phase 274): resolved separately, *after* this
+        #   tactic walk finishes -- see `_apply_scout()`'s own docstring
+        #   for why it can't simply take a branch here like every other
+        #   tactic above.
 
     if combat_attempted:
         # Phase 178: the plan's own tactic list ran out without a winner

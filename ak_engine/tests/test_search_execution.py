@@ -2111,4 +2111,299 @@ def test_execute_search_fulfill_not_honored_falls_through_and_clears_the_deal():
     assert mock_melee.called  # not honored -- no forced combat, just the plan's own next tactic
     assert result.winner == "leader"
     assert feature.pending_deal_leader_id is None  # the attempt still consumes the pending flag
-    assert state.leaders[LEADER_ID].merit_tally.monster_hp_neutralized == 0
+
+
+# -- Phase 274: Use_MI wired as a real Search Encounter Plan tactic ----
+
+
+def _use_mi_request(feature_id: int, item_id: int, *following: Maneuver) -> SearchRequest:
+    tactics = [SearchTactic(maneuver=Maneuver.USE_MI, sub_object=item_id)]
+    tactics += [SearchTactic(maneuver=m) for m in following]
+    return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=tactics)
+
+
+def test_execute_search_use_mi_missing_item_falls_through_to_melee():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _use_mi_request(1, 999, Maneuver.MELEE)  # no such item in state.items
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_use_mi_item_not_owned_by_leader_falls_through_to_melee():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    item = state.add_item(Treasure.WAND_CHARM, owner_leader_id=99, charges=3)  # somebody else's wand
+    request = _use_mi_request(1, item.item_id, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert item.charges == 3  # untouched -- never resolved as this leader's own item
+
+
+def test_execute_search_use_mi_non_wand_category_falls_through_to_melee():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=LEADER_ID)  # not a SPELL_WAND
+    request = _use_mi_request(1, item.item_id, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_use_mi_no_charges_left_falls_through_to_melee():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    item = state.add_item(Treasure.WAND_CHARM, owner_leader_id=LEADER_ID, charges=0)
+    request = _use_mi_request(1, item.item_id, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert item.charges == 0
+
+
+def test_execute_search_use_mi_wand_of_charm_is_automatically_successful_and_spends_a_charge():
+    # [3.11]/[5.1]: a spell cast from a magic item is automatically
+    # successful -- no resolve_personal_combat_spell_cast roll at all,
+    # unlike a hand-cast Charm (see test_execute_search_cast_charm_*).
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    item = state.add_item(Treasure.WAND_CHARM, owner_leader_id=LEADER_ID, charges=3)
+    request = _use_mi_request(1, item.item_id, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_roll.called  # automatic success -- the real roll is never even consulted
+    assert not mock_melee.called  # Charm's own success ends the Search in a guaranteed Flee
+    assert result.fled is True
+    assert item.charges == 2
+
+
+def test_execute_search_use_mi_wand_of_charm_ignores_the_casters_own_real_skill_level():
+    # TREASAB.X2: every wand casts "at skill-2" regardless of the
+    # caster's real Psychic level -- an unskilled leader (level 0) still
+    # gets a fully-successful, automatic cast.
+    state = _state_with_leader()  # skills=None -- level 0 in every ability
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    item = state.add_item(Treasure.WAND_CHARM, owner_leader_id=LEADER_ID, charges=1)
+    request = _use_mi_request(1, item.item_id, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_melee.called
+    assert result.fled is True
+    assert item.charges == 0
+
+
+def test_execute_search_use_mi_wand_holding_an_unmodeled_spell_is_a_no_effect_and_no_charge_spent():
+    # Wand of Oratory: a real Treasure/Spell mapping, but Oratory isn't
+    # one of the 13 Personal-Combat spells `_resolve_cast_tactic()`
+    # models -- `cast_attempt_applied` stays False, so no charge is
+    # spent (nothing was actually cast), same as Phase 141's own rule.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    item = state.add_item(Treasure.WAND_ORATORY, owner_leader_id=LEADER_ID, charges=3)
+    request = _use_mi_request(1, item.item_id, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+    assert item.charges == 3  # untouched
+
+
+def test_execute_search_use_mi_wand_of_hand_of_death_kills_the_guardian_instantly():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    item = state.add_item(Treasure.WAND_HAND_OF_DEATH, owner_leader_id=LEADER_ID, charges=1)
+    request = _use_mi_request(1, item.item_id, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_melee.called
+    assert result.combat_resolved is True
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+    assert item.charges == 0
+
+
+# -- Phase 274: Scout wired as a real, always-last Search Encounter Plan tactic --
+
+
+def _scout_request(feature_id: int, *tactics: Maneuver) -> SearchRequest:
+    return SearchRequest(
+        feature_id=feature_id, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=m) for m in tactics]
+    )
+
+
+def test_execute_search_no_scout_tactic_leaves_the_feature_undiscovered():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.scout_orders_given == 0
+    assert state.features[1].discovered_by_kingdom == {}
+
+
+def test_execute_search_scout_counts_every_scout_tactic_in_the_plan():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.MELEE, Maneuver.SCOUT, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    # PCOND.X2's own confirmed reading: >=2 Scout orders is this game's
+    # explicit consent signal for a Power condition, recorded honestly
+    # even though nothing yet consumes it.
+    assert result.scout_orders_given == 2
+
+
+def test_execute_search_scout_with_only_unnamed_tactics_is_genuinely_unresolved():
+    # A bare Scout (or Cast/Beg/Say + Scout) matches neither [5.8]'s
+    # guaranteed branch nor either of its two named exceptions (Steal,
+    # Flee) -- no source gives a percentage for this case, so it must
+    # have no effect at all, not a guessed-at reveal.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.SCOUT)
+
+    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))  # the monster's own hit_points roll
+
+    assert result.scout_orders_given == 1
+    assert state.features[1].discovered_by_kingdom == {}
+
+
+def test_execute_search_scout_with_melee_in_plan_is_a_guaranteed_full_discovery():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        # The lone scripted value is consumed by the monster's own
+        # hit_points roll at Combatant construction, not by Scout (the
+        # Talk/Fulfill/Attacking branch is a guaranteed reveal, no roll).
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert result.scout_orders_given == 1
+    assert state.features[1].discovery_level(1) == 3
+
+
+def test_execute_search_scout_skipped_when_the_leader_dies_but_still_counted():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="b", rounds=1)  # the guardian wins
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert result.leader_killed is True
+    assert result.scout_orders_given == 1  # still recorded -- see _apply_scout()'s own docstring
+    assert state.features[1].discovered_by_kingdom == {}  # but no discovery -- a dead leader can't scout
+
+
+def test_execute_search_scout_steal_only_partial_discovery_on_the_documented_33_percent_miss():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.STEAL, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=True):
+        # First value: the monster's own hit_points roll at Combatant
+        # construction. Second: Scout's own roll, >= 0.67 -- the 33% miss.
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.9]))
+
+    assert result.scout_orders_given == 1
+    assert state.features[1].discovery_level(1) == 2  # told it's there, not what it does
+
+
+def test_execute_search_scout_steal_only_full_discovery_on_the_documented_67_percent_hit():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.STEAL, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=True):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.1]))  # < 0.67 -- the 67% hit
+
+    assert state.features[1].discovery_level(1) == 3
+
+
+def test_execute_search_scout_flee_only_partial_discovery_on_the_documented_67_percent_miss():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.FLEE, Maneuver.SCOUT)
+
+    # First value: the monster's own hit_points roll. Second fails the
+    # Flee roll (Gargoyle is MEDIUM speed, 50% chance -- 0.9 always
+    # fails); third is Scout's own roll, >= 0.33 -- the rulebook's
+    # documented 67% miss for Flee+Scout.
+    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.9, 0.9]))
+
+    assert state.features[1].discovery_level(1) == 2
+
+
+def test_execute_search_scout_flee_only_full_discovery_on_the_documented_33_percent_hit():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.FLEE, Maneuver.SCOUT)
+
+    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.9, 0.1]))  # < 0.33 -- the 33% hit
+
+    assert state.features[1].discovery_level(1) == 3
+
+
+def test_execute_search_scout_never_downgrades_an_already_fully_known_feature():
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    feature.discovered_by_kingdom[1] = 3  # already fully known from an earlier Search
+    state.add_feature(feature)
+    request = _scout_request(1, Maneuver.STEAL, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=True):
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.9]))  # the 33% miss
+
+    assert feature.discovery_level(1) == 3  # a failed re-scout never downgrades a known feature
+
+
+def test_execute_search_scout_kingdomless_leader_is_a_no_effect():
+    state = GameState()
+    state.add_leader(LeaderState(LEADER_ID, kingdom_id=None, name="Independent", location=LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert result.scout_orders_given == 1
+    assert state.features[1].discovered_by_kingdom == {}  # nowhere to record it

@@ -11367,7 +11367,7 @@ complete (Phases 209-211).
     espionage` nor `discoveries_first_found_by` are touched -- 3079
     passed total.
 
-- **Phase 273 (current)**: extends Fire Arrow into Challenge, Pursue and
+- **Phase 273**: extends Fire Arrow into Challenge, Pursue and
   Duel -- previously only Search (Phase 170) actually resolved a
   `Maneuver.SHOOT` tactic as a real Fire Arrow duel; Challenge and
   Pursue only ever consulted it to decide whether combat-acceptance
@@ -11419,6 +11419,91 @@ complete (Phases 209-211).
     for `battle_orchestrator.py` (`_commander_combatant` reads real
     Archery skill; `_maybe_fight_duel` resolves Fire Arrow first when
     `duel_maneuvers` is supplied) -- 3088 passed total.
+
+- **Phase 274 (current)**: wires Use_MI and Scout as real Search
+  Encounter Plan tactics ([5.1]/[3.11] and [5.8] respectively); Give
+  stays deliberately unwired (re-confirmed directly by the user, project
+  author -- see below). This closes a stale scoping note: `turn/use_mi_
+  execution.py`'s own `GameState.items`/`TREASURE_WAND_SPELL` machinery
+  (Phase 140/141) had already closed the "no magic-item-instance ->
+  spell-effect mapping" gap `search_execution.py`'s own module docstring
+  used to justify skipping Use_MI -- the note was simply never updated.
+  Scout was re-examined directly against RULES.AK [5.8] after a prior
+  session's own note calling it "'non esiste' as a distinct mechanic,
+  served by Talk instead" turned out to be wrong; the user (project
+  author) confirmed it's real and distinct, and supplied two Pascal
+  PROSE reference files (`PCOND.X2`, `POWMSG.X2`) describing the
+  Scout-explorable Power-condition mechanic.
+  - **Use_MI [US]**: `tactic.sub_object` is a magic-item-instance id
+    (`turn/search_decode.py`'s own docstring), resolved through the same
+    `GameState.items` registry Phase 140/141 already established. Only
+    the 20 spell-casting wands are combat-relevant here (a Skill Book
+    mid-fight isn't a "cast"); an unowned/missing/non-wand/empty item is
+    a documented no-op, same as `execute_use_mi()`'s own precedent. New
+    `_resolve_use_mi_tactic()` reuses `_resolve_cast_tactic()`'s own
+    13-spell dispatch directly via a new `forced_level` parameter
+    (`SEARCH_USE_MI_WAND_SKILL_LEVEL = 2`, TREASAB.X2's own "at skill-2"
+    label on every wand) instead of duplicating any spell-effect code --
+    [3.11]'s "a spell cast from a magic item is automatically
+    successful" skips `resolve_personal_combat_spell_cast()`'s own roll
+    entirely. A charge is spent only when the wand's own spell was
+    actually a modeled Personal-Combat spell that passed every
+    precondition (the new `cast_attempt_applied` flag), not on a
+    rejected target or an unmodeled spell -- the same "spend only on a
+    genuine cast" rule `execute_use_mi()` already follows.
+  - **Scout [SC]**: resolved as a genuine post-processing step
+    (`_apply_scout()`, called once by a new thin `execute_search()`
+    wrapper after the renamed `_resolve_search_encounter()` settles its
+    own outcome) rather than at Scout's own position in the tactic walk
+    -- [5.8] states position never matters and Scout always resolves
+    last, which a single post-hoc pass honors far more cleanly than
+    threading a hook through this module's dozen-plus return sites. Only
+    the discovery-*level* effect is modeled
+    (`Feature.discovered_by_kingdom`, real since Phase 75/242): a plan
+    that "calls for Talking, Fulfilling or Attacking" (Melee/Fire Arrow)
+    is a guaranteed full reveal (level 3); a bare Steal is the
+    rulebook's own named 67% chance, a bare Flee its own named 33%
+    (level 2, "a magic-power hint is known," on a miss); every other
+    combination (Cast-only, Beg-only, a bare Scout) matches neither the
+    guaranteed branch nor either named exception, so it's genuinely
+    unresolved by the source -- no discovery-level change at all, not a
+    guessed-at percentage. Never downgrades an already-higher level. A
+    dead leader can't Scout (skipped outright); a kingdomless
+    (independent-Hero) leader has nowhere to record a per-kingdom
+    discovery, also skipped. What Scout would actually *reveal* (the
+    Special's own real content) stays unmodeled: no `Feature` in this
+    project is ever assigned a `Power`/`PowerCondition`
+    (`models/power.py`'s own vocabulary has no real instance anywhere)
+    -- confirmed directly with the user, who chose this narrower scope
+    explicitly. New `SearchExecutionResult.scout_orders_given` records
+    how many Scout tactics the plan actually listed, regardless of
+    outcome -- `PCOND.X2` (user-supplied) confirms two Scout orders on
+    the same feature is this game's own explicit consent mechanism for 3
+    of `PowerCondition`'s 6 real conditions (`PayUp`/`DrainSkill`/
+    `DrainCourage`), a sourced fact recorded honestly even though
+    nothing yet consumes it (no Feature carries a Power to consent to in
+    the first place).
+  - **Give**: re-confirmed unwired, no code change -- the user's own
+    prior note stands as correct ("exactly one real use, passing an item
+    to another Hero or King, never to a monster; Search's own target is
+    always the guardian monster").
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added (3088, matching Phase 273's own final count).
+  - 19 new tests: 8 for Use_MI (missing/unowned/non-wand/no-charge
+    items all fall through to the plan's own next tactic; a Wand of
+    Charm is automatically successful and spends exactly one charge,
+    regardless of the caster's own real, unrelated skill level; a Wand
+    of Oratory -- a real item whose spell isn't one of the 13 modeled
+    Personal-Combat effects -- is a no-op that spends no charge; a Wand
+    of Hand of Death kills the guardian instantly), 11 for Scout (no
+    Scout tactic leaves the feature untouched; multiple Scout tactics
+    are all counted; the guaranteed Talk/Fulfill/Melee/Shoot branch; a
+    dead leader is skipped but still counted; the rulebook's own two
+    named 33%/67% Steal and Flee percentages, both directions each; a
+    plan matching neither the guaranteed branch nor either named
+    exception is genuinely unresolved; an already-fully-known feature is
+    never downgraded by a failed re-scout; a kingdomless leader is a
+    no-op) -- 3107 passed total.
 
 ## Setup
 
