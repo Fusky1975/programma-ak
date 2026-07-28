@@ -10747,7 +10747,7 @@ complete (Phases 209-211).
     aptitude formulas' own documented numeric coincidence, checked
     directly -- 2977 passed total.
 
-- **Phase 261 (current)**: closes Recruit's own long-flagged "ally
+- **Phase 261**: closes Recruit's own long-flagged "ally
   Treat order precondition" gap (see Phase 15's/47's own notes above),
   sourced from RULES.AK [3.4]: "A character is allowed to recruit an
   army in a province belonging to his ally. The recruiter pays 1 gold
@@ -10798,6 +10798,37 @@ complete (Phases 209-211).
     recruiter granting himself doesn't count); recruiting in one's own
     territory is never gated; `has_treat_permission()`'s own direct
     coverage -- 2981 passed total.
+
+- **Phase 262 (current)**: closes the last piece of the same RULES.AK
+  [3.4] paragraph -- "Also, if you are recruiting in your former home
+  province which is now your ally's province, you can recruit 4 units,
+  and they will start as Average units" (flagged as deliberately out
+  of scope in Phase 261's own note above).
+  - `turn/recruit_execution.py` now splits what used to be a single
+    "am I at my home province" check into two mutually exclusive
+    flags: `is_home_province` (still self-owned -- ordinary 2-unit
+    bonus, unchanged) and the new `is_former_home_province_now_allied`
+    (location still matches `KingdomState.home_province`, which this
+    project never reassigns after kingdom creation -- confirmed by
+    grep -- but current ownership has passed to an ally). No new field
+    needed: `home_province` already functions as the "original" home
+    province the rulebook means, since nothing here ever updates it.
+  - `turn/recruit.py`: new `FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT =
+    4` constant; `recruit_limit()`/`resolve_recruit()` both gain an
+    `is_former_home_province_now_allied` keyword (default `False`,
+    every existing caller unaffected), checked before the ordinary
+    home-province branch since it's the more specific case.
+  - Still gated by Phase 261's own Treat-permission check -- this is
+    still ally territory, just a more generous limit within it, not an
+    exemption from the precondition.
+  - Non-breaking: full suite passed unchanged (2981 passed) before any
+    new tests were written. 7 new tests: `recruit_limit()`'s own
+    4-unit case and its priority over the ordinary home-province flag,
+    `resolve_recruit()`'s pass-through, and end-to-end coverage in
+    `test_recruit_execution.py` (four units succeed with the bonus
+    active, still blocked without Treat permission, and the ordinary
+    self-owned home province stays capped at 2, not 4) -- 2987 passed
+    total.
 
 ## Setup
 
@@ -11018,12 +11049,13 @@ rulebook before being turned into named, typed fields:
     is simply owned by an ally, regardless of whether that ally issued
     a Treat order permitting it~~ **fixed in Phase 261** -- see that
     phase's own note above (`GameState.treat_permissions`/
-    `has_treat_permission()`). Still open: the rulebook's more specific
-    "1-2 recruitable types per province" isn't tracked, only
-    approximated via race-compatibility (see Phase 12's note above);
-    the "former home province, now an ally's" 4-unit bonus stays
-    unmodeled (Phase 261's own note above); and this project still
-    never blocks recruiting in a non-owned, non-allied province at all.
+    `has_treat_permission()`). ~~the "former home province, now an
+    ally's" 4-unit bonus stays unmodeled~~ **fixed in Phase 262** -- see
+    that phase's own note above (`FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT`).
+    Still open: the rulebook's more specific "1-2 recruitable types per
+    province" isn't tracked, only approximated via race-compatibility
+    (see Phase 12's note above); and this project still never blocks
+    recruiting in a non-owned, non-allied province at all.
   - **Hire's remaining gaps** (see Phase 17's note above): a Hero's own
     "required pay" (may be less than the offer, depends on
     temper/race/alignment compatibility -- `models/temper.py Temper`

@@ -55,6 +55,17 @@ granted this specific recruiter permission this turn -- see that
 field's own docstring for why this is caller-populated rather than
 decoded from a move file. Recruiting in one's own territory (allied or
 not relevant) is never gated by this check.
+
+**The "former home province, now an ally's" 4-unit bonus (Phase 262)**:
+same [3.4] paragraph, next sentence -- "Also, if you are recruiting in
+your former home province which is now your ally's province, you can
+recruit 4 units." ``at_own_former_home`` (location still matches
+``KingdomState.home_province``, which this project never reassigns) is
+split into two mutually exclusive cases: still self-owned ->
+``is_home_province`` (ordinary 2-unit bonus, unchanged), or now owned
+by an ally -> ``is_former_home_province_now_allied`` (the new 4-unit
+bonus, still subject to the same Treat-permission gate above, since
+it's still ally territory).
 """
 
 from __future__ import annotations
@@ -112,12 +123,17 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
     target_leader = state.leaders.get(request.leader_id) if request.leader_id is not None else None
     commanded_by = request.leader_id if target_leader is not None and target_leader.location == location else None
 
-    is_home_province = location == kingdom.home_province
+    at_own_former_home = location == kingdom.home_province
     in_ally_territory = (
         province.owner_kingdom_id is not None
         and province.owner_kingdom_id != kingdom_id
         and state.is_allied(province.owner_kingdom_id, kingdom_id)
     )
+    # Own home province: still self-owned. A former home province now
+    # owned by an ally is a distinct, better-treated case (Phase 262,
+    # RULES.AK [3.4]) -- not merely "not the home-province bonus".
+    is_home_province = at_own_former_home and province.owner_kingdom_id == kingdom_id
+    is_former_home_province_now_allied = at_own_former_home and in_ally_territory
 
     result = RecruitExecutionResult(request=request)
 
@@ -134,6 +150,7 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
                 is_home_province=is_home_province,
                 is_native_to_province=is_native,
                 in_ally_territory=in_ally_territory,
+                is_former_home_province_now_allied=is_former_home_province_now_allied,
             )
         except IncompatibleRaceError:
             result.incompatible.append(army_type)

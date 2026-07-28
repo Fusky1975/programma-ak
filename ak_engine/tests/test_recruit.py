@@ -5,6 +5,7 @@ import pytest
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.race import Race
 from ak_engine.turn.recruit import (
+    FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT,
     IncompatibleRaceError,
     is_army_type_compatible_with_race,
     recruit_limit,
@@ -41,6 +42,42 @@ def test_garrison_gets_limit_of_two_in_any_humanoid_province_even_if_not_home():
 
 def test_garrison_limit_is_one_in_non_humanoid_non_home_province():
     assert recruit_limit(ArmyType.GARRISON, is_home_province=False, province_race=Race.DRAGONS) == 1
+
+
+def test_former_home_province_now_allied_allows_four():
+    assert (
+        recruit_limit(
+            ArmyType.BOWMEN,
+            is_home_province=False,
+            province_race=Race.HUMAN,
+            is_former_home_province_now_allied=True,
+        )
+        == FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT
+        == 4
+    )
+
+
+def test_former_home_province_now_allied_takes_priority_over_home_province_flag():
+    # Mutually exclusive by construction in the caller, but the limit
+    # function itself should still prefer the more specific case.
+    assert (
+        recruit_limit(
+            ArmyType.BOWMEN,
+            is_home_province=True,
+            province_race=Race.HUMAN,
+            is_former_home_province_now_allied=True,
+        )
+        == FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT
+    )
+
+
+def test_resolve_recruit_passes_through_former_home_province_flag():
+    result = resolve_recruit(
+        ArmyType.BOWMEN, Race.HUMAN,
+        is_home_province=False, is_native_to_province=True,
+        in_ally_territory=True, is_former_home_province_now_allied=True,
+    )
+    assert result.max_units == FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT
 
 
 def test_resolve_recruit_native_cost_matches_army_table_pay():

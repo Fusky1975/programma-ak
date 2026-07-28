@@ -198,6 +198,50 @@ def test_has_treat_permission_helper():
     assert state.has_treat_permission(1, 2) is False
 
 
+def test_former_home_province_now_allied_allows_four_units():
+    # Rulebook [3.4]: "if you are recruiting in your former home
+    # province which is now your ally's province, you can recruit 4
+    # units" -- more generous than either the ordinary 1-per-type ally
+    # territory limit or the ordinary 2-per-type home province limit.
+    state = build_state(treasury=1000, is_home_province=True)
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(5, 5), treasury=0))
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.provinces[LOCATION].owner_kingdom_id = 2  # an ally now holds it
+    state.treat_permissions.add((2, 1))
+    request = RecruitRequest(
+        leader_id=None, army_types=[ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.BOWMEN]
+    )
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 4
+    assert result.limit_blocked == []
+
+
+def test_former_home_province_now_allied_still_gated_by_treat_permission():
+    state = build_state(treasury=1000, is_home_province=True)
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(5, 5), treasury=0))
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.provinces[LOCATION].owner_kingdom_id = 2
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.treat_blocked == [ArmyType.BOWMEN]
+
+
+def test_own_home_province_still_limited_to_two_when_self_owned():
+    # Same location as the kingdom's home_province, but never lost to
+    # anyone -- ordinary home-province bonus, not the 4-unit case.
+    state = build_state(treasury=1000, is_home_province=True)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 2
+    assert result.limit_blocked == [ArmyType.BOWMEN]
+
+
 def test_incompatible_army_type_is_reported_not_recruited():
     state = build_state()
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.DRAGON_WING])  # needs Dragons race

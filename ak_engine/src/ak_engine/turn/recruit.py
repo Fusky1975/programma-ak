@@ -10,6 +10,19 @@ doesn't carry, and lives in ``turn/recruit_execution.py`` instead (Phase
 ``GameState.has_treat_permission()``) -- this module's own
 ``in_ally_territory`` parameter only ever affects pricing/crediting, never
 whether recruiting is allowed to proceed at all.
+
+**Phase 262 -- the "former home province, now an ally's" 4-unit bonus**:
+RULES.AK [3.4], same paragraph as the ally-fee/Treat text: "Also, if you
+are recruiting in your former home province which is now your ally's
+province, you can recruit 4 units, and they will start as Average
+units." ``is_former_home_province_now_allied`` is a separate flag from
+``is_home_province`` (not merely its negation-of-ownership) because the
+two are mutually exclusive by construction in the caller
+(``turn/recruit_execution.py``): ``is_home_province`` there now also
+requires *current* self-ownership, whereas this flag requires the
+location to still be the kingdom's own (never-reassigned, see
+``KingdomState.home_province``'s own field) home province while
+currently owned by an ally instead.
 """
 
 from __future__ import annotations
@@ -22,6 +35,9 @@ from ak_engine.models.race import HUMANOID_RACES, Race
 DEFAULT_RECRUIT_LIMIT = 1
 HOME_PROVINCE_RECRUIT_LIMIT = 2
 GARRISON_HUMANOID_PROVINCE_LIMIT = 2
+# RULES.AK [3.4]: "if you are recruiting in your former home province
+# which is now your ally's province, you can recruit 4 units."
+FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT = 4
 
 
 class IncompatibleRaceError(ValueError):
@@ -43,14 +59,23 @@ def is_army_type_compatible_with_race(army_type: ArmyType, province_race: Race) 
     return province_race in HUMANOID_RACES
 
 
-def recruit_limit(army_type: ArmyType, *, is_home_province: bool, province_race: Race) -> int:
+def recruit_limit(
+    army_type: ArmyType,
+    *,
+    is_home_province: bool,
+    province_race: Race,
+    is_former_home_province_now_allied: bool = False,
+) -> int:
     """Max number of this army type recruitable from the populace this turn.
 
     Normally 1; a King's home province allows 2 of each type; Garrison
     units get the same "2 per gameturn" allowance in *any* humanoid
-    province, home or not.
+    province, home or not; a *former* home province now owned by an
+    ally allows 4 (Phase 262, RULES.AK [3.4]).
     """
 
+    if is_former_home_province_now_allied:
+        return FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT
     if is_home_province:
         return HOME_PROVINCE_RECRUIT_LIMIT
     if army_type is ArmyType.GARRISON and province_race in HUMANOID_RACES:
@@ -65,6 +90,7 @@ def resolve_recruit(
     is_home_province: bool,
     is_native_to_province: bool,
     in_ally_territory: bool = False,
+    is_former_home_province_now_allied: bool = False,
 ) -> RecruitResolution:
     """Resolve the limit and cost for recruiting one army type in one province.
 
@@ -79,7 +105,12 @@ def resolve_recruit(
 
     base_pay = ARMY_TABLE[army_type].pay
     return RecruitResolution(
-        max_units=recruit_limit(army_type, is_home_province=is_home_province, province_race=province_race),
+        max_units=recruit_limit(
+            army_type,
+            is_home_province=is_home_province,
+            province_race=province_race,
+            is_former_home_province_now_allied=is_former_home_province_now_allied,
+        ),
         gold_per_unit=base_pay if is_native_to_province else base_pay * 2,
         ally_fee_per_unit=1 if in_ally_territory else 0,
         is_double_cost=not is_native_to_province,
