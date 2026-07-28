@@ -1,4 +1,4 @@
-from ak_engine.models.enums import ABILITY_ABBREVIATION, Ability, ActionCode, action_from_int
+from ak_engine.models.enums import ABILITY_ABBREVIATION, ABILITY_NAME, Ability, ActionCode, action_from_int
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
@@ -61,3 +61,18 @@ def test_ability_abbreviation_matches_sourced_column_header():
     assert ABILITY_ABBREVIATION[Ability.EXPLORER] == "Ex"
     assert ABILITY_ABBREVIATION[Ability.SPY] == "Sp"
     assert ABILITY_ABBREVIATION[Ability.SAGE] == "Sa"
+
+
+# -- Phase 268: ABILITY_NAME (CTBOTH.PAS `anoun`) --
+
+
+def test_ability_name_covers_every_ability_member():
+    assert set(ABILITY_NAME.keys()) == set(Ability)
+
+
+def test_ability_name_verbatim_samples():
+    assert ABILITY_NAME[Ability.TACTICAL] == "Tactics"
+    assert ABILITY_NAME[Ability.MELEE] == "Meleeing"
+    assert ABILITY_NAME[Ability.WHITE] == "White Magic"
+    assert ABILITY_NAME[Ability.SAGE] == "Sageness"
+    assert ABILITY_NAME[Ability.EXPLORER] == "Exploring"

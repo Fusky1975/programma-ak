@@ -5,9 +5,13 @@ from ak_engine.models.discovery import (
     DISCOVERY_ABILITY_BONUS,
     DISCOVERY_ANTISPELL_TARGET,
     DISCOVERY_DESCRIPTION,
+    DISCOVERY_DISPLAY_VALUE,
     DISCOVERY_NAME,
     DISCOVERY_REVENUE_BONUS_PERCENT,
     Discovery,
+    describe_discovery_line,
+    discovery_effect_description,
+    sorted_kingdom_discoveries,
 )
 
 
@@ -125,3 +129,62 @@ def test_discovery_three_mechanics_dicts_partition_the_enum_without_overlap():
     assert not (ability_keys & revenue_keys)
     assert not (antispell_keys & revenue_keys)
     assert ability_keys | antispell_keys | revenue_keys == set(Discovery)
+
+
+# -- Phase 268: DISCOVERY_DISPLAY_VALUE + report line composition ----------
+
+
+def test_discovery_display_value_covers_every_discovery():
+    assert set(DISCOVERY_DISPLAY_VALUE.keys()) == set(Discovery)
+
+
+def test_discovery_display_value_verbatim_samples():
+    # CTBOTH.PAS discval array, positional -- see module docstring.
+    assert DISCOVERY_DISPLAY_VALUE[Discovery.LAND_SHIP] == 19
+    assert DISCOVERY_DISPLAY_VALUE[Discovery.PONY_EXPRESS] == 20
+    assert DISCOVERY_DISPLAY_VALUE[Discovery.PEANUT_BUTTER_SANDWICH] == 10
+    assert DISCOVERY_DISPLAY_VALUE[Discovery.VULCANIZED_RUBBER] == 13
+
+
+def test_discovery_effect_description_ability_bonus():
+    assert discovery_effect_description(Discovery.COMPASS) == "+1 skill in Exploring"
+
+
+def test_discovery_effect_description_antispell():
+    assert discovery_effect_description(Discovery.OSTEOPATHIC_GERM_WARFARE) == "Anti-spell: Skeletal Army"
+
+
+def test_discovery_effect_description_revenue():
+    assert discovery_effect_description(Discovery.PEANUT_BUTTER_SANDWICH) == "+1% revenue"
+
+
+def test_describe_discovery_line_pads_name_to_25_characters():
+    line = describe_discovery_line(Discovery.COMPASS)
+    assert line == "  Compass" + " " * 18 + "(+1 skill in Exploring)"
+
+
+def test_describe_discovery_line_handles_a_name_at_the_padding_boundary():
+    # OSTEOPATHIC_GERM_WARFARE's name is 24 characters -- only 1 padding space.
+    name = DISCOVERY_NAME[Discovery.OSTEOPATHIC_GERM_WARFARE]
+    assert len(name) == 24
+    line = describe_discovery_line(Discovery.OSTEOPATHIC_GERM_WARFARE)
+    assert line == f"  {name} (Anti-spell: Skeletal Army)"
+
+
+def test_sorted_kingdom_discoveries_orders_by_descending_display_value():
+    discoveries = {Discovery.COMPASS, Discovery.PONY_EXPRESS, Discovery.PEANUT_BUTTER_SANDWICH}
+
+    ordered = sorted_kingdom_discoveries(discoveries)
+
+    assert ordered == [Discovery.PONY_EXPRESS, Discovery.PEANUT_BUTTER_SANDWICH, Discovery.COMPASS]
+
+
+def test_sorted_kingdom_discoveries_breaks_ties_by_declaration_order():
+    # LAND_SHIP and SCYTHED_CHARIOTS both have display value 19.
+    ordered = sorted_kingdom_discoveries({Discovery.SCYTHED_CHARIOTS, Discovery.LAND_SHIP})
+
+    assert ordered == [Discovery.LAND_SHIP, Discovery.SCYTHED_CHARIOTS]
+
+
+def test_sorted_kingdom_discoveries_empty_set():
+    assert sorted_kingdom_discoveries(set()) == []

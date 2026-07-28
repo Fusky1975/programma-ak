@@ -11026,7 +11026,7 @@ complete (Phases 209-211).
   scope," even though `turn/rumor.py` (Phase 243) and its
   `plan_dispatch.py` wiring already closed it. See commit `9a8637e`.
 
-- **Phase 267 (current)**: closes ASpy's own espionage-Discovery gap,
+- **Phase 267**: closes ASpy's own espionage-Discovery gap,
   RULES.AK [3.14] (quoted in full in `turn/aspy_execution.py`'s own
   module docstring): "There is also a chance of finding out what Sage
   Discoveries the spied-on Kingdom has, and obtaining them for the use
@@ -11074,6 +11074,55 @@ complete (Phases 209-211).
     plus `execute_aspy()`'s end-to-end grant, merit credit, roll
     failure, unowned province, and no-candidates coverage) -- 3031
     passed total.
+
+- **Phase 268 (current)**: closes the revenue-bonus half of the
+  Discoveries-of-the-Sages gap `models/discovery.py`'s own module
+  docstring left open since Phase 93 -- the real FINANCES report section
+  now shows the kingdom's own actual held Discoveries and the
+  `Inv_Bonus` line, both previously confirmed-absent for lack of any
+  per-kingdom Discovery-tracking field (closed by Phase 266).
+  - `models/enums.py`: `ABILITY_NAME` (new) -- `CTBOTH.PAS`'s own
+    `anoun` array ("Tactics", "Marches", ... "Sageness"), a real,
+    previously-unmodeled noun-form ability name table, distinct from
+    `ABILITY_ABBREVIATION`'s two-letter codes.
+  - `models/discovery.py`: `DISCOVERY_DISPLAY_VALUE` (new) --
+    `CTBOTH.PAS`'s own `discval` const array, transcribed verbatim.
+    Phase 93's own docstring had called this field's only use "that one
+    print loop" and left it unmodeled; this phase is exactly that use.
+    `discovery_effect_description()`/`describe_discovery_line()`/
+    `sorted_kingdom_discoveries()` (new) reproduce REPORTS.PAS's own
+    exact per-discovery report line ("+1 skill in <ability>" /
+    "Anti-spell: <spell>" / "+X% revenue", name padded to a 25-character
+    field, `discval`-descending order) -- real, quoted Pascal, not a
+    project-original format.
+  - `turn/tax_base.py`: `compute_invention_bonus_percent()` (new) --
+    `Inv_Bonus(kng)`, the sum of every revenue-bonus Discovery a kingdom
+    owns. REPORTS.PAS's own `IF Inv_Bonus(kng) > 0 THEN WRITELN(...
+    Inv_Bonus(kng):3,'%')` confirms it prints as a bare percentage, not
+    gold, so it stays additive to (never folded into)
+    `compute_tax_base()`'s own return value -- the two remain separate
+    report lines, matching the real source exactly.
+  - `report/turn_report.py describe_finances_report()`: now renders the
+    real "+Invention Bonus: X%" line (only when positive) and the real
+    Discoveries-of-the-Sages list (falling back to the existing
+    `_FINANCES_NONE_AT_PRESENT` only when the kingdom holds none).
+    **Not modeled**: the `'(Received from player(s) #k1...'`
+    parenthetical (`kexch[k1,kng]`) naming who a Discovery was received
+    from -- this project tracks *that* a Discovery came from espionage
+    (Phase 267) but not *from whom*, so there's nothing real to render
+    for that suffix.
+  - Non-breaking: full suite passed unchanged (3031 passed) before any
+    new tests were written -- every existing FINANCES test's kingdom
+    starts with an empty `discoveries` set, the same `_FINANCES_NONE_AT_
+    PRESENT`/no-Invention-Bonus-line path as before. 18 new tests
+    (`ABILITY_NAME` coverage/samples; `DISCOVERY_DISPLAY_VALUE`
+    coverage/samples; `discovery_effect_description()` across all three
+    effect categories; `describe_discovery_line()`'s padding at both a
+    short and a boundary-length name; `sorted_kingdom_discoveries()`'s
+    ordering and tie-breaking; `compute_invention_bonus_percent()`'s
+    zero/mixed-discoveries cases; `describe_finances_report()`'s real
+    discovery list, sort order, and Invention Bonus line shown/omitted)
+    -- 3049 passed total.
 
 ## Setup
 

@@ -79,6 +79,32 @@ ABILITY_ABBREVIATION: dict[Ability, str] = {
 }
 
 
+# CTBOTH.PAS `anoun` (~line 143), verbatim, positional with this module's
+# own `Tactical..Sage` declaration order -- the noun form used by real
+# report text like "+1 skill in <ability>" (REPORTS.PAS's own Discoveries
+# of the Sages section, Phase 268) and elsewhere (`RUMORS.PAS Get_AbDesc`).
+# Distinct from `ABILITY_ABBREVIATION` (two-letter codes) and from the
+# separate `adesc` array (adjective form, e.g. "Tactical" vs. "Tactics") --
+# only `anoun` has a confirmed real caller so far.
+ABILITY_NAME: dict[Ability, str] = {
+    Ability.TACTICAL: "Tactics",
+    Ability.MARCH: "Marches",
+    Ability.NAVAL: "Navigation",
+    Ability.ARCHERY: "Archery",
+    Ability.MELEE: "Meleeing",
+    Ability.WHITE: "White Magic",
+    Ability.NECROMANCY: "Necromancy",
+    Ability.ELEMENTAL: "Element Magic",
+    Ability.PSYCHIC: "Psychic Magic",
+    Ability.ILLUSION: "Illusions",
+    Ability.DRUID: "Druidism",
+    Ability.THIEF: "Thievery",
+    Ability.EXPLORER: "Exploring",
+    Ability.SPY: "Spying",
+    Ability.SAGE: "Sageness",
+}
+
+
 # RUMORS.PAS `Get_AbDesc` (~line 481, found while researching Phase 87's own
 # "^Y: Character Description" marker -- that marker turned out to be the
 # already-modeled Alignment+Temper "nature/character" sentence, not this;

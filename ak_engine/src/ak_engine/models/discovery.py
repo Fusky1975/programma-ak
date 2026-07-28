@@ -67,21 +67,57 @@ way: ``DISCOVERY_REVENUE_BONUS_PERCENT`` below follows the Pascal
 formula (the actual executable behavior of the original engine), and this
 one exception is called out at its own dict entry.
 
-Applying any of these bonuses to actual gameplay (how a kingdom earns a
-``Discovery``, how the ability bonus stacks with ``LeaderState.skills``,
-how the revenue bonus combines with ``Inv_Bonus`` the same report section
-prints right above it, how the anti-spell wards actually modify
-``turn/cast_execution.py``) is still deliberately left to a real
+Applying any of these bonuses to actual gameplay (how the ability bonus
+stacks with ``LeaderState.skills``, how the anti-spell wards actually
+modify ``turn/cast_execution.py``) is still deliberately left to a real
 follow-up phase -- this phase only models the confirmed *data*, matching
 how ``models/office.py``/``models/weapon.py`` (Phases 81/83) started with
-vocabulary before any mechanical wiring.
+vocabulary before any mechanical wiring. **Phase 268 closes the
+acquisition mechanic (`KingdomState.discoveries`, Phase 266) and, since
+Phase 268, the revenue-bonus half of this list**: `Inv_Bonus` and the
+real per-discovery FINANCES report line, both below.
+
+``REPORTS.PAS`` (~line 325-360, continuing the loop quoted above)
+confirms the full "Discoveries of the Sages" report line format and the
+separate `Inv_Bonus` line right above it:
+
+```pascal
+WRITELN(playfile,  '  Expected Revenues: ',Tax_Base(kng):3);
+IF Inv_Bonus(kng) > 0 THEN
+  WRITELN(playfile,'   +Invention Bonus: ',Inv_Bonus(kng):3,'%');
+...
+FOR dval:= 20 DOWNTO 0 DO FOR d:= fix0 TO crunch27 DO
+  IF discval[d] = dval THEN IF dk[d] THEN BEGIN
+    WRITE(playfile,'  ',dname[d],' ':25-Length(dname[d]),'(');
+    CASE d OF ... END;
+    WRITELN(playfile,')');
+    ...
+```
+
+`Inv_Bonus(kng)` prints as a bare percentage (`'%'` suffix, no gold sign),
+confirming it's the *sum* of every owned `crunch` discovery's own revenue
+percentage (`DISCOVERY_REVENUE_BONUS_PERCENT`), not a gold figure --
+`turn/tax_base.py compute_invention_bonus_percent()` (Phase 268) is
+therefore additive to, not folded into, `compute_tax_base()`'s own
+return value, matching how the two print as separate report lines.
+Each Discoveries-list line orders by descending `discval` (a real,
+previously-unmodeled field, extracted verbatim from `CTBOTH.PAS` line
+766's own `discval: discbyte = (...)` const array as
+`DISCOVERY_DISPLAY_VALUE` below -- Phase 93's own docstring called this
+field's only use "that one print loop"; this phase is exactly that use),
+ties broken by declaration order (the inner `FOR d` loop's own order).
+**Not modeled**: the `'(Received from player(s) #k1...'` parenthetical
+suffix naming who a discovery was received from (`kexch[k1,kng]`) --
+this project tracks *that* a Discovery was obtained via espionage
+(`MeritTally.discoveries_via_espionage`, Phase 267) but not *from whom*,
+so the suffix has nothing real to render and is left off entirely.
 """
 
 from __future__ import annotations
 
 from enum import Enum
 
-from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.enums import ABILITY_NAME, SPELL_NAME, Ability, Spell
 
 
 class Discovery(Enum):
@@ -388,3 +424,116 @@ DISCOVERY_REVENUE_BONUS_PERCENT: dict[Discovery, int] = {
     Discovery.FIREWORKS_DISPLAY: 3,
     Discovery.VULCANIZED_RUBBER: 4,
 }
+
+
+# CTBOTH.PAS `discval: discbyte = (...)` (~line 766), verbatim, positional
+# with `Discovery`'s own enum declaration order -- see module docstring's
+# Phase 268 note. A pure display-order key (higher prints first): the
+# real report loop is `FOR dval:= 20 DOWNTO 0 DO FOR d:= fix0 TO crunch27
+# DO IF discval[d] = dval ...`, so sorting a kingdom's own discoveries by
+# `(-DISCOVERY_DISPLAY_VALUE[d], d.value)` reproduces that exact order
+# (descending value, ties broken by the inner loop's own declaration
+# order).
+DISCOVERY_DISPLAY_VALUE: dict[Discovery, int] = {
+    Discovery.LAND_SHIP: 19,
+    Discovery.SCYTHED_CHARIOTS: 19,
+    Discovery.PONY_EXPRESS: 20,
+    Discovery.MACADAM_ROADS: 20,
+    Discovery.GREEK_FIRE: 18,
+    Discovery.SEXTANT: 18,
+    Discovery.COMPOSITE_BOW: 3,
+    Discovery.TUNGSTEN_TIPPED_ARROW: 3,
+    Discovery.STRENGTH_ELIXIR: 3,
+    Discovery.MITHRIL_CHAINMAIL: 3,
+    Discovery.MEDITATION_INCENSE: 17,
+    Discovery.CLASSIFICATION_OF_LIFE: 17,
+    Discovery.MAGNETIZED_LOCK_PICKS: 2,
+    Discovery.TRAP_FINDING_DUST: 2,
+    Discovery.COMPASS: 2,
+    Discovery.TELESCOPE: 2,
+    Discovery.INVISIBLE_INK: 16,
+    Discovery.TWO_WAY_MIRRORS: 16,
+    Discovery.HIEROGLYPHIC_TRANSLATION: 1,
+    Discovery.SCIENTIFIC_METHOD: 1,
+    Discovery.OSTEOPATHIC_GERM_WARFARE: 17,
+    Discovery.HIDDEN_TATTOOS: 17,
+    Discovery.PENICILLIN: 18,
+    Discovery.ARTIFICIAL_ORGANS: 2,
+    Discovery.FLOOD_DAMS: 17,
+    Discovery.GIANT_FAN: 18,
+    Discovery.REINFORCED_CONCRETE: 15,
+    Discovery.ASBESTOS_CLOTHING: 2,
+    Discovery.ANALYTICAL_PSYCHOLOGY: 14,
+    Discovery.PROPAGANDA_MEGAPHONES: 17,
+    Discovery.DRY_ICE_FOG: 16,
+    Discovery.LEAD_LINED_HELMET: 2,
+    Discovery.ULTRAVIOLET_LENSES: 17,
+    Discovery.OBSERVATION_BALLOONS: 18,
+    Discovery.HAND_HELD_RADAR: 1,
+    Discovery.INFRARED_GOGGLES: 1,
+    Discovery.PEANUT_BUTTER_SANDWICH: 10,
+    Discovery.ASPIRIN_PILL: 11,
+    Discovery.PEPPER_SPICE: 12,
+    Discovery.COTTON_GIN: 13,
+    Discovery.ICE_CREAM_CONE: 10,
+    Discovery.BLACK_LACE_TEDDY: 11,
+    Discovery.SCREW: 12,
+    Discovery.REFORGING_OF_STEEL: 13,
+    Discovery.MAGNET: 10,
+    Discovery.MALPRACTICE_SUIT: 11,
+    Discovery.GAMBLING_CASINO: 12,
+    Discovery.PULLEY: 13,
+    Discovery.INK_STAMP: 10,
+    Discovery.POSTAGE_STAMP: 11,
+    Discovery.GAME_OF_CHESS: 12,
+    Discovery.WATER_WHEEL: 13,
+    Discovery.SOAP_BAR: 10,
+    Discovery.PIPE_ORGAN: 11,
+    Discovery.REAPER: 12,
+    Discovery.COAL_MINE: 13,
+    Discovery.SPECTACLES: 10,
+    Discovery.WINDMILL: 11,
+    Discovery.GUITAR: 12,
+    Discovery.PAPER_MILL: 13,
+    Discovery.UMBRELLA: 10,
+    Discovery.TIMEPIECE: 11,
+    Discovery.FIREWORKS_DISPLAY: 12,
+    Discovery.VULCANIZED_RUBBER: 13,
+}
+
+
+def discovery_effect_description(discovery: Discovery) -> str:
+    """The parenthesized effect text REPORTS.PAS prints after each
+    Discovery's own name -- see module docstring's Phase 268 quote:
+    "+1 skill in <ability>" / "Anti-spell: <spell>" / "+X% revenue".
+    """
+
+    ability = DISCOVERY_ABILITY_BONUS.get(discovery)
+    if ability is not None:
+        return f"+1 skill in {ABILITY_NAME[ability]}"
+    spell = DISCOVERY_ANTISPELL_TARGET.get(discovery)
+    if spell is not None:
+        return f"Anti-spell: {SPELL_NAME[spell]}"
+    return f"+{DISCOVERY_REVENUE_BONUS_PERCENT[discovery]}% revenue"
+
+
+def sorted_kingdom_discoveries(discoveries: set[Discovery]) -> list[Discovery]:
+    """Orders a kingdom's own held Discoveries the way the real report
+    does: descending `DISCOVERY_DISPLAY_VALUE`, ties broken by the
+    Pascal enum's own declaration order -- see `DISCOVERY_DISPLAY_VALUE`'s
+    own docstring.
+    """
+
+    return sorted(discoveries, key=lambda d: (-DISCOVERY_DISPLAY_VALUE[d], d.value))
+
+
+def describe_discovery_line(discovery: Discovery) -> str:
+    """One real report line: two spaces, the name padded to a 25-character
+    field, then the parenthesized effect -- ``REPORTS.PAS``'s own
+    ``WRITE(playfile,'  ',dname[d],' ':25-Length(dname[d]),'(');`` ...
+    ``WRITELN(playfile,')');``. See module docstring's Phase 268 quote.
+    """
+
+    name = DISCOVERY_NAME[discovery]
+    padding = " " * max(0, 25 - len(name))
+    return f"  {name}{padding}({discovery_effect_description(discovery)})"

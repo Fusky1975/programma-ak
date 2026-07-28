@@ -5,10 +5,11 @@ project-original scar-then-percent-modifier formula this exercises.
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
-from ak_engine.turn.tax_base import compute_tax_base, province_tax_yield
+from ak_engine.turn.tax_base import compute_invention_bonus_percent, compute_tax_base, province_tax_yield
 
 HOME = HexCoord(0, 0)
 
@@ -89,3 +90,22 @@ def test_compute_tax_base_does_not_count_allied_kingdoms_provinces():
     state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, tax=10))
 
     assert compute_tax_base(state, 1) == 0
+
+
+# -- Phase 268: compute_invention_bonus_percent() (Inv_Bonus) --------------
+
+
+def test_compute_invention_bonus_percent_zero_with_no_discoveries():
+    kingdom = KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HOME)
+    assert compute_invention_bonus_percent(kingdom) == 0
+
+
+def test_compute_invention_bonus_percent_sums_only_revenue_discoveries():
+    kingdom = KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HOME)
+    kingdom.discoveries = {
+        Discovery.PEANUT_BUTTER_SANDWICH,  # 1%
+        Discovery.ASPIRIN_PILL,  # 2%
+        Discovery.COMPASS,  # ability bonus, no revenue contribution
+    }
+
+    assert compute_invention_bonus_percent(kingdom) == 3

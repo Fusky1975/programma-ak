@@ -5,7 +5,7 @@ import pytest
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.discovery import Discovery
+from ak_engine.models.discovery import Discovery, describe_discovery_line
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.item import ItemInstance
@@ -3595,13 +3595,64 @@ def test_describe_finances_report_zero_treasury():
     assert lines[2] == "Gold in treasury: 0"
 
 
-def test_describe_finances_report_discoveries_always_none_at_present():
+def test_describe_finances_report_discoveries_none_at_present_when_kingdom_owns_none():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0), treasury=999))
 
     lines = describe_finances_report(state, 1)
 
     assert lines[-2:] == [_FINANCES_DISCOVERIES_INTRO, "None at present"]
+    assert "+Invention Bonus" not in "\n".join(lines)
+
+
+# -- Phase 268: real Discoveries of the Sages list + Invention Bonus --
+
+
+def test_describe_finances_report_lists_owned_discoveries():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.kingdoms[1].discoveries = {Discovery.COMPASS}
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[-2] == _FINANCES_DISCOVERIES_INTRO
+    assert lines[-1] == describe_discovery_line(Discovery.COMPASS)
+    assert lines[-1] == "  Compass" + " " * 18 + "(+1 skill in Exploring)"
+
+
+def test_describe_finances_report_discoveries_sorted_by_real_display_value():
+    # PONY_EXPRESS (discval 20) must print before COMPASS (discval 2).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.kingdoms[1].discoveries = {Discovery.COMPASS, Discovery.PONY_EXPRESS}
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[-2:] == [
+        describe_discovery_line(Discovery.PONY_EXPRESS),
+        describe_discovery_line(Discovery.COMPASS),
+    ]
+
+
+def test_describe_finances_report_shows_invention_bonus_when_positive():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.kingdoms[1].discoveries = {Discovery.PEANUT_BUTTER_SANDWICH, Discovery.ASPIRIN_PILL}  # 1% + 2%
+
+    lines = describe_finances_report(state, 1)
+
+    assert "+Invention Bonus: 3%" in lines
+
+
+def test_describe_finances_report_omits_invention_bonus_line_when_zero():
+    # Ability-bonus/anti-spell Discoveries contribute nothing to Inv_Bonus.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.kingdoms[1].discoveries = {Discovery.COMPASS}
+
+    lines = describe_finances_report(state, 1)
+
+    assert not any("+Invention Bonus" in line for line in lines)
 
 
 def test_describe_finances_report_reads_only_the_given_kingdoms_own_treasury():

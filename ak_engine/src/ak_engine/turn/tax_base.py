@@ -55,7 +55,8 @@ military purposes.
 
 from __future__ import annotations
 
-from ak_engine.models.game_state import GameState, ProvinceState
+from ak_engine.models.discovery import DISCOVERY_REVENUE_BONUS_PERCENT
+from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
 
 
 def province_tax_yield(province: ProvinceState) -> int | None:
@@ -83,4 +84,20 @@ def compute_tax_base(state: GameState, kingdom_id: int) -> int:
         yield_ for province in state.provinces.values()
         if province.owner_kingdom_id == kingdom_id
         and (yield_ := province_tax_yield(province)) is not None
+    )
+
+
+def compute_invention_bonus_percent(kingdom: KingdomState) -> int:
+    """``Inv_Bonus(kng)``: the sum of every revenue-bonus ``Discovery``
+    (``crunch0``-``crunch27``) this kingdom owns -- REPORTS.PAS's own
+    ``IF Inv_Bonus(kng) > 0 THEN WRITELN(... Inv_Bonus(kng):3,'%')``
+    confirms this is a bare percentage, not a gold figure, and therefore
+    additive to (not folded into) ``compute_tax_base()``'s own return
+    value -- see ``models/discovery.py``'s own Phase 268 note.
+    """
+
+    return sum(
+        DISCOVERY_REVENUE_BONUS_PERCENT[discovery]
+        for discovery in kingdom.discoveries
+        if discovery in DISCOVERY_REVENUE_BONUS_PERCENT
     )

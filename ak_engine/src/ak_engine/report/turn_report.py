@@ -1137,7 +1137,7 @@ from ak_engine.models.office import OFFICE_NAME
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
-from ak_engine.models.discovery import DISCOVERY_NAME, Discovery
+from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, describe_discovery_line, sorted_kingdom_discoveries
 from ak_engine.models.temper import TEMPER_NAME
 from ak_engine.models.treasure import TREASURE_NAME
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
@@ -1157,7 +1157,7 @@ from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResul
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
-from ak_engine.turn.tax_base import compute_tax_base
+from ak_engine.turn.tax_base import compute_invention_bonus_percent, compute_tax_base
 from ak_engine.turn.trade_execution import TradeExecutionResult
 from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
@@ -5361,34 +5361,40 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
       for the same reason `Tax_Base` itself was, and unlike `Tax_Base`
       this project has no per-army/per-leader upkeep-cost data to
       aggregate instead.
-    - The optional "+Invention Bonus" line needs `Inv_Bonus(kng)`,
-      itself derived from this kingdom's own held Discoveries -- see
-      the Discoveries gap below.
     - The optional "(Including +5 Black Knights)"/"(Including +10
       Thieves Guild)" notes need Evilking/ThiefPrince office-holder
       tracking -- the same IMPERIAL OFFICE REPORT gap this project's
       own `compose_letter_report()` docstring already names.
 
-    **The Discoveries of the Sages list always renders empty**: no
-    per-kingdom Discovery-tracking field exists anywhere in this
-    project (`models/discovery.py`'s own `Discovery` enum and
-    `DISCOVERY_NAME`/effect-magnitude tables from Phase 91/135 model
-    the *vocabulary*, never a "kingdom X holds discovery Y" record) --
-    confirmed absent, so `_FINANCES_NONE_AT_PRESENT` (a real, sourced
-    string) always renders here rather than a guess at zero
-    discoveries.
+    **Phase 268 closes the "+Invention Bonus" line and the Discoveries
+    of the Sages list**, both previously confirmed-absent (no per-
+    kingdom Discovery-tracking field existed anywhere in this project
+    before Phase 266's `KingdomState.discoveries`). `+Invention Bonus`
+    only renders when `compute_invention_bonus_percent()` is positive
+    (`IF Inv_Bonus(kng) > 0`, real Pascal text quoted in `models/
+    discovery.py`'s own module docstring); the Discoveries list renders
+    one real report line per owned Discovery (`describe_discovery_line()`,
+    sorted the real way via `sorted_kingdom_discoveries()`), falling back
+    to `_FINANCES_NONE_AT_PRESENT` only when the kingdom holds none.
     """
 
     kingdom = state.kingdoms[kingdom_id]
 
-    return [
+    lines = [
         "FINANCES",
         _FINANCES_OPENING,
         f"Gold in treasury: {kingdom.treasury}",
         f"Expected Revenues: {compute_tax_base(state, kingdom_id)}",
-        _FINANCES_DISCOVERIES_INTRO,
-        _FINANCES_NONE_AT_PRESENT,
     ]
+    invention_bonus_percent = compute_invention_bonus_percent(kingdom)
+    if invention_bonus_percent > 0:
+        lines.append(f"+Invention Bonus: {invention_bonus_percent}%")
+    lines.append(_FINANCES_DISCOVERIES_INTRO)
+    if kingdom.discoveries:
+        lines.extend(describe_discovery_line(d) for d in sorted_kingdom_discoveries(kingdom.discoveries))
+    else:
+        lines.append(_FINANCES_NONE_AT_PRESENT)
+    return lines
 
 
 # HostAK/TP/REPORTS.PAS Rep_Provs (~lines 404-450) -- the real "PROVINCES"
