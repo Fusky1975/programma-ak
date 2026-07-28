@@ -164,6 +164,7 @@ from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import Terrain
 from ak_engine.models.treasure import Treasure, TreasureCategory, TREASURE_CATEGORY
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.tax_base import compute_tax_base
 
 _CHANCELLOR_SKILL_ABILITIES: tuple[Ability, ...] = (Ability.EXPLORER, Ability.SPY, Ability.SAGE)
@@ -194,10 +195,8 @@ LEGENDARY_ITEM_BONUS_TREASURES: frozenset[Treasure] = frozenset(
 )
 
 
-def _skill_level_sum(leader: LeaderState, abilities: tuple[Ability, ...]) -> int:
-    if leader.skills is None:
-        return 0
-    return sum(leader.skills.pair_for_ability(ability)[0] for ability in abilities)
+def _skill_level_sum(state: GameState, leader: LeaderState, abilities: tuple[Ability, ...]) -> int:
+    return sum(effective_skill_level(state, leader, ability) for ability in abilities)
 
 
 def emperor_merit_points(state: GameState, kingdom_id: int) -> int:
@@ -208,7 +207,7 @@ def emperor_merit_points(state: GameState, kingdom_id: int) -> int:
     return compute_tax_base(state, kingdom_id)
 
 
-def chancellor_merit_points(leader: LeaderState) -> int:
+def chancellor_merit_points(state: GameState, leader: LeaderState) -> int:
     """See module docstring: only the Explorer/Spy/Sage skill term is
     live; the three discovery-attribution terms read `MeritTally`
     counters no action in this project increments yet.
@@ -216,7 +215,7 @@ def chancellor_merit_points(leader: LeaderState) -> int:
 
     tally = leader.merit_tally
     return (
-        _skill_level_sum(leader, _CHANCELLOR_SKILL_ABILITIES)
+        _skill_level_sum(state, leader, _CHANCELLOR_SKILL_ABILITIES)
         + 2 * tally.features_discovered_first
         + 2 * tally.discoveries_found_first
         + tally.discoveries_via_espionage
@@ -260,7 +259,7 @@ def admiral_merit_points(state: GameState, leader: LeaderState) -> int:
     """
 
     tally = leader.merit_tally
-    naval_skill = _skill_level_sum(leader, (Ability.NAVAL,))
+    naval_skill = _skill_level_sum(state, leader, (Ability.NAVAL,))
     rich_sea_provinces = _rich_sea_province_count(state, leader.kingdom_id)
     return tally.naval_battles_won_enemy_units - tally.naval_battles_lost_own_units + naval_skill + rich_sea_provinces
 
@@ -275,13 +274,13 @@ def defender_merit_points(leader: LeaderState) -> int:
     return tally.monster_hp_defeated + tally.monster_hp_neutralized // 2
 
 
-def priest_merit_points(leader: LeaderState) -> int:
+def priest_merit_points(state: GameState, leader: LeaderState) -> int:
     """+1 per successful Resurrection/Bless cast, +2 per level in Druidic
     and White Magic (live).
     """
 
     tally = leader.merit_tally
-    return tally.resurrection_bless_casts + 2 * _skill_level_sum(leader, _PRIEST_SKILL_ABILITIES)
+    return tally.resurrection_bless_casts + 2 * _skill_level_sum(state, leader, _PRIEST_SKILL_ABILITIES)
 
 
 def mage_merit_points(state: GameState, leader: LeaderState) -> int:
@@ -289,7 +288,7 @@ def mage_merit_points(state: GameState, leader: LeaderState) -> int:
     Spell-Wand-category item -- both terms are fully live.
     """
 
-    skill_sum = _skill_level_sum(leader, _MAGE_SKILL_ABILITIES)
+    skill_sum = _skill_level_sum(state, leader, _MAGE_SKILL_ABILITIES)
     wand_count = sum(
         1
         for item in state.items_held_by(leader.leader_id)

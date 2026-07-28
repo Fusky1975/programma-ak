@@ -120,15 +120,14 @@ from ak_engine.models.map import HexCoord
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance, neighbors
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 
 
-def _spy_skill_of(leader: LeaderState) -> int:
-    if leader.skills is None:
-        return 0
-    return leader.skills.pair_for_ability(Ability.SPY)[0]
+def _spy_skill_of(state: GameState, leader: LeaderState) -> int:
+    return effective_skill_level(state, leader, Ability.SPY)
 
 
 def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
@@ -137,9 +136,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
     (see that function's own docstring) for small per-consumer lookups.
     """
 
-    melee_skill = 0
-    if leader.skills is not None:
-        melee_skill = leader.skills.pair_for_ability(Ability.MELEE)[0]
+    melee_skill = effective_skill_level(state, leader, Ability.MELEE)
 
     neutral_bonus = False
     if leader.kingdom_id is not None:
@@ -231,7 +228,7 @@ def execute_pursue(
     same_kingdom = pursuer.kingdom_id is not None and pursuer.kingdom_id == target.kingdom_id
     distance = hex_distance(pursuer.location, target.location)
     chance = pursue_catch_up_chance(
-        _spy_skill_of(pursuer),
+        _spy_skill_of(state, pursuer),
         target_leads_army=target_leads_army,
         distance_provinces=distance,
         same_kingdom=same_kingdom,

@@ -641,6 +641,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, is_adjacent
 
@@ -861,7 +862,7 @@ def _roll_cast_success(
         return True, None
 
     ability = _spell_ability(caster, spell)
-    level = caster.skills.pair_for_ability(ability)[0]
+    level = effective_skill_level(state, caster, ability)
     if level < 1:
         return False, "insufficient skill"
 
@@ -874,17 +875,19 @@ def _roll_cast_success(
     return False, "spell failed"
 
 
-def _caster_level(caster: LeaderState, ability: Ability, wand_skill_level: int | None = None) -> int:
-    """Real skill level if recorded, else 0 -- see module docstring's "level-dependent
-    magnitudes" section. ``wand_skill_level``, when given, overrides
-    unconditionally (Phase 141: a wand always casts "at skill-2").
+def _caster_level(
+    state: GameState, caster: LeaderState, ability: Ability, wand_skill_level: int | None = None
+) -> int:
+    """Real skill level (Discovery ability bonuses included, see
+    ``turn/discovery_effects.py``) if recorded, else 0 -- see module
+    docstring's "level-dependent magnitudes" section. ``wand_skill_level``,
+    when given, overrides unconditionally (Phase 141: a wand always casts
+    "at skill-2").
     """
 
     if wand_skill_level is not None:
         return wand_skill_level
-    if caster.skills is None:
-        return 0
-    return caster.skills.pair_for_ability(ability)[0]
+    return effective_skill_level(state, caster, ability)
 
 
 def _resolve_province_target(state: GameState, caster: LeaderState, target_number: int, board_width: int, *, require_adjacent: bool = True):
@@ -1139,7 +1142,7 @@ def _execute_tornado(
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
-    chance = TORNADO_DESTROY_CHANCE_PER_LEVEL * _caster_level(caster, Ability.ELEMENTAL, wand_skill_level)
+    chance = TORNADO_DESTROY_CHANCE_PER_LEVEL * _caster_level(state, caster, Ability.ELEMENTAL, wand_skill_level)
     for army in list(state.armies_at(coord)):
         if rng.random() < chance:
             state.remove_army(army.army_id)
@@ -1218,7 +1221,7 @@ def _execute_bless(
 
     province.tax_modifier_percent = BLESS_TAX_BONUS_PERCENT
 
-    cleanup_level = _caster_level(caster, Ability.WHITE, wand_skill_level)
+    cleanup_level = _caster_level(state, caster, Ability.WHITE, wand_skill_level)
     cleanup_chance = BLESS_GRAVEYARD_CLEAR_BASE_CHANCE + BLESS_GRAVEYARD_CLEAR_CHANCE_PER_LEVEL * cleanup_level
     if rng.random() < cleanup_chance:
         state.battle_graveyard.pop(coord, None)
@@ -1282,7 +1285,7 @@ def _execute_illus_armies(
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
-    target.phantasmal_armies_level = _caster_level(caster, Ability.ILLUSION, wand_skill_level)
+    target.phantasmal_armies_level = _caster_level(state, caster, Ability.ILLUSION, wand_skill_level)
     return CastExecutionResult(request, applied=True)
 
 
@@ -1542,7 +1545,7 @@ def _execute_plague(
 
     province.plague_active = True
     chance = PLAGUE_BASE_DESTROY_CHANCE + PLAGUE_DESTROY_CHANCE_PER_LEVEL * _caster_level(
-        caster, Ability.NECROMANCY, wand_skill_level
+        state, caster, Ability.NECROMANCY, wand_skill_level
     )
     apply_plague_exposure(state, coord, chance, rng)
     return CastExecutionResult(request, applied=True)
@@ -1664,7 +1667,7 @@ def _execute_skeletal_army(
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
-    raised_count = min(_caster_level(caster, Ability.NECROMANCY, wand_skill_level), len(graveyard))
+    raised_count = min(_caster_level(state, caster, Ability.NECROMANCY, wand_skill_level), len(graveyard))
     for _ in range(raised_count):
         entry = graveyard.pop()
         state.add_army(

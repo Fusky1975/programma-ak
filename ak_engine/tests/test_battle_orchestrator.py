@@ -6,6 +6,7 @@ import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
@@ -1098,6 +1099,27 @@ def test_select_side_commander_uses_real_tactical_skill_for_the_tiebreak():
 
     assert commander.leader_id == 2
     assert commander.tactical_ability == 5
+
+
+def test_select_side_commander_reads_the_discovery_ability_bonus():
+    # Phase 269: LAND_SHIP raises a Kingdom's own Tactical ability by 1 --
+    # equal stored skill, so the tiebreak must fall to the leader whose
+    # kingdom owns the Discovery.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Inventia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_kingdom(KingdomState(2, "Plain Old Kingdom", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.kingdoms[1].discoveries.add(Discovery.LAND_SHIP)
+    state.add_leader(LeaderState(1, 1, "Inventor's Tactician", FIELD, skills=_skills_with(Ability.TACTICAL, 3, 0)))
+    state.add_leader(LeaderState(2, 2, "Plain Tactician", FIELD, skills=_skills_with(Ability.TACTICAL, 3, 0)))
+    armies = [
+        ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, commanded_by=1),
+        ArmyState(102, 2, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, commanded_by=2),
+    ]
+
+    commander = _select_side_commander(armies, state, Ability.TACTICAL, allow_garrison_fallback=False)
+
+    assert commander.leader_id == 1
+    assert commander.tactical_ability == 4
 
 
 def test_maybe_fight_duel_demoralizes_the_losers_own_led_units():

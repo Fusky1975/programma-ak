@@ -11075,7 +11075,7 @@ complete (Phases 209-211).
     failure, unowned province, and no-candidates coverage) -- 3031
     passed total.
 
-- **Phase 268 (current)**: closes the revenue-bonus half of the
+- **Phase 268**: closes the revenue-bonus half of the
   Discoveries-of-the-Sages gap `models/discovery.py`'s own module
   docstring left open since Phase 93 -- the real FINANCES report section
   now shows the kingdom's own actual held Discoveries and the
@@ -11123,6 +11123,64 @@ complete (Phases 209-211).
     zero/mixed-discoveries cases; `describe_finances_report()`'s real
     discovery list, sort order, and Invention Bonus line shown/omitted)
     -- 3049 passed total.
+
+- **Phase 269 (current)**: closes the ability-bonus half of the
+  Discoveries-of-the-Sages gap `models/discovery.py`'s own module
+  docstring left open since Phase 93 -- the user's explicit two-part
+  request ("prima quelle che danno +1 ai talenti, poi quelle che
+  bloccano o limitano gli incantesimi") starts here with the "+1 ai
+  talenti" half; the anti-spell-ward half is the next phase.
+  - `turn/discovery_effects.py` (new): `ability_bonus_from_discoveries()`
+    sums how many of a kingdom's owned `fix0`-`fix9`/`wreck0`-`wreck9`
+    Discoveries bonus a given `Ability` (0, 1, or 2 -- two Discoveries
+    exist per bonused Ability, and REPORTS.PAS's own report loop prints
+    each as an independent "+1 skill in..." line, so both stack rather
+    than a flat non-stacking flag). `effective_skill_level()` adds that
+    bonus to the leader's own stored `SkillTable` level (0 if unrecorded,
+    the same pre-existing convention), capped at `MAX_SKILL_LEVEL` (9,
+    `CTBOTH.PAS`'s own `skillrange`) -- see the module's own docstring
+    for the full stacking/cap rationale and for the four sites
+    deliberately left untouched (Practice's own roll, Use_MI's
+    skill-raise write, succession's dead-King overlap check, the
+    CHARACTERS report's raw skill column).
+  - Wired `effective_skill_level()` into every real gameplay-outcome
+    skill read this project has, replacing the raw
+    `leader.skills.pair_for_ability(ability)[0]` read at each site:
+    `turn/battle_orchestrator.py` (Druidic shortfall x2, Supreme
+    Commander Tactical/Naval selection, `_commander_combatant()`'s own
+    Melee read for Duel combat); `turn/cast_execution.py`
+    (`_roll_cast_success()`'s own level read, `_caster_level()` --
+    now takes `state` -- and its 5 call sites); `turn/
+    challenge_execution.py` (`_leader_combatant()`'s own Melee read);
+    `turn/merit_points.py` (`_skill_level_sum()` -- now takes `state`
+    -- feeding Chancellor's Explorer/Spy/Sage sum and Priest's
+    Druidic/White sum, threaded through `turn/office_holder.py`'s own
+    two call sites); `turn/patrol_execution.py` (`_combat_skill_of()`/
+    `_spy_skill_of()` -- both now take `state` -- and its own
+    `_leader_combatant()`); `turn/pursue_execution.py`/`turn/
+    trail_execution.py`/`turn/aspy_execution.py` (each module's own
+    `_spy_skill_of()`, now taking `state`); `turn/search_execution.py`
+    (`_leader_combatant()` -- now takes `state` -- plus the Mirror
+    Image/Illusory Hero Sage+Illusion disbelief-bonus reads, the Cast
+    tactic's caster level, Steal's Thief level, and Talk's Druid level,
+    all already inside closures over `execute_search()`'s own `state`
+    parameter, so only the read itself changed, not the signature).
+  - Non-breaking: full suite passed unchanged (3049 passed) before any
+    new tests were written -- every existing test's kingdom starts with
+    an empty `discoveries` set, so `effective_skill_level()` degrades to
+    the exact prior raw-skill read everywhere no test explicitly grants
+    a Discovery. 4 pre-existing `test_merit_points.py` calls to
+    `chancellor_merit_points()`/`priest_merit_points()` needed a
+    `state` argument added for the new signature (a mechanical
+    threading fix, not a behavior change).
+  - 10 new tests: `turn/discovery_effects.py`'s own unit tests
+    (zero/single/stacking bonus, independent-Hero and kingdom-not-found
+    edge cases, stored-skill addition, and the `MAX_SKILL_LEVEL` cap),
+    plus 3 targeted integration tests proving the wiring reaches real
+    call sites (`_select_side_commander()`'s Tactical tiebreak now
+    resolved by an owned `LAND_SHIP`; `chancellor_merit_points()`'s
+    Explorer term now including an owned `COMPASS`) -- 3059 passed
+    total.
 
 ## Setup
 

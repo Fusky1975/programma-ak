@@ -159,16 +159,15 @@ from ak_engine.models.item import ItemInstance
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
 from ak_engine.turn.pursue_execution import step_toward_target
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 from ak_engine.turn.trail_decode import TrailRequest
 
 
-def _spy_skill_of(leader: LeaderState) -> int:
-    if leader.skills is None:
-        return 0
-    return leader.skills.pair_for_ability(Ability.SPY)[0]
+def _spy_skill_of(state: GameState, leader: LeaderState) -> int:
+    return effective_skill_level(state, leader, Ability.SPY)
 
 
 @dataclass(slots=True, frozen=True)
@@ -245,7 +244,7 @@ def execute_trail(
     same_kingdom = trailer.kingdom_id is not None and trailer.kingdom_id == target.kingdom_id
     distance = hex_distance(trailer.location, target.location)
     chance = pursue_catch_up_chance(
-        _spy_skill_of(trailer),
+        _spy_skill_of(state, trailer),
         target_leads_army=bool(target_armies),
         distance_provinces=distance,
         same_kingdom=same_kingdom,

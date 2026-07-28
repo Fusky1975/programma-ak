@@ -161,6 +161,7 @@ from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.intelligence_estimate import estimate_alignment, estimate_temper
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.practice_execution import SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL
@@ -173,10 +174,8 @@ from ak_engine.turn.tax_base import province_tax_yield
 ESPIONAGE_DISCOVERY_CHANCE_MULTIPLIER = 2.0
 
 
-def _spy_skill_of(leader: LeaderState) -> int:
-    if leader.skills is None:
-        return 0
-    return leader.skills.pair_for_ability(Ability.SPY)[0]
+def _spy_skill_of(state: GameState, leader: LeaderState) -> int:
+    return effective_skill_level(state, leader, Ability.SPY)
 
 
 def _roll_espionage_discoveries(
@@ -349,7 +348,7 @@ def execute_aspy(
         _army_display_name(state, army) for army in state.armies_at(leader.location) if army.commanded_by is None
     )
 
-    spy_skill = _spy_skill_of(leader)
+    spy_skill = _spy_skill_of(state, leader)
 
     exact_tax_yield = province_tax_yield(province)
     tax_estimate = (

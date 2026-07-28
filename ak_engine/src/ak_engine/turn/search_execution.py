@@ -251,6 +251,7 @@ from ak_engine.models.monster import (
 )
 from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.encounter import (
     BEG_MERCY_CHANCE,
     CHARACTER_HIT_POINTS,
@@ -324,7 +325,7 @@ FLEE_CHANCE: dict[MonsterSpeed, float] = {
 }
 
 
-def _leader_combatant(leader: LeaderState) -> Combatant:
+def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
     """Same construction as ``challenge_execution.py``'s own private helper (Phase 50),
     duplicated rather than shared -- see that module's own docstring for
     why (a different concept that happens to need the same small lookup).
@@ -334,10 +335,8 @@ def _leader_combatant(leader: LeaderState) -> Combatant:
     applying against monsters), so it's omitted here rather than guessed.
     """
 
-    melee_skill = archery_skill = 0
-    if leader.skills is not None:
-        melee_skill = leader.skills.pair_for_ability(Ability.MELEE)[0]
-        archery_skill = leader.skills.pair_for_ability(Ability.ARCHERY)[0]
+    melee_skill = effective_skill_level(state, leader, Ability.MELEE)
+    archery_skill = effective_skill_level(state, leader, Ability.ARCHERY)
     return Combatant(
         name=leader.name, hit_points=CHARACTER_HIT_POINTS, melee_skill=melee_skill, archery_skill=archery_skill
     )
@@ -409,7 +408,7 @@ def execute_search(
             reason=f"no combat stats for guardian ({monster_name}) -- see models/monster.py MONSTER_COMBAT_STATS",
         )
 
-    leader_combatant = _leader_combatant(leader)
+    leader_combatant = _leader_combatant(state, leader)
     monster_combatant = Combatant(
         name=MONSTER_NAMES.get(feature.guardian_monster, "guardian"),
         hit_points=rng.randint(*stats.hit_points_range),
@@ -568,7 +567,7 @@ def execute_search(
                 return None
 
         if caster_is_leader:
-            level = leader.skills.pair_for_ability(ability)[0] if leader.skills is not None else 0
+            level = effective_skill_level(state, leader, ability)
             kingdom = state.kingdoms.get(leader.kingdom_id) if leader.kingdom_id is not None else None
             # White Magic never gets the Pagan-Realm bonus (Phase 192).
             caster_is_pagan = (
@@ -694,10 +693,8 @@ def execute_search(
                 # level bonus on top of the table -- monster opponents
                 # don't get this bonus.
                 opponent_tier = MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT
-                sage_level = leader.skills.pair_for_ability(Ability.SAGE)[0] if leader.skills is not None else 0
-                illusion_level = (
-                    leader.skills.pair_for_ability(Ability.ILLUSION)[0] if leader.skills is not None else 0
-                )
+                sage_level = effective_skill_level(state, leader, Ability.SAGE)
+                illusion_level = effective_skill_level(state, leader, Ability.ILLUSION)
                 opponent_disbelief_bonus = mirror_image_leader_disbelief_bonus(sage_level, illusion_level)
             duel_result = resolve_mirror_image_duel(
                 caster, target, opponent_tier, level, rng, opponent_disbelief_bonus=opponent_disbelief_bonus
@@ -718,16 +715,14 @@ def execute_search(
                 # visiting Valhalla -- no effect, same "precondition can't
                 # be met" convention as every other spell above.
                 return None
-            hero_combatant = _leader_combatant(hero)
+            hero_combatant = _leader_combatant(state, hero)
             if target_is_monster:
                 opponent_tier = MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER[monster_species]
                 opponent_disbelief_bonus = 0.0
             else:
                 opponent_tier = MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT
-                sage_level = leader.skills.pair_for_ability(Ability.SAGE)[0] if leader.skills is not None else 0
-                illusion_level = (
-                    leader.skills.pair_for_ability(Ability.ILLUSION)[0] if leader.skills is not None else 0
-                )
+                sage_level = effective_skill_level(state, leader, Ability.SAGE)
+                illusion_level = effective_skill_level(state, leader, Ability.ILLUSION)
                 opponent_disbelief_bonus = mirror_image_leader_disbelief_bonus(sage_level, illusion_level)
             # "Unless the alignments of the illusion and the spellcaster
             # are implacably hostile" -- both alignments must be recorded
@@ -949,7 +944,7 @@ def execute_search(
         cunning = MONSTER_STEAL_CUNNING.get(feature.guardian_monster, StealTargetCunning.AVERAGE)
         if resolve_monster_hides_treasure(cunning, rng):
             return None  # this attempt found nothing -- plan continues
-        level = leader.skills.pair_for_ability(Ability.THIEF)[0] if leader.skills is not None else 0
+        level = effective_skill_level(state, leader, Ability.THIEF)
         if resolve_steal_attempt(level, rng):
             return _outcome_from(EncounterCombatResult(winner="a", rounds=0))
         if resolve_steal_evasion(level, rng):
@@ -991,7 +986,7 @@ def execute_search(
         honored()``'s own module comment.
         """
 
-        druid_level = leader.skills.pair_for_ability(Ability.DRUID)[0] if leader.skills is not None else 0
+        druid_level = effective_skill_level(state, leader, Ability.DRUID)
         if not can_talk_to_monster(feature.guardian_monster, druid_level):
             return None
         caster_is_druidic = leader.alignment is Alignment.DRUID

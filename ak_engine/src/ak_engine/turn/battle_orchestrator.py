@@ -171,6 +171,7 @@ from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
@@ -373,7 +374,7 @@ def _druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race, p
         if leader is None or leader.kingdom_id is None:
             return 0
         leader_race = state.kingdoms[leader.kingdom_id].race
-        leader_druidic_skill = leader.skills.pair_for_ability(Ability.DRUID)[0] if leader.skills is not None else 0
+        leader_druidic_skill = effective_skill_level(state, leader, Ability.DRUID)
         return compute_druidic_shortfall(leader_race, army_race, leader_druidic_skill)
 
     return _king_druidic_shortfall_for(state, army_race, province_coord)
@@ -396,7 +397,7 @@ def _king_druidic_shortfall_for(state: GameState, army_race: Race, province_coor
     if king is None or king.kingdom_id is None:
         return 0
     king_race = state.kingdoms[king.kingdom_id].race
-    king_druidic_skill = king.skills.pair_for_ability(Ability.DRUID)[0] if king.skills is not None else 0
+    king_druidic_skill = effective_skill_level(state, king, Ability.DRUID)
     return compute_druidic_shortfall(king_race, army_race, king_druidic_skill)
 
 
@@ -591,8 +592,8 @@ def _select_side_commander(
     for leader_id, led_armies in by_leader.items():
         level = 0
         leader = state.leaders.get(leader_id)
-        if leader is not None and leader.skills is not None:
-            level = leader.skills.pair_for_ability(ability)[0]
+        if leader is not None:
+            level = effective_skill_level(state, leader, ability)
         candidates.append(Commander(leader_id=leader_id, contingent_size=len(led_armies), tactical_ability=level))
     if unled_armies and allow_garrison_fallback:
         candidates.append(provincial_garrison_commander(len(unled_armies)))
@@ -626,8 +627,8 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
 
     leader = state.leaders.get(commander.leader_id)
     melee_skill = 0
-    if leader is not None and leader.skills is not None:
-        melee_skill = leader.skills.pair_for_ability(Ability.MELEE)[0]
+    if leader is not None:
+        melee_skill = effective_skill_level(state, leader, Ability.MELEE)
 
     neutral_bonus = False
     if leader is not None and leader.kingdom_id is not None:

@@ -6,6 +6,7 @@ from the rulebook's own "TABELLA DELLE CARICHE IMPERIALI" (page 51).
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
@@ -63,7 +64,7 @@ def test_chancellor_merit_points_sums_explorer_spy_sage_skills():
     leader = state.leaders[1]
     leader.skills = skills_with(EXPLORER=2, SPY=1, SAGE=3, TACTICAL=9)
 
-    assert chancellor_merit_points(leader) == 6
+    assert chancellor_merit_points(state, leader) == 6
 
 
 def test_chancellor_merit_points_adds_discovery_tally_terms():
@@ -73,14 +74,26 @@ def test_chancellor_merit_points_adds_discovery_tally_terms():
     leader.merit_tally.discoveries_found_first = 1
     leader.merit_tally.discoveries_via_espionage = 3
 
-    assert chancellor_merit_points(leader) == 2 * 2 + 2 * 1 + 3
+    assert chancellor_merit_points(state, leader) == 2 * 2 + 2 * 1 + 3
 
 
 def test_chancellor_merit_points_zero_with_no_skills_and_no_tally():
     state = make_state()
     leader = state.leaders[1]
 
-    assert chancellor_merit_points(leader) == 0
+    assert chancellor_merit_points(state, leader) == 0
+
+
+def test_chancellor_merit_points_includes_ability_bonus_discoveries():
+    # Phase 269: the Explorer/Spy/Sage skill term now reads
+    # turn/discovery_effects.py's effective_skill_level(), so an owned
+    # ability-bonus Discovery (COMPASS -> Explorer) is included.
+    state = make_state()
+    leader = state.leaders[1]
+    leader.skills = skills_with(EXPLORER=2, SPY=1, SAGE=3)
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+
+    assert chancellor_merit_points(state, leader) == (2 + 1) + 1 + 3
 
 
 def test_marshal_merit_points_nets_won_and_lost_units():
@@ -138,7 +151,7 @@ def test_priest_merit_points_combines_casts_and_druid_white_skills():
     leader.skills = skills_with(DRUID=2, WHITE=3)
     leader.merit_tally.resurrection_bless_casts = 4
 
-    assert priest_merit_points(leader) == 4 + 2 * (2 + 3)
+    assert priest_merit_points(state, leader) == 4 + 2 * (2 + 3)
 
 
 def test_mage_merit_points_sums_the_five_magic_talents_and_owned_wands():

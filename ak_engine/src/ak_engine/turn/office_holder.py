@@ -93,7 +93,7 @@ class OfficeHolder:
 
 def _leader_merit_points(office: Office, state: GameState, leader: LeaderState) -> int:
     if office is Office.CHANCELLOR:
-        return chancellor_merit_points(leader)
+        return chancellor_merit_points(state, leader)
     if office is Office.TREASURER:
         return treasurer_merit_points(state, leader.kingdom_id) if leader.kingdom_id is not None else 0
     if office is Office.MARSHAL:
@@ -103,7 +103,7 @@ def _leader_merit_points(office: Office, state: GameState, leader: LeaderState) 
     if office is Office.DEFENDER:
         return defender_merit_points(leader)
     if office is Office.PRIEST:
-        return priest_merit_points(leader)
+        return priest_merit_points(state, leader)
     if office is Office.MAGE:
         return mage_merit_points(state, leader)
     raise ValueError(f"{office} is not a ranked office -- Emperor is resolved via resolve_office_holder() directly")

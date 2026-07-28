@@ -105,29 +105,26 @@ from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
 from ak_engine.turn.movement import MapBounds, neighbors
 
 _MAGIC_ABILITIES = (Ability.WHITE, Ability.NECROMANCY, Ability.ELEMENTAL, Ability.PSYCHIC, Ability.ILLUSION)
 
 
-def _combat_skill_of(leader: LeaderState) -> int:
+def _combat_skill_of(state: GameState, leader: LeaderState) -> int:
     """Rule (g)'s "best skill in Archery, Melee or Magic" -- see module docstring
     for why "Magic" is read as the max of all five magic schools.
     """
 
-    if leader.skills is None:
-        return 0
-    archery = leader.skills.pair_for_ability(Ability.ARCHERY)[0]
-    melee = leader.skills.pair_for_ability(Ability.MELEE)[0]
-    magic = max(leader.skills.pair_for_ability(ability)[0] for ability in _MAGIC_ABILITIES)
+    archery = effective_skill_level(state, leader, Ability.ARCHERY)
+    melee = effective_skill_level(state, leader, Ability.MELEE)
+    magic = max(effective_skill_level(state, leader, ability) for ability in _MAGIC_ABILITIES)
     return max(archery, melee, magic)
 
 
-def _spy_skill_of(leader: LeaderState) -> int:
-    if leader.skills is None:
-        return 0
-    return leader.skills.pair_for_ability(Ability.SPY)[0]
+def _spy_skill_of(state: GameState, leader: LeaderState) -> int:
+    return effective_skill_level(state, leader, Ability.SPY)
 
 
 def _is_enemy(patroller: LeaderState, candidate: LeaderState, state: GameState) -> bool:
@@ -158,7 +155,7 @@ def find_patrol_target(state: GameState, patroller_leader_id: int, bounds: MapBo
         return None
 
     watched_hexes = {patroller.location, *neighbors(patroller.location, bounds)}
-    patroller_skill = _combat_skill_of(patroller)
+    patroller_skill = _combat_skill_of(state, patroller)
 
     candidates: list[LeaderState] = []
     for candidate in state.leaders.values():
@@ -168,7 +165,7 @@ def find_patrol_target(state: GameState, patroller_leader_id: int, bounds: MapBo
             continue  # rule (a): only armyless intruders are chased
         if not _is_enemy(patroller, candidate, state):
             continue  # rule (c)
-        if _combat_skill_of(candidate) > patroller_skill:
+        if _combat_skill_of(state, candidate) > patroller_skill:
             continue  # rule (g)
         candidates.append(candidate)
 
@@ -179,7 +176,7 @@ def find_patrol_target(state: GameState, patroller_leader_id: int, bounds: MapBo
     # point (7)'s own cross-reference doesn't resolve to anything in the
     # available rulebook text (see module docstring) -- lower leader_id
     # as a final deterministic tiebreak.
-    candidates.sort(key=lambda c: (-_combat_skill_of(c), c.leader_id))
+    candidates.sort(key=lambda c: (-_combat_skill_of(state, c), c.leader_id))
     return candidates[0]
 
 
@@ -189,9 +186,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
     small-per-consumer-lookup precedent (see module docstring).
     """
 
-    melee_skill = 0
-    if leader.skills is not None:
-        melee_skill = leader.skills.pair_for_ability(Ability.MELEE)[0]
+    melee_skill = effective_skill_level(state, leader, Ability.MELEE)
 
     neutral_bonus = False
     if leader.kingdom_id is not None:
@@ -241,7 +236,7 @@ def execute_patrol(
 
     patroller = state.leaders[patroller_leader_id]
     if target.location != patroller.location:  # adjacent, not same hex -- rule (i)
-        if _spy_skill_of(patroller) == 0 and rng.random() < 0.5:
+        if _spy_skill_of(state, patroller) == 0 and rng.random() < 0.5:
             return PatrolExecutionResult(
                 intercepted=False, target_leader_id=target.leader_id, reason="wandered into a random hex"
             )

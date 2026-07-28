@@ -76,6 +76,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
 
 _COMBAT_MANEUVERS = frozenset({Maneuver.MELEE, Maneuver.SHOOT})
@@ -118,9 +119,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
     small lookup, not worth a cross-module dependency for.
     """
 
-    melee_skill = 0
-    if leader.skills is not None:
-        melee_skill = leader.skills.pair_for_ability(Ability.MELEE)[0]
+    melee_skill = effective_skill_level(state, leader, Ability.MELEE)
 
     neutral_bonus = False
     if leader.kingdom_id is not None:
