@@ -11182,7 +11182,7 @@ complete (Phases 209-211).
     Explorer term now including an owned `COMPASS`) -- 3059 passed
     total.
 
-- **Phase 270 (current)**: closes the anti-spell-ward half of the
+- **Phase 270**: closes the anti-spell-ward half of the
   Discoveries-of-the-Sages gap `models/discovery.py`'s own module
   docstring left open since Phase 93 -- the second half of the user's
   explicit two-part request ("poi quelle che bloccano o limitano gli
@@ -11251,6 +11251,58 @@ complete (Phases 209-211).
     Balloons, Osteopathic Germ Warfare), and `test_tax_base.py`
     (`earthquake_flat_reduction`'s own flat-reduction and floor-at-zero
     cases) -- 3068 passed total.
+
+- **Phase 271 (current)**: unblocks the Gran Cancelliere / Chancellor's
+  own Discovery-attribution Merit Point terms, the "materially larger,
+  still-unscoped gap" `turn/merit_points.py`'s own Phase 137/256 note
+  flagged as needing a global first-inventor registry across every
+  kingdom, now that Phase 266 gave this project a real Discovery-
+  acquisition mechanic to attribute. **User-specified scoring rule**
+  (2026-07-29), explicitly requested to replace the rulebook's own flat
+  "+2 per Invention found first" figure: the world's first hero/King
+  ever to discover a given Discovery scores **3** points; every later,
+  independent discoverer of that same Discovery scores **2** (the
+  rulebook itself awards nothing at all for a non-first personal
+  discovery -- this project's own owner chose to score both cases).
+  - `models/game_state.py`: `GameState.discoveries_first_found_by:
+    dict[Discovery, int]` (new) -- a global, permanent, write-once
+    registry (Discovery -> the Kingdom that discovered it first),
+    the same "one shared, world-wide fact" shape `Feature.
+    discovered_by_kingdom`'s own per-instance registry doesn't need
+    (many Kingdoms can each independently know about the same
+    Feature; a Discovery has exactly one true first inventor,
+    game-wide). `MeritTally.discoveries_found_not_first: int` (new)
+    joins the existing `discoveries_found_first` -- one counter per
+    outcome, so `chancellor_merit_points()` can apply the 3/2 weights
+    directly rather than re-deriving "was this first" from stored data.
+  - `turn/practice_execution.py execute_practice()`'s own SAGE branch:
+    right after a successful device-discovery roll adds a new
+    `Discovery` to the practicing leader's own Kingdom, checks
+    `discoveries_first_found_by` -- absent means this Kingdom is the
+    world's first (registry written, `discoveries_found_first`
+    credited); present means some other Kingdom already got there
+    first (registry left untouched, `discoveries_found_not_first`
+    credited instead). Espionage-copied ownership (`turn/
+    aspy_execution.py`, Phase 267) never corrupts this check: the
+    registry only ever asks "does *any* Kingdom already know this,"
+    regardless of how they came to know it.
+  - `turn/merit_points.py chancellor_merit_points()`: `3 *
+    discoveries_found_first + 2 * discoveries_found_not_first`,
+    replacing the old, never-populated `2 * discoveries_found_first`
+    term.
+  - Docs-only, in passing: `turn/practice_execution.py`'s own module
+    docstring updated to stop saying Discovery mechanical effects are
+    "a distinct, unstarted future phase" -- Phases 269/270 already
+    wired both halves.
+  - Non-breaking: full suite passed unchanged except one pre-existing
+    test (`test_chancellor_merit_points_adds_discovery_tally_terms`)
+    that asserted the old `2 * discoveries_found_first` formula --
+    updated to the new 3/2 weights, a mechanical fix for the
+    intentional formula change, not a regression.
+  - 2 new tests in `test_practice_execution.py` (world-first discoverer
+    credited 3 points and registers itself; a second, independent
+    discoverer of the same already-registered Discovery credited 2
+    points, registry entry left unchanged) -- 3070 passed total.
 
 ## Setup
 

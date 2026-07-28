@@ -177,13 +177,23 @@ phase's scope for each:
   64 (exhausted) or a leader with no ``kingdom_id`` (an independent Hero
   -- nowhere to grant a *kingdom*-level Discovery to) both leave
   ``discovery_granted`` at ``None`` while ``device_discovered`` still
-  reports the roll's own outcome honestly. **What's still not modeled**:
-  the discovered device's *mechanical effect* -- ``models/discovery.py``
-  already documents its own real ability-bonus/anti-spell/revenue-bonus
-  data, but wiring those bonuses into actual gameplay (skill checks, spell
-  resolution, tax revenue) remains a distinct, unstarted future phase,
-  the same layered "vocabulary first, mechanics later" precedent that
-  module's own docstring set. **Not extended to
+  reports the roll's own outcome honestly. The discovered device's own
+  mechanical effect (``models/discovery.py``'s ability-bonus/anti-spell/
+  revenue-bonus data) is now wired into real gameplay too -- see
+  ``turn/discovery_effects.py`` (Phase 269, ability bonuses) and ``turn/
+  cast_execution.py``'s own Phase 270 addendum (7 of the 16 anti-spell
+  Discoveries; the rest documented as blocked at their own call sites).
+
+  **Phase 271 (Chancellor Merit Points, user-specified)**: a successful
+  grant here also credits the practicing leader's own ``MeritTally``:
+  3 points if ``discovery_granted`` is the very first time *any*
+  Kingdom in the game has ever owned it (``GameState.discoveries_
+  first_found_by``, written once, permanently), 2 points otherwise --
+  see that field's own docstring and ``turn/merit_points.py``'s own
+  module docstring for why this figure supersedes the rulebook's own
+  printed "+2 per Invention found first."
+
+  **Not extended to
   ``execute_practice_group``**: the
   multi-character pooling path resolves a *shared* skill-rise outcome
   across co-practicers, but Sageness's own device-discovery roll is a
@@ -489,6 +499,17 @@ def execute_practice(
                 discovery_granted = _select_discovery_to_grant(kingdom, rng)
                 if discovery_granted is not None:
                     kingdom.discoveries.add(discovery_granted)
+                    # Phase 271 (Chancellor Merit Points, user-specified
+                    # scoring): the world's first hero/King ever to
+                    # discover this particular Discovery scores 3
+                    # points; every later, independent discoverer of the
+                    # same Discovery scores 2 -- see GameState.
+                    # discoveries_first_found_by's own docstring.
+                    if discovery_granted not in state.discoveries_first_found_by:
+                        state.discoveries_first_found_by[discovery_granted] = leader.kingdom_id
+                        leader.merit_tally.discoveries_found_first += 1
+                    else:
+                        leader.merit_tally.discoveries_found_not_first += 1
 
     return PracticeExecutionResult(
         ability=ability,

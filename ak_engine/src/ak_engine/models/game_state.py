@@ -311,14 +311,19 @@ class MeritTally:
     (a successful Fulfill, ``turn/search_execution.py
     _resolve_fulfill()``, Phase 258), and ``discoveries_via_espionage``
     (``turn/aspy_execution.py execute_aspy()``'s own espionage-Discovery
-    roll, Phase 267) now have real writers; ``discoveries_found_first``
-    alone is still never incremented by any action in this project --
-    unlike the espionage half, attributing "found first" needs a global
-    first-inventor registry across every kingdom (the same shape as
-    ``Feature.discovered_by_kingdom``, Phase 75/256), which the
-    acquisition mechanic itself (``KingdomState.discoveries``, Phase 266)
-    deliberately didn't build alongside it, to keep the two concerns
-    separate. All default to 0: a leader who has fought no battles,
+    roll, Phase 267) now have real writers.
+
+    **Phase 271**: ``discoveries_found_first``/``discoveries_found_not_
+    first`` are now live too, via ``GameState.discoveries_first_found_
+    by`` (the global first-inventor registry this docstring's own prior
+    note said was missing) -- see ``turn/practice_execution.py
+    execute_practice()``'s own SAGE branch and ``turn/merit_points.py``'s
+    own module docstring for the point values these two feed (a
+    user-specified, project-original scoring rule, confirmed 2026-07-29,
+    that supersedes the rulebook's own flat "+2 per Invention found
+    first" figure -- see that module's own note).
+
+    All default to 0: a leader who has fought no battles,
     killed no monsters, cast no Resurrection/Bless, or been the first to
     find any Special Place/Discovery legitimately starts here, the same
     "field exists, no populating consumer yet" convention this project
@@ -348,12 +353,17 @@ class MeritTally:
     resurrection_bless_casts: int = 0
     # Chancellor: features_discovered_first is live as of Phase 256 (see
     # turn/plan_dispatch.py's own EXPLORE branch, keyed off Feature.
-    # discovered_by_kingdom, Phase 75). The two Discovery-attribution
-    # counters below stay unwired -- no acquisition mechanic for a
-    # Discovery exists anywhere in this project yet (see turn/
-    # merit_points.py's own module docstring).
+    # discovered_by_kingdom, Phase 75). discoveries_found_first/
+    # discoveries_found_not_first are live as of Phase 271 -- see this
+    # class's own Phase 271 note above.
     features_discovered_first: int = 0
+    # Discoveries this leader personally discovered via Practice's own
+    # SAGE branch that were the world's first instance (worth 3 points
+    # each in the Chancellor formula) vs. not (worth 2 each) -- see
+    # GameState.discoveries_first_found_by's own docstring for how
+    # "first" is determined.
     discoveries_found_first: int = 0
+    discoveries_found_not_first: int = 0
     discoveries_via_espionage: int = 0
 
 
@@ -591,6 +601,19 @@ class GameState:
     # not a per-province list (Pascal's own `fx`/`fy` arrays are keyed by
     # feature-instance number, not by province).
     features: dict[int, Feature] = field(default_factory=dict)
+    # Global first-inventor registry for Discoveries (Phase 271) -- see
+    # MeritTally's own docstring for why this was the missing piece
+    # blocking discoveries_found_first/discoveries_found_not_first.
+    # Unlike Feature.discovered_by_kingdom (per-instance, since many
+    # Kingdoms can each hold their own copy of the same feature-type
+    # knowledge independently), a Discovery is one shared, world-wide
+    # invention -- Discovery.LAND_SHIP either has a first inventor or it
+    # doesn't, game-wide. Written once, permanently, the instant any
+    # Kingdom's own KingdomState.discoveries gains an entry no other
+    # Kingdom's own set already held (turn/practice_execution.py
+    # execute_practice()'s own SAGE branch) -- never overwritten
+    # afterward, even if that Kingdom is later destroyed.
+    discoveries_first_found_by: dict[Discovery, int] = field(default_factory=dict)
     # Leader-held magic-item instances (Phase 140) -- see models/item.py's
     # own docstring for the RUMORS.PAS Add_Tr/treaslist/trowner/trcharges
     # source and its deliberate leader-only scope.

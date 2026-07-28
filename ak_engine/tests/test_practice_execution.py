@@ -642,6 +642,41 @@ def test_execute_practice_sage_discovery_grants_nothing_when_kingdom_already_com
     assert state.kingdoms[1].discoveries == set(Discovery)
 
 
+# -- Phase 271: Chancellor Merit Points -- world-first vs. not-first --
+
+
+def test_execute_practice_sage_discovery_credits_the_worlds_first_discoverer():
+    state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=4, aptitude=9))
+
+    result = execute_practice(
+        state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15], choice_indices=[0])
+    )
+
+    assert result.discovery_granted is Discovery.LAND_SHIP
+    leader = state.leaders[1]
+    assert leader.merit_tally.discoveries_found_first == 1
+    assert leader.merit_tally.discoveries_found_not_first == 0
+    assert state.discoveries_first_found_by[Discovery.LAND_SHIP] == 1
+
+
+def test_execute_practice_sage_discovery_credits_a_later_independent_discoverer():
+    # Another Kingdom (2) already discovered LAND_SHIP first; Kingdom 1's
+    # own leader now discovers it independently via Practice.
+    state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=4, aptitude=9))
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.discoveries_first_found_by[Discovery.LAND_SHIP] = 2
+
+    result = execute_practice(
+        state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15], choice_indices=[0])
+    )
+
+    assert result.discovery_granted is Discovery.LAND_SHIP
+    leader = state.leaders[1]
+    assert leader.merit_tally.discoveries_found_first == 0
+    assert leader.merit_tally.discoveries_found_not_first == 1
+    assert state.discoveries_first_found_by[Discovery.LAND_SHIP] == 2  # unchanged -- kingdom 2 stays first
+
+
 # -- Phase 259: Practice clears a Royal Heir's resurrection eligibility --
 
 

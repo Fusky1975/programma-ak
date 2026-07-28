@@ -33,27 +33,36 @@ reimplemented.
 ## Gran Cancelliere / Chancellor (10%)
 - +1 per level in Explorer, Spy, and Sage
 - +2 per Special Place (Feature) discovered first
-- +2 per Invention (Discovery) found first
+- Invention (Discovery) attribution: **3 points to the world's first
+  hero/King ever to discover a given Discovery, 2 points to every
+  later, independent discoverer of that same Discovery** -- a
+  user-specified, project-original scoring rule (confirmed 2026-07-29)
+  that *supersedes* the rulebook's own flat "+2 per Invention found
+  first" figure quoted above the fix (the rulebook itself gives no
+  points at all for a non-first personal discovery; this project's own
+  owner chose to score both cases, at these two values, rather than
+  leave the non-first case at zero).
 - +1 per Invention obtained via espionage
 
-**The skill-level term and the Feature half are live; the Invention half
-still isn't.** `features_discovered_first` is live as of **Phase 256**:
-`models/feature.py Feature.discovered_by_kingdom` (a per-kingdom dict,
-Phase 75) already exists and is written by `turn/exploration.py
-discover_features()` every time a kingdom first discovers a Special
-Place; `turn/plan_dispatch.py`'s own `ActionCode.EXPLORE` branch now
-checks, for each newly-discovered feature, whether that kingdom's own
-entry is still the *only* one in the dict (nobody else got there
-first) and credits the acting leader's own `MeritTally.
-features_discovered_first` when so. `discoveries_found_first`/
-`discoveries_via_espionage` (Inventions) remain unwired -- unlike
-Features, this project has **no acquisition mechanic for a `Discovery`
-at all**: nothing anywhere ever grants a `KingdomState` a `Discovery`
-in the first place (confirmed by an exhaustive search, not merely
-unwired), so there is no event to attribute "found first" or "via
-espionage" to yet. That's a materially larger, still-unscoped gap
-(inventing the acquisition mechanic itself, not just attributing an
-existing one) than Phase 256's own Feature-side fix.
+**All four terms are now live.** `features_discovered_first` is live
+as of **Phase 256**: `models/feature.py Feature.discovered_by_kingdom`
+(a per-kingdom dict, Phase 75) already exists and is written by
+`turn/exploration.py discover_features()` every time a kingdom first
+discovers a Special Place; `turn/plan_dispatch.py`'s own
+`ActionCode.EXPLORE` branch checks, for each newly-discovered feature,
+whether that kingdom's own entry is still the *only* one in the dict
+(nobody else got there first) and credits the acting leader's own
+`MeritTally.features_discovered_first` when so.
+
+`discoveries_found_first`/`discoveries_found_not_first` (Phase 271)
+and `discoveries_via_espionage` (Phase 267) are live too, now that a
+real Discovery-acquisition mechanic exists (`KingdomState.discoveries`,
+Phase 266): `turn/practice_execution.py execute_practice()`'s own SAGE
+branch checks a new global registry, `GameState.discoveries_first_
+found_by` (written once, permanently, the instant any Kingdom's own
+`discoveries` set gains a Discovery no other Kingdom's own set already
+held) to decide which of the two counters -- and therefore which of
+the 3-point/2-point figures above -- a successful grant credits.
 
 ## Tesoriere Imperiale / Treasurer (10%)
 "Il tesoro più sostanzioso alla fine del gioco" -- the kingdom's own
@@ -208,16 +217,18 @@ def emperor_merit_points(state: GameState, kingdom_id: int) -> int:
 
 
 def chancellor_merit_points(state: GameState, leader: LeaderState) -> int:
-    """See module docstring: only the Explorer/Spy/Sage skill term is
-    live; the three discovery-attribution terms read `MeritTally`
-    counters no action in this project increments yet.
+    """See module docstring: all four terms are live. Discovery
+    attribution uses the user-specified 3-for-world-first/2-for-not-
+    first scoring (Phase 271), not the rulebook's own flat "+2 per
+    Invention found first" figure.
     """
 
     tally = leader.merit_tally
     return (
         _skill_level_sum(state, leader, _CHANCELLOR_SKILL_ABILITIES)
         + 2 * tally.features_discovered_first
-        + 2 * tally.discoveries_found_first
+        + 3 * tally.discoveries_found_first
+        + 2 * tally.discoveries_found_not_first
         + tally.discoveries_via_espionage
     )
 
