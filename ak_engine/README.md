@@ -10871,7 +10871,7 @@ complete (Phases 209-211).
     100% chance still requiring an inspiring army present -- 2991
     passed total.
 
-- **Phase 264 (current)**: the last piece of Hire's own required-pay
+- **Phase 264**: the last piece of Hire's own required-pay
   gap flagged since Phase 162's own note -- the "rare exception" bypass
   for an otherwise-refused wide alignment gap. Same manual passage
   Phase 162 already quoted, next sentence: "In rare occasioni un Re
@@ -10910,6 +10910,48 @@ complete (Phases 209-211).
     pre-existing outright-refusal test now scripted to fail the roll
     deterministically rather than relying on luck) -- 2997 passed
     total.
+
+- **Phase 265 (current)**: two stale claims found and corrected while
+  hunting for the next well-scoped gap, plus the real fix each one was
+  actually blocking. ASpy's own "Not yet implemented" note still said
+  "no per-province tax-base model exists" -- false since Phase 222-224
+  (`turn/tax_base.py`) -- and `turn/spy_table.py`'s own docstring still
+  said the [4.33] Spy Table's "Margin of Error of Spy Reports" column
+  had no resolver, when in fact `SpyReport.tax_estimate` (Phase 253)
+  had already been passing the *exact* real tax yield straight through
+  unperturbed the whole time -- a field literally named "estimate,"
+  rendered through the real `_LSTax` template ("Approximate Taxation:
+  #"), silently reporting the true value instead.
+  - `turn/spy_table.py`: `margin_of_error_fraction(spy_skill)` exposes
+    the table's own previously-unused column (0.70 at skill 0, down to
+    0.15 at skill 4); `estimate_reported_value(true_value, spy_skill,
+    rng)` perturbs a true integer by a uniform, symmetric,
+    floor-at-0 offset within that margin. The percentages are the
+    sourced part of [4.33]; **how a percentage becomes a perturbed
+    number is this project's own documented design choice**, the same
+    "no formula survives, only the shape is natural" category as
+    `win_probability`'s own interpolation curve.
+  - `turn/aspy_execution.py execute_aspy()`: now takes an `rng`
+    parameter and reads the caster's own Spy skill (`_spy_skill_of()`,
+    mirroring `turn/trail_execution.py`'s own identical helper) to
+    perturb `tax_estimate` before it's returned -- `None` (never
+    perturbed) whenever the base `ProvinceState.tax` was never
+    recorded, unchanged from Phase 253.
+  - **"Chance of Escaping Notice" (the table's third column) stays
+    genuinely unmodeled**: a direct search of the available rulebook
+    text found no described consequence of *being* noticed while
+    spying anywhere, so there's nothing concrete to attach a roll's
+    result to yet -- flagged, not guessed at.
+  - Non-breaking: full suite passed unchanged except for one
+    pre-existing test that (correctly) assumed the exact value was
+    reported -- updated with a scripted rng landing the perturbation
+    at exactly zero offset, the same "expected, not a regression"
+    pattern already established this session. 10 new tests (5 in
+    `test_spy_table.py` for the margin/perturbation functions
+    themselves, 5 in `test_aspy_execution.py` for the wiring:
+    zero-offset passthrough, maximum perturbation at Spy skill 0, the
+    margin shrinking at Spy skill 4, the zero floor, and `None`
+    staying unperturbed) -- 3011 passed total.
 
 ## Setup
 
@@ -11297,8 +11339,12 @@ rulebook before being turned into named, typed fields:
     the actual owner/adjacent-owners/recruitable-types/capital facts
     have no confirmed PROSE template anywhere in the available source
     (see Phase 63's own note above for the research trail), so they
-    stay unrendered, plus taxation reporting (no per-province tax-base
-    model exists). `obj`
+    stay unrendered. ~~plus taxation reporting (no per-province
+    tax-base model exists)~~ -- **stale, corrected in Phase 265**:
+    taxation *is* real and rendered (Phase 253's own `tax_estimate` +
+    `render_spy_tax_estimate()`), and as of Phase 265 is finally
+    perturbed by [4.33]'s own Margin of Error, not the exact value.
+    `obj`
     (`target_province`) still stays an unconverted, untrusted raw int
     for both actions -- Phase 62 sidesteps needing it for ASpy at all by
     reading the rulebook's own "he is actually in" text literally

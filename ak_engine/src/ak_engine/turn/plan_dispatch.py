@@ -580,7 +580,7 @@ def dispatch_phase(
         return _dispatch_pursue(phase, state, leader_id, rng)
 
     if action is ActionCode.ASPY:
-        return _dispatch_aspy(phase, state, leader_id)
+        return _dispatch_aspy(phase, state, leader_id, rng)
 
     if action is ActionCode.DEFEND:
         return decode_defend_phase(phase)
@@ -591,9 +591,11 @@ def dispatch_phase(
     raise AssertionError("unreachable: action was checked against SUPPORTED_ACTIONS above")
 
 
-def _dispatch_aspy(phase: PlanPhase, state: GameState, leader_id: int) -> SpyReport | None:
+def _dispatch_aspy(
+    phase: PlanPhase, state: GameState, leader_id: int, rng: random.Random | None = None
+) -> SpyReport | None:
     request = decode_aspy_phase(phase)
-    return execute_aspy(state, leader_id, request)
+    return execute_aspy(state, leader_id, request, rng=rng)
 
 
 def _dispatch_practice(

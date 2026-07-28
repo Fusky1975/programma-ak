@@ -3,13 +3,17 @@ from __future__ import annotations
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.aspy_execution import SpottedCharacter, SpyReport, execute_aspy
 from ak_engine.turn.combat import Quality
+
+from _helpers import ScriptedRandom
 
 LEADER_ID = 1
 HOME = HexCoord(3, 9)
@@ -81,17 +85,53 @@ def test_execute_aspy_reports_recruitable_army_types_for_the_provinces_race():
     assert ArmyType.TROLLS not in report.recruitable_army_types  # Race.HUMAN isn't a monstrous race
 
 
-def test_execute_aspy_reports_the_provinces_tax_estimate():
+def test_execute_aspy_reports_the_provinces_tax_estimate_unperturbed_at_zero_offset():
+    # Phase 265: tax_estimate is now perturbed by the caster's own
+    # Spy-skill margin of error -- scripted rng.random()=0.5 lands the
+    # uniform(-margin, margin) offset at exactly 0, keeping this the
+    # simplest possible assertion (no margin-of-error math needed).
     state = _state()
     state.provinces[HOME].tax = 5
-    report = execute_aspy(state, LEADER_ID, _request())
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.5]))
 
     assert report.tax_estimate == 5
 
 
+def test_execute_aspy_tax_estimate_is_perturbed_at_zero_spy_skill():
+    # No leader.skills recorded -> spy skill 0 -> the widest margin
+    # (70%). rng.random()=1.0 pushes the offset to its maximum (+70%).
+    state = _state()
+    state.provinces[HOME].tax = 10
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([1.0]))
+
+    assert report.tax_estimate == 17  # round(10 * 1.70)
+
+
+def test_execute_aspy_tax_estimate_margin_shrinks_with_spy_skill():
+    # Spy skill 4 -> the narrowest margin (15%), same rng.random()=1.0
+    # (maximum offset) as the skill-0 case above, for a direct contrast.
+    state = _state()
+    state.provinces[HOME].tax = 10
+    state.leaders[LEADER_ID].skills = SkillTable(
+        [0] * (Ability.SPY.value * 2) + [4, 6] + [0] * (30 - Ability.SPY.value * 2 - 2)
+    )
+
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([1.0]))
+
+    assert report.tax_estimate == 12  # round(10 * 1.15)
+
+
+def test_execute_aspy_tax_estimate_floors_at_zero():
+    state = _state()
+    state.provinces[HOME].tax = 1
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.0]))  # maximum negative offset
+
+    assert report.tax_estimate == 0
+
+
 def test_execute_aspy_reports_none_tax_estimate_when_never_recorded():
     state = _state()  # ProvinceState.tax defaults to None
-    report = execute_aspy(state, LEADER_ID, _request())
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([]))
 
     assert report.tax_estimate is None
 

@@ -16,12 +16,25 @@ Quoted in full, ``RULES.AK`` ~line 2370::
     character is of the same Kingdom as the pursuer, then the chance of
     success is 100%.
 
-Only the "Chance to Pursue or Trail" column is modeled here
-(``pursue_catch_up_chance``) -- "Chance of Escaping Notice" belongs to
-ASpy ([3.14]) and "Margin of Error of Spy Reports" belongs to ASpy's own
-report-generation, neither of which has a resolver in this project yet
-(``turn/aspy_defend_decode.py`` is decode-only). Both are left
-unimplemented rather than guessed at partial relevance.
+Two of the three columns are modeled here. **"Chance to Pursue or
+Trail"** (``pursue_catch_up_chance``) was the original, Phase 51 scope.
+**"Margin of Error of Spy Reports"** (``margin_of_error_fraction``/
+``estimate_reported_value``, Phase 265) closes ASpy's own [3.14] line
+-- "taxation values and army types are subject to a margin of error
+which decreases with increasing skill in Spy ability." The percentages
+themselves are the sourced part of this table; **how a percentage
+becomes a perturbed reported number is not stated anywhere and is this
+module's own documented design choice**: ``estimate_reported_value()``
+applies a uniform random offset in ``[-margin, +margin]`` (as a
+fraction of the true value), floored at 0 -- the same "no negative
+report" floor ``turn/tax_base.py province_tax_yield()`` already applies
+to the true value itself. **"Chance of Escaping Notice"** (column 0,
+ASpy's own [3.14] detection-avoidance mechanic) stays genuinely
+unmodeled -- confirmed by a direct search of the available rulebook
+text: no consequence of *being* noticed while spying is ever described
+anywhere (only the flavor fact that spying/trailing reduces detection
+odds), so there is nothing concrete this project could attach a roll's
+result to yet.
 
 **Distance-0 (same-province) special case, a documented design choice,
 not a rulebook quote**: the table's own formula ("divided by the
@@ -34,8 +47,10 @@ guaranteed catch-up, no division by zero.
 
 from __future__ import annotations
 
+import random
+
 # (escaping_notice_pct, margin_of_error_pct, pursue_or_trail_base_pct) by Spy skill level 0-4.
-# Only pursue_or_trail_base_pct (index 2) is used by this module -- see module docstring.
+# escaping_notice_pct (index 0) is still unused -- see module docstring.
 _SPY_TABLE: dict[int, tuple[int, int, int]] = {
     0: (0, 70, 50),
     1: (50, 55, 100),
@@ -66,3 +81,24 @@ def pursue_catch_up_chance(
 
     chance = (base_percent / 100) / distance_provinces
     return min(chance, 1.0)
+
+
+def margin_of_error_fraction(spy_skill: int) -> float:
+    """Rulebook [4.33]'s "Margin of Error of Spy Reports" column, as a fraction (0.70 at
+    skill 0, down to 0.15 at skill 4). ``spy_skill`` is clamped to the
+    table's own 0-4 range, same as ``pursue_catch_up_chance``.
+    """
+
+    level = max(0, min(spy_skill, 4))
+    return _SPY_TABLE[level][1] / 100
+
+
+def estimate_reported_value(true_value: int, spy_skill: int, rng: random.Random) -> int:
+    """Perturbs ``true_value`` by ``margin_of_error_fraction(spy_skill)`` -- see module
+    docstring for why the exact perturbation shape (uniform, symmetric,
+    floored at 0) is a documented design choice, not a sourced formula.
+    """
+
+    margin = margin_of_error_fraction(spy_skill)
+    offset_fraction = rng.uniform(-margin, margin)
+    return max(0, round(true_value * (1 + offset_fraction)))

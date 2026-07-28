@@ -29,17 +29,29 @@ conservative choice this project has made before (e.g. Recruit and
 Practice already resolve against the acting leader's own location rather
 than a player-typed target).
 
-**Taxation of the province is reported as of Phase 253.** Wiring this
-required no new formula here -- ``turn/tax_base.py province_tax_yield()``
-(Phase 222-224) already computes exactly this figure (real base
-``ProvinceState.tax``, minus Scar Terrain's permanent reduction, times
-Bless/Earthquake's own turn modifier), the same one
-``describe_finances_report()``'s own "Expected Revenues" line already
-consumes at the kingdom level. ``SpyReport.tax_estimate`` is that
-function's own return value for this province, unchanged -- ``None``
-(not a guessed zero) whenever ``ProvinceState.tax`` was never recorded,
-the same "no data isn't a true zero" convention this module already
-uses everywhere else.
+**Taxation of the province is reported as of Phase 253, and finally
+subject to a real margin of error as of Phase 265.** ``turn/
+tax_base.py province_tax_yield()`` (Phase 222-224) computes the
+province's own real, exact figure -- but [3.14] itself is explicit
+that "taxation values ... are subject to a margin of error which
+decreases with increasing skill in Spy ability," and Phase 253 shipped
+this field passing that exact value straight through unperturbed, the
+same gap the field's own name ("estimate") already implied but never
+delivered on. **Phase 265 closes it**: ``turn/spy_table.py
+estimate_reported_value()`` (the [4.33] Spy Table's own "Margin of
+Error of Spy Reports" column, previously modeled as raw data but never
+exposed) perturbs the exact yield by the caster's own Spy-skill-scaled
+margin before it reaches ``SpyReport.tax_estimate`` -- see that
+module's own docstring for why the exact perturbation shape (a
+uniform, symmetric, floor-at-0 offset) is this project's own documented
+design choice, the percentages themselves being the only sourced part.
+``None`` (not a guessed zero, and never perturbed) whenever
+``ProvinceState.tax`` was never recorded, the same "no data isn't a
+true zero" convention this module already uses everywhere else.
+``execute_aspy()`` reads the caster's own Spy skill the same
+``leader.skills is None -> 0`` placeholder convention ``turn/
+trail_execution.py``'s own ``_spy_skill_of()`` already established
+for the identical lookup.
 
 Reuses ``turn/movement.py neighbors()`` (already the sourced hex-adjacency
 primitive every other module needing "provinces around here" already
@@ -100,12 +112,14 @@ mercenary army with no owning Kingdom.
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import MONSTROUS_ARMY_RACE, ArmyType
-from ak_engine.models.game_state import ArmyState, GameState
+from ak_engine.models.enums import Ability
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
@@ -113,7 +127,14 @@ from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.intelligence_estimate import estimate_alignment, estimate_temper
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.recruit import is_army_type_compatible_with_race
+from ak_engine.turn.spy_table import estimate_reported_value
 from ak_engine.turn.tax_base import province_tax_yield
+
+
+def _spy_skill_of(leader: LeaderState) -> int:
+    if leader.skills is None:
+        return 0
+    return leader.skills.pair_for_ability(Ability.SPY)[0]
 
 
 def _army_display_name(state: GameState, army: ArmyState) -> str:
@@ -160,8 +181,10 @@ class SpyReport:
     # this province -- SAY.PAS's own ``_LSGarr`` line item needs this
     # list, see module docstring.
     garrison_army_names: tuple[str, ...] = ()
-    # Phase 253: this province's own real expected tax revenue this turn
-    # (``turn/tax_base.py province_tax_yield()``) -- ``None`` if its base
+    # Phase 253: this province's own expected tax revenue this turn
+    # (``turn/tax_base.py province_tax_yield()``), perturbed by the [4.33]
+    # Spy Table's own margin of error as of Phase 265 (``turn/spy_table.py
+    # estimate_reported_value()``) -- ``None`` if its base
     # ``ProvinceState.tax`` was never recorded. See module docstring.
     tax_estimate: int | None = None
 
@@ -175,6 +198,7 @@ def execute_aspy(
     board_height: int = NORMAL_MAP_BOUNDS[1],
     caster_holds_psychic_mage_office: bool = False,
     caster_has_detect_align: bool = False,
+    rng: random.Random | None = None,
 ) -> SpyReport | None:
     """Builds the intelligence report for the caster's own current province.
 
@@ -190,6 +214,7 @@ def execute_aspy(
     """
 
     del request  # see module docstring
+    rng = rng if rng is not None else random.Random()
     leader = state.leaders[leader_id]
     province = state.provinces.get(leader.location)
     if province is None:
@@ -253,6 +278,11 @@ def execute_aspy(
         _army_display_name(state, army) for army in state.armies_at(leader.location) if army.commanded_by is None
     )
 
+    exact_tax_yield = province_tax_yield(province)
+    tax_estimate = (
+        estimate_reported_value(exact_tax_yield, _spy_skill_of(leader), rng) if exact_tax_yield is not None else None
+    )
+
     return SpyReport(
         province=leader.location,
         owner_kingdom_id=province.owner_kingdom_id,
@@ -261,5 +291,5 @@ def execute_aspy(
         is_capital=is_capital,
         spotted_characters=spotted_characters,
         garrison_army_names=garrison_army_names,
-        tax_estimate=province_tax_yield(province),
+        tax_estimate=tax_estimate,
     )
