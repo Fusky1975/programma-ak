@@ -156,14 +156,35 @@ phase's scope for each:
   ``PracticeExecutionResult.device_discovered`` flag, rolled *after* the
   ordinary skill-rise attempt (an unsourced but inconsequential
   ordering choice, since the two rolls are independent either way).
-  **What the roll doesn't do**: the discovered *device itself* stays
-  entirely unmodeled -- this project has no item/inventory/effect system
-  anywhere (the rulebook's own examples, a compass or a war machine,
-  need a treasure/magic-item instance this codebase doesn't have --
-  same gap ``turn/search_execution.py``'s own [5.9] addendum already
-  documents). ``device_discovered=True`` is therefore a flag with no
-  further consequence yet, honestly reported rather than silently
-  dropped. **Not extended to ``execute_practice_group``**: the
+  **Phase 266 closes the acquisition half of this gap**: when the roll
+  succeeds, ``execute_practice()`` now actually grants the practicing
+  leader's kingdom a real ``Discovery`` -- ``KingdomState.discoveries``
+  (a plain ``set[Discovery]``, matching ``CTBOTH.PAS``'s own ``dknow``
+  boolean array exactly, see ``models/game_state.py``). *Which* specific
+  Discovery gets granted has no surviving source anywhere (the same
+  "missing compiled unit" gap ``turn/merit_points.py``'s own module
+  docstring already documents for this exact mechanic) -- the rulebook's
+  own worked examples ("You might discover the compass... or create a
+  mighty war engine") are flavor text, not a selection rule, and
+  ``models/discovery.py``'s own confirmed data (``discval`` is a pure
+  *display-order* key, not a difficulty/weight) gives no basis for
+  weighting one of the 64 discoveries over another. ``_select_discovery_
+  to_grant()`` therefore picks uniformly at random among the kingdom's
+  not-yet-owned discoveries -- an explicit, unsourced design choice in
+  the same category as ``turn/spy_table.py estimate_reported_value()``'s
+  own uniform perturbation shape (Phase 265): no information favors any
+  other distribution. A kingdom that has somehow already collected all
+  64 (exhausted) or a leader with no ``kingdom_id`` (an independent Hero
+  -- nowhere to grant a *kingdom*-level Discovery to) both leave
+  ``discovery_granted`` at ``None`` while ``device_discovered`` still
+  reports the roll's own outcome honestly. **What's still not modeled**:
+  the discovered device's *mechanical effect* -- ``models/discovery.py``
+  already documents its own real ability-bonus/anti-spell/revenue-bonus
+  data, but wiring those bonuses into actual gameplay (skill checks, spell
+  resolution, tax revenue) remains a distinct, unstarted future phase,
+  the same layered "vocabulary first, mechanics later" precedent that
+  module's own docstring set. **Not extended to
+  ``execute_practice_group``**: the
   multi-character pooling path resolves a *shared* skill-rise outcome
   across co-practicers, but Sageness's own device-discovery roll is a
   per-*character* mechanic with no stated interaction with group
@@ -177,8 +198,9 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
-from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.turn.combat import Quality
 
@@ -345,6 +367,12 @@ class PracticeExecutionResult:
     # every other ability, and for TACTICAL (which never reaches the
     # skill-rise branch this flag is set in).
     device_discovered: bool = False
+    # Phase 266: the specific Discovery granted when device_discovered
+    # is True and the leader belongs to a kingdom that didn't already
+    # own every Discovery -- see module docstring. None whenever
+    # device_discovered is False, and also (honestly) when it's True but
+    # nothing could be granted (no kingdom, or kingdom already complete).
+    discovery_granted: Discovery | None = None
 
 
 def _get_or_create_skills(leader: LeaderState) -> SkillTable:
@@ -361,6 +389,18 @@ def _get_or_create_skills(leader: LeaderState) -> SkillTable:
     if leader.skills is None:
         leader.skills = SkillTable([0] * 30)
     return leader.skills
+
+
+def _select_discovery_to_grant(kingdom: KingdomState, rng: random.Random) -> Discovery | None:
+    """Uniformly picks a ``Discovery`` the kingdom doesn't already own -- see
+    module docstring's Phase 266 note for why uniform, unweighted selection
+    is the documented, unsourced design choice here. Returns ``None`` if
+    the kingdom already owns all 64 (exhausted)."""
+
+    available = [d for d in Discovery if d not in kingdom.discoveries]
+    if not available:
+        return None
+    return rng.choice(available)
 
 
 def execute_practice_tactical(state: GameState, leader_id: int, rng: random.Random | None = None) -> tuple[int, ...]:
@@ -437,11 +477,18 @@ def execute_practice(
         leader.is_royal_heir = False
 
     device_discovered = False
+    discovery_granted: Discovery | None = None
     if ability is Ability.SAGE:
         # Independent of the skill-rise roll above ("on top of, not
         # instead of") -- see module docstring for why current_skill
         # (pre-attempt) drives the chance, not outcome.new_skill.
         device_discovered = rng.random() < current_skill * SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL
+        if device_discovered and leader.kingdom_id is not None:
+            kingdom = state.kingdoms.get(leader.kingdom_id)
+            if kingdom is not None:
+                discovery_granted = _select_discovery_to_grant(kingdom, rng)
+                if discovery_granted is not None:
+                    kingdom.discoveries.add(discovery_granted)
 
     return PracticeExecutionResult(
         ability=ability,
@@ -450,6 +497,7 @@ def execute_practice(
         new_skill=outcome.new_skill,
         new_aptitude=outcome.new_aptitude,
         device_discovered=device_discovered,
+        discovery_granted=discovery_granted,
     )
 
 

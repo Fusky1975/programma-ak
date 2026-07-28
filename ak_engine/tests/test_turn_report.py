@@ -5,6 +5,7 @@ import pytest
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.item import ItemInstance
@@ -151,6 +152,8 @@ from ak_engine.report.turn_report import (
     render_cast_announcement,
     render_practice_already_maxed,
     render_practice_tutored,
+    render_sage_discovery,
+    render_sage_no_discovery,
     render_skill_book_read,
     render_pursuit_and_destroy,
     render_quest_errand_thanks,
@@ -1686,6 +1689,38 @@ def test_practice_already_maxed_template_is_the_confirmed_hardcoded_say():
     assert PRACTICE_ALREADY_MAXED_TEMPLATE == (
         "< practiced ^ even though < had already reached the maximum skill level."
     )
+
+
+# -- Sage device-discovery narrative (DISCOV.X / _LNoDisc, Phase 266) -------
+
+
+def test_render_sage_discovery_names_the_granted_discovery():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_sage_discovery("Aldric", Discovery.COMPASS, rng)
+    assert result == "in Aldric's sagely researches, Aldric discovered a fabulous invention called the Compass"
+
+
+def test_render_sage_discovery_picks_an_before_a_vowel_initial_discovery():
+    # ^A peeks past "fabulous" (hardcoded, consonant-initial) either way --
+    # this only confirms ^A resolution runs at all, via a vowel-initial name.
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_sage_discovery("Aldric", Discovery.ASBESTOS_CLOTHING, rng)
+    assert result == "in Aldric's sagely researches, Aldric discovered a fabulous invention called the Asbestos Clothing"
+
+
+def test_render_sage_no_discovery_left_branch():
+    # Three /R choices resolve left-to-right before the {optional} block's
+    # own inclusion roll: "discovered", "valuable", "researches", then a
+    # >=0.5 fourth roll includes the optional block.
+    rng = ScriptedRandom([0.1, 0.1, 0.1, 0.9])
+    result = render_sage_no_discovery("Aldric", rng)
+    assert result == "Aldric discovered nothing valuable in Aldric's sagely researches."
+
+
+def test_render_sage_no_discovery_right_branch():
+    rng = ScriptedRandom([0.9] * 4)
+    result = render_sage_no_discovery("Aldric", rng)
+    assert result == "Aldric invented nothing worthy of note in Aldric's sagely experiments."
 
 
 # -- describe_practice (integration, Phase 144) --

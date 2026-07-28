@@ -225,6 +225,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import Feature
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.kingdom import SkillTable
@@ -245,6 +246,13 @@ class KingdomState:
     alignment: Alignment
     home_province: HexCoord
     treasury: int = 0
+    # Sage's "Discoveries" (Phase 266) -- CTBOTH.PAS's own `dknow` is a
+    # per-kingdom `array[discovery] of boolean` ("does this kingdom know
+    # this Discovery"), never a count or per-leader value, so a plain
+    # per-kingdom set matches the real data shape exactly. See
+    # `turn/practice_execution.py`'s own module docstring (Phase 266) for
+    # how a Discovery gets added here.
+    discoveries: set[Discovery] = field(default_factory=set)
 
 
 @dataclass(slots=True)

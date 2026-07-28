@@ -1137,6 +1137,7 @@ from ak_engine.models.office import OFFICE_NAME
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
+from ak_engine.models.discovery import DISCOVERY_NAME, Discovery
 from ak_engine.models.temper import TEMPER_NAME
 from ak_engine.models.treasure import TREASURE_NAME
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
@@ -3756,6 +3757,52 @@ def describe_practice(
     if result.skill_rose and teacher_name is not None:
         return render_practice_tutored(character_name, ability_name, teacher_name, rng)
     return None
+
+
+# HostAK/TP/PROSE/DISCOV.X -- Sage's device-discovery success (rulebook
+# [4.3.1], SAY.PAS's own `_LDisc` report code, Phase 266). Real, extracted
+# file content: "1 1\nin > sagely researches, < discovered  fabulous
+# invention called the !" -- markers `>` (possessive), `<` (character
+# name), `!` (discovery name), matching this project's established
+# marker conventions elsewhere (e.g. render_commander_died_demoralized).
+# The double space before "fabulous" is the same lost-marker extraction
+# artifact this project has already resolved elsewhere: "discovered"
+# then a lone consonant-initial noun phrase needing an article is
+# exactly what `^A` (Phase 118's own auto a/an marker, e.g. "^A
+# dungeon") produces, so `^A` is restored there rather than left as a
+# raw double space or a silently invented literal "a". Standalone, not
+# yet wired into describe_practice()'s single-line-per-entry dispatch:
+# the device-discovery roll is independent of ("on top of, not instead
+# of") the ordinary skill-rise roll describe_practice() already
+# prioritizes between, so a call with both outcomes true would need an
+# unsourced priority decision between two genuinely-narratable sourced
+# templates -- left to a real composer-wiring phase rather than guessed
+# at here, the same "renderer exists, full wiring later" precedent
+# already used for render_wandering_encounter (Phase 106) and others
+# before their own eventual composer wiring.
+_DISCOVERY_TEMPLATE = "in > sagely researches, < discovered ^A fabulous invention called the !"
+
+
+def render_sage_discovery(character_name: str, discovery: Discovery, rng: random.Random) -> str:
+    """Renders DISCOV.X's own device-discovery success line for ``discovery``."""
+
+    values = {">": f"{character_name}'s", "<": character_name, "!": DISCOVERY_NAME[discovery]}
+    return render(_DISCOVERY_TEMPLATE, values, rng=rng)
+
+
+# SAY.PAS `_LNoDisc` -- Sage's device-discovery failure line (the same
+# report code slot DISCOV.X's own success line occupies, `_LDisc`, sits
+# right next to). See render_sage_discovery()'s own docstring for why
+# this isn't yet wired into describe_practice() either.
+_NO_DISCOVERY_TEMPLATE = "< discovered/Rinvented nothing {valuable/Rworthy_of_note }in > sagely researches/Rexperiments."
+
+
+def render_sage_no_discovery(character_name: str, rng: random.Random) -> str:
+    """Renders SAY.PAS's own ``_LNoDisc`` line for a Sage practice attempt
+    that rolled no device discovery this phase."""
+
+    values = {"<": character_name, ">": f"{character_name}'s"}
+    return render(_NO_DISCOVERY_TEMPLATE, values, rng=rng)
 
 
 # HostAK/TP/SAY.PAS _ADishK -- a real entry made of two separate

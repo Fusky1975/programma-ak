@@ -10911,7 +10911,7 @@ complete (Phases 209-211).
     deterministically rather than relying on luck) -- 2997 passed
     total.
 
-- **Phase 265 (current)**: two stale claims found and corrected while
+- **Phase 265**: two stale claims found and corrected while
   hunting for the next well-scoped gap, plus the real fix each one was
   actually blocking. ASpy's own "Not yet implemented" note still said
   "no per-province tax-base model exists" -- false since Phase 222-224
@@ -10952,6 +10952,69 @@ complete (Phases 209-211).
     zero-offset passthrough, maximum perturbation at Spy skill 0, the
     margin shrinking at Spy skill 4, the zero floor, and `None`
     staying unperturbed) -- 3011 passed total.
+
+- **Phase 266 (current)**: closes Sage's "Discoveries" acquisition gap --
+  `turn/merit_points.py`'s own module docstring had flagged this as "a
+  materially larger, still-unscoped gap... this project has no
+  acquisition mechanic for a `Discovery` at all," confirmed by an
+  exhaustive search: Phase 171's own device-discovery roll
+  (`PracticeExecutionResult.device_discovered`, [4.3.1]'s "5% chance
+  per level") had never actually granted anything.
+  - `models/game_state.py`: `KingdomState.discoveries: set[Discovery]`
+    (new) -- matches `CTBOTH.PAS`'s own `dknow` array exactly (a
+    per-kingdom, per-`discovery` boolean, confirmed via `REPORTS.PAS`'s
+    own "Discoveries of the Sages" report loop and `RUMORS.PAS`'s own
+    `dknow^[kng,discovery(...)]` reads), so a plain set needed no new
+    abstraction.
+  - `turn/practice_execution.py`: `_select_discovery_to_grant()` picks
+    uniformly at random among the kingdom's not-yet-owned discoveries
+    when the roll succeeds. *Which* specific Discovery gets granted has
+    no surviving source anywhere -- the same "missing compiled unit"
+    gap `turn/merit_points.py` already documents for this exact
+    mechanic, and `models/discovery.py`'s own confirmed data (`discval`
+    is a pure display-order key, not a difficulty/weight) gives no
+    basis for weighting one of the 64 discoveries over another, so
+    uniform selection is this project's own documented, unsourced
+    design choice -- the same "no formula survives, only the shape is
+    natural" category as `estimate_reported_value()`'s own uniform
+    perturbation shape (Phase 265). `execute_practice()` now grants and
+    records the outcome via a new `PracticeExecutionResult.
+    discovery_granted: Discovery | None` field, left at `None`
+    (honestly, not silently) for an independent Hero with no
+    `kingdom_id` or a kingdom that has somehow already collected all 64.
+  - `report/turn_report.py`: `render_sage_discovery()` (real extracted
+    `PROSE/DISCOV.X` template, `SAY.PAS`'s own `_LDisc` report code) and
+    `render_sage_no_discovery()` (`SAY.PAS`'s own `_LNoDisc` literal
+    string) -- both standalone, not yet wired into `describe_practice()`
+    's single-line-per-entry dispatch, since the device-discovery roll
+    is independent of ("on top of, not instead of") the ordinary
+    skill-rise roll `describe_practice()` already prioritizes between,
+    and a call where both succeed would need an unsourced priority
+    decision between two genuinely-narratable sourced templates --
+    left to a real composer-wiring phase, the same "renderer exists,
+    full wiring later" precedent already used for
+    `render_wandering_encounter` (Phase 106) before its own eventual
+    composer wiring.
+  - **What's still not modeled**: the discovered device's *mechanical
+    effect* (`models/discovery.py`'s own ability-bonus/anti-spell/
+    revenue-bonus data isn't wired into actual gameplay yet -- a
+    distinct, unstarted future phase, matching that module's own
+    "vocabulary first, mechanics later" precedent), and the Chancellor
+    Merit Point attribution (`MeritTally.discoveries_found_first`/
+    `discoveries_via_espionage`, `turn/merit_points.py`) -- attributing
+    "found first" needs a global first-inventor registry across every
+    kingdom (the same shape as `Feature.discovered_by_kingdom`, Phase
+    75/256) that this phase deliberately didn't invent alongside the
+    acquisition mechanic itself, to keep the two concerns separate.
+  - Non-breaking: full suite passed unchanged except for one
+    pre-existing test that reached the newly-random `rng.choice()` call
+    without scripting it -- updated with a `choice_indices` value, the
+    same "expected, not a regression" pattern established this session
+    for prior RNG-consuming additions. 13 new tests (kingdom starts with
+    no discoveries; uniform selection excludes owned discoveries;
+    exhausted-kingdom returns `None`; end-to-end grant/no-kingdom/
+    already-complete coverage in `practice_execution.py`; both new
+    renderers' branches in `turn_report.py`) -- 3021 passed total.
 
 ## Setup
 

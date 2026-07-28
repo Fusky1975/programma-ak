@@ -61,6 +61,13 @@ def test_remove_army_drops_it():
     assert {a.army_id for a in state.armies_at(FIELD)} == {201}
 
 
+def test_kingdom_state_starts_with_no_discoveries():
+    # Phase 266: KingdomState.discoveries mirrors CTBOTH.PAS's own `dknow`
+    # per-kingdom boolean array -- a fresh kingdom knows nothing yet.
+    state = make_state()
+    assert state.kingdoms[1].discoveries == set()
+
+
 def test_is_allied_true_for_same_kingdom():
     state = make_state()
     assert state.is_allied(1, 1) is True

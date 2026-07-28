@@ -6,6 +6,7 @@ import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
@@ -19,6 +20,7 @@ from ak_engine.turn.practice_execution import (
     SOLO_PRACTICE_CHANCE,
     TACTICAL_TRAINING_CHANCE,
     PracticeExecutionResult,
+    _select_discovery_to_grant,
     attempt_skill_rise,
     execute_practice,
     execute_practice_group,
@@ -520,13 +522,19 @@ def test_execute_practice_sage_device_discovery_succeeds():
     # example ("a level-4 character... will average one discovery per
     # turn"). Chance = 4 * 5% = 20%. First roll (0.99) fails the ordinary
     # skill-rise attempt; second roll (0.15) succeeds the independent
-    # device-discovery roll.
+    # device-discovery roll. A successful roll now also grants a real
+    # Discovery (Phase 266) -- choice_indices=[0] picks the first
+    # not-yet-owned Discovery deterministically.
     state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=4, aptitude=9))
 
-    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15]))
+    result = execute_practice(
+        state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15], choice_indices=[0])
+    )
 
     assert result.skill_rose is False
     assert result.device_discovered is True
+    assert result.discovery_granted is not None
+    assert result.discovery_granted in state.kingdoms[1].discoveries
 
 
 def test_execute_practice_sage_device_discovery_fails_above_chance():
@@ -574,6 +582,64 @@ def test_execute_practice_non_sage_ability_never_sets_device_discovered():
     result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
 
     assert result.device_discovered is False
+
+
+# -- Phase 266: Sage device-discovery acquisition (granting a real Discovery) --
+
+
+def test_select_discovery_to_grant_picks_uniformly_among_not_yet_owned():
+    kingdom = KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION)
+    kingdom.discoveries = {Discovery.LAND_SHIP, Discovery.SCYTHED_CHARIOTS}
+
+    # choice_indices=[0] picks the first entry of the *filtered* list --
+    # confirms the two already-owned discoveries were excluded from it.
+    granted = _select_discovery_to_grant(kingdom, ScriptedRandom([], choice_indices=[0]))
+
+    assert granted is not None
+    assert granted not in {Discovery.LAND_SHIP, Discovery.SCYTHED_CHARIOTS}
+
+
+def test_select_discovery_to_grant_returns_none_when_kingdom_owns_everything():
+    kingdom = KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION)
+    kingdom.discoveries = set(Discovery)
+
+    granted = _select_discovery_to_grant(kingdom, ScriptedRandom([], choice_indices=[]))
+
+    assert granted is None
+
+
+def test_execute_practice_sage_discovery_grants_a_real_discovery_to_the_kingdom():
+    state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=4, aptitude=9))
+
+    result = execute_practice(
+        state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15], choice_indices=[0])
+    )
+
+    assert result.device_discovered is True
+    assert result.discovery_granted is not None
+    assert state.kingdoms[1].discoveries == {result.discovery_granted}
+
+
+def test_execute_practice_sage_discovery_grants_nothing_for_a_kingdomless_hero():
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=None, name="Wanderer", location=LOCATION,
+                                  skills=_skills_with(Ability.SAGE, skill=4, aptitude=9)))
+
+    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15]))
+
+    assert result.device_discovered is True
+    assert result.discovery_granted is None
+
+
+def test_execute_practice_sage_discovery_grants_nothing_when_kingdom_already_complete():
+    state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=4, aptitude=9))
+    state.kingdoms[1].discoveries = set(Discovery)
+
+    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15]))
+
+    assert result.device_discovered is True
+    assert result.discovery_granted is None
+    assert state.kingdoms[1].discoveries == set(Discovery)
 
 
 # -- Phase 259: Practice clears a Royal Heir's resurrection eligibility --
