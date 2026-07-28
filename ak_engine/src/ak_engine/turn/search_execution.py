@@ -100,15 +100,23 @@ resolves"**:
   sourced modifiers to this same roll, but adding either now would be an
   under-tested compound change; flagged here as a natural follow-up
   phase instead.
-- **Victory's own aftermath is minimal, by design**: rulebook [5.9]
+- ~~**Victory's own aftermath is minimal, by design**: rulebook [5.9]
   ("looting a vanquished foe's treasure, magic items changing hands")
   needs a treasure-*instance* and magic-item-ownership model this
-  project doesn't have (``models/feature.py``'s own docstring: "a
-  feature's own treasure instance... is still unmodeled -- world
-  generation itself remains the blocking gap"; ``models/item.py`` is a
-  never-populated stub). A win only sets ``Feature.looted = True``
-  (``fstate[fn] = Dead``, "sacked & looted") -- the one confirmed,
-  modeled consequence.
+  project doesn't have... ``models/item.py`` is a never-populated
+  stub. A win only sets ``Feature.looted = True`` (``fstate[fn] =
+  Dead``, "sacked & looted") -- the one confirmed, modeled
+  consequence.~~ -- **stale as of Phase 242**: the item-ownership
+  registry has been real since Phase 140 (``GameState.add_item()``/
+  ``ItemInstance``, ``models/item.py``), and a feature's own treasure
+  *instance* field (``Feature.treasure``, set by world generation) has
+  existed since Phase 242, which also wired the actual grant -- a
+  Search win now calls ``state.add_item(feature.treasure, leader_id)``
+  right alongside the ``Feature.looted = True`` flag (see
+  ``_outcome_from()`` below), whenever world generation gave this
+  feature a treasure to begin with. ``models/feature.py``'s own
+  docstring already carries the corrected version of this note; this
+  copy was simply never updated to match.
 - **A loss kills the searching leader**, no special carve-out: personal
   combat's generic rule ([5.0]: "until one combatant is killed") applies
   in full here, the same reasoning ``turn/challenge_execution.py``'s own

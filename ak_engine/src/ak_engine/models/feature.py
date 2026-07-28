@@ -105,12 +105,18 @@ separate field; a future phase that needs it can revisit.
   selection wherever it has real coverage; see that module's own
   docstring for the full density/terrain/guardian/treasure design and
   which numbers were confirmed directly with the user (project author).
-- **Rumor generation** ([3.2]'s "about half... false" mechanic) --
+- ~~**Rumor generation** ([3.2]'s "about half... false" mechanic) --
   still out of scope: the prose templates exist
   (``HostAK/TP/PROSE/FRUMOR.X``) but the selection/falsification logic
   doesn't, and Phase 242 only wired the *direct*-discovery half of
   [3.2] (``turn/exploration.py discover_features()``), not the
-  separate "hear about a feature in another province" channel.
+  separate "hear about a feature in another province" channel.~~ --
+  **closed by Phase 243** (``turn/rumor.py``): the separate "hear
+  about a feature in another province" channel is now a real,
+  sourced-where-possible mechanic (trigger chance by order type,
+  distance-2 eligibility, 70/30 monster-vs-treasure content split,
+  50/50 truth roll), wired into ``plan_dispatch.py`` right alongside
+  each order's own real effect.
 - ~~**Search resolution**~~ **now exists as of Phase 132**
   (``turn/search_execution.py``), including treasure being actually
   granted to the winning leader as of Phase 242 (``GameState.
