@@ -279,17 +279,64 @@ def test_execute_practice_tactical_requires_a_higher_quality_army_present():
     assert state.armies[1].quality is Quality.GREEN
 
 
-def test_execute_practice_tactical_leaves_untrainable_tiers_alone():
-    # Depleted, Average, Veteran, and Elite have no sourced percentage --
-    # confirmed absent, not guessed at (see module docstring).
+def test_execute_practice_tactical_leaves_elite_alone():
+    # Elite has no next tier to rise to -- the one quality genuinely
+    # absent from TACTICAL_TRAINING_CHANCE (see module docstring).
     state = _state_with_leader(skills=None)
-    state.add_army(_army(1, Quality.AVERAGE))
+    state.add_army(_army(1, Quality.ELITE))
     state.add_army(_army(2, Quality.ELITE))
 
     trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.0]))
 
     assert trained == ()
-    assert state.armies[1].quality is Quality.AVERAGE
+    assert state.armies[1].quality is Quality.ELITE
+
+
+def test_execute_practice_tactical_trains_a_depleted_army_at_full_source_from_rules_ak():
+    # Phase 263: RULES.AK [6.1]'s own complete table -- "Depleted =>
+    # Green: 100%", still gated on an inspiring higher-quality army.
+    state = _state_with_leader(skills=None)
+    state.add_army(_army(1, Quality.DEPLETED))
+    state.add_army(_army(2, Quality.GREEN))
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.0]))
+
+    assert trained == (1,)
+    assert state.armies[1].quality is Quality.GREEN
+
+
+def test_execute_practice_tactical_trains_an_average_army_at_its_sourced_chance():
+    state = _state_with_leader(skills=None)
+    state.add_army(_army(1, Quality.AVERAGE))
+    state.add_army(_army(2, Quality.VETERAN))
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.049]))
+
+    assert trained == (1,)
+    assert state.armies[1].quality is Quality.VETERAN
+
+
+def test_execute_practice_tactical_trains_a_veteran_army_at_its_sourced_chance():
+    state = _state_with_leader(skills=None)
+    state.add_army(_army(1, Quality.VETERAN))
+    state.add_army(_army(2, Quality.CRACK))
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.009]))
+
+    assert trained == (1,)
+    assert state.armies[1].quality is Quality.CRACK
+
+
+def test_execute_practice_tactical_depleted_still_needs_an_inspiring_army():
+    # Even the "100%" tier is gated on the same "train and inspire"
+    # precondition -- no army present above Depleted means no roll.
+    state = _state_with_leader(skills=None)
+    state.add_army(_army(1, Quality.DEPLETED))
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.0]))
+
+    assert trained == ()
+    assert state.armies[1].quality is Quality.DEPLETED
 
 
 def test_execute_practice_tactical_ignores_armies_commanded_by_someone_else():
@@ -313,9 +360,16 @@ def test_execute_practice_tactical_fails_the_roll():
     assert state.armies[1].quality is Quality.GREEN
 
 
-def test_tactical_training_chance_only_has_green_and_crack():
-    assert set(TACTICAL_TRAINING_CHANCE) == {Quality.GREEN, Quality.CRACK}
+def test_tactical_training_chance_covers_all_five_transitions_per_rules_ak_6_1():
+    # Phase 263: the complete RULES.AK [6.1] training-maneuvers table --
+    # Elite has no next tier, so it's the only Quality absent here.
+    assert set(TACTICAL_TRAINING_CHANCE) == {
+        Quality.DEPLETED, Quality.GREEN, Quality.AVERAGE, Quality.VETERAN, Quality.CRACK,
+    }
+    assert TACTICAL_TRAINING_CHANCE[Quality.DEPLETED] == 1.0
     assert TACTICAL_TRAINING_CHANCE[Quality.GREEN] == 0.25
+    assert TACTICAL_TRAINING_CHANCE[Quality.AVERAGE] == 0.05
+    assert TACTICAL_TRAINING_CHANCE[Quality.VETERAN] == 0.01
     assert TACTICAL_TRAINING_CHANCE[Quality.CRACK] == 0.002
 
 

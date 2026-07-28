@@ -88,38 +88,52 @@ phase's scope for each:
 
 - **Tactical** ([6.1]): Practicing Tactical does *not* raise personal
   skill via [3.13] at all -- it trains the leader's *armies* instead,
-  rolling each army's quality tier upward. **Phase 167 implements the
-  two sourced transitions** (``turn/practice_decode.py``'s own quote:
-  "Green->Average 25%, Crack->Elite 0.2%") for a single leader's own
-  commanded armies (``GameState.armies_commanded_by``), gated on the
-  rulebook's own "if a higher-quality army is present to 'train and
-  inspire' it" condition -- interpreted here as *any other army under
-  that same leader's command* having a strictly higher original
-  ``Quality`` tier than the training candidate (checked against a
-  snapshot taken before any rolls this call, so results don't depend
-  on iteration order). **The other three transitions
-  (Depleted->Green, Average->Veteran, Veteran->Crack) are deliberately
-  left unmodeled** -- the rulebook gives only these two anchor
-  percentages, at opposite ends of a five-step tier ladder, and this
-  project's own convention (``win_probability``,
-  ``exploration_advantage_multiplier``) only interpolates *between* two
-  anchors describing the *same* underlying curve; inventing three more
-  percentages for three structurally distinct transitions from two
-  unrelated data points would be a materially larger, far less
-  constrained guess than any interpolation already accepted elsewhere
-  in this project. ``TACTICAL_TRAINING_CHANCE`` only has entries for
-  ``Quality.GREEN``/``Quality.CRACK``; an army at any other tier is
-  left untouched, honestly, rather than guessed at. **Multi-leader army
-  pooling stays out of scope**, same as before: this only trains the
-  single dispatching leader's own command, not co-located leaders'
-  combined forces the way the generic skill-rise mechanic pools
-  co-located *characters* -- flagged as a further future phase, not
-  silently expanded into this one. ``execute_practice_group`` (Phase
-  46's multi-character pooling entry point) still returns
-  ``not_implemented_for_ability=True`` for Tactical unchanged, since
-  its own pooling concept (co-located *characters* sharing one
-  skill-rise roll) doesn't apply to Tactical's *army*-training
-  mechanic at all.
+  rolling each army's quality tier upward. **Phase 167 implemented two
+  transitions** off an incomplete illustrative "e.g." quote in
+  ``turn/practice_decode.py`` ("Green->Average 25%, Crack->Elite
+  0.2%"), leaving the other three deliberately unmodeled for lack of a
+  source. **Phase 263 supplies the missing source**: RULES.AK's own
+  [6.1] "Types of Armies" section gives the complete five-tier table
+  directly, quoted here in full --
+
+      When an army leader Practices Tactics, he is taking his armies
+      on training maneuvers. Those armies may have a chance to rise in
+      quality: Depleted => Green: 100%, Green => Average: 25%, Average
+      => Veteran: 5%, Veteran => Crack: 1%, Crack => Elite: 0.2%. In
+      order for an army to rise to a higher quality, an existing army
+      of that quality must be there to train and inspire it. [...] The
+      [inspiring] army need not be of the same type as the [training]
+      armies. If two leaders Practice Tactics together, their armies
+      are pooled into the same training maneuvers.
+
+  ``TACTICAL_TRAINING_CHANCE`` now has all five entries; the existing
+  ``execute_practice_tactical()`` gating logic (any *other* army under
+  the same leader's command with a strictly higher *original* Quality
+  tier, snapshotted before any rolls this call) needed no change at
+  all -- it was already generic over whichever tiers the chance table
+  happens to list, so the two previously-modeled tiers keep their
+  exact prior behavior and the newly-added three simply slot into the
+  same mechanism. **Deliberately still out of scope**: the *separate*,
+  unconditional "Green and Depleted armies always improve to the next
+  level at the end of a turn" rule from the same [6.1] section, a
+  turn-boundary rule with no Practice/inspiration precondition at all
+  -- distinct from this training-maneuvers table (which requires both
+  a Tactical Practice order *and* an inspiring army present even for
+  its own Depleted=>Green 100% entry) and confirmed by grep to have no
+  existing turn-boundary hook anywhere in this project to attach to,
+  the same "no general per-turn reset mechanism yet" situation already
+  documented for ``recruited_this_turn``/``ArmyState.movement_points``.
+  **Multi-leader army pooling stays out of scope**, same as before:
+  this only trains the single dispatching leader's own command, not
+  co-located leaders' combined forces ("if two leaders Practice
+  Tactics together, their armies are pooled" above) the way the
+  generic skill-rise mechanic pools co-located *characters* -- flagged
+  as a further future phase, not silently expanded into this one.
+  ``execute_practice_group`` (Phase 46's multi-character pooling entry
+  point) still returns ``not_implemented_for_ability=True`` for
+  Tactical unchanged, since its own pooling concept (co-located
+  *characters* sharing one skill-rise roll) doesn't apply to
+  Tactical's *army*-training mechanic at all.
 - **Sage / Sageness** ([4.3.1], rulebook's own heading "CONOSCENZA --
   Sageness [SA]"), quoted in full: "Permette la scoperta di nuovi
   strumenti o conoscenze. Quando si fa pratica in questo Talento
@@ -186,12 +200,14 @@ MAX_SKILL_LEVEL = 9
 # inventare o scoprire qualcosa di utile" -- see module docstring.
 SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL = 0.05
 
-# turn/practice_decode.py's own [6.1] quote: "Green->Average 25%,
-# Crack->Elite 0.2%" -- the only two of Quality's five upward
-# transitions with a real sourced percentage. See module docstring's
-# Phase 167 note for why the other three aren't guessed at.
+# RULES.AK [6.1] "Types of Armies", quoted in full in the module
+# docstring's Phase 263 note: the complete training-maneuvers table for
+# all five upward Quality transitions.
 TACTICAL_TRAINING_CHANCE: dict[Quality, float] = {
+    Quality.DEPLETED: 1.0,
     Quality.GREEN: 0.25,
+    Quality.AVERAGE: 0.05,
+    Quality.VETERAN: 0.01,
     Quality.CRACK: 0.002,
 }
 

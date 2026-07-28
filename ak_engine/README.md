@@ -10799,7 +10799,7 @@ complete (Phases 209-211).
     territory is never gated; `has_treat_permission()`'s own direct
     coverage -- 2981 passed total.
 
-- **Phase 262 (current)**: closes the last piece of the same RULES.AK
+- **Phase 262**: closes the last piece of the same RULES.AK
   [3.4] paragraph -- "Also, if you are recruiting in your former home
   province which is now your ally's province, you can recruit 4 units,
   and they will start as Average units" (flagged as deliberately out
@@ -10829,6 +10829,47 @@ complete (Phases 209-211).
     active, still blocked without Treat permission, and the ordinary
     self-owned home province stays capped at 2, not 4) -- 2987 passed
     total.
+
+- **Phase 263 (current)**: completes Tactical Practice's own
+  army-training mechanic (rulebook [6.1] "Types of Armies") -- Phase
+  167 had implemented only 2 of the 5 upward Quality transitions
+  (Green->Average 25%, Crack->Elite 0.2%) off an incomplete
+  illustrative "e.g." quote in `turn/practice_decode.py`, leaving the
+  other three unmodeled for lack of a source. RULES.AK's own [6.1]
+  section (found this phase) gives the complete table directly,
+  quoted in full in `turn/practice_execution.py`'s own docstring:
+  Depleted->Green 100%, Green->Average 25%, Average->Veteran 5%,
+  Veteran->Crack 1%, Crack->Elite 0.2%, each still gated on "an
+  existing army of that [target] quality... there to train and
+  inspire it."
+  - `TACTICAL_TRAINING_CHANCE` now has all five entries.
+    `execute_practice_tactical()`'s own gating logic (any *other* army
+    under the same leader's command with a strictly higher *original*
+    Quality tier, snapshotted before any rolls) needed **zero code
+    changes** -- it was already generic over whatever tiers the chance
+    table lists, so this phase is purely a data completion, not a
+    redesign.
+  - **Deliberately still out of scope, documented not conflated**:
+    [6.1]'s own *separate* "Green and Depleted armies always improve
+    to the next level at the end of a turn" rule -- an unconditional,
+    turn-boundary rule with no Practice/inspiration precondition at
+    all, confirmed by grep to have no existing turn-boundary hook in
+    this project (same "no general per-turn reset mechanism yet"
+    situation as `recruited_this_turn`). Also still out of scope:
+    multi-leader army pooling ("if two leaders Practice Tactics
+    together, their armies are pooled") -- unchanged from Phase 167.
+  - Non-breaking: full suite passed unchanged (2987 passed) before any
+    new tests were written (data-only change, existing GREEN/CRACK
+    behavior untouched). One pre-existing test
+    (`test_tactical_training_chance_only_has_green_and_crack`)
+    correctly asserted the old, narrower table -- updated to assert
+    all five entries, the same "expected, not a regression" pattern
+    already established for prior phases' own test updates. 5 new
+    tests: the newly-sourced Depleted/Average/Veteran transitions each
+    training at their own chance, Elite (the one tier genuinely absent
+    -- no next tier exists) staying untouched, and Depleted's own
+    100% chance still requiring an inspiring army present -- 2991
+    passed total.
 
 ## Setup
 
@@ -11133,9 +11174,18 @@ rulebook before being turned into named, typed fields:
     sourced in `RULES.AK` (only the roll *sequencing* is a documented
     design choice); only province-level multi-character grouping stays
     genuinely unresolved, worked around via a documented conservative
-    "always solo" approximation. Tactical's army-quality-training
+    "always solo" approximation. ~~Tactical's army-quality-training
     variant and Sage's extra device-discovery roll are separate,
-    still-unmodeled special cases (see Phase 44's own note).
+    still-unmodeled special cases~~ -- **stale as of Phase 263**: both
+    rolls are wired (`turn/practice_execution.py execute_practice`/
+    `execute_practice_tactical`, Phases 167/171/263). Tactical's own
+    training-maneuvers table is now complete across all five Quality
+    tiers (Phase 263, RULES.AK [6.1] quoted in full); Sage's own
+    device-discovery roll fires (Phase 171) but the discovered device
+    itself stays unmodeled, no item/effect system existing anywhere in
+    this project to attach it to (see that phase's own note above).
+    Multi-leader army pooling for Tactical stays a genuine, documented
+    gap.
   - ~~**Cast's remaining gap** (see Phase 29's note above): only Charm
     and Kill_Enemy execute; the other 10 real spells' actual effects...
     need game-state logic not present anywhere in the available Pascal
