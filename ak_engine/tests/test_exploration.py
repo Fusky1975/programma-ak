@@ -4,10 +4,13 @@ import random
 
 import pytest
 
+from ak_engine.models.alignment import Alignment
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import GameState
+from ak_engine.models.game_state import GameState, KingdomState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
+from ak_engine.models.race import Race
 from ak_engine.turn.exploration import discover_features, resolve_explore
 
 from _helpers import ScriptedRandom
@@ -94,6 +97,19 @@ def test_discover_features_skips_magically_hidden():
     discovered = discover_features(state, LOCATION, kingdom_id=1, exploration_percent=100, rng=random.Random(0))
     assert discovered == []
     assert feature.discovery_level(1) == 0
+
+
+def test_discover_features_hand_held_radar_bypasses_magically_hidden():
+    # Phase 270: Hand-Held Radar (Discovery.txt) -- a kingdom that owns
+    # it finds a feature regardless of Hide Feature.
+    state, feature = _state_with_feature(magically_hidden=True)
+    state.add_kingdom(KingdomState(1, "Radaria", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.kingdoms[1].discoveries.add(Discovery.HAND_HELD_RADAR)
+
+    discovered = discover_features(state, LOCATION, kingdom_id=1, exploration_percent=100, rng=random.Random(0))
+
+    assert discovered == [feature]
+    assert feature.discovery_level(1) == 3
 
 
 def test_discover_features_is_per_kingdom():

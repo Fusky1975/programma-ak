@@ -162,6 +162,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType, is_overflight_unit
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
@@ -169,7 +170,7 @@ from ak_engine.models.race import Race
 from ak_engine.turn.aftermath import roll_quality_change
 from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
-from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit
+from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit, quality_one_level_down
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
@@ -179,11 +180,18 @@ from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_b
 from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
 from ak_engine.turn.retreat import attacker_retreat_candidates, find_retreat_destination
 from ak_engine.turn.strength import (
+    PHANTASMAL_ARMIES_BONUS_PER_LEVEL,
     compute_druidic_shortfall,
     compute_effective_strength,
     roll_elephants_strength,
     roll_fanaticism,
 )
+
+# Observation Balloons (Discovery.txt, Phase 270): "army strength is
+# increased by only 5% per skill level" by Phantasmal Armies, instead of
+# the base 15%, when the opposing Kingdom in a battle owns the
+# Discovery -- see _build_battle_units's own Phase 270 addendum.
+OBSERVATION_BALLOONS_PHANTASMAL_ARMIES_BONUS_PER_LEVEL = 0.05
 
 
 @dataclass(slots=True)
@@ -225,6 +233,7 @@ def _build_battle_units(
     apply_fanaticism: bool = False,
     own_explored_percent: int = 0,
     enemy_explored_percent: int = 0,
+    opponent_kingdom_ids: frozenset[int] = frozenset(),
 ) -> list[BattleUnit]:
     """Build BattleUnits for one side of a battle at ``province_coord``.
 
@@ -315,6 +324,23 @@ def _build_battle_units(
     the same "derive from the commanding leader, ``False`` for an unled
     army" pattern ``_phantasmal_armies_level_for()`` already
     established. Fully deterministic, no ``rng`` involved.
+
+    **Osteopathic Germ Warfare / Observation Balloons** (Discovery.txt,
+    Phase 270): two anti-spell ward Discoveries whose own effect only
+    applies *in battle, against the opposing side* -- not at Cast time,
+    unlike every other anti-spell Discovery this project models (see
+    ``turn/cast_execution.py``'s own Phase 270 addendum). ``opponent_
+    kingdom_ids`` (the *other* side's own distinct ``kingdom_id`` set,
+    resolved once by ``fight_battle()`` from its own ``attacker_armies``/
+    ``defender_armies``) lets this function check, per army: Osteopathic
+    Germ Warfare reduces a Skeletal Army unit (``ArmyState.is_skeletal``)
+    by one quality level (``turn/cast_execution.py quality_one_level_
+    down()``) before strength is computed, if any opposing Kingdom owns
+    it; Observation Balloons reduces Phantasmal Armies' own strength
+    bonus from 15% to 5% per level (``turn/strength.py
+    phantasmal_armies_multiplier``'s own ``bonus_per_level`` override),
+    same opposing-Kingdom check. Both default to inert (empty
+    ``opponent_kingdom_ids``) for every pre-Phase-270 caller.
     """
 
     desert_without_camels = terrain is Terrain.DESERT and not any(
@@ -322,6 +348,13 @@ def _build_battle_units(
     )
     province = state.provinces.get(province_coord)
     illusory_fog_active = province is not None and province.illusory_fog_active
+
+    opponent_owns_osteopathic = any(
+        Discovery.OSTEOPATHIC_GERM_WARFARE in state.kingdoms[kid].discoveries for kid in opponent_kingdom_ids
+    )
+    opponent_owns_balloons = any(
+        Discovery.OBSERVATION_BALLOONS in state.kingdoms[kid].discoveries for kid in opponent_kingdom_ids
+    )
 
     units = []
     for army in armies:
@@ -337,10 +370,18 @@ def _build_battle_units(
         illusory_fog_affected = illusory_fog_active and is_illusory_fog_affected_air_unit(
             army.army_type, mystic_winds_active
         )
+        battle_quality = army.quality
+        if army.is_skeletal and opponent_owns_osteopathic:
+            battle_quality = quality_one_level_down(battle_quality)
+        phantasmal_armies_bonus_per_level = (
+            OBSERVATION_BALLOONS_PHANTASMAL_ARMIES_BONUS_PER_LEVEL
+            if phantasmal_armies_level > 0 and opponent_owns_balloons
+            else PHANTASMAL_ARMIES_BONUS_PER_LEVEL
+        )
         strength = compute_effective_strength(
             army.army_type,
             kingdom.race,
-            army.quality,
+            battle_quality,
             terrain,
             is_defender=is_defender,
             is_home_province=is_home,
@@ -350,6 +391,7 @@ def _build_battle_units(
             base_strength_override=override,
             combat_ability_level=combat_ability_level,
             phantasmal_armies_level=phantasmal_armies_level,
+            phantasmal_armies_bonus_per_level=phantasmal_armies_bonus_per_level,
             own_explored_percent=own_explored_percent,
             enemy_explored_percent=enemy_explored_percent,
             illusory_fog_affected=illusory_fog_affected,
@@ -904,15 +946,20 @@ def fight_battle(
         province.explored_percent_by_kingdom.get(defender_kingdom_id, 0) if defender_kingdom_id is not None else 0
     )
 
+    attacker_kingdom_ids = frozenset(army.kingdom_id for army in attacker_armies if army.kingdom_id is not None)
+    defender_kingdom_ids = frozenset(army.kingdom_id for army in defender_armies if army.kingdom_id is not None)
+
     attacker_units = _build_battle_units(
         attacker_armies, state, is_defender=False, terrain=terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=attacker_ability_level, apply_fanaticism=apply_fanaticism,
         own_explored_percent=attacker_explored, enemy_explored_percent=defender_explored,
+        opponent_kingdom_ids=defender_kingdom_ids,
     )
     defender_units = _build_battle_units(
         defender_armies, state, is_defender=True, terrain=terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=defender_ability_level, apply_fanaticism=apply_fanaticism,
         own_explored_percent=defender_explored, enemy_explored_percent=attacker_explored,
+        opponent_kingdom_ids=attacker_kingdom_ids,
     )
 
     duel = _maybe_fight_duel(

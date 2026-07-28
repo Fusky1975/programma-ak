@@ -470,6 +470,17 @@ class ProvinceState:
     # not cumulative) -- this is an absolute gold amount that only ever
     # grows.
     scar_terrain_gold_reduction: int = 0
+    # Reinforced Concrete vs. Earthquake (Phase 270, Discovery.txt) --
+    # "income from the affected province will only decrease by 3 gold,"
+    # a flat replacement for Earthquake's own -100%
+    # ``tax_modifier_percent`` when the province owner's Kingdom owns
+    # the Discovery. Set (not accumulated) by a defended Earthquake cast
+    # (``turn/cast_execution.py _execute_earthquake``); a *for one turn*
+    # figure, unlike the cumulative/permanent ``scar_terrain_gold_
+    # reduction`` above -- the caller resets it the same "no auto-clear
+    # yet" way it already leaves ``tax_modifier_percent``/
+    # ``illusory_terrain`` between turns.
+    earthquake_flat_reduction: int = 0
     # Illusory Fog (Phase 207) -- see module docstring. Set by a
     # successful cast (turn/cast_execution.py _execute_illus_fog); not
     # auto-cleared at end of turn -- the same "spell writes real state,

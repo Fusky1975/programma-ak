@@ -672,6 +672,50 @@ def test_build_battle_units_applies_the_commanders_phantasmal_armies_level():
     assert units[0].effective_strength == pytest.approx(expected)
 
 
+def test_build_battle_units_observation_balloons_reduces_the_phantasmal_bonus():
+    # Phase 270: Observation Balloons (Discovery.txt) -- an opposing
+    # Kingdom that owns it reduces Phantasmal Armies' own bonus from
+    # 15%/level to 5%/level for this battle.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Illusia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Balloonia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.kingdoms[2].discoveries.add(Discovery.OBSERVATION_BALLOONS)
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Illusionist", location=FIELD, phantasmal_armies_level=2))
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        opponent_kingdom_ids=frozenset({2}),
+    )
+
+    expected = compute_effective_strength(
+        ArmyType.LEGION, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS,
+        phantasmal_armies_level=2, phantasmal_armies_bonus_per_level=0.05,
+    )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_osteopathic_germ_warfare_downgrades_skeletal_quality():
+    # Phase 270: Osteopathic Germ Warfare (Discovery.txt) -- an opposing
+    # Kingdom that owns it reduces a Skeletal Army unit by one quality
+    # level in this battle, before strength is computed.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Necropolis", Race.HUMAN, Alignment.EVIL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Osteopathia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.kingdoms[2].discoveries.add(Discovery.OSTEOPATHIC_GERM_WARFARE)
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, is_skeletal=True)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        opponent_kingdom_ids=frozenset({2}),
+    )
+
+    expected = compute_effective_strength(ArmyType.LEGION, Race.HUMAN, Quality.GREEN, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
 def test_build_battle_units_unled_army_gets_no_phantasmal_armies_bonus():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Illusia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))

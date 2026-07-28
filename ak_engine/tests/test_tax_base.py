@@ -51,6 +51,18 @@ def test_province_tax_yield_earthquake_zeroes_revenue():
     assert province_tax_yield(province) == 0
 
 
+def test_province_tax_yield_applies_earthquake_flat_reduction():
+    # Phase 270: Reinforced Concrete's own flat 3-gold Earthquake
+    # replacement -- ProvinceState.earthquake_flat_reduction.
+    province = ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, tax=10, earthquake_flat_reduction=3)
+    assert province_tax_yield(province) == 7
+
+
+def test_province_tax_yield_earthquake_flat_reduction_floors_at_zero():
+    province = ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, tax=2, earthquake_flat_reduction=3)
+    assert province_tax_yield(province) == 0
+
+
 def test_province_tax_yield_combines_scar_then_bless():
     # base 10 -> scar -2 -> 8 -> Bless +60% -> 12
     province = ProvinceState(

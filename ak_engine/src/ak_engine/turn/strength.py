@@ -185,7 +185,9 @@ def combat_ability_multiplier(ability_level: int) -> float:
     return 1 + TACTICAL_BONUS_PER_LEVEL * ability_level
 
 
-def phantasmal_armies_multiplier(caster_illusion_level: int) -> float:
+def phantasmal_armies_multiplier(
+    caster_illusion_level: int, *, bonus_per_level: float = PHANTASMAL_ARMIES_BONUS_PER_LEVEL
+) -> float:
     """Rulebook (Regolamento AK.txt [4.23.2]): "la forza delle unita' militari che
     egli comanda aumenta del 15% per livello d'abilita'" -- Phantasmal
     Armies' strength bonus, keyed by the *caster's* Illusionist skill
@@ -198,9 +200,17 @@ def phantasmal_armies_multiplier(caster_illusion_level: int) -> float:
     casts don't stack) is enforced by the caller storing (not adding)
     ``LeaderState.phantasmal_armies_level`` -- see ``turn/
     cast_execution.py``'s ``_execute_illus_armies``.
+
+    ``bonus_per_level`` (Phase 270): Observation Balloons (Discovery.txt)
+    -- "army strength is increased by only 5% per skill level" instead
+    of the base 15%, when the *opposing* Kingdom in this particular
+    battle owns the Discovery. The caller (``turn/battle_orchestrator.py
+    _build_battle_units``) resolves which value applies; this function
+    stays agnostic to Discoveries, same as every other strength-pipeline
+    step here.
     """
 
-    return 1 + PHANTASMAL_ARMIES_BONUS_PER_LEVEL * caster_illusion_level
+    return 1 + bonus_per_level * caster_illusion_level
 
 
 def _base_strength(army_type: ArmyType, *, is_defender: bool, base_strength_override: float | None) -> float:
@@ -231,6 +241,7 @@ def compute_effective_strength(
     enemy_explored_percent: int = 0,
     combat_ability_level: int = 0,
     phantasmal_armies_level: int = 0,
+    phantasmal_armies_bonus_per_level: float = PHANTASMAL_ARMIES_BONUS_PER_LEVEL,
     opponent_army_type: ArmyType | None = None,
     base_strength_override: float | None = None,
     illusory_fog_affected: bool = False,
@@ -289,7 +300,7 @@ def compute_effective_strength(
         strength *= DEFENDER_BONUS
     strength *= exploration_advantage_multiplier(own_explored_percent, enemy_explored_percent)
     strength *= combat_ability_multiplier(combat_ability_level)
-    strength *= phantasmal_armies_multiplier(phantasmal_armies_level)
+    strength *= phantasmal_armies_multiplier(phantasmal_armies_level, bonus_per_level=phantasmal_armies_bonus_per_level)
     strength = illusory_fog_strength(strength, affected=illusory_fog_affected)
     if opponent_army_type is not None and is_nemesis_of(army_type, opponent_army_type):
         strength *= NEMESIS_PENALTY

@@ -635,6 +635,7 @@ from dataclasses import dataclass
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import OVERFLIGHT_AIR, ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
@@ -669,6 +670,22 @@ TORNADO_DESTROY_CHANCE_PER_LEVEL = 0.10
 # [4.22.1]: "+60% for one turn" (Bless) / [4.24.3]: zeroes revenue (Earthquake).
 BLESS_TAX_BONUS_PERCENT = 60
 EARTHQUAKE_TAX_MODIFIER_PERCENT = -100
+
+# Discovery.txt (Phase 270, anti-spell ward Discoveries -- see module
+# docstring's own Phase 270 addendum): each of these replaces the base
+# spell's own effect for the defended side, rather than reducing it by a
+# formula this project has any source for.
+# Penicillin (vs Plague): "affected armies will have a 50% chance of
+# losing one level of quality" -- flat, in place of the caster-level-scaled
+# destroy chance.
+PENICILLIN_QUALITY_DOWNGRADE_CHANCE = 0.50
+# Giant Fan (vs Tornado): "a 50% chance of losing one level of quality" --
+# in place of the caster-level-scaled destroy chance.
+GIANT_FAN_QUALITY_DOWNGRADE_CHANCE = 0.50
+# Reinforced Concrete (vs Earthquake): "income ... will only decrease by
+# 3 gold" -- a flat gold reduction, replacing the -100%-revenue effect
+# entirely (see ProvinceState.tax_flat_reduction).
+REINFORCED_CONCRETE_TAX_REDUCTION = 3
 
 # Scar Terrain (Phase 201, secret spell, user-supplied): "-2 Taxation...
 # reduced by 2 gold immediately and permanently." An add, not a set --
@@ -741,6 +758,12 @@ class CastExecutionResult:
     request: CastRequest
     applied: bool
     reason: str | None = None  # set when applied is False
+    # Phase 270: set when the defending side's own anti-spell ward
+    # Discovery changed the spell's effect (see module docstring's own
+    # Phase 270 addendum) -- ``applied`` stays True (the spell *was*
+    # cast/resolved), this only flags that its outcome isn't the base,
+    # un-defended one.
+    discovery_defended: Discovery | None = None
 
 
 def execute_cast(
@@ -973,6 +996,20 @@ def _execute_charm(
 def _execute_kill_enemy(
     state: GameState, leader_id: int, request: CastRequest, rng: random.Random, wand_skill_level: int | None = None
 ) -> CastExecutionResult:
+    """Rulebook [4.21.4]: kills the target character outright.
+
+    **Hidden Tattoos** (Discovery.txt, Phase 270): "neutralize the Kill
+    Enemy spell of Necromancers... All characters of the Kingdom are
+    protected. Instead of being killed, the target character will be
+    sick for the remainder of the gameturn and will spend his time
+    practicing abilities somewhat randomly." Only the confirmed core
+    effect -- the target survives -- is modeled; the "sick, practices
+    randomly" secondary effect has no consumer this project could wire
+    it into without inventing a new sickness/forced-Practice mechanic
+    the source doesn't specify the parameters of (same "don't guess"
+    convention as Flood's own unmodeled land-units-trapped clause).
+    """
+
     caster = state.leaders[leader_id]
     target = state.leaders.get(request.target)
     if target is None:
@@ -983,6 +1020,9 @@ def _execute_kill_enemy(
     succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
+
+    if target.kingdom_id is not None and Discovery.HIDDEN_TATTOOS in state.kingdoms[target.kingdom_id].discoveries:
+        return CastExecutionResult(request, applied=True, discovery_defended=Discovery.HIDDEN_TATTOOS)
 
     state.remove_leader(request.target)
     return CastExecutionResult(request, applied=True)
@@ -1131,6 +1171,13 @@ def _execute_tornado(
     chance of being destroyed." No ownership/allegiance check on which
     units get caught in the blast -- the rulebook explicitly says own
     and allied units aren't exempt.
+
+    **Giant Fan** (Discovery.txt, Phase 270): "Armies hit by Tornadoes
+    will have a 50% chance of losing one level of quality" instead of
+    being destroyed -- checked per army, against *that army's own*
+    ``kingdom_id`` (the rulebook's "own and allied units aren't exempt"
+    reading applies equally to which armies get the *defended* outcome:
+    each army's own Kingdom decides, not the province owner's).
     """
 
     caster = state.leaders[leader_id]
@@ -1143,10 +1190,18 @@ def _execute_tornado(
         return CastExecutionResult(request, applied=False, reason=reason)
 
     chance = TORNADO_DESTROY_CHANCE_PER_LEVEL * _caster_level(state, caster, Ability.ELEMENTAL, wand_skill_level)
+    defended = False
     for army in list(state.armies_at(coord)):
+        if army.kingdom_id is not None and Discovery.GIANT_FAN in state.kingdoms[army.kingdom_id].discoveries:
+            defended = True
+            if rng.random() < GIANT_FAN_QUALITY_DOWNGRADE_CHANCE:
+                army.quality = quality_one_level_down(army.quality)
+            continue
         if rng.random() < chance:
             state.remove_army(army.army_id)
-    return CastExecutionResult(request, applied=True)
+    return CastExecutionResult(
+        request, applied=True, discovery_defended=Discovery.GIANT_FAN if defended else None
+    )
 
 
 def _execute_earthquake(
@@ -1161,6 +1216,13 @@ def _execute_earthquake(
     adjacent to it, for one turn." "Not cumulative" -- stored as a
     ``ProvinceState.tax_modifier_percent`` -100 (a set, not an add),
     same convention as Bless's +60.
+
+    **Reinforced Concrete** (Discovery.txt, Phase 270): when the
+    province's own owner Kingdom owns it, "income from the affected
+    province will only decrease by 3 gold" -- replaces the -100% effect
+    entirely with ``ProvinceState.earthquake_flat_reduction`` (see
+    ``turn/tax_base.py province_tax_yield()``), rather than stacking
+    both.
     """
 
     caster = state.leaders[leader_id]
@@ -1173,6 +1235,11 @@ def _execute_earthquake(
     succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
+
+    owner_kingdom_id = province.owner_kingdom_id
+    if owner_kingdom_id is not None and Discovery.REINFORCED_CONCRETE in state.kingdoms[owner_kingdom_id].discoveries:
+        province.earthquake_flat_reduction = REINFORCED_CONCRETE_TAX_REDUCTION
+        return CastExecutionResult(request, applied=True, discovery_defended=Discovery.REINFORCED_CONCRETE)
 
     province.tax_modifier_percent = EARTHQUAKE_TAX_MODIFIER_PERCENT
     return CastExecutionResult(request, applied=True)
@@ -1458,7 +1525,7 @@ def illusory_fog_strength(base_strength: float, *, affected: bool) -> float:
     return base_strength * ILLUSORY_FOG_STRENGTH_MULTIPLIER
 
 
-def _quality_one_level_down(quality: Quality) -> Quality:
+def quality_one_level_down(quality: Quality) -> Quality:
     """One quality level below ``quality``, clamped at ``Quality.DEPLETED``
     -- rulebook [4.25.3]'s own "(it may instead drop a level in quality.)"
     for a plague-immune army, Phase 233. Not the same mechanic as
@@ -1486,20 +1553,33 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
     an army not yet marked ``plague_immune`` rolls the ordinary destroy
     chance -- destroyed on a hit, marked immune on a miss (it "survived
     a plague"). An already-immune army instead rolls the *same* `chance`
-    for a one-level quality downgrade (`_quality_one_level_down()`) --
+    for a one-level quality downgrade (`quality_one_level_down()`) --
     the rulebook names no separate probability for this "may instead"
     clause, so reusing the destroy chance is a documented, unsourced
     choice, not a recovered formula.
+
+    **Penicillin** (Discovery.txt, Phase 270): "affected armies will
+    have a 50% chance of losing one level of quality" -- an army whose
+    own ``kingdom_id`` owns Penicillin always takes this flat,
+    non-destroy outcome (the same shape as the immunity branch above,
+    but at ``PENICILLIN_QUALITY_DOWNGRADE_CHANCE`` regardless of
+    ``chance`` or prior ``plague_immune`` status), never the destroy
+    roll.
     """
 
     for army in list(state.armies_at(coord)):
         if army.kingdom_id is None:
             continue
-        if state.kingdoms[army.kingdom_id].race not in HUMANOID_RACES:
+        kingdom = state.kingdoms[army.kingdom_id]
+        if kingdom.race not in HUMANOID_RACES:
+            continue
+        if Discovery.PENICILLIN in kingdom.discoveries:
+            if rng.random() < PENICILLIN_QUALITY_DOWNGRADE_CHANCE:
+                army.quality = quality_one_level_down(army.quality)
             continue
         if army.plague_immune:
             if rng.random() < chance:
-                army.quality = _quality_one_level_down(army.quality)
+                army.quality = quality_one_level_down(army.quality)
             continue
         if rng.random() < chance:
             state.remove_army(army.army_id)

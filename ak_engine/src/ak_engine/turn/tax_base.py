@@ -33,6 +33,9 @@ figure is this module's own design, in this order:
 3. Apply the turn's ``tax_modifier_percent`` (``base * (100 + pct) / 100``,
    integer division), floored at 0 gold again -- Earthquake's own "zeroes
    the tax revenue" (-100%) must land on exactly 0, never negative.
+4. Subtract the turn's ``earthquake_flat_reduction`` (Phase 270's
+   Reinforced Concrete Discovery: a flat 3-gold Earthquake replacement,
+   not a percent), floored at 0 gold again.
 
 Permanent damage is applied before the turn's temporary modifier because
 Scar Terrain describes an actual, lasting change to the province's own tax
@@ -71,7 +74,8 @@ def province_tax_yield(province: ProvinceState) -> int | None:
 
     after_scar = max(0, province.tax - province.scar_terrain_gold_reduction)
     after_modifier = after_scar * (100 + province.tax_modifier_percent) // 100
-    return max(0, after_modifier)
+    after_earthquake_flat = after_modifier - province.earthquake_flat_reduction
+    return max(0, after_earthquake_flat)
 
 
 def compute_tax_base(state: GameState, kingdom_id: int) -> int:

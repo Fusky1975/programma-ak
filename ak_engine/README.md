@@ -11124,7 +11124,7 @@ complete (Phases 209-211).
     discovery list, sort order, and Invention Bonus line shown/omitted)
     -- 3049 passed total.
 
-- **Phase 269 (current)**: closes the ability-bonus half of the
+- **Phase 269**: closes the ability-bonus half of the
   Discoveries-of-the-Sages gap `models/discovery.py`'s own module
   docstring left open since Phase 93 -- the user's explicit two-part
   request ("prima quelle che danno +1 ai talenti, poi quelle che
@@ -11181,6 +11181,76 @@ complete (Phases 209-211).
     resolved by an owned `LAND_SHIP`; `chancellor_merit_points()`'s
     Explorer term now including an owned `COMPASS`) -- 3059 passed
     total.
+
+- **Phase 270 (current)**: closes the anti-spell-ward half of the
+  Discoveries-of-the-Sages gap `models/discovery.py`'s own module
+  docstring left open since Phase 93 -- the second half of the user's
+  explicit two-part request ("poi quelle che bloccano o limitano gli
+  incantesimi"). Research first: the three SAY.PAS templates that
+  seemed to promise one uniform block/reduce mechanism (`_SCounter`/
+  `_SComCtr`/`_SComRed`) have no recoverable trigger logic anywhere in
+  the surviving 14 `.PAS` files (a confirmed dead end, the same
+  category as Phase 137's Merit Point globals) -- but `Discovery.txt`
+  (already the confirmed-authoritative source for this project's whole
+  Discovery catalog since Phase 93) turned out to describe each of the
+  16 `bild10`-`bild43` anti-spell Discoveries with its own distinct,
+  fully-specified mechanical override, not a shared formula. Of the 16:
+  4 target spells this project has never implemented (Hand of Death,
+  Fireball, Psychic Blast, Invisibility) and stay blocked for that
+  reason alone; 4 more describe a real Discovery.txt effect but the
+  *base* mechanic they'd modify has no consumer in this codebase to
+  begin with (Flood's own land-units-trapped effect, Clairvoyance's own
+  info feed, Illusory Terrain's own "who believes it," and Oratory's
+  own per-battle "33% chance affected," which would need a brand-new
+  per-army boosted-by-Oratory-this-turn flag this project doesn't
+  track) -- each documented at its own call site rather than guessed
+  into existence. The remaining 7 are wired:
+  - **Cast-time, checked against the *defended* side's own Kingdom**
+    (`turn/cast_execution.py`): Hidden Tattoos neutralizes Kill_Enemy
+    (the target survives; the "sick, practices randomly" secondary
+    effect isn't modeled -- no sickness/forced-Practice mechanic
+    exists to hook it into); Penicillin replaces Plague's destroy roll
+    with a flat 50% quality-downgrade chance (`apply_plague_exposure()`
+    -- same shape as the pre-existing immunity branch, just
+    unconditional and at a fixed rate); Giant Fan does the same for
+    Tornado; Reinforced Concrete replaces Earthquake's -100% tax
+    modifier with a flat 3-gold reduction (new `ProvinceState.
+    earthquake_flat_reduction` field, consumed by `turn/tax_base.py
+    province_tax_yield()`, since the existing `tax_modifier_percent`
+    field is percent-only and can't express a flat amount). A new
+    `CastExecutionResult.discovery_defended: Discovery | None` field
+    flags when any of these fired, without disturbing `applied`'s own
+    existing "the spell was cast" meaning.
+  - **Cast-time, checked against the *acting* Kingdom**
+    (`turn/exploration.py discover_features()`): Hand-Held Radar
+    bypasses `Feature.magically_hidden` entirely for the searching
+    Kingdom's own rolls.
+  - **Battle-time, checked against the *opposing* side's Kingdom(s)**
+    (`turn/battle_orchestrator.py _build_battle_units()`, new
+    `opponent_kingdom_ids` parameter resolved once by `fight_battle()`
+    from each side's own army roster): Osteopathic Germ Warfare reduces
+    a Skeletal Army unit (`ArmyState.is_skeletal`) by one quality level
+    for that battle's strength computation only (`turn/cast_execution.py
+    quality_one_level_down()`, promoted from private to shared);
+    Observation Balloons reduces Phantasmal Armies' own strength bonus
+    from 15%/level to 5%/level (`turn/strength.py
+    phantasmal_armies_multiplier()`'s new `bonus_per_level` parameter,
+    threaded through `compute_effective_strength()`'s new
+    `phantasmal_armies_bonus_per_level` parameter). Both are genuinely
+    battle-time effects, not Cast-time interceptions -- Discovery.txt's
+    own wording ("in any battle which the Kingdom conducts") ties them
+    to whichever battle the Discovery-owning Kingdom is actually
+    fighting, not to when the opposing spell was originally cast.
+  - Non-breaking: full suite passed unchanged (3059 passed) before any
+    new tests were written -- every existing test's kingdom starts with
+    an empty `discoveries` set and no army is ever `is_skeletal` by
+    default, so every new check degrades to its exact prior behavior.
+  - 9 new tests across `test_cast_execution.py` (Hidden Tattoos,
+    Giant Fan, Reinforced Concrete, Penicillin), `test_exploration.py`
+    (Hand-Held Radar), `test_battle_orchestrator.py` (Observation
+    Balloons, Osteopathic Germ Warfare), and `test_tax_base.py`
+    (`earthquake_flat_reduction`'s own flat-reduction and floor-at-zero
+    cases) -- 3068 passed total.
 
 ## Setup
 

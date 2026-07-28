@@ -31,6 +31,12 @@ independently. A feature already discovered by this kingdom
 (``discovery_level(kingdom_id) != 0``) or magically hidden (``Feature.
 magically_hidden``, Phase 193 -- confirmed as this flag's own first real
 consumer) is skipped, not rerolled.
+
+**Hand-Held Radar** (Discovery.txt, Phase 270): "enable characters to
+find features regardless of whether a Hide Feature spell has been cast
+on the feature." A kingdom owning it bypasses the ``magically_hidden``
+skip entirely -- the feature rolls for discovery exactly as if it were
+never hidden.
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import GameState
 from ak_engine.models.map import TERRAIN_EXPLORATION_NUMBER, HexCoord, Terrain
@@ -106,8 +113,10 @@ def discover_features(
     """
 
     discovered: list[Feature] = []
+    kingdom = state.kingdoms.get(kingdom_id)
+    has_radar = kingdom is not None and Discovery.HAND_HELD_RADAR in kingdom.discoveries
     for feature in state.features_at(coord):
-        if feature.magically_hidden:
+        if feature.magically_hidden and not has_radar:
             continue
         if feature.discovery_level(kingdom_id) != 0:
             continue

@@ -4,6 +4,7 @@ import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, GraveyardEntry, KingdomState, LeaderState, ProvinceState
@@ -200,6 +201,21 @@ def test_kill_enemy_fails_when_target_does_not_exist():
 
     assert result.applied is False
     assert result.reason == "target character not found"
+
+
+def test_kill_enemy_neutralized_by_hidden_tattoos():
+    # Phase 270: Hidden Tattoos (Discovery.txt) protects every character
+    # of the owning Kingdom from Kill Enemy -- the target survives.
+    state = build_state()
+    state.kingdoms[2].discoveries.add(Discovery.HIDDEN_TATTOOS)
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert result.discovery_defended is Discovery.HIDDEN_TATTOOS
+    assert 78 in state.leaders  # survives
 
 
 def test_charm_succeeds_on_a_real_roll_under_the_casters_chance():
@@ -572,6 +588,27 @@ def test_tornado_destroys_nothing_when_caster_has_no_recorded_level():
     assert 1 in state.armies  # unknown level -> 0% chance, nothing destroyed
 
 
+def test_tornado_giant_fan_downgrades_quality_instead_of_destroying():
+    # Phase 270: Giant Fan (Discovery.txt) -- a 50% chance of losing one
+    # quality level instead of being destroyed, checked against the
+    # army's own Kingdom.
+    state = build_state()
+    state.kingdoms[2].discoveries.add(Discovery.GIANT_FAN)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 2)  # 20% destroy chance
+    state.add_army(ArmyState(2, 2, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))
+    request = CastRequest(spell=Spell.TORNADO, target=_target(LOCATION))
+    # rolls: [0] cast-success roll, [1] army 2's downgrade roll (hits, at flat 50%)
+    rng = ScriptedRandom([0.01, 0.49])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert result.discovery_defended is Discovery.GIANT_FAN
+    assert 2 in state.armies  # never destroyed
+    assert state.armies[2].quality == Quality.GREEN  # one level down from AVERAGE
+
+
 # ---------------------------------------------------------------------------
 # Earthquake (Phase 59) -- Regolamento AK.txt [4.24.3]
 # ---------------------------------------------------------------------------
@@ -586,6 +623,23 @@ def test_earthquake_zeroes_the_tax_modifier_on_a_land_province():
 
     assert result.applied is True
     assert state.provinces[LOCATION].tax_modifier_percent == -100
+
+
+def test_earthquake_reinforced_concrete_applies_flat_reduction_instead():
+    # Phase 270: Reinforced Concrete (Discovery.txt) -- replaces the
+    # -100% effect with a flat 3-gold reduction, checked against the
+    # province owner's own Kingdom.
+    state = build_state()
+    state.kingdoms[2].discoveries.add(Discovery.REINFORCED_CONCRETE)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert result.discovery_defended is Discovery.REINFORCED_CONCRETE
+    assert state.provinces[LOCATION].tax_modifier_percent == 0  # untouched
+    assert state.provinces[LOCATION].earthquake_flat_reduction == 3
 
 
 def test_earthquake_fails_on_a_sea_province():
@@ -833,6 +887,22 @@ def test_apply_plague_exposure_destroys_a_non_immune_army_on_a_hit():
     apply_plague_exposure(state, LOCATION, 0.2, rng)
 
     assert 1 not in state.armies
+
+
+def test_apply_plague_exposure_penicillin_never_destroys_only_downgrades():
+    # Phase 270: Penicillin (Discovery.txt) -- a flat 50% chance of
+    # losing one quality level, never the destroy roll, regardless of
+    # `chance` or prior plague_immune status.
+    state = build_state()
+    state.kingdoms[1].discoveries.add(Discovery.PENICILLIN)
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
+    rng = ScriptedRandom([0.49])  # hits the flat 50% downgrade chance
+
+    apply_plague_exposure(state, LOCATION, 1.0, rng)  # chance=100% would otherwise always destroy
+
+    assert 1 in state.armies  # never destroyed
+    assert state.armies[1].quality == Quality.GREEN
+    assert state.armies[1].plague_immune is False  # Penicillin's own branch, not the immunity path
 
 
 def test_apply_plague_exposure_drops_an_immune_armys_quality_instead_of_killing_it():
