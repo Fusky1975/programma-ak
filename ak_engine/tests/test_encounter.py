@@ -68,6 +68,7 @@ from ak_engine.turn.encounter import (
     invisibility_reduced_hit_chance,
     mirror_image_disbelief_chance,
     personal_combat_spell_cast_chance,
+    resolve_encounter_combat,
     resolve_fire_arrow_duel,
     resolve_melee_duel,
     resolve_personal_combat_spell_cast,
@@ -152,7 +153,7 @@ from ak_engine.turn.encounter import (
     resolve_fulfill_honored,
 )
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.monster import Monster, SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
 
 from _helpers import ScriptedRandom
@@ -321,6 +322,65 @@ def test_resolve_melee_duel_never_logs_shots():
     result = resolve_melee_duel(a, b, rng)
 
     assert result.shots == ()
+
+
+# -- Phase 273: resolve_encounter_combat, the Challenge/Pursue/Duel plan walk --
+
+
+def test_resolve_encounter_combat_shoot_tactic_resolves_via_fire_arrow():
+    a = Combatant("A", archery_skill=2, hit_points=10)
+    b = Combatant("B", archery_skill=0, hit_points=1)  # dies to A's first hit
+    rng = ScriptedRandom([0.1, 0.5])  # A's shot: hit-chance roll, then damage roll
+
+    result = resolve_encounter_combat([Maneuver.SHOOT], a, b, rng)
+
+    assert result.winner == "a"
+    assert len(result.shots) == 1  # only resolve_fire_arrow_duel ever logs shots
+
+
+def test_resolve_encounter_combat_falls_through_to_melee_once_shots_exhaust():
+    a = Combatant("A", archery_skill=1, melee_skill=1, hit_points=10)
+    b = Combatant("B", archery_skill=0, melee_skill=0, hit_points=1)
+    # A's one Fire Arrow shot misses (shots then exhausted, nobody dead), so
+    # the walk falls through to a Melee duel -- B's own 1 hit point means
+    # A's first Melee swing kills instantly if it lands.
+    rng = ScriptedRandom([0.99, 0.1, 0.5])  # shot misses; Melee hit-chance, then damage roll
+
+    result = resolve_encounter_combat([Maneuver.SHOOT], a, b, rng)
+
+    assert result.winner == "a"
+    assert result.shots == ()  # the winning duel was Melee, not Fire Arrow
+
+
+def test_resolve_encounter_combat_empty_tactic_list_defaults_to_melee():
+    a = Combatant("A", melee_skill=1, hit_points=10)
+    b = Combatant("B", melee_skill=0, hit_points=1)
+    rng = ScriptedRandom([0.1, 0.5])
+
+    result = resolve_encounter_combat([], a, b, rng)
+
+    assert result.winner == "a"
+
+
+def test_resolve_encounter_combat_melee_never_reaches_a_later_shoot_entry():
+    a = Combatant("A", melee_skill=1, archery_skill=0, hit_points=10)
+    b = Combatant("B", melee_skill=0, hit_points=1)
+    rng = ScriptedRandom([0.1, 0.5])  # only enough for the one Melee swing
+
+    result = resolve_encounter_combat([Maneuver.MELEE, Maneuver.SHOOT], a, b, rng)
+
+    assert result.winner == "a"
+    assert result.shots == ()
+
+
+def test_resolve_encounter_combat_skips_unrelated_maneuvers():
+    a = Combatant("A", melee_skill=1, hit_points=10)
+    b = Combatant("B", melee_skill=0, hit_points=1)
+    rng = ScriptedRandom([0.1, 0.5])
+
+    result = resolve_encounter_combat([Maneuver.TALK, Maneuver.MELEE], a, b, rng)
+
+    assert result.winner == "a"
 
 
 # -- Phase 132: monster-specific melee damage range --

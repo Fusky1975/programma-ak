@@ -1,8 +1,22 @@
 """Executing a Challenge (rulebook [3.12] "Encounter Character") order -- Phase 50.
 
-Reuses ``turn/encounter.py``'s Melee combat core (Phase 48), the same
-way ``turn/battle_orchestrator.py``'s Duel wiring did (Phase 49) --
-built once, reused by whichever consumer is ready for it next.
+Reuses ``turn/encounter.py``'s combat core (Phase 48), the same way
+``turn/battle_orchestrator.py``'s Duel wiring did (Phase 49) -- built
+once, reused by whichever consumer is ready for it next.
+
+**Fire Arrow (Phase 273)**: combat resolution now walks ``request.
+tactics`` via ``turn/encounter.py resolve_encounter_combat()`` instead
+of always calling ``resolve_melee_duel()`` directly -- a ``SHOOT``
+tactic listed before ``MELEE`` genuinely fires first now, per [5.10]'s
+"Special Encounter Plan" (Talk/Fulfill/Steal excluded, but Fire Arrow
+and Melee both real Encounter Plan tactics). Previously ``Maneuver.
+SHOOT`` was only ever consulted by ``has_combat_intent`` to decide
+*whether* the King/Hero acceptance restrictions apply -- the actual
+duel always resolved as Melee regardless, a real, previously
+undocumented gap this phase closes. ``_leader_combatant`` now also
+reads ``Ability.ARCHERY`` (previously left at ``Combatant``'s own
+default of 0, which would have made Fire Arrow a guaranteed 0-free-
+attacks no-op even once wired).
 
 **[3.12] Encounter Character, quoted in full** (also quoted in
 ``turn/challenge_pursue_decode.py``'s own docstring):
@@ -77,7 +91,7 @@ from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_encounter_combat
 
 _COMBAT_MANEUVERS = frozenset({Maneuver.MELEE, Maneuver.SHOOT})
 
@@ -120,6 +134,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
     """
 
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)
+    archery_skill = effective_skill_level(state, leader, Ability.ARCHERY)
 
     neutral_bonus = False
     if leader.kingdom_id is not None:
@@ -130,6 +145,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         name=leader.name,
         hit_points=CHARACTER_HIT_POINTS,
         melee_skill=melee_skill,
+        archery_skill=archery_skill,
         neutral_duelist_bonus=neutral_bonus,
     )
 
@@ -183,7 +199,9 @@ def execute_challenge(
 
     challenger_combatant = _leader_combatant(challenger, state)
     target_combatant = _leader_combatant(target, state)
-    combat_result = resolve_melee_duel(challenger_combatant, target_combatant, rng)
+    combat_result = resolve_encounter_combat(
+        [tactic.maneuver for tactic in request.tactics], challenger_combatant, target_combatant, rng
+    )
 
     if combat_result.winner is None:
         return ChallengeExecutionResult(accepted=True, combat_occurred=True)

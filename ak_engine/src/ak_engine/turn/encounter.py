@@ -1219,7 +1219,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
-from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.monster import Monster, MonsterSpeed
 from ak_engine.models.temper import Temper
 
@@ -2309,6 +2309,53 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
     if a.hit_points <= 0:
         return EncounterCombatResult(winner="b", rounds=round_number, shots=tuple(shots))
     return EncounterCombatResult(winner=None, rounds=round_number, shots=tuple(shots))
+
+
+def resolve_encounter_combat(
+    maneuvers: list[Maneuver], a: Combatant, b: Combatant, rng: random.Random
+) -> EncounterCombatResult:
+    """[5.10]/[5.2]/[3.16]: walk an Encounter Plan's own tactic list in
+    order, the same "Fire Arrow first if listed, fall through to Melee
+    once its shots exhaust with nobody dead, or once the list runs out"
+    rule ``turn/search_execution.py``'s own docstring already establishes
+    for Search (Phase 170/178 corrections) -- reused here directly for
+    every other Encounter consumer (Challenge, Pursue, Duel) rather than
+    re-derived, since [5.10] governs them identically: "All rules listed
+    under the Encounter action apply to Pursuit encounters" ([3.16]), and
+    a battle Duel is explicitly "given in the Special Encounter Plan
+    rules [5.10]" too ([7.1]).
+
+    A ``Maneuver.SHOOT`` entry resolves a Fire Arrow duel first; if it
+    ends with nobody dead (shots exhausted, ``winner is None``), the walk
+    continues to the next entry. A ``Maneuver.MELEE`` entry always
+    resolves the whole encounter on its own (Melee never leaves both
+    combatants standing, Phase 48). Any other maneuver in the list is
+    skipped, the same "unwired tactic, keep walking" convention Search's
+    own tactic walk already uses. If the list is exhausted with nobody
+    dead -- including an empty list, e.g. no Encounter Plan data
+    available at all -- resolves one Melee duel: "the character
+    automatically starts using ME" (module docstring's own Phase 178
+    quote, a general Special Encounter Plan rule, not Search-specific),
+    and also the one defensible default when there's no plan to read
+    from in the first place (``resolve_melee_duel``'s own Phase 48
+    reasoning: "no skill prerequisite").
+
+    Both combatants are still assumed to fight with the *same* tactic for
+    the whole encounter, same as ``resolve_melee_duel``/``resolve_fire_
+    arrow_duel`` individually -- this project has no per-side, mixed-
+    tactic range-transition state machine (see this module's own
+    "Explicitly out of scope" note above).
+    """
+
+    for maneuver in maneuvers:
+        if maneuver is Maneuver.SHOOT:
+            result = resolve_fire_arrow_duel(a, b, rng)
+            if result.winner is not None:
+                return result
+            continue
+        if maneuver is Maneuver.MELEE:
+            return resolve_melee_duel(a, b, rng)
+    return resolve_melee_duel(a, b, rng)
 
 
 # Phase 210 addendum -- Hand of Death [HA] and Mirror-Image Phantasm [MI],

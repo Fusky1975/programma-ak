@@ -54,7 +54,7 @@ core directly** (``has_combat_intent``, ``is_encounter_accepted``,
 Phase 50): "All rules listed under the Encounter action apply to
 Pursuit encounters" is read literally here -- a caught-up Pursue target
 goes through the exact same [3.12] King/Hero acceptance decision tree
-and Melee duel as a Challenge, including a King target's own
+and combat resolution as a Challenge, including a King target's own
 ``mutual_encounter`` requirement (caller-supplied only, defaulting to
 ``False``, same documented conservative choice as Phase 50 -- Pursue
 gives no more visibility into the target's own orders than Challenge
@@ -62,6 +62,12 @@ does). A decisive loser is removed from ``state`` via
 ``GameState.remove_leader()``, the same generic-Encounter [5.0] "until
 one combatant is killed" rule Challenge already applies -- Duel's own
 [7.1] no-death special case still doesn't generalize here either.
+
+**Fire Arrow (Phase 273)**: combat resolution now walks ``request.
+tactics`` via ``turn/encounter.py resolve_encounter_combat()`` -- see
+``turn/challenge_execution.py``'s own Phase 273 note for the full
+reasoning (identical here, since Pursue's armyless combat reuses that
+same core). ``_leader_combatant`` now also reads ``Ability.ARCHERY``.
 
 **Catch-up chance**: ``turn/spy_table.py``'s ``pursue_catch_up_chance``
 ([4.33]), driven by the pursuer's real ``Ability.SPY`` skill (0 if
@@ -121,7 +127,7 @@ from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_encounter_combat
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance, neighbors
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 
@@ -137,6 +143,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
     """
 
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)
+    archery_skill = effective_skill_level(state, leader, Ability.ARCHERY)
 
     neutral_bonus = False
     if leader.kingdom_id is not None:
@@ -147,6 +154,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         name=leader.name,
         hit_points=CHARACTER_HIT_POINTS,
         melee_skill=melee_skill,
+        archery_skill=archery_skill,
         neutral_duelist_bonus=neutral_bonus,
     )
 
@@ -254,7 +262,9 @@ def execute_pursue(
 
     pursuer_combatant = _leader_combatant(pursuer, state)
     target_combatant = _leader_combatant(target, state)
-    combat_result = resolve_melee_duel(pursuer_combatant, target_combatant, rng)
+    combat_result = resolve_encounter_combat(
+        [tactic.maneuver for tactic in request.tactics], pursuer_combatant, target_combatant, rng
+    )
 
     if combat_result.winner is None:
         return PursueExecutionResult(caught_up=True, combat_occurred=True)

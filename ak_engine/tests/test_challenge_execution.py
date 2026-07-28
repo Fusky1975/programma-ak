@@ -232,6 +232,36 @@ def test_execute_challenge_combat_with_no_decisive_winner_kills_nobody():
     assert 1 in state.leaders and 2 in state.leaders
 
 
+# -- Fire Arrow (Phase 273): SHOOT now actually resolves via Fire Arrow --
+
+
+def test_execute_challenge_shoot_tactic_resolves_via_fire_arrow_before_melee():
+    state = _base_state()
+    # A has real Archery skill (10 free attacks, guaranteed hit chance since
+    # 0.30 + 0.10*10 > 1.0) and no Melee skill at all. B has real Melee
+    # skill (9) but no Archery -- if this still fell straight to Melee (the
+    # pre-Phase-273 bug), B's own higher skill would act first and A
+    # wouldn't reliably win. A's 10 guaranteed archery hits (minimum 1
+    # damage each) always total at least 10, guaranteeing B's death within
+    # Fire Arrow alone, regardless of the exact (unscripted) damage rolled
+    # per hit.
+    state.add_leader(
+        LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ARCHERY, 10, 9))
+    )
+    state.add_leader(
+        LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 9, 9))
+    )
+    rng = ScriptedRandom([0.01] * 25)
+    shoot_request = ChallengeRequest(target_character_id=2, unconfirmed_extra0=0, tactics=[SearchTactic(Maneuver.SHOOT)])
+
+    result = execute_challenge(state, 1, shoot_request, rng=rng)
+
+    assert result.combat_occurred is True
+    assert result.winner_leader_id == 1
+    assert result.loser_leader_id == 2
+    assert result.loser_killed is True
+
+
 def test_execute_challenge_mutual_king_encounter_can_result_in_combat():
     state = _base_state()
     state.add_leader(

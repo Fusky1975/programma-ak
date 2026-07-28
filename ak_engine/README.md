@@ -11304,7 +11304,7 @@ complete (Phases 209-211).
     discoverer of the same already-registered Discovery credited 2
     points, registry entry left unchanged) -- 3070 passed total.
 
-- **Phase 272 (current)**: implements rulebook [8.4] Scientific
+- **Phase 272**: implements rulebook [8.4] Scientific
   Treaties, previously listed as blocked ("ordine cartaceo, non
   parsificato da questo progetto" -- unparseable paper order). The
   underlying "Treat" order is still unparseable, same as ever, but
@@ -11366,6 +11366,59 @@ complete (Phases 209-211).
     anything new; and confirmation that neither `discoveries_via_
     espionage` nor `discoveries_first_found_by` are touched -- 3079
     passed total.
+
+- **Phase 273 (current)**: extends Fire Arrow into Challenge, Pursue and
+  Duel -- previously only Search (Phase 170) actually resolved a
+  `Maneuver.SHOOT` tactic as a real Fire Arrow duel; Challenge and
+  Pursue only ever consulted it to decide whether combat-acceptance
+  restrictions applied (`has_combat_intent`), then always fought a
+  Melee duel regardless, and Duel's own `_maybe_fight_duel()` docstring
+  explicitly said "always Melee, since no Encounter Plan data exists
+  anywhere in this project" -- a real, previously undocumented gap for
+  the first two, and a documented-but-now-closable limitation for the
+  third.
+  - New `turn/encounter.py resolve_encounter_combat()`: walks an
+    Encounter Plan's own tactic list in order (rulebook [5.10]/[5.2]/
+    [3.16] -- "All rules listed under the Encounter action apply to
+    Pursuit encounters," and Duel's own [7.1] cross-references [5.10]
+    by name), the same "Fire Arrow first if listed, fall through to
+    Melee once shots exhaust or the list runs out" rule Search's own
+    Phase 170/178 corrections already established -- reused directly
+    rather than re-derived, since it's one shared rulebook mechanic.
+  - `turn/challenge_execution.py`/`turn/pursue_execution.py`:
+    `_leader_combatant()` now also reads `Ability.ARCHERY` into
+    `Combatant.archery_skill` (previously left at the default 0, which
+    would have made Fire Arrow a guaranteed no-op even once wired), and
+    both call `resolve_encounter_combat()` with the real decoded
+    `request.tactics` instead of always calling `resolve_melee_duel()`
+    directly.
+  - `turn/battle_orchestrator.py`: `_commander_combatant()` reads
+    `Ability.ARCHERY` too. `_maybe_fight_duel()`/`fight_battle()` gain
+    an optional `duel_maneuvers: list[Maneuver] | None = None` parameter
+    -- `None` (every existing caller) reproduces the exact prior
+    always-Melee behavior and RNG consumption unchanged; a caller who
+    does have real Special Encounter Plan data for a Duel can now supply
+    it. This project still has no parser/decoder for a standing,
+    per-leader Special Encounter Plan (distinct from the one-off
+    tactics a CHALLENGE/PURSUE order itself carries) -- the same "no
+    real order-file shape ever seen" category as Treat/Break
+    Treaty/Call-For-Vote -- so `duel_maneuvers` stays caller-supplied
+    rather than auto-derived, matching `treat_permissions`'s own
+    established convention.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added (3088 passed once the new tests below were included) --
+    confirming no existing test exercised a `SHOOT`-tactic Challenge or
+    Pursue encounter, and the `duel_maneuvers` default preserves every
+    existing Duel test's own RNG consumption exactly.
+  - 9 new tests: 5 for `resolve_encounter_combat()` itself (Fire-Arrow-
+    then-fallback ordering, empty-list default, Melee-terminates-before-
+    a-later-SHOOT-entry, skipping unrelated maneuvers), 1 each for
+    Challenge's and Pursue's own SHOOT-tactic wiring (a high-Archery,
+    zero-Melee attacker reliably beats a zero-Archery, high-Melee
+    defender -- impossible under the old always-Melee behavior), and 2
+    for `battle_orchestrator.py` (`_commander_combatant` reads real
+    Archery skill; `_maybe_fight_duel` resolves Fire Arrow first when
+    `duel_maneuvers` is supplied) -- 3088 passed total.
 
 ## Setup
 

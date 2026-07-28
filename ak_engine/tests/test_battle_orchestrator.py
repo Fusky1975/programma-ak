@@ -7,7 +7,7 @@ import pytest
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
-from ak_engine.models.enums import Ability
+from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
@@ -1227,6 +1227,19 @@ def test_commander_combatant_reads_real_melee_skill_and_neutral_bonus():
     assert combatant.hit_points == CHARACTER_HIT_POINTS
 
 
+def test_commander_combatant_reads_real_archery_skill():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Archeria", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="Commander", location=FIELD, skills=_skills_with(Ability.ARCHERY, 4, 9))
+    )
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.archery_skill == 4
+
+
 def test_commander_combatant_non_neutral_kingdom_gets_no_bonus():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Goodia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
@@ -1337,6 +1350,43 @@ def test_maybe_fight_duel_real_combat_requires_state_or_falls_back_to_approximat
     )
 
     assert outcome.loser_side == "defender"  # attacker's huge strength edge wins the approximation
+
+
+# -- Fire Arrow (Phase 273): duel_maneuvers, opt-in Special Encounter Plan --
+# (the "no duel_maneuvers given -> always Melee, unchanged" default is
+# already exercised by every real-combat duel test above, none of which
+# pass duel_maneuvers -- and the full suite's own non-breaking check
+# confirmed their behavior/RNG consumption is unaffected.)
+
+
+def test_maybe_fight_duel_resolves_fire_arrow_first_when_duel_maneuvers_given():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ARCHERY, 10, 9))
+    )
+    state.add_leader(
+        LeaderState(502, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 9, 9))
+    )
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+    # Same reasoning as challenge_execution.py's own Phase 273 test: A's 10
+    # guaranteed archery hits (minimum 1 damage each) always total at least
+    # 10, guaranteeing B's death via Fire Arrow alone even though B's own
+    # Melee skill (9) would otherwise dominate a Melee-only duel.
+    rng = ScriptedRandom([0.01] * 25)
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state, use_real_duel_combat=True, duel_maneuvers=[Maneuver.SHOOT],
+    )
+
+    assert outcome.loser_side == "defender"
 
 
 def test_fight_battle_with_real_duel_combat_reports_a_loser_side():
