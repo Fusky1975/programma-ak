@@ -11252,7 +11252,7 @@ complete (Phases 209-211).
     (`earthquake_flat_reduction`'s own flat-reduction and floor-at-zero
     cases) -- 3068 passed total.
 
-- **Phase 271 (current)**: unblocks the Gran Cancelliere / Chancellor's
+- **Phase 271**: unblocks the Gran Cancelliere / Chancellor's
   own Discovery-attribution Merit Point terms, the "materially larger,
   still-unscoped gap" `turn/merit_points.py`'s own Phase 137/256 note
   flagged as needing a global first-inventor registry across every
@@ -11303,6 +11303,69 @@ complete (Phases 209-211).
     credited 3 points and registers itself; a second, independent
     discoverer of the same already-registered Discovery credited 2
     points, registry entry left unchanged) -- 3070 passed total.
+
+- **Phase 272 (current)**: implements rulebook [8.4] Scientific
+  Treaties, previously listed as blocked ("ordine cartaceo, non
+  parsificato da questo progetto" -- unparseable paper order). The
+  underlying "Treat" order is still unparseable, same as ever, but
+  Phase 261 already solved the identical problem for [3.4]'s own half
+  of the same order (Recruit's ally-territory permission gate):
+  `GameState.treat_permissions` is populated directly by the caller,
+  not decoded from a move file. [8.4] reuses that exact field rather
+  than inventing a second permission model -- a *mutual* Treat order is
+  just `(a, b)` and `(b, a)` both present in `treat_permissions` the
+  same gameturn.
+  - New `turn/scientific_treaty.py`, `execute_scientific_treaties()`:
+    for every mutual-Treat pair of currently-Allied Kingdoms in contact
+    (some province each owns is hex-adjacent, via `turn/movement.py
+    is_adjacent()`, or a leader from one is physically located inside a
+    province the other owns), each side gives away its own
+    highest-priority Discovery the other doesn't already hold --
+    computed independently per direction, so a lopsided exchange (only
+    one side has anything new) falls out naturally rather than needing
+    a special case, matching the rulebook's own "If only one of the
+    Kingdoms has a secret unknown to the other, one secret will still
+    be given away."
+  - **Exchange priority ("the most military-oriented ones" / "the order
+    of their priority for scientific exchanges")** reuses `models/
+    discovery.py sorted_kingdom_discoveries()` (Phase 268) rather than
+    inventing an unsourced military-ness ranking: the rulebook text
+    explicitly says the turn report's own Discoveries-of-the-Sages
+    ordering (descending `DISCOVERY_DISPLAY_VALUE`, the real, sourced
+    `discval` field) *is* the scientific-exchange priority ordering.
+  - **Two explicitly documented, confirmed-absent-data limitations**
+    (not silent guesses -- see the new module's own docstring for the
+    full reasoning): (1) "have become Allies on a previous gameturn" is
+    read as *current* `is_allied()` status only, since this project has
+    no alliance-formation timestamp anywhere to check duration against
+    -- `allied_kingdoms` is, like `treat_permissions`, entirely
+    caller-populated with no in-project writer; (2) "the exchange takes
+    place after finances are computed" has no equivalent hook inside
+    `turn/turn_processor.py run_turn()`, since this project never
+    applies revenue as a mutating turn-processor step (`turn/
+    tax_base.py`'s formulas are computed on demand for report
+    rendering only) -- `execute_scientific_treaties()` is therefore a
+    standalone resolver the caller invokes directly, the same
+    "caller's job" convention `treat_permissions` itself already
+    established.
+  - **No Merit Point credit**: the rulebook's own printed Chancellor
+    table (`turn/merit_points.py`) lists three specific Discovery-
+    attribution sources -- personal invention (first or not) and
+    "obtained via espionage" -- and Scientific Treaty exchange is none
+    of the three, so `MeritTally.discoveries_via_espionage` and
+    `GameState.discoveries_first_found_by` are both deliberately left
+    untouched by a Treaty-received Discovery.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added (3079 passed once the new tests below were included).
+  - 9 new tests in `test_scientific_treaty.py`: mutual-Treat exchange
+    between allied, adjacent Kingdoms; no exchange when the Treat order
+    isn't mutual; no exchange without alliance; no exchange without
+    contact; leader-presence-alone satisfying contact; the lopsided
+    one-direction-only exchange; highest-`DISCOVERY_DISPLAY_VALUE`
+    priority selection; no result recorded when neither side has
+    anything new; and confirmation that neither `discoveries_via_
+    espionage` nor `discoveries_first_found_by` are touched -- 3079
+    passed total.
 
 ## Setup
 
