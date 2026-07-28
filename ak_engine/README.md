@@ -10830,7 +10830,7 @@ complete (Phases 209-211).
     self-owned home province stays capped at 2, not 4) -- 2987 passed
     total.
 
-- **Phase 263 (current)**: completes Tactical Practice's own
+- **Phase 263**: completes Tactical Practice's own
   army-training mechanic (rulebook [6.1] "Types of Armies") -- Phase
   167 had implemented only 2 of the 5 upward Quality transitions
   (Green->Average 25%, Crack->Elite 0.2%) off an incomplete
@@ -10870,6 +10870,46 @@ complete (Phases 209-211).
     -- no next tier exists) staying untouched, and Depleted's own
     100% chance still requiring an inspiring army present -- 2991
     passed total.
+
+- **Phase 264 (current)**: the last piece of Hire's own required-pay
+  gap flagged since Phase 162's own note -- the "rare exception" bypass
+  for an otherwise-refused wide alignment gap. Same manual passage
+  Phase 162 already quoted, next sentence: "In rare occasioni un Re
+  può assoldare Eroi con un Allineamento distante più di due posizioni
+  dal proprio" ("On rare occasions a King CAN hire Heroes with an
+  alignment more than two positions distant"). No percentage survives
+  anywhere in the available source; asked the user directly
+  (2026-07-28, same "ask when genuinely ambiguous" policy as Phase
+  260's own succession mechanic) -- **15%**, user-specified.
+  - `turn/hire_pay.py`: new `RARE_ALIGNMENT_EXCEPTION_CHANCE = 0.15`
+    and `RARE_ALIGNMENT_EXCEPTION_PAY = 4` (the Hire action's own real
+    offer ceiling, [3.5]: "a payment of 1-4 gold"), plus
+    `roll_rare_alignment_exception(rng)`.
+  - `turn/plan_dispatch.py _dispatch_hire()`: when `required_pay()`
+    returns 5 (distance >= 3, previously an unconditional refusal),
+    rolls the bypass once; on success the price drops to 4 instead of
+    staying unreachable, so a King who actually offers the maximum can
+    still succeed, otherwise the request is refused exactly as before.
+    `HireExecutionResult.rare_alignment_exception` reports which path
+    was taken. `_dispatch_hire()` gained an `rng` parameter (threaded
+    from `dispatch_phase()`'s own existing one, its only call site).
+  - A user-specified design constant, not a value transcribed from any
+    Pascal or manual source -- documented as such in `hire_pay.py`'s
+    own module docstring, not presented as a recovered rule.
+  - Non-breaking: full suite passed unchanged (2991 passed) before any
+    new tests were written -- the new roll only fires on the
+    previously-always-refused `pay >= 5` path, and no existing test
+    hit that path with an unscripted (non-deterministic) rng except
+    one, fixed to script a deliberate failure so it keeps testing
+    exactly what it always tested (see below). 7 new tests: the
+    chance/pay constants, `roll_rare_alignment_exception()`'s own
+    threshold in both directions (`hire_pay.py`), and end-to-end
+    dispatch coverage (the rare exception succeeding at the offer
+    ceiling and crediting only 4 gold, succeeding-but-still-refused
+    when the offer stays below even the reduced price, and the
+    pre-existing outright-refusal test now scripted to fail the roll
+    deterministically rather than relying on luck) -- 2997 passed
+    total.
 
 ## Setup
 
@@ -11113,15 +11153,19 @@ rulebook before being turned into named, typed fields:
     see that phase's own note above for the full derivation and its
     `turn/hire_pay.py required_pay()`. ~~Race compatibility~~ was
     explicitly excluded from the formula per the user's own
-    instruction (only alignment distance and temperament), and
-    `LeaderState` still has no `.race` field to source it from anyway.
-    Recurring per-gameturn pay (only the one-time hiring charge is
-    modeled, matching Recruit's own established simplification) and a
-    genuine "rare exception" bypass for wide alignment gaps (the
-    rulebook: "In rare occasioni un Re può assoldare Eroi con un
+    instruction (only alignment distance and temperament) -- `LeaderState`
+    does have a real `.race` field as of Phase 196, but that's beside
+    the point, since the exclusion was a design choice, not a data
+    gap. ~~A genuine "rare exception" bypass for wide alignment gaps
+    (the rulebook: "In rare occasioni un Re può assoldare Eroi con un
     Allineamento distante più di due posizioni" -- not modeled as a
     random chance here, only as Charm/Resurrection's own already-real
-    bypass routes) remain open, with no sourced formula for either.
+    bypass routes) remains open, with no sourced formula~~ **fixed in
+    Phase 264** -- see that phase's own note above
+    (`RARE_ALIGNMENT_EXCEPTION_CHANCE`, a user-specified 15%, not a
+    recovered rule). Recurring per-gameturn pay (only the one-time
+    hiring charge is modeled, matching Recruit's own established
+    simplification) remains open.
     ~~"Can't Hire a Hero who rules his
     own province" (no King flag)~~ **fixed in Phase 40** -- see below.
     ~~`run_leader_plan` doesn't dispatch a `PlanPhase.nested_plan`'s own

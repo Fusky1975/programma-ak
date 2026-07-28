@@ -364,7 +364,7 @@ from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decod
 from ak_engine.turn.exploration import resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
-from ak_engine.turn.hire_pay import required_pay
+from ak_engine.turn.hire_pay import RARE_ALIGNMENT_EXCEPTION_PAY, required_pay, roll_rare_alignment_exception
 from ak_engine.turn.move_execution import execute_move, record_kingdom_exploration
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import PracticeExecutionResult, execute_practice
@@ -431,6 +431,11 @@ class HireExecutionResult:
     # found/is a King/already employed/not co-located), which never
     # reach the pay computation.
     minimum_gold: int | None = None
+    # Phase 264: True when the Hero was hired only because the "rare
+    # exception" bypass (turn/hire_pay.py roll_rare_alignment_exception())
+    # succeeded for an otherwise-refused alignment gap. Always False
+    # otherwise, including every ordinary hire and every outright refusal.
+    rare_alignment_exception: bool = False
 
 
 @dataclass(slots=True)
@@ -548,7 +553,7 @@ def dispatch_phase(
         return _dispatch_disband(phase, state, leader_id)
 
     if action is ActionCode.HIRE:
-        return _dispatch_hire(phase, state, kingdom_id, leader_id)
+        return _dispatch_hire(phase, state, kingdom_id, leader_id, rng)
 
     if action is ActionCode.FIRE:
         return _dispatch_fire(phase, state, leader_id)
@@ -774,7 +779,9 @@ def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
     return request
 
 
-def _dispatch_hire(phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int) -> HireExecutionResult:
+def _dispatch_hire(
+    phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int, rng: random.Random | None = None
+) -> HireExecutionResult:
     request = decode_hire_phase(phase)
     hero = state.leaders.get(request.hero_id)
     acting_leader = state.leaders[leader_id]
@@ -800,13 +807,19 @@ def _dispatch_hire(phase: PlanPhase, state: GameState, kingdom_id: int, leader_i
         None,
     )
     pay = required_pay(hero, king)
+    rare_exception = False
 
     if pay >= 5:
         # rulebook: "a Good King generally cannot hire a Pagan Hero" --
-        # an alignment gap this wide is refused outright, not merely
-        # priced out of reach (see turn/hire_pay.py's own docstring for
-        # why 5 is unreachable via a normal <=4-gold offer at all).
-        return HireExecutionResult(request, hired=False, reason="alignment gap too wide", minimum_gold=pay)
+        # refused outright, unless the "rare exception" bypass (Phase
+        # 264, turn/hire_pay.py roll_rare_alignment_exception()) fires;
+        # on success the price drops to the Hire ceiling (4) instead of
+        # staying unreachable. See that module's own docstring.
+        if roll_rare_alignment_exception(rng if rng is not None else random.Random()):
+            pay = RARE_ALIGNMENT_EXCEPTION_PAY
+            rare_exception = True
+        else:
+            return HireExecutionResult(request, hired=False, reason="alignment gap too wide", minimum_gold=pay)
     if request.gold_offer < pay:
         return HireExecutionResult(request, hired=False, reason="offer below required pay", minimum_gold=pay)
 
@@ -817,7 +830,7 @@ def _dispatch_hire(phase: PlanPhase, state: GameState, kingdom_id: int, leader_i
     kingdom.treasury -= pay
     hero.kingdom_id = kingdom_id
 
-    return HireExecutionResult(request, hired=True, minimum_gold=pay)
+    return HireExecutionResult(request, hired=True, minimum_gold=pay, rare_alignment_exception=rare_exception)
 
 
 def _dispatch_fire(phase: PlanPhase, state: GameState, leader_id: int) -> FireExecutionResult:

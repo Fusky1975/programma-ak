@@ -830,18 +830,64 @@ def test_dispatch_hire_refuses_a_hero_with_too_wide_an_alignment_gap():
     # Testia's King (_state_with_army) has no recorded alignment/temper,
     # so give him one explicitly here: GOOD vs the Hero's PAGAN is real
     # ordinal distance 3 -- "a Good King generally cannot hire a Pagan
-    # Hero" (the user's own rulebook-quoted anchor case).
+    # Hero" (the user's own rulebook-quoted anchor case). Scripted rng
+    # deliberately fails the Phase 264 "rare exception" roll (>= 0.15),
+    # so this test still exercises the ordinary refusal path only.
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})
     state.leaders[LEADER_ID].alignment = Alignment.GOOD
     state.add_leader(LeaderState(32, None, "Wandering Hero", location, alignment=Alignment.PAGAN))
     phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[4])  # max legal offer
 
-    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.99])
+    )
 
     assert result.hired is False
     assert result.reason == "alignment gap too wide"
     assert result.minimum_gold == 5
+    assert result.rare_alignment_exception is False
+    assert state.leaders[32].kingdom_id is None
+    assert state.kingdoms[1].treasury == 100  # untouched
+
+
+def test_dispatch_hire_rare_exception_succeeds_at_the_offer_ceiling():
+    # Phase 264: same wide alignment gap, but the "rare exception" roll
+    # (user-specified 15% chance) succeeds this time -- pay drops to the
+    # Hire ceiling (4), and a max offer covers it.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.leaders[LEADER_ID].alignment = Alignment.GOOD
+    state.add_leader(LeaderState(32, None, "Wandering Hero", location, alignment=Alignment.PAGAN))
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[4])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0])
+    )
+
+    assert result.hired is True
+    assert result.minimum_gold == 4
+    assert result.rare_alignment_exception is True
+    assert state.leaders[32].kingdom_id == 1
+    assert state.kingdoms[1].treasury == 96
+
+
+def test_dispatch_hire_rare_exception_success_still_needs_the_offer_ceiling():
+    # The bypass lowers the price to 4, not to nothing -- an offer below
+    # that still isn't enough, even when the rare roll itself succeeds.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.leaders[LEADER_ID].alignment = Alignment.GOOD
+    state.add_leader(LeaderState(32, None, "Wandering Hero", location, alignment=Alignment.PAGAN))
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[3])  # below the ceiling
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0])
+    )
+
+    assert result.hired is False
+    assert result.reason == "offer below required pay"
+    assert result.minimum_gold == 4
     assert state.leaders[32].kingdom_id is None
     assert state.kingdoms[1].treasury == 100  # untouched
 

@@ -4,7 +4,14 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.temper import Temper
-from ak_engine.turn.hire_pay import required_pay
+from ak_engine.turn.hire_pay import (
+    RARE_ALIGNMENT_EXCEPTION_CHANCE,
+    RARE_ALIGNMENT_EXCEPTION_PAY,
+    required_pay,
+    roll_rare_alignment_exception,
+)
+
+from _helpers import ScriptedRandom
 
 HOME = HexCoord(3, 9)
 
@@ -91,3 +98,24 @@ def test_required_pay_defaults_to_same_temper_when_temper_missing():
     king = _leader(alignment=Alignment.GOOD, temper=Temper.BRAVE, is_king=True)
 
     assert required_pay(hero, king) == 1
+
+
+# -- Phase 264: "In rare occasioni..." bypass --------------------------------
+
+
+def test_rare_alignment_exception_chance_is_the_user_specified_fifteen_percent():
+    assert RARE_ALIGNMENT_EXCEPTION_CHANCE == 0.15
+
+
+def test_rare_alignment_exception_pay_is_the_hire_offer_ceiling():
+    assert RARE_ALIGNMENT_EXCEPTION_PAY == 4
+
+
+def test_roll_rare_alignment_exception_succeeds_under_the_threshold():
+    rng = ScriptedRandom([0.14])
+    assert roll_rare_alignment_exception(rng) is True
+
+
+def test_roll_rare_alignment_exception_fails_at_or_above_the_threshold():
+    rng = ScriptedRandom([0.15])
+    assert roll_rare_alignment_exception(rng) is False

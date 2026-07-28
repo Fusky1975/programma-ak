@@ -72,15 +72,41 @@ matching temper -- pay 1), the same convention this project already
 uses for ``skills``/``birth_x``/etc.: a Hero or King with no recorded
 alignment/temper isn't penalized for data this project simply hasn't
 populated yet.
+
+**Phase 264 -- the "rare exception" bypass.** Same manual passage,
+next sentence: "In rare occasioni un Re può assoldare Eroi con un
+Allineamento distante più di due posizioni dal proprio" ("On rare
+occasions a King CAN hire Heroes with an alignment more than two
+positions distant from his own") -- meaning distance >= 3 shouldn't be
+an absolute wall, only almost always one. No percentage survives
+anywhere in the available source for how rare "rare" is; asked the
+user directly (2026-07-28, the same "ask when genuinely ambiguous"
+policy this project has followed since Phase 260's own succession
+mechanic), who specified **15%**. ``roll_rare_alignment_exception()``
+rolls that flat chance once per Hire attempt that would otherwise be
+refused outright; on success, the required pay drops to
+``RARE_ALIGNMENT_EXCEPTION_PAY = 4`` -- the Hire action's own real
+offer ceiling ([3.5]: "a payment of 1-4 gold") -- rather than staying
+at the unreachable 5, so a King who actually offers the maximum can
+succeed. This is a user-specified design choice, not a value
+transcribed from any Pascal or manual source -- documented as such,
+not presented as a recovered rule.
 """
 
 from __future__ import annotations
+
+import random
 
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.game_state import LeaderState
 
 _BASE_PAY_BY_DISTANCE: dict[int, int] = {0: 1, 1: 2, 2: 3}
 _UNHIREABLE_PAY = 5
+
+# Phase 264: user-specified (2026-07-28), not sourced -- see module
+# docstring's own "rare exception" note.
+RARE_ALIGNMENT_EXCEPTION_CHANCE = 0.15
+RARE_ALIGNMENT_EXCEPTION_PAY = 4
 
 
 def _alignment_distance(hero_alignment: Alignment | None, king_alignment: Alignment | None) -> int:
@@ -114,3 +140,13 @@ def required_pay(hero: LeaderState, king: LeaderState | None) -> int:
     # a mismatch alone, with matching alignment, never raises the price.
     penalty = 1 if distance >= 1 and not same_temper else 0
     return min(_UNHIREABLE_PAY, base_pay + penalty)
+
+
+def roll_rare_alignment_exception(rng: random.Random) -> bool:
+    """Phase 264: the "In rare occasioni..." bypass for an otherwise-unhireable
+    (``required_pay() >= 5``) alignment gap -- see module docstring for
+    the user-specified 15% chance and why 4, not 5, becomes the price
+    on success.
+    """
+
+    return rng.random() < RARE_ALIGNMENT_EXCEPTION_CHANCE
