@@ -231,6 +231,7 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.rumor import Rumor
+from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
@@ -409,6 +410,11 @@ class LeaderState:
     # clear it from (same "no source, no consumer" gap already flagged
     # for other under-modeled mechanics).
     is_royal_heir: bool = False
+    # Phase 260: models/sex.py's own Sex -- "confirmed absent" since
+    # Phases 195/217/230, now given its first real writer
+    # (turn/succession.py create_king()). None = not recorded, the same
+    # "no data" convention as temper/alignment/race above.
+    sex: Sex | None = None
 
 
 @dataclass(slots=True)

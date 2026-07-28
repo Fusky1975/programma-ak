@@ -10615,7 +10615,7 @@ complete (Phases 209-211).
     half-HP credit; Fulfill not honored falls through and still clears
     the pending flag) -- 2948 passed total.
 
-- **Phase 259 (current)**: King succession -- when a King dies, a
+- **Phase 259**: King succession -- when a King dies, a
   Royal Heir now takes the throne under the same `leader_id`, instead
   of the Kingdom simply going permanently Kingless (a real,
   confirmed-reachable gap: `GameState.remove_leader()` is called from
@@ -10682,6 +10682,70 @@ complete (Phases 209-211).
     actual rise, stays set when nothing rises, stays `False` for a
     non-Heir, and `execute_practice_group()` only clears it for
     whichever group member actually rose) -- 2960 passed total.
+
+- **Phase 260 (current)**: completes King succession -- the player-
+  facing act of actually creating a new King from the Phase 259 Royal
+  Heir, `turn/succession.py create_king()`, sourced from RULES.AK
+  [2.1] "Kings" (quoted in full in the module docstring) and [2.3]'s
+  own "ALIGNMENT TABLE".
+  - **Not a K1-decodable order, confirmed against the real Pascal
+    `action` enum**: no ordinal for "create a King" exists anywhere in
+    `CTBOTH.PAS`. RULES.AK's own [2.1] describes King creation as
+    happening "at the start of the game," the same one-time act a
+    Royal Heir's own creation now mirrors -- so `create_king()` is a
+    directly-callable function, not a new `Maneuver`/`ActionCode` with
+    a parser/decode layer, the same category `execute_practice_group()`
+    already established for a call with no real order-file shape.
+  - Validates RULES.AK's own 4-point allocation ("four abilities start
+    at level 1, or 2 abilities at level two... can't assign more than
+    2 points to any ability") and applies the automatic modifiers
+    verbatim: +1 Melee/Archery/Sage for every King; a Divine King's own
+    +1 White Magic and locked zero Necromancy skill/aptitude; an
+    Undead King's own +1 Necromancy and locked zero White Magic
+    skill/aptitude ("cannot start with any ability in a skill in which
+    they have zero aptitude"). Aptitude is `skill + 2` (capped at 5)
+    for every ability, with `turn/succession.py`'s own [2.3]-derived
+    doubling rule for the two Magic/Special-Aptitude abilities of the
+    King's own alignment (`ALIGNMENT_SPECIAL_ABILITIES`, transcribed
+    from the Alignment Table's own Good/Druidic/Neutral/Pagan/Evil
+    rows -- Divine/Undead read "None, None" there, confirming they
+    don't get this doubling on top of their own separate override).
+    **Documented, provable coincidence**: given the 0-2 player cap and
+    at most one +1 bonus per ability, the doubling formula and the
+    ordinary `+2` one are numerically identical for every value this
+    module can ever actually produce -- kept as two separate functions
+    anyway so the distinct [2.1]/[2.3] sourcing stays traceable, not a
+    bug (see `_special_aptitude()`'s own docstring for the proof).
+  - **Two genuinely unsourceable/unmodeled pieces, each confirmed with
+    the user (project author) rather than guessed**: (1) "must assign
+    at least 2 points to Talents the dead King had when he was
+    created" can't be checked against true creation-time skills (never
+    tracked separately from current, possibly-Practiced-up skills
+    anywhere in this project) -- the dead King's own skill snapshot
+    *at death* (`GameState.dead_leaders`, the same one Phase 259's
+    Resurrection-on-Heir branch already reads) is used as the best
+    available proxy instead, a documented simplification. (2) Sex
+    (`models/sex.py`, new this phase, `LeaderState.sex`) was
+    "confirmed absent" since Phases 195/217/230 for lack of a real
+    consumer -- `create_king()` is that consumer now, confirmed with
+    the user as also chosen at creation alongside name and temper.
+  - Race and alignment are never re-chosen -- already true by
+    construction, since the Royal Heir already carries the dead King's
+    own values forward; `create_king()` never touches either field.
+  - Non-breaking: full suite passed unchanged (2960 passed) before any
+    new tests were written (a new module plus an all-`None`-default
+    field touches nothing existing). 17 new tests in `tests/
+    test_succession.py`: not-a-Royal-Heir and leader-not-found
+    failures; the exact-4-points and max-2-per-ability validations;
+    the overlap requirement (met, unmet, and skipped when no death
+    snapshot exists -- the documented proxy in action); royal-training
+    bonus stacking onto untouched abilities; race/alignment left
+    untouched; the Divine/Undead skill-bonus-plus-locked-aptitude
+    override in both directions, including rejecting an attempt to
+    invest in the locked-out ability; the special-ability-alignment
+    table's own five-alignment coverage; the special-vs-ordinary
+    aptitude formulas' own documented numeric coincidence, checked
+    directly -- 2977 passed total.
 
 ## Setup
 
