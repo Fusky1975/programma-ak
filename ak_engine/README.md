@@ -11659,10 +11659,13 @@ rulebook before being turned into named, typed fields:
     resolver existed.~~ -- **stale as of Phase 153**: Phase 132/133
     confirmed `target_leader_id` and rewrote `turn/trade_execution.py
     execute_give()` into the real Give mechanic, wired as real execution
-    in `plan_dispatch.py`. Still genuinely unstarted: the Kingdom-level
-    "Treat" diplomacy order (scientific-discovery exchange between
-    Allies, [8.4]) is a separate system -- not parsed, not modeled, no
-    real data available yet either.
+    in `plan_dispatch.py`. The Kingdom-level "Treat" diplomacy order's
+    other half (scientific-discovery exchange between Allies, [8.4]) was
+    a separate system, still unparsed as an order file -- **stale as of
+    Phase 272**: `turn/scientific_treaty.py execute_scientific_treaties()`
+    closed it anyway by reusing Phase 261's own caller-populated
+    `GameState.treat_permissions`, the same "no real order-file shape
+    ever seen" workaround already used for that field's own [3.4] half.
   - ~~**Practice's remaining gap** (see Phase 21's note above):
     `GameState` now has a per-leader skill/aptitude table
     (`LeaderState.skills`, Phase 30), but nothing populates it from a
