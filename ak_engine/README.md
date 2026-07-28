@@ -11263,15 +11263,26 @@ rulebook before being turned into named, typed fields:
     unexecuted~~ -- **Trail's catch-up resolution is now implemented**
     (`turn/trail_execution.py`, Phase 52), reusing Phase 51's Spy Table
     directly ([4.33]'s "Chance to Pursue **or Trail**" is one shared
-    column). **Still open**: the actual spied-on intelligence payload
+    column). ~~**Still open**: the actual spied-on intelligence payload
     (Actions, race, temper, alignment, treasures, armies led) isn't
     assembled -- no report-generation system exists yet to route it to,
     and several of those fields (race, alignment, per-leader treasures)
-    still don't exist on `LeaderState` at all -- `temper` alone now has
-    a real enum to use (`models/temper.py`, Phase 82), though
-    `LeaderState` still has nowhere to store a per-leader value -- so
-    there is nothing concrete to report even if there were somewhere to
-    send it. Succ_Trail
+    still don't exist on `LeaderState` at all~~ -- **stale, left
+    uncorrected across several phases that actually closed this: all
+    six of [3.17]'s named fields are real as of Phase 252** (`temper`/
+    `treasures_owned`/`armies_led` Phase 159, `alignment` Phase 164,
+    `race` Phase 165 via the target's own Kingdom, `actions` Phase 252
+    via `turn/turn_processor.py run_turn()`'s own post-dispatch
+    backfill), plus the King-target aggregate case (`KingIntelligence`:
+    treasury/allies/controlled provinces, Phase 166 -- "enemies"
+    deliberately left out, no positive hostile-diplomacy registry
+    exists to source it from). `report/turn_report.py
+    describe_trail_intelligence()` renders the whole payload into
+    prose. See `turn/trail_execution.py`'s own module docstring for
+    the full phase-by-phase account -- corrected here per this
+    project's standing policy of fixing a stale note on discovery
+    rather than leaving a future reader misled (Phase 55/153's own
+    precedent). Succ_Trail
     is deliberately not decoded at all --
     concluded structurally impossible to receive in a player move file,
     not merely unimplemented; see `turn/plan_dispatch.py`'s module
