@@ -11974,7 +11974,7 @@ complete (Phases 209-211).
     execution.py`, and `test_battle_orchestrator.py` -- 3198 passed
     total.
 
-- **Phase 285 (current)**: wires the race-matching legendary leadership
+- **Phase 285**: wires the race-matching legendary leadership
   item's +1 quality bonus into real combat strength -- Phase 279 had
   already computed it for the ARMIES report's own "Modified Quality"
   column (`turn/army_quality.py compute_army_modified_quality()`), but
@@ -12021,6 +12021,56 @@ complete (Phases 209-211).
     -- 3202 passed total. `test_army_quality.py`'s existing
     `RACE_LEADERSHIP_TREASURE` coverage test updated to import from its
     new home rather than duplicated.
+
+- **Phase 286 (current)**: wires the two Flee flee-chance bonuses
+  `turn/search_execution.py`'s own Phase 169 docstring had explicitly
+  deferred -- the Weak-Temperament (Cautious/Cowardly) and Invisibility
+  "+30% chance to flee" bonuses on top of rulebook [5.6]'s own base
+  20%/50%/80% `FLEE_CHANCE` roll.
+  ```
+  (NOVITA') I personaggi Cauti hanno il 30% in più di possibilità di
+  fuggire.                                              -- [5.6]
+  ```
+  The rulebook names only **Cautious** for this bonus; the user (project
+  author) confirmed extending it to **Cowardly** too is a deliberate,
+  project-original design choice (Cowardly already sits at the far end
+  of the Temper Table's own flee-inclination spectrum), documented as
+  exactly that rather than conflated with the sourced text.
+  - `turn/encounter.py`: new `Combatant.is_invisible: bool = False`
+    field -- a separate explicit flag rather than inferring invisibility
+    from `defensive_hit_multiplier`'s own value (fragile once more than
+    one multiplier composes), read by this phase's own flee-chance
+    helper. Default `False` leaves every pre-Phase-286 caller unaffected.
+  - `turn/search_execution.py`: new `WEAK_TEMPER_FLEE_CHANCE_BONUS = 0.30`
+    (`Temper.CAUTIOUS`/`Temper.COWARDLY`) and `INVISIBILITY_FLEE_CHANCE_
+    BONUS = 0.30` constants, and a new `effective_flee_chance(base_chance,
+    *, temper, is_invisible)` helper: both bonuses are **additive
+    percentage points** on the base `FLEE_CHANCE` (not a multiplicative
+    scaling of it) -- "30% in più" ("30% more") reads as a flat
+    probability addition the same way the rulebook's own three base
+    percentages are flat, the same "no sourced stacking formula, pick
+    the plain reading" category `exploration_advantage_multiplier()`'s
+    own docstring already uses. Both bonuses can stack together, clamped
+    to 1.0 (a probability can't exceed certainty). The `Spell.
+    INVISIBILITY` branch now also sets `caster.is_invisible = True`
+    alongside its existing `defensive_hit_multiplier` mutation. Both real
+    `FLEE_CHANCE[stats.speed]` roll sites -- the main `Maneuver.FLEE`
+    tactic and `AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER`'s own reuse of
+    the same mechanic -- now route through `effective_flee_chance()`
+    instead of the bare table lookup.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added (`is_invisible` defaults to `False`, and `effective_flee_
+    chance()` returns the unmodified base chance for every existing
+    caller with no Temper/no invisibility) -- 3202 passed.
+  - 12 new tests: `effective_flee_chance()`'s own no-bonus/Cautious/
+    Cowardly/Brave-and-Berserk-unaffected/Invisibility/stacking-and-
+    clamping cases; wiring confirmations that a Cautious or Cowardly
+    leader's `Maneuver.FLEE` roll succeeds where the unboosted chance
+    would fail, that Brave gets no bonus and falls through to Melee,
+    that casting Invisibility sets `is_invisible` and that a subsequent
+    Flee gets its own bonus, and that Augur Combat's flee-when-cast-later
+    branch reads the same Cowardly bonus -- all in `test_search_
+    execution.py` -- 3214 passed total.
 
 ## Setup
 

@@ -97,15 +97,35 @@ resolves"**:
   quote (``FLEE_CHANCE`` below is keyed by the same ``MonsterSpeed`` tier
   already sourced there). A successful roll ends the Search with no
   combat and no loot; a failed roll falls through to the plan's next
-  wired tactic, per the ordering correction above. **Deliberately
-  excluded, not guessed**: the Cauto/Codardo temperament's "+30% chance
-  to flee" bonus ([5.6]'s own "(NOVITA')" addendum, keyed off ``models/
-  temper.py``) and Invisibility's "+30% chance to flee" bonus (``turn/
-  cast_execution.py``'s own docstring, already flagged unmodeled since it
-  needs the not-yet-built Cast-tactic combat engine) -- both are real,
-  sourced modifiers to this same roll, but adding either now would be an
-  under-tested compound change; flagged here as a natural follow-up
-  phase instead.
+  wired tactic, per the ordering correction above.
+  **Weak-Temperament and Invisibility flee bonuses (Phase 286)**: the
+  rulebook's own text at [5.6] reads, verbatim, "(NOVITA') I personaggi
+  Cauti hanno il 30% in più di possibilità di fuggire" -- naming only
+  the **Cautious** Temperament. The user (project author) confirmed
+  extending this same +30% to **Cowardly** as well is a deliberate,
+  project-original design choice, not a literal reading of the quoted
+  text -- Cowardly already sits at the far end of the Temper Table's own
+  flee-inclination spectrum (51-100% refusal range, vs. Cautious' own
+  1-50%), so a Cowardly character being at least as flee-prone as a
+  Cautious one is a reasonable extension, but it is documented here as
+  exactly that (an extension), not conflated with the sourced text.
+  ``effective_flee_chance()`` below adds ``WEAK_TEMPER_FLEE_CHANCE_
+  BONUS`` for ``Temper.CAUTIOUS`` or ``Temper.COWARDLY``, and separately
+  adds ``INVISIBILITY_FLEE_CHANCE_BONUS`` (``turn/cast_execution.py``'s
+  own docstring: "Invisibility's own addendum ('now gives +30% chance to
+  flee')") when the fleeing leader is currently invisible (``Combatant.
+  is_invisible``, set by the ``Spell.INVISIBILITY`` branch below). Both
+  bonuses are **additive percentage points** on the base ``FLEE_CHANCE``
+  (not a multiplicative scaling of it) -- the rulebook's own phrasing,
+  "30% in più" ("30% more"), reads as a flat probability addition the
+  same way the three base percentages themselves are flat, not as "30%
+  of the existing chance"; this is a documented interpretation (the same
+  "no sourced formula for the exact stacking, pick the plain reading"
+  category ``exploration_advantage_multiplier()``'s own docstring already
+  uses), not a guess at an alternative formula. The combined result is
+  clamped to 100% -- a probability can't exceed certainty. Both bonuses
+  can stack together (e.g. a Cautious, currently-invisible leader gets
+  both), since nothing in either source excludes the other.
 - ~~**Victory's own aftermath is minimal, by design**: rulebook [5.9]
   ("looting a vanquished foe's treasure, magic items changing hands")
   needs a treasure-*instance* and magic-item-ownership model this
@@ -358,6 +378,7 @@ from ak_engine.models.monster import (
     roll_monster_alignment,
 )
 from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
+from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.encounter import (
@@ -432,6 +453,32 @@ FLEE_CHANCE: dict[MonsterSpeed, float] = {
     MonsterSpeed.MEDIUM: 0.50,
     MonsterSpeed.SLOW: 0.80,
 }
+
+# Rulebook [5.6] "(NOVITA') I personaggi Cauti hanno il 30% in piu' di
+# possibilita' di fuggire" -- Cautious only per the literal text; extended
+# to Cowardly as a confirmed project-original design choice (see module
+# docstring's own Phase 286 addendum for the full reasoning).
+WEAK_TEMPER_FLEE_CHANCE_BONUS = 0.30
+WEAK_FLEE_TEMPERS = frozenset({Temper.CAUTIOUS, Temper.COWARDLY})
+
+# turn/cast_execution.py's own docstring: Invisibility's addendum "now
+# gives +30% chance to flee".
+INVISIBILITY_FLEE_CHANCE_BONUS = 0.30
+
+
+def effective_flee_chance(base_chance: float, *, temper: Temper | None, is_invisible: bool) -> float:
+    """Phase 286: applies the Weak-Temperament and Invisibility flee bonuses to a base [5.6] chance.
+
+    Both bonuses are additive percentage points, not a multiplicative
+    scaling of ``base_chance`` -- see module docstring's own Phase 286
+    addendum for the full sourcing and reasoning. Clamped to 1.0 (a
+    probability can't exceed certainty).
+    """
+
+    bonus = WEAK_TEMPER_FLEE_CHANCE_BONUS if temper in WEAK_FLEE_TEMPERS else 0.0
+    if is_invisible:
+        bonus += INVISIBILITY_FLEE_CHANCE_BONUS
+    return min(1.0, base_chance + bonus)
 
 # TREASAB.X2: every one of the 20 wands' own label reads "Cast '<Spell>' at
 # skill-2" -- same real fact as turn/use_mi_execution.py's own USE_MI_WAND_
@@ -932,6 +979,7 @@ def _resolve_search_encounter(
 
         if spell is Spell.INVISIBILITY:
             caster.defensive_hit_multiplier *= INVISIBILITY_HIT_CHANCE_MULTIPLIER
+            caster.is_invisible = True
             return None
 
         if spell is Spell.FIREBALL:
@@ -1114,8 +1162,12 @@ def _resolve_search_encounter(
                 # AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER -- "if it
                 # comes later, then the result will be an attempt to
                 # flee," reusing the exact real Flee mechanic
-                # `Maneuver.FLEE` itself already uses.
-                if rng.random() < FLEE_CHANCE[stats.speed]:
+                # `Maneuver.FLEE` itself already uses (Phase 286: now
+                # including that same mechanic's own flee-chance bonuses).
+                flee_chance = effective_flee_chance(
+                    FLEE_CHANCE[stats.speed], temper=leader.temper, is_invisible=caster.is_invisible
+                )
+                if rng.random() < flee_chance:
                     return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
                 return None
             if leader.temper is None:
@@ -1400,7 +1452,10 @@ def _resolve_search_encounter(
 
     for tactic_index, tactic in enumerate(request.tactics):
         if tactic.maneuver is Maneuver.FLEE:
-            if rng.random() < FLEE_CHANCE[stats.speed]:
+            flee_chance = effective_flee_chance(
+                FLEE_CHANCE[stats.speed], temper=leader.temper, is_invisible=leader_combatant.is_invisible
+            )
+            if rng.random() < flee_chance:
                 return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
             continue
         if tactic.maneuver is Maneuver.CAST:

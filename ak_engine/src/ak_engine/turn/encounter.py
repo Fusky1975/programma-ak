@@ -2211,6 +2211,16 @@ class Combatant:
     # recorded `LeaderState.temper`) is a documented no-effect -- see
     # module docstring's own Phase 284 addendum.
     temper: Temper | None = None
+    # Phase 286 -- set by `turn/search_execution.py` alongside
+    # `defensive_hit_multiplier *= INVISIBILITY_HIT_CHANCE_MULTIPLIER`
+    # when this combatant casts Invisibility. A separate explicit flag
+    # rather than inferring invisibility from the multiplier's own value
+    # (fragile once more than one multiplier composes) -- read by that
+    # same module's own `effective_flee_chance()` for [5.6]'s "+30%
+    # chance to flee" addendum, which `defensive_hit_multiplier` alone
+    # can't drive since it isn't a flee-roll input. Default `False`
+    # leaves every pre-Phase-286 caller unaffected.
+    is_invisible: bool = False
 
 
 def effective_melee_skill(combatant: Combatant) -> int:

@@ -19,9 +19,12 @@ from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, FIRE_ARROW_DAMAGE_RAN
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.search_execution import (
     FLEE_CHANCE,
+    INVISIBILITY_FLEE_CHANCE_BONUS,
     TROLL_REGENERATION_PER_COMBAT_ROUND,
+    WEAK_TEMPER_FLEE_CHANCE_BONUS,
     SearchExecutionResult,
     _leader_combatant,
+    effective_flee_chance,
     execute_search,
 )
 
@@ -31,9 +34,9 @@ LOCATION = HexCoord(3, 9)
 LEADER_ID = 1
 
 
-def _state_with_leader(*, skills: SkillTable | None = None) -> GameState:
+def _state_with_leader(*, skills: SkillTable | None = None, temper: Temper | None = None) -> GameState:
     state = GameState()
-    state.add_leader(LeaderState(LEADER_ID, 1, "Searcher", LOCATION, skills=skills))
+    state.add_leader(LeaderState(LEADER_ID, 1, "Searcher", LOCATION, skills=skills, temper=temper))
     return state
 
 
@@ -328,6 +331,45 @@ def test_flee_chance_matches_the_rulebooks_three_speed_tiers():
     assert MONSTER_COMBAT_STATS[Monster.GOLEM].speed is MonsterSpeed.SLOW
 
 
+# -- effective_flee_chance (Phase 286): Weak-Temperament + Invisibility --
+
+
+def test_effective_flee_chance_no_temper_no_invisibility_returns_the_base_chance_unchanged():
+    assert effective_flee_chance(0.20, temper=None, is_invisible=False) == 0.20
+
+
+def test_effective_flee_chance_cautious_adds_the_weak_temper_bonus():
+    assert effective_flee_chance(0.20, temper=Temper.CAUTIOUS, is_invisible=False) == pytest.approx(
+        0.20 + WEAK_TEMPER_FLEE_CHANCE_BONUS
+    )
+
+
+def test_effective_flee_chance_cowardly_gets_the_same_bonus_as_cautious():
+    # Phase 286: a confirmed project-original extension beyond the
+    # rulebook's own literal "I personaggi Cauti" (Cautious-only) wording
+    # -- see module docstring's own Phase 286 addendum for the reasoning.
+    assert effective_flee_chance(0.20, temper=Temper.COWARDLY, is_invisible=False) == pytest.approx(
+        0.20 + WEAK_TEMPER_FLEE_CHANCE_BONUS
+    )
+
+
+def test_effective_flee_chance_brave_and_berserk_get_no_bonus():
+    assert effective_flee_chance(0.50, temper=Temper.BRAVE, is_invisible=False) == 0.50
+    assert effective_flee_chance(0.50, temper=Temper.BERSERK, is_invisible=False) == 0.50
+
+
+def test_effective_flee_chance_invisibility_adds_its_own_bonus_independently_of_temper():
+    assert effective_flee_chance(0.20, temper=None, is_invisible=True) == pytest.approx(
+        0.20 + INVISIBILITY_FLEE_CHANCE_BONUS
+    )
+
+
+def test_effective_flee_chance_bonuses_stack_and_clamp_at_certainty():
+    # Cautious (+30%) and invisible (+30%) on top of an 80% base would be
+    # 140% -- clamped to 100%, since a probability can't exceed certainty.
+    assert effective_flee_chance(0.80, temper=Temper.CAUTIOUS, is_invisible=True) == 1.0
+
+
 def test_execute_search_flee_tactic_success_ends_search_without_combat():
     # Gryphon is Fast (20% flee chance) -- 0.1 < 0.20 succeeds.
     state = _state_with_leader()
@@ -385,6 +427,108 @@ def test_execute_search_no_flee_tactic_never_rolls_for_it():
 
     assert mock_resolve.called
     assert result.fled is False
+
+
+def test_execute_search_flee_tactic_cautious_temper_bonus_lets_a_fast_monster_flee_succeed():
+    # Gryphon is Fast (20% base) -- 0.35 fails the base chance but
+    # succeeds once Cautious' own +30% flee bonus lifts it to 50%.
+    state = _state_with_leader(temper=Temper.CAUTIOUS)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GRYPHON))
+    request = SearchRequest(
+        feature_id=1, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.FLEE), SearchTactic(maneuver=Maneuver.MELEE)]
+    )
+
+    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.35] * 20))
+
+    assert result.fled is True
+    assert result.combat_resolved is False
+
+
+def test_execute_search_flee_tactic_cowardly_temper_gets_the_same_bonus_as_cautious():
+    state = _state_with_leader(temper=Temper.COWARDLY)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GRYPHON))
+    request = SearchRequest(
+        feature_id=1, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.FLEE), SearchTactic(maneuver=Maneuver.MELEE)]
+    )
+
+    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.35] * 20))
+
+    assert result.fled is True
+    assert result.combat_resolved is False
+
+
+def test_execute_search_flee_tactic_brave_temper_gets_no_bonus_and_falls_through_to_melee():
+    # Same 0.35 roll as the Cautious/Cowardly tests above, but Brave gets
+    # no flee-chance bonus at all -- the base 20% still fails, so the
+    # plan's own Melee tactic runs afterward instead.
+    state = _state_with_leader(temper=Temper.BRAVE)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GRYPHON))
+    request = SearchRequest(
+        feature_id=1, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.FLEE), SearchTactic(maneuver=Maneuver.MELEE)]
+    )
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.35] * 20))
+
+    assert result.fled is False
+    assert mock_resolve.called
+
+
+def test_execute_search_cast_invisibility_sets_the_is_invisible_flag():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.INVISIBILITY, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    leader_combatant = mock_melee.call_args[0][0]
+    assert leader_combatant.is_invisible is True
+
+
+def test_execute_search_cast_invisibility_then_flee_gets_the_invisibility_flee_bonus():
+    # Gryphon is Fast (20% base) -- 0.35 fails the base chance but
+    # succeeds once Invisibility's own +30% flee bonus lifts it to 50%.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GRYPHON))
+    request = _cast_request(1, Spell.INVISIBILITY, Maneuver.FLEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.35] * 20))
+
+    assert result.fled is True
+    assert result.combat_resolved is False
+
+
+def test_execute_search_cast_augur_combat_not_first_tactic_gets_the_cowardly_flee_bonus():
+    # Archer is MEDIUM speed (50% base) -- 0.65 fails the base chance but
+    # succeeds once Cowardly's own +30% flee bonus lifts it to 80%.
+    leader = _skilled_leader(Ability.PSYCHIC, 5, temper=Temper.COWARDLY)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(maneuver=Maneuver.GIVE),
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.AUGUR_COMBAT.value),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        ],
+    )
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.65] * 20))
+
+    assert result.fled is True
+    assert result.combat_resolved is False
+    assert not mock_melee.called
 
 
 # -- Phase 170: Fire Arrow (rulebook [5.2]) --
