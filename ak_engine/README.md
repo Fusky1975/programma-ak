@@ -12022,7 +12022,7 @@ complete (Phases 209-211).
     `RACE_LEADERSHIP_TREASURE` coverage test updated to import from its
     new home rather than duplicated.
 
-- **Phase 286 (current)**: wires the two Flee flee-chance bonuses
+- **Phase 286**: wires the two Flee flee-chance bonuses
   `turn/search_execution.py`'s own Phase 169 docstring had explicitly
   deferred -- the Weak-Temperament (Cautious/Cowardly) and Invisibility
   "+30% chance to flee" bonuses on top of rulebook [5.6]'s own base
@@ -12071,6 +12071,31 @@ complete (Phases 209-211).
     Flee gets its own bonus, and that Augur Combat's flee-when-cast-later
     branch reads the same Cowardly bonus -- all in `test_search_
     execution.py` -- 3214 passed total.
+
+- **Phase 287 (current)**: renders the per-leader treasure list in the
+  CHARACTERS report -- `describe_characters_report()`'s own docstring
+  had explicitly left this out (`List_Treas(ldr,false)`, "a deliberately
+  narrower scope for this phase, not a data gap"), even though Phase
+  140's item-ownership registry could already answer it directly.
+  - `report/turn_report.py describe_characters_report()`: a third line
+    per leader, `state.items_held_by(leader.leader_id)` joined via
+    `TREASURE_NAME` -- the same "join `TREASURE_NAME` per held item"
+    pattern the trail report's own treasure-list rendering already
+    established (Phase 117). Omitted entirely (no third line at all,
+    not an empty "Items:" line) for a leader holding nothing -- there's
+    nothing to itemize, not missing data. The docstring's own "what this
+    deliberately does NOT reproduce" list updated: the treasure list
+    moves out of that list into a new closed-item note; the magic-item-
+    ownership *tick marks* on the skill line (`NT_Owned`, a finer-grained
+    change needing `TREASURE_ABILITY_ITEM`'s own positional mapping)
+    stay explicitly out of scope, unchanged.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added (a leader holding nothing renders exactly as before -- no new
+    line) -- 3214 passed.
+  - 3 new tests in `test_turn_report.py`: multiple held items joined in
+    one line, the line's total absence for an item-less leader, and that
+    each leader's own line only reflects items owned by that same
+    `leader_id` -- 3217 passed total.
 
 ## Setup
 

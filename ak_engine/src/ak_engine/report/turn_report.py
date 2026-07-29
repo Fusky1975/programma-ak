@@ -5660,13 +5660,21 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
       renders empty: no per-kingdom Discovery-tracking field exists
       anywhere in this project.
     - **Magic-item-ownership tick marks** (`'`/`"` suffixes on a skill
-      column, from `NT_Owned`) and the per-leader **treasure list**
-      (`List_Treas(ldr,false)`) are both left out of this composer,
-      even though Phase 140's item-ownership registry could in
-      principle answer "does this leader own an item of this type" --
-      a deliberately narrower scope for this phase, matching every
-      other section's own "readable line, not the full real table"
-      precedent, not a data gap.
+      column, from `NT_Owned`, marking *which ability column* an owned
+      item boosts) are still left out -- reconstructing that would need
+      matching each held item back to `models/treasure.py TREASURE_
+      ABILITY_ITEM`'s own positional mapping and re-rendering the skill
+      line itself, a finer-grained change than this composer's own
+      "readable line, not the full real table" precedent asks for.
+    - **The per-leader treasure list** (`List_Treas(ldr,false)`) **is
+      now rendered (Phase 287)**: a third line per leader, `state.
+      items_held_by(leader.leader_id)` (Phase 140's own registry) joined
+      via `TREASURE_NAME` -- the same "join TREASURE_NAME per held item"
+      pattern `describe_trail_report()`'s own treasure-list rendering
+      already established (Phase 117). Omitted entirely (no third line
+      at all) for a leader holding nothing, rather than an empty "Items:"
+      line -- there is nothing to itemize, not a placeholder for
+      missing data.
     - **Move precedence/aptitude** (the real line 2's other own
       content, per `_CHARACTERS_OPENING`'s own text) isn't modeled;
       this composer's own "line 2" is entirely the skill-level list
@@ -5702,6 +5710,11 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
             level = skills.pair_for_ability(ability)[0] if skills is not None else 0
             skill_tokens.append(f"{ABILITY_ABBREVIATION[ability]}{level}")
         lines.append(" ".join(skill_tokens))
+
+        held_items = state.items_held_by(leader.leader_id)
+        if held_items:
+            item_names = ", ".join(TREASURE_NAME[item.treasure] for item in held_items)
+            lines.append(f"Items: {item_names}")
 
     return lines
 

@@ -4147,6 +4147,48 @@ def test_describe_characters_report_hero_pay_reflects_alignment_distance():
     assert lines[4].endswith(", Pay 2")
 
 
+def test_describe_characters_report_lists_held_items():
+    # Phase 287: the per-leader treasure list (List_Treas(ldr,false)).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0)))
+    state.add_item(Treasure.LEADERSHIP_HUMAN, owner_leader_id=1)
+    state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=1)
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[4] == f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}, {TREASURE_NAME[Treasure.WAND_FIREBALL]}"
+
+
+def test_describe_characters_report_omits_items_line_when_leader_holds_nothing():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0)))
+
+    lines = describe_characters_report(state, 1)
+
+    assert len(lines) == 4  # header, opening, name line, skills line -- no Items line
+    assert not any(line.startswith("Items:") for line in lines)
+
+
+def test_describe_characters_report_only_lists_items_owned_by_that_leader():
+    # Aldric owns nothing; Elena owns the item -- confirms each leader's
+    # own Items line (or its absence) is keyed by leader_id, not shared.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, 1, "Elena", HexCoord(0, 0)))
+    state.add_item(Treasure.LEADERSHIP_HUMAN, owner_leader_id=2)
+
+    lines = describe_characters_report(state, 1)
+
+    # Aldric's own two lines (name + skills) are immediately followed by
+    # Elena's name line, not an Items line -- his own entry has none.
+    aldric_index = next(i for i, line in enumerate(lines) if line.startswith("Aldric"))
+    assert not lines[aldric_index + 2].startswith("Items:")
+    assert f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}" in lines
+
+
 # -- Phase 216: describe_adventure_report() -- the "ADVENTURE" section --
 
 
