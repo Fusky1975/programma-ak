@@ -5486,24 +5486,38 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
     distinguish them (see `ProvinceState.recruit_type_2`'s own
     docstring).
 
-    **Type 2 terrain "(Island)" parenthetical (`pt2`), Phase 282**: still
+    **Type 2 terrain "(Sea)" parenthetical (`pt2`), Phase 282/283**: still
     genuinely confirmed absent from every surviving `.PAS` file (Phase
     275's own audit, re-confirmed, not just repeated) -- a *different*
     kind of closure from `ptax`/`Mod_PAT`/`Qual_Modfr`/`Pay` before it
     (Phase 276/278/279/280), none of which is "formula lost, data
     sourced elsewhere" here: no real Pascal formula AND no real-file
     data source exist for `pt2` at all. What renders now
-    (`ProvinceState.is_island`, appended as `" (Island)"` right after
-    the terrain name) is **project-original**, implemented per the
-    user's own explicit domain knowledge (2026-07-29) rather than
-    recovered from any source -- an optional Super AK variant rule
-    (games up to 24 players): a province that's half Sea, half its own
-    land terrain, where armies fight at a blended half-land/half-Sea
-    strength (`turn/strength.py compute_effective_strength()`'s own
-    `is_island` parameter; overflight-air units -- Dragons, Eagles --
-    are exempt, the user's own words). Set at world-creation time via
-    the new `turn/island_provinces.py apply_island_provinces()` (an
-    exact-count picker, not a percentage), never inferred at runtime.
+    (`ProvinceState.is_island`, appended as `" (Sea)"` right after the
+    terrain name -- Type 1, the land terrain, is `terrain_name` itself;
+    Type 2, `is_island`, renders as the literal string `"Sea"`, per the
+    user's own real-report example, `"Jungle (Sea)"`, 2026-07-29,
+    correcting this composer's own first-draft `" (Island)"` wording) is
+    **project-original**, implemented per the user's own explicit domain
+    knowledge rather than recovered from any source -- an optional Super
+    AK variant rule (games up to 24 players): a province that's half
+    Sea, half its own land terrain, where armies fight at a blended
+    half-land/half-Sea strength (`turn/strength.py compute_effective_
+    strength()`'s own `is_island` parameter; overflight-air units --
+    Dragons, Eagles -- are exempt, the user's own words). Set at world-
+    creation time via the new `turn/island_provinces.py apply_island_
+    provinces()` (an exact-count picker, not a percentage), never
+    inferred at runtime.
+
+    **The real table's own "Type 1"/"Type 2" column pair is a different,
+    unrelated pair of columns** -- the user's own real-report header,
+    `"Province Tax Race Terrain Expl% Type 1 Type 2"`, confirms these
+    hold the Recruiting Types (`Mod_PAT`, e.g. `"Legion"`/`"Fleet"`),
+    already rendered here as `", Recruits X/Y"` (`recruit_type_1`/
+    `recruit_type_2`, Phase 278) -- not terrain at all. The Island-
+    province Type 1/Type 2 terrain split lives entirely inside the
+    single `Terrain` column instead (`"Jungle (Sea)"`), matching this
+    composer's own one-line-per-province shape.
 
     **Still not reproduced, and why**:
     - The real table's whole "grouped by descending effective tax tier"
@@ -5534,7 +5548,7 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
         race_name = RACE_NAME[province.race]
         terrain_name = TERRAIN_NAME[province.effective_terrain()]
         if province.is_island:
-            terrain_name += " (Island)"
+            terrain_name += " (Sea)"
         line = (
             f"{province_label} -- {race_name}, {terrain_name}, "
             f"{province.explored_percent}% explored"
@@ -6786,8 +6800,8 @@ def compose_letter_report(
       provinces_report()`'s own docstring for exactly which columns
       render (name, race, terrain, percent explored; as of Phase 278,
       Tax/Recruiting Types once a `GameState` has been bridged from a
-      real `GW3` world file; as of Phase 282, the `pt2`-derived "(Island)"
-      parenthetical, project-original rather than sourced -- see that
+      real `GW3` world file; as of Phase 282/283, the `pt2`-derived
+      "(Sea)" parenthetical, project-original rather than sourced -- see that
       docstring's own Phase 282 section) and which is still confirmed
       absent (only the tax-tier grouping presentation now).
     - CHARACTERS itself is only partially wired -- see

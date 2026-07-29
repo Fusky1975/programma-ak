@@ -11796,7 +11796,7 @@ complete (Phases 209-211).
     Cavalry`) and a non-skeletal Lt Cavalry army still rendering "Light
     Cavalry", both in `test_turn_report.py` -- 3165 passed total.
 
-- **Phase 282 (current)**: implements Island provinces (PROVINCES'
+- **Phase 282**: implements Island provinces (PROVINCES'
   `pt2`, the "(...Island)" Type 2-terrain parenthetical) -- a genuinely
   different kind of closure from every other Phase-275-audit identifier
   before it (Phase 276/278/279/280/281): `pt2` has no real Pascal
@@ -11861,6 +11861,41 @@ complete (Phases 209-211).
     its seeded determinism in the new `test_island_provinces.py`; the
     "(Island)" parenthetical rendering (present and absent) in
     `test_turn_report.py` -- 3181 passed total.
+
+- **Phase 283 (current)**: corrects the Island-province terrain
+  parenthetical's own rendered text, `" (Island)"` -> `" (Sea)"`,
+  against the user's own real PROVINCES report example (2026-07-29):
+  ```
+  Province            Tax   Race   Terrain  Expl%     Type 1     Type 2
+  Mongu                10   Human   Jungle (Sea) 100%     Legion     Fleet
+  ```
+  This example also resolves a separate ambiguity from Phase 282's own
+  framing ("Type 1 is the land part, Type 2 is Island"): the real
+  table's own **"Type 1"/"Type 2" column pair is the Recruiting Types**
+  (`Mod_PAT`, e.g. `"Legion"`/`"Fleet"`) -- already rendered here since
+  Phase 278 as `", Recruits X/Y"` -- not terrain at all. The terrain-
+  level Type 1 (land)/Type 2 (Sea) split the user was originally
+  describing lives entirely inside the real table's own single
+  `Terrain` column instead (`"Jungle (Sea)"`), matching this composer's
+  own one-line-per-province shape -- no new column needed, only the
+  parenthetical's own wording.
+  - `report/turn_report.py describe_provinces_report()`: `terrain_name
+    += " (Island)"` -> `" (Sea)"`; `ProvinceState.is_island` itself,
+    `turn/strength.py`'s `is_island` parameter, and `turn/island_
+    provinces.py` are all unchanged -- this is purely a display-text
+    correction, not a mechanics or data-model change. Both docstrings
+    (this function's own and the module driver's ten-section summary)
+    updated to match, plus a new paragraph distinguishing the real
+    Type 1/Type 2 *columns* from the terrain-level Type 1/Type 2
+    *concept*.
+  - Non-breaking: full suite passed unchanged before the one existing
+    test's own expected string was updated -- 3181 passed (the fix
+    only changes what one already-passing assertion expects, not new
+    coverage).
+  - 0 new tests: the existing Phase 282 Island-parenthetical test
+    (`test_describe_provinces_report_shows_island_parenthetical`) was
+    updated in place to expect `"Plain (Sea)"` instead of `"Plain
+    (Island)"`, still 3181 passed total.
 
 ## Setup
 

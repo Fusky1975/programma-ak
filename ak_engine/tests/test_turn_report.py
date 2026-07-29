@@ -3991,8 +3991,11 @@ def test_describe_provinces_report_shows_tax_and_recruits_together_in_order():
 
 
 def test_describe_provinces_report_shows_island_parenthetical():
-    # Phase 282, pt2 -- project-original, see describe_provinces_report()'s
-    # own docstring.
+    # Phase 282/283, pt2 -- project-original, see describe_provinces_
+    # report()'s own docstring. Rendered as "(Sea)", not "(Island)" --
+    # corrected in Phase 283 against the user's own real-report example
+    # ("Jungle (Sea)"): Type 1 is the land terrain, Type 2 is literally
+    # "Sea".
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     province = ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Reef Isle")
@@ -4001,7 +4004,7 @@ def test_describe_provinces_report_shows_island_parenthetical():
 
     lines = describe_provinces_report(state, 1)
 
-    assert lines[-1] == "Reef Isle -- Human, Plain (Island), 0% explored"
+    assert lines[-1] == "Reef Isle -- Human, Plain (Sea), 0% explored"
 
 
 def test_describe_provinces_report_omits_island_parenthetical_when_not_an_island():
