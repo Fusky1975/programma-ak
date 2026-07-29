@@ -1153,7 +1153,7 @@ from ak_engine.turn.encounter import FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
-from ak_engine.turn.expenses import compute_expected_expenses
+from ak_engine.turn.expenses import compute_expected_expenses, leader_pay
 from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders, resolve_office_holder
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
@@ -5582,10 +5582,11 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     `describe_armies_report()` uses), Alignment (`LeaderState.alignment.
     value`, already the real Pascal `outname` display string --
     `models/alignment.py`'s own docstring confirms this), Temperament
-    (`TEMPER_NAME`), and Race (`LeaderState.race` if set, else the
+    (`TEMPER_NAME`), Race (`LeaderState.race` if set, else the
     kingdom's own `KingdomState.race` -- `LeaderState.race`'s own
     docstring confirms this fallback is the real, general-case
-    behavior; only a Valhalla visitor keeps an independent race). A
+    behavior; only a Valhalla visitor keeps an independent race), and
+    Pay (see this function's own Phase 280 note below). A
     leader with no recorded Alignment/Temperament renders "Unknown" for
     that field -- a documented, unsourced placeholder for genuinely
     missing data, not a guess at a real value (the real Pascal `lalign`/
@@ -5601,11 +5602,20 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     fallback `turn/cast_execution.py _roll_cast_success` already
     established.
 
+    **Pay (Phase 280)**: the real table's own `Ini` column (`LCost(ldr,
+    kng)`) renders via `turn/expenses.py leader_pay()` -- the exact
+    formula/exclusions FINANCES' own "Expected Expenses" line already
+    uses for the identical recurring figure (rulebook [3.5]: "paid when
+    he signs up and at the end of each gameturn," the same amount both
+    places). 0 for the King himself and for a Valhalla visitor, `turn/
+    hire_pay.py required_pay()` otherwise. Confirmed against
+    `SE3__T1.K2`'s own real CHARACTERS table: Bradipo I (the King) -- 0;
+    Adele -- 1; Indra -- 1, all reproduced exactly. Re-opens and closes
+    (Phase 275 had called this "confirmed absent" -- true only of a
+    Pascal *formula*, the same "formula lost, inputs sourced" category
+    already closed for `ptax`/`Mod_PAT`/`Qual_Modfr` before it).
+
     **What this deliberately does NOT reproduce, and why**:
-    - **Pay** (`Ini`/`LCost(ldr,kng)`) is confirmed absent -- no
-      surviving formula exists anywhere in the available `.PAS` files,
-      the same citation `describe_armies_report()`'s own docstring and
-      `plan_dispatch.py`'s Phase 158 note already established.
     - **Gender** (`M/F`) is confirmed absent -- no `Gender()` concept
       or field exists anywhere in this project; nothing computes or
       stores it.
@@ -5639,6 +5649,8 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         lines.append(_CHARACTERS_NONE_AT_PRESENT)
         return lines
 
+    king = next((leader for leader in owned if leader.is_king), None)
+
     owned.sort(key=lambda leader: leader.leader_id)
     for leader in owned:
         province = state.provinces.get(leader.location)
@@ -5647,7 +5659,8 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         temper_label = TEMPER_NAME[leader.temper] if leader.temper is not None else "Unknown"
         race = leader.race if leader.race is not None else kingdom.race
         race_label = RACE_NAME[race]
-        lines.append(f"{leader.name} -- {location_label}, {alignment_label}, {temper_label}, {race_label}")
+        pay = leader_pay(leader, king)
+        lines.append(f"{leader.name} -- {location_label}, {alignment_label}, {temper_label}, {race_label}, Pay {pay}")
 
         skills = leader.skills
         skill_tokens = []
@@ -6741,11 +6754,11 @@ def compose_letter_report(
       parenthetical).
     - CHARACTERS itself is only partially wired -- see
       `describe_characters_report()`'s own docstring for exactly which
-      fields render (name, location, Alignment, Temperament, Race, and
-      15-ability skill levels for a kingdom's own leaders only) and
-      which are confirmed absent (pay, gender, Discovery-based skill
-      modifiers, magic-item ownership marks, the real procedure's
-      wandering-Hero/Priest-clairvoyance passes).
+      fields render (name, location, Alignment, Temperament, Race, Pay
+      as of Phase 280, and 15-ability skill levels for a kingdom's own
+      leaders only) and which are still confirmed absent (gender,
+      Discovery-based skill modifiers, magic-item ownership marks, the
+      real procedure's wandering-Hero/Priest-clairvoyance passes).
     - IMPERIAL OFFICE REPORT (Phase 230) renders between ARMIES and
       ADVENTURE, matching the real order -- see `describe_imperial_
       office_report()`'s own docstring for exactly which Merit Point

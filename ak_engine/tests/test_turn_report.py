@@ -3989,7 +3989,7 @@ def test_describe_characters_report_renders_own_leader_with_no_recorded_data():
     assert lines == [
         "CHARACTERS",
         _CHARACTERS_OPENING,
-        "Aldric -- Capital City, Unknown, Unknown, Human",
+        "Aldric -- Capital City, Unknown, Unknown, Human, Pay 0",
         _NO_SKILLS_LINE,
     ]
 
@@ -4021,7 +4021,7 @@ def test_describe_characters_report_falls_back_to_coordinate_when_unnamed_provin
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[2] == "Aldric -- (2, 3), Unknown, Unknown, Human"
+    assert lines[2] == "Aldric -- (2, 3), Unknown, Unknown, Human, Pay 1"
 
 
 def test_describe_characters_report_uses_recorded_alignment_temper_and_race():
@@ -4035,7 +4035,7 @@ def test_describe_characters_report_uses_recorded_alignment_temper_and_race():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[2] == "Aldric -- (0, 0), Good, Brave, Elf"
+    assert lines[2] == "Aldric -- (0, 0), Good, Brave, Elf, Pay 1"
 
 
 def test_describe_characters_report_renders_recorded_skill_levels():
@@ -4060,6 +4060,40 @@ def test_describe_characters_report_sorts_by_leader_id():
 
     assert lines[2].startswith("Aldric")
     assert lines[4].startswith("Elena")
+
+
+def test_describe_characters_report_pay_matches_real_sample_values():
+    # Phase 280, SE3__T1.K2 (real sample): King Bradipo I (Good/Cautious)
+    # -- 0; Adele (Good/Brave, alignment distance 0) -- 1; Indra (Good/
+    # Cautious, distance 0, same temper) -- 1.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(
+        LeaderState(1, 1, "Bradipo I", HexCoord(0, 0), is_king=True, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
+    )
+    state.add_leader(LeaderState(2, 1, "Adele", HexCoord(0, 0), alignment=Alignment.GOOD, temper=Temper.BRAVE))
+    state.add_leader(LeaderState(3, 1, "Indra", HexCoord(0, 0), alignment=Alignment.GOOD, temper=Temper.CAUTIOUS))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[2].endswith(", Pay 0")
+    assert lines[4].endswith(", Pay 1")
+    assert lines[6].endswith(", Pay 1")
+
+
+def test_describe_characters_report_hero_pay_reflects_alignment_distance():
+    # ALIGNMENT_ORDINAL: Divine=0, Good=1 -- distance 1, same temper ->
+    # required_pay() is 2 (base_pay[1]=2, no penalty since temper matches).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(
+        LeaderState(1, 1, "King", HexCoord(0, 0), is_king=True, alignment=Alignment.DIVINE, temper=Temper.CAUTIOUS)
+    )
+    state.add_leader(LeaderState(2, 1, "Hero", HexCoord(0, 0), alignment=Alignment.GOOD, temper=Temper.CAUTIOUS))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[4].endswith(", Pay 2")
 
 
 # -- Phase 216: describe_adventure_report() -- the "ADVENTURE" section --
@@ -4264,11 +4298,11 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "My Lord, Great indeed are the leaders of our proud kingdom.  Though thee "
         "knows them well, I list them here for thy consideration (the first line "
         "shows pay and abilities; line 2 shows move precedence and aptitude.)",
-        "Aldric -- Capital City, Unknown, Unknown, Human",
+        "Aldric -- Capital City, Unknown, Unknown, Human, Pay 0",
         "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
-        "Borin -- Capital City, Unknown, Unknown, Human",
+        "Borin -- Capital City, Unknown, Unknown, Human, Pay 1",
         "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
-        "Elena -- Capital City, Unknown, Unknown, Human",
+        "Elena -- Capital City, Unknown, Unknown, Human, Pay 1",
         "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "

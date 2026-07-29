@@ -71,12 +71,20 @@ Alignment/Temperament match that would otherwise price non-zero):
   "structurally obvious, not merely unstated" reasoning this project
   already applies elsewhere (e.g. ``turn/search_execution.py``'s own
   "a dead leader can't scout" note).
+
+**Phase 280** extracts this per-leader logic into its own ``leader_pay()``
+function so `report/turn_report.py describe_characters_report()`'s own
+"Pay" column (the real table's own "Ini" header) can reuse the identical
+formula and King/Valhalla-visitor exclusions, rather than the CHARACTERS
+composer re-deriving them -- the same real-sample values (Bradipo I the
+King: 0; Adele: 1; Indra: 1, all from ``SE3__T1.K2``) confirm the shared
+formula renders correctly in both places.
 """
 
 from __future__ import annotations
 
 from ak_engine.models.army_type import ARMY_TABLE
-from ak_engine.models.game_state import GameState
+from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.hire_pay import required_pay
 
@@ -94,10 +102,23 @@ def compute_army_maintenance(state: GameState, kingdom_id: int) -> int:
     )
 
 
+def leader_pay(leader: LeaderState, king: LeaderState | None) -> int:
+    """One leader's own real recurring per-turn pay ("Ini" in the real
+    CHARACTERS table) -- 0 for the King himself or a Valhalla visitor,
+    otherwise ``required_pay()``. Extracted (Phase 280) so both this
+    module's own ``compute_leader_maintenance()`` sum and `report/
+    turn_report.py describe_characters_report()`'s own "Pay" column
+    share the identical exclusion logic instead of duplicating it.
+    """
+
+    if leader.is_king or leader.leader_id == VALHALLA_VISITOR_LEADER_ID:
+        return 0
+    return required_pay(leader, king)
+
+
 def compute_leader_maintenance(state: GameState, kingdom_id: int) -> int:
-    """``LCost(kingdom_id)``: the sum of ``required_pay()`` across every
-    leader this kingdom owns, with the King and any Valhalla visitor
-    always contributing 0 -- see module docstring for the real-sample
+    """``LCost(kingdom_id)``: the sum of ``leader_pay()`` across every
+    leader this kingdom owns -- see module docstring for the real-sample
     cross-check and the one known mismatch.
     """
 
@@ -105,14 +126,9 @@ def compute_leader_maintenance(state: GameState, kingdom_id: int) -> int:
         (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
         None,
     )
-    total = 0
-    for leader in state.leaders.values():
-        if leader.kingdom_id != kingdom_id:
-            continue
-        if leader.is_king or leader.leader_id == VALHALLA_VISITOR_LEADER_ID:
-            continue
-        total += required_pay(leader, king)
-    return total
+    return sum(
+        leader_pay(leader, king) for leader in state.leaders.values() if leader.kingdom_id == kingdom_id
+    )
 
 
 def compute_expected_expenses(state: GameState, kingdom_id: int) -> int:

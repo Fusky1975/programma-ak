@@ -11677,7 +11677,7 @@ complete (Phases 209-211).
     Recruits omitted when unbridged, and both columns together in the
     real table's own order -- 3143 passed total.
 
-- **Phase 279 (current)**: closes the ARMIES report's "Modified Quality"
+- **Phase 279**: closes the ARMIES report's "Modified Quality"
   column (`Qual_Modfr`) gap `describe_armies_report()`'s own docstring
   had called "confirmed absent" since Phase 220/275 -- true only of a
   Pascal *formula*. The user's own quoted rulebook text named five real
@@ -11729,6 +11729,38 @@ complete (Phases 209-211).
     `test_army_quality.py`; `modified_quality()`'s own new
     `race_item_bonus` parameter, including the single-pass-clamp-vs-two-
     step distinction, in `test_strength.py` -- 3157 passed total.
+
+- **Phase 280 (current)**: closes the CHARACTERS report's own "Pay"
+  column (`Ini`/`LCost(ldr,kng)`) gap -- reopening Phase 275's "confirmed
+  absent" call the same way as Phase 276/278/279 before it: no Pascal
+  *formula* for `LCost` survives (still true), but this project already
+  built one from the real manual text for the Hire-time price
+  (`turn/hire_pay.py required_pay()`, Phase 162/163/264), and FINANCES'
+  own "Expected Expenses" line already reuses it for the identical
+  recurring figure (Phase 276) -- CHARACTERS' own "Pay" column is the
+  same figure a third time, not a new formula.
+  - `turn/expenses.py`: extracted `leader_pay(leader, king)` out of
+    `compute_leader_maintenance()`'s own inline loop body -- 0 for the
+    King himself or a Valhalla visitor, `required_pay()` otherwise --
+    so both the FINANCES sum and the new CHARACTERS column share the
+    identical exclusion logic instead of duplicating it.
+  - `report/turn_report.py describe_characters_report()`: appends
+    `", Pay {n}"` to each leader's own first line, right after Race,
+    matching the real table's own column order. Confirmed against
+    `SE3__T1.K2`'s own real CHARACTERS table: Bradipo I (King) -- 0;
+    Adele -- 1; Indra -- 1, all reproduced exactly. `compose_letter_
+    report()`'s own CHARACTERS bullet and Phase 275 audit note both
+    updated the same way as Phase 276/278/279's own closures.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added, once 4 pre-existing tests were updated for the new column
+    (every one of them happened to already exercise a leader whose real
+    Pay value could be computed from already-set-up alignment/temper
+    data) -- 3157 passed.
+  - 6 new tests: `leader_pay()`'s own King/Valhalla-visitor exclusions,
+    the real-sample Adele/Indra values, and the no-King permissive
+    default in `test_expenses.py`; the CHARACTERS report's own real-
+    sample row values and an alignment-distance-driven Pay difference in
+    `test_turn_report.py` -- 3163 passed total.
 
 ## Setup
 

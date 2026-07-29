@@ -12,7 +12,12 @@ from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.expenses import compute_army_maintenance, compute_expected_expenses, compute_leader_maintenance
+from ak_engine.turn.expenses import (
+    compute_army_maintenance,
+    compute_expected_expenses,
+    compute_leader_maintenance,
+    leader_pay,
+)
 
 HOME = HexCoord(3, 5)
 
@@ -109,6 +114,45 @@ def test_compute_leader_maintenance_ignores_other_kingdoms_leaders():
     state.add_leader(LeaderState(2, 2, "Rival Hero", HOME, alignment=Alignment.GOOD, temper=Temper.BRAVE))
 
     assert compute_leader_maintenance(state, 1) == 0
+
+
+# -- leader_pay (Phase 280) ----------------------------------------------
+
+
+def test_leader_pay_king_is_zero_even_against_himself():
+    state = make_state()
+    king = LeaderState(1, 1, "Bradipo I", HOME, is_king=True, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
+    state.add_leader(king)
+
+    assert leader_pay(king, king) == 0
+
+
+def test_leader_pay_valhalla_visitor_is_zero():
+    visitor = LeaderState(
+        VALHALLA_VISITOR_LEADER_ID, 1, "Kitralus", HOME, alignment=Alignment.NEUTRAL, temper=Temper.BRAVE
+    )
+    king = LeaderState(1, 1, "King", HOME, is_king=True, alignment=Alignment.NEUTRAL, temper=Temper.BRAVE)
+
+    assert leader_pay(visitor, king) == 0
+
+
+def test_leader_pay_ordinary_hero_matches_real_sample_values():
+    # SE3__T1.K2 (real sample): King Bradipo I (Good/Cautious); Adele
+    # (Good/Brave, distance 0) -> 1; Indra (Good/Cautious, distance 0,
+    # same temper) -> 1 -- this is the exact per-leader "Ini" figure the
+    # CHARACTERS report's own "Pay" column now renders (Phase 280).
+    king = LeaderState(1, 1, "Bradipo I", HOME, is_king=True, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
+    adele = LeaderState(2, 1, "Adele", HOME, alignment=Alignment.GOOD, temper=Temper.BRAVE)
+    indra = LeaderState(3, 1, "Indra", HOME, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
+
+    assert leader_pay(adele, king) == 1
+    assert leader_pay(indra, king) == 1
+
+
+def test_leader_pay_no_king_falls_back_to_permissive_default():
+    hero = LeaderState(2, 1, "Adele", HOME, alignment=Alignment.GOOD, temper=Temper.BRAVE)
+
+    assert leader_pay(hero, None) == 1
 
 
 # -- compute_expected_expenses -------------------------------------------
