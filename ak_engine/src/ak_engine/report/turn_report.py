@@ -5360,11 +5360,13 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
       army and leader this kingdom pays for -- both confirmed absent
       for the same reason `Tax_Base` itself was, and unlike `Tax_Base`
       this project has no per-army/per-leader upkeep-cost data to
-      aggregate instead.
+      aggregate instead. Re-audited, closed, Phase 275 -- see
+      `compose_letter_report()`'s own Phase 275 addendum.
     - The optional "(Including +5 Black Knights)"/"(Including +10
       Thieves Guild)" notes need Evilking/ThiefPrince office-holder
       tracking -- the same IMPERIAL OFFICE REPORT gap this project's
-      own `compose_letter_report()` docstring already names.
+      own `compose_letter_report()` docstring already names. Re-audited,
+      closed, Phase 275 (same addendum).
 
     **Phase 268 closes the "+Invention Bonus" line and the Discoveries
     of the Sages list**, both previously confirmed-absent (no per-
@@ -5442,7 +5444,8 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
       `pname` before Phase 150. Unlike `name`, no bridge in this project
       ever populates a province's tax either, so this column is left
       out entirely rather than rendering a permanent blank/guessed
-      figure.
+      figure. Re-audited, closed, Phase 275 -- see
+      `compose_letter_report()`'s own Phase 275 addendum.
     - The real table's **Recruiting Types** columns (`Mod_PAT(px,py,0)`/
       `Mod_PAT(px,py,1)`, the two `ArmyType`s recruitable in a province)
       and the **Type 2 terrain "(... Island)"** parenthetical (`pt2`)
@@ -5452,6 +5455,7 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
       is_army_type_compatible_with_race()` answers a *different*
       question (can this army type be recruited here at all, given
       race), not "which exactly two types does this table cell name."
+      Re-audited, closed, Phase 275 (same addendum).
     - Fixed-width columns and the tax-tier subheadings themselves aren't
       reproduced -- the same documented choice `describe_armies_report()`
       and `describe_adventure_report()`'s own docstrings already made.
@@ -5642,7 +5646,8 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
       `.PAS` files -- confirmed absent (the same missing-main-program
       category as `ACost`/`LCost`/`Tax_Base`, none of which are defined
       anywhere in this project's Pascal archive either). Only the plain,
-      unmodified `Quality` is rendered.
+      unmodified `Quality` is rendered. Re-audited, closed, Phase 275 --
+      see `compose_letter_report()`'s own Phase 275 addendum.
     - Skeletal-Army units get a distinct compact "Skel <designation>"
       form (``astate[an] = Zomboid``) in the real table; `ArmyState` has
       no equivalent per-army undead/skeletal flag, so every army renders
@@ -6692,6 +6697,51 @@ def compose_letter_report(
       needs that separate function called once per turn *before* this
       one -- `state.world_events` isn't populated by anything in this
       function's own call chain.
+
+    **Phase 275 -- closing audit for four still-confirmed-absent report
+    identifiers.** A fresh, systematic re-check (not a re-read of old
+    docstrings) was run against the full surviving Pascal archive --
+    all 14 raw `.PAS` files under `HostAK/TP`/`HostAK/MS` (13 with real
+    content; `COMPANY.PAS` is a 5-byte stub) -- specifically searching
+    for a `function`/`procedure` *declaration* of each of `ACost`,
+    `LCost`, `Qual_Modfr`, and `Mod_PAT`, and a `var`/array
+    *declaration* of `ptax`/`pt2`. Zero matches for any of the six: every
+    real occurrence in `REPORTS.PAS`/`RUMORS.PAS` only ever *calls* or
+    *reads* them, confirming (not merely repeating the prior inference)
+    that all six live exclusively in the missing main turn-processor /
+    the lost `AKGEN.EXE` world-generator -- the same "the caller (or, for
+    `ptax`/`pt2`, the writer) is lost, not every reader" situation this
+    module's own docstring already established for the ten-section
+    driver above. This closes, as of this date, the open question behind:
+    - `describe_finances_report()`'s own "Expected Expenses" gap
+      (`ACost`/`LCost`).
+    - `describe_provinces_report()`'s own Tax-column/tier-grouping gap
+      (`ptax`) and Recruiting-Types-columns/Island-parenthetical gap
+      (`Mod_PAT`/`pt2`) -- the same root cause `turn/recruit.py`'s own
+      module docstring cross-references for why it can't answer "which
+      exactly two `ArmyType`s are recruitable in this specific province"
+      either.
+    - `describe_armies_report()`'s own "Modified Quality" column gap
+      (`Qual_Modfr`).
+
+    A fifth item, the FINANCES "(Including +5 Black Knights)"/"(Including
+    +10 Thieves Guild)" notes (`titchar[Evilking]`/`LKing(titchar[
+    ThiefPrince])`, `REPORTS.PAS` lines 303-304/316-317), has a different
+    shape: the *identifiers* themselves (`Evilking`, `ThiefPrince`) are
+    real `models/office.py Office` members with real perk text, not
+    missing declarations -- what's confirmed absent instead is any hook
+    that tracks a running per-kingdom gold total tied to holding either
+    office (no field anywhere in `GameState`/`KingdomState` accumulates
+    it), the same IMPERIAL OFFICE REPORT-adjacent gap category as
+    `describe_characters_report()`'s own Priest-office/`Known_Loc` note.
+
+    None of these five is expected to become sourceable later -- the
+    surviving archive is fixed and has already been searched
+    exhaustively for each. A future phase could still choose to build a
+    project-original substitute (the same kind of deliberate,
+    user-confirmed design choice `turn/tax_base.py compute_tax_base()`
+    made for `Tax_Base` itself), but that would be a new design decision,
+    not a continuation of this search.
 
     **ALIGNMENT REDUCTION (Phase 229, appended after ADVENTURE)** is
     *not* one of the ten real sections above -- it's a project-original

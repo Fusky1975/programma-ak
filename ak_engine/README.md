@@ -11420,7 +11420,7 @@ complete (Phases 209-211).
     Archery skill; `_maybe_fight_duel` resolves Fire Arrow first when
     `duel_maneuvers` is supplied) -- 3088 passed total.
 
-- **Phase 274 (current)**: wires Use_MI and Scout as real Search
+- **Phase 274**: wires Use_MI and Scout as real Search
   Encounter Plan tactics ([5.1]/[3.11] and [5.8] respectively); Give
   stays deliberately unwired (re-confirmed directly by the user, project
   author -- see below). This closes a stale scoping note: `turn/use_mi_
@@ -11504,6 +11504,45 @@ complete (Phases 209-211).
     exception is genuinely unresolved; an already-fully-known feature is
     never downgraded by a failed re-scout; a kingdomless leader is a
     no-op) -- 3107 passed total.
+
+- **Phase 275 (current)**: closes, with a fresh declaration-level audit
+  (not a re-read of prior notes), four still-open turn-report gaps: FINANCES'
+  "Expected Expenses" line and its Evilking/ThiefPrince gold-bonus notes,
+  PROVINCES' Tax column/Recruiting-Types columns, and ARMIES' "Modified
+  Quality" column. Docs-only, no behavior change -- every one of these
+  lines was already confirmed absent by earlier phases; this phase
+  re-verifies that with a stronger, falsifiable method and records the
+  result as a single canonical, dated closure so a future session doesn't
+  need to re-derive it (as this session nearly did, after an automated
+  survey pass repeated two already-corrected stale claims from a much
+  earlier session -- monster combat stats coverage and Use_MI item
+  resolution -- both independently re-verified false in this same phase).
+  - Searched all 14 raw `.PAS` files under `HostAK/TP`/`HostAK/MS` (13
+    with real content; `COMPANY.PAS` is a 5-byte stub) for a `function`/
+    `procedure` **declaration** of `ACost`, `LCost`, `Qual_Modfr`, and
+    `Mod_PAT`, and a `var`/array **declaration** of `ptax`/`pt2` -- zero
+    matches for any of the six. Every real occurrence in `REPORTS.PAS`/
+    `RUMORS.PAS` only ever *calls* or *reads* them, confirming they live
+    exclusively in the missing main turn-processor / the lost
+    `AKGEN.EXE` world-generator.
+  - New "Phase 275" addendum in `report/turn_report.py
+    compose_letter_report()`'s own docstring is the single canonical
+    citation for this audit; `describe_finances_report()`,
+    `describe_provinces_report()`, `describe_armies_report()`, and
+    `turn/recruit.py`'s own module docstring each got a short, dated
+    pointer back to it rather than a duplicated re-explanation.
+  - The Evilking/ThiefPrince gold-bonus notes are a different shape from
+    the other four (the `Office` members themselves are real,
+    `models/office.py`) -- what's confirmed absent is any hook tracking a
+    running per-kingdom gold total tied to holding either office.
+  - None of these five is expected to become sourceable later; a future
+    phase could still choose a project-original substitute (the same
+    kind of user-confirmed design choice `turn/tax_base.py
+    compute_tax_base()` made for `Tax_Base` itself), but that's a new
+    design decision, not a continuation of this search.
+  - Non-breaking: full suite passed unchanged both before and after (no
+    code behavior changed, only docstrings) -- 3107 passed both times.
+    No new tests (pure documentation).
 
 ## Setup
 

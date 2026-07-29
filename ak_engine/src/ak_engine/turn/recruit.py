@@ -23,6 +23,17 @@ requires *current* self-ownership, whereas this flag requires the
 location to still be the kingdom's own (never-reassigned, see
 ``KingdomState.home_province``'s own field) home province while
 currently owned by an ally instead.
+
+**What this module can't answer**: ``is_army_type_compatible_with_race()``
+below only answers "can this army type be recruited in a province of
+this race at all" -- never "which exactly two `ArmyType`s does the real
+Recruiting Types table cell for *this specific province* name"
+(``Mod_PAT(px,py,0)``/``Mod_PAT(px,py,1)``). `Mod_PAT` is never defined
+anywhere in the available Pascal archive -- confirmed absent, re-audited
+and closed as of Phase 275 (``report/turn_report.py
+compose_letter_report()``'s own Phase 275 addendum has the full
+declaration-search citation; ``describe_provinces_report()``'s own
+docstring is the other consumer of this same gap).
 """
 
 from __future__ import annotations
