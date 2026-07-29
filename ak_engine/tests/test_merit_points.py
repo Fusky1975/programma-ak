@@ -19,11 +19,13 @@ from ak_engine.turn.merit_points import (
     chancellor_merit_points,
     defender_merit_points,
     emperor_merit_points,
+    evilking_merit_points,
     legendary_item_victory_point_bonus_count,
     mage_merit_points,
     marshal_merit_points,
     merit_point_tiebreak_key,
     priest_merit_points,
+    thiefprince_merit_points,
     treasurer_merit_points,
 )
 
@@ -203,3 +205,58 @@ def test_merit_point_tiebreak_key_independent_hero_is_zero_zero():
     state.add_leader(hero)
 
     assert merit_point_tiebreak_key(state, hero) == (0, 0)
+
+
+def make_evil_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Mordoth", Race.HUMAN, Alignment.EVIL, HOME, treasury=42))
+    state.add_leader(LeaderState(1, 1, "Vaelgor", HOME, is_king=True))
+    return state
+
+
+def test_evilking_merit_points_zero_for_non_king():
+    state = make_evil_state()
+    hero = LeaderState(9, 1, "Thug", HOME)
+    hero.skills = skills_with(NECROMANCY=5)
+    state.add_leader(hero)
+
+    assert evilking_merit_points(state, hero) == 0
+
+
+def test_evilking_merit_points_zero_when_kingdom_not_evil():
+    state = make_state()  # Alignment.NEUTRAL, see make_state()
+    king = state.leaders[1]
+    king.skills = skills_with(NECROMANCY=5)
+
+    assert evilking_merit_points(state, king) == 0
+
+
+def test_evilking_merit_points_combines_tax_base_skills_and_tally():
+    state = make_evil_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=6))
+    king = state.leaders[1]
+    king.skills = skills_with(NECROMANCY=3, THIEF=2)
+    king.merit_tally.monsters_killed_in_realm_province = 4
+    king.merit_tally.successful_thief_tactics = 1
+
+    assert evilking_merit_points(state, king) == 6 + 3 + 2 + 4 + 1
+
+
+def test_thiefprince_merit_points_open_to_a_hero():
+    # Unlike King of Pain, Prince of Thieves has no King-only/alignment gate.
+    state = make_state()
+    hero = LeaderState(9, 1, "Sneak", HOME)
+    hero.skills = skills_with(THIEF=3)
+    hero.merit_tally.gold_stolen = 10
+    hero.merit_tally.magic_items_stolen = 2
+    state.add_leader(hero)
+
+    assert thiefprince_merit_points(state, hero) == 3 + 10 + 5 * 2
+
+
+def test_thiefprince_merit_points_works_for_a_king_too():
+    state = make_state()
+    king = state.leaders[1]
+    king.skills = skills_with(THIEF=1)
+
+    assert thiefprince_merit_points(state, king) == 1

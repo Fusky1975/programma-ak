@@ -134,6 +134,38 @@ possession the rulebook's "posseduto" implies). Both terms are fully
 live: skills via `LeaderState.skills`, wands via `GameState.
 items_held_by()`.
 
+## King of Pain / Office.EVIL_KING (Phase 277)
+User-supplied reference text (`CARICHE E ABLITÀ.txt`, 2026-07-30, the
+"cariche base" the user described as the same standing as the rulebook
+page-51 table above), King of Pain's own "Come si ottiene" paragraph:
+"Questo titolo lo possono ottenere solo i RE Evil. Si ottiene un punto
+per ogni punto di tasse del Reame. In più si ottiene un punto per ogni
+punto di magia NE del RE. In più si ottiene un punto per ogni punto di
+TH del RE. Si ottiene un punto per ogni mostro che si uccide in una
+provincia del reame. E si ottiene un punto per ogni volta che la
+tattica TH ha successo (si ruba un tesoro a un mostro o un eroe di un
+reame in cui si è in guerra)." **King-only, and Evil-alignment-only**
+("Questo titolo lo possono ottenere solo i RE Evil") -- `evilking_
+merit_points()` returns 0 outright for any leader who isn't the acting
+King of an Evil-aligned Kingdom, the same "gate ineligible leaders to
+0" idiom `_leader_merit_points()`'s own `Office.TREASURER` branch
+already uses for a kingdomless leader, so this office's own eligibility
+rule needs no special-casing in `office_holder.py`'s generic Rank-
+contest loop. `monsters_killed_in_realm_province`/`successful_thief_
+tactics` (`MeritTally`, Phase 277) have no writer yet -- see that
+class's own Phase 277 note.
+
+## Prince of Thieves / Office.THIEF_PRINCE (Phase 277)
+Same user-supplied source: "Si ottiene un punto per ogni punto di TH
+che possiede il RE o l'eroe. Si ottiene un punto per ogni pezzo d'oro
+rubato a un mostro o un eroe o un RE. Si ottengono 5 punti per ogni
+oggetto magico rubato a un mostro, un eroe o un RE." Open to a King
+*or* a Hero (no alignment/office restriction stated, unlike King of
+Pain) -- `thiefprince_merit_points()` needs no eligibility gate at all,
+every leader can accumulate these points. `gold_stolen`/`magic_items_
+stolen` (`MeritTally`, Phase 277) have no writer yet -- see that
+class's own Phase 277 note.
+
 ## The "10 restanti Punti Merito" legendary-item bonus (not an office)
 The table's own closing paragraph: 10 named artifacts (Excalibur, Arco
 del Re degli Elfi, Ascia dei Signori dei Nani, Scimitarra del Dominio
@@ -169,6 +201,7 @@ guess.
 
 from __future__ import annotations
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import Terrain
@@ -306,6 +339,42 @@ def mage_merit_points(state: GameState, leader: LeaderState) -> int:
         if TREASURE_CATEGORY.get(item.treasure) is TreasureCategory.SPELL_WAND
     )
     return skill_sum + wand_count
+
+
+def evilking_merit_points(state: GameState, leader: LeaderState) -> int:
+    """See module docstring: King-only, Evil-alignment-only -- 0 for any
+    other leader. `monsters_killed_in_realm_province`/`successful_thief_
+    tactics` currently always read 0 (no writer yet).
+    """
+
+    if not leader.is_king or leader.kingdom_id is None:
+        return 0
+    kingdom = state.kingdoms[leader.kingdom_id]
+    if kingdom.alignment is not Alignment.EVIL:
+        return 0
+
+    tally = leader.merit_tally
+    return (
+        compute_tax_base(state, leader.kingdom_id)
+        + _skill_level_sum(state, leader, (Ability.NECROMANCY,))
+        + _skill_level_sum(state, leader, (Ability.THIEF,))
+        + tally.monsters_killed_in_realm_province
+        + tally.successful_thief_tactics
+    )
+
+
+def thiefprince_merit_points(state: GameState, leader: LeaderState) -> int:
+    """See module docstring: open to a King or a Hero, no eligibility
+    gate. `gold_stolen`/`magic_items_stolen` currently always read 0
+    (no writer yet).
+    """
+
+    tally = leader.merit_tally
+    return (
+        _skill_level_sum(state, leader, (Ability.THIEF,))
+        + tally.gold_stolen
+        + 5 * tally.magic_items_stolen
+    )
 
 
 def legendary_item_victory_point_bonus_count(state: GameState, leader_id: int) -> int:

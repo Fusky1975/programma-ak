@@ -2,12 +2,14 @@
 contest, Phase 230. Given a `GameState` with every leader's real
 skills/treasury/Tax_Base/owned-items data (fully live per `turn/
 merit_points.py`, Phase 227) plus whatever `MeritTally` counters a
-caller has populated, this resolves *who currently holds* each of the 8
-Imperial Offices -- closing the "needs the full Merit Point Rank contest
+caller has populated, this resolves *who currently holds* each of the 10
+Imperial Offices this project models (the rulebook's own 8 major offices
+plus, as of Phase 277, `Office.EVIL_KING`/`Office.THIEF_PRINCE`) --
+closing the "needs the full Merit Point Rank contest
 across every leader in the game" gap Phase 227/228's own docstrings both
 flagged as a separate, considerably larger follow-up.
 
-**Emperor is resolved differently from the other 7 offices.** The
+**Emperor is resolved differently from the other 9 offices.** The
 rulebook's own table lists Emperor's Merit Points as the Kingdom's own
 Tax_Base ("Ammontare della rendita di tasse alla fine del gioco"), but
 the actual *winner* of the Emperor office isn't a Merit-Point-Rank
@@ -18,7 +20,7 @@ holder(state, Office.EMPEROR)` reads that field directly (resolving to
 the elected Kingdom's own King, via `LeaderState.is_king`) rather than
 re-deriving anything from `emperor_merit_points()`.
 
-**The other 7 offices are a genuine Rank contest across every leader in
+**The other 9 offices are a genuine Rank contest across every leader in
 the game** -- "Anche un Eroe può aggiudicarsi una carica e uno stesso
 personaggio può aggiudicarsene più di una" (rulebook [10.1]): a Hero can
 win an office too, and the same character can hold more than one. Each
@@ -48,6 +50,22 @@ caller has already populated (possibly all zeros), the same as every
 other office. Likewise Marshal/Admiral/Defender/Priest's own tally
 counters resolve from whatever a caller has populated; no battle/
 encounter/cast call site increments them automatically yet.
+
+**Phase 277: `Office.EVIL_KING`/`Office.THIEF_PRINCE` join the Rank
+contest**, using the same generic loop as the other 7 non-Emperor
+offices -- `evilking_merit_points()` already returns 0 for any leader
+who isn't the acting King of an Evil-aligned Kingdom (see that
+function's own docstring), so King of Pain's own "King-only, Evil-only"
+eligibility rule needs no special-casing here, unlike Emperor's genuinely
+different resolution mechanism. Since `describe_imperial_office_report()`
+already iterates `ALL_OFFICES` generically (`models/office.py OFFICE_
+NAME` already had real display strings for both), extending this
+module's own registry automatically -- correctly -- adds "King of Pain"/
+"Prince of Thieves" rows to that table too, confirmed as real rows in
+that same table by the real `SE3__T10.K1` sample (alongside several
+other real titles -- e.g. race-specific fanaticism ones -- this project
+still doesn't model at all, an unrelated, larger, already-documented gap
+in that composer, not reopened here).
 """
 
 from __future__ import annotations
@@ -61,10 +79,12 @@ from ak_engine.turn.merit_points import (
     chancellor_merit_points,
     defender_merit_points,
     emperor_merit_points,
+    evilking_merit_points,
     mage_merit_points,
     marshal_merit_points,
     merit_point_tiebreak_key,
     priest_merit_points,
+    thiefprince_merit_points,
     treasurer_merit_points,
 )
 
@@ -78,10 +98,13 @@ RANKED_OFFICES: tuple[Office, ...] = (
     Office.DEFENDER,
     Office.PRIEST,
     Office.MAGE,
+    Office.EVIL_KING,
+    Office.THIEF_PRINCE,
 )
 
-# All 8 real Imperial Offices this project models, in the rulebook's own
-# table order.
+# All 10 real Imperial Offices this project models, in the rulebook's own
+# table order (EVIL_KING/THIEF_PRINCE appended, Phase 277 -- see that
+# phase's own module docstring note).
 ALL_OFFICES: tuple[Office, ...] = (Office.EMPEROR, *RANKED_OFFICES)
 
 
@@ -106,6 +129,10 @@ def _leader_merit_points(office: Office, state: GameState, leader: LeaderState) 
         return priest_merit_points(state, leader)
     if office is Office.MAGE:
         return mage_merit_points(state, leader)
+    if office is Office.EVIL_KING:
+        return evilking_merit_points(state, leader)
+    if office is Office.THIEF_PRINCE:
+        return thiefprince_merit_points(state, leader)
     raise ValueError(f"{office} is not a ranked office -- Emperor is resolved via resolve_office_holder() directly")
 
 
@@ -132,7 +159,7 @@ def resolve_office_holder(state: GameState, office: Office) -> OfficeHolder | No
         return OfficeHolder(leader_id, emperor_merit_points(state, state.emperor_kingdom_id))
 
     if office not in RANKED_OFFICES:
-        raise ValueError(f"{office} is not one of the 8 real Imperial Offices this project models")
+        raise ValueError(f"{office} is not one of the 10 real Imperial Offices this project models")
 
     min_points = OFFICE_MIN_POINTS[office]
     best: OfficeHolder | None = None
@@ -151,7 +178,7 @@ def resolve_office_holder(state: GameState, office: Office) -> OfficeHolder | No
 
 
 def resolve_all_office_holders(state: GameState) -> dict[Office, OfficeHolder | None]:
-    """All 8 real Imperial Offices at once, each resolved via
+    """All 10 real Imperial Offices at once, each resolved via
     `resolve_office_holder()`.
     """
 

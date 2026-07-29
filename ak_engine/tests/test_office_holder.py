@@ -1,5 +1,5 @@
 """Tests for turn/office_holder.py -- see its module docstring for the
-full derivation (Emperor's special-cased resolution vs. the other 7
+full derivation (Emperor's special-cased resolution vs. the other 9
 offices' genuine Merit Point Rank contest).
 """
 
@@ -119,5 +119,41 @@ def test_resolve_all_office_holders_covers_every_real_office():
     holders = resolve_all_office_holders(state)
 
     assert set(holders.keys()) == set(ALL_OFFICES)
-    assert len(ALL_OFFICES) == 8
-    assert len(RANKED_OFFICES) == 7
+    assert len(ALL_OFFICES) == 10
+    assert len(RANKED_OFFICES) == 9
+
+
+def test_resolve_office_holder_evilking_none_for_good_kingdom():
+    # Attackia is Alignment.GOOD (see make_state()) -- King of Pain
+    # requires an Evil-aligned Kingdom, so its own King never qualifies.
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+
+    assert resolve_office_holder(state, Office.EVIL_KING) is None
+
+
+def test_resolve_office_holder_evilking_resolves_for_an_evil_king():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Mordoth", Race.HUMAN, Alignment.EVIL, HOME, treasury=10))
+    king = LeaderState(1, 1, "Vaelgor", HOME, is_king=True)
+    king.merit_tally.monsters_killed_in_realm_province = 30  # comfortably above OFFICE_MIN_POINTS
+    state.add_leader(king)
+
+    holder = resolve_office_holder(state, Office.EVIL_KING)
+
+    assert holder is not None
+    assert holder.leader_id == 1
+
+
+def test_resolve_office_holder_thiefprince_open_to_a_hero():
+    # No King-only gate, unlike King of Pain -- a Hero can win it too.
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    hero = LeaderState(50, 1, "Sneak", HOME)
+    hero.merit_tally.gold_stolen = 20
+    state.add_leader(hero)
+
+    holder = resolve_office_holder(state, Office.THIEF_PRINCE)
+
+    assert holder is not None
+    assert holder.leader_id == 50

@@ -13,6 +13,7 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
+from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.temper import Temper
@@ -3683,6 +3684,119 @@ def test_describe_finances_report_expected_revenues_uses_compute_tax_base():
     assert lines[3] == "Expected Revenues: 10"
 
 
+# -- Phase 277: King of Pain / Prince of Thieves FINANCES bonus notes --
+
+
+def _skills_with(**levels: int) -> SkillTable:
+    raw_values = [0] * (len(Ability) * 2 + 1)
+    for name, level in levels.items():
+        i = Ability[name].value * 2
+        raw_values[i] = level
+        raw_values[i + 1] = level
+    return SkillTable(raw_values)
+
+
+def test_describe_finances_report_shows_black_knights_note_for_this_kingdoms_king_of_pain():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Mordoth", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0), treasury=50))
+    king = LeaderState(1, 1, "Vaelgor", HexCoord(0, 0), is_king=True)
+    king.merit_tally.monsters_killed_in_realm_province = 30  # comfortably above OFFICE_MIN_POINTS
+    state.add_leader(king)
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[2] == "Gold in treasury: 50"
+    assert lines[3] == "(Including +5 Black Knights)"
+
+
+def test_describe_finances_report_omits_black_knights_note_for_another_kingdoms_king_of_pain():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Mordoth", Race.HUMAN, Alignment.EVIL, HexCoord(1, 1)))
+    other_king = LeaderState(2, 2, "Vaelgor", HexCoord(1, 1), is_king=True)
+    other_king.merit_tally.monsters_killed_in_realm_province = 30
+    state.add_leader(other_king)
+
+    lines = describe_finances_report(state, 1)
+
+    assert not any("Black Knights" in line for line in lines)
+
+
+def test_describe_finances_report_omits_black_knights_note_when_nobody_holds_king_of_pain():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+
+    lines = describe_finances_report(state, 1)
+
+    assert not any("Black Knights" in line for line in lines)
+
+
+def test_describe_finances_report_shows_thieves_guild_note_for_this_kingdoms_king_holder():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0), treasury=50))
+    king = LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True)
+    king.skills = _skills_with(THIEF=5)
+    state.add_leader(king)
+
+    lines = describe_finances_report(state, 1)
+
+    assert "(Including +10 Thieves Guild)" in lines
+
+
+def test_describe_finances_report_shows_thieves_guild_note_credited_to_holders_own_king_when_holder_is_a_hero():
+    # Rulebook [10.1]: a Hero can win an office too -- Prince of Thieves has
+    # no Kingdom of its own, so the bonus is credited to the Hero's own King's
+    # Kingdom (the same Kingdom this report is being composed for).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0), treasury=50))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    hero = LeaderState(50, 1, "Sneak", HexCoord(0, 0))
+    hero.merit_tally.gold_stolen = 20
+    state.add_leader(hero)
+
+    lines = describe_finances_report(state, 1)
+
+    assert "(Including +10 Thieves Guild)" in lines
+
+
+def test_describe_finances_report_omits_thieves_guild_note_for_another_kingdoms_holder():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    other_king = LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True)
+    other_king.skills = _skills_with(THIEF=5)
+    state.add_leader(other_king)
+
+    lines = describe_finances_report(state, 1)
+
+    assert not any("Thieves Guild" in line for line in lines)
+
+
+def test_describe_finances_report_omits_thieves_guild_note_when_nobody_holds_prince_of_thieves():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+
+    lines = describe_finances_report(state, 1)
+
+    assert not any("Thieves Guild" in line for line in lines)
+
+
+def test_describe_finances_report_shows_both_notes_in_order_when_both_are_earned():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Mordoth", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0), treasury=50))
+    king = LeaderState(1, 1, "Vaelgor", HexCoord(0, 0), is_king=True)
+    king.merit_tally.monsters_killed_in_realm_province = 30
+    king.skills = _skills_with(THIEF=5)
+    state.add_leader(king)
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[2] == "Gold in treasury: 50"
+    assert lines[3] == "(Including +5 Black Knights)"
+    assert lines[4] == "(Including +10 Thieves Guild)"
+    assert lines[5] == "Expected Revenues: 0"
+
+
 # -- Phase 220: describe_provinces_report() -- the "PROVINCES" section --
 
 
@@ -4082,6 +4196,8 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Lord High Defender: None at present",
         "High Priest Palatine: None at present",
         "Arch-Mage Palatine: None at present",
+        "King of Pain: None at present",
+        "Prince of Thieves: None at present",
         "ADVENTURE",
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
@@ -4165,6 +4281,8 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "Lord High Defender: None at present",
         "High Priest Palatine: None at present",
         "Arch-Mage Palatine: None at present",
+        "King of Pain: None at present",
+        "Prince of Thieves: None at present",
         "ADVENTURE",
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
@@ -4289,7 +4407,9 @@ def test_describe_imperial_office_report_none_at_present_for_every_office_with_n
     assert lines[0] == "IMPERIAL OFFICE REPORT"
     assert lines.count("World Emperor: None at present") == 1
     assert lines.count("Arch-Mage Palatine: None at present") == 1
-    assert len(lines) == 9  # header + 8 offices
+    assert lines.count("King of Pain: None at present") == 1
+    assert lines.count("Prince of Thieves: None at present") == 1
+    assert len(lines) == 11  # header + 10 offices
 
 
 def test_describe_imperial_office_report_shows_a_real_office_holder():

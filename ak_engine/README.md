@@ -11544,7 +11544,7 @@ complete (Phases 209-211).
     code behavior changed, only docstrings) -- 3107 passed both times.
     No new tests (pure documentation).
 
-- **Phase 276 (current)**: wires the FINANCES "Expected Expenses" line
+- **Phase 276**: wires the FINANCES "Expected Expenses" line
   for real, reopening the "not expected to become sourceable" call
   Phase 275 made about `ACost`/`LCost` one day earlier -- the user
   supplied real generated `SE3__T*.K*` turn-report samples (2026-07-29)
@@ -11580,6 +11580,56 @@ complete (Phases 209-211).
     ignored; and one full real-sample regression test reproducing
     `SE3__T1.K2`'s own "Expected Expenses: 15" exactly (13 gold across
     six armies + 2 gold across two Heroes) -- 3117 passed total.
+
+- **Phase 277 (current)**: adds `Office.EVIL_KING` ("King of Pain") and
+  `Office.THIEF_PRINCE` ("Prince of Thieves") to the real Merit Point
+  Rank contest, and wires the two revenue-boosting bonuses they grant
+  into the FINANCES section -- sourced from a reference file the user
+  supplied directly (`CARICHE E ABILITÀ.txt`, 2026-07-29, the 8-major-office
+  + these 2 titles' exact English perk text and Italian scoring formulas),
+  scoped narrowly to just these two offices on the user's own explicit
+  choice; the file's further ~13 race/alignment fanaticism titles are
+  deliberately deferred to a future phase.
+  - `models/game_state.py MeritTally` gains 4 new fields feeding the two
+    formulas (`monsters_killed_in_realm_province`,
+    `successful_thief_tactics`, `gold_stolen`, `magic_items_stolen`) --
+    all currently unpopulated, no writer yet, matching this project's
+    established "field exists, writer comes later" convention for every
+    other Merit Point tally counter.
+  - `turn/merit_points.py`: `evilking_merit_points()` -- King of Pain is
+    King-only and Evil-Kingdom-only (returns 0 otherwise), summing
+    Tax_Base + Necromancy skill + Thief skill + the two new
+    monster/thief tally counters. `thiefprince_merit_points()` -- Prince
+    of Thieves has no eligibility gate (a Hero can win it too), summing
+    Thief skill + `gold_stolen` + `5 * magic_items_stolen`.
+  - `turn/office_holder.py`: `RANKED_OFFICES`/`ALL_OFFICES` extended from
+    7/8 to 9/10 real offices; `_leader_merit_points()` dispatches the two
+    new formulas through the same generic Rank-contest loop every other
+    non-Emperor office already uses -- no special-casing needed beyond
+    the formulas' own built-in eligibility gates.
+  - `report/turn_report.py describe_finances_report()`: two new
+    conditional lines, "(Including +5 Black Knights)" /
+    "(Including +10 Thieves Guild)", rendered right after "Gold in
+    treasury" and before "Expected Revenues" whenever this Kingdom's own
+    King/Hero currently holds the matching office -- confirmed against 5
+    real `SE3__T*.K1` samples (the note starts appearing the turn *after*
+    the title is actually earned, e.g. `SE3__T8.K1` vs. `SE3__T7.K1`),
+    correcting an initial assumption (based only on nearby Pascal line
+    numbers) that the notes rendered after "Expected Expenses" instead.
+    `describe_imperial_office_report()`'s own table already iterates
+    `ALL_OFFICES` generically, so it now automatically gains "King of
+    Pain"/"Prince of Thieves" rows too -- confirmed as a real table row
+    by the `SE3__T10.K1` sample, not a bug to suppress.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added, once 4 pre-existing tests were updated for the 7->9/8->10
+    office counts and the two new "None at present" table rows -- 3117
+    passed.
+  - 16 new tests: `evilking_merit_points()`/`thiefprince_merit_points()`
+    eligibility and scoring in `test_merit_points.py`; EVIL_KING/
+    THIEF_PRINCE actually resolving through the Rank contest in
+    `test_office_holder.py`; and the two FINANCES bonus notes' presence,
+    absence, kingdom-scoping, King-vs-Hero-holder crediting, and
+    relative ordering in `test_turn_report.py` -- 3133 passed total.
 
 ## Setup
 

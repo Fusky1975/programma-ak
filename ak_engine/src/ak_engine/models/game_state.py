@@ -323,6 +323,14 @@ class MeritTally:
     that supersedes the rulebook's own flat "+2 per Invention found
     first" figure -- see that module's own note).
 
+    **Phase 277**: four new fields support the two newly-modeled
+    non-major offices, `Office.EVIL_KING`/`Office.THIEF_PRINCE` (see
+    `turn/merit_points.py evilking_merit_points()`/`thiefprince_merit_
+    points()`) -- `monsters_killed_in_realm_province`, `successful_
+    thief_tactics`, `gold_stolen`, `magic_items_stolen`. None has a
+    writer yet, the same "field exists, no populating consumer yet"
+    starting state most of this class's own fields had for many phases.
+
     All default to 0: a leader who has fought no battles,
     killed no monsters, cast no Resurrection/Bless, or been the first to
     find any Special Place/Discovery legitimately starts here, the same
@@ -365,6 +373,24 @@ class MeritTally:
     discoveries_found_first: int = 0
     discoveries_found_not_first: int = 0
     discoveries_via_espionage: int = 0
+    # King of Pain (Office.EVIL_KING, Phase 277): a flat +1 per monster
+    # kill in a province of the King's own realm -- a documented
+    # different shape from Defender's monster_hp_defeated (HP-based, no
+    # realm-province restriction), so it needs its own counter. Also
+    # +1 per successful Steal tactic against a monster, or against a
+    # Hero/King of a kingdom currently at war with the acting leader's
+    # own kingdom -- no writer for either field yet (the same "field
+    # exists, no populating consumer yet" convention this class has used
+    # since Phase 59).
+    monsters_killed_in_realm_province: int = 0
+    successful_thief_tactics: int = 0
+    # Prince of Thieves (Office.THIEF_PRINCE, Phase 277): +1 per gold
+    # piece stolen from a monster, Hero, or King; +5 per magic item
+    # stolen from any of the same. No writer yet -- turn/search_
+    # execution.py's own Steal tactic doesn't currently model *what* is
+    # stolen (gold amount vs. item), only whether the attempt succeeds.
+    gold_stolen: int = 0
+    magic_items_stolen: int = 0
 
 
 @dataclass(slots=True)

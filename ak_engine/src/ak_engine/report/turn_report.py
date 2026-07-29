@@ -1133,7 +1133,7 @@ from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES, Monster
-from ak_engine.models.office import OFFICE_NAME
+from ak_engine.models.office import OFFICE_NAME, Office
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
@@ -1153,7 +1153,7 @@ from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.expenses import compute_expected_expenses
-from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders
+from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders, resolve_office_holder
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
@@ -5367,13 +5367,26 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
     against three of four real Heroes, with one known race-related
     mismatch documented rather than silently accepted).
 
-    The optional "(Including +5 Black Knights)"/"(Including +10
-    Thieves Guild)" notes still need Evilking/ThiefPrince office-holder
-    tracking -- the same IMPERIAL OFFICE REPORT gap this project's own
-    `compose_letter_report()` docstring already names. Re-audited,
-    closed, Phase 275 (same addendum) -- still open as of Phase 276,
-    pending the office-ability reference material the user separately
-    promised to supply.
+    **The optional "(Including +5 Black Knights)"/"(Including +10
+    Thieves Guild)" notes (Phase 277)**: render right after "Gold in
+    treasury" and *before* "Expected Revenues" -- confirmed directly
+    against five independent real `SE3__T*.K1` samples (not the position
+    Phase 275/276's own notes assumed; that guess, based only on nearby
+    Pascal line numbers rather than real generated output, is corrected
+    here). One sample (`SE3__T7.K1`) shows the office-holder's own
+    ADVENTURE-section narrative announcing the title with no FINANCES
+    note yet; the very next turn's own sample (`SE3__T8.K1`, same
+    kingdom) shows the note -- the gold bonus, and its note, start
+    applying the turn *after* the title is earned, not immediately.
+    Wired via `turn/office_holder.py resolve_office_holder()` against
+    the newly-modeled `Office.EVIL_KING`/`Office.THIEF_PRINCE` (Phase
+    277, `turn/merit_points.py evilking_merit_points()`/`thiefprince_
+    merit_points()`) -- King of Pain's own note checks whether this
+    kingdom's own King holds `EVIL_KING` directly; Prince of Thieves'
+    own note checks whether the `THIEF_PRINCE` holder (King *or* Hero)
+    belongs to this kingdom, matching `REPORTS.PAS`'s own `LKing(
+    titchar[ThiefPrince]) = kng` check (the gold always credits the
+    holder's own King's kingdom, even when a Hero holds the title).
 
     **Phase 268 closes the "+Invention Bonus" line and the Discoveries
     of the Sages list**, both previously confirmed-absent (no per-
@@ -5393,9 +5406,15 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
         "FINANCES",
         _FINANCES_OPENING,
         f"Gold in treasury: {kingdom.treasury}",
-        f"Expected Revenues: {compute_tax_base(state, kingdom_id)}",
-        f"Expected Expenses: {compute_expected_expenses(state, kingdom_id)}",
     ]
+    evilking_holder = resolve_office_holder(state, Office.EVIL_KING)
+    if evilking_holder is not None and state.leaders[evilking_holder.leader_id].kingdom_id == kingdom_id:
+        lines.append("(Including +5 Black Knights)")
+    thiefprince_holder = resolve_office_holder(state, Office.THIEF_PRINCE)
+    if thiefprince_holder is not None and state.leaders[thiefprince_holder.leader_id].kingdom_id == kingdom_id:
+        lines.append("(Including +10 Thieves Guild)")
+    lines.append(f"Expected Revenues: {compute_tax_base(state, kingdom_id)}")
+    lines.append(f"Expected Expenses: {compute_expected_expenses(state, kingdom_id)}")
     invention_bonus_percent = compute_invention_bonus_percent(kingdom)
     if invention_bonus_percent > 0:
         lines.append(f"+Invention Bonus: {invention_bonus_percent}%")
