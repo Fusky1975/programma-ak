@@ -89,11 +89,14 @@ There's also a second, distinct, real army-naming routine as of Phase
 236 (`turn/army_naming.py`, `REPORTS.PAS:986-992`'s own Army List table
 builder, verified against real letter data) -- a different report
 context (a tabular listing, not narrative prose) with its own real
-`" Skel "` marker for Skeletal-Army-raised units, not wired into any
-function below. Province-naming still has no real source at all; every
-function below still takes caller-supplied province display-name
-strings, the same values-dict pattern ``prose.render()`` itself already
-uses.
+`" Skel "` marker for Skeletal-Army-raised units. **Phase 281**: its
+branch logic (not its ordinal-number prefix) is now wired into
+`describe_armies_report()` below, closing the "not wired into any
+function below" gap this note used to flag -- see that function's own
+docstring for the full correction. Province-naming still has no real
+source at all; every function below still takes caller-supplied
+province display-name strings, the same values-dict pattern
+``prose.render()`` itself already uses.
 
 **Phase 63 addendum -- uncontested conquest and the Spy report's opening
 line.** Two more real, standalone templates, added the same way:
@@ -5706,10 +5709,24 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
       concept is modeled here (armies with ``ArmyState.kingdom_id ==
       kingdom_id``); the Mercenary pass needs `Known_Merc`/`Commanded`
       eligibility state this project's `GameState` doesn't track.
-    - Skeletal-Army units get a distinct compact "Skel <designation>"
-      form (``astate[an] = Zomboid``) in the real table; `ArmyState` has
-      no equivalent per-army undead/skeletal flag, so every army renders
-      via the ordinary ``ARMY_TYPE_NAME`` designation.
+    - **Skeletal-Army designation (Phase 281)**: the real table's
+      ``Doit`` procedure (nested inside ``Rep_Armies`` itself,
+      ``REPORTS.PAS:986-992``, the exact site ``turn/army_naming.py
+      make_army_display_name()`` was already built from in Phase 236)
+      swaps in a distinct compact "Skel <designation>" form
+      (``ARMY_TYPE_DESIGNATION``, not the ordinary ``ARMY_TYPE_NAME``)
+      whenever ``astate[an] = Zomboid``. This module's own docstring
+      previously claimed ``ArmyState`` had no equivalent flag at all --
+      wrong: ``ArmyState.is_skeletal`` (Phase 236) is exactly that flag,
+      already set by every Skeletal_Army cast (``turn/cast_execution.py
+      _execute_skeletal_army()``), just never read here. Wired directly
+      (the branch logic only, not `make_army_display_name()`'s own
+      ordinal-number prefix, since this composer's "province -- leader:
+      designation" line never rendered a per-army ordinal to begin
+      with -- a distinct, already-documented formatting choice above,
+      not reopened here). Cross-checked against the same real sample
+      `turn/army_naming.py`'s own docstring already cites
+      (`SE3__T0.K1:135`, "108th Skel Bowmen").
     - The real table's exact fixed-width column layout (province-name
       truncation/suffix rules, per-army-per-leader grouping markers) is
       not reproduced -- this composer emits one readable line per army
@@ -5757,7 +5774,10 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
             leader_label = state.leaders[army.commanded_by].name
         else:
             leader_label = "Garrison"
-        designation = ARMY_TYPE_NAME[army.army_type]
+        if army.is_skeletal:
+            designation = f"Skel {ARMY_TYPE_DESIGNATION[army.army_type]}"
+        else:
+            designation = ARMY_TYPE_NAME[army.army_type]
         race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race)
         race_name = RACE_NAME[race]
         quality_name = QUALITY_NAME[army.quality]

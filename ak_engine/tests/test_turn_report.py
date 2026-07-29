@@ -3267,6 +3267,30 @@ def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
     ]
 
 
+def test_describe_armies_report_skeletal_army_uses_skel_designation():
+    # Phase 281, REPORTS.PAS:988-992 (Doit, inside Rep_Armies): a
+    # Zomboid-state army renders "Skel <atdesig>", not the ordinary
+    # <atname> -- Lt Cavalry is the clearest real case, since its own
+    # atdesig ("Lt Cav") diverges from its atname ("Light Cavalry").
+    state = _armies_state()
+    state.add_army(ArmyState(1, 1, ArmyType.LT_CAVALRY, Quality.AVERAGE, HexCoord(0, 0), is_skeletal=True))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == ["Capital City -- Garrison: Skel Lt Cav (Human, Average, Modified Veteran)"]
+
+
+def test_describe_armies_report_non_skeletal_army_still_uses_atname():
+    # Same real branch's else-case: a non-Zomboid army keeps using
+    # ARMY_TYPE_NAME ("Light Cavalry"), not ARMY_TYPE_DESIGNATION.
+    state = _armies_state()
+    state.add_army(ArmyState(1, 1, ArmyType.LT_CAVALRY, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == ["Capital City -- Garrison: Light Cavalry (Human, Average, Modified Veteran)"]
+
+
 # -- Phase 217: describe_letter_reports() -- the "LETTER REPORTS" section --
 
 

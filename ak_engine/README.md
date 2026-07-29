@@ -11730,7 +11730,7 @@ complete (Phases 209-211).
     `race_item_bonus` parameter, including the single-pass-clamp-vs-two-
     step distinction, in `test_strength.py` -- 3157 passed total.
 
-- **Phase 280 (current)**: closes the CHARACTERS report's own "Pay"
+- **Phase 280**: closes the CHARACTERS report's own "Pay"
   column (`Ini`/`LCost(ldr,kng)`) gap -- reopening Phase 275's "confirmed
   absent" call the same way as Phase 276/278/279 before it: no Pascal
   *formula* for `LCost` survives (still true), but this project already
@@ -11761,6 +11761,40 @@ complete (Phases 209-211).
     default in `test_expenses.py`; the CHARACTERS report's own real-
     sample row values and an alignment-distance-driven Pay difference in
     `test_turn_report.py` -- 3163 passed total.
+
+- **Phase 281 (current)**: closes the ARMIES report's own Skeletal-Army
+  "Skel <designation>" display gap -- a *different* kind of unblock from
+  Phase 276/278/279/280's own "formula lost, inputs sourced" pattern:
+  here the real formula (`REPORTS.PAS:986-992`, the `Doit` procedure
+  nested inside `Rep_Armies` itself -- confirmed by direct read, the
+  exact site `turn/army_naming.py make_army_display_name()` was already
+  built from in Phase 236) was never missing, and neither was the data
+  (`ArmyState.is_skeletal`, Phase 236, set by every Skeletal_Army cast).
+  `describe_armies_report()`'s own docstring simply had a stale claim --
+  "`ArmyState` has no equivalent per-army undead/skeletal flag" -- left
+  over from before Phase 236 added that very flag, and the branch was
+  never wired to read it.
+  - `report/turn_report.py describe_armies_report()`: the per-army
+    designation now branches on `army.is_skeletal`, exactly matching the
+    real `Doit` procedure's own `IF astate[an] = Zomboid THEN
+    Concat(s,' Skel ',atdesig[...]) ELSE Concat(s,' ',atname[...])` --
+    `ARMY_TYPE_DESIGNATION` (not `ARMY_TYPE_NAME`) prefixed with "Skel "
+    for a skeletal army, the ordinary `ARMY_TYPE_NAME` otherwise. Only
+    the branch logic is reused, not `make_army_display_name()`'s own
+    ordinal-number prefix -- this composer's "province -- leader:
+    designation" line never rendered a per-army ordinal to begin with, a
+    distinct, already-documented formatting choice not reopened here.
+    Cross-checked against the same real sample `turn/army_naming.py`'s
+    own docstring already cites (`SE3__T0.K1:135`, "108th Skel Bowmen").
+    Both this function's own docstring and the module-level docstring's
+    own "not wired into any function below" note are corrected.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added (no existing test army had `is_skeletal=True`, so the new
+    branch was dormant against every prior fixture) -- 3163 passed.
+  - 2 new tests: a skeletal Lt Cavalry army rendering "Skel Lt Cav" (the
+    clearest real case, since `Lt Cav` genuinely diverges from `Light
+    Cavalry`) and a non-skeletal Lt Cavalry army still rendering "Light
+    Cavalry", both in `test_turn_report.py` -- 3165 passed total.
 
 ## Setup
 
