@@ -234,6 +234,7 @@ def _build_battle_units(
     own_explored_percent: int = 0,
     enemy_explored_percent: int = 0,
     opponent_kingdom_ids: frozenset[int] = frozenset(),
+    is_island: bool = False,
 ) -> list[BattleUnit]:
     """Build BattleUnits for one side of a battle at ``province_coord``.
 
@@ -341,6 +342,13 @@ def _build_battle_units(
     phantasmal_armies_multiplier``'s own ``bonus_per_level`` override),
     same opposing-Kingdom check. Both default to inert (empty
     ``opponent_kingdom_ids``) for every pre-Phase-270 caller.
+
+    **Island provinces** (Phase 282, ``is_island``): resolved once by
+    ``fight_battle()`` from ``ProvinceState.is_island`` and passed
+    straight through to ``turn/strength.py compute_effective_strength()``
+    for every unit on this side -- see that function's own docstring for
+    the land/Sea blend it runs. Defaults to ``False``, unaffected, for
+    every pre-Phase-282 caller.
     """
 
     desert_without_camels = terrain is Terrain.DESERT and not any(
@@ -395,6 +403,7 @@ def _build_battle_units(
             own_explored_percent=own_explored_percent,
             enemy_explored_percent=enemy_explored_percent,
             illusory_fog_affected=illusory_fog_affected,
+            is_island=is_island,
         )
         rear_targeting_blocked = is_overflight_unit(army.army_type) and druidic_shortfall > 0
         units.append(
@@ -801,19 +810,29 @@ def _apply_pursuit(
     terrain,
     report: BattleReport,
     rng: random.Random,
+    *,
+    is_island: bool = False,
 ) -> set[int]:
     """Rulebook [7.3]: chase down some of a clean-swept, retreating loser's armies before they escape.
 
     Returns the set of army ids caught and destroyed (already removed
     from ``state`` and recorded on ``report``) -- callers should skip
     ``_retreat_or_disband`` for those.
+
+    ``is_island`` (Phase 282): the same province-level fact `fight_
+    battle()` already resolved for the main battle itself, passed
+    through unchanged so a retreating army's own strength during the
+    chase honors it too -- see `turn/strength.py compute_effective_
+    strength()`'s own docstring.
     """
 
     retreating_units = []
     for army in losing_armies:
         kingdom = state.kingdoms[army.kingdom_id]
         pursued_quality = Quality(max(int(Quality.DEPLETED), int(army.quality) - 1))
-        strength = compute_effective_strength(army.army_type, kingdom.race, pursued_quality, terrain, is_defender=True)
+        strength = compute_effective_strength(
+            army.army_type, kingdom.race, pursued_quality, terrain, is_defender=True, is_island=is_island
+        )
         retreating_units.append(BattleUnit(army.army_type, strength, source_id=army.army_id))
 
     pursuers = select_pursuers(winner_units, rng)
@@ -963,6 +982,11 @@ def fight_battle(
     # effective_terrain()'s own docstring for why every mechanics call
     # site in this function uses this instead of the raw .terrain.
     terrain = province.effective_terrain()
+    # Island provinces (Phase 282) -- see turn/strength.py compute_
+    # effective_strength()'s own docstring for the land/Sea blend this
+    # feeds. Project-original, user-confirmed (2026-07-29) optional
+    # Super AK variant rule; False (no effect) for every ordinary game.
+    is_island = province.is_island
 
     ability = _combat_ability_for_terrain(terrain)
     attacker_commander = _select_side_commander(attacker_armies, state, ability, allow_garrison_fallback=False)
@@ -989,13 +1013,13 @@ def fight_battle(
         attacker_armies, state, is_defender=False, terrain=terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=attacker_ability_level, apply_fanaticism=apply_fanaticism,
         own_explored_percent=attacker_explored, enemy_explored_percent=defender_explored,
-        opponent_kingdom_ids=defender_kingdom_ids,
+        opponent_kingdom_ids=defender_kingdom_ids, is_island=is_island,
     )
     defender_units = _build_battle_units(
         defender_armies, state, is_defender=True, terrain=terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=defender_ability_level, apply_fanaticism=apply_fanaticism,
         own_explored_percent=defender_explored, enemy_explored_percent=attacker_explored,
-        opponent_kingdom_ids=attacker_kingdom_ids,
+        opponent_kingdom_ids=attacker_kingdom_ids, is_island=is_island,
     )
 
     duel = _maybe_fight_duel(
@@ -1034,12 +1058,12 @@ def fight_battle(
     attacker_pursuit_destroyed: set[int] = set()
     if attacker_clean_swept and loser_retreats:
         attacker_pursuit_destroyed = _apply_pursuit(
-            attacker_armies, defender_units, state, terrain, report, rng
+            attacker_armies, defender_units, state, terrain, report, rng, is_island=is_island
         )
     defender_pursuit_destroyed: set[int] = set()
     if defender_clean_swept and loser_retreats:
         defender_pursuit_destroyed = _apply_pursuit(
-            defender_armies, attacker_units, state, terrain, report, rng
+            defender_armies, attacker_units, state, terrain, report, rng, is_island=is_island
         )
 
     for army in attacker_armies:

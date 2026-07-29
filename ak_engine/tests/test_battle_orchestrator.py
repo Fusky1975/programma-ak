@@ -545,6 +545,45 @@ def test_fight_battle_reads_real_per_kingdom_exploration_from_the_province():
     )
 
 
+def test_fight_battle_reads_province_is_island_into_strength():
+    # Integration: fight_battle wires ProvinceState.is_island (Phase 282)
+    # into _build_battle_units for both sides -- same rng seed, only the
+    # province's own is_island flag differs, so any strength difference
+    # is attributable to the new wiring alone. HVY_CAVALRY: base 4, home
+    # Plains (+1) = 5 on land; adverse Sea (/2) = 2 -- island averages to
+    # 3.5, genuinely different from the ordinary 5.
+    state_ordinary = build_state()
+    state_island = build_state()
+    state_island.provinces[FIELD].is_island = True
+
+    report_ordinary = fight_battle(state_ordinary, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=random.Random(3))
+    report_island = fight_battle(state_island, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=random.Random(3))
+
+    assert report_island.battle_result.columns[0].attacker_strength == pytest.approx(
+        report_ordinary.battle_result.columns[0].attacker_strength * 3.5 / 5
+    )
+
+
+def test_build_battle_units_applies_is_island_blend():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.PHALANX, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+
+    ordinary = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+    island = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        is_island=True,
+    )
+
+    assert island[0].effective_strength != ordinary[0].effective_strength
+    assert island[0].effective_strength == compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_island=True
+    )
+
+
 def test_build_battle_units_reduces_quality_in_desert_without_camels():
     # Rulebook: "In a desert battle, one camel unit should be present...
     # If not, all armies have their quality reduced by 1 level." AVERAGE

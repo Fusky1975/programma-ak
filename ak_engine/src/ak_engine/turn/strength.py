@@ -45,6 +45,27 @@ SKIPPED: Illusory Terrain needs an exploration/movement-side "does this
 observer know the real terrain" distinction this project hasn't built
 (see ``models/game_state.py``'s ``ProvinceState.illusory_terrain``
 docstring), and no item-effect system exists at all.
+
+**Island provinces (Phase 282, ``is_island``)** -- a different kind of
+blended-terrain averaging from Illusory Terrain's (still-skipped) one,
+and NOT part of the rulebook pipeline above: the optional Super AK
+variant (games up to 24 players, project-original per the user's own
+explicit domain knowledge -- no Pascal source describes it) where a
+province is half Sea, half its own land terrain. ``compute_effective_
+strength()``'s ``is_island`` flag runs the terrain-dependent portion of
+the pipeline above (base strength, race/army-type terrain bonuses,
+adverse-terrain halving, Whales' off-Sea zero-strength override) twice
+-- once against the province's own land ``terrain``, once against
+``Terrain.SEA`` -- and averages the two, before quality/defender-bonus/
+multiplier steps run once as normal. Overflight-air units (Dragons,
+Eagles, ``models/army_type.py OVERFLIGHT_AIR``) are exempt -- the
+user's own words, "le province volanti... non hanno nessuna
+variazione" -- and always use the single, ordinary land-terrain pass.
+One useful emergent consequence, not special-cased separately: a Whale
+unit on an Island now nets exactly half its normal Sea strength (0, the
+off-Sea override, averaged with its full Sea value), matching "half
+strength as if at sea" without this function needing to know Whales are
+special here at all.
 """
 
 from __future__ import annotations
@@ -57,6 +78,7 @@ from ak_engine.models.army_type import (
     BASE_STRENGTH,
     GARRISON_ATTACK_STRENGTH,
     GARRISON_DEFENSE_STRENGTH,
+    OVERFLIGHT_AIR,
     RACE_TERRAIN_BONUS,
     RACE_TYPE_BONUS,
     ArmyType,
@@ -247,6 +269,41 @@ def _base_strength(army_type: ArmyType, *, is_defender: bool, base_strength_over
     return BASE_STRENGTH[army_type]
 
 
+def _terrain_strength(
+    army_type: ArmyType,
+    race: Race,
+    terrain: Terrain,
+    *,
+    is_defender: bool,
+    base_strength_override: float | None,
+) -> float:
+    """The terrain-dependent portion of the strength pipeline only -- base
+    strength, race/army-type terrain bonuses, adverse-terrain halving, and
+    Whales' off-Sea zero-strength override. Extracted (Phase 282) so
+    ``compute_effective_strength()`` can call this twice (once per
+    terrain) and average the results for an Island-province battle --
+    see that function's own ``is_island`` parameter and the module
+    docstring's Phase 282 section.
+    """
+
+    if army_type is ArmyType.WHALES and terrain is not Terrain.SEA:
+        return 0.0
+
+    strength = _base_strength(army_type, is_defender=is_defender, base_strength_override=base_strength_override)
+
+    if RACE_TYPE_BONUS.get((race, army_type)):
+        strength += 1
+    if RACE_TERRAIN_BONUS.get((race, terrain)):
+        strength += 1
+    stats = ARMY_TABLE.get(army_type)
+    if stats is not None and terrain in stats.home_terrain:
+        strength += 1
+    if stats is not None and terrain in stats.adverse_terrain:
+        strength /= 2
+
+    return strength
+
+
 def compute_effective_strength(
     army_type: ArmyType,
     race: Race,
@@ -266,6 +323,7 @@ def compute_effective_strength(
     opponent_army_type: ArmyType | None = None,
     base_strength_override: float | None = None,
     illusory_fog_affected: bool = False,
+    is_island: bool = False,
 ) -> float:
     """Full effective-strength pipeline, in the rulebook's documented order.
 
@@ -291,22 +349,27 @@ def compute_effective_strength(
     fog_affected_air_unit()``, whose own docstrings note neither was
     called from here until now. Defaults to ``False`` (no effect) for
     every pre-Phase-249 caller.
+
+    **Island provinces** (Phase 282, ``is_island``): see the module
+    docstring's own Phase 282 section for the full derivation. Runs
+    ``_terrain_strength()`` twice (land ``terrain`` and ``Terrain.SEA``)
+    and averages when ``True`` and ``army_type`` isn't an overflight-air
+    unit; a single ordinary pass otherwise. Defaults to ``False`` for
+    every pre-Phase-282 caller, unaffected.
     """
 
-    if army_type is ArmyType.WHALES and terrain is not Terrain.SEA:
-        return 0.0
-
-    strength = _base_strength(army_type, is_defender=is_defender, base_strength_override=base_strength_override)
-
-    if RACE_TYPE_BONUS.get((race, army_type)):
-        strength += 1
-    if RACE_TERRAIN_BONUS.get((race, terrain)):
-        strength += 1
-    stats = ARMY_TABLE.get(army_type)
-    if stats is not None and terrain in stats.home_terrain:
-        strength += 1
-    if stats is not None and terrain in stats.adverse_terrain:
-        strength /= 2
+    if is_island and army_type not in OVERFLIGHT_AIR:
+        land_strength = _terrain_strength(
+            army_type, race, terrain, is_defender=is_defender, base_strength_override=base_strength_override
+        )
+        sea_strength = _terrain_strength(
+            army_type, race, Terrain.SEA, is_defender=is_defender, base_strength_override=base_strength_override
+        )
+        strength = (land_strength + sea_strength) / 2
+    else:
+        strength = _terrain_strength(
+            army_type, race, terrain, is_defender=is_defender, base_strength_override=base_strength_override
+        )
 
     quality = modified_quality(
         base_quality,

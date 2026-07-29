@@ -11762,7 +11762,7 @@ complete (Phases 209-211).
     sample row values and an alignment-distance-driven Pay difference in
     `test_turn_report.py` -- 3163 passed total.
 
-- **Phase 281 (current)**: closes the ARMIES report's own Skeletal-Army
+- **Phase 281**: closes the ARMIES report's own Skeletal-Army
   "Skel <designation>" display gap -- a *different* kind of unblock from
   Phase 276/278/279/280's own "formula lost, inputs sourced" pattern:
   here the real formula (`REPORTS.PAS:986-992`, the `Doit` procedure
@@ -11795,6 +11795,72 @@ complete (Phases 209-211).
     clearest real case, since `Lt Cav` genuinely diverges from `Light
     Cavalry`) and a non-skeletal Lt Cavalry army still rendering "Light
     Cavalry", both in `test_turn_report.py` -- 3165 passed total.
+
+- **Phase 282 (current)**: implements Island provinces (PROVINCES'
+  `pt2`, the "(...Island)" Type 2-terrain parenthetical) -- a genuinely
+  different kind of closure from every other Phase-275-audit identifier
+  before it (Phase 276/278/279/280/281): `pt2` has no real Pascal
+  formula AND no real-file data source of any kind, so what renders now
+  is **project-original**, implemented per the user's own explicit
+  domain knowledge (2026-07-29), not recovered from any source -- an
+  optional Super AK variant rule (games up to 24 players): a province
+  that's half Sea, half its own land terrain, where armies fight at a
+  blended half-land/half-Sea strength; overflight-air units (Dragons,
+  Eagles) are exempt, the user's own words ("le province volanti...
+  non hanno nessuna variazione").
+  - `models/game_state.py`: new `ProvinceState.is_island: bool = False`
+    field -- the province's own land `terrain` is unchanged (an Island
+    is never literally `Terrain.SEA`; that would just be an ordinary Sea
+    province), this is a Sea-half overlay flag on top of it.
+  - `turn/strength.py compute_effective_strength()`: new `is_island`
+    parameter. Extracts the terrain-dependent portion of the pipeline
+    (base strength, race/army-type terrain bonuses, adverse-terrain
+    halving, Whales' off-Sea zero-strength override) into a new
+    `_terrain_strength()` helper, called twice (once against the
+    province's own land terrain, once against `Terrain.SEA`) and
+    averaged when `is_island=True` and the army isn't an overflight-air
+    unit (`models/army_type.py OVERFLIGHT_AIR`); a single ordinary pass
+    otherwise. One useful emergent consequence, not special-cased
+    separately: a Whale unit on an Island nets exactly half its normal
+    Sea strength (0, the off-Sea override, averaged with its full Sea
+    value).
+  - `turn/battle_orchestrator.py`: `fight_battle()` resolves
+    `province.is_island` once and threads it through both
+    `_build_battle_units()` calls and both `_apply_pursuit()` calls (the
+    same province-level fact `terrain` already gets threaded through),
+    so a battle's own strength and a clean-swept loser's own pursuit-
+    chase strength both honor it.
+  - `turn/island_provinces.py` (NEW): `apply_island_provinces(state,
+    island_count, rng)` -- the world-creation-time setup helper the user
+    asked for: "optional, decided at world creation... exact island
+    count instead of an exact land-province count." This project has no
+    full terrain-layout world generator at all (`turn/world_generation.py`
+    only ever populates *features* onto already-existing provinces; the
+    real `AKGEN.EXE` is compiled-only, no source survives), so this
+    marks an exact count of already-populated land provinces as Islands
+    -- chosen uniformly at random (sorted first for determinism), not a
+    percentage. Raises `ValueError` on a negative or over-large count,
+    the same explicit-refusal style `turn/recruit_execution.py`'s own
+    per-turn-limit checks already use.
+  - `report/turn_report.py describe_provinces_report()`: appends
+    `" (Island)"` right after the terrain name when `province.is_island`.
+    `compose_letter_report()`'s own Phase 275 audit note updated to
+    describe this Phase 282 closure accurately (project-original, not
+    sourced) rather than leaving the stale "not expected to become
+    sourceable" prediction in place.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added (`is_island` defaults to `False` everywhere, and no existing
+    fixture set `ProvinceState.is_island`) -- 3165 passed.
+  - 16 new tests: the land/Sea averaging, the Whales-half-strength
+    emergent case, the overflight-air exemption, and the `is_island=False`
+    default in `test_strength.py`; `_build_battle_units()`'s own
+    `is_island` threading and a `fight_battle()` integration test proving
+    the province's own flag reaches real battle strength in
+    `test_battle_orchestrator.py`; the exact-count picker, its Sea/
+    NO_TERRAIN/already-island exclusions, its `ValueError` refusals, and
+    its seeded determinism in the new `test_island_provinces.py`; the
+    "(Island)" parenthetical rendering (present and absent) in
+    `test_turn_report.py` -- 3181 passed total.
 
 ## Setup
 

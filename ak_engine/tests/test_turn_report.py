@@ -3990,6 +3990,30 @@ def test_describe_provinces_report_shows_tax_and_recruits_together_in_order():
     assert lines[-1] == "Macondo -- Orc, Jungle, 16% explored, Tax 4, Recruits Phalanx"
 
 
+def test_describe_provinces_report_shows_island_parenthetical():
+    # Phase 282, pt2 -- project-original, see describe_provinces_report()'s
+    # own docstring.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    province = ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Reef Isle")
+    province.is_island = True
+    state.add_province(province)
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines[-1] == "Reef Isle -- Human, Plain (Island), 0% explored"
+
+
+def test_describe_provinces_report_omits_island_parenthetical_when_not_an_island():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Mainland"))
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines[-1] == "Mainland -- Human, Plain, 0% explored"
+
+
 # -- Phase 221: describe_characters_report() -- the "CHARACTERS" section --
 
 

@@ -5486,6 +5486,25 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
     distinguish them (see `ProvinceState.recruit_type_2`'s own
     docstring).
 
+    **Type 2 terrain "(Island)" parenthetical (`pt2`), Phase 282**: still
+    genuinely confirmed absent from every surviving `.PAS` file (Phase
+    275's own audit, re-confirmed, not just repeated) -- a *different*
+    kind of closure from `ptax`/`Mod_PAT`/`Qual_Modfr`/`Pay` before it
+    (Phase 276/278/279/280), none of which is "formula lost, data
+    sourced elsewhere" here: no real Pascal formula AND no real-file
+    data source exist for `pt2` at all. What renders now
+    (`ProvinceState.is_island`, appended as `" (Island)"` right after
+    the terrain name) is **project-original**, implemented per the
+    user's own explicit domain knowledge (2026-07-29) rather than
+    recovered from any source -- an optional Super AK variant rule
+    (games up to 24 players): a province that's half Sea, half its own
+    land terrain, where armies fight at a blended half-land/half-Sea
+    strength (`turn/strength.py compute_effective_strength()`'s own
+    `is_island` parameter; overflight-air units -- Dragons, Eagles --
+    are exempt, the user's own words). Set at world-creation time via
+    the new `turn/island_provinces.py apply_island_provinces()` (an
+    exact-count picker, not a percentage), never inferred at runtime.
+
     **Still not reproduced, and why**:
     - The real table's whole "grouped by descending effective tax tier"
       structure (an `Min(11, tax + 8)` tier computation for the King's
@@ -5493,10 +5512,6 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
       not a missing data gap; this composer keeps its own coordinate
       sort instead, the same documented choice every other section
       composer in this module already made.
-    - The **Type 2 terrain "(... Island)"** parenthetical (`pt2`) --
-      still confirmed absent (Phase 275's audit), a genuinely different
-      gap from `Mod_PAT` despite being named in the same old bullet;
-      not reopened here.
     - Fixed-width columns themselves aren't reproduced -- the same
       documented choice `describe_armies_report()` and `describe_
       adventure_report()`'s own docstrings already made.
@@ -5518,6 +5533,8 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
         province_label = province.name if province.name else f"({coord.x}, {coord.y})"
         race_name = RACE_NAME[province.race]
         terrain_name = TERRAIN_NAME[province.effective_terrain()]
+        if province.is_island:
+            terrain_name += " (Island)"
         line = (
             f"{province_label} -- {race_name}, {terrain_name}, "
             f"{province.explored_percent}% explored"
@@ -6767,11 +6784,12 @@ def compose_letter_report(
       figures, per-kingdom Discovery tracking).
     - PROVINCES itself is only partially wired -- see `describe_
       provinces_report()`'s own docstring for exactly which columns
-      render (name, race, terrain, percent explored, and, as of Phase
-      278, Tax/Recruiting Types once a `GameState` has been bridged from
-      a real `GW3` world file) and which are still confirmed absent (the
-      tax-tier grouping presentation, the `pt2`-derived Island
-      parenthetical).
+      render (name, race, terrain, percent explored; as of Phase 278,
+      Tax/Recruiting Types once a `GameState` has been bridged from a
+      real `GW3` world file; as of Phase 282, the `pt2`-derived "(Island)"
+      parenthetical, project-original rather than sourced -- see that
+      docstring's own Phase 282 section) and which is still confirmed
+      absent (only the tax-tier grouping presentation now).
     - CHARACTERS itself is only partially wired -- see
       `describe_characters_report()`'s own docstring for exactly which
       fields render (name, location, Alignment, Temperament, Race, Pay
@@ -6836,12 +6854,25 @@ def compose_letter_report(
       strength.py`/`turn/battle_orchestrator.py` -- see `turn/army_
       quality.py`'s own docstring for the full derivation.
 
-    **Still genuinely confirmed absent, no known data source**:
-    - `pt2` -- `describe_provinces_report()`'s own Island parenthetical
-      gap (distinct from `Mod_PAT`, despite sharing the old audit
-      bullet -- `turn/recruit.py`'s own module docstring cross-
-      references the same underlying "which exactly two `ArmyType`s"
-      question `Mod_PAT` used to leave open).
+    **`pt2` (Phase 282) is a different kind of closure from the five
+    above -- project-original, not recovered.** `describe_provinces_
+    report()`'s own Island parenthetical gap (distinct from `Mod_PAT`,
+    despite sharing the old audit bullet -- `turn/recruit.py`'s own
+    module docstring cross-references the same underlying "which exactly
+    two `ArmyType`s" question `Mod_PAT` used to leave open) still has no
+    real Pascal formula AND no real-file data source of any kind --
+    unlike `ptax`/`Mod_PAT`/`ACost`/`LCost`, no `GW3` world file (or
+    similar) has ever shown a matching pattern, and unlike `Qual_Modfr`,
+    no cluster of already-sourced mechanics existed to recognize. What
+    renders now is a project-original Island-province system,
+    implemented per the user's own explicit domain knowledge
+    (2026-07-29, an optional Super AK variant rule for games up to 24
+    players) -- the same kind of deliberate, user-confirmed design
+    choice `turn/tax_base.py compute_tax_base()` made for `Tax_Base`
+    itself, not a continuation of this search. See `models/game_state.py
+    ProvinceState.is_island`, `turn/strength.py compute_effective_
+    strength()`'s own `is_island` parameter, and `turn/island_provinces.py`
+    for the full implementation.
 
     A related item, the FINANCES "(Including +5 Black Knights)"/
     "(Including +10 Thieves Guild)" notes (`titchar[Evilking]`/
@@ -6855,16 +6886,6 @@ def compose_letter_report(
     supplied reference text, not a recovered Pascal source) -- see
     `merit_points.py`'s own King of Pain/Prince of Thieves docstring
     sections.
-
-    `pt2` is not expected to become sourceable the way the other five
-    were -- it has no known real-file source (a `GW3` world file or
-    similar) the way `ptax`/`Mod_PAT`/`ACost`/`LCost` did, and no known
-    cluster of already-sourced mechanics the way `Qual_Modfr` did. A
-    future phase could still choose to build a project-original
-    substitute (the same kind of deliberate, user-confirmed design
-    choice `turn/tax_base.py compute_tax_base()` made for `Tax_Base`
-    itself), but that would be a new design decision, not a
-    continuation of this search.
 
     **ALIGNMENT REDUCTION (Phase 229, appended after ADVENTURE)** is
     *not* one of the ten real sections above -- it's a project-original

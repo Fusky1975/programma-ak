@@ -240,3 +240,58 @@ def test_whales_have_zero_strength_off_sea_regardless_of_bonuses():
 def test_whales_compute_normally_at_sea():
     strength = compute_effective_strength(ArmyType.WHALES, Race.HUMAN, Quality.AVERAGE, Terrain.SEA)
     assert strength > 0
+
+
+# -- Island provinces (Phase 282) -----------------------------------------
+
+
+def test_is_island_averages_land_and_sea_terrain_component():
+    # Phalanx: base 3, home Plains (+1) = 4 on land; adverse Sea (/2) =
+    # 1.5 at sea. Island averages the two (2.75) before quality
+    # multiplies -- see turn/strength.py's own Phase 282 docstring
+    # section for the full derivation.
+    island = compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_island=True
+    )
+    assert island == pytest.approx(2.75 * int(Quality.AVERAGE))
+
+
+def test_is_island_matches_plain_land_pass_when_land_and_sea_agree():
+    # Bowmen have no home/adverse terrain entry for Plains or Sea, so the
+    # land and sea passes are numerically identical (both just base
+    # strength) -- the island average should equal the ordinary result.
+    ordinary = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    island = compute_effective_strength(
+        ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_island=True
+    )
+    assert island == pytest.approx(ordinary)
+
+
+def test_is_island_whales_get_half_their_normal_sea_strength():
+    # Emergent, not special-cased: averaging Whales' off-Sea zero with
+    # their full Sea strength yields exactly half -- see the module
+    # docstring's own Phase 282 note.
+    normal_sea = compute_effective_strength(ArmyType.WHALES, Race.HUMAN, Quality.AVERAGE, Terrain.SEA)
+    island = compute_effective_strength(
+        ArmyType.WHALES, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_island=True
+    )
+    assert island == pytest.approx(normal_sea / 2)
+
+
+def test_is_island_overflight_air_units_are_unaffected():
+    # The user's own words: "le province volanti... non hanno nessuna
+    # variazione" -- Dragons/Eagles always take the single, ordinary
+    # land-terrain pass, island or not.
+    ordinary = compute_effective_strength(ArmyType.DRAGON_WING, Race.DRAGONS, Quality.AVERAGE, Terrain.PLAINS)
+    island = compute_effective_strength(
+        ArmyType.DRAGON_WING, Race.DRAGONS, Quality.AVERAGE, Terrain.PLAINS, is_island=True
+    )
+    assert island == ordinary
+
+
+def test_is_island_false_by_default_matches_pre_phase_282_behavior():
+    without_param = compute_effective_strength(ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    explicit_false = compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_island=False
+    )
+    assert without_param == explicit_false
