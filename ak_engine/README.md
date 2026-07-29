@@ -12072,7 +12072,7 @@ complete (Phases 209-211).
     branch reads the same Cowardly bonus -- all in `test_search_
     execution.py` -- 3214 passed total.
 
-- **Phase 287 (current)**: renders the per-leader treasure list in the
+- **Phase 287**: renders the per-leader treasure list in the
   CHARACTERS report -- `describe_characters_report()`'s own docstring
   had explicitly left this out (`List_Treas(ldr,false)`, "a deliberately
   narrower scope for this phase, not a data gap"), even though Phase
@@ -12096,6 +12096,65 @@ complete (Phases 209-211).
     one line, the line's total absence for an item-less leader, and that
     each leader's own line only reflects items owned by that same
     `leader_id` -- 3217 passed total.
+
+- **Phase 288 (current)**: implements the PROVINCES report's real
+  fixed-width columns and tax-tier grouping -- both previously left as
+  a documented "presentation choice, not a missing data gap", the same
+  way every other section composer in this module treats fixed-width
+  formatting. Closed directly from `REPORTS.PAS Rep_Provs` (~lines
+  404-459), which this project located and read in full this phase
+  (`C:\Users\Andrea\Desktop\Gioco\HostAK\TP\REPORTS.PAS`):
+  ```
+  FOR tt:= 11 DOWNTO 0 DO FOR px:= left TO right DO FOR py:= top TO bottom DO
+      IF powner[px,py] = kng THEN IF Min(11,ptax[px,py] +
+          8*ord((px = bornx[kng]) and (py = borny[kng]))) = tt THEN BEGIN
+        ...
+        WRITELN(playfile,pname^[px,py],'':20-Length(pname^[px,py]),ptax[px,py]:3,
+          rname[Mod_PRace(px,py)]:8,tername[pterr[px,py]]:9,pex[px,py]:6,'%',
+          atdesig[Mod_PAT(px,py,0)]:11,atdesig[Mod_PAT(px,py,1)]:11);
+  ```
+  Reading this directly corrected two things this project previously
+  had wrong or unconfirmed, both from an earlier paraphrase written
+  before this project had direct source access:
+  - **No per-tier subheading exists.** The column header prints exactly
+    once, guarded by a `none`-flag shared across the whole province
+    list, not reset per tier -- "grouped by descending tax tier" means
+    only that row *order* follows the `tt` loop (11 downto 0); it
+    produces no visible boundary text. This module's own docstring had
+    said "subheadings per tier," which turns out to have been an
+    overstatement.
+  - **The tier formula** is `min(11, tax + 8)` *only for whichever
+    province is the kingdom's own home province* -- every other owned
+    province's tier is just its own tax (still capped at 11).
+  - `report/turn_report.py`: new `_PROVINCES_COLUMN_CAPTION`/
+    `_PROVINCES_COLUMN_HEADER` (the real, verbatim two-line header,
+    printed once); new `_province_tax_tier(province, coord, kingdom)`
+    implementing the formula above (`province_tax_yield()` returning
+    `None` falls back to 0 for this sort-order computation only, not an
+    assertion that the real tax is zero); `describe_provinces_report()`
+    now sorts by `(-tier, x, y)` instead of plain coordinate, and
+    renders each province as one real fixed-width row (name left-
+    justified in 20 chars; Tax/Race/Terrain/Expl%/Type-1/Type-2 right-
+    justified in 3/8/9/6/11/11 -- Python's own `ljust`/`rjust` never
+    truncate a longer value either, matching Pascal's `:N` overflow
+    behavior, relevant for an Island's own `"Jungle (Sea)"` terrain
+    string exceeding its 9-char field) instead of the previous free-text
+    `"Name -- Race, Terrain, N% explored, ..."` line.
+  - Non-breaking check **skipped for the rewrite itself** (this is an
+    intentional behavior/format change, not an additive one -- the
+    entire point was to replace the old free-text rendering), but the
+    full suite was run immediately after the rewrite to catch every
+    site the format change touched.
+  - All 16 pre-existing `describe_provinces_report()` tests rewritten
+    against the new fixed-width format via a new `_province_row()` test
+    helper (mirroring the real row-formatting logic for readable
+    expected-value construction); 2 `compose_letter_report()` integration
+    tests' own embedded PROVINCES fixture lines updated to match. 3 new
+    tests: the column caption/header render exactly once, tax-tier
+    ordering beats coordinate ordering (a low-tax province that's the
+    kingdom's own home province sorts ahead of a higher-tax non-home
+    province), and the home-province tier bonus caps at 11 rather than
+    overflowing past it -- 3220 passed total.
 
 ## Setup
 

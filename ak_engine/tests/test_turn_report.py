@@ -3829,6 +3829,18 @@ _PROVINCES_OPENING = (
     "the wisdom to submit to thy yoke.  Here, then, are the lands of thy Empire:"
 )
 
+# Phase 288: the real REPORTS.PAS column caption/header, printed once
+# (not per tier) before the fixed-width rows.
+_PROVINCES_COLUMN_CAPTION = "                                                    Recruiting Types:"
+_PROVINCES_COLUMN_HEADER = "Province            Tax   Race   Terrain  Expl%     Type 1     Type 2"
+
+
+def _province_row(name: str, race: str, terrain: str, explored: int, *, tax: int | None = None, type1: str = "", type2: str = "") -> str:
+    """Builds the exact real fixed-width row -- see describe_provinces_report()'s own Phase 288 addendum."""
+
+    tax_field = f"{tax:>3}" if tax is not None else "   "
+    return f"{name:<20}{tax_field}{race:>8}{terrain:>9}{explored:>6}%{type1:>11}{type2:>11}"
+
 
 def test_describe_provinces_report_lists_owned_province():
     state = GameState()
@@ -3842,7 +3854,9 @@ def test_describe_provinces_report_lists_owned_province():
     assert lines == [
         "PROVINCES",
         _PROVINCES_OPENING,
-        "Capital City -- Human, Forest, 75% explored",
+        _PROVINCES_COLUMN_CAPTION,
+        _PROVINCES_COLUMN_HEADER,
+        _province_row("Capital City", "Human", "Forest", 75),
     ]
 
 
@@ -3873,20 +3887,24 @@ def test_describe_provinces_report_falls_back_to_coordinate_when_unnamed():
 
     lines = describe_provinces_report(state, 1)
 
-    assert lines[-1] == "(2, 3) -- Human, Desert, 0% explored"
+    assert lines[-1] == _province_row("(2, 3)", "Human", "Desert", 0)
 
 
-def test_describe_provinces_report_sorts_by_coordinate():
+def test_describe_provinces_report_sorts_by_coordinate_within_the_same_tax_tier():
+    # Both at tax=None (tier 0) and neither is the kingdom's own home
+    # province -- ties break by ascending coordinate, same as before
+    # Phase 288 demoted coordinate from the primary sort key to the
+    # tie-breaker.
     state = GameState()
-    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
     state.add_province(ProvinceState(HexCoord(3, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="South"))
     state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="North"))
 
     lines = describe_provinces_report(state, 1)
 
-    assert lines[2:] == [
-        "North -- Human, Plain, 0% explored",
-        "South -- Human, Plain, 0% explored",
+    assert lines[4:] == [
+        _province_row("North", "Human", "Plain", 0),
+        _province_row("South", "Human", "Plain", 0),
     ]
 
 
@@ -3900,7 +3918,7 @@ def test_describe_provinces_report_uses_effective_terrain_not_illusory():
 
     lines = describe_provinces_report(state, 1)
 
-    assert lines[-1] == "Drowned Fen -- Human, Plain, 0% explored"
+    assert lines[-1] == _province_row("Drowned Fen", "Human", "Plain", 0)
 
 
 # -- Phase 278: Tax + Recruiting Types columns --
@@ -3908,14 +3926,14 @@ def test_describe_provinces_report_uses_effective_terrain_not_illusory():
 
 def test_describe_provinces_report_shows_tax_when_known():
     state = GameState()
-    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
     state.add_province(
         ProvinceState(HexCoord(0, 0), Terrain.JUNGLE, Race.ORCISH, owner_kingdom_id=1, name="Macondo", explored_percent=16, tax=4)
     )
 
     lines = describe_provinces_report(state, 1)
 
-    assert lines[-1] == "Macondo -- Orc, Jungle, 16% explored, Tax 4"
+    assert lines[-1] == _province_row("Macondo", "Orc", "Jungle", 16, tax=4)
 
 
 def test_describe_provinces_report_omits_tax_when_unknown():
@@ -3925,7 +3943,7 @@ def test_describe_provinces_report_omits_tax_when_unknown():
 
     lines = describe_provinces_report(state, 1)
 
-    assert "Tax" not in lines[-1]
+    assert lines[-1] == _province_row("Unbridged", "Human", "Plain", 0)
 
 
 def test_describe_provinces_report_tax_reflects_scar_terrain_reduction():
@@ -3933,14 +3951,14 @@ def test_describe_provinces_report_tax_reflects_scar_terrain_reduction():
     # confirms the FINANCES-side scar/Bless/Earthquake modifiers apply
     # here too, not just in compute_tax_base().
     state = GameState()
-    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
     province = ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Scarred", tax=10)
     province.scar_terrain_gold_reduction = 4
     state.add_province(province)
 
     lines = describe_provinces_report(state, 1)
 
-    assert lines[-1] == "Scarred -- Human, Plain, 0% explored, Tax 6"
+    assert lines[-1] == _province_row("Scarred", "Human", "Plain", 0, tax=6)
 
 
 def test_describe_provinces_report_shows_both_recruit_types():
@@ -3953,19 +3971,19 @@ def test_describe_provinces_report_shows_both_recruit_types():
 
     lines = describe_provinces_report(state, 1)
 
-    assert lines[-1] == "Orielle -- Human, Plain, 0% explored, Recruits Legion/Chariots"
+    assert lines[-1] == _province_row("Orielle", "Human", "Plain", 0, type1="Legion", type2="Chariots")
 
 
 def test_describe_provinces_report_shows_single_recruit_type_when_second_is_none():
     state = GameState()
-    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
     province = ProvinceState(HexCoord(0, 0), Terrain.JUNGLE, Race.ORCISH, owner_kingdom_id=1, name="Macondo")
     province.recruit_type_1 = ArmyType.PHALANX
     state.add_province(province)
 
     lines = describe_provinces_report(state, 1)
 
-    assert lines[-1] == "Macondo -- Orc, Jungle, 0% explored, Recruits Phalanx"
+    assert lines[-1] == _province_row("Macondo", "Orc", "Jungle", 0, type1="Phalanx")
 
 
 def test_describe_provinces_report_omits_recruits_when_unknown():
@@ -3975,19 +3993,19 @@ def test_describe_provinces_report_omits_recruits_when_unknown():
 
     lines = describe_provinces_report(state, 1)
 
-    assert "Recruits" not in lines[-1]
+    assert lines[-1] == _province_row("Unbridged", "Human", "Plain", 0)
 
 
 def test_describe_provinces_report_shows_tax_and_recruits_together_in_order():
     state = GameState()
-    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
     province = ProvinceState(HexCoord(0, 0), Terrain.JUNGLE, Race.ORCISH, owner_kingdom_id=1, name="Macondo", explored_percent=16, tax=4)
     province.recruit_type_1 = ArmyType.PHALANX
     state.add_province(province)
 
     lines = describe_provinces_report(state, 1)
 
-    assert lines[-1] == "Macondo -- Orc, Jungle, 16% explored, Tax 4, Recruits Phalanx"
+    assert lines[-1] == _province_row("Macondo", "Orc", "Jungle", 16, tax=4, type1="Phalanx")
 
 
 def test_describe_provinces_report_shows_island_parenthetical():
@@ -4004,7 +4022,7 @@ def test_describe_provinces_report_shows_island_parenthetical():
 
     lines = describe_provinces_report(state, 1)
 
-    assert lines[-1] == "Reef Isle -- Human, Plain (Sea), 0% explored"
+    assert lines[-1] == _province_row("Reef Isle", "Human", "Plain (Sea)", 0)
 
 
 def test_describe_provinces_report_omits_island_parenthetical_when_not_an_island():
@@ -4014,7 +4032,54 @@ def test_describe_provinces_report_omits_island_parenthetical_when_not_an_island
 
     lines = describe_provinces_report(state, 1)
 
-    assert lines[-1] == "Mainland -- Human, Plain, 0% explored"
+    assert lines[-1] == _province_row("Mainland", "Human", "Plain", 0)
+
+
+# -- Phase 288: fixed-width columns + tax-tier grouping --
+
+
+def test_describe_provinces_report_column_header_and_caption():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Onlytown"))
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines[2] == _PROVINCES_COLUMN_CAPTION
+    assert lines[3] == _PROVINCES_COLUMN_HEADER
+
+
+def test_describe_provinces_report_sorts_by_descending_tax_tier_before_coordinate():
+    # Min(11, tax + 8*is_home_province) -- REPORTS.PAS Rep_Provs. Alpha
+    # (tax=5, not home) -> tier 5. Beta (tax=1, IS the kingdom's own home
+    # province) -> tier min(11, 1+8)=9. Gamma (tax=None -> 0, not home)
+    # -> tier 0. Expected order: Beta (9), Alpha (5), Gamma (0) --
+    # despite Gamma's coordinate sorting first and Beta's own name
+    # sorting after Alpha's alphabetically.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(5, 5)))
+    state.add_province(ProvinceState(HexCoord(9, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Alpha", tax=5))
+    state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Beta", tax=1))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Gamma"))
+
+    lines = describe_provinces_report(state, 1)
+
+    names_in_order = [line.split()[0] for line in lines[4:]]
+    assert names_in_order == ["Beta", "Alpha", "Gamma"]
+
+
+def test_describe_provinces_report_home_province_tier_bonus_caps_at_eleven():
+    # tax=10 + home bonus 8 = 18, capped at Min(11, ...) = 11 -- still
+    # sorts ahead of a non-home province with a higher raw tax (9 < 11).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital", tax=10))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Frontier", tax=9))
+
+    lines = describe_provinces_report(state, 1)
+
+    names_in_order = [line.split()[0] for line in lines[4:]]
+    assert names_in_order == ["Capital", "Frontier"]
 
 
 # -- Phase 221: describe_characters_report() -- the "CHARACTERS" section --
@@ -4386,7 +4451,9 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "PROVINCES",
         "O superfluous one, I have kept well a list of all provinces which have had "
         "the wisdom to submit to thy yoke.  Here, then, are the lands of thy Empire:",
-        "Capital City -- Human, Plain, 0% explored",
+        "                                                    Recruiting Types:",
+        "Province            Tax   Race   Terrain  Expl%     Type 1     Type 2",
+        "Capital City              Human    Plain     0%                      ",
         "CHARACTERS",
         "My Lord, Great indeed are the leaders of our proud kingdom.  Though thee "
         "knows them well, I list them here for thy consideration (the first line "
@@ -4476,7 +4543,9 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "PROVINCES",
         "O superfluous one, I have kept well a list of all provinces which have had "
         "the wisdom to submit to thy yoke.  Here, then, are the lands of thy Empire:",
-        "Capital City -- Human, Plain, 0% explored",
+        "                                                    Recruiting Types:",
+        "Province            Tax   Race   Terrain  Expl%     Type 1     Type 2",
+        "Capital City              Human    Plain     0%                      ",
         "CHARACTERS",
         "My Lord, Great indeed are the leaders of our proud kingdom.  Though thee "
         "knows them well, I list them here for thy consideration (the first line "

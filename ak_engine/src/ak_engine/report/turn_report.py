@@ -5440,6 +5440,37 @@ _PROVINCES_OPENING = (
 
 _PROVINCES_NONE_AT_PRESENT = "None at present"
 
+# REPORTS.PAS Rep_Provs, lines 436-439, verbatim (both raw WRITELN
+# strings, not rejoined -- these are two separate output lines, not one
+# wrapped sentence like `_PROVINCES_OPENING` above). Phase 288 wires
+# these in for real, alongside the fixed-width row format and the tax-
+# tier sort order they head -- see `describe_provinces_report()`'s own
+# docstring.
+_PROVINCES_COLUMN_CAPTION = "                                                    Recruiting Types:"
+_PROVINCES_COLUMN_HEADER = "Province            Tax   Race   Terrain  Expl%     Type 1     Type 2"
+
+# REPORTS.PAS line 426-427: `Min(11,ptax[px,py] + 8*ord((px = bornx[kng])
+# and (py = borny[kng])))` -- see this module's own Phase 288 docstring
+# addendum for the full derivation.
+_PROVINCE_TAX_TIER_HOME_BONUS = 8
+_PROVINCE_TAX_TIER_MAX = 11
+
+
+def _province_tax_tier(province: ProvinceState, coord: HexCoord, kingdom: KingdomState) -> int:
+    """REPORTS.PAS's own `Min(11,ptax + 8*is_home_province)` tier formula (Phase 288).
+
+    `province_tax_yield()` returning `None` (no real-world-file data
+    bridged for this province) falls back to 0 for this sort-order
+    computation only -- a presentation placement, not an assertion that
+    the province's real tax is zero (the same "no data isn't a true
+    zero" stance this module already takes for the Tax *column* itself,
+    which still omits the figure entirely when unknown).
+    """
+
+    tax_yield = province_tax_yield(province) or 0
+    home_bonus = _PROVINCE_TAX_TIER_HOME_BONUS if coord == kingdom.home_province else 0
+    return min(_PROVINCE_TAX_TIER_MAX, tax_yield + home_bonus)
+
 
 def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
     """Assembles the "PROVINCES" section (Phase 220) -- a deliberately
@@ -5448,27 +5479,24 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
     and `describe_adventure_report()` already established.
 
     **Sourced and rendered**: every province this kingdom owns
-    (`ProvinceState.owner_kingdom_id == kingdom_id`), one readable line
-    each -- name (or a `(x, y)` coordinate fallback, the same convention
-    `describe_armies_report()` already uses for an unnamed province),
-    race (`RACE_NAME`), terrain (`TERRAIN_NAME`, via
+    (`ProvinceState.owner_kingdom_id == kingdom_id`), one fixed-width
+    row each -- name (or a `(x, y)` coordinate fallback, the same
+    convention `describe_armies_report()` already uses for an unnamed
+    province), race (`RACE_NAME`), terrain (`TERRAIN_NAME`, via
     `effective_terrain()` so a cast Part Sea/Flood is reflected -- not
     `illusory_terrain`, which only deceives *outside* observers and must
     never leak into a kingdom's own report of its own land), and percent
     explored (`explored_percent`; the real `pex[px,py]` is a single
     per-province value, not per-kingdom, matching this project's
     already-modeled scalar field rather than `explored_percent_by_kingdom`).
-    Provinces are sorted by coordinate, the same ordering
-    `describe_armies_report()`/`describe_adventure_report()` already use
-    in place of the real tax-tier grouping below.
 
     **Tax and Recruiting Types, Phase 278**: the real table's **Tax**
     column (`ptax[px,py]`, via `turn/tax_base.py province_tax_yield()`,
     the same scar-terrain/Bless/Earthquake-adjusted figure `compute_tax_
     base()` already sums) and **Recruiting Types** columns (`Mod_PAT(px,
     py,0)`/`Mod_PAT(px,py,1)`, via `ProvinceState.recruit_type_1`/
-    `recruit_type_2` and `ARMY_TYPE_DESIGNATION`) now render whenever
-    known. Phase 220/275 called both "confirmed absent" -- true only of a
+    `recruit_type_2` and `ARMY_TYPE_DESIGNATION`) render whenever known.
+    Phase 220/275 called both "confirmed absent" -- true only of a
     Pascal *formula* (neither `ptax` nor `Mod_PAT` is ever computed
     anywhere in the surviving archive, still the case). What Phase 275's
     audit didn't re-check: `parser/gw_world.py`/`gw_world_bridge.py`
@@ -5476,15 +5504,15 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
     `GW3`-family world file, the same "world-gen-only data, sourced from
     a real snapshot rather than a formula" category `name` closed in
     Phase 150 -- see that module's own docstring for the full,
-    zero-conflict decode evidence. Both render `None`/absent for a
-    province whose `GameState` was never bridged from a real world file
-    (`tax is None`/`recruit_type_1 is None`) -- no data isn't a true
-    zero, the same stance `turn/tax_base.py` itself already takes.
-    `recruit_type_2` prints only when known and not the real "no second
-    recruit type" case -- both look identical from a caller's
-    perspective (nothing to show), so this composer doesn't need to
-    distinguish them (see `ProvinceState.recruit_type_2`'s own
-    docstring).
+    zero-conflict decode evidence. Both render blank (the fixed-width
+    field's own empty string, not a fabricated zero) for a province
+    whose `GameState` was never bridged from a real world file (`tax is
+    None`/`recruit_type_1 is None`) -- no data isn't a true zero, the
+    same stance `turn/tax_base.py` itself already takes. `recruit_type_2`
+    prints only when known and not the real "no second recruit type"
+    case -- both look identical from a caller's perspective (nothing to
+    show), so this composer doesn't need to distinguish them (see
+    `ProvinceState.recruit_type_2`'s own docstring).
 
     **Type 2 terrain "(Sea)" parenthetical (`pt2`), Phase 282/283**: still
     genuinely confirmed absent from every surviving `.PAS` file (Phase
@@ -5513,24 +5541,67 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
     unrelated pair of columns** -- the user's own real-report header,
     `"Province Tax Race Terrain Expl% Type 1 Type 2"`, confirms these
     hold the Recruiting Types (`Mod_PAT`, e.g. `"Legion"`/`"Fleet"`),
-    already rendered here as `", Recruits X/Y"` (`recruit_type_1`/
-    `recruit_type_2`, Phase 278) -- not terrain at all. The Island-
-    province Type 1/Type 2 terrain split lives entirely inside the
-    single `Terrain` column instead (`"Jungle (Sea)"`), matching this
-    composer's own one-line-per-province shape.
+    already rendered here in their own dedicated columns (Phase 278) --
+    not terrain at all. The Island-province Type 1/Type 2 terrain split
+    lives entirely inside the single `Terrain` column instead
+    (`"Jungle (Sea)"`), matching this composer's own one-row-per-
+    province shape.
 
-    **Still not reproduced, and why**:
-    - The real table's whole "grouped by descending effective tax tier"
-      structure (an `Min(11, tax + 8)` tier computation for the King's
-      own home province, subheadings per tier) -- a presentation choice,
-      not a missing data gap; this composer keeps its own coordinate
-      sort instead, the same documented choice every other section
-      composer in this module already made.
-    - Fixed-width columns themselves aren't reproduced -- the same
-      documented choice `describe_armies_report()` and `describe_
-      adventure_report()`'s own docstrings already made.
+    **Fixed-width columns and tax-tier grouping, Phase 288**: both were
+    previously left as documented "presentation choice, not a missing
+    data gap" omissions, the same way every other section composer in
+    this module treats fixed-width formatting -- closed now, directly
+    from `REPORTS.PAS Rep_Provs` (~lines 425-445), quoted here in full:
+    ```
+    FOR tt:= 11 DOWNTO 0 DO FOR px:= left TO right DO FOR py:= top TO bottom DO
+        IF powner[px,py] = kng THEN IF Min(11,ptax[px,py] +
+            8*ord((px = bornx[kng]) and (py = borny[kng]))) = tt THEN BEGIN
+          ...
+          WRITELN(playfile,pname^[px,py],'':20-Length(pname^[px,py]),ptax[px,py]:3,
+            rname[Mod_PRace(px,py)]:8,tername[pterr[px,py]]:9,pex[px,py]:6,'%',
+            atdesig[Mod_PAT(px,py,0)]:11,atdesig[Mod_PAT(px,py,1)]:11);
+    ```
+    Reading this directly (rather than the earlier docstring's own
+    paraphrase, which turns out to have overstated it) settles two
+    things this project previously had wrong or unconfirmed:
+    - **No per-tier subheading exists at all.** The column header
+      (`_PROVINCES_COLUMN_CAPTION`/`_PROVINCES_COLUMN_HEADER`) prints
+      exactly once, guarded by a `none`-style "have we printed anything
+      yet" flag that's shared across the *entire* province list, not
+      reset per tier. "Grouped by descending tax tier" means only that
+      the `tt` loop (11 downto 0) determines row *order* -- it produces
+      no visible boundary text between tiers. This corrects this
+      module's own earlier "subheadings per tier" description, which
+      was written before this project had direct access to
+      `REPORTS.PAS` and turns out to have been an overstatement.
+    - **The tier itself** is `min(11, tax + 8)` *only for whichever
+      province is this kingdom's own home province* (`px = bornx[kng]
+      and py = borny[kng]`) -- every other owned province's tier is
+      just its own `tax` (still capped at 11). `_province_tax_tier()`
+      implements this exactly; sort key is `(-tier, x, y)`, i.e.
+      descending tier (matching `tt` counting down from 11), then
+      ascending coordinate within a tier (matching the `px`/`py` loops'
+      own ascending `left TO right`/`top TO bottom` order) -- the same
+      role `describe_armies_report()`'s own coordinate sort played
+      before this phase, now demoted to a tie-breaker instead of the
+      primary key.
+
+    Fixed-width fields follow the Pascal `:N` widths literally: name
+    left-justified in 20, Tax/Race/Terrain/Expl%/Type-1/Type-2 right-
+    justified in 3/8/9/6/11/11 respectively (Python's own `str.ljust`/
+    `str.rjust` never truncate a longer value either, the same "overflow
+    past the field width, don't cut it" behavior Pascal's `:N` already
+    has -- relevant here since an Island's own `"Jungle (Sea)"` terrain
+    string is wider than its 9-char field). A missing Tax/Type-1/Type-2
+    value renders as blank spaces filling that same field width, not a
+    fabricated figure -- the column header/caption above them are
+    literal, hand-aligned Pascal strings in their own right and aren't
+    derived from these same field-width computations, so the two need
+    not (and in the real source don't) align to the same character
+    columns.
     """
 
+    kingdom = state.kingdoms[kingdom_id]
     lines = ["PROVINCES", _PROVINCES_OPENING]
 
     owned = [
@@ -5542,31 +5613,28 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
         lines.append(_PROVINCES_NONE_AT_PRESENT)
         return lines
 
-    owned.sort(key=lambda entry: (entry[0].x, entry[0].y))
+    owned.sort(key=lambda entry: (-_province_tax_tier(entry[1], entry[0], kingdom), entry[0].x, entry[0].y))
+
+    lines.append(_PROVINCES_COLUMN_CAPTION)
+    lines.append(_PROVINCES_COLUMN_HEADER)
+
     for coord, province in owned:
         province_label = province.name if province.name else f"({coord.x}, {coord.y})"
         race_name = RACE_NAME[province.race]
         terrain_name = TERRAIN_NAME[province.effective_terrain()]
         if province.is_island:
             terrain_name += " (Sea)"
-        line = (
-            f"{province_label} -- {race_name}, {terrain_name}, "
-            f"{province.explored_percent}% explored"
-        )
 
         tax_yield = province_tax_yield(province)
-        if tax_yield is not None:
-            line += f", Tax {tax_yield}"
+        tax_field = f"{tax_yield:>3}" if tax_yield is not None else " " * 3
 
-        if province.recruit_type_1 is not None:
-            type1_name = ARMY_TYPE_DESIGNATION[province.recruit_type_1]
-            if province.recruit_type_2 is not None:
-                type2_name = ARMY_TYPE_DESIGNATION[province.recruit_type_2]
-                line += f", Recruits {type1_name}/{type2_name}"
-            else:
-                line += f", Recruits {type1_name}"
+        type1_name = ARMY_TYPE_DESIGNATION[province.recruit_type_1] if province.recruit_type_1 is not None else ""
+        type2_name = ARMY_TYPE_DESIGNATION[province.recruit_type_2] if province.recruit_type_2 is not None else ""
 
-        lines.append(line)
+        lines.append(
+            f"{province_label:<20}{tax_field}{race_name:>8}{terrain_name:>9}"
+            f"{province.explored_percent:>6}%{type1_name:>11}{type2_name:>11}"
+        )
 
     return lines
 
