@@ -11631,7 +11631,7 @@ complete (Phases 209-211).
     absence, kingdom-scoping, King-vs-Hero-holder crediting, and
     relative ordering in `test_turn_report.py` -- 3133 passed total.
 
-- **Phase 278 (current)**: closes the PROVINCES "Tax" and "Recruiting
+- **Phase 278**: closes the PROVINCES "Tax" and "Recruiting
   Types" column gaps `describe_provinces_report()`'s own docstring had
   called "confirmed absent" since Phase 220/275 -- that audit only ever
   established no Pascal *formula* survives for `ptax`/`Mod_PAT` (still
@@ -11676,6 +11676,59 @@ complete (Phases 209-211).
     shown, a single type shown when the second is the real "None" case,
     Recruits omitted when unbridged, and both columns together in the
     real table's own order -- 3143 passed total.
+
+- **Phase 279 (current)**: closes the ARMIES report's "Modified Quality"
+  column (`Qual_Modfr`) gap `describe_armies_report()`'s own docstring
+  had called "confirmed absent" since Phase 220/275 -- true only of a
+  Pascal *formula*. The user's own quoted rulebook text named five real
+  modifiers, and every one of them turned out to already be a sourced,
+  implemented mechanic elsewhere in this project (home-province bonus
+  and desert-without-camels penalty from Phase 35, Druidic-ability
+  shortfall from Phase 41/42) or a genuinely new but fully-sourced one
+  (the four race-matching legendary leadership items, real names already
+  catalogued in `models/treasure.py TREASURE_NAME` since Phase 77) --
+  the same "formula lost, inputs sourced" category Phase 277/278 both
+  closed before it.
+  - New `turn/army_quality.py compute_army_modified_quality()`: combines
+    all five modifiers via `turn/strength.py modified_quality()`'s own
+    single-pass clamp (its new `race_item_bonus` parameter, default 0 so
+    every existing battle-strength call site is unaffected -- this
+    bonus is wired into the report column only, not into real combat
+    strength, a deliberately narrower scope matching the user's own
+    "reconstruct the report column" framing). `RACE_LEADERSHIP_TREASURE`
+    maps Human/Elf/Dwarf/Orc to Excalibur/Bow of the Elven Kings/Axe of
+    the Dwarven Lords/Scimitar of Orc Mastery -- real names, no
+    combat-quality wiring existed for them before this phase (only an
+    unrelated Merit Point bonus, `merit_points.py LEGENDARY_ITEM_BONUS_
+    TREASURES`). Unlike Druidic ability, this bonus has no King-
+    substitution carve-out for an unled army -- the user's own rules
+    name only the army's own commanding Hero or King.
+  - `turn/battle_orchestrator.py`: `druidic_shortfall_for()`/`king_
+    druidic_shortfall_for()`/`find_king_of_kingdom()` made public
+    (dropped their leading underscore) so `army_quality.py` can reuse
+    the exact same commander/King-substitution resolution outside of an
+    active battle, instead of re-deriving it a second time -- no logic
+    changed, only visibility.
+  - `report/turn_report.py describe_armies_report()`: renders a second
+    `Quality` name, "Modified {X}", next to the existing normal one,
+    matching the real table's own two-column shape; its own "confirmed
+    absent" docstring bullet removed. `compose_letter_report()`'s Phase
+    275 audit note updated the same way Phase 278's was -- `Qual_Modfr`
+    moved from "still confirmed absent" to the closed list, leaving only
+    `pt2`.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added, once 6 pre-existing tests were updated for the new column --
+    every one of them happened to place its own test army in the
+    kingdom's own home province, so all six needed a "Modified {X}"
+    clause added even though none of them intended to exercise the new
+    feature -- 3143 passed.
+  - 14 new tests: `compute_army_modified_quality()`'s five modifiers
+    (home province, desert-with/without camels, led and King-substituted
+    Druidic shortfall, race-item bonus and its race-matching requirement,
+    ceiling/floor clamping, an unregistered province) in
+    `test_army_quality.py`; `modified_quality()`'s own new
+    `race_item_bonus` parameter, including the single-pass-clamp-vs-two-
+    step distinction, in `test_strength.py` -- 3157 passed total.
 
 ## Setup
 

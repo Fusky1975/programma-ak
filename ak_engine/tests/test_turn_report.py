@@ -3211,7 +3211,7 @@ def test_describe_armies_report_led_army_line():
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["Capital City -- Sir Aldric: Bowmen (Human, Average)"]
+    assert lines[2:] == ["Capital City -- Sir Aldric: Bowmen (Human, Average, Modified Veteran)"]
 
 
 def test_describe_armies_report_unled_army_shows_garrison():
@@ -3220,7 +3220,7 @@ def test_describe_armies_report_unled_army_shows_garrison():
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["Capital City -- Garrison: Phalanx (Human, Veteran)"]
+    assert lines[2:] == ["Capital City -- Garrison: Phalanx (Human, Veteran, Modified Crack)"]
 
 
 def test_describe_armies_report_monstrous_army_uses_its_own_fixed_race():
@@ -3229,7 +3229,7 @@ def test_describe_armies_report_monstrous_army_uses_its_own_fixed_race():
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["Capital City -- Garrison: Dragons (Dragon, Elite)"]
+    assert lines[2:] == ["Capital City -- Garrison: Dragons (Dragon, Elite, Modified Elite)"]
 
 
 def test_describe_armies_report_excludes_other_kingdoms_armies():
@@ -3250,7 +3250,7 @@ def test_describe_armies_report_unnamed_province_falls_back_to_coordinates():
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["(3, 4) -- Garrison: Bowmen (Human, Average)"]
+    assert lines[2:] == ["(3, 4) -- Garrison: Bowmen (Human, Average, Modified Average)"]
 
 
 def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
@@ -3262,8 +3262,8 @@ def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
     lines = describe_armies_report(state, 1)
 
     assert lines[2:] == [
-        "Capital City -- Garrison: Bowmen (Human, Average)",
-        "Second Province -- Garrison: Axemen (Human, Average)",
+        "Capital City -- Garrison: Bowmen (Human, Average, Modified Veteran)",
+        "Second Province -- Garrison: Axemen (Human, Average, Modified Average)",
     ]
 
 
@@ -4273,7 +4273,7 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
-        "Capital City -- Garrison: Bowmen (Human, Average)",
+        "Capital City -- Garrison: Bowmen (Human, Average, Modified Veteran)",
         "IMPERIAL OFFICE REPORT",
         "World Emperor: None at present",
         "Esteemed High Chancellor: None at present",

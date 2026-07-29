@@ -21,8 +21,12 @@ The rulebook gives an exact, ordered pipeline:
        as literally turning Green units Average, Average units Veteran,
        etc. -- the same discrete step ``Quality``'s own enum ordering
        already represents -- see ``turn/cast_execution.py``'s
-       ``_execute_oratory``. +? magic items -- SKIPPED, no item-effect
-       system exists yet)
+       ``_execute_oratory``. +1 for a race-matching legendary leadership
+       item (Phase 279, ``modified_quality()``'s own ``race_item_bonus``
+       parameter) -- wired into the ARMIES report's "Modified Quality"
+       column (``turn/army_quality.py``) only; this pipeline's own real
+       ``_build_battle_units`` caller in ``battle_orchestrator.py``
+       still never passes it, so actual combat strength is unaffected)
     Multiply result by special factors (multiplied together, not added):
       Defense: +25%
       Exploration: +25% (maximum)
@@ -147,8 +151,24 @@ def modified_quality(
     is_home_province: bool = False,
     is_fanatical: bool = False,
     druidic_shortfall: int = 0,
+    race_item_bonus: int = 0,
 ) -> Quality:
-    """Shift a quality level per the rulebook's quality-modifier list, clamped to Quality's range."""
+    """Shift a quality level per the rulebook's quality-modifier list, clamped to Quality's range.
+
+    ``race_item_bonus`` (Phase 279): the ARMIES report's own "Modified
+    Quality" column additionally folds in a +1 for a race-matching
+    legendary leadership item (Excalibur for Human, etc. -- see
+    ``turn/army_quality.py``'s own docstring for the full derivation).
+    All modifiers are summed *before* the single clamp below, not
+    applied in separate clamped steps -- a severe Druidic shortfall
+    that would otherwise floor a unit at Depleted isn't rescued back up
+    by a later +1 that a two-step clamp would let through. Defaults to
+    0 so every existing battle-strength call site (which never passes
+    this) is unaffected -- this bonus is currently wired into the
+    report column only, not into `turn/battle_orchestrator.py`'s own
+    real combat-strength pipeline (a deliberately narrower scope, not
+    yet extended to actual battle outcomes).
+    """
 
     level = int(base_quality)
     if desert_without_camels:
@@ -158,6 +178,7 @@ def modified_quality(
         level += 1
     if is_fanatical:
         level += 1
+    level += race_item_bonus
     level = max(int(Quality.DEPLETED), min(int(Quality.ELITE), level))
     return Quality(level)
 

@@ -300,7 +300,7 @@ def _build_battle_units(
     **Unled armies (under the garrison commander)** (Phase 42, same
     rulebook section): *"If a unit is under the garrison commander of a
     province, and is of a different race than the King, then the King's
-    druidic ability is used"* -- ``_king_druidic_shortfall_for`` resolves
+    druidic ability is used"* -- ``king_druidic_shortfall_for`` resolves
     *which* King via ``province_coord``'s own ``ProvinceState.
     owner_kingdom_id`` (not necessarily the unled army's own
     ``kingdom_id`` -- an allied army defending alongside the owner's
@@ -364,7 +364,7 @@ def _build_battle_units(
         # Short-circuited: roll_fanaticism (and its rng.random() call) never
         # runs at all when apply_fanaticism is False -- see docstring.
         is_fanatical = apply_fanaticism and roll_fanaticism(kingdom.alignment, rng)
-        druidic_shortfall = _druidic_shortfall_for(army, state, kingdom.race, province_coord)
+        druidic_shortfall = druidic_shortfall_for(army, state, kingdom.race, province_coord)
         phantasmal_armies_level = _phantasmal_armies_level_for(army, state)
         mystic_winds_active = _mystic_winds_active_for(army, state)
         illusory_fog_affected = illusory_fog_active and is_illusory_fog_affected_air_unit(
@@ -408,8 +408,15 @@ def _build_battle_units(
     return units
 
 
-def _druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race, province_coord: HexCoord) -> int:
-    """Rulebook [4.32] Druid Table -- see ``_build_battle_units``'s docstring for scope."""
+def druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race, province_coord: HexCoord) -> int:
+    """Rulebook [4.32] Druid Table -- see ``_build_battle_units``'s docstring for scope.
+
+    Public (Phase 279, dropped its leading underscore): the ARMIES
+    report's own "Modified Quality" column (``turn/army_quality.py``)
+    reuses this exact resolution outside of an active battle -- a
+    peacetime army still has a real commander (or lacks one) the same
+    way, so no logic changed, only visibility.
+    """
 
     if army.commanded_by is not None:
         leader = state.leaders.get(army.commanded_by)
@@ -419,23 +426,24 @@ def _druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race, p
         leader_druidic_skill = effective_skill_level(state, leader, Ability.DRUID)
         return compute_druidic_shortfall(leader_race, army_race, leader_druidic_skill)
 
-    return _king_druidic_shortfall_for(state, army_race, province_coord)
+    return king_druidic_shortfall_for(state, army_race, province_coord)
 
 
-def _king_druidic_shortfall_for(state: GameState, army_race: Race, province_coord: HexCoord) -> int:
+def king_druidic_shortfall_for(state: GameState, army_race: Race, province_coord: HexCoord) -> int:
     """Phase 42, rulebook [4.32]: "If a unit is under the garrison commander of a
     province, and is of a different race than the King, then the King's
     druidic ability is used" -- the province's *owning* kingdom's King
     (``ProvinceState.owner_kingdom_id`` + ``LeaderState.is_king``, Phase
     40), not necessarily the unled army's own kingdom. No owning kingdom,
     or no King identified for it, falls back to 0 -- insufficient data,
-    not a guessed penalty.
+    not a guessed penalty. Public since Phase 279 -- see
+    ``druidic_shortfall_for``'s own note.
     """
 
     province = state.provinces.get(province_coord)
     if province is None or province.owner_kingdom_id is None:
         return 0
-    king = _find_king_of_kingdom(state, province.owner_kingdom_id)
+    king = find_king_of_kingdom(state, province.owner_kingdom_id)
     if king is None or king.kingdom_id is None:
         return 0
     king_race = state.kingdoms[king.kingdom_id].race
@@ -443,7 +451,7 @@ def _king_druidic_shortfall_for(state: GameState, army_race: Race, province_coor
     return compute_druidic_shortfall(king_race, army_race, king_druidic_skill)
 
 
-def _find_king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | None:
+def find_king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | None:
     for leader in state.leaders.values():
         if leader.kingdom_id == kingdom_id and leader.is_king:
             return leader

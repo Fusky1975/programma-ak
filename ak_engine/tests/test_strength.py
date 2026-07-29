@@ -119,6 +119,21 @@ def test_modified_quality_druidic_shortfall_reduces_and_clamps_at_floor():
     )
 
 
+def test_modified_quality_race_item_bonus_adds_a_level():
+    assert modified_quality(Quality.AVERAGE, race_item_bonus=1) == Quality.VETERAN
+
+
+def test_modified_quality_race_item_bonus_combines_in_one_clamp_pass_not_two():
+    # Phase 279: a severe Druidic shortfall that would floor a unit at
+    # Depleted on its own isn't rescued back up by a later +1 -- all
+    # modifiers sum together before the single clamp, matching
+    # modified_quality()'s own documented single-pass design.
+    assert (
+        modified_quality(Quality.GREEN, druidic_shortfall=5, race_item_bonus=1)
+        == Quality.DEPLETED
+    )
+
+
 def test_compute_effective_strength_applies_druidic_shortfall_to_quality():
     penalized = compute_effective_strength(
         ArmyType.BOWMEN, Race.HUMAN, Quality.VETERAN, Terrain.PLAINS, druidic_shortfall=1

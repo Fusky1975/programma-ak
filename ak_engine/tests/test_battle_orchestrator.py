@@ -887,9 +887,9 @@ def test_build_battle_units_druidic_shortfall_bypassed_for_same_kingdom_commandi
 
 
 def test_build_battle_units_druidic_shortfall_unled_army_falls_back_to_zero_when_province_unregistered():
-    # No ProvinceState registered for FIELD at all -> _king_druidic_shortfall_for
+    # No ProvinceState registered for FIELD at all -> king_druidic_shortfall_for
     # can't resolve an owning kingdom, so no King-substitution penalty applies
-    # (insufficient data, not a guessed one -- see _king_druidic_shortfall_for).
+    # (insufficient data, not a guessed one -- see king_druidic_shortfall_for).
     state = GameState()
     state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
     army = ArmyState(101, 2, ArmyType.DRAGON_WING, Quality.ELITE, location=FIELD, commanded_by=None)

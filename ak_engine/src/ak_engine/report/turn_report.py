@@ -1142,6 +1142,7 @@ from ak_engine.models.temper import TEMPER_NAME
 from ak_engine.models.treasure import TREASURE_NAME
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
 from ak_engine.report.prose import render
+from ak_engine.turn.army_quality import compute_army_modified_quality
 from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
@@ -5692,13 +5693,6 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
       concept is modeled here (armies with ``ArmyState.kingdom_id ==
       kingdom_id``); the Mercenary pass needs `Known_Merc`/`Commanded`
       eligibility state this project's `GameState` doesn't track.
-    - The real table's second "Modified Quality" column
-      (``Qual_Modfr``) has no surviving source in any of the 13 available
-      `.PAS` files -- confirmed absent (the same missing-main-program
-      category as `ACost`/`LCost`/`Tax_Base`, none of which are defined
-      anywhere in this project's Pascal archive either). Only the plain,
-      unmodified `Quality` is rendered. Re-audited, closed, Phase 275 --
-      see `compose_letter_report()`'s own Phase 275 addendum.
     - Skeletal-Army units get a distinct compact "Skel <designation>"
       form (``astate[an] = Zomboid``) in the real table; `ArmyState` has
       no equivalent per-army undead/skeletal flag, so every army renders
@@ -5717,6 +5711,18 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
     `plan_dispatch._dispatch_recruit`'s own
     `is_army_type_compatible_with_race` already established (Phase
     12/153's own note), not `Mod_ARace`'s own unavailable formula.
+
+    **"Modified Quality" (Phase 279)**: the real table's second quality
+    column, `Qual_Modfr`, still has no surviving Pascal declaration
+    (re-confirmed, not just repeated -- see `compose_letter_report()`'s
+    own Phase 275/279 audit notes) -- but every one of its five real
+    modifiers turned out to already be a sourced, implemented rulebook
+    mechanic elsewhere in this project, the same "formula lost, inputs
+    sourced" category Phase 277/278 both closed before it. Computed via
+    `turn/army_quality.py compute_army_modified_quality()` (see that
+    module's own docstring for the full derivation of each of the five
+    modifiers) and rendered as a second `Quality` name next to the
+    normal one, matching the real table's own two-column shape.
     """
 
     kingdom = state.kingdoms[kingdom_id]
@@ -5742,7 +5748,11 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
         race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race)
         race_name = RACE_NAME[race]
         quality_name = QUALITY_NAME[army.quality]
-        lines.append(f"{province_label} -- {leader_label}: {designation} ({race_name}, {quality_name})")
+        modified_quality_name = QUALITY_NAME[compute_army_modified_quality(state, army)]
+        lines.append(
+            f"{province_label} -- {leader_label}: {designation} "
+            f"({race_name}, {quality_name}, Modified {modified_quality_name})"
+        )
 
     return lines
 
@@ -6768,11 +6778,11 @@ def compose_letter_report(
     unchanged for all six identifiers** -- no Pascal formula for any of
     them has since turned up.
 
-    **What has changed since (Phases 276/278): a missing *formula* isn't
-    the same as missing *data*.** Four of these six identifiers turned
-    out to be recoverable a different way -- real per-instance values
-    sourced from elsewhere in this project rather than re-derived from a
-    lost formula, the same "world-gen-only data, not a runtime
+    **What has changed since (Phases 276/278/279): a missing *formula*
+    isn't the same as missing *data*.** Five of these six identifiers
+    turned out to be recoverable a different way -- real per-instance
+    values sourced from elsewhere in this project rather than re-derived
+    from a lost formula, the same "world-gen-only data, not a runtime
     computation" category `name`/`pname` itself closed back in Phase
     150:
     - `ACost`/`LCost` (Phase 276): `describe_finances_report()`'s own
@@ -6784,10 +6794,16 @@ def compose_letter_report(
       `parser/gw_world.py`/`gw_world_bridge.py`'s real `GW3` world-file
       decode -- see that composer's own Phase 278 docstring note and
       `gw_world.py`'s own "Recruiting Types (Mod_PAT)" section.
+    - `Qual_Modfr` (Phase 279): `describe_armies_report()`'s own
+      "Modified Quality" column gap, closed not by one recovered source
+      but by recognizing that all five of its real modifiers (home
+      province, desert-without-camels, Druidic shortfall, two more from
+      the user's own quoted rulebook text) were already sourced,
+      already-implemented rulebook mechanics scattered across `turn/
+      strength.py`/`turn/battle_orchestrator.py` -- see `turn/army_
+      quality.py`'s own docstring for the full derivation.
 
     **Still genuinely confirmed absent, no known data source**:
-    - `Qual_Modfr` -- `describe_armies_report()`'s own "Modified
-      Quality" column gap.
     - `pt2` -- `describe_provinces_report()`'s own Island parenthetical
       gap (distinct from `Mod_PAT`, despite sharing the old audit
       bullet -- `turn/recruit.py`'s own module docstring cross-
@@ -6807,13 +6823,14 @@ def compose_letter_report(
     `merit_points.py`'s own King of Pain/Prince of Thieves docstring
     sections.
 
-    `Qual_Modfr`/`pt2` are not expected to become sourceable the way the
-    other four were -- neither has a known real-file source (a `GW3`
-    world file or similar) the way `ptax`/`Mod_PAT`/`ACost`/`LCost` did.
-    A future phase could still choose to build a project-original
-    substitute for either (the same kind of deliberate, user-confirmed
-    design choice `turn/tax_base.py compute_tax_base()` made for `Tax_
-    Base` itself), but that would be a new design decision, not a
+    `pt2` is not expected to become sourceable the way the other five
+    were -- it has no known real-file source (a `GW3` world file or
+    similar) the way `ptax`/`Mod_PAT`/`ACost`/`LCost` did, and no known
+    cluster of already-sourced mechanics the way `Qual_Modfr` did. A
+    future phase could still choose to build a project-original
+    substitute (the same kind of deliberate, user-confirmed design
+    choice `turn/tax_base.py compute_tax_base()` made for `Tax_Base`
+    itself), but that would be a new design decision, not a
     continuation of this search.
 
     **ALIGNMENT REDUCTION (Phase 229, appended after ADVENTURE)** is
