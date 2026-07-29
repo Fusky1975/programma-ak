@@ -7,11 +7,12 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.movement import neighbors as _neighbors
-from ak_engine.turn.patrol_execution import execute_patrol, find_patrol_target
+from ak_engine.turn.patrol_execution import _leader_combatant, execute_patrol, find_patrol_target
 from ak_engine.turn.search_decode import SearchTactic
 
 from _helpers import ScriptedRandom
@@ -44,6 +45,16 @@ def _base_state() -> GameState:
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     state.add_province(ProvinceState(ADJACENT, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     return state
+
+
+def test_leader_combatant_reads_real_temper():
+    state = _base_state()
+    leader = LeaderState(1, kingdom_id=1, name="Patroller", location=HOME, temper=Temper.BERSERK)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.temper is Temper.BERSERK
 
 
 # -- find_patrol_target: rules (a), (f) ---------------------------------

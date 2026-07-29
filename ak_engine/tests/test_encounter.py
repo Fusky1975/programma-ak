@@ -151,6 +151,12 @@ from ak_engine.turn.encounter import (
     FULFILL_BASE_HONOR_CHANCE,
     FULFILL_EVIL_PENALTY,
     resolve_fulfill_honored,
+    BERSERK_FURY_BONUS_HIT_POINTS_RANGE,
+    BERSERK_INTIMIDATION_HIT_CHANCE_REDUCTION,
+    BRAVE_MOMENTUM_HIT_CHANCE_BONUS,
+    CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION,
+    apply_temper_melee_setup,
+    berserk_fury_bonus_hit_points,
 )
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
@@ -1932,3 +1938,141 @@ def test_resolve_fulfill_honored_missing_character_alignment_still_applies_the_e
     expected_chance = FULFILL_BASE_HONOR_CHANCE - FULFILL_EVIL_PENALTY
     assert resolve_fulfill_honored(Alignment.EVIL, None, ScriptedRandom([expected_chance - 0.01])) is True
     assert resolve_fulfill_honored(Alignment.EVIL, None, ScriptedRandom([expected_chance])) is False
+
+
+# -- Phase 284: the Temper Table's own melee mechanics --------------------
+
+
+def test_temper_table_melee_constants():
+    assert BERSERK_FURY_BONUS_HIT_POINTS_RANGE == (1, 4)
+    assert BERSERK_INTIMIDATION_HIT_CHANCE_REDUCTION == {
+        Temper.BRAVE: 0.05,
+        Temper.CAUTIOUS: 0.10,
+        Temper.COWARDLY: 0.15,
+    }
+    assert BRAVE_MOMENTUM_HIT_CHANCE_BONUS == 0.10
+    assert CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION == 0.10
+
+
+def test_berserk_fury_bonus_hit_points_stays_within_range():
+    rng = random.Random(0)
+    for _ in range(200):
+        bonus = berserk_fury_bonus_hit_points(rng)
+        assert 1 <= bonus <= 4
+
+
+def test_apply_temper_melee_setup_furia_adds_bonus_hit_points_only_to_the_berserk_side():
+    a = Combatant("Berserker", hit_points=CHARACTER_HIT_POINTS, temper=Temper.BERSERK)
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS)
+
+    apply_temper_melee_setup(a, b, random.Random(0))
+
+    assert CHARACTER_HIT_POINTS < a.hit_points <= CHARACTER_HIT_POINTS + 4
+    assert b.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_apply_temper_melee_setup_intimidazione_reduces_defense_by_opponent_own_temper():
+    for opponent_temper, expected_reduction in (
+        (Temper.BRAVE, 0.05),
+        (Temper.CAUTIOUS, 0.10),
+        (Temper.COWARDLY, 0.15),
+    ):
+        a = Combatant("Berserker", hit_points=CHARACTER_HIT_POINTS, temper=Temper.BERSERK)
+        b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS, temper=opponent_temper)
+
+        apply_temper_melee_setup(a, b, random.Random(0))
+
+        # Only the Berserk side's own defense is under test here -- b's
+        # own temper may separately trigger its own unrelated mechanic
+        # (e.g. Cautious's own Schivare), which isn't what this asserts.
+        assert a.defensive_hit_multiplier == pytest.approx(1.0 - expected_reduction)
+
+
+def test_apply_temper_melee_setup_berserk_vs_berserk_has_no_intimidation():
+    a = Combatant("Berserker A", hit_points=CHARACTER_HIT_POINTS, temper=Temper.BERSERK)
+    b = Combatant("Berserker B", hit_points=CHARACTER_HIT_POINTS, temper=Temper.BERSERK)
+
+    apply_temper_melee_setup(a, b, random.Random(0))
+
+    assert a.defensive_hit_multiplier == 1.0
+    assert b.defensive_hit_multiplier == 1.0
+    # Furia still applies to both -- it's a Berserk's own psychological
+    # toughness, not contingent on the opponent.
+    assert a.hit_points > CHARACTER_HIT_POINTS
+    assert b.hit_points > CHARACTER_HIT_POINTS
+
+
+def test_apply_temper_melee_setup_slancio_boosts_own_offense_only():
+    a = Combatant("Bold Hero", hit_points=CHARACTER_HIT_POINTS, temper=Temper.BRAVE)
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))  # no roll needed -- Slancio/Schivare are deterministic
+
+    assert a.offensive_hit_multiplier == pytest.approx(1.10)
+    assert a.defensive_hit_multiplier == 1.0
+    assert b.offensive_hit_multiplier == 1.0
+
+
+def test_apply_temper_melee_setup_schivare_reduces_the_opponents_own_chance_to_hit():
+    a = Combatant("Wary Hero", hit_points=CHARACTER_HIT_POINTS, temper=Temper.CAUTIOUS)
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.defensive_hit_multiplier == pytest.approx(0.90)
+    assert a.offensive_hit_multiplier == 1.0
+    assert b.defensive_hit_multiplier == 1.0
+
+
+def test_apply_temper_melee_setup_no_temper_on_either_side_is_a_no_op():
+    a = Combatant("A", hit_points=CHARACTER_HIT_POINTS)
+    b = Combatant("B", hit_points=CHARACTER_HIT_POINTS)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.hit_points == CHARACTER_HIT_POINTS
+    assert b.hit_points == CHARACTER_HIT_POINTS
+    assert a.offensive_hit_multiplier == a.defensive_hit_multiplier == 1.0
+    assert b.offensive_hit_multiplier == b.defensive_hit_multiplier == 1.0
+
+
+def test_apply_temper_melee_setup_multipliers_compose_independently_for_both_sides():
+    a = Combatant("Bold Hero", hit_points=CHARACTER_HIT_POINTS, temper=Temper.BRAVE)
+    b = Combatant("Wary Foe", hit_points=CHARACTER_HIT_POINTS, temper=Temper.CAUTIOUS)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.offensive_hit_multiplier == pytest.approx(1.10)
+    assert a.defensive_hit_multiplier == 1.0
+    assert b.offensive_hit_multiplier == 1.0
+    assert b.defensive_hit_multiplier == pytest.approx(0.90)
+
+
+def test_resolve_melee_duel_applies_temper_setup_before_any_combat():
+    # max_rounds=0 skips the round loop entirely, isolating
+    # apply_temper_melee_setup()'s own effect (called first, inside
+    # resolve_melee_duel() itself) from any combat damage.
+    a = Combatant("Berserker", melee_skill=0, hit_points=CHARACTER_HIT_POINTS, temper=Temper.BERSERK)
+    b = Combatant("Foe", melee_skill=0, hit_points=CHARACTER_HIT_POINTS)
+
+    resolve_melee_duel(a, b, random.Random(0), max_rounds=0)
+
+    assert CHARACTER_HIT_POINTS < a.hit_points <= CHARACTER_HIT_POINTS + 4
+    assert b.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_resolve_melee_duel_reads_the_attackers_own_offensive_multiplier_from_temper():
+    # Slancio: +10% to a Brave attacker's own hit chance (50% -> 55%).
+    # 0.52 is a miss at the plain 50% threshold but a hit once Slancio
+    # applies -- proves resolve_melee_duel() actually reads *attacker*.
+    # offensive_hit_multiplier (set by apply_temper_melee_setup() from
+    # a.temper), not just the defender's own defensive_hit_multiplier.
+    a = Combatant("Bold Hero", melee_skill=0, hit_points=CHARACTER_HIT_POINTS, temper=Temper.BRAVE)
+    b = Combatant("Victim", melee_skill=0, hit_points=1)
+    # acts_first, a's hit-chance roll, a's damage roll (any 1-6 kills b's 1 HP)
+    rng = ScriptedRandom([0.1, 0.52, 0.5])
+
+    result = resolve_melee_duel(a, b, rng)
+
+    assert result.winner == "a"
+    assert result.rounds == 1

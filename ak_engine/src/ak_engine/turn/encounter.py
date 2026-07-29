@@ -99,10 +99,12 @@ rulebook mechanic, just not attempted yet):
   primitive; see the "mixed-tactic range transitions" bullet above for
   why), with the actual plan-level fall-through correctly living one
   layer up, in the caller.
-- **Temper's effect on Melee** ("A character's Temper affects melee
-  according to the Temper Table"): this project has no `Temper` model
-  anywhere (no enum, no per-leader field) -- an entirely separate,
-  unstarted piece of character data, not merely an unwired mechanic.
+- ~~**Temper's effect on Melee**~~ -- **closed, Phase 284.** The original
+  claim here ("this project has no `Temper` model anywhere") was already
+  stale by the time it was written: `models/temper.py`'s `Temper` enum
+  and `LeaderState.temper` have existed since Phase 82/139. The real gap
+  was only the Temper Table's own melee mechanics themselves -- see the
+  "Phase 284 addendum" below.
 - **Victory and Death's aftermath** ([5.9]): looting a vanquished foe's
   treasure, magic items changing hands, and (for a slain King) his
   eldest son taking over with *player-chosen* starting ability levels --
@@ -1210,6 +1212,100 @@ Evil)."
 **Not wired into `turn/search_execution.py`'s combat resolution this
 phase either**, same reason as every other Personal-Combat spell
 above.
+
+**Phase 284 addendum -- the Temper Table's own melee mechanics ("Il
+Temperamento non influisce sul combattimento Melee", closed per the
+user's own explicit request).** `Regolamento AK.txt`'s own "TABELLA DEI
+TEMPERAMENTI", quoted in full (only the melee-relevant columns; flee
+probability and encounter-refusal are a separate, still-unwired
+mechanic -- see below):
+
+    Berserk    Furia, Intimidazione
+    Coraggioso Slancio
+    Cauto      Schivare
+    Codardo    Implorare pietà (not melee -- a death-avoidance roll)
+
+    FURIA il Berserk non avverte realmente i colpi ricevuti e questa sua
+    forza psicologica gli vale da 1 a 4 Punti Ferita supplementari.
+    INTIMIDAZIONE gli avversari sono atterriti e hanno minori probabilità
+    di colpire nel combattimento corpo a corpo (Coraggioso -5%, Cauto
+    -10%, Codardo -15%).
+    SLANCIO chi possiede questa caratteristica... Le sue probabilità di
+    colpire aumentano del 10%.
+    SCHIVARE il personaggio Cauto è un esperto nel parare, quindi i suoi
+    avversari hanno un -10% di probabilità di colpire.
+
+Four real, sourced mechanics, all specific to Melee (Fire Arrow's own
+hit chance is governed solely by Archery skill, [5.2] -- the Temper
+Table is never invoked there):
+1. **Furia (Berserk)** -- `BERSERK_FURY_BONUS_HIT_POINTS_RANGE = (1, 4)`,
+   `berserk_fury_bonus_hit_points(rng)`. Added once to a Berserk
+   combatant's own starting `hit_points`, applied the first (and only)
+   time `resolve_melee_duel()` runs for that combatant -- see that
+   function's own docstring for why this is the one safe, unambiguous
+   "start of melee" moment even when Fire Arrow shots came first in the
+   same encounter (`resolve_encounter_combat()`'s SHOOT-then-fall-
+   through-to-MELEE case never calls `resolve_melee_duel()` more than
+   once on the same pair of `Combatant`s, so there's no double-
+   application risk to guard against).
+2. **Intimidazione (Berserk)** -- `BERSERK_INTIMIDATION_HIT_CHANCE_
+   REDUCTION: dict[Temper, float]` (Brave 5%, Cautious 10%, Cowardly
+   15%; Berserk itself is never listed -- one Berserk facing another
+   isn't intimidated, a confirmed omission, not a guess). Reduces the
+   *opponent's* chance to land a hit on the Berserk -- modeled as a
+   multiplier on the Berserk's own `defensive_hit_multiplier`, the
+   exact same field/convention Holy Symbol's/Invisibility's own
+   defensive buffs already established (Phase 209) -- keyed by the
+   *opponent's* own Temper, not the Berserk's.
+3. **Slancio (Brave)** -- `BRAVE_MOMENTUM_HIT_CHANCE_BONUS = 0.10`, a
+   +10% multiplier on the Brave combatant's own chance to land a hit.
+   This is the first *attacker*-side hit-chance modifier this module
+   has needed -- every prior one (Holy Symbol, Invisibility) was
+   defender-side -- so `Combatant` gains a new `offensive_hit_
+   multiplier: float = 1.0` field, mirrored on `defensive_hit_
+   multiplier`'s own shape, and `resolve_melee_duel()`'s own
+   `hit_chance_multiplier` is now `attacker.offensive_hit_multiplier *
+   defender.defensive_hit_multiplier` (defaults to 1.0 for both, so
+   every pre-Phase-284 caller is unaffected).
+4. **Schivare (Cautious)** -- `CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION =
+   0.10`, folded into the Cautious combatant's own `defensive_hit_
+   multiplier` the same way Intimidazione is, but flat (no opponent-
+   Temper dependency -- the rulebook's own text names none for this
+   one).
+
+All four multiplicative on the base 50% Melee hit chance, the same
+convention `holy_symbol_hit_chance()`'s own worked example already
+established (a stated "-10%" reads as `base * (1 - 0.10)`, not
+`base - 10 percentage points`) -- kept consistent across every hit-
+chance modifier in this module rather than mixing conventions.
+
+**`Combatant.temper: Temper | None = None`** (new field) is how a
+caller supplies each side's own Temper -- `None` (every monster
+combatant, and any leader with no recorded `LeaderState.temper`) is a
+documented no-effect, the same permissive-missing-data convention this
+project uses everywhere else (e.g. `druidic_shortfall_for()`'s own
+`leader_race is None` case). Threaded through this project's five
+duplicated `_leader_combatant()`/`_commander_combatant()` helpers
+(`turn/challenge_execution.py`, `turn/patrol_execution.py`, `turn/
+pursue_execution.py`, `turn/search_execution.py`, `turn/
+battle_orchestrator.py`) via `temper=leader.temper`, each a one-line
+addition to an existing lookup -- the data was already on `LeaderState`
+(Phase 82/139), only the wiring was missing.
+
+**Deliberately NOT modeled this phase** (a different rulebook mechanic
+from "affects melee," even though it shares the same Temper Table):
+flee probability/refusal-to-Meet (Berserk never/never, Brave "when the
+odds look bad and mortal-blow risk is high"/never, Cautious "when
+mortal-blow risk is significant"/1-50%, Cowardly "when death is
+possible"/51-100%, a King of either of the last two never refuses) and
+Cowardly's own "Implorare pietà" (beg for mercy, ~50% success, better
+against Good-aligned opponents) death-avoidance roll -- both are
+decision/tactic-selection mechanics for `turn/search_execution.py`'s
+own tactic walk, not melee hit-chance math, and the Cautious flee bonus
+half of this ("(NOVITA') I personaggi Cauti hanno il 30% in più di
+possibilità di fuggire") was already flagged and deliberately deferred
+separately (this module's own "mixed-tactic range transitions" bullet
+above cross-references it). A natural, distinct follow-up phase.
 """
 
 from __future__ import annotations
@@ -1232,6 +1328,18 @@ CHARACTER_HIT_POINTS = 10
 # [5.3] Melee: flat 50% base chance, 1-6 damage -- not skill-scaled.
 MELEE_HIT_CHANCE = 0.50
 MELEE_DAMAGE_RANGE = (1, 6)
+
+# [Tabella dei Temperamenti] ("Temper Table"), Regolamento AK.txt -- see
+# module docstring's own Phase 284 addendum for the full quoted source
+# and the four melee-specific mechanics these back.
+BERSERK_FURY_BONUS_HIT_POINTS_RANGE = (1, 4)  # "Furia"
+BERSERK_INTIMIDATION_HIT_CHANCE_REDUCTION: dict[Temper, float] = {  # "Intimidazione"
+    Temper.BRAVE: 0.05,
+    Temper.CAUTIOUS: 0.10,
+    Temper.COWARDLY: 0.15,
+}
+BRAVE_MOMENTUM_HIT_CHANCE_BONUS = 0.10  # "Slancio"
+CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION = 0.10  # "Schivare"
 
 # [5.2] Fire Arrow: 30% + 10%/Archery level, 1-6 damage.
 FIRE_ARROW_BASE_HIT_CHANCE = 0.30
@@ -2093,6 +2201,16 @@ class Combatant:
     # from a successful Psychic Blast or Ice Suspension cast, consumed by
     # `turn/search_execution.py` immediately after the CAST tactic resolves.
     bonus_unanswered_attacks: int = 0
+    # Phase 284 -- multiplies the chance THIS combatant lands a hit (the
+    # attacker-side counterpart to defensive_hit_multiplier above) --
+    # Slancio's own +10% for a Brave combatant. Default 1.0 leaves every
+    # pre-Phase-284 caller unaffected.
+    offensive_hit_multiplier: float = 1.0
+    # Phase 284 -- this combatant's own real Temper ([Tabella dei
+    # Temperamenti]), if known. `None` (a monster, or a leader with no
+    # recorded `LeaderState.temper`) is a documented no-effect -- see
+    # module docstring's own Phase 284 addendum.
+    temper: Temper | None = None
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -2113,6 +2231,40 @@ def fire_arrow_free_attacks(archery_skill: int) -> int:
     """Rulebook [5.2]: "a number of free attacks equal to the level of archery skill."."""
 
     return archery_skill
+
+
+def berserk_fury_bonus_hit_points(rng: random.Random) -> int:
+    """"Furia": a Berserk combatant's own 1-4 bonus starting Hit Points --
+    see module docstring's own Phase 284 addendum.
+    """
+
+    return rng.randint(*BERSERK_FURY_BONUS_HIT_POINTS_RANGE)
+
+
+def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random) -> None:
+    """Mutates ``a``/``b`` in place per the Temper Table's own melee-specific
+    mechanics (Furia, Intimidazione, Slancio, Schivare) -- see module
+    docstring's own Phase 284 addendum for the full quoted source and
+    derivation. Reads each combatant's own ``.temper`` field (``None`` is
+    a documented no-effect); called once, internally, at the very start
+    of ``resolve_melee_duel()`` -- not meant to be called directly by
+    other callers.
+    """
+
+    for combatant, opponent in ((a, b), (b, a)):
+        if combatant.temper is Temper.BERSERK:
+            combatant.hit_points += berserk_fury_bonus_hit_points(rng)
+            reduction = (
+                BERSERK_INTIMIDATION_HIT_CHANCE_REDUCTION.get(opponent.temper)
+                if opponent.temper is not None
+                else None
+            )
+            if reduction is not None:
+                combatant.defensive_hit_multiplier *= 1.0 - reduction
+        elif combatant.temper is Temper.BRAVE:
+            combatant.offensive_hit_multiplier *= 1.0 + BRAVE_MOMENTUM_HIT_CHANCE_BONUS
+        elif combatant.temper is Temper.CAUTIOUS:
+            combatant.defensive_hit_multiplier *= 1.0 - CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION
 
 
 def roll_melee_attack(
@@ -2215,8 +2367,17 @@ def resolve_melee_duel(
     floored at 0 -- a debuffed attacker can never deal negative damage).
     Both default to a no-op (1.0 / 0), so every pre-Phase-209 caller is
     unaffected.
+
+    Phase 284: ``apply_temper_melee_setup(a, b, rng)`` runs once, first,
+    reading each side's own ``.temper`` (Furia/Intimidazione/Slancio/
+    Schivare -- see module docstring's own Phase 284 addendum) --
+    ``None`` on both is a no-op, so every pre-Phase-284 caller is
+    unaffected. Each swing then also consults the *attacker's* own
+    ``offensive_hit_multiplier`` (Slancio) alongside the defender's own
+    ``defensive_hit_multiplier``.
     """
 
+    apply_temper_melee_setup(a, b, rng)
     skill_a, skill_b = effective_melee_skill(a), effective_melee_skill(b)
     for round_number in range(1, max_rounds + 1):
         first, second = (a, b) if _acts_first(skill_a, skill_b, rng) else (b, a)
@@ -2224,7 +2385,9 @@ def resolve_melee_duel(
             if attacker.hit_points <= 0 or defender.hit_points <= 0:
                 continue
             damage = roll_melee_attack(
-                rng, damage_range=attacker.melee_damage_range, hit_chance_multiplier=defender.defensive_hit_multiplier
+                rng,
+                damage_range=attacker.melee_damage_range,
+                hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
             )
             damage = max(0, damage - attacker.melee_damage_dealt_reduction)
             defender.hit_points -= damage

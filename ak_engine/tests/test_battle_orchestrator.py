@@ -12,6 +12,7 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import (
     MultiAttackerParty,
@@ -1264,6 +1265,29 @@ def test_commander_combatant_reads_real_melee_skill_and_neutral_bonus():
     assert combatant.melee_skill == 2
     assert combatant.neutral_duelist_bonus is True
     assert combatant.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_commander_combatant_reads_real_temper():
+    # Phase 284: the Temper Table's own melee mechanics need each
+    # combatant's real Temper threaded through -- LeaderState.temper has
+    # existed since Phase 82, only the wiring here was missing.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Commander", location=FIELD, temper=Temper.BRAVE))
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.temper is Temper.BRAVE
+
+
+def test_commander_combatant_garrison_commander_has_no_temper():
+    state = GameState()
+    commander = provincial_garrison_commander(contingent_size=3)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.temper is None
 
 
 def test_commander_combatant_reads_real_archery_skill():

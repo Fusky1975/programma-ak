@@ -687,9 +687,11 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
     leader = state.leaders.get(commander.leader_id)
     melee_skill = 0
     archery_skill = 0
+    temper = None
     if leader is not None:
         melee_skill = effective_skill_level(state, leader, Ability.MELEE)
         archery_skill = effective_skill_level(state, leader, Ability.ARCHERY)
+        temper = leader.temper
 
     neutral_bonus = False
     if leader is not None and leader.kingdom_id is not None:
@@ -702,6 +704,7 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         melee_skill=melee_skill,
         archery_skill=archery_skill,
         neutral_duelist_bonus=neutral_bonus,
+        temper=temper,
     )
 
 

@@ -11862,7 +11862,7 @@ complete (Phases 209-211).
     "(Island)" parenthetical rendering (present and absent) in
     `test_turn_report.py` -- 3181 passed total.
 
-- **Phase 283 (current)**: corrects the Island-province terrain
+- **Phase 283**: corrects the Island-province terrain
   parenthetical's own rendered text, `" (Island)"` -> `" (Sea)"`,
   against the user's own real PROVINCES report example (2026-07-29):
   ```
@@ -11896,6 +11896,83 @@ complete (Phases 209-211).
     (`test_describe_provinces_report_shows_island_parenthetical`) was
     updated in place to expect `"Plain (Sea)"` instead of `"Plain
     (Island)"`, still 3181 passed total.
+
+- **Phase 284 (current)**: implements the Temper Table's own Melee-combat
+  mechanics -- Furia, Intimidazione, Slancio, Schivare -- against the
+  real "TABELLA DEI TEMPERAMENTI" (`Regolamento AK.txt`, ~lines 3392-3428).
+  `turn/encounter.py`'s own module docstring had stated (since Phase 48)
+  that this project had no `Temper` model anywhere; that claim was
+  already stale -- `Temper` (Phase 82) and `LeaderState.temper` (Phase
+  139) both existed, just never wired into combat. This phase closes
+  that gap:
+  ```
+  Temperamento    Effetti Speciali        Fuga           Rifiuto
+  Berserk         Furia, Intimidazione    Mai            Mai
+  Coraggioso      Slancio                 (probabilita)  Mai
+  Cauto           Schivare                (rischio)      1-50%
+  Codardo         Implorare pieta         (morte)        51-100%
+  ```
+  Only the four *melee-math* effects (Furia/Intimidazione/Slancio/
+  Schivare) are modeled this phase; flee probability, refusal-to-Meet,
+  and Cowardly's own "Implorare pietà" are a different rulebook
+  mechanic (decision/tactic-selection, not melee math) and are
+  explicitly left for a future phase. Fire Arrow is untouched -- its
+  hit chance is governed solely by Archery skill per [5.2], and the
+  Temper Table is never invoked there.
+  - `turn/encounter.py`: new constants
+    `BERSERK_FURY_BONUS_HIT_POINTS_RANGE = (1, 4)`,
+    `BERSERK_INTIMIDATION_HIT_CHANCE_REDUCTION` (Brave -5%, Cautious
+    -10%, Cowardly -15%), `BRAVE_MOMENTUM_HIT_CHANCE_BONUS = 0.10`,
+    `CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION = 0.10`. New
+    `Combatant.offensive_hit_multiplier: float = 1.0` field -- the
+    first *attacker*-side hit-chance multiplier this module has
+    needed (existing `defensive_hit_multiplier`, from Phase 209's Holy
+    Symbol/Invisibility, only ever multiplied the *opponent's* chance
+    to land a hit). New `Combatant.temper: Temper | None = None` field.
+    New `berserk_fury_bonus_hit_points(rng)` and
+    `apply_temper_melee_setup(a, b, rng)` functions; the latter is
+    called as the very first line of `resolve_melee_duel()`, before
+    the round loop, and mutates each side's `hit_points`,
+    `defensive_hit_multiplier`, and `offensive_hit_multiplier` in
+    place per its own Temper (and its opponent's, for Intimidazione).
+    `resolve_melee_duel()`'s hit-chance multiplier changed from
+    `defender.defensive_hit_multiplier` to `attacker.
+    offensive_hit_multiplier * defender.defensive_hit_multiplier`,
+    following the same multiplicative convention `holy_symbol_hit_
+    chance()` already established (Phase 209) rather than flat
+    percentage-point subtraction. Applying Intimidazione as a
+    multiplier on the Berserk's own `defensive_hit_multiplier` (keyed
+    by the *opponent's* Temper) composes automatically with every
+    pre-existing defensive multiplier without any special-casing.
+  - `turn/challenge_execution.py`, `turn/patrol_execution.py`, `turn/
+    pursue_execution.py`, `turn/search_execution.py`, `turn/battle_
+    orchestrator.py`: each module's own `_leader_combatant`/
+    `_commander_combatant` helper now passes `temper=leader.temper`
+    (or `None` for a Druid-substituted/garrison commander with no real
+    leader) into the `Combatant` it builds -- the same "duplicated
+    per-consumer lookup" precedent these five functions already follow
+    (see each one's own docstring), not refactored into a shared
+    helper.
+  - Non-breaking: full suite passed unchanged before any new tests
+    were added (`offensive_hit_multiplier` defaults to `1.0` and
+    `temper` defaults to `None` everywhere, so `apply_temper_melee_
+    setup()` is a no-op for every existing fixture) -- 3181 passed.
+  - 17 new tests: the Temper Table's own constants, `berserk_fury_
+    bonus_hit_points()`'s range, and every `apply_temper_melee_setup()`
+    branch (Furia's bonus hit points, Intimidazione keyed by the
+    opponent's own Temper including the Berserk-vs-Berserk no-op case,
+    Slancio's offense-only boost, Schivare's defense-only reduction,
+    the no-Temper no-op, and both sides' multipliers composing
+    independently) plus `resolve_melee_duel()`'s own wiring (setup
+    runs before combat via the `max_rounds=0` isolation trick, and the
+    attacker's own offensive multiplier is actually read) in `test_
+    encounter.py`; one wiring-confirmation test per consumer
+    (`_leader_combatant`/`_commander_combatant` reads the real
+    `LeaderState.temper`, and the garrison-commander carve-out stays
+    `None`) across `test_challenge_execution.py`, `test_patrol_
+    execution.py`, `test_pursue_execution.py`, `test_search_
+    execution.py`, and `test_battle_orchestrator.py` -- 3198 passed
+    total.
 
 ## Setup
 

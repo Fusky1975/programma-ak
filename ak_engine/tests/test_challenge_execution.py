@@ -9,8 +9,10 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.turn.challenge_execution import (
     ChallengeExecutionResult,
+    _leader_combatant,
     execute_challenge,
     has_combat_intent,
     is_encounter_accepted,
@@ -108,6 +110,19 @@ def test_armyless_hero_vs_hero_challenger_always_accepts_without_consuming_rng()
         rng=ScriptedRandom([]),  # any .random() call here would raise IndexError
     )
     assert accepted is True
+
+
+def test_leader_combatant_reads_real_temper():
+    # Phase 284: the Temper Table's own melee mechanics need each
+    # combatant's real Temper threaded through.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD, temper=Temper.CAUTIOUS)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.temper is Temper.CAUTIOUS
 
 
 # -- execute_challenge: co-location, not-found, peaceful bypass ---------

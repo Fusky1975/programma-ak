@@ -9,10 +9,17 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
-from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue, step_toward_target
+from ak_engine.turn.pursue_execution import (
+    PursueExecutionResult,
+    _leader_combatant,
+    advance_pursuit,
+    execute_pursue,
+    step_toward_target,
+)
 from ak_engine.turn.search_decode import SearchTactic
 
 from _helpers import ScriptedRandom
@@ -42,6 +49,16 @@ def _base_state() -> GameState:
     state.add_kingdom(KingdomState(1, "Chasia", Race.HUMAN, Alignment.GOOD, FIELD))
     state.add_kingdom(KingdomState(2, "Fleeland", Race.HUMAN, Alignment.GOOD, FIELD))
     return state
+
+
+def test_leader_combatant_reads_real_temper():
+    state = _base_state()
+    leader = LeaderState(1, kingdom_id=1, name="Chaser", location=FIELD, temper=Temper.COWARDLY)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.temper is Temper.COWARDLY
 
 
 # -- not found / army-leading mismatch -----------------------------------

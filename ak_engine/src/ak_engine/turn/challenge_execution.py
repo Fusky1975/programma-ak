@@ -147,6 +147,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         melee_skill=melee_skill,
         archery_skill=archery_skill,
         neutral_duelist_bonus=neutral_bonus,
+        temper=leader.temper,
     )
 
 

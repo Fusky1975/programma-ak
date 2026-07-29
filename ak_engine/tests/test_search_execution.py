@@ -21,6 +21,7 @@ from ak_engine.turn.search_execution import (
     FLEE_CHANCE,
     TROLL_REGENERATION_PER_COMBAT_ROUND,
     SearchExecutionResult,
+    _leader_combatant,
     execute_search,
 )
 
@@ -64,6 +65,16 @@ def _beg_request(feature_id: int, *following: Maneuver) -> SearchRequest:
 def _damage_leader_fire_arrow_duel(leader_combatant, monster_combatant, rng):
     leader_combatant.hit_points -= 3
     return EncounterCombatResult(winner=None, rounds=1)
+
+
+def test_leader_combatant_reads_real_temper():
+    state = GameState()
+    leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION, temper=Temper.BRAVE)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(state, leader)
+
+    assert combatant.temper is Temper.BRAVE
 
 
 def test_execute_search_leader_not_found():

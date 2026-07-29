@@ -463,7 +463,11 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)
     archery_skill = effective_skill_level(state, leader, Ability.ARCHERY)
     return Combatant(
-        name=leader.name, hit_points=CHARACTER_HIT_POINTS, melee_skill=melee_skill, archery_skill=archery_skill
+        name=leader.name,
+        hit_points=CHARACTER_HIT_POINTS,
+        melee_skill=melee_skill,
+        archery_skill=archery_skill,
+        temper=leader.temper,
     )
 
 
