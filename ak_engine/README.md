@@ -11897,7 +11897,7 @@ complete (Phases 209-211).
     updated in place to expect `"Plain (Sea)"` instead of `"Plain
     (Island)"`, still 3181 passed total.
 
-- **Phase 284 (current)**: implements the Temper Table's own Melee-combat
+- **Phase 284**: implements the Temper Table's own Melee-combat
   mechanics -- Furia, Intimidazione, Slancio, Schivare -- against the
   real "TABELLA DEI TEMPERAMENTI" (`Regolamento AK.txt`, ~lines 3392-3428).
   `turn/encounter.py`'s own module docstring had stated (since Phase 48)
@@ -11973,6 +11973,54 @@ complete (Phases 209-211).
     execution.py`, `test_pursue_execution.py`, `test_search_
     execution.py`, and `test_battle_orchestrator.py` -- 3198 passed
     total.
+
+- **Phase 285 (current)**: wires the race-matching legendary leadership
+  item's +1 quality bonus into real combat strength -- Phase 279 had
+  already computed it for the ARMIES report's own "Modified Quality"
+  column (`turn/army_quality.py compute_army_modified_quality()`), but
+  `turn/strength.py compute_effective_strength()`'s own real
+  `_build_battle_units` caller in `battle_orchestrator.py` never passed
+  it through, exactly as that function's own docstring had explicitly
+  flagged since Phase 279. Closed by threading the same
+  `race_item_bonus` parameter one level further.
+  - `models/treasure.py`: the `RACE_LEADERSHIP_TREASURE` table (Excalibur
+    for Human, Bow of the Elven Kings for Elf, Axe of the Dwarven Lords
+    for Dwarf, Scimitar of Orc Mastery for Orc -- no entry for any
+    non-humanoid race, unchanged from Phase 279) moved here from `turn/
+    army_quality.py`, its original single owner, so `turn/battle_
+    orchestrator.py` can share it too without a circular import
+    (`army_quality.py` itself already imports from `battle_
+    orchestrator.py`).
+  - `turn/strength.py compute_effective_strength()`: new `race_item_
+    bonus: int = 0` parameter, passed straight through to `modified_
+    quality()`'s own parameter of the same name (unchanged since Phase
+    279). Module docstring and `modified_quality()`'s own docstring
+    both updated to drop the "report column only" caveat.
+  - `turn/battle_orchestrator.py _build_battle_units()`: computes
+    `race_item_bonus` per unit the same way `compute_army_modified_
+    quality()` already does -- a *led* army (`commanded_by` is not
+    `None`) whose commander holds the item matching this side's own
+    `kingdom.race` gets +1, checked via `state.items_held_by()`. Same
+    "commander only, no King-substitution carve-out for an unled army"
+    rule the ARMIES report's own column already established (the
+    user's rulebook text names only the army's own commanding Hero or
+    King). Fully deterministic, no `rng` involved.
+  - `turn/army_quality.py`: its own `compute_army_modified_quality()`
+    is unchanged -- it still independently computes the same bonus
+    against `army.location` for the peacetime report column, rather
+    than calling the battle path. Only its import of
+    `RACE_LEADERSHIP_TREASURE` moved to the new shared location; its
+    module docstring's "Scope, deliberately narrow" section rewritten
+    to point at this phase instead of claiming report-only forever.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added (`race_item_bonus` defaults to 0 everywhere) -- 3198 passed.
+  - 4 new tests: `compute_effective_strength()`'s own `race_item_bonus`
+    passthrough in `test_strength.py`; `_build_battle_units()`'s three
+    wiring cases (matching item boosts a led army, a wrong-race item is
+    ignored, an unled army gets nothing) in `test_battle_orchestrator.py`
+    -- 3202 passed total. `test_army_quality.py`'s existing
+    `RACE_LEADERSHIP_TREASURE` coverage test updated to import from its
+    new home rather than duplicated.
 
 ## Setup
 

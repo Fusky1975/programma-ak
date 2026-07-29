@@ -44,13 +44,16 @@ modified_quality()`'s own single-pass clamp (its new Phase 279
 Druidic shortfall that floors a unit at Depleted isn't wrongly rescued
 back up by a later +1.
 
-**Scope, deliberately narrow**: this only feeds the ARMIES report's
-display column. `race_item_bonus` is never passed by `_build_battle_
-units` itself, so an army's *actual* combat strength is unaffected by a
-commander's leadership item -- the user's own request was specifically
-to reconstruct the report column, not to extend real battle math. A
-future phase could choose to wire this into combat too, but that's a new
-design decision, not a continuation of this one.
+**No longer report-only (Phase 285)**: `_build_battle_units` in
+`turn/battle_orchestrator.py` now computes this same `race_item_bonus`
+independently (same `RACE_LEADERSHIP_TREASURE` table, now hoisted to
+`models/treasure.py` so both modules can share it without a circular
+import) and threads it into `turn/strength.py compute_effective_
+strength()` for real combat -- see that function's own Phase 285 note.
+This module's own `compute_army_modified_quality()` still exists
+unchanged for the ARMIES report's peacetime display column; it does not
+call the battle path, it just computes the same bonus a second time
+against `army.location` instead of a live battle's province.
 """
 
 from __future__ import annotations
@@ -58,23 +61,10 @@ from __future__ import annotations
 from ak_engine.models.army_type import ArmyType, MONSTROUS_ARMY_RACE
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.map import Terrain
-from ak_engine.models.race import Race
-from ak_engine.models.treasure import Treasure
+from ak_engine.models.treasure import RACE_LEADERSHIP_TREASURE
 from ak_engine.turn.battle_orchestrator import druidic_shortfall_for
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.strength import modified_quality
-
-# The user's own rules 3-6: one race-matching legendary leadership item
-# per humanoid race, real names confirmed in `models/treasure.py
-# TREASURE_NAME` (Excalibur / Bow of the Elven Kings / Axe of the
-# Dwarven Lords / Scimitar of Orc Mastery). No entry for any
-# non-humanoid race -- the user's rules only ever named these four.
-RACE_LEADERSHIP_TREASURE: dict[Race, Treasure] = {
-    Race.HUMAN: Treasure.LEADERSHIP_HUMAN,
-    Race.ELVEN: Treasure.LEADERSHIP_ELVEN,
-    Race.DWARVEN: Treasure.LEADERSHIP_DWARVEN,
-    Race.ORCISH: Treasure.LEADERSHIP_ORCISH,
-}
 
 
 def compute_army_modified_quality(state: GameState, army: ArmyState) -> Quality:

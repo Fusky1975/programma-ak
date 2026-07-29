@@ -12,8 +12,8 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
-from ak_engine.models.treasure import Treasure
-from ak_engine.turn.army_quality import RACE_LEADERSHIP_TREASURE, compute_army_modified_quality
+from ak_engine.models.treasure import RACE_LEADERSHIP_TREASURE, Treasure
+from ak_engine.turn.army_quality import compute_army_modified_quality
 from ak_engine.turn.combat import Quality
 
 HOME = HexCoord(0, 0)
@@ -150,6 +150,9 @@ def test_unregistered_province_has_no_desert_penalty():
 
 
 def test_race_leadership_treasure_covers_the_four_humanoid_races():
+    # Phase 285: this table moved to models/treasure.py so turn/
+    # battle_orchestrator.py could share it too, without a circular
+    # import -- see that module's own docstring.
     assert RACE_LEADERSHIP_TREASURE == {
         Race.HUMAN: Treasure.LEADERSHIP_HUMAN,
         Race.ELVEN: Treasure.LEADERSHIP_ELVEN,

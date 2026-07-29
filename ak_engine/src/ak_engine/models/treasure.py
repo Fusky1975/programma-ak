@@ -182,6 +182,7 @@ from __future__ import annotations
 from enum import Enum
 
 from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.race import Race
 
 
 class TreasureCategory(Enum):
@@ -371,6 +372,20 @@ TREASURE_WAND_SPELL: dict[Treasure, Spell] = {
     Treasure(15 + spell.value): spell for spell in Spell if spell.value < 20
 }
 TREASURE_BOOK_ABILITY: dict[Treasure, Ability] = {Treasure(52 + ability.value): ability for ability in Ability}
+
+# The user's own rules 3-6 (Phase 279): one race-matching legendary
+# leadership item per humanoid race -- moved here (Phase 285) from
+# ``turn/army_quality.py``, its original single owner, so ``turn/
+# battle_orchestrator.py`` can share the same table without a circular
+# import (``army_quality.py`` itself imports from ``battle_orchestrator.py``).
+# No entry for any non-humanoid race -- the user's rules only ever named
+# these four ``LEADERSHIP_WEAPON`` ordinals.
+RACE_LEADERSHIP_TREASURE: dict[Race, Treasure] = {
+    Race.HUMAN: Treasure.LEADERSHIP_HUMAN,
+    Race.ELVEN: Treasure.LEADERSHIP_ELVEN,
+    Race.DWARVEN: Treasure.LEADERSHIP_DWARVEN,
+    Race.ORCISH: Treasure.LEADERSHIP_ORCISH,
+}
 
 
 # HostAK/TP/PROSE/TREASAB.X2, verbatim, ordinals 0-92 (93 lines -- the file

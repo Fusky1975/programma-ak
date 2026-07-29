@@ -167,6 +167,7 @@ from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import RACE_LEADERSHIP_TREASURE
 from ak_engine.turn.aftermath import roll_quality_change
 from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
@@ -349,6 +350,20 @@ def _build_battle_units(
     for every unit on this side -- see that function's own docstring for
     the land/Sea blend it runs. Defaults to ``False``, unaffected, for
     every pre-Phase-282 caller.
+
+    **Race-matching legendary leadership item** (Phase 279 originally
+    report-only, wired into real combat Phase 285): a *led* army
+    (``commanded_by`` is not ``None``) whose commander holds the item
+    from ``models/treasure.py RACE_LEADERSHIP_TREASURE`` matching this
+    side's own ``kingdom.race`` (Excalibur for Human, etc.) gets a +1
+    quality bonus via ``turn/strength.py compute_effective_strength()``'s
+    own ``race_item_bonus`` parameter -- the same table and the same
+    "commander only, no King-substitution carve-out for an unled army"
+    rule ``turn/army_quality.py compute_army_modified_quality()`` already
+    established for the ARMIES report's own peacetime display column
+    (the user's own rulebook text names only the army's own commanding
+    Hero or King). Checked once per unit via ``state.items_held_by()``,
+    fully deterministic, no ``rng`` involved.
     """
 
     desert_without_camels = terrain is Terrain.DESERT and not any(
@@ -381,6 +396,13 @@ def _build_battle_units(
         battle_quality = army.quality
         if army.is_skeletal and opponent_owns_osteopathic:
             battle_quality = quality_one_level_down(battle_quality)
+        race_item_bonus = 0
+        if army.commanded_by is not None:
+            needed_treasure = RACE_LEADERSHIP_TREASURE.get(kingdom.race)
+            if needed_treasure is not None and any(
+                item.treasure == needed_treasure for item in state.items_held_by(army.commanded_by)
+            ):
+                race_item_bonus = 1
         phantasmal_armies_bonus_per_level = (
             OBSERVATION_BALLOONS_PHANTASMAL_ARMIES_BONUS_PER_LEVEL
             if phantasmal_armies_level > 0 and opponent_owns_balloons
@@ -396,6 +418,7 @@ def _build_battle_units(
             is_fanatical=is_fanatical,
             desert_without_camels=desert_without_camels,
             druidic_shortfall=druidic_shortfall,
+            race_item_bonus=race_item_bonus,
             base_strength_override=override,
             combat_ability_level=combat_ability_level,
             phantasmal_armies_level=phantasmal_armies_level,

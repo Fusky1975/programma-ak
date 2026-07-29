@@ -142,6 +142,17 @@ def test_compute_effective_strength_applies_druidic_shortfall_to_quality():
     assert penalized == pytest.approx(unpenalized / int(Quality.VETERAN) * int(Quality.AVERAGE))
 
 
+def test_compute_effective_strength_applies_race_item_bonus_to_quality():
+    # Phase 285: race_item_bonus now passes through compute_effective_
+    # strength() into modified_quality(), the same way druidic_shortfall
+    # already does above.
+    boosted = compute_effective_strength(
+        ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, race_item_bonus=1
+    )
+    unboosted = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert boosted == pytest.approx(unboosted / int(Quality.AVERAGE) * int(Quality.VETERAN))
+
+
 def test_desert_without_camels_reduces_quality_multiplier():
     strength = compute_effective_strength(
         ArmyType.CAMEL_CORPS, Race.HUMAN, Quality.AVERAGE, Terrain.DESERT, desert_without_camels=True

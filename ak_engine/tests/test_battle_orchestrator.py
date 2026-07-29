@@ -13,6 +13,7 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import (
     MultiAttackerParty,
@@ -689,6 +690,57 @@ def test_build_battle_units_druidic_shortfall_penalizes_a_foreign_race_led_army(
     expected = compute_effective_strength(
         ArmyType.DRAGON_WING, Race.DRAGONS, Quality.ELITE, Terrain.PLAINS, druidic_shortfall=4
     )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_race_item_bonus_boosts_a_matching_led_army():
+    # Phase 285: the same +1 legendary-leadership-item bonus the ARMIES
+    # report's own "Modified Quality" column has computed since Phase 279
+    # (turn/army_quality.py) now also reaches real combat strength.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Hero", location=FIELD))
+    state.add_item(Treasure.LEADERSHIP_HUMAN, owner_leader_id=1)
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, race_item_bonus=1)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_race_item_bonus_requires_the_item_to_match_the_armys_own_race():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Hero", location=FIELD))
+    state.add_item(Treasure.LEADERSHIP_ELVEN, owner_leader_id=1)  # wrong race's item
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_race_item_bonus_not_applied_to_an_unled_army():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Hero", location=FIELD))
+    state.add_item(Treasure.LEADERSHIP_HUMAN, owner_leader_id=1)
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)  # commanded_by=None
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
     assert units[0].effective_strength == pytest.approx(expected)
 
 
