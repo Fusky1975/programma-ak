@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
@@ -36,6 +37,8 @@ def test_macondo_lands_at_its_real_confirmed_coordinate():
     assert macondo.tax == 4
     assert macondo.terrain is Terrain.JUNGLE
     assert macondo.race is Race.ORCISH
+    assert macondo.recruit_type_1 is ArmyType.PHALANX
+    assert macondo.recruit_type_2 is None
 
 
 def test_alderwood_lands_at_the_origin():

@@ -50,6 +50,13 @@ bridged). Unresolvable records are left at `owner_kingdom_id = None`
 rather than raising -- a partially-bridged `GameState` (not every
 kingdom's `AK3__T*.K1` available) is an expected, ordinary case, not an
 error condition.
+
+**Phase 278** adds `recruit_type_1`/`recruit_type_2` to the fields this
+function copies straight across from `GWProvinceRecord` -- see
+`gw_world.py`'s own "Recruiting Types (Mod_PAT)" docstring section for
+their derivation. No new logic needed here: like `tax` before them,
+they're already fully decoded on the `GWProvinceRecord` this function
+reads, so bridging them is a direct copy, not a new computation.
 """
 
 from __future__ import annotations
@@ -97,6 +104,8 @@ def bridge_gw_world_provinces(
             race=record.race,
             name=record.name,
             tax=record.tax,
+            recruit_type_1=record.recruit_type_1,
+            recruit_type_2=record.recruit_type_2,
         )
     return provinces
 

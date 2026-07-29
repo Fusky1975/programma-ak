@@ -11581,7 +11581,7 @@ complete (Phases 209-211).
     `SE3__T1.K2`'s own "Expected Expenses: 15" exactly (13 gold across
     six armies + 2 gold across two Heroes) -- 3117 passed total.
 
-- **Phase 277 (current)**: adds `Office.EVIL_KING` ("King of Pain") and
+- **Phase 277**: adds `Office.EVIL_KING` ("King of Pain") and
   `Office.THIEF_PRINCE` ("Prince of Thieves") to the real Merit Point
   Rank contest, and wires the two revenue-boosting bonuses they grant
   into the FINANCES section -- sourced from a reference file the user
@@ -11630,6 +11630,52 @@ complete (Phases 209-211).
     `test_office_holder.py`; and the two FINANCES bonus notes' presence,
     absence, kingdom-scoping, King-vs-Hero-holder crediting, and
     relative ordering in `test_turn_report.py` -- 3133 passed total.
+
+- **Phase 278 (current)**: closes the PROVINCES "Tax" and "Recruiting
+  Types" column gaps `describe_provinces_report()`'s own docstring had
+  called "confirmed absent" since Phase 220/275 -- that audit only ever
+  established no Pascal *formula* survives for `ptax`/`Mod_PAT` (still
+  true), not that the real per-province *data* was unrecoverable. It
+  was: `parser/gw_world.py`/`gw_world_bridge.py` (Phase 222-224) already
+  bridge `ptax` from a real `GW3` world file, and this phase decodes
+  that same file's own previously-unparsed line 3 (`Mod_PAT(px,py,0)`/
+  `Mod_PAT(px,py,1)`) the same way.
+  - `parser/gw_world.py`: cross-referenced 701 real "PROVINCES" table
+    rows (every `SE3__T*.K*` turn with a matching `GW3__T<n>` file, by
+    province name) against that world file's own line 3 -- a
+    **100% exact, zero-conflict decode** for all 19 distinct ordinals
+    observed. New `MOD_PAT_ORDINAL_TO_ARMY_TYPE` maps ordinals 0-14
+    directly onto this project's own `ArmyType` enum order; ordinal 15
+    is the real "no second recruit type" sentinel (`None`); 16-19
+    (`MERMEN`/`ENTS`/`TROLLS`/`WEREBEASTS`) are each one ordinal higher
+    than this project's own enum places them, revealing the real Pascal
+    enum has one more member (the sentinel) than this project's own
+    model does. `GWProvinceRecord` gains `recruit_type_1`/
+    `recruit_type_2: ArmyType | None`.
+  - `models/game_state.py ProvinceState` gains matching
+    `recruit_type_1`/`recruit_type_2` fields (`None` until bridged, the
+    same convention `tax` already uses); `parser/gw_world_bridge.py
+    bridge_gw_world_provinces()` copies both straight across --
+    already-decoded data, no new logic needed there.
+  - `report/turn_report.py describe_provinces_report()`: appends
+    `", Tax {yield}"` (via `turn/tax_base.py province_tax_yield()`, so
+    Scar Terrain/Bless/Earthquake modifiers apply here too) and
+    `", Recruits {type1}[/{type2}]"` (via `ARMY_TYPE_DESIGNATION`) to
+    each owned province's line whenever known; both omitted entirely
+    for a province whose `GameState` was never bridged from a real world
+    file -- no data isn't a true zero. `compose_letter_report()`'s own
+    Phase 275 audit note updated to stop calling `ptax`/`Mod_PAT`
+    "confirmed absent" (only `Qual_Modfr`/`pt2` still are).
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added -- 3136 passed (3133 plus 3 new `gw_world` parser tests
+    written alongside the decode itself, before the report-composer
+    change).
+  - 7 new tests in `test_turn_report.py`: Tax shown/omitted, Tax
+    reflecting Scar Terrain reduction (confirming it renders via
+    `province_tax_yield()` not the raw field), both Recruiting Types
+    shown, a single type shown when the second is the real "None" case,
+    Recruits omitted when unbridged, and both columns together in the
+    real table's own order -- 3143 passed total.
 
 ## Setup
 

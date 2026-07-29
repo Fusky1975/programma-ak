@@ -3879,6 +3879,93 @@ def test_describe_provinces_report_uses_effective_terrain_not_illusory():
     assert lines[-1] == "Drowned Fen -- Human, Plain, 0% explored"
 
 
+# -- Phase 278: Tax + Recruiting Types columns --
+
+
+def test_describe_provinces_report_shows_tax_when_known():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(
+        ProvinceState(HexCoord(0, 0), Terrain.JUNGLE, Race.ORCISH, owner_kingdom_id=1, name="Macondo", explored_percent=16, tax=4)
+    )
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines[-1] == "Macondo -- Orc, Jungle, 16% explored, Tax 4"
+
+
+def test_describe_provinces_report_omits_tax_when_unknown():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Unbridged"))
+
+    lines = describe_provinces_report(state, 1)
+
+    assert "Tax" not in lines[-1]
+
+
+def test_describe_provinces_report_tax_reflects_scar_terrain_reduction():
+    # Tax renders via province_tax_yield(), not the raw `tax` field --
+    # confirms the FINANCES-side scar/Bless/Earthquake modifiers apply
+    # here too, not just in compute_tax_base().
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    province = ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Scarred", tax=10)
+    province.scar_terrain_gold_reduction = 4
+    state.add_province(province)
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines[-1] == "Scarred -- Human, Plain, 0% explored, Tax 6"
+
+
+def test_describe_provinces_report_shows_both_recruit_types():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    province = ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Orielle")
+    province.recruit_type_1 = ArmyType.LEGION
+    province.recruit_type_2 = ArmyType.CHARIOTS
+    state.add_province(province)
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines[-1] == "Orielle -- Human, Plain, 0% explored, Recruits Legion/Chariots"
+
+
+def test_describe_provinces_report_shows_single_recruit_type_when_second_is_none():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    province = ProvinceState(HexCoord(0, 0), Terrain.JUNGLE, Race.ORCISH, owner_kingdom_id=1, name="Macondo")
+    province.recruit_type_1 = ArmyType.PHALANX
+    state.add_province(province)
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines[-1] == "Macondo -- Orc, Jungle, 0% explored, Recruits Phalanx"
+
+
+def test_describe_provinces_report_omits_recruits_when_unknown():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Unbridged"))
+
+    lines = describe_provinces_report(state, 1)
+
+    assert "Recruits" not in lines[-1]
+
+
+def test_describe_provinces_report_shows_tax_and_recruits_together_in_order():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    province = ProvinceState(HexCoord(0, 0), Terrain.JUNGLE, Race.ORCISH, owner_kingdom_id=1, name="Macondo", explored_percent=16, tax=4)
+    province.recruit_type_1 = ArmyType.PHALANX
+    state.add_province(province)
+
+    lines = describe_provinces_report(state, 1)
+
+    assert lines[-1] == "Macondo -- Orc, Jungle, 16% explored, Tax 4, Recruits Phalanx"
+
+
 # -- Phase 221: describe_characters_report() -- the "CHARACTERS" section --
 
 

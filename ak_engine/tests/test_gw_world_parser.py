@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.map import Terrain
 from ak_engine.models.race import Race
 from ak_engine.parser.errors import K1ParseError
@@ -32,7 +33,13 @@ def test_records_match_real_tax_race_terrain_from_the_letter_reports():
 
     macondo = by_name["Macondo"]
     assert macondo == GWProvinceRecord(
-        name="Macondo", tax=4, terrain=Terrain.JUNGLE, race=Race.ORCISH, governor_leader_id=None
+        name="Macondo",
+        tax=4,
+        terrain=Terrain.JUNGLE,
+        race=Race.ORCISH,
+        governor_leader_id=None,
+        recruit_type_1=ArmyType.PHALANX,
+        recruit_type_2=None,
     )
 
     transylvania = by_name["Transylvania"]
@@ -64,6 +71,35 @@ def test_race_ordinals_match_this_projects_own_race_enum_directly():
     assert by_name["Kaluga"].race is Race.ELVEN
     assert by_name["Kerry"].race is Race.DWARVEN
     assert by_name["Kiska"].race is Race.EAGLES
+
+
+def test_recruit_types_decoded_for_a_province_with_both_types():
+    # Orielle: real line 3 "4 0  7 0" -- Legion (4) and Chariots (7), the
+    # same "Le,Ch" pair the letter's own ASCII map legend shows for it
+    # (parser/gw_world.py's own "Recruiting Types (Mod_PAT)" docstring
+    # section has the full cross-reference).
+    by_name = {r.name: r for r in parse_gw_world(FIXTURE)}
+    orielle = by_name["Orielle"]
+    assert orielle.recruit_type_1 is ArmyType.LEGION
+    assert orielle.recruit_type_2 is ArmyType.CHARIOTS
+
+
+def test_recruit_type_2_none_sentinel_for_a_single_recruit_type_province():
+    # Macondo: real line 3 "3 0  15 0" -- ordinal 15 is the real "no
+    # second recruit type" sentinel, matching SE3__T1.K2's own real
+    # "Phalanx  None" PROVINCES table row for Macondo exactly.
+    by_name = {r.name: r for r in parse_gw_world(FIXTURE)}
+    assert by_name["Macondo"].recruit_type_2 is None
+
+
+def test_recruit_types_monstrous_ordinals_are_one_higher_than_this_projects_own_enum():
+    # Belladonna: real line 3 "19 0  15 0" -- ordinal 19 decodes to
+    # WEREBEASTS even though this project's own ArmyType enum places
+    # WEREBEASTS at ordinal 18 -- the real Pascal enum has one extra
+    # member (a "no type" sentinel at 15) this project's own enum never
+    # modeled. See the module docstring's ordinal table.
+    by_name = {r.name: r for r in parse_gw_world(FIXTURE)}
+    assert by_name["Belladonna"].recruit_type_1 is ArmyType.WEREBEASTS
 
 
 def test_raises_gw_parse_error_on_truncated_record(tmp_path: Path):

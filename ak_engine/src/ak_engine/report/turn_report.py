@@ -1127,7 +1127,7 @@ from ak_engine.models.enums import (
 )
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.army_naming import make_army_name
-from ak_engine.models.army_type import ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE, is_overflight_unit
+from ak_engine.models.army_type import ARMY_TYPE_DESIGNATION, ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE, is_overflight_unit
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
@@ -1158,7 +1158,7 @@ from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResul
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
-from ak_engine.turn.tax_base import compute_invention_bonus_percent, compute_tax_base
+from ak_engine.turn.tax_base import compute_invention_bonus_percent, compute_tax_base, province_tax_yield
 from ak_engine.turn.trade_execution import TradeExecutionResult
 from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
@@ -5458,34 +5458,44 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
     `describe_armies_report()`/`describe_adventure_report()` already use
     in place of the real tax-tier grouping below.
 
-    **What this deliberately does NOT reproduce, and why**:
-    - The real table's **Tax** column and its whole "grouped by
-      descending effective tax tier" structure (`ptax[px,py]`, plus an
-      Min(11, tax + 8 for the King's own home province) tier
-      computation) needs a per-province base tax value. `ptax` is never
-      computed anywhere in the available `.PAS` archive -- it's baked
-      into the map at world-generation time by the lost `AKGEN.EXE`
-      (confirmed via `grep`: the only other reference, `RUMORS.PAS`
-      line 2140, reads it, never sets it) -- the same "world-gen-only,
-      no runtime formula" category as `ProvinceState.name`'s own
-      `pname` before Phase 150. Unlike `name`, no bridge in this project
-      ever populates a province's tax either, so this column is left
-      out entirely rather than rendering a permanent blank/guessed
-      figure. Re-audited, closed, Phase 275 -- see
-      `compose_letter_report()`'s own Phase 275 addendum.
-    - The real table's **Recruiting Types** columns (`Mod_PAT(px,py,0)`/
-      `Mod_PAT(px,py,1)`, the two `ArmyType`s recruitable in a province)
-      and the **Type 2 terrain "(... Island)"** parenthetical (`pt2`)
-      both depend on `Mod_PAT`/`pt2` -- neither function nor array is
-      defined anywhere in the available Pascal archive. Confirmed
-      absent, not merely unwired: `turn/recruit.py
-      is_army_type_compatible_with_race()` answers a *different*
-      question (can this army type be recruited here at all, given
-      race), not "which exactly two types does this table cell name."
-      Re-audited, closed, Phase 275 (same addendum).
-    - Fixed-width columns and the tax-tier subheadings themselves aren't
-      reproduced -- the same documented choice `describe_armies_report()`
-      and `describe_adventure_report()`'s own docstrings already made.
+    **Tax and Recruiting Types, Phase 278**: the real table's **Tax**
+    column (`ptax[px,py]`, via `turn/tax_base.py province_tax_yield()`,
+    the same scar-terrain/Bless/Earthquake-adjusted figure `compute_tax_
+    base()` already sums) and **Recruiting Types** columns (`Mod_PAT(px,
+    py,0)`/`Mod_PAT(px,py,1)`, via `ProvinceState.recruit_type_1`/
+    `recruit_type_2` and `ARMY_TYPE_DESIGNATION`) now render whenever
+    known. Phase 220/275 called both "confirmed absent" -- true only of a
+    Pascal *formula* (neither `ptax` nor `Mod_PAT` is ever computed
+    anywhere in the surviving archive, still the case). What Phase 275's
+    audit didn't re-check: `parser/gw_world.py`/`gw_world_bridge.py`
+    (Phase 222-224, 278) already recover both real values straight from a
+    `GW3`-family world file, the same "world-gen-only data, sourced from
+    a real snapshot rather than a formula" category `name` closed in
+    Phase 150 -- see that module's own docstring for the full,
+    zero-conflict decode evidence. Both render `None`/absent for a
+    province whose `GameState` was never bridged from a real world file
+    (`tax is None`/`recruit_type_1 is None`) -- no data isn't a true
+    zero, the same stance `turn/tax_base.py` itself already takes.
+    `recruit_type_2` prints only when known and not the real "no second
+    recruit type" case -- both look identical from a caller's
+    perspective (nothing to show), so this composer doesn't need to
+    distinguish them (see `ProvinceState.recruit_type_2`'s own
+    docstring).
+
+    **Still not reproduced, and why**:
+    - The real table's whole "grouped by descending effective tax tier"
+      structure (an `Min(11, tax + 8)` tier computation for the King's
+      own home province, subheadings per tier) -- a presentation choice,
+      not a missing data gap; this composer keeps its own coordinate
+      sort instead, the same documented choice every other section
+      composer in this module already made.
+    - The **Type 2 terrain "(... Island)"** parenthetical (`pt2`) --
+      still confirmed absent (Phase 275's audit), a genuinely different
+      gap from `Mod_PAT` despite being named in the same old bullet;
+      not reopened here.
+    - Fixed-width columns themselves aren't reproduced -- the same
+      documented choice `describe_armies_report()` and `describe_
+      adventure_report()`'s own docstrings already made.
     """
 
     lines = ["PROVINCES", _PROVINCES_OPENING]
@@ -5504,10 +5514,24 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
         province_label = province.name if province.name else f"({coord.x}, {coord.y})"
         race_name = RACE_NAME[province.race]
         terrain_name = TERRAIN_NAME[province.effective_terrain()]
-        lines.append(
+        line = (
             f"{province_label} -- {race_name}, {terrain_name}, "
             f"{province.explored_percent}% explored"
         )
+
+        tax_yield = province_tax_yield(province)
+        if tax_yield is not None:
+            line += f", Tax {tax_yield}"
+
+        if province.recruit_type_1 is not None:
+            type1_name = ARMY_TYPE_DESIGNATION[province.recruit_type_1]
+            if province.recruit_type_2 is not None:
+                type2_name = ARMY_TYPE_DESIGNATION[province.recruit_type_2]
+                line += f", Recruits {type1_name}/{type2_name}"
+            else:
+                line += f", Recruits {type1_name}"
+
+        lines.append(line)
 
     return lines
 
@@ -6698,12 +6722,13 @@ def compose_letter_report(
       of its real lines render (`"Gold in treasury"`/`"Expected
       Revenues"`) and which are confirmed absent (`ACost`/`LCost`-derived
       figures, per-kingdom Discovery tracking).
-    - PROVINCES itself is only partially wired -- see
-      `describe_provinces_report()`'s own docstring for exactly which
-      columns render (name, race, terrain, percent explored) and which
-      are confirmed absent (`ptax`-derived tax/tier grouping, the
-      `Mod_PAT`-derived recruiting-types columns, the `pt2`-derived
-      Island parenthetical).
+    - PROVINCES itself is only partially wired -- see `describe_
+      provinces_report()`'s own docstring for exactly which columns
+      render (name, race, terrain, percent explored, and, as of Phase
+      278, Tax/Recruiting Types once a `GameState` has been bridged from
+      a real `GW3` world file) and which are still confirmed absent (the
+      tax-tier grouping presentation, the `pt2`-derived Island
+      parenthetical).
     - CHARACTERS itself is only partially wired -- see
       `describe_characters_report()`'s own docstring for exactly which
       fields render (name, location, Alignment, Temperament, Race, and
@@ -6725,50 +6750,71 @@ def compose_letter_report(
       one -- `state.world_events` isn't populated by anything in this
       function's own call chain.
 
-    **Phase 275 -- closing audit for four still-confirmed-absent report
-    identifiers.** A fresh, systematic re-check (not a re-read of old
-    docstrings) was run against the full surviving Pascal archive --
-    all 14 raw `.PAS` files under `HostAK/TP`/`HostAK/MS` (13 with real
-    content; `COMPANY.PAS` is a 5-byte stub) -- specifically searching
-    for a `function`/`procedure` *declaration* of each of `ACost`,
-    `LCost`, `Qual_Modfr`, and `Mod_PAT`, and a `var`/array
-    *declaration* of `ptax`/`pt2`. Zero matches for any of the six: every
-    real occurrence in `REPORTS.PAS`/`RUMORS.PAS` only ever *calls* or
-    *reads* them, confirming (not merely repeating the prior inference)
-    that all six live exclusively in the missing main turn-processor /
-    the lost `AKGEN.EXE` world-generator -- the same "the caller (or, for
-    `ptax`/`pt2`, the writer) is lost, not every reader" situation this
-    module's own docstring already established for the ten-section
-    driver above. This closes, as of this date, the open question behind:
-    - `describe_finances_report()`'s own "Expected Expenses" gap
-      (`ACost`/`LCost`).
-    - `describe_provinces_report()`'s own Tax-column/tier-grouping gap
-      (`ptax`) and Recruiting-Types-columns/Island-parenthetical gap
-      (`Mod_PAT`/`pt2`) -- the same root cause `turn/recruit.py`'s own
-      module docstring cross-references for why it can't answer "which
-      exactly two `ArmyType`s are recruitable in this specific province"
-      either.
-    - `describe_armies_report()`'s own "Modified Quality" column gap
-      (`Qual_Modfr`).
+    **Phase 275 -- closing audit for six report identifiers' own Pascal
+    *declarations* (not their data).** A fresh, systematic re-check (not
+    a re-read of old docstrings) was run against the full surviving
+    Pascal archive -- all 14 raw `.PAS` files under `HostAK/TP`/`HostAK/
+    MS` (13 with real content; `COMPANY.PAS` is a 5-byte stub) --
+    specifically searching for a `function`/`procedure` *declaration* of
+    each of `ACost`, `LCost`, `Qual_Modfr`, and `Mod_PAT`, and a `var`/
+    array *declaration* of `ptax`/`pt2`. Zero matches for any of the six:
+    every real occurrence in `REPORTS.PAS`/`RUMORS.PAS` only ever *calls*
+    or *reads* them, confirming (not merely repeating the prior
+    inference) that all six live exclusively in the missing main
+    turn-processor / the lost `AKGEN.EXE` world-generator -- the same
+    "the caller (or, for `ptax`/`pt2`, the writer) is lost, not every
+    reader" situation this module's own docstring already established
+    for the ten-section driver above. **This finding still stands
+    unchanged for all six identifiers** -- no Pascal formula for any of
+    them has since turned up.
 
-    A fifth item, the FINANCES "(Including +5 Black Knights)"/"(Including
-    +10 Thieves Guild)" notes (`titchar[Evilking]`/`LKing(titchar[
-    ThiefPrince])`, `REPORTS.PAS` lines 303-304/316-317), has a different
-    shape: the *identifiers* themselves (`Evilking`, `ThiefPrince`) are
-    real `models/office.py Office` members with real perk text, not
-    missing declarations -- what's confirmed absent instead is any hook
-    that tracks a running per-kingdom gold total tied to holding either
-    office (no field anywhere in `GameState`/`KingdomState` accumulates
-    it), the same IMPERIAL OFFICE REPORT-adjacent gap category as
-    `describe_characters_report()`'s own Priest-office/`Known_Loc` note.
+    **What has changed since (Phases 276/278): a missing *formula* isn't
+    the same as missing *data*.** Four of these six identifiers turned
+    out to be recoverable a different way -- real per-instance values
+    sourced from elsewhere in this project rather than re-derived from a
+    lost formula, the same "world-gen-only data, not a runtime
+    computation" category `name`/`pname` itself closed back in Phase
+    150:
+    - `ACost`/`LCost` (Phase 276): `describe_finances_report()`'s own
+      "Expected Expenses" gap, closed by reusing `ArmyTypeStats.pay`
+      and this project's own `hire_pay.py required_pay()` -- see that
+      composer's own Phase 276 docstring note.
+    - `ptax`/`Mod_PAT` (Phase 278): `describe_provinces_report()`'s own
+      Tax-column and Recruiting-Types-columns gaps, closed by
+      `parser/gw_world.py`/`gw_world_bridge.py`'s real `GW3` world-file
+      decode -- see that composer's own Phase 278 docstring note and
+      `gw_world.py`'s own "Recruiting Types (Mod_PAT)" section.
 
-    None of these five is expected to become sourceable later -- the
-    surviving archive is fixed and has already been searched
-    exhaustively for each. A future phase could still choose to build a
-    project-original substitute (the same kind of deliberate,
-    user-confirmed design choice `turn/tax_base.py compute_tax_base()`
-    made for `Tax_Base` itself), but that would be a new design decision,
-    not a continuation of this search.
+    **Still genuinely confirmed absent, no known data source**:
+    - `Qual_Modfr` -- `describe_armies_report()`'s own "Modified
+      Quality" column gap.
+    - `pt2` -- `describe_provinces_report()`'s own Island parenthetical
+      gap (distinct from `Mod_PAT`, despite sharing the old audit
+      bullet -- `turn/recruit.py`'s own module docstring cross-
+      references the same underlying "which exactly two `ArmyType`s"
+      question `Mod_PAT` used to leave open).
+
+    A related item, the FINANCES "(Including +5 Black Knights)"/
+    "(Including +10 Thieves Guild)" notes (`titchar[Evilking]`/
+    `LKing(titchar[ThiefPrince])`, `REPORTS.PAS` lines 303-304/316-317),
+    had a different shape from the start: the *identifiers* themselves
+    (`Evilking`, `ThiefPrince`) are real `models/office.py Office`
+    members with real perk text, not missing declarations -- what was
+    confirmed absent was a hook tracking a running per-kingdom gold
+    total tied to holding either office. Phase 277 closed this with a
+    project-original `MeritTally`-sourced formula (the user's own
+    supplied reference text, not a recovered Pascal source) -- see
+    `merit_points.py`'s own King of Pain/Prince of Thieves docstring
+    sections.
+
+    `Qual_Modfr`/`pt2` are not expected to become sourceable the way the
+    other four were -- neither has a known real-file source (a `GW3`
+    world file or similar) the way `ptax`/`Mod_PAT`/`ACost`/`LCost` did.
+    A future phase could still choose to build a project-original
+    substitute for either (the same kind of deliberate, user-confirmed
+    design choice `turn/tax_base.py compute_tax_base()` made for `Tax_
+    Base` itself), but that would be a new design decision, not a
+    continuation of this search.
 
     **ALIGNMENT REDUCTION (Phase 229, appended after ADVENTURE)** is
     *not* one of the ten real sections above -- it's a project-original

@@ -533,6 +533,19 @@ class ProvinceState:
     # (currently `parser/gw_world_bridge.py bridge_gw_world_provinces()`,
     # the one real, sourced populating path).
     tax: int | None = None
+    # Real per-province Recruiting Types, Mod_PAT(px,py,0)/Mod_PAT(px,py,1)
+    # (Phase 278 `parser/gw_world.py`'s own decode -- see that module's
+    # "Recruiting Types (Mod_PAT)" docstring section for the full
+    # derivation). Baked into the world file at world-generation time,
+    # same as `tax` above -- `None` until a caller populates it (currently
+    # `parser/gw_world_bridge.py bridge_gw_world_provinces()`). Every real
+    # province observed so far has a genuine `recruit_type_1`;
+    # `recruit_type_2` is `None` both when unbridged AND for the real "no
+    # second recruit type" case (the real table's own "None" cell) --
+    # the two cases render identically (nothing to show), so this field
+    # doesn't need to distinguish them, unlike `tax`.
+    recruit_type_1: ArmyType | None = None
+    recruit_type_2: ArmyType | None = None
     # Plague spread (Phase 233) -- rulebook [4.25.3]: "the next phase,
     # there is a 15% chance per adjacent province that the plague will
     # spread, and it can spread further each phase after that." Set by
