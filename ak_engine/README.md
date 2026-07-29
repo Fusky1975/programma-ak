@@ -11505,7 +11505,7 @@ complete (Phases 209-211).
     never downgraded by a failed re-scout; a kingdomless leader is a
     no-op) -- 3107 passed total.
 
-- **Phase 275 (current)**: closes, with a fresh declaration-level audit
+- **Phase 275**: closes, with a fresh declaration-level audit
   (not a re-read of prior notes), four still-open turn-report gaps: FINANCES'
   "Expected Expenses" line and its Evilking/ThiefPrince gold-bonus notes,
   PROVINCES' Tax column/Recruiting-Types columns, and ARMIES' "Modified
@@ -11543,6 +11543,43 @@ complete (Phases 209-211).
   - Non-breaking: full suite passed unchanged both before and after (no
     code behavior changed, only docstrings) -- 3107 passed both times.
     No new tests (pure documentation).
+
+- **Phase 276 (current)**: wires the FINANCES "Expected Expenses" line
+  for real, reopening the "not expected to become sourceable" call
+  Phase 275 made about `ACost`/`LCost` one day earlier -- the user
+  supplied real generated `SE3__T*.K*` turn-report samples (2026-07-29)
+  that let both components be verified directly against actual game
+  output instead of only cited from the lost Pascal source.
+  - New `turn/expenses.py`: `compute_army_maintenance()` sums
+    `ARMY_TABLE[army_type].pay` (RULES.AK [6.3]) across a kingdom's own
+    Hired armies -- verified **exact, zero discrepancy**, against four
+    independent real sample files (`SE3__T0.K2`/`K3`/`K5`/`T1.K2`).
+    `compute_leader_maintenance()` reuses `turn/hire_pay.py
+    required_pay()` (Phase 162/163/264, the Hire-pricing formula
+    already built from the real manual text) for the recurring per-turn
+    figure ([3.5]: "The Hero is paid when he signs up and at the end of
+    each gameturn") -- verified against 3 of 4 real Heroes exactly, with
+    one known mismatch (a Pagan Dwarf Hero under a Human Neutral King)
+    that looks like the still-missing race term [3.5] itself names but
+    `required_pay()` never added (built before `LeaderState.race`
+    existed). The King and any Valhalla visitor
+    (`models/valhalla.py VALHALLA_VISITOR_LEADER_ID`) always contribute
+    0, checked explicitly rather than left to the formula. On the
+    user's own explicit direction: wired now as-is, the race gap
+    documented rather than blocking the whole line.
+  - `report/turn_report.py describe_finances_report()` now renders
+    "Expected Expenses" via `compute_expected_expenses()`; 3 existing
+    tests updated for the new line.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added (3107, matching Phase 275's own final count, once the 3
+    pre-existing FINANCES-shape tests were updated for the new line).
+  - 10 new tests in `test_expenses.py`: army maintenance summing,
+    ignoring mercenary and other-kingdoms' armies; leader maintenance
+    for a King (0), an ordinary Hero (`required_pay()`), multiple
+    Heroes summed, a Valhalla visitor (0), and other-kingdoms' leaders
+    ignored; and one full real-sample regression test reproducing
+    `SE3__T1.K2`'s own "Expected Expenses: 15" exactly (13 gold across
+    six armies + 2 gold across two Heroes) -- 3117 passed total.
 
 ## Setup
 

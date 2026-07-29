@@ -3581,6 +3581,7 @@ def test_describe_finances_report_shows_treasury():
         _FINANCES_OPENING,
         "Gold in treasury: 250",
         "Expected Revenues: 0",
+        "Expected Expenses: 0",
         _FINANCES_DISCOVERIES_INTRO,
         "None at present",
     ]
@@ -4051,6 +4052,7 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "concerning the finances of our great nation:",
         "Gold in treasury: 0",
         "Expected Revenues: 0",
+        "Expected Expenses: 4",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
         "None at present",
         "PROVINCES",
@@ -4138,6 +4140,7 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "concerning the finances of our great nation:",
         "Gold in treasury: 0",
         "Expected Revenues: 0",
+        "Expected Expenses: 0",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
         "None at present",
         "PROVINCES",

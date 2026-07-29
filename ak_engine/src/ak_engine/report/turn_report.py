@@ -1152,6 +1152,7 @@ from ak_engine.turn.encounter import FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
+from ak_engine.turn.expenses import compute_expected_expenses
 from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
@@ -5354,19 +5355,25 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
     Phases 222-224 recovered, closing this specific line's gap even
     though the real formula's own Pascal source is still lost.
 
-    Every other real line remains confirmed absent, not merely
-    unpopulated:
-    - "Expected Expenses" needs `ACost`/`LCost` summed across every
-      army and leader this kingdom pays for -- both confirmed absent
-      for the same reason `Tax_Base` itself was, and unlike `Tax_Base`
-      this project has no per-army/per-leader upkeep-cost data to
-      aggregate instead. Re-audited, closed, Phase 275 -- see
-      `compose_letter_report()`'s own Phase 275 addendum.
-    - The optional "(Including +5 Black Knights)"/"(Including +10
-      Thieves Guild)" notes need Evilking/ThiefPrince office-holder
-      tracking -- the same IMPERIAL OFFICE REPORT gap this project's
-      own `compose_letter_report()` docstring already names. Re-audited,
-      closed, Phase 275 (same addendum).
+    **"Expected Expenses" (Phase 276)**: `ACost`/`LCost` are still never
+    *defined* in any available `.PAS` file (Phase 275's own audit), but
+    the user supplied real generated `SE3__T*.K*` sample reports
+    (2026-07-29) that let this line's own two components be verified
+    directly against actual game output rather than only cited from a
+    lost Pascal source -- see `turn/expenses.py compute_expected_
+    expenses()`'s own docstring for the full cross-check (army
+    maintenance confirmed exact across four independent samples; leader
+    maintenance reuses `turn/hire_pay.py required_pay()`, confirmed
+    against three of four real Heroes, with one known race-related
+    mismatch documented rather than silently accepted).
+
+    The optional "(Including +5 Black Knights)"/"(Including +10
+    Thieves Guild)" notes still need Evilking/ThiefPrince office-holder
+    tracking -- the same IMPERIAL OFFICE REPORT gap this project's own
+    `compose_letter_report()` docstring already names. Re-audited,
+    closed, Phase 275 (same addendum) -- still open as of Phase 276,
+    pending the office-ability reference material the user separately
+    promised to supply.
 
     **Phase 268 closes the "+Invention Bonus" line and the Discoveries
     of the Sages list**, both previously confirmed-absent (no per-
@@ -5387,6 +5394,7 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
         _FINANCES_OPENING,
         f"Gold in treasury: {kingdom.treasury}",
         f"Expected Revenues: {compute_tax_base(state, kingdom_id)}",
+        f"Expected Expenses: {compute_expected_expenses(state, kingdom_id)}",
     ]
     invention_bonus_percent = compute_invention_bonus_percent(kingdom)
     if invention_bonus_percent > 0:
