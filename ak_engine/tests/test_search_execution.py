@@ -15,7 +15,13 @@ from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, FIRE_ARROW_DAMAGE_RANGE, EncounterCombatResult, FireArrowShot
+from ak_engine.turn.encounter import (
+    CHARACTER_HIT_POINTS,
+    FIRE_ARROW_DAMAGE_RANGE,
+    EncounterCombatResult,
+    FireArrowShot,
+    MeleeRoundOutcome,
+)
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.search_execution import (
     FLEE_CHANCE,
@@ -2625,4 +2631,151 @@ def test_execute_search_scout_kingdomless_leader_is_a_no_effect():
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
 
     assert result.scout_orders_given == 1
+
+
+# -- Phase 293: bidirectional round-per-round engine ---------------------
+
+
+def test_execute_search_melee_uses_atomic_fast_path_when_guardian_has_nothing_left_to_interleave():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_duel, patch(
+        "ak_engine.turn.search_execution.resolve_one_melee_round"
+    ) as mock_round:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert mock_duel.called
+    assert not mock_round.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_melee_round_steps_when_guardian_has_a_cast_pending_beyond_its_first_melee():
+    # Mirrors Dryad's/Mermaid's own real "MELEE, MELEE, ..., CAST, MELEE"
+    # shape (models/monster_encounter_plan.py) -- the guardian's own
+    # immediate next action is Melee, but a real Cast is scheduled a
+    # round later; the fast path must not fire just because the
+    # guardian's own *very first* action happens to be Melee.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _melee_request(1)
+    monster_plan = (
+        SearchTactic(maneuver=Maneuver.MELEE),
+        SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),
+    )
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_duel, patch("ak_engine.turn.search_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing", return_value=0
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_spell_disruption_from_missed_attack", return_value=False
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ) as mock_cast, patch("ak_engine.turn.search_execution.roll_fireball_damage", return_value=999):
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert not mock_duel.called
+    assert mock_round.called
+    assert mock_cast.called  # the guardian's own later Cast was genuinely attempted
+
+
+def test_execute_search_guardians_own_cast_disrupted_by_a_landed_swing_never_attempts_the_cast():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _melee_request(1)
+    monster_plan = (
+        SearchTactic(maneuver=Maneuver.MELEE),
+        SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),
+    )
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch(
+        "ak_engine.turn.search_execution.resolve_one_melee_round"
+    ) as mock_round, patch(
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing", return_value=5
+    ) as mock_swing, patch(
+        "ak_engine.turn.search_execution.resolve_spell_disruption", return_value=True
+    ) as mock_disrupt, patch(
+        "ak_engine.turn.search_execution.resolve_spell_disruption_from_missed_attack"
+    ) as mock_miss_disrupt, patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_cast:
+        # First call: the guardian's own opening Melee round (undecided,
+        # advancing it to its own Cast tactic). Second call, if ever
+        # reached again after its plan is fully exhausted, is decisive --
+        # guards against an infinite loop, since this mock never actually
+        # reduces either side's real hit points on its own.
+        mock_round.side_effect = [
+            MeleeRoundOutcome(result=None),
+            MeleeRoundOutcome(result=EncounterCombatResult(winner="a", rounds=2)),
+        ]
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert mock_swing.called
+    assert mock_disrupt.called
+    assert not mock_miss_disrupt.called  # a landed hit uses the damage-scaled formula, not the flat-miss one
+    assert not mock_cast.called  # disrupted -- "the caster loses a turn," no cast-chance roll at all
+
+
+def test_execute_search_guardians_own_cast_disrupted_by_a_missed_swing_uses_the_flat_30_percent():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _melee_request(1)
+    monster_plan = (
+        SearchTactic(maneuver=Maneuver.MELEE),
+        SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),
+    )
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch(
+        "ak_engine.turn.search_execution.resolve_one_melee_round"
+    ) as mock_round, patch(
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing", return_value=0
+    ), patch("ak_engine.turn.search_execution.resolve_spell_disruption") as mock_damage_disrupt, patch(
+        "ak_engine.turn.search_execution.resolve_spell_disruption_from_missed_attack", return_value=True
+    ) as mock_miss_disrupt, patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_cast:
+        mock_round.side_effect = [
+            MeleeRoundOutcome(result=None),
+            MeleeRoundOutcome(result=EncounterCombatResult(winner="a", rounds=2)),
+        ]
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert mock_miss_disrupt.called
+    assert not mock_damage_disrupt.called  # a miss uses the flat 30%, not the damage-scaled formula
+    assert not mock_cast.called
+
+
+def test_execute_search_leaders_own_cast_after_a_non_last_melee_tactic_can_be_disrupted():
+    # The leader's own MELEE followed by a real CAST -- a genuinely new
+    # plan shape (no pre-Phase-293 caller ever ordered these this way)
+    # that must trigger round-stepping regardless of the guardian's own
+    # (here, trivial single-Melee) plan.
+    raw = [0] * 30
+    raw[Ability.ELEMENTAL.value * 2] = 4
+    raw[Ability.ELEMENTAL.value * 2 + 1] = 9
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(maneuver=Maneuver.MELEE),
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),
+        ],
+    )
+
+    with patch("ak_engine.turn.search_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing", return_value=5
+    ) as mock_swing, patch(
+        "ak_engine.turn.search_execution.resolve_spell_disruption", return_value=True
+    ) as mock_disrupt, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast"
+    ) as mock_cast, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert mock_swing.called
+    assert mock_disrupt.called
+    assert not mock_cast.called
     assert state.features[1].discovered_by_kingdom == {}  # nowhere to record it

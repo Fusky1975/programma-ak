@@ -12323,7 +12323,7 @@ complete (Phases 209-211).
     hypothetical leaderless attacker Commander is a silent no-op rather
     than a crash -- 3242 passed total.
 
-- **Phase 292 (current)**: the real round-based combat range engine, and
+- **Phase 292**: the real round-based combat range engine, and
   spell disruption wired for real -- user-directed via `AskUserQuestion`
   ("Costruisci il motore round-per-round (Consigliato)"), after
   determining disruption could not be honestly wired at `turn/
@@ -12412,6 +12412,87 @@ complete (Phases 209-211).
     atomicity, `SHOOT` ignored at melee range, both disruption triggers,
     a lethal reactive swing ending combat immediately, and `CAST` at
     `SPELL_RANGE` never checking disruption) -- 3264 passed total.
+
+- **Phase 293 (current)**: extends the round-per-round engine to `turn/
+  search_execution.py`'s own Search combat -- genuinely **bidirectional**
+  this time, by explicit user direction (`AskUserQuestion`: "Bidirezionale
+  completo (Consigliato)" over a narrower leader-only-parity option),
+  since a Search guardian has a real Special Encounter Plan of its own
+  (`models/monster_encounter_plan.py`), not just a passive target.
+  - **The core bug this closes**: the guardian's own `CAST` entries were
+    always burst-resolved as one upfront block, before Melee/Fire Arrow
+    even began -- so a species like Dryad/Mermaid, whose real plan reads
+    `MELEE, MELEE, MELEE, MELEE, MELEE, CAST(Charm), MELEE` (several real
+    melee rounds before its own Charm), had that later Charm cast
+    immediately alongside its opening tactics instead of several rounds
+    into the fight. `_resolve_monster_casts()` now stops its own burst at
+    the guardian's own *first* `MELEE` tactic (unchanged output for the
+    overwhelming majority of species, whose plans only ever have one
+    trailing `MELEE` anyway) instead of scanning past it for more `CAST`
+    entries; everything from that point onward is walked one round at a
+    time by the new `_resolve_melee_range_round()`, via a `monster_
+    tactic_index` cursor shared with a new `_peek_monster_action()`/
+    `_advance_monster_tactic()` pair.
+  - **`_resolve_melee_range_round()`** generalizes `turn/challenge_
+    execution.py`'s own Phase 292 disruption design to two real plans
+    instead of one: each round, both the leader's own next tactic
+    (`CAST`/`MELEE`) and the guardian's own peeked next tactic are
+    resolved via the same four-way matrix -- Melee-vs-Melee (an ordinary
+    mutual `resolve_one_melee_round()`), Melee-vs-Cast/Cast-vs-Melee
+    (the melee side's own swing is the *other* side's reactive attack,
+    `resolve_reactive_melee_swing()`, which can disrupt that cast via
+    `resolve_spell_disruption()`/`resolve_spell_disruption_from_missed_
+    attack()`), and Cast-vs-Cast (both attempt their own cast, no swings,
+    no disruption check). `apply_temper_melee_setup()` is now called
+    directly, exactly once per encounter, since the round-stepped path
+    never goes through `resolve_melee_duel()`'s own internal call to it.
+  - **A real bug found and fixed while building this**: a "Melee"
+    response (either side) never advanced `monster_tactic_index` on its
+    own -- only a resolved `CAST` did. For a guardian whose own plan
+    repeats several `MELEE` entries before its next `CAST` (Dryad/
+    Mermaid again), this meant the cursor could never progress past the
+    first repeated `MELEE` entry at all, permanently blocking the later
+    `CAST` from ever being reached. Fixed by advancing the cursor after
+    *every* round the guardian answers with Melee, not just after a cast
+    -- safe even on a genuinely final `MELEE` entry, since advancing past
+    it and `_peek_monster_action()` reading "past the end" both already
+    mean the same thing ("ME fino alla fine").
+  - **Atomic fast path preserved for the common case**: a new `_monster_
+    has_more_casts_pending()` lookahead (not just `_peek_monster_action()`'s
+    own "what does it want to do *this* round" answer -- a guardian whose
+    *immediate* next tactic is Melee can still have a real Cast waiting a
+    few rounds later) gates both the `MELEE` tactic branch and the
+    exhausted-tactic-list fallback: when neither side has any real casting
+    left to do, the original atomic `resolve_melee_duel()` still runs
+    (RNG/mock-identical to every pre-Phase-293 caller, the same proven
+    parity Phase 292 already established) instead of looping the new
+    primitives for no reason.
+  - `MELEE`'s own last-vs-non-last split (Phase 292's own design) is
+    reused unchanged for the leader's own plan; a trailing `Maneuver.
+    SCOUT` doesn't count as "more tactics" for that check (Scout always
+    resolves separately, after the whole walk, regardless of position).
+  - **Out of scope, unchanged from Phase 292's own explicit scoping**:
+    Search's own richer tactic set (Steal/Talk/Fulfill/Scout/Use_MI/Beg)
+    stays exactly as it already was -- resolved inline at its own
+    position in the leader's tactic walk, with no round-engine
+    interaction (no guardian reaction, no disruption exposure). Only
+    `CAST`/`MELEE`/`SHOOT` participate in the round engine, matching
+    Phase 292's own scope on the Challenge/Pursue side.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added, through several intermediate fixes (the initial design broke
+    55 tests by no longer calling the now-mocked `resolve_melee_duel()`
+    at all; restoring the fast path, then correcting its own lookahead
+    condition, then fixing the cursor-advance gap, each independently
+    re-verified against the full suite) -- 3264 -> 3269 across the
+    non-breaking checkpoints once the design stabilized.
+  - 5 new tests in `test_search_execution.py`: the atomic fast path still
+    fires when the guardian has nothing left to interleave; round-
+    stepping engages when its own plan has a Cast beyond its first Melee
+    (and that Cast is genuinely attempted, not skipped); the guardian's
+    own Cast can be disrupted by either a landed swing (damage-scaled
+    formula) or a missed one (flat 30%); and the leader's own Cast after
+    a non-last Melee tactic can likewise be disrupted -- 3269 passed
+    total.
 
 ## Setup
 

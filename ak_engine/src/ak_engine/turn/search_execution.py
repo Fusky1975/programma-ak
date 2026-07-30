@@ -466,6 +466,7 @@ from ak_engine.turn.encounter import (
     MirrorImageIntelligenceTier,
     StealTargetCunning,
     TalkReaction,
+    apply_temper_melee_setup,
     blocks_cast_and_archery,
     can_talk_to_monster,
     control_undead_failure_new_hit_points,
@@ -485,7 +486,11 @@ from ak_engine.turn.encounter import (
     resolve_melee_duel,
     resolve_mirror_image_duel,
     resolve_monster_hides_treasure,
+    resolve_one_melee_round,
     resolve_personal_combat_spell_cast,
+    resolve_reactive_melee_swing,
+    resolve_spell_disruption,
+    resolve_spell_disruption_from_missed_attack,
     resolve_steal_attempt,
     resolve_steal_evasion,
     resolve_talk_reaction,
@@ -817,6 +822,23 @@ def _resolve_search_encounter(
     # docstring's own Phase 209 addendum. `_resolve_monster_casts()`
     # below walks `monster_plan` directly (Phase 238) rather than a
     # pre-filtered tuple, so Augur Combat can see its own true position.
+
+    # Phase 293: the guardian's own cursor into `monster_plan` -- shared
+    # between `_resolve_monster_casts()`'s own pre-melee burst (which now
+    # stops at the guardian's own first Melee tactic instead of bursting
+    # past it) and `_resolve_melee_range_round()`'s own round-by-round
+    # walk once real Melee begins. `current_range` starts at `SPELL_
+    # RANGE` ([5.0]'s own "Encounters usually begin at spell range") and
+    # is set to `MELEE_RANGE` exactly once, the moment real Melee combat
+    # is first engaged (either the leader's own Melee tactic or the
+    # exhausted-tactic-list default) -- never reverts. `melee_setup_done`
+    # guards the one real `apply_temper_melee_setup()` call this module
+    # now makes directly (Phase 293), since round-stepped Melee no longer
+    # ever goes through `resolve_melee_duel()`'s own internal call to it
+    # -- see module docstring's own Phase 293 addendum.
+    monster_tactic_index = 0
+    current_range = CombatRange.SPELL_RANGE
+    melee_setup_done = False
 
     def _outcome_from(combat_result: EncounterCombatResult) -> SearchExecutionResult | None:
         """Translate a resolved duel into a terminal result, or None if the
@@ -1384,31 +1406,196 @@ def _resolve_search_encounter(
             return outcome
         return _consume_bonus_attacks(leader_combatant, monster_combatant, defender_is_monster=True)
 
+    def _peek_monster_action() -> SearchTactic | None:
+        """Phase 293: peeks (without consuming) the guardian's own next
+        Melee-range action from ``monster_plan`` starting at
+        ``monster_tactic_index``, skipping any ``SHOOT`` entry (already
+        resolved, if wanted at all, via the shared Fire Arrow phase
+        earlier in the encounter -- ``monster_wants_shoot`` already
+        checked the whole plan for one). Returns the next ``CAST``
+        tactic (not yet consumed -- the caller advances the cursor via
+        ``_advance_monster_tactic()`` once it's actually been resolved),
+        or ``None`` once the guardian's own plan calls for Melee or has
+        run out entirely -- "ME fino alla fine" (``models/monster_
+        encounter_plan.py``'s own module docstring), read here as "keep
+        answering Melee."
+        """
+
+        nonlocal monster_tactic_index
+        plan = monster_plan or ()
+        while monster_tactic_index < len(plan):
+            current = plan[monster_tactic_index]
+            if current.maneuver is Maneuver.SHOOT:
+                monster_tactic_index += 1
+                continue
+            if current.maneuver is Maneuver.MELEE:
+                return None
+            if current.maneuver is Maneuver.CAST:
+                return current
+            monster_tactic_index += 1  # not a shape this data table ever uses -- skip defensively
+        return None
+
+    def _advance_monster_tactic() -> None:
+        nonlocal monster_tactic_index
+        if monster_plan is not None and monster_tactic_index < len(monster_plan):
+            monster_tactic_index += 1
+
+    def _monster_has_more_casts_pending() -> bool:
+        """Phase 293: True if the guardian's own plan, from ``monster_
+        tactic_index`` onward, contains any ``CAST`` tactic still to
+        come -- even if its own *immediate* next action is Melee (e.g.
+        Dryad's/Mermaid's own ``MELEE, MELEE, ..., CAST(Charm), MELEE``
+        shape). Deciding whether the atomic fast path is safe needs this
+        broader lookahead, not just ``_peek_monster_action()``'s own
+        "what does it want to do this exact round" answer -- a guardian
+        whose immediate next tactic is Melee can still have a real cast
+        waiting a few rounds later.
+        """
+
+        return any(t.maneuver is Maneuver.CAST for t in (monster_plan or ())[monster_tactic_index:])
+
     monster_cast_resolved = False
 
     def _resolve_monster_casts() -> SearchExecutionResult | None:
+        """Phase 178 (burst model) / **Phase 293 addendum**: resolves the
+        guardian's own ``CAST`` tactics from ``monster_tactic_index``
+        onward, stopping (without consuming) at its own first ``MELEE``
+        tactic or once its plan runs out -- called once, before the
+        first real combat phase (Fire Arrow or Melee) begins. Everything
+        from that first ``MELEE`` tactic onward is now walked one round
+        at a time by ``_resolve_melee_range_round()`` instead of being
+        burst-resolved here too -- see module docstring's own Phase 293
+        addendum for why (letting a guardian's own later ``CAST`` entry,
+        e.g. Dryad's/Mermaid's own mid-plan Charm, actually fire only
+        after the Melee rounds preceding it, rather than in the same
+        upfront burst as everything else). For every guardian whose own
+        plan has at most one trailing ``MELEE`` (the overwhelming
+        majority), this produces byte-identical behavior to the old
+        burst-everything model, since there was nothing after that
+        ``MELEE`` to begin with.
+        """
+
         nonlocal monster_cast_resolved
         if monster_cast_resolved:
             return None
         monster_cast_resolved = True
-        if monster_plan is None:
-            return None
-        # Phase 238: walks the guardian's own *full* plan (not the
-        # pre-filtered `monster_cast_tactics`) so Augur Combat can know
-        # its own true position -- `AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_
-        # LATER` needs the real index within the whole plan, not just
-        # among its own CAST entries.
-        for plan_index, plan_tactic in enumerate(monster_plan):
-            if plan_tactic.maneuver is not Maneuver.CAST:
-                continue
-            outcome = _resolve_cast(plan_tactic, caster_is_leader=False, is_first_tactic=(plan_index == 0))
+        while True:
+            tactic = _peek_monster_action()
+            if tactic is None:
+                return None
+            is_first_tactic = monster_tactic_index == 0
+            outcome = _resolve_cast(tactic, caster_is_leader=False, is_first_tactic=is_first_tactic)
+            _advance_monster_tactic()
             if outcome is not None:
                 return outcome
-        return None
 
     combat_attempted = False
     fire_arrow_resolved = False
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
+
+    def _finish_melee_outcome(combat_result: EncounterCombatResult) -> SearchExecutionResult:
+        """Wraps ``_outcome_from()`` for a genuinely concluded Melee duel
+        (winner always set, in every real call site below) and attaches
+        the fire-arrow/guardian bookkeeping every terminal Melee outcome
+        has always carried. ``_outcome_from()`` returning ``None`` (a
+        winner-less draw -- only reachable via ``resolve_melee_duel()``'s
+        own defensive ``max_rounds`` cap, astronomically unlikely in real
+        play) still produces a real, honest ``winner=None`` result here,
+        matching this module's own pre-Phase-293 fallback exactly.
+        """
+
+        outcome = _outcome_from(combat_result) or SearchExecutionResult(accepted=True, combat_resolved=True, winner=None)
+        outcome.fire_arrow_shots = fire_arrow_shots
+        outcome.guardian_monster = feature.guardian_monster
+        return outcome
+
+    def _resolve_melee_range_round(
+        leader_tactic: SearchTactic, *, leader_tactic_index: int
+    ) -> SearchExecutionResult | None:
+        """Phase 293: one round of real combat once both sides are
+        confirmed at ``CombatRange.MELEE_RANGE``. ``leader_tactic`` is
+        the leader's own tactic driving this round (``Maneuver.CAST`` or
+        ``Maneuver.MELEE`` only -- every other caller filters everything
+        else). Peeks/advances the guardian's own cursor
+        (``_peek_monster_action()``/``_advance_monster_tactic()``) for
+        its own action this same round. Generalizes ``turn/challenge_
+        execution.py``'s own Phase 292 CAST-at-melee-range disruption
+        design to a genuinely bidirectional encounter -- unlike
+        Challenge/Pursue's one-directional-target scoping, the guardian
+        here has a real Encounter Plan of its own, so it can be the side
+        disrupted too:
+
+        - **Melee vs Melee**: an ordinary mutual ``resolve_one_melee_
+          round()``.
+        - **Melee vs Cast**: the melee side's own swing is the *other*
+          side's reactive attack (``resolve_reactive_melee_swing()``) --
+          a landed hit rolls ``resolve_spell_disruption()`` against the
+          actual damage; a miss rolls ``resolve_spell_disruption_from_
+          missed_attack()``'s own flat 30% instead. A disrupted cast
+          never reaches ``_resolve_cast()`` at all ("the caster loses a
+          turn").
+        - **Cast vs Cast**: both sides attempt their own cast, no
+          swings, no disruption check (neither side is attacking this
+          round).
+
+        Returns a terminal ``SearchExecutionResult`` on a decisive kill/
+        flee, or ``None`` once the round ends without one (the walk
+        continues).
+        """
+
+        nonlocal melee_setup_done
+        if not melee_setup_done:
+            apply_temper_melee_setup(leader_combatant, monster_combatant, rng)
+            melee_setup_done = True
+
+        monster_tactic = _peek_monster_action()
+
+        if leader_tactic.maneuver is Maneuver.MELEE and monster_tactic is None:
+            round_outcome = resolve_one_melee_round(leader_combatant, monster_combatant, rng)
+            # This Melee entry in the guardian's own plan has now been
+            # "used" for this round -- advance past it so a later CAST
+            # further down its plan (e.g. Dryad's/Mermaid's own trailing
+            # Charm) is eventually reached instead of the peek landing on
+            # this same Melee entry forever. Safe even when this genuinely
+            # is the guardian's own last tactic: advancing past it just
+            # moves from "at the last index" to "past the end," which
+            # `_peek_monster_action()` already reads identically ("ME
+            # fino alla fine").
+            _advance_monster_tactic()
+            return _finish_melee_outcome(round_outcome.result) if round_outcome.result is not None else None
+
+        if leader_tactic.maneuver is Maneuver.MELEE:
+            damage = resolve_reactive_melee_swing(leader_combatant, monster_combatant, rng)
+            if monster_combatant.hit_points <= 0:
+                return _finish_melee_outcome(EncounterCombatResult(winner="a", rounds=0))
+            disrupted = (
+                resolve_spell_disruption(damage, rng) if damage > 0 else resolve_spell_disruption_from_missed_attack(rng)
+            )
+            is_first_tactic = monster_tactic_index == 0
+            _advance_monster_tactic()
+            if disrupted:
+                return None
+            return _resolve_cast(monster_tactic, caster_is_leader=False, is_first_tactic=is_first_tactic)
+
+        # leader_tactic.maneuver is Maneuver.CAST from here on
+        if monster_tactic is None:
+            damage = resolve_reactive_melee_swing(monster_combatant, leader_combatant, rng)
+            if leader_combatant.hit_points <= 0:
+                return _finish_melee_outcome(EncounterCombatResult(winner="b", rounds=0))
+            disrupted = (
+                resolve_spell_disruption(damage, rng) if damage > 0 else resolve_spell_disruption_from_missed_attack(rng)
+            )
+            _advance_monster_tactic()  # this Melee entry has now been "used" too -- see the Melee-vs-Melee branch above
+            if disrupted:
+                return None
+            return _resolve_cast(leader_tactic, caster_is_leader=True, is_first_tactic=(leader_tactic_index == 0))
+
+        outcome = _resolve_cast(leader_tactic, caster_is_leader=True, is_first_tactic=(leader_tactic_index == 0))
+        if outcome is not None:
+            return outcome
+        is_first_tactic = monster_tactic_index == 0
+        _advance_monster_tactic()
+        return _resolve_cast(monster_tactic, caster_is_leader=False, is_first_tactic=is_first_tactic)
 
     def _resolve_fire_arrow_phase() -> SearchExecutionResult | None:
         nonlocal fire_arrow_shots, fire_arrow_resolved
@@ -1561,11 +1748,21 @@ def _resolve_search_encounter(
                 return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
             continue
         if tactic.maneuver is Maneuver.CAST:
+            if current_range is CombatRange.MELEE_RANGE:
+                # Phase 293: once real Melee is underway, a CAST tactic is
+                # one round of the round engine below (the guardian's own
+                # reactive swing can disrupt it), not an unconditional cast.
+                outcome = _resolve_melee_range_round(tactic, leader_tactic_index=tactic_index)
+                if outcome is not None:
+                    return outcome
+                continue
             outcome = _resolve_cast(tactic, caster_is_leader=True, is_first_tactic=(tactic_index == 0))
             if outcome is not None:
                 return outcome
             continue
         if tactic.maneuver is Maneuver.SHOOT:
+            if current_range is CombatRange.MELEE_RANGE:
+                continue  # [5.0]: only spells or Melee are usable in the melee zone
             if leader_combatant.blocked_from_cast_and_archery:
                 continue
             combat_attempted = True
@@ -1583,17 +1780,36 @@ def _resolve_search_encounter(
             outcome = _resolve_monster_casts()
             if outcome is not None:
                 return outcome
-            outcome = _outcome_from(resolve_melee_duel(leader_combatant, monster_combatant, rng))
-            # Melee always ends in a winner (max_rounds is only a defensive
-            # engineering cap), so `outcome` is never None here in practice.
-            result = (
-                outcome
-                if outcome is not None
-                else SearchExecutionResult(accepted=True, combat_resolved=True, winner=None)
-            )
-            result.fire_arrow_shots = fire_arrow_shots
-            result.guardian_monster = feature.guardian_monster
-            return result
+            current_range = CombatRange.MELEE_RANGE
+            # Phase 293: mirrors turn/challenge_execution.py's own Phase
+            # 292 last-vs-non-last MELEE split -- a plan's own *last*
+            # tactic (or its only one, every real caller/pre-Phase-293
+            # test's own shape) still loops until death ("melee once
+            # reached loops until death"); a MELEE tactic followed by
+            # more tactics (a genuinely new plan shape) fights only one
+            # round before falling through, letting a following CAST see
+            # the guardian's own reactive swing. A trailing Scout doesn't
+            # count as "more tactics" -- it "makes no difference where
+            # you put" it and always resolves separately, after this
+            # whole walk finishes (`_apply_scout()`'s own docstring), so
+            # `MELEE, SCOUT` is exactly the "MELEE is really last" shape,
+            # not a genuinely new one.
+            is_last_leader_tactic = all(t.maneuver is Maneuver.SCOUT for t in request.tactics[tactic_index + 1 :])
+            if is_last_leader_tactic and not _monster_has_more_casts_pending():
+                # Fast path: the guardian's own plan has nothing left but
+                # Melee too -- the atomic resolve_melee_duel() is RNG-
+                # identical to looping resolve_one_melee_round() (Phase
+                # 292's own proven parity), so every pre-Phase-293 caller
+                # (and every test mocking resolve_melee_duel() directly)
+                # is completely unaffected.
+                return _finish_melee_outcome(resolve_melee_duel(leader_combatant, monster_combatant, rng))
+            while True:
+                outcome = _resolve_melee_range_round(tactic, leader_tactic_index=tactic_index)
+                if outcome is not None:
+                    return outcome
+                if not is_last_leader_tactic:
+                    break
+            continue
         if tactic.maneuver is Maneuver.STEAL:
             outcome = _resolve_steal()
             if outcome is not None:
@@ -1644,17 +1860,24 @@ def _resolve_search_encounter(
         # (only reachable when Fire Arrow exhausted its shots and no
         # further tactic followed) -- default to Melee until someone
         # dies, per the user's own confirmed default. See module
-        # docstring's own Phase 178 addendum.
+        # docstring's own Phase 178 addendum. Phase 293: this is real
+        # "ME fino alla fine" territory -- the round engine loops
+        # forever (a synthetic bare Melee tactic drives the leader's own
+        # side), still letting the guardian's own remaining plan (if any
+        # CAST tactics are left past its own first Melee) interleave.
         outcome = _resolve_monster_casts()
         if outcome is not None:
             return outcome
-        outcome = _outcome_from(resolve_melee_duel(leader_combatant, monster_combatant, rng))
-        result = (
-            outcome if outcome is not None else SearchExecutionResult(accepted=True, combat_resolved=True, winner=None)
-        )
-        result.fire_arrow_shots = fire_arrow_shots
-        result.guardian_monster = feature.guardian_monster
-        return result
+        current_range = CombatRange.MELEE_RANGE
+        if not _monster_has_more_casts_pending():
+            # Fast path -- see the Melee tactic branch's own identical
+            # comment above.
+            return _finish_melee_outcome(resolve_melee_duel(leader_combatant, monster_combatant, rng))
+        synthetic_leader_tactic = SearchTactic(maneuver=Maneuver.MELEE)
+        while True:
+            outcome = _resolve_melee_range_round(synthetic_leader_tactic, leader_tactic_index=len(request.tactics))
+            if outcome is not None:
+                return outcome
     return SearchExecutionResult(
         accepted=True,
         combat_resolved=False,
