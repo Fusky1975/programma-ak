@@ -915,10 +915,19 @@ non-scaling effects):
   per-hit rate, same 95% cap, rather than halving the already-computed
   final chance (which would cap differently at high hit counts).
 
-**Not wired into `turn/search_execution.py`'s combat resolution this
-phase either**, same reason as every other Personal-Combat spell
-above -- this project has no real `CAST`-tactic orchestration engine
-yet to call it from.
+**Wired into `turn/search_execution.py`'s combat resolution as of
+Phase 289** (`_resolve_cast_tactic()`'s own `Spell.HEAL` branch -- the
+last of this module's 16 documented Personal-Combat spells to get real
+dispatch there; every other spell above already had it since Phase
+209-238). Self-only, no target interaction: heals the caster outright
+once the same secret-spell skill-5+ eligibility gate every other secret
+spell already uses is passed and the cast succeeds. Its own halved
+disruption rate (`words_of_healing_disruption_chance()`) stays unused
+by any real caller -- `spell_disruption_chance()` itself is still never
+rolled anywhere in `turn/search_execution.py`'s own tactic walk (see
+that module's own Phase 289 addendum for precisely why: it needs a
+round-based combat engine this project still doesn't have, not a small
+addition).
 
 **Phase 202 addendum -- Gate Demon [GD], tied to Ability.NECROMANCY,
 project-original (user-supplied), the second Necromancy secret spell

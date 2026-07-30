@@ -274,7 +274,7 @@ mechanic" is now corrected below.
   "clear, honest reason" precedent ``execute_use_mi()`` itself already
   established for an invalid target.
 
-  Reuses ``_resolve_cast_tactic()``'s own full 13-spell effect dispatch
+  Reuses ``_resolve_cast_tactic()``'s own full 16-spell effect dispatch
   directly via a new ``forced_level`` parameter -- ``SEARCH_USE_MI_
   WAND_SKILL_LEVEL`` (2, ``TREASAB.X2``'s own "at skill-2" label on
   every wand, matching ``turn/use_mi_execution.py``'s own
@@ -349,6 +349,75 @@ mechanic" is now corrected below.
   (e.g. Invisibility's own Steal bonus, module docstring's Phase 186
   note) -- since no ``Feature`` ever carries a ``Power``/
   ``PowerCondition`` to actually consent to in the first place.
+
+**Phase 289 addendum -- Words of Healing wired, completing the
+Personal-Combat spell engine's own spell coverage; spell disruption's
+own remaining gap re-scoped precisely.** Re-examined directly against
+``turn/encounter.py``'s own docstring (which documents 16 real
+Personal-Combat spell mechanics in total: the ten base spells, Charm's
+own combat form, and five secret spells) after a broader gap survey
+mischaracterized this project's "Personal-Combat spell engine" as
+largely unbuilt. That characterization was stale: ``_resolve_cast_
+tactic()`` above has dispatched 15 of those 16 spells since Phase 238,
+each with its own full, sourced mechanic -- only Words of Healing
+(``Spell.HEAL``, ``turn/encounter.py``'s own Phase 200 addendum) was
+missing, a plain oversight (every other secret spell added since Phase
+202 got its own dispatch branch the same phase its primitives landed;
+Words of Healing's own primitives landed in Phase 200, before Gate
+Demon/Lava Pool/Augur Combat established the "secret spell, `elif spell
+is Spell.X`" pattern this function now uses, and nobody circled back).
+Closed here: the new ``Spell.HEAL`` branch (self-only, no target
+interaction) calls ``words_of_healing_heal()`` outright once the same
+secret-spell skill-5+ eligibility gate every other secret spell already
+uses (``WORDS_OF_HEALING_KNOWN_ABILITY_LEVEL = 5``, mirroring
+``ILLUS_HERO_KNOWN_ABILITY_LEVEL``) is passed and the cast succeeds. A
+monster caster's own healing ceiling is ``monster_starting_hit_points``
+(already captured for the Phase 255 Merit Points credit, reused here
+rather than re-derived); a leader caster's is the fixed
+``CHARACTER_HIT_POINTS``.
+
+**What is still genuinely open, precisely re-scoped (not "the engine is
+unbuilt" -- two specific, narrower gaps):**
+
+1. **Spell disruption (``spell_disruption_chance()``/``resolve_spell_
+   disruption()``, ``turn/encounter.py``'s own Phase 179 addendum) is
+   still never rolled anywhere in this walk.** Not an oversight like
+   Words of Healing was -- it is structurally unwireable at this walk's
+   own granularity. The formula needs "hits taken by the caster
+   *this round*, before the cast is attempted," but this module's own
+   tactics resolve as whole self-contained duels (``resolve_melee_
+   duel()``/``resolve_fire_arrow_duel()`` each fight an entire encounter
+   to its own conclusion in one call), not as a round-by-round loop a
+   ``CAST`` tactic could be interleaved into mid-round. Meaningfully
+   wiring disruption needs the same round-based, three-``CombatRange``
+   state machine ``turn/encounter.py``'s own module docstring has
+   flagged as unbuilt since Phase 60/179/209-211/237-238 -- this
+   project's largest single remaining piece of unbuilt personal-combat
+   machinery, not a small addition. A degenerate wiring (every ``CAST``
+   tactic sees "0 hits taken so far," since nothing in the current walk
+   ever precedes a ``CAST`` with a partial, still-in-progress duel)
+   would technically compile but would always resolve to 0% disruption
+   -- indistinguishable from not wiring it at all, so it is left
+   honestly unattempted rather than faked.
+2. **This dispatch is still Search-only.** ``_resolve_cast_tactic()``
+   is a private closure inside ``execute_search()``, never exposed to
+   ``turn/challenge_execution.py`` or ``turn/pursue_execution.py`` --
+   both of which still resolve personal combat via Melee/Fire Arrow
+   only (``turn/encounter.py resolve_encounter_combat()``), with no
+   ``CAST`` tactic support at all. ``turn/challenge_execution.py``'s own
+   docstring still says outright "classifying which spells count as
+   personal combat spells needs a spell-effect system this project
+   doesn't have" -- true when written (Phase 50), stale now that Phase
+   209-238 built exactly that system, just never circled back to update
+   the claim or extend the wiring. Generalizing ``_resolve_cast_
+   tactic()`` into a shared, cross-consumer function (it currently reads
+   Search-specific concepts throughout -- ``feature.guardian_monster``,
+   ``MONSTER_MAGIC_ABILITIES`` lookups, a rolled monster combat stat
+   block -- none of which apply to a Challenge/Pursue leader-vs-leader
+   encounter) is real, scoped follow-up work, deliberately not attempted
+   in this same phase alongside the narrower Words of Healing fix, the
+   same "one clear gap per phase" discipline this project has followed
+   throughout.
 """
 
 from __future__ import annotations
@@ -429,6 +498,7 @@ from ak_engine.turn.encounter import (
     roll_telekinetic_storm_caster_damage,
     roll_telekinetic_storm_victim_damage,
     spiritwrack_melee_damage_reduction,
+    words_of_healing_heal,
 )
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_WAND_SPELL, TreasureCategory
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
@@ -445,6 +515,12 @@ TROLL_REGENERATION_PER_COMBAT_ROUND = 1
 # specifically. Below this threshold, the leader simply doesn't know the
 # spell yet -- casting it has no effect at all, no roll consumed.
 ILLUS_HERO_KNOWN_ABILITY_LEVEL = 5
+
+# Phase 289: same secret-spell skill-5+ gate as Illusory Hero above --
+# `AdvancedAbility.WORDS_OF_HEALING_SPELL` (White Magic skill 5+),
+# `turn/cast_execution.py`'s own docstring and `turn/encounter.py`'s own
+# Phase 200 addendum.
+WORDS_OF_HEALING_KNOWN_ABILITY_LEVEL = 5
 
 # Rulebook [5.6] Flee, transcribed verbatim -- see this module's own
 # docstring addendum and models/monster.py's own [5.6] quote.
@@ -805,9 +881,16 @@ def _resolve_search_encounter(
         whether this runs the real "silent simulation" (a throwaway
         ``resolve_melee_duel()`` on cloned combatants, discarded after
         reading only its winner) or acts as an attempted Flee, per
-        ``turn/encounter.py``'s own Phase 205 addendum). Returns a terminal
-        ``SearchExecutionResult`` (a kill, a neutralization, or Charm's
-        own guaranteed Flee), or ``None`` if the encounter continues (a
+        ``turn/encounter.py``'s own Phase 205 addendum), and Words of
+        Healing from Phase 289 (``words_of_healing_heal()`` -- self-only,
+        gated by the same secret-spell skill-5+ eligibility check as
+        Illusory Hero, no target interaction at all -- this closes the
+        last gap in this function's own spell coverage: all 16 real
+        Personal-Combat spell mechanics ``turn/encounter.py`` documents
+        are now dispatched here). Returns a terminal
+        ``SearchExecutionResult`` (a kill, a neutralization, Charm's own
+        guaranteed Flee, or nothing terminal for a self-only effect like
+        Words of Healing), or ``None`` if the encounter continues (a
         failed cast, a stat-modifier effect, or a spell whose target
         isn't eligible).
 
@@ -872,10 +955,15 @@ def _resolve_search_encounter(
             # Phase 238: secret spell, tied to Ability.PSYCHIC
             # (`turn/encounter.py`'s own Phase 205 addendum).
             ability = Ability.PSYCHIC
+        elif spell is Spell.HEAL:
+            # Phase 289: secret spell (Words of Healing), tied to
+            # Ability.WHITE (`turn/encounter.py`'s own Phase 200
+            # addendum).
+            ability = Ability.WHITE
         elif spell in PERSONAL_COMBAT_SPELL_ABILITY:
             ability = PERSONAL_COMBAT_SPELL_ABILITY[spell]
         else:
-            return None  # not modeled (any spell outside the 13 named above)
+            return None  # not modeled (any spell outside the 16 Personal-Combat spells this function covers)
 
         # Control Undead's own eligibility precondition -- checked before
         # any roll, same as every other spell's `target_is_immune` guard,
@@ -911,6 +999,8 @@ def _resolve_search_encounter(
         # ILLUS_HERO_KNOWN_ABILITY_LEVEL -- checked before the roll, same
         # "ineligible means no roll at all" pattern as Control Undead.
         if spell is Spell.ILLUS_HERO and level < ILLUS_HERO_KNOWN_ABILITY_LEVEL:
+            return None
+        if spell is Spell.HEAL and level < WORDS_OF_HEALING_KNOWN_ABILITY_LEVEL:
             return None
 
         cast_attempt_applied = True  # every real precondition above is now passed
@@ -980,6 +1070,18 @@ def _resolve_search_encounter(
         if spell is Spell.INVISIBILITY:
             caster.defensive_hit_multiplier *= INVISIBILITY_HIT_CHANCE_MULTIPLIER
             caster.is_invisible = True
+            return None
+
+        if spell is Spell.HEAL:
+            # "The character is completely healed... gaining back all
+            # lost hit points" -- self-only, no target interaction, no
+            # skill-level scaling (only the eligibility gate above uses
+            # `level`). A monster caster's own max is its starting roll
+            # (`monster_starting_hit_points`, captured before this
+            # encounter began mutating it); a leader caster's own max is
+            # the fixed character value.
+            max_hit_points = CHARACTER_HIT_POINTS if caster_is_leader else monster_starting_hit_points
+            words_of_healing_heal(caster, max_hit_points)
             return None
 
         if spell is Spell.FIREBALL:
@@ -1247,10 +1349,10 @@ def _resolve_search_encounter(
         A wand's spell is dispatched through ``_resolve_cast_tactic()``
         itself (``forced_level=SEARCH_USE_MI_WAND_SKILL_LEVEL``, TREASAB.
         X2's own fixed "at skill-2" label) rather than duplicating any of
-        its 13 Personal-Combat spell effects here -- this is the same
+        its 16 Personal-Combat spell effects here -- this is the same
         "reuse the real dispatcher" precedent ``_resolve_monster_casts()``
         already established for the guardian's own CAST entries. A wand
-        holding a spell outside those 13 (``cast_attempt_applied`` stays
+        holding a spell outside those 16 (``cast_attempt_applied`` stays
         ``False``) is a documented no-effect, not a charge-consuming
         misfire -- nothing was actually cast. Charge consumption always
         follows ``cast_attempt_applied`` regardless of the spell's own

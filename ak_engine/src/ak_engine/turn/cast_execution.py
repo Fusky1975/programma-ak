@@ -34,7 +34,19 @@ Of the 25 base ``Spell``s, 15 get real execution here as of Phase 193
 
 **Still unexecuted, each for its own documented reason** (10 of the 25
 as of Phase 193; see the note just above for why the Hide_Feature/
-Clairvoyance entries here are stale):
+Clairvoyance entries here are stale -- **the "10 Personal-Combat-only
+spells" and Charm-combat-form bullets below are now equally stale as of
+Phase 289**: the general tactic-sequence engine they claim blocks all
+eleven was in fact built, one spell at a time, entirely inside ``turn/
+search_execution.py _resolve_cast_tactic()`` across Phase 209-238 and
+289 -- not here, since (as this same bullet correctly notes) none of
+these spells ever appear as a top-level ``ActionCode.CAST`` phase this
+module handles, only inside a Search encounter's own tactic list. Kept
+verbatim below as the historical record of what blocked them through
+Phase 208, per this project's own "correct via addendum, don't rewrite
+history" convention; see ``turn/search_execution.py``'s own module
+docstring and ``turn/encounter.py``'s own per-spell addenda for what
+actually unblocked each one and when):
 
 - **Hide_Feature** ([4.23.3]): targets a "Special Location" in a
   province, but ``models/map.py``'s ``Feature`` is an unpopulated stub
@@ -79,8 +91,13 @@ Clairvoyance entries here are stale):
   own Phase 200 addendum -- an eleventh Personal-Combat spell alongside
   the ten above, granted via ``AdvancedAbility.WORDS_OF_HEALING_SPELL``
   (White Magic skill 5+) rather than the base-skill-1+ gate the other
-  ten use. Equally unwired into any real tactic-walk engine, same
-  reason as every spell above.
+  ten use. **Wired into ``turn/search_execution.py``'s own
+  ``_resolve_cast_tactic()`` as of Phase 289** -- see that module's own
+  Phase 289 addendum -- alongside every other Personal-Combat-only spell
+  named above, all of which were wired there across Phase 209-238. The
+  broader "no real tactic-walk engine exists" framing this paragraph
+  used through Phase 288 is stale for Search specifically (it still
+  holds for Challenge/Pursue, which don't reuse that dispatch yet).
 
 **Every province-targeted spell here shares one targeting mechanism**:
 ``CastRequest.target`` is a raw hex number (rulebook: "the province you

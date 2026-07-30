@@ -12097,7 +12097,7 @@ complete (Phases 209-211).
     each leader's own line only reflects items owned by that same
     `leader_id` -- 3217 passed total.
 
-- **Phase 288 (current)**: implements the PROVINCES report's real
+- **Phase 288**: implements the PROVINCES report's real
   fixed-width columns and tax-tier grouping -- both previously left as
   a documented "presentation choice, not a missing data gap", the same
   way every other section composer in this module treats fixed-width
@@ -12155,6 +12155,66 @@ complete (Phases 209-211).
     kingdom's own home province sorts ahead of a higher-tax non-home
     province), and the home-province tier bonus caps at 11 rather than
     overflowing past it -- 3220 passed total.
+
+- **Phase 289 (current)**: completes the Personal-Combat spell engine's
+  own spell coverage -- a broader gap survey had mischaracterized this
+  project's "spell engine for personal combat" as largely unbuilt.
+  Re-checked directly: `turn/search_execution.py _resolve_cast_tactic()`
+  has dispatched 15 of `turn/encounter.py`'s own 16 documented Personal-
+  Combat spell mechanics since Phase 238 (the ten base spells, Charm's
+  combat form, and four of the five secret spells). Only Words of
+  Healing (`Spell.HEAL`, Phase 200's own addendum) was missing -- a
+  plain oversight, not a design gap: every secret spell added from Phase
+  202 onward got its own dispatch branch the same phase its primitives
+  landed, but Words of Healing's primitives (Phase 200) predate that
+  pattern (established Phase 202) and nobody circled back.
+  - `turn/search_execution.py`: new `WORDS_OF_HEALING_KNOWN_ABILITY_
+    LEVEL = 5` (same secret-spell skill-5+ gate as Illusory Hero's own
+    `ILLUS_HERO_KNOWN_ABILITY_LEVEL`); `_resolve_cast_tactic()` gained a
+    `Spell.HEAL` ability-lookup branch (`Ability.WHITE`) and effect
+    branch calling `words_of_healing_heal()` outright once the gate and
+    the cast roll both pass -- self-only, no target interaction. A
+    monster caster's own healing ceiling reuses the already-captured
+    `monster_starting_hit_points` (Phase 255's own Merit Points variable,
+    not re-derived); a leader caster's is `CHARACTER_HIT_POINTS`. Every
+    stale "13-spell"/"outside the 13 named above" count in this module's
+    own docstrings corrected to 16.
+  - `turn/encounter.py`: Words of Healing's own Phase 200 addendum
+    updated with a "wired as of Phase 289" note, matching the pattern
+    every other spell's addendum already carries.
+  - `turn/cast_execution.py`: the module docstring's stale "the 10
+    Personal-Combat-only spells... none of these ten can be attempted
+    without building that engine first" claim (accurate through Phase
+    208, false since Phase 209-238 actually built that engine one spell
+    at a time inside `search_execution.py`) corrected via an addendum
+    note, per this project's own "correct via addendum, don't rewrite
+    history" convention -- the original stale paragraph is left verbatim
+    below the note as the historical record.
+  - **What's still genuinely open, precisely re-scoped** (`turn/
+    search_execution.py`'s own new Phase 289 addendum): (1) spell
+    disruption (`spell_disruption_chance()`, Phase 179) is still never
+    rolled anywhere in this walk -- not an oversight like Words of
+    Healing, but structurally unwireable at this walk's own granularity
+    (it needs "hits taken this round," but tactics here resolve as whole
+    self-contained duels, not a round-by-round loop a CAST could
+    interleave into) -- this project's largest remaining piece of
+    unbuilt personal-combat machinery, not a small addition; (2) this
+    dispatch is still Search-only -- `turn/challenge_execution.py`/
+    `turn/pursue_execution.py` still resolve personal combat via Melee/
+    Fire Arrow alone, with no CAST support, and generalizing
+    `_resolve_cast_tactic()` into a shared cross-consumer function is
+    real, scoped follow-up work, not attempted this same phase.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added (the new `Spell.HEAL` branch is additive -- every existing
+    spell's own branch and eligibility gate is untouched) -- 3220
+    passed.
+  - 3 new tests in `test_search_execution.py`: a damaged leader casting
+    Words of Healing is healed to `CHARACTER_HIT_POINTS` before its next
+    Melee round; the skill-4 White Magic gate blocks the cast roll
+    entirely (mirroring Illusory Hero's own gate test); a monster caster
+    (via a patched `MONSTER_MAGIC_ABILITIES` entry) heals to its own
+    `monster_starting_hit_points` rather than the character constant --
+    3223 passed total.
 
 ## Setup
 

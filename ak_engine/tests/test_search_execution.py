@@ -1841,6 +1841,70 @@ def test_execute_search_cast_augur_combat_simulation_does_not_mutate_real_combat
     assert result.winner in ("leader", "monster", None)
 
 
+# -- Phase 289: Words of Healing --
+
+
+def test_execute_search_cast_words_of_healing_heals_leader_to_full_after_taking_damage():
+    leader = _skilled_leader(Ability.WHITE, 5)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    tactics = [
+        SearchTactic(maneuver=Maneuver.SHOOT),
+        SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.HEAL.value),
+        SearchTactic(maneuver=Maneuver.MELEE),
+    ]
+    request = SearchRequest(feature_id=1, unconfirmed_extra0=0, tactics=tactics)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", side_effect=_damage_leader_fire_arrow_duel
+    ), patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    leader_combatant = mock_melee.call_args[0][0]
+    assert leader_combatant.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_execute_search_cast_words_of_healing_level_gate_blocks_low_white_skill():
+    leader = _skilled_leader(Ability.WHITE, 4)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HEAL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_cast_roll, patch(
+        "ak_engine.turn.search_execution.words_of_healing_heal"
+    ) as mock_heal, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_cast_roll.called
+    assert not mock_heal.called
+    assert mock_melee.called
+
+
+def test_execute_search_cast_words_of_healing_monster_caster_heals_to_its_own_starting_hit_points():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    expected_hp = random.Random(0).randint(*MONSTER_COMBAT_STATS[Monster.ARCHER].hit_points_range)
+    monster_plan = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.HEAL.value),)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch.dict(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.ARCHER: {Ability.WHITE: 5}}
+    ), patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.words_of_healing_heal"
+    ) as mock_heal, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert mock_heal.called
+    monster_combatant_arg, max_hp_arg = mock_heal.call_args[0]
+    assert max_hp_arg == expected_hp
+
+
 # -- Phase 239: Steal --
 
 
