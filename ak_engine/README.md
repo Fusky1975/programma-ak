@@ -12413,7 +12413,7 @@ complete (Phases 209-211).
     a lethal reactive swing ending combat immediately, and `CAST` at
     `SPELL_RANGE` never checking disruption) -- 3264 passed total.
 
-- **Phase 293 (current)**: extends the round-per-round engine to `turn/
+- **Phase 293**: extends the round-per-round engine to `turn/
   search_execution.py`'s own Search combat -- genuinely **bidirectional**
   this time, by explicit user direction (`AskUserQuestion`: "Bidirezionale
   completo (Consigliato)" over a narrower leader-only-parity option),
@@ -12493,6 +12493,34 @@ complete (Phases 209-211).
     formula) or a missed one (flat 30%); and the leader's own Cast after
     a non-last Melee tactic can likewise be disrupted -- 3269 passed
     total.
+
+- **Phase 294 (current)**: fixes a real Temper-setup gap in `turn/
+  challenge_execution.py`'s own Phase 292 round engine, found while
+  building the analogous (correct) version for Search (Phase 293).
+  `apply_temper_melee_setup()` (Furia/Intimidazione/Slancio/Schivare,
+  Phase 284) is normally applied exactly once, internally, by
+  `resolve_melee_duel()` -- but `resolve_challenge_combat()`'s own
+  non-last-`MELEE` round-stepping branch (a `MELEE` tactic followed by
+  more tactics) never went through that function at all, so a caster's/
+  target's own Temper effects silently never applied for that one plan
+  shape. A new one-shot `melee_setup_done` flag now calls `apply_temper_
+  melee_setup()` directly, exactly once, right before the *first*
+  `resolve_one_melee_round()` call in that branch -- guarded so it never
+  also fires when the atomic `resolve_melee_duel()` path is taken
+  instead (which would double-apply Berserk's own bonus hit points and
+  consume an extra roll). Every real caller/test only ever orders
+  `MELEE` last, so the fix is inert for all of them -- it only changes
+  behavior for the same genuinely new plan shape Phase 292's own
+  docstring already flagged as the only thing exercising the one-round
+  path at all.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added -- 3269 passed.
+  - 2 new tests in `test_challenge_execution.py`: a Berserk caster's own
+    bonus hit points now actually apply in the non-last-`MELEE` branch
+    (isolated via a mocked `resolve_one_melee_round()`/`resolve_melee_
+    duel()`, real seeded RNG only for the setup step itself); and the
+    setup call fires exactly once even across two separate non-last
+    `MELEE` tactics in the same plan -- 3271 passed total.
 
 ## Setup
 

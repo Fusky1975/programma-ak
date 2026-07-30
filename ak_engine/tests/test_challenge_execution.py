@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from unittest.mock import patch
 
 import pytest
@@ -747,3 +748,55 @@ def test_resolve_challenge_combat_cast_at_spell_range_never_checks_disruption():
 
     assert not mock_swing.called
     assert not mock_disrupt.called
+
+
+# -- Phase 294: apply_temper_melee_setup fix for the non-last MELEE branch --
+
+
+def test_resolve_challenge_combat_non_last_melee_applies_temper_setup_before_the_first_round():
+    # A real bug found while building the analogous engine in turn/
+    # search_execution.py (Phase 293): the non-last-MELEE round-stepping
+    # branch never called apply_temper_melee_setup() at all, so a
+    # Berserk caster's own bonus hit points (turn/encounter.py's own
+    # Phase 284 addendum) silently never applied for this specific plan
+    # shape. resolve_one_melee_round() is mocked (undecided) so only the
+    # setup step's own effect is observed.
+    state, caster_leader, caster, target_leader, target = _combatants(caster_kwargs={"temper": Temper.BERSERK})
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.TALK)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        # mock_duel guards the exhausted-tactic-list fallback (reached
+        # once TALK, unwired, falls through) -- unmocked, it would run a
+        # second, real apply_temper_melee_setup() internally and muddy
+        # this test's own isolated observation of the fix's own single
+        # explicit call.
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, random.Random(0))
+
+    assert CHARACTER_HIT_POINTS < caster.hit_points <= CHARACTER_HIT_POINTS + 4
+
+
+def test_resolve_challenge_combat_non_last_melee_only_applies_temper_setup_once():
+    # Two separate non-last MELEE tactics (a genuinely new plan shape,
+    # but a real one this project must not silently mishandle) must not
+    # double-apply Berserk's own bonus hit points or consume an extra
+    # roll the second time around.
+    state, caster_leader, caster, target_leader, target = _combatants(caster_kwargs={"temper": Temper.BERSERK})
+    tactics = [
+        SearchTactic(Maneuver.MELEE),
+        SearchTactic(Maneuver.TALK),
+        SearchTactic(Maneuver.MELEE),
+        SearchTactic(Maneuver.TALK),
+    ]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.apply_temper_melee_setup"
+    ) as mock_setup, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert mock_setup.call_count == 1

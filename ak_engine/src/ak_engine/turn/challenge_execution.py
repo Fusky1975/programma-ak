@@ -213,6 +213,7 @@ from ak_engine.turn.encounter import (
     Combatant,
     CombatRange,
     EncounterCombatResult,
+    apply_temper_melee_setup,
     blocks_cast_and_archery,
     control_undead_failure_new_hit_points,
     holy_symbol_hit_chance,
@@ -706,9 +707,29 @@ def resolve_challenge_combat(
       this still runs even when a preceding non-last ``MELEE`` tactic
       already stepped some rounds without a decisive winner, simply
       continuing from wherever hit points currently stand.
+
+    **Phase 294 addendum -- a real Temper-setup gap, found while building
+    the analogous (correct) engine in ``turn/search_execution.py``
+    (Phase 293), fixed here.** ``apply_temper_melee_setup()`` (Furia/
+    Intimidazione/Slancio/Schivare, Phase 284) is normally applied
+    exactly once, internally, by ``resolve_melee_duel()`` itself -- but
+    the non-last-``MELEE`` round-stepping branch never went through that
+    function at all, so a caster's/target's own Temper effects silently
+    never applied for that one specific plan shape (a ``MELEE`` tactic
+    followed by more tactics). A new one-shot ``melee_setup_done`` flag
+    now calls ``apply_temper_melee_setup()`` directly, exactly once,
+    right before the *first* ``resolve_one_melee_round()`` call --
+    guarded so it never also runs when the atomic ``resolve_melee_duel()``
+    path is taken instead (which would double-apply Berserk's own bonus
+    hit points and consume an extra roll). Every real caller/test today
+    only ever orders ``MELEE`` last, so this fix is inert for all of them
+    -- it only changes behavior for the same genuinely new plan shape
+    Phase 292's own docstring already flagged as the only thing exercising
+    the one-round path at all.
     """
 
     current_range = CombatRange.SPELL_RANGE
+    melee_setup_done = False
 
     for index, tactic in enumerate(tactics):
         if tactic.maneuver is Maneuver.SHOOT:
@@ -724,6 +745,9 @@ def resolve_challenge_combat(
             if index == len(tactics) - 1:
                 result = resolve_melee_duel(caster, target, rng)
                 return ChallengeCombatOutcome(winner=result.winner)
+            if not melee_setup_done:
+                apply_temper_melee_setup(caster, target, rng)
+                melee_setup_done = True
             round_outcome = resolve_one_melee_round(caster, target, rng)
             if round_outcome.result is not None:
                 return ChallengeCombatOutcome(winner=round_outcome.result.winner)
