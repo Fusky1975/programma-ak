@@ -12732,7 +12732,7 @@ complete (Phases 209-211).
     temporarily reverting the fix and confirming this exact test then
     fails -- 3281 passed total.
 
-- **Phase 300 (current)**: fixes the first confirmed bug from a second
+- **Phase 300**: fixes the first confirmed bug from a second
   bug-hunt audit round (three fresh parallel reviews across economy/
   army-management execution, spell casting/world-content generation,
   and kingdom/succession/intelligence/reporting -- the last of these
@@ -12763,6 +12763,35 @@ complete (Phases 209-211).
     *non*-allied army in that same province gets no protection at all,
     confirming the fix is alliance-gated, not blanket -- 3283 passed
     total.
+
+- **Phase 301 (current)**: fixes the second confirmed bug from the
+  same second bug-hunt audit round -- `turn/search_execution.py
+  _resolve_fulfill()` credited `MeritTally.monster_hp_neutralized` with
+  `monster_starting_hit_points // 2` (a negotiated Fulfill's own half-
+  credit, rulebook page 51's "metà dei punti se neutralizzato con
+  trattative"), but `turn/merit_points.py defender_merit_points()`
+  halves that same field *again* when computing the Defender office's
+  score -- both `MeritTally.monster_hp_neutralized`'s own field comment
+  (`models/game_state.py`) and `merit_points.py`'s own module docstring
+  already documented the field as a raw, unhalved count with the
+  halving applied exactly once, by the formula function. The double
+  halving quartered a negotiated monster's real credit instead of
+  halving it. Hid because each half of this two-function pipeline had
+  its own isolated test -- neither exercised both together.
+  - **Fix**: `_resolve_fulfill()` now credits the raw
+    `monster_starting_hit_points`, matching the field's own documented
+    contract; `defender_merit_points()`'s own halving is unchanged and
+    is now the pipeline's only halving.
+  - Non-breaking except the one existing test that (correctly, per the
+    bug's own signature) asserted the old, wrong pre-halved write --
+    updated in place to assert the raw value instead; full suite
+    otherwise passed unchanged (3283) before any new test was added.
+  - 1 new end-to-end test in `test_search_execution.py`:
+    drives a real `execute_search()` Fulfill-honored call and then
+    calls `defender_merit_points()` on the resulting tally in the same
+    test, asserting the final credited score is exactly half the
+    monster's starting HP -- closing the exact "each half tested in
+    isolation" gap that hid the bug -- 3284 passed total.
 
 ## Setup
 

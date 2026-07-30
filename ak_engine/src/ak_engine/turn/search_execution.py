@@ -1726,13 +1726,26 @@ def _resolve_search_encounter(
         available source ties Fulfill's own success to looting the
         feature. Failure leaves the encounter unresolved; the plan
         continues to its next tactic, no combat forced.
+
+        **Phase 301 fix**: credits the *raw*, unhalved
+        ``monster_starting_hit_points`` -- ``MeritTally.monster_hp_
+        neutralized``'s own docstring (``models/game_state.py``) and
+        ``turn/merit_points.py``'s own module docstring both document
+        this field as a raw count, with the negotiated half-credit
+        applied once, by ``defender_merit_points()`` itself. This
+        function used to pre-halve the value here too, so a negotiated
+        neutralization ended up quartered (halved twice) by the time
+        ``defender_merit_points()`` read it -- a real bug found in a
+        dedicated bug-hunt audit, confirmed by tracing both the writer
+        and reader together (each had its own test validating only its
+        own half of the pipeline).
         """
 
         if feature.pending_deal_leader_id != leader_id:
             return None
         feature.pending_deal_leader_id = None
         if resolve_fulfill_honored(feature.guardian_alignment, leader.alignment, rng):
-            leader.merit_tally.monster_hp_neutralized += monster_starting_hit_points // 2
+            leader.merit_tally.monster_hp_neutralized += monster_starting_hit_points
             return SearchExecutionResult(accepted=True, combat_resolved=False, winner="leader")
         return None  # not honored -- the plan continues to its next tactic
 

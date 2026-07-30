@@ -2287,7 +2287,7 @@ def test_execute_search_fulfill_pending_deal_for_a_different_leader_falls_throug
     assert feature.pending_deal_leader_id == 99  # untouched -- not this leader's own deal
 
 
-def test_execute_search_fulfill_honored_ends_search_peacefully_and_credits_half_hp():
+def test_execute_search_fulfill_honored_ends_search_peacefully_and_credits_raw_hp():
     state = _state_with_leader()
     feature = Feature(
         feature_id=1,
@@ -2312,8 +2312,42 @@ def test_execute_search_fulfill_honored_ends_search_peacefully_and_credits_half_
     assert result.feature_looted is False
     assert feature.looted is False  # nothing ties Fulfill's own success to looting -- see module docstring
     assert feature.pending_deal_leader_id is None
-    assert state.leaders[LEADER_ID].merit_tally.monster_hp_neutralized == expected_hp // 2
+    # Phase 301 fix: the raw, unhalved HP is stored here -- the negotiated
+    # half-credit is applied once, by merit_points.py's own
+    # defender_merit_points(), not pre-halved at the write site.
+    assert state.leaders[LEADER_ID].merit_tally.monster_hp_neutralized == expected_hp
     assert state.leaders[LEADER_ID].merit_tally.monster_hp_defeated == 0
+
+
+def test_execute_search_fulfill_honored_end_to_end_defender_merit_points_gets_exactly_half():
+    # Phase 301 regression: a bug-hunt audit found this pipeline's own
+    # writer (execute_search's _resolve_fulfill) and reader
+    # (merit_points.defender_merit_points) each independently tested,
+    # but never exercised together -- which is exactly how the writer
+    # pre-halving the value, on top of the reader's own halving, hid for
+    # a long time (a quartered credit instead of the documented half).
+    # This test closes that gap by driving both ends of the real
+    # pipeline in one place.
+    from ak_engine.turn.merit_points import defender_merit_points
+
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.CAVE,
+        guardian_monster=Monster.GARGOYLE,
+        pending_deal_leader_id=LEADER_ID,
+    )
+    state.add_feature(feature)
+    expected_hp = random.Random(0).randint(*MONSTER_COMBAT_STATS[Monster.GARGOYLE].hit_points_range)
+    request = _fulfill_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert defender_merit_points(state.leaders[LEADER_ID]) == expected_hp // 2
 
 
 def test_execute_search_fulfill_not_honored_falls_through_and_clears_the_deal():
