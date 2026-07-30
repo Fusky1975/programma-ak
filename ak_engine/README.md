@@ -12216,7 +12216,7 @@ complete (Phases 209-211).
     `monster_starting_hit_points` rather than the character constant --
     3223 passed total.
 
-- **Phase 290 (current)**: wires Personal-Combat spells into Challenge
+- **Phase 290**: wires Personal-Combat spells into Challenge
   and Pursue, closing the gap Phase 289's own addendum flagged --
   `turn/challenge_execution.py`/`turn/pursue_execution.py` previously
   only resolved Melee/Fire Arrow, silently skipping every `CAST` tactic
@@ -12271,6 +12271,57 @@ complete (Phases 209-211).
     Mirror-Image/Gate-Demon/Psychic-Blast-bonus-attacks/both Augur-
     Combat branches) and `test_pursue_execution.py` (1, confirming the
     armyless case's own Charm-flee reuse) -- 3238 passed total.
+
+- **Phase 291 (current)**: wires Personal-Combat spells into Duel
+  ([7.1]), the third and last real Encounter consumer after Search
+  (Phase 289) and Challenge/Pursue (Phase 290) -- `turn/battle_
+  orchestrator.py _maybe_fight_duel()`'s own opt-in real-combat mode
+  (`use_real_duel_combat=True`) previously only resolved Melee/Fire
+  Arrow via `resolve_encounter_combat()`.
+  - `turn/challenge_execution.py`: `_resolve_personal_combat_cast()`/
+    `resolve_challenge_combat()` widened to accept `caster_leader`/
+    `target_leader: LeaderState | None` -- a Duel side can be the
+    provincial garrison commander ([7.1]: "has no abilities"), which has
+    no real `LeaderState` at all (unlike Challenge/Pursue, where both
+    sides are always real leaders). `caster_leader is None` makes any
+    `CAST` tactic a silent no-op (no abilities to cast with);
+    `target_leader is None` is read as an ordinary, alignment-unrecorded
+    target -- every spell branch already treated an unset `alignment` as
+    "not eligible/not immune," so this needed no new logic, only the
+    `None`-guard on each `target_leader.alignment` access.
+  - `turn/battle_orchestrator.py`: `_maybe_fight_duel()`/`fight_battle()`
+    now import `resolve_challenge_combat()` (replacing `resolve_
+    encounter_combat()`) and widen `duel_maneuvers` to accept either a
+    bare `Maneuver` (Melee/Fire Arrow, Phase 273's own shape, still
+    accepted unchanged) or a full `SearchTactic` (`CAST` with its own
+    spell id) -- normalized to `SearchTactic` internally so both forms
+    coexist in the same list. Each commander's own `LeaderState` (or
+    `None` for the garrison-commander fallback) is looked up from
+    `state.leaders` and threaded through to the spell dispatcher.
+  - **A successful Charm (or Augur Combat cast first and shirking) is
+    read as no duel occurring at all** (`loser_side=None`) -- [7.1]
+    describes no "commander flees the duel" outcome, so this reuses the
+    exact same fallback the function's own docstring already used for an
+    astronomically-unlikely exhausted round cap. This falls out of the
+    existing `combat_result.winner is None` check for free, since
+    `resolve_challenge_combat()`'s own `ChallengeCombatOutcome` already
+    sets `winner=None` on a `fled` outcome. Augur Combat's own "cast
+    later -> acts as Flee" branch stays the same confirmed, unmodeled
+    gap it already is for Challenge/Pursue (no Flee tactic/chance table
+    exists for a Duel either).
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added (the `None`-widening is backward-compatible for every real
+    leader already in use, and normalizing a bare-`Maneuver`
+    `duel_maneuvers` list is a no-op for the one existing test that
+    passes one) -- 3238 passed.
+  - 4 new tests in `test_battle_orchestrator.py`: a successful Charm
+    reports no duel occurring and leaves both sides' strength untouched;
+    a Fireball kill demoralizes the loser exactly like a Melee kill
+    would; Control Undead against a garrison-commander (leaderless)
+    target is correctly ruled ineligible with no roll consumed, falling
+    through to Melee; and a defensive case confirms a CAST tactic from a
+    hypothetical leaderless attacker Commander is a silent no-op rather
+    than a crash -- 3242 passed total.
 
 ## Setup
 

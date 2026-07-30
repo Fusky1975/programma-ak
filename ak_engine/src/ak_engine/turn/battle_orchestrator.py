@@ -172,14 +172,16 @@ from ak_engine.turn.aftermath import roll_quality_change
 from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit, quality_one_level_down
+from ak_engine.turn.challenge_execution import resolve_challenge_combat
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_encounter_combat
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles
 from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
 from ak_engine.turn.retreat import attacker_retreat_candidates, find_retreat_destination
+from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.strength import (
     PHANTASMAL_ARMIES_BONUS_PER_LEVEL,
     compute_druidic_shortfall,
@@ -742,7 +744,7 @@ def _maybe_fight_duel(
     *,
     state: GameState | None = None,
     use_real_duel_combat: bool = False,
-    duel_maneuvers: list[Maneuver] | None = None,
+    duel_maneuvers: list[Maneuver | SearchTactic] | None = None,
 ) -> _DuelOutcome:
     """Rulebook [7.1]: mutates ``attacker_units``/``defender_units`` in place if a duel loser is decided.
 
@@ -788,12 +790,35 @@ def _maybe_fight_duel(
     CHALLENGE/PURSUE order itself carries), the same "no real order-file
     shape ever seen" category already established for Treat/Break
     Treaty/Call-For-Vote. Rather than invent that data, ``duel_maneuvers``
-    is an optional, caller-supplied tactic list (``turn/encounter.py
-    resolve_encounter_combat()``, same symmetric single-list shape
-    Challenge/Pursue already use) -- ``None`` (the default, every
-    existing caller) reproduces the exact prior always-Melee behavior
-    and RNG consumption unchanged; a caller who does have real plan data
-    for this Duel can supply it once a real source exists.
+    is an optional, caller-supplied tactic list -- ``None`` (the default,
+    every existing caller) reproduces the exact prior always-Melee
+    behavior and RNG consumption unchanged; a caller who does have real
+    plan data for this Duel can supply it once a real source exists.
+
+    **Personal-Combat spells (Phase 291)**: ``duel_maneuvers`` entries
+    may now be either a bare ``Maneuver`` (Melee/Fire Arrow, unchanged
+    from Phase 273) or a full ``turn/search_decode.py SearchTactic``
+    (``CAST`` with its own spell id) -- normalized to ``SearchTactic``
+    internally, then walked via ``turn/challenge_execution.py resolve_
+    challenge_combat()``, the same Personal-Combat spell dispatch
+    Challenge/Pursue already reuse (that module's own Phase 290/291
+    addenda). ``_commander_combatant``'s own ``leader_id=None`` case
+    (the garrison commander, "has no abilities") has no real
+    ``LeaderState`` -- ``resolve_challenge_combat()`` accepts ``None``
+    for either side and treats it exactly like Search/Challenge already
+    treat missing skill/alignment data: a leaderless caster's ``CAST``
+    tactic is a silent no-op, and a leaderless target is read as an
+    ordinary, alignment-unrecorded opponent.
+
+    **A successful Charm (or Augur Combat cast first and shirking) is
+    read as no duel occurring at all** (``loser_side=None``, the exact
+    same fallback the docstring above already uses for an exhausted
+    round cap) -- [7.1] describes no "commander flees the duel" outcome,
+    so this is a documented interpretation of an outcome the rulebook
+    doesn't address here, not a guess at a new demoralization rule.
+    Augur Combat's own "cast later -> acts as Flee" branch stays the
+    same confirmed, unmodeled gap it already is for Challenge/Pursue (no
+    Flee tactic/chance table exists for a Duel either).
     """
 
     if attacker_commander is None or defender_commander is None:
@@ -805,9 +830,20 @@ def _maybe_fight_duel(
     if use_real_duel_combat and state is not None:
         attacker_combatant = _commander_combatant(attacker_commander, state)
         defender_combatant = _commander_combatant(defender_commander, state)
-        combat_result = resolve_encounter_combat(
-            duel_maneuvers or [], attacker_combatant, defender_combatant, rng
+        attacker_leader = (
+            state.leaders.get(attacker_commander.leader_id) if attacker_commander.leader_id is not None else None
         )
+        defender_leader = (
+            state.leaders.get(defender_commander.leader_id) if defender_commander.leader_id is not None else None
+        )
+        tactics = [tactic if isinstance(tactic, SearchTactic) else SearchTactic(tactic) for tactic in (duel_maneuvers or [])]
+        combat_result = resolve_challenge_combat(
+            tactics, attacker_leader, attacker_combatant, defender_leader, defender_combatant, state, rng
+        )
+        # `combat_result.winner is None` also covers a successful Charm/
+        # Augur-Combat flee (`combat_result.fled`) -- see this function's
+        # own Phase 291 addendum for why that's read as "no duel
+        # occurred" rather than a new demoralization outcome.
         if combat_result.winner is None:
             return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, None)
         attacker_wins_duel = combat_result.winner == "a"
@@ -958,7 +994,7 @@ def fight_battle(
     attacker_origin: HexCoord | None = None,
     apply_fanaticism: bool = False,
     use_real_duel_combat: bool = False,
-    duel_maneuvers: list[Maneuver] | None = None,
+    duel_maneuvers: list[Maneuver | SearchTactic] | None = None,
     rng: random.Random | None = None,
 ) -> BattleReport:
     """Resolve one battle at ``province_coord`` and apply its consequences to ``state``.

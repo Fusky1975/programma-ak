@@ -301,9 +301,9 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
 
 def _resolve_personal_combat_cast(
     caster: Combatant,
-    caster_leader: LeaderState,
+    caster_leader: LeaderState | None,
     target: Combatant,
-    target_leader: LeaderState,
+    target_leader: LeaderState | None,
     tactic: SearchTactic,
     state: GameState,
     rng: random.Random,
@@ -318,9 +318,23 @@ def _resolve_personal_combat_cast(
     Augur Combat cast first and shirking), or ``None`` if the encounter
     continues (a failed cast, a stat-modifier effect, or an ineligible
     target).
+
+    **``caster_leader``/``target_leader`` are ``None``-able (Phase 291)**:
+    ``turn/battle_orchestrator.py``'s own Duel wiring reuses this same
+    dispatcher, and a Duel side can be the provincial garrison commander
+    ([7.1]: "has no abilities") -- no real ``LeaderState`` exists for it
+    at all. ``caster_leader is None`` makes any ``CAST`` tactic an
+    immediate no-op (a commander with no abilities cannot cast a
+    spell); ``target_leader is None`` is read as an ordinary,
+    alignment-unrecorded target -- every branch below already treats an
+    unset ``alignment`` as "not eligible/not immune," the same
+    permissive-missing-data convention used everywhere else in this
+    project.
     """
 
     if caster.blocked_from_cast_and_archery:
+        return None
+    if caster_leader is None:
         return None
     try:
         spell = Spell(tactic.sub_object)
@@ -346,7 +360,7 @@ def _resolve_personal_combat_cast(
         return None  # not modeled (any spell outside the 16 Personal-Combat spells)
 
     if spell is Spell.CONTROL_UNDEAD:
-        if target_leader.alignment is not Alignment.UNDEAD:
+        if target_leader is None or target_leader.alignment is not Alignment.UNDEAD:
             return None
     if spell is Spell.ILLUS_HERO:
         level = effective_skill_level(state, caster_leader, ability)
@@ -386,7 +400,10 @@ def _resolve_personal_combat_cast(
         return "fled"
 
     if spell is Spell.HOLY_SYMBOL:
-        target_is_undead_or_anti_holy = target_leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY)
+        target_is_undead_or_anti_holy = target_leader is not None and target_leader.alignment in (
+            Alignment.UNDEAD,
+            Alignment.ANTI_HOLY,
+        )
         caster.defensive_hit_multiplier *= holy_symbol_hit_chance(
             1.0, level, target_is_undead_or_anti_holy=target_is_undead_or_anti_holy
         )
@@ -397,7 +414,7 @@ def _resolve_personal_combat_cast(
         return None
 
     if spell is Spell.SPIRITWRACK:
-        target_is_immune = target_leader.alignment is Alignment.UNDEAD
+        target_is_immune = target_leader is not None and target_leader.alignment is Alignment.UNDEAD
         target.melee_damage_dealt_reduction += spiritwrack_melee_damage_reduction(
             level, rng, target_is_immune=target_is_immune, target_is_animal_intelligence=False
         )
@@ -435,7 +452,10 @@ def _resolve_personal_combat_cast(
         return None
 
     if spell is Spell.HAND_OF_DEATH:
-        target_is_immune = target_leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY)
+        target_is_immune = target_leader is not None and target_leader.alignment in (
+            Alignment.UNDEAD,
+            Alignment.ANTI_HOLY,
+        )
         channel_result = resolve_hand_of_death_channel(caster, target, level, rng, target_is_immune=target_is_immune)
         if channel_result.winner is not None:
             # "a" in resolve_hand_of_death_channel's own convention always means the caster.
@@ -487,7 +507,7 @@ def _resolve_personal_combat_cast(
         return None
 
     if spell is Spell.GATE_DEMON:
-        target_alignment = target_leader.alignment
+        target_alignment = target_leader.alignment if target_leader is not None else None
         opponent_eligible_for_refusal = (
             target_alignment is not None and ALIGNMENT_ORDINAL[target_alignment] >= ALIGNMENT_ORDINAL[Alignment.EVIL]
         )
@@ -565,9 +585,9 @@ class ChallengeCombatOutcome:
 
 def resolve_challenge_combat(
     tactics: list[SearchTactic],
-    caster_leader: LeaderState,
+    caster_leader: LeaderState | None,
     caster: Combatant,
-    target_leader: LeaderState,
+    target_leader: LeaderState | None,
     target: Combatant,
     state: GameState,
     rng: random.Random,
@@ -578,6 +598,12 @@ def resolve_challenge_combat(
     ``_resolve_personal_combat_cast()`` in addition to the Fire-Arrow-
     then-Melee walk that function already implements. See module
     docstring's own Phase 290 addendum.
+
+    ``caster_leader``/``target_leader`` accept ``None`` (Phase 291) for
+    ``turn/battle_orchestrator.py``'s own Duel reuse, where a side can be
+    the provincial garrison commander -- no real ``LeaderState`` exists
+    for it. See ``_resolve_personal_combat_cast()``'s own docstring for
+    what ``None`` means on each side.
     """
 
     for index, tactic in enumerate(tactics):

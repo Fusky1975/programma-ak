@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import random
+from unittest.mock import patch
 
 import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
-from ak_engine.models.enums import Ability, Maneuver
+from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
@@ -29,6 +30,7 @@ from ak_engine.turn.battle_resolution import BattleResult
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.duel import Commander, provincial_garrison_commander
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS
+from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.strength import compute_effective_strength
 
 from _helpers import ScriptedRandom
@@ -1501,6 +1503,126 @@ def test_maybe_fight_duel_resolves_fire_arrow_first_when_duel_maneuvers_given():
         state=state, use_real_duel_combat=True, duel_maneuvers=[Maneuver.SHOOT],
     )
 
+    assert outcome.loser_side == "defender"
+
+
+# -- Personal-Combat spells (Phase 291): duel_maneuvers may carry a CAST SearchTactic --
+
+
+def test_maybe_fight_duel_cast_charm_success_is_read_as_no_duel_occurring():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9))
+    )
+    state.add_leader(LeaderState(502, kingdom_id=2, name="B", location=FIELD))
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+    rng = ScriptedRandom([0.1])  # the cast's own success roll -- Charm needs no further roll
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state, use_real_duel_combat=True,
+        duel_maneuvers=[SearchTactic(Maneuver.CAST, Spell.CHARM.value)],
+    )
+
+    assert outcome.loser_side is None
+    assert defender_units[0].effective_strength == 10.0
+    assert attacker_units[0].effective_strength == 100.0
+
+
+def test_maybe_fight_duel_cast_fireball_kill_demoralizes_the_loser():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ELEMENTAL, 4, 9))
+    )
+    state.add_leader(LeaderState(502, kingdom_id=2, name="B", location=FIELD))
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.roll_fireball_damage", return_value=99
+    ):
+        outcome = _maybe_fight_duel(
+            attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units,
+            ScriptedRandom([]), state=state, use_real_duel_combat=True,
+            duel_maneuvers=[SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)],
+        )
+
+    assert outcome.loser_side == "defender"
+    assert defender_units[0].effective_strength == 10.0 * 0.75
+
+
+def test_maybe_fight_duel_cast_control_undead_ineligible_against_a_garrison_commander_target():
+    # The defender is the provincial garrison commander -- no real
+    # LeaderState exists for it, so `target_leader` is None. Control
+    # Undead's own eligibility check must treat that as "not eligible"
+    # rather than crash, and the walk falls through to Melee.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.MELEE, 3, 9))
+    )
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD)]  # unled
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = provincial_garrison_commander(contingent_size=1)
+    rng = ScriptedRandom([0.1, 0.5, 0.9] * 15)  # A always hits, B always misses, once Melee starts
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
+        outcome = _maybe_fight_duel(
+            attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units,
+            rng, state=state, use_real_duel_combat=True,
+            duel_maneuvers=[SearchTactic(Maneuver.CAST, Spell.CONTROL_UNDEAD.value), Maneuver.MELEE],
+        )
+
+    assert not mock_roll.called
+    assert outcome.loser_side == "defender"
+
+
+def test_maybe_fight_duel_cast_from_a_leaderless_attacker_is_a_silent_no_op():
+    # Defensive case: an attacker Commander with no real LeaderState
+    # (never produced by this project's own commander-selection logic,
+    # which requires attackers to be led -- but `_resolve_personal_
+    # combat_cast()` must not crash if ever handed one). A CAST tactic
+    # simply has no effect, and the walk falls through to Melee.
+    state = GameState()
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_leader(
+        LeaderState(502, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 0, 9))
+    )
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD)]  # unled
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=None, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+    # B's own melee skill (0) ties the garrison-style attacker's own
+    # (also 0) -- initiative goes to a coin flip each round; scripted so
+    # the attacker always wins that flip, always hits, B always misses.
+    rng = ScriptedRandom([0.1, 0.1, 0.9] * 15)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
+        outcome = _maybe_fight_duel(
+            attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units,
+            rng, state=state, use_real_duel_combat=True,
+            duel_maneuvers=[SearchTactic(Maneuver.CAST, Spell.CHARM.value), Maneuver.MELEE],
+        )
+
+    assert not mock_roll.called
     assert outcome.loser_side == "defender"
 
 
