@@ -376,6 +376,28 @@ monster caster's own healing ceiling is ``monster_starting_hit_points``
 rather than re-derived); a leader caster's is the fixed
 ``CHARACTER_HIT_POINTS``.
 
+**Phase 297 addendum -- a real Temper-setup double-apply bug, found in a
+dedicated bug-hunt audit (the same one that found Phase 296's terrain-
+line-length-cap gap).** Every place this module still calls the atomic
+``resolve_melee_duel()`` (the two "fast path" branches -- the ``MELEE``
+tactic's own last-tactic shortcut and the exhausted-tactic-list
+fallback -- plus ``_resolve_steal()``'s own caught-at-Melee-range
+branch) called it unconditionally, and ``resolve_melee_duel()`` itself
+always applies Temper setup internally -- so a plan where an earlier
+non-last ``MELEE`` tactic already ran real setup via round-stepping
+(``melee_setup_done`` already ``True``) and then later reached one of
+these atomic paths (e.g. ``[MELEE, TALK, MELEE]``, or a non-last
+``MELEE`` followed by a ``STEAL`` that gets caught into Melee range)
+really did double-apply -- confirmed live: a Cautious leader's own
+defensive multiplier compounded 1.0 -> 0.9 -> 0.81, and a Berserk
+leader's own bonus hit points could apply twice. Fixed the same way as
+``turn/challenge_execution.py``'s own identical Phase 297 fix: all
+three sites now pass ``skip_temper_setup=melee_setup_done`` to
+``resolve_melee_duel()`` (``turn/encounter.py``'s own new parameter) --
+inert whenever ``melee_setup_done`` is still ``False`` (every ordinary,
+pre-Phase-297 plan shape), since that's exactly when the atomic path's
+own internal setup call is still the *first* and only one.
+
 **What is still genuinely open, precisely re-scoped (not "the engine is
 unbuilt" -- two specific, narrower gaps):**
 
@@ -1646,7 +1668,9 @@ def _resolve_search_encounter(
         if outcome is not None:
             return outcome
         if combat_range is CombatRange.MELEE_RANGE:
-            return _outcome_from(resolve_melee_duel(leader_combatant, monster_combatant, rng))
+            return _outcome_from(
+                resolve_melee_duel(leader_combatant, monster_combatant, rng, skip_temper_setup=melee_setup_done)
+            )
         duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng)
         outcome = _outcome_from(duel_result)
         if outcome is not None:
@@ -1801,8 +1825,15 @@ def _resolve_search_encounter(
                 # identical to looping resolve_one_melee_round() (Phase
                 # 292's own proven parity), so every pre-Phase-293 caller
                 # (and every test mocking resolve_melee_duel() directly)
-                # is completely unaffected.
-                return _finish_melee_outcome(resolve_melee_duel(leader_combatant, monster_combatant, rng))
+                # is completely unaffected. Phase 297: skip_temper_setup=
+                # melee_setup_done guards against double-applying Temper
+                # setup for a genuinely new plan shape where an earlier
+                # non-last MELEE already ran it via round-stepping (e.g.
+                # `[MELEE, TALK, MELEE]`) -- inert (False) for every
+                # ordinary plan, where this is the first Melee reached.
+                return _finish_melee_outcome(
+                    resolve_melee_duel(leader_combatant, monster_combatant, rng, skip_temper_setup=melee_setup_done)
+                )
             while True:
                 outcome = _resolve_melee_range_round(tactic, leader_tactic_index=tactic_index)
                 if outcome is not None:
@@ -1871,8 +1902,11 @@ def _resolve_search_encounter(
         current_range = CombatRange.MELEE_RANGE
         if not _monster_has_more_casts_pending():
             # Fast path -- see the Melee tactic branch's own identical
-            # comment above.
-            return _finish_melee_outcome(resolve_melee_duel(leader_combatant, monster_combatant, rng))
+            # comment above (including the Phase 297 skip_temper_setup
+            # note).
+            return _finish_melee_outcome(
+                resolve_melee_duel(leader_combatant, monster_combatant, rng, skip_temper_setup=melee_setup_done)
+            )
         synthetic_leader_tactic = SearchTactic(maneuver=Maneuver.MELEE)
         while True:
             outcome = _resolve_melee_range_round(synthetic_leader_tactic, leader_tactic_index=len(request.tactics))

@@ -2779,3 +2779,34 @@ def test_execute_search_leaders_own_cast_after_a_non_last_melee_tactic_can_be_di
     assert mock_disrupt.called
     assert not mock_cast.called
     assert state.features[1].discovered_by_kingdom == {}  # nowhere to record it
+
+
+# -- Phase 297: exhausted-fallback's own resolve_melee_duel() must not
+# double-apply Temper setup after an earlier non-last MELEE already ran it --
+
+
+def test_execute_search_non_last_melee_trailing_fallback_skips_temper_setup_already_applied():
+    # Same real bug as turn/challenge_execution.py's own identical Phase
+    # 297 fix, found in a dedicated bug-hunt audit: a MELEE tactic that
+    # isn't last (round-stepping applies real Temper setup once) followed
+    # by an unwired/no-op tactic (SAY) falls through to the exhausted-
+    # tactic-list fallback, whose own resolve_melee_duel() call must
+    # skip re-applying setup a second time.
+    state = _state_with_leader(temper=Temper.CAUTIOUS)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[SearchTactic(maneuver=Maneuver.MELEE), SearchTactic(maneuver=Maneuver.SAY)],
+    )
+
+    with patch(
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=(SearchTactic(Maneuver.MELEE),)
+    ), patch("ak_engine.turn.search_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert mock_duel.call_args.kwargs["skip_temper_setup"] is True

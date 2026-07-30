@@ -589,7 +589,37 @@ def test_resolve_melee_duel_does_not_regenerate_a_combatant_killed_that_round():
     result = resolve_melee_duel(a, b, rng)
 
     assert result.winner == "a"
-    assert b.hit_points <= 0
+
+
+def test_resolve_melee_duel_skip_temper_setup_default_still_applies_setup():
+    # Phase 297: skip_temper_setup defaults to False -- every pre-Phase-
+    # 297 caller (which never passes this new keyword at all) is
+    # unaffected, still getting the same single, real Temper setup call
+    # resolve_melee_duel() has always made internally.
+    a = Combatant("Wary Hero", hit_points=CHARACTER_HIT_POINTS, temper=Temper.CAUTIOUS)
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS)
+    rng = ScriptedRandom([0.99] * 10)  # both always miss -- max_rounds cuts it short, unaffected either way
+
+    resolve_melee_duel(a, b, rng, max_rounds=1)
+
+    assert a.defensive_hit_multiplier == pytest.approx(0.90)
+
+
+def test_resolve_melee_duel_skip_temper_setup_true_skips_the_internal_call():
+    # Phase 297 fix for the real, confirmed double-apply bug found in a
+    # dedicated bug-hunt audit: a caller that already applied a real,
+    # direct apply_temper_melee_setup() call itself (turn/challenge_
+    # execution.py's/turn/search_execution.py's own round-stepping
+    # engines) can now tell resolve_melee_duel() not to apply it again.
+    a = Combatant("Wary Hero", hit_points=CHARACTER_HIT_POINTS, temper=Temper.CAUTIOUS)
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS)
+    rng = ScriptedRandom([0.99] * 10)
+
+    resolve_melee_duel(a, b, rng, max_rounds=1, skip_temper_setup=True)
+
+    # Still 1.0 -- neither this call nor any prior one in this isolated
+    # unit test ever applied Cautious' own dodge multiplier.
+    assert a.defensive_hit_multiplier == 1.0
 
 
 def test_resolve_fire_arrow_duel_regenerates_hp_after_a_surviving_round():

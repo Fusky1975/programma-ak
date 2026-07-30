@@ -718,14 +718,31 @@ def resolve_challenge_combat(
     never applied for that one specific plan shape (a ``MELEE`` tactic
     followed by more tactics). A new one-shot ``melee_setup_done`` flag
     now calls ``apply_temper_melee_setup()`` directly, exactly once,
-    right before the *first* ``resolve_one_melee_round()`` call --
-    guarded so it never also runs when the atomic ``resolve_melee_duel()``
-    path is taken instead (which would double-apply Berserk's own bonus
-    hit points and consume an extra roll). Every real caller/test today
-    only ever orders ``MELEE`` last, so this fix is inert for all of them
-    -- it only changes behavior for the same genuinely new plan shape
-    Phase 292's own docstring already flagged as the only thing exercising
-    the one-round path at all.
+    right before the *first* ``resolve_one_melee_round()`` call. Every
+    real caller/test today only ever orders ``MELEE`` last, so this fix
+    is inert for all of them -- it only changes behavior for the same
+    genuinely new plan shape Phase 292's own docstring already flagged
+    as the only thing exercising the one-round path at all.
+
+    **Phase 297 correction -- the "guarded so it never also runs" claim
+    above was wrong, a real bug found in a dedicated bug-hunt audit.**
+    Both places this function still calls the atomic ``resolve_melee_
+    duel()`` (the last-tactic path just below, and the exhausted-
+    tactic-list fallback at the end of this function) called it
+    unconditionally -- and ``resolve_melee_duel()`` itself always applies
+    Temper setup internally. So a plan like ``[MELEE, TALK, MELEE]``
+    (a non-last ``MELEE`` that sets ``melee_setup_done`` via round-
+    stepping, followed by a *second* ``MELEE`` that happens to be the
+    plan's own last tactic) really did double-apply -- confirmed live,
+    not just read: a Cautious combatant's own defensive multiplier
+    compounded 1.0 -> 0.9 -> 0.81 instead of the intended single 0.9,
+    and a Berserk combatant's own bonus hit points could apply twice.
+    Fixed by giving ``resolve_melee_duel()`` a new ``skip_temper_setup``
+    parameter (``turn/encounter.py``'s own Phase 297 addendum) and
+    passing ``skip_temper_setup=melee_setup_done`` at both call sites --
+    inert whenever ``melee_setup_done`` is still ``False`` (the setup
+    genuinely hasn't run yet, so the atomic path should still do it
+    itself), and skips exactly the redundant second call otherwise.
     """
 
     current_range = CombatRange.SPELL_RANGE
@@ -743,7 +760,7 @@ def resolve_challenge_combat(
         if tactic.maneuver is Maneuver.MELEE:
             current_range = _close_to(CombatRange.MELEE_RANGE, current_range)
             if index == len(tactics) - 1:
-                result = resolve_melee_duel(caster, target, rng)
+                result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
                 return ChallengeCombatOutcome(winner=result.winner)
             if not melee_setup_done:
                 apply_temper_melee_setup(caster, target, rng)
@@ -776,7 +793,7 @@ def resolve_challenge_combat(
                 return ChallengeCombatOutcome(winner=bonus_winner)
             continue
         # every other tactic is unwired -- skip it and keep walking
-    result = resolve_melee_duel(caster, target, rng)
+    result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
     return ChallengeCombatOutcome(winner=result.winner)
 
 

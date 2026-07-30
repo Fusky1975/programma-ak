@@ -800,3 +800,29 @@ def test_resolve_challenge_combat_non_last_melee_only_applies_temper_setup_once(
         resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
 
     assert mock_setup.call_count == 1
+
+
+# -- Phase 297: the exhausted-fallback's own resolve_melee_duel() call must
+# not re-apply Temper setup a second time --
+
+
+def test_resolve_challenge_combat_non_last_melee_trailing_fallback_does_not_double_apply_temper_setup():
+    # A real bug found in a dedicated bug-hunt audit: Phase 294's own fix
+    # only guarded the *explicit* apply_temper_melee_setup() call before
+    # round-stepping -- but resolve_melee_duel() itself always applies
+    # setup again, internally, and the exhausted-tactic-list fallback
+    # calls it unconditionally. So a non-last MELEE (round-stepping,
+    # setup applied once) followed by an unwired tactic (TALK, falling
+    # through to the fallback's own atomic resolve_melee_duel()) really
+    # did apply Cautious' own dodge multiplier twice: 1.0 -> 0.9 -> 0.81
+    # instead of the intended single 0.9. Unlike the two tests above,
+    # resolve_melee_duel() is genuinely NOT mocked here -- the whole
+    # point is observing its own real internal behavior.
+    state, caster_leader, caster, target_leader, target = _combatants(caster_kwargs={"temper": Temper.CAUTIOUS})
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.TALK)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, random.Random(0))
+
+    assert caster.defensive_hit_multiplier == pytest.approx(0.9)

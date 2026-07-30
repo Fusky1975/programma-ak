@@ -12556,7 +12556,7 @@ complete (Phases 209-211).
     once for a Berserk pursuer in that same branch -- 3273 passed
     total.
 
-- **Phase 296 (current)**: fixes a real, previously-undetected bug found
+- **Phase 296**: fixes a real, previously-undetected bug found
   during a dedicated bug-hunt audit (three parallel reviews across the
   personal-combat engine, the mass-battle engine, and the turn-
   orchestration layer, each independently re-verified before acting on
@@ -12620,6 +12620,50 @@ complete (Phases 209-211).
     call, that two identical attacker armies against a single defender
     on Plains now really does apply the 100%-instead-of-50% outflanking
     boost to the second-line unit -- 3275 passed total.
+
+- **Phase 297 (current)**: fixes the second confirmed bug from the same
+  bug-hunt audit that found Phase 296's terrain-line-length-cap gap --
+  `apply_temper_melee_setup()` (Furia/Intimidazione/Slancio/Schivare,
+  Phase 284) could be applied *twice* for a genuinely new Encounter Plan
+  shape. Phase 294's own fix only guarded the *explicit*
+  `apply_temper_melee_setup()` call made right before a non-last
+  `MELEE` tactic's own round-stepping -- but `resolve_melee_duel()`
+  itself always applies setup internally too, and every place `turn/
+  challenge_execution.py`/`turn/search_execution.py` still call it
+  atomically (the last-tactic path, the exhausted-tactic-list fallback,
+  and, in `search_execution.py`, `_resolve_steal()`'s own caught-at-
+  Melee-range branch) called it unconditionally. So a plan where an
+  earlier non-last `MELEE` already ran real setup via round-stepping,
+  then later reached one of those atomic paths (e.g. `[MELEE, TALK,
+  MELEE]`, or a non-last `MELEE` followed by a caught `STEAL`), really
+  did compound the effect -- confirmed live, not just read: a Cautious
+  combatant's own defensive multiplier compounded 1.0 -> 0.9 -> 0.81
+  instead of the intended single 0.9, and a Berserk combatant's own
+  bonus hit points could apply twice.
+  - **Fix**: `resolve_melee_duel()` (`turn/encounter.py`) gains a new
+    `skip_temper_setup: bool = False` parameter -- default inert for
+    every pre-Phase-297 caller, which never passes it at all. All five
+    vulnerable call sites (two in `challenge_execution.py`, three in
+    `search_execution.py`) now pass `skip_temper_setup=melee_setup_done`,
+    which is `False` (no-op change) for every ordinary plan shape where
+    the atomic path's own internal call is genuinely the first, and
+    `True` only for the same narrow, genuinely-new plan shapes that
+    triggered the bug.
+  - Also corrects Phase 294's own docstring claim ("guarded so it never
+    also runs when the atomic path is taken instead") in `turn/
+    challenge_execution.py`, which was the false premise behind this
+    bug going unnoticed.
+  - Non-breaking: full suite passed unchanged (3275) before any new
+    test was added.
+  - 4 new tests: `test_encounter.py` unit-tests `skip_temper_setup`
+    directly on `resolve_melee_duel()` (default still applies setup;
+    `True` skips it); `test_challenge_execution.py` proves the fix live
+    (unmocked `resolve_melee_duel()`, a Cautious caster's own
+    `defensive_hit_multiplier` stays at 0.9, not 0.81, after a `[MELEE,
+    TALK]` plan); `test_search_execution.py` proves the exhausted-
+    fallback call site is correctly wired (`skip_temper_setup=True`
+    reaches the mocked `resolve_melee_duel()` call) -- 3279 passed
+    total.
 
 ## Setup
 

@@ -2548,7 +2548,7 @@ def resolve_reactive_melee_swing(attacker: Combatant, defender: Combatant, rng: 
 
 
 def resolve_melee_duel(
-    a: Combatant, b: Combatant, rng: random.Random, *, max_rounds: int = 1000
+    a: Combatant, b: Combatant, rng: random.Random, *, max_rounds: int = 1000, skip_temper_setup: bool = False
 ) -> EncounterCombatResult:
     """Rulebook [5.3]: repeated Melee rounds until one combatant's hit points reach 0.
 
@@ -2579,9 +2579,23 @@ def resolve_melee_duel(
 
     Phase 292: now a thin loop over ``resolve_one_melee_round`` -- same
     RNG consumption order, same return value, zero behavior change.
+
+    Phase 297: ``skip_temper_setup`` (default ``False``, every pre-Phase-
+    297 caller unaffected) lets a caller that already applied ``a``/``b``'s
+    own Temper setup itself -- via a real, direct ``apply_temper_melee_
+    setup()`` call, e.g. ``turn/challenge_execution.py``'s/``turn/
+    search_execution.py``'s own round-stepping engines (Phase 292/293) --
+    skip this function's own internal call, avoiding the real, confirmed
+    double-apply bug (found in a dedicated bug-hunt audit) where a
+    non-last ``MELEE`` tactic's round-stepping already ran the real setup
+    once, and this function's own atomic fallback (the last-tactic path,
+    or the exhausted-tactic-list default) ran it again, compounding
+    Berserk's own bonus hit points and Cautious'/Slancio's own hit-chance
+    multipliers.
     """
 
-    apply_temper_melee_setup(a, b, rng)
+    if not skip_temper_setup:
+        apply_temper_melee_setup(a, b, rng)
     for round_number in range(1, max_rounds + 1):
         outcome = resolve_one_melee_round(a, b, rng, round_number=round_number)
         if outcome.result is not None:
