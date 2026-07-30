@@ -12699,7 +12699,7 @@ complete (Phases 209-211).
     post-battle quality roll genuinely receives `led_by_insufficient_
     druid=True` -- 3280 passed total.
 
-- **Phase 299 (current)**: fixes the fourth and last confirmed bug from
+- **Phase 299**: fixes the fourth and last confirmed bug from
   the same bug-hunt audit -- `turn_processor.py _apply_defend_battle_
   loss()` (the rulebook [3.15] Defend-cancellation-on-loss check) read
   `dispatch_results[0]` unconditionally to find the battle a reinforced
@@ -12731,6 +12731,38 @@ complete (Phases 209-211).
     still correctly cancelled -- verified to genuinely catch the bug by
     temporarily reverting the fix and confirming this exact test then
     fails -- 3281 passed total.
+
+- **Phase 300 (current)**: fixes the first confirmed bug from a second
+  bug-hunt audit round (three fresh parallel reviews across economy/
+  army-management execution, spell casting/world-content generation,
+  and kingdom/succession/intelligence/reporting -- the last of these
+  found nothing convincing after a genuine trace-through, reported
+  plainly rather than padded with speculative nitpicks) --
+  `apply_plague_exposure()` (`turn/cast_execution.py`, shared by
+  `_execute_plague()` and `turn/plague_spread.py`) only ever checked
+  an exposed army's *own* kingdom for `Discovery.PENICILLIN`. The
+  sourced Discovery text (`models/discovery.py`) has a second clause
+  this only implemented half of: "Your armies are protected wherever
+  they go, **and all armies (yours and your ally's) are protected in
+  your provinces**." An allied army with no Penicillin of its own,
+  garrisoned inside a Penicillin-owning kingdom's own territory, could
+  be outright destroyed by the ordinary Plague roll instead of only
+  ever facing the documented flat 50% quality-downgrade risk.
+  - **Fix**: `apply_plague_exposure()` now also looks up `coord`'s own
+    province-owner kingdom; an exposed army is protected (the flat
+    downgrade-only branch) if either its own kingdom owns Penicillin
+    (unchanged) or the province owner does and is allied with (or the
+    same as) the army's kingdom (`GameState.is_allied()`, which already
+    treats same-kingdom as allied, covers both halves of the clause
+    with one check).
+  - Non-breaking: full suite passed unchanged (3281) before any new
+    test was added.
+  - 2 new tests in `test_cast_execution.py`: an allied, Penicillin-less
+    army standing in a Penicillin-owning kingdom's own province now
+    gets the flat-downgrade protection instead of being destroyed; a
+    *non*-allied army in that same province gets no protection at all,
+    confirming the fix is alliance-gated, not blanket -- 3283 passed
+    total.
 
 ## Setup
 

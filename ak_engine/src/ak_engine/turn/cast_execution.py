@@ -1581,8 +1581,22 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
     non-destroy outcome (the same shape as the immunity branch above,
     but at ``PENICILLIN_QUALITY_DOWNGRADE_CHANCE`` regardless of
     ``chance`` or prior ``plague_immune`` status), never the destroy
-    roll.
+    roll. **Phase 300 fix**: the source text has a second clause this
+    project's own bug-hunt audit found silently dropped -- "all armies
+    (yours and your ally's) are protected in your provinces." An army
+    whose *own* kingdom lacks Penicillin is still protected here if
+    ``coord``'s owning kingdom has it and is allied with (or the same
+    as) the army's kingdom -- previously this project only ever
+    consulted the army's own kingdom, so an allied army garrisoned in a
+    Penicillin-owning kingdom's own territory could be destroyed by the
+    ordinary roll instead of only ever risking the flat downgrade.
     """
+
+    province = state.provinces.get(coord)
+    province_owner_id = province.owner_kingdom_id if province is not None else None
+    province_owner_has_penicillin = (
+        province_owner_id is not None and Discovery.PENICILLIN in state.kingdoms[province_owner_id].discoveries
+    )
 
     for army in list(state.armies_at(coord)):
         if army.kingdom_id is None:
@@ -1590,7 +1604,10 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
         kingdom = state.kingdoms[army.kingdom_id]
         if kingdom.race not in HUMANOID_RACES:
             continue
-        if Discovery.PENICILLIN in kingdom.discoveries:
+        protected_by_penicillin = Discovery.PENICILLIN in kingdom.discoveries or (
+            province_owner_has_penicillin and state.is_allied(army.kingdom_id, province_owner_id)
+        )
+        if protected_by_penicillin:
             if rng.random() < PENICILLIN_QUALITY_DOWNGRADE_CHANCE:
                 army.quality = quality_one_level_down(army.quality)
             continue

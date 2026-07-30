@@ -905,6 +905,40 @@ def test_apply_plague_exposure_penicillin_never_destroys_only_downgrades():
     assert state.armies[1].plague_immune is False  # Penicillin's own branch, not the immunity path
 
 
+def test_apply_plague_exposure_penicillin_protects_an_ally_in_the_owners_own_province():
+    # Phase 300 fix: Discovery.txt's own second clause -- "all armies
+    # (yours and your ally's) are protected in your provinces" -- an
+    # allied army with no Penicillin of its own, standing in a
+    # Penicillin-owning kingdom's own territory, gets the same flat
+    # downgrade-only protection instead of risking outright destruction.
+    state = build_state()
+    state.add_kingdom(KingdomState(3, "Allia", Race.HUMAN, Alignment.GOOD, ELSEWHERE))
+    state.allied_kingdoms.add(frozenset({1, 3}))
+    state.kingdoms[1].discoveries.add(Discovery.PENICILLIN)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(1, 3, ArmyType.LEGION, Quality.AVERAGE, LOCATION))  # kingdom 3's own army, no Penicillin
+    rng = ScriptedRandom([0.49])  # hits the flat 50% downgrade chance
+
+    apply_plague_exposure(state, LOCATION, 1.0, rng)  # chance=100% would otherwise always destroy
+
+    assert 1 in state.armies  # never destroyed
+    assert state.armies[1].quality == Quality.GREEN
+    assert state.armies[1].plague_immune is False
+
+
+def test_apply_plague_exposure_penicillin_does_not_protect_a_non_ally_in_the_owners_own_province():
+    state = build_state()
+    state.add_kingdom(KingdomState(3, "Foelandia", Race.HUMAN, Alignment.EVIL, ELSEWHERE))  # not allied
+    state.kingdoms[1].discoveries.add(Discovery.PENICILLIN)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(1, 3, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
+    rng = ScriptedRandom([0.01])  # hits the ordinary 100% destroy chance -- no protection applies
+
+    apply_plague_exposure(state, LOCATION, 1.0, rng)
+
+    assert 1 not in state.armies  # destroyed -- an unallied trespasser gets no Penicillin protection
+
+
 def test_apply_plague_exposure_drops_an_immune_armys_quality_instead_of_killing_it():
     state = build_state()
     army = ArmyState(1, 1, ArmyType.LEGION, Quality.VETERAN, LOCATION, plague_immune=True)
