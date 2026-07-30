@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from unittest.mock import patch
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
@@ -12,6 +13,7 @@ from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.encounter import EncounterCombatResult, MeleeRoundOutcome
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
 from ak_engine.turn.pursue_execution import (
     PursueExecutionResult,
@@ -382,3 +384,57 @@ def test_execute_pursue_cast_charm_success_makes_the_pursuer_flee():
     assert result.fled is True
     assert result.winner_leader_id is None
     assert 1 in state.leaders and 2 in state.leaders
+
+
+# -- Phase 295: round-per-round engine + Temper-setup fix reachable via execute_pursue --
+
+
+def test_execute_pursue_non_last_melee_tactic_steps_one_round_via_the_shared_engine():
+    # Proves the armyless case's delegation to resolve_challenge_combat()
+    # really does reach the Phase 292 round-stepping branch through
+    # execute_pursue's own public API (not just in theory, from reading
+    # the source) -- a MELEE tactic followed by more tactics fights only
+    # one round via resolve_one_melee_round(), not the atomic duel.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = PursueRequest(
+        target_character_id=2,
+        unconfirmed_extra0=0,
+        tactics=[SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.TALK)],
+    )
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        result = execute_pursue(state, 1, request, rng=ScriptedRandom([0.0]))
+
+    assert mock_round.called
+    assert mock_duel.called  # the exhausted-list fallback still ran afterward
+    assert result.caught_up is True
+
+
+def test_execute_pursue_non_last_melee_applies_temper_setup_exactly_once():
+    # Same inheritance proof as above, for the Phase 294 fix: Berserk's
+    # Temper setup must fire exactly once before round-stepping starts,
+    # reached here through execute_pursue -- not just resolve_challenge_
+    # combat() called directly, as the Phase 294 tests already cover.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, temper=Temper.BERSERK))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = PursueRequest(
+        target_character_id=2,
+        unconfirmed_extra0=0,
+        tactics=[SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.TALK)],
+    )
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.apply_temper_melee_setup"
+    ) as mock_setup, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_pursue(state, 1, request, rng=ScriptedRandom([0.0]))
+
+    assert mock_setup.call_count == 1

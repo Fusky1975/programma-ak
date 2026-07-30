@@ -64,10 +64,12 @@ one combatant is killed" rule Challenge already applies -- Duel's own
 [7.1] no-death special case still doesn't generalize here either.
 
 **Fire Arrow (Phase 273)**: combat resolution now walks ``request.
-tactics`` via ``turn/encounter.py resolve_encounter_combat()`` -- see
-``turn/challenge_execution.py``'s own Phase 273 note for the full
-reasoning (identical here, since Pursue's armyless combat reuses that
-same core). ``_leader_combatant`` now also reads ``Ability.ARCHERY``.
+tactics`` -- see ``turn/challenge_execution.py``'s own Phase 273 note
+for the full reasoning (identical here, since Pursue's armyless combat
+reuses that same core). ``_leader_combatant`` now also reads
+``Ability.ARCHERY``. (Superseded by the Phase 290 addendum below: the
+walk now goes through ``resolve_challenge_combat()``, not the old
+``turn/encounter.py resolve_encounter_combat()``.)
 
 **Catch-up chance**: ``turn/spy_table.py``'s ``pursue_catch_up_chance``
 ([4.33]), driven by the pursuer's real ``Ability.SPY`` skill (0 if
@@ -124,6 +126,20 @@ own Phase 290 addendum describes for Challenge. See that module's own
 addendum for the full design (leader-vs-leader spell dispatch, the
 still-open Augur-Combat-cast-later gap, and why ``fled`` is a new,
 separate outcome from an inconclusive draw).
+
+**Phase 295 addendum -- round-per-round combat engine wiring confirmed.**
+Because the armyless case already delegates its whole combat walk to
+``turn/challenge_execution.py resolve_challenge_combat()`` (Phase 290,
+above), it automatically inherited that function's own Phase 292 round-
+based ``CombatRange`` engine (spell-range Cast disruption checks, Bow-
+range Fire Arrow, a non-last Melee tactic fighting one round at a time
+via ``resolve_one_melee_round()`` instead of an atomic
+``resolve_melee_duel()``) and Phase 294's fix (``apply_temper_melee_setup``
+now applied exactly once before that round-stepping starts) with zero
+further production-code changes here. ``tests/test_pursue_execution.py``
+adds direct verification of that inheritance through ``execute_pursue()``'s
+own public API, mirroring the equivalent ``test_challenge_execution.py``
+tests.
 """
 
 from __future__ import annotations

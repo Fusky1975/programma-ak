@@ -12494,7 +12494,7 @@ complete (Phases 209-211).
     a non-last Melee tactic can likewise be disrupted -- 3269 passed
     total.
 
-- **Phase 294 (current)**: fixes a real Temper-setup gap in `turn/
+- **Phase 294**: fixes a real Temper-setup gap in `turn/
   challenge_execution.py`'s own Phase 292 round engine, found while
   building the analogous (correct) version for Search (Phase 293).
   `apply_temper_melee_setup()` (Furia/Intimidazione/Slancio/Schivare,
@@ -12521,6 +12521,40 @@ complete (Phases 209-211).
     duel()`, real seeded RNG only for the setup step itself); and the
     setup call fires exactly once even across two separate non-last
     `MELEE` tactics in the same plan -- 3271 passed total.
+
+- **Phase 295 (current)**: wires the round-per-round combat engine into
+  `turn/pursue_execution.py`, per explicit user request ("Facciamo il
+  wiring anche in Pursue"). Investigation found the armyless case's own
+  `execute_pursue()` already delegates its whole combat walk to `turn/
+  challenge_execution.py resolve_challenge_combat()` -- established
+  since the module's own "Phase 290 addendum", predating this project
+  phase -- meaning it had *already* automatically inherited Phase 292's
+  `CombatRange` round engine (spell-range Cast disruption, Bow-range
+  Fire Arrow, non-last-`MELEE` one-round-at-a-time stepping) and Phase
+  294's `apply_temper_melee_setup()` fix with zero further
+  production-code changes needed for the core mechanic. Two things
+  remained:
+  - A stale docstring paragraph (the module's own "Fire Arrow (Phase
+    273)" note) still claimed combat "walks `request.tactics` via
+    `turn/encounter.py resolve_encounter_combat()`" -- true before
+    Phase 290 but never updated when that addendum (further down the
+    same docstring) switched the call to `resolve_challenge_combat()`.
+    Corrected with a cross-reference to the Phase 290 addendum, plus a
+    new Phase 295 addendum documenting the inheritance explicitly.
+  - No test proved the inheritance was *real* (reachable through
+    `execute_pursue()`'s own public API), as opposed to merely true by
+    reading the source. Two new tests close that gap, mirroring the
+    equivalent `test_challenge_execution.py` Phase 292/294 tests but
+    driving them through `execute_pursue()` instead of calling
+    `resolve_challenge_combat()` directly.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added -- 3271 passed.
+  - 2 new tests in `test_pursue_execution.py`: a non-last `MELEE`
+    tactic genuinely steps one round via `resolve_one_melee_round()`
+    (not the atomic `resolve_melee_duel()`) when reached through
+    `execute_pursue()`; and `apply_temper_melee_setup()` fires exactly
+    once for a Berserk pursuer in that same branch -- 3273 passed
+    total.
 
 ## Setup
 
