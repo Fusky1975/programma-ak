@@ -70,6 +70,16 @@ class BattleUnit:
     # rear-targeting -- see column_strength's docstring. False for every
     # non-overflight unit regardless of this field (irrelevant to them).
     druidic_rear_targeting_blocked: bool = False
+    # Phase 298, rulebook [7.5]: "If it fought as a Green or Depleted
+    # unit because of insufficient Druidic ability, it has 60%/20% of
+    # the normal chance to improve" -- turn/aftermath.py roll_quality_
+    # change()'s own led_by_insufficient_druid parameter. True whenever
+    # this unit's own strength was actually computed with a nonzero
+    # druidic_shortfall (turn/battle_orchestrator.py's own
+    # druidic_shortfall_for()), independent of army_type -- unlike
+    # druidic_rear_targeting_blocked above, this isn't limited to
+    # overflight units.
+    led_by_insufficient_druid: bool = False
 
 
 Column = list[BattleUnit]

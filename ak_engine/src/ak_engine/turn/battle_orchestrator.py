@@ -437,6 +437,7 @@ def _build_battle_units(
                 strength,
                 source_id=army.army_id,
                 druidic_rear_targeting_blocked=rear_targeting_blocked,
+                led_by_insufficient_druid=druidic_shortfall > 0,
             )
         )
     return units
@@ -565,6 +566,7 @@ def _retreat_or_disband(
     *,
     destination: HexCoord | None,
     avoid_elimination: bool = False,
+    led_by_insufficient_druid: bool = False,
 ) -> None:
     """``avoid_elimination`` (Phase 38): the caller's way of saying this army must not be
     removed from ``state`` even if it would otherwise disband -- see
@@ -572,11 +574,20 @@ def _retreat_or_disband(
     "no retreat destination" branch, since that's the only branch here
     that actually removes the army; the mercenary branch already leaves
     it in ``state.armies``.
+
+    ``led_by_insufficient_druid`` (Phase 298): forwarded to ``roll_
+    quality_change()`` for completeness -- see that function's own
+    docstring for why it's currently a no-op on this particular
+    ``retreated=True`` call (the penalty only ever gates the "winner
+    improves" branch), kept here so this call stays correct if that
+    scope is ever widened.
     """
 
     if destination is not None:
         army.location = destination
-        army.quality = roll_quality_change(army.quality, rng, is_winner=False, retreated=True)
+        army.quality = roll_quality_change(
+            army.quality, rng, is_winner=False, retreated=True, led_by_insufficient_druid=led_by_insufficient_druid
+        )
         report.quality_changes[army.army_id] = army.quality
         report.retreated_army_ids.append(army.army_id)
         return
@@ -1127,6 +1138,18 @@ def fight_battle(
         len(attacker_armies), len(defender_armies),
     )
 
+    # Phase 298: rulebook [7.5]'s own Druidic insufficient-ability quality-
+    # improve-chance penalty (turn/aftermath.py roll_quality_change()'s
+    # own led_by_insufficient_druid parameter) was fully implemented but
+    # never actually threaded from here, even though druidic_shortfall is
+    # already computed per-army above (BattleUnit.led_by_insufficient_
+    # druid, set alongside the analogous druidic_rear_targeting_blocked
+    # flag). One lookup, built once, covers every quality-change call
+    # site below regardless of which side/branch an army falls into.
+    led_by_insufficient_druid_by_army_id = {
+        unit.source_id: unit.led_by_insufficient_druid for unit in (*attacker_units, *defender_units)
+    }
+
     attacker_pursuit_destroyed: set[int] = set()
     if attacker_clean_swept and loser_retreats:
         attacker_pursuit_destroyed = _apply_pursuit(
@@ -1141,13 +1164,19 @@ def fight_battle(
     for army in attacker_armies:
         if army.army_id in attacker_pursuit_destroyed:
             continue
+        led_by_insufficient_druid = led_by_insufficient_druid_by_army_id.get(army.army_id, False)
         if battle_result.winner == "attacker":
-            army.quality = roll_quality_change(army.quality, rng, is_winner=True)
+            army.quality = roll_quality_change(
+                army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid
+            )
             report.quality_changes[army.army_id] = army.quality
         elif attacker_clean_swept and _whale_forced_retreat_applies(army, terrain):
             bounds = MapBounds(*NORMAL_MAP_BOUNDS)
             destination = _whale_sea_retreat_destination(army, state, bounds)
-            _retreat_or_disband(army, state, report, rng, destination=destination)
+            _retreat_or_disband(
+                army, state, report, rng, destination=destination,
+                led_by_insufficient_druid=led_by_insufficient_druid,
+            )
         elif attacker_clean_swept and loser_retreats:
             bounds = MapBounds(*NORMAL_MAP_BOUNDS)
             if attacker_origin is not None:
@@ -1158,6 +1187,7 @@ def fight_battle(
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
                 avoid_elimination=_fleet_avoids_elimination(army, terrain),
+                led_by_insufficient_druid=led_by_insufficient_druid,
             )
         elif attacker_clean_swept and _fleet_avoids_elimination(army, terrain):
             army.quality = Quality.DEPLETED
@@ -1167,19 +1197,28 @@ def fight_battle(
             state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id)
             state.remove_army(army.army_id)
         else:
-            army.quality = roll_quality_change(army.quality, rng, is_winner=False, retreated=False)
+            army.quality = roll_quality_change(
+                army.quality, rng, is_winner=False, retreated=False,
+                led_by_insufficient_druid=led_by_insufficient_druid,
+            )
             report.quality_changes[army.army_id] = army.quality
 
     for army in defender_armies:
         if army.army_id in defender_pursuit_destroyed:
             continue
+        led_by_insufficient_druid = led_by_insufficient_druid_by_army_id.get(army.army_id, False)
         if battle_result.winner == "defender":
-            army.quality = roll_quality_change(army.quality, rng, is_winner=True)
+            army.quality = roll_quality_change(
+                army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid
+            )
             report.quality_changes[army.army_id] = army.quality
         elif defender_clean_swept and _whale_forced_retreat_applies(army, terrain):
             bounds = MapBounds(*NORMAL_MAP_BOUNDS)
             destination = _whale_sea_retreat_destination(army, state, bounds)
-            _retreat_or_disband(army, state, report, rng, destination=destination)
+            _retreat_or_disband(
+                army, state, report, rng, destination=destination,
+                led_by_insufficient_druid=led_by_insufficient_druid,
+            )
         elif defender_clean_swept and loser_retreats:
             bounds = MapBounds(*NORMAL_MAP_BOUNDS)
             friendly = state.friendly_provinces_for(army.kingdom_id) - {province_coord}
@@ -1187,6 +1226,7 @@ def fight_battle(
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
                 avoid_elimination=_fleet_avoids_elimination(army, terrain),
+                led_by_insufficient_druid=led_by_insufficient_druid,
             )
         elif defender_clean_swept and _fleet_avoids_elimination(army, terrain):
             army.quality = Quality.DEPLETED
@@ -1196,7 +1236,10 @@ def fight_battle(
             state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id)
             state.remove_army(army.army_id)
         else:
-            army.quality = roll_quality_change(army.quality, rng, is_winner=False, retreated=False)
+            army.quality = roll_quality_change(
+                army.quality, rng, is_winner=False, retreated=False,
+                led_by_insufficient_druid=led_by_insufficient_druid,
+            )
             report.quality_changes[army.army_id] = army.quality
 
     if defender_clean_swept:

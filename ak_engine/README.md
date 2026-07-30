@@ -12621,7 +12621,7 @@ complete (Phases 209-211).
     on Plains now really does apply the 100%-instead-of-50% outflanking
     boost to the second-line unit -- 3275 passed total.
 
-- **Phase 297 (current)**: fixes the second confirmed bug from the same
+- **Phase 297**: fixes the second confirmed bug from the same
   bug-hunt audit that found Phase 296's terrain-line-length-cap gap --
   `apply_temper_melee_setup()` (Furia/Intimidazione/Slancio/Schivare,
   Phase 284) could be applied *twice* for a genuinely new Encounter Plan
@@ -12664,6 +12664,40 @@ complete (Phases 209-211).
     fallback call site is correctly wired (`skip_temper_setup=True`
     reaches the mocked `resolve_melee_duel()` call) -- 3279 passed
     total.
+
+- **Phase 298 (current)**: fixes the third confirmed bug from the same
+  bug-hunt audit -- `turn/aftermath.py roll_quality_change()`'s own
+  `led_by_insufficient_druid` parameter (rulebook [7.5]: "If it fought
+  as a Green or Depleted unit because of insufficient Druidic ability,
+  it has 60% and 20% (respectively) of the normal chance to improve")
+  was fully implemented and unit-tested in isolation, but never actually
+  passed by any of the 5 real `roll_quality_change()` call sites in
+  `turn/battle_orchestrator.py` -- even though the exact value needed
+  (`druidic_shortfall > 0`) is already computed per-army in `_build_
+  battle_units()` for the strength-side penalty, right next to the
+  already-wired, analogous `druidic_rear_targeting_blocked` flag.
+  - **Fix**: `BattleUnit` (`turn/battle_line.py`) gains a new
+    `led_by_insufficient_druid: bool = False` field, set the same way as
+    `druidic_rear_targeting_blocked` but without that flag's own
+    overflight-only gate (this penalty applies to any shortfall-led
+    unit, not just overflight ones). `fight_battle()` builds one
+    `army_id -> bool` lookup from `attacker_units`/`defender_units`
+    right after `resolve_battle()` returns, and threads it into all 5
+    call sites -- the 4 direct `roll_quality_change()` calls, plus
+    `_retreat_or_disband()` (which gained the same parameter, forwarded
+    to its own internal call; currently a no-op there since `turn/
+    aftermath.py`'s own formula only consults the flag on the `is_
+    winner=True` branch, kept for completeness/correctness if that
+    scope is ever widened).
+  - Non-breaking: full suite passed unchanged (3279) before any new
+    test was added.
+  - 2 new tests in `test_battle_orchestrator.py`: `_build_battle_units()`
+    now sets `led_by_insufficient_druid=True` for the same foreign-race-
+    led-army fixture the existing strength-side penalty test already
+    uses; and a `fight_battle()`-level wiring proof (mocked `roll_
+    quality_change()`) that a winning, Druid-shortfall-led army's own
+    post-battle quality roll genuinely receives `led_by_insufficient_
+    druid=True` -- 3280 passed total.
 
 ## Setup
 

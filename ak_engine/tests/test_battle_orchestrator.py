@@ -704,6 +704,9 @@ def test_build_battle_units_druidic_shortfall_penalizes_a_foreign_race_led_army(
         ArmyType.DRAGON_WING, Race.DRAGONS, Quality.ELITE, Terrain.PLAINS, druidic_shortfall=4
     )
     assert units[0].effective_strength == pytest.approx(expected)
+    # Phase 298: the same shortfall also flags this unit for aftermath.py's
+    # own led_by_insufficient_druid quality-improve-chance penalty.
+    assert units[0].led_by_insufficient_druid is True
 
 
 def test_build_battle_units_race_item_bonus_boosts_a_matching_led_army():
@@ -1966,3 +1969,39 @@ def test_fight_battle_numeric_superiority_outflanking_now_applies_end_to_end():
     # Boosted: both units count at 100% (front + outflanked second line),
     # not the ordinary 100% + 50%.
     assert column.attacker_strength == pytest.approx(2 * single_unit_strength)
+
+
+# -- Phase 298: Druidic insufficient-ability quality-improve penalty now
+# reaches real post-battle roll_quality_change() calls --
+
+
+def test_fight_battle_winning_army_led_by_insufficient_druid_passes_the_penalty_flag():
+    # Bug fix: turn/aftermath.py roll_quality_change()'s own led_by_
+    # insufficient_druid parameter (rulebook [7.5]) was fully implemented
+    # but never actually passed by any real call site in this module,
+    # even though the same druidic_shortfall value is already computed
+    # per-army in _build_battle_units() for the strength-side penalty.
+    # Same fixture shape as test_build_battle_units_druidic_shortfall_
+    # penalizes_a_foreign_race_led_army: a Human leader (Druid skill 0)
+    # commands a Dragon army -- DRUID_TABLE[Dragons] == 4, full shortfall.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.add_kingdom(KingdomState(3, "Weakland", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(7, 7)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Hero", location=FIELD))
+    state.add_army(ArmyState(101, 2, ArmyType.DRAGON_WING, Quality.ELITE, location=FIELD, commanded_by=1))
+    state.add_army(ArmyState(201, 3, ArmyType.GARRISON, Quality.GREEN, location=FIELD))
+    # A real, unscripted seeded rng -- the attacker leader triggers a real
+    # Duel against the defender's own provisional garrison commander (an
+    # extra roll no simple scripted sequence accounts for), so a plain
+    # seed verified deterministic for this exact fixture (attacker wins)
+    # is simpler than hand-scripting every intermediate roll.
+    rng = random.Random(1)
+
+    with patch("ak_engine.turn.battle_orchestrator.roll_quality_change") as mock_roll:
+        mock_roll.return_value = Quality.ELITE
+        report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
+
+    assert report.battle_result.winner == "attacker"
+    mock_roll.assert_called_once_with(Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True)
