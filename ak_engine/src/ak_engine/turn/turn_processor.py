@@ -647,12 +647,29 @@ def _apply_defend_battle_loss(
     reinforcement (``_apply_defend_reinforcements``) just drew ``target``'s
     defender(s) into. See ``_apply_defend_cancellations``'s own docstring
     for why this is the only battle that needs checking.
+
+    Phase 299 fix (a real bug found in a dedicated bug-hunt audit):
+    ``dispatch_results`` isn't always a single-entry list carrying the
+    real battle at index 0 -- ``_dispatch_multi_attacker_lmove()`` can
+    mix per-mover validation-error entries (an illegal move, no province
+    data) in *before* the real ``MultiAttackerMoveResult`` entries for
+    the movers that actually joined the battle, so a multi-attacker
+    group with at least one invalid mover could have its own real battle
+    result sitting at index 1 or later. Reading only index ``[0]`` then
+    silently found no battle (an error entry carries none) and never
+    cancelled the Defend order despite a genuine loss. Fixed by scanning
+    every entry for the one real battle this call is ever looking for --
+    at most one battle is ever produced for a single ``target``, so the
+    first non-``None`` winner found is unambiguously the right one.
     """
 
     defender_leader_ids = reinforced_by_target.get(target)
     if not defender_leader_ids or not dispatch_results:
         return
-    if _extract_battle_winner(dispatch_results[0].result) == "attacker":
+    winner = next(
+        (w for w in (_extract_battle_winner(r.result) for r in dispatch_results) if w is not None), None
+    )
+    if winner == "attacker":
         defeated_while_defending.update(defender_leader_ids)
 
 

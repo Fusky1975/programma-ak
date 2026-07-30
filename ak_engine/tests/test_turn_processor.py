@@ -1159,6 +1159,76 @@ def test_run_turn_defend_battle_win_does_not_block_a_later_redeclaration():
     assert state.leaders[100].location == DL_SECOND_COVERED
 
 
+DL_ILLEGAL_ORIGIN = HexCoord(4, 3)  # adjacent to DL_FIRST_COVERED, distinct from the other DL_* origins
+
+
+def test_run_turn_defend_battle_loss_blocks_a_later_redeclaration_with_a_leading_group_error():
+    # Phase 299 regression: _dispatch_multi_attacker_lmove() appends a
+    # validation-error entry for an illegal mover BEFORE the real
+    # MultiAttackerMoveResult entries for the movers who actually joined
+    # the battle (see
+    # test_run_turn_excludes_an_illegal_contested_mover_but_still_groups_the_rest
+    # for that ordering in isolation). _apply_defend_battle_loss used to
+    # trust dispatch_results[0] to carry the real battle, so when a group
+    # like that reinforced a Defend leader's own province, the loss went
+    # undetected and the Defend order was never cancelled. Reproduced
+    # here by declaring the illegal mover first in the TurnLeader list so
+    # its error lands at index 0 of the group's own dispatch_results.
+    state = _defend_loss_state()
+    state.add_province(ProvinceState(DL_ILLEGAL_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.provinces[DL_ILLEGAL_ORIGIN].contested_by_kingdom_id = 1  # self-contested -- illegal to move out of
+
+    state.add_leader(LeaderState(400, kingdom_id=1, name="IllegalMover", location=DL_ILLEGAL_ORIGIN))
+    state.add_army(
+        ArmyState(904, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_ILLEGAL_ORIGIN, commanded_by=400, movement_points=3)
+    )
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=DL_FIRST_ATTACKER_ORIGIN))
+    state.add_army(
+        ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_FIRST_ATTACKER_ORIGIN, commanded_by=200, movement_points=3)
+    )
+    state.add_leader(LeaderState(250, kingdom_id=1, name="SecondWave", location=DL_FIRST_ATTACKER_ORIGIN))
+    state.add_army(
+        ArmyState(905, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_FIRST_ATTACKER_ORIGIN, commanded_by=250, movement_points=3)
+    )
+    state.add_leader(LeaderState(300, kingdom_id=1, name="SecondAttacker", location=DL_SECOND_ATTACKER_ORIGIN))
+    state.add_army(
+        ArmyState(903, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_SECOND_ATTACKER_ORIGIN, commanded_by=300, movement_points=3)
+    )
+
+    defender = _two_phase_leader(100, "Defender", _defend_phase("P0"), _defend_phase("P2"))
+    illegal_mover = _leader_with_phase(400, "IllegalMover", "P1", _lmove_phase("P1", DL_FIRST_COVERED))
+    attacker = _defend_loss_attacker(200, 902, DL_FIRST_ATTACKER_ORIGIN, DL_FIRST_COVERED, "P1")
+    second_wave = _defend_loss_attacker(250, 905, DL_FIRST_ATTACKER_ORIGIN, DL_FIRST_COVERED, "P1")
+    second_attacker = _defend_loss_attacker(300, 903, DL_SECOND_ATTACKER_ORIGIN, DL_SECOND_COVERED, "P3")
+
+    results = run_turn(
+        [
+            TurnLeader(defender, 2),
+            TurnLeader(illegal_mover, 1),  # declared first -- its error lands at group index 0
+            TurnLeader(attacker, 1),
+            TurnLeader(second_wave, 1),
+            TurnLeader(second_attacker, 1),
+        ],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=random.Random(1),
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[400].error is not None
+    assert by_leader[400].result is None
+    assert isinstance(by_leader[200].result, MultiAttackerMoveResult)
+    assert isinstance(by_leader[250].result, MultiAttackerMoveResult)
+    assert sorted(by_leader[200].result.battle.leader_ids) == [200, 250]
+    assert by_leader[200].result.battle.report.battle_result.winner == "attacker"  # defender lost
+
+    # Despite the illegal mover's error occupying index 0 of the group's
+    # own dispatch_results, the fix still finds the real battle result and
+    # correctly cancels the Defend order on loss -- P2's re-declaration
+    # never re-arms coverage for the P3 invasion.
+    assert state.leaders[100].location == DL_FIRST_COVERED
+
+
 # -- build_missed_deadline_turn_leaders() (Phase 138) --
 
 

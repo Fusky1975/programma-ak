@@ -12665,7 +12665,7 @@ complete (Phases 209-211).
     reaches the mocked `resolve_melee_duel()` call) -- 3279 passed
     total.
 
-- **Phase 298 (current)**: fixes the third confirmed bug from the same
+- **Phase 298**: fixes the third confirmed bug from the same
   bug-hunt audit -- `turn/aftermath.py roll_quality_change()`'s own
   `led_by_insufficient_druid` parameter (rulebook [7.5]: "If it fought
   as a Green or Depleted unit because of insufficient Druidic ability,
@@ -12698,6 +12698,39 @@ complete (Phases 209-211).
     quality_change()`) that a winning, Druid-shortfall-led army's own
     post-battle quality roll genuinely receives `led_by_insufficient_
     druid=True` -- 3280 passed total.
+
+- **Phase 299 (current)**: fixes the fourth and last confirmed bug from
+  the same bug-hunt audit -- `turn_processor.py _apply_defend_battle_
+  loss()` (the rulebook [3.15] Defend-cancellation-on-loss check) read
+  `dispatch_results[0]` unconditionally to find the battle a reinforced
+  Defend leader had just been drawn into. That assumption breaks for
+  `_dispatch_multi_attacker_lmove()`'s own dispatch lists: an illegal
+  mover (e.g. moving out of a province contested by their own kingdom)
+  gets its validation-error `PhaseDispatchResult` appended *before* the
+  real `MultiAttackerMoveResult` entries for the movers who actually
+  joined the battle, so a multi-attacker group with at least one invalid
+  mover declared first could have its own real battle result sitting at
+  index 1 or later -- reading only index `[0]` then silently found no
+  battle at all (an error entry carries none) and never cancelled the
+  Defend order despite a genuine loss.
+  - **Fix**: `_apply_defend_battle_loss()` now scans every entry in
+    `dispatch_results` via `_extract_battle_winner()` and takes the
+    first non-`None` winner found, instead of trusting index `[0]` --
+    at most one battle is ever produced for a single `target`, so the
+    first real winner found is unambiguously the right one.
+  - Non-breaking: full suite passed unchanged (3280) before any new
+    test was added.
+  - 1 new test in `test_turn_processor.py`:
+    `test_run_turn_defend_battle_loss_blocks_a_later_redeclaration_with_a_leading_group_error`
+    combines the illegal-mover-in-a-multi-attacker-group pattern (see
+    `test_run_turn_excludes_an_illegal_contested_mover_but_still_groups_
+    the_rest`) with the Defend-reinforcement-and-loss pattern (see
+    `_defend_loss_state()`): an illegal mover is declared first so its
+    error lands at group index 0, two real attackers behind it win the
+    battle against a reinforced Defend leader, and the Defend order is
+    still correctly cancelled -- verified to genuinely catch the bug by
+    temporarily reverting the fix and confirming this exact test then
+    fails -- 3281 passed total.
 
 ## Setup
 
