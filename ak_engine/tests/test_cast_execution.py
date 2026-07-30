@@ -87,6 +87,35 @@ def test_charm_steals_a_colocated_enemy_characters_allegiance():
     assert state.leaders[78].kingdom_id == 1
 
 
+def test_charm_against_an_analytical_psychology_protected_target_still_succeeds():
+    # Phase 302 fix: Discovery.ANALYTICAL_PSYCHOLOGY does NOT block Charm
+    # outright -- the source text says the spell still works, but wears
+    # off at end of turn. The reassignment happens exactly as normal;
+    # only the new revert bookkeeping differs from an unprotected target.
+    state = build_state()
+    state.kingdoms[2].discoveries.add(Discovery.ANALYTICAL_PSYCHOLOGY)
+    state.add_leader(LeaderState(78, 2, "Protected Hero", LOCATION))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[78].kingdom_id == 1  # charmed, same as an unprotected target
+    assert state.leaders[78].analytical_psychology_revert_kingdom_id == 2  # queued to revert to kingdom 2
+
+
+def test_charm_against_an_unprotected_target_never_sets_the_revert_field():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Ordinary Enemy Hero", LOCATION))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[78].kingdom_id == 1
+    assert state.leaders[78].analytical_psychology_revert_kingdom_id is None
+
+
 def test_charm_fails_when_target_not_colocated():
     state = build_state()
     state.add_leader(LeaderState(78, None, "Wandering Hero", ELSEWHERE))

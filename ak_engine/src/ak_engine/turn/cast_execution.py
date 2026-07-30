@@ -991,6 +991,23 @@ def _execute_charm(
     unaffected base success roll) isn't specified precisely enough to
     model without guessing, the same category of gap as this file's own
     Resurrection King-Heir case above.
+
+    **Phase 302 (Discovery.ANALYTICAL_PSYCHOLOGY, a real bug found in a
+    dedicated bug-hunt audit)**: the source text is explicit that this
+    Discovery does *not* block Charm outright -- "the spell will work,
+    but it wears off at the end of the turn, and the charmed character
+    will never Search features or risk combat." So when the target's
+    own (pre-charm) kingdom owns this Discovery, the reassignment below
+    still happens exactly as normal, but ``target.analytical_
+    psychology_revert_kingdom_id`` is set to the target's own original
+    kingdom -- ``turn/turn_processor.py run_turn()``'s own end-of-turn
+    sweep reverts ``kingdom_id`` back to it and clears the field.
+    "Never Search" is enforced by ``turn/search_execution.py
+    execute_search()`` itself refusing to run while this field is set;
+    "risk combat" needs no separate enforcement here, since Search is
+    the only combat-risking action this project's Charm precondition
+    above (co-located, army-less target) leaves the caster able to
+    order the newly-charmed character into.
     """
 
     caster = state.leaders[leader_id]
@@ -1006,6 +1023,8 @@ def _execute_charm(
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
+    if target.kingdom_id is not None and Discovery.ANALYTICAL_PSYCHOLOGY in state.kingdoms[target.kingdom_id].discoveries:
+        target.analytical_psychology_revert_kingdom_id = target.kingdom_id
     target.kingdom_id = kingdom_id
     return CastExecutionResult(request, applied=True)
 

@@ -4,6 +4,7 @@ import random
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
@@ -1359,3 +1360,53 @@ def test_run_turn_produces_no_gate_angel_result_when_no_leader_casts_it():
 
     assert not [r for r in results if r.phase_label == "gate-angel-visit"]
     assert VALHALLA_VISITOR_LEADER_ID not in state.leaders
+
+
+# ---------------------------------------------------------------------------
+# Analytical Psychology end-of-turn Charm revert (Phase 302) --
+# run_turn()'s own end-of-turn sweep, _revert_analytical_psychology_charms().
+# ---------------------------------------------------------------------------
+
+
+def _cast_charm_phase(label: str, target_leader_id: int) -> PlanPhase:
+    return PlanPhase(label=label, action=ActionCode.CAST, obj=Spell.CHARM.value, extra=[target_leader_id])
+
+
+def test_run_turn_reverts_an_analytical_psychology_protected_charm_at_end_of_turn():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Casteria", Race.HUMAN, Alignment.GOOD, HexCoord(3, 3)))
+    state.add_kingdom(KingdomState(2, "Protectia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.kingdoms[2].discoveries.add(Discovery.ANALYTICAL_PSYCHOLOGY)
+    caster = LeaderState(10, kingdom_id=1, name="Caster", location=HexCoord(3, 3))
+    target = LeaderState(78, kingdom_id=2, name="Protected Hero", location=HexCoord(3, 3))
+    state.add_leader(caster)
+    state.add_leader(target)
+    turn_leaders = [TurnLeader(_leader_with_phase(10, "Caster", "P0", _cast_charm_phase("P0", 78)), 1)]
+
+    results = run_turn(turn_leaders, state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    cast_result = next(r for r in results if r.leader_id == 10 and r.phase_label == "P0")
+    assert cast_result.result.applied is True  # the spell really did fire, not silently blocked
+    # By the time run_turn() returns, the end-of-turn sweep has already put
+    # the target back under their own original kingdom (2), not the
+    # caster's (1) -- proving the revert genuinely ran, not just that the
+    # Charm itself was rejected.
+    assert state.leaders[78].kingdom_id == 2
+    assert state.leaders[78].analytical_psychology_revert_kingdom_id is None
+
+
+def test_run_turn_does_not_revert_an_ordinary_unprotected_charm():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Casteria", Race.HUMAN, Alignment.GOOD, HexCoord(3, 3)))
+    state.add_kingdom(KingdomState(2, "Ordinaria", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    caster = LeaderState(10, kingdom_id=1, name="Caster", location=HexCoord(3, 3))
+    target = LeaderState(78, kingdom_id=2, name="Ordinary Hero", location=HexCoord(3, 3))
+    state.add_leader(caster)
+    state.add_leader(target)
+    turn_leaders = [TurnLeader(_leader_with_phase(10, "Caster", "P0", _cast_charm_phase("P0", 78)), 1)]
+
+    results = run_turn(turn_leaders, state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    cast_result = next(r for r in results if r.leader_id == 10 and r.phase_label == "P0")
+    assert cast_result.result.applied is True
+    assert state.leaders[78].kingdom_id == 1  # stays charmed -- no protection, no revert

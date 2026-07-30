@@ -463,6 +463,21 @@ class LeaderState:
     # (turn/succession.py create_king()). None = not recorded, the same
     # "no data" convention as temper/alignment/race above.
     sex: Sex | None = None
+    # Phase 302 (Discovery.ANALYTICAL_PSYCHOLOGY, rulebook text quoted in
+    # models/discovery.py): set by a successful Charm cast against a
+    # target whose own kingdom owns this Discovery -- the spell still
+    # works (kingdom_id reassigned as normal), but this records the
+    # target's own *original* kingdom_id so turn/turn_processor.py
+    # run_turn()'s own end-of-turn sweep can revert kingdom_id back to
+    # it and clear this field. Unlike every other "persistent for the
+    # rest of the turn, caller clears it" flag in this project
+    # (oratory_boosted_this_turn, mystic_winds_active, ...), this one
+    # IS auto-cleared, by that end-of-turn sweep -- the first field in
+    # this project that needs a real revert-to-prior-value, not just a
+    # flag reset, so it gets its own dedicated turn-boundary consumer
+    # instead of reusing that convention. None = not currently under a
+    # protected Charm.
+    analytical_psychology_revert_kingdom_id: int | None = None
 
 
 @dataclass(slots=True)

@@ -76,6 +76,23 @@ def _damage_leader_fire_arrow_duel(leader_combatant, monster_combatant, rng):
     return EncounterCombatResult(winner=None, rounds=1)
 
 
+def test_execute_search_rejected_for_a_leader_protected_by_analytical_psychology():
+    # Phase 302 fix: Discovery.ANALYTICAL_PSYCHOLOGY's own "the charmed
+    # character will never Search features" clause -- turn/
+    # cast_execution.py's _execute_charm() sets this field on a
+    # protected target; execute_search() must refuse before any real
+    # encounter resolution runs at all.
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].analytical_psychology_revert_kingdom_id = 2
+    request = _melee_request(1)  # no matching Feature registered -- a real resolution would raise/no-op differently
+
+    result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.accepted is False
+    assert result.reason == "protected by Analytical Psychology -- a charmed character never Searches"
+    assert result.combat_resolved is False
+
+
 def test_leader_combatant_reads_real_temper():
     state = GameState()
     leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION, temper=Temper.BRAVE)

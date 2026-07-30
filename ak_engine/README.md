@@ -12764,7 +12764,7 @@ complete (Phases 209-211).
     confirming the fix is alliance-gated, not blanket -- 3283 passed
     total.
 
-- **Phase 301 (current)**: fixes the second confirmed bug from the
+- **Phase 301**: fixes the second confirmed bug from the
   same second bug-hunt audit round -- `turn/search_execution.py
   _resolve_fulfill()` credited `MeritTally.monster_hp_neutralized` with
   `monster_starting_hit_points // 2` (a negotiated Fulfill's own half-
@@ -12792,6 +12792,60 @@ complete (Phases 209-211).
     test, asserting the final credited score is exactly half the
     monster's starting HP -- closing the exact "each half tested in
     isolation" gap that hid the bug -- 3284 passed total.
+
+- **Phase 302 (current)**: fixes the third and last confirmed bug from
+  the second bug-hunt audit round -- `Discovery.ANALYTICAL_PSYCHOLOGY`
+  (a Kingdom-level ward against enemy Charm casts, sourced text quoted
+  in full in `models/discovery.py`) was declared as `Spell.CHARM`'s
+  entry in `DISCOVERY_ANTISPELL_TARGET` but never consulted anywhere in
+  `turn/cast_execution.py _execute_charm()` -- unlike its 15 sibling
+  anti-spell Discoveries (each either wired or explicitly documented as
+  deferred, per Phase 270's own accounting), this one was silently
+  inert despite Charm's own base mechanic already being a real, working
+  consumer with nothing else blocking it. Unlike the other two bugs
+  this round, the source text is explicit that Analytical Psychology
+  does *not* block Charm outright: "the spell will work, but it wears
+  off at the end of the turn, and the charmed character will never
+  Search features or risk combat" -- a genuinely different shape of fix
+  from a simple guard clause, since this project had no "revert a
+  mutated value at end of turn" mechanism anywhere yet (every existing
+  "persistent for the rest of the turn" field is a caller-clears-it
+  boolean flag with no prior value to restore).
+  - **Fix**: `LeaderState` gains
+    `analytical_psychology_revert_kingdom_id: int | None = None`.
+    `_execute_charm()` still reassigns `kingdom_id` exactly as before,
+    but if the target's own (pre-charm) kingdom owns the Discovery, also
+    records their original `kingdom_id` into the new field. `turn/
+    turn_processor.py run_turn()` gains a new
+    `_revert_analytical_psychology_charms()` sweep, called once after
+    every phase has dispatched, that restores `kingdom_id` for any
+    leader with the field set and clears it -- the first genuine
+    end-of-turn revert consumer this project's turn loop has needed.
+    "Never Search" is enforced directly: `turn/search_execution.py
+    execute_search()` now refuses immediately (before any real
+    encounter resolution) while the field is set. "Risk combat" needed
+    no separate enforcement, since Search is the only combat-risking
+    action this project's own Charm precondition (a co-located,
+    army-less target) leaves reachable for a newly-charmed character.
+  - Non-breaking: full suite passed unchanged (3284) before any new
+    test was added.
+  - 5 new tests: `test_cast_execution.py` proves a protected target's
+    Charm still succeeds (matching an unprotected target) while
+    correctly queuing the revert, and that an unprotected target never
+    sets the new field at all; `test_search_execution.py` proves
+    `execute_search()` refuses outright for a leader with the field
+    set; `test_turn_processor.py` proves the fix through two real,
+    unmocked end-to-end `run_turn()` calls -- a protected Charm is back
+    under its own original kingdom by the time `run_turn()` returns
+    (verified to genuinely catch the bug by temporarily disabling the
+    new sweep and confirming this exact test then fails), while an
+    ordinary unprotected Charm is left charmed, exactly as before --
+    3289 passed total.
+
+This completes the second bug-hunt audit round's own three confirmed
+findings (Phases 300-302), alongside the first round's four (Phases
+296-299) -- seven real, previously-undetected bugs found and fixed
+across two dedicated audit passes this project has run so far.
 
 ## Setup
 

@@ -663,9 +663,21 @@ def execute_search(
     post-processing step (Phase 274) -- see `_apply_scout()`'s own
     docstring for why Scout can't simply resolve inline at its own
     position in the tactic walk like every other tactic below.
+
+    **Phase 302 (Discovery.ANALYTICAL_PSYCHOLOGY)**: a leader currently
+    under a protected Charm (``LeaderState.analytical_psychology_revert_
+    kingdom_id`` set -- see ``turn/cast_execution.py _execute_charm()``'s
+    own Phase 302 addendum) never Searches for the rest of the turn the
+    Discovery text promises, rejected here before any real encounter
+    resolution runs.
     """
 
     rng = rng if rng is not None else random.Random()
+    leader = state.leaders.get(leader_id)
+    if leader is not None and leader.analytical_psychology_revert_kingdom_id is not None:
+        return SearchExecutionResult(
+            accepted=False, reason="protected by Analytical Psychology -- a charmed character never Searches"
+        )
     result = _resolve_search_encounter(state, leader_id, request, rng)
     if result.accepted:
         _apply_scout(state, leader_id, request, result, rng)

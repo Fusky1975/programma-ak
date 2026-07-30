@@ -500,7 +500,29 @@ def run_turn(
             )
         )
 
+    _revert_analytical_psychology_charms(state)
+
     return results
+
+
+def _revert_analytical_psychology_charms(state: GameState) -> None:
+    """Phase 302 (Discovery.ANALYTICAL_PSYCHOLOGY): the one end-of-turn
+    revert this project's turn loop needs -- every other "persistent
+    for the rest of the turn" flag (``oratory_boosted_this_turn``,
+    ``mystic_winds_active``, ...) is a caller-clears-it boolean with no
+    prior value to restore, but a protected Charm genuinely mutated
+    ``kingdom_id`` and must put it back. Runs once, after every phase
+    of ``run_turn()`` has already dispatched, so ``kingdom_id`` reads
+    as the caster's kingdom for the rest of this turn (matching the
+    source text's "the spell will work") and is restored to the
+    target's own original kingdom before the next turn is ever
+    processed.
+    """
+
+    for leader in state.leaders.values():
+        if leader.analytical_psychology_revert_kingdom_id is not None:
+            leader.kingdom_id = leader.analytical_psychology_revert_kingdom_id
+            leader.analytical_psychology_revert_kingdom_id = None
 
 
 _DEFEND_CANCELLING_ACTIONS = frozenset({ActionCode.LMOVE, ActionCode.PURSUE, ActionCode.TRAIL})
