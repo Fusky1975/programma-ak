@@ -12156,7 +12156,7 @@ complete (Phases 209-211).
     province), and the home-province tier bonus caps at 11 rather than
     overflowing past it -- 3220 passed total.
 
-- **Phase 289 (current)**: completes the Personal-Combat spell engine's
+- **Phase 289**: completes the Personal-Combat spell engine's
   own spell coverage -- a broader gap survey had mischaracterized this
   project's "spell engine for personal combat" as largely unbuilt.
   Re-checked directly: `turn/search_execution.py _resolve_cast_tactic()`
@@ -12215,6 +12215,62 @@ complete (Phases 209-211).
     (via a patched `MONSTER_MAGIC_ABILITIES` entry) heals to its own
     `monster_starting_hit_points` rather than the character constant --
     3223 passed total.
+
+- **Phase 290 (current)**: wires Personal-Combat spells into Challenge
+  and Pursue, closing the gap Phase 289's own addendum flagged --
+  `turn/challenge_execution.py`/`turn/pursue_execution.py` previously
+  only resolved Melee/Fire Arrow, silently skipping every `CAST` tactic
+  even though `ChallengeRequest.tactics`/`PursueRequest.tactics` already
+  decode a `CAST` entry's own spell id (`SearchTactic.sub_object`).
+  - `turn/challenge_execution.py`: new `_resolve_personal_combat_cast()`
+    -- re-derived branch-for-branch from `turn/search_execution.py
+    _resolve_cast_tactic()`'s own leader-target ("target is not a
+    monster") branches, since an Encounter/Pursue opponent is *always*
+    another leader, never a monster. Every monster-species classifier
+    (Undead/Anti-Holy/Mechanical/Animal-Intelligence/submarine/flying)
+    collapses to a plain `target_leader.alignment` check or an
+    unconditional default (Mirror-Image/Illusory Hero's own opponent
+    tier defaults to High Human; Lava Pool's own escape-chance speed
+    defaults to Medium) -- Gate Demon still summons a real monster
+    `Combatant` for the demon itself via `MONSTER_COMBAT_STATS`/
+    `roll_gate_demon_type()`, unrelated to opponent classification. New
+    `resolve_challenge_combat()` walks the full `SearchTactic` list
+    (not just each entry's own `.maneuver`, unlike `turn/encounter.py
+    resolve_encounter_combat()`), dispatching `CAST` in addition to the
+    existing Fire-Arrow-then-Melee walk, with `_consume_bonus_attacks()`
+    resolving any Psychic-Blast/Ice-Suspension bonus swings immediately
+    after. `has_combat_intent()` also fixed to recognize a decodable
+    `CAST` tactic as combat intent -- [3.12]'s own quoted text already
+    named "personal combat spells (including Charm)" alongside combat
+    tactics, but the old check only looked at Melee/Fire Arrow, meaning
+    a cast-only Encounter Plan would previously skip the King/Hero
+    acceptance check entirely and never even reach real combat.
+    `ChallengeExecutionResult` gains a new `fled: bool = False` field
+    (a successful Charm, or Augur Combat cast first and shirking --
+    distinct from an inconclusive draw), default `False` so every
+    existing caller/test is unaffected.
+  - **Augur Combat's own "cast later -> acts as Flee" branch is
+    deliberately left unwired**, confirmed and documented rather than
+    guessed: it needs a real Flee *tactic* and [5.6]'s own base-chance
+    table, and neither exists anywhere in Challenge/Pursue today (unlike
+    Search, which has both) -- `_resolve_personal_combat_cast()` returns
+    `None` (no effect) for this one specific case, with the gap recorded
+    in the module's own docstring rather than silently faked.
+  - `turn/pursue_execution.py`: the armyless case now imports and reuses
+    `resolve_challenge_combat()` directly (the same way it already
+    reused `has_combat_intent`/`is_encounter_accepted`), replacing its
+    own raw `resolve_encounter_combat()` call; `PursueExecutionResult`
+    gains the same new `fled` field.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added (every new function is additive; the only existing-function
+    change, `has_combat_intent()`'s widened CAST detection, doesn't
+    affect any tactic list used by an existing test) -- 3223 passed.
+  - 15 new tests across `test_challenge_execution.py` (2 for the
+    `has_combat_intent()` CAST fix; Charm/Control-Undead-eligible-and-
+    ineligible/Fireball/Words-of-Healing-heal-and-gate/Hand-of-Death/
+    Mirror-Image/Gate-Demon/Psychic-Blast-bonus-attacks/both Augur-
+    Combat branches) and `test_pursue_execution.py` (1, confirming the
+    armyless case's own Charm-flee reuse) -- 3238 passed total.
 
 ## Setup
 

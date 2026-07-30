@@ -112,6 +112,18 @@ substantially larger undertaking, deferred rather than guessed at):
   larger, deferred integration.
 - **Patrol, Defend-cancellation, and catch-conditional later actions**:
   none of these are modeled by this addition.
+
+**Phase 290 addendum -- Personal-Combat spells now wired in the armyless
+case, via ``turn/challenge_execution.py resolve_challenge_combat()``.**
+The armyless case already reused that module's ``has_combat_intent``/
+``is_encounter_accepted`` directly (see the "armyless case" note
+above); it now reuses its combat walk too, replacing the previous raw
+``resolve_encounter_combat([tactic.maneuver for tactic in request.
+tactics], ...)`` call the same way ``turn/challenge_execution.py``'s
+own Phase 290 addendum describes for Challenge. See that module's own
+addendum for the full design (leader-vs-leader spell dispatch, the
+still-open Augur-Combat-cast-later gap, and why ``fled`` is a new,
+separate outcome from an inconclusive draw).
 """
 
 from __future__ import annotations
@@ -124,10 +136,10 @@ from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
-from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted
+from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted, resolve_challenge_combat
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_encounter_combat
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance, neighbors
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 
@@ -169,6 +181,11 @@ class PursueExecutionResult:
     loser_leader_id: int | None = None
     loser_killed: bool = False
     battle_report: BattleReport | None = None
+    # Phase 290: a successful Charm, or Augur Combat cast first and
+    # shirking -- see `turn/challenge_execution.py`'s own Phase 290
+    # addendum, reused here since the armyless case shares that module's
+    # combat core directly.
+    fled: bool = False
     # Phase 213: the originating request, for a caller (report/turn_report.py
     # describe_turn_results()) that needs the target's own id to resolve a
     # display name -- set by plan_dispatch.py's own dispatcher, not by this
@@ -263,10 +280,12 @@ def execute_pursue(
 
     pursuer_combatant = _leader_combatant(pursuer, state)
     target_combatant = _leader_combatant(target, state)
-    combat_result = resolve_encounter_combat(
-        [tactic.maneuver for tactic in request.tactics], pursuer_combatant, target_combatant, rng
+    combat_result = resolve_challenge_combat(
+        request.tactics, pursuer, pursuer_combatant, target, target_combatant, state, rng
     )
 
+    if combat_result.fled:
+        return PursueExecutionResult(caught_up=True, combat_occurred=True, fled=True)
     if combat_result.winner is None:
         return PursueExecutionResult(caught_up=True, combat_occurred=True)
 

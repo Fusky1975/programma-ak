@@ -1,24 +1,29 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.enums import Ability, Maneuver
+from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
+from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.challenge_execution import (
     ChallengeExecutionResult,
     _leader_combatant,
+    _resolve_personal_combat_cast,
     execute_challenge,
     has_combat_intent,
     is_encounter_accepted,
 )
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, EncounterCombatResult
 from ak_engine.turn.search_decode import SearchTactic
 
 from _helpers import ScriptedRandom
@@ -40,6 +45,12 @@ def _peaceful_request(target_id: int) -> ChallengeRequest:
 
 def _melee_request(target_id: int) -> ChallengeRequest:
     return ChallengeRequest(target_character_id=target_id, unconfirmed_extra0=0, tactics=[SearchTactic(Maneuver.MELEE)])
+
+
+def _cast_request(target_id: int, spell: Spell, *following: Maneuver) -> ChallengeRequest:
+    tactics = [SearchTactic(Maneuver.CAST, spell.value)]
+    tactics += [SearchTactic(m) for m in following]
+    return ChallengeRequest(target_character_id=target_id, unconfirmed_extra0=0, tactics=tactics)
 
 
 # -- has_combat_intent --------------------------------------------------
@@ -64,6 +75,21 @@ def test_has_combat_intent_false_for_peaceful_tactics():
 
 def test_has_combat_intent_false_for_no_tactics_at_all():
     request = ChallengeRequest(target_character_id=2, unconfirmed_extra0=0, tactics=[])
+    assert has_combat_intent(request) is False
+
+
+def test_has_combat_intent_true_for_a_decodable_cast_tactic():
+    # Phase 290: [3.12]'s own text names "personal combat spells
+    # (including Charm)" alongside combat tactics -- a CAST entry is
+    # combat intent too, not just Melee/Fire Arrow.
+    request = ChallengeRequest(
+        target_character_id=2, unconfirmed_extra0=0, tactics=[SearchTactic(Maneuver.CAST, Spell.CHARM.value)]
+    )
+    assert has_combat_intent(request) is True
+
+
+def test_has_combat_intent_false_for_cast_with_an_undecodable_spell_id():
+    request = ChallengeRequest(target_character_id=2, unconfirmed_extra0=0, tactics=[SearchTactic(Maneuver.CAST, 9999)])
     assert has_combat_intent(request) is False
 
 
@@ -295,3 +321,211 @@ def test_execute_challenge_mutual_king_encounter_can_result_in_combat():
     # leader_id rather than leaving the Kingdom leaderless.
     assert 2 in state.dead_leaders
     assert state.leaders[2].is_royal_heir is True
+
+
+# -- Phase 290: Personal-Combat spells wired via resolve_challenge_combat --
+
+
+def test_execute_challenge_cast_charm_success_makes_the_caster_flee():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.CHARM, Maneuver.MELEE)
+
+    result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.1]))
+
+    assert result.accepted is True
+    assert result.combat_occurred is True
+    assert result.fled is True
+    assert result.winner_leader_id is None
+    assert 1 in state.leaders and 2 in state.leaders
+
+
+def test_execute_challenge_cast_control_undead_success_kills_undead_target():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 5, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.UNDEAD))
+    request = _cast_request(2, Spell.CONTROL_UNDEAD)
+
+    result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.1]))
+
+    assert result.winner_leader_id == 1
+    assert result.loser_leader_id == 2
+    assert result.loser_killed is True
+
+
+def test_execute_challenge_cast_control_undead_ineligible_target_consumes_no_roll():
+    # Target isn't Undead -- the same leader-only "else" branch `turn/
+    # search_execution.py` already uses, re-derived here.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.GOOD))
+    request = _cast_request(2, Spell.CONTROL_UNDEAD, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert not mock_roll.called
+    assert mock_melee.called
+    assert result.winner_leader_id == 1
+
+
+def test_execute_challenge_cast_fireball_kills_via_damage():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ELEMENTAL, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.FIREBALL)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.roll_fireball_damage", return_value=99
+    ):
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert result.winner_leader_id == 1
+    assert result.loser_leader_id == 2
+    assert result.loser_killed is True
+
+
+def test_execute_challenge_cast_words_of_healing_heals_the_caster():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.WHITE, 5, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 9, 9)))
+    request = _cast_request(2, Spell.HEAL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    caster_combatant = mock_melee.call_args[0][0]
+    assert caster_combatant.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_execute_challenge_cast_words_of_healing_level_gate_blocks_low_white_skill():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.WHITE, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 9, 9)))
+    request = _cast_request(2, Spell.HEAL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert not mock_roll.called
+    assert mock_melee.called
+
+
+def test_execute_challenge_cast_hand_of_death_channel_win_kills_target():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=3)
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert result.winner_leader_id == 1
+    assert result.loser_leader_id == 2
+
+
+def test_execute_challenge_cast_mirror_image_caster_wins():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ILLUSION, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.MIRROR_IMAGE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_mirror_image_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=2)
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert result.winner_leader_id == 1
+
+
+def test_execute_challenge_cast_gate_demon_summons_and_the_demon_wins():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.GOOD))
+    request = _cast_request(2, Spell.GATE_DEMON)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.roll_gate_demon_type", return_value=Monster.SUCCUBUS
+    ), patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5]))
+
+    assert result.winner_leader_id == 1
+    demon_combatant = mock_melee.call_args[0][0]
+    assert demon_combatant.name  # a real, named monster Combatant was summoned
+
+
+def test_execute_challenge_cast_psychic_blast_bonus_attacks_can_finish_the_target():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.PSYCHIC_BLAST)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.roll_psychic_blast_stun_rounds", return_value=2
+    ), patch("ak_engine.turn.challenge_execution.roll_melee_attack", return_value=99):
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert result.winner_leader_id == 1
+    assert result.loser_leader_id == 2
+
+
+def test_augur_combat_cast_first_shirks_and_flees_on_a_simulated_loss():
+    state = _base_state()
+    caster_leader = LeaderState(
+        1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9), temper=Temper.COWARDLY
+    )
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.AUGUR_COMBAT.value)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_melee, patch("ak_engine.turn.challenge_execution.resolve_augur_combat", return_value=True):
+        mock_melee.return_value = EncounterCombatResult(winner="b", rounds=1)
+        outcome = _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, ScriptedRandom([]), is_first_tactic=True
+        )
+
+    assert outcome == "fled"
+
+
+def test_augur_combat_cast_later_is_a_documented_gap_with_no_effect_yet():
+    # Module docstring's own Phase 290 addendum: unlike Search, this
+    # module has no real Flee tactic/base-chance table to act as yet --
+    # confirmed as a genuine, still-open gap rather than a guess.
+    state = _base_state()
+    caster_leader = LeaderState(
+        1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9), temper=Temper.COWARDLY
+    )
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.AUGUR_COMBAT.value)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
+        outcome = _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, ScriptedRandom([]), is_first_tactic=False
+        )
+
+    assert outcome is None
+    assert not mock_roll.called

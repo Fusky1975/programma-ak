@@ -4,7 +4,7 @@ import random
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.enums import Ability, Maneuver
+from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
@@ -358,3 +358,27 @@ def test_advance_pursuit_reports_not_found_when_pursuer_or_target_missing():
 
     assert result.caught_up is False
     assert result.reason == "pursuer or target not found"
+
+
+# -- Phase 290: armyless case reuses challenge_execution's Personal-Combat wiring --
+
+
+def test_execute_pursue_cast_charm_success_makes_the_pursuer_flee():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = PursueRequest(
+        target_character_id=2,
+        unconfirmed_extra0=0,
+        tactics=[SearchTactic(Maneuver.CAST, Spell.CHARM.value), SearchTactic(Maneuver.MELEE)],
+    )
+    # catch-up roll, then the cast's own success roll.
+    rng = ScriptedRandom([0.0, 0.1])
+
+    result = execute_pursue(state, 1, request, rng=rng)
+
+    assert result.caught_up is True
+    assert result.combat_occurred is True
+    assert result.fled is True
+    assert result.winner_leader_id is None
+    assert 1 in state.leaders and 2 in state.leaders
