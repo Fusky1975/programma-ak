@@ -1092,8 +1092,45 @@ def _defend_loss_attacker(leader_id: int, army_id: int, origin: HexCoord, target
 
 
 def test_run_turn_defend_battle_loss_blocks_a_later_redeclaration():
-    # seed 0: the attacker wins this exact matchup (HVY_CAVALRY/ELITE vs
-    # GARRISON/GREEN) -- verified deterministic for this fixture.
+    # seed 1: the attacker wins this exact matchup (HVY_CAVALRY/ELITE vs
+    # GARRISON/GREEN) -- verified deterministic for this fixture. (Phase
+    # 296: reselected after fight_battle()'s own new terrain-line-length-
+    # cap roll shifted the RNG stream -- seed 0 no longer lands here.)
+    state = _defend_loss_state()
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=DL_FIRST_ATTACKER_ORIGIN))
+    state.add_army(
+        ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_FIRST_ATTACKER_ORIGIN, commanded_by=200, movement_points=3)
+    )
+    state.add_leader(LeaderState(300, kingdom_id=1, name="SecondAttacker", location=DL_SECOND_ATTACKER_ORIGIN))
+    state.add_army(
+        ArmyState(903, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_SECOND_ATTACKER_ORIGIN, commanded_by=300, movement_points=3)
+    )
+    defender = _two_phase_leader(100, "Defender", _defend_phase("P0"), _defend_phase("P2"))
+    attacker = _defend_loss_attacker(200, 902, DL_FIRST_ATTACKER_ORIGIN, DL_FIRST_COVERED, "P1")
+    second_attacker = _defend_loss_attacker(300, 903, DL_SECOND_ATTACKER_ORIGIN, DL_SECOND_COVERED, "P3")
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1), TurnLeader(second_attacker, 1)],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=random.Random(1),
+    )
+
+    by_label = {(r.leader_id, r.phase_label): r for r in results}
+    assert by_label[(200, "P1")].result.battle_report.battle_result.winner == "attacker"  # defender lost
+
+    # P2's Defend re-declaration never re-arms coverage -- reinforcement
+    # never relocates the leader again for the P3 invasion, regardless of
+    # whatever their own army independently did (e.g. retreated).
+    assert state.leaders[100].location == DL_FIRST_COVERED
+
+
+def test_run_turn_defend_battle_win_does_not_block_a_later_redeclaration():
+    # seed 0: the defender wins this exact matchup -- verified
+    # deterministic for this fixture (same geometry/armies as the loss
+    # case above, only the rng seed differs). (Phase 296: reselected
+    # after fight_battle()'s own new terrain-line-length-cap roll shifted
+    # the RNG stream -- seed 15 no longer lands here.)
     state = _defend_loss_state()
     state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=DL_FIRST_ATTACKER_ORIGIN))
     state.add_army(
@@ -1112,39 +1149,6 @@ def test_run_turn_defend_battle_loss_blocks_a_later_redeclaration():
         state,
         board_width=BOARD_WIDTH,
         rng=random.Random(0),
-    )
-
-    by_label = {(r.leader_id, r.phase_label): r for r in results}
-    assert by_label[(200, "P1")].result.battle_report.battle_result.winner == "attacker"  # defender lost
-
-    # P2's Defend re-declaration never re-arms coverage -- reinforcement
-    # never relocates the leader again for the P3 invasion, regardless of
-    # whatever their own army independently did (e.g. retreated).
-    assert state.leaders[100].location == DL_FIRST_COVERED
-
-
-def test_run_turn_defend_battle_win_does_not_block_a_later_redeclaration():
-    # seed 15: the defender wins this exact matchup -- verified
-    # deterministic for this fixture (same geometry/armies as the loss
-    # case above, only the rng seed differs).
-    state = _defend_loss_state()
-    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=DL_FIRST_ATTACKER_ORIGIN))
-    state.add_army(
-        ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_FIRST_ATTACKER_ORIGIN, commanded_by=200, movement_points=3)
-    )
-    state.add_leader(LeaderState(300, kingdom_id=1, name="SecondAttacker", location=DL_SECOND_ATTACKER_ORIGIN))
-    state.add_army(
-        ArmyState(903, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_SECOND_ATTACKER_ORIGIN, commanded_by=300, movement_points=3)
-    )
-    defender = _two_phase_leader(100, "Defender", _defend_phase("P0"), _defend_phase("P2"))
-    attacker = _defend_loss_attacker(200, 902, DL_FIRST_ATTACKER_ORIGIN, DL_FIRST_COVERED, "P1")
-    second_attacker = _defend_loss_attacker(300, 903, DL_SECOND_ATTACKER_ORIGIN, DL_SECOND_COVERED, "P3")
-
-    results = run_turn(
-        [TurnLeader(defender, 2), TurnLeader(attacker, 1), TurnLeader(second_attacker, 1)],
-        state,
-        board_width=BOARD_WIDTH,
-        rng=random.Random(15),
     )
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}

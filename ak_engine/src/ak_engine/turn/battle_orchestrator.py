@@ -169,7 +169,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import RACE_LEADERSHIP_TREASURE
 from ak_engine.turn.aftermath import roll_quality_change
-from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability
+from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability, roll_terrain_line_length_cap
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit, quality_one_level_down
 from ak_engine.turn.challenge_execution import resolve_challenge_combat
@@ -1089,9 +1089,19 @@ def fight_battle(
         state=state, use_real_duel_combat=use_real_duel_combat, duel_maneuvers=duel_maneuvers,
     )
 
+    # Phase 296: rulebook [1.6]'s own Terrain Table line-length shortening
+    # -- turn/battle_line.py roll_terrain_line_length_cap()'s own docstring
+    # -- was implemented (Phase 6) but never actually rolled by this, the
+    # sole production caller of resolve_battle(), so it (and the Phase 64
+    # numeric-superiority outflanking bonus that depends on it) silently
+    # never applied in any real battle. Rolled here, once, against the
+    # same real terrain already resolved above.
+    terrain_line_length_cap = roll_terrain_line_length_cap(terrain, rng)
+
     battle_result = resolve_battle(
         attacker_units,
         defender_units,
+        terrain_line_length_cap=terrain_line_length_cap,
         attacker_tactical_ability=attacker_ability_level,
         defender_tactical_ability=defender_ability_level,
         rng=rng,

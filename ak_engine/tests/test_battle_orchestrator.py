@@ -61,8 +61,17 @@ def no_luck_overwhelming_attacker_rng(
     # the battle-resolution rolls and before the attacker's own
     # winner_quality_roll, since defender-side pursuit is checked before
     # the attacker per-army loop runs.
+    # Phase 296: the leading 0.9 accounts for fight_battle()'s own new
+    # roll_terrain_line_length_cap() call, right before resolve_battle()
+    # -- ScriptedRandom overrides .random(), which flips CPython's own
+    # randint()/randrange() over to the _randbelow_without_getrandbits()
+    # path (consumes exactly one .random() draw for these small ranges,
+    # not the real bit-generator) -- see that phase's own README note.
+    # The rolled cap itself never matters here (Plains' own 5-10 range
+    # always exceeds every test army's own line_length), only that one
+    # extra draw is consumed before the next real one.
     return ScriptedRandom(
-        [0.9, 0.9, 0.9, win_roll, pursuit_attempt_roll, winner_quality_roll, loser_quality_roll]
+        [0.9, 0.9, 0.9, 0.9, win_roll, pursuit_attempt_roll, winner_quality_roll, loser_quality_roll]
     )
 
 
@@ -229,7 +238,9 @@ def test_attacker_whales_retreat_to_sea_when_repelled():
     state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
     # Whales have 0 strength on Plains regardless of the win roll -- the
     # defender wins decisively no matter what value is scripted there.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.5, 0.99, 0.99])
+    # Phase 296: leading 0.9 accounts for the new terrain-line-length-cap
+    # roll -- see no_luck_overwhelming_attacker_rng()'s own Phase 296 note.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.5, 0.99, 0.99])
 
     report = fight_battle(
         state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], loser_retreats=False, rng=rng
@@ -1138,7 +1149,10 @@ def test_fight_battle_reads_a_led_attackers_real_tactical_skill_end_to_end():
     state = build_state()
     state.add_leader(LeaderState(1, 1, "Skilled Commander", FIELD, skills=SkillTable(raw_values=[5] * 30 + [0])))
     state.armies[101].commanded_by = 1
-    rng = ScriptedRandom([0.05, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # Phase 296: extra 0.9 right after the duel roll accounts for the new
+    # terrain-line-length-cap roll (consumed after the duel, before the
+    # 3 luck rolls) -- see no_luck_overwhelming_attacker_rng()'s own note.
+    rng = ScriptedRandom([0.05, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
@@ -1158,7 +1172,9 @@ def test_pursuit_destroys_a_caught_retreating_army():
     # GARRISON/GREEN target), attacker's own winner_quality_roll. The
     # defender never reaches _retreat_or_disband at all, so no further
     # rolls are consumed.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.1, 0.1, 0.1, 0.99])
+    # Phase 296: leading 0.9 accounts for the new terrain-line-length-cap
+    # roll -- see no_luck_overwhelming_attacker_rng()'s own Phase 296 note.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.1, 0.1, 0.99])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
@@ -1643,8 +1659,10 @@ def test_fight_battle_with_real_duel_combat_reports_a_loser_side():
     # already dead) -- confirmed empirically, not padded, so the
     # remaining values line up exactly with resolve_battle's own
     # luck/win rolls afterward. Then the usual no-luck-overwhelming
-    # sequence.
-    rng = ScriptedRandom([0.1, 0.5, 0.9, 0.1, 0.5] + [0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # sequence. Phase 296: extra leading 0.9 in the second group accounts
+    # for the new terrain-line-length-cap roll (consumed right after the
+    # duel, before the 3 luck rolls).
+    rng = ScriptedRandom([0.1, 0.5, 0.9, 0.1, 0.5] + [0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
 
     report = fight_battle(
         state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng,
@@ -1663,7 +1681,9 @@ def test_fight_battle_reports_duel_commanders_and_demoralizes_loser():
     # duel roll (0.01, attacker wins), then the usual no-luck-overwhelming
     # sequence (3 luck, win_roll, pursuit-decline, winner_quality,
     # loser_quality for the defender's successful retreat to DEFENDER_HOME).
-    rng = ScriptedRandom([0.01, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # Phase 296: extra 0.9 right after the duel roll accounts for the new
+    # terrain-line-length-cap roll.
+    rng = ScriptedRandom([0.01, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
@@ -1773,7 +1793,9 @@ def test_fight_multi_attacker_battle_second_separate_group_claims_an_already_cle
     # separate battles; the first group's own overwhelming, no-luck rolls
     # (same shape as no_luck_overwhelming_attacker_rng()) clean-sweep the
     # lone defender before the second group's own turn.
-    rng = ScriptedRandom([0.99, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # Phase 296: extra 0.9 right after the unite-chance roll accounts for
+    # the first group's own new terrain-line-length-cap roll.
+    rng = ScriptedRandom([0.99, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
 
     battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
 
@@ -1873,9 +1895,74 @@ def test_fight_battle_wires_merit_points_for_a_led_winning_attacker():
     state = build_state()
     state.add_leader(LeaderState(1, 1, "Skilled Commander", FIELD, skills=SkillTable(raw_values=[5] * 30 + [0])))
     state.armies[101].commanded_by = 1
-    rng = ScriptedRandom([0.05, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # Phase 296: extra 0.9 right after the duel roll accounts for the new
+    # terrain-line-length-cap roll (consumed after the duel, before the
+    # 3 luck rolls) -- see no_luck_overwhelming_attacker_rng()'s own note.
+    rng = ScriptedRandom([0.05, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
 
     fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
     assert state.leaders[1].merit_tally.land_battles_won_enemy_units == 1  # the lone defending army (201)
     assert state.leaders[1].merit_tally.land_battles_lost_own_units == 0
+
+
+# -- Phase 296: terrain line-length cap now really rolled and forwarded --
+
+
+def test_fight_battle_rolls_and_forwards_the_terrain_line_length_cap():
+    # Bug fix: roll_terrain_line_length_cap() (rulebook [1.6]) existed
+    # since Phase 6 but fight_battle() -- the sole production caller of
+    # resolve_battle() -- never actually called it, so the Terrain Table
+    # line-length shortening (and the Phase 64 numeric-superiority
+    # outflanking bonus that depends on it) never applied in any real
+    # battle. Proven here via mocking, the same wiring-verification
+    # pattern this project already uses elsewhere: the roll is made
+    # against the province's own real terrain, and its result is
+    # forwarded to resolve_battle() rather than silently defaulting to
+    # None.
+    state = build_state()
+    rng = no_luck_overwhelming_attacker_rng()
+
+    with patch("ak_engine.turn.battle_orchestrator.roll_terrain_line_length_cap", return_value=7) as mock_roll, patch(
+        "ak_engine.turn.battle_orchestrator.resolve_battle"
+    ) as mock_resolve:
+        mock_resolve.return_value = BattleResult(winner="attacker")
+        fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
+
+    assert mock_roll.call_args.args[0] is Terrain.PLAINS  # build_state()'s own province terrain
+    assert mock_resolve.call_args.kwargs["terrain_line_length_cap"] == 7
+
+
+def test_fight_battle_numeric_superiority_outflanking_now_applies_end_to_end():
+    # Same rule as test_resolve_battle_numeric_superiority_boosts_second_
+    # line_to_full_strength (test_battle_resolution.py, Phase 64) but
+    # proven reachable through the real fight_battle() orchestrator this
+    # time, not just a direct resolve_battle() call -- the whole point of
+    # this fix. Two identical attacker armies (so the front-line and
+    # second-line units share the same effective_strength) against a
+    # single defender army on Plains ([1.6]: line-length range 5-10,
+    # always > line_length=1 here) -- the attacker's own numeric
+    # superiority (2 armies > 1) makes its second-line unit eligible for
+    # the 100%-instead-of-50% outflanking boost.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD))
+    # terrain-cap roll (any value >=2 works, Plains' own 5-10 range always
+    # does), no luck either side, decisive attacker win, pursuit-decline,
+    # then one winner_quality_roll per surviving attacker army (two here).
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99])
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101, 102], rng=rng)
+
+    assert len(report.battle_result.columns) == 1
+    column = report.battle_result.columns[0]
+    # A control single-HVY_CAVALRY/ELITE-vs-Plains unit's own effective
+    # strength (front-line unit -- always 100%, regardless of outflanking).
+    single_unit_strength = compute_effective_strength(ArmyType.HVY_CAVALRY, Race.HUMAN, Quality.ELITE, Terrain.PLAINS)
+    # Boosted: both units count at 100% (front + outflanked second line),
+    # not the ordinary 100% + 50%.
+    assert column.attacker_strength == pytest.approx(2 * single_unit_strength)

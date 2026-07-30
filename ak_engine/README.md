@@ -12522,7 +12522,7 @@ complete (Phases 209-211).
     setup call fires exactly once even across two separate non-last
     `MELEE` tactics in the same plan -- 3271 passed total.
 
-- **Phase 295 (current)**: wires the round-per-round combat engine into
+- **Phase 295**: wires the round-per-round combat engine into
   `turn/pursue_execution.py`, per explicit user request ("Facciamo il
   wiring anche in Pursue"). Investigation found the armyless case's own
   `execute_pursue()` already delegates its whole combat walk to `turn/
@@ -12555,6 +12555,71 @@ complete (Phases 209-211).
     `execute_pursue()`; and `apply_temper_melee_setup()` fires exactly
     once for a Berserk pursuer in that same branch -- 3273 passed
     total.
+
+- **Phase 296 (current)**: fixes a real, previously-undetected bug found
+  during a dedicated bug-hunt audit (three parallel reviews across the
+  personal-combat engine, the mass-battle engine, and the turn-
+  orchestration layer, each independently re-verified before acting on
+  it) -- `roll_terrain_line_length_cap()` (rulebook [1.6]'s own Terrain
+  Table line-length shortening, sourced since Phase 6) was fully
+  implemented but never actually rolled by `battle_orchestrator.py
+  fight_battle()`, the sole production caller of `resolve_battle()` --
+  meaning the Phase 64 numeric-superiority outflanking bonus that
+  depends on it (`RULES.AK` ~line 1362: "If a battle line is shorter
+  than the terrain allows, the flanking second-line units of a force
+  which is superior in numbers may outflank the enemy force... 100%
+  strength instead of 50%") silently never applied in any real battle
+  ever fought by this engine, regardless of terrain or force-size
+  mismatch -- `terrain_line_length_cap` always defaulted to `None`.
+  Fixed by rolling it once per battle, right before the `resolve_battle`
+  call, against the province's own real terrain (`province.
+  effective_terrain()`, already computed earlier in the same function).
+  - **Two further confirmed bugs from the same audit, not yet fixed
+    this phase** (deliberately scoped out -- see the audit's own
+    findings for the full detail; each needs its own dedicated fix/test
+    pass): (1) `apply_temper_melee_setup()` can be double-applied when a
+    non-last `MELEE` tactic's own round-stepping falls through to the
+    trailing atomic `resolve_melee_duel()` fallback in both `turn/
+    challenge_execution.py` and `turn/search_execution.py`, compounding
+    Temper bonuses; (2) `turn/aftermath.py`'s own Druidic insufficient-
+    ability quality-improve-chance penalty (`led_by_insufficient_druid`,
+    rulebook [7.5]) is never actually passed by any of `battle_
+    orchestrator.py`'s 5 real `roll_quality_change()` call sites, even
+    though the needed `druidic_shortfall` value is already computed and
+    available there; (3) `turn_processor.py _apply_defend_battle_loss()`
+    reads `dispatch_results[0]` unconditionally to detect a reinforced
+    Defend leader's own battle loss, but a multi-attacker group's own
+    dispatch list can have a validation-error entry (an illegal mover)
+    at index 0 ahead of the real battle-bearing entry, silently skipping
+    the loss-cancellation rule in that specific combination.
+  - **A non-obvious side effect, not a regression**: `ScriptedRandom`
+    (`tests/_helpers.py`) only overrides `.random()`/`.choice()`, not
+    `.randint()` -- but CPython's own `random.Random.__init_subclass__`
+    detects a subclass overriding `.random()` without also overriding
+    `.getrandbits()`, and silently rebinds `randint()`/`randrange()`'s
+    internal `_randbelow` to the `_randbelow_without_getrandbits()`
+    implementation, which *does* consume from the scripted `.random()`
+    queue (confirmed empirically, not assumed) -- meaning this fix's new
+    `rng.randint()` call consumes one scripted float per real-terrain
+    battle. Every existing `ScriptedRandom`-driven battle test needed
+    exactly one extra leading/mid-sequence value added at the point
+    `fight_battle()` now rolls the cap (right after any duel resolution,
+    right before the 3 luck rolls) -- the same "update tests for new RNG
+    consumption" precedent Phase 167 already established. Two `random.
+    Random(seed)`-driven `turn_processor.py` tests needed a reselected
+    seed (1 and 0, replacing 0 and 15) since the added draw shifted
+    their own downstream deterministic outcome.
+  - Non-breaking re-confirmed: after fixing every existing test's own
+    RNG script for the new consumption, the full suite passed unchanged
+    (3273) before any new test was added.
+  - 2 new tests in `test_battle_orchestrator.py`: the roll is genuinely
+    made against the province's own real terrain and forwarded to
+    `resolve_battle()` (mocked-wiring check, not a fresh reimplementation
+    of Phase 64's own `resolve_battle()`-level outflanking tests); and a
+    true end-to-end proof, through a real (unmocked) `fight_battle()`
+    call, that two identical attacker armies against a single defender
+    on Plains now really does apply the 100%-instead-of-50% outflanking
+    boost to the second-line unit -- 3275 passed total.
 
 ## Setup
 
