@@ -139,6 +139,27 @@ target_is_monster: ... else: ...``), not a guess at new behavior:
   half-wiring a spell whose second branch would otherwise just look
   broken. Recorded as a confirmed, sourced gap.
 
+**Phase 292 addendum -- the real round-based range engine, and spell
+disruption, both now wired.** ``turn/search_execution.py``'s own Phase
+289 addendum (and this module's own docstring, until now) both flagged
+disruption as structurally unwireable without "the same round-based,
+three-``CombatRange`` state machine ``turn/encounter.py``'s own module
+docstring has flagged as unbuilt since Phase 60/179/209-211/237-238."
+**User direction, confirmed via ``AskUserQuestion``**: build that real
+engine (rather than a documented approximation or leaving the gap open)
+here in ``resolve_challenge_combat()`` specifically -- ``turn/
+search_execution.py``'s own richer tactic set (Steal/Talk/Fulfill/
+Scout/Use_MI/Beg, interleaved with Cast/Melee/Shoot) is explicitly
+**out of scope**, a distinct future phase, not attempted alongside this
+one. See ``resolve_challenge_combat()``'s own docstring for the full
+range-tracking design, and ``turn/encounter.py``'s own Phase 292
+addendum for the corrected disruption formula itself (RULES.AK [5.1]:
+"3 hit points will disrupt your spell 50% of the time, while a missed
+swing will disrupt you 30% of the time" -- **also user-confirmed via
+``AskUserQuestion``** as a linear-on-damage rate, replacing this
+project's own earlier "20% cumulative per hit" paraphrase, which did
+not match the primary source once located and read directly).
+
 **Charm and Words of Healing** both need no monster-related
 simplification at all -- Charm's "guaranteed Flee" and Words of
 Healing's "heal to ``CHARACTER_HIT_POINTS``" already only ever
@@ -207,7 +228,11 @@ from ak_engine.turn.encounter import (
     resolve_lava_pool_escape,
     resolve_melee_duel,
     resolve_mirror_image_duel,
+    resolve_one_melee_round,
     resolve_personal_combat_spell_cast,
+    resolve_reactive_melee_swing,
+    resolve_spell_disruption,
+    resolve_spell_disruption_from_missed_attack,
     roll_fireball_damage,
     roll_holy_symbol_undead_damage,
     roll_melee_attack,
@@ -583,6 +608,21 @@ class ChallengeCombatOutcome:
     fled: bool = False
 
 
+def _close_to(target_range: CombatRange, current_range: CombatRange) -> CombatRange:
+    """Phase 292: advance ``current_range`` one tier per (implicit,
+    RNG-free) round until it reaches ``target_range`` -- closing the
+    distance is pure movement, not a combat action, so it consumes no
+    roll (the same "movement itself consumes no RNG" convention this
+    project's own Move/Pursue/Trail chase-step primitives already
+    established). Never widens the range back out -- there is no
+    rulebook mechanic for retreating to a farther range mid-Encounter.
+    """
+
+    while current_range.value < target_range.value:
+        current_range = CombatRange(current_range.value + 1)
+    return current_range
+
+
 def resolve_challenge_combat(
     tactics: list[SearchTactic],
     caster_leader: LeaderState | None,
@@ -604,18 +644,102 @@ def resolve_challenge_combat(
     the provincial garrison commander -- no real ``LeaderState`` exists
     for it. See ``_resolve_personal_combat_cast()``'s own docstring for
     what ``None`` means on each side.
+
+    **Phase 292 -- the real round-based range engine.** Tracks a single
+    ``current_range`` (``turn/encounter.py CombatRange``, starting at
+    ``SPELL_RANGE`` per [5.0]'s own "Encounters usually begin at spell
+    range" -- see ``turn/encounter.py``'s own Phase 179 addendum for the
+    full quoted rulebook text this models):
+
+    - **``CAST`` never needs to close range** -- "spell range... allows
+      only the use of spells" through "melee zone[:] only spells or
+      hand-to-hand attacks" confirms spells are usable at every range.
+      At ``MELEE_RANGE`` specifically, [5.0]'s own "[melee attacks]
+      will always have precedence" is modeled as a real *disruption*
+      check: the target (which has no Encounter Plan of its own -- this
+      project's established one-directional-target scoping) gets one
+      reactive Melee swing at the caster (``resolve_reactive_melee_
+      swing()``) *before* the cast is even attempted. A landed hit rolls
+      ``resolve_spell_disruption()`` against the actual damage dealt; a
+      miss rolls ``resolve_spell_disruption_from_missed_attack()``'s own
+      flat 30% instead ([5.1], corrected formula -- see ``turn/
+      encounter.py``'s own Phase 292 addendum). A disrupted cast never
+      reaches ``_resolve_personal_combat_cast()`` at all -- "the caster
+      loses a turn" is modeled as the tactic being consumed with no
+      effect, the same outcome a failed cast-chance roll already
+      produces, so no new outcome branch is needed. Disruption is
+      deliberately **not** checked at ``SPELL_RANGE``/``BOW_RANGE``
+      (module docstring's own established scope: the target has no
+      reciprocal Fire Arrow of its own modeled here).
+    - **``SHOOT`` closes ``SPELL_RANGE`` -> ``BOW_RANGE`` first** (one
+      free round, per the helper above), then fires atomically via the
+      existing ``resolve_fire_arrow_duel()`` -- unchanged from before
+      this phase, still a whole self-contained duel in one call, not
+      stepped round-by-round. **At ``MELEE_RANGE``, ``SHOOT`` is
+      ignored outright** ("In the melee zone, only spells or hand-to-
+      hand attacks") -- the tactic is skipped with no effect, exactly
+      like an already-unwired tactic.
+    - **``MELEE`` closes all the way to ``MELEE_RANGE``** (up to two
+      free rounds from ``SPELL_RANGE``), then fights via ``turn/
+      encounter.py resolve_one_melee_round()``/``resolve_melee_duel()``.
+      **Which of the two depends on whether it is this Encounter Plan's
+      own last tactic**: if more tactics follow it in the list (the
+      real shape a plan needs to genuinely interleave "swing this
+      round, cast next round" -- the Marzials/Ablamor worked example's
+      own "mutual Melee exchanges" interrupted by disrupted casts), only
+      **one round** is fought (``resolve_one_melee_round()``) before
+      falling through to whatever tactic comes next -- a decisive kill
+      still ends the encounter immediately, but an undecided round lets
+      a following ``CAST`` genuinely see ``current_range is MELEE_
+      RANGE`` and trigger the disruption check above. If it is the
+      *last* tactic (or the only one), the full atomic ``resolve_melee_
+      duel()`` still runs to its own conclusion in one call, exactly as
+      before this phase -- **every real caller and test today only ever
+      orders ``MELEE`` last**, so this preserves 100% of existing RNG-
+      consumption sequences unchanged; only a genuinely new plan shape
+      (``MELEE`` followed by more tactics) exercises the new one-round
+      path at all.
+    - **An exhausted tactic list still defaults to Melee** (unchanged
+      from before this phase), forcing ``current_range`` to
+      ``MELEE_RANGE`` first via the same closing helper, then fighting
+      the same atomic ``resolve_melee_duel()`` to its own conclusion --
+      this still runs even when a preceding non-last ``MELEE`` tactic
+      already stepped some rounds without a decisive winner, simply
+      continuing from wherever hit points currently stand.
     """
+
+    current_range = CombatRange.SPELL_RANGE
 
     for index, tactic in enumerate(tactics):
         if tactic.maneuver is Maneuver.SHOOT:
+            if current_range is CombatRange.MELEE_RANGE:
+                continue  # [5.0]: only spells or Melee are usable in the melee zone
+            current_range = _close_to(CombatRange.BOW_RANGE, current_range)
             result = resolve_fire_arrow_duel(caster, target, rng)
             if result.winner is not None:
                 return ChallengeCombatOutcome(winner=result.winner)
             continue
         if tactic.maneuver is Maneuver.MELEE:
-            result = resolve_melee_duel(caster, target, rng)
-            return ChallengeCombatOutcome(winner=result.winner)
+            current_range = _close_to(CombatRange.MELEE_RANGE, current_range)
+            if index == len(tactics) - 1:
+                result = resolve_melee_duel(caster, target, rng)
+                return ChallengeCombatOutcome(winner=result.winner)
+            round_outcome = resolve_one_melee_round(caster, target, rng)
+            if round_outcome.result is not None:
+                return ChallengeCombatOutcome(winner=round_outcome.result.winner)
+            continue
         if tactic.maneuver is Maneuver.CAST:
+            if current_range is CombatRange.MELEE_RANGE:
+                damage = resolve_reactive_melee_swing(target, caster, rng)
+                if caster.hit_points <= 0:
+                    return ChallengeCombatOutcome(winner="b")
+                disrupted = (
+                    resolve_spell_disruption(damage, rng)
+                    if damage > 0
+                    else resolve_spell_disruption_from_missed_attack(rng)
+                )
+                if disrupted:
+                    continue
             outcome = _resolve_personal_combat_cast(
                 caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=(index == 0)
             )

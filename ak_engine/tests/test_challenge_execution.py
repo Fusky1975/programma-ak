@@ -15,15 +15,17 @@ from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.challenge_execution import (
     ChallengeExecutionResult,
+    _close_to,
     _leader_combatant,
     _resolve_personal_combat_cast,
     execute_challenge,
     has_combat_intent,
     is_encounter_accepted,
+    resolve_challenge_combat,
 )
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, EncounterCombatResult
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, CombatRange, EncounterCombatResult, MeleeRoundOutcome
 from ak_engine.turn.search_decode import SearchTactic
 
 from _helpers import ScriptedRandom
@@ -529,3 +531,219 @@ def test_augur_combat_cast_later_is_a_documented_gap_with_no_effect_yet():
 
     assert outcome is None
     assert not mock_roll.called
+
+
+# -- Phase 292: the round-based range engine + real spell disruption ----
+
+
+def _combatants(**overrides):
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, **overrides.pop("caster_kwargs", {}))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD, **overrides.pop("target_kwargs", {}))
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    return state, caster_leader, caster, target_leader, target
+
+
+def test_close_to_advances_one_tier_at_a_time_and_never_widens():
+    assert _close_to(CombatRange.BOW_RANGE, CombatRange.SPELL_RANGE) is CombatRange.BOW_RANGE
+    assert _close_to(CombatRange.MELEE_RANGE, CombatRange.SPELL_RANGE) is CombatRange.MELEE_RANGE
+    assert _close_to(CombatRange.MELEE_RANGE, CombatRange.BOW_RANGE) is CombatRange.MELEE_RANGE
+    assert _close_to(CombatRange.MELEE_RANGE, CombatRange.MELEE_RANGE) is CombatRange.MELEE_RANGE
+    assert _close_to(CombatRange.SPELL_RANGE, CombatRange.MELEE_RANGE) is CombatRange.MELEE_RANGE  # never widens
+
+
+def test_resolve_challenge_combat_last_melee_tactic_fights_atomically():
+    # Every real caller and pre-Phase-292 test orders MELEE last -- that
+    # exact shape must still resolve via the full atomic resolve_melee_
+    # duel(), not the new one-round primitive.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel, patch(
+        "ak_engine.turn.challenge_execution.resolve_one_melee_round"
+    ) as mock_round:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([])
+        )
+
+    assert mock_duel.called
+    assert not mock_round.called
+    assert outcome.winner == "a"
+
+
+def test_resolve_challenge_combat_non_last_melee_tactic_steps_one_round_then_falls_through():
+    # A MELEE tactic followed by more tactics is the new plan shape --
+    # only one round is fought, and (undecided) the walk continues,
+    # eventually reaching the same exhausted-list atomic fallback.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.TALK)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner="b", rounds=1)
+        outcome = resolve_challenge_combat(
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([])
+        )
+
+    assert mock_round.called
+    assert mock_duel.called  # the exhausted-list fallback still ran afterward
+    assert outcome.winner == "b"
+
+
+def test_resolve_challenge_combat_non_last_melee_tactic_ends_combat_on_a_decisive_round():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.TALK)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=EncounterCombatResult(winner="a", rounds=1))
+        outcome = resolve_challenge_combat(
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([])
+        )
+
+    assert outcome.winner == "a"
+    assert not mock_duel.called  # a decisive round ends the encounter outright
+
+
+def test_resolve_challenge_combat_shoot_ignored_once_at_melee_range():
+    # [5.0]: "In the melee zone, only spells or hand-to-hand attacks" --
+    # a SHOOT tactic ordered after range has already closed to MELEE_
+    # RANGE is a pure no-op, never reaching resolve_fire_arrow_duel.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.SHOOT)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_fire_arrow_duel"
+    ) as mock_shoot, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert not mock_shoot.called
+    assert mock_duel.called  # falls through to the atomic fallback afterward
+
+
+def test_resolve_challenge_combat_cast_at_melee_range_disrupted_by_a_landed_hit_never_attempts_the_cast():
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": _skills_with(Ability.WHITE, 5, 9)}
+    )
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.HEAL.value)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing", return_value=5
+    ) as mock_swing, patch("ak_engine.turn.challenge_execution.resolve_spell_disruption", return_value=True) as mock_disrupt, patch(
+        "ak_engine.turn.challenge_execution.resolve_spell_disruption_from_missed_attack"
+    ) as mock_miss_disrupt, patch(
+        "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast"
+    ) as mock_cast, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert mock_swing.called
+    assert mock_disrupt.called
+    assert not mock_miss_disrupt.called  # a landed hit uses the damage-scaled formula, not the flat-miss one
+    assert not mock_cast.called  # disrupted -- "the caster loses a turn," no cast-chance roll at all
+
+
+def test_resolve_challenge_combat_cast_at_melee_range_disrupted_by_a_missed_swing():
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": _skills_with(Ability.WHITE, 5, 9)}
+    )
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.HEAL.value)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing", return_value=0
+    ), patch("ak_engine.turn.challenge_execution.resolve_spell_disruption") as mock_damage_disrupt, patch(
+        "ak_engine.turn.challenge_execution.resolve_spell_disruption_from_missed_attack", return_value=True
+    ) as mock_miss_disrupt, patch(
+        "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast"
+    ) as mock_cast, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert mock_miss_disrupt.called
+    assert not mock_damage_disrupt.called  # a miss uses the flat 30%, not the damage-scaled formula
+    assert not mock_cast.called
+
+
+def test_resolve_challenge_combat_cast_at_melee_range_not_disrupted_still_attempts_the_cast():
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": _skills_with(Ability.WHITE, 5, 9)}
+    )
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.HEAL.value)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing", return_value=2
+    ), patch("ak_engine.turn.challenge_execution.resolve_spell_disruption", return_value=False), patch(
+        "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True
+    ) as mock_cast, patch("ak_engine.turn.challenge_execution.words_of_healing_heal") as mock_heal, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert mock_cast.called  # not disrupted -- the cast-chance roll still happens
+    assert mock_heal.called  # ... and, having succeeded, the spell's own effect still lands
+
+
+def test_resolve_challenge_combat_reactive_swing_killing_the_caster_ends_combat_immediately():
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": _skills_with(Ability.WHITE, 5, 9)}
+    )
+    caster.hit_points = 1
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.HEAL.value)]
+
+    def _lethal_swing(attacker, defender, rng):
+        defender.hit_points -= 5
+        return 5
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing", side_effect=_lethal_swing
+    ), patch("ak_engine.turn.challenge_execution.resolve_spell_disruption") as mock_disrupt, patch(
+        "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast"
+    ) as mock_cast:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        outcome = resolve_challenge_combat(
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([])
+        )
+
+    assert outcome.winner == "b"
+    assert not mock_disrupt.called  # dead before a disruption check would even matter
+    assert not mock_cast.called
+
+
+def test_resolve_challenge_combat_cast_at_spell_range_never_checks_disruption():
+    # Unchanged, established scope: disruption is only checked at
+    # MELEE_RANGE -- a CAST as the very first tactic (still SPELL_RANGE)
+    # never rolls it, matching every pre-Phase-292 CAST test unaffected.
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": _skills_with(Ability.WHITE, 5, 9)}
+    )
+    tactics = [SearchTactic(Maneuver.CAST, Spell.HEAL.value)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_reactive_melee_swing") as mock_swing, patch(
+        "ak_engine.turn.challenge_execution.resolve_spell_disruption"
+    ) as mock_disrupt, patch(
+        "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.challenge_execution.words_of_healing_heal"), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert not mock_swing.called
+    assert not mock_disrupt.called

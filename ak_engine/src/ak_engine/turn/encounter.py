@@ -1372,46 +1372,109 @@ class CombatRange(Enum):
     MELEE_RANGE = 2
 
 
-# Rulebook [5.0], quoted in the module docstring's own Phase 179
-# addendum: spell disruption's cumulative-per-hit chance and its cap.
-SPELL_DISRUPTION_CHANCE_PER_HIT = 0.20
+# Rulebook [5.1] (RULES.AK, `C:\Users\Andrea\Desktop\Gioco\HostAK\MS\
+# RULES.AK`, confirmed identically in `ADDEND.AK`/`Regolamento AK.txt`'s
+# own translation) -- **corrects this module's own Phase 179 addendum**,
+# whose "20% cumulative per hit" formula was a paraphrase that doesn't
+# match the real source text once located and read directly (Phase 292).
+# Quoted in full: "In combat, whenever a character attempting to cast a
+# spell takes damage or is stunned, the spell is checked for disruption.
+# If it is disrupted, the caster loses a turn. For example, 3 hit points
+# will disrupt your spell 50% of the time, while a missed swing will
+# disrupt you 30% of the time because you may lose your spell-
+# concentration while evading the blow." Two distinct triggers, two
+# distinct formulas -- not one "per hit" count:
+#
+# 1. **Damage taken**: scales with the actual damage dealt, not a flat
+#    per-hit rate. Only one worked data point is given (3 points -> 50%)
+#    -- **confirmed directly by the user via AskUserQuestion** as a
+#    straight linear rate, `50% / 3 ≈ 16.67%` per damage point, capped
+#    at 95% (the same universal spell-success cap `turn/cast_execution.
+#    py ACTION_SPELL_CHANCE_CAP`/this project's own `PERSONAL_COMBAT_
+#    SPELL_CAST_CHANCE_CAP` already use elsewhere, reused here as the
+#    same real ceiling rather than a fresh guess).
+# 2. **A missed/dodged attack**: a flat 30%, independent of damage
+#    (there was none) -- "you may lose concentration while evading the
+#    blow" is a distinct mechanism, not a zero-damage case of formula 1.
+#
+# **"Or is stunned" is a confirmed, real, third trigger with no example
+# given anywhere in the source** -- deliberately left unquantified
+# rather than guessed. In this project's own current combat model it
+# never actually applies to the caster this module's round engine
+# checks disruption for: a caster's own opponent has no CAST tactic of
+# their own to stun them with (see `turn/challenge_execution.py`'s own
+# Phase 292 addendum for the full "target never casts" scoping this
+# round engine relies on), so the case is structurally unreachable
+# today, not silently ignored.
+SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT = 0.50 / 3  # "3 hit points... 50%"
+SPELL_DISRUPTION_MISSED_ATTACK_CHANCE = 0.30  # "a missed swing... 30%"
 SPELL_DISRUPTION_CHANCE_CAP = 0.95
 
 
-def spell_disruption_chance(hits_taken_this_round: int, *, chance_per_hit: float = SPELL_DISRUPTION_CHANCE_PER_HIT) -> float:
-    """The chance a spellcast attempt fails this round, per the user's own
-    confirmed formula (module docstring's Phase 179 addendum): 20% per
-    hit already landed on the caster this round, before the cast is
-    attempted, capped at 95%. Counts *hits*, not damage points -- "ogni
-    danno" ("every hit") -- matching the worked example, where a single
-    landed Melee hit alone was enough to disrupt the very next cast.
+def spell_disruption_chance(
+    damage_points: int, *, chance_per_point: float = SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT
+) -> float:
+    """The chance a spellcast attempt fails this round because the caster
+    took ``damage_points`` of damage before attempting the cast --
+    linear in damage, capped at 95%. See the module-level constants just
+    above for the full sourced formula and why it replaces the earlier
+    "20% cumulative per hit" version.
 
-    ``chance_per_hit`` defaults to ``SPELL_DISRUPTION_CHANCE_PER_HIT``
-    (every existing caller unaffected); Words of Healing's own halved
-    rate (module docstring's Phase 200 addendum) overrides it via
-    ``words_of_healing_disruption_chance()`` rather than duplicating
-    this formula.
+    ``chance_per_point`` defaults to ``SPELL_DISRUPTION_CHANCE_PER_
+    DAMAGE_POINT`` (every existing caller unaffected); Words of
+    Healing's own halved rate (module docstring's Phase 200 addendum)
+    overrides it via ``words_of_healing_disruption_chance()`` rather
+    than duplicating this formula.
     """
 
-    return min(hits_taken_this_round * chance_per_hit, SPELL_DISRUPTION_CHANCE_CAP)
+    return min(damage_points * chance_per_point, SPELL_DISRUPTION_CHANCE_CAP)
 
 
 def resolve_spell_disruption(
-    hits_taken_this_round: int, rng: random.Random, *, chance_per_hit: float = SPELL_DISRUPTION_CHANCE_PER_HIT
+    damage_points: int, rng: random.Random, *, chance_per_point: float = SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT
 ) -> bool:
-    """Rolls whether a spellcast attempt is disrupted this round -- see
-    ``spell_disruption_chance()``'s own docstring for the formula.
-    Returns True if disrupted (the cast fails, the round is lost).
+    """Rolls whether a spellcast attempt is disrupted this round because
+    the caster took damage -- see ``spell_disruption_chance()``'s own
+    docstring for the formula. Returns True if disrupted (the cast
+    fails, the round is lost).
 
-    With zero hits taken this round, the chance is exactly 0% -- this
+    With zero damage taken this round, the chance is exactly 0% -- this
     returns False directly without consuming a roll, the same no-roll-
     when-the-outcome-is-fixed convention ``models/monster.py roll_
-    monster_alignment()`` (Phase 176) already established.
+    monster_alignment()`` (Phase 176) already established. A missed
+    attack (no damage, but still an attack) has its own separate,
+    non-zero chance -- see ``resolve_spell_disruption_from_missed_
+    attack()``, not this function.
     """
 
-    if hits_taken_this_round <= 0:
+    if damage_points <= 0:
         return False
-    return rng.random() < spell_disruption_chance(hits_taken_this_round, chance_per_hit=chance_per_hit)
+    return rng.random() < spell_disruption_chance(damage_points, chance_per_point=chance_per_point)
+
+
+def spell_disruption_chance_from_missed_attack(
+    *, chance: float = SPELL_DISRUPTION_MISSED_ATTACK_CHANCE
+) -> float:
+    """The flat disruption chance when the caster was attacked but the
+    attack missed (or was dodged) -- "you may lose your spell-
+    concentration while evading the blow." Not damage-scaled, since no
+    damage was dealt; see the module-level constants above for the full
+    sourced formula.
+    """
+
+    return chance
+
+
+def resolve_spell_disruption_from_missed_attack(
+    rng: random.Random, *, chance: float = SPELL_DISRUPTION_MISSED_ATTACK_CHANCE
+) -> bool:
+    """Rolls whether a spellcast attempt is disrupted this round because
+    an attack against the caster missed -- see
+    ``spell_disruption_chance_from_missed_attack()``. Returns True if
+    disrupted.
+    """
+
+    return rng.random() < spell_disruption_chance_from_missed_attack(chance=chance)
 
 
 # Holy Symbol [HO], module docstring's own Phase 180 addendum -- project-
@@ -2019,28 +2082,47 @@ WORDS_OF_HEALING_HEALS_TO_FULL = True
 WORDS_OF_HEALING_DISRUPTION_CHANCE_MULTIPLIER = 0.5
 
 
-def words_of_healing_disruption_chance(hits_taken_this_round: int) -> float:
-    """Words of Healing's own disruption chance -- "half as likely to be
-    disrupted... as other spells": half ``SPELL_DISRUPTION_CHANCE_PER_HIT``,
-    same 95% cap, per hit already landed this round. See module
-    docstring's Phase 200 addendum.
+def words_of_healing_disruption_chance(damage_points: int) -> float:
+    """Words of Healing's own disruption chance when the caster took
+    damage -- "half as likely to be disrupted... as other spells": half
+    ``SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT``, same 95% cap. See
+    module docstring's Phase 200 addendum and this module's own Phase
+    292 addendum (corrected formula).
     """
 
     return spell_disruption_chance(
-        hits_taken_this_round,
-        chance_per_hit=SPELL_DISRUPTION_CHANCE_PER_HIT * WORDS_OF_HEALING_DISRUPTION_CHANCE_MULTIPLIER,
+        damage_points,
+        chance_per_point=SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT * WORDS_OF_HEALING_DISRUPTION_CHANCE_MULTIPLIER,
     )
 
 
-def resolve_words_of_healing_disruption(hits_taken_this_round: int, rng: random.Random) -> bool:
-    """Rolls Words of Healing's own halved disruption chance -- see
-    ``words_of_healing_disruption_chance()``. Same no-roll-at-zero-hits
-    shortcut as ``resolve_spell_disruption()``.
+def resolve_words_of_healing_disruption(damage_points: int, rng: random.Random) -> bool:
+    """Rolls Words of Healing's own halved disruption chance for a landed
+    hit -- see ``words_of_healing_disruption_chance()``. Same
+    no-roll-at-zero-damage shortcut as ``resolve_spell_disruption()``.
     """
 
-    if hits_taken_this_round <= 0:
+    if damage_points <= 0:
         return False
-    return rng.random() < words_of_healing_disruption_chance(hits_taken_this_round)
+    return rng.random() < words_of_healing_disruption_chance(damage_points)
+
+
+def words_of_healing_disruption_chance_from_missed_attack() -> float:
+    """Words of Healing's own halved disruption chance for a missed/
+    dodged attack -- half ``SPELL_DISRUPTION_MISSED_ATTACK_CHANCE``. Same
+    halving convention as the damage-taken case above.
+    """
+
+    return SPELL_DISRUPTION_MISSED_ATTACK_CHANCE * WORDS_OF_HEALING_DISRUPTION_CHANCE_MULTIPLIER
+
+
+def resolve_words_of_healing_disruption_from_missed_attack(rng: random.Random) -> bool:
+    """Rolls Words of Healing's own halved disruption chance for a missed
+    attack -- see ``words_of_healing_disruption_chance_from_missed_
+    attack()``.
+    """
+
+    return rng.random() < words_of_healing_disruption_chance_from_missed_attack()
 
 
 def words_of_healing_heal(combatant: "Combatant", max_hit_points: int = CHARACTER_HIT_POINTS) -> None:
@@ -2365,6 +2447,106 @@ class EncounterCombatResult:
     shots: tuple[FireArrowShot, ...] = ()
 
 
+@dataclass(slots=True)
+class MeleeRoundOutcome:
+    """One Melee round's full outcome (Phase 292 extraction from
+    ``resolve_melee_duel``'s own loop body) -- lets a round-based caller
+    (``turn/challenge_execution.py``'s own round engine) both step Melee
+    one round at a time AND read each side's own per-round damage/miss
+    detail, needed to feed ``resolve_spell_disruption``/
+    ``resolve_spell_disruption_from_missed_attack`` for a combatant that
+    is CASTing while the other side swings at it in Melee range.
+
+    ``a_attacked``/``b_attacked`` is ``False`` when that side never got
+    to swing this round (it died to the other side's first strike, per
+    initiative). ``damage_dealt_to_a``/``damage_dealt_to_b`` is 0 both
+    when the attacker missed AND when the attacker never attacked --
+    callers that need to tell those apart use the corresponding
+    ``*_attacked`` flag alongside the damage figure.
+    """
+
+    result: EncounterCombatResult | None  # set once a combatant's hit points reach 0 this round
+    damage_dealt_to_a: int = 0  # b's landed Melee damage against a this round
+    damage_dealt_to_b: int = 0  # a's landed Melee damage against b this round
+    a_attacked: bool = False
+    b_attacked: bool = False
+
+
+def resolve_one_melee_round(
+    a: Combatant, b: Combatant, rng: random.Random, *, round_number: int = 1
+) -> MeleeRoundOutcome:
+    """Rulebook [5.3]: one Melee round only.
+
+    Extracted (Phase 292) from ``resolve_melee_duel``'s own internal
+    per-round loop so a round-based caller can interleave Melee rounds
+    with other combat ranges (Spell/Bow) instead of only ever running a
+    Melee duel to its own atomic conclusion. Consumes RNG in exactly the
+    same order ``resolve_melee_duel`` always has, so wrapping this in a
+    loop (below) changes no existing caller's behavior.
+
+    Does NOT call ``apply_temper_melee_setup`` -- that is a once-per-
+    encounter setup step (Furia/Intimidazione/Slancio/Schivare), left to
+    the caller to run exactly once before the first round, not on every
+    round.
+    """
+
+    skill_a, skill_b = effective_melee_skill(a), effective_melee_skill(b)
+    first, second = (a, b) if _acts_first(skill_a, skill_b, rng) else (b, a)
+    outcome = MeleeRoundOutcome(result=None)
+    for attacker, defender in ((first, second), (second, first)):
+        if attacker.hit_points <= 0 or defender.hit_points <= 0:
+            continue
+        damage = roll_melee_attack(
+            rng,
+            damage_range=attacker.melee_damage_range,
+            hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
+        )
+        damage = max(0, damage - attacker.melee_damage_dealt_reduction)
+        defender.hit_points -= damage
+        if attacker is a:
+            outcome.damage_dealt_to_b = damage
+            outcome.a_attacked = True
+        else:
+            outcome.damage_dealt_to_a = damage
+            outcome.b_attacked = True
+        if defender.hit_points <= 0:
+            outcome.result = EncounterCombatResult(winner=("a" if defender is b else "b"), rounds=round_number)
+            return outcome
+    _apply_end_of_round_regeneration(a, b)
+    return outcome
+
+
+def resolve_reactive_melee_swing(attacker: Combatant, defender: Combatant, rng: random.Random) -> int:
+    """One one-directional Melee swing (Phase 292) -- ``attacker`` swings at
+    ``defender``, who does not swing back this round because it is
+    casting instead of fighting. Models rulebook [5.1]'s own "melee
+    attacks always take precedence" over a simultaneous cast (module
+    docstring's own Phase 179 addendum, quoted in full there): once both
+    combatants are at ``CombatRange.MELEE_RANGE`` and the *target* has no
+    Encounter Plan of its own (this project's established scoping -- see
+    ``turn/challenge_execution.py``'s own module docstring), it is
+    assumed to keep swinging Melee every round the caster spends
+    casting instead of answering in kind.
+
+    Returns the damage dealt (0 on a miss) so the caller can feed it
+    straight into ``resolve_spell_disruption``/``resolve_spell_
+    disruption_from_missed_attack`` -- the damage-taken-or-missed-swing
+    disruption check this exists to make possible. Mutates ``defender.
+    hit_points`` in place; the caller checks for death itself (the same
+    convention every other Personal-Combat spell effect in this module
+    already follows for its own target/caster hit-point checks).
+    """
+
+    damage = roll_melee_attack(
+        rng,
+        damage_range=attacker.melee_damage_range,
+        hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
+    )
+    damage = max(0, damage - attacker.melee_damage_dealt_reduction)
+    defender.hit_points -= damage
+    return damage
+
+
 def resolve_melee_duel(
     a: Combatant, b: Combatant, rng: random.Random, *, max_rounds: int = 1000
 ) -> EncounterCombatResult:
@@ -2394,25 +2576,16 @@ def resolve_melee_duel(
     unaffected. Each swing then also consults the *attacker's* own
     ``offensive_hit_multiplier`` (Slancio) alongside the defender's own
     ``defensive_hit_multiplier``.
+
+    Phase 292: now a thin loop over ``resolve_one_melee_round`` -- same
+    RNG consumption order, same return value, zero behavior change.
     """
 
     apply_temper_melee_setup(a, b, rng)
-    skill_a, skill_b = effective_melee_skill(a), effective_melee_skill(b)
     for round_number in range(1, max_rounds + 1):
-        first, second = (a, b) if _acts_first(skill_a, skill_b, rng) else (b, a)
-        for attacker, defender in ((first, second), (second, first)):
-            if attacker.hit_points <= 0 or defender.hit_points <= 0:
-                continue
-            damage = roll_melee_attack(
-                rng,
-                damage_range=attacker.melee_damage_range,
-                hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
-            )
-            damage = max(0, damage - attacker.melee_damage_dealt_reduction)
-            defender.hit_points -= damage
-            if defender.hit_points <= 0:
-                return EncounterCombatResult(winner=("a" if defender is b else "b"), rounds=round_number)
-        _apply_end_of_round_regeneration(a, b)
+        outcome = resolve_one_melee_round(a, b, rng, round_number=round_number)
+        if outcome.result is not None:
+            return outcome.result
     return EncounterCombatResult(winner=None, rounds=max_rounds)
 
 

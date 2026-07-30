@@ -15,7 +15,8 @@ from ak_engine.turn.encounter import (
     NEUTRAL_DUELIST_BONUS,
     PERSONAL_COMBAT_SPELL_LEVEL_CAP,
     SPELL_DISRUPTION_CHANCE_CAP,
-    SPELL_DISRUPTION_CHANCE_PER_HIT,
+    SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT,
+    SPELL_DISRUPTION_MISSED_ATTACK_CHANCE,
     CHARM_FLEE_ALWAYS_SUCCEEDS,
     CONTROL_UNDEAD_FAILURE_HP_INCREASE_RANGE,
     CONTROL_UNDEAD_SUCCESS_NEUTRALIZES_TARGET,
@@ -52,6 +53,7 @@ from ak_engine.turn.encounter import (
     TELEKINETIC_STORM_VICTIM_DAMAGE_RANGE,
     Combatant,
     CombatRange,
+    MeleeRoundOutcome,
     MirrorImageIntelligenceTier,
     _acts_first,
     effective_archery_skill,
@@ -71,8 +73,10 @@ from ak_engine.turn.encounter import (
     resolve_encounter_combat,
     resolve_fire_arrow_duel,
     resolve_melee_duel,
+    resolve_one_melee_round,
     resolve_personal_combat_spell_cast,
     resolve_spell_disruption,
+    resolve_spell_disruption_from_missed_attack,
     roll_fire_arrow_attack,
     roll_holy_symbol_undead_damage,
     resolve_mirror_image_disbelief,
@@ -86,12 +90,15 @@ from ak_engine.turn.encounter import (
     roll_telekinetic_storm_caster_damage,
     roll_telekinetic_storm_victim_damage,
     spell_disruption_chance,
+    spell_disruption_chance_from_missed_attack,
     spiritwrack_melee_damage_reduction,
     blocks_cast_and_archery,
     WORDS_OF_HEALING_DISRUPTION_CHANCE_MULTIPLIER,
     WORDS_OF_HEALING_HEALS_TO_FULL,
     resolve_words_of_healing_disruption,
+    resolve_words_of_healing_disruption_from_missed_attack,
     words_of_healing_disruption_chance,
+    words_of_healing_disruption_chance_from_missed_attack,
     words_of_healing_heal,
     GATE_DEMON_REFUSAL_CHANCE,
     GATE_DEMON_WINNER_RETURNS_TO_ABYSS,
@@ -249,6 +256,101 @@ def test_resolve_melee_duel_respects_max_rounds_cap_when_nobody_lands_a_hit():
     assert result.rounds == 2
     assert a.hit_points == 10
     assert b.hit_points == 10
+
+
+# -- Phase 292: resolve_one_melee_round (single-round Melee primitive) --
+
+
+def test_resolve_one_melee_round_returns_a_melee_round_outcome():
+    a = Combatant("A", melee_skill=1, hit_points=10)
+    b = Combatant("B", melee_skill=0, hit_points=10)
+    rng = ScriptedRandom([0.99, 0.99])
+
+    outcome = resolve_one_melee_round(a, b, rng, round_number=1)
+
+    assert isinstance(outcome, MeleeRoundOutcome)
+
+
+def test_resolve_one_melee_round_no_death_reports_both_sides_damage():
+    a = Combatant("A", melee_skill=1, hit_points=10)
+    b = Combatant("B", melee_skill=0, hit_points=10)
+    block = [0.1, 0.5, 0.1, 0.4]  # A hits (chance, damage), B hits (chance, damage)
+    rng = ScriptedRandom(block)
+
+    outcome = resolve_one_melee_round(a, b, rng, round_number=1)
+
+    assert outcome.result is None
+    assert outcome.a_attacked is True
+    assert outcome.b_attacked is True
+    assert outcome.damage_dealt_to_b > 0  # A's landed damage against B
+    assert outcome.damage_dealt_to_a > 0  # B's landed damage against A
+    assert a.hit_points == 10 - outcome.damage_dealt_to_a
+    assert b.hit_points == 10 - outcome.damage_dealt_to_b
+
+
+def test_resolve_one_melee_round_records_a_miss_as_zero_damage_but_attacked_true():
+    a = Combatant("A", melee_skill=1, hit_points=10)
+    b = Combatant("B", melee_skill=0, hit_points=10)
+    rng = ScriptedRandom([0.99, 0.99])  # both swing, both miss
+
+    outcome = resolve_one_melee_round(a, b, rng, round_number=1)
+
+    assert outcome.result is None
+    assert outcome.a_attacked is True
+    assert outcome.b_attacked is True
+    assert outcome.damage_dealt_to_a == 0
+    assert outcome.damage_dealt_to_b == 0
+
+
+def test_resolve_one_melee_round_dead_defender_never_swings_back():
+    # A(melee_skill=1) acts first and lands a lethal hit on a 1-hp B;
+    # B must never get a turn -- attacked flag stays False and no roll
+    # is consumed for it (ScriptedRandom raises IndexError otherwise).
+    a = Combatant("A", melee_skill=1, hit_points=10)
+    b = Combatant("B", melee_skill=0, hit_points=1)
+    rng = ScriptedRandom([0.1, 0.5])  # A's hit-chance roll, then damage roll
+
+    outcome = resolve_one_melee_round(a, b, rng, round_number=3)
+
+    assert outcome.result is not None
+    assert outcome.result.winner == "a"
+    assert outcome.result.rounds == 3
+    assert outcome.a_attacked is True
+    assert outcome.b_attacked is False
+    assert outcome.damage_dealt_to_a == 0
+
+
+def test_resolve_one_melee_round_regenerates_hp_only_when_nobody_died():
+    a = Combatant("A", melee_skill=1, hit_points=5, regenerates_hp=2)
+    b = Combatant("B", melee_skill=0, hit_points=10)
+    rng = ScriptedRandom([0.99, 0.99])  # both miss -- nobody dies
+
+    resolve_one_melee_round(a, b, rng, round_number=1)
+
+    assert a.hit_points == 7  # 5 + regenerates_hp, since it survived undamaged
+
+
+def test_resolve_melee_duel_matches_looping_resolve_one_melee_round():
+    # Same scripted rolls, same seed-free deterministic sequence -- the
+    # atomic resolve_melee_duel must be exactly a loop over
+    # resolve_one_melee_round with identical RNG consumption.
+    block = [0.1, 0.5, 0.9]  # A hits, B misses
+    a1 = Combatant("A", melee_skill=1, hit_points=10)
+    b1 = Combatant("B", melee_skill=0, hit_points=10)
+    result = resolve_melee_duel(a1, b1, ScriptedRandom(block * 15))
+
+    a2 = Combatant("A", melee_skill=1, hit_points=10)
+    b2 = Combatant("B", melee_skill=0, hit_points=10)
+    rng2 = ScriptedRandom(block * 15)
+    round_number = 1
+    outcome = resolve_one_melee_round(a2, b2, rng2, round_number=round_number)
+    while outcome.result is None:
+        round_number += 1
+        outcome = resolve_one_melee_round(a2, b2, rng2, round_number=round_number)
+
+    assert outcome.result == result
+    assert a2.hit_points == a1.hit_points
+    assert b2.hit_points == b1.hit_points
 
 
 def test_resolve_fire_arrow_duel_decisive_winner():
@@ -511,39 +613,58 @@ def test_combat_range_is_ordered_farthest_to_closest():
     assert CombatRange.MELEE_RANGE.value == 2
 
 
-def test_spell_disruption_chance_matches_the_formula():
+def test_spell_disruption_chance_matches_the_rules_ak_formula():
+    # RULES.AK [5.1]: "3 hit points will disrupt your spell 50% of the
+    # time" -- confirmed by the user as a straight linear rate.
     assert spell_disruption_chance(0) == 0.0
-    assert spell_disruption_chance(1) == pytest.approx(SPELL_DISRUPTION_CHANCE_PER_HIT)
-    assert spell_disruption_chance(2) == pytest.approx(2 * SPELL_DISRUPTION_CHANCE_PER_HIT)
-    assert spell_disruption_chance(3) == pytest.approx(3 * SPELL_DISRUPTION_CHANCE_PER_HIT)
+    assert spell_disruption_chance(1) == pytest.approx(SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT)
+    assert spell_disruption_chance(3) == pytest.approx(0.50)
 
 
 def test_spell_disruption_chance_caps_at_95_percent():
-    # 4 hits = 80%, not yet capped; 5 hits would be 100% uncapped, so
-    # that's the first value the 95% cap actually clips.
-    assert spell_disruption_chance(4) == pytest.approx(4 * SPELL_DISRUPTION_CHANCE_PER_HIT)
-    assert spell_disruption_chance(5) == pytest.approx(SPELL_DISRUPTION_CHANCE_CAP)
+    # 5 damage points = 83.3%, not yet capped; 6 points would be 100%
+    # uncapped, so that's the first value the 95% cap actually clips.
+    assert spell_disruption_chance(5) == pytest.approx(5 * SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT)
+    assert spell_disruption_chance(6) == pytest.approx(SPELL_DISRUPTION_CHANCE_CAP)
     assert spell_disruption_chance(100) == pytest.approx(SPELL_DISRUPTION_CHANCE_CAP)
 
 
-def test_resolve_spell_disruption_zero_hits_never_consumes_a_roll():
+def test_resolve_spell_disruption_zero_damage_never_consumes_a_roll():
     # Matches the worked example's own implicit case: a caster who took
-    # no hits this round always gets to attempt the cast.
+    # no damage this round always gets to attempt the cast.
     rng = ScriptedRandom([])
     assert resolve_spell_disruption(0, rng) is False
 
 
-def test_resolve_spell_disruption_one_hit_matches_the_worked_example():
-    # Ablamor's own cast attempt was disrupted after exactly one landed
-    # hit (Marzials's own 8-point Melee attack) earlier the same round --
-    # a 20% chance, so 0.19 disrupts and 0.20 doesn't.
-    assert resolve_spell_disruption(1, ScriptedRandom([0.19])) is True
-    assert resolve_spell_disruption(1, ScriptedRandom([0.20])) is False
+def test_resolve_spell_disruption_matches_the_worked_example():
+    # Ablamor's own cast attempt was disrupted right after Marzials's own
+    # 8-point Melee hit -- 8 damage points caps the formula at 95%,
+    # matching the narrated outcome (the spell was in fact disrupted).
+    assert spell_disruption_chance(8) == pytest.approx(SPELL_DISRUPTION_CHANCE_CAP)
+    assert resolve_spell_disruption(8, ScriptedRandom([0.94])) is True
+    assert resolve_spell_disruption(8, ScriptedRandom([0.95])) is False
 
 
-def test_resolve_spell_disruption_consumes_exactly_one_roll_when_hits_taken():
+def test_resolve_spell_disruption_consumes_exactly_one_roll_when_damaged():
     rng = ScriptedRandom([0.99])  # a second .random() call would raise IndexError
     resolve_spell_disruption(2, rng)
+
+
+def test_spell_disruption_chance_from_missed_attack_matches_rules_ak():
+    # RULES.AK [5.1]: "a missed swing will disrupt you 30% of the time".
+    assert spell_disruption_chance_from_missed_attack() == pytest.approx(0.30)
+
+
+def test_resolve_spell_disruption_from_missed_attack_uses_the_flat_30_percent():
+    assert resolve_spell_disruption_from_missed_attack(ScriptedRandom([0.29])) is True
+    assert resolve_spell_disruption_from_missed_attack(ScriptedRandom([0.30])) is False
+
+
+def test_resolve_spell_disruption_from_missed_attack_always_consumes_a_roll():
+    # Unlike the damage-taken case, a missed attack still happened --
+    # there's no "zero" shortcut here.
+    rng = ScriptedRandom([0.99])
+    resolve_spell_disruption_from_missed_attack(rng)
 
 
 # -- Phase 180: Holy Symbol [HO] --
@@ -1121,14 +1242,18 @@ def test_words_of_healing_constants():
 
 
 def test_words_of_healing_disruption_chance_is_half_the_normal_rate():
-    assert words_of_healing_disruption_chance(1) == pytest.approx(SPELL_DISRUPTION_CHANCE_PER_HIT * 0.5)
-    assert words_of_healing_disruption_chance(2) == pytest.approx(2 * SPELL_DISRUPTION_CHANCE_PER_HIT * 0.5)
+    assert words_of_healing_disruption_chance(1) == pytest.approx(
+        SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT * 0.5
+    )
+    assert words_of_healing_disruption_chance(2) == pytest.approx(
+        2 * SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT * 0.5
+    )
     assert words_of_healing_disruption_chance(0) == 0.0
 
 
 def test_words_of_healing_disruption_chance_still_caps_at_95_percent():
-    # 10 hits * (20%/2) = 100%, uncapped -- clamped to the same 95% cap.
-    assert words_of_healing_disruption_chance(10) == pytest.approx(SPELL_DISRUPTION_CHANCE_CAP)
+    # 12 damage points * (16.67%/2) = 100%, uncapped -- clamped to the same 95% cap.
+    assert words_of_healing_disruption_chance(12) == pytest.approx(SPELL_DISRUPTION_CHANCE_CAP)
 
 
 def test_resolve_words_of_healing_disruption_zero_hits_never_consumes_a_roll():
@@ -1137,16 +1262,32 @@ def test_resolve_words_of_healing_disruption_zero_hits_never_consumes_a_roll():
 
 
 def test_resolve_words_of_healing_disruption_uses_the_halved_chance():
-    # 1 hit -> 10% (half of the normal 20%): 0.09 disrupts, 0.10 doesn't --
-    # a roll that would disrupt a normal spell (0.19) does not disrupt WH.
-    assert resolve_words_of_healing_disruption(1, ScriptedRandom([0.09])) is True
-    assert resolve_words_of_healing_disruption(1, ScriptedRandom([0.10])) is False
-    assert resolve_words_of_healing_disruption(1, ScriptedRandom([0.19])) is False
+    # 1 damage point -> ~8.33% (half of the normal ~16.67%): 0.08 disrupts, 0.09 doesn't --
+    # a roll that would disrupt a normal spell (0.15) does not disrupt WH.
+    assert resolve_words_of_healing_disruption(1, ScriptedRandom([0.08])) is True
+    assert resolve_words_of_healing_disruption(1, ScriptedRandom([0.09])) is False
+    assert resolve_words_of_healing_disruption(1, ScriptedRandom([0.15])) is False
 
 
 def test_resolve_words_of_healing_disruption_consumes_exactly_one_roll_when_hits_taken():
     rng = ScriptedRandom([0.99])  # a second .random() call would raise IndexError
     resolve_words_of_healing_disruption(2, rng)
+
+
+def test_words_of_healing_disruption_chance_from_missed_attack_is_half_the_normal_rate():
+    assert words_of_healing_disruption_chance_from_missed_attack() == pytest.approx(
+        SPELL_DISRUPTION_MISSED_ATTACK_CHANCE * 0.5
+    )
+
+
+def test_resolve_words_of_healing_disruption_from_missed_attack_uses_the_halved_chance():
+    assert resolve_words_of_healing_disruption_from_missed_attack(ScriptedRandom([0.14])) is True
+    assert resolve_words_of_healing_disruption_from_missed_attack(ScriptedRandom([0.15])) is False
+
+
+def test_resolve_words_of_healing_disruption_from_missed_attack_always_consumes_a_roll():
+    rng = ScriptedRandom([0.99])
+    resolve_words_of_healing_disruption_from_missed_attack(rng)
 
 
 def test_words_of_healing_heal_restores_to_full():
@@ -1293,14 +1434,14 @@ def test_resolve_augur_combat_rolls_the_shirk_chance_on_a_simulated_loss():
 
 
 def test_spell_disruption_chance_still_defaults_to_the_normal_rate():
-    # The new keyword-only chance_per_hit override doesn't change any
+    # The keyword-only chance_per_point override doesn't change any
     # existing caller's behavior.
-    assert spell_disruption_chance(1) == pytest.approx(SPELL_DISRUPTION_CHANCE_PER_HIT)
+    assert spell_disruption_chance(1) == pytest.approx(SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT)
 
 
 def test_resolve_spell_disruption_still_defaults_to_the_normal_rate():
-    assert resolve_spell_disruption(1, ScriptedRandom([0.19])) is True
-    assert resolve_spell_disruption(1, ScriptedRandom([0.20])) is False
+    assert resolve_spell_disruption(1, ScriptedRandom([0.16])) is True
+    assert resolve_spell_disruption(1, ScriptedRandom([0.17])) is False
 
 
 # -- Phase 208: Illusory Hero [IH] --

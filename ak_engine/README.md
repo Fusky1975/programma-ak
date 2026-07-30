@@ -12272,7 +12272,7 @@ complete (Phases 209-211).
     Combat branches) and `test_pursue_execution.py` (1, confirming the
     armyless case's own Charm-flee reuse) -- 3238 passed total.
 
-- **Phase 291 (current)**: wires Personal-Combat spells into Duel
+- **Phase 291**: wires Personal-Combat spells into Duel
   ([7.1]), the third and last real Encounter consumer after Search
   (Phase 289) and Challenge/Pursue (Phase 290) -- `turn/battle_
   orchestrator.py _maybe_fight_duel()`'s own opt-in real-combat mode
@@ -12322,6 +12322,96 @@ complete (Phases 209-211).
     through to Melee; and a defensive case confirms a CAST tactic from a
     hypothetical leaderless attacker Commander is a silent no-op rather
     than a crash -- 3242 passed total.
+
+- **Phase 292 (current)**: the real round-based combat range engine, and
+  spell disruption wired for real -- user-directed via `AskUserQuestion`
+  ("Costruisci il motore round-per-round (Consigliato)"), after
+  determining disruption could not be honestly wired at `turn/
+  challenge_execution.py`'s previous atomic-tactic granularity (the same
+  gap `turn/search_execution.py`'s own Phase 289 addendum had already
+  flagged as this project's "largest single remaining piece of unbuilt
+  personal-combat machinery").
+  - **Corrected the shipped disruption formula.** The primary source
+    (`RULES.AK` [5.1], confirmed identically in `ADDEND.AK`/`Regolamento
+    AK.txt`) reads: "3 hit points will disrupt your spell 50% of the
+    time, while a missed swing will disrupt you 30% of the time" -- this
+    does **not** match this project's own Phase 179 "20% cumulative per
+    hit, 95% cap" paraphrase, discovered once the real source text was
+    located and read directly. Two distinct triggers, confirmed by the
+    user via `AskUserQuestion` as: damage-scaled `50%/3 ≈ 16.67%` per
+    damage point (`SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT`), and a flat
+    30% (`SPELL_DISRUPTION_MISSED_ATTACK_CHANCE`) for a missed/dodged
+    attack -- both capped at the same universal 95% this project already
+    uses elsewhere. `turn/encounter.py`'s `spell_disruption_chance()`/
+    `resolve_spell_disruption()` now take `damage_points` (was
+    `hits_taken_this_round`); new `spell_disruption_chance_from_missed_
+    attack()`/`resolve_spell_disruption_from_missed_attack()` model the
+    second trigger. Words of Healing's own halved-rate wrappers were
+    updated to match, plus new halved-rate missed-attack variants.
+  - **`turn/encounter.py MeleeRoundOutcome`/`resolve_one_melee_round()`**:
+    extracted from `resolve_melee_duel()`'s own internal per-round loop
+    -- a thin, RNG-consumption-identical wrapper now calls it in a loop,
+    verified zero behavior change. Exposes per-side per-round damage/
+    miss detail (`damage_dealt_to_a`/`_to_b`, `a_attacked`/`b_attacked`)
+    a round-based caller needs to feed disruption checks.
+  - **`resolve_reactive_melee_swing()`**: a new one-directional Melee
+    swing primitive -- the *target* (which has no Encounter Plan of its
+    own, this project's established scoping) swings at a *casting*
+    combatant, who doesn't swing back that round. Models [5.1]'s own
+    "[melee attacks] will always have precedence" as the mechanism that
+    makes disruption possible.
+  - **`turn/challenge_execution.py resolve_challenge_combat()`**: now
+    tracks a real `CombatRange` (starting `SPELL_RANGE`, per [5.0]'s own
+    "Encounters usually begin at spell range"). `SHOOT` closes to
+    `BOW_RANGE` first (one free, RNG-free round via the new `_close_to()`
+    helper) then fires atomically via the unchanged `resolve_fire_arrow_
+    duel()`; **at `MELEE_RANGE`, `SHOOT` is ignored outright** ("In the
+    melee zone, only spells or hand-to-hand attacks"). `CAST` never needs
+    to close range (spells are usable at every range); **at `MELEE_
+    RANGE` specifically**, the target's reactive swing
+    (`resolve_reactive_melee_swing()`) runs *before* the cast is even
+    attempted -- a landed hit rolls the damage-scaled formula, a miss
+    rolls the flat-30% one, and a disrupted cast never reaches `_resolve_
+    personal_combat_cast()` at all ("the caster loses a turn" = the
+    tactic consumed with no effect, the same outcome a failed cast-
+    chance roll already produces). Disruption is deliberately **not**
+    checked at `SPELL_RANGE`/`BOW_RANGE` (the target has no reciprocal
+    Fire Arrow of its own modeled here -- an established, narrower scope
+    boundary, not an oversight).
+  - **`MELEE`'s own atomicity now depends on its position in the plan**:
+    the *last* tactic (or the only one -- every real caller and pre-
+    Phase-292 test's own shape) still fights the full atomic `resolve_
+    melee_duel()` to its own conclusion in one call, unchanged. A `MELEE`
+    tactic followed by more tactics -- the shape a plan needs to
+    genuinely interleave "swing this round, cast next round" (the
+    Marzials/Ablamor worked example's own "mutual Melee exchanges"
+    interrupted by disrupted casts) -- now fights only **one round**
+    (`resolve_one_melee_round()`) before falling through, letting a
+    following `CAST` genuinely see `current_range is MELEE_RANGE`. An
+    exhausted tactic list still defaults to Melee, forcing `current_
+    range` to `MELEE_RANGE` and fighting the same atomic duel to its own
+    conclusion, unchanged from before this phase.
+  - **Out of scope, by explicit user direction**: `turn/search_
+    execution.py`'s own richer tactic set (Steal/Talk/Fulfill/Scout/
+    Use_MI/Beg, interleaved with Cast/Melee/Shoot) is a distinct future
+    phase, not attempted here.
+  - Non-breaking: full suite passed unchanged before any new tests were
+    added at each step (the `resolve_one_melee_round()` extraction, then
+    the range-engine rewrite) -- every real caller and test today only
+    ever orders `MELEE` last, so the new one-round path is exercised only
+    by genuinely new plan shapes -- 3242 -> 3248 -> 3254 passed across the
+    three non-breaking checkpoints.
+  - 6 new tests in `test_encounter.py` for `resolve_one_melee_round()`/
+    `MeleeRoundOutcome` (no-death both-sides-damage, a recorded miss, a
+    dead defender never swinging back, regeneration only when nobody
+    died, and RNG-identical parity against the atomic `resolve_melee_
+    duel()`), plus rewritten disruption-formula tests (`test_encounter.
+    py`, 231 total in that file); 10 new tests in `test_challenge_
+    execution.py` for the range engine itself (`_close_to()`'s own one-
+    tier-at-a-time/never-widens behavior, last-vs-non-last `MELEE`
+    atomicity, `SHOOT` ignored at melee range, both disruption triggers,
+    a lethal reactive swing ending combat immediately, and `CAST` at
+    `SPELL_RANGE` never checking disruption) -- 3264 passed total.
 
 ## Setup
 
