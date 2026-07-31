@@ -238,6 +238,16 @@ recorded turn reads as 0% here, same as anyone else with no history.
 Missing entries for *both* sides default to 0, which
 `exploration_advantage_multiplier(0, 0)` reads as no advantage either
 way -- a neutral, not a guessed, default.
+
+**`LeaderState.is_comatose` (Phase 310)**: Kill_Enemy's own [4.25.2]
+Action-cast alternative to killing the target outright -- see
+`turn/cast_execution.py _execute_kill_enemy()`'s own Phase 310
+addendum for the full sourced quote and design reasoning, and this
+field's own docstring below for exactly what being comatose changes
+(every ability reads 0, Practice is blocked, but every other action
+stays available) and how it's cured (a Resurrection cast, which -- the
+one deliberate divergence from an ordinary dead-Hero revival -- never
+changes `kingdom_id`, even cast by a foreign hero/King).
 """
 
 from __future__ import annotations
@@ -510,6 +520,30 @@ class LeaderState:
     # instead of reusing that convention. None = not currently under a
     # protected Charm.
     analytical_psychology_revert_kingdom_id: int | None = None
+    # Phase 310 (Kill_Enemy [4.25.2]'s coma variant, user-clarified
+    # 2026-07-31): True while this leader is in a deep coma. Every
+    # ability reads 0 for as long as this is set -- see
+    # ``turn/discovery_effects.py effective_skill_level()``'s own
+    # unconditional short-circuit -- covering every real consumer of a
+    # leader's own skill level (Cast success rolls, battle Tactical/
+    # Naval bonuses, Duel commander selection, Merit Points, ...) with
+    # one choke point, without ever mutating the real, underlying
+    # ``skills`` -- there is nothing to "restore" on cure beyond
+    # clearing this flag. ``turn/practice_execution.py`` additionally
+    # gates Practice itself outright (comatose ⇒ cannot raise a skill
+    # through experience, the one consumer that reads ``skills``
+    # directly rather than through ``effective_skill_level()``).
+    # Deliberately does NOT remove the leader from ``state.leaders`` or
+    # block any action -- the user's own clarification: "potrà comunque
+    # fare tutte le azioni (muoversi, reclutare armate eccetera)... come
+    # se fosse su un letto, trasportato dai suoi scudieri" (can still do
+    # every action -- as if lying on a bed, carried by their own
+    # squires). Cleared only by a successful Resurrection cast targeting
+    # this leader (``turn/cast_execution.py _execute_resurrection()``'s
+    # own Phase 310 addendum) -- unlike an ordinary dead-Hero
+    # resurrection, curing a coma never changes ``kingdom_id``, even
+    # when cast by a hero/King of a different kingdom (same source).
+    is_comatose: bool = False
 
 
 @dataclass(slots=True)

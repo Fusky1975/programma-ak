@@ -76,8 +76,19 @@ def effective_skill_level(state: GameState, leader: LeaderState, ability: Abilit
     never recorded, the same placeholder convention every consumer already
     used) plus any ability-bonus Discoveries their kingdom owns, capped at
     ``MAX_SKILL_LEVEL`` -- see module docstring.
+
+    Phase 310: a comatose leader (``LeaderState.is_comatose``, Kill_Enemy's
+    own [4.25.2] coma variant) reads 0 here unconditionally, before
+    ``leader.skills`` or any Discovery bonus is even consulted -- "tutti i
+    suoi Talenti sono ridotti a livello zero" (all his Talents are reduced
+    to level zero), a flat floor, not "0 plus whatever bonuses would
+    otherwise apply." The real stored values are never touched, so nothing
+    needs restoring once the coma is cured -- see that field's own
+    docstring.
     """
 
+    if leader.is_comatose:
+        return 0
     stored = leader.skills.pair_for_ability(ability)[0] if leader.skills is not None else 0
     bonus = ability_bonus_from_discoveries(state, leader, ability)
     return min(MAX_SKILL_LEVEL, stored + bonus)

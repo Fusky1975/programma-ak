@@ -98,3 +98,18 @@ def test_effective_skill_level_caps_at_max_skill_level():
     state.kingdoms[1].discoveries.update({Discovery.LAND_SHIP, Discovery.SCYTHED_CHARIOTS})
 
     assert effective_skill_level(state, leader, Ability.TACTICAL) == MAX_SKILL_LEVEL
+
+
+def test_effective_skill_level_reads_zero_for_a_comatose_leader():
+    # Phase 310: Kill_Enemy's own [4.25.2] coma variant -- "tutti i suoi
+    # Talenti sono ridotti a livello zero" -- a flat floor, not "0 plus
+    # whatever Discovery bonus would otherwise apply."
+    state = make_state()
+    leader = state.leaders[1]
+    leader.skills = skills_with(TACTICAL=MAX_SKILL_LEVEL)
+    state.kingdoms[1].discoveries.update({Discovery.LAND_SHIP, Discovery.SCYTHED_CHARIOTS})
+    leader.is_comatose = True
+
+    assert effective_skill_level(state, leader, Ability.TACTICAL) == 0
+    # The real, stored value is never mutated -- only hidden.
+    assert leader.skills.pair_for_ability(Ability.TACTICAL)[0] == MAX_SKILL_LEVEL

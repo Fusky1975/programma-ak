@@ -13143,7 +13143,7 @@ section.
     in `test_battle_orchestrator.py` reproducing the rulebook's own
     Crack-Garrison worked example) -- 3329 passed total.
 
-- **Phase 309 (current)**: enforces Skeletal Army's own 350-unit world
+- **Phase 309**: enforces Skeletal Army's own 350-unit world
   cap and ~10%/turn graveyard decomposition -- `Regolamento AK.txt`
   [4.2.5] (quoted in full): "Il numero totale di unità militari
   consentito nel gioco (sia viventi che morte) è di 350, perciò dopo le
@@ -13185,6 +13185,84 @@ section.
     untouched, `record_battle_death()`'s monotonic `death_seq`) plus 1
     `test_turn_processor.py` wiring test proving `run_turn()` itself
     triggers the decay -- 3337 passed total.
+
+- **Phase 310 (current)**: closes four Kill_Enemy ([4.25.2]) gaps
+  flagged directly by the user -- the coma variant, the Berserk
+  counterattack on a failed cast, King immunity, and the Special-Place/
+  army-leading-Hero halving. `Regolamento AK.txt` quoted in full: "Se
+  fallisce, la vittima designata attaccherà l'autore dell'incantesimo
+  assumendo per l'occasione un temperamento Berserk... Se viene
+  utilizzato come incantesimo d'Azione può succedere che, invece di
+  morire, la vittima cada in coma profondo... tutti i suoi Talenti sono
+  ridotti a livello zero, ma possono essere ripristinati con un
+  incantesimo di Resurrezione... la possibilità di riuscita è ridotta
+  alla metà in un incontro in un Luogo Speciale o contro un Eroe che
+  comanda unità militari... I Re sono immuni a questo incantesimo."
+  - **King immunity** and the **halving** (either a Special Place
+    feature at the shared province, or the target leading an army) are
+    both checked in `_execute_kill_enemy()`; the halving is passed into
+    `_roll_cast_success()`'s new `success_chance_multiplier` param
+    (default 1.0, every pre-Phase-310 caller unaffected), applied
+    before the 95% cap at the same point the Pagan bonus already is.
+    The rulebook's other named halving trigger -- casting at a monster
+    guarding a Special Place -- is documented as structurally
+    unreachable here: this project's Kill_Enemy only ever targets a
+    `LeaderState` (never a Monster), the same "Action-cast only, no
+    Individual-Combat dispatch path" gap the coma reasoning below also
+    rests on.
+  - **Coma**: since this project's Kill_Enemy is *only* ever cast as an
+    Action spell, a success now always sets `LeaderState.is_comatose =
+    True` instead of removing the leader -- no percentage for "può
+    succedere" is sourced anywhere (English `RULES.AK` omits the coma
+    variant entirely), so this reads the Action-cast success as always
+    producing it, a documented judgment call. `is_comatose` (new field)
+    makes `turn/discovery_effects.py effective_skill_level()` read 0
+    unconditionally for that leader -- one choke point covering every
+    real consumer (Cast rolls, Tactical/Naval combat bonus, Duel
+    selection, Merit Points, ...) -- without ever mutating the real
+    `skills`, so nothing needs restoring on cure.
+    `turn/practice_execution.py` additionally gates Practice itself
+    outright for a comatose leader (the one consumer that reads
+    `skills` directly, bypassing `effective_skill_level()`) --
+    `Ability.TACTICAL` stays unaffected, since training the leader's
+    own armies doesn't depend on the leader's own ability. The
+    comatose leader is never removed from `state.leaders` and no
+    action is blocked -- per the user's own clarification, "potrà
+    comunque fare tutte le azioni... come se fosse su un letto,
+    trasportato dai suoi scudieri."
+  - **Berserk counterattack**: on a failed cast, a real, immediate
+    `resolve_melee_duel()` between the target (temper forced to
+    `Temper.BERSERK` "for the occasion" -- their own recorded
+    `LeaderState.temper` is untouched) and the caster (their own real
+    temper) -- "quella stessa fase" read as resolving inline, not
+    deferred. Whoever loses is removed via `state.remove_leader()`,
+    the same convention `turn/challenge_execution.py` already
+    established for personal-combat winners/losers.
+    `CastExecutionResult.kill_enemy_berserk_winner` (new field) records
+    which side won, for a caller that wants to narrate it.
+  - **Resurrection cures a coma too** ([4.25.2]: "possono essere
+    ripristinati con un incantesimo di Resurrezione"), a new branch in
+    `_execute_resurrection()` checked before the Royal-Heir case: a
+    living, `is_comatose` target clears the flag on success and --
+    the one deliberate divergence from an ordinary dead-Hero revival,
+    per the user's own 2026-07-31 clarification -- never changes
+    `kingdom_id`, even cast by a hero/King of another kingdom. No
+    skill-restoration logic exists because the real values were never
+    touched.
+  - 9 pre-existing tests updated -- already-passing tests whose
+    Kill_Enemy examples now exercise the new Berserk/coma paths: 2 rewritten to assert
+    `is_comatose` instead of removal, 2 switched from Kill_Enemy to
+    Charm (their own 95%-cap/Pagan-bonus generic tests would otherwise
+    trip the new Berserk RNG consumption), 2 in `test_use_mi_execution.py`
+    updated for the wand-cast coma outcome, 1 given an explicit
+    `is_comatose is False` assertion (Hidden Tattoos).
+  - 13 new tests: `test_discovery_effects.py` (1 -- comatose reads 0,
+    real value untouched), `test_practice_execution.py` (2 -- Practice
+    blocked while comatose, Tactical still works), `test_cast_execution.py`
+    (10 -- King immunity, both halving triggers plus a full-chance
+    control, both Berserk-counterattack outcomes via seeded real RNG
+    since the Furia bonus-HP roll isn't ScriptedRandom-friendly, and 4
+    Resurrection-cures-a-coma cases) -- 3350 passed total.
 
 ## Setup
 

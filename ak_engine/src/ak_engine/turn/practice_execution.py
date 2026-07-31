@@ -532,6 +532,18 @@ def execute_practice(
         return PracticeExecutionResult(ability=ability, trained_army_ids=trained_army_ids)
 
     leader: LeaderState = state.leaders[leader_id]
+    if leader.is_comatose:
+        # Phase 310: Kill_Enemy's own coma variant ([4.25.2]) -- "non
+        # potrà aumentare i talenti con l'esperienza" (cannot raise
+        # Talents through experience). Only this direct-storage-read
+        # path needs an explicit gate: every other skill-dependent
+        # consumer already reads 0 through ``effective_skill_level()``'s
+        # own comatose short-circuit -- see LeaderState.is_comatose's
+        # own docstring. Ability.TACTICAL never reaches this branch (it
+        # returns above), and rightly so -- training the leader's own
+        # *armies* doesn't depend on the leader's own ability.
+        return PracticeExecutionResult(ability=ability)
+
     skills = _get_or_create_skills(leader)
 
     current_skill, aptitude = skills.pair_for_ability(ability)
@@ -622,6 +634,16 @@ def execute_practice_group(
 
     results = []
     for leader_id, table, outcome in zip(leader_ids, skills_tables, outcomes):
+        if state.leaders[leader_id].is_comatose:
+            # Phase 310: same comatose gate as execute_practice()'s own --
+            # this leader's own real stored skill/aptitude never changes,
+            # regardless of what resolve_practice_group() computed for
+            # them; the other co-practicers' own outcomes are unaffected
+            # (a documented, unsourced choice -- nothing in [3.13] covers
+            # a comatose participant, and there's no reason a partner's
+            # own experience should suffer for it).
+            results.append(PracticeExecutionResult(ability=ability))
+            continue
         table.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
         if outcome.skill_rose or outcome.aptitude_rose:
             # Phase 259: same is_royal_heir-clearing rule as execute_practice()'s own.

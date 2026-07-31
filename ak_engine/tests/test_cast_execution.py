@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from ak_engine.models.alignment import Alignment
@@ -199,7 +201,10 @@ def test_charm_non_undead_caster_still_uses_psychic():
     assert result.applied is True
 
 
-def test_kill_enemy_removes_a_colocated_target():
+def test_kill_enemy_puts_a_colocated_target_into_a_coma():
+    # Phase 310: this project's Kill_Enemy is only ever cast as an Action
+    # spell -- see _execute_kill_enemy()'s own docstring for why a success
+    # here always produces the Action-cast coma outcome, not death.
     state = build_state()
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
@@ -207,7 +212,8 @@ def test_kill_enemy_removes_a_colocated_target():
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
 
     assert result.applied is True
-    assert 78 not in state.leaders
+    assert 78 in state.leaders  # comatose, not removed
+    assert state.leaders[78].is_comatose is True
 
 
 def test_kill_enemy_fails_when_target_not_colocated():
@@ -245,6 +251,118 @@ def test_kill_enemy_neutralized_by_hidden_tattoos():
     assert result.applied is True
     assert result.discovery_defended is Discovery.HIDDEN_TATTOOS
     assert 78 in state.leaders  # survives
+    assert state.leaders[78].is_comatose is False  # the ward blocks the coma too
+
+
+# ---------------------------------------------------------------------------
+# Kill_Enemy [4.25.2] Phase 310 addendum: King immunity, the Special-Place/
+# army-leading-Hero halving, and the Berserk counterattack on failure
+# ---------------------------------------------------------------------------
+
+
+def test_kill_enemy_fails_outright_against_a_king_no_roll_consumed():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy King", LOCATION, is_king=True))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    rng = ScriptedRandom([])  # no roll, no melee -- King immunity short-circuits first
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "target is a King, immune to Kill Enemy"
+    assert 78 in state.leaders
+    assert state.leaders[78].is_comatose is False
+
+
+def test_kill_enemy_halves_the_chance_against_an_army_leading_hero():
+    # Real, seeded RNG, not ScriptedRandom -- a failed cast here falls
+    # through into the real Berserk-counterattack melee (see the two
+    # dedicated Berserk tests below for why that needs a real RNG, not a
+    # short scripted list). Seed 3's own first roll (~0.238) is under the
+    # un-halved 30% chance but over the halved 15% -- proving the
+    # halving, not just "some roll failed."
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # 30% base, 15% halved
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    state.add_army(ArmyState(201, 2, ArmyType.LEGION, Quality.AVERAGE, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    rng = random.Random(3)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_kill_enemy_halves_the_chance_in_a_special_place_province():
+    # Same seed-3 reasoning as the army-leading-Hero test above.
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # 30% base, 15% halved
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))  # leads no army -- the province alone triggers it
+    state.add_feature(Feature(1, LOCATION, FeatureType.TOWER))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    rng = random.Random(3)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_kill_enemy_full_chance_against_an_unled_hero_in_an_ordinary_province():
+    # Neither halving condition applies -- the same 30% roll that fails
+    # above (halved to 15%) succeeds here at full strength.
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    rng = ScriptedRandom([0.20])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.leaders[78].is_comatose is True
+
+
+def test_kill_enemy_berserk_counterattack_kills_the_caster_on_a_failed_cast():
+    # Real, seeded RNG rather than ScriptedRandom -- the Berserk temper's
+    # own Furia bonus-hit-points roll (turn/encounter.py
+    # berserk_fury_bonus_hit_points()) goes through rng.randint(), which
+    # ScriptedRandom doesn't intercept (same reason test_encounter.py's
+    # own apply_temper_melee_setup tests use random.Random(0), not
+    # ScriptedRandom). Seed 0 empirically produces a real cast failure
+    # followed by the retaliating target winning the melee.
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # 30% chance
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    rng = random.Random(0)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+    assert result.kill_enemy_berserk_winner == "b"
+    assert CASTER_ID not in state.leaders  # the caster died to the retaliation
+    assert 78 in state.leaders  # the Berserk retaliator survived
+
+
+def test_kill_enemy_berserk_counterattack_caster_survives_and_kills_the_retaliator():
+    # Same reasoning as above -- seed 10 empirically produces a real cast
+    # failure followed by the caster winning the melee instead.
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # 30% chance
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    rng = random.Random(10)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+    assert result.kill_enemy_berserk_winner == "a"
+    assert CASTER_ID in state.leaders  # the caster survived
+    assert 78 not in state.leaders  # the Berserk retaliator died
 
 
 def test_charm_succeeds_on_a_real_roll_under_the_casters_chance():
@@ -298,7 +416,7 @@ def test_kill_enemy_success_roll_uses_necromancy_skill():
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
     assert result.applied is True
-    assert 78 not in state.leaders
+    assert state.leaders[78].is_comatose is True
 
 
 def test_cast_always_succeeds_when_caster_has_no_skills_recorded():
@@ -381,6 +499,72 @@ def test_resurrection_fails_when_dead_leader_died_elsewhere():
     assert state.leaders[CASTER_ID].merit_tally.resurrection_bless_casts == 0  # no cast on failure
     assert result.reason == "not co-located"
     assert 78 in state.dead_leaders  # untouched
+
+
+# ---------------------------------------------------------------------------
+# Resurrection curing a Kill_Enemy coma (Phase 310) -- [4.25.2]
+# ---------------------------------------------------------------------------
+
+
+def test_resurrection_cures_a_coma_and_keeps_the_original_kingdom():
+    # User-clarified 2026-07-31: unlike an ordinary dead-Hero revival,
+    # curing a coma never changes kingdom_id, even cast by a foreign
+    # hero/King -- the comatose leader stays a co-located, living
+    # LeaderState the whole time, never entering dead_leaders.
+    state = build_state()
+    comatose = LeaderState(78, 2, "Comatose Hero", LOCATION, is_comatose=True)
+    state.add_leader(comatose)
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    # CASTER_ID belongs to kingdom 1, the comatose Hero to kingdom 2.
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[78] is comatose  # same object, never removed/replaced
+    assert state.leaders[78].is_comatose is False
+    assert state.leaders[78].kingdom_id == 2  # unchanged, despite a kingdom-1 caster
+    assert state.leaders[CASTER_ID].merit_tally.resurrection_bless_casts == 1
+
+
+def test_resurrection_does_not_cure_a_coma_when_not_co_located():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Comatose Hero", ELSEWHERE, is_comatose=True))
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "not co-located"
+    assert state.leaders[78].is_comatose is True  # untouched
+    assert state.leaders[CASTER_ID].merit_tally.resurrection_bless_casts == 0
+
+
+def test_resurrection_does_not_cure_a_coma_on_a_failed_roll():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 1)  # 30% chance
+    state.add_leader(LeaderState(78, 2, "Comatose Hero", LOCATION, is_comatose=True))
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+    rng = ScriptedRandom([0.99])  # over 30%
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+    assert state.leaders[78].is_comatose is True
+
+
+def test_resurrection_coma_cure_does_not_restore_the_real_stored_skills_it_never_touched():
+    # No "restoration" logic exists because the real values were never
+    # mutated -- clearing is_comatose alone un-hides them everywhere
+    # effective_skill_level() reads them (see that field's own docstring).
+    state = build_state()
+    comatose = LeaderState(78, 2, "Comatose Hero", LOCATION, is_comatose=True, skills=_skills_with(Ability.MELEE, 4))
+    state.add_leader(comatose)
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert state.leaders[78].skills.pair_for_ability(Ability.MELEE) == (4, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -1357,17 +1541,20 @@ def test_action_spell_chance_caps_at_95_percent_even_at_high_skill_level():
 def test_action_spell_can_fail_above_the_95_percent_cap_at_high_skill_level():
     # Before Phase 192 this roll would have always succeeded (uncapped
     # chance was 165%, and rng.random() never reaches 1.0).
+    # Charm, not Kill_Enemy, so a failed roll here stays a plain failure
+    # -- Kill_Enemy's own Phase 310 Berserk-counterattack-on-failure
+    # would consume extra RNG this test isn't scripting.
     state = build_state()
-    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 10)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 10)
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
-    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    request = CastRequest(spell=Spell.CHARM, target=78)
     rng = ScriptedRandom([0.96])  # over the 95% cap
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
     assert result.applied is False
     assert result.reason == "spell failed"
-    assert 78 in state.leaders  # untouched
+    assert state.leaders[78].kingdom_id == 2  # untouched
 
 
 def test_pagan_kingdom_caster_gets_a_10_percent_spell_cast_bonus():
@@ -1385,11 +1572,13 @@ def test_pagan_kingdom_caster_gets_a_10_percent_spell_cast_bonus():
 
 
 def test_non_pagan_kingdom_caster_gets_no_bonus_at_the_same_roll():
+    # Charm, not Kill_Enemy -- see the 95%-cap test above's own note on
+    # why a spell whose failure has no side effect is used here.
     state = build_state()
     assert state.kingdoms[1].alignment is Alignment.GOOD
-    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 1)
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
-    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    request = CastRequest(spell=Spell.CHARM, target=78)
     rng = ScriptedRandom([0.35])  # over the un-bonused 30% base chance
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)

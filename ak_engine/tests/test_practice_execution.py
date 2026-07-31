@@ -230,6 +230,35 @@ def test_execute_practice_reuses_and_only_touches_the_practiced_abilitys_pair():
     assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (3, 5)
 
 
+def test_execute_practice_blocked_while_comatose():
+    # Phase 310: Kill_Enemy's own coma variant ([4.25.2]) -- "non potrà
+    # aumentare i talenti con l'esperienza."
+    raw = [0] * 30
+    raw[Ability.SAGE.value * 2] = 3
+    state = _state_with_leader(skills=SkillTable(raw))
+    state.leaders[1].is_comatose = True
+
+    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([]))
+
+    assert result.skill_rose is False
+    assert result.aptitude_rose is False
+    # The real stored pair is untouched.
+    assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (3, 0)
+
+
+def test_execute_practice_tactical_still_works_while_comatose():
+    # Training the leader's own *armies* doesn't depend on the leader's
+    # own ability -- only raising the leader's own Talents is blocked.
+    state = _state_with_leader(skills=None)
+    state.leaders[1].is_comatose = True
+    state.add_army(ArmyState(101, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=1))
+    state.add_army(ArmyState(102, 1, ArmyType.LEGION, Quality.CRACK, LOCATION, commanded_by=1))
+
+    result = execute_practice(state, leader_id=1, ability=Ability.TACTICAL, rng=ScriptedRandom([0.01]))
+
+    assert result.trained_army_ids == (101,)
+
+
 def test_execute_practice_tactical_does_not_touch_personal_skill():
     state = _state_with_leader(skills=None)
 

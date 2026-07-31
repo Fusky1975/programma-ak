@@ -82,7 +82,10 @@ def test_execute_use_mi_wand_casts_the_mapped_spell():
     assert result.applied is True
     assert result.cast_result is not None
     assert result.cast_result.request.spell is Spell.KILL_ENEMY
-    assert 78 not in state.leaders
+    # Phase 310: this project's Kill_Enemy always puts a successful
+    # Action-cast target into a coma rather than killing them outright.
+    assert 78 in state.leaders
+    assert state.leaders[78].is_comatose is True
 
 
 def test_execute_use_mi_wand_bypasses_the_success_roll_even_with_no_recorded_skill():
@@ -103,7 +106,7 @@ def test_execute_use_mi_wand_bypasses_the_success_roll_even_with_no_recorded_ski
     result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request, rng=rng)
 
     assert result.applied is True
-    assert 78 not in state.leaders
+    assert state.leaders[78].is_comatose is True
 
 
 def test_execute_use_mi_wand_uses_skill_level_2_regardless_of_casters_real_level():

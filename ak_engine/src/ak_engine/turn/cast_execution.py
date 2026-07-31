@@ -657,9 +657,11 @@ from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import HUMANOID_RACES, Race
+from ak_engine.models.temper import Temper
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, is_adjacent
 
@@ -781,6 +783,12 @@ class CastExecutionResult:
     # cast/resolved), this only flags that its outcome isn't the base,
     # un-defended one.
     discovery_defended: Discovery | None = None
+    # Phase 310: Kill_Enemy's own [4.25.2] Berserk-retaliation-on-
+    # failure -- "a" (caster survived, the retaliating target died in
+    # the melee) / "b" (target survived, the caster died) / None (no
+    # melee -- every spell but a failed Kill_Enemy, or the exhausted-
+    # max_rounds draw). See ``_execute_kill_enemy``'s own docstring.
+    kill_enemy_berserk_winner: str | None = None
 
 
 def execute_cast(
@@ -882,7 +890,13 @@ def _caster_kingdom_is_pagan(state: GameState, caster: LeaderState) -> bool:
 
 
 def _roll_cast_success(
-    state: GameState, caster: LeaderState, spell: Spell, rng: random.Random, wand_skill_level: int | None = None
+    state: GameState,
+    caster: LeaderState,
+    spell: Spell,
+    rng: random.Random,
+    wand_skill_level: int | None = None,
+    *,
+    success_chance_multiplier: float = 1.0,
 ) -> tuple[bool, str | None]:
     """Rulebook [3.10]: 15% + 15%/level, requiring skill >= 1, capped at
     ``ACTION_SPELL_CHANCE_CAP`` (95% -- "Le probabilità di successo per
@@ -894,6 +908,19 @@ def _roll_cast_success(
     docstring for the ``skills is None`` fallback and the
     ``wand_skill_level`` override (rulebook [3.11]: a wand-triggered
     cast is always successful).
+
+    ``success_chance_multiplier`` (default 1.0, every pre-Phase-310
+    caller unaffected): a per-attempt multiplier applied *before* the
+    95% cap, at the same point the Pagan bonus is already added --
+    Kill_Enemy's own [4.25.2] halving ("la possibilità di riuscita è
+    ridotta alla metà in un incontro in un Luogo Speciale o contro un
+    Eroe che comanda unità militari") is the first real caller
+    (``_execute_kill_enemy``). No order between "halve" and "cap at
+    95%" is stated anywhere in the source; applying the halving before
+    the cap (like the Pagan bonus) keeps 95% as the one, final,
+    universal ceiling regardless of any spell-specific modifier, rather
+    than letting a halved-then-uncapped value exceed what a normal cast
+    could ever reach.
     """
 
     if wand_skill_level is not None:
@@ -909,6 +936,7 @@ def _roll_cast_success(
     chance = ACTION_SPELL_BASE_CHANCE + ACTION_SPELL_CHANCE_PER_LEVEL * level
     if ability is not Ability.WHITE and _caster_kingdom_is_pagan(state, caster):
         chance += PAGAN_MAGE_ORDER_BONUS
+    chance *= success_chance_multiplier
     chance = min(chance, ACTION_SPELL_CHANCE_CAP)
     if rng.random() < chance:
         return True, None
@@ -1029,21 +1057,112 @@ def _execute_charm(
     return CastExecutionResult(request, applied=True)
 
 
+def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temper | None) -> Combatant:
+    """Same construction as ``challenge_execution.py _leader_combatant()`` (Phase 50),
+    duplicated rather than shared -- see that function's own docstring for
+    why. ``temper`` is an explicit override, not ``leader.temper``: the
+    Berserk retaliator below fights with a temperament "assumed for the
+    occasion" ([4.25.2]'s own wording), not their own permanently
+    recorded one, so the caller decides what to pass.
+    """
+
+    melee_skill = effective_skill_level(state, leader, Ability.MELEE)
+    archery_skill = effective_skill_level(state, leader, Ability.ARCHERY)
+
+    neutral_bonus = False
+    if leader.kingdom_id is not None:
+        kingdom = state.kingdoms.get(leader.kingdom_id)
+        neutral_bonus = kingdom is not None and kingdom.alignment is Alignment.NEUTRAL
+
+    return Combatant(
+        name=leader.name,
+        hit_points=CHARACTER_HIT_POINTS,
+        melee_skill=melee_skill,
+        archery_skill=archery_skill,
+        neutral_duelist_bonus=neutral_bonus,
+        temper=temper,
+    )
+
+
 def _execute_kill_enemy(
     state: GameState, leader_id: int, request: CastRequest, rng: random.Random, wand_skill_level: int | None = None
 ) -> CastExecutionResult:
-    """Rulebook [4.21.4]: kills the target character outright.
+    """Rulebook [4.25.2] (quoted in full): "il mago costruisce una statuetta
+    dell'avversario di cui desidera la morte, quindi 'uccide' la
+    statuetta... Se l'incantesimo riesce, la vittima viene uccisa nello
+    stesso modo in cui era stata distrutta la statuetta. Se fallisce, la
+    vittima designata attaccherà l'autore dell'incantesimo assumendo per
+    l'occasione un temperamento Berserk, se necessario anche
+    aggredendolo in quella stessa fase. ... la possibilità di riuscita è
+    ridotta alla metà in un incontro in un Luogo Speciale o contro un
+    Eroe che comanda unità militari... I Re sono immuni a questo
+    incantesimo."
+
+    **Phase 310 -- four gaps closed, all sourced from the same passage
+    above (previously undocumented as gaps at all -- Phase 29's own
+    version only ever modeled the base "succeeds -> dies" case)**:
+
+    1. **King immunity** ("I Re sono immuni"): checked before any
+       success roll, the same "check applicability first" order every
+       other precondition here uses.
+    2. **Halved chance** ("ridotta alla metà in un incontro in un Luogo
+       Speciale o contro un Eroe che comanda unità militari"): read as
+       two independent triggers, either one halving the roll --
+       ``state.features_at(caster.location)`` non-empty (a Special
+       Place feature at the shared province, regardless of who's
+       targeted) OR the target leads at least one army
+       (``state.armies_commanded_by``). The rulebook's other named
+       condition for this same clause -- casting at a monster guarding
+       a Special Place -- is structurally unreachable here: this
+       project's Kill_Enemy only ever targets a ``LeaderState``
+       (``cast_decode.py CHARACTER_TARGET_SPELLS``), never a Monster,
+       so that half of the disjunction has no consumer to wire yet.
+       Passed to ``_roll_cast_success`` as ``success_chance_multiplier``.
+    3. **Coma instead of death** ("Se viene utilizzato come incantesimo
+       d'Azione può succedere che, invece di morire, la vittima cada in
+       coma profondo... i suoi Talenti sono ridotti a livello zero, ma
+       possono essere ripristinati con un incantesimo di
+       Resurrezione"): this project's Kill_Enemy is *only* ever cast as
+       an Action spell (via ``ActionCode.CAST`` -- there is no
+       Individual-Combat-mode dispatch path for it anywhere in this
+       project, the same structural gap as point 2's monster case), so
+       a success here always produces the Action-cast outcome. No
+       percentage for "può succedere" ("can happen") is sourced
+       anywhere (English ``RULES.AK`` doesn't mention the coma variant
+       at all), so rather than invent one, a success is read as always
+       producing coma for this project's one real cast path --
+       ``target.is_comatose = True`` (see ``LeaderState.is_comatose``'s
+       own docstring for exactly what that zeroes and how it's cured).
+       The target is never removed from ``state.leaders`` -- a coma
+       victim keeps acting normally, per the user's own 2026-07-31
+       clarification ("potrà comunque fare tutte le azioni").
+    4. **Berserk counterattack on failure**: a real, immediate
+       ``resolve_melee_duel`` between the target (Combatant.temper
+       forced to ``Temper.BERSERK`` "for the occasion" -- their own
+       recorded ``LeaderState.temper`` is never touched) and the caster
+       (their own real temper, ordinary construction) -- "quella stessa
+       fase" (that same phase) read as resolving inline, right here,
+       not deferred to a later phase the way Pursue/Trail's own
+       persistent chases are. Whoever loses is removed via
+       ``state.remove_leader()``, same convention as every other
+       personal-combat winner/loser this project already has
+       (``turn/challenge_execution.py``). ``kill_enemy_berserk_winner``
+       records which side won ("a" caster / "b" target / ``None`` for
+       the vanishingly rare ``max_rounds``-exhausted draw), for a
+       caller that wants to narrate it.
 
     **Hidden Tattoos** (Discovery.txt, Phase 270): "neutralize the Kill
     Enemy spell of Necromancers... All characters of the Kingdom are
     protected. Instead of being killed, the target character will be
     sick for the remainder of the gameturn and will spend his time
     practicing abilities somewhat randomly." Only the confirmed core
-    effect -- the target survives -- is modeled; the "sick, practices
-    randomly" secondary effect has no consumer this project could wire
-    it into without inventing a new sickness/forced-Practice mechanic
-    the source doesn't specify the parameters of (same "don't guess"
-    convention as Flood's own unmodeled land-units-trapped clause).
+    effect -- the target survives (now: doesn't fall comatose either,
+    reusing the same ward for the Phase 310 coma outcome) -- is
+    modeled; the "sick, practices randomly" secondary effect has no
+    consumer this project could wire it into without inventing a new
+    sickness/forced-Practice mechanic the source doesn't specify the
+    parameters of (same "don't guess" convention as Flood's own
+    unmodeled land-units-trapped clause).
     """
 
     caster = state.leaders[leader_id]
@@ -1052,15 +1171,30 @@ def _execute_kill_enemy(
         return CastExecutionResult(request, applied=False, reason="target character not found")
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
+    if target.is_king:
+        return CastExecutionResult(request, applied=False, reason="target is a King, immune to Kill Enemy")
 
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    halving_applies = bool(state.features_at(caster.location)) or bool(state.armies_commanded_by(target.leader_id))
+    multiplier = 0.5 if halving_applies else 1.0
+    succeeded, reason = _roll_cast_success(
+        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=multiplier
+    )
     if not succeeded:
+        caster_combatant = _kill_enemy_combatant(state, caster, temper=caster.temper)
+        target_combatant = _kill_enemy_combatant(state, target, temper=Temper.BERSERK)
+        combat_result = resolve_melee_duel(caster_combatant, target_combatant, rng)
+        if combat_result.winner == "a":  # caster survived the Berserk retaliation
+            state.remove_leader(request.target)
+            return CastExecutionResult(request, applied=False, reason=reason, kill_enemy_berserk_winner="a")
+        if combat_result.winner == "b":  # the retaliating target killed the caster
+            state.remove_leader(leader_id)
+            return CastExecutionResult(request, applied=False, reason=reason, kill_enemy_berserk_winner="b")
         return CastExecutionResult(request, applied=False, reason=reason)
 
     if target.kingdom_id is not None and Discovery.HIDDEN_TATTOOS in state.kingdoms[target.kingdom_id].discoveries:
         return CastExecutionResult(request, applied=True, discovery_defended=Discovery.HIDDEN_TATTOOS)
 
-    state.remove_leader(request.target)
+    target.is_comatose = True
     return CastExecutionResult(request, applied=True)
 
 
@@ -1098,9 +1232,39 @@ def _execute_resurrection(
     ``turn/merit_points.py``'s own "Gran Sacerdote / Priest" section for
     the +1-per-cast formula this feeds, previously never incremented by
     any consumer.
+
+    **Phase 310 -- curing a Kill_Enemy coma is also a Resurrection cast**
+    ([4.25.2]: "[i Talenti] possono essere ripristinati con un
+    incantesimo di Resurrezione"), checked first, before the Royal-Heir
+    branch below: ``request.target`` resolving to a *living*,
+    ``is_comatose`` ``LeaderState`` clears the flag on success and
+    stops there -- unlike every other branch here, ``target.kingdom_id``
+    is deliberately left untouched. The user's own 2026-07-31
+    clarification: "Se l'incantesimo viene lanciato da un eroe o un RE
+    di un altro reame, l'eroe in coma torna normale ma non cambia
+    reame" (if cast by a hero or King of another kingdom, the comatose
+    hero returns to normal but doesn't change kingdom) -- the one
+    explicit way this project's Resurrection now differs from its own
+    base "joins the service of the Kingdom that resurrected him" rule
+    quoted above. No skill restoration logic is needed: comatose
+    ``LeaderState.skills`` was never mutated in the first place (see
+    that field's own docstring) -- clearing the flag alone un-hides the
+    real, untouched values everywhere ``effective_skill_level()`` reads
+    them.
     """
 
     caster = state.leaders[leader_id]
+
+    comatose_target = state.leaders.get(request.target)
+    if comatose_target is not None and comatose_target.is_comatose:
+        if comatose_target.location != caster.location:
+            return CastExecutionResult(request, applied=False, reason="not co-located")
+        succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+        if not succeeded:
+            return CastExecutionResult(request, applied=False, reason=reason)
+        comatose_target.is_comatose = False
+        caster.merit_tally.resurrection_bless_casts += 1
+        return CastExecutionResult(request, applied=True)
 
     heir = state.leaders.get(request.target)
     if heir is not None and heir.is_royal_heir:
