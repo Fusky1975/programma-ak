@@ -1788,7 +1788,10 @@ def _execute_skeletal_army(
     army-state marker (`turn/army_naming.py`'s own docstring), driving
     the " Skel " tag in the real Army List table's own name column. The
     global 350-unit world cap and ~10%/turn decomposition past it are
-    unenforced -- see ``GameState.battle_graveyard``'s own docstring.
+    now enforced -- see ``turn/skeletal_decay.py decompose_graveyard()``
+    (Phase 309) and ``GameState.battle_graveyard``'s own docstring. That
+    decay only ever removes graveyard entries (dead, not yet raised);
+    it never touches an army this function has already raised.
     """
 
     caster = state.leaders[leader_id]

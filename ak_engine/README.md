@@ -13096,7 +13096,7 @@ section.
     March-4 skill from `state.leaders`, not a hardcoded default) --
     3323 passed total.
 
-- **Phase 308 (current)**: replaces `turn/merit_points.py`'s flat
+- **Phase 308**: replaces `turn/merit_points.py`'s flat
   +1-per-unit/-1-per-unit Gran Maresciallo (Marshal) and Grande
   Ammiraglio (Admiral) battle scoring with `Regolamento AK.txt`'s own
   "NUOVE REGOLE E MODIFICHE" quality table -- requested directly, after
@@ -13142,6 +13142,49 @@ section.
     `test_record_battle_merit_applies_the_attacking_garrison_modifier`
     in `test_battle_orchestrator.py` reproducing the rulebook's own
     Crack-Garrison worked example) -- 3329 passed total.
+
+- **Phase 309 (current)**: enforces Skeletal Army's own 350-unit world
+  cap and ~10%/turn graveyard decomposition -- `Regolamento AK.txt`
+  [4.2.5] (quoted in full): "Il numero totale di unità militari
+  consentito nel gioco (sia viventi che morte) è di 350, perciò dopo le
+  prime fasi, a ogni turno un 10% circa delle unità distrutte in
+  precedenza è destinato alla decomposizione. Quando si supera il
+  limite di 350, le unità distrutte da più lungo tempo si decompongono
+  automaticamente." `turn/cast_execution.py _execute_skeletal_army()`'s
+  own docstring had explicitly flagged this half of the rule as
+  unenforced since Phase 60.
+  - New `turn/skeletal_decay.py`: `WORLD_UNIT_CAP = 350`,
+    `GRAVEYARD_DECAY_FRACTION = 0.10`, `decompose_graveyard()`. Gate:
+    only once `len(state.armies) + total graveyard entries` exceeds 350
+    (the more literal of the rulebook's own two sentences). Rate:
+    `round(graveyard_size * 0.10)` -- the same "`round()` for an
+    approximate rulebook percentage" precedent `turn/spy_table.py`
+    already established; no invented minimum-of-1 floor, so a small
+    graveyard can round to 0 removed even while over cap. Priority:
+    oldest-destroyed first.
+  - **User-clarified scope, not guessed**: only `battle_graveyard`
+    entries (destroyed armies, not yet raised) ever decompose -- an
+    already-risen Skeletal Army (a real, live `ArmyState` with
+    `is_skeletal=True`) never decomposes via this mechanic, commanded
+    or not, since it's alive, not a graveyard entry. `decompose_
+    graveyard()` never touches `state.armies`.
+  - `GraveyardEntry.death_seq` (new field, defaults to 0) and
+    `GameState.graveyard_death_counter` close the "entries aren't
+    turn-stamped" gap `GraveyardEntry`'s own Phase 60 note flagged --
+    a monotonic insertion-order counter, not a real turn number, just
+    precise enough to answer "which died longest ago."
+    `record_battle_death()` now stamps it.
+  - Wired once per game turn, at the same end-of-`run_turn()` point
+    `turn/turn_processor.py`'s own Gate Angel visit and Analytical
+    Psychology revert already run -- the one unambiguous "once per
+    turn" boundary this phase-by-phase loop offers.
+  - 8 new tests: `test_skeletal_decay.py` (7 -- under-cap no-op,
+    oldest-first removal, cross-province global ordering, an emptied
+    province key getting deleted, rounding down to 0 for a small
+    graveyard, live armies including a commanded Skeletal Army staying
+    untouched, `record_battle_death()`'s monotonic `death_seq`) plus 1
+    `test_turn_processor.py` wiring test proving `run_turn()` itself
+    triggers the decay -- 3337 passed total.
 
 ## Setup
 

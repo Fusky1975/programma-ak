@@ -190,6 +190,27 @@ soft world-balance rule this project doesn't enforce (would need a
 live global army count and a turn-scheduled decay pass, out of scope
 for spell execution).
 
+**Phase 309 addendum -- the 350-cap decay above is now enforced.**
+`Regolamento AK.txt` [4.2.5] (quoted in full): "Il numero totale di
+unità militari consentito nel gioco (sia viventi che morte) è di 350,
+perciò dopo le prime fasi, a ogni turno un 10% circa delle unità
+distrutte in precedenza è destinato alla decomposizione. Quando si
+supera il limite di 350, le unità distrutte da più lungo tempo si
+decompongono automaticamente." `turn/skeletal_decay.py
+decompose_graveyard()` implements this: the world total is `len(state.
+armies)` ("viventi" -- every currently-live army, including an already-
+risen, still-commanded Skeletal Army, see that module's own docstring
+for why a risen army never itself decomposes) plus every
+`battle_graveyard` entry ("morte" -- destroyed, not yet raised); once
+that total exceeds 350, roughly 10% of the graveyard's own entries
+decompose (removed permanently, no longer raisable), oldest-destroyed
+first. `GraveyardEntry.death_seq` (new field below) and
+`GameState.graveyard_death_counter` close the "entries aren't turn-
+stamped" gap noted above -- not a real turn number, just a monotonic
+insertion-order counter, exactly enough to answer "which of these died
+longest ago" without inventing a broader turn-history log this project
+doesn't otherwise keep.
+
 **``ProvinceState.explored_percent_by_kingdom`` (Phase 69)**: `RULES.AK`'s
 [6.3] "ARMY STRENGTH NOTES" (quoted in full): "The side with the better
 exploration of the contested province will also have up to a 25%
@@ -632,6 +653,13 @@ class GraveyardEntry:
     army_type: ArmyType
     quality: Quality  # rank at time of death
     kingdom_id: int | None  # who owned it -- reference only, not read by any consumer yet
+    # Phase 309: monotonic insertion order, assigned by GameState.record_
+    # battle_death() from GameState.graveyard_death_counter -- not a real
+    # turn number (see module docstring's Phase 309 addendum), just
+    # enough to answer turn/skeletal_decay.py's "which died longest ago."
+    # Defaults to 0 so pre-existing direct-construction call sites (tests
+    # that don't care about decay ordering) keep working unchanged.
+    death_seq: int = 0
 
 
 @dataclass(slots=True)
@@ -665,6 +693,9 @@ class GameState:
     dead_leaders: dict[int, LeaderState] = field(default_factory=dict)
     # Battle deaths only (Phase 60) -- see module docstring.
     battle_graveyard: dict[HexCoord, list[GraveyardEntry]] = field(default_factory=dict)
+    # Phase 309: next GraveyardEntry.death_seq to hand out -- see module
+    # docstring's Phase 309 addendum. Monotonic, never reset.
+    graveyard_death_counter: int = 0
     allied_kingdoms: set[frozenset[int]] = field(default_factory=set)
     # Phase 261: RULES.AK [3.4] "In order for you to Recruit in your
     # ally's territory, he MUST issue a 'Treat' order with you (even
@@ -765,9 +796,15 @@ class GameState:
     def record_battle_death(self, coord: HexCoord, army_type: ArmyType, quality: Quality, kingdom_id: int | None) -> None:
         """Appends one ``GraveyardEntry`` for a genuine battle death at ``coord`` -- see
         module docstring for exactly which destruction sites call this.
+        Stamps ``death_seq`` from ``graveyard_death_counter`` (Phase 309)
+        so ``turn/skeletal_decay.py`` can later tell which entries died
+        longest ago, then advances the counter.
         """
 
-        self.battle_graveyard.setdefault(coord, []).append(GraveyardEntry(army_type, quality, kingdom_id))
+        self.battle_graveyard.setdefault(coord, []).append(
+            GraveyardEntry(army_type, quality, kingdom_id, death_seq=self.graveyard_death_counter)
+        )
+        self.graveyard_death_counter += 1
 
     def remove_leader(self, leader_id: int) -> None:
         """Removes a leader from play, archiving it into ``dead_leaders`` (Phase 59) so a

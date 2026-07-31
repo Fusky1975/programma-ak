@@ -1444,3 +1444,25 @@ def test_run_turn_does_not_revert_an_ordinary_unprotected_charm():
     cast_result = next(r for r in results if r.leader_id == 10 and r.phase_label == "P0")
     assert cast_result.result.applied is True
     assert state.leaders[78].kingdom_id == 1  # stays charmed -- no protection, no revert
+
+
+def test_run_turn_decomposes_the_graveyard_once_at_turn_end_when_over_the_world_cap():
+    # Phase 309: turn/skeletal_decay.py decompose_graveyard() runs once,
+    # after every phase, alongside _revert_analytical_psychology_charms
+    # -- see run_turn()'s own docstring. A trivial single-WAIT-phase plan
+    # is enough to exercise the end-of-run_turn() housekeeping sweep.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=HexCoord(0, 0)))
+    for _ in range(340):
+        state.add_army(ArmyState(state.new_army_id(), 1, ArmyType.HVY_CAVALRY, Quality.AVERAGE, HexCoord(0, 0)))
+    for _ in range(20):
+        state.record_battle_death(HexCoord(1, 1), ArmyType.HVY_CAVALRY, Quality.AVERAGE, kingdom_id=1)
+    # 340 + 20 = 360 > 350 -- decay should remove round(20 * 0.10) == 2.
+
+    p0 = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    leader = Leader(10, "A", ActionPlan(10, [PlanSegment(0, 1, (), {"P0": p0})]))
+
+    run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH)
+
+    assert len(state.battle_graveyard[HexCoord(1, 1)]) == 18

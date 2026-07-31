@@ -250,6 +250,7 @@ from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import execute_practice_group
 from ak_engine.turn.patrol_execution import execute_patrol
 from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue
+from ak_engine.turn.skeletal_decay import decompose_graveyard
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail
 from ak_engine.turn.valhalla_execution import finalize_gate_angel_visit
@@ -318,6 +319,15 @@ def run_turn(
     this enables and everything explicitly still out of scope. Never
     raises on its own (mirrors ``run_leader_plan``'s own convention) --
     a failing phase is recorded with ``error`` set, dispatch continues.
+
+    Ends with two bare, unsurfaced once-per-turn housekeeping calls (no
+    ``PhaseDispatchResult`` recorded for either, same as each other):
+    ``_revert_analytical_psychology_charms`` and, as of Phase 309,
+    ``turn/skeletal_decay.py decompose_graveyard()`` -- the world-wide
+    350-unit-cap graveyard decay. One call to ``run_turn()`` is the one
+    unambiguous "once per game turn" boundary this phase-by-phase loop
+    offers; see that module's own docstring for why the decay lives
+    there rather than per-phase.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -505,6 +515,7 @@ def run_turn(
         )
 
     _revert_analytical_psychology_charms(state)
+    decompose_graveyard(state)
 
     return results
 
