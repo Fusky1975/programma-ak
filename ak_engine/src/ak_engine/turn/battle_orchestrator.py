@@ -1330,16 +1330,30 @@ def fight_multi_attacker_battle(
     [7.8] text doesn't say how several simultaneous, unrelated
     invasions of the same province are meant to interact once one of
     them has already resolved -- a documented, unsourced-but-reasonable
-    design choice, the same category as this function's own
-    ``SAME_ORIGIN_UNITE_CHANCE``/``DIFFERENT_ORIGIN_UNITE_CHANCE``
-    constants (``multiple_contingents.py``).
+    design choice (unlike ``multiple_contingents.py``'s own union-chance
+    formula, which is real, sourced MARCH TABLE data as of Phase 307).
     """
 
     rng = rng if rng is not None else random.Random()
     if not parties:
         raise ValueError("no attacking parties given")
 
-    attackers = [Attacker(leader_id=p.leader_id, kingdom_id=p.kingdom_id, origin_province=p.origin_province) for p in parties]
+    # Phase 307: each party's own real March skill drives its own chance
+    # of uniting with another group (`multiple_contingents.py`'s own
+    # MARCH TABLE) -- 0 (the table's own floor) for a party whose leader
+    # isn't recorded in `state.leaders`, the same permissive-missing-data
+    # convention used throughout this project.
+    attackers = [
+        Attacker(
+            leader_id=p.leader_id,
+            kingdom_id=p.kingdom_id,
+            origin_province=p.origin_province,
+            march_level=effective_skill_level(state, state.leaders[p.leader_id], Ability.MARCH)
+            if p.leader_id in state.leaders
+            else 0,
+        )
+        for p in parties
+    ]
     groups = group_attackers_into_battles(attackers, state.allied_kingdoms, rng)
     parties_by_leader = {p.leader_id: p for p in parties}
 

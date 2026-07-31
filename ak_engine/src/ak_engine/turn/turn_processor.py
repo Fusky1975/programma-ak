@@ -177,9 +177,10 @@ already read `results` for their own sources.
 - **The partial-exploration side effect** for a united multi-attacker
   move is applied *once* per target province per phase (shared), not
   once per attacker -- the rulebook doesn't say whether simultaneous
-  arrivals compound it; a documented, unsourced design choice, the same
-  category as ``turn/multiple_contingents.py``'s own unite-chance
-  constants.
+  arrivals compound it; a documented, unsourced design choice (unlike
+  ``turn/multiple_contingents.py``'s own unite-chance formula, which is
+  real, sourced MARCH TABLE data as of Phase 307, not an invented
+  constant).
 - **Post-battle bookkeeping (movement cost, army/leader relocation) is
   duplicated from ``turn/move_execution.py execute_move()``**, not
   extracted into a shared helper -- deliberately, to avoid touching the

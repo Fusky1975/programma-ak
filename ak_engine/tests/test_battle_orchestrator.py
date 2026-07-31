@@ -1717,10 +1717,12 @@ def test_fight_multi_attacker_battle_unites_same_origin_attackers():
         MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=origin),
         MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102], origin_province=origin),
     ]
-    # 0.1 < SAME_ORIGIN_UNITE_CHANCE (0.85) -> unites into one battle; the
-    # rest are generic, repeated "safe" rolls so the 2-vs-1 battle that
-    # follows never runs out of scripted values regardless of exactly how
-    # many luck/quality rolls its own resolution consumes.
+    # 0.1 < the MARCH TABLE's own same-origin (distance 0), March-level-0
+    # chance (80%, `multiple_contingents.py march_unite_chance()`, Phase
+    # 307) -> unites into one battle; the rest are generic, repeated
+    # "safe" rolls so the 2-vs-1 battle that follows never runs out of
+    # scripted values regardless of exactly how many luck/quality rolls
+    # its own resolution consumes.
     rng = ScriptedRandom([0.1] + [0.1] * 40, choice_indices=[0] * 40)
 
     battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
@@ -1748,7 +1750,8 @@ def test_fight_multi_attacker_battle_splits_different_origin_attackers():
         MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5)),
         MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102], origin_province=HexCoord(9, 9)),
     ]
-    # 0.99 >= DIFFERENT_ORIGIN_UNITE_CHANCE (0.30) -> stays split into two
+    # 0.99 >= the MARCH TABLE's own beyond-distance-2 (clamped),
+    # March-level-0 chance (20%, Phase 307) -> stays split into two
     # separate battles against the same (overwhelmingly strong, so it
     # survives both) defender.
     rng = ScriptedRandom([0.99] + [0.5] * 40, choice_indices=[0] * 40)
@@ -1757,6 +1760,32 @@ def test_fight_multi_attacker_battle_splits_different_origin_attackers():
 
     assert len(battles) == 2
     assert sorted(battle.leader_ids[0] for battle in battles) == [10, 20]  # each fought its own battle
+
+
+def test_fight_multi_attacker_battle_looks_up_each_leaders_own_march_skill():
+    # Phase 307: the same far-apart origins as the "splits" test above,
+    # but the joining party's own leader now has a real March-4 skill in
+    # `state.leaders` -- proves `fight_multi_attacker_battle()` actually
+    # looks it up (via `effective_skill_level`) rather than always
+    # defaulting `Attacker.march_level` to 0. At distance 2+, level 0 is
+    # 20% and level 4 is 60% -- a 0.5 roll fails the former and succeeds
+    # the latter.
+    state = build_state(attacker_quality=Quality.GREEN, defender_quality=Quality.ELITE)
+    state.armies[201].army_type = ArmyType.HVY_CAVALRY  # overwhelmingly strong defender
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.GREEN, FIELD))
+    state.add_leader(
+        LeaderState(20, kingdom_id=1, name="Marcher", location=HexCoord(9, 9), skills=_skills_with(Ability.MARCH, 4, 9))
+    )
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5)),
+        MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102], origin_province=HexCoord(9, 9)),
+    ]
+    rng = ScriptedRandom([0.5] + [0.5] * 40, choice_indices=[0] * 40)
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 1  # united, thanks to leader 20's own real March-4 skill
+    assert sorted(battles[0].leader_ids) == [10, 20]
 
 
 def test_fight_multi_attacker_battle_claims_province_for_largest_contingent_kingdom():
@@ -1792,7 +1821,8 @@ def test_fight_multi_attacker_battle_second_separate_group_claims_an_already_cle
         MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5)),
         MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102], origin_province=HexCoord(9, 9)),
     ]
-    # 0.99 >= DIFFERENT_ORIGIN_UNITE_CHANCE (0.30) -> stays split into two
+    # 0.99 >= the MARCH TABLE's own beyond-distance-2 (clamped),
+    # March-level-0 chance (20%, Phase 307) -> stays split into two
     # separate battles; the first group's own overwhelming, no-luck rolls
     # (same shape as no_luck_overwhelming_attacker_rng()) clean-sweep the
     # lone defender before the second group's own turn.

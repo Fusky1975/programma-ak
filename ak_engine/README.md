@@ -12999,7 +12999,7 @@ section.
     three capture-combat ranges plus the success/executed fall-through
     cases -- 3314 passed total.
 
-- **Phase 306 (current)**: wires Steal's own narrative text into the
+- **Phase 306**: wires Steal's own narrative text into the
   report layer, plus a correctness fix to Phase 305 found in the course
   of that research -- requested directly ("crea un testo nel report"),
   building on Phase 305's own newly-implemented mechanic.
@@ -13046,6 +13046,55 @@ section.
     `test_challenge_execution.py` rewritten (the old atomic-duel
     assumption no longer holds) plus 1 new test proving the worked
     -example flow end-to-end -- 3319 passed total.
+
+- **Phase 307 (current)**: replaces `turn/multiple_contingents.py`'s own
+  invented `SAME_ORIGIN_UNITE_CHANCE`/`DIFFERENT_ORIGIN_UNITE_CHANCE`
+  constants (85%/30% flat) with the real MARCH TABLE -- requested
+  directly, after the earlier rulebook-comparison research flagged this
+  as a genuine, verified gap: a precise table exists in both available
+  sources (`RULES.AK [4.12] MARCH TABLE`, English, and Regolamento
+  AK.txt's own "TABELLA DELLA MARCIA", Italian -- word-for-word the same
+  figures), keyed by March ability level (0-4) x distance between the
+  two forces' origin provinces (0/1/2+), ranging 20%-100%.
+  - New `MARCH_UNITE_CHANCE`/`march_unite_chance()` in
+    `multiple_contingents.py` implement the table's own "Contingents
+    Unify %" half (the "Extra moves for..." half is a separate,
+    still-unmodeled land-movement-range bonus, out of scope here).
+    Distances beyond 2 and levels beyond 4 clamp to the table's own
+    last known value rather than extrapolating.
+  - **A design call the source itself doesn't disambiguate, documented
+    rather than guessed**: [4.12]'s own prose ("the character with
+    Forced March ability has a *better* chance of uniting") describes
+    one character's own advantage, not a combined figure -- read here as
+    each attacker's own March level driving their own chance of joining
+    an already-forming group (`roll_unite_for_battle(a, b, rng)` uses
+    `a`'s own level, `a` always being the one being asked "does this one
+    manage to unite", per `group_attackers_into_battles()`'s own call
+    site), not the founding member's level. "Distance to 2nd force" is
+    the real `hex_distance()` between the two origins, not a guessed
+    proxy. Naval's own analogous bonus ([4.13], "in a manner similar to
+    March ability") has no numeric table of its own in either source --
+    left unmodeled, the same "confirmed mechanic, no sourced magnitude"
+    treatment as everywhere else in this project. Eagles/Dragons' own
+    "not affected by March ability" carve-out also isn't modeled --
+    `Attacker` has no army-composition field to check it against.
+  - `Attacker` gains a `march_level: int = 0` field;
+    `battle_orchestrator.py fight_multi_attacker_battle()` now looks up
+    each party's own real March skill (`effective_skill_level(state,
+    ..., Ability.MARCH)`) instead of leaving every attacker at the
+    table's own floor.
+  - Two pre-existing `test_turn_processor.py` tests (real, unscripted
+    `random.Random(0)` sequences) flipped from uniting to not-uniting
+    once the flat 85% became the level-0 table's own 80% -- fixed by
+    giving those tests' leaders a real March-4 skill (guaranteeing
+    100% union at same-origin), the same "expected, not a regression"
+    test-update pattern this project has used throughout.
+  - 4 new tests (`test_multiple_contingents.py`: the table matches the
+    sourced figures exactly, clamping at both ends, the joining
+    attacker's own level driving the outcome; `test_battle_orchestrator
+    .py`: `fight_multi_attacker_battle()` reads a real leader's own
+    March-4 skill from `state.leaders`, not a hardcoded default) --
+    3323 passed total.
 
 ## Setup
 

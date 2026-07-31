@@ -102,8 +102,13 @@ def test_run_turn_single_attacker_lmove_resolves_as_ordinary_solo_battle():
 
 def test_run_turn_groups_same_phase_same_target_lmoves_into_one_multi_attacker_battle():
     state = _base_state()
-    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
-    state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=ORIGIN))
+    # Phase 307: same-origin (distance 0) union is only guaranteed (100%)
+    # at March level 2+ -- level 0's own 80% left this test's real,
+    # unscripted `random.Random(0)` sequence sensitive to a threshold
+    # that shifted once the real MARCH TABLE replaced the old flat 85%.
+    march_4 = _skills_with(Ability.MARCH, 4, 9)
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=march_4))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=ORIGIN, skills=march_4))
     state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=10))
     state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=20))
 
@@ -185,9 +190,12 @@ def test_run_turn_peaceful_mover_unaffected_by_a_lone_attacker_targeting_the_sam
 
 def test_run_turn_excludes_an_illegal_contested_mover_but_still_groups_the_rest():
     state = _base_state()
+    # Phase 307: guarantees B/C's own same-origin union (see the sibling
+    # test's own Phase 307 note above for why).
+    march_4 = _skills_with(Ability.MARCH, 4, 9)
     state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
-    state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=ORIGIN2))
-    state.add_leader(LeaderState(30, kingdom_id=1, name="C", location=ORIGIN2))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=ORIGIN2, skills=march_4))
+    state.add_leader(LeaderState(30, kingdom_id=1, name="C", location=ORIGIN2, skills=march_4))
     state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=10))
     state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN2, movement_points=5, commanded_by=20))
     state.add_army(ArmyState(103, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN2, movement_points=5, commanded_by=30))
