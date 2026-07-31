@@ -234,6 +234,8 @@ from ak_engine.turn.encounter import (
     resolve_reactive_melee_swing,
     resolve_spell_disruption,
     resolve_spell_disruption_from_missed_attack,
+    resolve_steal_attempt,
+    resolve_steal_evasion,
     roll_fireball_damage,
     roll_holy_symbol_undead_damage,
     roll_melee_attack,
@@ -603,6 +605,72 @@ def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, rng: random
     return None
 
 
+def _apply_successful_theft(state: GameState, thief: LeaderState, victim: LeaderState) -> None:
+    """The theft's own tangible effect -- Phase 305: "oro o uno o piu'
+    oggetti magici (sempre che siano presenti)", with no quantity formula
+    for either resource. Gold theft stays unmodeled (see module
+    docstring's own Phase 305 addendum). Item theft is modeled directly:
+    the victim's first held item (if any) changes hands via ``GameState.
+    transfer_item()`` (Phase 140) -- "how many" is read as exactly one,
+    matching ``turn/trade_execution.py execute_give()``'s own established
+    "one item per order" convention, this project's only other real
+    item-transfer mechanic, rather than guessing at "all of them."
+    """
+
+    items = state.items_held_by(victim.leader_id)
+    if items:
+        state.transfer_item(items[0].item_id, thief.leader_id)
+
+
+def _resolve_steal_tactic(
+    caster_leader: LeaderState | None,
+    target_leader: LeaderState | None,
+    state: GameState,
+    rng: random.Random,
+) -> str:
+    """Steal [ST], rulebook [5.5] -- Phase 305. See module docstring's own
+    Phase 305 addendum for the full quoted text and the reasoning behind
+    every branch below.
+
+    Returns ``"success"`` (theft applied, plan continues), ``"evaded"``
+    (failed but not caught, plan continues), ``"executed"`` (thief
+    killed outright, no combat), ``"ransom"`` (King-vs-King capture,
+    nobody dies), ``"combat"`` (caller must resolve a forced personal-
+    combat encounter at a freshly-rolled range), or ``"unresolved"`` (a
+    King caught robbing a non-King army-commanding Hero -- the one
+    combination none of the three sourced capture branches covers).
+
+    A garrison commander (``caster_leader``/``target_leader`` is
+    ``None``, Phase 291's own Duel reuse) can neither attempt nor be a
+    Steal target -- no ``LeaderState`` exists to read a Thief skill,
+    royal status, or army command from.
+    """
+
+    if caster_leader is None or target_leader is None:
+        return "unresolved"
+
+    level = effective_skill_level(state, caster_leader, Ability.THIEF)
+    target_leads_army = bool(state.armies_commanded_by(target_leader.leader_id))
+    if resolve_steal_attempt(level, rng, target_leads_army=target_leads_army):
+        _apply_successful_theft(state, caster_leader, target_leader)
+        return "success"
+    if resolve_steal_evasion(level, rng):
+        return "evaded"
+
+    target_is_protected = target_leader.is_king or target_leads_army
+    if not target_is_protected:
+        return "combat"
+    if caster_leader.is_king and target_leader.is_king:
+        kingdom = state.kingdoms.get(caster_leader.kingdom_id) if caster_leader.kingdom_id is not None else None
+        if kingdom is None or kingdom.treasury <= 0:
+            return "executed"
+        kingdom.treasury -= kingdom.treasury // 2
+        return "ransom"
+    if not caster_leader.is_king:
+        return "executed"
+    return "unresolved"  # a King caught robbing a non-King army-commanding Hero
+
+
 @dataclass(slots=True)
 class ChallengeCombatOutcome:
     winner: str | None  # "a" (challenger/pursuer) / "b" (target) / None (inconclusive)
@@ -743,6 +811,91 @@ def resolve_challenge_combat(
     inert whenever ``melee_setup_done`` is still ``False`` (the setup
     genuinely hasn't run yet, so the atomic path should still do it
     itself), and skips exactly the redundant second call otherwise.
+
+    **Phase 305 addendum -- character-vs-character Steal [ST], rulebook
+    [5.5], generalizing ``turn/search_execution.py _resolve_steal()``'s
+    own monster-target case (Phase 239) to a leader target.** Quoted in
+    full: "Il personaggio tenta di rubare il suo avversario, Re, Eroe o
+    mostro che sia. Ci sono due possibilita': o ci riesce oppure viene
+    scoperto. Se la tattica Steal riesce il personaggio puo' portar via
+    oro o uno o piu' oggetti magici (sempre che siano presenti). La
+    probabilita' base di riuscita e' del 15% piu' 15% per livello di
+    abilita', ma si applicano le seguenti modifiche. 1) Se il ladro
+    prende di mira un personaggio che e' alla guida di un esercito le sue
+    probabilita' di riuscita sono dimezzate. 2) Se la vittima e' un Re,
+    c'e' la possibilita' di sottrargli una certa quantita' di oro (dipende
+    da quanto ha nella tesoreria in quel momento). Se il ladro fallisce
+    nei suoi tentativi di furto non verra' necessariamente arrestato: le
+    probabilita' di evitare la cattura sono in funzione del livello di
+    abilita' del ladro. In caso di cattura le possibilita' sono tre: se
+    il ladro e' un Eroe che ha provato a derubare un Re o un altro Eroe
+    che comanda unita' militari, viene giustiziato; se il ladro e' un
+    personaggio che ha tentato di derubare un mostro o un Eroe che non
+    comanda unita' militari, si ha un combattimento individuale, a una
+    distanza scelta a caso; se il ladro e' un Re che ha tentato di
+    derubare un altro Re, perde meta' dell'oro della sua tesoreria come
+    prezzo del riscatto (se non ha oro verra' giustiziato)."
+
+    Reuses ``turn/encounter.py``'s own ``steal_success_chance()``/
+    ``resolve_steal_attempt()``/``resolve_steal_evasion()`` (Phase 239)
+    unchanged -- the base 15%+15%/level success formula, the target-
+    leads-an-army halving, and the evasion-after-failure roll are all
+    already sourced primitives with no leader-vs-monster assumption
+    baked in.
+
+    **Gold theft's own magnitude is still not modeled** -- ``turn/
+    encounter.py``'s own Phase 239 addendum already confirmed this
+    formula "confirmed absent" for the King-victim case specifically,
+    noting "a future Challenge/Pursue-side Steal would still need it";
+    this phase *is* that future consumer, and the text still gives no
+    number to build against. Generalizing further: only a King's own
+    ``KingdomState.treasury`` is a real gold pool in this project's
+    model at all (an ordinary Hero holds no gold of his own), so gold
+    theft stays unmodeled for every target, not just Kings.
+    ``_apply_successful_theft()`` below models the other half of "oro o
+    uno o piu' oggetti magici" instead -- item theft, which has both a
+    clean mechanism (``GameState.transfer_item()``, Phase 140) and no
+    magnitude ambiguity once "how many" is read as one (see that
+    function's own docstring for why).
+
+    **The three capture consequences, and one combination the text
+    doesn't cover.** ``_resolve_steal_tactic()`` below implements all
+    three sourced branches directly off ``LeaderState.is_king`` and
+    ``target_leads_army``: Hero-thief-vs-(King-or-army-Hero) is executed;
+    King-thief-vs-King pays half the thief's own kingdom treasury as
+    ransom (or is executed if that treasury is already empty); anyone
+    (Hero or King) caught targeting a monster or a non-army-commanding
+    Hero fights a personal-combat encounter at a freshly-rolled random
+    range (Search's own precedent for "no continuous range being tracked
+    for this side tactic," reused here even though this module *does*
+    otherwise track a continuous ``current_range`` for its main tactic
+    walk -- Steal's own capture-combat is a distinct, freshly-arranged
+    confrontation, not a continuation of whatever range the encounter
+    happened to be at). **A King caught robbing an army-commanding Hero
+    who isn't also a King matches none of the three literal branches**
+    (the execution rule is scoped to a Hero thief, the ransom rule to a
+    King *victim*) -- left genuinely unresolved (the thief is caught,
+    nothing further happens) rather than borrowing an outcome from either
+    neighboring branch on a guess.
+
+    **Not addressed here**: [3.12]'s own English-only clause ("If the
+    Steal tactic is used in such a restricted encounter, the chance of
+    success is halved") describes a second, textually distinct halving
+    condition (tied to whether the encounter plan also carries combat
+    tactics/personal-combat spells, triggering the King/Hero acceptance
+    restrictions) from the Italian [5.5] target-leads-an-army halving
+    already wired above. Whether the two describe the same underlying
+    condition from different angles, or would genuinely stack, isn't
+    resolved by either source read literally -- flagged here rather than
+    guessed at, the same "confirmed but unresolved" treatment this
+    project already gives Mirror-Image's double-dissipation rule and
+    Ice Suspension's item-seizure mechanic.
+
+    **Not wired for Search's own monster-target case** -- ``turn/
+    search_execution.py _resolve_steal()`` keeps its own, narrower
+    implementation unchanged (a guardian monster is never a King, never
+    commands an army, and never holds an ``ItemInstance`` in this
+    project's model), so nothing here replaces it.
     """
 
     current_range = CombatRange.SPELL_RANGE
@@ -792,6 +945,27 @@ def resolve_challenge_combat(
             if bonus_winner is not None:
                 return ChallengeCombatOutcome(winner=bonus_winner)
             continue
+        if tactic.maneuver is Maneuver.STEAL:
+            steal_outcome = _resolve_steal_tactic(caster_leader, target_leader, state, rng)
+            if steal_outcome == "executed":
+                return ChallengeCombatOutcome(winner="b")
+            if steal_outcome == "combat":
+                capture_range = rng.choice((CombatRange.SPELL_RANGE, CombatRange.BOW_RANGE, CombatRange.MELEE_RANGE))
+                if capture_range is CombatRange.SPELL_RANGE:
+                    # No spell-effect system exists for this side combat --
+                    # a documented no-effect, same convention `turn/
+                    # search_execution.py _resolve_steal()`'s own identical
+                    # branch already uses.
+                    continue
+                if capture_range is CombatRange.MELEE_RANGE:
+                    result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
+                    melee_setup_done = True
+                    return ChallengeCombatOutcome(winner=result.winner)
+                result = resolve_fire_arrow_duel(caster, target, rng)
+                if result.winner is not None:
+                    return ChallengeCombatOutcome(winner=result.winner)
+                continue
+            continue  # success / evaded / ransom / unresolved -- plan continues
         # every other tactic is unwired -- skip it and keep walking
     result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
     return ChallengeCombatOutcome(winner=result.winner)

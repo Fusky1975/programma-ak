@@ -12879,7 +12879,7 @@ across two dedicated audit passes this project has run so far.
     hostile province is still hireable, proving the territory gate
     never touches the mercenary path -- 3292 passed total.
 
-- **Phase 304 (current)**: closes Tactical Practice's own long-flagged
+- **Phase 304**: closes Tactical Practice's own long-flagged
   "multi-leader army pooling" gap (Phase 167's/263's own notes above),
   sourced from RULES.AK [6.1], quoted in full: "If two leaders Practice
   Tactics together, their armies are pooled into the same training
@@ -12929,6 +12929,75 @@ this session: Recruit's territory gate (Phase 303) and Tactical
 Practice's army pooling (Phase 304), the two concrete, verified-open
 feature gaps identified from the README's own "Not yet implemented"
 section.
+
+- **Phase 305 (current)**: closes the character-vs-character half of
+  Steal [ST] (rulebook [5.5]) -- `turn/search_execution.py`'s own
+  `_resolve_steal()` only ever handled Search's guardian-monster target;
+  `turn/challenge_execution.py`'s own docstring flagged the general case
+  directly ("Steal isn't checked here (a separate, still-unmodeled
+  tactic)"). Found via a background research agent's own systematic
+  read-through of the Italian `Regolamento AK.txt` rulebook against this
+  project's implementation, cross-checked against source before being
+  presented as a real gap.
+  - [5.5] quoted in full: "Il personaggio tenta di rubare il suo
+    avversario, Re, Eroe o mostro che sia... Se la tattica Steal riesce
+    il personaggio può portar via oro o uno o più oggetti magici (sempre
+    che siano presenti). La probabilità base di riuscita è del 15% più
+    15% per livello di abilità... Se il ladro prende di mira un
+    personaggio che è alla guida di un esercito le sue probabilità di
+    riuscita sono dimezzate... Se il ladro fallisce... le probabilità di
+    evitare la cattura sono in funzione del livello di abilità del
+    ladro. In caso di cattura le possibilità sono tre: se il ladro è un
+    Eroe che ha provato a derubare un Re o un altro Eroe che comanda
+    unità militari, viene giustiziato; se il ladro è un personaggio che
+    ha tentato di derubare un mostro o un Eroe che non comanda unità
+    militari, si ha un combattimento individuale, a una distanza scelta
+    a caso; se il ladro è un Re che ha tentato di derubare un altro Re,
+    perde metà dell'oro della sua tesoreria come prezzo del riscatto (se
+    non ha oro verrà giustiziato)."
+  - **Reuses, doesn't reinvent**: `turn/encounter.py`'s own
+    `steal_success_chance()`/`resolve_steal_attempt()`/
+    `resolve_steal_evasion()` (Phase 239) already implement the base
+    success formula, the target-leads-an-army halving, and the
+    post-failure evasion roll with no leader-vs-monster assumption baked
+    in -- reused unchanged.
+  - **New in `turn/challenge_execution.py`**: `_apply_successful_theft()`
+    transfers one held item (the victim's first, if any) via the
+    existing `GameState.transfer_item()` registry (Phase 140) --
+    "how many" read as one, matching `execute_give()`'s own one-item-
+    per-order convention. Gold theft's own magnitude stays unmodeled
+    (confirmed absent in both sources, the same "confirmed absent" note
+    `turn/encounter.py`'s own Phase 239 addendum already gave for the
+    King-victim case). `_resolve_steal_tactic()` implements all three
+    sourced capture consequences off `LeaderState.is_king` and whether
+    the target commands an army: Hero-thief-vs-(King-or-army-Hero) is
+    executed; King-vs-King pays half the thief's own kingdom treasury as
+    ransom (or is executed if that treasury is already empty); anyone
+    caught targeting a monster or non-army Hero fights a personal-combat
+    encounter at a freshly-rolled random range. One combination the text
+    doesn't cover -- a King caught robbing a non-King army-commanding
+    Hero -- is left genuinely unresolved rather than guessed at.
+  - `resolve_challenge_combat()`'s own tactic walk gains a `Maneuver.
+    STEAL` branch dispatching to the above, automatically extending to
+    `turn/pursue_execution.py` (which already reuses this same function)
+    with no changes needed there. `has_combat_intent()` is unchanged --
+    Steal still isn't itself "combat intent" per [3.12]'s own text.
+    Search's own narrower monster-target `_resolve_steal()` is untouched.
+  - Not addressed: [3.12]'s own English-only "chance is halved when
+    Steal is used in a restricted encounter" clause describes a second,
+    textually distinct halving condition from the Italian target-leads-
+    an-army halving already wired -- flagged in `challenge_execution.py`'s
+    own docstring as confirmed-but-unresolved rather than guessed at.
+  - 17 new tests in `test_challenge_execution.py`: item theft transfers
+    exactly one item and is a no-op when the victim holds nothing; the
+    success/evasion/capture branches of `_resolve_steal_tactic()`
+    (execution for a Hero robbing a King or an army-commanding Hero,
+    King-vs-King ransom and its no-gold-execution edge case, combat for
+    both thief types against a non-army Hero, the unresolved King-vs-
+    army-Hero combination, and the no-LeaderState no-op consuming no
+    RNG); and `resolve_challenge_combat()`'s own STEAL wiring across all
+    three capture-combat ranges plus the success/executed fall-through
+    cases -- 3314 passed total.
 
 ## Setup
 

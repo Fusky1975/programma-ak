@@ -14,11 +14,14 @@ from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.challenge_execution import (
     ChallengeExecutionResult,
+    _apply_successful_theft,
     _close_to,
     _leader_combatant,
     _resolve_personal_combat_cast,
+    _resolve_steal_tactic,
     execute_challenge,
     has_combat_intent,
     is_encounter_accepted,
@@ -826,3 +829,230 @@ def test_resolve_challenge_combat_non_last_melee_trailing_fallback_does_not_doub
         resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, random.Random(0))
 
     assert caster.defensive_hit_multiplier == pytest.approx(0.9)
+
+
+# -- Phase 305: character-vs-character Steal [ST], rulebook [5.5] ------
+
+
+def test_apply_successful_theft_transfers_the_victims_first_held_item():
+    state = _base_state()
+    thief = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)
+    victim = LeaderState(2, kingdom_id=2, name="Victim", location=FIELD)
+    state.add_leader(thief)
+    state.add_leader(victim)
+    first = state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=2)
+    second = state.add_item(Treasure.ABILITY_MARCH, owner_leader_id=2)
+
+    _apply_successful_theft(state, thief, victim)
+
+    assert state.items[first.item_id].owner_leader_id == 1
+    assert state.items[second.item_id].owner_leader_id == 2  # only one item changes hands
+
+
+def test_apply_successful_theft_is_a_no_op_when_the_victim_holds_nothing():
+    state = _base_state()
+    thief = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)
+    victim = LeaderState(2, kingdom_id=2, name="Victim", location=FIELD)
+    state.add_leader(thief)
+    state.add_leader(victim)
+
+    _apply_successful_theft(state, thief, victim)  # must not raise
+
+    assert state.items_held_by(1) == []
+
+
+def test_resolve_steal_tactic_success_applies_theft():
+    state = _base_state()
+    thief = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)
+    victim = LeaderState(2, kingdom_id=2, name="Victim", location=FIELD)
+    state.add_leader(thief)
+    state.add_leader(victim)
+    item = state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=2)
+
+    outcome = _resolve_steal_tactic(thief, victim, state, ScriptedRandom([0.1]))  # < 15% base chance
+
+    assert outcome == "success"
+    assert state.items[item.item_id].owner_leader_id == 1
+
+
+def test_resolve_steal_tactic_failure_then_evaded_leaves_no_trace():
+    state = _base_state()
+    thief = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)
+    victim = LeaderState(2, kingdom_id=2, name="Victim", location=FIELD)
+    state.add_leader(thief)
+    state.add_leader(victim)
+
+    outcome = _resolve_steal_tactic(thief, victim, state, ScriptedRandom([0.2, 0.1]))  # fail attempt, evade capture
+
+    assert outcome == "evaded"
+
+
+def test_resolve_steal_tactic_hero_thief_caught_robbing_a_king_is_executed():
+    state = _base_state()
+    thief = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)
+    king = LeaderState(2, kingdom_id=2, name="King", location=FIELD, is_king=True)
+    state.add_leader(thief)
+    state.add_leader(king)
+
+    outcome = _resolve_steal_tactic(thief, king, state, ScriptedRandom([0.5, 0.5]))  # fail attempt, fail evasion
+
+    assert outcome == "executed"
+
+
+def test_resolve_steal_tactic_hero_thief_caught_robbing_an_army_commanding_hero_is_executed():
+    state = _base_state()
+    thief = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)
+    general = LeaderState(2, kingdom_id=2, name="General", location=FIELD)
+    state.add_leader(thief)
+    state.add_leader(general)
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
+
+    outcome = _resolve_steal_tactic(thief, general, state, ScriptedRandom([0.5, 0.5]))
+
+    assert outcome == "executed"
+
+
+def test_resolve_steal_tactic_king_vs_king_caught_pays_half_treasury_as_ransom():
+    state = _base_state()
+    state.kingdoms[1].treasury = 100
+    thief_king = LeaderState(1, kingdom_id=1, name="Thief King", location=FIELD, is_king=True)
+    victim_king = LeaderState(2, kingdom_id=2, name="Victim King", location=FIELD, is_king=True)
+    state.add_leader(thief_king)
+    state.add_leader(victim_king)
+
+    outcome = _resolve_steal_tactic(thief_king, victim_king, state, ScriptedRandom([0.5, 0.5]))
+
+    assert outcome == "ransom"
+    assert state.kingdoms[1].treasury == 50
+
+
+def test_resolve_steal_tactic_king_vs_king_caught_with_no_gold_is_executed():
+    state = _base_state()
+    state.kingdoms[1].treasury = 0
+    thief_king = LeaderState(1, kingdom_id=1, name="Thief King", location=FIELD, is_king=True)
+    victim_king = LeaderState(2, kingdom_id=2, name="Victim King", location=FIELD, is_king=True)
+    state.add_leader(thief_king)
+    state.add_leader(victim_king)
+
+    outcome = _resolve_steal_tactic(thief_king, victim_king, state, ScriptedRandom([0.5, 0.5]))
+
+    assert outcome == "executed"
+    assert state.kingdoms[1].treasury == 0
+
+
+def test_resolve_steal_tactic_caught_targeting_a_non_army_hero_is_combat():
+    state = _base_state()
+    thief = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)
+    hero = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD)
+    state.add_leader(thief)
+    state.add_leader(hero)
+
+    outcome = _resolve_steal_tactic(thief, hero, state, ScriptedRandom([0.5, 0.5]))
+
+    assert outcome == "combat"
+
+
+def test_resolve_steal_tactic_king_caught_targeting_a_non_army_hero_is_also_combat():
+    state = _base_state()
+    king = LeaderState(1, kingdom_id=1, name="King", location=FIELD, is_king=True)
+    hero = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD)
+    state.add_leader(king)
+    state.add_leader(hero)
+
+    outcome = _resolve_steal_tactic(king, hero, state, ScriptedRandom([0.5, 0.5]))
+
+    assert outcome == "combat"
+
+
+def test_resolve_steal_tactic_king_thief_caught_robbing_a_non_king_army_hero_is_unresolved():
+    # None of the three sourced capture branches literally covers this
+    # combination -- module docstring's own Phase 305 addendum.
+    state = _base_state()
+    king = LeaderState(1, kingdom_id=1, name="King", location=FIELD, is_king=True)
+    general = LeaderState(2, kingdom_id=2, name="General", location=FIELD)
+    state.add_leader(king)
+    state.add_leader(general)
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
+
+    outcome = _resolve_steal_tactic(king, general, state, ScriptedRandom([0.5, 0.5]))
+
+    assert outcome == "unresolved"
+
+
+def test_resolve_steal_tactic_is_unresolved_with_no_rng_consumed_for_a_missing_leaderstate():
+    # A garrison commander (Phase 291's own Duel reuse) has no LeaderState.
+    state = _base_state()
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(target)
+
+    outcome = _resolve_steal_tactic(None, target, state, ScriptedRandom([]))  # any .random() call would raise
+
+    assert outcome == "unresolved"
+
+
+def test_resolve_challenge_combat_steal_executed_ends_the_encounter():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.STEAL)]
+
+    with patch("ak_engine.turn.challenge_execution._resolve_steal_tactic", return_value="executed"):
+        outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert outcome.winner == "b"
+
+
+def test_resolve_challenge_combat_steal_success_lets_the_plan_continue():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.STEAL), SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution._resolve_steal_tactic", return_value="success"), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert outcome.winner == "a"
+
+
+def test_resolve_challenge_combat_steal_capture_combat_at_spell_range_has_no_effect():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.STEAL), SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution._resolve_steal_tactic", return_value="combat"), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([], choice_indices=[0])
+        )
+
+    assert outcome.winner == "a"  # fell through to the following MELEE tactic
+
+
+def test_resolve_challenge_combat_steal_capture_combat_at_bow_range_fires_arrows():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.STEAL)]
+
+    with patch("ak_engine.turn.challenge_execution._resolve_steal_tactic", return_value="combat"), patch(
+        "ak_engine.turn.challenge_execution.resolve_fire_arrow_duel"
+    ) as mock_shoot:
+        mock_shoot.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([], choice_indices=[1])
+        )
+
+    assert outcome.winner == "a"
+
+
+def test_resolve_challenge_combat_steal_capture_combat_at_melee_range_fights_atomically():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.STEAL)]
+
+    with patch("ak_engine.turn.challenge_execution._resolve_steal_tactic", return_value="combat"), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="b", rounds=1)
+        outcome = resolve_challenge_combat(
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([], choice_indices=[2])
+        )
+
+    assert outcome.winner == "b"
