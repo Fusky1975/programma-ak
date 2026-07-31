@@ -13186,7 +13186,7 @@ section.
     `test_turn_processor.py` wiring test proving `run_turn()` itself
     triggers the decay -- 3337 passed total.
 
-- **Phase 310 (current)**: closes four Kill_Enemy ([4.25.2]) gaps
+- **Phase 310**: closes four Kill_Enemy ([4.25.2]) gaps
   flagged directly by the user -- the coma variant, the Berserk
   counterattack on a failed cast, King immunity, and the Special-Place/
   army-leading-Hero halving. `Regolamento AK.txt` quoted in full: "Se
@@ -13263,6 +13263,50 @@ section.
     control, both Berserk-counterattack outcomes via seeded real RNG
     since the Furia bonus-HP roll isn't ScriptedRandom-friendly, and 4
     Resurrection-cures-a-coma cases) -- 3350 passed total.
+- **Phase 311 (current)**: contested-province priority for a double
+  simultaneous *neutral*-province invasion -- previously unsourced/
+  arbitrary processing order, flagged by the user. `Regolamento AK.txt`
+  [7.6]/[7.7]: "In caso di doppia invasione simultanea di una provincia
+  neutrale da parte di eserciti non alleati fra loro, ha la priorità
+  l'esercito guidato dal personaggio con il coefficiente d'iniziativa
+  più alto; a parità di iniziativa, ha la priorità l'esercito con il
+  maggior numero di unità" -- both per the project owner's own
+  clarification (initiative first, unit count as the tiebreak).
+  - New `turn/initiative.py character_initiative(state, leader)`:
+    the general, character-wide Initiative score -- quoted in full in
+    the module docstring -- "la somma dei punteggi nei suoi vari
+    Talenti, con Marcia contato 3 volte" (every `Ability`, summed via
+    `turn/discovery_effects.py effective_skill_level()` so Discovery
+    bonuses are folded in for free and a comatose leader ([[Phase 310]])
+    reads 0 automatically, plus 2 *extra* copies of March's own level).
+    Not to be confused with `turn/encounter.py`'s own narrower [5.0]
+    per-combat-tactic "initiative" (`_acts_first()`), a different,
+    already-implemented, single-round mechanic. Magic-item-derived
+    Initiative bonuses are documented as confirmed-mechanic-no-sourced-
+    magnitude and left out, the same gap this project already leaves
+    open elsewhere (e.g. Naval's own union bonus).
+  - `turn/battle_orchestrator.py fight_multi_attacker_battle()`: right
+    after `group_attackers_into_battles()` produces its separate
+    (non-united) groups, a new pre-loop step checks whether
+    `province_coord` currently belongs to no kingdom at all
+    (`ProvinceState.owner_kingdom_id is None` -- a genuinely neutral
+    province, matching the rulebook's own scoping) and, if so and there's
+    more than one group, stable-sorts them by (each group's own highest
+    member `character_initiative()`, descending; that group's own total
+    unit count, descending) before the existing fight loop runs. An
+    enemy-owned province's multi-invasion is untouched -- falls through
+    to the pre-existing arbitrary (caller-supplied) order, since [7.6]'s
+    own wording is scoped to "provincia neutrale" specifically. The
+    function's own docstring gained a "Phase 311 addendum" documenting
+    this, right after the pre-existing paragraph that had flagged the
+    gap as unsourced.
+  - 7 new tests: `test_initiative.py` (4 -- zero for no skill data, the
+    sum-plus-two-March-copies formula, Discovery bonuses folded in for
+    free, zero for a comatose leader), `test_battle_orchestrator.py`
+    (3 -- higher-Initiative group claims a neutral province first,
+    equal-Initiative groups tiebreak on unit count, an enemy-owned
+    province's multi-invasion keeps the caller's own unchanged order) --
+    3357 passed total.
 
 ## Setup
 

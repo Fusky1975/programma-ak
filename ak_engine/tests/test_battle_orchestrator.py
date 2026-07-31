@@ -1843,6 +1843,97 @@ def test_fight_multi_attacker_battle_second_separate_group_claims_an_already_cle
     assert second_battle.report.battle_result.winner == "attacker"
 
 
+# --- Contested-province priority for a double simultaneous neutral
+# invasion (rulebook [7.6], Phase 311) --------------------------------------
+
+
+def _neutral_invasion_state(*, field_owner_kingdom_id: int | None) -> GameState:
+    # A single kingdom, two of its own leaders each leading a separate army
+    # already sitting at FIELD (post-movement, pre-orchestration -- the same
+    # convention every other multi-attacker test above uses) from far-apart
+    # origins, so `group_attackers_into_battles` never unites them (Phase
+    # 307's own MARCH TABLE, distance-clamped, at March level 0). Same
+    # kingdom_id -> `state.is_allied()` treats the two groups as friendly to
+    # each other, so with no third-party defender present, each group's own
+    # claim is uncontested regardless of processing order -- letting these
+    # tests isolate the Phase 311 *ordering* itself instead of a battle's
+    # outcome. (A genuinely rival, non-allied double invasion of the very
+    # same empty province would mean the two forces fighting each other
+    # directly -- a real scenario, but one `fight_multi_attacker_battle()`
+    # doesn't yet handle for a group whose own army is destroyed acting as
+    # the "defender" in an earlier group's battle; out of this phase's
+    # scope, since it's the *ordering* being added here, not that gap.)
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=field_owner_kingdom_id))
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.GREEN, FIELD))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.GREEN, FIELD))
+    return state
+
+
+def test_fight_multi_attacker_battle_neutral_province_gives_priority_to_higher_initiative():
+    state = _neutral_invasion_state(field_owner_kingdom_id=None)
+    # Leader 10 has no skill data at all -> Initiative 0. Leader 20 has
+    # real, high non-March skills -> Initiative well above 0. March itself
+    # is left at 0 for both so neither leader's own union chance is
+    # affected (irrelevant here regardless, since same-kingdom groups never
+    # fight each other).
+    state.add_leader(
+        LeaderState(20, kingdom_id=1, name="Highstrung", location=HexCoord(20, 20), skills=_skills_with(Ability.MELEE, 9, 9))
+    )
+    parties = [
+        # Given in low-initiative-first order -- priority must reorder this.
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(0, 0)),
+        MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102], origin_province=HexCoord(20, 20)),
+    ]
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[0] * 10)
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 2
+    assert battles[0].leader_ids == [20]  # higher-Initiative leader's group fights (claims) first
+    assert battles[1].leader_ids == [10]
+
+
+def test_fight_multi_attacker_battle_neutral_province_tiebreaks_on_unit_count():
+    state = _neutral_invasion_state(field_owner_kingdom_id=None)
+    state.add_army(ArmyState(103, 1, ArmyType.BOWMEN, Quality.GREEN, FIELD))  # 2nd army for leader 20's group
+    # Neither leader has any skill data -> both Initiative 0 -> tiebreak on
+    # each group's own total unit count instead.
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(0, 0)),  # 1 unit
+        MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102, 103], origin_province=HexCoord(20, 20)),  # 2 units
+    ]
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[0] * 10)
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 2
+    assert battles[0].leader_ids == [20]  # more units -> claims first
+
+
+def test_fight_multi_attacker_battle_enemy_owned_province_keeps_arbitrary_order():
+    # Same higher-Initiative-leader setup as the neutral-province test
+    # above, but FIELD now belongs to a (third) kingdom -- [7.6]'s own
+    # priority rule is scoped to a "provincia neutrale", so this case must
+    # NOT be reordered: the groups stay in the order the caller supplied.
+    state = _neutral_invasion_state(field_owner_kingdom_id=99)
+    state.add_leader(
+        LeaderState(20, kingdom_id=1, name="Highstrung", location=HexCoord(20, 20), skills=_skills_with(Ability.MELEE, 9, 9))
+    )
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(0, 0)),
+        MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102], origin_province=HexCoord(20, 20)),
+    ]
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[0] * 10)
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 2
+    assert battles[0].leader_ids == [10]  # unchanged input order, despite leader 20's higher Initiative
+    assert battles[1].leader_ids == [20]
+
+
 # --- Merit Point battle-outcome recording (rulebook page 51, Phase 254) ---
 
 

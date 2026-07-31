@@ -177,6 +177,7 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant
+from ak_engine.turn.initiative import character_initiative
 from ak_engine.turn.merit_points import battle_quality_points
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles
@@ -1345,6 +1346,24 @@ def fight_multi_attacker_battle(
     them has already resolved -- a documented, unsourced-but-reasonable
     design choice (unlike ``multiple_contingents.py``'s own union-chance
     formula, which is real, sourced MARCH TABLE data as of Phase 307).
+
+    **Phase 311 addendum -- ordering the groups for a neutral province**:
+    [7.6]/[7.7] itself, for a "provincia neutrale" invaded by more than
+    one separate (non-allied, non-united) force in the same turn, gives
+    the fighting priority to "l'esercito guidato da chi ha piu
+    iniziativa" (the army led by whoever has more Initiative), with
+    unit count as the tiebreak when Initiative is equal -- both per the
+    project owner's own clarification. That's implemented here as a
+    pre-loop sort of ``groups`` (stable, so a full tie keeps the
+    original arbitrary order from above) keyed on each group's own
+    highest ``turn/initiative.py character_initiative()`` member, then
+    that group's own total unit count, both descending -- but *only*
+    when ``province_coord`` currently belongs to no kingdom at all
+    (``ProvinceState.owner_kingdom_id is None``): the rulebook's own
+    wording is scoped to a genuinely neutral province, so a multi-group
+    invasion of an *enemy*-owned province still falls through to the
+    unsourced arbitrary order documented in the paragraph above,
+    unchanged.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -1369,6 +1388,24 @@ def fight_multi_attacker_battle(
     ]
     groups = group_attackers_into_battles(attackers, state.allied_kingdoms, rng)
     parties_by_leader = {p.leader_id: p for p in parties}
+
+    # Phase 311: a truly neutral province (owner_kingdom_id is None --
+    # [7.6]'s own "provincia neutrale") reorders the separate groups by
+    # priority before any of them fight, instead of leaving them in
+    # whatever order the caller happened to supply -- see this
+    # function's own Phase 311 addendum.
+    target_province = state.provinces.get(province_coord)
+    if target_province is not None and target_province.owner_kingdom_id is None and len(groups) > 1:
+
+        def _group_priority_key(group: list[Attacker]) -> tuple[int, int]:
+            max_initiative = max(
+                character_initiative(state, state.leaders[member.leader_id]) if member.leader_id in state.leaders else 0
+                for member in group
+            )
+            total_units = sum(len(parties_by_leader[member.leader_id].army_ids) for member in group)
+            return (-max_initiative, -total_units)
+
+        groups = sorted(groups, key=_group_priority_key)
 
     reports = []
     for group in groups:
