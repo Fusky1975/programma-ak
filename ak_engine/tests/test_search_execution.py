@@ -354,6 +354,16 @@ def test_flee_chance_matches_the_rulebooks_three_speed_tiers():
     assert MONSTER_COMBAT_STATS[Monster.GOLEM].speed is MonsterSpeed.SLOW
 
 
+def test_weak_temper_flee_chance_bonus_stays_at_the_body_texts_30_percent():
+    # Phase 312: `Regolamento AK.txt` contradicts itself here -- [5.6]'s own
+    # body text says "+30% in piu' di possibilita' di fuggire" for Cauti,
+    # but the closing "NUOVE REGOLE E MODIFICHE" appendix restates the same
+    # rule as "+20%". The user (project author), asked directly, confirmed
+    # +30% is correct -- this guards against the value silently drifting to
+    # the appendix's own +20% figure.
+    assert WEAK_TEMPER_FLEE_CHANCE_BONUS == pytest.approx(0.30)
+
+
 # -- effective_flee_chance (Phase 286): Weak-Temperament + Invisibility --
 
 

@@ -109,6 +109,18 @@ resolves"**:
   1-50%), so a Cowardly character being at least as flee-prone as a
   Cautious one is a reasonable extension, but it is documented here as
   exactly that (an extension), not conflated with the sourced text.
+  **Phase 312 addendum -- the rulebook contradicts itself on this exact
+  number, now consciously resolved.** `Regolamento AK.txt`'s own closing
+  "NUOVE REGOLE E MODIFICHE" appendix (line 3533) restates the same rule
+  as "I Cauti hanno il +20% di possibilità alla fuga" -- ten points
+  lower than the body text's own [5.6] figure quoted above, and this
+  project had been implementing the body text's +30% since Phase 286
+  without that conflict ever having been noticed or a choice made
+  between the two consciously. The user (project author), asked
+  directly, confirmed **+30% is correct** -- `WEAK_TEMPER_FLEE_CHANCE_
+  BONUS` stays unchanged at `0.30`; this addendum exists purely so the
+  discrepancy and the resolution are on record, not silently sitting in
+  two contradictory places in the source text.
   ``effective_flee_chance()`` below adds ``WEAK_TEMPER_FLEE_CHANCE_
   BONUS`` for ``Temper.CAUTIOUS`` or ``Temper.COWARDLY``, and separately
   adds ``INVISIBILITY_FLEE_CHANCE_BONUS`` (``turn/cast_execution.py``'s
@@ -561,6 +573,12 @@ FLEE_CHANCE: dict[MonsterSpeed, float] = {
 # possibilita' di fuggire" -- Cautious only per the literal text; extended
 # to Cowardly as a confirmed project-original design choice (see module
 # docstring's own Phase 286 addendum for the full reasoning).
+# Phase 312: the rulebook's own closing "NUOVE REGOLE E MODIFICHE" appendix
+# restates this same rule as +20% instead -- a genuine, previously-unnoticed
+# internal contradiction. The user (project author), asked directly,
+# confirmed +30% (the body-text figure already implemented here) is correct
+# -- this value is intentionally unchanged; see the module docstring's own
+# Phase 312 addendum for the full note.
 WEAK_TEMPER_FLEE_CHANCE_BONUS = 0.30
 WEAK_FLEE_TEMPERS = frozenset({Temper.CAUTIOUS, Temper.COWARDLY})
 

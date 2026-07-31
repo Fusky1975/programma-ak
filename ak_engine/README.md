@@ -13263,7 +13263,7 @@ section.
     control, both Berserk-counterattack outcomes via seeded real RNG
     since the Furia bonus-HP roll isn't ScriptedRandom-friendly, and 4
     Resurrection-cures-a-coma cases) -- 3350 passed total.
-- **Phase 311 (current)**: contested-province priority for a double
+- **Phase 311**: contested-province priority for a double
   simultaneous *neutral*-province invasion -- previously unsourced/
   arbitrary processing order, flagged by the user. `Regolamento AK.txt`
   [7.6]/[7.7]: "In caso di doppia invasione simultanea di una provincia
@@ -13307,6 +13307,26 @@ section.
     equal-Initiative groups tiebreak on unit count, an enemy-owned
     province's multi-invasion keeps the caller's own unchanged order) --
     3357 passed total.
+- **Phase 312 (current)**: a genuine, previously-unnoticed internal
+  contradiction in `Regolamento AK.txt` itself, flagged directly by the
+  user -- the body text at [5.6] says the Cautious flee bonus is +30%
+  ("(NOVITA') I personaggi Cauti hanno il 30% in più di possibilità di
+  fuggire", already implemented as `turn/search_execution.py
+  WEAK_TEMPER_FLEE_CHANCE_BONUS` since Phase 286), but the rulebook's own
+  closing "NUOVE REGOLE E MODIFICHE" appendix (line 3533) restates the
+  same rule as "I Cauti hanno il +20% di possibilità alla fuga" -- ten
+  points lower, and nobody had ever consciously noticed or decided
+  between the two conflicting numbers. The user (project author), asked
+  directly, confirmed **+30% is correct** -- no behavior change, since
+  the code already implemented the body text's figure; this phase is
+  purely about getting the conscious decision on record. Both the
+  constant's own comment and the module docstring's Phase 286 paragraph
+  gained a "Phase 312 addendum" quoting the appendix's conflicting text
+  and recording the resolution.
+  - 1 new test: `test_search_execution.py
+    test_weak_temper_flee_chance_bonus_stays_at_the_body_texts_30_percent`
+    -- a regression guard against the value silently drifting to the
+    appendix's own +20% figure -- 3358 passed total.
 
 ## Setup
 
