@@ -675,6 +675,17 @@ def _resolve_steal_tactic(
 class ChallengeCombatOutcome:
     winner: str | None  # "a" (challenger/pursuer) / "b" (target) / None (inconclusive)
     fled: bool = False
+    # Phase 306: whichever Steal outcome `_resolve_steal_tactic()` returned
+    # ("success"/"evaded"/"executed"/"ransom"/"combat"/"unresolved"), if the
+    # plan contained a STEAL tactic at all -- carried through to whatever
+    # this function eventually returns (not just a terminal STEAL branch),
+    # so `report/turn_report.py describe_steal()` can narrate it even when
+    # the encounter's actual winner was decided by a later tactic.
+    steal_outcome: str | None = None
+    # Set only when steal_outcome == "combat" -- the freshly-rolled range
+    # the capture-combat happened at, needed to pick the right `SNEAKUP_
+    # RANGE_*` clause.
+    steal_capture_range: CombatRange | None = None
 
 
 def _close_to(target_range: CombatRange, current_range: CombatRange) -> CombatRange:
@@ -865,18 +876,13 @@ def resolve_challenge_combat(
     King-thief-vs-King pays half the thief's own kingdom treasury as
     ransom (or is executed if that treasury is already empty); anyone
     (Hero or King) caught targeting a monster or a non-army-commanding
-    Hero fights a personal-combat encounter at a freshly-rolled random
-    range (Search's own precedent for "no continuous range being tracked
-    for this side tactic," reused here even though this module *does*
-    otherwise track a continuous ``current_range`` for its main tactic
-    walk -- Steal's own capture-combat is a distinct, freshly-arranged
-    confrontation, not a continuation of whatever range the encounter
-    happened to be at). **A King caught robbing an army-commanding Hero
-    who isn't also a King matches none of the three literal branches**
-    (the execution rule is scoped to a Hero thief, the ransom rule to a
-    King *victim*) -- left genuinely unresolved (the thief is caught,
-    nothing further happens) rather than borrowing an outcome from either
-    neighboring branch on a guess.
+    Hero is moved to a freshly-rolled random combat range ("a una
+    distanza scelta a caso") for the encounter to continue from. **A King
+    caught robbing an army-commanding Hero who isn't also a King matches
+    none of the three literal branches** (the execution rule is scoped to
+    a Hero thief, the ransom rule to a King *victim*) -- left genuinely
+    unresolved (the thief is caught, nothing further happens) rather than
+    borrowing an outcome from either neighboring branch on a guess.
 
     **Not addressed here**: [3.12]'s own English-only clause ("If the
     Steal tactic is used in such a restricted encounter, the chance of
@@ -896,10 +902,59 @@ def resolve_challenge_combat(
     implementation unchanged (a guardian monster is never a King, never
     commands an army, and never holds an ``ItemInstance`` in this
     project's model), so nothing here replaces it.
+
+    **Phase 306 correction -- capture no longer atomically resolves a
+    duel.** Phase 305's original "combat" branch called ``resolve_melee_
+    duel()``/``resolve_fire_arrow_duel()`` directly, self-contained,
+    exactly mirroring Search's own ``_resolve_steal()``. A real worked
+    example, [11.3]'s own "ESEMPI DI PIANI D'INCONTRO", reads: "CA-IN,
+    ST, FL, ME. Lanciare l'incantesimo invisibilita' e tentare di rubare.
+    Se scoperti tentare di fuggire e, se nel caso non riuscisse, lanciarsi
+    in mischia." ("Cast Invisibility and attempt to steal. If discovered,
+    try to Flee, and if that doesn't work, engage in Melee.") -- getting
+    caught is meant to hand control back to the plan's *own next tactic*
+    (Flee, then Melee), not short-circuit straight into an atomic duel
+    that skips over it. The fix: the STEAL branch now sets ``current_
+    range`` outright to the freshly-rolled range (not merely advanced via
+    ``_close_to()`` -- "a randomly chosen distance" is a fresh
+    confrontation, not a continuation) and ``continue``s the walk, the
+    same way a SHOOT/MELEE tactic already leaves ``current_range`` for
+    whatever comes next. ``Maneuver.FLEE`` is still unwired in this
+    module (a separate, already-documented gap, Phase 290's own
+    addendum), so it's silently skipped exactly like any other unwired
+    tactic -- but a following ``MELEE`` (as in this very example) now
+    correctly picks up from the rolled range via the existing MELEE
+    branch, and an exhausted list still falls through to the existing
+    "defaults to Melee" tail if nothing follows at all. No test exercised
+    the old atomic path with a following tactic, so this is a correction
+    caught before it shipped a wrong default, not a regression fix.
+
+    **A Steal-only plan (no Melee/Fire-Arrow/decodable-Cast alongside it)
+    never reaches this function at all**, a narrower, separate,
+    consciously-not-fixed gap: ``execute_challenge()``'s own ``not has_
+    combat_intent(request)`` short-circuit (Phase 50) returns before ever
+    calling this function, since [3.12]'s own text deliberately excludes
+    Steal from "combat intent" (only Steal's own success *chance* is
+    affected by whether the encounter also has combat intent, per that
+    same [3.12] clause already flagged above as unaddressed -- Steal's
+    ability to fire *at all* isn't gated on it). Both of [11.3]'s own
+    worked examples always pair ``ST`` with a real combat tactic (``CA-
+    FI``/``ME`` or ``CA-IN``/``ME``), which already sets ``has_combat_
+    intent`` `True` and reaches this function correctly -- a Steal-only
+    plan isn't attested in any available real data, the same "don't fix
+    an unattested shape" discipline this project already applies
+    elsewhere (e.g. Search's own confirmed single-FI-order rule).
     """
 
     current_range = CombatRange.SPELL_RANGE
     melee_setup_done = False
+    # Phase 306: carried into every ``ChallengeCombatOutcome`` returned
+    # below (not just a terminal STEAL branch) -- see that dataclass's own
+    # Phase 306 addendum for why a non-terminal Steal outcome (success/
+    # evaded/ransom/unresolved) still needs to reach the report layer even
+    # when a later tactic decides the encounter's actual winner.
+    steal_outcome: str | None = None
+    steal_capture_range: CombatRange | None = None
 
     for index, tactic in enumerate(tactics):
         if tactic.maneuver is Maneuver.SHOOT:
@@ -908,25 +963,35 @@ def resolve_challenge_combat(
             current_range = _close_to(CombatRange.BOW_RANGE, current_range)
             result = resolve_fire_arrow_duel(caster, target, rng)
             if result.winner is not None:
-                return ChallengeCombatOutcome(winner=result.winner)
+                return ChallengeCombatOutcome(
+                    winner=result.winner, steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
+                )
             continue
         if tactic.maneuver is Maneuver.MELEE:
             current_range = _close_to(CombatRange.MELEE_RANGE, current_range)
             if index == len(tactics) - 1:
                 result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
-                return ChallengeCombatOutcome(winner=result.winner)
+                return ChallengeCombatOutcome(
+                    winner=result.winner, steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
+                )
             if not melee_setup_done:
                 apply_temper_melee_setup(caster, target, rng)
                 melee_setup_done = True
             round_outcome = resolve_one_melee_round(caster, target, rng)
             if round_outcome.result is not None:
-                return ChallengeCombatOutcome(winner=round_outcome.result.winner)
+                return ChallengeCombatOutcome(
+                    winner=round_outcome.result.winner,
+                    steal_outcome=steal_outcome,
+                    steal_capture_range=steal_capture_range,
+                )
             continue
         if tactic.maneuver is Maneuver.CAST:
             if current_range is CombatRange.MELEE_RANGE:
                 damage = resolve_reactive_melee_swing(target, caster, rng)
                 if caster.hit_points <= 0:
-                    return ChallengeCombatOutcome(winner="b")
+                    return ChallengeCombatOutcome(
+                        winner="b", steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
+                    )
                 disrupted = (
                     resolve_spell_disruption(damage, rng)
                     if damage > 0
@@ -938,37 +1003,50 @@ def resolve_challenge_combat(
                 caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=(index == 0)
             )
             if outcome == "fled":
-                return ChallengeCombatOutcome(winner=None, fled=True)
+                return ChallengeCombatOutcome(
+                    winner=None, fled=True, steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
+                )
             if outcome in ("a", "b"):
-                return ChallengeCombatOutcome(winner=outcome)
+                return ChallengeCombatOutcome(
+                    winner=outcome, steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
+                )
             bonus_winner = _consume_bonus_attacks(caster, target, rng)
             if bonus_winner is not None:
-                return ChallengeCombatOutcome(winner=bonus_winner)
+                return ChallengeCombatOutcome(
+                    winner=bonus_winner, steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
+                )
             continue
         if tactic.maneuver is Maneuver.STEAL:
             steal_outcome = _resolve_steal_tactic(caster_leader, target_leader, state, rng)
             if steal_outcome == "executed":
-                return ChallengeCombatOutcome(winner="b")
+                return ChallengeCombatOutcome(
+                    winner="b", steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
+                )
             if steal_outcome == "combat":
-                capture_range = rng.choice((CombatRange.SPELL_RANGE, CombatRange.BOW_RANGE, CombatRange.MELEE_RANGE))
-                if capture_range is CombatRange.SPELL_RANGE:
-                    # No spell-effect system exists for this side combat --
-                    # a documented no-effect, same convention `turn/
-                    # search_execution.py _resolve_steal()`'s own identical
-                    # branch already uses.
-                    continue
-                if capture_range is CombatRange.MELEE_RANGE:
-                    result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
-                    melee_setup_done = True
-                    return ChallengeCombatOutcome(winner=result.winner)
-                result = resolve_fire_arrow_duel(caster, target, rng)
-                if result.winner is not None:
-                    return ChallengeCombatOutcome(winner=result.winner)
+                # Phase 306 correction: a real worked example ([11.3] "CA-IN,
+                # ST, FL, ME") confirms getting caught doesn't atomically
+                # resolve a duel on its own -- it moves the encounter to the
+                # rolled-random range ("a una distanza scelta a caso") and
+                # the plan's own *next* tactic decides what happens from
+                # there (here: try to Flee, and if that fails, Melee), the
+                # same way a SHOOT/MELEE tactic already leaves `current_
+                # range` for whatever tactic follows it. Only jumping
+                # straight to an atomic duel (Phase 305's original design)
+                # would skip that following tactic entirely -- wrong per
+                # this example. `current_range` is set outright, not just
+                # advanced via `_close_to`, since "a randomly chosen
+                # distance" describes a fresh confrontation, not a
+                # continuation of wherever the encounter previously stood.
+                current_range = steal_capture_range = rng.choice(
+                    (CombatRange.SPELL_RANGE, CombatRange.BOW_RANGE, CombatRange.MELEE_RANGE)
+                )
                 continue
             continue  # success / evaded / ransom / unresolved -- plan continues
         # every other tactic is unwired -- skip it and keep walking
     result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
-    return ChallengeCombatOutcome(winner=result.winner)
+    return ChallengeCombatOutcome(
+        winner=result.winner, steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
+    )
 
 
 @dataclass(slots=True)
@@ -983,6 +1061,12 @@ class ChallengeExecutionResult:
     # shirking -- the caster escapes unharmed, distinct from an
     # inconclusive draw (combat_occurred=True, winner_leader_id=None).
     fled: bool = False
+    # Phase 306: copied straight from `ChallengeCombatOutcome` when the
+    # plan's own tactics included a STEAL -- lets `report/turn_report.py
+    # describe_steal()` narrate the Steal sub-event even when the
+    # encounter's overall winner (if any) was decided by a later tactic.
+    steal_outcome: str | None = None
+    steal_capture_range: CombatRange | None = None
 
 
 def execute_challenge(
@@ -1029,9 +1113,20 @@ def execute_challenge(
     )
 
     if combat_result.fled:
-        return ChallengeExecutionResult(accepted=True, combat_occurred=True, fled=True)
+        return ChallengeExecutionResult(
+            accepted=True,
+            combat_occurred=True,
+            fled=True,
+            steal_outcome=combat_result.steal_outcome,
+            steal_capture_range=combat_result.steal_capture_range,
+        )
     if combat_result.winner is None:
-        return ChallengeExecutionResult(accepted=True, combat_occurred=True)
+        return ChallengeExecutionResult(
+            accepted=True,
+            combat_occurred=True,
+            steal_outcome=combat_result.steal_outcome,
+            steal_capture_range=combat_result.steal_capture_range,
+        )
 
     winner_id, loser_id = (
         (challenger_leader_id, request.target_character_id)
@@ -1041,5 +1136,11 @@ def execute_challenge(
     state.remove_leader(loser_id)
 
     return ChallengeExecutionResult(
-        accepted=True, combat_occurred=True, winner_leader_id=winner_id, loser_leader_id=loser_id, loser_killed=True
+        accepted=True,
+        combat_occurred=True,
+        winner_leader_id=winner_id,
+        loser_leader_id=loser_id,
+        loser_killed=True,
+        steal_outcome=combat_result.steal_outcome,
+        steal_capture_range=combat_result.steal_capture_range,
     )

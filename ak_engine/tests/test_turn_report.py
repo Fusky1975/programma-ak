@@ -64,6 +64,7 @@ from ak_engine.report.turn_report import (
     describe_pursue,
     describe_rumor,
     describe_search,
+    describe_steal,
     describe_trail,
     describe_trail_intelligence,
     describe_use_mi,
@@ -221,7 +222,8 @@ from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
-from ak_engine.turn.encounter import FireArrowShot
+from ak_engine.turn.challenge_execution import ChallengeExecutionResult
+from ak_engine.turn.encounter import CombatRange, FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
@@ -1415,6 +1417,69 @@ def test_describe_fire_renders_nothing_on_failure():
         line = describe_fire(result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=rng)
 
         assert line is None
+
+
+# -- describe_steal (integration, Phase 306) ---------------------------------
+
+
+def test_describe_steal_renders_the_ransom_narrative():
+    result = ChallengeExecutionResult(accepted=True, combat_occurred=True, steal_outcome="ransom")
+    rng = ScriptedRandom([0.1] * 10)
+
+    line = describe_steal(result, thief_name="Aldric", victim_name="Borin", rng=rng)
+
+    assert line == (
+        "Borin caught Aldric red-handed while Aldric was rummaging "
+        "through Borin's things in a bungled attempt at thievery.Borin "
+        "forced Aldric to pay Borin half Aldric's treasury in ransom "
+        "before letting him go."
+    )
+
+
+def test_describe_steal_renders_the_combat_narrative_at_the_captured_range():
+    result = ChallengeExecutionResult(
+        accepted=True, combat_occurred=True, steal_outcome="combat", steal_capture_range=CombatRange.MELEE_RANGE
+    )
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
+
+    line = describe_steal(result, thief_name="Arthur", victim_name="Grendel", rng=rng)
+
+    assert line == "Arthur tried to sneak by Grendel, but was seen at melee range."
+
+
+def test_describe_steal_renders_nothing_for_outcomes_with_no_sourced_template():
+    for outcome in (None, "success", "evaded", "executed", "unresolved"):
+        result = ChallengeExecutionResult(accepted=True, combat_occurred=True, steal_outcome=outcome)
+        rng = ScriptedRandom([])  # any .random()/.choice() call here would raise
+
+        line = describe_steal(result, thief_name="Aldric", victim_name="Borin", rng=rng)
+
+        assert line is None
+
+
+def test_describe_steal_renders_nothing_when_combat_outcome_has_no_capture_range():
+    # Defensive: `steal_capture_range` is only ever unset alongside
+    # `steal_outcome == "combat"` if a caller builds the result by hand
+    # (never happens via `resolve_challenge_combat()` itself) -- no crash,
+    # no guessed range.
+    result = ChallengeExecutionResult(accepted=True, combat_occurred=True, steal_outcome="combat")
+    rng = ScriptedRandom([])
+
+    line = describe_steal(result, thief_name="Aldric", victim_name="Borin", rng=rng)
+
+    assert line is None
+
+
+def test_describe_steal_also_accepts_a_pursue_execution_result():
+    # `PursueExecutionResult` shares the same field names (Phase 306) --
+    # this composer reads them structurally, no isinstance check.
+    result = PursueExecutionResult(caught_up=True, combat_occurred=True, steal_outcome="ransom")
+    rng = ScriptedRandom([0.1] * 10)
+
+    line = describe_steal(result, thief_name="Aldric", victim_name="Borin", rng=rng)
+
+    assert line is not None
+    assert "Aldric" in line and "Borin" in line
 
 
 # -- ASpy report body (Phase 115) --------------------------------------------

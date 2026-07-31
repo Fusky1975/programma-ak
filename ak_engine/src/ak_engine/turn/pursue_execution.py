@@ -155,7 +155,7 @@ from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted, resolve_challenge_combat
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, CombatRange
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance, neighbors
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 
@@ -211,6 +211,12 @@ class PursueExecutionResult:
     # directly, bypassing dispatch -- the same "not populated outside its
     # real consumer" convention already used elsewhere in this project.
     request: PursueRequest | None = None
+    # Phase 306: same field, same reason as `turn/challenge_execution.py
+    # ChallengeExecutionResult`'s own Phase 306 addendum -- copied
+    # straight from `ChallengeCombatOutcome` for the armyless case, which
+    # shares that module's combat core directly.
+    steal_outcome: str | None = None
+    steal_capture_range: CombatRange | None = None
 
 
 def _fight_army_pursuit_battle(
@@ -301,9 +307,20 @@ def execute_pursue(
     )
 
     if combat_result.fled:
-        return PursueExecutionResult(caught_up=True, combat_occurred=True, fled=True)
+        return PursueExecutionResult(
+            caught_up=True,
+            combat_occurred=True,
+            fled=True,
+            steal_outcome=combat_result.steal_outcome,
+            steal_capture_range=combat_result.steal_capture_range,
+        )
     if combat_result.winner is None:
-        return PursueExecutionResult(caught_up=True, combat_occurred=True)
+        return PursueExecutionResult(
+            caught_up=True,
+            combat_occurred=True,
+            steal_outcome=combat_result.steal_outcome,
+            steal_capture_range=combat_result.steal_capture_range,
+        )
 
     winner_id, loser_id = (
         (pursuer_leader_id, request.target_character_id)
@@ -313,7 +330,13 @@ def execute_pursue(
     state.remove_leader(loser_id)
 
     return PursueExecutionResult(
-        caught_up=True, combat_occurred=True, winner_leader_id=winner_id, loser_leader_id=loser_id, loser_killed=True
+        caught_up=True,
+        combat_occurred=True,
+        winner_leader_id=winner_id,
+        loser_leader_id=loser_id,
+        loser_killed=True,
+        steal_outcome=combat_result.steal_outcome,
+        steal_capture_range=combat_result.steal_capture_range,
     )
 
 

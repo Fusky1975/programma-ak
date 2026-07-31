@@ -1150,9 +1150,10 @@ from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult
+from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
 from ak_engine.turn.emperor_election import alignment_victory_point_reduction_percent
-from ak_engine.turn.encounter import FireArrowShot
+from ak_engine.turn.encounter import CombatRange, FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
@@ -3932,6 +3933,62 @@ def render_sneak_detected(
         ">": f"{character_name}'s",
     }
     return render(variant, values, rng=rng) + range_suffix
+
+
+_STEAL_CAPTURE_RANGE_SUFFIX: dict[CombatRange, str] = {
+    CombatRange.MELEE_RANGE: SNEAKUP_RANGE_MELEE,
+    CombatRange.BOW_RANGE: SNEAKUP_RANGE_BOW,
+    CombatRange.SPELL_RANGE: SNEAKUP_RANGE_SPELL,
+}
+
+
+def describe_steal(
+    result: ChallengeExecutionResult | PursueExecutionResult,
+    *,
+    thief_name: str,
+    victim_name: str,
+    rng: random.Random,
+) -> str | None:
+    """Assembles the Steal sub-event narrative from an already-computed
+    ``ChallengeExecutionResult`` (``turn/challenge_execution.py
+    execute_challenge()``, Phase 305/306) -- the same ``describe_hire()``
+    -style composer, reused by Pursue's own ``PursueExecutionResult``
+    (which shares the same ``steal_outcome``/``steal_capture_range``
+    field names -- see that module's own docstring) via a plain
+    attribute read, not an isinstance check.
+
+    Wires two real, previously-unconsumed renderers (both already
+    sourced, tested, and dispatch-ready before this phase, per their own
+    module docstring addenda -- Phase 105's ``render_sneak_detected`` and
+    Phase 119's ``render_steal_caught_and_ransomed``):
+
+    - ``"combat"`` -> ``render_sneak_detected()`` (``SNEAKUP.X``): caught
+      mid-theft, engaged at whichever range ``_resolve_steal_tactic()``
+      rolled. Whether real combat actually follows in the same report is
+      a separate question this function doesn't answer -- see ``turn/
+      challenge_execution.py``'s own Phase 306 addendum for how the
+      mechanic itself now hands off to the plan's next tactic instead of
+      resolving atomically.
+    - ``"ransom"`` -> ``render_steal_caught_and_ransomed()`` (``_LRans``):
+      a King caught robbing another King, forced to pay half his own
+      treasury. ``victim_name`` is the *catcher* here (the King who was
+      almost robbed), ``thief_name`` the one who paid -- matching that
+      renderer's own ``catcher_name``/``thief_name`` parameter order.
+    - ``"success"``/``"evaded"``/``"executed"``/``"unresolved"``/``None``
+      all have no sourced narrative template of their own (a clean gold
+      or item theft was never given prose in any available source, and
+      no sourced text describes a Hero's own execution or a genuinely
+      unresolved capture) -- returns ``None``, the same "no source, no
+      guess" convention every other ``describe_*`` composer in this
+      module already follows for its own undocumented failure reasons.
+    """
+
+    if result.steal_outcome == "ransom":
+        return render_steal_caught_and_ransomed(victim_name, thief_name, rng)
+    if result.steal_outcome == "combat" and result.steal_capture_range is not None:
+        range_suffix = _STEAL_CAPTURE_RANGE_SUFFIX[result.steal_capture_range]
+        return render_sneak_detected(thief_name, victim_name, range_suffix, rng)
+    return None
 
 
 # HostAK/TP/PROSE/RWENC.X -- a wandering encounter's opening sentence.

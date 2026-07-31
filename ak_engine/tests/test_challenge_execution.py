@@ -998,6 +998,7 @@ def test_resolve_challenge_combat_steal_executed_ends_the_encounter():
         outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
 
     assert outcome.winner == "b"
+    assert outcome.steal_outcome == "executed"
 
 
 def test_resolve_challenge_combat_steal_success_lets_the_plan_continue():
@@ -1011,9 +1012,10 @@ def test_resolve_challenge_combat_steal_success_lets_the_plan_continue():
         outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
 
     assert outcome.winner == "a"
+    assert outcome.steal_outcome == "success"
 
 
-def test_resolve_challenge_combat_steal_capture_combat_at_spell_range_has_no_effect():
+def test_resolve_challenge_combat_steal_capture_combat_at_spell_range_lets_a_following_melee_tactic_decide():
     state, caster_leader, caster, target_leader, target = _combatants()
     tactics = [SearchTactic(Maneuver.STEAL), SearchTactic(Maneuver.MELEE)]
 
@@ -1025,27 +1027,40 @@ def test_resolve_challenge_combat_steal_capture_combat_at_spell_range_has_no_eff
             tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([], choice_indices=[0])
         )
 
-    assert outcome.winner == "a"  # fell through to the following MELEE tactic
+    assert outcome.winner == "a"  # decided by the following MELEE tactic, not an atomic Steal-side duel
+    assert outcome.steal_outcome == "combat"
+    assert outcome.steal_capture_range is CombatRange.SPELL_RANGE
 
 
-def test_resolve_challenge_combat_steal_capture_combat_at_bow_range_fires_arrows():
+def test_resolve_challenge_combat_steal_capture_sets_the_rolled_range_and_falls_through_to_the_exhausted_default():
+    # Phase 306 correction: no follow-up tactic after STEAL -- being
+    # caught no longer atomically resolves its own duel, so this falls
+    # through to the pre-existing "exhausted tactic list defaults to
+    # Melee" tail, the same way an unwired trailing tactic already would.
     state, caster_leader, caster, target_leader, target = _combatants()
     tactics = [SearchTactic(Maneuver.STEAL)]
 
     with patch("ak_engine.turn.challenge_execution._resolve_steal_tactic", return_value="combat"), patch(
-        "ak_engine.turn.challenge_execution.resolve_fire_arrow_duel"
-    ) as mock_shoot:
-        mock_shoot.return_value = EncounterCombatResult(winner="a", rounds=1)
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="b", rounds=1)
         outcome = resolve_challenge_combat(
             tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([], choice_indices=[1])
         )
 
-    assert outcome.winner == "a"
+    assert outcome.winner == "b"
+    assert outcome.steal_outcome == "combat"
+    assert outcome.steal_capture_range is CombatRange.BOW_RANGE
+    mock_duel.assert_called_once()  # the exhausted-list tail, not an atomic Steal-side resolution
 
 
-def test_resolve_challenge_combat_steal_capture_combat_at_melee_range_fights_atomically():
+def test_resolve_challenge_combat_steal_capture_at_melee_range_then_a_following_melee_tactic_resolves_once():
+    # [11.3]'s own worked example ("CA-IN, ST, FL, ME"): getting caught
+    # hands control to the plan's own next tactic. FLEE stays unwired
+    # (a separate, already-documented gap) and is skipped; the following
+    # MELEE picks up from the rolled range without re-closing it.
     state, caster_leader, caster, target_leader, target = _combatants()
-    tactics = [SearchTactic(Maneuver.STEAL)]
+    tactics = [SearchTactic(Maneuver.STEAL), SearchTactic(Maneuver.FLEE), SearchTactic(Maneuver.MELEE)]
 
     with patch("ak_engine.turn.challenge_execution._resolve_steal_tactic", return_value="combat"), patch(
         "ak_engine.turn.challenge_execution.resolve_melee_duel"
@@ -1056,3 +1071,6 @@ def test_resolve_challenge_combat_steal_capture_combat_at_melee_range_fights_ato
         )
 
     assert outcome.winner == "b"
+    assert outcome.steal_outcome == "combat"
+    assert outcome.steal_capture_range is CombatRange.MELEE_RANGE
+    mock_duel.assert_called_once()

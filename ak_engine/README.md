@@ -12930,7 +12930,7 @@ Practice's army pooling (Phase 304), the two concrete, verified-open
 feature gaps identified from the README's own "Not yet implemented"
 section.
 
-- **Phase 305 (current)**: closes the character-vs-character half of
+- **Phase 305**: closes the character-vs-character half of
   Steal [ST] (rulebook [5.5]) -- `turn/search_execution.py`'s own
   `_resolve_steal()` only ever handled Search's guardian-monster target;
   `turn/challenge_execution.py`'s own docstring flagged the general case
@@ -12998,6 +12998,54 @@ section.
     RNG); and `resolve_challenge_combat()`'s own STEAL wiring across all
     three capture-combat ranges plus the success/executed fall-through
     cases -- 3314 passed total.
+
+- **Phase 306 (current)**: wires Steal's own narrative text into the
+  report layer, plus a correctness fix to Phase 305 found in the course
+  of that research -- requested directly ("crea un testo nel report"),
+  building on Phase 305's own newly-implemented mechanic.
+  - **Two real, previously-unconsumed renderers were already sitting in
+    `report/turn_report.py`, sourced and tested since Phase 105/119,
+    just never dispatched by any caller**: `render_sneak_detected()`
+    (`SNEAKUP.X`, a failed Steal maneuver caught mid-theft, ending with
+    a range clause) and `render_steal_caught_and_ransomed()` (`_LRans`,
+    the exact King-vs-King ransom narrative Phase 305's own `"ransom"`
+    branch implements). New `describe_steal()` composer dispatches to
+    them off `steal_outcome`/`steal_capture_range`; the other four
+    outcomes (`success`/`evaded`/`executed`/`unresolved`) have no
+    sourced template and render nothing, the same "no source, no guess"
+    convention every other `describe_*` composer already follows.
+  - **A real bug found while researching how to expose the "combat"
+    range for narration**: [11.3]'s own worked example ("CA-IN, ST, FL,
+    ME" -- cast Invisibility, attempt Steal, if caught try to Flee, if
+    that fails Melee) proves getting caught should hand control to the
+    plan's *own next tactic*, not atomically resolve a duel the way
+    Phase 305 originally built it (mirroring Search's own precedent,
+    which turned out not to generalize here). Fixed: the STEAL branch
+    now sets `current_range` outright to the freshly-rolled range and
+    lets the tactic walk continue, the same way SHOOT/MELEE already
+    leave `current_range` for whatever follows -- a following `MELEE`
+    (as in the worked example) picks up correctly; `FLEE` stays
+    unwired (a separate, already-documented gap); an exhausted list
+    still falls through to the pre-existing "defaults to Melee" tail.
+  - `ChallengeCombatOutcome`/`ChallengeExecutionResult` (and
+    `PursueExecutionResult`, which shares the same combat core) gain
+    `steal_outcome`/`steal_capture_range` fields, threaded through every
+    return site in `resolve_challenge_combat()` -- not just a terminal
+    STEAL branch -- so the report layer can narrate the Steal sub-event
+    even when a later tactic decides the encounter's actual winner.
+  - Also newly documented (no code change): a Steal-only plan (no
+    Melee/Fire-Arrow/decodable-Cast alongside it) never reaches
+    `resolve_challenge_combat()` at all, since [3.12] deliberately
+    excludes Steal from "combat intent" and `execute_challenge()`
+    short-circuits before that. Both real worked examples always pair
+    `ST` with a real combat tactic, so this is left as a documented,
+    unattested-shape gap rather than fixed speculatively.
+  - 5 new tests in `test_turn_report.py` covering `describe_steal()`'s
+    ransom/combat/no-template/defensive-no-range branches and its reuse
+    for `PursueExecutionResult`; 2 pre-existing Phase 305 tests in
+    `test_challenge_execution.py` rewritten (the old atomic-duel
+    assumption no longer holds) plus 1 new test proving the worked
+    -example flow end-to-end -- 3319 passed total.
 
 ## Setup
 
