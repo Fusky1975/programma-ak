@@ -50,10 +50,13 @@ together instead of each resolving solo. **No alliance/kingdom
 requirement** -- unlike Multiple Contingents, the rulebook's own text
 ("If 2 or more characters are in the same province...") never mentions
 kingdom membership at all, so this groups purely by co-location, across
-any kingdoms. ``Ability.TACTICAL``/an undecoded raw ability value groups
-the same as any other ability (so ``execute_practice_group`` still sees
-the collision), but resolves to ``not_implemented_for_ability=True`` for
-the whole group, same as the solo path already does for those cases.
+any kingdoms. ``Ability.TACTICAL`` groups the same as any other ability
+(so ``execute_practice_group`` still sees the collision), but resolves
+through the [6.1] army-pooling mechanic instead of the ordinary
+skill-rise mechanic -- see that function's own Phase 304 note. An
+undecoded raw (non-``Ability``) value still resolves to
+``not_implemented_for_ability=True`` for the whole group, same as the
+solo path.
 
 **MUTUAL ENCOUNTER detection rule (Phase 56)**: when leader A's CHALLENGE
 or PURSUE phase at a given phase label targets leader B, and leader B's

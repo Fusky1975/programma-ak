@@ -301,6 +301,32 @@ def test_run_turn_groups_co_located_same_ability_practicers():
     assert by_leader[20].result.new_skill == 4
 
 
+def test_run_turn_pools_armies_for_co_located_tactical_practicers():
+    # Phase 304 end-to-end: two co-located leaders both ordering Practice
+    # Tactical get grouped by run_turn()'s own same-ability/same-location
+    # rule (Phase 46) exactly like any other ability, and now actually
+    # resolve through the [6.1] army-pooling mechanic instead of
+    # silently training nobody. Leader 10's own Green army has no
+    # higher-tier army under 10's own command -- only leader 20's pooled
+    # Veteran army makes it trainable.
+    state = _practice_state(10, 20)
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.GREEN, ORIGIN, commanded_by=10))
+    state.add_army(ArmyState(2, 1, ArmyType.BOWMEN, Quality.VETERAN, ORIGIN, commanded_by=20))
+    leader_a = _leader_with_phase(10, "A", "P0", _practice_phase("P0", Ability.TACTICAL))
+    leader_b = _leader_with_phase(20, "B", "P0", _practice_phase("P0", Ability.TACTICAL))
+
+    results = run_turn(
+        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0])
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[10].result.not_implemented_for_ability is False
+    assert by_leader[10].result.trained_army_ids == (1,)
+    assert by_leader[20].result.trained_army_ids == ()
+    assert state.armies[1].quality is Quality.AVERAGE
+    assert state.armies[2].quality is Quality.VETERAN  # untouched
+
+
 def test_run_turn_does_not_group_different_abilities_even_when_co_located():
     state = _practice_state(
         10,

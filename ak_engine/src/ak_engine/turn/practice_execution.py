@@ -123,17 +123,28 @@ phase's scope for each:
   existing turn-boundary hook anywhere in this project to attach to,
   the same "no general per-turn reset mechanism yet" situation already
   documented for ``recruited_this_turn``/``ArmyState.movement_points``.
-  **Multi-leader army pooling stays out of scope**, same as before:
-  this only trains the single dispatching leader's own command, not
-  co-located leaders' combined forces ("if two leaders Practice
-  Tactics together, their armies are pooled" above) the way the
-  generic skill-rise mechanic pools co-located *characters* -- flagged
-  as a further future phase, not silently expanded into this one.
-  ``execute_practice_group`` (Phase 46's multi-character pooling entry
-  point) still returns ``not_implemented_for_ability=True`` for
-  Tactical unchanged, since its own pooling concept (co-located
-  *characters* sharing one skill-rise roll) doesn't apply to
-  Tactical's *army*-training mechanic at all.
+  **Multi-leader army pooling -- closed as of Phase 304**:
+  ``execute_practice_tactical_group()`` implements the quoted "if two
+  leaders Practice Tactics together, their armies are pooled into the
+  same training maneuvers" clause directly -- every army commanded by
+  any of the co-practicing leaders (as detected by ``turn/
+  turn_processor.py run_turn()``'s own co-location/same-phase grouping,
+  Phase 46) is merged into one shared training-and-inspiration pool
+  before the per-army roll, instead of each leader's own command being
+  gated in isolation. ``execute_practice_group`` now special-cases
+  ``Ability.TACTICAL`` to call it instead of returning
+  ``not_implemented_for_ability=True`` -- previously, two or more
+  co-located leaders who both ordered Practice Tactical the same phase
+  got grouped by ``run_turn()``'s general same-ability/same-location
+  rule (which doesn't distinguish Tactical from any other ability) and
+  then silently trained *nobody at all*, since the group path
+  unconditionally refused Tactical while the (bypassed) solo path was
+  the only one that ever actually rolled -- worse than the
+  single-leader case it was meant to generalize, not just narrower than
+  it. Each co-practicer's own ``PracticeExecutionResult.
+  trained_army_ids`` still reports only their own armies that trained,
+  matching the solo case's own reporting shape -- see that function's
+  own docstring for the full design.
 - **Sage / Sageness** ([4.3.1], rulebook's own heading "CONOSCENZA --
   Sageness [SA]"), quoted in full: "Permette la scoperta di nuovi
   strumenti o conoscenze. Quando si fa pratica in questo Talento
@@ -446,6 +457,54 @@ def execute_practice_tactical(state: GameState, leader_id: int, rng: random.Rand
     return tuple(trained_army_ids)
 
 
+def execute_practice_tactical_group(
+    state: GameState, leader_ids: list[int], rng: random.Random | None = None
+) -> dict[int, tuple[int, ...]]:
+    """[6.1]'s own "If two leaders Practice Tactics together, their armies are pooled
+    into the same training maneuvers" (Phase 304) -- pools every army
+    commanded by *any* of ``leader_ids`` into one shared training-and-
+    inspiration pool, instead of gating each leader's own command alone
+    the way the single-leader ``execute_practice_tactical()`` does. An
+    army is training-eligible under the pooled gate the same way the
+    solo case gates it -- some *other* pooled army, regardless of which
+    of the co-practicing leaders commands it, sitting at a strictly
+    higher *original* (pre-roll, snapshotted once before any roll this
+    call) Quality tier -- then rolls independently at its own tier's
+    ``TACTICAL_TRAINING_CHANCE``, exactly as the solo case.
+
+    Returns ``{leader_id: trained_army_ids}`` (only that leader's own
+    armies) so each co-practicer's own ``PracticeExecutionResult.
+    trained_army_ids`` keeps the same "my own commanded armies that
+    trained" shape the solo case already reports -- callers never see a
+    pooled list mixing another leader's army ids into their own result.
+    """
+
+    rng = rng if rng is not None else random.Random()
+
+    armies_by_leader = {leader_id: state.armies_commanded_by(leader_id) for leader_id in leader_ids}
+    pooled_armies = [army for armies in armies_by_leader.values() for army in armies]
+    original_qualities = {army.army_id: army.quality for army in pooled_armies}
+
+    trained_army_ids: set[int] = set()
+    for army in pooled_armies:
+        chance = TACTICAL_TRAINING_CHANCE.get(army.quality)
+        if chance is None:
+            continue
+        has_higher_quality_army = any(
+            original_qualities[other.army_id] > army.quality for other in pooled_armies if other.army_id != army.army_id
+        )
+        if not has_higher_quality_army:
+            continue
+        if rng.random() < chance:
+            army.quality = Quality(army.quality + 1)
+            trained_army_ids.add(army.army_id)
+
+    return {
+        leader_id: tuple(army.army_id for army in armies if army.army_id in trained_army_ids)
+        for leader_id, armies in armies_by_leader.items()
+    }
+
+
 def execute_practice(
     state: GameState, leader_id: int, ability: Ability | int, rng: random.Random | None = None
 ) -> PracticeExecutionResult:
@@ -539,8 +598,19 @@ def execute_practice_group(
 
     rng = rng if rng is not None else random.Random()
 
-    if not isinstance(ability, Ability) or ability is Ability.TACTICAL:
+    if not isinstance(ability, Ability):
         return [PracticeExecutionResult(ability=ability, not_implemented_for_ability=True) for _ in leader_ids]
+
+    if ability is Ability.TACTICAL:
+        # Phase 304: army pooling, via execute_practice_tactical_group() --
+        # see that function's own docstring.
+        if len(leader_ids) < 2:
+            raise ValueError("execute_practice_group needs at least 2 leaders; use execute_practice for 1")
+        trained_by_leader = execute_practice_tactical_group(state, leader_ids, rng)
+        return [
+            PracticeExecutionResult(ability=ability, trained_army_ids=trained_by_leader[leader_id])
+            for leader_id in leader_ids
+        ]
 
     if len(leader_ids) < 2:
         raise ValueError("execute_practice_group needs at least 2 leaders; use execute_practice for 1")

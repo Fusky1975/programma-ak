@@ -12847,7 +12847,7 @@ findings (Phases 300-302), alongside the first round's four (Phases
 296-299) -- seven real, previously-undetected bugs found and fixed
 across two dedicated audit passes this project has run so far.
 
-- **Phase 303 (current)**: closes Recruit's own long-flagged "never
+- **Phase 303**: closes Recruit's own long-flagged "never
   blocks recruiting in a non-owned, non-allied province" gap (see
   Phase 261's/262's own notes above), sourced from RULES.AK [3.4],
   quoted in full: "You can Recruit armies from the populace only if
@@ -12878,6 +12878,57 @@ across two dedicated audit passes this project has run so far.
     province is likewise blocked; a co-located mercenary in that same
     hostile province is still hireable, proving the territory gate
     never touches the mercenary path -- 3292 passed total.
+
+- **Phase 304 (current)**: closes Tactical Practice's own long-flagged
+  "multi-leader army pooling" gap (Phase 167's/263's own notes above),
+  sourced from RULES.AK [6.1], quoted in full: "If two leaders Practice
+  Tactics together, their armies are pooled into the same training
+  maneuvers." Worse than merely missing: `turn/turn_processor.py
+  run_turn()`'s own Phase 46 same-ability/same-location grouping rule
+  doesn't distinguish Tactical from any other ability, so two co-located
+  leaders who both ordered Practice Tactical the same phase were already
+  being grouped and routed to `execute_practice_group()` -- which
+  unconditionally refused Tactical (`not_implemented_for_ability=True`
+  for the whole group), silently training *nobody at all*, while the
+  (bypassed) single-leader path was the only one that ever actually
+  rolled. A multi-leader Tactical Practice order was strictly worse than
+  a solo one, not just narrower.
+  - **Fix**: new `turn/practice_execution.py
+    execute_practice_tactical_group()` pools every army commanded by any
+    of the co-practicing leaders into one shared training-and-inspiration
+    pool before the per-army roll -- an army is eligible if *any* pooled
+    army (regardless of which co-practicer commands it) sits at a
+    strictly higher *original* Quality tier, then rolls independently at
+    its own tier's `TACTICAL_TRAINING_CHANCE`, exactly as the solo case.
+    `execute_practice_group()` now special-cases `Ability.TACTICAL` to
+    call it instead of refusing the whole group. Each co-practicer's own
+    `PracticeExecutionResult.trained_army_ids` still reports only their
+    own armies that trained, matching the solo case's own reporting
+    shape -- no caller ever sees another leader's army id mixed into
+    their own result.
+  - One pre-existing test
+    (`test_execute_practice_group_tactical_is_not_implemented_for_the_whole_group`)
+    asserted the old, buggy "trains nobody" behavior -- renamed and
+    updated in place to assert the fix instead, the same "expected, not
+    a regression" pattern already established for prior phases' own test
+    updates. Non-breaking otherwise: full suite passed unchanged (3296)
+    before any further new test was added.
+  - 5 new tests: `test_practice_execution.py` proves a pooled army trains
+    off another co-practicer's inspiring army that its *own* leader's
+    command alone could never provide, proves the solo mechanic
+    genuinely can't do this (same setup, `execute_practice_tactical()`
+    directly), proves each leader's own result only ever lists their own
+    army ids even when both co-practicers' armies train in the same
+    call, and proves the `len(leader_ids) < 2` guard still applies to
+    the new Tactical path; `test_turn_processor.py` proves the fix
+    end-to-end through a real, unmocked `run_turn()` call with two
+    co-located Tactical practicers -- 3297 passed total.
+
+This closes both halves of the user's "sviluppiamo il gioco" request
+this session: Recruit's territory gate (Phase 303) and Tactical
+Practice's army pooling (Phase 304), the two concrete, verified-open
+feature gaps identified from the README's own "Not yet implemented"
+section.
 
 ## Setup
 

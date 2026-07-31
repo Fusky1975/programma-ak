@@ -25,6 +25,7 @@ from ak_engine.turn.practice_execution import (
     execute_practice,
     execute_practice_group,
     execute_practice_tactical,
+    execute_practice_tactical_group,
     resolve_practice_group,
     resolve_practice_pair,
     resolve_practice_solo,
@@ -362,6 +363,61 @@ def test_execute_practice_tactical_fails_the_roll():
     assert state.armies[1].quality is Quality.GREEN
 
 
+def test_execute_practice_tactical_group_pools_armies_across_co_practicing_leaders():
+    # Phase 304: RULES.AK [6.1] -- "If two leaders Practice Tactics
+    # together, their armies are pooled into the same training
+    # maneuvers." Leader 1's own Green army has no higher-tier army of
+    # its OWN command to inspire it, but leader 2 (co-practicing)
+    # commands a Veteran army -- pooled, that's enough to train it,
+    # which the single-leader execute_practice_tactical() alone could
+    # never do for leader 1's own command.
+    state = _state_with_leaders(1, 2)
+    state.add_army(_army(1, Quality.GREEN, commanded_by=1))
+    state.add_army(_army(2, Quality.VETERAN, commanded_by=2))
+
+    trained_by_leader = execute_practice_tactical_group(state, [1, 2], rng=ScriptedRandom([0.0]))
+
+    assert trained_by_leader == {1: (1,), 2: ()}
+    assert state.armies[1].quality is Quality.AVERAGE
+    assert state.armies[2].quality is Quality.VETERAN  # untouched, not itself trainable
+
+
+def test_execute_practice_tactical_group_without_pooling_would_never_have_trained():
+    # Same setup as above, but proves the *solo* mechanic genuinely
+    # can't do this -- leader 1's own command alone has no inspiring
+    # army, so execute_practice_tactical() finds nothing to train.
+    state = _state_with_leaders(1, 2)
+    state.add_army(_army(1, Quality.GREEN, commanded_by=1))
+    state.add_army(_army(2, Quality.VETERAN, commanded_by=2))
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([]))
+
+    assert trained == ()
+    assert state.armies[1].quality is Quality.GREEN
+
+
+def test_execute_practice_tactical_group_reports_each_leaders_own_armies_only():
+    state = _state_with_leaders(1, 2)
+    state.add_army(_army(10, Quality.GREEN, commanded_by=1))
+    state.add_army(_army(20, Quality.GREEN, commanded_by=2))
+    state.add_army(_army(30, Quality.VETERAN, commanded_by=2))  # inspires both Green armies
+
+    trained_by_leader = execute_practice_tactical_group(state, [1, 2], rng=ScriptedRandom([0.0, 0.0]))
+
+    assert trained_by_leader[1] == (10,)  # leader 1's own result never lists leader 2's army id 20
+    assert trained_by_leader[2] == (20,)
+    assert state.armies[10].quality is Quality.AVERAGE
+    assert state.armies[20].quality is Quality.AVERAGE
+    assert state.armies[30].quality is Quality.VETERAN
+
+
+def test_execute_practice_tactical_group_requires_at_least_two_leaders_via_execute_practice_group():
+    state = _state_with_leaders(1)
+
+    with pytest.raises(ValueError):
+        execute_practice_group(state, [1], Ability.TACTICAL, rng=ScriptedRandom([]))
+
+
 def test_tactical_training_chance_covers_all_five_transitions_per_rules_ak_6_1():
     # Phase 263: the complete RULES.AK [6.1] training-maneuvers table --
     # Elite has no next tier, so it's the only Quality absent here.
@@ -484,12 +540,18 @@ def test_execute_practice_group_attaches_fresh_skill_tables_when_none_recorded()
     assert len(results) == 2
 
 
-def test_execute_practice_group_tactical_is_not_implemented_for_the_whole_group():
+def test_execute_practice_group_tactical_resolves_via_army_pooling_not_skill_rise():
+    # Phase 304 fix: TACTICAL used to be a blanket not_implemented for
+    # the whole group (worse than the solo case, which does train) --
+    # it now resolves through execute_practice_tactical_group() instead
+    # of the ordinary skill-rise mechanic, and never touches
+    # LeaderState.skills at all (TACTICAL trains armies, not skill).
     state = _state_with_leaders(1, 2)
 
     results = execute_practice_group(state, [1, 2], Ability.TACTICAL, rng=ScriptedRandom([]))
 
-    assert all(r.not_implemented_for_ability for r in results)
+    assert all(not r.not_implemented_for_ability for r in results)
+    assert all(r.trained_army_ids == () for r in results)  # no armies commanded -- nothing to pool or train
     assert state.leaders[1].skills is None
     assert state.leaders[2].skills is None
 
