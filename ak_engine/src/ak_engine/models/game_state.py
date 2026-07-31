@@ -339,16 +339,27 @@ class MeritTally:
     `terrain_override` (only wired up 166+ phases later, Phase 225/226).
 
     Two fields per office needing a win/loss split (Marshal, Admiral) are
-    kept as separate won/lost counters rather than a single running total,
-    so `turn/merit_points.py`'s own formula -- "+1 per enemy unit if won,
-    -1 per own unit if lost" -- can apply the sign itself; pre-signing here
-    would hide the raw counts a future battle-outcome wiring phase needs.
+    kept as separate won/lost totals rather than a single running total,
+    so `turn/merit_points.py`'s own formula can apply the sign itself;
+    pre-signing here would hide the raw totals a future battle-outcome
+    wiring phase needs.
+
+    **Phase 308**: these four fields were originally named `..._enemy_
+    units`/`..._own_units` and held a flat per-unit count (`turn/
+    merit_points.py`'s own original "+1 per enemy unit if won, -1 per
+    own unit if lost" formula). Renamed to `..._points` now that
+    `turn/battle_orchestrator.py _record_battle_merit()` sums a real,
+    sourced quality-weighted table (`turn/merit_points.py
+    MARSHAL_QUALITY_POINTS`/`battle_quality_points()`, Regolamento
+    AK.txt's own "NUOVE REGOLE" appendix) instead of a flat +1/-1 per
+    unit -- the old names would have silently misdescribed what these
+    totals hold.
     """
 
-    land_battles_won_enemy_units: int = 0
-    land_battles_lost_own_units: int = 0
-    naval_battles_won_enemy_units: int = 0
-    naval_battles_lost_own_units: int = 0
+    land_battles_won_points: int = 0
+    land_battles_lost_points: int = 0
+    naval_battles_won_points: int = 0
+    naval_battles_lost_points: int = 0
     # Defender: monster Hit Points -- full for a kill, half (per the
     # rulebook's own "metà dei punti se neutralizzato con trattative")
     # for a monster talked/negotiated into stopping, applied by the

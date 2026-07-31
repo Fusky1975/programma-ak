@@ -71,10 +71,12 @@ the 3-point/2-point figures above -- a successful grant credits.
 treasury") is now confirmed by the rulebook's own text, not a guess.
 
 ## Gran Maresciallo / Marshal (10%)
-"Per ogni battaglia terrestre comandata: se vinta, per ciascuna unità
+Original page-51 rule (quoted verbatim, now **superseded** for the
+per-unit magnitude -- see the Phase 308 addendum below): "Per ogni
+battaglia terrestre comandata: se vinta, per ciascuna unità
 dell'esercito nemico +1; se persa, per ciascuna unità nel proprio
-esercito -1." `MeritTally.land_battles_won_enemy_units`/
-`land_battles_lost_own_units` are **live as of Phase 254**:
+esercito -1." `MeritTally.land_battles_won_points`/
+`land_battles_lost_points` are **live as of Phase 254**:
 `turn/battle_orchestrator.py _record_battle_merit()` credits/debits
 each side's own Supreme Commander (`None` for an unled side -- not a
 "battaglia comandata" for anyone) right after `fight_battle()` resolves
@@ -83,6 +85,43 @@ each side's own Supreme Commander (`None` for an unled side -- not a
 army<->`BattleUnit` correspondence), not just casualties. A `"tie"`
 records nothing for either side -- the rulebook's own "vinta"/"persa"
 wording doesn't address one.
+
+**Phase 308 addendum -- the flat +1/-1-per-unit rule above is replaced
+by a quality-weighted table.** `Regolamento AK.txt`'s own "NUOVE REGOLE
+E MODIFICHE" appendix (the same layer already mined for Patrol,
+Bless's graveyard-clearing addendum, Invisibility's +30% flee bonus,
+Defend-cancel-on-loss, and the real MARCH TABLE, Phase 307), quoted in
+full: "Adesso per la Carica di Maresciallo conta la qualità delle unità
+sconfitte secondo questa tabella: Reclute 0 punti / Medio 1 punto /
+Veterani 2 punti / Crack 3 punti / Elite 4 punti. Una Garrison che
+attacca ha un modificatore di -1 su questa tabella (una Garrison Crack
+che attacca e viene distrutta dà solo 2 punti al generale che l'ha
+vinta)."
+
+`MARSHAL_QUALITY_POINTS`/`battle_quality_points()` implement this
+directly -- "Reclute"/"Medio" are this project's own already-established
+Italian<->English `Quality` mapping (`GREEN`/`AVERAGE`, `turn/combat.py
+QUALITY_NAME` and every other consumer already use this pairing).
+**`Quality.DEPLETED` has no entry of its own in the quoted
+table** -- read as 0 (the table's own floor, the same "clamp rather
+than extrapolate" convention `march_unite_chance()` established, Phase
+307), which happens to make the whole table exactly
+`max(0, int(quality) - 1)` -- a clean coincidence of this project's own
+`Quality` ordinal values, not a formula the rulebook states directly, so
+the explicit dict stays the source of truth rather than that shortcut.
+**The Garrison modifier's own per-unit floor is unstated**: the
+rulebook's own worked example only tests a Crack Garrison (3 points,
+-1 -> 2, still positive) -- nothing rules out a weaker attacking
+Garrison's own per-unit score going negative (e.g. a defeated Green
+attacking Garrison scores -1, not 0), so `battle_quality_points()`
+applies the literal subtraction with no invented floor.
+
+`_record_battle_merit()` (`turn/battle_orchestrator.py`) now sums this
+per-unit table over the real, defeated side's own `ArmyState` list
+(``army_type``/``quality`` as fielded, matching this same function's
+own pre-existing "count everything fielded, not just casualties"
+reading) instead of a flat per-unit constant -- see that function's own
+Phase 308 addendum.
 
 ## Grande Ammiraglio / Admiral (10%)
 Same won/lost-unit formula as Marshal but for naval battles (also live
@@ -94,6 +133,24 @@ is a flat per-kingdom count applied to *every* character of that
 kingdom, not per-leader-owned territory, so `admiral_merit_points()`
 counts qualifying sea provinces once per `leader.kingdom_id` and adds
 the same figure for every leader who shares that kingdom.
+
+**Phase 308 addendum -- extended the same quality table.** The NUOVE
+REGOLE text above names only "la Carica di Maresciallo" -- Admiral
+isn't mentioned by name. Applied here anyway, for two reasons stated
+plainly rather than assumed silently: this project's own pre-existing
+docstring already treats Admiral's own battle term as "Same won/lost-
+unit formula as Marshal... for naval battles" (one shared formula, two
+offices, since the original page-51 text itself gives both offices the
+identical wording); and the user's own request that prompted this phase
+explicitly named both offices together ("Punteggio Gran Maresciallo/
+Grande Ammiraglio"). `MeritTally.naval_battles_won_points`/
+`naval_battles_lost_points` (renamed from `..._enemy_units`/`..._own_
+units`, since they now hold quality points, not raw unit counts) feed
+the same subtraction as Marshal's own formula; the Garrison-attacker
+modifier applies here too, purely for uniformity -- a naval Garrison
+attack isn't a shape this project's own data has ever shown, so the
+modifier is expected to be inert here in practice, not a claim that
+naval Garrisons are a real, attested unit shape.
 
 ## Gran Difensore / Defender (10%)
 "Per ciascun mostro ucciso: totale Punti Ferita del mostro (metà dei
@@ -202,10 +259,12 @@ guess.
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import Terrain
 from ak_engine.models.treasure import Treasure, TreasureCategory, TREASURE_CATEGORY
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.tax_base import compute_tax_base
 
@@ -272,14 +331,51 @@ def treasurer_merit_points(state: GameState, kingdom_id: int) -> int:
     return state.kingdoms[kingdom_id].treasury
 
 
+# NUOVE REGOLE E MODIFICHE (Regolamento AK.txt), quoted in full: "Adesso
+# per la Carica di Maresciallo conta la qualità delle unità sconfitte
+# secondo questa tabella: Reclute 0 punti / Medio 1 punto / Veterani 2
+# punti / Crack 3 punti / Elite 4 punti. Una Garrison che attacca ha un
+# modificatore di -1 su questa tabella (una Garrison Crack che attacca e
+# viene distrutta dà solo 2 punti al generale che l'ha vinta)." See
+# module docstring's own Phase 308 addendum for the full reasoning
+# (Depleted's own unlisted score, Admiral's extension, the per-unit
+# negative-score reading of the Garrison modifier).
+MARSHAL_QUALITY_POINTS: dict[Quality, int] = {
+    Quality.DEPLETED: 0,
+    Quality.GREEN: 0,
+    Quality.AVERAGE: 1,
+    Quality.VETERAN: 2,
+    Quality.CRACK: 3,
+    Quality.ELITE: 4,
+}
+MARSHAL_ATTACKING_GARRISON_MODIFIER = -1
+
+
+def battle_quality_points(army_type: ArmyType, quality: Quality, *, is_attacker: bool) -> int:
+    """One defeated unit's own Marshal/Admiral Merit Point contribution --
+    `MARSHAL_QUALITY_POINTS`, minus 1 if this unit was a Garrison on the
+    attacking side. The result can go negative (a defeated Green
+    attacking Garrison scores -1) -- the rulebook's own worked example
+    only tests the Crack case (3 - 1 = 2, still positive), so nothing in
+    the source rules out a weaker attacking Garrison's own score going
+    below zero; no floor is invented here.
+    """
+
+    points = MARSHAL_QUALITY_POINTS[quality]
+    if is_attacker and army_type is ArmyType.GARRISON:
+        points += MARSHAL_ATTACKING_GARRISON_MODIFIER
+    return points
+
+
 def marshal_merit_points(leader: LeaderState) -> int:
-    """+1 per enemy unit in a won land battle, -1 per own unit in a lost
-    one -- reads `MeritTally`'s raw won/lost counters (see module
-    docstring for why no consumer populates them yet).
+    """Sum of `battle_quality_points()` over each won land battle's
+    defeated enemy units, minus the same sum over each lost battle's own
+    defeated units -- reads `MeritTally`'s raw won/lost point totals
+    (`turn/battle_orchestrator.py _record_battle_merit()` computes them).
     """
 
     tally = leader.merit_tally
-    return tally.land_battles_won_enemy_units - tally.land_battles_lost_own_units
+    return tally.land_battles_won_points - tally.land_battles_lost_points
 
 
 def _rich_sea_province_count(state: GameState, kingdom_id: int | None) -> int:
@@ -305,7 +401,7 @@ def admiral_merit_points(state: GameState, leader: LeaderState) -> int:
     tally = leader.merit_tally
     naval_skill = _skill_level_sum(state, leader, (Ability.NAVAL,))
     rich_sea_provinces = _rich_sea_province_count(state, leader.kingdom_id)
-    return tally.naval_battles_won_enemy_units - tally.naval_battles_lost_own_units + naval_skill + rich_sea_provinces
+    return tally.naval_battles_won_points - tally.naval_battles_lost_points + naval_skill + rich_sea_provinces
 
 
 def defender_merit_points(leader: LeaderState) -> int:

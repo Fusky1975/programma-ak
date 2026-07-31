@@ -177,6 +177,7 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant
+from ak_engine.turn.merit_points import battle_quality_points
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles
 from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
@@ -926,16 +927,16 @@ def _record_battle_merit(
     battle_result: BattleResult,
     attacker_commander_leader_id: int | None,
     defender_commander_leader_id: int | None,
-    attacker_unit_count: int,
-    defender_unit_count: int,
+    attacker_armies: list[ArmyState],
+    defender_armies: list[ArmyState],
 ) -> None:
     """Phase 254: rulebook page 51's Marshal/Admiral formula
     (``turn/merit_points.py``'s own module docstring, "TABELLA DELLE
-    CARICHE IMPERIALI") -- "+1 per enemy unit for a battle *commanded*
-    and won, -1 per own unit for one commanded and lost." Closes the gap
-    that formula's own docstring flagged: "no battle-outcome call site
-    in this project attributes a fought battle to a specific commanding
-    leader's cumulative Merit Point history yet."
+    CARICHE IMPERIALI") -- credits the winning side's own commander,
+    debits the losing side's, for a battle *commanded* by each. Closes
+    the gap that formula's own docstring flagged: "no battle-outcome
+    call site in this project attributes a fought battle to a specific
+    commanding leader's cumulative Merit Point history yet."
 
     Only a side's own Supreme Commander (Phase 30/49's real duel-commander
     selection -- ``None`` for an unled side, e.g. the defender's own
@@ -952,17 +953,24 @@ def _record_battle_merit(
     ``merit_point_tiebreak_key()``'s own kingdom-less-Hero ``(0, 0)``
     fallback already documents.
 
-    "Unit" here is one committed ``ArmyState`` (this project's own
-    existing 1:1 army<->``BattleUnit`` correspondence, Phase 9) -- the
-    *entire* opposing side fielded in the battle, not just units
-    destroyed: the rulebook text credits the size of the army *fought*,
-    and double-counting against the battle's own separate quality-change/
-    elimination outcome would misread "unità dell'esercito nemico" as
-    "casualties inflicted," a different, unstated claim. The losing
-    side's own unit count and the winning side's "enemy unit" count are
-    the same list by construction (one side's army *is* the other's
-    enemy), so a single ``unit_count`` serves both the winner's credit
-    and the loser's debit below.
+    **Phase 308**: the flat "+1 per enemy unit if won, -1 per own unit
+    if lost" rule quoted above is superseded by a real, sourced quality
+    table (``turn/merit_points.py MARSHAL_QUALITY_POINTS``/
+    ``battle_quality_points()``, Regolamento AK.txt's own "NUOVE REGOLE"
+    appendix) -- this function now sums that table over the *entire*
+    losing side's own committed ``ArmyState`` list, not just casualties:
+    the rulebook text credits the quality of the army *fought*, and
+    double-counting against the battle's own separate quality-change/
+    elimination outcome would misread "la qualità delle unità sconfitte"
+    as "casualties inflicted," a different, unstated claim -- the same
+    "count everything fielded" reading this function's own pre-Phase-308
+    version already established. The losing side's own armies (used for
+    the winner's credit) and the same armies again (for the loser's own
+    debit) are the same list by construction (one side's army *is* the
+    other's enemy) -- a single ``points`` total serves both below.
+    ``battle_quality_points()``'s own ``is_attacker`` flag reads whether
+    the *losing* side was the attacker (needed for the Garrison
+    modifier), independent of who won.
     """
 
     if battle_result.winner == "tie":
@@ -972,27 +980,32 @@ def _record_battle_merit(
     if battle_result.winner == "attacker":
         winner_leader_id = attacker_commander_leader_id
         loser_leader_id = defender_commander_leader_id
-        unit_count = defender_unit_count
+        losing_armies, losing_side_is_attacker = defender_armies, False
     else:
         winner_leader_id = defender_commander_leader_id
         loser_leader_id = attacker_commander_leader_id
-        unit_count = attacker_unit_count
+        losing_armies, losing_side_is_attacker = attacker_armies, True
+
+    points = sum(
+        battle_quality_points(army.army_type, army.quality, is_attacker=losing_side_is_attacker)
+        for army in losing_armies
+    )
 
     if winner_leader_id is not None:
         winner_leader = state.leaders.get(winner_leader_id)
         if winner_leader is not None:
             if is_naval:
-                winner_leader.merit_tally.naval_battles_won_enemy_units += unit_count
+                winner_leader.merit_tally.naval_battles_won_points += points
             else:
-                winner_leader.merit_tally.land_battles_won_enemy_units += unit_count
+                winner_leader.merit_tally.land_battles_won_points += points
 
     if loser_leader_id is not None:
         loser_leader = state.leaders.get(loser_leader_id)
         if loser_leader is not None:
             if is_naval:
-                loser_leader.merit_tally.naval_battles_lost_own_units += unit_count
+                loser_leader.merit_tally.naval_battles_lost_points += points
             else:
-                loser_leader.merit_tally.land_battles_lost_own_units += unit_count
+                loser_leader.merit_tally.land_battles_lost_points += points
 
 
 def fight_battle(
@@ -1135,7 +1148,7 @@ def fight_battle(
     _record_battle_merit(
         state, terrain, battle_result,
         duel.attacker_commander_leader_id, duel.defender_commander_leader_id,
-        len(attacker_armies), len(defender_armies),
+        attacker_armies, defender_armies,
     )
 
     # Phase 298: rulebook [7.5]'s own Druidic insufficient-ability quality-

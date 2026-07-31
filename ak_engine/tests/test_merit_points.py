@@ -6,6 +6,7 @@ from the rulebook's own "TABELLA DELLE CARICHE IMPERIALI" (page 51).
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
@@ -13,9 +14,12 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.merit_points import (
     LEGENDARY_ITEM_BONUS_TREASURES,
+    MARSHAL_QUALITY_POINTS,
     admiral_merit_points,
+    battle_quality_points,
     chancellor_merit_points,
     defender_merit_points,
     emperor_merit_points,
@@ -106,8 +110,8 @@ def test_chancellor_merit_points_includes_ability_bonus_discoveries():
 def test_marshal_merit_points_nets_won_and_lost_units():
     state = make_state()
     leader = state.leaders[1]
-    leader.merit_tally.land_battles_won_enemy_units = 5
-    leader.merit_tally.land_battles_lost_own_units = 2
+    leader.merit_tally.land_battles_won_points = 5
+    leader.merit_tally.land_battles_lost_points = 2
 
     assert marshal_merit_points(leader) == 3
 
@@ -116,8 +120,8 @@ def test_admiral_merit_points_combines_battles_skill_and_rich_sea_provinces():
     state = make_state()
     leader = state.leaders[1]
     leader.skills = skills_with(NAVAL=4)
-    leader.merit_tally.naval_battles_won_enemy_units = 6
-    leader.merit_tally.naval_battles_lost_own_units = 1
+    leader.merit_tally.naval_battles_won_points = 6
+    leader.merit_tally.naval_battles_lost_points = 1
     state.add_province(ProvinceState(HexCoord(0, 1), Terrain.SEA, Race.NO_RACE, owner_kingdom_id=1, tax=2))
     state.add_province(ProvinceState(HexCoord(0, 2), Terrain.SEA, Race.NO_RACE, owner_kingdom_id=1, tax=1))
 
@@ -141,6 +145,41 @@ def test_admiral_merit_points_independent_hero_has_no_rich_sea_bonus():
     state.add_leader(hero)
 
     assert admiral_merit_points(state, hero) == 0
+
+
+# -- Phase 308: quality-weighted Marshal/Admiral battle scoring -------------
+
+
+def test_marshal_quality_points_table_matches_the_rulebook():
+    assert MARSHAL_QUALITY_POINTS == {
+        Quality.DEPLETED: 0,
+        Quality.GREEN: 0,
+        Quality.AVERAGE: 1,
+        Quality.VETERAN: 2,
+        Quality.CRACK: 3,
+        Quality.ELITE: 4,
+    }
+
+
+def test_battle_quality_points_reads_the_table_for_a_non_garrison_unit():
+    assert battle_quality_points(ArmyType.HVY_CAVALRY, Quality.ELITE, is_attacker=False) == 4
+    assert battle_quality_points(ArmyType.HVY_CAVALRY, Quality.GREEN, is_attacker=True) == 0
+
+
+def test_battle_quality_points_applies_the_attacking_garrison_modifier():
+    # The rulebook's own worked example: a Crack Garrison that attacks and
+    # is destroyed gives only 2 points (3 - 1), not 3.
+    assert battle_quality_points(ArmyType.GARRISON, Quality.CRACK, is_attacker=True) == 2
+
+
+def test_battle_quality_points_garrison_modifier_only_applies_when_attacking():
+    # The same Crack Garrison, as the defender, scores the unmodified 3.
+    assert battle_quality_points(ArmyType.GARRISON, Quality.CRACK, is_attacker=False) == 3
+
+
+def test_battle_quality_points_attacking_garrison_can_go_negative():
+    # No floor is invented -- a defeated Green attacking Garrison scores -1.
+    assert battle_quality_points(ArmyType.GARRISON, Quality.GREEN, is_attacker=True) == -1
 
 
 def test_defender_merit_points_full_for_kills_half_for_negotiated():

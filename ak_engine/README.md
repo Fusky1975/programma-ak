@@ -13047,7 +13047,7 @@ section.
     assumption no longer holds) plus 1 new test proving the worked
     -example flow end-to-end -- 3319 passed total.
 
-- **Phase 307 (current)**: replaces `turn/multiple_contingents.py`'s own
+- **Phase 307**: replaces `turn/multiple_contingents.py`'s own
   invented `SAME_ORIGIN_UNITE_CHANCE`/`DIFFERENT_ORIGIN_UNITE_CHANCE`
   constants (85%/30% flat) with the real MARCH TABLE -- requested
   directly, after the earlier rulebook-comparison research flagged this
@@ -13095,6 +13095,53 @@ section.
     .py`: `fight_multi_attacker_battle()` reads a real leader's own
     March-4 skill from `state.leaders`, not a hardcoded default) --
     3323 passed total.
+
+- **Phase 308 (current)**: replaces `turn/merit_points.py`'s flat
+  +1-per-unit/-1-per-unit Gran Maresciallo (Marshal) and Grande
+  Ammiraglio (Admiral) battle scoring with `Regolamento AK.txt`'s own
+  "NUOVE REGOLE E MODIFICHE" quality table -- requested directly, after
+  the same rulebook-comparison research that produced Phase 307 flagged
+  this as a second genuine, verified gap. Quoted in full: "Adesso per la
+  Carica di Maresciallo conta la qualità delle unità sconfitte secondo
+  questa tabella: Reclute 0 punti / Medio 1 punto / Veterani 2 punti /
+  Crack 3 punti / Elite 4 punti. Una Garrison che attacca ha un
+  modificatore di -1 su questa tabella (una Garrison Crack che attacca e
+  viene distrutta dà solo 2 punti al generale che l'ha vinta)."
+  - New `MARSHAL_QUALITY_POINTS`/`battle_quality_points()` in
+    `merit_points.py` implement the table plus the Garrison-attacker
+    modifier. `Quality.DEPLETED` (unlisted in the source table) clamps
+    to 0, the same "clamp rather than extrapolate" convention Phase
+    307's `march_unite_chance()` established. The Garrison modifier's
+    own per-unit floor is left unstated by the source (its worked
+    example only tests the still-positive Crack case), so the
+    subtraction is applied literally with no invented floor -- a
+    defeated Green attacking Garrison scores -1, not 0.
+  - **Extended to Admiral too, reasoned explicitly rather than
+    guessed**: the quoted text names only "la Carica di Maresciallo",
+    but this project's own pre-existing docstring already treats
+    Admiral's battle term as "the same won/lost-unit formula as
+    Marshal... for naval battles" (one shared formula per the original
+    page-51 table), and the user's own request named both offices
+    together.
+  - `MeritTally`'s battle counters renamed (`models/game_state.py`):
+    `land_battles_won_enemy_units`/`land_battles_lost_own_units`/
+    `naval_battles_won_enemy_units`/`naval_battles_lost_own_units` ->
+    `..._won_points`/`..._lost_points`, since they now hold
+    quality-weighted points, not raw unit counts.
+    `turn/battle_orchestrator.py _record_battle_merit()`'s signature
+    changed from two unit-count integers to the real `attacker_armies`/
+    `defender_armies` lists, so it can sum `battle_quality_points()`
+    over the losing side's real `ArmyState.army_type`/`.quality`
+    instead of a flat per-unit constant.
+  - 9 pre-existing tests updated for the rename/signature change (6 in
+    `test_battle_orchestrator.py` now build real `ArmyState` lists
+    instead of passing unit counts; 1 in `test_game_state.py` and 2 in
+    `test_merit_points.py` are simple field renames) plus 6 new tests
+    (`test_battle_quality_points_*`/`test_marshal_quality_points_table_
+    matches_the_rulebook` in `test_merit_points.py`, and a dedicated
+    `test_record_battle_merit_applies_the_attacking_garrison_modifier`
+    in `test_battle_orchestrator.py` reproducing the rulebook's own
+    Crack-Garrison worked example) -- 3329 passed total.
 
 ## Setup
 

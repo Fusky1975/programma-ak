@@ -1855,68 +1855,94 @@ def _merit_state() -> GameState:
     return state
 
 
+def _armies(*specs: tuple[ArmyType, Quality]) -> list[ArmyState]:
+    """A throwaway list of ``ArmyState``s for `_record_battle_merit()`'s own
+    quality-table lookup -- ids/kingdom/location are irrelevant here,
+    only ``army_type``/``quality`` feed `battle_quality_points()`.
+    """
+
+    return [ArmyState(i, 1, army_type, quality, FIELD) for i, (army_type, quality) in enumerate(specs)]
+
+
 def test_record_battle_merit_credits_winning_land_commander_and_debits_losing_one():
     state = _merit_state()
+    # Defender (the losing side) fields a Veteran (2 points) and a Crack
+    # (3 points) -- 5 points total, same shape the old flat-count test
+    # used, now quality-weighted instead of a bare unit count.
+    defender_armies = _armies((ArmyType.HVY_CAVALRY, Quality.VETERAN), (ArmyType.HVY_CAVALRY, Quality.CRACK))
 
-    _record_battle_merit(
-        state, Terrain.PLAINS, BattleResult(winner="attacker"), 1, 2, attacker_unit_count=3, defender_unit_count=5
-    )
+    _record_battle_merit(state, Terrain.PLAINS, BattleResult(winner="attacker"), 1, 2, [], defender_armies)
 
-    assert state.leaders[1].merit_tally.land_battles_won_enemy_units == 5
-    assert state.leaders[2].merit_tally.land_battles_lost_own_units == 5
-    assert state.leaders[1].merit_tally.land_battles_lost_own_units == 0
-    assert state.leaders[2].merit_tally.land_battles_won_enemy_units == 0
+    assert state.leaders[1].merit_tally.land_battles_won_points == 5
+    assert state.leaders[2].merit_tally.land_battles_lost_points == 5
+    assert state.leaders[1].merit_tally.land_battles_lost_points == 0
+    assert state.leaders[2].merit_tally.land_battles_won_points == 0
 
 
 def test_record_battle_merit_credits_winning_naval_commander():
     state = _merit_state()
+    # Attacker (the losing side) fields two Elite (4 points each) -- 8
+    # points total.
+    attacker_armies = _armies((ArmyType.FLEET, Quality.ELITE), (ArmyType.FLEET, Quality.ELITE))
 
-    _record_battle_merit(
-        state, Terrain.SEA, BattleResult(winner="defender"), 1, 2, attacker_unit_count=4, defender_unit_count=2
-    )
+    _record_battle_merit(state, Terrain.SEA, BattleResult(winner="defender"), 1, 2, attacker_armies, [])
 
-    assert state.leaders[2].merit_tally.naval_battles_won_enemy_units == 4
-    assert state.leaders[1].merit_tally.naval_battles_lost_own_units == 4
+    assert state.leaders[2].merit_tally.naval_battles_won_points == 8
+    assert state.leaders[1].merit_tally.naval_battles_lost_points == 8
     # Naval and land counters are kept fully separate.
-    assert state.leaders[2].merit_tally.land_battles_won_enemy_units == 0
+    assert state.leaders[2].merit_tally.land_battles_won_points == 0
+
+
+def test_record_battle_merit_applies_the_attacking_garrison_modifier():
+    # NUOVE REGOLE's own worked example: a Crack Garrison that attacks
+    # and is destroyed gives only 2 points (3 - 1), not 3.
+    state = _merit_state()
+    attacker_armies = _armies((ArmyType.GARRISON, Quality.CRACK))
+
+    _record_battle_merit(state, Terrain.PLAINS, BattleResult(winner="defender"), 1, 2, attacker_armies, [])
+
+    assert state.leaders[2].merit_tally.land_battles_won_points == 2
 
 
 def test_record_battle_merit_records_nothing_for_a_tie():
     state = _merit_state()
+    defender_armies = _armies((ArmyType.HVY_CAVALRY, Quality.CRACK))
 
-    _record_battle_merit(
-        state, Terrain.PLAINS, BattleResult(winner="tie"), 1, 2, attacker_unit_count=3, defender_unit_count=5
-    )
+    _record_battle_merit(state, Terrain.PLAINS, BattleResult(winner="tie"), 1, 2, [], defender_armies)
 
-    assert state.leaders[1].merit_tally.land_battles_won_enemy_units == 0
-    assert state.leaders[2].merit_tally.land_battles_lost_own_units == 0
+    assert state.leaders[1].merit_tally.land_battles_won_points == 0
+    assert state.leaders[2].merit_tally.land_battles_lost_points == 0
 
 
 def test_record_battle_merit_skips_an_unled_winning_side():
     state = _merit_state()
+    attacker_armies = _armies((ArmyType.HVY_CAVALRY, Quality.CRACK))
+    defender_armies = _armies((ArmyType.HVY_CAVALRY, Quality.ELITE))
 
     # The winning side (defender) has no commander (garrison fallback,
     # leader_id=None) -- no one to credit -- but the losing side (attacker,
     # leader 1) is still a real "battaglia comandata" for its own leader.
     _record_battle_merit(
-        state, Terrain.PLAINS, BattleResult(winner="defender"), 1, None, attacker_unit_count=3, defender_unit_count=5
+        state, Terrain.PLAINS, BattleResult(winner="defender"), 1, None, attacker_armies, defender_armies
     )
 
-    assert state.leaders[1].merit_tally.land_battles_lost_own_units == 3
-    assert state.leaders[1].merit_tally.land_battles_won_enemy_units == 0
+    assert state.leaders[1].merit_tally.land_battles_lost_points == 3
+    assert state.leaders[1].merit_tally.land_battles_won_points == 0
 
 
 def test_record_battle_merit_skips_an_unled_losing_side():
     state = _merit_state()
+    attacker_armies = _armies((ArmyType.HVY_CAVALRY, Quality.CRACK))
+    defender_armies = _armies((ArmyType.HVY_CAVALRY, Quality.ELITE))
 
     # The losing side (defender) has no commander -- nothing to debit --
     # but the winning side (attacker, leader 1) still earns its credit.
     _record_battle_merit(
-        state, Terrain.PLAINS, BattleResult(winner="attacker"), 1, None, attacker_unit_count=3, defender_unit_count=5
+        state, Terrain.PLAINS, BattleResult(winner="attacker"), 1, None, attacker_armies, defender_armies
     )
 
-    assert state.leaders[1].merit_tally.land_battles_won_enemy_units == 5
-    assert state.leaders[1].merit_tally.land_battles_lost_own_units == 0
+    assert state.leaders[1].merit_tally.land_battles_won_points == 4
+    assert state.leaders[1].merit_tally.land_battles_lost_points == 0
 
 
 def test_fight_battle_wires_merit_points_for_a_led_winning_attacker():
@@ -1924,7 +1950,9 @@ def test_fight_battle_wires_merit_points_for_a_led_winning_attacker():
     # test_fight_battle_reads_a_led_attackers_real_tactical_skill_end_to_end:
     # attacker leader 1 wins outright, defender falls back to an unled
     # garrison commander (leader_id=None) -- only the attacker's own
-    # commander has a real leader to credit.
+    # commander has a real leader to credit. build_state()'s own lone
+    # defending army (201) is a GARRISON/GREEN -- 0 points, no attacking-
+    # Garrison modifier (it's the defender here).
     state = build_state()
     state.add_leader(LeaderState(1, 1, "Skilled Commander", FIELD, skills=SkillTable(raw_values=[5] * 30 + [0])))
     state.armies[101].commanded_by = 1
@@ -1935,8 +1963,8 @@ def test_fight_battle_wires_merit_points_for_a_led_winning_attacker():
 
     fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
-    assert state.leaders[1].merit_tally.land_battles_won_enemy_units == 1  # the lone defending army (201)
-    assert state.leaders[1].merit_tally.land_battles_lost_own_units == 0
+    assert state.leaders[1].merit_tally.land_battles_won_points == 0  # GARRISON/GREEN defender scores 0
+    assert state.leaders[1].merit_tally.land_battles_lost_points == 0
 
 
 # -- Phase 296: terrain line-length cap now really rolled and forwarded --

@@ -281,10 +281,10 @@ def test_leader_merit_tally_defaults_to_all_zero():
     leader = LeaderState(1, 1, "Aldric", HexCoord(0, 0))
 
     tally = leader.merit_tally
-    assert tally.land_battles_won_enemy_units == 0
-    assert tally.land_battles_lost_own_units == 0
-    assert tally.naval_battles_won_enemy_units == 0
-    assert tally.naval_battles_lost_own_units == 0
+    assert tally.land_battles_won_points == 0
+    assert tally.land_battles_lost_points == 0
+    assert tally.naval_battles_won_points == 0
+    assert tally.naval_battles_lost_points == 0
     assert tally.monster_hp_defeated == 0
     assert tally.monster_hp_neutralized == 0
     assert tally.resurrection_bless_casts == 0
