@@ -1102,11 +1102,15 @@ def test_run_turn_patrol_is_cancelled_by_a_later_move_order():
 # -- Defend battle-loss cancellation (Phase 72) ------------------------------
 
 
+# Phase 314: DL_FIRST_ATTACKER_ORIGIN/DL_SECOND_COVERED/DL_SECOND_ATTACKER_ORIGIN
+# moved -- neighbors()'s own real-data-sourced parity fix (see turn/movement.py's
+# docstring) changed which hexes are actually adjacent to DL_FIRST_COVERED/
+# DL_SECOND_COVERED; DL_HOME and DL_FIRST_COVERED are unaffected.
 DL_HOME = HexCoord(5, 4)
 DL_FIRST_COVERED = HexCoord(5, 3)  # adjacent to DL_HOME
-DL_FIRST_ATTACKER_ORIGIN = HexCoord(6, 2)  # adjacent to DL_FIRST_COVERED
-DL_SECOND_COVERED = HexCoord(6, 3)  # adjacent to DL_FIRST_COVERED (the leader's post-reinforcement location)
-DL_SECOND_ATTACKER_ORIGIN = HexCoord(7, 2)  # adjacent to DL_SECOND_COVERED
+DL_FIRST_ATTACKER_ORIGIN = HexCoord(6, 3)  # adjacent to DL_FIRST_COVERED
+DL_SECOND_COVERED = HexCoord(4, 3)  # adjacent to DL_FIRST_COVERED (the leader's post-reinforcement location)
+DL_SECOND_ATTACKER_ORIGIN = HexCoord(3, 3)  # adjacent to DL_SECOND_COVERED
 
 
 def _defend_loss_state() -> GameState:

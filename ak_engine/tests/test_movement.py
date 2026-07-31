@@ -146,18 +146,20 @@ def test_step_toward_non_adjacent_target_stops_chasing_when_no_neighbor_is_close
 
 
 def test_step_toward_non_adjacent_target_breaks_ties_by_ownership_tier():
-    # From (5,5) toward (5,0): (6,4) and (5,4) tie at distance 4, both
-    # strictly closer than (5,5)'s own distance-5.
+    # From (5,5) toward (5,0): (4,4) and (5,4) tie at distance 4, both
+    # strictly closer than (5,5)'s own distance-5. (Phase 314: these
+    # tied coordinates flipped along with neighbors()'s own real-data-
+    # sourced parity fix -- see that module's docstring.)
     current, target = HexCoord(5, 5), HexCoord(5, 0)
-    tied_candidates = {HexCoord(6, 4), HexCoord(5, 4)}
+    tied_candidates = {HexCoord(4, 4), HexCoord(5, 4)}
 
-    def prefer_6_4(coord: HexCoord) -> HexOwnershipTier:
-        return HexOwnershipTier.OWNED_OR_ALLIED if coord == HexCoord(6, 4) else HexOwnershipTier.NEUTRAL
+    def prefer_4_4(coord: HexCoord) -> HexOwnershipTier:
+        return HexOwnershipTier.OWNED_OR_ALLIED if coord == HexCoord(4, 4) else HexOwnershipTier.NEUTRAL
 
     def prefer_5_4(coord: HexCoord) -> HexOwnershipTier:
         return HexOwnershipTier.OWNED_OR_ALLIED if coord == HexCoord(5, 4) else HexOwnershipTier.NEUTRAL
 
-    assert step_toward_non_adjacent_target(current, target, BOUNDS, prefer_6_4) == HexCoord(6, 4)
+    assert step_toward_non_adjacent_target(current, target, BOUNDS, prefer_4_4) == HexCoord(4, 4)
     assert step_toward_non_adjacent_target(current, target, BOUNDS, prefer_5_4) == HexCoord(5, 4)
     # sanity: both really are the tied, strictly-closer candidate set
     assert {
@@ -178,6 +180,54 @@ def test_direction_enum_has_6_declared_values():
     assert len(Direction) == 6
     assert Direction.NE.value == 0
     assert Direction.NW.value == 5
+
+
+# -- Phase 314: real-data-sourced adjacency confirmation ---------------------
+#
+# `Desktop/SE3__T*.K*` turn-report narrative text explicitly names each of a
+# real province's 6 neighbors by direction and hex number (see module
+# docstring for the full quote). Splitting each real hex number as
+# ``(number // 100, number % 100)`` gives the HexCoord literals below --
+# independent, real ground truth for neighbors(), not a self-referential
+# check against this module's own offset tables.
+
+
+def test_neighbors_matches_mongus_own_6_real_neighbors():
+    # Kingdom 2, Turn 0: Mongu (#305) -- odd HexCoord.y (col=5).
+    mongu = HexCoord(3, 5)
+    real_neighbors = {
+        HexCoord(3, 4),  # NE: Shasta (#304)
+        HexCoord(4, 5),  # E: Moongard (#405)
+        HexCoord(3, 6),  # SE: Big Sky (#306)
+        HexCoord(2, 6),  # SW: Transylvania (#206)
+        HexCoord(2, 5),  # W: Macondo (#205)
+        HexCoord(2, 4),  # NW: Orielle (#204)
+    }
+    assert set(neighbors(mongu, BOUNDS)) == real_neighbors
+
+
+def test_neighbors_matches_moonshine_seas_own_3_real_neighbors():
+    # Kingdom 8, Turn 4: Moonshine Sea (#706) -- even HexCoord.y (col=6),
+    # the opposite parity from Mongu above.
+    moonshine_sea = HexCoord(7, 6)
+    real_neighbors = {
+        HexCoord(8, 5),  # NE: the Valiant Sea (#805)
+        HexCoord(8, 6),  # E: the Buccaneer Sea (#806)
+        HexCoord(8, 7),  # SE: the Third Sea (#807)
+    }
+    assert real_neighbors <= set(neighbors(moonshine_sea, BOUNDS))
+
+
+def test_neighbors_matches_limericks_own_3_real_neighbors():
+    # Kingdom 3, Turn 1: Limerick (#703) -- odd HexCoord.y (col=3), same
+    # parity as Mongu but a different real province/kingdom/turn.
+    limerick = HexCoord(7, 3)
+    real_neighbors = {
+        HexCoord(7, 2),  # NE: the Daedalus Sea (#702)
+        HexCoord(8, 3),  # E: Gafsa (#803)
+        HexCoord(6, 2),  # NW: Berga (#602)
+    }
+    assert real_neighbors <= set(neighbors(limerick, BOUNDS))
 
 
 def test_direction_name_covers_every_enum_value():

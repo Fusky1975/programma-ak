@@ -13327,7 +13327,7 @@ section.
     test_weak_temper_flee_chance_bonus_stays_at_the_body_texts_30_percent`
     -- a regression guard against the value silently drifting to the
     appendix's own +20% figure -- 3358 passed total.
-- **Phase 313 (current)**: closes the treasure-looting gap flagged in
+- **Phase 313**: closes the treasure-looting gap flagged in
   `turn/encounter.py`'s own "Victory and Death's aftermath" ([5.9]) note
   -- "looting a vanquished foe's treasure, magic items changing hands"
   was never wired for a defeated *character* (only a guarded *feature*'s
@@ -13359,6 +13359,53 @@ section.
     extending each module's own existing decisive-loser test with a
     looted item), plus 2 pre-existing `test_cast_execution.py` Berserk
     tests extended with loot assertions -- 3364 passed total.
+- **Phase 314 (current)**: the exact hex-adjacency offset convention
+  (`turn/movement.py`'s own "odd-r vs even-r, cannot be verified without
+  the lost source" caveat) is now confirmed from real game data, not
+  guessed. `Desktop/SE3__T*.K*` turn-report narrative text explicitly
+  names each home province's 6 real neighbors by direction and hex
+  number (e.g. Kingdom 2 Turn 0: "The province of Mongu belongs to
+  thee. Looking to the northeast... Shasta (#304)... To the east
+  lies... Moongard (#405)... Southeast of here lies... Big Sky
+  (#306)... southwestern horizon... Transylvania (#206)... To the west
+  there lies... Macondo (#205)... Northwest of here is Orielle
+  (#204)" -- Mongu's own number, 305, independently confirmed by 5
+  *other* kingdoms' own reports each separately naming it "Mongu
+  (#305)"). Splitting each real hex number as ``(number // 100, number
+  % 100)`` and comparing the resulting coordinate deltas against
+  `_EVEN_ROW_OFFSETS`/`_ODD_ROW_OFFSETS` (the six offset *vectors*
+  were always right -- CTBOTH.PAS's own confirmed 6-direction shape)
+  showed they're keyed to the *opposite* `coord.y % 2` parity from what
+  `neighbors()` previously checked -- confirmed across 5 separate real
+  provinces (Mongu, Maplehaven, Limerick, Flying Fish Sea, Moonshine
+  Sea; turns 0/1/4/9, 4 different kingdoms; 15 individual direction
+  observations, zero contradictions). `neighbors()`'s own ternary is
+  flipped accordingly; `_to_cube()` (used by `hex_distance()`) switched
+  from the standard "odd-r" cube-conversion formula to "even-r" to
+  match -- the two offset tables are unchanged, but which real-world
+  parity each applies to (and therefore which textbook cube-conversion
+  reproduces distance-1 to every real neighbor) flips along with it.
+  This also resolves the previously-flagged "board reaches y=17, taller
+  than the assumed 15-row height" puzzle from `turn/hex_numbering.py`'s
+  own docstring: under this same real numbering, the number's *leading*
+  digit group (which reaches into the teens in the sample data) lines
+  up with `HexCoord.x`, not `.y`, so it was bounded by `width=30` all
+  along, never actually violating `height=15`.
+  - 9 pre-existing tests updated for the corrected parity (their own
+    hardcoded expected coordinates flipped along with it, not a
+    behavior regression): `test_movement.py`'s own ownership-tier
+    tie-break test, `test_move_execution.py`'s 5 non-adjacent-chase
+    tests (`INTERMEDIATE` moved from (1,2) to (0,2)) plus its own
+    ownership-tier tie-break test, and `test_turn_processor.py`'s 3
+    Defend-battle-loss tests (`DL_FIRST_ATTACKER_ORIGIN`/
+    `DL_SECOND_COVERED`/`DL_SECOND_ATTACKER_ORIGIN` relocated to stay
+    adjacent under the corrected scheme).
+  - 3 new tests: `test_movement.py` (`test_neighbors_matches_mongus_
+    own_6_real_neighbors`, `..._moonshine_seas_own_3_real_neighbors`,
+    `..._limericks_own_3_real_neighbors`) -- asserting `neighbors()`
+    directly against the real, narrative-sourced neighbor sets above,
+    independent of this module's own offset tables -- 3367 passed
+    total.
 
 ## Setup
 
@@ -13394,13 +13441,19 @@ rulebook before being turned into named, typed fields:
   nested plan's own contents~~ **fixed in Phase 23 (decode) and Phase 32
   (dispatch)** — see Phase 32's note above; a newly-hired or
   Charm-targeted character's own orders now dispatch the same turn.
-- **Hex adjacency scheme** (`turn/movement.py`) — the original adjacency
+- ~~**Hex adjacency scheme** (`turn/movement.py`) — the original adjacency
   code isn't in the available source (it lived in the missing main
   program). The module implements a standard "odd-r" offset hex grid,
   which is consistent with the 6 direction names confirmed in
   `CTBOTH.PAS` (`dirname`), but the exact offset convention is a guess and
   unverified. Revisit here first if movement behavior ever looks wrong
-  against real game data.
+  against real game data.~~ -- **resolved by Phase 314**: the exact
+  offset-to-parity convention is now confirmed directly from real
+  `Desktop/SE3__T*.K*` turn-report narrative text (5 real provinces, 15
+  individual direction observations, zero contradictions) -- see that
+  phase's own note above for the full sourcing and the one-line parity
+  fix it required (`neighbors()`'s own ternary, plus `_to_cube()`
+  switching from "odd-r" to "even-r" to match).
 - **Humanoid-army-type compatibility** (`models/army_type.py`
   `MONSTROUS_ARMY_RACE`) — the rulebook states plainly that monstrous army
   types (Dragons, Eagles, etc.) require their own race's province, and

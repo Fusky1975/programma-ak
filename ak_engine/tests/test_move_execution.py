@@ -317,8 +317,11 @@ def test_allowed_from_a_merely_neutral_owned_province_to_an_enemy_province():
 # directly); INTERMEDIATE is itself adjacent to FAR_TARGET, so a second hop
 # from there reaches it. Distinct terrain from FAR_TARGET so exploration
 # tests can tell which province was actually explored.
+# Phase 314: INTERMEDIATE moved from (1,2) to (0,2) -- neighbors()'s own
+# real-data-sourced parity fix (see turn/movement.py's docstring) changed
+# which of CHASE_ORIGIN's neighbors is closest to FAR_TARGET.
 CHASE_ORIGIN = HexCoord(1, 1)
-INTERMEDIATE = HexCoord(1, 2)
+INTERMEDIATE = HexCoord(0, 2)
 FAR_TARGET = HexCoord(0, 3)
 
 
@@ -387,11 +390,11 @@ def test_stopped_chasing_when_no_closer_neighbor_exists():
 
 def test_chase_step_breaks_ties_by_ownership_tier():
     # Mirrors turn/movement.py's own tie-break test case: from (5,5) toward
-    # (5,0), (6,4) and (5,4) tie as the two strictly-closer candidates.
+    # (5,0), (4,4) and (5,4) tie as the two strictly-closer candidates.
     state = GameState()
     origin = HexCoord(5, 5)
     target = HexCoord(5, 0)
-    owned_candidate = HexCoord(6, 4)
+    owned_candidate = HexCoord(4, 4)
     enemy_candidate = HexCoord(5, 4)
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, origin))
     state.add_kingdom(KingdomState(2, "Enemia", Race.HUMAN, Alignment.EVIL, enemy_candidate))

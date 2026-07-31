@@ -1,19 +1,50 @@
 """Hex adjacency and Move-action resolution (rulebook [3.1] and [6.2]).
 
-**Reconstruction assumption, not sourced from the original program**: the
-code that computed hex adjacency lived in the AK turn-processor's main
-program, which is missing from the available Pascal source (only compiled
-into ``AK.EXE``/``AK.OVR``). ``CTBOTH.PAS`` confirms a 6-neighbor hex grid
-(direction names ``northeast, east, southeast, southwest, west, northwest``,
-see ``dirname`` around line 526) but does not give the coordinate math.
+The code that originally computed hex adjacency lived in the AK
+turn-processor's main program, which is missing from the available
+Pascal source (only compiled into ``AK.EXE``/``AK.OVR``). ``CTBOTH.PAS``
+confirms a 6-neighbor hex grid (direction names ``northeast, east,
+southeast, southwest, west, northwest``, see ``dirname`` around line
+526) but does not give the coordinate math.
 
 This module implements the standard "odd-r" offset-coordinate hex grid
 (each odd row shifted half a hex to the right), which produces exactly
-those 6 neighbor directions. This is a reasonable, well-known scheme
-consistent with the confirmed direction names -- but it is a guess about
-the *exact* offset convention (odd-r vs even-r) that cannot be verified
-without the lost source. If real game data ever contradicts it, this is
-the first place to revisit.
+those 6 neighbor directions -- a reasonable, well-known scheme
+consistent with the confirmed direction names.
+
+**Phase 314 -- the exact offset convention is now confirmed from real
+game data, not guessed.** `Desktop/SE3__T*.K*` turn-report narrative
+text (per-kingdom "STATE OF THE NATION" reports; per this project's own
+established precedent of treating a confirmed-original real-data corpus
+as a legitimate source, e.g. `models/monster.py`'s own `MOSTRI con
+statistiche.txt` note) explicitly names each home province's 6 real
+neighbors by direction and hex number, e.g. (Kingdom 2, Turn 0):
+"The province of Mongu belongs to thee. Looking to the northeast, one
+can see... Shasta (#304)... To the east lies... Moongard (#405)...
+Southeast of here lies... Big Sky (#306)... southwestern horizon...
+Transylvania (#206)... To the west there lies... Macondo (#205)...
+Northwest of here is Orielle (#204)" -- Mongu's own number, 305, is
+independently confirmed by five *other* kingdoms' own reports each
+separately naming it "Mongu (#305)" as their own neighbor.
+
+Splitting each of these real hex numbers as ``(number // 100, number %
+100)`` and comparing the resulting coordinate deltas against this
+module's own `_EVEN_ROW_OFFSETS`/`_ODD_ROW_OFFSETS` (unchanged below --
+the six offset *vectors* were always right, matching CTBOTH.PAS's own
+confirmed 6-direction shape) revealed the deltas exactly reproduce
+those two tables' own values -- but keyed to the *opposite* parity of
+`coord.y % 2` from what `neighbors()` previously checked. Confirmed
+independently across 5 separate real provinces (Mongu, Maplehaven,
+Limerick, Flying Fish Sea, Moonshine Sea -- spanning turns 0/1/4/9 and
+4 different kingdoms, 15 individual direction observations total, zero
+contradictions): `neighbors()` below now reads `_EVEN_ROW_OFFSETS` when
+`coord.y` is odd and `_ODD_ROW_OFFSETS` when even -- the reverse of the
+prior guess. (This also resolves the previously-flagged "board reaches
+y=17, taller than the assumed 15-row height" puzzle from `turn/
+hex_numbering.py`'s own docstring: under this same real numbering, the
+*leading* digit group -- which reaches into the teens in the sample
+above -- lines up with `HexCoord.x`, not `.y`, so it's bounded by this
+project's own `width=30`, not `height=15`, all along.)
 
 Explicitly out of scope for this phase (rulebook [3.1]):
 - ~~Moving to a *non-adjacent* target hex ("he will move towards it, through
@@ -116,9 +147,14 @@ class MoveResult:
 
 
 def neighbors(coord: HexCoord, bounds: MapBounds) -> list[HexCoord]:
-    """The up-to-6 in-bounds hexes adjacent to ``coord``."""
+    """The up-to-6 in-bounds hexes adjacent to ``coord``.
 
-    offsets = _ODD_ROW_OFFSETS if coord.y % 2 else _EVEN_ROW_OFFSETS
+    Phase 314: which offset table applies to which ``coord.y`` parity is
+    now sourced from real game data (see module docstring) -- previously
+    the reverse of this.
+    """
+
+    offsets = _EVEN_ROW_OFFSETS if coord.y % 2 else _ODD_ROW_OFFSETS
     candidates = (HexCoord(coord.x + dx, coord.y + dy) for dx, dy in offsets)
     return [c for c in candidates if bounds.contains(c)]
 
@@ -128,14 +164,19 @@ def is_adjacent(a: HexCoord, b: HexCoord, bounds: MapBounds) -> bool:
 
 
 def _to_cube(coord: HexCoord) -> tuple[int, int, int]:
-    """Converts this module's "odd-r" offset coordinates to cube coordinates.
+    """Converts this module's offset coordinates to cube coordinates.
 
-    Standard odd-r-to-cube conversion (redblobgames.com/grids/hexagons);
-    confirmed to reproduce exactly the 6 neighbor offsets above (each at
-    cube distance 1, for both even and odd rows) before use.
+    Standard "even-r"-to-cube conversion (redblobgames.com/grids/hexagons)
+    -- confirmed to reproduce exactly the 6 neighbor offsets above (each
+    at cube distance 1, for both even and odd rows) before use. Phase
+    314: switched from "odd-r" to match `neighbors()`'s own real-data-
+    sourced parity fix (see module docstring) -- the two offset tables
+    themselves are unchanged, only which ``coord.y`` parity each one
+    applies to, which flips which of the two textbook conversions
+    actually matches.
     """
 
-    x = coord.x - (coord.y - (coord.y & 1)) // 2
+    x = coord.x - (coord.y + (coord.y & 1)) // 2
     z = coord.y
     y = -x - z
     return x, y, z
