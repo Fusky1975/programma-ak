@@ -164,10 +164,15 @@ from ak_engine.turn.encounter import (
     CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION,
     apply_temper_melee_setup,
     berserk_fury_bonus_hit_points,
+    loot_defeated_leader,
 )
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster, SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
+from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 
 from _helpers import ScriptedRandom
 
@@ -2247,3 +2252,50 @@ def test_resolve_melee_duel_reads_the_attackers_own_offensive_multiplier_from_te
 
     assert result.winner == "a"
     assert result.rounds == 1
+
+
+# -- loot_defeated_leader (Phase 313, rulebook [5.9]) -----------------------
+
+
+def _loot_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Winland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Winner", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="Loser", location=HexCoord(0, 0)))
+    return state
+
+
+def test_loot_defeated_leader_transfers_every_item_the_loser_owned():
+    state = _loot_state()
+    item_a = state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=20)
+    item_b = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=20)
+    other_leaders_item = state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=10)
+
+    looted = loot_defeated_leader(state, winner_id=10, loser_id=20)
+
+    assert {item.item_id for item in looted} == {item_a.item_id, item_b.item_id}
+    assert state.items[item_a.item_id].owner_leader_id == 10
+    assert state.items[item_b.item_id].owner_leader_id == 10
+    assert state.items[other_leaders_item.item_id].owner_leader_id == 10  # untouched, already the winner's
+
+
+def test_loot_defeated_leader_returns_empty_list_when_loser_owned_nothing():
+    state = _loot_state()
+
+    looted = loot_defeated_leader(state, winner_id=10, loser_id=20)
+
+    assert looted == []
+
+
+def test_loot_defeated_leader_works_after_remove_leader_since_item_ownership_is_independent():
+    # Item ownership (ItemInstance.owner_leader_id) isn't tied to
+    # GameState.leaders -- every real call site calls remove_leader()
+    # first, so this confirms that order doesn't break the transfer.
+    state = _loot_state()
+    item = state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=20)
+    state.remove_leader(20)
+
+    looted = loot_defeated_leader(state, winner_id=10, loser_id=20)
+
+    assert looted == [item]
+    assert state.items[item.item_id].owner_leader_id == 10

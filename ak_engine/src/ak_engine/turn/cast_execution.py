@@ -648,7 +648,7 @@ prior behavior unchanged.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import OVERFLIGHT_AIR, ArmyType
@@ -661,7 +661,7 @@ from ak_engine.models.temper import Temper
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, loot_defeated_leader, resolve_melee_duel
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, is_adjacent
 
@@ -789,6 +789,12 @@ class CastExecutionResult:
     # melee -- every spell but a failed Kill_Enemy, or the exhausted-
     # max_rounds draw). See ``_execute_kill_enemy``'s own docstring.
     kill_enemy_berserk_winner: str | None = None
+    # Phase 313: item ids the Berserk retaliation's loser owned, transferred
+    # to the winner via `turn/encounter.py loot_defeated_leader()` -- [5.9]'s
+    # "looting a vanquished foe's treasure, magic items changing hands".
+    # Empty unless `kill_enemy_berserk_winner` is set and the loser owned
+    # something.
+    looted_item_ids: list[int] = field(default_factory=list)
 
 
 def execute_cast(
@@ -1185,10 +1191,24 @@ def _execute_kill_enemy(
         combat_result = resolve_melee_duel(caster_combatant, target_combatant, rng)
         if combat_result.winner == "a":  # caster survived the Berserk retaliation
             state.remove_leader(request.target)
-            return CastExecutionResult(request, applied=False, reason=reason, kill_enemy_berserk_winner="a")
+            looted_items = loot_defeated_leader(state, winner_id=leader_id, loser_id=request.target)
+            return CastExecutionResult(
+                request,
+                applied=False,
+                reason=reason,
+                kill_enemy_berserk_winner="a",
+                looted_item_ids=[item.item_id for item in looted_items],
+            )
         if combat_result.winner == "b":  # the retaliating target killed the caster
             state.remove_leader(leader_id)
-            return CastExecutionResult(request, applied=False, reason=reason, kill_enemy_berserk_winner="b")
+            looted_items = loot_defeated_leader(state, winner_id=request.target, loser_id=leader_id)
+            return CastExecutionResult(
+                request,
+                applied=False,
+                reason=reason,
+                kill_enemy_berserk_winner="b",
+                looted_item_ids=[item.item_id for item in looted_items],
+            )
         return CastExecutionResult(request, applied=False, reason=reason)
 
     if target.kingdom_id is not None and Discovery.HIDDEN_TATTOOS in state.kingdoms[target.kingdom_id].discoveries:

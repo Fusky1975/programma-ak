@@ -335,6 +335,7 @@ def test_kill_enemy_berserk_counterattack_kills_the_caster_on_a_failed_cast():
     state = build_state()
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # 30% chance
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=CASTER_ID)
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
     rng = random.Random(0)
 
@@ -345,6 +346,9 @@ def test_kill_enemy_berserk_counterattack_kills_the_caster_on_a_failed_cast():
     assert result.kill_enemy_berserk_winner == "b"
     assert CASTER_ID not in state.leaders  # the caster died to the retaliation
     assert 78 in state.leaders  # the Berserk retaliator survived
+    # Phase 313, rulebook [5.9]: the retaliator loots the dead caster's items.
+    assert result.looted_item_ids == [item.item_id]
+    assert state.items[item.item_id].owner_leader_id == 78
 
 
 def test_kill_enemy_berserk_counterattack_caster_survives_and_kills_the_retaliator():
@@ -353,6 +357,7 @@ def test_kill_enemy_berserk_counterattack_caster_survives_and_kills_the_retaliat
     state = build_state()
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # 30% chance
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=78)
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
     rng = random.Random(10)
 
@@ -363,6 +368,9 @@ def test_kill_enemy_berserk_counterattack_caster_survives_and_kills_the_retaliat
     assert result.kill_enemy_berserk_winner == "a"
     assert CASTER_ID in state.leaders  # the caster survived
     assert 78 not in state.leaders  # the Berserk retaliator died
+    # Phase 313, rulebook [5.9]: the surviving caster loots the retaliator.
+    assert result.looted_item_ids == [item.item_id]
+    assert state.items[item.item_id].owner_leader_id == CASTER_ID
 
 
 def test_charm_succeeds_on_a_real_roll_under_the_casters_chance():

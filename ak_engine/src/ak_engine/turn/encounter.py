@@ -110,6 +110,27 @@ rulebook mechanic, just not attempted yet):
   eldest son taking over with *player-chosen* starting ability levels --
   the last of these needs interactive player choice this automated
   engine has no channel for at all, not just missing game-state logic.
+  ~~Looting a vanquished foe's own treasure/magic items~~ -- **closed by
+  Phase 313**: `loot_defeated_leader()` below transfers every
+  `ItemInstance` (`models/item.py`) the loser owned to the winner via
+  `GameState.transfer_item()` (Phase 140's own item registry) --
+  distinct from `turn/search_execution.py`'s own Phase 242 grant of a
+  guarded *feature*'s own `Feature.treasure` on a Search win, which
+  covers a monster guardian's hoard, not another character's personal
+  inventory. Wired into every site where character-vs-character personal
+  combat kills the loser: `turn/challenge_execution.py execute_challenge()`,
+  `turn/patrol_execution.py execute_patrol()`, `turn/pursue_execution.py`'s
+  own armyless-combat branch, and `turn/cast_execution.py`'s Kill_Enemy
+  Berserk-retaliation-on-failure (both outcomes). **Not** wired into
+  army-vs-army battle deaths (`turn/battle_orchestrator.py`) -- [5.9] is
+  explicitly personal-combat vocabulary ("a vanquished foe"), and a
+  defeated *army*'s own commanding leader, if any, survives that defeat
+  (armies rout/disband; only a personal duel kills the leader
+  themselves) -- so this gap was scoped to leader-vs-leader death only,
+  matching where the rulebook's own "Victory and Death" section [5.0]-
+  [5.9] actually lives. King succession's own *player-choice* half
+  stays unaddressed, unchanged -- a distinct, still-open gap (see the
+  paragraph above).
 
 **Phase 170 addendum -- monster-specific missile damage, mirroring Phase
 132's melee precedent.** Wiring Fire Arrow into Search (see ``turn/
@@ -1325,6 +1346,8 @@ from enum import Enum
 
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
+from ak_engine.models.game_state import GameState
+from ak_engine.models.item import ItemInstance
 from ak_engine.models.monster import Monster, MonsterSpeed
 from ak_engine.models.temper import Temper
 
@@ -3484,3 +3507,23 @@ BEG_MERCY_CHANCE: dict[MirrorImageIntelligenceTier, float] = {
 
 def resolve_beg_for_mercy(tier: MirrorImageIntelligenceTier, rng: random.Random) -> bool:
     return rng.random() < BEG_MERCY_CHANCE[tier]
+
+
+def loot_defeated_leader(state: GameState, *, winner_id: int, loser_id: int) -> list[ItemInstance]:
+    """[5.9] "Victory and Death": "looting a vanquished foe's treasure, magic
+    items changing hands" -- transfers every item ``loser_id`` owned to
+    ``winner_id``. See module docstring's own Phase 313 addendum for which
+    call sites wire this in (every character-vs-character death) and which
+    deliberately don't (army-vs-army battle deaths). Called *after*
+    ``GameState.remove_leader(loser_id)`` at every real call site, but order
+    doesn't actually matter -- item ownership (``ItemInstance.owner_leader_id``)
+    is tracked independently of ``GameState.leaders``, so a dead leader's own
+    items simply sit orphaned-but-still-owned by their id until reassigned.
+    Returns the transferred items (for a caller that wants to narrate the
+    loot later), or an empty list if the loser owned nothing.
+    """
+
+    looted = state.items_held_by(loser_id)
+    for item in looted:
+        state.transfer_item(item.item_id, winner_id)
+    return looted

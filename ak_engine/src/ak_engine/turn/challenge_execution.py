@@ -195,7 +195,7 @@ always the target (no monster-side complexity to thread through).
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
@@ -220,6 +220,7 @@ from ak_engine.turn.encounter import (
     ice_suspension_is_frozen,
     ice_suspension_slowed_bonus_rounds,
     illusory_hero_alignments_are_implacably_hostile,
+    loot_defeated_leader,
     mirror_image_leader_disbelief_bonus,
     resolve_augur_combat,
     resolve_fire_arrow_duel,
@@ -1067,6 +1068,12 @@ class ChallengeExecutionResult:
     # encounter's overall winner (if any) was decided by a later tactic.
     steal_outcome: str | None = None
     steal_capture_range: CombatRange | None = None
+    # Phase 313: item ids transferred from the loser to the winner via
+    # `turn/encounter.py loot_defeated_leader()` -- [5.9]'s "looting a
+    # vanquished foe's treasure, magic items changing hands". Empty (not
+    # None) when `loser_killed` is True but the loser owned nothing; stays
+    # `[]` when there's no death at all.
+    looted_item_ids: list[int] = field(default_factory=list)
 
 
 def execute_challenge(
@@ -1134,6 +1141,7 @@ def execute_challenge(
         else (request.target_character_id, challenger_leader_id)
     )
     state.remove_leader(loser_id)
+    looted_items = loot_defeated_leader(state, winner_id=winner_id, loser_id=loser_id)
 
     return ChallengeExecutionResult(
         accepted=True,
@@ -1141,6 +1149,7 @@ def execute_challenge(
         winner_leader_id=winner_id,
         loser_leader_id=loser_id,
         loser_killed=True,
+        looted_item_ids=[item.item_id for item in looted_items],
         steal_outcome=combat_result.steal_outcome,
         steal_capture_range=combat_result.steal_capture_range,
     )

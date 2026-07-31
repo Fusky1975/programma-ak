@@ -11,6 +11,7 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.encounter import EncounterCombatResult, MeleeRoundOutcome
@@ -210,6 +211,25 @@ def test_execute_pursue_combat_removes_the_decisive_loser():
     assert result.loser_killed is True
     assert 2 not in state.leaders
     assert 1 in state.leaders
+
+
+def test_execute_pursue_combat_loots_the_decisive_losers_items():
+    # Phase 313, rulebook [5.9] -- same setup as the removal test above.
+    state = _base_state()
+    state.add_leader(
+        LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.MELEE, 3, 9))
+    )
+    state.add_leader(
+        LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 0, 9))
+    )
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=2)
+    rng = ScriptedRandom([0.0] + [0.1, 0.5, 0.9] * 15)
+
+    result = execute_pursue(state, 1, _melee_request(2), rng=rng)
+
+    assert result.loser_killed is True
+    assert result.looted_item_ids == [item.item_id]
+    assert state.items[item.item_id].owner_leader_id == 1
 
 
 # -- Fire Arrow (Phase 273): SHOOT now actually resolves via Fire Arrow --

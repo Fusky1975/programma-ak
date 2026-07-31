@@ -98,7 +98,7 @@ itself already uses across ``challenge_execution.py``/
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
@@ -106,7 +106,7 @@ from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, resolve_melee_duel
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, loot_defeated_leader, resolve_melee_duel
 from ak_engine.turn.movement import MapBounds, neighbors
 
 _MAGIC_ABILITIES = (Ability.WHITE, Ability.NECROMANCY, Ability.ELEMENTAL, Ability.PSYCHIC, Ability.ILLUSION)
@@ -211,6 +211,9 @@ class PatrolExecutionResult:
     winner_leader_id: int | None = None
     loser_leader_id: int | None = None
     loser_killed: bool = False
+    # Phase 313: same field/reason as `turn/challenge_execution.py
+    # ChallengeExecutionResult`'s own Phase 313 addendum.
+    looted_item_ids: list[int] = field(default_factory=list)
 
 
 def execute_patrol(
@@ -268,6 +271,7 @@ def execute_patrol(
         else (target.leader_id, patroller_leader_id)
     )
     state.remove_leader(loser_id)
+    looted_items = loot_defeated_leader(state, winner_id=winner_id, loser_id=loser_id)
 
     return PatrolExecutionResult(
         intercepted=True,
@@ -276,4 +280,5 @@ def execute_patrol(
         winner_leader_id=winner_id,
         loser_leader_id=loser_id,
         loser_killed=True,
+        looted_item_ids=[item.item_id for item in looted_items],
     )

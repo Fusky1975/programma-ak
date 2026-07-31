@@ -259,6 +259,26 @@ def test_execute_challenge_combat_removes_the_decisive_loser():
     assert 1 in state.leaders
 
 
+def test_execute_challenge_combat_loots_the_decisive_losers_items():
+    # Phase 313, rulebook [5.9]: "looting a vanquished foe's treasure,
+    # magic items changing hands" -- same setup as the removal test above.
+    state = _base_state()
+    state.add_leader(
+        LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.MELEE, 3, 9))
+    )
+    state.add_leader(
+        LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 0, 9))
+    )
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=2)
+    rng = ScriptedRandom([0.1, 0.5, 0.9] * 15)
+
+    result = execute_challenge(state, 1, _melee_request(2), rng=rng)
+
+    assert result.loser_killed is True
+    assert result.looted_item_ids == [item.item_id]
+    assert state.items[item.item_id].owner_leader_id == 1
+
+
 def test_execute_challenge_combat_with_no_decisive_winner_kills_nobody():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD))

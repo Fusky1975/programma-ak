@@ -13307,7 +13307,7 @@ section.
     equal-Initiative groups tiebreak on unit count, an enemy-owned
     province's multi-invasion keeps the caller's own unchanged order) --
     3357 passed total.
-- **Phase 312 (current)**: a genuine, previously-unnoticed internal
+- **Phase 312**: a genuine, previously-unnoticed internal
   contradiction in `Regolamento AK.txt` itself, flagged directly by the
   user -- the body text at [5.6] says the Cautious flee bonus is +30%
   ("(NOVITA') I personaggi Cauti hanno il 30% in più di possibilità di
@@ -13327,6 +13327,38 @@ section.
     test_weak_temper_flee_chance_bonus_stays_at_the_body_texts_30_percent`
     -- a regression guard against the value silently drifting to the
     appendix's own +20% figure -- 3358 passed total.
+- **Phase 313 (current)**: closes the treasure-looting gap flagged in
+  `turn/encounter.py`'s own "Victory and Death's aftermath" ([5.9]) note
+  -- "looting a vanquished foe's treasure, magic items changing hands"
+  was never wired for a defeated *character* (only a guarded *feature*'s
+  own hoard has been granted on a Search win since Phase 242). New
+  `turn/encounter.py loot_defeated_leader(state, *, winner_id, loser_id)`
+  transfers every `ItemInstance` the loser owned to the winner via
+  `GameState.transfer_item()` (Phase 140's own registry) -- item
+  ownership isn't tied to `GameState.leaders`, so it works regardless of
+  whether it's called before or after `remove_leader()`. Wired into
+  every site where character-vs-character personal combat kills the
+  loser: `turn/challenge_execution.py execute_challenge()`, `turn/
+  patrol_execution.py execute_patrol()`, `turn/pursue_execution.py`'s
+  own armyless-combat branch, and `turn/cast_execution.py`'s Kill_Enemy
+  Berserk-retaliation-on-failure (both outcomes) -- each result
+  dataclass (`ChallengeExecutionResult`, `PatrolExecutionResult`,
+  `PursueExecutionResult`, `CastExecutionResult`) gained a
+  `looted_item_ids: list[int]` field for a future narration phase.
+  **Deliberately not wired into army-vs-army battle deaths**
+  (`turn/battle_orchestrator.py`) -- [5.9] is personal-combat vocabulary
+  ("a vanquished foe"), and a defeated army's own commanding leader (if
+  any) survives an ordinary battle loss; only personal combat actually
+  kills the leader themselves, so that's the gap's real scope. King
+  succession's own player-choice half (also named in that same [5.9]
+  note) stays a separate, still-open gap, unaddressed here.
+  - 6 new tests: `test_encounter.py` (3 -- transfers every item, returns
+    empty when the loser owned nothing, works regardless of call order
+    relative to `remove_leader()`), `test_challenge_execution.py`,
+    `test_pursue_execution.py`, and `test_patrol_execution.py` (1 each,
+    extending each module's own existing decisive-loser test with a
+    looted item), plus 2 pre-existing `test_cast_execution.py` Berserk
+    tests extended with loot assertions -- 3364 passed total.
 
 ## Setup
 

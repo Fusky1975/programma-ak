@@ -145,7 +145,7 @@ tests.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
@@ -155,7 +155,7 @@ from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted, resolve_challenge_combat
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, CombatRange
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, CombatRange, loot_defeated_leader
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance, neighbors
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 
@@ -217,6 +217,13 @@ class PursueExecutionResult:
     # shares that module's combat core directly.
     steal_outcome: str | None = None
     steal_capture_range: CombatRange | None = None
+    # Phase 313: same field/reason as `turn/challenge_execution.py
+    # ChallengeExecutionResult`'s own Phase 313 addendum -- set for the
+    # armyless-combat branch only, which shares that module's combat core
+    # directly; the army-vs-army battle branch (`_fight_army_pursuit_battle`)
+    # goes through `fight_battle()` instead, out of [5.9]'s own personal-
+    # combat scope.
+    looted_item_ids: list[int] = field(default_factory=list)
 
 
 def _fight_army_pursuit_battle(
@@ -328,6 +335,7 @@ def execute_pursue(
         else (request.target_character_id, pursuer_leader_id)
     )
     state.remove_leader(loser_id)
+    looted_items = loot_defeated_leader(state, winner_id=winner_id, loser_id=loser_id)
 
     return PursueExecutionResult(
         caught_up=True,
@@ -335,6 +343,7 @@ def execute_pursue(
         winner_leader_id=winner_id,
         loser_leader_id=loser_id,
         loser_killed=True,
+        looted_item_ids=[item.item_id for item in looted_items],
         steal_outcome=combat_result.steal_outcome,
         steal_capture_range=combat_result.steal_capture_range,
     )
