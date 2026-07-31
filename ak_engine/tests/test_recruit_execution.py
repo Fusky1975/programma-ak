@@ -198,6 +198,54 @@ def test_has_treat_permission_helper():
     assert state.has_treat_permission(1, 2) is False
 
 
+def test_levy_blocked_in_a_hostile_non_allied_provinces_own_territory():
+    # Phase 303 fix: RULES.AK [3.4], "You can Recruit armies from the
+    # populace only if you own the province" -- a levy (no mercenary
+    # present) in a province owned by an unallied kingdom used to
+    # silently succeed; now it's blocked.
+    state = build_state(treasury=100)
+    state.add_kingdom(KingdomState(2, "Hostilia", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0), treasury=0))
+    state.provinces[LOCATION].owner_kingdom_id = 2  # not allied with kingdom 1
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.territory_blocked == [ArmyType.BOWMEN]
+    assert result.total_gold_spent == 0
+    assert state.kingdoms[1].treasury == 100  # untouched -- never debited
+
+
+def test_levy_blocked_in_an_unclaimed_non_player_province():
+    state = build_state(treasury=100)
+    state.provinces[LOCATION].owner_kingdom_id = None
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.territory_blocked == [ArmyType.BOWMEN]
+    assert state.kingdoms[1].treasury == 100
+
+
+def test_mercenary_hire_still_works_in_hostile_territory_where_a_levy_would_be_blocked():
+    # RULES.AK [3.4]'s own second half of the same sentence: "mercenaries
+    # can be Recruited in any province by any character, even a King who
+    # owns no provinces." The territory gate must never touch this path.
+    state = build_state(treasury=100)
+    state.add_kingdom(KingdomState(2, "Hostilia", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0), treasury=0))
+    state.provinces[LOCATION].owner_kingdom_id = 2
+    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.recruited[0].hired is True
+    assert result.territory_blocked == []
+    assert state.armies[50].kingdom_id == 1
+
+
 def test_former_home_province_now_allied_allows_four_units():
     # Rulebook [3.4]: "if you are recruiting in your former home
     # province which is now your ally's province, you can recruit 4

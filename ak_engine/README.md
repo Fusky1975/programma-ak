@@ -12793,7 +12793,7 @@ complete (Phases 209-211).
     monster's starting HP -- closing the exact "each half tested in
     isolation" gap that hid the bug -- 3284 passed total.
 
-- **Phase 302 (current)**: fixes the third and last confirmed bug from
+- **Phase 302**: fixes the third and last confirmed bug from
   the second bug-hunt audit round -- `Discovery.ANALYTICAL_PSYCHOLOGY`
   (a Kingdom-level ward against enemy Charm casts, sourced text quoted
   in full in `models/discovery.py`) was declared as `Spell.CHARM`'s
@@ -12846,6 +12846,38 @@ This completes the second bug-hunt audit round's own three confirmed
 findings (Phases 300-302), alongside the first round's four (Phases
 296-299) -- seven real, previously-undetected bugs found and fixed
 across two dedicated audit passes this project has run so far.
+
+- **Phase 303 (current)**: closes Recruit's own long-flagged "never
+  blocks recruiting in a non-owned, non-allied province" gap (see
+  Phase 261's/262's own notes above), sourced from RULES.AK [3.4],
+  quoted in full: "You can Recruit armies from the populace only if
+  you own the province, but mercenaries can be Recruited in any
+  province by any character, even a King who owns no provinces." This
+  project only ever enforced the second half -- a levy (no matching
+  mercenary present) used to succeed in any province at all, including
+  one owned by a hostile kingdom or unclaimed/non-player territory.
+  - **Fix**: `RecruitExecutionResult` gains a new `territory_blocked:
+    list[ArmyType]` field. `execute_recruit()` now checks for a
+    hireable co-located mercenary *before* deciding whether the
+    request can proceed -- `can_levy = province.owner_kingdom_id ==
+    kingdom_id or in_ally_territory` (ally territory is already gated
+    by the existing Treat-permission check, Phase 261) gates only the
+    populace-levy path; a genuine mercenary hire still proceeds in any
+    province, unconditionally, exactly as the quoted sentence's own
+    second half requires. No treasury debit happens for a
+    territory-blocked type. The paragraph's later "You can never
+    Recruit armies belonging to another kingdom" needed no separate
+    fix -- `GameState.mercenaries_at()` already only returns
+    `kingdom_id is None` armies, so a kingdom-owned army was never
+    mistakenly hireable as a mercenary to begin with.
+  - Non-breaking: full suite passed unchanged (3289) before any new
+    test was added.
+  - 3 new tests in `test_recruit_execution.py`: a levy in a
+    hostile (unallied-owned) province is blocked and the treasury
+    stays untouched; a levy in an unclaimed (`owner_kingdom_id=None`)
+    province is likewise blocked; a co-located mercenary in that same
+    hostile province is still hireable, proving the territory gate
+    never touches the mercenary path -- 3292 passed total.
 
 ## Setup
 

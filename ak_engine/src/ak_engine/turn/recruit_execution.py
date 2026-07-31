@@ -66,6 +66,23 @@ split into two mutually exclusive cases: still self-owned ->
 by an ally -> ``is_former_home_province_now_allied`` (the new 4-unit
 bonus, still subject to the same Treat-permission gate above, since
 it's still ally territory).
+
+**Blocking a levy in hostile/unclaimed territory (Phase 303)**: RULES.AK
+[3.4], quoted in full: "You can Recruit armies from the populace only if
+you own the province, but mercenaries can be Recruited in any province
+by any character, even a King who owns no provinces." This project
+never enforced the first half -- a levy (no matching mercenary present)
+used to succeed in any province at all, regardless of ownership.
+``can_levy`` (``province.owner_kingdom_id == kingdom_id or
+in_ally_territory`` -- ally territory is already gated by the Treat
+check above) now blocks *only* the populace-levy path
+(``RecruitExecutionResult.territory_blocked``); a genuine mercenary hire
+still proceeds in any province, exactly as the quoted sentence's own
+second half requires. "Belonging to another kingdom" (the same
+paragraph's later "You can never Recruit armies belonging to another
+kingdom") needed no separate fix -- ``GameState.mercenaries_at()``
+already only returns ``kingdom_id is None`` armies, so a kingdom-owned
+army was never mistakenly hireable as a mercenary in the first place.
 """
 
 from __future__ import annotations
@@ -95,6 +112,7 @@ class RecruitExecutionResult:
     gold_blocked: list[ArmyType] = field(default_factory=list)
     incompatible: list[ArmyType] = field(default_factory=list)
     treat_blocked: list[ArmyType] = field(default_factory=list)
+    territory_blocked: list[ArmyType] = field(default_factory=list)
     total_gold_spent: int = 0
 
 
@@ -161,15 +179,6 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             result.limit_blocked.append(army_type)
             continue
 
-        unit_cost = resolution.gold_per_unit + resolution.ally_fee_per_unit
-        if kingdom.treasury < unit_cost:
-            result.gold_blocked.append(army_type)
-            continue
-
-        kingdom.treasury -= unit_cost
-        if in_ally_territory and resolution.ally_fee_per_unit:
-            state.kingdoms[province.owner_kingdom_id].treasury += resolution.ally_fee_per_unit
-
         mercenary = next(
             (
                 army
@@ -180,6 +189,20 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             ),
             None,
         )
+        can_levy = province.owner_kingdom_id == kingdom_id or in_ally_territory
+        if mercenary is None and not can_levy:
+            result.territory_blocked.append(army_type)
+            continue
+
+        unit_cost = resolution.gold_per_unit + resolution.ally_fee_per_unit
+        if kingdom.treasury < unit_cost:
+            result.gold_blocked.append(army_type)
+            continue
+
+        kingdom.treasury -= unit_cost
+        if in_ally_territory and resolution.ally_fee_per_unit:
+            state.kingdoms[province.owner_kingdom_id].treasury += resolution.ally_fee_per_unit
+
         if mercenary is not None:
             mercenary.kingdom_id = kingdom_id
             mercenary.commanded_by = commanded_by
