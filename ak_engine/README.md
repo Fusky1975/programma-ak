@@ -13863,7 +13863,7 @@ section.
     own module docstring, directly after Phase 332's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3380 passed) both before and after.
-- **Phase 334 (current)**: tries tracking one province's own unled
+- **Phase 334**: tries tracking one province's own unled
   garrison across turns instead of one leader's own rows (research-
   only, no new parser code). `HexCoord(10,4)`'s own 3 unled rows are
   byte-for-byte identical between `GW3__T2` and `GW3__T3`, including
@@ -13885,6 +13885,32 @@ section.
   undeciphered.
   - Documented as a `"Phase 334 addendum"` in `parser/gw_world.py`'s
     own module docstring, directly after Phase 333's own addendum.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3380 passed) both before and after.
+- **Phase 335 (current)**: pushes field 10 across all 12 real
+  `GW3__Tn` turns at once (research-only, no new parser code), instead
+  of the single `GW3__T3` snapshot Phase 332/333 checked. Corrects the
+  earlier "0 or 1" reading -- `GW3__T12` shows a `2` for the first
+  time. Finds a clean, zero-exception `ArmyType` gate: field 10 is
+  non-zero only for the 10 "humanoid"/conventional `ArmyType`s;
+  across all 12 turns combined, the "monstrous, race-locked" types
+  (`DRAGON_WING`, `EAGLE_WING`, `WHALES`, `MERMEN`, `ENTS`, `TROLLS`,
+  `WEREBEASTS` -- 780 rows total) show zero non-zero field 10 values,
+  not one. `WARG_RIDERS` is a rare partial exception traced to
+  essentially a single persistently-tracked real unit (Guerin's own
+  `209th Warg Riders`). Also confirms field 10 is `0` for every row in
+  `GW3__T1` (game start) and the count of non-zero rows grows
+  monotonically turn over turn, consistent with a rarely-cleared
+  per-unit flag. Tests and rules out "this unit fought a battle" as
+  the trigger: three of Guerin's own rows flip `0` to `1` between `T9`
+  and `T10` with zero combat reported in his own real `SE3__T9.K1`
+  letter for that turn (only an illegal-move attempt, a failed
+  Tactics roll, and a plague). Leaves an open, unconfirmed lead: a
+  `T12` cluster of unled rows shows field 10 values of both `1` and
+  `2` side by side, suggestive of an incrementing count rather than a
+  one-shot flag.
+  - Documented as a `"Phase 335 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 334's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3380 passed) both before and after.
 

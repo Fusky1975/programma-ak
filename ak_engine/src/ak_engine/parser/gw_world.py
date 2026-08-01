@@ -972,6 +972,74 @@ snapshots. Left open rather than forced.
 
 Net result: field 9 is confirmed a **persistent per-unit state**, not
 a counter, but its own specific values remain undeciphered.
+
+**Phase 335 addendum -- field 10 pushed across all 12 real turns at
+once (not just `GW3__T3`); a clean `ArmyType`-gated structural fact
+found, one leading hypothesis tested and ruled out (research pass
+only, no new parser code).** Phase 332's "rare binary, 4 of 259 rows
+in `GW3__T3`" reading undersold both field 10's own range and its
+real structure -- pulling every Block B row from all 12 real
+`GW3__Tn` snapshots at once (218 rows at `T1` growing to 344 by `T7`
+onward) changes the picture:
+
+- **Field 10 is not binary.** `GW3__T12` has 3 rows reading `2` (all
+  three sharing `field9=11`, all at the same `HexCoord`) alongside 27
+  reading `1` and 314 reading `0` -- `2` never appears before `T12` in
+  any of the 12 real snapshots. Phase 332's "`0` or `1`" was simply
+  the full range visible in the one turn it checked.
+- **A clean, zero-exception `ArmyType` gate**: field 10 is non-zero
+  **only** for the 10 "humanoid"/conventional `ArmyType`s (`GARRISON`,
+  `BOWMEN`, `AXEMEN`, `PHALANX`, `LEGION`, `LT_CAVALRY`, `HVY_CAVALRY`,
+  `CHARIOTS`, `CAMEL_CORPS`, `FLEET`). Across all 12 turns combined,
+  the "monstrous, race-locked" `ArmyType`s already identified in Phase
+  331 (`DRAGON_WING`, `EAGLE_WING`, `WHALES`, `MERMEN`, `ENTS`,
+  `TROLLS`, `WEREBEASTS` -- 780 rows total) show **zero** non-zero
+  field 10 values, not one, across the whole 12-turn game. This is a
+  real structural exclusion, not sampling noise -- at even a
+  conservative 2% rate (the lowest rate any conventional type shows)
+  780 independent rows would be expected to show over a dozen
+  non-zero hits. `WARG_RIDERS` (also nominally race-locked per Phase
+  331) is the one partial exception, but its 4 non-zero hits across
+  129 rows trace back to essentially a single real, persistently-
+  tracked unit (Guerin's own `209th Warg Riders`, followed T10-T12)
+  plus one more instance at `T12` -- not a broad pattern the way the
+  10 conventional types show. `ELEPHANTS` (0 of 19 rows) is too small
+  a sample to judge either way.
+- **Field 10 is `0` for every single row in `GW3__T1`** (the game's
+  own turn-0 starting snapshot, 218 of 218 rows), and the count of
+  non-zero rows then grows **monotonically** turn over turn (`0, 3, 4,
+  4, 5, 5, 4, 13, 21, 27, 27, 30`, `T1`-`T12`) -- consistent with a
+  per-unit flag that some in-game event sets and that is, once set,
+  rarely if ever cleared (mirroring field 9's own Phase 334
+  persistence finding, though the two fields are otherwise
+  independent -- field 10 is `0` on the vast majority of `field7=0`
+  unled rows that carry field 9's own non-zero values).
+- **Tested and ruled out as the trigger: "this unit fought a battle
+  this turn."** Three of Guerin's own led rows (`108th Skel Bowmen`,
+  `110th Bowmen`, `209th Warg Riders`) flip field 10 from `0` (`T9`)
+  to `1` (`T10`) together, a clean same-leader, same-province,
+  led-both-turns transition. `SE3__T9.K1`'s own real letter for that
+  exact turn reports **no battle or combat of any kind** for Guerin --
+  only a failed illegal-move attempt, a failed Tactics practice roll,
+  and a plague at Quantara Roo that destroyed three of his *other*
+  units (`109th Heavy Cavalry` and two Bowmen) plus the garrison's own
+  `292nd Legion`. Since the flip happens with zero combat in the
+  source letter, "fought a battle" cannot be field 10's own trigger.
+- **Open lead, not confirmed**: by `T12` the same general area (the
+  province Guerin's own `209th Warg Riders` ends up in) accumulates a
+  cluster of 8 unled rows sharing `field9 in {10, 11, 251}`, with
+  field 10 reading `1` and `2` side by side within the same cluster --
+  including a `Quality=0` (Depleted) `Warg Riders` row -- consistent
+  with a chaotic post-battle scatter (many units suddenly reduced to
+  unled garrison status at lowered quality) and suggestive of field 10
+  as an incrementing count of some repeatable event rather than a
+  one-shot flag, but not independently confirmed the way the
+  `ArmyType` gate above is.
+
+Net result: field 10 is confirmed `ArmyType`-gated (conventional
+troop types only, monstrous types structurally excluded) and
+confirmed not a simple "fought a battle" flag; its own specific
+triggering event and its `0`/`1`/`2` value meaning remain open.
 """
 
 from __future__ import annotations
