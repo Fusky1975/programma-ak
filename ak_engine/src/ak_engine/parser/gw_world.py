@@ -242,6 +242,75 @@ Still not implemented as a parser -- decoding fields 4-10 individually
 (which field is `ArmyType`, which is quantity/quality) needs a larger,
 systematic cross-check (in the style of Phase 278's own 701-row
 `Mod_PAT` recovery) before any code is written against this shape.
+
+**Phase 318 addendum -- the kingdom/leader header block before the
+province-record block (research pass only, no new parser code).**
+`GW3__T1` lines 1 to ~1419 (before the province block starts) hold one
+record per kingdom, each a King's own record followed by his Heroes'
+records back to back. A leader record's own shape (`GW3__T1`, King
+Babba Sissoko / leader id 0): a numeric header line, then a long
+numeric line, then **Title** (`"Lord"`), **Epithet** (`"Master of the
+s"` -- see below), **real player name** (`"Andrea Ferrigno"`), then one
+or more `"Action Plans:"` blocks in the *exact same grammar*
+`parser/k1_moves.py` already parses (`SP:`, `P0 :`, ...). 101 total
+`"Action Plans:"` blocks in `GW3__T1` across 9 kingdoms and their
+Heroes.
+
+- **Kingdom identity confirmed against real letters.** `"Babba
+  Sissoko"` (the kingdom name printed on its own line, right before the
+  King's own record) and King Babba Sissoko's own in-game character
+  name, `"Uga-Buga Makumb"`, and his real player name, `"Andrea
+  Ferrigno"`, all independently match `SE3__T1.K1`/`SE3__T2.K1`'s own
+  real narrative and move-sheet text (`"#0, Andrea Ferrigno, ... a
+  Orcish, Undead ruler"`) -- confirming Kingdom name and King's own
+  character name are two distinct fields, matching this project's own
+  existing `KingdomState`/`LeaderState` split.
+- **"Master of the s" is a real, independently-reproduced truncation**,
+  not a parsing artifact: it appears cut at the exact same point in
+  both the raw world file and `SE3__T1.K1`'s own separately-generated
+  narrative text (`"Lord Babba Sissoko Master of the s (#0)"`) -- a
+  genuine fixed-width truncation bug/feature of the original engine.
+- **A leader record's own numeric header line starts with that
+  leader's current `HexCoord`, confirmed by cross-check**: King Babba
+  Sissoko's own header line begins `"11 7 ..."`, matching Piratum
+  `HexCoord(11, 7)`, his own real capital confirmed via
+  `GWProvinceRecord.governor_leader_id == 0` in the same file's
+  province block. Position 4 on that same line is `0`, matching his
+  own `leader_id` too.
+- **The kingdom-level header line (33 integers, one per kingdom,
+  shared by the King and all his Heroes) yields a confirmed, verified
+  in-game calendar**, found by comparing the same kingdom's own header
+  line across all 12 real `GW3__T1..T12` snapshots: position 3 (and,
+  redundantly, position 20) is the **turn number**, counting 1 through
+  12 exactly; positions 14/15/16 are **day/month/year** of the in-game
+  date, progressing monotonically and plausibly from `19/12/2006`
+  (`T1`) to `25/5/2007` (`T12`) -- corroborated independently by
+  `AK3__T1.K1`'s own real move-sheet footer, `"Due: Jan. 2, 2007"`,
+  shortly after `T1`'s own in-game date. Most of the remaining 33
+  positions are constant across all 12 turns (structural markers, not
+  data); a few grow then plateau (candidate object/record counters);
+  position 29 grows near-monotonically (`0` at `T1` to `434` at `T12`)
+  and looked like treasury, but **direct comparison against
+  `SE3__T1.K1`/`SE3__T2.K1`'s own real "Gold in treasury" lines (11,
+  then 22) rules that out** -- the real treasury is far smaller and
+  doesn't grow anywhere near that fast. A cumulative-revenue-style
+  running total is a plausible alternative, not confirmed.
+- **A real dynastic succession, independently confirmed**: by `T12`,
+  Kingdom Babba Sissoko's own King is no longer Andrea Ferrigno/Uga-
+  Buga Makumb but `"Brian Gruber"` (title `"Lord"`, epithet `"Master
+  orango"`) -- the kingdom name persists across a change of ruler, and
+  the new King's own record reuses `leader_id` 0 (this project's own
+  "King's `leader_id` == `kingdom_id`" convention holding even across
+  a succession).
+
+Not implemented as a parser here -- this is a promising lead for a
+future phase that could close the README's own "populating a brand-new
+`GameState` from nothing at turn 0" gap (`turn/kingdom_bridge.py`'s own
+Phase 31 note), since a leader's own starting coordinate and an
+embedded, already-parseable Action Plan are both present in this block.
+Fields still unresolved: the long second numeric line per leader, most
+of the 33-field kingdom header, and everything in a leader's own
+25-ish-field header line past the confirmed coordinate/id.
 """
 
 from __future__ import annotations

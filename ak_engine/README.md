@@ -13471,7 +13471,7 @@ section.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after -- no test or source-code
     behavior changed, only a docstring addendum.
-- **Phase 317 (current)**: refines Phase 316's own 218-row-block
+- **Phase 317**: refines Phase 316's own 218-row-block
   finding (still research-only, no new parser code), using all 12 real
   `GW3__T1..T12` snapshots rather than just `T1`. Comparing the same
   `leader_id` across turns overturns the "one row per Hero" reading:
@@ -13485,6 +13485,40 @@ section.
   already-confirmed 0-19 ordinal range, though no individual field is
   decoded with confidence yet (field 4 skews toward `1`/`BOWMEN` in the
   small samples checked so far, not a wide enough spread to be sure).
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
+- **Phase 318 (current)**: research pass (no new parser code) on the
+  kingdom/leader header block before the province-record block
+  (`GW3__T1` lines 1-~1419) -- one record per kingdom, King then his
+  Heroes back to back, each with Title/Epithet/real-player-name lines
+  and one or more `"Action Plans:"` blocks already in
+  `parser/k1_moves.py`'s own grammar. Confirmed against real letters:
+  Kingdom "Babba Sissoko" 's King (character name "Uga-Buga Makumb",
+  player "Andrea Ferrigno") matches `SE3__T1.K1`/`SE3__T2.K1` exactly,
+  including an identically-truncated title (`"Master of the s"`) in
+  both independently-generated sources. A leader's own numeric header
+  line starts with his current `HexCoord` (King Babba Sissoko's own
+  `"11 7 ..."` matches his real capital Piratum) and position 4 is his
+  `leader_id`. The 33-field kingdom-level header line, compared across
+  all 12 real `T1..T12` snapshots, yields a **confirmed in-game
+  calendar**: position 3 (and 20) is the turn number 1-12 exactly;
+  positions 14/15/16 are day/month/year, progressing plausibly from
+  19/12/2006 to 25/5/2007, corroborated by `AK3__T1.K1`'s own real
+  "Due: Jan. 2, 2007" move-sheet footer. Position 29's near-monotonic
+  growth looked like treasury but is **ruled out** by direct comparison
+  against `SE3__T1.K1`/`SE3__T2.K1`'s own real treasury lines (11, then
+  22 -- far smaller than position 29's own trajectory); a cumulative-
+  revenue reading is plausible, not confirmed. Also independently
+  confirmed a real dynastic succession: by `T12`, Kingdom Babba
+  Sissoko's King is `"Brian Gruber"`, not Andrea Ferrigno -- the
+  kingdom name persists across rulers, and the new King reuses
+  `leader_id` 0.
+  - Documented as a `"Phase 318 addendum"` in `parser/gw_world.py`'s
+    own module docstring -- a promising lead for a future phase that
+    could close `turn/kingdom_bridge.py`'s own "populating a brand-new
+    `GameState` from nothing at turn 0" gap, since a leader's starting
+    coordinate and an already-parseable embedded Action Plan both live
+    in this block.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
 
