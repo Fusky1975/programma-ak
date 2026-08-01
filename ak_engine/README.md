@@ -13436,7 +13436,7 @@ section.
     `test_width_10_decisively_beats_every_other_width_2_to_200`,
     `test_se3_report_style_row_times_100_plus_col_is_ruled_out_for_
     ak3_lmove` -- 3371 passed total.
-- **Phase 316 (current)**: a research-only pass (no new parser code)
+- **Phase 316**: a research-only pass (no new parser code)
   into what's actually in `GW3__T1`'s post-province-block content
   (`parser/gw_world.py`'s own "differently-shaped record format after
   line ~2066" known gap, Phase 222). Splits into three sub-parts,
@@ -13471,6 +13471,22 @@ section.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after -- no test or source-code
     behavior changed, only a docstring addendum.
+- **Phase 317 (current)**: refines Phase 316's own 218-row-block
+  finding (still research-only, no new parser code), using all 12 real
+  `GW3__T1..T12` snapshots rather than just `T1`. Comparing the same
+  `leader_id` across turns overturns the "one row per Hero" reading:
+  Guerin (`leader_id` 18) has 6 rows in `T3` and 9 in `T4` (all sharing
+  his own current, turn-to-turn-moving `HexCoord`) -- and his real
+  `AK3__T4.K1` move file shows exactly 2 real `RECRUIT` phases that
+  turn, a genuine sourced correlation between row-count growth and real
+  Recruit orders. Working (not yet confirmed) hypothesis: one row per
+  *army* under that Hero's command, not one row per Hero -- fields 4-10
+  would hold that army's own type/size/quality, echoing `ArmyType`'s
+  already-confirmed 0-19 ordinal range, though no individual field is
+  decoded with confidence yet (field 4 skews toward `1`/`BOWMEN` in the
+  small samples checked so far, not a wide enough spread to be sure).
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
 
 ## Setup
 

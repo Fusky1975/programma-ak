@@ -204,6 +204,44 @@ padding/terminator row:
 None of this is implemented in `parse_gw_world()` -- this addendum
 records a research pass only, so a future phase doesn't re-walk the
 already-falsified Feature/Monster hypothesis from scratch.
+
+**Phase 317 addendum -- the 218-row block is per-army, not per-Hero
+(refines Phase 316, still a research pass, no new parser code).** All
+12 real `GW3__T1..T12` snapshots are now available (not just `T1`), and
+comparing the same `leader_id` across turns overturns Phase 316's
+"one row per Hero" reading:
+
+- **A Hero can have *many* rows in the same turn, not one.** Guerin
+  (`leader_id` 18) has 6 rows in `GW3__T3`, 9 in `GW3__T4`, 9 in `T5`...
+  -- all sharing his own current `HexCoord` for that turn (which itself
+  moves turn over turn, e.g. `(10,6)` at `T3` to `(11,5)` at `T4`,
+  tracking his real LMOVE orders) -- so fields 2-3 are still "this
+  Hero's current position," but field 1 is better read as "commanded
+  by," not "this Hero's own single record."
+- **Row count changes correlate directly with real Recruit orders.**
+  Guerin's row count jumps from 6 (`T3`) to 9 (`T4`), a net +3; his own
+  real `AK3__T4.K1` move file shows exactly 2 `ActionCode.RECRUIT`
+  phases that turn (`P2`, `P4`). This is a genuine, sourced correlation
+  (not a coordinate-format coincidence like Phase 316's own
+  now-falsified lead) -- recruiting under a Hero adds row(s) to his own
+  group in this table.
+- **Working hypothesis, not yet fully confirmed**: one row per *army*
+  (or army-like unit) under that Hero's command -- fields 4-10 would
+  then hold that army's own type, size, and/or quality, echoing
+  `models/army_type.py ArmyType`'s own already-confirmed 0-19 ordinal
+  range (`MOD_PAT_ORDINAL_TO_ARMY_TYPE` above) and this project's own
+  `ArmyState` shape. Not confirmed field-by-field: in the small samples
+  checked, field 4 skews heavily toward `1` (`ArmyType.BOWMEN`'s own
+  ordinal) rather than spanning the range enough to be confident yet.
+- Philo's own earlier "two identical duplicate rows" (Phase 316) is
+  consistent with this reading too -- a Hero governing a province
+  directly (rather than actively commanding a field army) still shows
+  up with >=1 row here, not necessarily tied to Recruiting specifically.
+
+Still not implemented as a parser -- decoding fields 4-10 individually
+(which field is `ArmyType`, which is quantity/quality) needs a larger,
+systematic cross-check (in the style of Phase 278's own 701-row
+`Mod_PAT` recovery) before any code is written against this shape.
 """
 
 from __future__ import annotations
