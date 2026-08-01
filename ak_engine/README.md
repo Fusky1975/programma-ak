@@ -13487,7 +13487,7 @@ section.
   small samples checked so far, not a wide enough spread to be sure).
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
-- **Phase 318 (current)**: research pass (no new parser code) on the
+- **Phase 318**: research pass (no new parser code) on the
   kingdom/leader header block before the province-record block
   (`GW3__T1` lines 1-~1419) -- one record per kingdom, King then his
   Heroes back to back, each with Title/Epithet/real-player-name lines
@@ -13519,6 +13519,32 @@ section.
     `GameState` from nothing at turn 0" gap, since a leader's starting
     coordinate and an already-parseable embedded Action Plan both live
     in this block.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
+- **Phase 319 (current)**: confirms one more leader-header field and
+  corrects two Phase 318 claims (still research-only, no new parser
+  code), by comparing the same header line across *different* leaders
+  in one turn rather than the same leader across turns. **Corrected**:
+  position 4 is not `leader_id` -- King Bradipo I's real `leader_id`
+  (2, confirmed via `SE3__T1.K1`'s "Bradipo I (#2)") doesn't match his
+  own position-4 value (`0`, the same as Babba Sissoko's, whose
+  `leader_id` genuinely is 0) -- that earlier match was coincidental.
+  **Corrected**: there's no separate "Kingdom name" field distinct
+  from a leader's own name -- `"Uga-Buga Makumb"` (read in Phase 318
+  as King Babba Sissoko's own alternate character name) turns out to
+  have its own, separate leader record later in the very same
+  kingdom's block, making him a second, subordinate Hero, not the King
+  under another name; every name in this block is simply *a leader's
+  own name*, King or Hero alike. **Confirmed, 3-for-3 against real
+  letters**: leader header position 3 is the `Race` ordinal (the same
+  `models/race.py Race` enum the province block already uses) -- King
+  Babba Sissoko (`3` = `Race.ORCISH`) matches `SE3__T1.K1`'s "a Orcish,
+  Undead ruler"; King Bradipo I (`0` = `Race.HUMAN`) matches
+  `SE3__T10.K1`'s "a Human ruler"; King Kwoth (`0` = `Race.HUMAN`)
+  matches `SE3__T6.K1`'s "a Human ruler".
+  - Documented as a `"Phase 319 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 318's own addendum, so
+    a future phase sees the corrected reading first.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
 

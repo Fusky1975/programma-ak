@@ -311,6 +311,55 @@ embedded, already-parseable Action Plan are both present in this block.
 Fields still unresolved: the long second numeric line per leader, most
 of the 33-field kingdom header, and everything in a leader's own
 25-ish-field header line past the confirmed coordinate/id.
+
+**Phase 319 addendum -- a leader header field confirmed, and two
+Phase 318 claims corrected (research pass only, no new parser code).**
+Comparing the same 25-ish-field leader header line across *different*
+leaders in the same turn (not just the same leader across turns, Phase
+318's own method) both confirms a new field and overturns two of that
+phase's own claims:
+
+- **Corrected: position 4 is *not* `leader_id`.** Phase 318 read King
+  Babba Sissoko's own position 4 (`0`) as matching his own `leader_id`
+  (`0`). It doesn't generalize: King Bradipo I's own real `leader_id`
+  is `2` (confirmed via `SE3__T1.K1`'s own "Bradipo I (#2)"), but his
+  header line's position 4 is also `0` -- the same value as a
+  different leader with a different real id. Babba Sissoko's own match
+  was coincidental. No field in this line has been found to hold the
+  raw `leader_id` literally; it's only recoverable positionally (which
+  `"Action Plans:"` block follows which name).
+- **Corrected: there is no separate "Kingdom name" field distinct from
+  a leader's own name.** Phase 318 read `"Babba Sissoko"` as a Kingdom
+  name and `"Uga-Buga Makumb"` as King Babba Sissoko's own *alternate*
+  in-game character name, based on a diplomatic-contact narrative
+  paragraph that turned out to describe two different people making
+  contact with each other, not one person's two names. Direct
+  cross-check: `"Uga-Buga Makumb"` has its *own*, separate leader
+  record later in the very same kingdom's block in `GW3__T1` (own
+  numeric header, own `"Action Plans:"`), making him a second,
+  subordinate leader (a Hero) under King Babba Sissoko, not the King
+  himself under another name. Every name found in this block --
+  `"Babba Sissoko"`, `"Bradipo I"`, `"Kwoth"`, `"Uga-Buga Makumb"`,
+  ... -- is simply *a leader's own name* (King or Hero alike); a
+  Kingdom's first leader record (its King) happens to open that
+  kingdom's contiguous run, which is what made it look like a
+  distinct "Kingdom name" field.
+- **Confirmed, 3-for-3 against real letters: leader header position 3
+  is the `Race` ordinal** (`models/race.py Race`, the same enum the
+  province block's own `race` field already uses). King Babba Sissoko
+  (position 3 = `3`) is confirmed `Race.ORCISH` (`= 3`) via
+  `SE3__T1.K1`'s own "a Orcish, Undead ruler" -- already known from
+  Phase 318. Newly cross-checked here: King Bradipo I (position 3 =
+  `0`) is confirmed `Race.HUMAN` (`= 0`) via `SE3__T10.K1`'s own
+  "Bradipo I is King #2, ..., a Human ruler"; King Kwoth (position 3 =
+  `0`) is confirmed `Race.HUMAN` too, via `SE3__T6.K1`'s own "Kwoth is
+  King #3, ..., a Human ruler". Three real, independent kings, three
+  exact matches.
+
+Not implemented as a parser here. `Race` decoding is solid enough to
+act on in a future phase; `leader_id` recovery and the kingdom/leader
+naming structure still need the positional (name-follows-record)
+approach described above, not a dedicated id field.
 """
 
 from __future__ import annotations
