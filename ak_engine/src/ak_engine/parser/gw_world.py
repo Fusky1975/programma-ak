@@ -407,6 +407,27 @@ letter data found specific enough to test an alternative hypothesis
 that one kingdom). Recorded here as an open structural lead only --
 the "15 pairs" shape is real and reproducible, but its meaning isn't,
 so no code should be written against it yet.
+
+**Phase 322 addendum -- a leader's own trailing ~128-token line is
+confirmed dynamic per-turn state, meaning still unresolved (research
+pass only, no new parser code, no confirmed field).** Each leader's
+record ends with a trailing block -- a ~128-token line, then a longer
+one -- appearing after that leader's own `"Action Plans:"` section and
+before the *next* leader's name. Comparing King Babba Sissoko's own
+128-token line across `GW3__T1..T6` shows it is **not a static
+template duplicated per leader**: position 16 moves `1` (`T1`) ->
+`2` (`T2`), then plateaus; several further positions switch on from
+`T4` onward (e.g. 39, 64, 91, 99, 121, 128), and at least two (38, 42)
+keep climbing turn over turn, reaching `3` by `T6` -- real, small,
+targeted accumulation, not noise or a coincidental re-render. This
+confirms the block is genuine per-leader-per-turn tracked state.
+**Not confirmed**: which of the ~128 slots means what. `128` doesn't
+match the confirmed 162-province board (Phase 223), so a direct
+per-province index is unlikely; no confirmed project enum has 128
+members either. Correlating specific slot indices against specific
+real per-turn events (which real order, on which turn, causes exactly
+that slot to increment) would need substantially more cross-
+referencing than this pass attempted -- recorded as an open lead only.
 """
 
 from __future__ import annotations

@@ -13569,7 +13569,7 @@ section.
     own module docstring, directly after Phase 319's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
-- **Phase 321 (current)**: records an open, unconfirmed structural
+- **Phase 321**: records an open, unconfirmed structural
   lead (research-only, no new parser code, no confirmed finding) on
   the kingdom-level "doubled 30-value list" that appears once per
   kingdom, right after its own name. It splits cleanly into 15
@@ -13589,6 +13589,23 @@ section.
     own module docstring, directly after Phase 320's own addendum, as
     an open lead rather than a resolved field, so a future phase
     doesn't mistake the "15 pairs" shape for a settled result.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
+- **Phase 322 (current)**: confirms a leader's own trailing
+  ~128-token line (following that leader's own `"Action Plans:"`
+  section, before the next leader's name) is genuine dynamic
+  per-turn state, not a static template -- still research-only, no
+  new parser code, no confirmed field meaning. Comparing King Babba
+  Sissoko's own line across all of `GW3__T1..T6` shows real, targeted
+  change over time: position 16 moves `1` -> `2` then plateaus;
+  several further positions switch on starting `T4`; at least two (38,
+  42) keep climbing, reaching `3` by `T6`. `128` doesn't match the
+  confirmed 162-province board, and no project enum has 128 members,
+  so a direct index mapping isn't obvious; identifying which specific
+  slot tracks which specific real event would need substantially more
+  cross-referencing than this pass attempted.
+  - Documented as a `"Phase 322 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 321's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
 
