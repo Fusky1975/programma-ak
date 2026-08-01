@@ -13547,7 +13547,7 @@ section.
     a future phase sees the corrected reading first.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
-- **Phase 320 (current)**: confirms a Gender marker on a leader's own
+- **Phase 320**: confirms a Gender marker on a leader's own
   long numeric line (still research-only, no new parser code). That
   line (Phase 318's own "long numeric line, still unresolved")
   actually starts with a single letter token, `"M"` or `"F"`, followed
@@ -13567,6 +13567,28 @@ section.
   rather than guessed.
   - Documented as a `"Phase 320 addendum"` in `parser/gw_world.py`'s
     own module docstring, directly after Phase 319's own addendum.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
+- **Phase 321 (current)**: records an open, unconfirmed structural
+  lead (research-only, no new parser code, no confirmed finding) on
+  the kingdom-level "doubled 30-value list" that appears once per
+  kingdom, right after its own name. It splits cleanly into 15
+  `(min, max)`-shaped pairs -- suggestively the same count as
+  `models/race.py Race` (15 members) -- but this is **not confirmed**:
+  a universal per-`Race` table would be identical across every
+  kingdom's own file, and it isn't (Babba Sissoko's own list and
+  Bradipo I's own list share no values). Whatever this is, it's
+  kingdom-specific, not a fixed race-indexed constant. No real letter
+  data specific enough was found to test an alternative reading.
+  Also ruled out (not documented as its own bullet, folded into this
+  phase): the leader header's own position 19, checked across all 10
+  leaders in `GW3__T1`, is `27` for 9 of them and `26` for one -- too
+  uniform to be a real per-leader stat, more likely a structural
+  marker.
+  - Documented as a `"Phase 321 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 320's own addendum, as
+    an open lead rather than a resolved field, so a future phase
+    doesn't mistake the "15 pairs" shape for a settled result.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
 

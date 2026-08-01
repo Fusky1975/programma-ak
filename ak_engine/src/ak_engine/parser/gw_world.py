@@ -386,6 +386,27 @@ leader to leader with no obvious pattern yet (`2` for Babba Sissoko,
 for Circe) -- large values for some Heroes, small/zero for these
 particular Kings, no real-letter cross-check found for it. Left
 unresolved rather than guessed.
+
+**Phase 321 addendum -- an open, unconfirmed structural lead on the
+kingdom-level "doubled 30-value list" (research pass only, no new
+parser code, no confirmed finding).** The 30-integer line that appears
+once per kingdom, immediately after that kingdom's own name and before
+its King's numeric header (e.g. Babba Sissoko's own `"0 3 2 4 0 2 1 3 1
+3 0 0 3 5 0 2 0 2 0 2 2 4 0 2 0 2 0 2 1 3"`, doubled to 60 tokens with
+only the first 4 differing between the two copies) splits cleanly into
+**15 `(min, max)`-shaped pairs** -- suggestively the same count as this
+project's own `models/race.py Race` enum (15 members, ordinals 0-14),
+with most pairs spanning a gap of ~2. **Tested and NOT confirmed**: if
+this were a fixed universal per-`Race` table, it would be identical
+across every kingdom's own file. It isn't -- Bradipo I's own list
+(`"1 3 0 2 0 2 1 3 1 3 0 4 1 3 1 3 0 2 0 2 1 3 0 2 0 2 0 2 1 5"`) is
+completely different from Babba Sissoko's, so whatever this is, it's
+kingdom-specific, not a universal race-indexed constant table. No real
+letter data found specific enough to test an alternative hypothesis
+(e.g. a per-race relationship or exploration-range value scoped to
+that one kingdom). Recorded here as an open structural lead only --
+the "15 pairs" shape is real and reproducible, but its meaning isn't,
+so no code should be written against it yet.
 """
 
 from __future__ import annotations
