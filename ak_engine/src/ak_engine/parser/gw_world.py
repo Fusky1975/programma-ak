@@ -550,6 +550,58 @@ includes a 94-entry (`0`-`93`) "Magic Treasures" name catalog (e.g.
 here for the record as a possible future resource, but out of scope for
 this parser since it applies to the Valhalla archive format, not the
 live world file.
+
+**Phase 326 addendum -- Babba Sissoko and Uga-Buga Makumb are two
+different Kings of two different kingdoms, correcting Phase 319's own
+"Hero subordinate to a King" reading (research pass only, no new parser
+code).** Phase 319 concluded that `"Uga-Buga Makumb"` is a Hero owned
+by King Babba Sissoko, based on a diplomatic-contact paragraph in
+`SE3__T1.K1` and on finding a separate leader record for Uga-Buga
+Makumb later in the same kingdom's block. Both of those observations
+were real, but the conclusion drawn from them was wrong. Direct
+re-examination of `GW3__T3` and `SE3__T1.K1` shows:
+
+- **Uga-Buga Makumb's own `GW3` record is King-shaped, not Hero-shaped**:
+  a 60-token doubled skill list, an `M`/`F` line, and the trailing
+  King-only ~128-token dynamic block (Phase 320/322/323's own King
+  markers) -- the same shape as Babba Sissoko's own record, not the
+  30-token undoubled Hero shape. Both also read Liege `255 255` (no
+  liege), as expected for two Kings.
+- **Their real players are different people**: Babba Sissoko's own
+  record is followed by player name `"Andrea Ferrigno"`; Uga-Buga
+  Makumb's own record is followed by player name `"Andrea Vitali"` --
+  two separate human players, not one player under an alias.
+- **`SE3__T1.K1`'s own `CHARACTERS` roster table is addressed to
+  Uga-Buga Makumb as "My Lord"** and lists him first with `leader_id 1`
+  (`"Uga-Buga Ma(1) ..."`), the same `Kx`-suffix-equals-King's-own-id
+  pattern independently confirmed for `K2`/Bradipo I(`#2`) and
+  `K3`/Kwoth(`#3`). Babba Sissoko does not appear anywhere in that
+  roster -- he belongs to a different kingdom (`#0`, per his own
+  `"(#0)"` references in the same letter's narrative text), which
+  appears first in `GW3`'s own kingdom-block order but has no
+  Heroes of its own and no corresponding `SE3__Tn.K0` letter file among
+  this project's own fixtures (possibly a lightly-populated or
+  NPC-adjacent kingdom, unconfirmed).
+- **The "diplomatic contact" paragraph Phase 318/319 both read from is
+  exactly what it says**: `"Uga-Buga Makumb asked Lord Babba Sissoko
+  Master of the s (#0) to improve..."` describes two independent Kings
+  of neighboring kingdoms interacting, not an internal command from a
+  King to his own subordinate Hero.
+
+Net correction: every one of Phase 318's own raw facts about Babba
+Sissoko (coordinate, `Race.ORCISH`, Undead alignment, the "Master of
+the s" truncation, player `Andrea Ferrigno`) remains accurate -- he is
+simply the King of kingdom `#0`, a separate kingdom from Uga-Buga
+Makumb's own kingdom `#1`, not entangled with Uga-Buga Makumb's own
+identity at all. Phase 319's own "no separate Kingdom name field, every
+name is just a leader's own name" observation also still holds -- it
+was the *specific relationship* between these two named leaders (King
+alongside King, not King alongside subordinate Hero) that was
+misidentified.
+
+Not implemented as a parser here. Kingdom `#0`'s own lack of a letter
+file and lack of Heroes remains an open, unconfirmed detail rather than
+a settled fact.
 """
 
 from __future__ import annotations

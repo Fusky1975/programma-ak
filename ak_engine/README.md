@@ -13645,7 +13645,7 @@ section.
     own module docstring, directly after Phase 323's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
-- **Phase 325 (current)**: decodes a leader's own doubled skill-list
+- **Phase 325**: decodes a leader's own doubled skill-list
   and 25-field header from a genuine original game-host document (the
   user's own "FILE UTILE PER LEGGERE IL FILE GW.TXT", the manual
   procedure for Valhalla hall-of-fame registration) -- a direct source,
@@ -13676,6 +13676,31 @@ section.
   catalog for the record (out of scope for this parser).
   - Documented as a `"Phase 325 addendum"` in `parser/gw_world.py`'s
     own module docstring, directly after Phase 324's own addendum.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
+- **Phase 326 (current)**: corrects Phase 319's own reading of "Babba
+  Sissoko" and "Uga-Buga Makumb" (research-only, no new parser code).
+  Phase 319 concluded Uga-Buga Makumb is a Hero owned by King Babba
+  Sissoko. Re-examining `GW3__T3`/`SE3__T1.K1` shows they are instead
+  **two different Kings of two different kingdoms**: Uga-Buga Makumb's
+  own `GW3` record is King-shaped (60-token doubled skill list, `M`/`F`
+  line, trailing ~128-token dynamic block, Liege `255 255`), not
+  Hero-shaped; the two records are followed by two different real
+  player names (`Andrea Ferrigno` vs `Andrea Vitali`); and `SE3__T1.K1`'s
+  own `CHARACTERS` roster is addressed to Uga-Buga Makumb as "My Lord"
+  and lists him first with `leader_id 1`, the same `Kx`-suffix pattern
+  already confirmed for `K2`/Bradipo I and `K3`/Kwoth -- Babba Sissoko
+  doesn't appear in that roster at all, since he belongs to a separate
+  kingdom (`#0`). The "diplomatic contact" paragraph both Phase 318 and
+  319 read from literally describes two independent Kings interacting,
+  not a King commanding his own subordinate Hero. Phase 318's own raw
+  facts about Babba Sissoko (coordinate, `Race.ORCISH`, Undead
+  alignment, "Master of the s" truncation, player Andrea Ferrigno) all
+  remain accurate; only the relationship between the two named leaders
+  was misidentified, first by Phase 318 (same person, two names) and
+  then by Phase 319 (King and his own subordinate Hero).
+  - Documented as a `"Phase 326 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 325's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
 
