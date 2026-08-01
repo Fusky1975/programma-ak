@@ -13608,7 +13608,7 @@ section.
     own module docstring, directly after Phase 321's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
-- **Phase 323 (current)**: corrects Phases 320/322 -- the `M`/`F`
+- **Phase 323**: corrects Phases 320/322 -- the `M`/`F`
   Gender line and the trailing ~128-token dynamic block are
   **King-only**, not universal to every leader (research-only, no new
   parser code). Both earlier phases implicitly described these as
@@ -13626,6 +13626,23 @@ section.
     own module docstring, directly after Phase 322's own addendum, so
     a future reader sees the corrected King/Hero distinction rather
     than the earlier, overgeneralized reading.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
+- **Phase 324 (current)**: extends Phase 323's King/Hero distinction
+  to Phase 321's own "doubled 30-value list" (research-only, no new
+  parser code). Kings carry the 60-token doubled list Phase 321
+  described; Heroes carry a single, un-doubled 30-token list instead
+  (e.g. Guerin's own list is exactly 30 tokens). Confirmed on a larger
+  sample than Phase 323's own check: across `GW3__T3`, all 7 Kings
+  found (Babba Sissoko, Bradipo I, Kwoth, Hokuto, Kahn, Circe,
+  Agesilao) have the 60-token list; all 11 Heroes found immediately
+  after them (Guerin, Arnulf, Clarambald, Kokocala, Lallipugh,
+  Alexius, Ningarl, Saladin, Girard, Everard, Stonebrick) have the
+  30-token list -- 18 for 18, no exceptions. Phase 321's own "15
+  pairs" shape remains real and unconfirmed for Kings; it simply
+  doesn't generalize to a Hero's own shorter, un-doubled list.
+  - Documented as a `"Phase 324 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 323's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
 

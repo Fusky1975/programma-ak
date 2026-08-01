@@ -448,6 +448,24 @@ King-specific fields, not general leader attributes -- relevant for
 any future phase that tries to model this block, since a `GWLeader
 Record`-equivalent parser would need two distinct shapes (King vs
 Hero), not one.
+
+**Phase 324 addendum -- the King/Hero distinction (Phase 323) also
+governs the "doubled 30-value list"'s own length (research pass only,
+no new parser code).** Phase 321's own "15 `(min, max)` pairs" reading
+assumed a 60-token doubled list for every leader, because every
+example checked was a King. Heroes carry a **single, un-doubled
+30-token list** instead -- e.g. Guerin's own list is exactly 30 tokens
+(`"0 0 2 2 1 1 0 0 0 0 2 5 3 4 0 2 0 0 0 0 1 2 0 0 0 4 0 0 1 3"`), not
+60. Confirmed on a larger sample than Phase 323's own check: across
+`GW3__T3`, all 7 Kings found (Babba Sissoko, Bradipo I, Kwoth, Hokuto,
+Kahn, Circe, Agesilao) have the 60-token doubled list; all 11 Heroes
+found immediately after them (Guerin, Arnulf, Clarambald, Kokocala,
+Lallipugh, Alexius, Ningarl, Saladin, Girard, Everard, Stonebrick) have
+the 30-token single list -- 18 for 18, no exceptions. Still unresolved:
+what the 30 (or 60) values themselves mean (Phase 321's own "15 pairs"
+shape is unaffected by this -- it's still real for Kings, still
+unconfirmed semantically, and now known not to generalize to Heroes at
+all in its doubled form).
 """
 
 from __future__ import annotations
