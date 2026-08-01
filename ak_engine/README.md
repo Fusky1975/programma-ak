@@ -13628,7 +13628,7 @@ section.
     than the earlier, overgeneralized reading.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
-- **Phase 324 (current)**: extends Phase 323's King/Hero distinction
+- **Phase 324**: extends Phase 323's King/Hero distinction
   to Phase 321's own "doubled 30-value list" (research-only, no new
   parser code). Kings carry the 60-token doubled list Phase 321
   described; Heroes carry a single, un-doubled 30-token list instead
@@ -13643,6 +13643,39 @@ section.
   doesn't generalize to a Hero's own shorter, un-doubled list.
   - Documented as a `"Phase 324 addendum"` in `parser/gw_world.py`'s
     own module docstring, directly after Phase 323's own addendum.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
+- **Phase 325 (current)**: decodes a leader's own doubled skill-list
+  and 25-field header from a genuine original game-host document (the
+  user's own "FILE UTILE PER LEGGERE IL FILE GW.TXT", the manual
+  procedure for Valhalla hall-of-fame registration) -- a direct source,
+  not an inference (research-only, no new parser code). Two findings:
+  1. The 30-value list (Phase 316/321/324) is 15 `(skill_level,
+     aptitude)` pairs, one per `Ability`, in exact `Ability` enum
+     order -- **supersedes Phase 321's own unconfirmed "possibly
+     `Race`-indexed" speculation** and matches Phase 127's own prior
+     `SkillTable` pair-shape resolution.
+  2. Five previously-unlabeled 25-field-header positions are named:
+     position 4 `S` (Special effects, value meaning still unknown);
+     positions 5-6 `L L` (Liege lord id, `255`=none/`0`-`11`=owned by
+     that King -- a candidate for the leader-to-kingdom-ownership gap
+     open since Phase 224, partially checked against real `GW3__T3`
+     data but not yet settled); position 7 `C` (Condition,
+     `0`=Dead/`1`=Hired/`2`=Mercenary, matching
+     `models/monster.py MonsterEngagementState`'s first three members);
+     position 10 `A` (Alignment, exact match for
+     `models/alignment.py ALIGNMENT_ORDINAL`'s `1`-`5` range, also
+     explaining King Babba Sissoko's real "Undead" alignment as
+     `UNDEAD=7`, outside that range); position 11 `T` (Temper, exact
+     match for `models/temper.py Temper`'s `0`-`3` range).
+
+  Also documents that the `VALHALLA.txt` archive's own manually-authored
+  `M`/`F` + favorite-magic-item line is a distinct artifact from the
+  live `GW*` file's own naturally-occurring `M`/`F` line (Phase
+  320/322/323), and notes the document's 94-entry Magic Treasures name
+  catalog for the record (out of scope for this parser).
+  - Documented as a `"Phase 325 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 324's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
 

@@ -466,6 +466,90 @@ what the 30 (or 60) values themselves mean (Phase 321's own "15 pairs"
 shape is unaffected by this -- it's still real for Kings, still
 unconfirmed semantically, and now known not to generalize to Heroes at
 all in its doubled form).
+
+**Phase 325 addendum -- a leader's own doubled skill-list and 25-field
+header, decoded from an original game-host document (research pass
+only, no new parser code).** The user supplied a genuine original
+game-host document ("FILE UTILE PER LEGGERE IL FILE GW.TXT") describing
+the manual procedure for registering a champion King into the separate
+`VALHALLA.txt` hall-of-fame archive, including a field-by-field legend
+for a leader's own two numeric lines in the raw `GW*` file. This is a
+**direct source, not an inference** -- the strongest evidence tier this
+project uses -- and it resolves two long-open leads:
+
+1. **The doubled/single 30-value list (Phase 316/321/324) is 15
+   `(skill_level, aptitude)` pairs, one per `Ability`, in exact
+   `models/enums.py Ability` enum order** (`TACTICAL, MARCH, NAVAL,
+   ARCHERY, MELEE, WHITE, NECROMANCY, ELEMENTAL, PSYCHIC, ILLUSION,
+   DRUID, THIEF, EXPLORER, SPY, SAGE`). This **supersedes Phase 321's
+   own unconfirmed "possibly `Race`-indexed" speculation** (`Race` also
+   happens to have 15 members, which was the coincidence that made that
+   reading plausible) and directly matches this project's own prior
+   Phase 127 resolution of the K1 move-file's own `SkillTable`
+   pair-shape as `(skill, aptitude)`. Kings' own list is this 15-pair
+   table written out twice back-to-back (still unexplained why it's
+   doubled for Kings only); Heroes carry it once.
+
+2. **Five previously-unlabeled positions in the leader's own 25-field
+   numeric header (Phase 318/319) are named by the document**, using
+   its own single-letter column headers:
+   - position 4, `S` -- "Special effects." Meaning of the value itself
+     is not given by the document and remains unconfirmed here.
+   - positions 5 and 6, `L L` -- "Liege lord" (given as two columns in
+     the source, both apparently carrying the same value in every
+     example checked). `255` = no liege (the leader is themself a
+     King); `0`-`11` = owned by the King with that id. This is a
+     **candidate** for the leader-to-kingdom-ownership mapping this
+     project has lacked since Phase 224, but is only partially checked
+     against real `GW3__T3` data so far: every King sampled (Babba
+     Sissoko, Bradipo I, Kwoth, Hokuto, Kahn, Circe, Agesilao) reads
+     `255 255` as expected; Hero Clarambald reads `3 3`, matching King
+     Kwoth's own real `leader_id` (`SE3__T1.K1`'s "Kwoth (#3)"); Hero
+     Arnulf reads `255 255` rather than a real id, which is consistent
+     with this project's own `LeaderState.kingdom_id` already being
+     nullable for independent Heroes (Phase 104) rather than a
+     contradiction. Not yet confirmed for enough Heroes to treat as
+     settled -- flagged here as a strong open lead, not a closed one.
+   - position 7, `C` -- "Condition": `0`=Dead, `1`=Hired, `2`=Mercenary.
+     These three values match `models/monster.py`'s own
+     `MonsterEngagementState` enum's first three members (`DEAD=0`,
+     `HIRED=1`, `MERCENARY=2`) exactly, though that enum's further
+     members (`ZOMBOID`, `BOLD`, `SOLD`, `LOSER`, `CALM`) go unmentioned
+     by the document, which only needed the alive/dead/mercenary
+     distinction for Valhalla registration -- whether leaders literally
+     reuse the monster enum's own underlying Pascal type, or merely a
+     numerically-identical one, is not confirmed.
+   - position 10, `A` -- "Alignment": `1`=Good, `2`=Druidic,
+     `3`=Neutral, `4`=Pagan, `5`=Evil. This is an **exact match** for
+     `models/alignment.py`'s own `ALIGNMENT_ORDINAL` values `GOOD=1`
+     through `EVIL=5`. That same dict's further, CTBOTH.PAS-sourced
+     members (`DIVINE=0`, `ANTI_HOLY=6`, `UNDEAD=7`, `MECHANICAL=8`,
+     `SPECIAL=9`) fall outside the document's own simplified `1`-`5`
+     legend -- which also explains King Babba Sissoko's own real
+     "Undead" alignment from `SE3__T1.K1`'s letter text
+     (`Alignment.UNDEAD` = `7`).
+   - position 11, `T` -- "Temper": `0`=Cowardly through `3`=Berserk.
+     This is an **exact match** for `models/temper.py`'s own `Temper`
+     enum (`COWARDLY=0`, `CAUTIOUS=1`, `BRAVE=2`, `BERSERK=3`).
+
+   Positions 8-9 and 12-25 are not named by the document and remain
+   unconfirmed.
+
+The document also describes a **separate, distinct artifact**: the
+`VALHALLA.txt` archive's own manually-authored third line ("`M` or `F`,
+followed by a number for the character's favorite magic item") is
+something the human registrar writes by hand during induction -- it is
+**not** the same thing as the naturally-occurring `M`/`F` line already
+documented in the live `GW*` file itself (Phase 320's Gender field,
+followed by Phase 322's own dynamic ~128-token block, both King-only
+per Phase 323). The two artifacts merely share a leading `M`/`F` token
+by coincidence of both encoding gender. The document additionally
+includes a 94-entry (`0`-`93`) "Magic Treasures" name catalog (e.g.
+`0`=Standard of Command, `40`=Sword Excalibur, `58`=Necronomicon,
+`93`=No treasure) used for that same manually-authored line -- noted
+here for the record as a possible future resource, but out of scope for
+this parser since it applies to the Valhalla archive format, not the
+live world file.
 """
 
 from __future__ import annotations
