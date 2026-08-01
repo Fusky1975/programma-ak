@@ -13798,7 +13798,7 @@ section.
     3371 passed), wrote 9 new tests (5 in `test_gw_world_parser.py`
     against the real `GW3__T1` fixture, 4 in `test_kingdom_bridge.py`),
     ran the suite again (3380 passed).
-- **Phase 331 (current)**: decodes 3 of Block B's own 7 unresolved
+- **Phase 331**: decodes 3 of Block B's own 7 unresolved
   trailing fields -- Race, ArmyType, Quality (research-only, no new
   parser code). Fixed a turn-alignment error first: `GW3__Tn` reflects
   the game's state at the *end of turn n-1*, not turn n. Cross-
@@ -13817,6 +13817,30 @@ section.
   9, 10 remain unexamined.
   - Documented as a `"Phase 331 addendum"` in `parser/gw_world.py`'s
     own module docstring, directly after Phase 330's own addendum.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3380 passed) both before and after.
+- **Phase 332 (current)**: confirms field 7 as a Skeletal-army marker
+  and finds partial (not fully resolved) structure for the rest of
+  Block B's own remaining unexamined fields (research-only, no new
+  parser code). `field7=3` occurs on exactly 3 of 259 `GW3__T3` rows,
+  every one belonging to an Undead-aligned leader or a leader serving
+  an Undead King (Teleko/Guerin, both serving Uga-Buga Makumb; Babba
+  Sissoko himself) -- directly confirmed against real letter text for
+  Teleko: his own `field7=3` row decodes to Elven/Bowmen/Average, and
+  `SE3__T2.K1`'s own real army table lists exactly one such unit for
+  him, `"96th Skel Bowmen -- Elf -- Average"`, the literal "Skel"
+  prefix this project's own `ArmyState.is_skeletal` already models,
+  sourced from `models/monster.py MonsterEngagementState`'s own
+  `ZOMBOID=3` member. Also finds (not yet confirmed against real data)
+  that `field7 in {1,3}` occurs only on led rows and `field7 in {0,2}`
+  only on unled ones, with `0` common and `2` rare among the unled
+  rows and a different Quality spread -- suggestive of "still kingdom-
+  owned, unled" vs. genuine "mercenary," flagged as an open lead. Field
+  9's lone `251` value is a strict subset of the unled `field7=0`
+  rows, unexplained further; field 10 remains unexamined beyond its
+  own `{0,1}` range.
+  - Documented as a `"Phase 332 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 331's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3380 passed) both before and after.
 

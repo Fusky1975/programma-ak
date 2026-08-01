@@ -859,6 +859,51 @@ Not implemented as a parser here -- a future phase could extend
 `quality` per Block B row now that all three are confirmed, once
 fields 7/9/10 are resolved enough to decide what else such a record
 should carry.
+
+**Phase 332 addendum -- field 7 confirmed as a Skeletal-army marker;
+partial structure found for its other values (research pass only, no
+new parser code).** Across all 259 Block B rows in `GW3__T3`, field 7
+(`0`-`3`) is `3` for exactly 3 rows, and every one of the 3 belongs to
+an Undead-aligned leader or a leader serving an Undead King: `leader_id
+72` (Teleko, serves King Uga-Buga Makumb, Undead), `leader_id 18`
+(Guerin, same kingdom), and `leader_id 0` (Babba Sissoko, himself
+Undead-aligned, Phase 318). **Directly confirmed against real letter
+text, not just thematic plausibility**: Teleko's own `field7=3` row
+reads Race `1`(Elven)/ArmyType `1`(Bowmen)/Quality `2`(Average), and
+`SE3__T2.K1`'s own real army table lists exactly one such unit for
+him -- `"96th Skel Bowmen -- Elf -- Average"` -- the literal "Skel"
+prefix marking a Necromancy-raised Skeletal unit, matching this
+project's own already-modeled `ArmyState.is_skeletal` concept (Phase
+236) and the `Zomboid` member of `models/monster.py
+MonsterEngagementState` (`DEAD=0, HIRED=1, MERCENARY=2, ZOMBOID=3,
+...`) it was sourced from. Guerin's own single `field7=3` row is
+likewise his own only real "Skel"-prefixed Bowmen (`108th Skel
+Bowmen`) among four Bowmen units.
+
+Field 7's other values show a real, structural split not yet fully
+resolved: `field7 in {1, 3}` occurs **only** on rows with a real
+leader (`field 1 != 255`); `field7 in {0, 2}` occurs **only** on
+unled rows (`field 1 == 255`, "under the garrison commander" per this
+project's own rulebook citation). Within the unled rows, `0` is common
+(66 of 129) and `2` is rare (9 of 129) with a visibly different
+Quality spread (`2` includes a `Depleted`-quality row, `0` never does)
+-- suggestive of "still kingdom-owned, just unled" (`0`) versus
+genuinely ownerless "mercenary" (`2`, matching this project's own
+`ArmyState.kingdom_id == None` concept and `MonsterEngagementState`'s
+own `MERCENARY=2`), but **not independently confirmed against real
+letter data** the way `field7=3` was -- flagged as an open lead, not a
+finding.
+
+**Field 9's lone non-`{0,1,2}` value, `251`, is a strict subset of the
+unled `field7=0` rows** (9 of the 66) -- every `field9=251` row also
+has `field7=0`, but not vice versa. No further pattern found (spans
+multiple `ArmyType`/`Race`/`Quality` combinations); still open.
+
+**Field 10 remains unexamined beyond its own value range** (`0` or
+`1`, only 4 of 259 rows non-zero, no correlation found yet with
+`field7`, led/unled status, `ArmyType`, or `Quality`).
+
+Not implemented as a parser here.
 """
 
 from __future__ import annotations
