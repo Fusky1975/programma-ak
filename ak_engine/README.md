@@ -13591,7 +13591,7 @@ section.
     doesn't mistake the "15 pairs" shape for a settled result.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
-- **Phase 322 (current)**: confirms a leader's own trailing
+- **Phase 322**: confirms a leader's own trailing
   ~128-token line (following that leader's own `"Action Plans:"`
   section, before the next leader's name) is genuine dynamic
   per-turn state, not a static template -- still research-only, no
@@ -13606,6 +13606,26 @@ section.
   cross-referencing than this pass attempted.
   - Documented as a `"Phase 322 addendum"` in `parser/gw_world.py`'s
     own module docstring, directly after Phase 321's own addendum.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
+- **Phase 323 (current)**: corrects Phases 320/322 -- the `M`/`F`
+  Gender line and the trailing ~128-token dynamic block are
+  **King-only**, not universal to every leader (research-only, no new
+  parser code). Both earlier phases implicitly described these as
+  belonging to "a leader" in general because every example checked
+  happened to be a King. A Hero's own record is leaner and has neither
+  field: `name` / 30-value list / 25-field header / (blank) /
+  `"Action Plans:"` -- no `M`/`F` line, no Title/Epithet/player-name,
+  no trailing block. Confirmed 3-for-3 each way in `GW3__T3`: Kings
+  Babba Sissoko, Bradipo I, and Kwoth all have the full block; Heroes
+  Guerin, Arnulf, and Clarambald all have the lean form. So Gender
+  (Phase 320) and the dynamic per-turn state (Phase 322) are both
+  King-specific fields -- a future parser for this block would need
+  two distinct record shapes, not one.
+  - Documented as a `"Phase 323 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 322's own addendum, so
+    a future reader sees the corrected King/Hero distinction rather
+    than the earlier, overgeneralized reading.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
 

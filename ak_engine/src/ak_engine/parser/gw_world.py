@@ -428,6 +428,26 @@ members either. Correlating specific slot indices against specific
 real per-turn events (which real order, on which turn, causes exactly
 that slot to increment) would need substantially more cross-
 referencing than this pass attempted -- recorded as an open lead only.
+
+**Phase 323 addendum -- corrects Phases 320/322: the M/F line and
+trailing ~128-token block are King-only, not universal to every
+leader (research pass only, no new parser code).** Both earlier
+addenda implicitly described these fields as belonging to "a leader"
+in general, because every example checked so far happened to be a
+King. A Hero's own record is leaner and lacks both fields entirely:
+`name` / 30-value list / 25-field header / (blank) / `"Action Plans:"`
+-- no `M`/`F` line, no Title/Epithet/player-name lines, and no
+trailing ~128-token block before the next leader's name. Confirmed
+3-for-3 each way in `GW3__T3`: Kings Babba Sissoko, Bradipo I, and
+Kwoth all have the full block (`M`/`F` line through the trailing
+~128-token line); Heroes Guerin, Arnulf, and Clarambald all have the
+lean form, going straight from their own 25-field header to their own
+`"Action Plans:"` with nothing in between. This means Gender (Phase
+320) and the dynamic per-turn tracked state (Phase 322) are both
+King-specific fields, not general leader attributes -- relevant for
+any future phase that tries to model this block, since a `GWLeader
+Record`-equivalent parser would need two distinct shapes (King vs
+Hero), not one.
 """
 
 from __future__ import annotations
