@@ -13936,7 +13936,7 @@ section.
     `GW3__T1` fixture (218-row count, Philo's own known Dwarven Axemen
     rows, the Skeletal-marker correction, raw-field preservation, and
     error handling). Full suite: 3380 passed before, 3385 after.
-- **Phase 337 (current)**: closes field 7's own unled `{0, 2}` split
+- **Phase 337**: closes field 7's own unled `{0, 2}` split
   left open since Phase 332/333 -- `2` is the "independent mercenary,
   available to Recruit" marker. Real letters carry an "independent
   mercenaries which you may Recruit" table (province, unit
@@ -13957,6 +13957,42 @@ section.
   - Added 1 test in `tests/test_gw_world_parser.py` against the real
     `GW3__T1` fixture, cross-checked against `SE3__T0.K1`'s own real
     mercenary table. Full suite: 3385 passed before, 3386 after.
+- **Phase 338 (current)**: closes the "populate a `GameState` from
+  nothing" gap for the part that's actually recoverable from a single
+  `GW3` file -- `parser/gw_world_bridge.py bridge_new_game_state()`.
+  Before writing any code, tested and **falsified** two candidate
+  techniques for recovering an arbitrary Hero's own real `leader_id`
+  (coordinate-match against a personally-governed province; coordinate-
+  match against Block B's own `commanded_by_leader_id`) against 5
+  independently-confirmed real ids from earlier phases -- both fail
+  (Kokocala, Guerin, Teleko, Ningarl all mismatch), since multiple
+  Heroes legitimately share one coordinate at game start. Confirmed
+  with the user: every King gets his own real, confirmed `leader_id`
+  (`== kingdom_id`, Phase 330) and a real `KingdomState`/`LeaderState`;
+  every Hero gets a synthetic negative `leader_id` (real name, race,
+  alignment, temper, skills, coord, and kingdom_id/Liege -- just not
+  the real numeric identity). Provinces reuse the existing
+  `bridge_gw_world_provinces()`/`resolve_province_owners()` unchanged.
+  Armies bridge for every unled row (owner = the province's own
+  resolved owner) and every King-led row (owner = that King's own real
+  id); a Hero-led row is left out (owner unconfirmable) and returned in
+  the report rather than bridged with a guessed `kingdom_id` --
+  `ArmyState.kingdom_id=None` is already reserved for "confirmed
+  mercenary" (Phase 337's own `is_mercenary`), so reusing it for
+  "unknown" would silently conflict with that meaning.
+  `apply_confirmed_hero_ids()` re-keys a Hero's `LeaderState` from its
+  synthetic id to a real one once the user supplies a name-to-id list,
+  and retries every Block B row that had to be left out for exactly
+  that Hero.
+  - Documented as a `"Phase 338 addendum"` in
+    `parser/gw_world_bridge.py`'s own module docstring, directly after
+    the existing Phase 278 note.
+  - Added 6 tests in `tests/test_gw_world_bridge.py` against the real
+    `GW3__T1` fixture, including a regression test for a bug caught
+    mid-implementation (an early draft used a re-identified Hero's own
+    `leader_id` as his army's `kingdom_id`, instead of his own
+    `kingdom_id`/Liege field -- only equal for a King). Full suite:
+    3386 passed before, 3392 after.
 
 ## Setup
 
