@@ -1169,10 +1169,13 @@ from pathlib import Path
 
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.feature import FeatureType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import Treasure
 from ak_engine.parser.errors import K1ParseError
 from ak_engine.turn.combat import Quality
 
@@ -1608,6 +1611,139 @@ def parse_gw_armies(path: Path) -> list[GWArmyRecord]:
                 raw_field8=field8,
                 raw_field9=field9,
                 raw_field10=field10,
+            )
+        )
+
+    return records
+
+
+@dataclass(slots=True)
+class GWFeatureRecord:
+    """One Feature instance's own row from Block A, the 128-row block
+    that precedes Block B in a world file -- see the module docstring's
+    Phase 316/340 addenda for the full, evidence-based field derivation.
+
+    Confirmed 14-for-14, zero exceptions, cross-checking every Feature
+    named in 8 real provinces' own ADVENTURE-section letters (Dolphin,
+    Ngara, Jerbilia, Birchwood, Pearlgate, Hollabrand, the Jellyfish
+    Sea) against `GW3__T1`'s own Block A rows at that same coordinate:
+    both the guarding ``Monster`` and the ``FeatureType`` match exactly
+    every single time, and the row *count* per coordinate matches the
+    real feature count there too (e.g. the Dolphin Sea's own 2 real
+    features -> exactly 2 Block A rows at that coordinate).
+
+    ``treasure`` is the guarded ``Treasure`` -- also confirmed, not
+    guessed: the two "gold hoard" sentinels this project's own
+    Phase 316 pass first read as meaningless filler (`67`/`68`, 64 of
+    the 128 rows) are themselves real, valid ordinals
+    (`Treasure.GOLD_HOARD_LARGE`/`GOLD_HOARD_HUGE`), and the two real
+    *named* treasures spotted in the same letter sample (Birchwood's
+    Temple/`Antennae of Psychic Blasting`, Pearlgate's Pyramid
+    /`Reflector of Armies`) match their own `Treasure` ordinals exactly
+    too.
+
+    ``engagement_state`` is the guarding ``Monster``'s own
+    ``MonsterEngagementState`` (Phase 130) -- constant `MERCENARY` for
+    every one of `GW3__T1`'s 128 rows, but real, valid values
+    (`DEAD`/`BOLD`/`CALM`) appear as the game progresses across
+    `GW3__T2`-`GW3__T12`.
+
+    ``raw_field5`` is the one field this phase leaves undeciphered: a
+    small, stable `2`-`10` range across every real turn checked, with
+    no correlation found yet against Monster HP, Treasure category, or
+    province exploration percentage. ``raw_field8`` is kept too even
+    though it's a confirmed constant (`0` on every single row, all 12
+    real turns) -- its own real meaning is unknown, so it's kept raw
+    rather than dropped outright, the same "don't discard an
+    unexplained-but-confirmed field" treatment `GWArmyRecord` already
+    gives its own trailing fields. The row's own 4th token (a trivial
+    `255 + row_number` file-position counter, confirmed Phase 316) is
+    intentionally not stored at all, the same treatment
+    `GWProvinceRecord`'s own now-decoded "mystery" field got once
+    understood (Phase 340).
+    """
+
+    coord: HexCoord
+    treasure: Treasure
+    monster: Monster
+    feature_type: FeatureType
+    engagement_state: MonsterEngagementState
+    raw_field5: int
+    raw_field8: int
+
+
+def parse_gw_features(path: Path) -> list[GWFeatureRecord]:
+    """Parses every Feature-instance record out of a world file's own
+    Block A.
+
+    Locates Block A the same way `parse_gw_world`/`parse_gw_leaders`/
+    `parse_gw_armies` locate their own blocks: scan the whole file for
+    the row's own fixed shape (exactly 9 space-separated integers) and
+    take the one contiguous run of such lines. Verified against all 12
+    real `GW3__Tn` samples that this run is always the single,
+    unambiguous one in the entire file, always exactly 128 rows long --
+    the same "confirmed unique, no false positives" basis every sibling
+    parser in this module already relies on.
+    """
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+
+    candidate_indices = []
+    for i, line in enumerate(lines):
+        tokens = line.split()
+        if len(tokens) == 9 and _all_int(tokens):
+            candidate_indices.append(i)
+    if not candidate_indices:
+        raise GWParseError("no 9-token Block A rows found in this world file", line_number=1, line="")
+
+    runs: list[list[int]] = [[candidate_indices[0]]]
+    for idx in candidate_indices[1:]:
+        if idx == runs[-1][-1] + 1:
+            runs[-1].append(idx)
+        else:
+            runs.append([idx])
+    block_a = max(runs, key=len)
+
+    records: list[GWFeatureRecord] = []
+    for line_index in block_a:
+        values = [int(token) for token in lines[line_index].split()]
+        x, y, treasure_ordinal, _row_counter, field5, monster_ordinal, feature_type_ordinal, field8, engagement_ordinal = values
+
+        if treasure_ordinal not in {member.value for member in Treasure}:
+            raise GWParseError(
+                f"unrecognized Treasure ordinal {treasure_ordinal} on a Block A feature row",
+                line_number=line_index + 1,
+                line=lines[line_index],
+            )
+        if monster_ordinal not in {member.value for member in Monster}:
+            raise GWParseError(
+                f"unrecognized Monster ordinal {monster_ordinal} on a Block A feature row",
+                line_number=line_index + 1,
+                line=lines[line_index],
+            )
+        if feature_type_ordinal not in {member.value for member in FeatureType}:
+            raise GWParseError(
+                f"unrecognized FeatureType ordinal {feature_type_ordinal} on a Block A feature row",
+                line_number=line_index + 1,
+                line=lines[line_index],
+            )
+        if engagement_ordinal not in {member.value for member in MonsterEngagementState}:
+            raise GWParseError(
+                f"unrecognized MonsterEngagementState ordinal {engagement_ordinal} on a Block A feature row",
+                line_number=line_index + 1,
+                line=lines[line_index],
+            )
+
+        records.append(
+            GWFeatureRecord(
+                coord=HexCoord(x, y),
+                treasure=Treasure(treasure_ordinal),
+                monster=Monster(monster_ordinal),
+                feature_type=FeatureType(feature_type_ordinal),
+                engagement_state=MonsterEngagementState(engagement_ordinal),
+                raw_field5=field5,
+                raw_field8=field8,
             )
         )
 

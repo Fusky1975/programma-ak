@@ -14,11 +14,20 @@ import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.feature import FeatureType
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import Treasure
 from ak_engine.parser.errors import K1ParseError
-from ak_engine.parser.gw_world import GWProvinceRecord, parse_gw_armies, parse_gw_leaders, parse_gw_world
+from ak_engine.parser.gw_world import (
+    GWProvinceRecord,
+    parse_gw_armies,
+    parse_gw_features,
+    parse_gw_leaders,
+    parse_gw_world,
+)
 from ak_engine.turn.combat import Quality
 
 FIXTURE = Path(__file__).parent / "fixtures" / "world" / "G3" / "GW3__T1"
@@ -260,3 +269,90 @@ def test_raises_gw_parse_error_on_unrecognized_race_ordinal(tmp_path: Path):
 
     with pytest.raises(K1ParseError):
         parse_gw_armies(bad_race)
+
+
+# -- Phase 341: parse_gw_features() (Block A) ---------------------------
+
+
+def test_parses_all_128_feature_rows():
+    records = parse_gw_features(FIXTURE)
+    assert len(records) == 128
+
+
+def test_dolphin_seas_two_features_match_the_real_letter():
+    # SE3__T1.K1's own ADVENTURE section: "Dolphin 1006 100 Altar 1
+    # Necromancer ? /Large Hoard of Gold (#1): 10-25 gold / Hollow Tree
+    # 16 Swordsman ? /Guarding unknown riches" -- the Dolphin Sea is
+    # HexCoord(9, 5) (Phase 340's own confirmed province-name lookup).
+    records = parse_gw_features(FIXTURE)
+    dolphin = [r for r in records if r.coord == HexCoord(9, 5)]
+    assert len(dolphin) == 2
+
+    by_type = {r.feature_type: r for r in dolphin}
+    altar = by_type[FeatureType.ALTAR]
+    assert altar.monster is Monster.NEC_MAGE
+    assert altar.treasure is Treasure.GOLD_HOARD_LARGE
+
+    hollow_tree = by_type[FeatureType.HOLLOW_TREE]
+    assert hollow_tree.monster is Monster.SWORDSMAN
+    assert hollow_tree.treasure is Treasure.GOLD_HOARD_LARGE
+
+
+def test_more_feature_instances_match_real_letters_across_six_more_provinces():
+    # Ground truth quoted verbatim from SE3__T1.K3/K5/K7/K9's own
+    # ADVENTURE sections, each cross-checked against this fixture's own
+    # Block A rows at that same province's real coordinate.
+    records = parse_gw_features(FIXTURE)
+    by_coord: dict[HexCoord, list] = {}
+    for r in records:
+        by_coord.setdefault(r.coord, []).append(r)
+
+    def by_feature_type(coord: HexCoord, feature_type: FeatureType):
+        return next(r for r in by_coord[coord] if r.feature_type is feature_type)
+
+    # Ngara (0604) -> HexCoord(5, 3): Pyramid/Vampire, Cave/Succubus.
+    ngara = HexCoord(5, 3)
+    assert by_feature_type(ngara, FeatureType.PYRAMID).monster is Monster.VAMPIRE
+    assert by_feature_type(ngara, FeatureType.CAVE).monster is Monster.SUCCUBUS
+
+    # Jerbilia (0605) -> HexCoord(5, 4): Desert Ruins/Beholder, Sacred
+    # Rock/Eagle (Monster.GI_EAGLE).
+    jerbilia = HexCoord(5, 4)
+    assert by_feature_type(jerbilia, FeatureType.DES_RUINS).monster is Monster.BEHOLDER
+    assert by_feature_type(jerbilia, FeatureType.SACRED_ROCK).monster is Monster.GI_EAGLE
+
+    # Birchwood (0301) -> HexCoord(2, 0): Temple/Hydra (guarding the
+    # named "Antennae of Psychic Blasting"), Altar/Sphinx.
+    birchwood = HexCoord(2, 0)
+    temple = by_feature_type(birchwood, FeatureType.TEMPLE)
+    assert temple.monster is Monster.HYDRA
+    assert temple.treasure is Treasure.WAND_PSYCHIC_BLAST
+    assert by_feature_type(birchwood, FeatureType.ALTAR).monster is Monster.SPHINX
+
+    # Pearlgate (1703) -> HexCoord(16, 2): Pyramid/Lich (guarding the
+    # named "Reflector of Armies"), Monastery/Witch.
+    pearlgate = HexCoord(16, 2)
+    pyramid = by_feature_type(pearlgate, FeatureType.PYRAMID)
+    assert pyramid.monster is Monster.LICH
+    assert pyramid.treasure is Treasure.WAND_ILLUS_ARMIES
+    assert by_feature_type(pearlgate, FeatureType.MONASTERY).monster is Monster.WITCH
+
+
+def test_engagement_state_and_field8_are_confirmed_constant_at_t1():
+    # Every one of T1's 128 rows reads MERCENARY -- the guarding
+    # monster's own default, pre-engagement state (Phase 130's own
+    # MonsterEngagementState) -- and every row's raw_field8 is 0. Real
+    # letters/turns later show DEAD/BOLD/CALM too (Phase 341's own
+    # module-docstring addendum), so this is a T1 snapshot fact, not a
+    # claim that the field never varies.
+    records = parse_gw_features(FIXTURE)
+    assert all(r.engagement_state is MonsterEngagementState.MERCENARY for r in records)
+    assert all(r.raw_field8 == 0 for r in records)
+
+
+def test_raises_gw_parse_error_on_unrecognized_treasure_ordinal(tmp_path: Path):
+    bad_treasure = tmp_path / "bad_treasure_gw_block_a"
+    bad_treasure.write_text("11 7 999 256 4 51 1 0 2\n", encoding="utf-8")
+
+    with pytest.raises(K1ParseError):
+        parse_gw_features(bad_treasure)

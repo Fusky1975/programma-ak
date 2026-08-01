@@ -14026,7 +14026,7 @@ section.
   - Added 6 tests in `tests/test_hero_roster.py` and updated/added
     tests in `tests/test_gw_world_bridge.py` for the new roster-first
     behavior. Full suite: 3392 passed before, 3398 after.
-- **Phase 340 (current)**: end-to-end validates `bridge_new_game_state()`
+- **Phase 340**: end-to-end validates `bridge_new_game_state()`
   against a real, non-T1 world file (`GW3__T5`), cross-checked against
   the real `SE3__T4.K1` letter for that same turn -- and in doing so,
   finds and fixes a real parsing bug every earlier phase's testing had
@@ -14056,6 +14056,44 @@ section.
     `tests/test_gw3_t5_end_to_end.py` with 7 tests covering the full
     chain against the real letter. Full suite: 3398 passed before, 3406
     after.
+- **Phase 341 (current)**: decodes most of Block A (the 128-row, 9-field
+  block that precedes Block B in a world file) -- the last major
+  unresolved structural mystery in the `GW3` format, open since Phase
+  316's own falsified Feature/Monster-roster hypothesis. Cross-checking
+  Block A's rows against 8 real provinces' own ADVENTURE-section
+  letters (14 Feature instances total: Dolphin, Ngara, Jerbilia,
+  Birchwood, Pearlgate, Hollabrand, the Jellyfish Sea) gives a clean,
+  zero-exception decode of 4 of the block's 9 fields, on top of the
+  coordinate (fields 1-2, already known) and the trivial file-position
+  counter (field 4, already known, Phase 316):
+  - **Field 3 = the guarded `Treasure`'s own ordinal.** Phase 316's own
+    "64 distinct low values vs. 64 rows at a mystery `67`/`68`" reading
+    wasn't real-vs-filler at all -- `67`/`68` are themselves real,
+    valid `Treasure` ordinals (`GOLD_HOARD_LARGE`/`GOLD_HOARD_HUGE`),
+    and the 2 real *named* treasures spotted in the same letter sample
+    (Birchwood's Temple/`Antennae of Psychic Blasting`, Pearlgate's
+    Pyramid/`Reflector of Armies`) match their own `Treasure` ordinals
+    exactly too.
+  - **Field 6 = the guarding `Monster`'s own ordinal**, and **field 7 =
+    the `FeatureType`'s own ordinal** -- both confirmed 14-for-14
+    against the same letter sample, zero exceptions.
+  - **Field 9 = the guarding `Monster`'s own `MonsterEngagementState`**
+    (Phase 130) -- constant `MERCENARY` across all 128 of `GW3__T1`'s
+    own rows, but real, valid values (`DEAD`/`BOLD`/`CALM`) appear
+    across `GW3__T2`-`GW3__T12` as the game progresses.
+  - Field 5 (a small, stable `2`-`10` range) and field 8 (a confirmed
+    constant `0` across all 12 real turns) remain undeciphered --
+    `GWFeatureRecord` keeps both as `raw_field5`/`raw_field8` rather
+    than guessing.
+  - New `GWFeatureRecord`/`parse_gw_features()` in `parser/gw_world.py`,
+    following the same "scan for the block's own unique fixed shape"
+    approach `parse_gw_armies()`/`parse_gw_world()` already use.
+  - Documented as a `"Phase 341 addendum"` directly in
+    `GWFeatureRecord`'s own docstring (Block A's own research history
+    already lives across the Phase 316/340 module-docstring addenda,
+    not repeated here).
+  - Added 6 tests in `tests/test_gw_world_parser.py`. Full suite: 3406
+    passed before, 3411 after.
 
 ## Setup
 
