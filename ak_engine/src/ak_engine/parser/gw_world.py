@@ -153,6 +153,57 @@ confirmed or implemented here (see "Known gaps" below).
   has substantial content before and after that block (kingdom headers,
   a differently-shaped record format after line ~2066 in the confirmed
   `GW3__T1` sample) that isn't touched here.
+
+**Phase 316 addendum -- what's actually in the post-province-block
+content, an initial research pass (not implemented, no new parser
+code).** The content after the province-record block (`GW3__T1` lines
+~2067-2415) splits into three sub-parts, separated by a 2-line marker
+(`"0 255 0"` / `"35 99 0"`) and closed by a fixed-length `"255 0 0"` x 52
+padding/terminator row:
+
+- **128 rows, 9 space-separated integers each** (e.g. `"11 7 67 256 4
+  51 1 0 2"`). **Tested and falsified**: this looked like a plausible
+  Feature/Monster instance roster (`models/feature.py`'s own `fx`/`fy`/
+  `ftype`/`fmonst`/`fn` shape) -- fields 1-2 are valid 0-indexed
+  `HexCoord`s on the confirmed 18x9 board, and 230 is the right order of
+  magnitude for `featrange`. Directly falsified against real ground
+  truth: `SE3__T1.K2`'s own "ADVENTURE" section names 3 real feature
+  instances with real `F#`s (Macondo's Monastery `F#114`/Genie;
+  Mongu's Cave `F#2`/Swordsman and Crypt `F#17`/Gargoyle) -- **none of
+  114, and no isolated 17, ever appears anywhere in `GW3__T1`**. Field 4
+  (which looked like a sequential instance id, `256, 257, 258...`) is
+  actually trivial: exactly `255 + row_number`, a file-position counter,
+  not game data. Field 3's own distribution (64 distinct low values,
+  0-25 and 29-66 skipping 26-28, each appearing exactly once, mixed with
+  64 filler rows at value 67 or 68) doesn't correlate cleanly with
+  coordinate or row order either. This 9-field block's real meaning is
+  still unknown; the Feature/Monster-roster hypothesis is ruled out, not
+  just unconfirmed.
+- **218 rows, 10 space-separated integers each** (e.g. `"70 1 5 2 2 2 1
+  2 0 0"`). **Confirmed, not just a lead**: field 1 is a governing
+  Hero's own `leader_id` (`255` = empty slot, 104 of the 218 rows),
+  fields 2-3 are that Hero's current `HexCoord` -- verified two ways:
+  (a) the complete set of distinct real field-1 values (`10, 11, 12,
+  14...97`) matches this same file's own confirmed
+  `GWProvinceRecord.governor_leader_id` set *exactly*, except every
+  single-digit id (0-9, this project's own "King's `leader_id` ==
+  `kingdom_id`" range for a 9-kingdom game) is systematically absent --
+  i.e. this table excludes Kings, Heroes only; (b) Philo (`leader_id`
+  70, confirmed governing Transylvania at `HexCoord(1, 5)` since Phase
+  222's own "Philo(70)" cross-check) appears at exactly `"70 1 5 ..."`,
+  twice (duplicate rows, same trailing fields). Fields 4-10 (7 more
+  integers) are still unresolved -- items carried, personal stats, or
+  commanded units are all plausible given the duplicate-row pattern, but
+  none is confirmed. Not implemented as a parser here; a future phase
+  could extend this module with a `GWHeroRecord`-equivalent once the
+  trailing fields are decoded.
+- The 2-line marker between the two blocks (`"0 255 0"` / `"35 99 0"`)
+  and the fixed 52-triple `"255 0 0"` terminator row are both unresolved
+  structural boundaries, not data.
+
+None of this is implemented in `parse_gw_world()` -- this addendum
+records a research pass only, so a future phase doesn't re-walk the
+already-falsified Feature/Monster hypothesis from scratch.
 """
 
 from __future__ import annotations

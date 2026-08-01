@@ -13406,7 +13406,7 @@ section.
     directly against the real, narrative-sourced neighbor sets above,
     independent of this module's own offset tables -- 3367 passed
     total.
-- **Phase 315 (current)**: re-derives `turn/hex_numbering.py`'s
+- **Phase 315**: re-derives `turn/hex_numbering.py`'s
   "width=10, 78-84% match" LMOVE hex-number hypothesis from scratch,
   using the project's own parser instead of a lost ad-hoc script. Every
   consecutive pair of LMOVE targets within a leader's final plan segment,
@@ -13436,6 +13436,41 @@ section.
     `test_width_10_decisively_beats_every_other_width_2_to_200`,
     `test_se3_report_style_row_times_100_plus_col_is_ruled_out_for_
     ak3_lmove` -- 3371 passed total.
+- **Phase 316 (current)**: a research-only pass (no new parser code)
+  into what's actually in `GW3__T1`'s post-province-block content
+  (`parser/gw_world.py`'s own "differently-shaped record format after
+  line ~2066" known gap, Phase 222). Splits into three sub-parts,
+  separated by a 2-line marker and closed by a fixed `"255 0 0"` x 52
+  terminator row:
+  - **128 rows, 9 fields each -- tested and falsified as a Feature/
+    Monster roster.** Looked plausible (fields 1-2 are valid `HexCoord`s
+    on the confirmed 18x9 board), but the real feature instance numbers
+    named in `SE3__T1.K2`'s own "ADVENTURE" section (Macondo's Monastery
+    `F#114`; Mongu's Cave `F#2` and Crypt `F#17`) **never appear
+    anywhere in `GW3__T1`** -- a clean, direct falsification against
+    real ground truth, not just an unconfirmed lead. The field that
+    looked like a sequential instance id turned out to be trivial
+    (`255 + row_number`, a file-position counter). This block's real
+    meaning stays unknown.
+  - **218 rows, 10 fields each -- confirmed as a per-Hero table.**
+    Field 1 is a governing Hero's own `leader_id` (`255` = empty slot),
+    fields 2-3 are that Hero's current `HexCoord`. Verified two ways:
+    the complete set of distinct real field-1 values matches this same
+    file's own confirmed `GWProvinceRecord.governor_leader_id` set
+    exactly, except every single-digit id (0-9, this project's own
+    King-numbering range for a 9-kingdom game) is systematically
+    absent -- Heroes only, Kings excluded; and Philo (`leader_id` 70,
+    confirmed governing Transylvania at `HexCoord(1, 5)` since Phase
+    222) appears at exactly `"70 1 5 ..."`, twice. The remaining 7
+    fields (items carried? personal stats? commanded units?) are still
+    unresolved.
+  - Documented as a `"Phase 316 addendum"` in `parser/gw_world.py`'s
+    own module docstring, so a future phase that wants to build a
+    `GWHeroRecord`-equivalent parser doesn't re-walk the already-
+    falsified Feature/Monster hypothesis from scratch.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after -- no test or source-code
+    behavior changed, only a docstring addendum.
 
 ## Setup
 
@@ -13980,4 +14015,16 @@ rulebook before being turned into named, typed fields:
 - `SE3__T*.K1` files: same extension as the move files, but these are
   actually generated turn *reports* (narrative prose), not move data — kept
   as future reference output for the report-generation phase, not used here.
-- `GW3__T*` files: a different, denser numeric format — not yet investigated.
+- ~~`GW3__T*` files: a different, denser numeric format — not yet
+  investigated.~~ **Stale as of Phase 222** (this bullet was never
+  updated once real work started on this file family): the province-
+  record block has a full parser and `GameState` bridge since Phases
+  222-224 (`parser/gw_world.py`/`gw_world_bridge.py`) -- tax, terrain,
+  race, recruiting types, coordinates, and owner resolution are all
+  confirmed against real data. The content before and after that block
+  (kingdom/leader headers with embedded Action Plans; a 128-row block
+  falsified as a Feature/Monster roster; a 218-row block confirmed as a
+  per-Hero `leader_id`+`HexCoord` table with 7 still-unresolved trailing
+  fields) remains genuinely unexplored/only-partially-explored -- see
+  Phase 316's own note above and `parser/gw_world.py`'s own module
+  docstring for the details.
