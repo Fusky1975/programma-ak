@@ -46,6 +46,38 @@ are left uncreated and reported as skipped -- not a bug, a direct
 consequence of having no location data for them. Populating ``GameState``
 from nothing (turn 0) is a separate, still-unsolved problem this module
 doesn't attempt to solve.
+
+**Phase 330 addendum -- ``sync_leaders_from_gw_world``, closing the
+leader-to-kingdom-ownership gap flagged since Phase 224.** The K1-based
+sync above has two real limits: it only ever sees leaders who are
+*submitting orders this turn* (a Hero sitting idle, or an independent
+Hero doing nothing, never appears in any King's own move file at all),
+and it cannot supply anything beyond ``kingdom_id``/``skills``/``is_king``
+(a move file carries no race/alignment/temper for anyone). The world
+file (``parser/gw_world.py``'s ``GWLeaderRecord``, Phase 330) has neither
+limit: it's a full snapshot of every King and Hero in the game, whether
+or not they moved this turn, and it independently carries the Liege
+field (Phase 325/327, confirmed 27-for-27 against real letter rosters)
+that decodes every Hero's own real ``kingdom_id`` directly, plus
+race/alignment/temper/skills that this bridge previously had no source
+for at all.
+
+Matched by **name**, the same limitation the K1-based sync above already
+has (a ``GWLeaderRecord`` carries no ``leader_id`` either -- see that
+dataclass's own docstring for why) -- so, like the function above, this
+only enriches ``LeaderState``s that already exist in ``state.leaders``,
+never creates new ones. For every matched leader it authoritatively sets
+``race``/``alignment``/``temper``/``skills``/``is_king`` (real data this
+project had no other source for), and, for a Hero record specifically,
+``kingdom_id`` too (a King's own record can't supply his own kingdom id
+this way -- see ``GWLeaderRecord.kingdom_id``'s own docstring for the
+separate, file-order-based derivation this project uses for a King's own
+id instead, not reused here since a King's own ``kingdom_id`` already has
+a confirmed source via the K1-based sync's own King-name match). A
+matched Hero's ``kingdom_id`` is set even when it's currently ``None``
+in ``state.leaders`` -- e.g. an independent Hero later Hired, or a Hero
+who simply never appeared in a submitted move file before -- something
+the K1-based sync alone could never populate.
 """
 
 from __future__ import annotations
@@ -54,6 +86,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.game_state import GameState
 from ak_engine.models.kingdom import Kingdom
+from ak_engine.parser.gw_world import GWLeaderRecord
 
 
 @dataclass(slots=True)
@@ -89,5 +122,47 @@ def sync_leaders_from_kingdom(kingdom: Kingdom, state: GameState) -> KingdomBrid
         if leader.leader_id == king_leader_id:
             leader_state.skills = kingdom.skills
             report.skills_attached_to_leader_id = leader.leader_id
+
+    return report
+
+
+@dataclass(slots=True)
+class GWKingdomBridgeReport:
+    synced_names: list[str] = field(default_factory=list)
+    kingdom_id_set_for_names: list[str] = field(default_factory=list)
+    not_found_names: list[str] = field(default_factory=list)
+
+
+def sync_leaders_from_gw_world(records: list[GWLeaderRecord], state: GameState) -> GWKingdomBridgeReport:
+    """Apply the real, world-file-derived data described in the module docstring's own
+    Phase 330 addendum to ``state``.
+
+    Matches each ``GWLeaderRecord`` to an existing ``LeaderState`` by name;
+    mutates matches in place, never creates new ones (see the module
+    docstring for why). For a matched Hero record, also sets
+    ``kingdom_id`` from ``record.kingdom_id`` -- for a matched King
+    record, ``kingdom_id`` is left untouched (see ``GWLeaderRecord``'s
+    own docstring for why a King's own record can't supply it here).
+    """
+
+    report = GWKingdomBridgeReport()
+    by_name = {leader.name: leader for leader in state.leaders.values()}
+
+    for record in records:
+        leader_state = by_name.get(record.name)
+        if leader_state is None:
+            report.not_found_names.append(record.name)
+            continue
+
+        leader_state.race = record.race
+        leader_state.alignment = record.alignment
+        leader_state.temper = record.temper
+        leader_state.skills = record.skills
+        leader_state.is_king = record.is_king
+        report.synced_names.append(record.name)
+
+        if not record.is_king:
+            leader_state.kingdom_id = record.kingdom_id
+            report.kingdom_id_set_for_names.append(record.name)
 
     return report

@@ -746,6 +746,41 @@ project's own Ofc_Pts/Rank research from Phase 137) were spot-checked
 too and don't line up with either position's own raw values either.
 
 Not implemented as a parser here.
+
+**Phase 330 -- ``parse_gw_leaders``/``GWLeaderRecord``, the first real
+parser code for the kingdom/leader header block, closing the leader-to-
+kingdom-ownership gap open since Phase 224.** Every phase from 316
+through 329 was explicitly "research pass only, no new parser code" --
+this one turns the confirmed subset of that research (King/Hero record
+shape, Race, Alignment, Temper, Liege) into an actual parser function
+plus a real ``GameState`` consumer
+(``turn/kingdom_bridge.py sync_leaders_from_gw_world``, same phase). See
+``GWLeaderRecord``'s own docstring for the field-by-field derivation
+(including the new King-own-kingdom-id-by-file-order finding, confirmed
+8-for-8 against real letter data) and ``turn/kingdom_bridge.py``'s own
+Phase 330 addendum for exactly what the new bridge function does and
+why it's additive to, not a replacement for, the existing K1-based
+sync. Deliberately leaves untouched: positions 4/8/12/18/19/22 (still
+unresolved, Phase 325/328/329), the kingdom-level 33-field header, and
+Blocks A/B -- this phase only acts on the subset already confirmed with
+high confidence.
+
+**One further real-data nuance found while building this, not
+previously documented**: Condition (position 7) does *not* always
+imply a real Liege. Scanning every one of the 100 real leader records
+in `GW3__T1` (not just the 27 named Heroes Phase 327 cross-referenced
+against letters) turns up three Heroes -- Kokocala, Lallipugh, Alexius
+-- who read Condition `1` (Hired) with Liege `255 255` (independent).
+All three are independently confirmed in real letter text as
+self-ruling local rulers (e.g. `SE3__T2.K1`: "populated by Humans and
+Kokocala rules there," no King mentioned). This isn't a contradiction
+of Phase 325/327's own Condition/Liege findings -- it clarifies that
+Condition describes whether a *character* is alive and active
+(Hired/Mercenary/Dead), independent of whether they currently serve a
+King (Liege); Phase 327's own 16-for-16 "Hired implies a real Liege"
+pattern held only because every Hero it checked happened to be an
+actual player-kingdom subordinate, not because the two fields are
+coupled in general.
 """
 
 from __future__ import annotations
@@ -754,9 +789,12 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.map import Terrain
+from ak_engine.models.kingdom import SkillTable
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.parser.errors import K1ParseError
 
 _PROVINCE_HEADER_RE = re.compile(r"^(\d+) (\d+) 0 (\d+) 0 6$")
@@ -899,3 +937,156 @@ def _parse_recruit_types(line3: str, line_number: int) -> tuple[ArmyType | None,
             )
 
     return MOD_PAT_ORDINAL_TO_ARMY_TYPE[type1_ord], MOD_PAT_ORDINAL_TO_ARMY_TYPE[type2_ord]
+
+
+# A leader record's own skill-list line is 30 tokens (Hero) or 60 (King,
+# doubled) -- Phase 324/325.
+_LEADER_SKILL_LIST_LENGTHS = (30, 60)
+
+
+@dataclass(slots=True)
+class GWLeaderRecord:
+    """One King's or Hero's own record from the kingdom/leader header block
+    that precedes the province block -- see the module docstring's Phase
+    316-330 addenda for the full, evidence-based field derivation.
+
+    ``kingdom_id`` is the kingdom this leader currently serves:
+
+    - For a **Hero**, decoded directly from the header's own Liege field
+      (Phase 325/327, confirmed 27-for-27 against real letter rosters):
+      the owning King's own id, or ``None`` for an independent Hero
+      (the ``255`` sentinel).
+    - For a **King**, a King's own header always reads Liege ``255``
+      (no liege above him) -- it cannot supply his own kingdom's id.
+      Instead this uses the King-shaped records' own **file order**:
+      the Nth King-shaped record encountered (0-indexed) is Kingdom N.
+      Confirmed 8-for-8 against every King whose real id was already
+      established from `SE3__T1.Kx` letters (Phase 319/326): Bradipo I
+      (0-indexed position 2) = `#2`; Kwoth (position 3) = `#3`; Hokuto
+      (position 4) = `#4`; Prometeo (position 5) = `#5`; Kahn (position
+      6) = `#6`; Giovanna d'Arco (position 7) = `#7`; Circe (position 8)
+      = `#8`; Agesilao (position 9) = `#9` -- every one of these 8 Kings
+      matches its own 0-indexed file position exactly, strongly
+      suggesting `GW3` simply stores kingdoms in id order starting from
+      `#0` (Babba Sissoko, position 0) and `#1` (Uga-Buga Makumb,
+      position 1) -- both consistent with, though not independently
+      confirmed against, real letter data the way the other 8 are.
+    """
+
+    name: str
+    is_king: bool
+    race: Race
+    alignment: Alignment
+    temper: Temper
+    # 0=Dead, 1=Hired, 2=Mercenary (Phase 325, matching
+    # `models/monster.py MonsterEngagementState`'s first three members) --
+    # kept as a raw int since whether leaders literally reuse that
+    # monster-specific enum is unconfirmed.
+    condition: int
+    coord: HexCoord
+    skills: SkillTable
+    kingdom_id: int | None
+
+
+def _all_int(tokens: list[str]) -> bool:
+    try:
+        for token in tokens:
+            int(token)
+    except ValueError:
+        return False
+    return True
+
+
+def parse_gw_leaders(path: Path) -> list[GWLeaderRecord]:
+    """Parses every King's and Hero's own record out of a world file's
+    kingdom/leader header block (before the province block).
+
+    Scans for the leader-record shape itself (a name line, immediately
+    followed by a 30- or 60-token all-integer skill-list line, immediately
+    followed by a 25-token all-integer header line) rather than assuming a
+    fixed byte offset -- the same "confirmed unique, no false positives"
+    approach `parse_gw_world`'s own docstring already uses for the
+    province block. Against the real `GW3__T1` fixture this finds exactly
+    100 records (10 Kings, 90 Heroes), every name a real character name --
+    no false positives from the file's differently-shaped blocks (the
+    kingdom-level 33-field header, the per-leader ``"Action Plans:"``
+    phase dumps, the King-only trailing ~128-token dynamic block).
+    """
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+
+    records: list[GWLeaderRecord] = []
+    kingdom_index = 0
+    i = 0
+    while i < len(lines) - 2:
+        skill_tokens = lines[i + 1].split()
+        if len(skill_tokens) not in _LEADER_SKILL_LIST_LENGTHS or not _all_int(skill_tokens):
+            i += 1
+            continue
+
+        header_tokens = lines[i + 2].split()
+        if len(header_tokens) != 25 or not _all_int(header_tokens):
+            i += 1
+            continue
+
+        name = lines[i].strip()
+        if not name or name[0].isdigit() or name[0] == "-":
+            i += 1
+            continue
+
+        is_king = len(skill_tokens) == 60
+        record = _build_leader_record(name, is_king, skill_tokens, header_tokens, kingdom_index, i)
+        if is_king:
+            kingdom_index += 1
+        records.append(record)
+        i += 1
+
+    return records
+
+
+def _build_leader_record(
+    name: str,
+    is_king: bool,
+    skill_tokens: list[str],
+    header_tokens: list[str],
+    kingdom_index: int,
+    line_number: int,
+) -> GWLeaderRecord:
+    values = [int(token) for token in header_tokens]
+    x, y, race_ordinal = values[0], values[1], values[2]
+    liege_raw = values[4]
+    condition = values[6]
+    alignment_ordinal = values[9]
+    temper_ordinal = values[10]
+
+    if race_ordinal not in {member.value for member in Race}:
+        raise GWParseError(
+            f"unrecognized Race ordinal {race_ordinal} on a leader header line",
+            line_number=line_number + 3,
+            line=" ".join(header_tokens),
+        )
+    if not 0 <= alignment_ordinal < len(ALIGNMENT_BY_ORDINAL):
+        raise GWParseError(
+            f"unrecognized Alignment ordinal {alignment_ordinal} on a leader header line",
+            line_number=line_number + 3,
+            line=" ".join(header_tokens),
+        )
+    if temper_ordinal not in {member.value for member in Temper}:
+        raise GWParseError(
+            f"unrecognized Temper ordinal {temper_ordinal} on a leader header line",
+            line_number=line_number + 3,
+            line=" ".join(header_tokens),
+        )
+
+    return GWLeaderRecord(
+        name=name,
+        is_king=is_king,
+        race=Race(race_ordinal),
+        alignment=ALIGNMENT_BY_ORDINAL[alignment_ordinal],
+        temper=Temper(temper_ordinal),
+        condition=condition,
+        coord=HexCoord(x, y),
+        skills=SkillTable(raw_values=[int(token) for token in skill_tokens[:30]]),
+        kingdom_id=kingdom_index if is_king else (None if liege_raw == 255 else liege_raw),
+    )

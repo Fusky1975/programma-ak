@@ -12,11 +12,13 @@ from pathlib import Path
 
 import pytest
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.map import Terrain
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.parser.errors import K1ParseError
-from ak_engine.parser.gw_world import GWProvinceRecord, parse_gw_world
+from ak_engine.parser.gw_world import GWProvinceRecord, parse_gw_leaders, parse_gw_world
 
 FIXTURE = Path(__file__).parent / "fixtures" / "world" / "G3" / "GW3__T1"
 
@@ -100,6 +102,60 @@ def test_recruit_types_monstrous_ordinals_are_one_higher_than_this_projects_own_
     # modeled. See the module docstring's ordinal table.
     by_name = {r.name: r for r in parse_gw_world(FIXTURE)}
     assert by_name["Belladonna"].recruit_type_1 is ArmyType.WEREBEASTS
+
+
+def test_parses_all_100_leader_records():
+    records = parse_gw_leaders(FIXTURE)
+    assert len(records) == 100
+    assert sum(1 for r in records if r.is_king) == 10
+    assert sum(1 for r in records if not r.is_king) == 90
+
+
+def test_kings_own_kingdom_id_derived_from_file_order_matches_real_letter_ids():
+    # Ground truth from SE3__T1.Kx's own letters (parser/gw_world.py's own
+    # Phase 330 addendum): Bradipo I is King #2, Kwoth #3, Hokuto #4,
+    # Prometeo #5, Kahn #6, Giovanna d'Arco #7, Circe #8, Agesilao #9.
+    by_name = {r.name: r for r in parse_gw_leaders(FIXTURE) if r.is_king}
+    assert by_name["Bradipo I"].kingdom_id == 2
+    assert by_name["Kwoth"].kingdom_id == 3
+    assert by_name["Hokuto"].kingdom_id == 4
+    assert by_name["Prometeo"].kingdom_id == 5
+    assert by_name["Kahn"].kingdom_id == 6
+    assert by_name["Giovanna d'Arco"].kingdom_id == 7
+    assert by_name["Circe"].kingdom_id == 8
+    assert by_name["Agesilao"].kingdom_id == 9
+    # The first two Kings in file order -- consistent with, though not
+    # independently confirmed against, real letter data the way the
+    # other 8 are (see GWLeaderRecord's own docstring).
+    assert by_name["Babba Sissoko"].kingdom_id == 0
+    assert by_name["Uga-Buga Makumb"].kingdom_id == 1
+
+
+def test_a_kings_own_race_alignment_temper_and_coordinate():
+    by_name = {r.name: r for r in parse_gw_leaders(FIXTURE) if r.is_king}
+    bradipo = by_name["Bradipo I"]
+    assert bradipo.race is Race.HUMAN
+    assert bradipo.alignment is Alignment.GOOD
+    assert bradipo.temper is Temper.CAUTIOUS
+    assert bradipo.coord == HexCoord(2, 4)
+    # 15 (skill, aptitude) pairs -- Phase 325.
+    assert len(bradipo.skills.raw_values) == 30
+
+
+def test_a_heros_own_kingdom_id_decoded_from_the_liege_field():
+    # Ningarl (#13) serves King Hokuto (#4) -- confirmed via SE3__T1.K4's
+    # own real CHARACTERS roster (Phase 327).
+    by_name = {r.name: r for r in parse_gw_leaders(FIXTURE)}
+    assert by_name["Ningarl"].kingdom_id == 4
+    assert by_name["Ningarl"].is_king is False
+
+
+def test_an_independent_heros_own_kingdom_id_is_none():
+    # Kokocala -- narrated in SE3__T2.K1's own letter as an independent
+    # local ruler ("populated by Humans and Kokocala rules there"),
+    # matching his own real Liege 255/255 header value.
+    by_name = {r.name: r for r in parse_gw_leaders(FIXTURE)}
+    assert by_name["Kokocala"].kingdom_id is None
 
 
 def test_raises_gw_parse_error_on_truncated_record(tmp_path: Path):

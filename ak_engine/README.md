@@ -13743,7 +13743,7 @@ section.
     own module docstring, directly after Phase 327's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
-- **Phase 329 (current)**: falsifies both of Phase 328's own leading
+- **Phase 329**: falsifies both of Phase 328's own leading
   hypotheses for positions 18 and 22 against Guerin's own full
   narrative record (research-only, no new parser code). Position 22's
   `Ability`-named bit pattern isn't an ability-unlock bitmask: the
@@ -13762,6 +13762,42 @@ section.
     own module docstring, directly after Phase 328's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
+- **Phase 330 (current)**: `parser/gw_world.py parse_gw_leaders()` +
+  `GWLeaderRecord` -- the first real parser code for the kingdom/leader
+  header block (Phases 316-329 were all research-only), closing the
+  leader-to-kingdom-ownership gap open since Phase 224. Scans for the
+  leader-record shape itself (name line, 30/60-token all-integer skill
+  list, 25-token all-integer header) the same "confirmed unique, no
+  false positives" way `parse_gw_world` already finds province records;
+  against the real `GW3__T1` fixture this finds exactly 100 records (10
+  Kings, 90 Heroes). Extracts Race/Alignment/Temper/coordinate/skills
+  (all already-confirmed fields) and `kingdom_id`: for a Hero, decoded
+  directly from the Liege field (Phase 325/327); for a King, a *new*
+  finding -- a King's own kingdom id equals the 0-indexed position of
+  his own King-shaped record in file order, confirmed 8-for-8 against
+  every King with an independently-known real id from `SE3__T1.Kx`
+  letters. Also found and documented a real nuance while validating
+  against all 100 records (not just the 27 named Heroes Phase 327
+  checked): Condition (Hired) doesn't always imply a real Liege --
+  three self-ruling local characters (Kokocala, Lallipugh, Alexius)
+  read Hired with Liege `255`, confirmed independent via real letter
+  narrative text.
+  - `turn/kingdom_bridge.py sync_leaders_from_gw_world()`: a second,
+    additive bridge function alongside the existing K1-based
+    `sync_leaders_from_kingdom()`. Matches by name (same limitation as
+    the K1-based sync -- a `GWLeaderRecord` has no `leader_id` either),
+    only enriches existing `LeaderState`s. Sets
+    Race/Alignment/Temper/skills/`is_king` for every match (data the
+    K1-based sync could never supply at all), and `kingdom_id` for a
+    matched Hero specifically -- including Heroes who never appeared in
+    any submitted move file, something the K1-based sync alone could
+    never populate. A matched King's own `kingdom_id` is left untouched
+    (his GW3 record can't supply it; that's the K1-based sync's own
+    job).
+  - Ran the full suite before writing new tests (non-breaking check:
+    3371 passed), wrote 9 new tests (5 in `test_gw_world_parser.py`
+    against the real `GW3__T1` fixture, 4 in `test_kingdom_bridge.py`),
+    ran the suite again (3380 passed).
 
 ## Setup
 
