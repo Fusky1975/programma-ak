@@ -13,11 +13,35 @@ To recover it, every consecutive pair of LMOVE targets within a leader's
 several `(row_width, offset)` hypotheses and checked for hex-adjacency
 (reusing `turn/movement.py`'s adjacency formula, ignoring map-edge
 bounds). Row-major decoding with **width 10** matched on 78-84% of the 93
-pairs tested, far above the ~1-2% expected by chance (each hex has only 6
-neighbors); every other width tried (9, 11, 15, 20, 29, 30) scored 20-62%.
-This is strong circumstantial evidence for "hex number = y * width + x",
-not proof -- treat it as a working hypothesis to revisit if it ever
-contradicts real gameplay outcomes.
+pairs originally tested, far above the ~1-2% expected by chance (each hex
+has only 6 neighbors); every other width tried (9, 11, 15, 20, 29, 30)
+scored 20-62%.
+
+Phase 315 re-derived this from scratch using the project's own parser
+(`parser/k1_moves.py`) instead of the original ad-hoc script, yielding a
+stricter set of 59 pairs (only strictly-consecutive LMOVE phases within
+one run, rather than any two LMOVE targets anywhere in a segment) and
+re-checked it two ways:
+- Against `turn/movement.py`'s real-data-sourced adjacency parity (Phase
+  314's confirmed convention): **50/59 = 84.7%** -- consistent with, and
+  slightly above, the original 78-84% figure, despite the stricter pair
+  selection. This is meaningful because Phase 314's parity was fixed
+  *after* the original 93-pair validation ran (against the old, since-
+  corrected parity) -- the hypothesis survives being re-checked against
+  ground truth it wasn't originally tuned against.
+- An exhaustive width sweep from 2 to 200 (not just the handful tried
+  originally) found **no other width comes close**: width 9 scores 57.6%,
+  width 11 scores 55.9%, and every other width scores under 33%. Width 10
+  is decisively the best fit, not just the best of a small handful tried.
+
+Also tested and **ruled out**: the `row*100+col` scheme confirmed for SE3
+report-file province numbers (see `turn/movement.py`'s own docstring,
+e.g. Mongu = #305) does not describe AK3 LMOVE targets -- despite both
+filename families sharing a "3", they are different, incompatible
+numbering schemes. `row*100+col` scores only 23.7% (14/59) against real
+AK3 adjacency pairs, i.e. AK3 move files are NOT report-style province
+numbers. Recorded here so this plausible-looking hypothesis isn't
+re-tried.
 
 Unresolved even under this hypothesis:
 - The exact board height (real data includes y values past 17, taller
@@ -27,14 +51,21 @@ Unresolved even under this hypothesis:
   therefore a caller-supplied parameter here, not a constant.
 - Whether row-parity (which of the two 6-neighbor offset sets applies to
   even vs. odd rows) matches `turn/movement.py`'s convention or its
-  opposite -- the validation score barely changed either way (77 vs 78
-  of 93), too close to call from this sample.
-- The ~16-22% of pairs that DON'T decode as adjacent: some are plausibly
+  opposite -- genuinely still too close to call from AK3 data alone (50
+  vs. 52 of 59 under Phase 314's corrected vs. old parity). Every one of
+  the 8 non-sentinel mismatches under the corrected parity happens to be
+  a diagonal (dx, dy) = (±1, ∓1) step that the *old* parity table would
+  have caught -- but the old table also breaks pairs the corrected one
+  gets right, netting out lower overall (52 vs 50). This dataset can't
+  settle parity on its own; `turn/movement.py`'s convention is kept here
+  too, since it is sourced from real narrative prose naming actual
+  provinces and directions, not a statistical curve fit.
+- The ~15% of pairs that DON'T decode as adjacent: some are plausibly
   legitimate non-adjacent situations (a leader chasing a distant target
   across a phase gap, or another action in between moving them
-  elsewhere by other means); a few show suspiciously round jumps (e.g.
-  differing by exactly 170) that might be a distinct sentinel/reset value
-  rather than an ordinary hex number.
+  elsewhere by other means); one shows a suspiciously round jump (differs
+  by exactly 170) that might be a distinct sentinel/reset value rather
+  than an ordinary hex number.
 """
 
 from __future__ import annotations

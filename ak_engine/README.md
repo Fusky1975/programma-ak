@@ -13359,7 +13359,7 @@ section.
     extending each module's own existing decisive-loser test with a
     looted item), plus 2 pre-existing `test_cast_execution.py` Berserk
     tests extended with loot assertions -- 3364 passed total.
-- **Phase 314 (current)**: the exact hex-adjacency offset convention
+- **Phase 314**: the exact hex-adjacency offset convention
   (`turn/movement.py`'s own "odd-r vs even-r, cannot be verified without
   the lost source" caveat) is now confirmed from real game data, not
   guessed. `Desktop/SE3__T*.K*` turn-report narrative text explicitly
@@ -13406,6 +13406,36 @@ section.
     directly against the real, narrative-sourced neighbor sets above,
     independent of this module's own offset tables -- 3367 passed
     total.
+- **Phase 315 (current)**: re-derives `turn/hex_numbering.py`'s
+  "width=10, 78-84% match" LMOVE hex-number hypothesis from scratch,
+  using the project's own parser instead of a lost ad-hoc script. Every
+  consecutive pair of LMOVE targets within a leader's final plan segment,
+  across all 10 `AK3__T*.K1` files, gives a stricter 59-pair dataset
+  (versus the original 93). Checked against `turn/movement.py`'s Phase
+  314-confirmed adjacency parity: **50/59 = 84.7%**, holding up even
+  though that parity was fixed *after* the original validation ran
+  against the old, now-corrected offsets. An exhaustive width sweep from
+  2 to 200 (not just the handful tried originally) confirms width 10 is
+  decisively the best fit -- the next closest, width 9, scores only
+  57.6%. Also tested and **ruled out**: hypothesizing that AK3's own
+  move-file numbering shares SE3's confirmed `row*100+col` report-file
+  province-numbering scheme (both filename families contain a "3", but
+  they turn out to be unrelated) -- scores only 23.7%, decisively
+  falsifying that plausible-looking shortcut. Row-parity remains
+  genuinely too-close-to-call from AK3 data alone (50 vs. 52 of 59 under
+  the corrected vs. old parity), so `turn/movement.py`'s narrative-
+  sourced parity (stronger ground truth than a statistical fit on move
+  targets) stays the documented default here too. No code behavior
+  changes -- `decode_hex_number`/`encode_hex_number` and
+  `EMPIRICAL_AK3_BOARD_WIDTH = 10` are unchanged; this is a
+  documentation-only strengthening of the module's own empirical basis,
+  plus a permanent regression test against real fixtures.
+  - 4 new tests in `test_hex_numbering.py`:
+    `test_real_move_file_lmove_pairs_yield_the_59_pair_dataset`,
+    `test_width_10_matches_over_84_percent_of_real_lmove_pairs`,
+    `test_width_10_decisively_beats_every_other_width_2_to_200`,
+    `test_se3_report_style_row_times_100_plus_col_is_ruled_out_for_
+    ak3_lmove` -- 3371 passed total.
 
 ## Setup
 
@@ -13556,16 +13586,22 @@ rulebook before being turned into named, typed fields:
   forced attacker retreat.
 - **The LMOVE hex-number encoding itself** (`turn/hex_numbering.py`) —
   unlike every other assumption in this README, this one is backed by an
-  empirical test against real move-file data (78-84% adjacency match
-  across 93 real consecutive-move pairs, vs. ~1-2% expected by chance),
-  not just a "reasonable reading" of rulebook text. Still open: the exact
-  board height (real data reaches y=17, taller than `turn/movement.py`'s
-  assumed 15-row "normal" board -- this game series may simply use a
-  different board size), which row-parity convention applies (the two
-  options scored within 1 match of each other on this sample, too close
-  to call), and what the ~16-22% of non-adjacent pairs represent (some
-  are plausibly legitimate, e.g. a leader chasing a distant target; a few
-  suspiciously round jumps might be a distinct sentinel value).
+  empirical test against real move-file data, strengthened in Phase 315:
+  width=10 now scores 84.7% (50/59) against `turn/movement.py`'s Phase
+  314-confirmed adjacency parity, and is the decisive best fit across an
+  exhaustive width sweep from 2 to 200 (next closest: 57.6%) -- far above
+  the ~1-2% expected by chance. Phase 315 also ruled out one plausible
+  alternative: AK3 LMOVE targets are NOT SE3-style `row*100+col` province
+  numbers (23.7% match), despite both filename families sharing a "3".
+  Still open: the exact board height (real data reaches y=17, taller than
+  `turn/movement.py`'s assumed 15-row "normal" board -- this game series
+  may simply use a different board size), which row-parity convention
+  applies (genuinely too close to call from AK3 data alone -- 50 vs. 52
+  of 59 -- though `turn/movement.py`'s narrative-sourced convention is
+  used here too, being the stronger evidence), and what the ~15% of
+  non-adjacent pairs represent (some are plausibly legitimate, e.g. a
+  leader chasing a distant target; one suspiciously round jump, exactly
+  170, might be a distinct sentinel value).
 - **`is_native_to_province` approximated as race-compatibility**
   (`plan_dispatch._dispatch_recruit`) — the rulebook's real rule is
   "Each province has 1 or 2 army types that can be recruited from the
