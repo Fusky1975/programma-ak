@@ -1115,6 +1115,50 @@ This resolves field 7's own full range:
 `GWArmyRecord` gains `is_mercenary: bool`, set `True` only for the
 confirmed `field7 == 2` case -- the same "only derive what's actually
 confirmed" treatment `is_skeletal` already got in Phase 336.
+
+**Phase 340 addendum -- end-to-end validation against a real, non-T1
+file (`GW3__T5`) surfaces and fixes a real province-header parsing bug.**
+Every earlier phase's own claims about `parse_gw_world()`'s province
+scan were checked only against the committed `GW3__T1` fixture. Running
+the full chain (`parse_gw_leaders`/`parse_gw_world`/`parse_gw_armies` ->
+`gw_world_bridge.bridge_new_game_state()`) against `GW3__T5` instead --
+cross-checked against the real `SE3__T4.K1` letter for that same turn --
+first failed outright: `GW3__T5` only yielded 159 of its 162 real
+provinces (Katmai, Maplehaven, Khalturin missing, no duplicates and no
+garbage names).
+
+The cause: `_PROVINCE_HEADER_RE` hard-coded the header's 3rd token as a
+literal `0` (`"<tax> <terrain> 0 <race> 0 6"`), since that token
+happened to be `0` for all 162 provinces in `GW3__T1` -- the only file
+this regex had ever been checked against. Loosening that one token to accept any integer, and re-scanning all 12
+real `GW3__T1`-`GW3__T12` files, yields exactly 162 provinces from every
+one of them, with no false positives
+(the shape is still otherwise unique in the file). The token itself
+takes on several distinct real values across the corpus (`0`, `48`,
+`64`, `80`, `256`, `512`, `1280`, `1536`) -- most likely a per-province
+bitmask of some kind (exploration-by-kingdom is one plausible guess,
+consistent with it being `0` for every T1 province before anyone has
+explored anything, and nonzero later) -- but its exact meaning is
+undeciphered and deliberately not stored on `GWProvinceRecord` rather
+than guessed at. The header's final `0` (before the trailing `6`
+anchor) was checked across the same 12-file corpus and never observed
+to be anything but `0`, so it stays a literal.
+
+With the fix in place, the rest of the `GW3__T5` end-to-end run is a
+clean, positive validation of everything built through Phase 339: all
+162 provinces, 10 Kings, and 90 Heroes bridge; every single Block B
+army row resolves (`unresolved_army_records` is empty at this turn);
+Kingdom 1 (Uga-Buga Makumb)'s own name/race/alignment, Guerin's own
+kingdom/race/alignment/sex/location, two independent "wandering Hero"
+sightings (Kokocala, Dracona) with their own real ids/races/sexes/
+locations, Guerin's own 9-army roster at the Falkland Sea (exact
+`ArmyType`/`Quality` match against the letter's own "Normal Quality"
+column -- confirming `GWArmyRecord.quality`/`ArmyState.quality` store
+the base, unmodified Quality, not the letter's separately-tracked
+"Modified Quality"), and province ownership (Falkland Sea, Ark Royal Sea
+-> kingdom 1; Balearic Sea -> unowned) all match the real `SE3__T4.K1`
+letter exactly. See `tests/test_gw3_t5_end_to_end.py` for the full,
+letter-quoted assertions.
 """
 
 from __future__ import annotations
@@ -1132,7 +1176,7 @@ from ak_engine.models.temper import Temper
 from ak_engine.parser.errors import K1ParseError
 from ak_engine.turn.combat import Quality
 
-_PROVINCE_HEADER_RE = re.compile(r"^(\d+) (\d+) 0 (\d+) 0 6$")
+_PROVINCE_HEADER_RE = re.compile(r"^(\d+) (\d+) (\d+) (\d+) 0 6$")
 
 # Line 3's own two real ordinals, decoded (Phase 278) -- see the module
 # docstring's "Recruiting Types (Mod_PAT)" section for the full
@@ -1190,12 +1234,31 @@ def parse_gw_world(path: Path) -> list[GWProvinceRecord]:
     """Parses every province record out of a world file.
 
     Scans the whole file for the province-header line's own fixed shape
-    (`"<tax> <terrain> 0 <race> 0 6"`) rather than assuming a fixed byte
-    offset, since that shape is confirmed unique to the province block
-    (a file-wide regex scan against the real `GW3__T1` sample returns
-    exactly 162 matches -- the real, user-confirmed province count per
-    world -- with no false positives from the file's other, differently-
-    shaped record blocks).
+    (`"<tax> <terrain> <mystery> <race> 0 6"`) rather than assuming a
+    fixed byte offset, since that shape is confirmed unique to the
+    province block (a file-wide regex scan against every real `GW3__T1`
+    through `GW3__T12` sample returns exactly 162 matches each -- the
+    real, user-confirmed province count per world -- with no false
+    positives from the file's other, differently-shaped record blocks).
+
+    Phase 340 correction: the 3rd token (between terrain and race) was
+    originally hard-coded as a literal `0`, since it happened to be `0`
+    for every province in the `GW3__T1` sample this regex was first
+    verified against. Real end-to-end validation against `GW3__T5`
+    (Phase 340) proved that field is NOT always `0` -- it takes on
+    several other observed values (48, 64, 80, 256, 512, 1280, 1536)
+    across `GW3__T1`-`GW3__T12`, most likely a per-province bitmask
+    (exploration-by-kingdom or similar) that changes as the game
+    progresses, not a constant. Hard-coding it as `0` silently dropped
+    any province whose bitmask happened to be nonzero at that turn --
+    `GW3__T5` alone was missing 3 of its 162 real provinces (Katmai,
+    Maplehaven, Khalturin) before this fix. This field's own real
+    meaning is still undeciphered and is deliberately discarded (not
+    stored on `GWProvinceRecord`) rather than guessed at. The final `0`
+    before the trailing `6` anchor, by contrast, was checked against the
+    same 12-file corpus and never observed to be anything but `0` --
+    left as a literal since loosening it changes nothing this project
+    has ever seen.
     """
 
     text = path.read_text(encoding="utf-8", errors="replace")
@@ -1220,7 +1283,8 @@ def parse_gw_world(path: Path) -> list[GWProvinceRecord]:
             )
 
         name = lines[name_idx].strip()
-        tax, terrain_ordinal, race_ordinal = (int(g) for g in match.groups())
+        tax_raw, terrain_raw, _mystery_field, race_raw = match.groups()
+        tax, terrain_ordinal, race_ordinal = int(tax_raw), int(terrain_raw), int(race_raw)
         recruit_type_1, recruit_type_2 = _parse_recruit_types(lines[line3_idx], line3_idx)
         governor_raw = lines[owner_idx].strip()
         if not governor_raw.lstrip("-").isdigit():

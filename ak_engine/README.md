@@ -13993,7 +13993,7 @@ section.
     `leader_id` as his army's `kingdom_id`, instead of his own
     `kingdom_id`/Liege field -- only equal for a King). Full suite:
     3386 passed before, 3392 after.
-- **Phase 339 (current)**: closes most of Phase 338's own "Hero id"
+- **Phase 339**: closes most of Phase 338's own "Hero id"
   gap after all, via a fixed name roster rather than any per-game
   technique -- `models/hero_roster.py STANDARD_HERO_ROSTER`, sourced
   from a project-original reference document the user supplied
@@ -14026,6 +14026,36 @@ section.
   - Added 6 tests in `tests/test_hero_roster.py` and updated/added
     tests in `tests/test_gw_world_bridge.py` for the new roster-first
     behavior. Full suite: 3392 passed before, 3398 after.
+- **Phase 340 (current)**: end-to-end validates `bridge_new_game_state()`
+  against a real, non-T1 world file (`GW3__T5`), cross-checked against
+  the real `SE3__T4.K1` letter for that same turn -- and in doing so,
+  finds and fixes a real parsing bug every earlier phase's testing had
+  missed. `parser/gw_world.py parse_gw_world()`'s own province-header
+  regex hard-coded a token as a literal `0` because it happened to be
+  `0` for all 162 provinces in the only file (`GW3__T1`) this regex had
+  ever been checked against; against `GW3__T5` it silently dropped 3 of
+  162 real provinces (Katmai, Maplehaven, Khalturin) whose own token
+  was nonzero there. Loosened to accept any integer -- re-verified
+  against all 12 real `GW3__T1`-`GW3__T12` files, each now yields
+  exactly 162 provinces, with no false positives introduced.
+  - With the fix in place, the rest of the `GW3__T5` run is a clean
+    positive validation: all 162 provinces/10 Kings/90 Heroes bridge,
+    every Block B army row resolves, and Kingdom 1's own name/race/
+    alignment, Guerin's own kingdom/race/alignment/sex/location, two
+    wandering Heroes' (Kokocala, Dracona) own real ids/races/sexes/
+    locations, Guerin's own 9-army roster at the Falkland Sea (exact
+    `ArmyType`/`Quality` match against the letter's "Normal Quality"
+    column), and province ownership (Falkland Sea, Ark Royal Sea,
+    Balearic Sea) all match the real letter exactly.
+  - Added `tests/fixtures/world/G3/GW3__T5` (a second real, user-
+    provided world-file snapshot, same precedent as `GW3__T1`).
+  - Documented as a `"Phase 340 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after the Phase 337 addendum.
+  - Added a regression test for the regex fix in
+    `tests/test_gw_world_parser.py`, plus a new
+    `tests/test_gw3_t5_end_to_end.py` with 7 tests covering the full
+    chain against the real letter. Full suite: 3398 passed before, 3406
+    after.
 
 ## Setup
 

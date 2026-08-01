@@ -29,6 +29,26 @@ def test_parses_all_162_provinces():
     assert len(records) == 162
 
 
+def test_province_header_tolerates_a_nonzero_mystery_field(tmp_path: Path):
+    # Phase 340: end-to-end validation against a real, non-T1 file
+    # (GW3__T5) proved the header's 3rd token isn't always a literal
+    # `0` -- it happened to be `0` for every province in GW3__T1 (the
+    # only file this regex had ever been checked against), but real
+    # values like 64/256/512 turn up elsewhere in the same game. A
+    # province whose own bitmask is nonzero must still parse -- not
+    # silently vanish from the result, which is what happened before
+    # this fix (GW3__T5 was missing 3 of its 162 real provinces).
+    text = "Somewhere\n6 3 256 1 0 6\n 1 0  15 0 \n47\n"
+    path = tmp_path / "gw_with_nonzero_mystery_field"
+    path.write_text(text, encoding="utf-8")
+    records = parse_gw_world(path)
+    assert len(records) == 1
+    assert records[0].name == "Somewhere"
+    assert records[0].tax == 6
+    assert records[0].terrain is Terrain.FOREST
+    assert records[0].race is Race.ELVEN
+
+
 def test_records_match_real_tax_race_terrain_from_the_letter_reports():
     # Ground truth quoted verbatim from SE3__T1.K2's own "PROVINCES" section
     # and its ASCII map legend (see parser/gw_world.py's own docstring).
