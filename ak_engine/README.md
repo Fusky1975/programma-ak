@@ -13798,6 +13798,27 @@ section.
     3371 passed), wrote 9 new tests (5 in `test_gw_world_parser.py`
     against the real `GW3__T1` fixture, 4 in `test_kingdom_bridge.py`),
     ran the suite again (3380 passed).
+- **Phase 331 (current)**: decodes 3 of Block B's own 7 unresolved
+  trailing fields -- Race, ArmyType, Quality (research-only, no new
+  parser code). Fixed a turn-alignment error first: `GW3__Tn` reflects
+  the game's state at the *end of turn n-1*, not turn n. Cross-
+  referencing Guerin's own Block B rows in `GW3__T3`/`GW3__T5` against
+  his own real "Modified Quality" army tables in `SE3__T2.K1`/
+  `SE3__T4.K1`: field 4 = `Race` (fixed per race-locked monstrous
+  `ArmyType`, 8-for-8; varies 0-3 for humanoid types, matching real
+  per-unit race text); field 5 = `ArmyType` ordinal (tallying rows by
+  this field exactly reproduces the real army roster's type
+  composition, both turns); field 6 = `Quality` (matched as a per-type
+  multiset against real qualities, both turns, using each unit's own
+  *base* Quality not the letter's separate race/terrain-adjusted
+  "Modified Quality"). 15 of 15 individual values checked matched with
+  zero exceptions. Field 8 checked and ruled out as `BASE_STRENGTH`
+  (constant per `ArmyType` but doesn't match the Str column); fields 7,
+  9, 10 remain unexamined.
+  - Documented as a `"Phase 331 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 330's own addendum.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3380 passed) both before and after.
 
 ## Setup
 

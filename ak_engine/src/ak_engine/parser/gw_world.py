@@ -781,6 +781,84 @@ King (Liege); Phase 327's own 16-for-16 "Hired implies a real Liege"
 pattern held only because every Hero it checked happened to be an
 actual player-kingdom subordinate, not because the two fields are
 coupled in general.
+
+**Phase 331 addendum -- three of the 218-row "per-army" Block B's own 7
+unresolved trailing fields decoded: Race, ArmyType, Quality (research
+pass only, no new parser code).** Phase 316/317 confirmed Block B's own
+row shape (`leader_id, X, Y`, then 7 more integers) and that it's per-
+army, not per-Hero, but left every one of those 7 trailing fields
+unresolved. Cross-referencing a single leader's own Block B rows across
+two turns against that leader's own real "Modified Quality" army table
+in `SE3__Tn.K1` decodes three of them -- **but only after fixing a
+turn-alignment error**: `GW3__Tn` reflects the game's state at the
+*end of turn n-1* (start of turn n), not the end of turn n itself --
+confirmed by matching `GW3__T3`'s own row count for Guerin (`leader_id`
+18) exactly to `SE3__T2.K1`'s own 6-unit end-of-turn roster, not
+`SE3__T3.K1`'s own (different) 9-unit one.
+
+- **Field 4 = `Race`** (`models/race.py`, the same enum already used
+  for province/leader race elsewhere in this file). For every
+  "monstrous," race-locked `ArmyType` (`WARG_RIDERS`, `DRAGON_WING`,
+  `EAGLE_WING`, `WHALES`, `MERMEN`, `ENTS`, `TROLLS`, `WEREBEASTS`),
+  this field is a single fixed value across every row of that type in
+  `GW3__T3`, and that value is exactly the type's own locked race
+  ordinal (`WARG_RIDERS`->`3`=`ORCISH`, `DRAGON_WING`->`4`=`DRAGONS`,
+  `EAGLE_WING`->`5`=`EAGLES`, `WHALES`->`6`=`WHALES`,
+  `MERMEN`->`8`=`MERMISH`, `ENTS`->`9`=`ENTISH`,
+  `TROLLS`->`10`=`TROLLISH`, `WEREBEASTS`->`11`=`WEREFOLK` -- 8 for 8,
+  zero exceptions). For every "humanoid" `ArmyType` (recruitable by any
+  of the 4 humanoid races), this field instead varies freely across
+  `0`-`3` (`HUMAN`/`ELVEN`/`DWARVEN`/`ORCISH`) -- exactly the race
+  diversity a humanoid unit can actually have. Directly confirmed
+  against real per-unit race text too: Guerin's own Bowmen/Heavy
+  Cavalry read "Elf" in `SE3__T2.K1`/`SE3__T4.K1` and this field reads
+  `1`=`ELVEN`; his Warg Riders read "Orc" and this field reads
+  `3`=`ORCISH`; his Dragons/Eagles read "Dragon"/"Eagle" and this field
+  reads `4`/`5` to match.
+- **Field 5 = `ArmyType` ordinal** (`models/army_type.py`, the same
+  `MOD_PAT_ORDINAL_TO_ARMY_TYPE` table already used for province
+  recruiting types). Tallying Guerin's own rows by this field exactly
+  reproduces his own real army roster's type composition both turns
+  checked: `GW3__T3` (6 rows) -> 4 Bowmen + 1 Heavy Cavalry + 1 Warg
+  Riders, matching `SE3__T2.K1`'s own 6-unit list exactly; `GW3__T5` (9
+  rows, scattered non-contiguously through the block rather than
+  grouped by leader) -> 4 Bowmen + 1 Heavy Cavalry + 2 Dragon Wing + 1
+  Warg Riders + 1 Eagle Wing, matching `SE3__T4.K1`'s own 9-unit list
+  exactly.
+- **Field 6 = `Quality`** (`turn/combat.py`, the same 0-5
+  Depleted..Elite enum already used for battle strength). Matched as a
+  multiset per `ArmyType` group rather than by row order (Block B
+  carries no per-unit name/id to pin an exact row-to-named-unit
+  correspondence): Guerin's own 4 real Bowmen qualities at end of `T2`
+  are `{Veteran, Average, Crack, Veteran}` = `{3, 2, 4, 3}`, and his own
+  4 Bowmen-type rows in `GW3__T3` read this field as exactly `{3, 2, 4,
+  3}`; at end of `T4` his 4 real Bowmen qualities are `{Crack, Veteran,
+  Crack, Crack}` = `{4, 3, 4, 4}`, matched exactly by `GW3__T5`. Every
+  non-Bowmen type (Heavy Cavalry, Warg Riders, Dragon Wing, Eagle Wing)
+  matched too, both turns. Uses each unit's own **base** Quality, not
+  the letter's separate "Modified Quality" column (which factors in
+  race/terrain penalties) -- confirmed by the two Dragon and one Eagle
+  row, whose real *base* quality is Average (matching this field) even
+  though their real *modified* quality is Sub-Depleted/Depleted.
+
+15 of 15 individual (Race, ArmyType, Quality) values checked across the
+two turns matched with zero exceptions.
+
+**Field 8 checked and ruled out as `BASE_STRENGTH`**: it's constant per
+`ArmyType` (never varies within a type, across any leader, in
+`GW3__T3`), which looked promising, but the actual constant values
+don't line up with `models/army_type.py BASE_STRENGTH`'s own Str
+column for the majority of types (e.g. `PHALANX`'s own Str is `3`,
+this field reads `2`; `ENTS`'s own Str is `6`, this field reads `1`) --
+a real, per-type constant, but not that one. Fields 7, 9, and 10 remain
+completely unexamined; 9 and 10 are `0` in nearly every row seen so
+far (one lone exception, a `9`th field value of `251`, unexplained).
+
+Not implemented as a parser here -- a future phase could extend
+`GWLeaderRecord` (or a new `GWArmyRecord`) with `race`/`army_type`/
+`quality` per Block B row now that all three are confirmed, once
+fields 7/9/10 are resolved enough to decide what else such a record
+should carry.
 """
 
 from __future__ import annotations
