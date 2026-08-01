@@ -13843,7 +13843,7 @@ section.
     own module docstring, directly after Phase 331's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3380 passed) both before and after.
-- **Phase 333 (current)**: pushes fields 9 and 10 further, finds one
+- **Phase 333**: pushes fields 9 and 10 further, finds one
   real structural fact, leaves both fields' own specific values open
   (research-only, no new parser code). Field 9 is confirmed a genuine
   sub-field of field 7: it reads exactly `0` on all 213 rows where
@@ -13861,6 +13861,30 @@ section.
   way a `leader_id` does for led armies.
   - Documented as a `"Phase 333 addendum"` in `parser/gw_world.py`'s
     own module docstring, directly after Phase 332's own addendum.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3380 passed) both before and after.
+- **Phase 334 (current)**: tries tracking one province's own unled
+  garrison across turns instead of one leader's own rows (research-
+  only, no new parser code). `HexCoord(10,4)`'s own 3 unled rows are
+  byte-for-byte identical between `GW3__T2` and `GW3__T3`, including
+  field 9's own exact values (`1, 1, 251`, same order both turns) --
+  rules out field 9 as a simple per-turn-incrementing counter, since
+  it would have changed across two genuinely idle turns. The same
+  coordinate's own led rows *did* change in that window (King Uga-Buga
+  Makumb's own units, present at `T2`, gone by `T3`), confirming the
+  snapshot itself is turn-sensitive -- the garrison's own stability is
+  real, not a sampling artifact. By `GW3__T4` the coordinate has no
+  Block B rows at all, consistent with `SE3__T4.K1`'s own real letter
+  describing this exact province (`#1105`, "Jellyfish Sea") being
+  newly conquered with a brand-new `"288th Garrison"` formed there --
+  supporting "unled rows persist unchanged until conquest wipes and
+  replaces them" as the real mechanic, though the new garrison's own
+  row wasn't located in `GW3__T4`/`T5` to directly compare, left open
+  rather than forced. Net: field 9 confirmed a persistent per-unit
+  state, not a counter, but its own specific values remain
+  undeciphered.
+  - Documented as a `"Phase 334 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 333's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3380 passed) both before and after.
 

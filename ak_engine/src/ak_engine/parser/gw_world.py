@@ -939,6 +939,39 @@ or by tracking one real leader's own rows across turns. Neither
 applies directly to unled, garrison rows, which carry no name and
 whose own turn-to-turn identity can't be tracked the way a `leader_id`
 already lets Block B rows be tracked for led armies.
+
+**Phase 334 addendum -- tried tracking one province's own unled
+garrison across turns instead of one leader; rules out a per-turn
+counter reading for field 9, no further decode (research pass only,
+no new parser code).** `HexCoord(10,4)`'s own 3 unled (`field7=0`)
+rows are **byte-for-byte identical between `GW3__T2` and `GW3__T3`**,
+including field 9's own exact values (`1, 1, 251` in the same order
+both turns) -- this directly rules out any reading of field 9 as a
+simple per-turn-incrementing counter, since it would have changed
+between two consecutive real turns of true idleness. The same
+coordinate's own led rows *did* change in that window (King Uga-Buga
+Makumb's own led units, present at `T2`, are gone by `T3`), so the
+snapshot mechanism itself is turn-sensitive -- the unled garrison's
+own stability is a real fact about that data, not a sampling artifact.
+
+By `GW3__T4` this same coordinate has **no Block B rows at all**
+(neither led nor unled) -- consistent with a real letter event:
+`SE3__T4.K1` describes this exact province (`#1105`, "Jellyfish Sea,"
+previously ruled by the independent Hero Tao-Li per that same letter's
+own roster line) being newly conquered, with a brand-new `"288th
+Garrison"` unit formed there. This supports "unled Block B rows persist
+unchanged while a province's ownership is undisturbed, and get wiped
+and replaced on conquest" as the real underlying mechanic, though the
+new garrison's own row wasn't located in a following turn's Block B to
+directly compare against the old one's field 9 -- attempted in both
+`GW3__T4` and `GW3__T5` at the same coordinate, found nothing at
+either, suggesting the coordinate-to-file-position mapping used for
+Block B may itself shift after a conquest (unconfirmed) or that the
+new garrison hadn't yet been captured in either of those two
+snapshots. Left open rather than forced.
+
+Net result: field 9 is confirmed a **persistent per-unit state**, not
+a counter, but its own specific values remain undeciphered.
 """
 
 from __future__ import annotations
