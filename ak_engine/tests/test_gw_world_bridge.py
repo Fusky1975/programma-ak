@@ -16,6 +16,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.sex import Sex
 from ak_engine.parser.gw_world import parse_gw_armies, parse_gw_leaders, parse_gw_world
 from ak_engine.parser.gw_world_bridge import (
     apply_confirmed_hero_ids,
@@ -151,29 +152,56 @@ def test_every_king_gets_a_real_confirmed_id_and_kingdom():
     assert king_leader.skills is not None
 
 
-def test_every_hero_gets_a_synthetic_negative_id_but_real_data():
+def test_a_roster_matched_hero_gets_his_own_real_id_and_sex():
+    # Phase 339: Guerin's own name is in models/hero_roster.py's fixed
+    # 98-entry table (#18, confirmed independently many times over in
+    # earlier phases), so he no longer needs a synthetic placeholder id.
     state, report = _bridge_fixture()
 
     assert report.heroes_created == 90
-    guerin_id = report.hero_synthetic_ids["Guerin"]
-    assert guerin_id < 0
-    guerin = state.leaders[guerin_id]
+    assert report.heroes_with_confirmed_id["Guerin"] == 18
+    guerin = state.leaders[18]
     assert guerin.is_king is False
     assert guerin.race is Race.ELVEN
     assert guerin.alignment is Alignment.UNDEAD
+    assert guerin.sex is Sex.MALE
     # Liege field (Phase 325/327, confirmed real) -- Guerin serves
     # kingdom 1 (Uga-Buga Makumb), matching every earlier cross-check.
     assert guerin.kingdom_id == 1
+
+
+def test_a_non_rostered_hero_falls_back_to_a_synthetic_negative_id():
+    # Bagmore and Kitralus are both real entries in the user's own
+    # separate VALHALLA NEUTRAL.txt -- exactly the roster's own
+    # documented "#99, arrived via VALHALLA" case, not a data error
+    # (Phase 339's own module-docstring addendum).
+    state, report = _bridge_fixture()
+
+    assert set(report.heroes_with_synthetic_id) == {"Bagmore", "Kitralus"}
+    for name, synthetic_id in report.heroes_with_synthetic_id.items():
+        assert synthetic_id < 0
+        leader = state.leaders[synthetic_id]
+        assert leader.name == name
+        assert leader.sex is None
 
 
 def test_provinces_and_king_owned_provinces_bridge_same_as_existing_functions():
     state, report = _bridge_fixture()
 
     assert report.provinces_created == 162
-    assert report.provinces_with_resolved_owner == report.kings_created
+    # Phase 339: roster-matched Heroes now have real ids in state.leaders
+    # too, so resolve_province_owners() resolves every Hero-governed
+    # province as well, not just the 10 King-owned ones -- a real
+    # improvement over Phase 338's narrower scope, not a regression.
+    assert report.provinces_with_resolved_owner > report.kings_created
     pearlgate = state.provinces[HexCoord(16, 2)]
     assert pearlgate.name == "Pearlgate"
     assert pearlgate.owner_kingdom_id == 7
+    # Transylvania is personally governed by Philo, an independent Hero
+    # (kingdom_id=None) -- now resolvable directly, unlike Phase 338.
+    transylvania = state.provinces[HexCoord(1, 5)]
+    assert transylvania.name == "Transylvania"
+    assert transylvania.owner_kingdom_id is None
 
 
 def test_army_bridging_splits_mercenary_king_led_and_hero_led_correctly():
@@ -201,29 +229,49 @@ def test_army_bridging_splits_mercenary_king_led_and_hero_led_correctly():
     # equals his kingdom_id (Phase 330), so a King-led army's commanded_by
     # and kingdom_id must always agree.
     for army in state.armies.values():
-        if army.commanded_by is not None:
+        if army.commanded_by is not None and state.leaders[army.commanded_by].is_king:
             assert army.commanded_by == army.kingdom_id
 
-    # Every unresolved record is genuinely Hero-led (not unled, not a King).
-    king_ids = {leader.leader_id for leader in state.leaders.values() if leader.is_king}
+    # Phase 339: a roster-matched Hero's own led rows now bridge directly
+    # too, owned by his own real kingdom_id (the Liege field) -- NOT his
+    # own leader_id, which only coincides with kingdom_id for a King.
+    # Philo's own 2 real Axemen rows (Phase 336's Dwarven-Axemen
+    # cross-check) are the concrete case: he's an independent Hero
+    # (kingdom_id=None), so this specifically catches the "used the
+    # wrong id for ownership" bug class a synthetic-id-only test can't.
+    philos_armies = [a for a in state.armies.values() if a.commanded_by == 70]
+    assert len(philos_armies) == 2
+    for army in philos_armies:
+        assert army.army_type is ArmyType.AXEMEN
+        assert army.kingdom_id is None
+
+    # Only a row led by a genuinely un-rostered (synthetic-id) Hero ends
+    # up unresolved -- its own commanded_by_leader_id is a real id no
+    # `LeaderState` this bridge built actually carries as a key,
+    # because a synthetic id is always negative.
     for record in report.unresolved_army_records:
         assert record.commanded_by_leader_id is not None
-        assert record.commanded_by_leader_id not in king_ids
+        assert record.commanded_by_leader_id not in state.leaders
 
 
 def test_apply_confirmed_hero_ids_rekeys_and_recovers_his_own_armies():
+    # Phase 339 leaves only genuinely un-rostered Heroes (Bagmore,
+    # Kitralus -- VALHALLA arrivals) as candidates for this fallback
+    # path; a hypothetical real id is supplied here purely to exercise
+    # the re-keying/army-recovery mechanism itself.
     state, report = _bridge_fixture()
-    synthetic_guerin_id = report.hero_synthetic_ids["Guerin"]
-    synthetic_philo_id = report.hero_synthetic_ids["Philo"]
+    synthetic_bagmore_id = report.heroes_with_synthetic_id["Bagmore"]
 
-    applied = apply_confirmed_hero_ids(state, {"Guerin": 18, "Philo": 70}, report.unresolved_army_records)
+    applied = apply_confirmed_hero_ids(state, {"Bagmore": 991}, report.unresolved_army_records)
 
-    assert applied.leaders_rekeyed == 2
+    assert applied.leaders_rekeyed == 1
     assert applied.not_found_names == []
-    assert synthetic_guerin_id not in state.leaders
-    assert synthetic_philo_id not in state.leaders
-    assert state.leaders[18].name == "Guerin"
-    assert state.leaders[70].name == "Philo"
+    assert synthetic_bagmore_id not in state.leaders
+    assert state.leaders[991].name == "Bagmore"
+    assert applied.armies_recovered >= 0
+    for army in state.armies.values():
+        if army.commanded_by == 991:
+            assert army.kingdom_id == state.leaders[991].kingdom_id
 
     # Philo's own 2 real Axemen rows (Phase 336/338's own Dwarven-Axemen
     # cross-check) get recovered, owned by his own real kingdom_id --

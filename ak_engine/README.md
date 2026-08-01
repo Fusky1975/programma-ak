@@ -13957,7 +13957,7 @@ section.
   - Added 1 test in `tests/test_gw_world_parser.py` against the real
     `GW3__T1` fixture, cross-checked against `SE3__T0.K1`'s own real
     mercenary table. Full suite: 3385 passed before, 3386 after.
-- **Phase 338 (current)**: closes the "populate a `GameState` from
+- **Phase 338**: closes the "populate a `GameState` from
   nothing" gap for the part that's actually recoverable from a single
   `GW3` file -- `parser/gw_world_bridge.py bridge_new_game_state()`.
   Before writing any code, tested and **falsified** two candidate
@@ -13993,6 +13993,39 @@ section.
     `leader_id` as his army's `kingdom_id`, instead of his own
     `kingdom_id`/Liege field -- only equal for a King). Full suite:
     3386 passed before, 3392 after.
+- **Phase 339 (current)**: closes most of Phase 338's own "Hero id"
+  gap after all, via a fixed name roster rather than any per-game
+  technique -- `models/hero_roster.py STANDARD_HERO_ROSTER`, sourced
+  from a project-original reference document the user supplied
+  (`"Nomi (eroi) fino a #99.txt"`) listing all 98 Hero names this
+  project's own AK game series draws from, each with a fixed id and
+  sex, independent of which particular game it is. Verified against
+  the real `GW3__T1` fixture before relying on it: 88 of its own 90
+  Hero names match the roster exactly, at unique ids all in the
+  `10-98` range; the 2 unmatched names (`Bagmore`, `Kitralus`) are both
+  real entries in the user's own separate `VALHALLA NEUTRAL.txt` --
+  exactly the roster's own documented "`#99`, arrived via VALHALLA"
+  case, not a data error. Also **corrects a mistake surfaced while
+  cross-checking the roster**: Phase 338's own "coordinate-matching
+  fails for Kokocala" claim used an unconfirmed test-fixture id (`50`)
+  as if it were her own confirmed real id; the roster gives her real
+  id as `10`, which the coordinate-matching technique had actually
+  found correctly -- corrected here rather than left to mislead a
+  future reader (this project's own standing policy, Phase 55/153's
+  precedent), though the broader "no *general* technique" finding
+  still holds independent of this one corrected case. `bridge_new_game_
+  state()` now assigns a roster-matched Hero his own real `leader_id`
+  and `sex` directly; Phase 338's synthetic-id scheme becomes the
+  fallback for the genuinely un-rostered case only. Army bridging's own
+  King-only check generalizes to any leader with a real id (King or
+  roster-matched Hero), so a Hero-led Block B row now bridges
+  immediately too, no longer deferred to `apply_confirmed_hero_ids()`.
+  - Documented as a `"Phase 339 addendum"` in
+    `parser/gw_world_bridge.py`'s own module docstring, directly after
+    the Phase 338 addendum.
+  - Added 6 tests in `tests/test_hero_roster.py` and updated/added
+    tests in `tests/test_gw_world_bridge.py` for the new roster-first
+    behavior. Full suite: 3392 passed before, 3398 after.
 
 ## Setup
 

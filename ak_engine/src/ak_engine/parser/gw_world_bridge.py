@@ -135,6 +135,33 @@ already used below); a King-led row's real owner is always resolvable
 by definition. Only a Hero-led row has no confirmed source at all for
 who it belongs to -- so it's left out of the freshly-built `GameState`
 entirely and counted, not silently misattributed.
+
+**Phase 339 addendum -- most of Phase 338's own "Hero id" gap closes
+after all, via a fixed name roster rather than any per-game
+technique.** The user supplied a project-original reference document
+(`"Nomi (eroi) fino a #99.txt"`) listing all 98 Hero names this
+project's own AK game series draws from, each with a fixed numeric id
+and sex, independent of which particular game/world it is --
+`models/hero_roster.py`'s own `STANDARD_HERO_ROSTER`. Verified against
+the real `GW3__T1` fixture before relying on it: **88 of its own 90
+Hero names match the roster exactly**, at unique ids all in the
+`10-98` range (this is a 10-kingdom game, so Kings already occupy ids
+`0-9` -- Phase 330 -- and the roster's own `1-9` slots, Adam through
+Enlil, never get to appear as Heroes here). The 2 unmatched names
+(`Bagmore`, `Kitralus`) are both real entries in the user's own
+separate `VALHALLA NEUTRAL.txt` -- exactly the roster's own documented
+`#99` "arrived via VALHALLA" case, not a data error.
+
+`bridge_new_game_state()` now assigns a roster-matched Hero his own
+real `leader_id` and `sex` directly (Phase 338's synthetic negative-id
+scheme becomes the fallback for the residual, genuinely un-rostered
+case only). Army bridging's own King-only check
+(`commanded_by_leader_id in king_ids`) generalizes to `in leaders`,
+since `leaders` now holds real ids for both Kings and roster-matched
+Heroes -- a Hero-led Block B row bridges immediately whenever that
+Hero's own name was in the roster, no longer deferred to
+`apply_confirmed_hero_ids()` at all. That function remains the correct
+path for the true residual case (a name the roster doesn't cover).
 """
 
 from __future__ import annotations
@@ -142,6 +169,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.hero_roster import STANDARD_HERO_ID_BY_NAME, STANDARD_HERO_SEX_BY_NAME
 from ak_engine.models.map import HexCoord
 from ak_engine.parser.gw_world import GWArmyRecord, GWLeaderRecord, GWProvinceRecord
 
@@ -232,13 +260,21 @@ class NewGameStateReport:
     provinces_created: int
     provinces_with_resolved_owner: int
     armies_created: int
-    # A Hero's real leader_id was assigned a synthetic (negative) id --
-    # see module docstring's Phase 338 addendum. Maps name -> synthetic id.
-    hero_synthetic_ids: dict[str, int] = field(default_factory=dict)
-    # Block B rows led by a Hero (not a King, not unled) -- their real
-    # owning kingdom has no confirmed source, so they weren't bridged
-    # into `GameState.armies` at all. Kept here so `apply_confirmed_hero_ids()`
-    # can retry them once real Hero ids are supplied.
+    # A Hero whose own name matched `models/hero_roster.py`'s fixed
+    # 98-entry table (Phase 339) -- his own `leader_id` is fully real,
+    # not a placeholder. Maps name -> real id.
+    heroes_with_confirmed_id: dict[str, int] = field(default_factory=dict)
+    # A Hero whose own name did NOT match the roster (e.g. a VALHALLA
+    # arrival, id `99`, not a specific named roster entry) -- assigned a
+    # synthetic (negative) id instead. See module docstring's Phase 338
+    # addendum. Maps name -> synthetic id.
+    heroes_with_synthetic_id: dict[str, int] = field(default_factory=dict)
+    # Block B rows led by a leader id this bridge couldn't resolve to any
+    # `LeaderState` it built (i.e. a synthetic-id Hero, Phase 338's
+    # residual case) -- their real owning kingdom has no confirmed
+    # source, so they weren't bridged into `GameState.armies` at all.
+    # Kept here so `apply_confirmed_hero_ids()` can retry them once a
+    # real id is supplied for that specific Hero.
     unresolved_army_records: list[GWArmyRecord] = field(default_factory=list)
 
 
@@ -253,26 +289,29 @@ def bridge_new_game_state(
 ) -> tuple[GameState, NewGameStateReport]:
     """Builds a brand-new `GameState` directly from a single `GW3` file's
     own three already-parsed record lists -- see module docstring's
-    Phase 338 addendum for exactly what's real here and what's a
+    Phase 338/339 addenda for exactly what's real here and what's a
     documented placeholder.
 
     Every King's own `KingdomState`/`LeaderState` is fully real
-    (`leader_id == kingdom_id`, Phase 330). Every Hero's own
-    `LeaderState` uses a synthetic, negative `leader_id` (real name,
-    race, alignment, temper, skills, coord, and kingdom_id/Liege --
-    just not the real numeric identity, which no `GW3` file alone can
-    supply -- see the module docstring's own falsified-technique
-    writeup). Provinces reuse `bridge_gw_world_provinces()`/
-    `resolve_province_owners()` unchanged. Armies bridge for every
-    unled row (owner = the province's own resolved owner) and every
-    King-led row (owner = that King's own real id); a Hero-led row is
-    left out and returned in the report instead of being bridged with
-    a guessed owner.
+    (`leader_id == kingdom_id`, Phase 330). Every Hero whose own name
+    matches `models/hero_roster.py`'s fixed roster (Phase 339) also gets
+    his own fully real `leader_id` and `sex`; a Hero outside that roster
+    (a VALHALLA arrival) falls back to a synthetic, negative `leader_id`
+    -- either way, name, race, alignment, temper, skills, coord, and
+    kingdom_id/Liege are all real. Provinces reuse
+    `bridge_gw_world_provinces()`/`resolve_province_owners()` unchanged.
+    Armies bridge for every unled row (owner = the province's own
+    resolved owner) and every row led by any leader this bridge gave a
+    real id (King or roster-matched Hero, owner = that leader's own real
+    `kingdom_id`); a row led by a still-synthetic-id Hero is left out
+    and returned in the report instead of being bridged with a guessed
+    owner.
     """
 
     kingdoms: dict[int, KingdomState] = {}
     leaders: dict[int, LeaderState] = {}
-    hero_synthetic_ids: dict[str, int] = {}
+    heroes_with_confirmed_id: dict[str, int] = {}
+    heroes_with_synthetic_id: dict[str, int] = {}
     king_ids: set[int] = set()
 
     next_hero_id = hero_id_start
@@ -300,9 +339,16 @@ def bridge_new_game_state(
                 alignment=record.alignment,
             )
         else:
-            hero_id = next_hero_id
-            next_hero_id -= 1
-            hero_synthetic_ids[record.name] = hero_id
+            roster_id = STANDARD_HERO_ID_BY_NAME.get(record.name)
+            if roster_id is not None:
+                hero_id = roster_id
+                heroes_with_confirmed_id[record.name] = hero_id
+                sex = STANDARD_HERO_SEX_BY_NAME[record.name]
+            else:
+                hero_id = next_hero_id
+                next_hero_id -= 1
+                heroes_with_synthetic_id[record.name] = hero_id
+                sex = None
             leaders[hero_id] = LeaderState(
                 leader_id=hero_id,
                 kingdom_id=record.kingdom_id,
@@ -313,6 +359,7 @@ def bridge_new_game_state(
                 temper=record.temper,
                 race=record.race,
                 alignment=record.alignment,
+                sex=sex,
             )
 
     state = GameState(turn_number=turn_number, kingdoms=kingdoms, leaders=leaders)
@@ -333,8 +380,15 @@ def bridge_new_game_state(
             province = provinces.get(record.coord)
             owner_kingdom_id = province.owner_kingdom_id if province is not None else None
             commanded_by = None
-        elif record.commanded_by_leader_id in king_ids:
-            owner_kingdom_id = record.commanded_by_leader_id
+        elif record.commanded_by_leader_id in leaders:
+            # Any leader this bridge gave a real id -- a King, or a
+            # roster-matched Hero (Phase 339) -- resolves directly via
+            # his own real `kingdom_id` (the Liege field for a Hero,
+            # `== leader_id` for a King -- never the leader_id itself,
+            # see `apply_confirmed_hero_ids()`'s own docstring for the
+            # bug class this distinction guards against).
+            commander = leaders[record.commanded_by_leader_id]
+            owner_kingdom_id = commander.kingdom_id
             commanded_by = record.commanded_by_leader_id
         else:
             unresolved_army_records.append(record)
@@ -355,11 +409,12 @@ def bridge_new_game_state(
 
     report = NewGameStateReport(
         kings_created=len(king_ids),
-        heroes_created=len(hero_synthetic_ids),
+        heroes_created=len(heroes_with_confirmed_id) + len(heroes_with_synthetic_id),
         provinces_created=len(provinces),
         provinces_with_resolved_owner=resolved_owners,
         armies_created=armies_created,
-        hero_synthetic_ids=hero_synthetic_ids,
+        heroes_with_confirmed_id=heroes_with_confirmed_id,
+        heroes_with_synthetic_id=heroes_with_synthetic_id,
         unresolved_army_records=unresolved_army_records,
     )
     return state, report
