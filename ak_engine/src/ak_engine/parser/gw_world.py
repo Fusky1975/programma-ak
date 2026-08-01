@@ -904,6 +904,41 @@ multiple `ArmyType`/`Race`/`Quality` combinations); still open.
 `field7`, led/unled status, `ArmyType`, or `Quality`).
 
 Not implemented as a parser here.
+
+**Phase 333 addendum -- fields 9 and 10 pushed further, one real
+structural fact found, both values' own specific meaning still open
+(research pass only, no new parser code).** Continuing directly from
+Phase 332's own open leads:
+
+- **Field 9 is a genuine sub-field of `field7`, not an independent
+  value**: across all 259 `GW3__T3` rows, field 9 reads exactly `0`
+  whenever `field7` is `1`, `2`, or `3` (213 of 213 such rows, zero
+  exceptions) -- it only ever varies (`1`, `2`, or `251`) on the 66
+  rows where `field7=0` (unled, "under the garrison commander," not
+  the rarer `field7=2` "mercenary" reading). This is a real, confirmed
+  structural fact, distinct from Phase 332's own weaker "251 is a
+  subset of field7=0" observation.
+- **Tested and ruled out as an explanation for field 9's own `{1, 2,
+  251}` split within that subset**: Quality (`field9=1` rows are all
+  `Quality=2`/Average, but `field9=2` rows are *also* almost all
+  `Quality=2`, so this doesn't cleanly separate the two); `ArmyType`;
+  `field8`; and a same-province stacking/sequence-index reading (every
+  province in `GW3__T3` holding more than one `field7=0` row was
+  checked directly -- e.g. `HexCoord(9,4)`'s own two rows read `field9
+  = 1` then `251`, `HexCoord(10,4)`'s own three rows read `1, 1, 251`
+  -- no province shows a clean sequential/positional pattern). None of
+  these distinguishes the three values.
+- **Field 10 remains fully unresolved.** No further leads found beyond
+  Phase 332's own "rare binary, no correlation" observation.
+
+Cracking field 9's own specific values (beyond the `field7`-gated
+structural fact above) likely needs a different technique than the
+ones that worked for fields 4-7 -- those were all solved either by
+cross-referencing a *specific, named* real unit against letter text,
+or by tracking one real leader's own rows across turns. Neither
+applies directly to unled, garrison rows, which carry no name and
+whose own turn-to-turn identity can't be tracked the way a `leader_id`
+already lets Block B rows be tracked for led armies.
 """
 
 from __future__ import annotations

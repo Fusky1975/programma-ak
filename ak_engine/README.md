@@ -13819,7 +13819,7 @@ section.
     own module docstring, directly after Phase 330's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3380 passed) both before and after.
-- **Phase 332 (current)**: confirms field 7 as a Skeletal-army marker
+- **Phase 332**: confirms field 7 as a Skeletal-army marker
   and finds partial (not fully resolved) structure for the rest of
   Block B's own remaining unexamined fields (research-only, no new
   parser code). `field7=3` occurs on exactly 3 of 259 `GW3__T3` rows,
@@ -13841,6 +13841,26 @@ section.
   own `{0,1}` range.
   - Documented as a `"Phase 332 addendum"` in `parser/gw_world.py`'s
     own module docstring, directly after Phase 331's own addendum.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3380 passed) both before and after.
+- **Phase 333 (current)**: pushes fields 9 and 10 further, finds one
+  real structural fact, leaves both fields' own specific values open
+  (research-only, no new parser code). Field 9 is confirmed a genuine
+  sub-field of field 7: it reads exactly `0` on all 213 rows where
+  `field7` is `1`, `2`, or `3`, and only ever varies (`1`, `2`, `251`)
+  on the 66 rows where `field7=0` (unled, "under the garrison
+  commander"). Tested and ruled out as an explanation for that `{1, 2,
+  251}` split: Quality, `ArmyType`, field 8, and a same-province
+  stacking/sequence-index reading (every province with more than one
+  `field7=0` row was checked directly, none shows a sequential
+  pattern). Field 10 remains fully unresolved -- no further leads found
+  beyond Phase 332's own "rare binary, no correlation" observation.
+  Notes that cracking field 9's specific values likely needs a
+  different technique than what worked for fields 4-7, since unled
+  garrison rows carry no persistent identity to track turn-to-turn the
+  way a `leader_id` does for led armies.
+  - Documented as a `"Phase 333 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 332's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3380 passed) both before and after.
 
