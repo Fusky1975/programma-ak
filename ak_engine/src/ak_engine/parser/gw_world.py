@@ -602,6 +602,50 @@ misidentified.
 Not implemented as a parser here. Kingdom `#0`'s own lack of a letter
 file and lack of Heroes remains an open, unconfirmed detail rather than
 a settled fact.
+
+**Phase 327 addendum -- the Liege field (Phase 325) confirmed across 27
+real Heroes, upgraded from open lead to confirmed (research pass only,
+no new parser code).** Phase 325 read a leader header's positions 5-6
+(`L L`) as "Liege lord id, `255`=none/`0`-`11`=owned by that King," but
+flagged it as only spot-checked on a handful of examples. Using each
+`SE3__T1.Kx` letter's own `CHARACTERS` roster as independent ground
+truth (every Hero listed there under a King, plus separately-noted
+"wandering Hero" / "buried in ..." entries for unaffiliated or dead
+ones) and cross-referencing all 27 named Heroes found in `GW3__T3`
+against their own real Liege value:
+
+- **16 Heroes already affiliated with a King as of the turn-1 letter**
+  show Liege equal to that King's own real id at turn 3, exactly:
+  Guerin/Teleko -> `1` (Uga-Buga Makumb's kingdom, Phase 326), Clarambald/
+  Garin -> `3` (Kwoth), Ningarl/Lexington -> `4` (Hokuto), Tarsus/Marlon
+  -> `5` (Prometeo), Gladstone/Hume -> `6` (Kahn), Rolando/Hakim -> `7`
+  (Giovanna d'Arco), Behemond/Duqaq -> `8` (Circe), Tancred/Negumba ->
+  `9` (Agesilao) -- 16 for 16.
+- **6 Heroes still unaffiliated or dead as of the turn-1 letter, and
+  still so at turn 3**, correctly show Liege `255 255`: Eric, Lakes,
+  Samantha, Odysseus ("a wandering Hero" at both turns), Reynald
+  ("buried in Siouxhome," still dead), and Arnulf (narrated in
+  `SE3__T2.K1` as ruling an independent Orcish region, consistent with
+  having no liege at all) -- 6 for 6.
+- **5 Heroes unaffiliated or dead as of the turn-1 letter show a real,
+  non-`255` Liege by turn 3** (Melantheus, Tao-Li -> `1`; Helatia,
+  Jamielle -> `8`; Tiffany -> `7`): not a contradiction but the expected
+  effect of two mechanics this project already implements --
+  `turn/hire_fire_decode.py`'s own Hire (a King picking up a wandering
+  Hero) and Cast's own Resurrection (`turn/cast_decode.py`'s own nested-
+  plan handling) -- both plausible between `T1` and `T3` and each one
+  fully explaining a previously-`255` Hero acquiring a real liege.
+
+27 for 27, zero unexplained mismatches. The Liege field is now
+confirmed with high confidence, not merely a candidate; it remains,
+however, a `research pass only` finding -- no `LeaderState`/`GameState`
+field consumes it yet, so this doesn't change parser or model
+behavior.
+
+Not implemented as a parser here. A future phase could use this field
+to close the leader-to-kingdom-ownership gap open since Phase 224 by
+wiring it into `turn/kingdom_bridge.py`'s own Kingdom-to-`GameState`
+sync.
 """
 
 from __future__ import annotations

@@ -13678,7 +13678,7 @@ section.
     own module docstring, directly after Phase 324's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
-- **Phase 326 (current)**: corrects Phase 319's own reading of "Babba
+- **Phase 326**: corrects Phase 319's own reading of "Babba
   Sissoko" and "Uga-Buga Makumb" (research-only, no new parser code).
   Phase 319 concluded Uga-Buga Makumb is a Hero owned by King Babba
   Sissoko. Re-examining `GW3__T3`/`SE3__T1.K1` shows they are instead
@@ -13701,6 +13701,26 @@ section.
   then by Phase 319 (King and his own subordinate Hero).
   - Documented as a `"Phase 326 addendum"` in `parser/gw_world.py`'s
     own module docstring, directly after Phase 325's own addendum.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
+- **Phase 327 (current)**: upgrades the Liege field (Phase 325's own
+  leader-header positions 5-6) from open lead to confirmed
+  (research-only, no new parser code). Using each `SE3__T1.Kx` letter's
+  own `CHARACTERS` roster as independent ground truth, all 27 named
+  Heroes found in `GW3__T3` were cross-checked against their own real
+  Liege value: 16 already-affiliated Heroes show Liege exactly equal to
+  their own King's real id (Guerin/Teleko->1, Clarambald/Garin->3,
+  Ningarl/Lexington->4, Tarsus/Marlon->5, Gladstone/Hume->6,
+  Rolando/Hakim->7, Behemond/Duqaq->8, Tancred/Negumba->9); 6 Heroes
+  unaffiliated or dead at both turn 1 and turn 3 correctly show `255
+  255` (Eric, Lakes, Samantha, Odysseus, Reynald, Arnulf); and 5 Heroes
+  unaffiliated/dead at turn 1 show a real Liege by turn 3 (Melantheus,
+  Tao-Li->1; Helatia, Jamielle->8; Tiffany->7), fully explained by this
+  project's own already-implemented Hire and Resurrection mechanics
+  rather than being a contradiction. 27 for 27, zero unexplained
+  mismatches.
+  - Documented as a `"Phase 327 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 326's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
 
