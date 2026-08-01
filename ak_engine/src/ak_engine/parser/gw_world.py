@@ -705,6 +705,47 @@ monotonic behavior; both would benefit from checking against explicit
 narrative events (Practice results, item discoveries, battle
 participation) in the same leader's own `SE3__Tn.Kx` letters turn by
 turn, the same technique that resolved Liege (Phase 327).
+
+**Phase 329 addendum -- both of Phase 328's own leading hypotheses for
+positions 18 and 22 falsified against Guerin's own full narrative
+record (research pass only, no new parser code).** Phase 328 flagged
+position 22's bit pattern as suggestively `Ability`-indexed and
+position 18 as a plausible battle/conquest counter, but only checked
+them against the header's own numbers. Reading Guerin's own full
+`SE3__T2..T10.K1` letters turn by turn falsifies both:
+
+- **Position 22 is not an `Ability`-unlock bitmask.** Its `ELEMENTAL`
+  bit (bit 7) turns on at `T9`, but Guerin's own Elemental skill level
+  stays `0` across all 12 turns -- there's nothing to "unlock." Its
+  `TACTICAL` bit (bit 0) turns on at `T3`, while Guerin's own Tactical
+  skill level is still `0` at that point too (it only starts rising at
+  `T5`). The bit positions happening to spell out real ability names
+  (`Tac/Mar/Nav/Nec/Ele`) was coincidence, not signal.
+- **Position 18 is not a battle-victory or conquest counter.** Cross-
+  referencing every real conquest and battle mentioned in Guerin's own
+  letters against the position-18 delta each turn shows no clean
+  relationship: `T2` (2 conquests: Falkenheim, Mare Tarkium) -- no
+  change; `T4` (2 conquests: the Ark Royal Sea, the Falkland Sea) -- no
+  change; `T5` (1 conquest, plus the letter's own explicit "Guerin's
+  experience improved my skill in Tactics") -- `+1`; `T6` (1 conquest:
+  Bir Nzaran) -- no change; `T7` (2 conquests: Peachwood, Sherwood,
+  plus the same "improved my skill in Tactics" phrase again) -- no
+  change; `T8` (1 conquest: Quantara Roo) -- `+1`; `T9` (**no battle at
+  all** -- a purely diplomatic letter) -- `+1` anyway; `T10` (1
+  conquest: Rejaf) -- `+2`. Battles/conquests happen in turns with and
+  without an increment, and the field increments in a turn with no
+  battle at all -- ruling out both a simple win-counter and a
+  skill-improvement counter.
+
+Both fields remain confirmed dynamic and non-decreasing (from Phase
+328's own cross-turn data), but their real trigger is unresolved.
+Recording both falsified hypotheses here so a future pass doesn't
+retrace them; the office-holder score tables in the same letters
+(`"First Elder of Elvenkind Guerin 1 933 ..."`, matching this
+project's own Ofc_Pts/Rank research from Phase 137) were spot-checked
+too and don't line up with either position's own raw values either.
+
+Not implemented as a parser here.
 """
 
 from __future__ import annotations

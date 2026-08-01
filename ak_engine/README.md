@@ -13723,7 +13723,7 @@ section.
     own module docstring, directly after Phase 326's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
-- **Phase 328 (current)**: tracks one Hero (Guerin) across all 12 real
+- **Phase 328**: tracks one Hero (Guerin) across all 12 real
   turns to isolate which remaining leader-header positions are truly
   dynamic (research-only, no new parser code). Falsifies position 4
   (`S`) as the letter roster's own "Ini" column -- it reads `0` for all
@@ -13741,6 +13741,25 @@ section.
   (Guerin always 48, Ningarl always 46).
   - Documented as a `"Phase 328 addendum"` in `parser/gw_world.py`'s
     own module docstring, directly after Phase 327's own addendum.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
+- **Phase 329 (current)**: falsifies both of Phase 328's own leading
+  hypotheses for positions 18 and 22 against Guerin's own full
+  narrative record (research-only, no new parser code). Position 22's
+  `Ability`-named bit pattern isn't an ability-unlock bitmask: the
+  `ELEMENTAL` bit turns on at `T9` while Guerin's own Elemental skill
+  stays `0` for all 12 turns, and the `TACTICAL` bit turns on at `T3`
+  while Guerin's own Tactical skill is still `0` too. Position 18 isn't
+  a battle-victory or conquest counter either: cross-referencing every
+  real conquest in Guerin's own letters against the position-18 delta
+  shows conquests in `T2`/`T4`/`T6`/`T7` with no counter change, and a
+  `+1` at `T9` despite a purely diplomatic letter with no battle at
+  all. Both fields remain confirmed dynamic and non-decreasing, but
+  their real trigger is unresolved; the office-holder Ofc_Pts/Rank
+  score tables in the same letters (Phase 137) were spot-checked too
+  and don't line up with either position either.
+  - Documented as a `"Phase 329 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 328's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
 
