@@ -18,7 +18,8 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.parser.errors import K1ParseError
-from ak_engine.parser.gw_world import GWProvinceRecord, parse_gw_leaders, parse_gw_world
+from ak_engine.parser.gw_world import GWProvinceRecord, parse_gw_armies, parse_gw_leaders, parse_gw_world
+from ak_engine.turn.combat import Quality
 
 FIXTURE = Path(__file__).parent / "fixtures" / "world" / "G3" / "GW3__T1"
 
@@ -166,3 +167,55 @@ def test_raises_gw_parse_error_on_truncated_record(tmp_path: Path):
 
     with pytest.raises(K1ParseError):
         parse(truncated)
+
+
+def test_parses_all_218_block_b_army_records():
+    # 218 rows at T1, 104 unled (`leader_id == 255`) -- Phase 316's own
+    # confirmed counts for this exact fixture.
+    records = parse_gw_armies(FIXTURE)
+    assert len(records) == 218
+    assert sum(1 for r in records if r.commanded_by_leader_id is None) == 104
+
+
+def test_philos_own_block_b_rows_match_his_real_dwarven_axemen_garrison():
+    # Philo(70) governs Transylvania (Dwarven) -- two duplicate real rows
+    # (Phase 316), both Race=Dwarven/ArmyType=Axemen/Quality=Average.
+    records = parse_gw_armies(FIXTURE)
+    philos_rows = [r for r in records if r.commanded_by_leader_id == 70]
+    assert len(philos_rows) == 2
+    for row in philos_rows:
+        assert row.coord == HexCoord(1, 5)
+        assert row.race is Race.DWARVEN
+        assert row.army_type is ArmyType.AXEMEN
+        assert row.quality is Quality.AVERAGE
+        assert row.is_skeletal is False
+
+
+def test_is_skeletal_true_only_for_the_confirmed_field7_equals_3_rows():
+    # Both of this fixture's own Skeletal rows are themselves unled --
+    # a real correction to Phase 332's "field7 in {1, 3} only on led
+    # rows" claim, which was only ever checked against a different turn.
+    records = parse_gw_armies(FIXTURE)
+    skeletal = [r for r in records if r.is_skeletal]
+    assert len(skeletal) == 2
+    for row in skeletal:
+        assert row.raw_field7 == 3
+        assert row.commanded_by_leader_id is None
+    assert all(r.raw_field7 != 3 for r in records if not r.is_skeletal)
+
+
+def test_block_b_raw_fields_are_preserved_undecoded():
+    records = parse_gw_armies(FIXTURE)
+    philo_row = next(r for r in records if r.commanded_by_leader_id == 70)
+    assert philo_row.raw_field7 == 1
+    assert philo_row.raw_field8 == 2
+    assert philo_row.raw_field9 == 0
+    assert philo_row.raw_field10 == 0
+
+
+def test_raises_gw_parse_error_on_unrecognized_race_ordinal(tmp_path: Path):
+    bad_race = tmp_path / "bad_race_gw_block_b"
+    bad_race.write_text("70 1 5 99 2 2 1 2 0 0\n", encoding="utf-8")
+
+    with pytest.raises(K1ParseError):
+        parse_gw_armies(bad_race)

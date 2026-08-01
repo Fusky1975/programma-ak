@@ -13887,7 +13887,7 @@ section.
     own module docstring, directly after Phase 333's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3380 passed) both before and after.
-- **Phase 335 (current)**: pushes field 10 across all 12 real
+- **Phase 335**: pushes field 10 across all 12 real
   `GW3__Tn` turns at once (research-only, no new parser code), instead
   of the single `GW3__T3` snapshot Phase 332/333 checked. Corrects the
   earlier "0 or 1" reading -- `GW3__T12` shows a `2` for the first
@@ -13913,6 +13913,29 @@ section.
     own module docstring, directly after Phase 334's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3380 passed) both before and after.
+- **Phase 336 (current)**: consolidates Block B into real parser code
+  -- `GWArmyRecord`/`parse_gw_armies()` in `parser/gw_world.py`, the
+  first code (not research-only) phase for this block. Locates Block B
+  the same shape-scanning way `parse_gw_world`/`parse_gw_leaders`
+  already locate their own blocks (exactly-10-integer-token rows,
+  taking the one contiguous run); verified this run is the single,
+  unambiguous one across all 12 real `GW3__Tn` samples. Exposes only
+  the independently-confirmed fields as typed values
+  (`commanded_by_leader_id`, `coord`, `race`, `army_type`, `quality`,
+  `is_skeletal`) and keeps the three still-undeciphered trailing
+  fields as plain, raw ints (`raw_field8`/`raw_field9`/`raw_field10`)
+  rather than guessing. Surfaced and documented a real correction while
+  testing against the committed `GW3__T1` fixture: Phase 332's own
+  "field 7's Skeletal marker only appears on led rows" claim doesn't
+  hold at `T1`, which has two unled Skeletal rows -- the marker and
+  the led/unled split are independent bits, not coupled the way a
+  single-turn (`T3`-only) sample suggested.
+  - Documented as a `"Phase 336 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 335's own addendum.
+  - Added 5 tests in `tests/test_gw_world_parser.py` against the real
+    `GW3__T1` fixture (218-row count, Philo's own known Dwarven Axemen
+    rows, the Skeletal-marker correction, raw-field preservation, and
+    error handling). Full suite: 3380 passed before, 3385 after.
 
 ## Setup
 

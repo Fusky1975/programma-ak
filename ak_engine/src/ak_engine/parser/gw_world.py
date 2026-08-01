@@ -1040,6 +1040,49 @@ Net result: field 10 is confirmed `ArmyType`-gated (conventional
 troop types only, monstrous types structurally excluded) and
 confirmed not a simple "fought a battle" flag; its own specific
 triggering event and its `0`/`1`/`2` value meaning remain open.
+
+**Phase 336 addendum -- Block B finally gets real parser code:
+``GWArmyRecord``/``parse_gw_armies`` (code phase, not research-only).**
+Phases 316/317/331-335 confirmed enough of Block B's own row shape
+(``leader_id, X, Y, Race, ArmyType, Quality`` plus a Skeletal marker in
+field 7) to justify turning it into an actual parser, instead of only
+ever re-deriving it ad hoc from raw file offsets each time a new phase
+needs it.
+
+Block B's own row is located the same way ``parse_gw_world`` and
+``parse_gw_leaders`` already locate their own blocks: scan the whole
+file for the row's own fixed shape (exactly 10 space-separated
+integers) and take the one contiguous run of such lines -- verified
+against all 12 real ``GW3__Tn`` samples that this run is **always
+the single, unambiguous one** in the entire file (no second
+false-positive run of any length, in any of the 12 turns), so no
+byte-offset or marker-line assumption is needed.
+
+``GWArmyRecord`` exposes only what's independently confirmed as typed
+fields (``commanded_by_leader_id``, ``coord``, ``race``, ``army_type``,
+``quality``, ``is_skeletal``) and keeps the three still-undeciphered
+trailing fields as plain, undecoded ints (``raw_field8``,
+``raw_field9``, ``raw_field10``) -- the same "keep it raw until it's
+actually decoded" treatment ``GWLeaderRecord.condition`` already uses
+above. ``is_skeletal`` is only ever set `True` for the confirmed
+``field7 == 3`` case (Phase 332); the unconfirmed ``field7 in {0, 2}``
+unled split (Phase 332/333's own open "kingdom-owned vs. mercenary"
+lead) is preserved verbatim as ``raw_field7`` rather than being forced
+into a guessed boolean or enum.
+
+**Correction surfaced while testing against the real, committed
+``GW3__T1`` fixture**: Phase 332's own "``field7 in {1, 3}`` occurs
+only on rows with a real leader" claim was checked only against
+`GW3__T3`. `GW3__T1` has two `field7 == 3` rows that are themselves
+**unled** (`"255 9 5 1 1 2 3 2 0 0"`, `"255 11 7 3 3 2 3 2 0 0"`) --
+so the Skeletal marker and the led/unled split are two independent
+bits within field 7, not perfectly coupled the way Phase 332 read
+them from its own single-turn sample. This doesn't weaken
+``is_skeletal``'s own confirmation (still the same directly-verified
+``field7 == 3`` reading either way); it only means the marker can
+legitimately appear on an unled Skeletal garrison too, which
+`GWArmyRecord.is_skeletal` already handles correctly since it never
+looked at `commanded_by_leader_id` in the first place.
 """
 
 from __future__ import annotations
@@ -1055,6 +1098,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.parser.errors import K1ParseError
+from ak_engine.turn.combat import Quality
 
 _PROVINCE_HEADER_RE = re.compile(r"^(\d+) (\d+) 0 (\d+) 0 6$")
 
@@ -1349,3 +1393,123 @@ def _build_leader_record(
         skills=SkillTable(raw_values=[int(token) for token in skill_tokens[:30]]),
         kingdom_id=kingdom_index if is_king else (None if liege_raw == 255 else liege_raw),
     )
+
+
+@dataclass(slots=True)
+class GWArmyRecord:
+    """One army's own row from Block B, the per-army block that follows
+    the province block (and Block A, still unresolved) -- see the module
+    docstring's Phase 316/317/331-336 addenda for the full, evidence-
+    based field derivation.
+
+    Only what's independently confirmed is exposed as a typed field.
+    Three trailing fields remain undeciphered and are kept as plain,
+    raw ints rather than guessed at -- the same treatment
+    ``GWLeaderRecord.condition`` already gets above:
+
+    - ``raw_field8``: confirmed constant per ``army_type`` (Phase 331)
+      but ruled out as ``models.army_type.BASE_STRENGTH``; its own real
+      meaning is unknown.
+    - ``raw_field9``: confirmed a genuine, persistent per-unit state,
+      but only ever varies when ``raw_field7 == 0`` (Phase 333/334);
+      its own ``{1, 2, 251}`` values are undeciphered.
+    - ``raw_field10``: confirmed gated by ``army_type`` (only the 10
+      non-monstrous types ever show it non-zero) and confirmed not a
+      simple "fought a battle this turn" flag (Phase 335); its own
+      ``0``/``1``/``2`` meaning is undeciphered.
+    """
+
+    # The commanding Hero's/King's own leader id, or `None` for the
+    # `255` "under the garrison commander" unled sentinel (Phase 317).
+    commanded_by_leader_id: int | None
+    coord: HexCoord
+    race: Race
+    # `None` for the real "no type" sentinel ordinal (15) -- never
+    # observed in Block B itself so far, but kept nullable to match
+    # `MOD_PAT_ORDINAL_TO_ARMY_TYPE`'s own real shape.
+    army_type: ArmyType | None
+    quality: Quality
+    # `True` only for the confirmed Skeletal-army marker (Phase 332,
+    # `raw_field7 == 3`). The unconfirmed unled `{0, 2}` split (Phase
+    # 332/333's own open "kingdom-owned vs. mercenary" lead) is left in
+    # `raw_field7` rather than forced into a guessed boolean.
+    is_skeletal: bool
+    raw_field7: int
+    raw_field8: int
+    raw_field9: int
+    raw_field10: int
+
+
+def parse_gw_armies(path: Path) -> list[GWArmyRecord]:
+    """Parses every army record out of a world file's own Block B.
+
+    Locates Block B the same way `parse_gw_world`/`parse_gw_leaders`
+    locate their own blocks: scan the whole file for the row's own
+    fixed shape (exactly 10 space-separated integers) and take the one
+    contiguous run of such lines. Verified against all 12 real
+    `GW3__Tn` samples that this run is always the single, unambiguous
+    one in the entire file -- no second run of any length ever appears
+    in any of the 12 turns -- so no byte-offset or marker-line
+    assumption is needed, the same "confirmed unique, no false
+    positives" basis the sibling parsers already rely on.
+    """
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+
+    candidate_indices = []
+    for i, line in enumerate(lines):
+        tokens = line.split()
+        if len(tokens) == 10 and _all_int(tokens):
+            candidate_indices.append(i)
+    if not candidate_indices:
+        raise GWParseError("no 10-token Block B rows found in this world file", line_number=1, line="")
+
+    runs: list[list[int]] = [[candidate_indices[0]]]
+    for idx in candidate_indices[1:]:
+        if idx == runs[-1][-1] + 1:
+            runs[-1].append(idx)
+        else:
+            runs.append([idx])
+    block_b = max(runs, key=len)
+
+    records: list[GWArmyRecord] = []
+    for line_index in block_b:
+        values = [int(token) for token in lines[line_index].split()]
+        leader_id, x, y, race_ordinal, army_type_ordinal, quality_ordinal, field7, field8, field9, field10 = values
+
+        if race_ordinal not in {member.value for member in Race}:
+            raise GWParseError(
+                f"unrecognized Race ordinal {race_ordinal} on a Block B army row",
+                line_number=line_index + 1,
+                line=lines[line_index],
+            )
+        if army_type_ordinal not in MOD_PAT_ORDINAL_TO_ARMY_TYPE:
+            raise GWParseError(
+                f"unrecognized ArmyType ordinal {army_type_ordinal} on a Block B army row",
+                line_number=line_index + 1,
+                line=lines[line_index],
+            )
+        if quality_ordinal not in {member.value for member in Quality}:
+            raise GWParseError(
+                f"unrecognized Quality ordinal {quality_ordinal} on a Block B army row",
+                line_number=line_index + 1,
+                line=lines[line_index],
+            )
+
+        records.append(
+            GWArmyRecord(
+                commanded_by_leader_id=None if leader_id == 255 else leader_id,
+                coord=HexCoord(x, y),
+                race=Race(race_ordinal),
+                army_type=MOD_PAT_ORDINAL_TO_ARMY_TYPE[army_type_ordinal],
+                quality=Quality(quality_ordinal),
+                is_skeletal=field7 == 3,
+                raw_field7=field7,
+                raw_field8=field8,
+                raw_field9=field9,
+                raw_field10=field10,
+            )
+        )
+
+    return records
