@@ -646,6 +646,65 @@ Not implemented as a parser here. A future phase could use this field
 to close the leader-to-kingdom-ownership gap open since Phase 224 by
 wiring it into `turn/kingdom_bridge.py`'s own Kingdom-to-`GameState`
 sync.
+
+**Phase 328 addendum -- tracking one Hero (Guerin) across all 12 real
+turns isolates which remaining header positions are truly dynamic, one
+falsified hypothesis, and two new candidate leads (research pass only,
+no new parser code).** Comparing the same leader's own 25-field header
+across `GW3__T1` through `GW3__T12` (rather than different leaders in
+the same turn, the method used so far) cleanly separates constant
+positions from genuinely time-varying ones:
+
+- **Falsified: position 4 (`S`) is not the letter roster's own "Ini"
+  column.** `SE3__T1.Kx`'s own `CHARACTERS` table has an unlabeled
+  numeric column between `M/F Race` and the ability grid (plausibly
+  Initiative) that varies per leader (Guerin `2`, Clarambald `1`, Uga-
+  Buga Makumb `0`, ...). Position 4 was a candidate match since Phase
+  325 left its meaning open. Checked across all 27 Heroes from Phase
+  327's own dataset: position 4 reads `0` for every single one of
+  them, never varying, so it cannot be encoding this per-leader
+  "Ini" value. Its true meaning (the document's own "Special effects")
+  remains unconfirmed.
+- **Reconfirmed at scale: position 7 (Condition, Phase 325) matches
+  perfectly across all 27 Heroes**, not just the earlier spot check --
+  the 6 wandering/unaffiliated Heroes (Eric, Lakes, Samantha, Odysseus,
+  Melantheus, Tao-Li at `T1`) all read `2` (Mercenary); the one dead
+  Hero (Reynald, "buried in Siouxhome") reads `0` (Dead); every
+  affiliated Hero reads `1` (Hired).
+- **New lead: position 18 behaves like a non-decreasing counter.**
+  Guerin's own value across `T1`..`T12`: `0, 0, 0, 0, 1, 1, 1, 2, 3, 5,
+  5, 7` -- never decreases, sometimes plateaus for several turns, in
+  line with a rank/level/seniority-style stat. Unconfirmed against any
+  real letter text; no narrative "level up" language has been checked
+  yet.
+- **New lead: position 22 behaves like an accumulating bitmask.**
+  Guerin's own value: `2, 6, 7, 7, 7, 71, 71, 71, 199, 199, 199, 199`.
+  In binary, each jump adds exactly one new bit and never clears an
+  existing one (`7` = bits 0,1,2; `71` = `7 + 64`, adding bit 6; `199`
+  = `71 + 128`, adding bit 7). Consistent with a flags/unlocks-style
+  field that only accumulates. Unconfirmed against any specific
+  real-world trigger (item found, ability learned, province type
+  visited, ...).
+- **Ruled out as a candidate for either of the above: position 12
+  fluctuates non-monotonically and goes negative** (`0, 0, 2, 4, 7, 12,
+  13, 22, 22, 22, 3, -16` for Guerin) -- incompatible with an
+  ever-growing counter or bitmask; more likely a spendable/lossable
+  resource (gold, morale, supply) or a value relative to some baseline.
+- **Position 19 shows no discernible trend turn to turn** (`87, 1, 39,
+  88, 52, 8, 55, 30, 57, 93, 41, 11` for Guerin) -- possibly a
+  per-turn-recomputed state (current strength, a random roll) rather
+  than anything cumulative.
+- **Position 8 is constant per leader but differs between leaders**
+  (Guerin always `48`, Ningarl always `46`) -- a per-character constant,
+  plausibly tied to identity or a fixed base stat, not yet cross-checked
+  against anything in the letters.
+
+Not implemented as a parser here. Positions 18 and 22 are the most
+promising open leads for a future phase, given their clean, non-random
+monotonic behavior; both would benefit from checking against explicit
+narrative events (Practice results, item discoveries, battle
+participation) in the same leader's own `SE3__Tn.Kx` letters turn by
+turn, the same technique that resolved Liege (Phase 327).
 """
 
 from __future__ import annotations

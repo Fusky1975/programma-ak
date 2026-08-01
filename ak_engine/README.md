@@ -13703,7 +13703,7 @@ section.
     own module docstring, directly after Phase 325's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
-- **Phase 327 (current)**: upgrades the Liege field (Phase 325's own
+- **Phase 327**: upgrades the Liege field (Phase 325's own
   leader-header positions 5-6) from open lead to confirmed
   (research-only, no new parser code). Using each `SE3__T1.Kx` letter's
   own `CHARACTERS` roster as independent ground truth, all 27 named
@@ -13721,6 +13721,26 @@ section.
   mismatches.
   - Documented as a `"Phase 327 addendum"` in `parser/gw_world.py`'s
     own module docstring, directly after Phase 326's own addendum.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
+- **Phase 328 (current)**: tracks one Hero (Guerin) across all 12 real
+  turns to isolate which remaining leader-header positions are truly
+  dynamic (research-only, no new parser code). Falsifies position 4
+  (`S`) as the letter roster's own "Ini" column -- it reads `0` for all
+  27 Heroes checked, never varying, while "Ini" does. Reconfirms
+  position 7 (Condition) at full scale: all 27 Heroes match Dead
+  (`0`)/Hired (`1`)/Mercenary (`2`) exactly. Surfaces two new candidate
+  leads: position 18 behaves like a non-decreasing counter (Guerin:
+  `0,0,0,0,1,1,1,2,3,5,5,7` across T1-T12); position 22 behaves like an
+  accumulating bitmask (Guerin: `2,6,7,7,7,71,71,71,199,199,199,199` --
+  each jump adds exactly one new bit, never clears one). Also notes
+  position 12 fluctuates non-monotonically and goes negative (rules it
+  out as a counter/bitmask; more likely a spendable resource), position
+  19 shows no discernible trend (possibly a per-turn-recomputed state),
+  and position 8 is a per-leader constant that differs between leaders
+  (Guerin always 48, Ningarl always 46).
+  - Documented as a `"Phase 328 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 327's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
 
