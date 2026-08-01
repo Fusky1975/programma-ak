@@ -13913,7 +13913,7 @@ section.
     own module docstring, directly after Phase 334's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3380 passed) both before and after.
-- **Phase 336 (current)**: consolidates Block B into real parser code
+- **Phase 336**: consolidates Block B into real parser code
   -- `GWArmyRecord`/`parse_gw_armies()` in `parser/gw_world.py`, the
   first code (not research-only) phase for this block. Locates Block B
   the same shape-scanning way `parse_gw_world`/`parse_gw_leaders`
@@ -13936,6 +13936,27 @@ section.
     `GW3__T1` fixture (218-row count, Philo's own known Dwarven Axemen
     rows, the Skeletal-marker correction, raw-field preservation, and
     error handling). Full suite: 3380 passed before, 3385 after.
+- **Phase 337 (current)**: closes field 7's own unled `{0, 2}` split
+  left open since Phase 332/333 -- `2` is the "independent mercenary,
+  available to Recruit" marker. Real letters carry an "independent
+  mercenaries which you may Recruit" table (province, unit
+  designation, race, quality) whenever a mercenary sits near a
+  kingdom's own territory; cross-referencing **every one of the 85
+  distinct (real-turn, province) sightings of this table across every
+  `SE3__T0..T11.Kx` letter available** against the corresponding
+  `GW3__T(n+1)` snapshot's own Block B rows gives **85 exact matches,
+  zero exceptions** -- the row with `field7 == 2` at that coordinate
+  always has the exact Race/ArmyType/Quality the letter lists.
+  Resolves field 7's own full range: `0` unled kingdom-owned garrison,
+  `1` led (normal), `2` unled independent mercenary (confirmed here),
+  `3` Skeletal marker (Phase 332/336). `GWArmyRecord` gains
+  `is_mercenary: bool`, set only for the confirmed `field7 == 2` case
+  -- the same treatment `is_skeletal` got in Phase 336.
+  - Documented as a `"Phase 337 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 336's own addendum.
+  - Added 1 test in `tests/test_gw_world_parser.py` against the real
+    `GW3__T1` fixture, cross-checked against `SE3__T0.K1`'s own real
+    mercenary table. Full suite: 3385 passed before, 3386 after.
 
 ## Setup
 

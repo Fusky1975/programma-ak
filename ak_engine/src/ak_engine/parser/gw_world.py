@@ -1083,6 +1083,38 @@ them from its own single-turn sample. This doesn't weaken
 legitimately appear on an unled Skeletal garrison too, which
 `GWArmyRecord.is_skeletal` already handles correctly since it never
 looked at `commanded_by_leader_id` in the first place.
+
+**Phase 337 addendum -- field 7's own unled `{0, 2}` split confirmed:
+`2` is the "independent mercenary, available to Recruit" marker
+(closes Phase 332/333's own open lead; code phase, `GWArmyRecord`
+gains `is_mercenary`).** Real letters carry an "independent
+mercenaries which you may Recruit" table (province, unit designation,
+race, Modified Quality) whenever a mercenary army sits in or near a
+kingdom's own territory. Cross-referencing **every one of the 85
+distinct (real-turn, province) sightings of this table across every
+`SE3__T0..T11.Kx` letter available** against the corresponding
+`GW3__T(n+1)` snapshot's own Block B rows at that same coordinate
+(the standard turn-alignment fix from Phase 331) gives **85 exact
+matches, zero exceptions**: in every single case, the one row at that
+coordinate with `field7 == 2` has the exact `Race`/`ArmyType`/`Quality`
+the letter lists, and no `field7 == 0` row ever does. `field7 == 2`
+rows total 132 across all 12 turns -- the other ~47 are mercenaries
+outside any bordering kingdom's own visibility in the available
+letters, not exceptions to the pattern (a kingdom's own letter only
+lists mercenaries it can actually see).
+
+This resolves field 7's own full range:
+
+- `0` -- unled, this province's own kingdom-owned garrison.
+- `1` -- led (normal, non-Skeletal).
+- `2` -- unled, an **independent mercenary army available to Recruit**
+  (confirmed above).
+- `3` -- Skeletal-army marker (Phase 332), independent of led/unled
+  status (Phase 336's own correction).
+
+`GWArmyRecord` gains `is_mercenary: bool`, set `True` only for the
+confirmed `field7 == 2` case -- the same "only derive what's actually
+confirmed" treatment `is_skeletal` already got in Phase 336.
 """
 
 from __future__ import annotations
@@ -1399,7 +1431,7 @@ def _build_leader_record(
 class GWArmyRecord:
     """One army's own row from Block B, the per-army block that follows
     the province block (and Block A, still unresolved) -- see the module
-    docstring's Phase 316/317/331-336 addenda for the full, evidence-
+    docstring's Phase 316/317/331-337 addenda for the full, evidence-
     based field derivation.
 
     Only what's independently confirmed is exposed as a typed field.
@@ -1430,10 +1462,12 @@ class GWArmyRecord:
     army_type: ArmyType | None
     quality: Quality
     # `True` only for the confirmed Skeletal-army marker (Phase 332,
-    # `raw_field7 == 3`). The unconfirmed unled `{0, 2}` split (Phase
-    # 332/333's own open "kingdom-owned vs. mercenary" lead) is left in
-    # `raw_field7` rather than forced into a guessed boolean.
+    # `raw_field7 == 3`).
     is_skeletal: bool
+    # `True` only for the confirmed "independent mercenary, available
+    # to Recruit" marker (Phase 337, `raw_field7 == 2`) -- 85 of 85
+    # real letter cross-checks matched, zero exceptions.
+    is_mercenary: bool
     raw_field7: int
     raw_field8: int
     raw_field9: int
@@ -1505,6 +1539,7 @@ def parse_gw_armies(path: Path) -> list[GWArmyRecord]:
                 army_type=MOD_PAT_ORDINAL_TO_ARMY_TYPE[army_type_ordinal],
                 quality=Quality(quality_ordinal),
                 is_skeletal=field7 == 3,
+                is_mercenary=field7 == 2,
                 raw_field7=field7,
                 raw_field8=field8,
                 raw_field9=field9,

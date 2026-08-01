@@ -204,6 +204,27 @@ def test_is_skeletal_true_only_for_the_confirmed_field7_equals_3_rows():
     assert all(r.raw_field7 != 3 for r in records if not r.is_skeletal)
 
 
+def test_is_mercenary_true_only_for_the_confirmed_field7_equals_2_rows():
+    # `HexCoord(9, 5)`'s own mercenary row (Orc/Warg Riders/Average)
+    # matches SE3__T0.K1's own real "independent mercenaries which you
+    # may Recruit" table exactly (Dolphin Sea/#1006/209th Warg
+    # Riders/Orc/Average) -- one of 85 such letter cross-checks
+    # confirmed across the whole game, zero exceptions (Phase 337).
+    records = parse_gw_armies(FIXTURE)
+    mercenaries = [r for r in records if r.is_mercenary]
+    assert len(mercenaries) == 10
+    warg_riders = next(r for r in mercenaries if r.coord == HexCoord(9, 5))
+    assert warg_riders.race is Race.ORCISH
+    assert warg_riders.army_type is ArmyType.WARG_RIDERS
+    assert warg_riders.quality is Quality.AVERAGE
+    assert warg_riders.raw_field7 == 2
+    assert warg_riders.commanded_by_leader_id is None
+    for row in mercenaries:
+        assert row.raw_field7 == 2
+        assert row.is_skeletal is False
+    assert all(r.raw_field7 != 2 for r in records if not r.is_mercenary)
+
+
 def test_block_b_raw_fields_are_preserved_undecoded():
     records = parse_gw_armies(FIXTURE)
     philo_row = next(r for r in records if r.commanded_by_leader_id == 70)
