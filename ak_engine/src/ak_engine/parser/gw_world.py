@@ -360,6 +360,32 @@ Not implemented as a parser here. `Race` decoding is solid enough to
 act on in a future phase; `leader_id` recovery and the kingdom/leader
 naming structure still need the positional (name-follows-record)
 approach described above, not a dedicated id field.
+
+**Phase 320 addendum -- the leader's own long numeric line starts with
+a confirmed Gender marker (research pass only, no new parser code).**
+The long ~140-integer line that immediately follows a leader's 25-ish-
+field header line (Phase 318's own "long numeric line, still
+unresolved") itself starts with a single letter token, `"M"` or
+`"F"`, followed by a constant `10` (a structural marker, not data --
+identical across every leader checked, both genders). Confirmed
+against real character names, not just plausible: in `GW3__T1`, 8 of
+10 leaders are tagged `"M"` and exactly 2 are tagged `"F"` -- and those
+2 are **`"Giovanna d'Arco"`** (Joan of Arc, under male player Alberto
+Clerici) and **`"Circe"`** (the Odyssey's sorceress, under male player
+Marco Calabresi, already confirmed as King #8's own kingdom in Phase
+318's own addendum) -- both unambiguously female in-game character
+names, chosen by male real-world players, matching the `"F"` tag
+exactly. Every `"M"`-tagged leader (Babba Sissoko, Bradipo I, Kwoth,
+...) has a male or gender-neutral name. Not yet given a project enum --
+this project doesn't currently model character gender anywhere, so
+adding one is deferred to whichever future phase actually consumes it.
+
+The long line's own third token (right after `"<M|F> 10 "`) varies
+leader to leader with no obvious pattern yet (`2` for Babba Sissoko,
+`0` for Bradipo I, `1012` for Kwoth, `892` for Giovanna d'Arco, `764`
+for Circe) -- large values for some Heroes, small/zero for these
+particular Kings, no real-letter cross-check found for it. Left
+unresolved rather than guessed.
 """
 
 from __future__ import annotations

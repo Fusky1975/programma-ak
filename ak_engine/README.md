@@ -13521,7 +13521,7 @@ section.
     in this block.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
-- **Phase 319 (current)**: confirms one more leader-header field and
+- **Phase 319**: confirms one more leader-header field and
   corrects two Phase 318 claims (still research-only, no new parser
   code), by comparing the same header line across *different* leaders
   in one turn rather than the same leader across turns. **Corrected**:
@@ -13545,6 +13545,28 @@ section.
   - Documented as a `"Phase 319 addendum"` in `parser/gw_world.py`'s
     own module docstring, directly after Phase 318's own addendum, so
     a future phase sees the corrected reading first.
+  - Non-breaking, documentation-only: full suite passed unchanged
+    (3371 passed) both before and after.
+- **Phase 320 (current)**: confirms a Gender marker on a leader's own
+  long numeric line (still research-only, no new parser code). That
+  line (Phase 318's own "long numeric line, still unresolved")
+  actually starts with a single letter token, `"M"` or `"F"`, followed
+  by a constant `10` (a structural marker, identical for both genders).
+  In `GW3__T1`, 8 of 10 leaders are tagged `"M"` and exactly 2 are
+  tagged `"F"` -- and those 2 are `"Giovanna d'Arco"` (Joan of Arc,
+  under male player Alberto Clerici) and `"Circe"` (the Odyssey's
+  sorceress, under male player Marco Calabresi, already confirmed as
+  King #8's own kingdom in Phase 318) -- both unambiguously female
+  in-game character names chosen by male real players, matching the
+  `"F"` tag exactly; every `"M"`-tagged leader has a male or
+  gender-neutral name. This project doesn't currently model character
+  gender anywhere, so no enum was added -- deferred to whichever future
+  phase actually consumes it. The long line's own third token varies
+  leader to leader (`2`/`0`/`1012`/`892`/`764` across the 5 leaders
+  checked) with no real-letter cross-check found yet; left unresolved
+  rather than guessed.
+  - Documented as a `"Phase 320 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after Phase 319's own addendum.
   - Non-breaking, documentation-only: full suite passed unchanged
     (3371 passed) both before and after.
 
