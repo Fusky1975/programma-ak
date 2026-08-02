@@ -14885,7 +14885,7 @@ section.
     isolation, and the attempt cap terminating cleanly when no
     eligible coordinate exists at all. Full suite: 3551 passed before,
     3565 after.
-- **Phase 363 (current)**: `worldgen/mercenary_band.py` (new) -- fills
+- **Phase 363**: `worldgen/mercenary_band.py` (new) -- fills
   the second pipeline-integration gap: the extra mercenary band's
   radial search Phase 358 left deliberately unwired (`initial_armies.
   extra_mercenary_band`, 0x14CF6). `hex_ring()` enumerates every
@@ -14916,6 +14916,34 @@ section.
     the six confirmed radii, the fallback path, and the shared
     retry-budget cap holding even when nothing is ever compatible.
     Full suite: 3565 passed before, 3572 after.
+- **Phase 364 (current)**: `worldgen/feature_placement.py` (new) --
+  fills the third pipeline-integration gap: the feature spatial
+  placement loop Phase 359 left deliberately unwired
+  (`world_generation.features` -- `first_2k_placement`/
+  `later_placement`/`rejection_rule`). `place_feature()` combines
+  Phase 359's own already-confirmed `first_2k_home_index()`/
+  `propose_monster()`/`propose_feature_type()`/
+  `is_terrain_compatible()` into one full propose/reject cycle per
+  feature index: the first `2*king_count` features use a fixed King
+  Home coordinate (never redrawn -- only monster/type get re-proposed
+  on a terrain-incompatible rejection); every later feature redraws
+  "monster, feature type and coordinate ... all proposed again" as one
+  combined cycle, rejecting King Home coordinates outright ("duplicate
+  non-Home coordinates are allowed", so no occupancy tracking is
+  needed here, unlike Phase 362's own special-race pass).
+  `place_all_features()` drives the whole loop for
+  `feature_count(gamevers)` features in index order.
+  - `MAX_ATTEMPTS = 10_000` is explicitly flagged as an engineering
+    safeguard only, not a sourced value -- neither placement rule
+    states a retry cap (unlike Phase 362's own confirmed
+    `ATTEMPT_CAP = 3000`).
+  - Added 5 tests in `tests/test_feature_placement.py`: exact King
+    Home coordinates for every first-2K index, a Sea-only King Home
+    forcing real rejection-loop retries before landing on one of the
+    three Sea-compatible feature types, later placements never
+    landing on a King Home, and `place_all_features()` producing
+    exactly the confirmed 128/230 totals. Full suite: 3572 passed
+    before, 3577 after.
 
 ## Setup
 
