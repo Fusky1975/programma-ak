@@ -11,6 +11,7 @@ from ak_engine.turn.combat import (
     apply_defender_bonus,
     apply_nemesis_penalty,
     column_bres,
+    direct_destruction_probability,
     line_contribution,
     win_probability,
 )
@@ -121,3 +122,49 @@ def test_column_bres_zero_strength_edge_cases():
     assert column_bres(0.0, 100.0, r1=1.0, r2=1.0) == -5
     assert column_bres(100.0, 0.0, r1=1.0, r2=1.0) == 5
     assert column_bres(0.0, 0.0, r1=1.0, r2=1.0) == 0
+
+
+# -- Phase 348: direct_destruction_probability() --------------------------
+
+
+def test_direct_destruction_matches_the_confirmed_margin_speed_table():
+    # Source: destroyed_percent_by_margin_and_speed_delta, expressed here
+    # as fractions (winner_speed - loser_speed picked to land exactly on
+    # each documented speed_delta of -1/0/+1).
+    table = {
+        (1, -1): 0.0,
+        (1, 0): 0.25,
+        (1, 1): 0.5,
+        (2, -1): 0.25,
+        (2, 0): 0.5,
+        (2, 1): 0.75,
+        (3, -1): 0.5,
+        (3, 0): 0.75,
+        (3, 1): 1.0,
+        (4, -1): 0.75,
+        (4, 0): 1.0,
+        (4, 1): 1.0,
+        (5, -1): 1.0,
+        (5, 0): 1.0,
+        (5, 1): 1.0,
+    }
+    for (margin, speed_delta), expected in table.items():
+        winner_speed = 3 + speed_delta
+        loser_speed = 3
+        result = direct_destruction_probability(margin, winner_speed, loser_speed)
+        assert result == pytest.approx(expected), (margin, speed_delta)
+        # The sign of bres doesn't matter -- only its magnitude.
+        assert direct_destruction_probability(-margin, winner_speed, loser_speed) == pytest.approx(expected)
+
+
+def test_direct_destruction_clamps_speed_delta_beyond_the_documented_minus1_1_range():
+    # A 5-vs-1 speed gap (raw delta +4) reads exactly like a +1 gap.
+    fast_winner = direct_destruction_probability(1, winner_speed=5, loser_speed=1)
+    small_gap_winner = direct_destruction_probability(1, winner_speed=4, loser_speed=3)
+    assert fast_winner == pytest.approx(0.5)
+    assert fast_winner == pytest.approx(small_gap_winner)
+
+
+def test_direct_destruction_never_exceeds_the_0_1_probability_range():
+    assert direct_destruction_probability(5, winner_speed=5, loser_speed=1) <= 1.0
+    assert direct_destruction_probability(0, winner_speed=1, loser_speed=5) >= 0.0

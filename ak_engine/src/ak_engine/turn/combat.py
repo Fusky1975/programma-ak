@@ -175,3 +175,30 @@ def column_bres(side1_strength: float, side2_strength: float, r1: float, r2: flo
     sqrt_ratio = ratio**0.5
     raw = round(r1 * sqrt_ratio - r2 / sqrt_ratio)
     return max(-5, min(5, raw))
+
+
+def direct_destruction_probability(bres: int, winner_speed: int, loser_speed: int) -> float:
+    """The real, confirmed probability that a column's own first-line
+    loser is destroyed outright, from the same `AK.EXE`/`AK.OVR` source
+    as `column_bres` (Phase 347/348): `clamp(0,1, 0.25*(abs(BRES) +
+    speed_delta))`, where `speed_delta = clamp(-1,1, winner_speed -
+    loser_speed)` (`ArmyType`'s own `ARMY_TABLE[...].speed`, Phase 4).
+
+    This is only the *direct* contest check -- the source's own explicit
+    warning: a survivor of this roll may still be destroyed later in
+    pursuit, or removed for want of a retreat destination, neither of
+    which this function models. Eligibility (alive, first-line, the
+    losing side of its own column, not already eliminated by an earlier
+    step; "special unit types may divert the result") is the caller's
+    own responsibility to check before calling this -- the source
+    doesn't give a formula for eligibility itself, only for the roll
+    once a unit is eligible.
+
+    Verified against the source's own worked table (`bres`=1..5,
+    `speed_delta`=-1/0/+1): e.g. `bres`=4, `speed_delta`=+1 computes
+    `0.25*5=1.25`, clamped to the table's own `100%` rather than an
+    impossible `125%`.
+    """
+
+    speed_delta = max(-1, min(1, winner_speed - loser_speed))
+    return max(0.0, min(1.0, 0.25 * (abs(bres) + speed_delta)))

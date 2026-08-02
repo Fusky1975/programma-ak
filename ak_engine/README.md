@@ -14278,7 +14278,7 @@ section.
     destruction, pursuit, quality-change, and formation-multiplier
     corrections -- each its own phase, verified against the same
     source.
-- **Phase 347 (current)**: the real column-resolution score (`BRES`),
+- **Phase 347**: the real column-resolution score (`BRES`),
   the same `AK.EXE`/`AK.OVR` source as Phase 346. New `column_bres()` in
   `turn/combat.py`, alongside `win_probability` -- whose own docstring
   already called itself "a documented approximation, not a sourced
@@ -14315,6 +14315,34 @@ section.
   - Added 8 tests (5 in `tests/test_combat.py`, 3 in
     `tests/test_battle_luck.py`). Full suite: 3431 passed before, 3439
     after.
+- **Phase 348 (current)**: direct destruction, the same `AK.EXE`/
+  `AK.OVR` source as Phase 346/347. New `direct_destruction_probability()`
+  in `turn/combat.py`, alongside `column_bres`.
+  - `clamp(0,1, 0.25*(abs(BRES) + speed_delta))`, where
+    `speed_delta = clamp(-1,1, winner_speed - loser_speed)` (`ArmyType`'s
+    own `ARMY_TABLE[...].speed`, Phase 4) -- the probability that a
+    column's own first-line loser is destroyed outright once `column_bres`
+    (Phase 347) has decided the column. Verified against the source's own
+    worked 5x3 margin/speed-delta table exactly (e.g. margin 4, speed
+    delta +1 computes `1.25`, clamped to the table's own `100%`, not an
+    impossible `125%`).
+  - The source's own explicit warning is carried into the docstring
+    verbatim rather than silently dropped: this is *only* the direct
+    contest check -- a survivor can still be destroyed later in pursuit
+    (Phase 349, queued next) or removed for want of a retreat
+    destination, neither of which this function models. Eligibility
+    (alive, first-line, the losing side, not already eliminated;
+    "special unit types may divert the result") stays the caller's own
+    responsibility -- the source gives a formula for the roll, not for
+    eligibility itself.
+  - Documented as a `"Phase 348 addendum"`-equivalent directly in
+    `direct_destruction_probability`'s own docstring (no existing
+    docstring needed correcting this time, unlike Phase 346/347's own
+    superseded-guess pattern -- this is a genuinely new formula, not a
+    replacement for an existing "documented approximation").
+  - Added 3 tests in `tests/test_combat.py` (exact table cross-check,
+    speed-delta clamping, range bounds). Full suite: 3439 passed before,
+    3442 after.
 
 ## Setup
 
