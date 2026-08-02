@@ -200,6 +200,58 @@ def test_raises_gw_parse_error_on_truncated_record(tmp_path: Path):
         parse(truncated)
 
 
+# -- Phase 343: GWLeaderRecord's own extended status-line fields --------
+
+
+def test_a_kings_own_birth_coord_and_known_by_kings_mask():
+    # Babba Sissoko's own raw stats line: "11 7 3 0 255 255 1 11 7 7
+    # 3 0 0 0 0 0 0 0 89 0 0 1023 0 0 0" -- birth coord equals his own
+    # current coord (his own capital), and, with 10 real Kings in this
+    # fixture, known_by_kings_mask == 1023 (2**10 - 1): every King
+    # starts knowing every other King.
+    by_name = {r.name: r for r in parse_gw_leaders(FIXTURE) if r.is_king}
+    babba = by_name["Babba Sissoko"]
+    assert babba.birth_coord == babba.coord == HexCoord(11, 7)
+    assert babba.original_liege_raw == 255
+    assert babba.known_by_kings_mask == 1023
+    assert babba.experience_progress == 89
+    assert babba.sex_override_flag is False
+    assert babba.unpaid_blackmail_penalty_exponent == 0
+
+
+def test_a_governing_heros_own_extended_fields():
+    # Guerin's own raw stats line has his current Liege (1) copied
+    # verbatim into original_liege_raw too, and every one of the three
+    # Imperial-Office merit accumulators reads 0 at T1 (world creation,
+    # before anyone has fought a single battle).
+    by_name = {r.name: r for r in parse_gw_leaders(FIXTURE)}
+    guerin = by_name["Guerin"]
+    assert guerin.original_liege_raw == 1
+    assert guerin.general_merit == 0
+    assert guerin.admiral_merit == 0
+    assert guerin.defender_merit == 0
+    assert guerin.feature_discoveries == 0
+    assert guerin.discovery_points == 0
+    assert guerin.white_magic_service_points == 0
+    assert guerin.experience_progress == 87
+    assert guerin.hiring_turn == 0
+
+
+def test_birth_coord_mismatches_exactly_the_2k_plus_1_unlanded_companions():
+    # This module's own Phase 342 addendum (world generation) documents
+    # that each King's own two unlanded "companions", plus one further
+    # reserved roster slot, never become a province's own governor --
+    # 2*K + 1 leaders for a K-King game, 21 for this fixture's own 10
+    # Kings. Every other leader (every King, and every Hero who governs
+    # a province) has birth_coord == coord, since nobody has moved yet
+    # at world creation.
+    records = parse_gw_leaders(FIXTURE)
+    mismatched = [r for r in records if r.birth_coord != r.coord]
+    assert len(mismatched) == 2 * 10 + 1
+    matched = [r for r in records if r.birth_coord == r.coord]
+    assert len(matched) == 100 - (2 * 10 + 1)
+
+
 def test_parses_all_218_block_b_army_records():
     # 218 rows at T1, 104 unled (`leader_id == 255`) -- Phase 316's own
     # confirmed counts for this exact fixture.

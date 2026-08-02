@@ -14094,7 +14094,7 @@ section.
     not repeated here).
   - Added 6 tests in `tests/test_gw_world_parser.py`. Full suite: 3406
     passed before, 3411 after.
-- **Phase 342 (current)**: decodes the world file's own 33-value header,
+- **Phase 342**: decodes the world file's own 33-value header,
   the first of several planned phases mining a genuinely new source --
   the user supplied a *static reverse engineering of `AKGEN.EXE` itself*
   (the original world-generator executable, Turbo Pascal 6.0/DOS,
@@ -14118,15 +14118,44 @@ section.
     own module docstring, directly after the Phase 340 addendum.
   - Added 5 tests in `tests/test_gw_world_parser.py`. Full suite: 3411
     passed before, 3415 after.
-  - **Queued next from the same source**: extending `GWLeaderRecord`
-    with the 16 leader status-line fields this project never decoded
-    (sex, birth coordinates, hiring turn, the 6 Imperial-Office merit
-    accumulators, experience, blackmail/sex-override flags, the
-    "known by which Kings" bitmask); correcting Phase 341's own Block A
-    field names now that the same source identifies them as `trowner`/
-    `trcharges`/`fdis` rather than a discarded counter and two raw
-    fields; and an office/title-block parser (merit records + the
-    final 52-office table).
+  - **Queued next from the same source**: correcting Phase 341's own
+    Block A field names now that the same source identifies them as
+    `trowner`/`trcharges`/`fdis` rather than a discarded counter and
+    two raw fields; and an office/title-block parser (merit records +
+    the final 52-office table).
+- **Phase 343 (current)**: extends `GWLeaderRecord` with the 15 leader
+  status-line fields this project never decoded (of the status line's
+  own 22 real values, only 7 were previously captured) -- from the same
+  `AKGEN.EXE` static reverse engineering as Phase 342.
+  - New fields: `birth_coord`, `original_liege_raw`, `hiring_turn`,
+    `general_merit`/`admiral_merit`/`defender_merit` (the missing data
+    Phase 137's own Imperial-Office research needed and didn't have a
+    parser for), `feature_discoveries`/`discovery_points`/`white_
+    magic_service_points`, `experience_progress`, `sex_raw`,
+    `sex_override_flag`, `unpaid_blackmail_penalty_exponent`, and
+    `known_by_kings_mask` -- re-verified against the real `GW3__T1`
+    fixture wherever possible (e.g. every King's own
+    `known_by_kings_mask` reads exactly `1023` = `2**10 - 1` for this
+    10-King game, exactly matching the disassembly's own claim).
+  - A genuine cross-validation surfaced along the way, not just a field
+    dump: `birth_coord` matches each leader's own current `coord` for
+    79 of the 100 real leaders in `GW3__T1`, and the other 21 all read
+    values far outside any plausible map coordinate. 21 is exactly
+    `2*K + 1` for this 10-King game -- the same reserve Phase 342's own
+    world-generation section describes for each King's own two unlanded
+    "companions" plus one further reserved roster slot, none of whom
+    ever become a province's own governor. Documented as a real,
+    structural correlation, not treated as a parsing bug.
+  - `sex_raw` is deliberately *not* wired to `models.sex.Sex`: it reads
+    `0` for every one of `GW3__T1`'s own 100 leaders, including
+    confirmed-female Heroes (Tao-Li, Dracona) -- so it isn't what
+    actually determines a character's displayed sex under normal play,
+    and no real nonzero example exists yet to confirm which value would
+    mean which sex.
+  - Documented as a `"Phase 343 addendum"` directly in
+    `GWLeaderRecord`'s own docstring.
+  - Added 3 tests in `tests/test_gw_world_parser.py`. Full suite: 3415
+    passed before, 3418 after.
 
 ## Setup
 

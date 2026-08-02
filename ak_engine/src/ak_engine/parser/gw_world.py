@@ -1419,6 +1419,78 @@ class GWLeaderRecord:
       `#0` (Babba Sissoko, position 0) and `#1` (Uga-Buga Makumb,
       position 1) -- both consistent with, though not independently
       confirmed against, real letter data the way the other 8 are.
+
+    **Phase 343 addendum -- the remaining 15 of the status line's own 22
+    real values, from the same `AKGEN.EXE` static reverse engineering
+    Phase 342 already draws on (see the module docstring's own Phase
+    342 addendum for the source and its confidence level).** Every
+    field below is named directly from the disassembly (Pascal field
+    name, data-segment address, and the code that reads/writes it), not
+    inferred from letters -- re-verified where the real `GW3__T1..T12`
+    corpus offers a way to (e.g. `known_by_kings_mask` reads exactly
+    `1023` (`2**10 - 1`) for all 10 Kings in this project's own 10-King
+    corpus, exactly matching the disassembly's own "Kings start with
+    every bit set" claim).
+
+    - `birth_coord`: where this leader started the game. Matches this
+      leader's own current `coord` for exactly 79 of `GW3__T1`'s own
+      100 leaders (every King, plus every Hero who governs a province)
+      -- expected, since nobody's moved yet at world creation. The
+      other 21 all read a `birth_x` far outside any plausible map
+      coordinate (`32`-`49`, past even the wider `0..29` compiled X
+      range) except one (`Kitralus`, in-bounds but still not matching
+      current position). 21 is exactly `2*K + 1` for this 10-King game
+      (`K = 10`) -- the same reserve this module's own Phase 342
+      addendum's world-generation section describes for each King's own
+      two unlanded "companions" plus one further reserved roster slot,
+      none of whom ever become a province's own governor. This is a
+      real, structural correlation (companions never received a
+      meaningful birth coordinate), not a parsing bug -- but the exact
+      out-of-range values themselves aren't independently decoded here.
+    - `original_liege_raw`: the Liege field's own *original* value
+      (`lliege`/`liege0` are two separate Pascal fields, confirmed by
+      the disassembly's own `liege0 := lliege` copy) -- always equal to
+      the current Liege in this project's own corpus so far, but kept
+      distinct rather than assumed identical, since a Hero switching
+      allegiance is exactly the kind of event that would diverge them.
+      Same `255` = "no liege" sentinel encoding as `kingdom_id`'s own
+      raw Liege field, deliberately not converted to `None` here since
+      no real-corpus example of divergence exists yet to interpret.
+    - `hiring_turn`: the effective game turn a non-King leader was
+      hired -- `0` for every leader in `GW3__T1` (nobody hired yet) and
+      confirmed by the disassembly's own longitudinal note to track
+      real hiring events turn over turn thereafter (not modeled by this
+      parser beyond exposing the raw value).
+    - `general_merit`/`admiral_merit`/`defender_merit`: this leader's
+      own cumulative Imperial Office merit for Marshal/Admiral/Defender
+      -- directly the missing data this project's own Phase 137
+      research needed and didn't have a parser for.
+    - `feature_discoveries`/`discovery_points`/`white_magic_service_
+      points`: cumulative Imperial Office merit for Chancellor
+      (features + Sage discoveries) and Priest (White Magic service).
+    - `experience_progress`: a `0..99` fractional accumulator toward
+      this leader's next ability increase (confirmed always nonzero and
+      broadly changing turn over turn in the real 12-turn corpus).
+    - `sex_raw`: the disassembly's own `sex` field (word storage) --
+      reads `0` for all 100 leaders in every real file checked so far,
+      including confirmed-female Heroes (Tao-Li, Dracona), so this
+      field is *not* what actually determines a character's displayed
+      sex under normal play (that's a separate, not-yet-parsed
+      leader-id-band default the disassembly describes) -- kept raw
+      rather than wired to `models.sex.Sex` since no real example of a
+      nonzero value exists yet to confirm which value means which sex.
+    - `sex_override_flag`: a moderator-toggled boolean that inverts a
+      non-King leader's own default sex -- confirmed real and rare
+      (2 of 1200 real Phase-342-source records) but never observed in
+      this project's own committed `GW3__T1` fixture.
+    - `unpaid_blackmail_penalty_exponent`: confirmed real (an unpaid-
+      blackmail counter that halves the next demand each time it's
+      incremented) but always `0` in this project's own corpus (no
+      unpaid blackmail ever occurs in the available real games).
+    - `known_by_kings_mask`: a bitmask of which Kingdoms know this
+      leader -- Kings themselves always start with every bit set
+      (`1023` for 10 Kings), confirmed exactly in this project's own
+      corpus.
     """
 
     name: str
@@ -1434,6 +1506,20 @@ class GWLeaderRecord:
     coord: HexCoord
     skills: SkillTable
     kingdom_id: int | None
+    birth_coord: HexCoord
+    original_liege_raw: int
+    hiring_turn: int
+    general_merit: int
+    admiral_merit: int
+    defender_merit: int
+    feature_discoveries: int
+    discovery_points: int
+    white_magic_service_points: int
+    experience_progress: int
+    sex_raw: int
+    sex_override_flag: bool
+    unpaid_blackmail_penalty_exponent: int
+    known_by_kings_mask: int
 
 
 def _all_int(tokens: list[str]) -> bool:
@@ -1503,10 +1589,20 @@ def _build_leader_record(
 ) -> GWLeaderRecord:
     values = [int(token) for token in header_tokens]
     x, y, race_ordinal = values[0], values[1], values[2]
+    sex_raw = values[3]
     liege_raw = values[4]
+    original_liege_raw = values[5]
     condition = values[6]
+    birth_x, birth_y = values[7], values[8]
     alignment_ordinal = values[9]
     temper_ordinal = values[10]
+    hiring_turn = values[11]
+    general_merit, admiral_merit, defender_merit = values[12], values[13], values[14]
+    feature_discoveries, discovery_points, white_magic_service_points = values[15], values[16], values[17]
+    experience_progress = values[18]
+    sex_override_flag = values[19] == 1
+    unpaid_blackmail_penalty_exponent = values[20]
+    known_by_kings_mask = values[21]
 
     if race_ordinal not in {member.value for member in Race}:
         raise GWParseError(
@@ -1537,15 +1633,29 @@ def _build_leader_record(
         coord=HexCoord(x, y),
         skills=SkillTable(raw_values=[int(token) for token in skill_tokens[:30]]),
         kingdom_id=kingdom_index if is_king else (None if liege_raw == 255 else liege_raw),
+        birth_coord=HexCoord(birth_x, birth_y),
+        original_liege_raw=original_liege_raw,
+        hiring_turn=hiring_turn,
+        general_merit=general_merit,
+        admiral_merit=admiral_merit,
+        defender_merit=defender_merit,
+        feature_discoveries=feature_discoveries,
+        discovery_points=discovery_points,
+        white_magic_service_points=white_magic_service_points,
+        experience_progress=experience_progress,
+        sex_raw=sex_raw,
+        sex_override_flag=sex_override_flag,
+        unpaid_blackmail_penalty_exponent=unpaid_blackmail_penalty_exponent,
+        known_by_kings_mask=known_by_kings_mask,
     )
 
 
 @dataclass(slots=True)
 class GWArmyRecord:
     """One army's own row from Block B, the per-army block that follows
-    the province block (and Block A, still unresolved) -- see the module
-    docstring's Phase 316/317/331-337 addenda for the full, evidence-
-    based field derivation.
+    the province block and Block A (`GWFeatureRecord`, mostly decoded as
+    of Phase 341) -- see the module docstring's Phase 316/317/331-337
+    addenda for the full, evidence-based field derivation.
 
     Only what's independently confirmed is exposed as a typed field.
     Three trailing fields remain undeciphered and are kept as plain,
