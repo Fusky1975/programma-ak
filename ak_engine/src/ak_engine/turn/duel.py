@@ -15,6 +15,13 @@ Encounter Plans) this project hasn't built. This module only provides
 what's fully specified without that system: who the two commanders are,
 and the fixed 25% strength penalty once a loser is known by some other
 means.
+
+Phase 351 addendum: the same AK.EXE/AK.OVR static reverse engineering
+as Phase 346-350's own battle-resolution corrections independently
+confirms this exact number from the compiled battle engine's own code
+-- `battle_engine.column_resolution.confirmed_multipliers.
+preliminary_duel_loser_led_units` is `0.75`, matching
+`DUEL_DEMORALIZATION_MULTIPLIER` below exactly. Zero correction needed.
 """
 
 from __future__ import annotations

@@ -83,6 +83,17 @@ def line_contribution(depth_index: int) -> float:
     the same target ("a second non-humanoid unit attacking an enemy unit
     is at 1/2 strength, a third is at 1/4 strength") -- pass the 0-based
     stack index (0 for the first such unit) for that case.
+
+    **Phase 351 addendum**: the same `AK.EXE`/`AK.OVR` static reverse
+    engineering as Phase 346-350 independently confirms this exact
+    formula from the compiled battle engine's own code, not just the
+    rulebook's text -- `gw_format`'s own sibling `battle_engine.
+    formation.strength_by_rank` is `[1.0, 0.5, 0.25, 0.125, 0.0625]`
+    ("each further rank is halved"), and its own `same_nonhumanoid_
+    group` note describes the identical halving law for stacked
+    non-humanoid attackers. Zero correction needed here -- this is the
+    rare case in the same sub-plan where the earlier, rulebook-derived
+    implementation already matched the compiled engine exactly.
     """
 
     if depth_index < 0:

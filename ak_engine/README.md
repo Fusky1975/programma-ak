@@ -14381,7 +14381,7 @@ section.
   - **Queued next in this sub-plan**: quality-change and formation-
     multiplier corrections -- the last two phases against this same
     source.
-- **Phase 350 (current)**: quality change, the same `AK.EXE`/`AK.OVR`
+- **Phase 350**: quality change, the same `AK.EXE`/`AK.OVR`
   source as Phase 346-349. New `base_quality_change_percent()`,
   `FORMATION_DIVISOR`, and `quality_gain_merit_multiplier()` in
   `turn/aftermath.py` -- whose own pre-existing docstring said outright
@@ -14414,6 +14414,51 @@ section.
     multiplier corrections (strength-by-rank, and the source's own
     `confirmed_multipliers` cross-check against `turn/strength.py`'s
     existing constants).
+- **Phase 351 (current)**: formation multipliers, the last phase in the
+  6-phase `AK.EXE`/`AK.OVR` battle-resolution sub-plan (Phase 346-351).
+  Unlike every earlier phase in it, **this one needed zero code
+  corrections** -- every single constant the source's own
+  `battle_engine.formation.strength_by_rank` and `column_resolution.
+  confirmed_multipliers` tables give was already exactly right in this
+  project's own pre-existing code:
+  - `turn/combat.py line_contribution` (`1/2^depth`) already matches
+    `strength_by_rank` (`[1.0, 0.5, 0.25, 0.125, 0.0625]`) and its own
+    "each further rank is halved" / stacked-non-humanoid halving rule
+    exactly -- already fully tested by Phase 6's own
+    `test_line_contribution_halves_per_depth`.
+  - `turn/strength.py MAX_EXPLORATION_ADVANTAGE` (0.25),
+    `TACTICAL_BONUS_PER_LEVEL` (0.20), and `PHANTASMAL_ARMIES_BONUS_
+    PER_LEVEL` (0.15) match `confirmed_multipliers`' own
+    `exploration_max` (1.25), `tactical_or_naval_per_level` (1.2), and
+    `phantasmal_per_caster_level` (1.15) exactly.
+  - `turn/duel.py DUEL_DEMORALIZATION_MULTIPLIER` (0.75) matches
+    `confirmed_multipliers.preliminary_duel_loser_led_units` exactly
+    (already behaviorally locked in by Phase 45's own
+    `test_apply_duel_demoralization_reduces_strength_25_percent`).
+  - `turn/strength.py FANATICISM_CHANCE` (Divine 50%/Good 40%/Evil 25%)
+    matches the source's own separate `special_events` table exactly.
+  - `DEFENDER_BONUS` (1.25) and `NEMESIS_PENALTY` (2/3 ~= 0.67) were
+    already confirmed back in Phase 347; this phase closes out the
+    remaining five constants the same `confirmed_multipliers` dict
+    names.
+  - This closes the whole sub-plan with a clean result: every constant
+    this project's own earlier work either sourced directly from the
+    rulebook (formation halving, exploration/tactical/phantasmal/
+    fanaticism percentages, duel demoralization) or was forced to guess
+    without a source (BLUCK/CLUCK luck, `BRES` column resolution,
+    direct destruction, pursuit standstill, quality change) has now
+    been checked against the compiled game engine itself -- six
+    genuine corrections/additions (Phase 346-350) and, in this last
+    phase, unanimous confirmation that the rulebook-sourced numbers
+    were implemented correctly all along.
+  - Documented as `"Phase 351 addendum"` notes directly in
+    `turn/combat.py line_contribution`, `turn/strength.py` (two
+    locations), and `turn/duel.py`'s own docstrings.
+  - Added 4 tests in `tests/test_strength.py` (the three multiplier
+    maximums plus the fanaticism table) -- `line_contribution` and
+    `DUEL_DEMORALIZATION_MULTIPLIER` needed no new tests, already
+    covered exactly by Phase 6/45. Full suite: 3448 passed before, 3452
+    after.
 
 ## Setup
 

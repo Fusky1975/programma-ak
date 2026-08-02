@@ -102,12 +102,25 @@ ELEPHANTS_STRENGTH_RANGE = (2, 5)
 # other alignment has no stated chance (treated as 0, not guessed higher).
 # "A Skeletal army fighting under an Undead character has will always be
 # fanatical" is modeled as the separate ``always_fanatical`` override.
+# Phase 351 addendum: the same AK.EXE/AK.OVR source's own
+# `battle_engine.special_events` table independently confirms these
+# three exact percentages ("Divine fanaticism": 50, "Good fanaticism":
+# 40, "Evil fanaticism": 25) from the compiled engine's own code.
 FANATICISM_CHANCE: dict[Alignment, float] = {
     Alignment.DIVINE: 0.50,
     Alignment.GOOD: 0.40,
     Alignment.EVIL: 0.25,
 }
 
+# Phase 351 addendum: the same AK.EXE/AK.OVR static reverse engineering
+# as Phase 346-350's own battle-resolution corrections independently
+# confirms all three of these rulebook-sourced numbers from the
+# compiled battle engine's own code, not just the rulebook's text --
+# `battle_engine.column_resolution.confirmed_multipliers` gives
+# `exploration_max: 1.25` (== 1 + 0.25 here), `tactical_or_naval_per_
+# level: 1.2` (== 1 + 0.20/level here), and `phantasmal_per_caster_
+# level: 1.15` (== 1 + 0.15/level here). Zero correction needed -- all
+# three already matched exactly.
 MAX_EXPLORATION_ADVANTAGE = 0.25
 TACTICAL_BONUS_PER_LEVEL = 0.20
 PHANTASMAL_ARMIES_BONUS_PER_LEVEL = 0.15

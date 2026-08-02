@@ -12,6 +12,7 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.strength import (
     DRUID_TABLE,
     ELEPHANTS_STRENGTH_RANGE,
+    FANATICISM_CHANCE,
     combat_ability_multiplier,
     compute_druidic_shortfall,
     compute_effective_strength,
@@ -306,3 +307,27 @@ def test_is_island_false_by_default_matches_pre_phase_282_behavior():
         ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_island=False
     )
     assert without_param == explicit_false
+
+
+# -- Phase 351: cross-validation against the confirmed AK.EXE/AK.OVR ------
+# battle_engine.column_resolution.confirmed_multipliers and
+# battle_engine.special_events tables -- zero code changes needed here,
+# these numbers were already correct (rulebook-sourced, not guessed).
+
+
+def test_exploration_advantage_maxes_out_at_the_confirmed_1_25():
+    assert exploration_advantage_multiplier(100, 0) == pytest.approx(1.25)
+
+
+def test_tactical_or_naval_bonus_matches_the_confirmed_1_2_per_level():
+    assert combat_ability_multiplier(1) == pytest.approx(1.2)
+
+
+def test_phantasmal_armies_bonus_matches_the_confirmed_1_15_per_level():
+    assert phantasmal_armies_multiplier(1) == pytest.approx(1.15)
+
+
+def test_fanaticism_chance_matches_the_confirmed_special_events_table():
+    assert FANATICISM_CHANCE[Alignment.DIVINE] == 0.50
+    assert FANATICISM_CHANCE[Alignment.GOOD] == 0.40
+    assert FANATICISM_CHANCE[Alignment.EVIL] == 0.25
