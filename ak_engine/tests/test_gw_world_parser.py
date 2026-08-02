@@ -22,9 +22,11 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.parser.errors import K1ParseError
 from ak_engine.parser.gw_world import (
+    GameType,
     GWProvinceRecord,
     parse_gw_armies,
     parse_gw_features,
+    parse_gw_header,
     parse_gw_leaders,
     parse_gw_world,
 )
@@ -356,3 +358,66 @@ def test_raises_gw_parse_error_on_unrecognized_treasure_ordinal(tmp_path: Path):
 
     with pytest.raises(K1ParseError):
         parse_gw_features(bad_treasure)
+
+
+# -- Phase 342: parse_gw_header() ----------------------------------------
+
+
+def test_parses_the_33_value_header_matching_real_letter_facts():
+    # GW3__T1's own first line: matches this project's own earlier,
+    # independently-confirmed facts (Phase 318's calendar finding, the
+    # 18x9/162-province map, this fixture's own 128 Block A features).
+    header = parse_gw_header(FIXTURE)
+
+    assert header.king_count == 10
+    assert header.game_turn == 1
+    assert header.feature_count == 128
+    assert (header.map_left_x, header.map_right_x) == (0, 17)
+    assert (header.map_top_y, header.map_bottom_y) == (0, 8)
+    assert header.game_version == 3
+    assert header.game_number == 3
+    assert (header.due_day, header.due_month, header.due_year) == (19, 12, 2006)
+    assert header.turn_length_days == 14
+    assert header.game_type is GameType.NORMAL
+    assert header.header_revision == 30
+    assert header.last_leader_index == 99  # 100 leaders, 0-indexed
+    assert header.max_feature_index == 129  # feature_count(128) + 1
+
+
+def test_army_count_and_calendar_advance_between_committed_fixtures():
+    # Cross-checked against every real GW3__T1-T12 file (not just these
+    # two committed fixtures): army_count grows turn over turn and the
+    # due-date progresses forward, both exactly matching this project's
+    # own earlier, independently-observed findings (Phase 318 addendum).
+    t1 = parse_gw_header(FIXTURE)
+    t5 = parse_gw_header(FIXTURE.parent / "GW3__T5")
+
+    assert t1.army_count == 218
+    assert t5.army_count == 327
+    assert (t1.game_turn, t5.game_turn) == (1, 5)
+    assert (t1.due_year, t1.due_month) < (t5.due_year, t5.due_month)
+
+
+def test_raises_gw_parse_error_on_unrecognized_game_type_ordinal(tmp_path: Path):
+    bad_header = tmp_path / "bad_header_gw"
+    bad_header.write_text(
+        "10 218 1 -1 0 130 128 0 17 0 8 3 3 19 12 2006 14 1 30 1 0 99 0 99 40 3 129 0 0 1 2 3 6\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(K1ParseError):
+        parse_gw_header(bad_header)
+
+
+def test_extended_fields_are_none_for_a_legacy_23_token_header(tmp_path: Path):
+    legacy_header = tmp_path / "legacy_header_gw"
+    legacy_header.write_text(
+        "10 218 1 -1 0 130 128 0 17 0 8 3 3 19 12 2006 14 1 17 1 0 1 0\n",
+        encoding="utf-8",
+    )
+
+    header = parse_gw_header(legacy_header)
+
+    assert header.header_revision == 17
+    assert header.last_leader_index is None
+    assert header.misc_write_flags is None

@@ -1159,12 +1159,58 @@ the base, unmodified Quality, not the letter's separately-tracked
 -> kingdom 1; Balearic Sea -> unowned) all match the real `SE3__T4.K1`
 letter exactly. See `tests/test_gw3_t5_end_to_end.py` for the full,
 letter-quoted assertions.
+
+**Phase 342 addendum -- the world header's own 33 values, all decoded,
+from a genuinely new source: a static reverse engineering of
+`AKGEN.EXE` itself.** Every earlier phase in this module derived its
+findings by testing hypotheses against real letters and real `GW3`
+files -- inference, not access to the original engine's own compiled
+logic. Phase 342 works from a direct disassembly of the original
+world-generator executable (Turbo Pascal 6.0, DOS MZ, 1990), which
+names every one of the header's 33 fields by its own Pascal data-
+segment address and the code that reads/writes it -- not a guess, the
+actual compiled program. Every field was then re-verified against all
+12 real `GW3__T1`-`GW3__T12` files, not just asserted from the
+disassembly: `army_count` (field 2) matches this project's own earlier,
+independently-observed "218 to 345" growth across the 12 turns exactly;
+`game_turn` (field 3) matches 1-12 exactly; `due_day`/`due_month`/
+`due_year` (fields 14-16) match this module's own earlier Phase 318
+calendar finding exactly (`19/12/2006` at `T1` through `25/5/2007` at
+`T12`); `feature_count` (field 7) matches Block A's own confirmed
+128-row count (Phase 316/341) on every turn.
+
+`GWHeader`/`parse_gw_header()` expose all 33 fields. Fields 1-23 are
+always present; fields 24-33 are only present when `header_revision`
+(field 19) is greater than 17 -- every real file in this project's own
+corpus reads `header_revision == 30`, so all ten extended fields are
+populated in practice, but the parser still models the legacy case
+(`None` for all ten) rather than assuming it never occurs. `game_type`
+(field 22) is modeled as a new `GameType` enum (`TRIAL`, `NORMAL`,
+`EUROPE`, `EARTH`, `VALHALLA`, `ARCANES`) -- every real file in this
+project's own corpus reads `NORMAL`.
+
+Two fields deserve a direct callout because they overturn this
+project's own prior guesses rather than just filling a gap: field 22
+was floated in an earlier phase as a possible "capacity selector" --
+the disassembly identifies it directly as the Pascal `gametyp` enum
+instead, unrelated to leader/army capacity. Field 31
+(`compatibility_revision_31`) is more than a bare "armies version"
+label -- besides gating Block B's own 10th field
+(`GWArmyRecord.raw_field10`, Phase 335), it also triggers a legacy
+leader/province migration before being normalized to `2`.
+
+This is the first of several planned phases mining the same static
+reverse-engineering source (a leader/King record extension, corrected
+Block A field names, and an office/title block parser are queued
+next) -- see `ak_engine/README.md`'s own Phase 342 entry for the
+source material's full scope and this project's own priority order.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
@@ -1748,3 +1794,153 @@ def parse_gw_features(path: Path) -> list[GWFeatureRecord]:
         )
 
     return records
+
+
+class GameType(Enum):
+    """The world header's own `gametyp` enum (header field 22) --
+    confirmed directly from a static reverse engineering of AKGEN.EXE
+    (see the module docstring's Phase 342 addendum), not inferred from
+    letters. Every one of the real `GW3__T1`-`GW3__T12` files reads
+    `NORMAL`.
+    """
+
+    TRIAL = 0
+    NORMAL = 1
+    EUROPE = 2
+    EARTH = 3
+    VALHALLA = 4
+    ARCANES = 10
+
+
+@dataclass(slots=True)
+class GWHeader:
+    """The world file's own 33-value header -- always its very first
+    line. See the module docstring's Phase 342 addendum for the full,
+    byte-level derivation: a static reverse engineering of AKGEN.EXE
+    (not inference from real letters) identified every one of the 33
+    fields by its own data-segment address and the Pascal code that
+    reads/writes it, then the whole header was verified field-by-field
+    against all 12 real `GW3__T1`-`GW3__T12` files (e.g. `army_count`
+    matches this project's own earlier, independently-observed "218 to
+    345" growth exactly; `game_turn` matches 1-12 exactly; `due_day`/
+    `due_month`/`due_year` match the project's own earlier Phase 318
+    calendar finding exactly).
+
+    Fields 1-23 are always present. Fields 24-33 are only present when
+    `header_revision > 17` -- AKGEN's own reader falls back to internal
+    defaults for older saves lacking them; this parser leaves the
+    corresponding attributes `None` in that case rather than guessing
+    defaults it can't verify. Every real file in this project's own
+    corpus has `header_revision == 30`, so all ten extended fields are
+    always populated in practice.
+    """
+
+    king_count: int
+    army_count: int
+    game_turn: int
+    # Initialized to -1; feeds a `game_turn`-modulo-3 selection with a
+    # special case for `GameType.EARTH`. Real role beyond that is
+    # unconfirmed -- kept raw rather than guessed.
+    raw_04: int
+    setup_fee_cents: int
+    treasure_count: int
+    feature_count: int
+    map_left_x: int
+    map_right_x: int
+    map_top_y: int
+    map_bottom_y: int
+    game_version: int
+    game_number: int
+    due_day: int
+    due_month: int
+    due_year: int
+    turn_length_days: int
+    diplomacy_type: int
+    header_revision: int
+    original_turn: int
+    turn_cost_cents: int
+    game_type: GameType
+    total_fees: int
+    last_leader_index: int | None
+    valhalla_alignment_rotation_mask: int | None
+    visiting_king: int | None
+    max_feature_index: int | None
+    # First extra setup parameter; legacy administrative role, still
+    # unnamed even in the static reverse engineering -- kept raw.
+    setup_extra_1: int | None
+    office_merit_record_count: int | None
+    office_state_table_present: int | None
+    # Gates Block B's own 10th field (`GWArmyRecord.raw_field10`,
+    # Phase 335) and an unrelated legacy leader/province migration.
+    compatibility_revision_31: int | None
+    mine_write_flags: int | None
+    misc_write_flags: int | None
+
+
+def parse_gw_header(path: Path) -> GWHeader:
+    """Parses a world file's own 33-value header, always its first
+    line.
+
+    Accepts a legacy 23-token line too (fields 24-33 absent, all
+    reported as `None`) even though every real file in this project's
+    own corpus writes the full 33 -- the module docstring's own Phase
+    342 addendum documents this as a real, confirmed reader behavior,
+    not a hypothetical.
+    """
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    first_line = text.splitlines()[0]
+    tokens = first_line.split()
+    if len(tokens) not in (23, 33) or not _all_int(tokens):
+        raise GWParseError(
+            "expected a 23- or 33-integer header line as the world file's first line",
+            line_number=1,
+            line=first_line,
+        )
+
+    values = [int(token) for token in tokens]
+    game_type_ordinal = values[21]
+    if game_type_ordinal not in {member.value for member in GameType}:
+        raise GWParseError(
+            f"unrecognized GameType ordinal {game_type_ordinal} in the world file header",
+            line_number=1,
+            line=first_line,
+        )
+
+    extended: list[int | None] = values[23:33] if len(values) == 33 else [None] * 10
+
+    return GWHeader(
+        king_count=values[0],
+        army_count=values[1],
+        game_turn=values[2],
+        raw_04=values[3],
+        setup_fee_cents=values[4],
+        treasure_count=values[5],
+        feature_count=values[6],
+        map_left_x=values[7],
+        map_right_x=values[8],
+        map_top_y=values[9],
+        map_bottom_y=values[10],
+        game_version=values[11],
+        game_number=values[12],
+        due_day=values[13],
+        due_month=values[14],
+        due_year=values[15],
+        turn_length_days=values[16],
+        diplomacy_type=values[17],
+        header_revision=values[18],
+        original_turn=values[19],
+        turn_cost_cents=values[20],
+        game_type=GameType(game_type_ordinal),
+        total_fees=values[22],
+        last_leader_index=extended[0],
+        valhalla_alignment_rotation_mask=extended[1],
+        visiting_king=extended[2],
+        max_feature_index=extended[3],
+        setup_extra_1=extended[4],
+        office_merit_record_count=extended[5],
+        office_state_table_present=extended[6],
+        compatibility_revision_31=extended[7],
+        mine_write_flags=extended[8],
+        misc_write_flags=extended[9],
+    )

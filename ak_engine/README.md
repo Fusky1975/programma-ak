@@ -14056,7 +14056,7 @@ section.
     `tests/test_gw3_t5_end_to_end.py` with 7 tests covering the full
     chain against the real letter. Full suite: 3398 passed before, 3406
     after.
-- **Phase 341 (current)**: decodes most of Block A (the 128-row, 9-field
+- **Phase 341**: decodes most of Block A (the 128-row, 9-field
   block that precedes Block B in a world file) -- the last major
   unresolved structural mystery in the `GW3` format, open since Phase
   316's own falsified Feature/Monster-roster hypothesis. Cross-checking
@@ -14094,6 +14094,39 @@ section.
     not repeated here).
   - Added 6 tests in `tests/test_gw_world_parser.py`. Full suite: 3406
     passed before, 3411 after.
+- **Phase 342 (current)**: decodes the world file's own 33-value header,
+  the first of several planned phases mining a genuinely new source --
+  the user supplied a *static reverse engineering of `AKGEN.EXE` itself*
+  (the original world-generator executable, Turbo Pascal 6.0/DOS,
+  disassembled directly, not inferred from letters), plus machine-
+  readable JSON catalogs extracted the same way. Confidence is "certain"
+  for nearly every finding since it comes from the compiled program's
+  own logic, re-verified against all 12 real `GW3__T1`-`GW3__T12` files.
+  - New `GameType` enum (`TRIAL`/`NORMAL`/`EUROPE`/`EARTH`/`VALHALLA`/
+    `ARCANES`) and `GWHeader`/`parse_gw_header()` in `parser/gw_world.py`
+    -- all 33 header fields named and typed. Every field re-verified
+    against the real corpus: `army_count` matches this project's own
+    earlier "218 to 345" growth exactly; `game_turn` matches 1-12
+    exactly; the due-date fields match this module's own earlier Phase
+    318 calendar finding exactly (`19/12/2006` through `25/5/2007`).
+  - Corrects two of this project's own prior guesses: header field 22
+    was floated as a possible capacity selector -- it's actually the
+    Pascal `gametyp` enum, unrelated to capacity. Field 31 does more
+    than gate Block B's own 10th field (Phase 335) -- it also triggers
+    a legacy leader/province migration.
+  - Documented as a `"Phase 342 addendum"` in `parser/gw_world.py`'s
+    own module docstring, directly after the Phase 340 addendum.
+  - Added 5 tests in `tests/test_gw_world_parser.py`. Full suite: 3411
+    passed before, 3415 after.
+  - **Queued next from the same source**: extending `GWLeaderRecord`
+    with the 16 leader status-line fields this project never decoded
+    (sex, birth coordinates, hiring turn, the 6 Imperial-Office merit
+    accumulators, experience, blackmail/sex-override flags, the
+    "known by which Kings" bitmask); correcting Phase 341's own Block A
+    field names now that the same source identifies them as `trowner`/
+    `trcharges`/`fdis` rather than a discarded counter and two raw
+    fields; and an office/title-block parser (merit records + the
+    final 52-office table).
 
 ## Setup
 
