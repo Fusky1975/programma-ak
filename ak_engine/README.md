@@ -14587,7 +14587,7 @@ section.
     left behind (checked via an independent second flood fill),
     same-seed determinism, and `draw_land_terrain()` never returning
     Sea. Full suite: 3468 passed before, 3475 after.
-- **Phase 355 (current)**: `worldgen/province_races.py` (new) -- the
+- **Phase 355**: `worldgen/province_races.py` (new) -- the
   ordinary per-province race draw (``base_race_and_tax``,
   0B57:9575), a confirmed two-stage process: a terrain-specific
   **provisional** race draw, then the **common humanoid mix** ("only
@@ -14616,6 +14616,40 @@ section.
     200,000-draw-per-terrain Monte Carlo matching every confirmed
     final percentage to within 0.4 points. Full suite: 3475 passed
     before, 3481 after.
+- **Phase 356 (current)**: `worldgen/province_tax.py` (new) --
+  province tax assignment (`province_tax`, 0xEB8A). `coast_score()`
+  (Sea cells among a province's six hex neighbors, reusing
+  `turn/movement.py neighbors()`) and `compute_edge_score()` (a
+  1.5x random scale-up on the map's top/bottom rows only).
+  `ordinary_land_tax()`: `1 + trunc(U*M)` uniform over `1..M` per
+  terrain's own confirmed maximum (Plains 9/Desert 2/Jungle 6/
+  Forest 7/Mountains 8), then the confirmed low-floor rule ("if tax <
+  round(0.24*M), increment by one") -- verified by hand before coding
+  that this rule removes tax-1 entirely for Plains/Forest/Mountains
+  (`round(0.24*M) == 2` for all three) but never fires for Desert/
+  Jungle (`round(0.24*M) <= 1`). `NOTERR_TAX = 0` and
+  `HOME_OVERRIDE_TAX = 10` are fixed constants. `true_sea_tax()`: a
+  10%/90% split -- 10% draws uniform `0..4`; 90% depends on
+  `edge_score`: "high coast" (`6..9`) is a literal `IRand < 7000`
+  Bernoulli (`7000/32768 == 21.36%`), otherwise `min(6, trunc(1.8*(7-
+  edge_score)*U1*U2))`.
+  - **Deliberately not implemented**, each documented as a genuine
+    gap: the `pt2`-secondary-terrain Sea formula (this project has no
+    `pt2` concept at all, same gap Phase 355 already flagged); the
+    true-Sea formula's own "geometry_bonuses" (source names that two
+    special neighbor configurations add +1/+2 but never states what
+    they are); the interactive `+`/`-` placement override (a human
+    GM UI action, no interactive placement step exists here); the
+    special-race tax recompute (deferred with the special-race
+    placement pass itself, Phase 355's own follow-up).
+  - Added 10 tests in `tests/test_province_tax.py`: per-terrain
+    `1..M` range and low-floor effect (present for Plains/Forest/
+    Mountains, absent for Desert/Jungle), `coast_score` neighbor
+    counting, edge-row scaling, a 200,000-draw Monte Carlo matching
+    the high-coast branch's hand-derived combined probability, and an
+    independent-reimplementation cross-check for the non-high-coast
+    branch (no source-given worked example exists for it). Full
+    suite: 3481 passed before, 3491 after.
 
 ## Setup
 
