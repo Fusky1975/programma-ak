@@ -14766,7 +14766,7 @@ section.
     including the corrected `MAG_POOL`/`LOCH` land classification and
     the `SUNK_CITY` 50/50 split. Full suite: 3519 passed before, 3531
     after.
-- **Phase 360 (current)**: `worldgen/magic_item_placement.py` (new) --
+- **Phase 360**: `worldgen/magic_item_placement.py` (new) --
   the real magic-item/treasure cursor
   (`magic_item_province_placement`), correcting `turn/
   world_generation.py`'s own Phase 242 treasure-draw guess with a new
@@ -14802,6 +14802,54 @@ section.
     pattern and `item_slot_count()`'s own aggregate formula for both
     confirmed feature-count totals. Full suite: 3531 passed before,
     3539 after.
+- **Phase 361 (current)**: `worldgen/internal_magical_locations.py`
+  (new) -- the real per-feature magical-location and power selection
+  (``Set_Event``), the tenth and final phase of the world-generation
+  sub-plan. Both formulas are fully deterministic -- no RNG at all,
+  unlike every other worldgen phase. `candidate_location()`
+  (`mf1[ftype] + ((feature_index+ftype) mod (mff[ftype]-mf1[ftype]
+  +1))`): the source's own 32 per-`FeatureType` location-name ranges
+  convert directly onto this project's own pre-existing
+  `MagicFeature` enum (`CTME.PAS`'s own `magfeat`, already 21 members
+  in the source's own exact order) -- every range's own declared
+  `choices` count was cross-checked programmatically against this
+  ordinal arithmetic before the table was written, zero mismatches.
+  `resolve_visible_location()`: the confirmed odd/even
+  `(feature_index+feature_x)` visibility gate plus the Gastrap/Seal
+  forced-`MFNone` rule. `candidate_power()`/`resolve_power()`
+  (`mfpow1[location] + ((tries+feature_index+feature_type+min(10,
+  tries)*(feature_index+feature_type+min(20,tries))) mod
+  (mfpowf[location]-mfpow1[location]+1))`, up to three tries, early
+  stop on CastSpell/AnsPrayer): the source's own 21 location->power
+  ranges likewise convert directly onto this project's own
+  pre-existing `Power` enum (`CTME.PAS`'s own `power`, 25 members),
+  again cross-checked with zero mismatches.
+  - **Deliberately not implemented**: `test_game_999`'s debug-mode
+    bypass (a reserved test game number, not real generation); wiring
+    these formulas into live feature processing, which needs a real
+    generated map's `feature_index`/`feature_x` sequence -- the same
+    spatial-integration gap flagged since Phase 359. The source's own
+    real `GW3__T1` aggregate (128 features: 71 MFNone/55.47%, 57
+    visible/44.53%) is recorded as context, not reproduced exactly.
+  - Added 12 tests in `tests/test_internal_magical_locations.py`:
+    hand-worked examples, full-period coverage checks (pure modular
+    arithmetic, no Monte Carlo needed since nothing here is random),
+    the Gastrap/Seal forced-none rule, and both branches of
+    `resolve_power()`'s early-stop rule. Full suite: 3539 passed
+    before, 3551 after.
+  - **This closes the 10-phase `AKGEN.EXE` world-generation sub-plan**
+    (Phase 352-361): Pascal-compatible RNG, map shape + terrain,
+    spatial map assembly, province race assignment, province tax,
+    leader placement, recruit slots + initial armies, corrected
+    feature-generation formulas, magic-item placement, and internal
+    magical locations. Every phase followed the same discipline:
+    implement confirmed formulas as standalone, tested primitives;
+    document (not silently overwrite) any correction to this
+    project's own earlier guesses; and leave the several remaining
+    spatial-integration gaps (special-race placement, the extra
+    mercenary band's radial search, and wiring every one of these
+    formulas into a live, generated `GameState`) explicitly flagged
+    for future phases rather than invented.
 
 ## Setup
 
