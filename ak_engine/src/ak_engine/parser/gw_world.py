@@ -1219,6 +1219,7 @@ from ak_engine.models.feature import FeatureType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
+from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
@@ -2091,3 +2092,157 @@ def parse_gw_header(path: Path) -> GWHeader:
         mine_write_flags=extended[8],
         misc_write_flags=extended[9],
     )
+
+
+@dataclass(slots=True)
+class GWOfficeMeritRecord:
+    """One kingdom's own accumulated merit-points entry for a single
+    Imperial/Royal office, from the variable-length office-merit-record
+    block that immediately follows Block B (armies) -- see the module
+    docstring's Phase 345 addendum. Confirmed via the same `AKGEN.EXE`
+    static reverse engineering as Phase 342/343/344's own JSON source
+    (`gw_format.records.office_merit`): 3 integers per line, `tityp,
+    tildr, tipts` (`office_code`, `leader_or_army_id`, `merit_points`).
+    Its own count is header field 29
+    (`GWHeader.office_merit_record_count`), not inferred by scanning --
+    `GW3__T1`'s freshly generated world has exactly 0 of these (no one
+    has held an office yet), `GW3__T5`'s has 159, both matching the
+    header's own count exactly. Every real `office_code` seen across
+    both fixtures is a valid `Office` ordinal (0-51).
+
+    `leader_or_army_id` is, per the source, either a leader id or an
+    army id depending on `office_code`: 3 of the 52 office codes
+    (`Office.AIR_FORCE`/`PRAETOR`/`FLAGSHIP` -- 38/45/47) are army
+    offices, not leader offices, so this field's own real target type
+    switches on `office_code` rather than being uniformly one or the
+    other -- kept as a raw `int` rather than a leader/army union type.
+    """
+
+    office_code: Office
+    leader_or_army_id: int
+    merit_points: int
+
+
+@dataclass(slots=True)
+class GWOfficeStateEntry:
+    """One office's own persistent state row, from the world file's
+    final line -- a fixed 52-triplet (156-integer) table, one triplet
+    per `Office` ordinal 0-51, always present right after the office-
+    merit-record block. Confirmed via the same source's own
+    `gw_format.records.office_state_entry`: `prevchar, knowit, <a
+    literal 0>` (`previous_holder_raw`, `known_by_kings_mask`, and a
+    third field this parser doesn't expose since every one of the real
+    12-turn corpus's own 624 triplets reads a literal `0` there).
+
+    `previous_holder_raw` uses the same `255` "nobody" sentinel this
+    module's other leader-id fields already use -- confirmed: every
+    office in `GW3__T1`'s freshly generated world reads exactly `255`
+    here, since no one has ever held any office yet. `known_by_kings_
+    mask` is a per-King bitmask, the same convention as
+    `GWLeaderRecord.known_by_kings_mask` (Phase 343) -- `0` for every
+    office in `GW3__T1`, real nonzero values (`2`, `256`, `513`, ...)
+    once `GW3__T5`'s Kings have actually learned who holds what.
+    """
+
+    office: Office
+    previous_holder_raw: int
+    known_by_kings_mask: int
+
+
+def parse_gw_offices(path: Path) -> tuple[list[GWOfficeMeritRecord], list[GWOfficeStateEntry]]:
+    """Parses the office-merit-record block and the final office-state
+    table out of a world file.
+
+    Unlike Block A/B/features (found by scanning for a unique row
+    shape), this block's own position is only found by *counting*:
+    right after Block B's own army rows end (whichever contiguous run
+    of 10-token rows is longest, the same rule `parse_gw_armies` uses),
+    read exactly `GWHeader.office_merit_record_count` more lines --
+    each must be exactly 3 tokens -- then the world file's own final
+    line is the 156-token (52-triplet) office-state table. A pure
+    uniqueness scan doesn't work here the way it does for Block A/B:
+    unlike those blocks' own fixed 9-/10-token row shape, a bare
+    3-token line shape recurs incidentally dozens of times elsewhere in
+    a real world file (154 scattered singleton matches in `GW3__T1`
+    alone, mostly leader/plan data that happens to tokenize to 3
+    integers), so this parser leans on the header's own count and the
+    file's own fixed block order instead.
+    """
+
+    header = parse_gw_header(path)
+    if header.office_merit_record_count is None:
+        raise GWParseError(
+            "this world file's header has no office_merit_record_count (legacy 23-token header)",
+            line_number=1,
+            line="",
+        )
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+
+    candidate_indices = [i for i, line in enumerate(lines) if len(line.split()) == 10 and _all_int(line.split())]
+    if not candidate_indices:
+        raise GWParseError("no 10-token Block B rows found in this world file", line_number=1, line="")
+    runs: list[list[int]] = [[candidate_indices[0]]]
+    for idx in candidate_indices[1:]:
+        if idx == runs[-1][-1] + 1:
+            runs[-1].append(idx)
+        else:
+            runs.append([idx])
+    block_b_end = max(runs, key=len)[-1]
+
+    merit_start = block_b_end + 1
+    merit_end = merit_start + header.office_merit_record_count
+
+    merit_records: list[GWOfficeMeritRecord] = []
+    for line_index in range(merit_start, merit_end):
+        tokens = lines[line_index].split() if line_index < len(lines) else []
+        if len(tokens) != 3 or not _all_int(tokens):
+            raise GWParseError(
+                "expected a 3-integer office-merit-record row here",
+                line_number=line_index + 1,
+                line=lines[line_index] if line_index < len(lines) else "",
+            )
+        office_ordinal, leader_or_army_id, merit_points = (int(token) for token in tokens)
+        if office_ordinal not in {member.value for member in Office}:
+            raise GWParseError(
+                f"unrecognized Office ordinal {office_ordinal} on an office-merit-record row",
+                line_number=line_index + 1,
+                line=lines[line_index],
+            )
+        merit_records.append(
+            GWOfficeMeritRecord(
+                office_code=Office(office_ordinal),
+                leader_or_army_id=leader_or_army_id,
+                merit_points=merit_points,
+            )
+        )
+
+    state_line_index = merit_end
+    if state_line_index >= len(lines):
+        raise GWParseError(
+            "world file ends before its own office-state table",
+            line_number=state_line_index + 1,
+            line="",
+        )
+    state_tokens = lines[state_line_index].split()
+    if len(state_tokens) != 156 or not _all_int(state_tokens):
+        raise GWParseError(
+            "expected a 156-integer office-state table on this world file's own final block line",
+            line_number=state_line_index + 1,
+            line=lines[state_line_index],
+        )
+    state_values = [int(token) for token in state_tokens]
+
+    state_entries: list[GWOfficeStateEntry] = []
+    for office_ordinal in range(52):
+        prevchar, knowit, _compat_zero = state_values[office_ordinal * 3 : office_ordinal * 3 + 3]
+        state_entries.append(
+            GWOfficeStateEntry(
+                office=Office(office_ordinal),
+                previous_holder_raw=prevchar,
+                known_by_kings_mask=knowit,
+            )
+        )
+
+    return merit_records, state_entries

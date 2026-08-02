@@ -17,6 +17,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.feature import FeatureType
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
+from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
@@ -28,6 +29,7 @@ from ak_engine.parser.gw_world import (
     parse_gw_features,
     parse_gw_header,
     parse_gw_leaders,
+    parse_gw_offices,
     parse_gw_world,
 )
 from ak_engine.turn.combat import Quality
@@ -518,3 +520,72 @@ def test_extended_fields_are_none_for_a_legacy_23_token_header(tmp_path: Path):
     assert header.header_revision == 17
     assert header.last_leader_index is None
     assert header.misc_write_flags is None
+
+
+# -- Phase 345: parse_gw_offices() ---------------------------------------
+
+
+def test_a_freshly_generated_t1_world_has_zero_merit_records():
+    # T1's header field 29 (office_merit_record_count) reads 0 -- no
+    # kingdom has held any office long enough to accrue merit yet.
+    merit, state = parse_gw_offices(FIXTURE)
+    assert merit == []
+    assert len(state) == 52
+
+
+def test_t1s_office_state_table_is_all_unclaimed():
+    # Every one of T1's 52 offices reads the same "255" no-previous-
+    # holder sentinel this module's other leader-id fields already use,
+    # and a zero known-by-kings bitmask -- a freshly generated world
+    # where no King has ever learned who (if anyone) holds what.
+    _merit, state = parse_gw_offices(FIXTURE)
+    assert {entry.office for entry in state} == set(Office)
+    assert all(entry.previous_holder_raw == 255 for entry in state)
+    assert all(entry.known_by_kings_mask == 0 for entry in state)
+
+
+def test_t5s_merit_record_count_matches_its_own_header_field():
+    fixture_t5 = FIXTURE.parent / "GW3__T5"
+    header = parse_gw_header(fixture_t5)
+    merit, state = parse_gw_offices(fixture_t5)
+
+    assert header.office_merit_record_count == 159
+    assert len(merit) == 159
+    assert len(state) == 52
+    assert all(isinstance(record.office_code, Office) for record in merit)
+
+
+def test_t5_has_real_office_state_progress_now_that_offices_are_held():
+    fixture_t5 = FIXTURE.parent / "GW3__T5"
+    _merit, state = parse_gw_offices(fixture_t5)
+
+    held = [entry for entry in state if entry.previous_holder_raw != 255]
+    known = [entry for entry in state if entry.known_by_kings_mask != 0]
+    assert held
+    assert known
+
+
+def _is_int_token(token: str) -> bool:
+    return token.lstrip("-").isdigit()
+
+
+def test_raises_gw_parse_error_on_unrecognized_office_ordinal(tmp_path: Path):
+    fixture_t5 = FIXTURE.parent / "GW3__T5"
+    lines = fixture_t5.read_text(encoding="utf-8", errors="replace").splitlines()
+
+    header_tokens = lines[0].split()
+    header_tokens[28] = "1"  # office_merit_record_count -> 1
+    lines[0] = " ".join(header_tokens)
+
+    army_run_end = next(
+        i
+        for i in range(len(lines) - 1, -1, -1)
+        if len(lines[i].split()) == 10 and all(_is_int_token(t) for t in lines[i].split())
+    )
+    lines.insert(army_run_end + 1, "999 0 0")
+
+    bad_offices = tmp_path / "bad_office_gw"
+    bad_offices.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(K1ParseError):
+        parse_gw_offices(bad_offices)

@@ -14156,7 +14156,7 @@ section.
     `GWLeaderRecord`'s own docstring.
   - Added 3 tests in `tests/test_gw_world_parser.py`. Full suite: 3415
     passed before, 3418 after.
-- **Phase 344 (current)**: corrects Phase 341's own `GWFeatureRecord`
+- **Phase 344**: corrects Phase 341's own `GWFeatureRecord`
   (Block A) field names using the same `AKGEN.EXE` static reverse
   engineering as Phase 342/343's own `gw_format.records.full_feature`
   JSON, which confirms the exact field order `fx, fy, treaslist,
@@ -14184,6 +14184,49 @@ section.
     `GWFeatureRecord`'s own docstring.
   - Added 3 tests in `tests/test_gw_world_parser.py`. Full suite: 3418
     passed before, 3421 after.
+- **Phase 345 (current)**: the office/title-block parser -- the last
+  item from the "GW format/parser" sub-plan the user approved
+  (`GameType`/header/leader record/Block A rename/this), and the final
+  block in a world file's own layout. New `GWOfficeMeritRecord`,
+  `GWOfficeStateEntry`, and `parse_gw_offices()` in `parser/gw_world.py`,
+  drawing on the same `AKGEN.EXE` source's
+  `gw_format.records.office_merit`/`office_state_entry`.
+  - Unlike every other block this module parses, this one *can't* be
+    found by scanning for a unique row shape: a bare 3-token line (the
+    merit-record row's own `tityp, tildr, tipts` shape) recurs
+    incidentally 154 times elsewhere in `GW3__T1` alone, mostly other
+    data that happens to tokenize to 3 integers. `parse_gw_offices()`
+    instead uses the file's own fixed block order plus the header's
+    own count: right after Block B's own army rows end, read exactly
+    `GWHeader.office_merit_record_count` (header field 29, already
+    named in Phase 342) 3-token lines, then the world file's own final
+    line is always the 156-integer (52-triplet) office-state table --
+    verified against both committed fixtures byte-for-byte (`GW3__T1`:
+    0 merit records, matching its own header field exactly; `GW3__T5`:
+    159, likewise exact).
+  - `Office` (Phase 81's own 52-member enum) turned out to be an exact
+    match for the state table's own 52-entry index and every real
+    `office_code` seen in both fixtures' merit records -- no new enum
+    needed.
+  - A genuine cross-fixture finding: `GW3__T1`'s freshly generated
+    world has every office's `previous_holder_raw` read the same `255`
+    "nobody" sentinel this module's other leader-id fields already use,
+    and every `known_by_kings_mask` read `0` -- but `GW3__T5` has real
+    holders and real nonzero per-King bitmasks, confirming both fields'
+    own semantics with a before/after pair rather than a single
+    snapshot.
+  - Documented as a `"Phase 345 addendum"` directly in
+    `GWOfficeMeritRecord`/`GWOfficeStateEntry`'s own docstrings.
+  - Added 5 tests in `tests/test_gw_world_parser.py`. Full suite: 3421
+    passed before, 3426 after.
+  - This closes the "Formato GW e parser (Block A/B, header, leader
+    record)" sub-plan the user approved; the remaining AKGEN.EXE
+    material (world generation from scratch, battle-luck engine
+    corrections, Imperial Office/Royal Title exact formulas, 60-monster
+    profiles, spell-catalog corrections, special-abilities-5-10
+    assignment, Valhalla algorithm, and the Hero/province name-catalog
+    discrepancy flagged back in Phase 341/342) is still untouched and
+    needs a fresh prioritization round.
 
 ## Setup
 
