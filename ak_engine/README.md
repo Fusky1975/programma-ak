@@ -14315,7 +14315,7 @@ section.
   - Added 8 tests (5 in `tests/test_combat.py`, 3 in
     `tests/test_battle_luck.py`). Full suite: 3431 passed before, 3439
     after.
-- **Phase 348 (current)**: direct destruction, the same `AK.EXE`/
+- **Phase 348**: direct destruction, the same `AK.EXE`/
   `AK.OVR` source as Phase 346/347. New `direct_destruction_probability()`
   in `turn/combat.py`, alongside `column_bres`.
   - `clamp(0,1, 0.25*(abs(BRES) + speed_delta))`, where
@@ -14343,6 +14343,44 @@ section.
   - Added 3 tests in `tests/test_combat.py` (exact table cross-check,
     speed-delta clamping, range bounds). Full suite: 3439 passed before,
     3442 after.
+- **Phase 349 (current)**: pursuit, the same `AK.EXE`/`AK.OVR` source as
+  Phase 346-348, and -- unlike those three -- **wired straight into the
+  real call site** (`turn/pursuit.py resolve_pursuit()`), not left
+  standalone: pursuit only has one consumer
+  (`turn/battle_orchestrator.py`), a small enough blast radius to
+  correct in place this phase rather than defer.
+  - Confirms two more of this project's own pre-existing constants
+    exactly: `INFANTRY_PURSUIT_CHANCE`/`CAVALRY_PURSUIT_CHANCE` (25%/
+    75%) match the source's own `manual_average_attempt_rate` verbatim
+    -- a third instance of an earlier, undocumented guess turning out
+    correct (after Phase 347's `DEFENDER_BONUS`/`NEMESIS_PENALTY`).
+  - What the source corrects is the standstill formula: new
+    `pursuit_destruction_probability(r_p)` (a real piecewise curve in
+    `r_p` = pursuer strength / retreater strength, verified against the
+    source's own five worked examples: `r_p`=0.8/1.0/1.25/1.5/2.0 ->
+    22.5%/50%/77.5%/91.667%/100%) replaces the old generic
+    `estimate_win_probability` logistic curve inside `resolve_pursuit`.
+    New `draw_pursuit_random_multiplier` supplies the source's own
+    `random_multiplier_each_unit` (independent `U[1,2)`), applied to
+    the pursuer's own strength before computing `r_p` -- the source's
+    wording doesn't say which side it lands on, so this is a documented
+    reading, not a silently-assumed one.
+  - Fixed a `ZeroDivisionError` the direct-ratio formula introduced for
+    a strengthless retreater (e.g. a fully depleted unit) with the same
+    zero-strength edge-case handling `estimate_win_probability`/
+    `column_bres` already use.
+  - Updated one existing RNG-scripted test
+    (`test_pursuit_destroys_a_caught_retreating_army`) for the new
+    per-pairing random-multiplier draw -- the same "new RNG consumption"
+    category of fixup this project's own Phase 28 first established as
+    expected when a battle subsystem's own draw count changes.
+  - Documented as a `"Phase 349 addendum"` in `turn/pursuit.py`'s own
+    module docstring.
+  - Added 4 tests in `tests/test_pursuit.py`. Full suite: 3442 passed
+    before, 3446 after.
+  - **Queued next in this sub-plan**: quality-change and formation-
+    multiplier corrections -- the last two phases against this same
+    source.
 
 ## Setup
 

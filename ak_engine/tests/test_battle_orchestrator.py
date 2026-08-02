@@ -1171,13 +1171,15 @@ def test_pursuit_destroys_a_caught_retreating_army():
     state = build_state()
     # 3 luck, win_roll (decisive attacker win), pursuit-attempt (0.1 < the
     # 75% cavalry chance -> the winning HVY_CAVALRY attempts pursuit),
-    # pursuit-standstill (0.1 -> destroys the far-weaker retreating
-    # GARRISON/GREEN target), attacker's own winner_quality_roll. The
-    # defender never reaches _retreat_or_disband at all, so no further
-    # rolls are consumed.
+    # Phase 349: pursuit's own random_multiplier_each_unit draw (any
+    # value -- the pursuer already overwhelms the target so r_p
+    # saturates the destruction curve regardless), pursuit-standstill
+    # (0.1 -> destroys the far-weaker retreating GARRISON/GREEN target),
+    # attacker's own winner_quality_roll. The defender never reaches
+    # _retreat_or_disband at all, so no further rolls are consumed.
     # Phase 296: leading 0.9 accounts for the new terrain-line-length-cap
     # roll -- see no_luck_overwhelming_attacker_rng()'s own Phase 296 note.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.1, 0.1, 0.99])
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.1, 0.1, 0.1, 0.99])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 

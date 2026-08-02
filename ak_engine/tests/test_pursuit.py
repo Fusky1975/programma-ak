@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import random
 
+import pytest
+
 from ak_engine.models.army_type import ArmyType
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.pursuit import (
     CAVALRY_PURSUIT_CHANCE,
     INFANTRY_PURSUIT_CHANCE,
+    draw_pursuit_random_multiplier,
+    pursuit_destruction_probability,
     resolve_pursuit,
     select_pursuers,
 )
@@ -84,3 +88,42 @@ def test_resolve_pursuit_survives_when_pursuer_is_weak():
     outcomes = resolve_pursuit([pursuer], [target], rng)
 
     assert outcomes[0].target_destroyed is False
+
+
+# -- Phase 349: the confirmed AK.EXE/AK.OVR pursuit standstill formula ----
+
+
+def test_pursuit_destruction_probability_matches_the_source_examples():
+    # Source: examples_percent for r_p = 0.8/1.0/1.25/1.5/2.0.
+    assert pursuit_destruction_probability(0.8) == pytest.approx(0.225)
+    assert pursuit_destruction_probability(1.0) == pytest.approx(0.5)
+    assert pursuit_destruction_probability(1.25) == pytest.approx(0.775)
+    assert pursuit_destruction_probability(1.5) == pytest.approx(0.916666667, rel=1e-6)
+    assert pursuit_destruction_probability(2.0) == pytest.approx(1.0)
+
+
+def test_pursuit_destruction_probability_clamps_outside_the_documented_range():
+    assert pursuit_destruction_probability(0.1) == 0.0
+    assert pursuit_destruction_probability(0.5) == 0.0
+    assert pursuit_destruction_probability(10.0) == 1.0
+    assert pursuit_destruction_probability(float("inf")) == 1.0
+
+
+def test_draw_pursuit_random_multiplier_stays_within_u1_2():
+    rng = random.Random(349)
+    for _ in range(TRIALS):
+        multiplier = draw_pursuit_random_multiplier(rng)
+        assert 1.0 <= multiplier < 2.0
+
+
+def test_resolve_pursuit_handles_a_strengthless_target_without_crashing():
+    # A retreater already reduced to zero effective strength (e.g. a
+    # fully depleted unit) must not raise ZeroDivisionError -- it's the
+    # r_p -> infinity edge case, a guaranteed catch.
+    pursuer = unit(ArmyType.HVY_CAVALRY, strength=10)
+    target = unit(ArmyType.ENTS, strength=0)
+    rng = random.Random(0)
+
+    outcomes = resolve_pursuit([pursuer], [target], rng)
+
+    assert outcomes[0].target_destroyed is True
