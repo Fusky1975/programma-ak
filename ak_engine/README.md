@@ -14414,7 +14414,7 @@ section.
     multiplier corrections (strength-by-rank, and the source's own
     `confirmed_multipliers` cross-check against `turn/strength.py`'s
     existing constants).
-- **Phase 351 (current)**: formation multipliers, the last phase in the
+- **Phase 351**: formation multipliers, the last phase in the
   6-phase `AK.EXE`/`AK.OVR` battle-resolution sub-plan (Phase 346-351).
   Unlike every earlier phase in it, **this one needed zero code
   corrections** -- every single constant the source's own
@@ -14459,6 +14459,48 @@ section.
     `DUEL_DEMORALIZATION_MULTIPLIER` needed no new tests, already
     covered exactly by Phase 6/45. Full suite: 3448 passed before, 3452
     after.
+- **Phase 352 (current)**: the first phase of a new, 10-phase sub-plan
+  porting `AKGEN.EXE`'s own world generator (a static reverse
+  engineering, distinct from Phase 346-351's own `AK.EXE`/`AK.OVR`
+  runtime battle resolver) -- new top-level package
+  `src/ak_engine/worldgen/`, since this is a genuinely new subsystem
+  (creating a fresh world from nothing) rather than a correction to the
+  existing parse-and-replay engine. Full 10-phase plan: this RNG
+  primitive; map/terrain generation; province race assignment;
+  province tax; leader placement; recruit slots + initial armies;
+  correcting Phase 242's own "no source survives" feature-generation
+  guesses with the real formulas; magic-item/treasure placement;
+  internal magical locations; hero talent/aptitude generation.
+  - New `worldgen/pascal_random.py PascalRandom`: the real linear
+    congruential generator `AKGEN.EXE` itself used --
+    `RandSeed = (RandSeed * 134775813 + 1) mod 2**32` (`134775813` ==
+    `0x8088405`, the historically documented real Borland Turbo Pascal
+    multiplier, not a value this project chose) and `IRand = trunc(
+    Random * 32768)`, both confirmed directly from the disassembly.
+    Every later phase drawing on the same generator (feature
+    generation, initial-army budgets, hero talent rolls) builds on this
+    one primitive rather than re-deriving it.
+  - **Deliberately not implemented**: the real DOS-clock startup seed
+    (`INT 21h`/`AH=2Ch`) that seeds hero-talent generation -- the
+    source confirms *that* it's clock-derived (and the real, stated
+    consequence: hero skills aren't reproducible from `game_number`),
+    but not the exact bit-packing formula combining the four clock
+    words into one seed, so guessing one would be exactly the kind of
+    unsourced invention this project avoids. `PascalRandom.__init__`
+    takes an explicit seed instead -- callers needing reproducibility
+    (tests, or the source's own *separately* confirmed
+    `RandSeed = (50 * game_number) mod 2**32` special-ability reseed, a
+    later phase's own concern) supply one directly.
+  - **Verification caveat, stated honestly**: no known-seed/known-
+    output trace from the real binary exists in the source material, so
+    this can't be tested for byte-exact reproduction of the original
+    DOS executable's own output stream. What is tested: determinism
+    (same seed -> same sequence), the documented `[0, 32768)` range,
+    and a 200,000-draw Monte Carlo landing close to the expected
+    uniform mean -- the same empirical bar this project's own
+    `random.Random`-based dice formulas already meet elsewhere.
+  - Added 9 tests in `tests/test_pascal_random.py`. Full suite: 3452
+    passed before, 3461 after.
 
 ## Setup
 
