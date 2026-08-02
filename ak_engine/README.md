@@ -14616,7 +14616,7 @@ section.
     200,000-draw-per-terrain Monte Carlo matching every confirmed
     final percentage to within 0.4 points. Full suite: 3475 passed
     before, 3481 after.
-- **Phase 356 (current)**: `worldgen/province_tax.py` (new) --
+- **Phase 356**: `worldgen/province_tax.py` (new) --
   province tax assignment (`province_tax`, 0xEB8A). `coast_score()`
   (Sea cells among a province's six hex neighbors, reusing
   `turn/movement.py neighbors()`) and `compute_edge_score()` (a
@@ -14650,6 +14650,44 @@ section.
     independent-reimplementation cross-check for the non-high-coast
     branch (no source-given worked example exists for it). Full
     suite: 3481 passed before, 3491 after.
+- **Phase 357 (current)**: `worldgen/leader_placement.py` (new) --
+  leader roster placement (0x12F3C). Four exact count formulas, each
+  verified against the source's own two real worked examples
+  (`GW3_T1_K10`, `GW900_K4`) rather than just trusted at face value:
+  `owner_leader_count()` (`min(humanoid_province_count, leader_count -
+  (2*king_count+1))`), `companion_count()` (`2*king_count`),
+  `RESERVED_ROSTER_COUNT = 1`, and `remaining_mercenary_count()`.
+  `GW3_T1_K10`'s own `leader_count` isn't stated directly, so it was
+  reconstructed from that example's other confirmed counts
+  (`79+20+1+0 == 100`) before checking the formula against it.
+  `king_home_effects()`/`independent_lord_effects()`: standalone
+  dataclasses for each role's confirmed province/leader mutation set
+  (owner id, tax -- reusing Phase 356's own `HOME_OVERRIDE_TAX`,
+  native race, current/born coordinates) -- not applied to any live
+  `GameState`, matching every worldgen phase since 352.
+  `draw_second_companion_race()`: a literal reject-and-redraw loop for
+  "uniform Human/Elf/Dwarf/Orc, redraw while equal to King race" (the
+  same "implement the real mechanism, not an equivalent simplified
+  distribution" choice as `battle_luck.break_bres_tie`, Phase 347).
+  `draw_mercenary_relocation_coordinate()`: the same reject-and-redraw
+  pattern for "redraw while on Sea or in a King-owned province",
+  taking caller predicates to stay decoupled from any specific map
+  representation.
+  - **Deliberately not implemented**: the interactive King roster
+    choice (human GM action); the independent-lords' exact
+    selection *order* (narrative only, same category of gap as
+    `province_races.py`'s special-race pass -- not turned into a
+    project-original algorithm this time, since that treatment was a
+    one-off explicit request for `place_map` specifically); "first
+    recruit slot becomes best_atype[king race]" (table not sourced
+    yet, natural fit for the still-pending recruit-slots phase); the
+    reserved roster entry's own attachment target (only its count is
+    confirmed).
+  - Added 10 tests in `tests/test_leader_placement.py`, all four count
+    formulas checked against exact integers from both real examples
+    (no Monte Carlo needed), plus Monte Carlo checks for the two
+    reject-and-redraw draws. Full suite: 3491 passed before, 3501
+    after.
 
 ## Setup
 
