@@ -98,6 +98,31 @@ needs the whole spatial placement loop (`later_placement`/
 against, consistent with every other worldgen phase's own "formulas
 now, spatial wiring later" split (Phase 353/354, Phase 355's
 special-race pass, Phase 358's extra mercenary band).
+
+**Phase 360 addendum**: the real magic-item/treasure assignment has
+also now been found (``world_generation.magic_item_province_placement``
+-- see ``ak_engine.worldgen.magic_item_placement``), and it confirms
+this module's own treasure draw was guessed wrong too:
+
+- This module draws an **independent uniform ``Treasure`` choice for
+  every single feature** (`_create_feature`'s own `rng.choice(
+  TREASURE_POOL)`, over the full 113-member catalog). The real
+  generator instead gives only roughly **half** of all features an
+  actual item at all -- the other half get gold, per a confirmed
+  4-gold/4-item repeating pattern over feature index -- and the items
+  a map *does* receive are **not independently random**: they cycle
+  through a 67-item pool via one shared, sequentially-advancing
+  cursor (uniform start, then ``+1 mod 67`` per item-slot feature).
+  This project's own pre-existing `Treasure` catalog already has
+  *exactly* 67 members in a contiguous block at ordinals 0..66 (the
+  ability-item/wand/weapon/amulet/command-item/skill-book categories)
+  -- an item id from the source maps directly onto those ordinals with
+  no new data needed.
+
+As with the feature-terrain correction above, `generate_world_features`
+itself is left unchanged -- wiring the shared cursor in needs features
+processed in their real generation order, the same spatial-integration
+gap already noted.
 """
 
 from __future__ import annotations

@@ -14726,7 +14726,7 @@ section.
     two-slot alternation, single-slot repeat when the second slot is
     empty, and the four-army cap firing ahead of the budget). Full
     suite: 3501 passed before, 3519 after.
-- **Phase 359 (current)**: `worldgen/feature_generation.py` (new) --
+- **Phase 359**: `worldgen/feature_generation.py` (new) --
   correcting `turn/world_generation.py`'s own Phase 242 project-original
   feature-generation guesses (written when no source was known to
   survive) with the real generator (0006:5002/0x5062). `feature_count()`
@@ -14766,6 +14766,42 @@ section.
     including the corrected `MAG_POOL`/`LOCH` land classification and
     the `SUNK_CITY` 50/50 split. Full suite: 3519 passed before, 3531
     after.
+- **Phase 360 (current)**: `worldgen/magic_item_placement.py` (new) --
+  the real magic-item/treasure cursor
+  (`magic_item_province_placement`), correcting `turn/
+  world_generation.py`'s own Phase 242 treasure-draw guess with a new
+  "Phase 360 addendum" (documented, not silently overwritten, same
+  pattern as Phase 359). `MAGIC_ITEM_COUNT = 67` -- this project's own
+  pre-existing `Treasure` catalog (113 members, Phase 77) already has
+  *exactly* 67 members in one contiguous block at ordinals 0..66 (the
+  ability-item/wand/weapon/amulet/command-item/skill-book categories),
+  so a real item id maps directly onto those ordinals with zero new
+  data. `item_slot_count()` (`4*floor(nfeatures/8)+max(0,min(4,
+  nfeatures mod 8-4))`) verified by hand against both confirmed totals
+  (128->64, 230->114) before coding. `feature_gets_item_slot()` (the
+  four-gold/four-item repeating pattern, `feature_index % 8 >= 4`) is
+  cross-checked in tests against `item_slot_count()` itself for
+  internal consistency, not just trusted independently.
+  `initial_item_cursor()`/`next_item_cursor()`/`cursor_to_treasure()`
+  realize the confirmed shared cyclic cursor (uniform start, `+1 mod
+  67` per item-slot feature).
+  - **A genuine, concrete correction**: Phase 242 guessed every
+    feature's treasure was an independent uniform draw over the full
+    113-member catalog. The real generator instead gives only roughly
+    half of features an item at all (the rest get gold), and the
+    items a map does get are **not independently random** -- they
+    cycle through the 67-item pool via one shared cursor, so which
+    items co-occur on one map is far more constrained than 128 (or
+    230) independent draws would ever produce.
+  - **Deliberately not implemented**: wiring the shared cursor into
+    `generate_world_features()` -- needs features processed in their
+    real generation order, the same spatial-integration gap Phase 359
+    already left open.
+  - Added 8 tests in `tests/test_magic_item_placement.py`, including a
+    cross-check between `feature_gets_item_slot()`'s per-feature
+    pattern and `item_slot_count()`'s own aggregate formula for both
+    confirmed feature-count totals. Full suite: 3531 passed before,
+    3539 after.
 
 ## Setup
 
