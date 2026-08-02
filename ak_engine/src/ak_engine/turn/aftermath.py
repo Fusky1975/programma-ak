@@ -17,6 +17,35 @@ qualitative. Every constant in this module is therefore a deliberate,
 unsourced design choice made to have *some* deterministic, testable
 behavior, not a recovered or even approximated rule. Revisit freely;
 there's nothing here to contradict.
+
+**Phase 350 addendum**: real data has now arrived, from the same
+`AK.EXE`/`AK.OVR` source as Phase 346-349's own battle-resolution
+corrections. Its own confirmed formula: `base_percent = 60 >>
+max(0, quality + formation_divisor - 2)` (an integer right-shift, not a
+division), where `formation_divisor` is `1`/`2`/`4`/`8` for front/
+second/third/fourth-and-later formation depth (`FORMATION_DIVISOR`
+below) and `quality` is `Quality`'s own `0`-`5` ordinal -- verified
+exactly against the source's own 4x6 worked table (e.g. front-line
+Average, `60 >> max(0,2+1-2) = 60 >> 1 = 30`; third-line Elite,
+`60 >> max(0,5+4-2) = 60 >> 7 = 0`). A losing, selected front-line unit
+falls one level at exactly this `base_percent` (Depleted excluded --
+"Depleted cannot fall"). A winning, selected unit rises one level at
+`base_percent * merit_multiplier` (`MERIT_MULTIPLIER` below, keyed by
+the unit's own battle-performance "score"; Elite excluded -- "Elite
+cannot gain").
+
+**Not yet wired into `roll_quality_change`/`turn/battle_orchestrator.py`'s
+6 call sites** -- the real formula's own two real inputs (which
+formation depth a specific army fought at, and its own per-unit
+"merit" battle-performance score) aren't tracked anywhere in this
+project's post-battle aftermath code today; wiring them in means
+threading that state through `fight_battle`'s own battle-line
+bookkeeping first, a separate, larger design phase, not a drop-in
+formula swap like Phase 349's pursuit rewire. `base_quality_change_
+percent`/`MERIT_MULTIPLIER` are added standalone and tested against the
+source's own table, mirroring Phase 346's own "implement the standalone
+function first, wire it into the real call site in a later phase"
+split.
 """
 
 from __future__ import annotations
@@ -26,6 +55,39 @@ import random
 from ak_engine.turn.combat import Quality
 
 BASE_QUALITY_CHANGE_CHANCE = 0.5
+
+# -- Phase 350: the confirmed AK.EXE/AK.OVR quality-change formula --------
+
+FORMATION_DIVISOR = {
+    "front": 1,
+    "second": 2,
+    "third": 4,
+    "fourth_and_later": 8,
+}
+
+MERIT_MULTIPLIER = {
+    0: 1.0,
+    -1: 0.6,
+    -2: 0.2,
+}
+
+
+def base_quality_change_percent(quality: Quality, formation_divisor: int) -> float:
+    """`60 >> max(0, quality + formation_divisor - 2)`, as a `0.0`-`0.6`
+    fraction -- see this module's own "Phase 350 addendum" for the full
+    derivation and its source. `formation_divisor` is one of
+    `FORMATION_DIVISOR`'s own four values, not an arbitrary int."""
+
+    shift = max(0, int(quality) + formation_divisor - 2)
+    return (60 >> shift) / 100
+
+
+def quality_gain_merit_multiplier(score: int) -> float:
+    """The source's own `gain_merit_multiplier`: `1.0` for a
+    non-negative battle-performance score, `0.6`/`0.2` for `-1`/`-2`,
+    and `0.0` (no gain at all) for `-3` or worse."""
+
+    return MERIT_MULTIPLIER.get(min(score, 0), 0.0)
 
 DRUID_LED_IMPROVE_MULTIPLIER: dict[Quality, float] = {
     Quality.GREEN: 0.60,

@@ -14343,7 +14343,7 @@ section.
   - Added 3 tests in `tests/test_combat.py` (exact table cross-check,
     speed-delta clamping, range bounds). Full suite: 3439 passed before,
     3442 after.
-- **Phase 349 (current)**: pursuit, the same `AK.EXE`/`AK.OVR` source as
+- **Phase 349**: pursuit, the same `AK.EXE`/`AK.OVR` source as
   Phase 346-348, and -- unlike those three -- **wired straight into the
   real call site** (`turn/pursuit.py resolve_pursuit()`), not left
   standalone: pursuit only has one consumer
@@ -14381,6 +14381,39 @@ section.
   - **Queued next in this sub-plan**: quality-change and formation-
     multiplier corrections -- the last two phases against this same
     source.
+- **Phase 350 (current)**: quality change, the same `AK.EXE`/`AK.OVR`
+  source as Phase 346-349. New `base_quality_change_percent()`,
+  `FORMATION_DIVISOR`, and `quality_gain_merit_multiplier()` in
+  `turn/aftermath.py` -- whose own pre-existing docstring said outright
+  "no numbers at all are given here... every constant in this module is
+  a deliberate, unsourced design choice... revisit freely."
+  - The real formula: `base_percent = 60 >> max(0, quality +
+    formation_divisor - 2)` (an integer right-shift, not a division),
+    `formation_divisor` one of `1`/`2`/`4`/`8` for front/second/third/
+    fourth-and-later formation depth. Verified exactly against the
+    source's own 4-depth x 6-quality worked table. A losing, selected
+    front-line unit falls at exactly `base_percent` (Depleted excluded);
+    a winning, selected unit rises at `base_percent *
+    quality_gain_merit_multiplier(score)` (Elite excluded), the merit
+    multiplier itself confirmed against the source's own table (`1.0`
+    at score >= 0, `0.6`/`0.2` at `-1`/`-2`, `0.0` at `-3` or worse).
+  - **Not yet wired into `roll_quality_change`/`turn/battle_orchestrator.py`'s
+    6 call sites** -- unlike Phase 349's pursuit rewire, the real
+    formula's own two inputs (which formation depth an army fought at,
+    and its own per-unit merit score) aren't tracked anywhere in this
+    project's post-battle aftermath code today. Wiring them in needs
+    threading that state through `fight_battle`'s own battle-line
+    bookkeeping first -- a separate, larger design phase, not a drop-in
+    swap. Kept standalone and tested, mirroring Phase 346's own split.
+  - Documented as a `"Phase 350 addendum"` in `turn/aftermath.py`'s own
+    module docstring.
+  - Added 2 tests in `tests/test_aftermath.py` (exact table
+    cross-checks for both new functions). Full suite: 3446 passed
+    before, 3448 after.
+  - **Queued next in this sub-plan (the last phase)**: formation-
+    multiplier corrections (strength-by-rank, and the source's own
+    `confirmed_multipliers` cross-check against `turn/strength.py`'s
+    existing constants).
 
 ## Setup
 
