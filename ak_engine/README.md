@@ -14501,7 +14501,7 @@ section.
     `random.Random`-based dice formulas already meet elsewhere.
   - Added 9 tests in `tests/test_pascal_random.py`. Full suite: 3452
     passed before, 3461 after.
-- **Phase 353 (current)**: `worldgen/map_shape.py` (new) -- the
+- **Phase 353**: `worldgen/map_shape.py` (new) -- the
   second phase of the world-generation sub-plan, covering the two
   fully-specified, verifiable pieces of `AKGEN.EXE`'s `place_map`
   routine. `shape_goal()`: `(cell_count div 2) + king_count +
@@ -14541,6 +14541,52 @@ section.
     Carlo cross-check of `draw_terrain()`'s land-only distribution
     against the source's own `conditional_percent_when_placing_land`
     table. Full suite: 3461 passed before, 3468 after.
+- **Phase 354 (current)**: `worldgen/place_map.py` (new) -- fills the
+  spatial gap Phase 353 deliberately left open, at the user's explicit
+  request ("riempi il gap usando la fonte e trasformandola in un
+  algoritmo, poi se spunta fuori quello esatto lo cambiamo"). The
+  source's own `place_map` pipeline is five narrative steps, not exact
+  pseudocode ("place 3 random land seeds", "add random sea cells until
+  main_land_threshold", "perform 2*king_count additional land
+  attempts", "iteratively fill enclosed sea holes using six hex
+  neighbors", "for bottom_y=8 regenerate if land_count exceeds 90") --
+  this phase turns each step into a concrete, runnable realization
+  using only confirmed source *values* (the 3-seed count, the
+  `2*king_count` attempt count, the `final_land_hard_max=90`/
+  `bottom_y=8` regenerate gate, the six-hex-neighbor rule, the
+  latitude terrain weights), while the specific cell-selection
+  procedure for each step is this project's own choice, documented
+  explicitly as a project-original realization -- not a recovered
+  disassembly -- and flagged to be replaced outright if the exact
+  routine (`place_map` 0006:41FB) is ever recovered.
+  - `generate_map()`: all-Sea grid -> 3 random land seeds -> uniform
+    random-cell draws converting Sea to land until `main_land_threshold`
+    is reached -> `2*king_count` further single-cell attempts (each
+    only converts a cell that's still Sea, unlike the threshold step's
+    guaranteed count) -> a breadth-first flood fill from every edge Sea
+    cell across this project's own already-validated, real-data-
+    confirmed 6-neighbor hex adjacency (`turn/movement.py neighbors()`,
+    Phase 314) to find and fill every enclosed Sea hole in one pass ->
+    regenerate from scratch if the default-size (18x9) map exceeds the
+    confirmed 90-cell land cap. Every land cell's specific terrain
+    comes from Phase 353's already-source-verified land-only latitude
+    weights.
+  - `draw_land_terrain()`: the land-only (Sea-excluded) counterpart to
+    Phase 353's `draw_terrain()`, derived from the same
+    `LATITUDE_TERRAIN_WEIGHTS` table Phase 353 already proved
+    reproduces the source's own `conditional_percent_when_placing_land`
+    table exactly -- no new terrain data introduced.
+  - **Verification**: a 500-map Monte Carlo at the confirmed default
+    size (18x9, 10 kings) never exceeded the 90-cell cap even once
+    (land counts ranged 51-68 across the sample), so the regenerate
+    branch exists but is rarely exercised -- consistent with the
+    source's own framing of 90 as a hard cap, not a typical outcome.
+  - Added 7 tests in `tests/test_place_map.py`: full-grid coverage,
+    every cell landing in a real (non-Sea) terrain or Sea, the 90-cell
+    cap holding over 20 repeated generations, zero enclosed Sea holes
+    left behind (checked via an independent second flood fill),
+    same-seed determinism, and `draw_land_terrain()` never returning
+    Sea. Full suite: 3468 passed before, 3475 after.
 
 ## Setup
 
