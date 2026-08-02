@@ -14688,7 +14688,7 @@ section.
     (no Monte Carlo needed), plus Monte Carlo checks for the two
     reject-and-redraw draws. Full suite: 3491 passed before, 3501
     after.
-- **Phase 358 (current)**: `worldgen/initial_armies.py` (new) --
+- **Phase 358**: `worldgen/initial_armies.py` (new) --
   recruit slots + initial army generation (`province_army_routine`,
   0B57:A400). `BEST_ATYPE` (Human->Legion, Elf->Bowmen, Dwarf->Axemen,
   Orc->Phalanx) directly closes the gap Phase 357's own
@@ -14726,6 +14726,46 @@ section.
     two-slot alternation, single-slot repeat when the second slot is
     empty, and the four-army cap firing ahead of the budget). Full
     suite: 3501 passed before, 3519 after.
+- **Phase 359 (current)**: `worldgen/feature_generation.py` (new) --
+  correcting `turn/world_generation.py`'s own Phase 242 project-original
+  feature-generation guesses (written when no source was known to
+  survive) with the real generator (0006:5002/0x5062). `feature_count()`
+  (fixed 128/230 total by `gamevers`, not a per-province chance),
+  `propose_monster()` (uniform `IRand mod 60` with a 10%-chance redraw,
+  `Monster`'s own pre-existing ordinals already matching `0..59`
+  exactly), `MFEAT_RANGE`/`propose_feature_type()` (the real per-monster
+  ordinal range, converted directly since `FeatureType`'s own
+  pre-existing ordinals -- Phase 79/CTBOTH.PAS `ftname` -- already match
+  the source's own numbering exactly; every one of the 60 real
+  monsters' declared range width was cross-checked programmatically
+  before the table was written), `FEATURE_TERRAIN`/
+  `is_terrain_compatible()` (per-type terrain gating including the
+  `SUNK_CITY` 50/50 Desert/Sea special case), and `first_2k_home_index()`.
+  - **A genuine, concrete correction found and documented** (as a new
+    "Phase 359 addendum" in `turn/world_generation.py`'s own docstring,
+    not silently overwritten): Phase 242 guessed `MAG_POOL` ("Magic
+    Pool") was Sea-only, inferred from every one of its sourced
+    guardian monsters being aquatic -- the real terrain table says
+    "any land 0..4" instead; only `UND_CAVERN`/`MAELSTROM` are really
+    Sea-only. Phase 242's whole land/sea binary split is also shown too
+    coarse -- several types are gated to one *specific* land terrain
+    (Desert/Jungle/Forest/Mountains), which that module never modeled.
+    Phase 242's `AQUATIC_MONSTERS` 5-species list, by contrast, is
+    confirmed **exactly right** -- those same 5 species are exactly the
+    ones whose real `mfeat1..mfeat2` range is `MAG_POOL..MAELSTROM`.
+  - **Deliberately not implemented**: the full spatial placement loop
+    (`later_placement`'s King-Home-rejecting random coordinate draw,
+    `rejection_rule`'s propose-again-on-mismatch retry) -- needs a live
+    generated map to run against, the same integration gap already
+    flagged for Phase 355's special-race pass and Phase 358's extra
+    mercenary band. `generate_world_features()` itself is left
+    unchanged for now; only its docstring records the correction.
+  - Added 12 tests in `tests/test_feature_generation.py`: exact-range
+    checks per monster, a Monte Carlo confirming `propose_monster()`'s
+    uniformity, terrain-compatibility checks for every gating category
+    including the corrected `MAG_POOL`/`LOCH` land classification and
+    the `SUNK_CITY` 50/50 split. Full suite: 3519 passed before, 3531
+    after.
 
 ## Setup
 

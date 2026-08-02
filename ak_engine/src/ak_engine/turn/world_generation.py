@@ -54,6 +54,50 @@ documented fallback, not a silent gap.
 ``Treasure`` catalog (``models/treasure.py``, Phase 77). No source ties
 treasure to feature type, monster, or any notion of "tier" -- confirmed
 absent, not simplified away.
+
+**Phase 359 addendum**: the real generator (``AKGEN.EXE``, static
+disassembly, ``world_generation.features`` in the source JSON) has since
+been found after all -- see ``ak_engine.worldgen.feature_generation``
+for its confirmed formulas. Comparing this module's own guesses above
+against it:
+
+- **Density is confirmed wrong.** The real generator produces a fixed
+  *total* feature count for the whole map (128 or 230, by
+  ``gamevers``), placed by rejection-sampled random coordinates -- not
+  this module's own per-province independent 60%/20%/10% chances. This
+  module's density model has not been rewired to the real one yet
+  (that needs a live generated map to place features onto, the same
+  integration gap `worldgen.place_map`'s own callers still have).
+- **``MAG_POOL`` ("Magic Pool") is confirmed wrong as Sea-only.** This
+  module's own inference (every sourced guardian monster for it is
+  aquatic) doesn't hold: the real generator's own terrain table lists
+  it "any land 0..4", alongside ``LOCH``. Only ``UND_CAVERN``/
+  ``MAELSTROM`` are really Sea-only -- `SEA_FEATURE_TYPES` below should
+  drop ``MAG_POOL`` once this module is rewired to the real generator.
+- **The land/sea binary terrain split was always too coarse.** The real
+  generator gates several types to one *specific* land terrain rather
+  than "any land": ``DES_RUINS``->Desert, ``LOST_CITY``/
+  ``LOST_TEMPLE``->Jungle, ``HOLLOW_TREE``/``GLADE``->Forest,
+  ``HANG_VALLEY``/``MOUNT_PEAK``->Mountains, plus ``SUNK_CITY``'s own
+  50/50 Desert/Sea split -- none of which this module's own
+  `LAND_FEATURE_TYPES` (one undifferentiated land pool) models.
+- **Guardian selection is a different mechanism than "candidates".**
+  The real generator proposes a monster first (uniform over the 60 real
+  species), then draws a feature type from *that monster's own*
+  ``mfeat1..mfeat2`` ordinal range -- the reverse direction from this
+  module's `FEATURE_TYPE_CANDIDATE_MONSTERS` (feature type -> monster
+  candidates). The `AQUATIC_MONSTERS` 5-species list this module
+  guessed, however, is confirmed **exactly right** -- those same 5
+  species are exactly the ones whose real ``mfeat1..mfeat2`` range is
+  ``MAG_POOL..MAELSTROM``.
+
+This module's actual generator function (`generate_world_features`) is
+deliberately left unchanged for now -- rewiring it to the real formulas
+needs the whole spatial placement loop (`later_placement`/
+`rejection_rule`), which itself needs a live generated map to run
+against, consistent with every other worldgen phase's own "formulas
+now, spatial wiring later" split (Phase 353/354, Phase 355's
+special-race pass, Phase 358's extra mercenary band).
 """
 
 from __future__ import annotations
