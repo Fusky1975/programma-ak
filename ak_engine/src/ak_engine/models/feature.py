@@ -135,8 +135,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster
+from ak_engine.models.power import Power
 from ak_engine.models.treasure import Treasure
 
 
@@ -258,6 +260,19 @@ class Feature:
     # encounter.py resolve_fulfill_honored()`'s own module comment for
     # the honor-roll formula. `None` means no deal is currently pending.
     pending_deal_leader_id: int | None = None
+    # Phase 365: this feature's own internal magical location/power --
+    # ``worldgen.internal_magical_locations.resolve_visible_location()``/
+    # ``resolve_power()`` (Phase 361), first wired to a real feature
+    # roster here (``worldgen.generate_new_game``). Both formulas are
+    # unconditional (they always resolve, never skipped), so a feature
+    # created through that pipeline always carries a real
+    # ``MagicFeature``/``Power`` value here -- including the "no
+    # location" (``MagicFeature.NONE``) case itself, which is a real
+    # resolved answer, not a missing one. ``None`` (the default) means
+    # only "never run through that pipeline", the same convention
+    # ``treasure``/``guardian_alignment`` above already use.
+    magic_location: MagicFeature | None = None
+    magic_power: Power | None = None
 
     def discovery_level(self, kingdom_id: int) -> int:
         return self.discovered_by_kingdom.get(kingdom_id, 0)

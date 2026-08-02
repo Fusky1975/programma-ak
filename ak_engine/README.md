@@ -14916,7 +14916,7 @@ section.
     the six confirmed radii, the fallback path, and the shared
     retry-budget cap holding even when nothing is ever compatible.
     Full suite: 3565 passed before, 3572 after.
-- **Phase 364 (current)**: `worldgen/feature_placement.py` (new) --
+- **Phase 364**: `worldgen/feature_placement.py` (new) --
   fills the third pipeline-integration gap: the feature spatial
   placement loop Phase 359 left deliberately unwired
   (`world_generation.features` -- `first_2k_placement`/
@@ -14944,6 +14944,82 @@ section.
     landing on a King Home, and `place_all_features()` producing
     exactly the confirmed 128/230 totals. Full suite: 3572 passed
     before, 3577 after.
+- **Phase 365 (current)**: `worldgen/generate_new_game.py` (new) -- the
+  master orchestrator, the fourth and final phase of the
+  pipeline-integration sub-plan (Phase 362-365). `generate_new_game()`
+  ties every Phase 352-364 formula together into a real, populated
+  `GameState`, following the exact stage order
+  `world_generation.province_population_order` confirms verbatim
+  ("initialize every province...", "generate/import terrain", "assign
+  base native race, automatic tax and recruit slots per province",
+  "overwrite accepted provinces with the seven special-race
+  populations and recompute their tax", "place Kings...", "create
+  province armies and one extra mercenary band per King", "create
+  features and their feature-bound treasure/magic-item records") -- a
+  new catalog key this project hadn't drawn on before this phase.
+  Wires: `place_map.generate_map()` (terrain), `province_races.
+  draw_base_race()` (base race, every province), `province_tax`'s two
+  formulas dispatched by terrain, `special_race_placement.
+  place_all_special_races()` + `recompute_tax()` (special-race
+  overwrite + tax recompute, as two full passes rather than
+  interleaved with placement itself), `leader_placement.
+  king_home_effects()` for each caller-supplied King (owner/tax/race
+  override plus the King leader's own `location`/`birth_x` --
+  `leader_born_coord`'s x component, since `LeaderState` has no full
+  born-*coordinate* field, only Phase 139's own birth-x), initial
+  armies for King Homes (`initial_armies.home_first_slot()` +
+  `KING_HOME_BUDGET=7`) and special-race provinces
+  (`special_race_recruit_slot()` + whichever of `whale_budget()`/
+  `flying_or_special_budget()` covers that race), and features
+  (`feature_placement.place_all_features()`, the magic-item cursor in
+  real feature-index order, `internal_magical_locations.
+  resolve_visible_location()`/`resolve_power()` against each feature's
+  real `feature_index`/`feature_x`/`feature_type`, and guardian
+  Alignment via the pre-existing, previously-unwired
+  `models.monster.roll_monster_alignment()`, Phase 176).
+  - `models/feature.py Feature` gains two new fields,
+    `magic_location`/`magic_power` (`MagicFeature | None`/
+    `Power | None`) -- both formulas are unconditional (never skipped,
+    including the "no location" `MagicFeature.NONE` case itself, which
+    is a real resolved answer), so any feature this pipeline creates
+    always carries real values here; `None` means only "never run
+    through this pipeline", the same convention `treasure`/
+    `guardian_alignment` already use.
+  - `KingSetup(leader_id, race, home_coord)`: the caller-supplied per-
+    King input this project has no automatic generation for (King
+    selection is confirmed interactive) -- `game_state.leaders
+    [leader_id]` must already exist with a real `kingdom_id`; this
+    orchestrator only mutates its `location`/`birth_x`, never creates
+    or reassigns kingdom membership.
+  - **Deliberately NOT implemented, each an honest, already-documented
+    gap, not invented past**: independent lords and companions (no
+    "unused roster leader" source exists in this project -- real
+    leaders only ever enter via a parsed `.K1` file or explicit caller
+    data; companions also need names this project has no in-scope
+    generator for, a separate not-yet-integrated discrepancy); ordinary
+    (non-Home, non-special-race) humanoid provinces' recruit slots and
+    armies (`humanoid_first_slot`'s terrain-weighted table was never
+    sourced, Phase 358's own gap); Trollish special-race armies (no
+    budget formula covers Trollish); the `necromantic_home_exception`
+    (Phase 358's own gap); the extra mercenary band (Phase 363) --
+    its "compatible recruit type" test and fallback both naturally
+    depend on the same missing ordinary-recruit-slot table.
+  - Added 9 tests in `tests/test_generate_new_game.py`: every one of
+    the 162 provinces gets a real terrain/race/tax; every King Home
+    gets tax 10, the King's own race/recruit slot, a real initial-army
+    list starting with `BEST_ATYPE[king race]`, and correct
+    `location`/`birth_x` on the King's own `LeaderState`; special-race
+    provinces get their own native recruit slot and no
+    `owner_kingdom_id`; Trollish provinces never get an army across 14
+    seeds; the feature roster matches `feature_count(gamevers)` with
+    every feature carrying a real monster/alignment/magic-location/
+    magic-power; the magic-item cursor assigns treasure to exactly
+    `item_slot_count()` features; a fixed seed reproduces identical
+    tax/army-count/feature-count across two independent runs. Full
+    suite: 3577 passed before, 3586 after.
+  - This closes the 4-phase pipeline-integration sub-plan (Phase
+    362-365), and with it the whole world-generation arc opened at
+    Phase 352.
 
 ## Setup
 

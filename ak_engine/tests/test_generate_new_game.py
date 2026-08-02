@@ -1,0 +1,146 @@
+from __future__ import annotations
+
+from ak_engine.models.alignment import Alignment
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.magic_feature import MagicFeature
+from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.power import Power
+from ak_engine.models.race import Race
+from ak_engine.worldgen.feature_generation import feature_count
+from ak_engine.worldgen.generate_new_game import KingSetup, generate_new_game
+from ak_engine.worldgen.initial_armies import BEST_ATYPE, COMMANDER_NONE
+from ak_engine.worldgen.magic_item_placement import item_slot_count
+from ak_engine.worldgen.pascal_random import PascalRandom
+from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH
+from ak_engine.worldgen.province_tax import HOME_OVERRIDE_TAX
+from ak_engine.worldgen.special_race_placement import SPECIAL_RACE_BASE_COUNT
+
+_KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
+
+
+def _setup(king_count: int = 10) -> tuple[GameState, list[KingSetup]]:
+    game_state = GameState()
+    kings: list[KingSetup] = []
+    for i in range(king_count):
+        race = _KING_RACES[i % 4]
+        home = HexCoord(i, 0)
+        game_state.kingdoms[i] = KingdomState(
+            kingdom_id=i, name=f"K{i}", race=race, alignment=Alignment.NEUTRAL, home_province=home
+        )
+        game_state.leaders[i] = LeaderState(
+            leader_id=i, kingdom_id=i, name=f"King{i}", location=HexCoord(0, 0), is_king=True, race=race
+        )
+        kings.append(KingSetup(leader_id=i, race=race, home_coord=home))
+    return game_state, kings
+
+
+def test_generate_new_game_populates_every_province():
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    assert len(result.provinces) == DEFAULT_WIDTH * DEFAULT_HEIGHT
+    for coord, province in result.provinces.items():
+        assert province.coord == coord
+        assert province.terrain in Terrain
+        assert province.race in Race
+        assert province.tax >= 0
+
+
+def test_king_home_effects_are_applied_to_province_and_leader():
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=2)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        province = result.provinces[king.home_coord]
+        assert province.tax == HOME_OVERRIDE_TAX
+        assert province.race is king.race
+        assert province.owner_kingdom_id == king.leader_id
+        assert province.recruit_type_1 == BEST_ATYPE[king.race]
+
+        leader = result.leaders[king.leader_id]
+        assert leader.location == king.home_coord
+        assert leader.birth_x == king.home_coord.x
+
+
+def test_king_home_gets_a_real_initial_army_using_best_atype():
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=3)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        armies = [a for a in result.armies.values() if a.location == king.home_coord]
+        assert armies
+        assert armies[0].army_type == BEST_ATYPE[king.race]
+        for army in armies:
+            assert army.commanded_by is None  # COMMANDER_NONE (255) translates to None
+            assert army.kingdom_id == king.leader_id
+
+
+def test_special_race_provinces_get_their_own_native_recruit_slot():
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=4)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    from ak_engine.worldgen.initial_armies import NATIVE_ARMY_TYPE
+
+    found_any = False
+    for province in result.provinces.values():
+        if province.race in SPECIAL_RACE_BASE_COUNT:
+            found_any = True
+            assert province.recruit_type_1 == NATIVE_ARMY_TYPE[province.race]
+            assert province.owner_kingdom_id is None
+    assert found_any
+
+
+def test_trollish_provinces_never_get_an_army_no_sourced_budget():
+    game_state, kings = _setup()
+    # A handful of seeds to reliably land at least one Trollish placement.
+    for seed in range(1, 15):
+        rng = PascalRandom(seed=seed)
+        gs, k = _setup()
+        result = generate_new_game(rng, gs, k, gamevers=1)
+        trollish = [p for p in result.provinces.values() if p.race is Race.TROLLISH]
+        for province in trollish:
+            armies_here = [a for a in result.armies.values() if a.location == province.coord]
+            assert armies_here == []
+
+
+def test_feature_roster_matches_the_confirmed_count_and_carries_real_data():
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=5)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    assert len(result.features) == feature_count(1)
+    for feature in result.features.values():
+        assert feature.guardian_monster is not None
+        assert feature.guardian_alignment is not None
+        assert isinstance(feature.magic_location, MagicFeature)
+        assert isinstance(feature.magic_power, Power)
+
+
+def test_magic_item_cursor_assigns_treasure_to_exactly_the_confirmed_slot_count():
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=6)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    with_treasure = sum(1 for f in result.features.values() if f.treasure is not None)
+    assert with_treasure == item_slot_count(feature_count(1))
+
+
+def test_generate_new_game_is_deterministic_for_a_fixed_seed():
+    game_state_a, kings_a = _setup()
+    game_state_b, kings_b = _setup()
+    result_a = generate_new_game(PascalRandom(seed=99), game_state_a, kings_a, gamevers=1)
+    result_b = generate_new_game(PascalRandom(seed=99), game_state_b, kings_b, gamevers=1)
+
+    tax_a = {coord: p.tax for coord, p in result_a.provinces.items()}
+    tax_b = {coord: p.tax for coord, p in result_b.provinces.items()}
+    assert tax_a == tax_b
+    assert len(result_a.armies) == len(result_b.armies)
+    assert len(result_a.features) == len(result_b.features)
+
+
+def test_commander_none_sentinel_matches_the_confirmed_value():
+    assert COMMANDER_NONE == 255
