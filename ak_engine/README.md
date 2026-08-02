@@ -14850,7 +14850,7 @@ section.
     mercenary band's radial search, and wiring every one of these
     formulas into a live, generated `GameState`) explicitly flagged
     for future phases rather than invented.
-- **Phase 362 (current)**: `worldgen/special_race_placement.py` (new)
+- **Phase 362**: `worldgen/special_race_placement.py` (new)
   -- the first phase of a new pipeline-integration sub-plan closing the
   world-generation gaps just flagged above. Fills Phase 355's own
   deliberately-left-open special-race spatial pass, at the user's
@@ -14885,6 +14885,37 @@ section.
     isolation, and the attempt cap terminating cleanly when no
     eligible coordinate exists at all. Full suite: 3551 passed before,
     3565 after.
+- **Phase 363 (current)**: `worldgen/mercenary_band.py` (new) -- fills
+  the second pipeline-integration gap: the extra mercenary band's
+  radial search Phase 358 left deliberately unwired (`initial_armies.
+  extra_mercenary_band`, 0x14CF6). `hex_ring()` enumerates every
+  in-bounds coordinate at an exact radius using this project's own
+  pre-existing, already-validated `turn/movement.py hex_distance()`
+  (already relied on by Phase 51's own Spy Table catch-up formula).
+  `find_mercenary_recruit_type()` realizes "from Home through radii
+  1..6 for a compatible recruit type, up to 100 retries before
+  fallback" as an increasing radial sweep drawing candidates from each
+  ring in random order, capped at one shared `MAX_RETRIES = 100`
+  budget across the whole sweep (not per radius) -- the most literal
+  reading of the source's own wording. `ARMY_STATE_HIRED = 1`/
+  `ARMY_STATE_MERCENARY = 2` are the confirmed state values (Hired was
+  already named in Phase 358's own docstring but never turned into a
+  constant); `quality`/`commander` reuse Phase 358's own confirmed
+  `INITIAL_ARMY_QUALITY`/`COMMANDER_NONE` directly.
+  - **Deliberately left as an honest, documented gap**: the source
+    never states what makes a recruit type "compatible" for this
+    search, nor what the exact fallback type is, so both are
+    caller-supplied parameters rather than guessed rules -- a real
+    caller would naturally reuse Phase 358's own confirmed
+    `home_first_slot()`/`BEST_ATYPE[king_race]` as the fallback, but
+    this module doesn't hard-code that choice.
+  - Added 7 tests in `tests/test_mercenary_band.py`: `hex_ring()`
+    cross-checked against `hex_distance()` both ways (every returned
+    cell is at that exact distance, and every in-bounds cell at that
+    distance is returned), a compatible coordinate found at each of
+    the six confirmed radii, the fallback path, and the shared
+    retry-budget cap holding even when nothing is ever compatible.
+    Full suite: 3565 passed before, 3572 after.
 
 ## Setup
 
