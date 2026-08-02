@@ -14184,7 +14184,7 @@ section.
     `GWFeatureRecord`'s own docstring.
   - Added 3 tests in `tests/test_gw_world_parser.py`. Full suite: 3418
     passed before, 3421 after.
-- **Phase 345 (current)**: the office/title-block parser -- the last
+- **Phase 345**: the office/title-block parser -- the last
   item from the "GW format/parser" sub-plan the user approved
   (`GameType`/header/leader record/Block A rename/this), and the final
   block in a world file's own layout. New `GWOfficeMeritRecord`,
@@ -14227,6 +14227,57 @@ section.
     assignment, Valhalla algorithm, and the Hero/province name-catalog
     discrepancy flagged back in Phase 341/342) is still untouched and
     needs a fresh prioritization round.
+- **Phase 346 (current)**: the first of a new 6-phase sub-plan
+  correcting `turn/battle_luck.py` and the rest of the battle-
+  resolution pipeline against a *second* AKGEN-adjacent source -- a
+  static reverse engineering of `AK.EXE`/`AK.OVR` (the real runtime
+  battle resolver, not the `AKGEN.EXE` world generator Phase 342-345
+  drew on), plus `RULES.AK`/`ADDEND.AK`/`RUMORS.PAS`/`SAY.PAS`/
+  `BLUCK.X2`/`CLUCK.X2`/`CLUCK2.X2`/`TACTICS.X2`. This module's own
+  pre-existing docstring said outright "every number is a deliberate,
+  DOCUMENTED design choice, not a recovered rule... revisit these
+  constants first if real game data or a recovered rule ever
+  contradicts them" -- that trigger has now happened.
+  - The real formula: one global luck value per side, drawn once per
+    battle (`G1`/`G2`, each `U[0,1)`), and one local luck value per
+    side, drawn fresh for every column (`L1`/`L2`). Side `s`'s own real
+    per-column strength multiplier is `R_s = 1 + k*(G_s+L_s)`, `k`=0.75
+    on turn 1 (range `[1,2.5)`, "because both random components are
+    halved"), 1.5 on turn 2+ (range `[1,4)`) -- a materially higher
+    ceiling than this project's own earlier guess (at most 1.5x column,
+    1.1x battle), though still consistent with the rulebook's own "can
+    as much as double... but most only... 1.5 or less" language for the
+    *typical* draw.
+  - New `draw_global_luck`, `draw_local_luck`, `luck_strength_
+    multiplier`, `bluck_event_index` (`clamp(1,17,
+    9+round(9*(G1-G2)))`), and `cluck_event_index`
+    (`clamp(1,39, 20+round(20*(L_selected-L_other)))`) in
+    `turn/battle_luck.py`. Both discretized narration-index formulas
+    were verified empirically before being written: a 2,000,000-draw
+    Monte Carlo of each matched the source's own declared per-index
+    probability tables (turn-1 and turn-2+) to within 0.03 percentage
+    points.
+  - **Deliberately not yet wired into `resolve_battle`** -- `R_s` only
+    means something once plugged into the real `BRES` column-scoring
+    formula (`turn/battle_resolution.py`'s current win-decision path
+    uses a different, older mechanism entirely: `roll_column_luck`/
+    `roll_battle_luck`, still both untouched, plus a logistic win-
+    probability estimate). Rewiring the win decision itself to the real
+    `BRES` formula is next (queued as its own phase in this same
+    sub-plan): mirrors this project's own established "implement the
+    standalone function first, wire it into the real call site in a
+    later phase" split (Phase 172/173 precedent).
+  - Documented as a `"Phase 346 addendum"` in `turn/battle_luck.py`'s
+    own module docstring.
+  - Added 5 tests in `tests/test_battle_luck.py` (exact clamp/direction
+    checks plus a 300,000-draw distributional cross-check against the
+    source's own neutral-outcome percentages). Full suite: 3426 passed
+    before, 3431 after.
+  - **Queued next in this sub-plan**: column resolution (`BRES`
+    formula, replacing the win/loss decision itself), direct
+    destruction, pursuit, quality-change, and formation-multiplier
+    corrections -- each its own phase, verified against the same
+    source.
 
 ## Setup
 
