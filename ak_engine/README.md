@@ -14802,7 +14802,7 @@ section.
     pattern and `item_slot_count()`'s own aggregate formula for both
     confirmed feature-count totals. Full suite: 3531 passed before,
     3539 after.
-- **Phase 361 (current)**: `worldgen/internal_magical_locations.py`
+- **Phase 361**: `worldgen/internal_magical_locations.py`
   (new) -- the real per-feature magical-location and power selection
   (``Set_Event``), the tenth and final phase of the world-generation
   sub-plan. Both formulas are fully deterministic -- no RNG at all,
@@ -14850,6 +14850,41 @@ section.
     mercenary band's radial search, and wiring every one of these
     formulas into a live, generated `GameState`) explicitly flagged
     for future phases rather than invented.
+- **Phase 362 (current)**: `worldgen/special_race_placement.py` (new)
+  -- the first phase of a new pipeline-integration sub-plan closing the
+  world-generation gaps just flagged above. Fills Phase 355's own
+  deliberately-left-open special-race spatial pass, at the user's
+  explicit request, with the same "turn the narrative into an
+  algorithm, replace it outright if the exact routine is ever
+  recovered" treatment already given to `place_map` (Phase 354).
+  `special_race_count()` (`base_count * multiplier`, `1` old rules/`3`
+  new rules) verified against all seven of the source's own declared
+  old/new count pairs. Per-race terrain eligibility tables (Eagles
+  Mountains-only, Ents Jungle-or-Forest, Trolls Jungle-through-
+  Mountains, Dragons Desert-through-Mountains, Werefolk any land,
+  Whales Sea-only) plus the confirmed Merman special case (Sea always
+  eligible; Jungle eligible only via `coast_score(coord) > (IRand AND
+  7)`, a literal reuse of Phase 356's own `coast_score()` and the same
+  "count > IRand AND 7" shape as that phase's own `second_slot_gate`).
+  `place_special_race()`/`place_all_special_races()`: the confirmed
+  rejection-sampling loop (reject King Homes, reject provinces already
+  carrying a special race, reject any of the six hex neighbors
+  carrying one -- reusing `turn/movement.py neighbors()` again --
+  reject ineligible terrain), applied to all seven races in the
+  source's own confirmed call order, capped at the source's own
+  declared `ATTEMPT_CAP = 3000`. `recompute_tax()`: "on_accept:
+  overwrite prace and recompute tax" -- a thin dispatcher reusing
+  Phase 356's own `true_sea_tax()`/`ordinary_land_tax()` directly,
+  since tax was already confirmed purely terrain-driven, never
+  race-driven.
+  - Added 14 tests in `tests/test_special_race_placement.py`: all
+    seven count pairs, every terrain-eligibility table, the Merman
+    coastal-Jungle rule (both its Sea-neighbor requirement and its
+    `coast_score`-vs-`IRand AND 7` shape, cross-checked against an
+    independent re-derivation), each rejection rule exercised in
+    isolation, and the attempt cap terminating cleanly when no
+    eligible coordinate exists at all. Full suite: 3551 passed before,
+    3565 after.
 
 ## Setup
 
