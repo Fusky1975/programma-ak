@@ -14650,7 +14650,7 @@ section.
     independent-reimplementation cross-check for the non-high-coast
     branch (no source-given worked example exists for it). Full
     suite: 3481 passed before, 3491 after.
-- **Phase 357 (current)**: `worldgen/leader_placement.py` (new) --
+- **Phase 357**: `worldgen/leader_placement.py` (new) --
   leader roster placement (0x12F3C). Four exact count formulas, each
   verified against the source's own two real worked examples
   (`GW3_T1_K10`, `GW900_K4`) rather than just trusted at face value:
@@ -14688,6 +14688,44 @@ section.
     (no Monte Carlo needed), plus Monte Carlo checks for the two
     reject-and-redraw draws. Full suite: 3491 passed before, 3501
     after.
+- **Phase 358 (current)**: `worldgen/initial_armies.py` (new) --
+  recruit slots + initial army generation (`province_army_routine`,
+  0B57:A400). `BEST_ATYPE` (Human->Legion, Elf->Bowmen, Dwarf->Axemen,
+  Orc->Phalanx) directly closes the gap Phase 357's own
+  `king_home_effects()` deliberately left open ("first recruit slot
+  becomes best_atype[king race]" wasn't sourced yet at that point).
+  `NATIVE_ARMY_TYPE` (the special-race direct-native-unit rule) is
+  built by inverting this project's own pre-existing
+  `MONSTROUS_ARMY_RACE` (Phase 26/31) -- zero new data needed, another
+  exact cross-validation; `Race.VAMPISH` is deliberately absent since
+  this project's `ArmyType` enum has never modeled a Vampire unit.
+  `second_slot_gate()` (`tax > (IRand AND 7)`) was hand-verified
+  against the source's own separately-stated `min(tax,8)/8`
+  probability before coding. The four budget formulas
+  (`KING_HOME_BUDGET=7`, `ordinary_humanoid_budget`, `whale_budget`,
+  `flying_or_special_budget`, all built on the source's own named
+  "R4" uniform-1..4 primitive) and `build_initial_armies()` (the
+  confirmed slot-alternating creation loop, spending each type's own
+  pre-existing `BASE_STRENGTH` from Phase 26, capped at 4 armies) are
+  both implemented directly from the source. `resolve_commander()`
+  and `INITIAL_ARMY_QUALITY` (reusing `turn.combat.Quality.AVERAGE`,
+  confirming the source's own "Average (2)" exactly) round out the
+  confirmed per-army defaults.
+  - **Deliberately not implemented**: the `humanoid_first_slot`'s own
+    "terrain-weighted infantry" table (named but never given); the
+    `necromantic_home_exception` (no definition of what makes a King
+    property "qualifying"); the `extra_mercenary_band`'s radial
+    search from Home (a spatial algorithm needing the whole generated
+    map, in the same vein as `place_map` and Phase 357's own
+    independent-lord placement order -- not turned into a
+    project-original algorithm this time either).
+  - Added 18 tests in `tests/test_initial_armies.py`: exact-table
+    checks, a Monte Carlo confirming `second_slot_gate()` against its
+    hand-derived probability across several tax values, budget-range
+    checks, and hand-worked `build_initial_armies()` traces (exact
+    two-slot alternation, single-slot repeat when the second slot is
+    empty, and the four-army cap firing ahead of the budget). Full
+    suite: 3501 passed before, 3519 after.
 
 ## Setup
 
