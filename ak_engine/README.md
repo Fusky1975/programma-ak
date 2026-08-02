@@ -14459,7 +14459,7 @@ section.
     `DUEL_DEMORALIZATION_MULTIPLIER` needed no new tests, already
     covered exactly by Phase 6/45. Full suite: 3448 passed before, 3452
     after.
-- **Phase 352 (current)**: the first phase of a new, 10-phase sub-plan
+- **Phase 352**: the first phase of a new, 10-phase sub-plan
   porting `AKGEN.EXE`'s own world generator (a static reverse
   engineering, distinct from Phase 346-351's own `AK.EXE`/`AK.OVR`
   runtime battle resolver) -- new top-level package
@@ -14501,6 +14501,46 @@ section.
     `random.Random`-based dice formulas already meet elsewhere.
   - Added 9 tests in `tests/test_pascal_random.py`. Full suite: 3452
     passed before, 3461 after.
+- **Phase 353 (current)**: `worldgen/map_shape.py` (new) -- the
+  second phase of the world-generation sub-plan, covering the two
+  fully-specified, verifiable pieces of `AKGEN.EXE`'s `place_map`
+  routine. `shape_goal()`: `(cell_count div 2) + king_count +
+  (king_count div 2) - (IRand mod king_count)`, verified against the
+  source's own declared default-map bounds (`cell_count=162,
+  king_count=10` -> `[87, 96]`, exact match). `main_land_threshold()`:
+  `shape_goal div 2`, verified against the source's own `[43, 48]`.
+  `draw_terrain()`: a latitude-band-weighted terrain draw using the
+  source's own `default_latitude_weights_before_sea_rejection` table
+  (5 bands x Plains/Desert/Jungle/Forest/Mountains/Sea, each summing
+  to 100) and `band_for_row()` (`min(y, bottom_y - y)`). Cross-checked
+  the weight table against the source's own *separate*
+  `conditional_percent_when_placing_land` table (same weights with Sea
+  excluded and rescaled) -- e.g. band 0's land weights (6+0+0+17+7=30)
+  rescale to Plains 20.0%/Forest 56.667%/Mountains 23.333%, an exact
+  match for every band, confirming both tables describe the same
+  underlying distribution.
+  - **Terrain enum cross-validation, with a documented gap**: the
+    source's own `terrain_enum` has 9 members (0=Plains..6=noterr,
+    plus 7=Swamp, 8=Lava) where this project's pre-existing
+    `models/map.py Terrain` has 7 (0..6) -- another exact match for
+    the members it does have. Swamp/Lava are deliberately *not* added:
+    they never appear in any `random_terrain` weight table (every band
+    covers only the original 6 terrains), so they're unreachable
+    through this generator and presumably belong to the fixed
+    Europe/Earth maps this project doesn't parse -- left out of scope
+    rather than guessed at.
+  - **Deliberately not implemented**: the full spatial `place_map`
+    pipeline (3 random land seeds, add-sea-cells-until-threshold,
+    `2*king_count` additional land attempts, iterative six-hex-
+    neighbor sea-hole filling, regenerate-if-over-90-land-cells). The
+    source describes these as a narrative sequence, not exact
+    reproducible algorithms (which cells, in what order, chosen how) --
+    implementing it fully would require inventing unsourced spatial-
+    selection logic, which this project avoids.
+  - Added 7 tests in `tests/test_map_shape.py`, including a Monte
+    Carlo cross-check of `draw_terrain()`'s land-only distribution
+    against the source's own `conditional_percent_when_placing_land`
+    table. Full suite: 3461 passed before, 3468 after.
 
 ## Setup
 
