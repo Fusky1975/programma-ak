@@ -171,3 +171,24 @@ def cluck_event_index(l_selected: float, l_other: float) -> int:
     the selected unit, 20 neutral, 21-39 positive."""
 
     return max(1, min(39, 20 + round(20 * (l_selected - l_other))))
+
+
+def break_bres_tie(rng: random.Random) -> Literal["side1", "side2"]:
+    """Break an exact-zero summed-`BRES` battle tie (`turn/combat.py
+    column_bres`, Phase 347) "by repeated differences of fair coins" --
+    the source's own phrase for the tie-break rule, given without a
+    fully worked example. Read literally: draw one fair coin per side,
+    repeat until the two coins disagree, and the side that landed heads
+    wins -- a `2^-n` chance of needing an `n`-th round, so this
+    terminates with probability 1 and (unlike a plain single coin flip)
+    stays faithful to the source's own "repeated" and "differences of
+    fair coins" (plural coins, one per side) wording. Kept honest about
+    the ambiguity rather than silently picking a different, unstated
+    interpretation.
+    """
+
+    while True:
+        side1_heads = rng.random() < 0.5
+        side2_heads = rng.random() < 0.5
+        if side1_heads != side2_heads:
+            return "side1" if side1_heads else "side2"

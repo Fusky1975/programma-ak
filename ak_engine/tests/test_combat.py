@@ -10,6 +10,7 @@ from ak_engine.turn.combat import (
     Quality,
     apply_defender_bonus,
     apply_nemesis_penalty,
+    column_bres,
     line_contribution,
     win_probability,
 )
@@ -88,3 +89,35 @@ def test_win_probability_increases_with_ratio():
 def test_win_probability_rejects_negative_ratio():
     with pytest.raises(ValueError):
         win_probability(-1)
+
+
+# -- Phase 347: column_bres() -- the real AK.EXE/AK.OVR column score -----
+
+
+def test_column_bres_is_zero_for_an_equal_fight_with_no_luck():
+    assert column_bres(100.0, 100.0, r1=1.0, r2=1.0) == 0
+
+
+def test_column_bres_matches_the_confirmed_4_to_1_worked_example():
+    # Source: r1=r2=1 (no luck), r=4 -> BRES = round(1*2 - 1/2) = 2.
+    assert column_bres(400.0, 100.0, r1=1.0, r2=1.0) == 2
+    # r=1/4 (side 2 four times stronger) is the mirror image.
+    assert column_bres(100.0, 400.0, r1=1.0, r2=1.0) == -2
+
+
+def test_column_bres_clamps_to_the_documented_minus5_5_range():
+    assert column_bres(1_000_000.0, 1.0, r1=4.0, r2=0.1) == 5
+    assert column_bres(1.0, 1_000_000.0, r1=0.1, r2=4.0) == -5
+
+
+def test_column_bres_luck_multipliers_can_swing_an_otherwise_even_fight():
+    # An equal deterministic fight (r=1) is decided purely by the two
+    # sides' own luck multipliers once they differ.
+    assert column_bres(100.0, 100.0, r1=2.0, r2=1.0) > 0
+    assert column_bres(100.0, 100.0, r1=1.0, r2=2.0) < 0
+
+
+def test_column_bres_zero_strength_edge_cases():
+    assert column_bres(0.0, 100.0, r1=1.0, r2=1.0) == -5
+    assert column_bres(100.0, 0.0, r1=1.0, r2=1.0) == 5
+    assert column_bres(0.0, 0.0, r1=1.0, r2=1.0) == 0

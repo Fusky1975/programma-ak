@@ -14227,7 +14227,7 @@ section.
     assignment, Valhalla algorithm, and the Hero/province name-catalog
     discrepancy flagged back in Phase 341/342) is still untouched and
     needs a fresh prioritization round.
-- **Phase 346 (current)**: the first of a new 6-phase sub-plan
+- **Phase 346**: the first of a new 6-phase sub-plan
   correcting `turn/battle_luck.py` and the rest of the battle-
   resolution pipeline against a *second* AKGEN-adjacent source -- a
   static reverse engineering of `AK.EXE`/`AK.OVR` (the real runtime
@@ -14278,6 +14278,43 @@ section.
     destruction, pursuit, quality-change, and formation-multiplier
     corrections -- each its own phase, verified against the same
     source.
+- **Phase 347 (current)**: the real column-resolution score (`BRES`),
+  the same `AK.EXE`/`AK.OVR` source as Phase 346. New `column_bres()` in
+  `turn/combat.py`, alongside `win_probability` -- whose own docstring
+  already called itself "a documented approximation, not a sourced
+  rule" for exactly the gap `BRES` now fills.
+  - `BRES = clamp(-5,5, round(R1*sqrt(r) - R2/sqrt(r)))`, where
+    `r = side1_strength / side2_strength` is the deterministic ratio
+    (every non-luck modifier already applied) and `R1`/`R2` are Phase
+    346's own `luck_strength_multiplier` outputs. Its *sign* is the
+    real engine's own column-winner decision (not a probability draw),
+    and its *magnitude* matters downstream too -- the source states
+    directly: "the engine weighs the size of each column result, not
+    merely the number of columns won."
+  - Confirmed a genuine cross-validation in passing, not just a new
+    formula: the source's own `confirmed_multipliers` (`defender`
+    1.25, `nemesis_approx` 0.67) match this project's own pre-existing
+    `turn/combat.py DEFENDER_BONUS`/`NEMESIS_PENALTY` (1.25, 2/3)
+    exactly -- both already-implemented constants turned out correct,
+    not just newly-discovered ones.
+  - Also adds `turn/battle_luck.py break_bres_tie()`: the source's own
+    tie-break rule for an exact-zero summed `BRES` ("repeated
+    differences of fair coins") is implemented as literally as its own
+    ambiguous wording allows -- draw one fair coin per side, repeat
+    until they disagree -- documented as an honest reading rather than
+    a silently-assumed alternative.
+  - **Still not wired into `resolve_battle`** -- same reasoning as
+    Phase 346: the real win decision needs `column_bres`'s own output
+    threaded through 6 files' worth of consumers (`turn/battle_line.py`
+    `estimate_win_probability`, `turn/battle_orchestrator.py`,
+    `turn/pursuit.py`, `turn/encounter.py`,
+    `report/turn_report.py`), so the rewire stays its own later phase.
+  - Documented as a `"Phase 347 addendum"` in `turn/combat.py
+    win_probability`'s own docstring, plus `column_bres`'s and
+    `break_bres_tie`'s own docstrings.
+  - Added 8 tests (5 in `tests/test_combat.py`, 3 in
+    `tests/test_battle_luck.py`). Full suite: 3431 passed before, 3439
+    after.
 
 ## Setup
 

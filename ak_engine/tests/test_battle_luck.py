@@ -11,6 +11,7 @@ from ak_engine.turn.battle_luck import (
     FIRST_TURN_LUCK_COEFFICIENT,
     LATER_TURN_LUCK_COEFFICIENT,
     bluck_event_index,
+    break_bres_tie,
     cluck_event_index,
     draw_global_luck,
     draw_local_luck,
@@ -137,3 +138,30 @@ def test_bluck_and_cluck_distributions_match_the_akgen_probability_tables():
     # 4.9375 (CLUCK).
     assert abs(bluck_neutral / n * 100 - 10.8024691) < 0.5
     assert abs(cluck_neutral / n * 100 - 4.9375) < 0.5
+
+
+# -- Phase 347: break_bres_tie() -- the summed-BRES tie-break ------------
+
+
+def test_break_bres_tie_always_returns_one_of_the_two_sides():
+    rng = random.Random(347)
+    for _ in range(1000):
+        assert break_bres_tie(rng) in ("side1", "side2")
+
+
+def test_break_bres_tie_is_roughly_50_50_over_many_calls():
+    rng = random.Random(3470)
+    winners = [break_bres_tie(rng) for _ in range(TRIALS)]
+    side1_share = sum(1 for w in winners if w == "side1") / len(winners)
+    assert abs(side1_share - 0.5) < TOLERANCE
+
+
+def test_break_bres_tie_terminates_even_when_the_coin_always_lands_the_same():
+    # A degenerate rng that always returns the same value would make
+    # `side1_heads == side2_heads` forever -- guard against an infinite
+    # loop by bounding the number of draws a real random.Random needs in
+    # practice (expected 2 draws per round, astronomically unlikely to
+    # need more than a few hundred).
+    rng = random.Random(999)
+    for _ in range(50):
+        break_bres_tie(rng)
