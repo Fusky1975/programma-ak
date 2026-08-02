@@ -14123,7 +14123,7 @@ section.
     `trowner`/`trcharges`/`fdis` rather than a discarded counter and
     two raw fields; and an office/title-block parser (merit records +
     the final 52-office table).
-- **Phase 343 (current)**: extends `GWLeaderRecord` with the 15 leader
+- **Phase 343**: extends `GWLeaderRecord` with the 15 leader
   status-line fields this project never decoded (of the status line's
   own 22 real values, only 7 were previously captured) -- from the same
   `AKGEN.EXE` static reverse engineering as Phase 342.
@@ -14156,6 +14156,34 @@ section.
     `GWLeaderRecord`'s own docstring.
   - Added 3 tests in `tests/test_gw_world_parser.py`. Full suite: 3415
     passed before, 3418 after.
+- **Phase 344 (current)**: corrects Phase 341's own `GWFeatureRecord`
+  (Block A) field names using the same `AKGEN.EXE` static reverse
+  engineering as Phase 342/343's own `gw_format.records.full_feature`
+  JSON, which confirms the exact field order `fx, fy, treaslist,
+  trowner, trcharges, fmonst, ftype, fdis, fstate`.
+  - Renames: what Phase 341 discarded as a "trivial file-position
+    counter" is really `trowner_raw` (Pascal name literally
+    "treasure owner **or container**", kept ambiguous per the source);
+    `raw_field5` -> `trcharges` (the treasure's own remaining charge
+    count, an unsigned byte); `raw_field8` -> `fdis_raw` (Pascal name
+    "discovery **or flags**", also ambiguous at the source, a `word`).
+  - A genuine finding beyond the rename: `GW3__T1`'s 128 rows all read
+    the unclaimed-treasure sentinel `trowner_raw == 256 + row_index`
+    exactly (Phase 341's own "255 + row_number" observation, same
+    value under 0- vs 1-indexing) -- but `GW3__T5`'s fixture supplies
+    this project's first 2 real *claimed*-treasure examples: exactly 2
+    of its 128 rows diverge from that sentinel, and those are *exactly*
+    the only 2 rows whose `engagement_state` is `DEAD`. Both divergent
+    values (`0`/`6`) are real, valid indices into that file's own
+    leader list, and both land on a King (`Babba Sissoko`/`Kahn`) of
+    the matching `kingdom_id` -- consistent with `trowner_raw`
+    switching from the sentinel to the claiming leader's own id once
+    the guardian is killed, though kept as a raw `int` (only 2 real
+    examples, both Kings, not a confirmed general rule).
+  - Documented as a `"Phase 344 addendum"` directly in
+    `GWFeatureRecord`'s own docstring.
+  - Added 3 tests in `tests/test_gw_world_parser.py`. Full suite: 3418
+    passed before, 3421 after.
 
 ## Setup
 

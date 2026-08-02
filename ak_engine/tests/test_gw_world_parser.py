@@ -392,16 +392,17 @@ def test_more_feature_instances_match_real_letters_across_six_more_provinces():
     assert by_feature_type(pearlgate, FeatureType.MONASTERY).monster is Monster.WITCH
 
 
-def test_engagement_state_and_field8_are_confirmed_constant_at_t1():
+def test_engagement_state_and_fdis_are_confirmed_constant_at_t1():
     # Every one of T1's 128 rows reads MERCENARY -- the guarding
     # monster's own default, pre-engagement state (Phase 130's own
-    # MonsterEngagementState) -- and every row's raw_field8 is 0. Real
-    # letters/turns later show DEAD/BOLD/CALM too (Phase 341's own
-    # module-docstring addendum), so this is a T1 snapshot fact, not a
-    # claim that the field never varies.
+    # MonsterEngagementState) -- and every row's fdis_raw (Phase 344's
+    # own rename of the former raw_field8) is 0. Real letters/turns
+    # later show DEAD/BOLD/CALM too (Phase 341's own module-docstring
+    # addendum), so this is a T1 snapshot fact, not a claim that the
+    # field never varies.
     records = parse_gw_features(FIXTURE)
     assert all(r.engagement_state is MonsterEngagementState.MERCENARY for r in records)
-    assert all(r.raw_field8 == 0 for r in records)
+    assert all(r.fdis_raw == 0 for r in records)
 
 
 def test_raises_gw_parse_error_on_unrecognized_treasure_ordinal(tmp_path: Path):
@@ -410,6 +411,50 @@ def test_raises_gw_parse_error_on_unrecognized_treasure_ordinal(tmp_path: Path):
 
     with pytest.raises(K1ParseError):
         parse_gw_features(bad_treasure)
+
+
+# -- Phase 344: trowner_raw/trcharges/fdis_raw field renames -------------
+
+
+def test_trowner_raw_is_the_256_plus_row_index_sentinel_for_every_t1_row():
+    # T1 is a freshly generated world -- every one of its 128 Block A
+    # rows' treasure is still unclaimed, and every row reads the same
+    # "256 + row_index" (equivalently Phase 341's own "255 + row_number"
+    # for a 1-indexed row_number) file-position sentinel, zero
+    # exceptions. This is the confirmed unclaimed-treasure encoding.
+    records = parse_gw_features(FIXTURE)
+    assert all(r.trowner_raw == 256 + i for i, r in enumerate(records))
+
+
+def test_trcharges_stays_within_its_observed_2_to_10_range_at_t1():
+    records = parse_gw_features(FIXTURE)
+    assert all(2 <= r.trcharges <= 10 for r in records)
+
+
+def test_trowner_raw_becomes_the_claiming_kings_own_id_once_a_guardian_is_dead():
+    # GW3__T5 supplies this project's first two real claimed-treasure
+    # examples: of its 128 rows, exactly 2 diverge from the
+    # "256 + row_index" unclaimed sentinel, and those are *exactly* the
+    # only 2 rows whose engagement_state is DEAD. Both divergent values
+    # (0 and 6) are themselves real, valid 0-indexed leader ids in that
+    # same file's own leader list, and both land on a King (Babba
+    # Sissoko/Kahn) of the matching kingdom_id -- consistent with
+    # trowner_raw switching to the claiming leader's own id once the
+    # guardian is killed.
+    fixture_t5 = FIXTURE.parent / "GW3__T5"
+    records = parse_gw_features(fixture_t5)
+    leaders = parse_gw_leaders(fixture_t5)
+
+    unclaimed_sentinel = [r.trowner_raw == 256 + i for i, r in enumerate(records)]
+    diverging = [(i, r) for i, r in enumerate(records) if not unclaimed_sentinel[i]]
+    dead = [(i, r) for i, r in enumerate(records) if r.engagement_state is MonsterEngagementState.DEAD]
+
+    assert {i for i, _ in diverging} == {i for i, _ in dead}
+    assert len(diverging) == 2
+
+    for _, row in diverging:
+        claimant = leaders[row.trowner_raw]
+        assert claimant.is_king
 
 
 # -- Phase 342: parse_gw_header() ----------------------------------------

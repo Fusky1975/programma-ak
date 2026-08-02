@@ -1804,19 +1804,54 @@ class GWFeatureRecord:
     (`DEAD`/`BOLD`/`CALM`) appear as the game progresses across
     `GW3__T2`-`GW3__T12`.
 
-    ``raw_field5`` is the one field this phase leaves undeciphered: a
-    small, stable `2`-`10` range across every real turn checked, with
-    no correlation found yet against Monster HP, Treasure category, or
-    province exploration percentage. ``raw_field8`` is kept too even
-    though it's a confirmed constant (`0` on every single row, all 12
-    real turns) -- its own real meaning is unknown, so it's kept raw
-    rather than dropped outright, the same "don't discard an
-    unexplained-but-confirmed field" treatment `GWArmyRecord` already
-    gives its own trailing fields. The row's own 4th token (a trivial
-    `255 + row_number` file-position counter, confirmed Phase 316) is
-    intentionally not stored at all, the same treatment
-    `GWProvinceRecord`'s own now-decoded "mystery" field got once
-    understood (Phase 340).
+    **Phase 344 addendum -- the two fields this phase's own Phase 341
+    treated as raw/unexplained (`raw_field5`, `raw_field8`) are real,
+    named Pascal fields after all, per the same `AKGEN.EXE` static
+    reverse engineering Phase 342/343 already draw on. What Phase 341
+    called a discarded "trivial file-position counter" is real too --
+    it's `trowner` (`treasure_owner_or_container`), not a throwaway
+    value.** The confirmed field order is `fx, fy, treaslist, trowner,
+    trcharges, fmonst, ftype, fdis, fstate` -- `treaslist`/`fmonst`/
+    `ftype`/`fstate` are this record's own `treasure`/`monster`/
+    `feature_type`/`engagement_state`, already correctly identified in
+    Phase 341 by independent letter cross-checks.
+
+    - `trowner_raw`: the Pascal source's own name is literally
+      "treasure owner **or container**" -- acknowledging the same
+      ambiguity this project already found empirically. For every
+      still-unclaimed treasure in `GW3__T1`'s own 128 rows this reads
+      `255 + row_number` == `256 + row_index` for a 0-indexed row
+      (Phase 341's own "trivial counter" finding), *not* the plain
+      `255` "no leader" sentinel every other real leader-id field in
+      this module uses. `GW3__T5`'s fixture supplies the first two real
+      *claimed*-treasure examples in this project's own corpus: of its
+      128 rows, exactly 2 diverge from the `256 + row_index` sentinel
+      (rows 15 and 111, reading `0` and `6`) and those are *exactly*
+      the only 2 rows whose `engagement_state` is `DEAD` -- and `0`/`6`
+      are themselves real, valid indices into that same file's own
+      leader list, each landing on a King (`Babba Sissoko`/`Kahn`) of
+      the matching `kingdom_id`. This is consistent with `trowner_raw`
+      switching from the unclaimed-sentinel to the claiming leader's
+      own (0-indexed) id once the guarding monster is killed -- but
+      with only 2 real examples it's kept as a raw `int` rather than
+      converted to `Optional[int]`, since a King index is a weak
+      confirmation of a general "any leader can claim" rule.
+    - `trcharges`: the treasure's own remaining charge count -- Phase
+      341's own "stable `2`-`10` range, no correlation found" raw field
+      is really this, an unsigned byte. Its own confirmed name doesn't
+      make the specific `2`-`10` distribution self-explanatory (a
+      magic item's own maximum charges presumably vary by item), so
+      this parser exposes the count directly rather than guessing at a
+      per-Treasure maximum.
+    - `fdis_raw`: the Pascal source's own name is "discovery **or
+      flags**" -- again ambiguous even at the source. Constant `0` on
+      every one of `GW3__T1`'s 128 rows (and in fact every row in all
+      12 real `GW3__T1`-`GW3__T12` turns checked), consistent with "no
+      feature has been discovered by anyone yet" for a freshly
+      generated world, but kept as a raw `word` rather than a `bool`
+      since no real nonzero example exists yet to confirm that reading
+      (word storage also suggests a bitmask, e.g. per-kingdom
+      discovery flags, over a plain boolean).
     """
 
     coord: HexCoord
@@ -1824,8 +1859,9 @@ class GWFeatureRecord:
     monster: Monster
     feature_type: FeatureType
     engagement_state: MonsterEngagementState
-    raw_field5: int
-    raw_field8: int
+    trowner_raw: int
+    trcharges: int
+    fdis_raw: int
 
 
 def parse_gw_features(path: Path) -> list[GWFeatureRecord]:
@@ -1864,7 +1900,7 @@ def parse_gw_features(path: Path) -> list[GWFeatureRecord]:
     records: list[GWFeatureRecord] = []
     for line_index in block_a:
         values = [int(token) for token in lines[line_index].split()]
-        x, y, treasure_ordinal, _row_counter, field5, monster_ordinal, feature_type_ordinal, field8, engagement_ordinal = values
+        x, y, treasure_ordinal, trowner_raw, trcharges, monster_ordinal, feature_type_ordinal, fdis_raw, engagement_ordinal = values
 
         if treasure_ordinal not in {member.value for member in Treasure}:
             raise GWParseError(
@@ -1898,8 +1934,9 @@ def parse_gw_features(path: Path) -> list[GWFeatureRecord]:
                 monster=Monster(monster_ordinal),
                 feature_type=FeatureType(feature_type_ordinal),
                 engagement_state=MonsterEngagementState(engagement_ordinal),
-                raw_field5=field5,
-                raw_field8=field8,
+                trowner_raw=trowner_raw,
+                trcharges=trcharges,
+                fdis_raw=fdis_raw,
             )
         )
 
