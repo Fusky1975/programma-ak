@@ -14541,7 +14541,7 @@ section.
     Carlo cross-check of `draw_terrain()`'s land-only distribution
     against the source's own `conditional_percent_when_placing_land`
     table. Full suite: 3461 passed before, 3468 after.
-- **Phase 354 (current)**: `worldgen/place_map.py` (new) -- fills the
+- **Phase 354**: `worldgen/place_map.py` (new) -- fills the
   spatial gap Phase 353 deliberately left open, at the user's explicit
   request ("riempi il gap usando la fonte e trasformandola in un
   algoritmo, poi se spunta fuori quello esatto lo cambiamo"). The
@@ -14587,6 +14587,35 @@ section.
     left behind (checked via an independent second flood fill),
     same-seed determinism, and `draw_land_terrain()` never returning
     Sea. Full suite: 3468 passed before, 3475 after.
+- **Phase 355 (current)**: `worldgen/province_races.py` (new) -- the
+  ordinary per-province race draw (``base_race_and_tax``,
+  0B57:9575), a confirmed two-stage process: a terrain-specific
+  **provisional** race draw, then the **common humanoid mix** ("only
+  while the provisional race is Human: probability 0.30 to replace it
+  with a uniform `IRand AND 3` result among Human/Elf/Dwarf/Orc" --
+  `IRand AND 3`'s four outcomes line up exactly with this project's
+  own `Race` ordinals). Only Forest and Mountains have their
+  provisional split stated directly in the source; Plains/Desert/
+  Jungle's provisional split (100% Human) was back-derived by solving
+  the confirmed final percentages against the mix formula -- verified
+  by exact arithmetic (Python cross-check) reproducing all three
+  terrains' confirmed 77.5/7.5/7.5/7.5 split, plus Forest's
+  46.5/44.5/4.5/4.5 and Mountains' 46.1125/4.4625/34.4625/14.9625,
+  before any code was written.
+  - No new `Race` members needed: the pre-existing enum (Phase 20,
+    extended through Phase 87) already has every race this table and
+    the source's own special-race list reference -- another exact
+    cross-validation.
+  - **Deliberately not implemented**: the special-race overwrite pass
+    (Eagles/Ents/Mermen/Trolls/Dragons/Whales/Werefolk placed onto
+    random provinces after this base draw). That needs the whole
+    generated map plus six-neighbor adjacency rejection sampling --
+    its own spatial algorithm in the same vein as Phase 354's
+    `place_map`, scoped out to its own follow-up phase.
+  - Added 6 tests in `tests/test_province_races.py`, including a
+    200,000-draw-per-terrain Monte Carlo matching every confirmed
+    final percentage to within 0.4 points. Full suite: 3475 passed
+    before, 3481 after.
 
 ## Setup
 
