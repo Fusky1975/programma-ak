@@ -14944,7 +14944,7 @@ section.
     landing on a King Home, and `place_all_features()` producing
     exactly the confirmed 128/230 totals. Full suite: 3572 passed
     before, 3577 after.
-- **Phase 365 (current)**: `worldgen/generate_new_game.py` (new) -- the
+- **Phase 365**: `worldgen/generate_new_game.py` (new) -- the
   master orchestrator, the fourth and final phase of the
   pipeline-integration sub-plan (Phase 362-365). `generate_new_game()`
   ties every Phase 352-364 formula together into a real, populated
@@ -15020,6 +15020,63 @@ section.
   - This closes the 4-phase pipeline-integration sub-plan (Phase
     362-365), and with it the whole world-generation arc opened at
     Phase 352.
+- **Phase 366 (current)**: corrects Phase 152 (`models/province_names.py`)
+  and Phase 339 (`models/hero_roster.py`), replacing both
+  project-original catalogs with real recovered Pascal sources, found by
+  a later reverse-engineering pass over `AKGEN.EXE`
+  (`AKGEN_reverse_engineering_report.md`, `AKGEN_name_catalogs.json.txt`
+  on the user's own Desktop). Both phases had explicitly built their
+  catalogs on the premise that no such source existed; it does.
+  - **`models/province_names.py`**: rewritten from `PRNAMES.PAS` (read
+    by `Place_L` at `0006:41FB`), 512 real entries -- Plains/Desert/
+    Jungle/Forest/Mountains 50 each, Sea 262 -- replacing the previous
+    ~300-name, differently-sized pools. `turn/rename_province.py
+    assign_province_name()` needed no logic change at all: its own
+    "prefer an unused name, reject and redraw on collision" design,
+    chosen independently as an undocumented guess, turns out to already
+    match the real confirmed selection rule almost exactly. **Verified
+    against both real `GW3__T1`/`GW3__T5` fixtures: all 162 province
+    names in each match the new catalog exactly** (Phase 152's own
+    pools were never cross-checked against real fixture data at all).
+  - **`models/hero_roster.py`**: rewritten from `LNAMES.PAS` (read
+    sequentially, no shuffle, by `Init_Tr` at `0006:1176`), 255 real
+    entries (not 98), with confirmed per-game-version leader counts
+    (100/175/250) and a real King-name-override mechanism. **Two
+    concrete corrections** found by re-verifying against `GW3__T1`:
+    ids 0-3 were previously unverifiable guesses (`Adam`/`Eve`/`Abel`/...,
+    since every prior cross-check fixture had those ids King-occupied)
+    -- the real values are `Alanus`/`Bubka`/`Cecil`/`Daedona`; id 75 was
+    wrongly `Atlas` and its mismatch wrongly blamed on a Valhalla
+    arrival -- the real value, `Bagmore`, is itself a genuine `GW3__T1`
+    Hero name. Result: **89 of 90 real Heroes now match** (was 88/90),
+    at one unbroken, collision-free id run 10-98; the sole remaining
+    gap, `Kitralus`, is confirmed absent from all 255 `LNAMES.PAS`
+    entries, matching its already-correct Valhalla-visitor
+    classification.
+  - **Sex correction**: `LNAMES.PAS` carries no sex data at all, so
+    Phase 339's per-name Sex values were guesses from name appearance
+    -- several wrong (`Isis`/`Kishijoten`, both mythological goddess
+    names, were marked `MALE`). The real mechanism
+    (`AKGEN_reverse_engineering_report.md`'s own AK.EXE/AK.OVR byte-20
+    analysis) is a default band (ids 80-95 default Female, else Male)
+    plus a separate, rare, persistent per-leader override flag --
+    `default_hero_sex()` implements the confirmed default half; the
+    override flag itself (confirmed only for two named leaders in the
+    real corpus, with no general rule for who else acquires it) is
+    deliberately not modeled, an honest, documented simplification
+    (one real regression surfaces from it and is called out explicitly:
+    `test_gw3_t5_end_to_end.py`'s own Dracona, id 38, outside the
+    default band, resolves Male under the new rule even though the old
+    table's lucky guess had her Female).
+  - `parser/gw_world_bridge.py` and `turn/rename_province.py` both gain
+    a "Phase 366 addendum" documenting the correction inline, following
+    the same pattern Phase 359/360 used for their own corrections to
+    Phase 242.
+  - Updated `tests/test_hero_roster.py`, `tests/test_province_names.py`,
+    and fixed the two `tests/test_gw_world_bridge.py`/one
+    `tests/test_gw3_t5_end_to_end.py` tests whose own assertions had
+    baked in the old (now known-wrong) data. Full suite: 3586 passed
+    before, 3591 after.
 
 ## Setup
 

@@ -59,15 +59,26 @@ parsing can't determine" convention `report/turn_report.py`'s own
 **Phase 152 addendum**: ``assign_province_name`` below covers the other
 half of the naming gap -- every non-capital province, for which no
 ``Read_T1Names``-style mechanism exists at all in the real host engine
-(the rulebook only ever lets a player rename their own capital). Since
-the real world-generation source (``AKGEN.EXE``) that would have picked
-these names isn't in the archive, this project draws from a
-project-original name pool the user supplied directly, organized by
-terrain (``models/province_names.py``) -- not a Pascal transcription,
-and not a reconstruction of ``AKGEN.EXE``'s own (unknown, unrecoverable)
-selection algorithm. Picking "an unused name from the matching terrain's
-pool" is this project's own, undocumented-in-any-source design choice
-for turning that static list into per-province names on demand.
+(the rulebook only ever lets a player rename their own capital). At the
+time, the real world-generation source (``AKGEN.EXE``) that would have
+picked these names wasn't known to survive in the archive, so this
+project drew from a project-original name pool the user supplied
+directly, organized by terrain -- not a Pascal transcription, and not a
+reconstruction of ``AKGEN.EXE``'s own selection algorithm. Picking "an
+unused name from the matching terrain's pool" was this project's own,
+undocumented-in-any-source design choice for turning that static list
+into per-province names on demand.
+
+**Phase 366 addendum**: ``models/province_names.py``'s own underlying
+pools were rewritten from a real recovered Pascal source
+(``PRNAMES.PAS``, found by a later reverse-engineering pass over
+``AKGEN.EXE``) -- see that module's own docstring for the full
+correction writeup. The real source's own confirmed selection rule --
+"uniform random source index inside the terrain pool; source indices
+already used are rejected and redrawn" -- turns out to already match
+this function's own "prefer an unused name, reject and redraw on
+collision" design almost exactly, so ``assign_province_name`` itself
+needed no logic change, only the data underneath it.
 """
 
 from __future__ import annotations

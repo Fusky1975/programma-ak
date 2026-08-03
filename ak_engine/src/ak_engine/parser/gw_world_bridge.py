@@ -162,6 +162,17 @@ Heroes -- a Hero-led Block B row bridges immediately whenever that
 Hero's own name was in the roster, no longer deferred to
 `apply_confirmed_hero_ids()` at all. That function remains the correct
 path for the true residual case (a name the roster doesn't cover).
+
+**Phase 366 addendum -- `models/hero_roster.py` itself was rewritten**
+from a real Pascal source (`LNAMES.PAS`, found by a later
+reverse-engineering pass) rather than the project-original document
+this addendum originally described. The re-verification against this
+same `GW3__T1` fixture now finds **89 of 90** Hero names matching (not
+88): `Bagmore`, previously attributed to a Valhalla arrival, turned out
+to be a real roster entry the old hand-typed table simply had wrong at
+its own id 75. Only `Kitralus` remains a genuine synthetic-id case --
+see `models/hero_roster.py`'s own module docstring for the full
+writeup.
 """
 
 from __future__ import annotations

@@ -51,11 +51,11 @@ def test_every_province_and_leader_bridges_with_nothing_left_unresolved():
     assert report.provinces_created == 162
     assert report.kings_created == 10
     assert report.heroes_created == 90
-    # Bagmore and Kitralus (VALHALLA arrivals, Phase 339) are the only
-    # real un-rostered Heroes in this game -- unlike at T1, neither one
-    # commands a Block B army row at this particular turn, so every
-    # single army record bridges cleanly with nothing left unresolved.
-    assert set(report.heroes_with_synthetic_id) == {"Bagmore", "Kitralus"}
+    # Kitralus (a VALHALLA arrival, Phase 339/366) is the only real
+    # un-rostered Hero in this game -- he doesn't command a Block B army
+    # row at this particular turn, so every single army record bridges
+    # cleanly with nothing left unresolved.
+    assert set(report.heroes_with_synthetic_id) == {"Kitralus"}
     assert report.unresolved_army_records == []
     assert len(state.provinces) == 162
 
@@ -110,7 +110,14 @@ def test_wandering_heroes_kokocala_and_dracona_are_independent_of_kingdom_1():
     dracona = state.leaders[38]
     assert dracona.kingdom_id is None
     assert dracona.race is Race.ORCISH
-    assert dracona.sex is Sex.FEMALE
+    # Phase 366: sex now comes from the real, sourced default-band rule
+    # (id 80-95 -> Female, else Male; see models/hero_roster.py), not a
+    # per-name guess -- id 38 falls outside that band, so this resolves
+    # Male even though the name itself reads as feminine. The letter's
+    # own text has no independent sex field to cross-check against; this
+    # project has no source for the separate, rare per-leader override
+    # flag that could flip an individual id like this one.
+    assert dracona.sex is Sex.MALE
     assert dracona.location == HexCoord(12, 5)
 
 

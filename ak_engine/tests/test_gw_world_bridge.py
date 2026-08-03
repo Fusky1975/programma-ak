@@ -171,13 +171,14 @@ def test_a_roster_matched_hero_gets_his_own_real_id_and_sex():
 
 
 def test_a_non_rostered_hero_falls_back_to_a_synthetic_negative_id():
-    # Bagmore and Kitralus are both real entries in the user's own
-    # separate VALHALLA NEUTRAL.txt -- exactly the roster's own
+    # Kitralus is a real VALHALLA NEUTRAL.txt entry -- the roster's own
     # documented "#99, arrived via VALHALLA" case, not a data error
-    # (Phase 339's own module-docstring addendum).
+    # (Phase 366's own re-verification: the real LNAMES.PAS-sourced
+    # roster now also resolves Bagmore, previously a second unmatched
+    # name under Phase 339's own hand-typed table).
     state, report = _bridge_fixture()
 
-    assert set(report.heroes_with_synthetic_id) == {"Bagmore", "Kitralus"}
+    assert set(report.heroes_with_synthetic_id) == {"Kitralus"}
     for name, synthetic_id in report.heroes_with_synthetic_id.items():
         assert synthetic_id < 0
         leader = state.leaders[synthetic_id]
@@ -255,19 +256,19 @@ def test_army_bridging_splits_mercenary_king_led_and_hero_led_correctly():
 
 
 def test_apply_confirmed_hero_ids_rekeys_and_recovers_his_own_armies():
-    # Phase 339 leaves only genuinely un-rostered Heroes (Bagmore,
-    # Kitralus -- VALHALLA arrivals) as candidates for this fallback
-    # path; a hypothetical real id is supplied here purely to exercise
-    # the re-keying/army-recovery mechanism itself.
+    # Phase 366's re-verification leaves only Kitralus (a genuine
+    # VALHALLA arrival) as a candidate for this fallback path; a
+    # hypothetical real id is supplied here purely to exercise the
+    # re-keying/army-recovery mechanism itself.
     state, report = _bridge_fixture()
-    synthetic_bagmore_id = report.heroes_with_synthetic_id["Bagmore"]
+    synthetic_kitralus_id = report.heroes_with_synthetic_id["Kitralus"]
 
-    applied = apply_confirmed_hero_ids(state, {"Bagmore": 991}, report.unresolved_army_records)
+    applied = apply_confirmed_hero_ids(state, {"Kitralus": 991}, report.unresolved_army_records)
 
     assert applied.leaders_rekeyed == 1
     assert applied.not_found_names == []
-    assert synthetic_bagmore_id not in state.leaders
-    assert state.leaders[991].name == "Bagmore"
+    assert synthetic_kitralus_id not in state.leaders
+    assert state.leaders[991].name == "Kitralus"
     assert applied.armies_recovered >= 0
     for army in state.armies.values():
         if army.commanded_by == 991:
