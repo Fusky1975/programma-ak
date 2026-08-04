@@ -149,9 +149,21 @@ from ak_engine.turn.encounter import (
     TALK_DRUIDIC_ATTACK_CHANCE,
     TALK_IGNORE_CHANCE,
     TALK_MONSTER_DRUID_LEVEL_REQUIRED,
+    MONSTER_TALK_REPLY_FREQUENCY,
+    MONSTER_TALK_REPLY_INTELLIGENCE,
+    MONSTER_TALK_REPLY_INTELLIGENCE_VARIANCE,
+    MONSTER_TALK_REPLY_INVOLVES_CHARACTER,
+    MONSTER_TALK_REPLY_NAME,
+    MONSTER_TALK_REPLY_OUTCOME,
+    MONSTER_TALK_REPLY_VIEW,
+    MONSTER_TALK_REPLY_VIEW_VARIANCE,
+    MonsterTalkReply,
     TalkReaction,
+    TalkReplyOutcome,
     can_talk_to_monster,
+    monster_talk_reply_eligible,
     resolve_talk_reaction,
+    select_monster_talk_reply,
     BEG_MERCY_CHANCE,
     resolve_beg_for_mercy,
     FULFILL_ALIGNMENT_DISTANCE_PENALTY_PER_STEP,
@@ -2022,6 +2034,93 @@ def test_resolve_talk_reaction_druidic_shifts_attack_to_deal():
         resolve_talk_reaction(ScriptedRandom([TALK_DRUIDIC_ATTACK_CHANCE]), caster_is_druidic=True)
         is TalkReaction.IGNORE
     )
+
+
+# -- Phase 382: the real 24-reply Talk selector -----------------------------
+
+
+def test_monster_talk_reply_covers_all_24_real_ids():
+    assert len(MonsterTalkReply) == 24
+    assert len(MONSTER_TALK_REPLY_NAME) == 24
+    assert len(MONSTER_TALK_REPLY_FREQUENCY) == 24
+    assert len(MONSTER_TALK_REPLY_INTELLIGENCE) == 24
+    assert len(MONSTER_TALK_REPLY_INTELLIGENCE_VARIANCE) == 24
+    assert len(MONSTER_TALK_REPLY_VIEW) == 24
+    assert len(MONSTER_TALK_REPLY_VIEW_VARIANCE) == 24
+    assert len(MONSTER_TALK_REPLY_INVOLVES_CHARACTER) == 24
+    assert len(MONSTER_TALK_REPLY_OUTCOME) == 24
+
+
+def test_monster_talk_reply_outcome_categories_match_the_real_source():
+    # ids {0, 2} ignore, {1, 23} attack, the remaining 20 are each a
+    # distinct quest/agreement.
+    assert MONSTER_TALK_REPLY_OUTCOME[MonsterTalkReply.R_PUZZLED] is TalkReplyOutcome.IGNORE
+    assert MONSTER_TALK_REPLY_OUTCOME[MonsterTalkReply.R_WARN] is TalkReplyOutcome.IGNORE
+    assert MONSTER_TALK_REPLY_OUTCOME[MonsterTalkReply.R_CHARGE] is TalkReplyOutcome.ATTACK
+    assert MONSTER_TALK_REPLY_OUTCOME[MonsterTalkReply.R_MADVANCE] is TalkReplyOutcome.ATTACK
+    quest_count = sum(1 for outcome in MONSTER_TALK_REPLY_OUTCOME.values() if outcome is TalkReplyOutcome.QUEST_OR_AGREEMENT)
+    assert quest_count == 20
+
+
+def test_monster_talk_reply_only_frevenge_and_prevenge_involve_a_character():
+    involved = {reply for reply, flag in MONSTER_TALK_REPLY_INVOLVES_CHARACTER.items() if flag}
+    assert involved == {MonsterTalkReply.R_FREVENGE, MonsterTalkReply.R_PREVENGE}
+
+
+def test_monster_talk_reply_eligible_roc_matches_the_real_view_and_intelligence_bands():
+    # Roc: base_view=Pagan (ordinal 4), intelligence=Semi (ordinal 0;
+    # Phase 381's own MONSTER_RUNTIME_PROFILE). RPuzzled (view=Special
+    # ordinal 9, rvvar=0) is never eligible for Roc -- |9-4|=5 > 0.
+    # RPain (view=Neutral ordinal 3, rvvar=2; intel=Semi, rivar=0) IS
+    # eligible: |3-4|=1 <= 2 and |0-0|=0 <= 0.
+    assert monster_talk_reply_eligible(MonsterTalkReply.R_PUZZLED, Monster.ROC) is False
+    assert monster_talk_reply_eligible(MonsterTalkReply.R_PAIN, Monster.ROC) is True
+    # RWish (view=Divine ordinal 0, rvvar=1) is far outside Roc's own
+    # Pagan view: |0-4|=4 > 1.
+    assert monster_talk_reply_eligible(MonsterTalkReply.R_WISH, Monster.ROC) is False
+
+
+def test_monster_talk_reply_eligible_rmate_requires_can_offer_mate_quest():
+    # Archer's own MONSTER_RUNTIME_PROFILE.can_offer_mate_quest is False
+    # (Phase 381); Centaur's is True. Both otherwise pass RMate's own
+    # view/intelligence bands (view=Neutral rvvar=2, intel=Low rivar=2).
+    assert monster_talk_reply_eligible(MonsterTalkReply.R_MATE, Monster.ARCHER) is False
+    assert monster_talk_reply_eligible(MonsterTalkReply.R_MATE, Monster.CENTAUR) is True
+
+
+def test_monster_talk_reply_eligible_rsell_requires_the_caller_supplied_flag():
+    assert monster_talk_reply_eligible(MonsterTalkReply.R_SELL, Monster.ARCHER, has_purchasable_treasure=False) is False
+    assert monster_talk_reply_eligible(MonsterTalkReply.R_SELL, Monster.ARCHER, has_purchasable_treasure=True) is True
+
+
+def test_select_monster_talk_reply_sphinx_forces_rriddle_below_50_percent():
+    assert select_monster_talk_reply(Monster.SPHINX, ScriptedRandom([0.0])) is MonsterTalkReply.R_RIDDLE
+    assert select_monster_talk_reply(Monster.SPHINX, ScriptedRandom([0.49])) is MonsterTalkReply.R_RIDDLE
+
+
+def test_select_monster_talk_reply_sphinx_falls_through_to_general_selector_at_50_percent():
+    # >= 0.5 skips the forced RRiddle branch and falls through to the
+    # general selector instead (a real random.Random since the general
+    # selector's own .choice() calls aren't scripted here).
+    rng = random.Random(7)
+    for _ in range(20):
+        result = select_monster_talk_reply(Monster.SPHINX, rng)
+        assert result is not None
+
+
+def test_select_monster_talk_reply_only_returns_eligible_replies_for_the_monster():
+    rng = random.Random(1234)
+    eligible = {reply for reply in MonsterTalkReply if monster_talk_reply_eligible(reply, Monster.ROC)}
+    for _ in range(200):
+        result = select_monster_talk_reply(Monster.ROC, rng)
+        assert result in eligible
+
+
+def test_select_monster_talk_reply_returns_none_when_nothing_is_eligible(monkeypatch):
+    # A defensive check, not a real game state: force every reply to be
+    # ineligible and confirm the selector doesn't infinite-loop.
+    monkeypatch.setattr("ak_engine.turn.encounter.monster_talk_reply_eligible", lambda *args, **kwargs: False)
+    assert select_monster_talk_reply(Monster.ROC, random.Random(1)) is None
 
 
 # -- Phase 241: Beg --

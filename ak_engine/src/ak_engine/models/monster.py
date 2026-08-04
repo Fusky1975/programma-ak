@@ -606,6 +606,30 @@ class MonsterIntelligence(Enum):
     MECH = "Mech"
 
 
+# Phase 382 -- `runtime_mechanics.monster_talk.reply_selection`'s own
+# eligibility test ("abs(monster_intelligence-repint[id]) <= rivar[id]")
+# needs a numeric ordinal for `MonsterIntelligence`, the same way
+# `models/alignment.py ALIGNMENT_ORDINAL` already gives `Alignment` one
+# for the matching view-distance test. The 5 real tiers this table's
+# own `repint` column actually uses (`Semi`..`Godlike`) form a genuine
+# ladder, confirmed by which species land where (animals/beasts at
+# `SEMI`/`LOW`, humans/centaurs at `MEDIUM`, most demons/dragons/undead
+# at `HIGH`, the handful of named-genius species -- Couatl, Titan,
+# Genie, Go Dragon, Lich, Balrog -- at `GODLIKE`). `MECH` never appears
+# in `repint` at all (only `Golem`/`Giant Amoeba` carry it as their own
+# `mintel`), so its own ordinal position relative to the other 5 is
+# unconfirmed by this source -- placed after `GODLIKE` here as a
+# reasonable default, not a sourced claim.
+MONSTER_INTELLIGENCE_ORDINAL: dict[MonsterIntelligence, int] = {
+    MonsterIntelligence.SEMI: 0,
+    MonsterIntelligence.LOW: 1,
+    MonsterIntelligence.MEDIUM: 2,
+    MonsterIntelligence.HIGH: 3,
+    MonsterIntelligence.GODLIKE: 4,
+    MonsterIntelligence.MECH: 5,
+}
+
+
 @dataclass(frozen=True, slots=True)
 class MonsterRuntimeProfile:
     average_hit_points: int

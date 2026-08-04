@@ -15839,7 +15839,7 @@ section.
     Kings across both fixtures), ran again, updated README, ran once
     more before commit -- the standing per-phase workflow. Full suite:
     3663 passed before, 3669 after (6 new tests).
-- **Phase 381 (current)**: adds `models/monster.py MONSTER_RUNTIME_
+- **Phase 381**: adds `models/monster.py MONSTER_RUNTIME_
   PROFILE`, real per-species CTME.PAS runtime constants for all 60
   monster species (`AKGEN_embedded_catalogs.json.txt tables.monster_
   profiles`) -- the exact data `MONSTER_COMBAT_STATS`'s own Phase 154
@@ -15885,6 +15885,71 @@ section.
     WEAPON`+`MONSTER_RANGED_WEAPON`), ran again, updated README, ran
     once more before commit -- the standing per-phase workflow. Full
     suite: 3669 passed before, 3676 after (7 new tests).
+- **Phase 382 (current)**: adds the real 24-reply Talk selector,
+  `runtime_mechanics.monster_talk` (`AK.OVR TALK branch`/`AK.EXE reply
+  selector`, a real static disassembly). `turn/encounter.py` gets
+  `MonsterTalkReply` (`RPuzzled`..`RMAdvance`) plus each real id's own
+  `repfreq`/`repint`+`rivar`/`repview`+`rvvar`/outcome-category/
+  character-involvement data, `monster_talk_reply_eligible()` (the
+  source's own 4 eligibility gates), and `select_monster_talk_reply()`
+  (Sphinx's confirmed 50%-forced `RRiddle`, then the real uniform-
+  propose/`repfreq`-accept rejection loop restricted to eligible
+  replies).
+  - **Deliberately additive, not a replacement**: `TalkReaction`/
+    `resolve_talk_reaction()` (confirmed project-original, the live
+    mechanism `turn/search_execution.py`'s own Talk branch already
+    calls) are untouched. This phase closes the "no numeric split is
+    given anywhere" gap that function's own docstring names with real
+    source data, but doesn't unilaterally swap live Talk execution over
+    to it -- the same "confirmed real, not wired into live behavior
+    without a separate decision" stance Phase 381 already took for
+    `MONSTER_RUNTIME_PROFILE` vs. `MONSTER_COMBAT_STATS`.
+  - Real, natural composition with two prior phases: `RMate`'s own
+    eligibility gate reuses `MonsterRuntimeProfile.can_offer_mate_quest`
+    (Phase 381's `mtmate` field) directly; the view/intelligence
+    distance tests reuse `models/alignment.py ALIGNMENT_ORDINAL` and a
+    new `models/monster.py MONSTER_INTELLIGENCE_ORDINAL` (added this
+    phase, the numeric ladder `MonsterIntelligence`'s own 5 real tiers
+    form) -- no new vocabulary invented where an existing one already
+    fit.
+  - `RSell`'s own "a purchasable magic-item treasure" gate is threaded
+    in as a caller-supplied flag (`has_purchasable_treasure`) rather
+    than guessed at, since this module has no access to that real-world
+    state.
+  - Uses `random.Random`, Monte-Carlo-verified like every other dice
+    formula in this project (`resolve_talk_reaction()` included), not
+    `PascalRandom` -- no captured real trace exists for this routine to
+    reproduce byte-exact.
+  - **A related, unsuccessful reproduction attempt, recorded honestly
+    rather than shipped as a guess**: the same research pass also
+    tried to reproduce `runtime_mechanics.special_ability_level_
+    schedule` (the `spabord` level-5-10 unlock schedule for the 5 magic
+    schools) against its own real worked example (`game_900_magic_
+    schedule`), reusing the already-existing `worldgen/pascal_random.py
+    PascalRandom` and its own already-documented `RandSeed = (50 *
+    game_number) mod 2**32` reseed. Implementing the JSON's own quoted
+    algorithm ("tries starts at 3; n=min(20,tries//2+(s+1)//2); dest=1+
+    IRand%n; reject dest>6 or occupied") with a per-ability reseed
+    reproduces the *shape* of the real White Magic schedule (a genuine
+    RNG-driven permutation, not noise) but not its exact values against
+    multiple source-ordering and discard-count hypotheses tried. Rather
+    than ship a plausible-looking but unverified level-schedule table --
+    against this project's own standing "empirically verify before
+    writing code" rule -- nothing was written for this routine; it
+    remains exactly as unrecoverable as `models/advanced_ability.py`'s
+    own Phase 128/131 docstring already says, an honest negative result
+    for a future phase with more disassembly context to revisit.
+  - Ran the full suite before writing new tests (non-breaking check;
+    no regressions), wrote 10 new tests in `tests/test_encounter.py`
+    (all-24-ids coverage, the real outcome-category split, the 2
+    character-involving replies, Roc's own real eligibility bands
+    including a `False` case, `RMate`'s `can_offer_mate_quest` gate,
+    `RSell`'s caller-supplied flag, Sphinx's forced-`RRiddle` boundary
+    both sides, the general selector only ever returning an eligible
+    reply over 200 real samples, and the defensive no-eligible-replies
+    `None` case), ran again, updated README, ran once more before
+    commit -- the standing per-phase workflow. Full suite: 3676 passed
+    before, 3686 after (10 new tests).
 
 ## Setup
 

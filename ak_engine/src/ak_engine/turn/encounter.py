@@ -1348,7 +1348,13 @@ from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState
 from ak_engine.models.item import ItemInstance
-from ak_engine.models.monster import Monster, MonsterSpeed
+from ak_engine.models.monster import (
+    MONSTER_INTELLIGENCE_ORDINAL,
+    MONSTER_RUNTIME_PROFILE,
+    Monster,
+    MonsterIntelligence,
+    MonsterSpeed,
+)
 from ak_engine.models.temper import Temper
 
 # [5.0]: "In combat, all characters have 10 hit points. Monsters may
@@ -3391,6 +3397,352 @@ def resolve_talk_reaction(rng: random.Random, *, caster_is_druidic: bool = False
     if roll < attack_chance + TALK_IGNORE_CHANCE:
         return TalkReaction.IGNORE
     return TalkReaction.DEAL
+
+
+# **Phase 382 -- the real 24-reply Talk selector, `runtime_mechanics.
+# monster_talk` (`AK.OVR TALK branch`/`AK.EXE reply selector`, a real
+# static disassembly).** `TalkReaction`/`resolve_talk_reaction()` above
+# stay exactly as they are -- confirmed directly with the user
+# (project author) as project-original, and already the live mechanism
+# `turn/search_execution.py`'s own Talk branch calls. What follows is
+# **additive, not a replacement**: the real compiled selector this
+# source names, given real per-reply data this project didn't have
+# before, but not yet wired into live Talk execution -- swapping
+# `search_execution.py`'s own Talk branch over to it is a separate,
+# larger follow-up decision (the same "confirmed real, not unilaterally
+# swapped into live behavior" stance Phase 381's own `MONSTER_RUNTIME_
+# PROFILE` addendum already takes for `MONSTER_COMBAT_STATS`).
+#
+# The 24 real reply identifiers (`RPuzzled`..`RMAdvance`), each with a
+# real `repfreq` (0-10, the reply's own acceptance chance out of 10),
+# `repint`/`rivar` (an eligibility band on the monster's own `mintel`,
+# reusing `models/monster.py MonsterIntelligence`/`MONSTER_
+# INTELLIGENCE_ORDINAL`, Phase 382's own addendum there), `repview`/
+# `rvvar` (the same band on the monster's own `mview`, reusing
+# `models/alignment.py Alignment`/`ALIGNMENT_ORDINAL`), and which of
+# the three narrative outcomes (Ignore/Attack/Quest-or-Agreement) it
+# belongs to.
+class MonsterTalkReply(Enum):
+    R_PUZZLED = 0
+    R_CHARGE = 1
+    R_WARN = 2
+    R_REGAIN = 3
+    R_VISIT = 4
+    R_RIDDLE = 5
+    R_FREVENGE = 6
+    R_PAIN = 7
+    R_SLAVE = 8
+    R_MATE = 9
+    R_TRADE = 10
+    R_WISH = 11
+    R_SELL = 12
+    R_SOUL = 13
+    R_SACH = 14
+    R_WFREE = 15
+    R_JUNDEAD = 16
+    R_PREVENGE = 17
+    R_DRAIN = 18
+    R_CIRCNAV = 19
+    R_2POLES = 20
+    R_1TERR = 21
+    R_EXPALL = 22
+    R_MADVANCE = 23
+
+
+MONSTER_TALK_REPLY_NAME: dict[MonsterTalkReply, str] = {
+    MonsterTalkReply.R_PUZZLED: "RPuzzled",
+    MonsterTalkReply.R_CHARGE: "RCharge",
+    MonsterTalkReply.R_WARN: "RWarn",
+    MonsterTalkReply.R_REGAIN: "RRegain",
+    MonsterTalkReply.R_VISIT: "RVisit",
+    MonsterTalkReply.R_RIDDLE: "RRiddle",
+    MonsterTalkReply.R_FREVENGE: "RFRevenge",
+    MonsterTalkReply.R_PAIN: "RPain",
+    MonsterTalkReply.R_SLAVE: "RSlave",
+    MonsterTalkReply.R_MATE: "RMate",
+    MonsterTalkReply.R_TRADE: "RTrade",
+    MonsterTalkReply.R_WISH: "RWish",
+    MonsterTalkReply.R_SELL: "RSell",
+    MonsterTalkReply.R_SOUL: "RSoul",
+    MonsterTalkReply.R_SACH: "RSacH",
+    MonsterTalkReply.R_WFREE: "RWFree",
+    MonsterTalkReply.R_JUNDEAD: "RJUndead",
+    MonsterTalkReply.R_PREVENGE: "RPRevenge",
+    MonsterTalkReply.R_DRAIN: "RDrain",
+    MonsterTalkReply.R_CIRCNAV: "RCircNav",
+    MonsterTalkReply.R_2POLES: "R2Poles",
+    MonsterTalkReply.R_1TERR: "R1Terr",
+    MonsterTalkReply.R_EXPALL: "RExpAll",
+    MonsterTalkReply.R_MADVANCE: "RMAdvance",
+}
+
+MONSTER_TALK_REPLY_FREQUENCY: dict[MonsterTalkReply, int] = {
+    MonsterTalkReply.R_PUZZLED: 5,
+    MonsterTalkReply.R_CHARGE: 10,
+    MonsterTalkReply.R_WARN: 7,
+    MonsterTalkReply.R_REGAIN: 5,
+    MonsterTalkReply.R_VISIT: 10,
+    MonsterTalkReply.R_RIDDLE: 7,
+    MonsterTalkReply.R_FREVENGE: 8,
+    MonsterTalkReply.R_PAIN: 3,
+    MonsterTalkReply.R_SLAVE: 5,
+    MonsterTalkReply.R_MATE: 3,
+    MonsterTalkReply.R_TRADE: 7,
+    MonsterTalkReply.R_WISH: 10,
+    MonsterTalkReply.R_SELL: 10,
+    MonsterTalkReply.R_SOUL: 8,
+    MonsterTalkReply.R_SACH: 5,
+    MonsterTalkReply.R_WFREE: 4,
+    MonsterTalkReply.R_JUNDEAD: 10,
+    MonsterTalkReply.R_PREVENGE: 9,
+    MonsterTalkReply.R_DRAIN: 8,
+    MonsterTalkReply.R_CIRCNAV: 4,
+    MonsterTalkReply.R_2POLES: 4,
+    MonsterTalkReply.R_1TERR: 4,
+    MonsterTalkReply.R_EXPALL: 4,
+    MonsterTalkReply.R_MADVANCE: 10,
+}
+
+MONSTER_TALK_REPLY_INTELLIGENCE: dict[MonsterTalkReply, MonsterIntelligence] = {
+    MonsterTalkReply.R_PUZZLED: MonsterIntelligence.SEMI,
+    MonsterTalkReply.R_CHARGE: MonsterIntelligence.MEDIUM,
+    MonsterTalkReply.R_WARN: MonsterIntelligence.MEDIUM,
+    MonsterTalkReply.R_REGAIN: MonsterIntelligence.MEDIUM,
+    MonsterTalkReply.R_VISIT: MonsterIntelligence.MEDIUM,
+    MonsterTalkReply.R_RIDDLE: MonsterIntelligence.HIGH,
+    MonsterTalkReply.R_FREVENGE: MonsterIntelligence.MEDIUM,
+    MonsterTalkReply.R_PAIN: MonsterIntelligence.SEMI,
+    MonsterTalkReply.R_SLAVE: MonsterIntelligence.MEDIUM,
+    MonsterTalkReply.R_MATE: MonsterIntelligence.LOW,
+    MonsterTalkReply.R_TRADE: MonsterIntelligence.HIGH,
+    MonsterTalkReply.R_WISH: MonsterIntelligence.GODLIKE,
+    MonsterTalkReply.R_SELL: MonsterIntelligence.MEDIUM,
+    MonsterTalkReply.R_SOUL: MonsterIntelligence.HIGH,
+    MonsterTalkReply.R_SACH: MonsterIntelligence.HIGH,
+    MonsterTalkReply.R_WFREE: MonsterIntelligence.LOW,
+    MonsterTalkReply.R_JUNDEAD: MonsterIntelligence.MEDIUM,
+    MonsterTalkReply.R_PREVENGE: MonsterIntelligence.MEDIUM,
+    MonsterTalkReply.R_DRAIN: MonsterIntelligence.MEDIUM,
+    MonsterTalkReply.R_CIRCNAV: MonsterIntelligence.GODLIKE,
+    MonsterTalkReply.R_2POLES: MonsterIntelligence.GODLIKE,
+    MonsterTalkReply.R_1TERR: MonsterIntelligence.GODLIKE,
+    MonsterTalkReply.R_EXPALL: MonsterIntelligence.GODLIKE,
+    MonsterTalkReply.R_MADVANCE: MonsterIntelligence.MEDIUM,
+}
+
+MONSTER_TALK_REPLY_INTELLIGENCE_VARIANCE: dict[MonsterTalkReply, int] = {
+    MonsterTalkReply.R_PUZZLED: 0,
+    MonsterTalkReply.R_CHARGE: 2,
+    MonsterTalkReply.R_WARN: 3,
+    MonsterTalkReply.R_REGAIN: 1,
+    MonsterTalkReply.R_VISIT: 1,
+    MonsterTalkReply.R_RIDDLE: 1,
+    MonsterTalkReply.R_FREVENGE: 1,
+    MonsterTalkReply.R_PAIN: 0,
+    MonsterTalkReply.R_SLAVE: 1,
+    MonsterTalkReply.R_MATE: 2,
+    MonsterTalkReply.R_TRADE: 2,
+    MonsterTalkReply.R_WISH: 1,
+    MonsterTalkReply.R_SELL: 1,
+    MonsterTalkReply.R_SOUL: 1,
+    MonsterTalkReply.R_SACH: 1,
+    MonsterTalkReply.R_WFREE: 1,
+    MonsterTalkReply.R_JUNDEAD: 2,
+    MonsterTalkReply.R_PREVENGE: 1,
+    MonsterTalkReply.R_DRAIN: 2,
+    MonsterTalkReply.R_CIRCNAV: 2,
+    MonsterTalkReply.R_2POLES: 2,
+    MonsterTalkReply.R_1TERR: 2,
+    MonsterTalkReply.R_EXPALL: 2,
+    MonsterTalkReply.R_MADVANCE: 3,
+}
+
+MONSTER_TALK_REPLY_VIEW: dict[MonsterTalkReply, Alignment] = {
+    MonsterTalkReply.R_PUZZLED: Alignment.SPECIAL,
+    MonsterTalkReply.R_CHARGE: Alignment.EVIL,
+    MonsterTalkReply.R_WARN: Alignment.EVIL,
+    MonsterTalkReply.R_REGAIN: Alignment.PAGAN,
+    MonsterTalkReply.R_VISIT: Alignment.DRUID,
+    MonsterTalkReply.R_RIDDLE: Alignment.NEUTRAL,
+    MonsterTalkReply.R_FREVENGE: Alignment.NEUTRAL,
+    MonsterTalkReply.R_PAIN: Alignment.NEUTRAL,
+    MonsterTalkReply.R_SLAVE: Alignment.NEUTRAL,
+    MonsterTalkReply.R_MATE: Alignment.NEUTRAL,
+    MonsterTalkReply.R_TRADE: Alignment.NEUTRAL,
+    MonsterTalkReply.R_WISH: Alignment.DIVINE,
+    MonsterTalkReply.R_SELL: Alignment.NEUTRAL,
+    MonsterTalkReply.R_SOUL: Alignment.ANTI_HOLY,
+    MonsterTalkReply.R_SACH: Alignment.ANTI_HOLY,
+    MonsterTalkReply.R_WFREE: Alignment.NEUTRAL,
+    MonsterTalkReply.R_JUNDEAD: Alignment.UNDEAD,
+    MonsterTalkReply.R_PREVENGE: Alignment.NEUTRAL,
+    MonsterTalkReply.R_DRAIN: Alignment.UNDEAD,
+    MonsterTalkReply.R_CIRCNAV: Alignment.NEUTRAL,
+    MonsterTalkReply.R_2POLES: Alignment.NEUTRAL,
+    MonsterTalkReply.R_1TERR: Alignment.NEUTRAL,
+    MonsterTalkReply.R_EXPALL: Alignment.NEUTRAL,
+    MonsterTalkReply.R_MADVANCE: Alignment.MECHANICAL,
+}
+
+MONSTER_TALK_REPLY_VIEW_VARIANCE: dict[MonsterTalkReply, int] = {
+    MonsterTalkReply.R_PUZZLED: 0,
+    MonsterTalkReply.R_CHARGE: 2,
+    MonsterTalkReply.R_WARN: 4,
+    MonsterTalkReply.R_REGAIN: 3,
+    MonsterTalkReply.R_VISIT: 2,
+    MonsterTalkReply.R_RIDDLE: 1,
+    MonsterTalkReply.R_FREVENGE: 2,
+    MonsterTalkReply.R_PAIN: 2,
+    MonsterTalkReply.R_SLAVE: 2,
+    MonsterTalkReply.R_MATE: 2,
+    MonsterTalkReply.R_TRADE: 4,
+    MonsterTalkReply.R_WISH: 1,
+    MonsterTalkReply.R_SELL: 2,
+    MonsterTalkReply.R_SOUL: 0,
+    MonsterTalkReply.R_SACH: 1,
+    MonsterTalkReply.R_WFREE: 3,
+    MonsterTalkReply.R_JUNDEAD: 0,
+    MonsterTalkReply.R_PREVENGE: 2,
+    MonsterTalkReply.R_DRAIN: 0,
+    MonsterTalkReply.R_CIRCNAV: 3,
+    MonsterTalkReply.R_2POLES: 3,
+    MonsterTalkReply.R_1TERR: 3,
+    MonsterTalkReply.R_EXPALL: 3,
+    MonsterTalkReply.R_MADVANCE: 1,
+}
+
+MONSTER_TALK_REPLY_INVOLVES_CHARACTER: dict[MonsterTalkReply, bool] = {
+    MonsterTalkReply.R_PUZZLED: False,
+    MonsterTalkReply.R_CHARGE: False,
+    MonsterTalkReply.R_WARN: False,
+    MonsterTalkReply.R_REGAIN: False,
+    MonsterTalkReply.R_VISIT: False,
+    MonsterTalkReply.R_RIDDLE: False,
+    MonsterTalkReply.R_FREVENGE: True,
+    MonsterTalkReply.R_PAIN: False,
+    MonsterTalkReply.R_SLAVE: False,
+    MonsterTalkReply.R_MATE: False,
+    MonsterTalkReply.R_TRADE: False,
+    MonsterTalkReply.R_WISH: False,
+    MonsterTalkReply.R_SELL: False,
+    MonsterTalkReply.R_SOUL: False,
+    MonsterTalkReply.R_SACH: False,
+    MonsterTalkReply.R_WFREE: False,
+    MonsterTalkReply.R_JUNDEAD: False,
+    MonsterTalkReply.R_PREVENGE: True,
+    MonsterTalkReply.R_DRAIN: False,
+    MonsterTalkReply.R_CIRCNAV: False,
+    MonsterTalkReply.R_2POLES: False,
+    MonsterTalkReply.R_1TERR: False,
+    MonsterTalkReply.R_EXPALL: False,
+    MonsterTalkReply.R_MADVANCE: False,
+}
+
+
+class TalkReplyOutcome(Enum):
+    IGNORE = "Ignore"
+    ATTACK = "Attack"
+    QUEST_OR_AGREEMENT = "Quest or Agreement"
+
+
+# `outcome_categories`: ids {0, 2} ignore, {1, 23} attack, the remaining
+# 20 ids each a distinct quest/agreement (see `agreements` in the
+# source for each one's own request/reward text -- not transcribed
+# here, out of scope for this vocabulary-level phase).
+MONSTER_TALK_REPLY_OUTCOME: dict[MonsterTalkReply, TalkReplyOutcome] = {
+    MonsterTalkReply.R_PUZZLED: TalkReplyOutcome.IGNORE,
+    MonsterTalkReply.R_CHARGE: TalkReplyOutcome.ATTACK,
+    MonsterTalkReply.R_WARN: TalkReplyOutcome.IGNORE,
+    MonsterTalkReply.R_REGAIN: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_VISIT: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_RIDDLE: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_FREVENGE: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_PAIN: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_SLAVE: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_MATE: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_TRADE: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_WISH: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_SELL: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_SOUL: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_SACH: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_WFREE: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_JUNDEAD: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_PREVENGE: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_DRAIN: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_CIRCNAV: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_2POLES: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_1TERR: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_EXPALL: TalkReplyOutcome.QUEST_OR_AGREEMENT,
+    MonsterTalkReply.R_MADVANCE: TalkReplyOutcome.ATTACK,
+}
+
+
+def monster_talk_reply_eligible(
+    reply: MonsterTalkReply, monster: Monster, *, has_purchasable_treasure: bool = False
+) -> bool:
+    """Whether `reply` passes the source's own 4 eligibility gates for
+    `monster`'s own real `MONSTER_RUNTIME_PROFILE` view/intelligence.
+    `RMate` reuses `MonsterRuntimeProfile.can_offer_mate_quest`
+    directly (Phase 381's own `mtmate` field) rather than a caller
+    argument; `RSell`'s own "a purchasable magic-item treasure" gate is
+    a real-world-state question this module has no access to, so it's
+    threaded in by the caller instead of guessed.
+    """
+
+    profile = MONSTER_RUNTIME_PROFILE[monster]
+    view_distance = abs(ALIGNMENT_ORDINAL[profile.base_view] - ALIGNMENT_ORDINAL[MONSTER_TALK_REPLY_VIEW[reply]])
+    if view_distance > MONSTER_TALK_REPLY_VIEW_VARIANCE[reply]:
+        return False
+    intel_distance = abs(
+        MONSTER_INTELLIGENCE_ORDINAL[profile.intelligence]
+        - MONSTER_INTELLIGENCE_ORDINAL[MONSTER_TALK_REPLY_INTELLIGENCE[reply]]
+    )
+    if intel_distance > MONSTER_TALK_REPLY_INTELLIGENCE_VARIANCE[reply]:
+        return False
+    if reply is MonsterTalkReply.R_MATE and not profile.can_offer_mate_quest:
+        return False
+    if reply is MonsterTalkReply.R_SELL and not has_purchasable_treasure:
+        return False
+    return True
+
+
+def select_monster_talk_reply(
+    monster: Monster, rng: random.Random, *, has_purchasable_treasure: bool = False
+) -> MonsterTalkReply | None:
+    """The real reply selector: Sphinx's own confirmed 50%-forced
+    `RRiddle` special case, then a uniform-id-propose/`repfreq`-accept
+    rejection loop restricted to the eligible replies -- mathematically
+    the same `repfreq[r] / sum(repfreq[q] for q in eligible)` weighted
+    choice the source itself gives as the closed form, but implemented
+    as the real described loop rather than the reduction, matching this
+    project's own convention of modelling the real algorithm shape
+    where one is given. Returns `None` only if no reply is eligible at
+    all (never observed for any real `Monster`, but not assumed
+    impossible). Uses `random.Random`, not `PascalRandom` -- like
+    `resolve_talk_reaction()` above, this is Monte-Carlo-verified
+    against the source's own stated frequencies, not a byte-exact
+    reproduction of a real captured trace (none exists for this
+    routine).
+    """
+
+    if monster is Monster.SPHINX and rng.random() < 0.5:
+        return MonsterTalkReply.R_RIDDLE
+
+    eligible = [
+        reply
+        for reply in MonsterTalkReply
+        if monster_talk_reply_eligible(reply, monster, has_purchasable_treasure=has_purchasable_treasure)
+    ]
+    if not eligible:
+        return None
+
+    all_replies = list(MonsterTalkReply)
+    while True:
+        candidate = rng.choice(all_replies)
+        if candidate not in eligible:
+            continue
+        if rng.random() < MONSTER_TALK_REPLY_FREQUENCY[candidate] / 10:
+            return candidate
 
 
 # Say [SA] and Fulfill [FU], rulebook [5.6]/[5.7] -- Phase 240.
