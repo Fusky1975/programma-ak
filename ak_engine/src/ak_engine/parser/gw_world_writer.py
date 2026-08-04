@@ -61,6 +61,15 @@ parameter, Phase 372). A round-tripped leader record is therefore
 guaranteed equal on every field `GWLeaderRecord` actually models, but a
 freshly-written record's own raw positions 22-24 will not match a real
 file's own original values there.
+
+**Phase 376 -- `write_gw_army_record` now writes `GWArmyRecord`'s own
+`state`/`movement_points`/`death_or_transformation_marker`/`plague_
+survival_count` fields directly** (see `gw_world.py`'s own Phase 376
+addendum on `GWArmyRecord` for the full field-by-field derivation from
+`AKGEN_embedded_catalogs.json.txt`'s own `gw_format.records.army.
+ordered_storage`), superseding the earlier `raw_field7`-`raw_field10`
+placeholder names this writer used before that record type was decoded
+further.
 """
 
 from __future__ import annotations
@@ -263,7 +272,10 @@ def write_gw_feature_record(record: GWFeatureRecord) -> str:
 
 def write_gw_army_record(record: GWArmyRecord) -> str:
     """Writes one army's own 10-integer Block B row -- the exact inverse
-    of `parse_gw_armies`.
+    of `parse_gw_armies`. `record.state` is written directly (Phase 376);
+    `is_skeletal`/`is_mercenary` are derived, read-only convenience flags
+    on `GWArmyRecord`, not independent data, so they aren't consulted
+    here.
     """
 
     leader_id = _NO_LEADER_SENTINEL if record.commanded_by_leader_id is None else record.commanded_by_leader_id
@@ -278,10 +290,10 @@ def write_gw_army_record(record: GWArmyRecord) -> str:
             record.race.value,
             army_type_ord,
             record.quality.value,
-            record.raw_field7,
-            record.raw_field8,
-            record.raw_field9,
-            record.raw_field10,
+            record.state.value,
+            record.movement_points,
+            record.death_or_transformation_marker,
+            record.plague_survival_count,
         )
     )
 

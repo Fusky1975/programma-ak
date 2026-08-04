@@ -1708,23 +1708,44 @@ class GWArmyRecord:
     """One army's own row from Block B, the per-army block that follows
     the province block and Block A (`GWFeatureRecord`, mostly decoded as
     of Phase 341) -- see the module docstring's Phase 316/317/331-337
-    addenda for the full, evidence-based field derivation.
+    addenda for the field-by-field empirical derivation that got this
+    record type to 6 of its 10 fields.
 
-    Only what's independently confirmed is exposed as a typed field.
-    Three trailing fields remain undeciphered and are kept as plain,
-    raw ints rather than guessed at -- the same treatment
-    ``GWLeaderRecord.condition`` already gets above:
+    **Phase 376 addendum -- the 3 remaining fields (7-10) are real,
+    named Pascal fields, not permanently undeciphered.** A static
+    reverse engineering of `AKGEN.EXE` (`AKGEN_embedded_catalogs.json.txt`
+    `gw_format.records.army.ordered_storage`) names every one of them
+    directly, independent of this project's own empirical Phase 331-337
+    work:
 
-    - ``raw_field8``: confirmed constant per ``army_type`` (Phase 331)
-      but ruled out as ``models.army_type.BASE_STRENGTH``; its own real
-      meaning is unknown.
-    - ``raw_field9``: confirmed a genuine, persistent per-unit state,
-      but only ever varies when ``raw_field7 == 0`` (Phase 333/334);
-      its own ``{1, 2, 251}`` values are undeciphered.
-    - ``raw_field10``: confirmed gated by ``army_type`` (only the 10
-      non-monstrous types ever show it non-zero) and confirmed not a
-      simple "fought a battle this turn" flag (Phase 335); its own
-      ``0``/``1``/``2`` meaning is undeciphered.
+    - `state` (Pascal `astate`): a real 8-value engagement/state enum,
+      not just the 2 values (`MERCENARY`=2, `ZOMBOID`=3) Phase 332/337
+      already isolated as `is_mercenary`/`is_skeletal` -- the other 6
+      values (`DEAD`=0, `HIRED`=1, `BOLD`=4, `SOLD`=5, `LOSER`=6,
+      `CALM`=7) are exactly `models/monster.py MonsterEngagementState`'s
+      own already-existing 8 members, in the same 0-7 order, confirmed
+      by name in the disassembly's own `state_enum` table. Only
+      `MERCENARY`/`ZOMBOID` (and, by the unled-row structural split
+      Phase 332/333 already found, plausibly `HIRED`/`DEAD`) have real
+      letter-text cross-checks; `BOLD`/`SOLD`/`LOSER`/`CALM` are typed
+      here on the disassembly's own authority, not independently
+      confirmed against a real fixture yet.
+    - `movement_points` (Pascal `AMP`, "certain" confidence): a signed
+      byte, this army's own current movement points.
+    - `death_or_transformation_marker` (Pascal `adie`, "certain_as_role"):
+      the disassembly's own observed role is that `250` triggers
+      conversion to Weres/Werefolk, and other values are death-context
+      codes including a `251` sentinel -- individual non-`250` codes
+      aren't enumerated by the source, so this stays a raw `int` rather
+      than an enum.
+    - `plague_survival_count` ("certain_as_role"): positive values
+      prevent a future plague death and allow a quality drop; the
+      source's own observed role says it's incremented after surviving
+      plague. Gated by header field 31 -- already parsed by this module
+      as `GWHeader.compatibility_revision_31` -- so a legacy (23-token
+      header) file may not carry this meaningfully; kept as a raw `int`
+      with no gating logic here, since no legacy-header real fixture
+      exists in this project's own corpus to test against.
     """
 
     # The commanding Hero's/King's own leader id, or `None` for the
@@ -1737,17 +1758,19 @@ class GWArmyRecord:
     # `MOD_PAT_ORDINAL_TO_ARMY_TYPE`'s own real shape.
     army_type: ArmyType | None
     quality: Quality
+    # Phase 376: the real `astate` enum -- see docstring above.
+    state: MonsterEngagementState
     # `True` only for the confirmed Skeletal-army marker (Phase 332,
-    # `raw_field7 == 3`).
+    # `state is MonsterEngagementState.ZOMBOID`).
     is_skeletal: bool
     # `True` only for the confirmed "independent mercenary, available
-    # to Recruit" marker (Phase 337, `raw_field7 == 2`) -- 85 of 85
-    # real letter cross-checks matched, zero exceptions.
+    # to Recruit" marker (Phase 337, `state is MonsterEngagementState.
+    # MERCENARY`) -- 85 of 85 real letter cross-checks matched, zero
+    # exceptions.
     is_mercenary: bool
-    raw_field7: int
-    raw_field8: int
-    raw_field9: int
-    raw_field10: int
+    movement_points: int
+    death_or_transformation_marker: int
+    plague_survival_count: int
 
 
 def parse_gw_armies(path: Path) -> list[GWArmyRecord]:
@@ -1786,7 +1809,18 @@ def parse_gw_armies(path: Path) -> list[GWArmyRecord]:
     records: list[GWArmyRecord] = []
     for line_index in block_b:
         values = [int(token) for token in lines[line_index].split()]
-        leader_id, x, y, race_ordinal, army_type_ordinal, quality_ordinal, field7, field8, field9, field10 = values
+        (
+            leader_id,
+            x,
+            y,
+            race_ordinal,
+            army_type_ordinal,
+            quality_ordinal,
+            state_ordinal,
+            movement_points,
+            death_or_transformation_marker,
+            plague_survival_count,
+        ) = values
 
         if race_ordinal not in {member.value for member in Race}:
             raise GWParseError(
@@ -1806,7 +1840,14 @@ def parse_gw_armies(path: Path) -> list[GWArmyRecord]:
                 line_number=line_index + 1,
                 line=lines[line_index],
             )
+        if state_ordinal not in {member.value for member in MonsterEngagementState}:
+            raise GWParseError(
+                f"unrecognized MonsterEngagementState ordinal {state_ordinal} on a Block B army row",
+                line_number=line_index + 1,
+                line=lines[line_index],
+            )
 
+        state = MonsterEngagementState(state_ordinal)
         records.append(
             GWArmyRecord(
                 commanded_by_leader_id=None if leader_id == 255 else leader_id,
@@ -1814,12 +1855,12 @@ def parse_gw_armies(path: Path) -> list[GWArmyRecord]:
                 race=Race(race_ordinal),
                 army_type=MOD_PAT_ORDINAL_TO_ARMY_TYPE[army_type_ordinal],
                 quality=Quality(quality_ordinal),
-                is_skeletal=field7 == 3,
-                is_mercenary=field7 == 2,
-                raw_field7=field7,
-                raw_field8=field8,
-                raw_field9=field9,
-                raw_field10=field10,
+                state=state,
+                is_skeletal=state is MonsterEngagementState.ZOMBOID,
+                is_mercenary=state is MonsterEngagementState.MERCENARY,
+                movement_points=movement_points,
+                death_or_transformation_marker=death_or_transformation_marker,
+                plague_survival_count=plague_survival_count,
             )
         )
 

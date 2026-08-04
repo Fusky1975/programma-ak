@@ -295,7 +295,7 @@ def test_philos_own_block_b_rows_match_his_real_dwarven_axemen_garrison():
         assert row.is_skeletal is False
 
 
-def test_is_skeletal_true_only_for_the_confirmed_field7_equals_3_rows():
+def test_is_skeletal_true_only_for_the_confirmed_zomboid_state_rows():
     # Both of this fixture's own Skeletal rows are themselves unled --
     # a real correction to Phase 332's "field7 in {1, 3} only on led
     # rows" claim, which was only ever checked against a different turn.
@@ -303,12 +303,12 @@ def test_is_skeletal_true_only_for_the_confirmed_field7_equals_3_rows():
     skeletal = [r for r in records if r.is_skeletal]
     assert len(skeletal) == 2
     for row in skeletal:
-        assert row.raw_field7 == 3
+        assert row.state is MonsterEngagementState.ZOMBOID
         assert row.commanded_by_leader_id is None
-    assert all(r.raw_field7 != 3 for r in records if not r.is_skeletal)
+    assert all(r.state is not MonsterEngagementState.ZOMBOID for r in records if not r.is_skeletal)
 
 
-def test_is_mercenary_true_only_for_the_confirmed_field7_equals_2_rows():
+def test_is_mercenary_true_only_for_the_confirmed_mercenary_state_rows():
     # `HexCoord(9, 5)`'s own mercenary row (Orc/Warg Riders/Average)
     # matches SE3__T0.K1's own real "independent mercenaries which you
     # may Recruit" table exactly (Dolphin Sea/#1006/209th Warg
@@ -321,21 +321,23 @@ def test_is_mercenary_true_only_for_the_confirmed_field7_equals_2_rows():
     assert warg_riders.race is Race.ORCISH
     assert warg_riders.army_type is ArmyType.WARG_RIDERS
     assert warg_riders.quality is Quality.AVERAGE
-    assert warg_riders.raw_field7 == 2
+    assert warg_riders.state is MonsterEngagementState.MERCENARY
     assert warg_riders.commanded_by_leader_id is None
     for row in mercenaries:
-        assert row.raw_field7 == 2
+        assert row.state is MonsterEngagementState.MERCENARY
         assert row.is_skeletal is False
-    assert all(r.raw_field7 != 2 for r in records if not r.is_mercenary)
+    assert all(r.state is not MonsterEngagementState.MERCENARY for r in records if not r.is_mercenary)
 
 
-def test_block_b_raw_fields_are_preserved_undecoded():
+def test_block_b_trailing_fields_are_named_and_preserved():
+    # Phase 376: state/movement_points/death_or_transformation_marker/
+    # plague_survival_count -- see GWArmyRecord's own Phase 376 addendum.
     records = parse_gw_armies(FIXTURE)
     philo_row = next(r for r in records if r.commanded_by_leader_id == 70)
-    assert philo_row.raw_field7 == 1
-    assert philo_row.raw_field8 == 2
-    assert philo_row.raw_field9 == 0
-    assert philo_row.raw_field10 == 0
+    assert philo_row.state is MonsterEngagementState.HIRED
+    assert philo_row.movement_points == 2
+    assert philo_row.death_or_transformation_marker == 0
+    assert philo_row.plague_survival_count == 0
 
 
 def test_raises_gw_parse_error_on_unrecognized_race_ordinal(tmp_path: Path):

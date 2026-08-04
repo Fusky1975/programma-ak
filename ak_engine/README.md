@@ -15547,7 +15547,7 @@ section.
     again, updated README, ran once more before commit -- the standing
     per-phase workflow. Full suite: 3612 passed before, 3623 after (11
     new tests).
-- **Phase 375 (current)**: corrects a documentation-only mistake in
+- **Phase 375**: corrects a documentation-only mistake in
   Phase 374's own module docstring, found while auditing
   `AKGEN_reverse_engineering_report.md`/`AKGEN_embedded_catalogs.json.txt`
   for anything still unused (a user question, not a code bug report).
@@ -15569,6 +15569,55 @@ section.
   updated README, ran once more before commit -- the standing per-phase
   workflow, scaled to a docs-only change. Full suite: 3623 passed before
   and after.
+- **Phase 376 (current)**: decodes `GWArmyRecord`'s (Block B) own last 4
+  fields, previously kept as undeciphered `raw_field7`-`raw_field10`
+  (Phase 331-337), found while continuing the AKGEN research audit that
+  produced Phase 375. `AKGEN_embedded_catalogs.json.txt`'s own
+  `gw_format.records.army.ordered_storage` names every one of them
+  directly, independent of this project's own prior empirical work:
+  - `state` (Pascal `astate`): the real 8-value engagement/state enum --
+    not just the 2 values (`MERCENARY`, `ZOMBOID`) already isolated as
+    `is_mercenary`/`is_skeletal` (Phase 332/337). The other 6 (`DEAD`,
+    `HIRED`, `BOLD`, `SOLD`, `LOSER`, `CALM`) are exactly `models/
+    monster.py MonsterEngagementState`'s own already-existing 8 members
+    in the same 0-7 order -- an enum this project had already built for
+    Block A's `GWFeatureRecord.engagement_state` (Phase 130/341) but
+    never connected to Block B. `is_skeletal`/`is_mercenary` are now
+    derived from `state` rather than a raw int comparison; no behavior
+    change for either flag.
+  - `movement_points` (Pascal `AMP`, "certain" confidence): this army's
+    own current movement points, a signed byte.
+  - `death_or_transformation_marker` (Pascal `adie`, "certain_as_role"):
+    `250` triggers conversion to Weres/Werefolk; other values are
+    death-context codes including a `251` sentinel -- individual
+    non-`250` codes aren't enumerated by the source, so this stays a raw
+    `int`, just named and documented instead of anonymous.
+  - `plague_survival_count` ("certain_as_role"): positive values prevent
+    a future plague death and allow a quality drop, incremented after
+    surviving plague; gated by header field 31 (already parsed as
+    `GWHeader.compatibility_revision_31`) -- kept as a raw `int` with no
+    gating logic added, since no legacy-header real fixture exists in
+    this project's own corpus to test that gate against.
+  - `parser/gw_world_writer.py write_gw_army_record` updated to match
+    (writes `state.value` and the 3 newly-named fields directly,
+    superseding the old `raw_field7`-`raw_field10` placeholders).
+    `parser/gw_world_bridge.py` needed no change -- it already reads
+    `is_skeletal`/`is_mercenary` by keyword, and those two fields keep
+    their own real meaning and values unchanged.
+  - Renamed 2 existing tests and their own in-body assertions from
+    `raw_field7 == 2/3` to `state is MonsterEngagementState.MERCENARY/
+    ZOMBOID`; replaced `test_block_b_raw_fields_are_preserved_undecoded`
+    with `test_block_b_trailing_fields_are_named_and_preserved`, using
+    the same real Philo(70) row's own values, now asserted against the
+    named fields. Added a new writer round-trip test for
+    `MonsterEngagementState.CALM` (a synthetic record -- the real
+    `GW3__T1` fixture's own Block B rows only ever show `HIRED`/
+    `MERCENARY`/`ZOMBOID` in practice, so the other 5 states need a
+    synthetic example to exercise the writer/reader round trip at all).
+    Ran the parser/writer/bridge/end-to-end suite, then the full suite,
+    updated README, ran once more before commit -- the standing
+    per-phase workflow. Full suite: 3623 passed before, 3624 after (1
+    net new test).
 
 ## Setup
 

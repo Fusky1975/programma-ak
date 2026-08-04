@@ -23,6 +23,7 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.parser.gw_world import (
     GameType,
+    GWArmyRecord,
     GWHeader,
     GWLeaderRecord,
     GWOfficeMeritRecord,
@@ -192,6 +193,29 @@ def test_write_gw_army_record_round_trips_every_real_army(tmp_path: Path):
     path = tmp_path / "all_armies"
     path.write_text(text, encoding="utf-8")
     assert parse_gw_armies(path) == records
+
+
+def test_write_gw_army_record_round_trips_a_state_not_seen_in_the_real_fixture(tmp_path: Path):
+    # Phase 376: GW3__T1's own 218 Block B rows only ever show state in
+    # {HIRED, MERCENARY, ZOMBOID} -- CALM (7) is real per the AKGEN
+    # disassembly's own state_enum but untested by the fixture round
+    # trip above, so this exercises it with a synthetic record.
+    record = GWArmyRecord(
+        commanded_by_leader_id=None,
+        coord=HexCoord(3, 4),
+        race=Race.HUMAN,
+        army_type=ArmyType.BOWMEN,
+        quality=Quality.VETERAN,
+        state=MonsterEngagementState.CALM,
+        is_skeletal=False,
+        is_mercenary=False,
+        movement_points=5,
+        death_or_transformation_marker=251,
+        plague_survival_count=1,
+    )
+    path = tmp_path / "calm_army_only"
+    path.write_text(write_gw_army_record(record), encoding="utf-8")
+    assert parse_gw_armies(path) == [record]
 
 
 def test_write_gw_office_records_round_trips_through_a_synthetic_full_file(tmp_path: Path):
