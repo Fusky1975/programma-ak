@@ -15950,7 +15950,7 @@ section.
     `None` case), ran again, updated README, ran once more before
     commit -- the standing per-phase workflow. Full suite: 3676 passed
     before, 3686 after (10 new tests).
-- **Phase 383 (current)**: the "minor tables" item from the same
+- **Phase 383**: the "minor tables" item from the same
   research pass -- 3 more real `Race` members, 9 more real `ArmyType`
   members, and a new mundane-scenery vocabulary model.
   - `models/race.py` gains `Race.DROW`/`LIZARDMAN`/`GOBLIN` (ordinals
@@ -16028,6 +16028,64 @@ section.
     README, ran once more before commit -- the standing per-phase
     workflow. Full suite: 3686 passed before this phase's own new work,
     3703 after (4 pre-existing tests updated in place, 21 new tests).
+- **Phase 384 (current)**: **corrects Phase 382's own "cannot be
+  honestly shipped" conclusion about the Advanced Ability Schedule --
+  it was reproducible after all**, once asked directly what the actual
+  blocker was. New `worldgen/special_ability_level_schedule.py`
+  implements `build_magic_ability_level_schedule(game_number)`, the
+  real `spabord` level assignment (which real `AdvancedAbility` a
+  character is granted at skill levels 5-10) for the 5 magic colleges
+  (`Ability.WHITE`/`NECROMANCY`/`ELEMENTAL`/`PSYCHIC`/`ILLUSION`),
+  verified to reproduce `game_900_magic_schedule`'s own real worked
+  example **exactly, all 5 colleges in a row**.
+  - **The two mistakes Phase 382's attempt made**: it reseeded
+    `RandSeed` independently per magic college (the real routine
+    reseeds *once* for the whole 15-ability `spabord` table and never
+    reseeds again between abilities), and it only swept discard offsets
+    0-40 looking for where White Magic's own worked example would
+    start (White Magic isn't built first -- 99 further calls are
+    consumed by earlier abilities before it even begins, far outside
+    that window).
+  - **What actually closed it**: this project's own pre-existing
+    `models/enums.py Ability` enum (real `CTBOTH.PAS` declaration
+    order) lines up exactly with `spabord`'s own build order --
+    `TACTICAL, MARCH, NAVAL, ARCHERY, MELEE, WHITE, NECROMANCY,
+    ELEMENTAL, PSYCHIC, ILLUSION, DRUID, THIEF, EXPLORER, SPY, SAGE`.
+    The source's own "March alone uses dest=s" algorithm exception is a
+    direct match for `Ability.MARCH` sitting at ordinal 1, the only one
+    of the 4 abilities before `WHITE` that costs zero `IRand` calls.
+    Since the selection algorithm's own `IRand` consumption is a pure
+    function of the numeric destinations drawn (never of what the
+    items are named), the other 3 preceding abilities
+    (`TACTICAL`/`NAVAL`/`ARCHERY`/`MELEE`) can be correctly *consumed*
+    without knowing their own real 6-item content -- `_run_generic_
+    selection()` does this, reused both to build a real college's
+    schedule and to advance the stream past an unknown one.
+  - Cross-checked the 5 colleges' own real 30 template item names
+    (`magic_templates`) against this project's own pre-existing
+    `models/advanced_ability.py ADVANCED_ABILITY_POOL` (sourced
+    independently, from a user-supplied rulebook excerpt): every one
+    matches by meaning 1:1, confirming both sources describe the same
+    real system (a few labels differ cosmetically across the two
+    sources, e.g. `"White Places"` vs. `HOLY_PLACES`'s own `"Holy
+    Places"` -- the same kind of cross-source naming drift already
+    documented for `ArmyType.WHALES`).
+  - Deliberately still out of scope: `Ability.MARCH`'s own concrete
+    level-schedule (confirmed `dest=s` identity, but this project's own
+    `ADVANCED_ABILITY_POOL[MARCH]` has only 5 candidates, not 6, and
+    its ordering was never confirmed to match the real template order
+    the way `magic_templates` was); `TACTICAL`/`NAVAL`/`ARCHERY`/
+    `MELEE`'s and `DRUID`/`THIEF`/`EXPLORER`/`SPY`/`SAGE`'s own real
+    template content (not in the available material -- the first 4 are
+    still correctly consumed to reach the magic colleges, the last 5
+    aren't touched at all since nothing needs them here).
+  - Ran the full suite before writing new tests (non-breaking check),
+    wrote `tests/test_special_ability_level_schedule.py` (the full
+    game-900 worked example verified exactly, template coverage,
+    determinism for a fixed `game_number`, and a smoke check that
+    different `game_number`s actually diverge), ran again, updated
+    README, ran once more before commit -- the standing per-phase
+    workflow. Full suite: 3703 passed before, 3709 after (6 new tests).
 
 ## Setup
 

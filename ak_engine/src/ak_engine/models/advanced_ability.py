@@ -74,6 +74,22 @@ have contained the array). So: the mechanic is now correctly described
 as deterministic-but-data-unavailable, not "possibly random" -- a real
 correction, not just an elaboration.
 
+**Phase 384 update -- `spabord` itself is now recovered, from a
+different source.** The claim above ("unrecoverable") was true of the
+``.PAS`` archive alone; it was never a claim about the AKGEN reverse-
+engineering material (a separate, disassembly-derived source, not part
+of ``Programma Pascal.zip``), which turned out to give the real
+selection *algorithm* for ``spabord`` (not just its existence) and a
+full worked example for one real game. See
+``worldgen/special_ability_level_schedule.py`` -- verified to
+reproduce that worked example exactly for the 5 magic colleges
+(``Ability.WHITE``/``NECROMANCY``/``ELEMENTAL``/``PSYCHIC``/
+``ILLUSION``). The other 10 categories' own real pool-selection order
+(including ``ADVANCED_ABILITY_POOL``'s own tuple order in *this*
+module, which is sourced from a different, user-supplied rulebook
+excerpt and was never confirmed to match `spabord`'s real per-category
+template order) remain unrecovered.
+
 **Two further real, fully-recoverable mechanics found in the same
 sweep** (``SPEAK.PAS Check_MSpab``/``Check_DSpab``, ~lines 66-90):
 
