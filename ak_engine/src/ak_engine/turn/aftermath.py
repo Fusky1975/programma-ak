@@ -34,18 +34,35 @@ falls one level at exactly this `base_percent` (Depleted excluded --
 the unit's own battle-performance "score"; Elite excluded -- "Elite
 cannot gain").
 
-**Not yet wired into `roll_quality_change`/`turn/battle_orchestrator.py`'s
-6 call sites** -- the real formula's own two real inputs (which
-formation depth a specific army fought at, and its own per-unit
-"merit" battle-performance score) aren't tracked anywhere in this
-project's post-battle aftermath code today; wiring them in means
-threading that state through `fight_battle`'s own battle-line
-bookkeeping first, a separate, larger design phase, not a drop-in
-formula swap like Phase 349's pursuit rewire. `base_quality_change_
-percent`/`MERIT_MULTIPLIER` are added standalone and tested against the
-source's own table, mirroring Phase 346's own "implement the standalone
-function first, wire it into the real call site in a later phase"
-split.
+**Phase 372: wired into `roll_quality_change`/`turn/battle_orchestrator.py`'s
+call sites.** Formation depth turned out to already be available, not
+missing: `turn/battle_resolution.py BattleColumnResult.attacker_units`/
+`defender_units` are ordered front-to-back lists (Phase 6's own
+`assign_battle_lines`), so an army's own index in its column's list
+*is* its formation depth -- `battle_orchestrator._formation_divisors()`
+reads exactly that, no new state needed. `improve_chance`/
+`decline_chance` below now take that `formation_divisor` and use
+`base_quality_change_percent` instead of the old flat, unsourced
+`BASE_QUALITY_CHANGE_CHANCE` formula -- that constant is removed
+outright, not kept dead, since nothing else in the project ever needs a
+from-scratch flat rate again.
+
+The other real input, a unit's own per-unit "merit" battle-performance
+`score` (used only by the *gain* side's `quality_gain_merit_multiplier`)
+genuinely is still missing, and unlike formation depth there's no
+already-computed real number sitting in this project's battle-line data
+that the source confirms is the right substitute -- `column_bres` is
+tempting (it *is* a real, per-column performance number), but the
+source never says the engine's own "score" reuses `BRES`, and guessing
+that mapping would misrepresent an unconfirmed interpretation as a
+recovered formula. `roll_quality_change`'s new `score` parameter
+defaults to `0` -- the gain formula's own documented "score >= 0 -->
+multiplier 1.0" case, i.e. *no* reduction -- the same "missing data
+defaults to a neutral, not a guessed, value" convention this project
+already uses elsewhere (see `turn/battle_orchestrator.py
+_build_battle_units`'s own exploration-advantage default). A future
+phase can source and wire a real `score` the moment a source confirms
+one; nothing here forecloses that.
 """
 
 from __future__ import annotations
@@ -53,8 +70,6 @@ from __future__ import annotations
 import random
 
 from ak_engine.turn.combat import Quality
-
-BASE_QUALITY_CHANGE_CHANCE = 0.5
 
 # -- Phase 350: the confirmed AK.EXE/AK.OVR quality-change formula --------
 
@@ -95,20 +110,23 @@ DRUID_LED_IMPROVE_MULTIPLIER: dict[Quality, float] = {
 }
 
 
-def improve_chance(quality: Quality) -> float:
-    """Chance to rise one quality level; decreases as quality rises, zero at Elite."""
+def improve_chance(quality: Quality, formation_divisor: int = FORMATION_DIVISOR["front"], *, score: int = 0) -> float:
+    """Chance to rise one quality level: `base_quality_change_percent`
+    scaled by `quality_gain_merit_multiplier(score)` -- zero at Elite
+    ("Elite cannot gain"), regardless of `score`."""
 
     if quality == Quality.ELITE:
         return 0.0
-    return BASE_QUALITY_CHANGE_CHANCE * (1 - int(quality) / int(Quality.ELITE))
+    return base_quality_change_percent(quality, formation_divisor) * quality_gain_merit_multiplier(score)
 
 
-def decline_chance(quality: Quality) -> float:
-    """Chance to fall one quality level; decreases as quality rises, zero at Depleted."""
+def decline_chance(quality: Quality, formation_divisor: int = FORMATION_DIVISOR["front"]) -> float:
+    """Chance to fall one quality level: `base_quality_change_percent`
+    directly -- zero at Depleted ("Depleted cannot fall")."""
 
     if quality == Quality.DEPLETED:
         return 0.0
-    return BASE_QUALITY_CHANGE_CHANCE * (1 - int(quality) / int(Quality.ELITE))
+    return base_quality_change_percent(quality, formation_divisor)
 
 
 def _step(quality: Quality, delta: int) -> Quality:
@@ -123,6 +141,8 @@ def roll_quality_change(
     is_winner: bool,
     retreated: bool = False,
     led_by_insufficient_druid: bool = False,
+    formation_divisor: int = FORMATION_DIVISOR["front"],
+    score: int = 0,
 ) -> Quality:
     """Roll this unit's post-battle quality change.
 
@@ -131,20 +151,31 @@ def roll_quality_change(
     - Losers that retreated: may decline.
     - Losers that didn't retreat ("can either improve or decrease"): rolls
       both directions, decline checked first.
+
+    ``formation_divisor`` (Phase 372) is one of ``FORMATION_DIVISOR``'s
+    own four values -- which formation depth this unit fought at,
+    defaulting to front-line for a caller that doesn't track it.
+    ``score`` (Phase 372) only affects the *improve* side (see
+    ``improve_chance``'s own docstring) -- defaulting to `0`, the
+    formula's own "no reduction" case, since no real source gives this
+    project a per-unit merit score to compute (see this module's own
+    docstring).
     """
 
     if is_winner:
-        chance = improve_chance(quality)
+        chance = improve_chance(quality, formation_divisor, score=score)
         if led_by_insufficient_druid:
             chance *= DRUID_LED_IMPROVE_MULTIPLIER.get(quality, 1.0)
         return _step(quality, 1) if rng.random() < chance else quality
 
     if retreated:
-        return _step(quality, -1) if rng.random() < decline_chance(quality) else quality
+        return _step(quality, -1) if rng.random() < decline_chance(quality, formation_divisor) else quality
 
+    decline = decline_chance(quality, formation_divisor)
+    improve = improve_chance(quality, formation_divisor, score=score)
     roll = rng.random()
-    if roll < decline_chance(quality) / 2:
+    if roll < decline / 2:
         return _step(quality, -1)
-    if roll < decline_chance(quality) / 2 + improve_chance(quality) / 2:
+    if roll < decline / 2 + improve / 2:
         return _step(quality, 1)
     return quality

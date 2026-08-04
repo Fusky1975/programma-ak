@@ -16,11 +16,13 @@ from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.battle_line import BattleUnit
+from ak_engine.turn.aftermath import FORMATION_DIVISOR
 from ak_engine.turn.battle_orchestrator import (
     MultiAttackerParty,
     _build_battle_units,
     _commander_combatant,
     _direct_destruction_probabilities,
+    _formation_divisors,
     _maybe_fight_duel,
     _record_battle_merit,
     _select_side_commander,
@@ -2156,7 +2158,9 @@ def test_fight_battle_winning_army_led_by_insufficient_druid_passes_the_penalty_
         report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
     assert report.battle_result.winner == "attacker"
-    mock_roll.assert_called_once_with(Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True)
+    mock_roll.assert_called_once_with(
+        Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True, formation_divisor=1
+    )
 
 
 # -- Phase 371: real, confirmed per-column direct destruction wired into
@@ -2247,3 +2251,100 @@ def test_fight_battle_falls_back_to_quality_change_when_direct_destruction_misse
     assert 101 not in report.destroyed_army_ids
     assert 101 in state.armies
     assert 101 in report.quality_changes
+
+
+# -- Phase 372: real, confirmed post-battle quality-change formula wired
+# into roll_quality_change via formation_divisor --
+
+
+def test_formation_divisors_reads_each_units_own_index_as_its_depth():
+    column = BattleColumnResult(
+        attacker_strength=30.0,
+        defender_strength=10.0,
+        bres=3,
+        attacker_won=True,
+        cluck_index=20,
+        attacker_units=[
+            BattleUnit(ArmyType.HVY_CAVALRY, 10.0, source_id=1),  # front
+            BattleUnit(ArmyType.HVY_CAVALRY, 10.0, source_id=2),  # second
+            BattleUnit(ArmyType.HVY_CAVALRY, 5.0, source_id=3),  # third
+            BattleUnit(ArmyType.HVY_CAVALRY, 5.0, source_id=4),  # fourth_and_later
+            BattleUnit(ArmyType.HVY_CAVALRY, 5.0, source_id=5),  # also fourth_and_later
+        ],
+        defender_units=[BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)],
+    )
+    battle_result = BattleResult(columns=[column], winner="attacker", total_bres=3)
+
+    divisors = _formation_divisors(battle_result)
+
+    assert divisors[1] == FORMATION_DIVISOR["front"]
+    assert divisors[2] == FORMATION_DIVISOR["second"]
+    assert divisors[3] == FORMATION_DIVISOR["third"]
+    assert divisors[4] == FORMATION_DIVISOR["fourth_and_later"]
+    assert divisors[5] == FORMATION_DIVISOR["fourth_and_later"]
+    assert divisors[201] == FORMATION_DIVISOR["front"]
+
+
+def test_formation_divisors_covers_both_sides_across_multiple_columns():
+    column_one = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=10.0, bres=1, attacker_won=True, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.HVY_CAVALRY, 10.0, source_id=101)],
+        defender_units=[
+            BattleUnit(ArmyType.GARRISON, 5.0, source_id=201),
+            BattleUnit(ArmyType.GARRISON, 5.0, source_id=202),
+        ],
+    )
+    column_two = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=10.0, bres=-1, attacker_won=False, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.HVY_CAVALRY, 10.0, source_id=102)],
+        defender_units=[BattleUnit(ArmyType.GARRISON, 5.0, source_id=203)],
+    )
+    battle_result = BattleResult(columns=[column_one, column_two], winner="attacker", total_bres=0)
+
+    divisors = _formation_divisors(battle_result)
+
+    assert divisors == {
+        101: FORMATION_DIVISOR["front"],
+        102: FORMATION_DIVISOR["front"],
+        201: FORMATION_DIVISOR["front"],
+        202: FORMATION_DIVISOR["second"],
+        203: FORMATION_DIVISOR["front"],
+    }
+
+
+def test_fight_battle_uses_real_formation_depth_for_a_winning_seconds_line_army():
+    # A hand-built BattleResult double (not a real resolve_battle() output
+    # -- see the Phase 371 direct-destruction tests above for the same
+    # pattern) puts army 101 at the front of its column and army 102
+    # second, both on the winning attacker side. AVERAGE's own real
+    # improve chance is 30% front, 15% second (score=0) -- a scripted
+    # roll of 0.20 clears the front-line chance but not the second-line
+    # one, proving formation_divisor actually reaches roll_quality_change
+    # through a real fight_battle() call, not just a direct unit test.
+    state = build_state()
+    state.armies[101].quality = Quality.AVERAGE
+    state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.AVERAGE, FIELD))
+    column = BattleColumnResult(
+        attacker_strength=20.0, defender_strength=5.0, bres=5, attacker_won=True, cluck_index=20,
+        attacker_units=[
+            BattleUnit(ArmyType.HVY_CAVALRY, 20.0, source_id=101),
+            BattleUnit(ArmyType.HVY_CAVALRY, 10.0, source_id=102),
+        ],
+        defender_units=[BattleUnit(ArmyType.GARRISON, 5.0, source_id=201)],
+    )
+    battle_result = BattleResult(
+        columns=[column], winner="attacker", total_bres=5, attacker_columns_won=1, defender_columns_won=0
+    )
+    # One draw for fight_battle's own terrain-line-length-cap roll (value
+    # irrelevant -- resolve_battle is patched, so its own cap argument is
+    # never read), then the two scripted improve rolls.
+    rng = ScriptedRandom([0.9, 0.20, 0.20])
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result):
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101, 102],
+            loser_retreats=False, rng=rng,
+        )
+
+    assert state.armies[101].quality == Quality.VETERAN  # front: 0.20 < 0.30 -- improved
+    assert state.armies[102].quality == Quality.AVERAGE  # second: 0.20 >= 0.15 -- unchanged

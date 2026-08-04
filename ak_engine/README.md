@@ -15351,7 +15351,7 @@ section.
     unlike the old probability-roll model), run again, update README,
     run once more before commit -- the standing per-phase workflow. Full
     suite: 3592 passed before Phase 370's own test fixes, 3597 after.
-- **Phase 371 (current)**: wires `turn/combat.py
+- **Phase 371**: wires `turn/combat.py
   direct_destruction_probability()` (Phase 347/348, real and confirmed)
   into `turn/battle_orchestrator.py fight_battle()`'s own per-army
   outcome loop -- the last of the two follow-ups Phase 370 explicitly
@@ -15399,6 +15399,55 @@ section.
     quality-change fallback. Ran again, updated README, ran once more
     before commit -- the standing per-phase workflow. Full suite: 3597
     passed before, 3602 after (5 new tests).
+- **Phase 372 (current)**: wires the real, confirmed post-battle
+  quality-change formula (`turn/aftermath.py base_quality_change_percent`,
+  Phase 350) into `roll_quality_change`/`turn/battle_orchestrator.py`'s
+  own call sites -- the second, and last, of Phase 370's own two deferred
+  follow-ups.
+  - Formation depth, the formula's own real input, turned out to already
+    be sitting in this project's own data, not missing: `turn/battle_
+    resolution.py BattleColumnResult.attacker_units`/`defender_units`
+    (Phase 6's own `assign_battle_lines`) are ordered front-to-back for
+    every column, so a unit's own index in that list *is* its formation
+    depth. New `battle_orchestrator._formation_divisors()` reads exactly
+    that, mirroring `_direct_destruction_probabilities()`'s own Phase
+    371 pattern -- no new state to track, just a column-by-column
+    `army_id -> formation_divisor` map built once per battle and
+    threaded through every `roll_quality_change`/`_retreat_or_disband`
+    call site.
+  - `improve_chance`/`decline_chance` now take that `formation_divisor`
+    and read `base_quality_change_percent` instead of the old flat,
+    unsourced `BASE_QUALITY_CHANGE_CHANCE` formula, which is removed
+    outright (nothing else needed a from-scratch flat rate).
+  - The formula's *other* real input -- a unit's own per-unit "merit"
+    battle-performance `score`, which only scales the winner's own
+    improve chance -- genuinely has no sourced formula or already-
+    computed real substitute in this project (unlike formation depth):
+    `column_bres` is a real, per-column performance number and was
+    tempting to reuse, but the source never confirms the engine's own
+    "score" is `BRES`, and guessing that mapping would misrepresent an
+    interpretation as a recovered formula. `roll_quality_change`'s new
+    `score` parameter defaults to `0` -- the gain formula's own
+    documented "score >= 0 -> multiplier 1.0" case, i.e. no reduction --
+    the same "missing data defaults to a neutral, not a guessed, value"
+    convention already used elsewhere in this project (exploration
+    advantage's own missing-entry default). A future phase can source
+    and wire a real `score` the moment a source confirms one.
+  - Run full suite before writing new Phase 372 tests, fixed the two
+    casualties of the real numbers replacing the old flat 50% rate
+    (`tests/test_aftermath.py`'s druid-led-improve-chance test,
+    `tests/test_battle_orchestrator.py`'s mock-assertion test needing
+    the new `formation_divisor` kwarg), wrote new tests (`base_quality_
+    change_percent`/`quality_gain_merit_multiplier`-driven `improve_
+    chance`/`decline_chance` tests, `roll_quality_change` formation-
+    divisor/score threading tests, `_formation_divisors()` unit tests
+    across single- and multi-column battles, and a `fight_battle()`
+    integration test proving a real front-line army and a real
+    stacked second-line army -- same quality, same battle, same
+    scripted roll -- land on different sides of their own real,
+    different improve-chance thresholds), ran again, updated README, ran
+    once more before commit -- the standing per-phase workflow. Full
+    suite: 3602 passed before, 3611 after (9 new tests).
 
 ## Setup
 

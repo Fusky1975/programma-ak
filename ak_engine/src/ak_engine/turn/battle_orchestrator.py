@@ -168,7 +168,7 @@ from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import RACE_LEADERSHIP_TREASURE
-from ak_engine.turn.aftermath import roll_quality_change
+from ak_engine.turn.aftermath import FORMATION_DIVISOR, roll_quality_change
 from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability, roll_terrain_line_length_cap
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit, quality_one_level_down
@@ -569,6 +569,7 @@ def _retreat_or_disband(
     destination: HexCoord | None,
     avoid_elimination: bool = False,
     led_by_insufficient_druid: bool = False,
+    formation_divisor: int = FORMATION_DIVISOR["front"],
 ) -> None:
     """``avoid_elimination`` (Phase 38): the caller's way of saying this army must not be
     removed from ``state`` even if it would otherwise disband -- see
@@ -583,12 +584,16 @@ def _retreat_or_disband(
     ``retreated=True`` call (the penalty only ever gates the "winner
     improves" branch), kept here so this call stays correct if that
     scope is ever widened.
+
+    ``formation_divisor`` (Phase 372): the real quality-change formula's
+    own real input, forwarded straight through.
     """
 
     if destination is not None:
         army.location = destination
         army.quality = roll_quality_change(
-            army.quality, rng, is_winner=False, retreated=True, led_by_insufficient_druid=led_by_insufficient_druid
+            army.quality, rng, is_winner=False, retreated=True,
+            led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
         )
         report.quality_changes[army.army_id] = army.quality
         report.retreated_army_ids.append(army.army_id)
@@ -1042,6 +1047,46 @@ def _direct_destruction_probabilities(battle_result: BattleResult) -> dict[int, 
     return probabilities
 
 
+_FORMATION_DIVISOR_BY_DEPTH = (
+    FORMATION_DIVISOR["front"],
+    FORMATION_DIVISOR["second"],
+    FORMATION_DIVISOR["third"],
+)
+
+
+def _formation_divisor_for_depth(index: int) -> int:
+    """`index` is a unit's own position in its column's `attacker_units`/
+    `defender_units` list (0 = front) -- see `_formation_divisors`'
+    own docstring. Any depth past third falls to `fourth_and_later`."""
+
+    if index < len(_FORMATION_DIVISOR_BY_DEPTH):
+        return _FORMATION_DIVISOR_BY_DEPTH[index]
+    return FORMATION_DIVISOR["fourth_and_later"]
+
+
+def _formation_divisors(battle_result: BattleResult) -> dict[int, int]:
+    """Phase 372: every surviving-to-this-point army's own real
+    formation depth, keyed by `army_id`, for `turn/aftermath.py
+    roll_quality_change`'s own `formation_divisor` parameter.
+
+    Nothing new to track -- `BattleColumnResult.attacker_units`/
+    `defender_units` (`turn/battle_line.py assign_battle_lines`, Phase 6)
+    were already ordered front-to-back for every column; a unit's own
+    index in that list *is* its formation depth, unchanged since before
+    this project's own real battle-resolution work began.
+    """
+
+    divisors: dict[int, int] = {}
+    for column in battle_result.columns:
+        for index, unit in enumerate(column.attacker_units):
+            if unit.source_id is not None:
+                divisors[unit.source_id] = _formation_divisor_for_depth(index)
+        for index, unit in enumerate(column.defender_units):
+            if unit.source_id is not None:
+                divisors[unit.source_id] = _formation_divisor_for_depth(index)
+    return divisors
+
+
 def fight_battle(
     state: GameState,
     attacker_kingdom_id: int,
@@ -1211,6 +1256,12 @@ def fight_battle(
     # phase (see ak_engine/README.md).
     direct_destruction_probability_by_army_id = _direct_destruction_probabilities(battle_result)
 
+    # Phase 372: real, confirmed post-battle quality-change formula
+    # (turn/aftermath.py roll_quality_change, base_quality_change_percent)
+    # -- see _formation_divisors' own docstring for why this needed no
+    # new state, just reading data this project already had.
+    formation_divisor_by_army_id = _formation_divisors(battle_result)
+
     attacker_pursuit_destroyed: set[int] = set()
     if attacker_clean_swept and loser_retreats:
         attacker_pursuit_destroyed = _apply_pursuit(
@@ -1226,9 +1277,11 @@ def fight_battle(
         if army.army_id in attacker_pursuit_destroyed:
             continue
         led_by_insufficient_druid = led_by_insufficient_druid_by_army_id.get(army.army_id, False)
+        formation_divisor = formation_divisor_by_army_id.get(army.army_id, FORMATION_DIVISOR["front"])
         if battle_result.winner == "attacker":
             army.quality = roll_quality_change(
-                army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid
+                army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid,
+                formation_divisor=formation_divisor,
             )
             report.quality_changes[army.army_id] = army.quality
         elif attacker_clean_swept and _whale_forced_retreat_applies(army, terrain):
@@ -1236,7 +1289,7 @@ def fight_battle(
             destination = _whale_sea_retreat_destination(army, state, bounds)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
-                led_by_insufficient_druid=led_by_insufficient_druid,
+                led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
             )
         elif attacker_clean_swept and loser_retreats:
             bounds = MapBounds(*NORMAL_MAP_BOUNDS)
@@ -1248,7 +1301,7 @@ def fight_battle(
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
                 avoid_elimination=_fleet_avoids_elimination(army, terrain),
-                led_by_insufficient_druid=led_by_insufficient_druid,
+                led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
             )
         elif attacker_clean_swept and _fleet_avoids_elimination(army, terrain):
             army.quality = Quality.DEPLETED
@@ -1264,7 +1317,7 @@ def fight_battle(
         else:
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=False, retreated=False,
-                led_by_insufficient_druid=led_by_insufficient_druid,
+                led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
             )
             report.quality_changes[army.army_id] = army.quality
 
@@ -1272,9 +1325,11 @@ def fight_battle(
         if army.army_id in defender_pursuit_destroyed:
             continue
         led_by_insufficient_druid = led_by_insufficient_druid_by_army_id.get(army.army_id, False)
+        formation_divisor = formation_divisor_by_army_id.get(army.army_id, FORMATION_DIVISOR["front"])
         if battle_result.winner == "defender":
             army.quality = roll_quality_change(
-                army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid
+                army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid,
+                formation_divisor=formation_divisor,
             )
             report.quality_changes[army.army_id] = army.quality
         elif defender_clean_swept and _whale_forced_retreat_applies(army, terrain):
@@ -1282,7 +1337,7 @@ def fight_battle(
             destination = _whale_sea_retreat_destination(army, state, bounds)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
-                led_by_insufficient_druid=led_by_insufficient_druid,
+                led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
             )
         elif defender_clean_swept and loser_retreats:
             bounds = MapBounds(*NORMAL_MAP_BOUNDS)
@@ -1291,7 +1346,7 @@ def fight_battle(
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
                 avoid_elimination=_fleet_avoids_elimination(army, terrain),
-                led_by_insufficient_druid=led_by_insufficient_druid,
+                led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
             )
         elif defender_clean_swept and _fleet_avoids_elimination(army, terrain):
             army.quality = Quality.DEPLETED
@@ -1307,7 +1362,7 @@ def fight_battle(
         else:
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=False, retreated=False,
-                led_by_insufficient_druid=led_by_insufficient_druid,
+                led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
             )
             report.quality_changes[army.army_id] = army.quality
 

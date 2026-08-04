@@ -44,11 +44,12 @@ def test_winner_cannot_exceed_elite():
 
 
 def test_druid_led_green_unit_has_reduced_improve_chance():
-    # improve_chance(GREEN) = 0.5*(1-1/5) = 0.4; druid-led multiplier for
-    # GREEN is 0.60 -> 0.24. A roll of 0.35 clears the unmodified chance
-    # but not the druid-led one.
+    # Phase 372: improve_chance(GREEN, front) = base_quality_change_percent
+    # (GREEN=1, divisor=1) = 60 >> max(0,1+1-2) = 60 >> 0 = 0.60; druid-led
+    # multiplier for GREEN is 0.60 -> 0.36. A roll of 0.5 clears the
+    # unmodified chance but not the druid-led one.
     rng = random.Random()
-    rng.random = lambda: 0.35
+    rng.random = lambda: 0.5
 
     unmodified = roll_quality_change(Quality.GREEN, rng, is_winner=True)
     druid_led = roll_quality_change(Quality.GREEN, rng, is_winner=True, led_by_insufficient_druid=True)
@@ -106,3 +107,60 @@ def test_quality_gain_merit_multiplier_matches_the_source_table():
     assert quality_gain_merit_multiplier(-2) == 0.2
     assert quality_gain_merit_multiplier(-3) == 0.0
     assert quality_gain_merit_multiplier(-10) == 0.0
+
+
+# -- Phase 372: the real formula wired into improve_chance/decline_chance/
+# roll_quality_change ------------------------------------------------------
+
+
+def test_decline_chance_uses_the_real_formula_by_formation_depth():
+    # AVERAGE (ordinal 2): front 60>>1=30%, second 60>>2=15%, third
+    # 60>>4=3%, fourth_and_later 60>>8=0%.
+    assert decline_chance(Quality.AVERAGE, FORMATION_DIVISOR["front"]) == pytest.approx(0.30)
+    assert decline_chance(Quality.AVERAGE, FORMATION_DIVISOR["second"]) == pytest.approx(0.15)
+    assert decline_chance(Quality.AVERAGE, FORMATION_DIVISOR["third"]) == pytest.approx(0.03)
+    assert decline_chance(Quality.AVERAGE, FORMATION_DIVISOR["fourth_and_later"]) == 0.0
+
+
+def test_decline_chance_defaults_to_front_line():
+    assert decline_chance(Quality.AVERAGE) == decline_chance(Quality.AVERAGE, FORMATION_DIVISOR["front"])
+
+
+def test_improve_chance_scales_by_the_real_merit_multiplier():
+    # AVERAGE front base is 30% -- score>=0 keeps it, -1/-2 scale it down
+    # by the source's own gain_merit_multiplier, -3-or-worse zeroes it.
+    front = FORMATION_DIVISOR["front"]
+    assert improve_chance(Quality.AVERAGE, front, score=0) == pytest.approx(0.30)
+    assert improve_chance(Quality.AVERAGE, front, score=-1) == pytest.approx(0.18)
+    assert improve_chance(Quality.AVERAGE, front, score=-2) == pytest.approx(0.06)
+    assert improve_chance(Quality.AVERAGE, front, score=-3) == 0.0
+
+
+def test_improve_chance_stays_zero_at_elite_regardless_of_score():
+    assert improve_chance(Quality.ELITE, FORMATION_DIVISOR["front"], score=5) == 0.0
+
+
+def test_roll_quality_change_threads_formation_divisor_into_the_winner_roll():
+    # AVERAGE front improve chance is 30%; second-line is 15% -- a roll of
+    # 0.20 clears the front-line chance but not the second-line one.
+    rng = random.Random()
+    rng.random = lambda: 0.20
+
+    front = roll_quality_change(Quality.AVERAGE, rng, is_winner=True, formation_divisor=FORMATION_DIVISOR["front"])
+    second = roll_quality_change(Quality.AVERAGE, rng, is_winner=True, formation_divisor=FORMATION_DIVISOR["second"])
+
+    assert front == Quality.VETERAN
+    assert second == Quality.AVERAGE
+
+
+def test_roll_quality_change_threads_score_into_the_winner_roll():
+    # AVERAGE front improve chance is 30% at score=0, 6% at score=-2 --
+    # a roll of 0.10 clears the first but not the second.
+    rng = random.Random()
+    rng.random = lambda: 0.10
+
+    neutral_score = roll_quality_change(Quality.AVERAGE, rng, is_winner=True, score=0)
+    low_score = roll_quality_change(Quality.AVERAGE, rng, is_winner=True, score=-2)
+
+    assert neutral_score == Quality.VETERAN
+    assert low_score == Quality.AVERAGE
