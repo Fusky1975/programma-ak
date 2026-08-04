@@ -362,6 +362,11 @@ class MeritTally:
     writer yet, the same "field exists, no populating consumer yet"
     starting state most of this class's own fields had for many phases.
 
+    **Phase 368**: nine more fields support the 6 alignment-King titles
+    plus Chief of Staff/Silver Tongue (see `turn/merit_points.py`'s own
+    Phase 368 addendum for each formula) -- none has a writer yet,
+    same convention.
+
     All default to 0: a leader who has fought no battles,
     killed no monsters, cast no Resurrection/Bless, or been the first to
     find any Special Place/Discovery legitimately starts here, the same
@@ -433,6 +438,38 @@ class MeritTally:
     # stolen (gold amount vs. item), only whether the attempt succeeds.
     gold_stolen: int = 0
     magic_items_stolen: int = 0
+    # The 6 alignment-King titles (Office.DIVINE_KING/GOOD_KING/DRUID_
+    # KING/UNDEAD_KING, Phase 368): each counts monster kills in a realm
+    # province, but with a different alignment filter per title --
+    # Divine Archangel wants Anti-Holy only, Good/Druid Kings share the
+    # same "Anti-Holy or Evil" filter, and Angel of Death wants "Good,
+    # Druid, or Neutral". No writer yet, the same "field exists, no
+    # populating consumer yet" convention as monsters_killed_in_realm_
+    # province above (reused as-is by Defender of Freedom/Warlock of the
+    # Pagan Gods, whose own source text is the unfiltered "per ogni
+    # mostro" King of Pain already uses).
+    monsters_killed_anti_holy_in_realm_province: int = 0
+    monsters_killed_anti_holy_or_evil_in_realm_province: int = 0
+    monsters_killed_good_druid_neutral_in_realm_province: int = 0
+    # Angel of Death (Office.UNDEAD_KING, Phase 368): +1 per successful
+    # Charm (CH) cast that transforms a Hero into an Undead. No writer
+    # yet -- turn/cast_execution.py's own _execute_charm() models
+    # Charm's free-hire/escape-combat modes only, not an Undead-
+    # transformation outcome.
+    ch_undead_transformations: int = 0
+    # Chief of Staff (Office.CHIEF_OF_STAFF, Phase 368): +1 per military
+    # unit recruited (cumulative, game-long). No writer yet -- turn/
+    # recruit_execution.py's own execute_recruit() doesn't touch
+    # MeritTally.
+    military_units_recruited: int = 0
+    # Silver Tongue (Office.DIPLOMAT, Phase 368): +1 per successful Treat
+    # (alliance formed); alliance_upkeep_points accumulates +0.5 per
+    # turn for every alliance still active at that turn's own end; +1
+    # per Discovery traded away. No writer yet -- this project has no
+    # Treat/alliance or Discovery-trade execution mechanic at all yet.
+    alliances_formed: int = 0
+    alliance_upkeep_points: float = 0.0
+    discoveries_traded: int = 0
 
 
 @dataclass(slots=True)

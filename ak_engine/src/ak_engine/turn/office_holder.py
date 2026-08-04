@@ -2,15 +2,16 @@
 contest, Phase 230. Given a `GameState` with every leader's real
 skills/treasury/Tax_Base/owned-items data (fully live per `turn/
 merit_points.py`, Phase 227) plus whatever `MeritTally` counters a
-caller has populated, this resolves *who currently holds* each of the 21
+caller has populated, this resolves *who currently holds* each of the 29
 Imperial Offices this project models (the rulebook's own 8 major offices
 plus, as of Phase 277, `Office.EVIL_KING`/`Office.THIEF_PRINCE`, plus,
-as of Phase 367, the 11 race-fanaticism titles) -- closing the "needs
-the full Merit Point Rank contest across every leader in the game" gap
-Phase 227/228's own docstrings both flagged as a separate, considerably
-larger follow-up.
+as of Phase 367, the 11 race-fanaticism titles, plus, as of Phase 368,
+the 6 alignment-King titles and Chief of Staff/Silver Tongue) -- closing
+the "needs the full Merit Point Rank contest across every leader in the
+game" gap Phase 227/228's own docstrings both flagged as a separate,
+considerably larger follow-up.
 
-**Emperor is resolved differently from the other 20 offices.** The
+**Emperor is resolved differently from the other 28 offices.** The
 rulebook's own table lists Emperor's Merit Points as the Kingdom's own
 Tax_Base ("Ammontare della rendita di tasse alla fine del gioco"), but
 the actual *winner* of the Emperor office isn't a Merit-Point-Rank
@@ -21,7 +22,7 @@ holder(state, Office.EMPEROR)` reads that field directly (resolving to
 the elected Kingdom's own King, via `LeaderState.is_king`) rather than
 re-deriving anything from `emperor_merit_points()`.
 
-**The other 20 offices are a genuine Rank contest across every leader in
+**The other 28 offices are a genuine Rank contest across every leader in
 the game** -- "Anche un Eroe può aggiudicarsi una carica e uno stesso
 personaggio può aggiudicarsene più di una" (rulebook [10.1]): a Hero can
 win an office too, and the same character can hold more than one. Each
@@ -87,6 +88,26 @@ handle on its own, both applied explicitly:
   office_holder()` returns `None` outright for any of these 11 offices
   before `state.turn_number` reaches `RACE_TITLE_TURN_GATE[race]`,
   even if some leader's own tally already clears `OFFICE_MIN_POINTS`.
+
+**Phase 368: the 6 alignment-King titles plus Chief of Staff/Silver
+Tongue join too**, via 8 new `turn/merit_points.py` formula functions
+(`divinearchangel_merit_points()`, `goodking_merit_points()`,
+`druidking_merit_points()`, `neutralking_merit_points()`,
+`paganking_merit_points()`, `undeadking_merit_points()`,
+`chiefofstaff_merit_points()`, `silvertongue_merit_points()`) --
+one `if` branch each in `_leader_merit_points()`, not a generic table
+dispatch like the race titles, since these 8 don't share one common
+formula shape the way the 11 race titles do (different `Ability`
+pairs, different eligibility rules per title). Like the 11 race titles
+and King of Pain/Prince of Thieves before them, none of these 8 grant
+Victory Points (`models/office.py OFFICE_VALUE` already reflects this,
+Phase 81), and none of the 6 alignment-King titles has a turn gate
+stated in the source -- unlike the 11 race titles, no office-level
+cutoff is applied here. Each formula function already returns 0/None
+for an ineligible leader on its own (King-only, alignment-gated where
+stated), so this generic Rank-contest loop needs no additional
+special-casing for any of the 8, the same "eligibility lives in the
+formula, not the loop" shape Phase 277 established.
 """
 
 from __future__ import annotations
@@ -99,15 +120,23 @@ from ak_engine.models.race import Race
 from ak_engine.turn.merit_points import (
     admiral_merit_points,
     chancellor_merit_points,
+    chiefofstaff_merit_points,
     defender_merit_points,
+    divinearchangel_merit_points,
+    druidking_merit_points,
     emperor_merit_points,
     evilking_merit_points,
+    goodking_merit_points,
     mage_merit_points,
     marshal_merit_points,
     merit_point_tiebreak_key,
+    neutralking_merit_points,
+    paganking_merit_points,
     priest_merit_points,
+    silvertongue_merit_points,
     thiefprince_merit_points,
     treasurer_merit_points,
+    undeadking_merit_points,
 )
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE, RACE_TITLE_TURN_GATE, race_title_merit_points
 
@@ -128,12 +157,21 @@ RANKED_OFFICES: tuple[Office, ...] = (
     Office.EVIL_KING,
     Office.THIEF_PRINCE,
     *RACE_TITLE_OFFICE.values(),
+    Office.DIVINE_KING,
+    Office.GOOD_KING,
+    Office.DRUID_KING,
+    Office.NEUTRAL_KING,
+    Office.PAGAN_KING,
+    Office.UNDEAD_KING,
+    Office.CHIEF_OF_STAFF,
+    Office.DIPLOMAT,
 )
 
-# All 21 real Imperial Offices this project models, in the rulebook's own
+# All 29 real Imperial Offices this project models, in the rulebook's own
 # table order (EVIL_KING/THIEF_PRINCE appended Phase 277, the 11 race
-# titles appended Phase 367 -- see each phase's own module docstring
-# note).
+# titles appended Phase 367, the 6 alignment-King titles plus Chief of
+# Staff/Silver Tongue appended Phase 368 -- see each phase's own module
+# docstring note).
 ALL_OFFICES: tuple[Office, ...] = (Office.EMPEROR, *RANKED_OFFICES)
 
 
@@ -162,6 +200,22 @@ def _leader_merit_points(office: Office, state: GameState, leader: LeaderState) 
         return evilking_merit_points(state, leader)
     if office is Office.THIEF_PRINCE:
         return thiefprince_merit_points(state, leader)
+    if office is Office.DIVINE_KING:
+        return divinearchangel_merit_points(state, leader)
+    if office is Office.GOOD_KING:
+        return goodking_merit_points(state, leader)
+    if office is Office.DRUID_KING:
+        return druidking_merit_points(state, leader)
+    if office is Office.NEUTRAL_KING:
+        return neutralking_merit_points(state, leader)
+    if office is Office.PAGAN_KING:
+        return paganking_merit_points(state, leader)
+    if office is Office.UNDEAD_KING:
+        return undeadking_merit_points(state, leader)
+    if office is Office.CHIEF_OF_STAFF:
+        return chiefofstaff_merit_points(state, leader)
+    if office is Office.DIPLOMAT:
+        return silvertongue_merit_points(state, leader)
     if office in _OFFICE_RACE:
         return race_title_merit_points(state, leader, _OFFICE_RACE[office])
     raise ValueError(f"{office} is not a ranked office -- Emperor is resolved via resolve_office_holder() directly")

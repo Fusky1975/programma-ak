@@ -242,6 +242,82 @@ exact English names (`LEADERSHIP_HUMAN` = "Excalibur", `WEAPON_1` =
 independent confirmation the rulebook table and the already-transcribed
 Pascal `treasure` enum describe the same 10 artifacts.
 
+## The 6 alignment-King titles (Phase 368)
+Same user-supplied source (`CARICHE E ABLITÀ.txt`), the "cariche minori"
+section shared with King of Pain/Prince of Thieves and the 11
+`turn/race_titles.py` race titles -- these don't grant Victory Points
+either, and each is **King-only, and gated to one specific `Alignment`**
+("Questo titolo lo possono ottenere solo i RE Divini/Good/Druid/Neutral/
+Pagan/Undead"), so every formula function below returns 0 outright for
+a Hero or a King of the wrong Kingdom alignment, the exact same idiom
+`evilking_merit_points()` already established. `_king_of_alignment()`
+factors that one shared gate check out of all 6, since the point terms
+themselves differ per title (different `Ability` pair, different
+monster-kill filter) but the eligibility shape is identical.
+
+Every one of the 6 shares "+1 per punto di tasse del Reame" (`compute_
+tax_base()`, same as Emperor/King of Pain) plus two `Ability` skill-level
+terms, plus one monster-kill-in-realm-province term with a per-title
+alignment filter:
+
+- **Divine Archangel** (`Office.DIVINE_KING`): White Magic (Wh) skill +
+  kills of Anti-Holy monsters (`MeritTally.monsters_killed_anti_holy_
+  in_realm_province`) -- only one skill term, not two, unlike the other
+  5 (the source's own text names only "magia WH", no second ability).
+- **Most Blessed of Kings** (`Office.GOOD_KING`): White Magic (Wh) +
+  Sage (Sa) skill, kills of Anti-Holy-or-Evil monsters.
+- **Great Druid of Life** (`Office.DRUID_KING`): Psychic (Ps) + Druidic
+  (Dr) skill, kills of Anti-Holy-or-Evil monsters (**same field** as
+  Most Blessed of Kings -- the source gives both titles the identical
+  "anti-holy o Evil" filter verbatim).
+- **Defender of Freedom** (`Office.NEUTRAL_KING`): Illusion (Il) +
+  Melee (Me) skill, kills of *any* monster in a realm province -- reuses
+  `MeritTally.monsters_killed_in_realm_province` as-is (the source's own
+  wording here, "per ogni mostro che si uccide in una provincia del
+  reame", is identical to King of Pain's own unfiltered term).
+- **Warlock of the Pagan Gods** (`Office.PAGAN_KING`): Elemental (El) +
+  Explorer (Ex) skill, same unfiltered monster-kill term as Defender of
+  Freedom.
+- **Angel of Death** (`Office.UNDEAD_KING`): Necromancy (Ne) skill only,
+  kills of Good-or-Druid-or-Neutral monsters (`monsters_killed_good_
+  druid_neutral_in_realm_province`), plus +1 per successful Charm (CH)
+  cast that transforms a Hero into Undead (`ch_undead_transformations`)
+  -- no writer for either counter yet, same as every other tally term
+  this phase adds.
+
+## Chief of Staff / Office.CHIEF_OF_STAFF (Phase 368)
+"ogni unità militare reclutata vale 1 punto" (`MeritTally.military_
+units_recruited`, cumulative, no writer yet) "+ ogni unità militare
+comandata dà 0,25 punti" (**live**, a flat per-currently-commanded-unit
+count via `GameState.armies`, the same "live, not tallied" shape `turn/
+race_titles.py _crack_plus_units_commanded()` already established for
+an analogous "unit(s) currently commanded" term) "+ per ogni unità
+militare veteran/crack/elite o più si ottengono 0,10/0,20/0,30 punti"
+(`CHIEF_OF_STAFF_QUALITY_BONUS`, an additional live per-unit bonus on
+top of the flat 0.25, keyed by the commanded unit's own `Quality` --
+Green/Average/Depleted score no bonus, since the source names only
+Veteran/Crack/Elite explicitly; "Elite o più" reads as `Quality.ELITE`,
+this project's own top modeled tier, since Super-Elite has no
+precise rule of its own -- see `turn/combat.py Quality`'s own
+docstring). **Open to a King or a Hero**, no eligibility gate stated,
+the same as Prince of Thieves.
+
+## Silver Tongue / Office.DIPLOMAT (Phase 368)
+"per ogni comando Treat riuscito ... si ottiene 1 punto" (`MeritTally.
+alliances_formed`) "+ ogni turno, per ogni alleanza mantenuta fino a
+termine del turno stesso si ottiene 0,5 punti" (`alliance_upkeep_
+points`, meant to accumulate +0.5 per still-active alliance at each
+turn's own end -- a running total, not a live per-turn recount, since
+this project has no standing Alliance/Treat model yet to recount
+against) "+ ogni livello di DR si ottiene 1 punto" (**live**, Druidic
+skill level) "+ per ogni discovery scambiata si ottiene 1 punto"
+(`discoveries_traded`). **King-only** -- the title line's own "(solo
+per i RE)" marker, unlike the un-marked Chief of Staff title line right
+above it in the same source; no alignment restriction is stated for
+Silver Tongue, unlike the 6 titles above. None of the four tally fields
+has a writer yet -- this project has no Treat/alliance or Discovery-
+trade execution mechanic at all.
+
 ## Tie-break (rulebook footnote 3)
 "Se due personaggi hanno pari punteggio per una Carica Imperiale, il
 primo posto viene assegnato in base prima all'ammontare del tesoro e poi
@@ -470,6 +546,156 @@ def thiefprince_merit_points(state: GameState, leader: LeaderState) -> int:
         _skill_level_sum(state, leader, (Ability.THIEF,))
         + tally.gold_stolen
         + 5 * tally.magic_items_stolen
+    )
+
+
+def _king_of_alignment(state: GameState, leader: LeaderState, alignment: Alignment) -> bool:
+    """See module docstring's Phase 368 addendum: the shared eligibility
+    gate for all 6 alignment-King titles -- the acting King of a Kingdom
+    whose own `Alignment` matches exactly.
+    """
+
+    if not leader.is_king or leader.kingdom_id is None:
+        return False
+    return state.kingdoms[leader.kingdom_id].alignment is alignment
+
+
+def divinearchangel_merit_points(state: GameState, leader: LeaderState) -> int:
+    """Office.DIVINE_KING -- Divine-alignment Kings only. See module
+    docstring's Phase 368 addendum.
+    """
+
+    if not _king_of_alignment(state, leader, Alignment.DIVINE):
+        return 0
+    tally = leader.merit_tally
+    return (
+        compute_tax_base(state, leader.kingdom_id)
+        + _skill_level_sum(state, leader, (Ability.WHITE,))
+        + tally.monsters_killed_anti_holy_in_realm_province
+    )
+
+
+def goodking_merit_points(state: GameState, leader: LeaderState) -> int:
+    """Office.GOOD_KING (Most Blessed of Kings) -- Good-alignment Kings
+    only. See module docstring's Phase 368 addendum.
+    """
+
+    if not _king_of_alignment(state, leader, Alignment.GOOD):
+        return 0
+    tally = leader.merit_tally
+    return (
+        compute_tax_base(state, leader.kingdom_id)
+        + _skill_level_sum(state, leader, (Ability.WHITE, Ability.SAGE))
+        + tally.monsters_killed_anti_holy_or_evil_in_realm_province
+    )
+
+
+def druidking_merit_points(state: GameState, leader: LeaderState) -> int:
+    """Office.DRUID_KING (Great Druid of Life) -- Druid-alignment Kings
+    only. Shares `monsters_killed_anti_holy_or_evil_in_realm_province`
+    with Most Blessed of Kings -- see module docstring's Phase 368
+    addendum.
+    """
+
+    if not _king_of_alignment(state, leader, Alignment.DRUID):
+        return 0
+    tally = leader.merit_tally
+    return (
+        compute_tax_base(state, leader.kingdom_id)
+        + _skill_level_sum(state, leader, (Ability.PSYCHIC, Ability.DRUID))
+        + tally.monsters_killed_anti_holy_or_evil_in_realm_province
+    )
+
+
+def neutralking_merit_points(state: GameState, leader: LeaderState) -> int:
+    """Office.NEUTRAL_KING (Defender of Freedom) -- Neutral-alignment
+    Kings only. Reuses `monsters_killed_in_realm_province` as-is -- see
+    module docstring's Phase 368 addendum.
+    """
+
+    if not _king_of_alignment(state, leader, Alignment.NEUTRAL):
+        return 0
+    tally = leader.merit_tally
+    return (
+        compute_tax_base(state, leader.kingdom_id)
+        + _skill_level_sum(state, leader, (Ability.ILLUSION, Ability.MELEE))
+        + tally.monsters_killed_in_realm_province
+    )
+
+
+def paganking_merit_points(state: GameState, leader: LeaderState) -> int:
+    """Office.PAGAN_KING (Warlock of the Pagan Gods) -- Pagan-alignment
+    Kings only. See module docstring's Phase 368 addendum.
+    """
+
+    if not _king_of_alignment(state, leader, Alignment.PAGAN):
+        return 0
+    tally = leader.merit_tally
+    return (
+        compute_tax_base(state, leader.kingdom_id)
+        + _skill_level_sum(state, leader, (Ability.ELEMENTAL, Ability.EXPLORER))
+        + tally.monsters_killed_in_realm_province
+    )
+
+
+def undeadking_merit_points(state: GameState, leader: LeaderState) -> int:
+    """Office.UNDEAD_KING (Angel of Death) -- Undead-alignment Kings
+    only. See module docstring's Phase 368 addendum.
+    """
+
+    if not _king_of_alignment(state, leader, Alignment.UNDEAD):
+        return 0
+    tally = leader.merit_tally
+    return (
+        compute_tax_base(state, leader.kingdom_id)
+        + _skill_level_sum(state, leader, (Ability.NECROMANCY,))
+        + tally.monsters_killed_good_druid_neutral_in_realm_province
+        + tally.ch_undead_transformations
+    )
+
+
+# "Per ogni unità militare veteran/crack/elite o più si ottengono
+# 0,10/0,20/0,30 punti" -- an additional live bonus on top of Chief of
+# Staff's own flat 0.25-per-commanded-unit term. See module docstring's
+# Phase 368 addendum for why Green/Average/Depleted score no bonus and
+# "Elite o più" reads as Quality.ELITE.
+CHIEF_OF_STAFF_QUALITY_BONUS: dict[Quality, float] = {
+    Quality.DEPLETED: 0.0,
+    Quality.GREEN: 0.0,
+    Quality.AVERAGE: 0.0,
+    Quality.VETERAN: 0.10,
+    Quality.CRACK: 0.20,
+    Quality.ELITE: 0.30,
+}
+
+
+def chiefofstaff_merit_points(state: GameState, leader: LeaderState) -> float:
+    """Office.CHIEF_OF_STAFF -- open to a King or a Hero, no eligibility
+    gate. See module docstring's Phase 368 addendum.
+    """
+
+    tally = leader.merit_tally
+    commanded = [army for army in state.armies.values() if army.commanded_by == leader.leader_id]
+    return (
+        tally.military_units_recruited
+        + 0.25 * len(commanded)
+        + sum(CHIEF_OF_STAFF_QUALITY_BONUS[army.quality] for army in commanded)
+    )
+
+
+def silvertongue_merit_points(state: GameState, leader: LeaderState) -> float:
+    """Office.DIPLOMAT (Silver Tongue) -- King-only, no alignment
+    restriction. See module docstring's Phase 368 addendum.
+    """
+
+    if not leader.is_king or leader.kingdom_id is None:
+        return 0
+    tally = leader.merit_tally
+    return (
+        tally.alliances_formed
+        + tally.alliance_upkeep_points
+        + _skill_level_sum(state, leader, (Ability.DRUID,))
+        + tally.discoveries_traded
     )
 
 

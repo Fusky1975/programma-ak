@@ -4555,6 +4555,14 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Tsar of the Trees: None at present",
         "High Mucky-Muck of Trolls: None at present",
         "Lord of Lycanthropes: None at present",
+        "Divine Archangel: None at present",
+        "Most Blessed of Kings: None at present",
+        "Great Druid of Life: None at present",
+        "Defender of Freedom: None at present",
+        "Warlock of the Pagan Gods: None at present",
+        "Angel of Death: None at present",
+        "Chief of Staff: None at present",
+        "Silver Tongue: None at present",
         "ADVENTURE",
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
@@ -4653,6 +4661,14 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "Tsar of the Trees: None at present",
         "High Mucky-Muck of Trolls: None at present",
         "Lord of Lycanthropes: None at present",
+        "Divine Archangel: None at present",
+        "Most Blessed of Kings: None at present",
+        "Great Druid of Life: None at present",
+        "Defender of Freedom: None at present",
+        "Warlock of the Pagan Gods: None at present",
+        "Angel of Death: None at present",
+        "Chief of Staff: None at present",
+        "Silver Tongue: None at present",
         "ADVENTURE",
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
@@ -4781,7 +4797,7 @@ def test_describe_imperial_office_report_none_at_present_for_every_office_with_n
     assert lines.count("Prince of Thieves: None at present") == 1
     assert lines.count("Savior of Humankind: None at present") == 1
     assert lines.count("Dragon Lord: None at present") == 1
-    assert len(lines) == 22  # header + 21 offices
+    assert len(lines) == 30  # header + 29 offices
 
 
 def test_describe_imperial_office_report_shows_a_real_office_holder():

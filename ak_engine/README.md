@@ -15077,7 +15077,7 @@ section.
     `tests/test_gw3_t5_end_to_end.py` tests whose own assertions had
     baked in the old (now known-wrong) data. Full suite: 3586 passed
     before, 3591 after.
-- **Phase 367 (current)**: `turn/race_titles.py` (new) -- the 11
+- **Phase 367**: `turn/race_titles.py` (new) -- the 11
   race-fanaticism Imperial title Merit Point formulas (Savior of
   Humankind, First Elder of Elvenkind, King Under the Mountain, Khan of
   the Orcish Hordes, Dragon Lord, Ace of Eagles, Whale League
@@ -15139,6 +15139,74 @@ section.
     Great Druid of Life, Defender of Freedom, Warlock of the Pagan
     Gods, Angel of Death) and the 2 fully generic titles (Chief of
     Staff, Silver Tongue).
+- **Phase 368 (current)**: `turn/merit_points.py` -- the 6
+  alignment-King titles Phase 367 deferred, plus the 2 fully generic
+  titles (Chief of Staff, Silver Tongue), closing out `CARICHE E
+  ABLITÀ.txt`'s entire "cariche minori" section. `models/office.py`
+  already had real, Phase-81-sourced `Office` members/`OFFICE_MIN_
+  POINTS`/`OFFICE_VALUE`/`OFFICE_NAME` entries for all 8
+  (`DIVINE_KING`/`GOOD_KING`/`DRUID_KING`/`NEUTRAL_KING`/`PAGAN_KING`/
+  `UNDEAD_KING`/`CHIEF_OF_STAFF`/`DIPLOMAT`) -- only the scoring
+  formula was missing, the same "formula found, catalog already real"
+  shape every phase in this arc has shared since Phase 227.
+  - The 6 alignment-King titles are King-only and gated to one specific
+    Kingdom `Alignment` each ("Questo titolo lo possono ottenere solo i
+    RE Divini/Good/Druid/Neutral/Pagan/Undead") -- a new `_king_of_
+    alignment()` helper in `merit_points.py` factors that one shared
+    eligibility gate out of all 6 formula functions
+    (`divinearchangel_merit_points()`, `goodking_merit_points()`,
+    `druidking_merit_points()`, `neutralking_merit_points()`,
+    `paganking_merit_points()`, `undeadking_merit_points()`). Each sums
+    the Kingdom's own tax base (`compute_tax_base()`, same as Emperor/
+    King of Pain) plus one or two live `Ability` skill-level terms
+    (different pair per title -- e.g. White+Sage for Most Blessed of
+    Kings, Elemental+Explorer for Warlock of the Pagan Gods) plus a
+    monster-kill-in-realm-province term with a per-title alignment
+    filter. Most Blessed of Kings and Great Druid of Life share the
+    exact same "Anti-Holy or Evil" filter verbatim, so both read the
+    same new `MeritTally.monsters_killed_anti_holy_or_evil_in_realm_
+    province` field; Defender of Freedom and Warlock of the Pagan Gods
+    both reuse the pre-existing, unfiltered `monsters_killed_in_realm_
+    province` (King of Pain's own field) since their own source text is
+    identical to King of Pain's. 3 new `MeritTally` fields altogether
+    for the alignment-filtered kill counters, plus a 4th
+    (`ch_undead_transformations`) for Angel of Death's own Charm-cast
+    term -- none has a writer yet, the same "field exists, no
+    populating consumer yet" convention this arc has used throughout.
+    None of the 6 states a turn gate, unlike the 11 race titles.
+  - Chief of Staff (open to a King or a Hero, like Prince of Thieves) is
+    `MeritTally.military_units_recruited` (cumulative, no writer yet)
+    plus a fully live per-currently-commanded-unit term: a flat 0.25
+    per unit (`GameState.armies`, the same "live, not tallied" shape
+    `turn/race_titles.py`'s own commanded-unit term already
+    established) plus an additional `CHIEF_OF_STAFF_QUALITY_BONUS`
+    (0.10/0.20/0.30 for Veteran/Crack/Elite-or-better, 0 for Green/
+    Average/Depleted -- "Elite o più" reads as `Quality.ELITE`, this
+    project's own top modeled tier).
+  - Silver Tongue (King-only, no alignment restriction -- its own
+    title line's "(solo per i RE)" marker, unlike the un-marked Chief
+    of Staff right above it in the same source) sums 4 terms: `MeritTally.
+    alliances_formed` (+1 per Treat-formed alliance),
+    `alliance_upkeep_points` (+0.5 accumulated per turn per alliance
+    still active at that turn's end), a live Druidic (DR) skill-level
+    term, and `discoveries_traded` (+1 per Discovery given away). None
+    of the four has a writer yet -- this project has no Treat/alliance
+    or Discovery-trade execution mechanic at all.
+  - `turn/office_holder.py`: `RANKED_OFFICES`/`ALL_OFFICES` extended
+    from 20/21 to 28/29 real offices; the 8 new offices dispatch through
+    8 explicit `if` branches in `_leader_merit_points()` (not a generic
+    table lookup like the 11 race titles), since their formulas don't
+    share one common shape. None of the 8 grants Victory Points
+    (`OFFICE_VALUE` already reflects this, Phase 81); each formula
+    function already returns 0 for an ineligible leader on its own, so
+    the generic Rank-contest loop needs no additional special-casing.
+  - `describe_imperial_office_report()` already iterates `ALL_OFFICES`
+    generically, so it automatically gains all 8 new rows too -- 4
+    pre-existing `tests/test_office_holder.py`/`tests/test_turn_
+    report.py` tests updated for the new office count (same 4 tests
+    Phase 367 touched for the same reason). Full suite: 3604 passed
+    before, 3614 after (10 new tests, `tests/test_alignment_and_
+    generic_titles.py`).
 
 ## Setup
 

@@ -119,8 +119,8 @@ def test_resolve_all_office_holders_covers_every_real_office():
     holders = resolve_all_office_holders(state)
 
     assert set(holders.keys()) == set(ALL_OFFICES)
-    assert len(ALL_OFFICES) == 21
-    assert len(RANKED_OFFICES) == 20
+    assert len(ALL_OFFICES) == 29
+    assert len(RANKED_OFFICES) == 28
 
 
 def test_resolve_office_holder_evilking_none_for_good_kingdom():
