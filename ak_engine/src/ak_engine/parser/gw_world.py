@@ -2037,6 +2037,108 @@ def parse_gw_features(path: Path) -> list[GWFeatureRecord]:
     return records
 
 
+@dataclass(slots=True)
+class GWTreasureOnlyRecord:
+    """A "loose" treasure instance with no guarding Feature -- Phase 378,
+    `AKGEN_embedded_catalogs.json.txt gw_format.records.treasure_only`
+    (a real static disassembly of `AKGEN.EXE`/`AK.EXE`/`AK.OVR`): "fields
+    3, 4 and 5 of the shared feature/treasure arrays" for `index_range
+    feature_count through treasure_count - 1` -- the same underlying
+    Pascal `treaslist`/`trowner`/`trcharges` arrays `GWFeatureRecord`
+    already reads for its own first `feature_count` entries, but this
+    record only ever carries those 3 of the 9 fields (no coordinate, no
+    guarding Monster -- there's nothing there to guard the treasure, it
+    isn't attached to any Feature at all).
+
+    **This entire record type was previously misread as an "unresolved
+    2-line structural boundary marker"** between Block A (`GWFeatureRecord`)
+    and Block B (`GWArmyRecord`) -- this project's own earlier research
+    (see the module docstring's Phase 316 addendum, `"0 255 0" / "35 99
+    0"`) treated it as a fixed separator, since every real fixture this
+    project owned at the time happened to show exactly 2 such lines.
+    Cross-checking both real fixtures at once falsifies "fixed": `GW3__
+    T1` has exactly 2 (`treasure_count - feature_count` = `130 - 128`),
+    `GW3__T5` has exactly 4 (`132 - 128`) -- and `GW3__T5`'s own first and
+    third rows are byte-identical to `GW3__T1`'s own two rows (`"0 255
+    0"`, `"35 99 0"`, both real, valid `Treasure` ordinals -- `0` =
+    `ABILITY_TACTICAL`, `35` = `WEAPON_1`/"Holy Sword"), while its own
+    second and fourth rows (`"88 71 11"`, `"88 77 52"`, both `Treasure.
+    QUEST_KILL_QUEST` = `88`) are new -- exactly the pattern of 2
+    pre-existing unclaimed treasures persisting turn over turn plus 2
+    freshly-generated ones, not a fixed marker at all.
+
+    `owner_raw` mirrors `GWFeatureRecord.trowner_raw`'s own real ambiguity
+    (the Pascal field's own name is literally "treasure owner **or
+    container**") -- `255` is the real "unclaimed" sentinel (`GW3__T1`'s
+    own first row), and a real, low id (`GW3__T1`'s own second row, `99`;
+    `GW3__T5`'s own new rows, `71`/`77`) is a plausible claiming-leader id,
+    consistent with `GWFeatureRecord.trowner_raw`'s own documented
+    reading -- kept as a raw `int` for the same reason that field is: too
+    few real examples to confirm which case applies when.
+    """
+
+    treasure: Treasure
+    owner_raw: int
+    charges: int
+
+
+def parse_gw_treasures_only(path: Path) -> list[GWTreasureOnlyRecord]:
+    """Parses the "loose" treasure block that immediately follows Block A
+    (`GWFeatureRecord`, the confirmed 128-row run of 9-token lines) and
+    immediately precedes Block B (`GWArmyRecord`) -- Phase 378.
+
+    Unlike Block A/B (found by scanning for a unique row shape), a bare
+    3-token line recurs incidentally elsewhere in a real world file (the
+    same reason `parse_gw_offices`'s own office-merit block can't use a
+    uniqueness scan either) -- so this locates Block A's own end the same
+    way `parse_gw_features` does, then reads exactly `GWHeader.
+    treasure_count - GWHeader.feature_count` further lines (the real
+    Pascal `index_range`), each a 3-integer row.
+    """
+
+    header = parse_gw_header(path)
+    count = header.treasure_count - header.feature_count
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+
+    candidate_indices = []
+    for i, line in enumerate(lines):
+        tokens = line.split()
+        if len(tokens) == 9 and _all_int(tokens):
+            candidate_indices.append(i)
+    if not candidate_indices:
+        raise GWParseError("no 9-token Block A rows found in this world file", line_number=1, line="")
+
+    runs: list[list[int]] = [[candidate_indices[0]]]
+    for idx in candidate_indices[1:]:
+        if idx == runs[-1][-1] + 1:
+            runs[-1].append(idx)
+        else:
+            runs.append([idx])
+    block_a_end = max(runs, key=len)[-1]
+
+    records: list[GWTreasureOnlyRecord] = []
+    for line_index in range(block_a_end + 1, block_a_end + 1 + count):
+        tokens = lines[line_index].split() if line_index < len(lines) else []
+        if len(tokens) != 3 or not _all_int(tokens):
+            raise GWParseError(
+                "expected a 3-integer treasure-only row here",
+                line_number=line_index + 1,
+                line=lines[line_index] if line_index < len(lines) else "",
+            )
+        treasure_ordinal, owner_raw, charges = (int(token) for token in tokens)
+        if treasure_ordinal not in {member.value for member in Treasure}:
+            raise GWParseError(
+                f"unrecognized Treasure ordinal {treasure_ordinal} on a treasure-only row",
+                line_number=line_index + 1,
+                line=lines[line_index],
+            )
+        records.append(GWTreasureOnlyRecord(treasure=Treasure(treasure_ordinal), owner_raw=owner_raw, charges=charges))
+
+    return records
+
+
 class GameType(Enum):
     """The world header's own `gametyp` enum (header field 22) --
     confirmed directly from a static reverse engineering of AKGEN.EXE

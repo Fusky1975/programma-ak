@@ -25,11 +25,13 @@ from ak_engine.parser.errors import K1ParseError
 from ak_engine.parser.gw_world import (
     GameType,
     GWProvinceRecord,
+    GWTreasureOnlyRecord,
     parse_gw_armies,
     parse_gw_features,
     parse_gw_header,
     parse_gw_leaders,
     parse_gw_offices,
+    parse_gw_treasures_only,
     parse_gw_world,
 )
 from ak_engine.turn.combat import Quality
@@ -478,6 +480,50 @@ def test_trowner_raw_becomes_the_claiming_kings_own_id_once_a_guardian_is_dead()
     for _, row in diverging:
         claimant = leaders[row.trowner_raw]
         assert claimant.is_king
+
+
+# -- Phase 378: parse_gw_treasures_only() --------------------------------
+
+
+def test_parses_the_real_t1_treasure_only_block():
+    # GW3__T1's own header: treasure_count(130) - feature_count(128) = 2.
+    # These 2 rows were previously misread as a fixed "0 255 0" / "35 99
+    # 0" structural boundary marker (Phase 316) -- see GWTreasureOnlyRecord's
+    # own docstring for the full correction.
+    records = parse_gw_treasures_only(FIXTURE)
+    assert records == [
+        GWTreasureOnlyRecord(treasure=Treasure.ABILITY_TACTICAL, owner_raw=255, charges=0),
+        GWTreasureOnlyRecord(treasure=Treasure.WEAPON_1, owner_raw=99, charges=0),
+    ]
+
+
+def test_parses_the_real_t5_treasure_only_block_including_2_new_rows():
+    # GW3__T5's own header: 132 - 128 = 4. Rows 1 and 3 are byte-identical
+    # to GW3__T1's own 2 rows (the same 2 treasures, still unclaimed/
+    # claimed exactly as before); rows 2 and 4 are new (Treasure.
+    # QUEST_KILL_QUEST, freshly generated between T1 and T5) -- real,
+    # independent cross-turn confirmation this isn't a fixed marker.
+    fixture_t5 = FIXTURE.parent / "GW3__T5"
+    records = parse_gw_treasures_only(fixture_t5)
+    assert records == [
+        GWTreasureOnlyRecord(treasure=Treasure.ABILITY_TACTICAL, owner_raw=255, charges=0),
+        GWTreasureOnlyRecord(treasure=Treasure.QUEST_KILL_QUEST, owner_raw=71, charges=11),
+        GWTreasureOnlyRecord(treasure=Treasure.WEAPON_1, owner_raw=99, charges=0),
+        GWTreasureOnlyRecord(treasure=Treasure.QUEST_KILL_QUEST, owner_raw=77, charges=52),
+    ]
+
+
+def test_raises_gw_parse_error_on_unrecognized_treasure_only_ordinal(tmp_path: Path):
+    # A minimal synthetic file: header (feature_count=1, treasure_count=2
+    # so exactly 1 treasure-only row is expected after 1 dummy Block A
+    # row), then one bad treasure-only row.
+    bad = tmp_path / "bad_treasure_only"
+    header_line = "10 1 1 -1 0 2 1 0 17 0 8 3 3 1 1 2007 14 0 30 1 0 1 0 0 0 255 0 0 0 1 0 0 0"
+    block_a_row = "0 0 0 256 5 0 0 0 1"
+    bad.write_text(f"{header_line}\n{block_a_row}\n999 255 0\n", encoding="utf-8")
+
+    with pytest.raises(K1ParseError):
+        parse_gw_treasures_only(bad)
 
 
 # -- Phase 342: parse_gw_header() ----------------------------------------

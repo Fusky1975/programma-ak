@@ -1,7 +1,8 @@
 """Writer for the original engine's "world file" format -- the inverse of
-``parser/gw_world.py``'s six confirmed reader record types
+``parser/gw_world.py``'s seven confirmed reader record types
 (``GWHeader``, ``GWProvinceRecord``, ``GWLeaderRecord``, ``GWFeatureRecord``,
-``GWArmyRecord``, ``GWOfficeMeritRecord``/``GWOfficeStateEntry``).
+``GWTreasureOnlyRecord``, ``GWArmyRecord``,
+``GWOfficeMeritRecord``/``GWOfficeStateEntry``).
 
 **Scope, Phase 374.** One writer function per confirmed record type, each
 the exact byte-shape inverse of its own reader function -- verified by a
@@ -85,6 +86,7 @@ from ak_engine.parser.gw_world import (
     GWOfficeMeritRecord,
     GWOfficeStateEntry,
     GWProvinceRecord,
+    GWTreasureOnlyRecord,
 )
 
 # The inverse of `gw_world.MOD_PAT_ORDINAL_TO_ARMY_TYPE` -- every value in
@@ -268,6 +270,14 @@ def write_gw_feature_record(record: GWFeatureRecord) -> str:
             record.engagement_state.value,
         )
     )
+
+
+def write_gw_treasure_only_record(record: GWTreasureOnlyRecord) -> str:
+    """Writes one "loose" treasure's own 3-integer row -- the exact
+    inverse of `parse_gw_treasures_only` (Phase 378).
+    """
+
+    return " ".join(str(value) for value in (record.treasure.value, record.owner_raw, record.charges))
 
 
 def write_gw_army_record(record: GWArmyRecord) -> str:

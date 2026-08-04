@@ -33,6 +33,7 @@ from ak_engine.parser.gw_world import (
     parse_gw_header,
     parse_gw_leaders,
     parse_gw_offices,
+    parse_gw_treasures_only,
     parse_gw_world,
 )
 from ak_engine.parser.gw_world_writer import (
@@ -43,6 +44,7 @@ from ak_engine.parser.gw_world_writer import (
     write_gw_leader_record,
     write_gw_office_records,
     write_gw_province_record,
+    write_gw_treasure_only_record,
 )
 from ak_engine.turn.combat import Quality
 
@@ -185,6 +187,25 @@ def test_write_gw_feature_record_round_trips_every_real_feature(tmp_path: Path):
     path = tmp_path / "all_features"
     path.write_text(text, encoding="utf-8")
     assert parse_gw_features(path) == records
+
+
+def test_write_gw_treasure_only_record_round_trips_the_real_t1_and_t5_blocks(tmp_path: Path):
+    for fixture in (FIXTURE, FIXTURE.parent / "GW3__T5"):
+        header = parse_gw_header(fixture)
+        features = parse_gw_features(fixture)
+        records = parse_gw_treasures_only(fixture)
+
+        text = "\n".join(
+            (
+                write_gw_header(header),
+                *(write_gw_feature_record(feature) for feature in features),
+                *(write_gw_treasure_only_record(record) for record in records),
+            )
+        )
+        path = tmp_path / f"header_features_treasures_only_{fixture.name}"
+        path.write_text(text, encoding="utf-8")
+
+        assert parse_gw_treasures_only(path) == records
 
 
 def test_write_gw_army_record_round_trips_every_real_army(tmp_path: Path):

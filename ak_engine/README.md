@@ -15618,7 +15618,7 @@ section.
     updated README, ran once more before commit -- the standing
     per-phase workflow. Full suite: 3623 passed before, 3624 after (1
     net new test).
-- **Phase 377 (current)**: wires three real mechanics from
+- **Phase 377**: wires three real mechanics from
   `AKGEN_embedded_catalogs.json.txt gw_format.imperial_office_system`
   (a real static disassembly of `AKGEN.EXE`/`AK.EXE`/`AK.OVR`) that this
   project's own prior Merit Point/Office/Emperor-election work
@@ -15670,6 +15670,45 @@ section.
     request that the flat threshold would reject), ran again, updated
     README, ran once more before commit -- the standing per-phase
     workflow. Full suite: 3624 passed before, 3632 after (8 new tests).
+- **Phase 378 (current)**: adds `GWTreasureOnlyRecord`/`parse_gw_
+  treasures_only()`/`write_gw_treasure_only_record()` -- a whole record
+  type this project had never read at all, found while finishing the
+  AKGEN research audit begun in Phase 375-377.
+  `AKGEN_embedded_catalogs.json.txt gw_format.records.treasure_only`
+  describes "loose" treasures with no guarding Feature, stored as the
+  same underlying Pascal `treaslist`/`trowner`/`trcharges` arrays
+  `GWFeatureRecord` already reads, for `index_range feature_count
+  through treasure_count - 1`.
+  - **This record type was previously misread as a fixed "0 255 0" /
+    "35 99 0" structural boundary marker** between Block A
+    (`GWFeatureRecord`) and Block B (`GWArmyRecord`) -- Phase 316's own
+    research pass, working from only the `GW3__T1` fixture, saw exactly
+    2 such lines and assumed a fixed 2-line separator. Cross-checking
+    both real fixtures this project owns at once falsifies "fixed":
+    `GW3__T1` has exactly 2 such lines (`treasure_count - feature_count`
+    = `130 - 128`), `GW3__T5` has exactly 4 (`132 - 128`) -- and `GW3__
+    T5`'s own first and third rows are byte-identical to `GW3__T1`'s own
+    two rows (two real, valid `Treasure` ordinals persisting turn over
+    turn, one unclaimed at `255`, one claimed at `99`), while its own
+    second and fourth rows are new, freshly-generated treasures. Real,
+    multi-turn evidence, not a coincidence of one file's own row count.
+  - `parse_gw_treasures_only()` can't use a pure uniqueness scan (a bare
+    3-token line recurs incidentally elsewhere in the file, the same
+    reason `parse_gw_offices`'s own office-merit block needs one) -- it
+    locates Block A's own end the same way `parse_gw_features` does,
+    then reads exactly `GWHeader.treasure_count - GWHeader.feature_count`
+    further 3-integer lines, mirroring `parse_gw_offices`'s own
+    count-and-position strategy.
+  - `write_gw_treasure_only_record()` is the exact inverse; round-trip
+    verified against both real fixtures at once (write a full
+    header + Block A + treasure-only reconstruction, re-parse, assert
+    equality) rather than just one.
+  - Ran the parser/writer/bridge/end-to-end suite before writing new
+    tests, wrote 4 new tests (2 real-fixture parse assertions across
+    both turns, 1 malformed-ordinal error test, 1 dual-fixture writer
+    round trip), ran again, updated README, ran once more before commit
+    -- the standing per-phase workflow. Full suite: 3632 passed before,
+    3636 after (4 new tests).
 
 ## Setup
 
