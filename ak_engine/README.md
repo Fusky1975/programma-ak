@@ -15448,7 +15448,7 @@ section.
     different improve-chance thresholds), ran again, updated README, ran
     once more before commit -- the standing per-phase workflow. Full
     suite: 3602 passed before, 3611 after (9 new tests).
-- **Phase 373 (current)**: corrects `parser/gw_world.py`'s
+- **Phase 373**: corrects `parser/gw_world.py`'s
   `GWProvinceRecord`, discovered while researching the byte-exact GW
   writer the user actually asked for (`AKGEN_reverse_engineering_report.md`
   + `AKGEN_embedded_catalogs.json.txt`'s own `gw_format.records.province`
@@ -15483,6 +15483,71 @@ section.
     end suite, then the full suite, updated README, ran once more before
     commit -- the standing per-phase workflow. Full suite: 3611 passed
     before, 3612 after (1 new test).
+- **Phase 374 (current)**: adds `parser/gw_world_writer.py`, a byte-shape
+  writer for every one of `gw_world.py`'s own six confirmed reader
+  record types (`GWHeader`, the Phase 373-corrected `GWProvinceRecord`,
+  `GWLeaderRecord`, `GWFeatureRecord`, `GWArmyRecord`,
+  `GWOfficeMeritRecord`/`GWOfficeStateEntry`) -- the actual deliverable
+  the user chose ("Scrittore file GW") after Phase 373 closed the one
+  known correctness gap standing in its way.
+  - One `write_gw_*` function per record type, each verified by a real
+    round trip -- write the record(s), feed the written text back
+    through the matching real `parse_gw_*` reader, assert the re-parsed
+    result equals the original -- rather than a shape-only self-check.
+    `write_gw_province_record`/`write_gw_feature_record`/`write_gw_
+    army_record` round-trip every one of the real `GW3__T1` fixture's
+    own 162 provinces/128 Block A rows/218 Block B rows exactly;
+    `write_gw_header` round-trips that same fixture's real header;
+    `write_gw_office_records` round-trips through a small synthetic
+    file built entirely from real writer output (header + one Block B
+    row + the office block itself), exercising `parse_gw_offices`'s own
+    header-count-driven block-location logic for real, not just
+    formatting assertions.
+  - `write_gw_leader_record` is verified against synthetic Hero/King
+    records rather than a real fixture slice, since a real leader
+    block's own file position interleaves content this project's reader
+    doesn't parse yet (`"Action Plans:"` blocks, the King-only Gender/
+    Title/Epithet/player-name lines and trailing ~128-token dynamic
+    block, Phase 320-323) -- slicing a real leader record out of
+    `GW3__T1` would carry that unparsed content along and couldn't
+    round-trip through `parse_gw_leaders` alone. A King's own header
+    line always writes Liege `255` and doubles its skill list to 60
+    tokens (Phase 323-325); a King's own `kingdom_id` field (derived
+    positionally by the reader, not a literal header token) is instead
+    used only to decide *that* doubling/Liege behavior, never written
+    directly -- confirmed by a mixed-roster round-trip test with two
+    Kings and two Heroes (one owned, one independent), Kings written in
+    ascending `kingdom_id` order to match how `parse_gw_leaders` re-
+    derives it positionally.
+  - A leader header line's own positions 22-24 (of 25) are never
+    populated by `GWLeaderRecord` in the first place (`_build_leader_
+    record` only ever reads positions 0-21) -- `write_gw_leader_record`
+    writes them as literal `0`, documented as an honest placeholder,
+    not a guessed real value (this project's own "missing data defaults
+    to neutral, not guessed" convention, Phase 372's own `score`
+    parameter). Every other position round-trips exactly.
+  - **Explicitly out of scope, documented in the new module's own
+    docstring rather than silently omitted**: the kingdom-level 33-field
+    header that precedes each kingdom's own King record (distinct from
+    `GWHeader`, the single whole-file header this phase does write); a
+    leader's own `"Action Plans:"` block(s) (real, and already
+    parseable by `parser/k1_moves.py`'s own grammar, but not embedded by
+    either the reader or this writer); the King-only `king_extension`
+    block (Gender line, Title/Epithet/player-name lines, the trailing
+    ~128-token dynamic block); and the "15 `(min, max)` pairs"
+    kingdom-specific list. A file assembled purely from this phase's own
+    writers is therefore not a complete, engine-loadable `GW*` file --
+    closing that gap needs a future phase to first port `king_extension`
+    and Action Plans embedding into the *reader* (both now sourced in
+    `AKGEN_embedded_catalogs.json.txt`'s own `gw_format.records.king_
+    extension`/`action_plan_note`, per this project's own Phase 373
+    research pass), not attempted here.
+  - Ran the full suite before writing new tests, wrote 11 new round-trip
+    tests (header, province x2, leader x3, feature, army, office, plus
+    an `ARMY_TYPE_TO_MOD_PAT_ORDINAL` reversal-completeness check), ran
+    again, updated README, ran once more before commit -- the standing
+    per-phase workflow. Full suite: 3612 passed before, 3623 after (11
+    new tests).
 
 ## Setup
 
