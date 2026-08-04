@@ -58,14 +58,18 @@ it. See each function's own docstring in ``turn/battle_line.py`` for
 those still-correct derivations.
 
 Still NOT handled here -- see ak_engine/README.md: eliminating or
-demoting the losing side's armies (though ``turn/combat.py
-direct_destruction_probability`` is now a real, confirmed formula for
-part of that -- not yet wired into ``turn/battle_orchestrator.py``'s own
-destruction logic, a separate follow-up), duels, pursuit (already wired,
-Phase 349), retreat, post-battle quality changes (`turn/aftermath.py`'s
-own real formula is likewise standalone-only pending formation-depth/
-merit-score tracking this project doesn't have yet), contested
-provinces, conquest movement cost, and multiple contingents.
+demoting the losing side's armies (``turn/combat.py direct_destruction_
+probability`` is now wired into ``turn/battle_orchestrator.py``'s own
+per-army loop, Phase 371 -- but only for the "lost the battle without a
+clean sweep" branch; a column loser on the overall-winning or
+clean-swept side is still handled by that side's own existing path, not
+by this formula -- see ``battle_orchestrator.py
+_direct_destruction_probabilities``'s own docstring for why), duels,
+pursuit (already wired, Phase 349), retreat, post-battle quality changes
+(`turn/aftermath.py`'s own real formula is likewise standalone-only
+pending formation-depth/merit-score tracking this project doesn't have
+yet), contested provinces, conquest movement cost, and multiple
+contingents.
 """
 
 from __future__ import annotations

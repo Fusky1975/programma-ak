@@ -20,13 +20,14 @@ from ak_engine.turn.battle_orchestrator import (
     MultiAttackerParty,
     _build_battle_units,
     _commander_combatant,
+    _direct_destruction_probabilities,
     _maybe_fight_duel,
     _record_battle_merit,
     _select_side_commander,
     fight_battle,
     fight_multi_attacker_battle,
 )
-from ak_engine.turn.battle_resolution import BattleResult
+from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.duel import Commander, provincial_garrison_commander
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS
@@ -2156,3 +2157,93 @@ def test_fight_battle_winning_army_led_by_insufficient_druid_passes_the_penalty_
 
     assert report.battle_result.winner == "attacker"
     mock_roll.assert_called_once_with(Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True)
+
+
+# -- Phase 371: real, confirmed per-column direct destruction wired into
+# the non-clean-swept per-army loss branch --
+
+
+def _direct_destruction_column(
+    bres: int, attacker_type: ArmyType, defender_type: ArmyType, attacker_id: int = 101, defender_id: int = 201
+) -> BattleColumnResult:
+    return BattleColumnResult(
+        attacker_strength=20.0,
+        defender_strength=5.0,
+        bres=bres,
+        attacker_won=bres > 0,
+        cluck_index=20,
+        attacker_units=[BattleUnit(attacker_type, 20.0, source_id=attacker_id)],
+        defender_units=[BattleUnit(defender_type, 5.0, source_id=defender_id)],
+    )
+
+
+def test_direct_destruction_probabilities_reads_the_losing_front_line_unit_only():
+    # bres > 0 -- attacker won the column, so the defender's own front
+    # unit (not the attacker's) is the eligible "first-line loser".
+    # HVY_CAVALRY (speed 3) beats GARRISON (speed 1): speed_delta clamps
+    # to +1, so direct_destruction_probability(5, 3, 1) == 1.0.
+    column = _direct_destruction_column(5, ArmyType.HVY_CAVALRY, ArmyType.GARRISON)
+    battle_result = BattleResult(columns=[column], winner="attacker", total_bres=5)
+
+    probabilities = _direct_destruction_probabilities(battle_result)
+
+    assert probabilities == {201: 1.0}
+
+
+def test_direct_destruction_probabilities_flips_the_loser_when_bres_favors_the_defender():
+    column = _direct_destruction_column(-5, ArmyType.GARRISON, ArmyType.HVY_CAVALRY)
+    battle_result = BattleResult(columns=[column], winner="defender", total_bres=-5)
+
+    probabilities = _direct_destruction_probabilities(battle_result)
+
+    # Now the attacker's own front unit (101) is the loser.
+    assert probabilities == {101: 1.0}
+
+
+def test_direct_destruction_probabilities_skips_a_genuine_column_tie():
+    column = _direct_destruction_column(0, ArmyType.HVY_CAVALRY, ArmyType.GARRISON)
+    battle_result = BattleResult(columns=[column], winner="attacker", total_bres=0)
+
+    assert _direct_destruction_probabilities(battle_result) == {}
+
+
+def test_fight_battle_destroys_a_non_clean_swept_defenders_front_line_column_loser():
+    # A hand-built BattleResult double (not a real resolve_battle() output --
+    # defender_columns_won=1 is asserted directly rather than derived from
+    # the single injected column, purely to make the top-level winner/
+    # columns_won fields say "the defender wasn't clean swept" without
+    # needing a second real column) exercises exactly the one branch that
+    # previously had no destruction path at all: an army that lost the
+    # battle without its own side being clean swept.
+    state = build_state()  # attacker army 101 (HVY_CAVALRY), defender army 201 (GARRISON)
+    column = _direct_destruction_column(5, ArmyType.HVY_CAVALRY, ArmyType.GARRISON)
+    battle_result = BattleResult(
+        columns=[column], winner="attacker", total_bres=5, attacker_columns_won=1, defender_columns_won=1
+    )
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result):
+        report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert 201 in report.destroyed_army_ids
+    assert 201 not in state.armies
+    assert state.battle_graveyard[FIELD][0].army_type is ArmyType.GARRISON
+
+
+def test_fight_battle_falls_back_to_quality_change_when_direct_destruction_misses():
+    # bres=-1 with the defender (GARRISON, speed 1) as winner and the
+    # attacker (HVY_CAVALRY, speed 3) as loser: speed_delta clamps to -1,
+    # so direct_destruction_probability(1, 1, 3) == 0.0 -- a guaranteed
+    # miss regardless of the rng draw, falling through to the ordinary
+    # is_winner=False quality-change roll unchanged.
+    state = build_state()
+    column = _direct_destruction_column(-1, ArmyType.HVY_CAVALRY, ArmyType.GARRISON)
+    battle_result = BattleResult(
+        columns=[column], winner="defender", total_bres=-1, attacker_columns_won=1, defender_columns_won=1
+    )
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result):
+        report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert 101 not in report.destroyed_army_ids
+    assert 101 in state.armies
+    assert 101 in report.quality_changes

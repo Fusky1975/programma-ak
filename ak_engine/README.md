@@ -15287,7 +15287,7 @@ section.
     the standing per-phase workflow. Full suite: 3614 passed before,
     3609 after (test count dropped since several now-fictional-formula
     tests were removed rather than replaced 1:1).
-- **Phase 370 (current)**: finishes wiring the real, confirmed
+- **Phase 370**: finishes wiring the real, confirmed
   `AK.EXE`/`AK.OVR` battle-resolution luck and win-decision formulas
   Phases 346-349 already reverse-engineered and standalone-tested from
   the AKGEN disassembly (`AKGEN_reverse_engineering_report.md`/
@@ -15335,8 +15335,8 @@ section.
   - Deliberately deferred, each needing its own separate design pass:
     wiring `turn/combat.py direct_destruction_probability()` (Phase
     347/348, also real and confirmed) into `battle_orchestrator.py`'s
-    actual unit-destruction logic; wiring the real quality-change
-    formula (`turn/aftermath.py`, Phase 350), blocked on
+    actual unit-destruction logic (done next, Phase 371); wiring the real
+    quality-change formula (`turn/aftermath.py`, Phase 350), blocked on
     formation-depth/merit-score state tracking this project doesn't have
     yet.
   - Run full suite before writing new Phase 370 tests, write/update
@@ -15351,6 +15351,54 @@ section.
     unlike the old probability-roll model), run again, update README,
     run once more before commit -- the standing per-phase workflow. Full
     suite: 3592 passed before Phase 370's own test fixes, 3597 after.
+- **Phase 371 (current)**: wires `turn/combat.py
+  direct_destruction_probability()` (Phase 347/348, real and confirmed)
+  into `turn/battle_orchestrator.py fight_battle()`'s own per-army
+  outcome loop -- the last of the two follow-ups Phase 370 explicitly
+  deferred.
+  - New `battle_orchestrator.py _direct_destruction_probabilities()`
+    reads a `BattleResult`'s own columns and, for every column with a
+    real winner (`bres != 0`), maps that column's losing side's own
+    front-line unit (`attacker_units[0]`/`defender_units[0]` -- "the
+    alive, first-line loser of its column" the source's own eligibility
+    rule names) to its real destruction probability, keyed by
+    `army_id`. A genuine per-column tie (`bres == 0`) has no loser and
+    contributes nothing.
+  - Consulted from exactly one place: the per-army loop's own plain
+    `else` branch (an army whose side neither swept the battle nor won
+    it outright) -- previously the *only* battle outcome with no
+    destruction path at all; a losing, non-clean-swept army could only
+    ever have its quality reduced, never actually die, no matter how
+    badly its own column went. Now that branch first rolls the real
+    probability; a hit destroys the army outright (the same
+    `destroyed_army_ids`/`record_battle_death`/`remove_army` bookkeeping
+    the clean-swept destroy path already uses); a miss falls through to
+    the unchanged `roll_quality_change(is_winner=False, ...)` roll.
+  - Deliberately **not** touched, each its own separate design question:
+    a column loser on the overall-*winning* side (that per-army branch
+    is a quality-*improve* roll, not a loss -- reconciling a single bad
+    column against an otherwise-winning battle needs its own
+    eligibility rule the source doesn't spell out) and a column loser on
+    a *clean-swept* side (already fully modeled by its own established
+    retreat/pursuit/Whale/Fleet/elimination paths; layering a second,
+    independent destruction check on top of a side already being wiped
+    out needs its own ordering design, not a drive-by addition here).
+  - Run full suite before writing new Phase 371 tests (unchanged: this
+    phase's wiring sits behind a branch no existing scripted test
+    happens to reach, since every existing "loser, not clean swept"
+    fixture uses a single-column, heavily lopsided matchup where the
+    battle is always either a clean sweep or an outright loss for the
+    other side). Wrote `_direct_destruction_probabilities()` unit tests
+    (front-line-loser selection, sign-flip for a defender-favored
+    column, tie skip) plus two `fight_battle()` integration tests using
+    a hand-built `BattleResult` double (patched in place of a real
+    `resolve_battle()` call, since only the top-level `winner`/
+    `*_columns_won` fields and the one injected column's own `bres`/
+    units matter to this wiring, not a realistic multi-column battle) --
+    one forcing a guaranteed-hit destruction, one a guaranteed-miss
+    quality-change fallback. Ran again, updated README, ran once more
+    before commit -- the standing per-phase workflow. Full suite: 3597
+    passed before, 3602 after (5 new tests).
 
 ## Setup
 

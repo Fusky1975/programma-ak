@@ -161,7 +161,7 @@ import random
 from dataclasses import dataclass, field
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ArmyType, is_overflight_unit
+from ak_engine.models.army_type import ARMY_TABLE, ArmyType, is_overflight_unit
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
@@ -173,7 +173,7 @@ from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability, rol
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit, quality_one_level_down
 from ak_engine.turn.challenge_execution import resolve_challenge_combat
-from ak_engine.turn.combat import Quality
+from ak_engine.turn.combat import Quality, direct_destruction_probability
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant
@@ -1009,6 +1009,39 @@ def _record_battle_merit(
                 loser_leader.merit_tally.land_battles_lost_points += points
 
 
+def _direct_destruction_probabilities(battle_result: BattleResult) -> dict[int, float]:
+    """Phase 371: for each column with a real winner, the real,
+    confirmed probability (``turn/combat.py direct_destruction_
+    probability``, Phase 347/348) that its losing side's own front-line
+    unit -- "the alive, first-line loser of its column" the source's own
+    eligibility rule names -- is destroyed outright in the direct
+    contest, keyed by that unit's own ``army_id``.
+
+    A per-column tie (``bres == 0``) has no loser and contributes
+    nothing. Only each column's own front unit (index 0, the same unit
+    ``turn/battle_line.py column_strength`` already treats as "first
+    line") is eligible -- a second-line unit was never in contention for
+    this column's own contest.
+    """
+
+    probabilities: dict[int, float] = {}
+    for column in battle_result.columns:
+        if column.bres == 0:
+            continue
+        attacker_front = column.attacker_units[0]
+        defender_front = column.defender_units[0]
+        attacker_speed = ARMY_TABLE[attacker_front.army_type].speed
+        defender_speed = ARMY_TABLE[defender_front.army_type].speed
+        if column.bres > 0:
+            loser_unit, winner_speed, loser_speed = defender_front, attacker_speed, defender_speed
+        else:
+            loser_unit, winner_speed, loser_speed = attacker_front, defender_speed, attacker_speed
+        if loser_unit.source_id is None:
+            continue
+        probabilities[loser_unit.source_id] = direct_destruction_probability(column.bres, winner_speed, loser_speed)
+    return probabilities
+
+
 def fight_battle(
     state: GameState,
     attacker_kingdom_id: int,
@@ -1165,6 +1198,19 @@ def fight_battle(
         unit.source_id: unit.led_by_insufficient_druid for unit in (*attacker_units, *defender_units)
     }
 
+    # Phase 371: real, confirmed per-column direct destruction (turn/
+    # combat.py direct_destruction_probability, Phase 347/348) -- see
+    # _direct_destruction_probabilities' own docstring. Only consulted
+    # below for an army whose own side neither swept the battle nor won
+    # it outright: a clean-swept side already has its own fully-modeled
+    # fate (retreat, pursuit, Whale/Fleet special cases, or outright
+    # elimination), and an overall-winning side's own per-army branch is
+    # a quality-improve roll, not a loss -- reconciling a single column's
+    # own bad result against either of those established paths is a
+    # separate, larger design question, deliberately left for a future
+    # phase (see ak_engine/README.md).
+    direct_destruction_probability_by_army_id = _direct_destruction_probabilities(battle_result)
+
     attacker_pursuit_destroyed: set[int] = set()
     if attacker_clean_swept and loser_retreats:
         attacker_pursuit_destroyed = _apply_pursuit(
@@ -1211,6 +1257,10 @@ def fight_battle(
             report.destroyed_army_ids.append(army.army_id)
             state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id)
             state.remove_army(army.army_id)
+        elif rng.random() < direct_destruction_probability_by_army_id.get(army.army_id, 0.0):
+            report.destroyed_army_ids.append(army.army_id)
+            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id)
+            state.remove_army(army.army_id)
         else:
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=False, retreated=False,
@@ -1247,6 +1297,10 @@ def fight_battle(
             army.quality = Quality.DEPLETED
             report.quality_changes[army.army_id] = army.quality
         elif defender_clean_swept:
+            report.destroyed_army_ids.append(army.army_id)
+            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id)
+            state.remove_army(army.army_id)
+        elif rng.random() < direct_destruction_probability_by_army_id.get(army.army_id, 0.0):
             report.destroyed_army_ids.append(army.army_id)
             state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id)
             state.remove_army(army.army_id)
