@@ -61,7 +61,13 @@ def test_race_short_tag_positional_values():
     assert RACE_SHORT_TAG[Race.DWARVEN] == "Dwf"
     assert RACE_SHORT_TAG[Race.ORCISH] == "Orc"
     assert RACE_SHORT_TAG[Race.ROHAN] == ""
+    # Phase 383's new races (Drow/Lizardman/Goblin) are outside `rab3`'s
+    # own declared range -- see models/army_naming.py's module docstring.
+    assert Race.DROW not in RACE_SHORT_TAG
+    assert Race.LIZARDMAN not in RACE_SHORT_TAG
+    assert Race.GOBLIN not in RACE_SHORT_TAG
 
 
-def test_race_short_tag_covers_every_race():
-    assert set(RACE_SHORT_TAG.keys()) == set(Race)
+def test_race_short_tag_covers_every_race_within_rab3s_own_declared_range():
+    # Phase 383's Drow/Lizardman/Goblin are outside `rab3`'s own range.
+    assert set(RACE_SHORT_TAG.keys()) == set(Race) - {Race.DROW, Race.LIZARDMAN, Race.GOBLIN}

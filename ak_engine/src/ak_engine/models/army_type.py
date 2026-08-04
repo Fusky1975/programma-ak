@@ -21,6 +21,44 @@ humanoid army type in any humanoid province") -- this module treats that
 as symmetric (non-humanoid provinces can't recruit humanoid-only types
 either), which is an interpretation of the rulebook text, not a literal
 quote.
+
+**9 more real `army` ordinals, 20-28 (Phase 383)**: the AKGEN
+reverse-engineering material's own `tables.army_types` catalog gives real
+`id`/`name`/`code` entries for these ordinals -- Dinosaurs(Di),
+Vampires(Va), Marauders(Ma), Shamans(Sh), Crossbow(Cr), Javelins(Ja),
+Artil'ry(Ar), Spiders(Sp), D-Turtle(Dt) -- closing the gap
+`ARMY_TYPE_BY_ORDINAL`'s own docstring previously flagged as "aren't in
+the rulebook's Army Type Table [6.3] and have no ArmyType here either."
+That's still true for their rulebook mechanics: none of these 9 appear
+in RULES.AK [6.3], so they get no `ArmyTypeStats`/`BASE_STRENGTH`/
+`NEMESIS` entry, same as before. The catalog's own `name` field
+cross-checks as `ARMY_TYPE_DESIGNATION` (the short `atdesig` form), not
+`ARMY_TYPE_NAME` (`atname`) -- confirmed by 5 known ordinals that
+disambiguate the two tables (`Lt Cav`/`Hvy Cav`/`Camels`/`Wargs`/
+`League` are all `atdesig`, not `atname`'s own longer forms). 7 of the 9
+new values read as complete, unabbreviated words already (Dinosaurs,
+Vampires, Marauders, Shamans, Crossbow, Javelins, Spiders) and are
+reused for `ARMY_TYPE_NAME` too, matching this module's own existing
+convention wherever `atname`/`atdesig` coincide. The remaining 2
+(`Artil'ry`, `D-Turtle`) are visibly abbreviated forms with no confirmed
+full `atname` available, so `ARMY_TYPE_NAME` is deliberately left without
+entries for them -- an honest gap, not a guess. `MONSTROUS_ARMY_RACE`
+gains exactly 1 new entry, `ArmyType.VAMPIRES: Race.VAMPISH` -- not by
+name-symmetry guesswork but by the same catalog's own separately-stated
+``world_generation.province_recruit_slots.special_races`` field: "direct
+native unit type: Dragons, Eagles, Whales, Mermen, Ents, Trolls,
+Werefolk or Vampires" -- an exact, independently-sourced 8-item list
+whose first 7 already match this dict's own pre-existing entries 1:1,
+strongly confirming the 8th belongs too. That same list conspicuously
+excludes Dinosaurs, so `ArmyType.DINOSAURS` is deliberately **not**
+added here despite the tempting `Race.SAURIAN`/"Dinosaur" name match --
+unconfirmed name-symmetry alone isn't this project's evidentiary bar.
+The other 7 new types (Marauders, Shamans, Crossbow, Javelins, Artil'ry,
+Spiders, D-Turtle) have no matching `Race` member and stay unmapped too.
+This closes a gap ``worldgen/initial_armies.py``'s own docstring
+previously flagged by name ("Vampires are named in the source's own
+list too, but this project's `ArmyType` enum has no Vampire-native
+entry") -- see that module's own updated docstring.
 """
 
 from __future__ import annotations
@@ -52,6 +90,15 @@ class ArmyType(Enum):
     ENTS = "EN"
     TROLLS = "TR"
     WEREBEASTS = "WE"
+    DINOSAURS = "DI"
+    VAMPIRES = "VA"
+    MARAUDERS = "MA"
+    SHAMANS = "SH"
+    CROSSBOW = "CR"
+    JAVELINS = "JA"
+    ARTILLERY = "AR"
+    SPIDERS = "SP"
+    D_TURTLE = "DT"
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +142,9 @@ MONSTROUS_ARMY_RACE: dict[ArmyType, Race] = {
     ArmyType.ENTS: Race.ENTISH,
     ArmyType.TROLLS: Race.TROLLISH,
     ArmyType.WEREBEASTS: Race.WEREFOLK,
+    # Phase 383: confirmed by `special_races`' own explicit 8-item list
+    # (see module docstring) -- not name-symmetry guesswork.
+    ArmyType.VAMPIRES: Race.VAMPISH,
 }
 
 # "Str" column of the Army Type Table. Garrison and Elephants are excluded;
@@ -229,6 +279,15 @@ ARMY_TYPE_BY_ORDINAL: dict[int, ArmyType] = {
     17: ArmyType.ENTS,
     18: ArmyType.TROLLS,
     19: ArmyType.WEREBEASTS,
+    20: ArmyType.DINOSAURS,
+    21: ArmyType.VAMPIRES,
+    22: ArmyType.MARAUDERS,
+    23: ArmyType.SHAMANS,
+    24: ArmyType.CROSSBOW,
+    25: ArmyType.JAVELINS,
+    26: ArmyType.ARTILLERY,
+    27: ArmyType.SPIDERS,
+    28: ArmyType.D_TURTLE,
 }
 
 # CTBOTH.PAS `noleader = 255` -- used in Recruit phases' `obj` field to
@@ -264,6 +323,18 @@ ARMY_TYPE_NAME: dict[ArmyType, str] = {
     ArmyType.ENTS: "Ents",
     ArmyType.TROLLS: "Trolls",
     ArmyType.WEREBEASTS: "Were-Beasts",
+    # Phase 383: ordinals 20-28, confirmed only where the AKGEN catalog's
+    # own designation value is already a complete, unabbreviated word --
+    # see module docstring. `ARTILLERY`/`D_TURTLE` are deliberately
+    # excluded (no confirmed full `atname` form for their abbreviated
+    # `Artil'ry`/`D-Turtle` designations).
+    ArmyType.DINOSAURS: "Dinosaurs",
+    ArmyType.VAMPIRES: "Vampires",
+    ArmyType.MARAUDERS: "Marauders",
+    ArmyType.SHAMANS: "Shamans",
+    ArmyType.CROSSBOW: "Crossbow",
+    ArmyType.JAVELINS: "Javelins",
+    ArmyType.SPIDERS: "Spiders",
 }
 
 # CTBOTH.PAS `atdesig` (~line 1288), verbatim, positional with the `army`
@@ -297,4 +368,16 @@ ARMY_TYPE_DESIGNATION: dict[ArmyType, str] = {
     ArmyType.ENTS: "Ents",
     ArmyType.TROLLS: "Trolls",
     ArmyType.WEREBEASTS: "Weres",
+    # Phase 383: ordinals 20-28, the AKGEN catalog's own confirmed
+    # `atdesig` field (see module docstring's Phase 383 addendum for the
+    # atname/atdesig disambiguation evidence).
+    ArmyType.DINOSAURS: "Dinosaurs",
+    ArmyType.VAMPIRES: "Vampires",
+    ArmyType.MARAUDERS: "Marauders",
+    ArmyType.SHAMANS: "Shamans",
+    ArmyType.CROSSBOW: "Crossbow",
+    ArmyType.JAVELINS: "Javelins",
+    ArmyType.ARTILLERY: "Artil'ry",
+    ArmyType.SPIDERS: "Spiders",
+    ArmyType.D_TURTLE: "D-Turtle",
 }

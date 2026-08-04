@@ -13,15 +13,16 @@ Sixth phase of the world-generation sub-plan. Source:
   becomes best_atype[king race]" -- the table wasn't sourced yet at
   that point). `home_first_slot()` wraps it for that exact use.
 - ``NATIVE_ARMY_TYPE``: "special_races: direct native unit type" for
-  Dragons/Eagles/Whales/Mermen/Ents/Trolls/Werefolk -- built by
+  Dragons/Eagles/Whales/Mermen/Ents/Trolls/Werefolk/Vampires -- built by
   inverting this project's own pre-existing
-  ``models.army_type.MONSTROUS_ARMY_RACE`` (Phase 26/31), which
-  already covers exactly these seven races with zero new data needed.
-  Vampires are named in the source's own list too, but this project's
-  ``ArmyType`` enum has no Vampire-native entry (a pre-existing gap,
-  not new here -- Vampish is an Arcanes_V-variant race this project
-  has never modeled a unit for); `NATIVE_ARMY_TYPE` simply has no
-  ``Race.VAMPISH`` key rather than guessing one.
+  ``models.army_type.MONSTROUS_ARMY_RACE`` (Phase 26/31/383), which now
+  covers all eight of the source's own named races. Vampires were
+  originally a documented gap here ("this project's ``ArmyType`` enum
+  has no Vampire-native entry") -- closed by Phase 383's own
+  ``ArmyType.VAMPIRES``/``MONSTROUS_ARMY_RACE[ArmyType.VAMPIRES] =
+  Race.VAMPISH`` addition, sourced from this exact ``special_races``
+  field. `NATIVE_ARMY_TYPE` now includes ``Race.VAMPISH`` automatically,
+  with no change needed here.
 - ``second_slot_gate()``: "``tax > (IRand AND 7)``" -- realized
   literally as ``tax > (rng.irand() & 7)``. Cross-checked against the
   source's own separately-stated ``probability_before_other_filters =

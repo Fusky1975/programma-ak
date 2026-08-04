@@ -15885,7 +15885,7 @@ section.
     WEAPON`+`MONSTER_RANGED_WEAPON`), ran again, updated README, ran
     once more before commit -- the standing per-phase workflow. Full
     suite: 3669 passed before, 3676 after (7 new tests).
-- **Phase 382 (current)**: adds the real 24-reply Talk selector,
+- **Phase 382**: adds the real 24-reply Talk selector,
   `runtime_mechanics.monster_talk` (`AK.OVR TALK branch`/`AK.EXE reply
   selector`, a real static disassembly). `turn/encounter.py` gets
   `MonsterTalkReply` (`RPuzzled`..`RMAdvance`) plus each real id's own
@@ -15950,6 +15950,84 @@ section.
     `None` case), ran again, updated README, ran once more before
     commit -- the standing per-phase workflow. Full suite: 3676 passed
     before, 3686 after (10 new tests).
+- **Phase 383 (current)**: the "minor tables" item from the same
+  research pass -- 3 more real `Race` members, 9 more real `ArmyType`
+  members, and a new mundane-scenery vocabulary model.
+  - `models/race.py` gains `Race.DROW`/`LIZARDMAN`/`GOBLIN` (ordinals
+    15-17), closing 3 of the module's own previously-unused `er3`-`er10`
+    `rstrs` extension slots with real named entries from the AKGEN
+    `tables.races` catalog ("Drow Elves"/"Drow", "Lizardmen"/"Lizardman",
+    "Goblins"/"Goblin"). `RACE_ADJECTIVE` gains all 3 (an exact,
+    15-for-15-confirmed source field). A new `RACE_PLURAL_NAME` dict
+    transcribes the catalog's own "plural" field for all 18 real races
+    -- proven to be an independently-sourced table, not a computed
+    function of `RACE_NAME`'s own singular forms, by two real
+    counter-examples (`WEREFOLK`: "Were"/"Werefolk"; `ROHAN`: "Rohan"/
+    "Riders", not a regular pluralization either way). `RACE_NAME`
+    itself is deliberately left without entries for the 3 new races --
+    no confirmed singular `rname` source exists for them -- an honest
+    gap, not a guess. `RACE_FANATICISM_TITLE`/`RACE_SHORT_TAG`/
+    `HUMANOID_RACES` stay untouched (outside their own declared ranges).
+  - `models/army_type.py` gains `ArmyType.DINOSAURS`/`VAMPIRES`/
+    `MARAUDERS`/`SHAMANS`/`CROSSBOW`/`JAVELINS`/`ARTILLERY`/`SPIDERS`/
+    `D_TURTLE` (ordinals 20-28), closing the exact gap
+    `ARMY_TYPE_BY_ORDINAL`'s own docstring previously named ("aren't in
+    the rulebook's Army Type Table [6.3] and have no ArmyType here
+    either") -- still true for rulebook mechanics, so none of the 9 get
+    an `ArmyTypeStats`/`BASE_STRENGTH`/`NEMESIS` entry. `ARMY_TYPE_NAME`
+    gains 7 of the 9 (the ones already a complete, unabbreviated word);
+    `Artil'ry`/`D-Turtle` are visibly abbreviated `atdesig` forms with
+    no confirmed full `atname`, so `ARMY_TYPE_NAME` leaves them out --
+    another honest gap. `MONSTROUS_ARMY_RACE` gains exactly 1 new entry,
+    `ArmyType.VAMPIRES: Race.VAMPISH` -- not name-symmetry guesswork but
+    the AKGEN catalog's own separately-stated `special_races` field
+    ("direct native unit type: Dragons, Eagles, Whales, Mermen, Ents,
+    Trolls, Werefolk or Vampires"), an independently-sourced 8-item list
+    whose first 7 already matched this dict 1:1. That same list
+    conspicuously excludes Dinosaurs, so `ArmyType.DINOSAURS` is
+    deliberately **not** added despite the tempting `Race.SAURIAN`/
+    "Dinosaur" name match. This closes a gap
+    `worldgen/initial_armies.py`'s own docstring previously flagged by
+    name ("Vampires are named in the source's own list too, but this
+    project's `ArmyType` enum has no Vampire-native entry") --
+    `NATIVE_ARMY_TYPE` (built by inverting `MONSTROUS_ARMY_RACE`) now
+    includes `Race.VAMPISH` automatically, no new code needed there.
+  - New `models/common_feature_scenery.py`: `CommonFeatureScenery`, the
+    27-member `CTME.PAS comfeat` enum (mundane in-feature set-dressing --
+    Seaweed, Trees, Stairs, Fireplace, Coffin, Well, etc.), confirmed
+    distinct from and not to be confused with the already-implemented
+    `models.magic_feature.MagicFeature` (the *magical* landmark
+    vocabulary). `COMMON_FEATURE_SCENERY_NAME` transcribes the 27 real
+    display strings. **The selection formula itself is deliberately not
+    implemented**: the catalog gives the formula's own shape (`cf1[
+    feature_type] + ((feature_index + feature_type) mod (cff[
+    feature_type] - cf1[feature_type] + 1))`, structurally the same
+    deterministic pattern `worldgen/internal_magical_locations.py`'s own
+    `candidate_location()` already implements for Phase 361) but, unlike
+    that phase's own `location_ranges` table, no per-`FeatureType`
+    `cf1`/`cff` numeric range pairs exist anywhere in the available
+    material -- writing `candidate_scenery()` would mean guessing 32
+    range pairs outright. Recorded as an honest, documented non-result,
+    the same stance Phase 382 took for the Advanced Ability Schedule.
+  - Ran the full suite before writing new tests (non-breaking check),
+    which caught 4 pre-existing exhaustive-coverage tests
+    (`test_race_name_covers_every_enum_value`,
+    `test_army_type_name_covers_every_army_type`,
+    `test_race_short_tag_covers_every_race`, and
+    `test_native_army_type_covers_every_race_the_source_names_except_
+    vampires`) that assumed every `Race`/`ArmyType` member has a name --
+    an assumption this phase's own honest gaps break. Updated all 4 to
+    scope the coverage assertion to the confirmed subset and added
+    companion tests asserting the gaps explicitly (mirroring this
+    project's own established `RACE_FANATICISM_TITLE`
+    Vampish/Rohan-exclusion precedent), plus flipped the Vampires test
+    to assert inclusion now that the gap is closed. Wrote a new
+    `tests/test_common_feature_scenery.py` and extended
+    `tests/test_race.py`/`test_army_type.py`/`test_army_naming.py`/
+    `test_initial_armies.py` for the new data. Ran again, updated
+    README, ran once more before commit -- the standing per-phase
+    workflow. Full suite: 3686 passed before this phase's own new work,
+    3703 after (4 pre-existing tests updated in place, 21 new tests).
 
 ## Setup
 

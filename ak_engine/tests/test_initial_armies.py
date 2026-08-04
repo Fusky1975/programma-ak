@@ -44,7 +44,10 @@ def test_native_army_type_is_the_exact_inverse_of_monstrous_army_race():
         assert special_race_recruit_slot(race) == NATIVE_ARMY_TYPE[race]
 
 
-def test_native_army_type_covers_every_race_the_source_names_except_vampires():
+def test_native_army_type_covers_every_race_the_source_names_including_vampires():
+    # Phase 383 closed the previously-documented Vampires gap (see
+    # worldgen/initial_armies.py's own updated module docstring) --
+    # `special_races` names exactly these 8 races, all now covered.
     named_races = {
         Race.DRAGONS,
         Race.EAGLES,
@@ -53,9 +56,10 @@ def test_native_army_type_covers_every_race_the_source_names_except_vampires():
         Race.ENTISH,
         Race.TROLLISH,
         Race.WEREFOLK,
+        Race.VAMPISH,
     }
     assert named_races <= set(NATIVE_ARMY_TYPE)
-    assert Race.VAMPISH not in NATIVE_ARMY_TYPE
+    assert NATIVE_ARMY_TYPE[Race.VAMPISH] == ArmyType.VAMPIRES
 
 
 def test_second_slot_gate_matches_the_hand_derived_probability():

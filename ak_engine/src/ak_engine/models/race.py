@@ -52,6 +52,33 @@ four sibling variants (`_AGFan`/`_AEFan` alignment-based via `Good_Fan`/
 Only the raw template data is transcribed here, matching how every other
 `.X2`-sourced phase started; wiring `_ARFan`'s own selection condition
 and `GANG.X2`'s sibling table are left to a real follow-up phase.
+
+**`Race.DROW`/`LIZARDMAN`/`GOBLIN` (Phase 383)**, found continuing to
+mine the AKGEN reverse-engineering material's own `tables.races` catalog
+(a disassembly-derived table distinct from the `CTBOTH.PAS` source read
+directly for Phases 87/100 above): 3 more real, named `rstrs` entries at
+ordinals 15-17, previously undocumented here and left as unused `er3`-
+`er5` extension slots (the module's own count of "15 real + 8 unused"
+is now "18 real + 5 unused", `er6`-`er10`). The catalog's own
+`adjectives_ds_offset` field is an exact, 15-for-15 match to this
+module's own pre-existing `RACE_ADJECTIVE` for ordinals 0-14 -- the
+same cross-check discipline as every prior phase here -- so its values
+for the 3 new ordinals are trusted and added to `RACE_ADJECTIVE`
+directly. The catalog's sibling `plural_names_ds_offset` field is
+**not** the same table `RACE_NAME` already models (`rname`, the
+singular noun `CTBOTH.PAS` itself stores): comparing the catalog's own
+"plural" values against `RACE_NAME`'s existing 15 singular entries
+shows most pairs differ only by regular English pluralization (`Elf`/
+`Elves`, `Whale`/`Whales`), but two don't (`WEREFOLK`: `Were`/
+`Werefolk`; `ROHAN`: `Rohan`/`Riders` -- a wholly different word), proving
+the plural table is independently sourced, not a computed function of
+`rname`. Since no confirmed singular form exists for the 3 new
+ordinals in the available material, `RACE_NAME` is deliberately left
+without entries for them (an honest gap, not a guess); the plural
+table is instead transcribed whole, for all 18 real ordinals, as the
+new `RACE_PLURAL_NAME`. `RACE_FANATICISM_TITLE` stays untouched --
+`RACE.X2`'s own declared range is still only ordinals 0-12, so 15-17
+join 13/14 as already-excluded, out-of-range members.
 """
 
 from __future__ import annotations
@@ -75,6 +102,9 @@ class Race(Enum):
     SAURIAN = 12
     VAMPISH = 13
     ROHAN = 14
+    DROW = 15
+    LIZARDMAN = 16
+    GOBLIN = 17
 
 
 HUMANOID_RACES = frozenset({Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH})
@@ -116,6 +146,35 @@ RACE_ADJECTIVE: dict[Race, str] = {
     Race.SAURIAN: "Saurian",
     Race.VAMPISH: "Vampiric",
     Race.ROHAN: "Rohan",
+    Race.DROW: "Drow",
+    Race.LIZARDMAN: "Lizardman",
+    Race.GOBLIN: "Goblin",
+}
+
+# AKGEN reverse-engineering material's own `tables.races` catalog, the
+# plural-name field sourced separately from `RACE_NAME`'s own singular
+# `rname` (see module docstring's Phase 383 addendum -- the two are not
+# interchangeable). Covers all 18 real ordinals; `NO_RACE`'s own entry
+# is "no races", matching `RACE_NAME`'s own "no race" convention.
+RACE_PLURAL_NAME: dict[Race, str] = {
+    Race.HUMAN: "Humans",
+    Race.ELVEN: "Elves",
+    Race.DWARVEN: "Dwarves",
+    Race.ORCISH: "Orcs",
+    Race.DRAGONS: "Dragons",
+    Race.EAGLES: "Eagles",
+    Race.WHALES: "Whales",
+    Race.NO_RACE: "no races",
+    Race.MERMISH: "Mermen",
+    Race.ENTISH: "Ents",
+    Race.TROLLISH: "Trolls",
+    Race.WEREFOLK: "Werefolk",
+    Race.SAURIAN: "Dinosaurs",
+    Race.VAMPISH: "Vampires",
+    Race.ROHAN: "Riders",
+    Race.DROW: "Drow Elves",
+    Race.LIZARDMAN: "Lizardmen",
+    Race.GOBLIN: "Goblins",
 }
 
 # HostAK/TP/PROSE/RACE.X2, verbatim, positional with `Race`'s own first
