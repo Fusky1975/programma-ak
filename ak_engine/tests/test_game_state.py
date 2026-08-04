@@ -404,3 +404,49 @@ def test_remove_leader_unknown_leader_id_is_a_no_op():
 
     assert state.dead_leaders == {}
     assert 999 not in state.leaders
+
+
+def test_remove_leader_applies_the_real_25_percent_office_merit_death_penalty():
+    # Phase 377: AKGEN_embedded_catalogs.json.txt's own two real worked
+    # examples, "old - old div 4": Teleko lgenp 23->18, lmhpp 21->16.
+    state = make_state()
+    leader = LeaderState(1, 1, "Hero", FIELD, is_king=False)
+    leader.merit_tally.land_battles_won_points = 23
+    leader.merit_tally.monster_hp_defeated = 21
+    state.add_leader(leader)
+
+    state.remove_leader(1)
+
+    dead = state.dead_leaders[1]
+    assert dead.merit_tally.land_battles_won_points == 18
+    assert dead.merit_tally.monster_hp_defeated == 16
+
+
+def test_merit_tally_apply_death_penalty_uses_pascal_truncating_division():
+    # Phase 377: AKGEN_embedded_catalogs.json.txt's own third real
+    # example, Adele lgenp -17 -> -13 -- only matches truncating-toward-
+    # zero division (Pascal's own `div`), not Python's floor `//`
+    # (-17 // 4 == -5, giving -12, not the real -13).
+    from ak_engine.models.game_state import MeritTally
+
+    tally = MeritTally(land_battles_won_points=-17)
+    tally.apply_death_penalty()
+    assert tally.land_battles_won_points == -13
+
+
+def test_apply_death_penalty_does_not_touch_royal_title_fields():
+    # Phase 377: successful_thefts/diplomatic_merit_points back Phase
+    # 369's own royal_title_system formulas, a separate title system
+    # this same JSON source doesn't state the same death-penalty rule
+    # for -- deliberately left untouched.
+    state = make_state()
+    leader = LeaderState(1, 1, "Hero", FIELD, is_king=False)
+    leader.merit_tally.successful_thefts = 8
+    leader.merit_tally.diplomatic_merit_points = 8.0
+    state.add_leader(leader)
+
+    state.remove_leader(1)
+
+    dead = state.dead_leaders[1]
+    assert dead.merit_tally.successful_thefts == 8
+    assert dead.merit_tally.diplomatic_merit_points == 8.0

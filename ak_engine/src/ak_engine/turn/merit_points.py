@@ -281,7 +281,7 @@ Hero** -- the JSON's own `general_assignment.multiple_titles` note is
 explicit: "Heroes may hold titles except the seven alignment-King
 titles," and Diplomat/id 41 isn't one of those seven.
 
-## Tie-break (rulebook footnote 3)
+## Tie-break (rulebook footnote 3, extended Phase 377)
 "Se due personaggi hanno pari punteggio per una Carica Imperiale, il
 primo posto viene assegnato in base prima all'ammontare del tesoro e poi
 alla rendita in tasse." Both tie-break figures are Kingdom-scoped (a
@@ -291,8 +291,17 @@ leader has no personal treasury or tax base of their own), so
 (`kingdom_id is None`) has neither -- the rulebook's own "anche un Eroe
 può aggiudicarsi una carica" confirms a Hero can win an office outright,
 but says nothing about how *that* Hero would be ranked against a tied
-rival, so this falls back to `(0, 0)`, a documented gap rather than a
-guess.
+rival, so both figures fall back to `0` for one.
+
+**Phase 377**: the rulebook's own footnote only names these first two
+tiers, but `AKGEN_embedded_catalogs.json.txt gw_format.imperial_office_
+system.tie_breakers_major_offices` (the real disassembly) lists a third
+and final one -- lower `leader_id` wins a tie that survives both
+treasury and tax base. This also closes the "how would a tied
+independent Hero be ranked" gap the rulebook's own text left open: two
+kingdom-less Heroes tied on the first two (necessarily `0`/`0`) now
+resolve by `leader_id` instead of falling through to undefined `dict`
+iteration order.
 """
 
 from __future__ import annotations
@@ -595,14 +604,28 @@ def legendary_item_victory_point_bonus_count(state: GameState, leader_id: int) -
     return sum(1 for item in state.items_held_by(leader_id) if item.treasure in LEGENDARY_ITEM_BONUS_TREASURES)
 
 
-def merit_point_tiebreak_key(state: GameState, leader: LeaderState) -> tuple[int, int]:
+def merit_point_tiebreak_key(state: GameState, leader: LeaderState) -> tuple[int, int, int]:
     """Rulebook footnote 3's own tie-break, as a sort key (higher wins):
     treasury first, then tax base -- both read from `leader.kingdom_id`'s
-    own `KingdomState`. `(0, 0)` for a kingdom-less independent Hero, a
-    documented gap (see module docstring), not a guess.
+    own `KingdomState`, `0` for both when `leader.kingdom_id is None`
+    (a kingdom-less independent Hero has neither).
+
+    **Phase 377 addendum -- a real third tier, closing the independent-
+    Hero gap this function's own pre-Phase-377 docstring flagged.**
+    `AKGEN_embedded_catalogs.json.txt`'s own `gw_format.imperial_office_
+    system.tie_breakers_major_offices` (a real static disassembly of
+    `AKGEN.EXE`/`AK.EXE`/`AK.OVR`) lists a third, final tier past treasury
+    and tax base: "lower character id" -- confirming the rulebook's own
+    footnote 3 (which only names the first two) doesn't fully resolve a
+    tie on its own. Encoded as `-leader.leader_id` so this stays a plain
+    "higher tuple wins" sort key throughout: a lower `leader_id` produces
+    a higher (less negative) third element. This also means two tied,
+    kingdom-less independent Heroes -- previously an unresolved `(0, 0)`
+    tie decided only by incidental `dict` iteration order -- now resolve
+    deterministically by `leader_id`, same as any other tie.
     """
 
     if leader.kingdom_id is None:
-        return (0, 0)
+        return (0, 0, -leader.leader_id)
     kingdom = state.kingdoms[leader.kingdom_id]
-    return (kingdom.treasury, compute_tax_base(state, leader.kingdom_id))
+    return (kingdom.treasury, compute_tax_base(state, leader.kingdom_id), -leader.leader_id)

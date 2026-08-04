@@ -34,7 +34,8 @@ threshold, Phase 81) -- a leader below threshold is not a genuine
 office-holder yet, even if they're the highest scorer among a field of
 zeros. Ties are broken via `turn/merit_points.py
 merit_point_tiebreak_key()` (rulebook footnote 3: treasury, then
-Tax_Base -- both of the tied leader's own serving Kingdom).
+Tax_Base, both of the tied leader's own serving Kingdom; plus a real
+third tier, Phase 377: lower `leader_id`).
 
 **Treasurer needs a per-leader wrapper.** `treasurer_merit_points()`
 takes a `kingdom_id` (a King's own treasury is his Kingdom's), so a
@@ -261,7 +262,7 @@ def resolve_office_holder(state: GameState, office: Office) -> OfficeHolder | No
 
     min_points = OFFICE_MIN_POINTS[office]
     best: OfficeHolder | None = None
-    best_tiebreak: tuple[int, int] | None = None
+    best_tiebreak: tuple[int, int, int] | None = None
 
     for leader_id, leader in state.leaders.items():
         points = _leader_merit_points(office, state, leader)

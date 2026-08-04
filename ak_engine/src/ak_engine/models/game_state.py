@@ -443,6 +443,66 @@ class MeritTally:
     # alliance execution mechanic at all.
     diplomatic_merit_points: float = 0.0
 
+    def apply_death_penalty(self) -> None:
+        """Phase 377 -- a leader who dies loses 25% of their own
+        accumulated office merit (`AKGEN_embedded_catalogs.json.txt`
+        `gw_format.imperial_office_system.death_penalty`, a real static
+        disassembly of `AKGEN.EXE`/`AK.EXE`/`AK.OVR`): `new = old -
+        (old div 4)`, confirmed against two real examples the source
+        itself quotes -- Teleko `lgenp` 23->18 and `lmhpp` 21->16, both
+        exactly `old - old div 4`. Called by `GameState.remove_leader()`
+        on every leader death, matching the source's own unconditional
+        "a leader who dies" framing (no exemption for a King's own
+        succession, which `remove_leader()` already models separately).
+
+        This project splits several of the real, single Pascal
+        accumulators (`lgenp`, `ladmp`) into two non-negative won/lost
+        counters (Phase 254/308's own design, not a source requirement)
+        rather than one running signed total -- so this method applies
+        the same `old - old div 4` formula to each stored counter
+        independently, which is this project's own reasonable reading of
+        "the accumulated total", not a byte-for-byte replica of a single
+        `lgenp` field's own haircut (no real corpus example with a
+        split representation exists to test against). Pascal's own
+        `div` truncates toward zero, unlike Python's `//` (floors toward
+        negative infinity) -- irrelevant for this project's own fields,
+        which are never negative, but implemented correctly regardless
+        since the source's own examples include a negative case
+        (Adele's `lgenp` -17->-13, which only matches truncating
+        division: `-17 - (-17 div 4)` = `-17 - (-4)` = `-13`).
+
+        Scoped to exactly the fields that back the 4 offices
+        `imperial_office_system` itself marks `cumulative`/`mixed
+        cumulative` (Marshal, Admiral, Defender, Chancellor's own
+        discovery terms, Priest's own cast-count term) -- Emperor/
+        Treasurer/Mage's own formulas are `current` (tax base, treasury,
+        live skills), not stored accumulators, so nothing here applies
+        to them. Deliberately NOT touched: `successful_thefts`/
+        `diplomatic_merit_points` (Phase 369's own `royal_title_system`
+        formulas, a separate title system this same JSON source doesn't
+        state the same death-penalty rule for) and `RaceTitleTally`
+        (Phase 367's own separate race-fanaticism title system) -- both
+        left as an honest "not verified for these" gap rather than an
+        assumed blanket rule.
+        """
+
+        for field_name in (
+            "land_battles_won_points",
+            "land_battles_lost_points",
+            "naval_battles_won_points",
+            "naval_battles_lost_points",
+            "monster_hp_defeated",
+            "monster_hp_neutralized",
+            "resurrection_bless_casts",
+            "features_discovered_first",
+            "discoveries_found_first",
+            "discoveries_found_not_first",
+            "discoveries_via_espionage",
+        ):
+            old_value: int = getattr(self, field_name)
+            pascal_div4 = old_value // 4 if old_value >= 0 else -((-old_value) // 4)
+            setattr(self, field_name, old_value - pascal_div4)
+
 
 @dataclass(slots=True)
 class RaceTitleTally:
@@ -927,6 +987,13 @@ class GameState:
         leader = self.leaders.pop(leader_id, None)
         if leader is None:
             return
+        # Phase 377: the real, disassembly-confirmed 25% office-merit
+        # death penalty -- see MeritTally.apply_death_penalty()'s own
+        # docstring. Applied to the archived leader's own tally so a
+        # future Resurrection (this same leader, from dead_leaders)
+        # reflects the real reduced total rather than a stale
+        # pre-death one.
+        leader.merit_tally.apply_death_penalty()
         self.dead_leaders[leader_id] = leader
         if leader.is_king and leader.kingdom_id is not None:
             self.leaders[leader_id] = LeaderState(

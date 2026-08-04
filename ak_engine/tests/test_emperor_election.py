@@ -12,6 +12,7 @@ from ak_engine.turn.emperor_election import (
     ELECTION_REQUEST_THRESHOLD_PERCENT,
     alignment_victory_point_reduction_percent,
     can_request_election,
+    election_threshold_percent,
     resolve_emperor_election,
     tally_emperor_vote,
 )
@@ -101,6 +102,41 @@ def test_can_request_election_blocked_by_consecutive_turn_ban():
     assert can_request_election(state, 1, current_turn=4) is False
     # A request at turn 5 schedules a vote at turn 6 -- allowed.
     assert can_request_election(state, 1, current_turn=5) is True
+
+
+# -- election_threshold_percent (Phase 377) ------------------------------
+
+
+def test_election_threshold_percent_flat_before_turn_25():
+    assert election_threshold_percent(1) == 55
+    assert election_threshold_percent(24) == 55
+
+
+def test_election_threshold_percent_erodes_from_turn_25():
+    # AKGEN_embedded_catalogs.json.txt: "falls by 5 percentage points per
+    # turn ... to 25% on turn 30".
+    assert election_threshold_percent(25) == 50
+    assert election_threshold_percent(26) == 45
+    assert election_threshold_percent(27) == 40
+    assert election_threshold_percent(28) == 35
+    assert election_threshold_percent(29) == 30
+    assert election_threshold_percent(30) == 25
+
+
+def test_election_threshold_percent_floors_at_25_after_turn_30():
+    assert election_threshold_percent(31) == 25
+    assert election_threshold_percent(100) == 25
+
+
+def test_can_request_election_uses_the_eroded_threshold_at_a_late_turn():
+    # 40% would fail the flat 55% threshold but clears the real, eroded
+    # turn-30 threshold (25%).
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 40)
+    give_tax(state, 2, HexCoord(1, 1), 60)
+
+    assert can_request_election(state, 1, current_turn=5) is False
+    assert can_request_election(state, 1, current_turn=30) is True
 
 
 # -- tally_emperor_vote / resolve_emperor_election -----------------------

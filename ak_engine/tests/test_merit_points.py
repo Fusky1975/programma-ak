@@ -235,15 +235,19 @@ def test_merit_point_tiebreak_key_reads_treasury_then_tax_base():
     state = make_state()
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=9))
 
-    assert merit_point_tiebreak_key(state, state.leaders[1]) == (42, 9)
+    # Phase 377: a real third tier, lower leader_id wins -- encoded as
+    # -leader_id so the whole tuple stays a plain "higher wins" key.
+    assert merit_point_tiebreak_key(state, state.leaders[1]) == (42, 9, -1)
 
 
-def test_merit_point_tiebreak_key_independent_hero_is_zero_zero():
+def test_merit_point_tiebreak_key_independent_hero_breaks_ties_by_leader_id():
     state = make_state()
     hero = LeaderState(9, None, "Wanderer", HOME)
     state.add_leader(hero)
 
-    assert merit_point_tiebreak_key(state, hero) == (0, 0)
+    # Phase 377: previously (0, 0) for every kingdom-less Hero alike (an
+    # unresolved tie); now the real third tier still applies.
+    assert merit_point_tiebreak_key(state, hero) == (0, 0, -9)
 
 
 def make_evil_state() -> GameState:

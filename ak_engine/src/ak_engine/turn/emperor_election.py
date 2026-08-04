@@ -135,12 +135,45 @@ def _alliance_component(state: GameState, kingdom_id: int) -> set[int]:
     return component
 
 
+def election_threshold_percent(current_turn: int) -> int:
+    """The real, turn-dependent version of `ELECTION_REQUEST_THRESHOLD_
+    PERCENT` -- Phase 377, `AKGEN_embedded_catalogs.json.txt gw_format.
+    imperial_office_system.emperor_election.time_limit` (a real static
+    disassembly of `AKGEN.EXE`/`AK.EXE`/`AK.OVR`; the same JSON's own
+    `call_threshold_standard_percent: 55` matches the user-confirmed
+    rulebook figure this module's docstring already uses -- unlike the
+    disassembly's own separately-flagged, rejected "2%/4%" strings, this
+    turn-based erosion note comes from a field that already agrees with
+    the trusted source before turn 25, lending it real credibility.
+
+    "From turn 25 the call/become threshold falls by 5 percentage points
+    per turn to 25% on turn 30": read as the erosion applying starting
+    at turn 25 itself (`55 -> 50` at turn 25, ..., `55 -> 25` at turn 30,
+    a clean 5-point-per-turn descent that lands exactly on the source's
+    own "25% on turn 30" anchor), floored at 25% for every turn after.
+
+    Deliberately scoped to only `ELECTION_REQUEST_THRESHOLD_PERCENT`
+    (the 55% call threshold) -- the source's own "call/become" wording
+    doesn't unambiguously say whether `ELECTION_WIN_THRESHOLD_PERCENT`
+    (the 50% vote-winning threshold) eroded the same way, so that one is
+    deliberately left untouched rather than guessed.
+    """
+
+    if current_turn < 25:
+        return ELECTION_REQUEST_THRESHOLD_PERCENT
+    erosion = 5 * (current_turn - 24)
+    return max(25, ELECTION_REQUEST_THRESHOLD_PERCENT - erosion)
+
+
 def can_request_election(state: GameState, requesting_kingdom_id: int, current_turn: int) -> bool:
     """Whether ``requesting_kingdom_id`` (together with its own allied
     "alleanza") can call for an Emperor vote this turn -- see module
-    docstring for the 55% threshold and the "not two turns in a row" ban.
-    ``current_turn`` is the turn the request is made in; the resulting
-    vote would be held on ``current_turn + 1``.
+    docstring for the 55% threshold and the "not two turns in a row" ban,
+    and `election_threshold_percent()`'s own docstring (Phase 377) for
+    why that 55% erodes turn-by-turn from turn 25 onward instead of
+    staying flat for the whole game. ``current_turn`` is the turn the
+    request is made in; the resulting vote would be held on
+    ``current_turn + 1``.
     """
 
     world_total = _world_tax_base(state)
@@ -149,7 +182,8 @@ def can_request_election(state: GameState, requesting_kingdom_id: int, current_t
 
     coalition = _alliance_component(state, requesting_kingdom_id)
     coalition_total = sum(compute_tax_base(state, kingdom_id) for kingdom_id in coalition)
-    if coalition_total * 100 <= ELECTION_REQUEST_THRESHOLD_PERCENT * world_total:
+    threshold_percent = election_threshold_percent(current_turn)
+    if coalition_total * 100 <= threshold_percent * world_total:
         return False
 
     vote_turn = current_turn + 1

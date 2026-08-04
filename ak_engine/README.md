@@ -15569,7 +15569,7 @@ section.
   updated README, ran once more before commit -- the standing per-phase
   workflow, scaled to a docs-only change. Full suite: 3623 passed before
   and after.
-- **Phase 376 (current)**: decodes `GWArmyRecord`'s (Block B) own last 4
+- **Phase 376**: decodes `GWArmyRecord`'s (Block B) own last 4
   fields, previously kept as undeciphered `raw_field7`-`raw_field10`
   (Phase 331-337), found while continuing the AKGEN research audit that
   produced Phase 375. `AKGEN_embedded_catalogs.json.txt`'s own
@@ -15618,6 +15618,58 @@ section.
     updated README, ran once more before commit -- the standing
     per-phase workflow. Full suite: 3623 passed before, 3624 after (1
     net new test).
+- **Phase 377 (current)**: wires three real mechanics from
+  `AKGEN_embedded_catalogs.json.txt gw_format.imperial_office_system`
+  (a real static disassembly of `AKGEN.EXE`/`AK.EXE`/`AK.OVR`) that this
+  project's own prior Merit Point/Office/Emperor-election work
+  (Phase 137/227/228/230/369) had never touched, found while continuing
+  the AKGEN research audit begun in Phase 375/376.
+  - **Office-merit death penalty** (`models/game_state.py MeritTally.
+    apply_death_penalty()`): a leader who dies loses 25% of their own
+    accumulated office merit, `new = old - (old div 4)` -- confirmed
+    against the source's own two worked examples (Teleko `lgenp`
+    23->18, `lmhpp` 21->16) and, for Pascal's own truncating-toward-
+    zero `div` (not Python's floor `//`), a third real example (Adele
+    `lgenp` -17->-13). Scoped to exactly the `MeritTally` fields backing
+    the offices the source itself marks cumulative/mixed-cumulative
+    (Marshal, Admiral, Defender, Chancellor's discovery terms, Priest's
+    cast-count term) -- deliberately NOT `successful_thefts`/
+    `diplomatic_merit_points` (Phase 369's own separate `royal_title_
+    system` formulas) or `RaceTitleTally` (Phase 367's own separate
+    race-fanaticism titles), since this same JSON source doesn't state
+    the same rule for either. Wired into `GameState.remove_leader()` so
+    every leader death applies it automatically, including to the
+    archived `dead_leaders` record a future Resurrection would revive.
+  - **A real third office tie-break tier** (`turn/merit_points.py
+    merit_point_tiebreak_key()`): the rulebook's own footnote 3 only
+    names treasury then tax base, but the disassembly's own
+    `tie_breakers_major_offices` lists a third and final one, lower
+    `leader_id` wins. This also closes a real gap the function's own
+    prior docstring flagged: two tied, kingdom-less independent Heroes
+    used to fall back to an unresolved `(0, 0)`, decided only by
+    incidental `dict` iteration order; they now resolve deterministically
+    by `leader_id` like any other tie. `turn/office_holder.py`'s own
+    `best_tiebreak` type annotation updated to match the new 3-tuple.
+  - **Emperor-election threshold erosion** (`turn/emperor_election.py
+    election_threshold_percent()`): "from turn 25 the call/become
+    threshold falls by 5 percentage points per turn to 25% on turn 30" --
+    `can_request_election()` now reads this turn-dependent value instead
+    of the flat 55% constant. The same JSON's own `call_threshold_
+    standard_percent: 55` independently matches the user-confirmed
+    rulebook figure this module's docstring already uses (as opposed to
+    the disassembly's own separately-flagged, already-rejected "2%/4%"
+    strings), lending real credibility to this same source's own further
+    turn-based erosion claim. Deliberately scoped to only the 55% call
+    threshold, not the 50% win threshold -- the source's own "call/
+    become" wording doesn't unambiguously cover both.
+  - Ran the affected test files before writing new tests, wrote 8 new
+    tests (2 existing tie-break tests updated for the 3-tuple shape,
+    2 new death-penalty tests including the negative-truncation case,
+    1 new office-holder full-tie-by-leader_id test, 3 new election-
+    threshold tests plus one integration test proving a late-turn
+    request that the flat threshold would reject), ran again, updated
+    README, ran once more before commit -- the standing per-phase
+    workflow. Full suite: 3624 passed before, 3632 after (8 new tests).
 
 ## Setup
 

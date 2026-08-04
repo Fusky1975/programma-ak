@@ -104,6 +104,24 @@ def test_resolve_office_holder_tiebreak_uses_treasury_then_tax_base():
     assert holder.leader_id == 1
 
 
+def test_resolve_office_holder_tiebreak_falls_through_to_lower_leader_id():
+    # Phase 377: a real third tie-break tier past treasury and tax base
+    # -- both Kings share the same Kingdom (so treasury and tax base are
+    # necessarily identical too), so only leader_id can break this tie.
+    state = make_state()
+    higher_id = LeaderState(7, 1, "Later Claimant", HOME, is_king=True)
+    higher_id.merit_tally.monster_hp_defeated = 10
+    lower_id = LeaderState(3, 1, "Earlier Claimant", HOME, is_king=True)
+    lower_id.merit_tally.monster_hp_defeated = 10
+    state.add_leader(higher_id)
+    state.add_leader(lower_id)
+
+    holder = resolve_office_holder(state, Office.DEFENDER)
+
+    assert holder is not None
+    assert holder.leader_id == 3
+
+
 def test_resolve_office_holder_raises_for_a_non_office():
     state = make_state()
     import pytest
