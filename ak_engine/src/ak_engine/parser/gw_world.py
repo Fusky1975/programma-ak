@@ -1215,6 +1215,7 @@ from pathlib import Path
 
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import FeatureType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
@@ -1700,6 +1701,237 @@ def _build_leader_record(
         sex_override_flag=sex_override_flag,
         unpaid_blackmail_penalty_exponent=unpaid_blackmail_penalty_exponent,
         known_by_kings_mask=known_by_kings_mask,
+    )
+
+
+# Phase 380 -- `AKGEN_embedded_catalogs.json.txt gw_format.records.
+# king_extension` (a real static disassembly of `AKGEN.EXE`/`AK.EXE`)
+# names, for the first time, every field of the King-only "M"/"F" line
+# this module's own Phase 320/322/323 addenda (see `GWLeaderRecord`'s
+# docstring above) had already found but left entirely unparsed --
+# confirmed "genuine per-leader-per-turn tracked state" (Phase 322) of
+# unknown shape until now. `KingSendMethod`'s real Pascal name is
+# `ksendmeth`.
+class KingSendMethod(Enum):
+    FORUM = -1
+    COMPUSERVE = 0
+    GENIE = 1
+    DISK = 2
+    PRINTOUT = 3
+    BOTH = 4
+
+
+# `standby` -- a King's own standing request to be replaced.
+class KingStandbyState(Enum):
+    NO = 0
+    INTERESTED = 1
+    WAITING = 2
+    START = 3
+    RISING = 4
+
+
+# `kallst` -- one King's own stored relation toward another King.
+class DiplomaticRelation(Enum):
+    ENEMY = 0
+    NEUTRAL = 1
+    ALLIED = 2
+    TEAMED = 3
+
+
+@dataclass(slots=True)
+class GWKingExtension:
+    """A King's own trailing dynamic-state line (the real shape of the
+    "M"/"F" line Phase 320/322/323 found but never parsed) -- see this
+    module's own Phase 380 addendum, right above `KingSendMethod`, for
+    the full sourcing and the empirical verification against both real
+    fixtures (`GW3__T1`/`GW3__T5`) that confirmed every field below,
+    positionally, before this dataclass was written.
+
+    `is_male` is Phase 320's own already-confirmed Gender field (`M`/
+    `F`) -- included here now that this line is being parsed at all,
+    even though nothing yet consumes it. `diplomatic_relations` has one
+    entry per King in the game (`GWHeader.king_count`-long, king-id
+    order, this King's own view of each King including itself).
+    `discovered` is this King's own Kingdom's real `Discovery` set --
+    the JSON's own 64-boolean `dknow` range is an exact match for
+    `models/discovery.py Discovery`'s own 64 members (ordinals 0-63),
+    confirmed by direct count before this field was added. The 5
+    trailing `trailing_compatibility_zeros` are a literal Pascal short
+    string (`" 0 0 0 0 0"`) the JSON calls certain to always be zero --
+    stored rather than assumed so `write_gw_king_extension()` can
+    reconstruct the line exactly either way.
+    """
+
+    is_male: bool
+    treasury: int
+    alliance_requests_bitmask: int
+    break_treaty_requests_bitmask: int
+    account_number: int
+    player_mode: int
+    met_kings_bitmask: int
+    send_method: KingSendMethod
+    election_request_or_previous_choice: int
+    payment_percent: int
+    miscellaneous_fee: int
+    turn_funds_received: int
+    consecutive_missed_turns: int
+    standby_state: KingStandbyState
+    standby_max_percent: int
+    prize_credit: int
+    raw_administrative_flag: int
+    moves_read_success: bool
+    order_interpreter_version: int
+    diplomatic_relations: tuple[DiplomaticRelation, ...]
+    discovered: frozenset[Discovery]
+    valhalla_visit_count: int
+    king_information_flags: int
+    disk_delivery_flags: int
+    king_power_or_votes_cast: int
+    moves_insurance: bool
+    team_state: int
+    active_blackmailer_king_id: int | None
+    pending_blackmailer_king_id: int | None
+    power_percent: int
+    trailing_compatibility_zeros: tuple[int, int, int, int, int]
+
+
+_KING_SEND_METHOD_VALUES = {member.value for member in KingSendMethod}
+_KING_STANDBY_STATE_VALUES = {member.value for member in KingStandbyState}
+_DIPLOMATIC_RELATION_VALUES = {member.value for member in DiplomaticRelation}
+
+
+def parse_gw_king_extensions(path: Path) -> list[GWKingExtension]:
+    """Every King's own trailing dynamic-state line -- see
+    `GWKingExtension`'s own docstring for the full field mapping.
+
+    Reuses `parse_gw_leaders`'s own King-detection shape (a name line,
+    then a 60-token doubled skill list, then a 25-token header line --
+    only Kings carry the doubled list) to find each King's own record,
+    then reads the very next line, which must be `"M"` or `"F"`
+    followed by exactly `96 + GWHeader.king_count` more integers (the
+    JSON's own `numeric_count_rule`) -- confirmed exactly 106 tokens for
+    the real `GW3__T1`/`GW3__T5` fixtures (`king_count = 10`).
+    """
+
+    header = parse_gw_header(path)
+    king_count = header.king_count
+    expected_numeric_count = 96 + king_count
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+
+    records: list[GWKingExtension] = []
+    i = 0
+    while i < len(lines) - 2:
+        skill_tokens = lines[i + 1].split()
+        if len(skill_tokens) != 60 or not _all_int(skill_tokens):
+            i += 1
+            continue
+
+        header_tokens = lines[i + 2].split()
+        if len(header_tokens) != 25 or not _all_int(header_tokens):
+            i += 1
+            continue
+
+        name = lines[i].strip()
+        if not name or name[0].isdigit() or name[0] == "-":
+            i += 1
+            continue
+
+        m_line = lines[i + 3] if i + 3 < len(lines) else ""
+        m_tokens = m_line.split()
+        if (
+            len(m_tokens) != expected_numeric_count + 1
+            or m_tokens[0] not in ("M", "F")
+            or not _all_int(m_tokens[1:])
+        ):
+            raise GWParseError(
+                f"expected a King's own gender + {expected_numeric_count}-integer "
+                "extension line here",
+                line_number=i + 4,
+                line=m_line,
+            )
+
+        records.append(_build_king_extension(m_tokens, king_count, line_number=i + 4))
+        i += 1
+
+    return records
+
+
+def _build_king_extension(m_tokens: list[str], king_count: int, line_number: int) -> GWKingExtension:
+    is_male = m_tokens[0] == "M"
+    values = [int(token) for token in m_tokens[1:]]
+
+    send_method_raw = values[6]
+    standby_state_raw = values[12]
+    relation_start = 18
+    relation_end = relation_start + king_count
+    discovery_start = relation_end
+    discovery_end = discovery_start + 64
+    b = discovery_end
+
+    if send_method_raw not in _KING_SEND_METHOD_VALUES:
+        raise GWParseError(
+            f"unrecognized King send-method ordinal {send_method_raw}",
+            line_number=line_number,
+            line=" ".join(m_tokens),
+        )
+    if standby_state_raw not in _KING_STANDBY_STATE_VALUES:
+        raise GWParseError(
+            f"unrecognized King standby-state ordinal {standby_state_raw}",
+            line_number=line_number,
+            line=" ".join(m_tokens),
+        )
+    relation_tokens = values[relation_start:relation_end]
+    for relation_raw in relation_tokens:
+        if relation_raw not in _DIPLOMATIC_RELATION_VALUES:
+            raise GWParseError(
+                f"unrecognized diplomatic-relation ordinal {relation_raw}",
+                line_number=line_number,
+                line=" ".join(m_tokens),
+            )
+
+    active_blackmailer_raw = values[b + 6]
+    pending_blackmailer_raw = values[b + 7]
+
+    return GWKingExtension(
+        is_male=is_male,
+        treasury=values[0],
+        alliance_requests_bitmask=values[1],
+        break_treaty_requests_bitmask=values[2],
+        account_number=values[3],
+        player_mode=values[4],
+        met_kings_bitmask=values[5],
+        send_method=KingSendMethod(send_method_raw),
+        election_request_or_previous_choice=values[7],
+        payment_percent=values[8],
+        miscellaneous_fee=values[9],
+        turn_funds_received=values[10],
+        consecutive_missed_turns=values[11],
+        standby_state=KingStandbyState(standby_state_raw),
+        standby_max_percent=values[13],
+        prize_credit=values[14],
+        raw_administrative_flag=values[15],
+        moves_read_success=values[16] == 1,
+        order_interpreter_version=values[17],
+        diplomatic_relations=tuple(DiplomaticRelation(raw) for raw in relation_tokens),
+        discovered=frozenset(Discovery(index) for index, flag in enumerate(values[discovery_start:discovery_end]) if flag),
+        valhalla_visit_count=values[b + 0],
+        king_information_flags=values[b + 1],
+        disk_delivery_flags=values[b + 2],
+        king_power_or_votes_cast=values[b + 3],
+        moves_insurance=values[b + 4] == 1,
+        team_state=values[b + 5],
+        active_blackmailer_king_id=None if active_blackmailer_raw == 255 else active_blackmailer_raw,
+        pending_blackmailer_king_id=None if pending_blackmailer_raw == 255 else pending_blackmailer_raw,
+        power_percent=values[b + 8],
+        trailing_compatibility_zeros=(
+            values[b + 9],
+            values[b + 10],
+            values[b + 11],
+            values[b + 12],
+            values[b + 13],
+        ),
     )
 
 

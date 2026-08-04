@@ -31,14 +31,17 @@ isn't attempted, and shouldn't be assumed possible from this module alone:
 - A leader's own ``"Action Plans:"`` block(s) -- real, and already
   parseable by `parser/k1_moves.py`'s own grammar, but not embedded by
   either the reader or this writer.
-- The King-only Gender line, Title/Epithet/player-name lines, and the
-  King-only trailing ~128-token dynamic block (``king_extension`` in
-  `AKGEN_embedded_catalogs.json.txt`'s own `gw_format.records`, Phase
-  320/322/323) -- `write_gw_leader_record` below writes only a leader's
-  confirmed base 3-line record (name / skill list / 25-field header) for
-  both Kings and Heroes; a written King record is real and round-trips
-  through `parse_gw_leaders`, but is not a complete King record the way a
-  written Hero record is a complete Hero record.
+- The King-only Title/Epithet/player-name lines -- still real, still
+  unparsed by any reader in this project. `write_gw_leader_record` below
+  writes only a leader's confirmed base 3-line record (name / skill list
+  / 25-field header) for both Kings and Heroes; a written King record is
+  real and round-trips through `parse_gw_leaders`, but is not a complete
+  King record the way a written Hero record is a complete Hero record.
+  **Phase 380 correction**: the King-only Gender line and trailing
+  dynamic-state block, previously listed here as uncovered, are now
+  fully decoded (`GWKingExtension`/`parse_gw_king_extensions`/
+  `write_gw_king_extension`, see `gw_world.py`'s own Phase 380
+  addendum) -- removed from this exclusion list.
 **Phase 375 correction -- the "15 `(min, max)` pairs" list is NOT a
 separate excluded block.** An earlier draft of this docstring listed it
 as one more not-yet-covered piece, carried over from Phase 321's own
@@ -77,11 +80,13 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.parser.gw_world import (
     MOD_PAT_ORDINAL_TO_ARMY_TYPE,
     GWArmyRecord,
     GWFeatureRecord,
     GWHeader,
+    GWKingExtension,
     GWLeaderRecord,
     GWOfficeMeritRecord,
     GWOfficeStateEntry,
@@ -248,6 +253,57 @@ def write_gw_leader_record(record: GWLeaderRecord) -> str:
     header_line = " ".join(str(value) for value in header_values)
 
     return "\n".join((record.name, skill_line, header_line))
+
+
+def write_gw_king_extension(record: GWKingExtension) -> str:
+    """Writes a King's own Gender + trailing dynamic-state line -- the
+    exact inverse of `parse_gw_king_extensions`, in the confirmed field
+    order `GWKingExtension`'s own docstring (Phase 380) lays out. The
+    diplomatic-relations count is taken from `len(record.diplomatic_
+    relations)`, not passed separately, so this writer is self-
+    contained -- a round trip only requires the header's own
+    `king_count` to already match that length (`parse_gw_king_
+    extensions` itself derives the count from `GWHeader.king_count`, so
+    a mismatched write there would fail on re-parse, the same
+    "malformed input surfaces as a parse error" contract every other
+    writer in this module already follows).
+    """
+
+    discovered_flags = [1 if Discovery(index) in record.discovered else 0 for index in range(64)]
+    values = [
+        record.treasury,
+        record.alliance_requests_bitmask,
+        record.break_treaty_requests_bitmask,
+        record.account_number,
+        record.player_mode,
+        record.met_kings_bitmask,
+        record.send_method.value,
+        record.election_request_or_previous_choice,
+        record.payment_percent,
+        record.miscellaneous_fee,
+        record.turn_funds_received,
+        record.consecutive_missed_turns,
+        record.standby_state.value,
+        record.standby_max_percent,
+        record.prize_credit,
+        record.raw_administrative_flag,
+        1 if record.moves_read_success else 0,
+        record.order_interpreter_version,
+        *(relation.value for relation in record.diplomatic_relations),
+        *discovered_flags,
+        record.valhalla_visit_count,
+        record.king_information_flags,
+        record.disk_delivery_flags,
+        record.king_power_or_votes_cast,
+        1 if record.moves_insurance else 0,
+        record.team_state,
+        _NO_LEADER_SENTINEL if record.active_blackmailer_king_id is None else record.active_blackmailer_king_id,
+        _NO_LEADER_SENTINEL if record.pending_blackmailer_king_id is None else record.pending_blackmailer_king_id,
+        record.power_percent,
+        *record.trailing_compatibility_zeros,
+    ]
+    gender_token = "M" if record.is_male else "F"
+    return " ".join((gender_token, *(str(value) for value in values)))
 
 
 def write_gw_feature_record(record: GWFeatureRecord) -> str:

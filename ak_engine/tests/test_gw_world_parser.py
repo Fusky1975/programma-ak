@@ -22,13 +22,18 @@ from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.parser.errors import K1ParseError
+from ak_engine.models.discovery import Discovery
 from ak_engine.parser.gw_world import (
+    DiplomaticRelation,
     GameType,
     GWProvinceRecord,
     GWTreasureOnlyRecord,
+    KingSendMethod,
+    KingStandbyState,
     parse_gw_armies,
     parse_gw_features,
     parse_gw_header,
+    parse_gw_king_extensions,
     parse_gw_leaders,
     parse_gw_offices,
     parse_gw_treasures_only,
@@ -524,6 +529,97 @@ def test_raises_gw_parse_error_on_unrecognized_treasure_only_ordinal(tmp_path: P
 
     with pytest.raises(K1ParseError):
         parse_gw_treasures_only(bad)
+
+
+# -- Phase 380: parse_gw_king_extensions() -------------------------------
+
+
+def test_parses_the_real_t1_king_extension_for_babba_sissoko():
+    # See gw_world.py's own Phase 380 addendum for the full field mapping
+    # and empirical derivation against this exact fixture line.
+    records = parse_gw_king_extensions(FIXTURE)
+    assert len(records) == 10  # header.king_count
+
+    babba = records[0]
+    assert babba.is_male is True
+    assert babba.treasury == 10
+    assert babba.alliance_requests_bitmask == 2
+    assert babba.break_treaty_requests_bitmask == 0
+    assert babba.account_number == 100
+    assert babba.player_mode == 1
+    assert babba.met_kings_bitmask == 0
+    assert babba.send_method is KingSendMethod.GENIE
+    assert babba.election_request_or_previous_choice == 15
+    assert babba.payment_percent == 0
+    assert babba.standby_state is KingStandbyState.NO
+    assert babba.standby_max_percent == 100
+    assert babba.moves_read_success is False
+    assert babba.order_interpreter_version == 27
+    assert len(babba.diplomatic_relations) == 10
+    assert babba.diplomatic_relations[0] is DiplomaticRelation.ALLIED
+    assert babba.diplomatic_relations[1] is DiplomaticRelation.NEUTRAL
+    assert babba.discovered == frozenset()
+    assert babba.valhalla_visit_count == 0
+    assert babba.king_information_flags == 1
+    assert babba.disk_delivery_flags == 0
+    assert babba.king_power_or_votes_cast == 10
+    assert babba.moves_insurance is False
+    assert babba.team_state == 0
+    assert babba.active_blackmailer_king_id is None
+    assert babba.pending_blackmailer_king_id is None
+    assert babba.power_percent == 100
+    assert babba.trailing_compatibility_zeros == (0, 0, 0, 0, 0)
+
+
+def test_parses_the_real_t5_king_extension_showing_longitudinal_change():
+    # Same King, 4 turns later: treasury grew, met_kings_bitmask and
+    # break_treaty_requests_bitmask went from 0 to real nonzero values,
+    # moves_read_success flips to True once a turn's moves are read, and
+    # diplomatic_relations evolves -- all confirming this is genuine
+    # dynamic per-turn state, not a static template (Phase 322's own
+    # earlier, pre-JSON finding).
+    fixture_t5 = FIXTURE.parent / "GW3__T5"
+    records = parse_gw_king_extensions(fixture_t5)
+    babba = records[0]
+
+    assert babba.treasury == 15
+    assert babba.break_treaty_requests_bitmask == 512
+    assert babba.met_kings_bitmask == 770
+    assert babba.moves_read_success is True
+    assert babba.diplomatic_relations[5] is DiplomaticRelation.ENEMY
+    # The "always" fields Phase 380's own longitudinal_observations named
+    # stay stable across both turns.
+    assert babba.king_information_flags == 1
+    assert babba.disk_delivery_flags == 0
+    assert babba.active_blackmailer_king_id is None
+    assert babba.pending_blackmailer_king_id is None
+    assert babba.power_percent == 100
+
+
+def test_raises_gw_parse_error_on_malformed_king_extension_line(tmp_path: Path):
+    # A minimal synthetic file: header (king_count=1), one King-shaped
+    # leader record, then a far-too-short M-line.
+    bad = tmp_path / "bad_king_extension"
+    header_line = "1 1 1 -1 0 0 0 0 17 0 8 3 3 1 1 2007 14 0 30 1 0 1 0 0 0 255 0 0 0 1 0 0 0"
+    skill_line = " ".join(["0"] * 60)
+    leader_header_line = "0 0 0 0 255 255 1 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0"
+    bad.write_text(f"{header_line}\nTest King\n{skill_line}\n{leader_header_line}\nM 1 2 3\n", encoding="utf-8")
+
+    with pytest.raises(K1ParseError):
+        parse_gw_king_extensions(bad)
+
+
+def test_king_extension_discovered_range_matches_the_full_discovery_enum():
+    # The JSON's own 64-boolean dknow range is an exact match for
+    # Discovery's own 64 members (ordinals 0-63) -- confirmed by direct
+    # count before this field was added (see GWKingExtension's own
+    # docstring). No discoveries are owned yet in either real fixture,
+    # so this only proves the range is read at the right width/offset,
+    # not that a nonzero flag round-trips -- the writer round-trip test
+    # below covers that with a synthetic record.
+    for fixture in (FIXTURE, FIXTURE.parent / "GW3__T5"):
+        for record in parse_gw_king_extensions(fixture):
+            assert record.discovered <= frozenset(Discovery)
 
 
 # -- Phase 342: parse_gw_header() ----------------------------------------

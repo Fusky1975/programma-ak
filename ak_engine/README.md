@@ -15709,7 +15709,7 @@ section.
     round trip), ran again, updated README, ran once more before commit
     -- the standing per-phase workflow. Full suite: 3632 passed before,
     3636 after (4 new tests).
-- **Phase 379 (current)**: implements 18 of the 23 Imperial Offices
+- **Phase 379**: implements 18 of the 23 Imperial Offices
   found unmodeled in the second AKGEN research audit -- `office_holder.
   py`'s own `RANKED_OFFICES`/`ALL_OFFICES` previously covered only 29 of
   `models/office.py Office`'s 52 real ordinals; `AKGEN_embedded_
@@ -15792,6 +15792,53 @@ section.
     again, updated README, ran once more before commit -- the standing
     per-phase workflow. Full suite: 3636 passed before, 3663 after (27
     new tests).
+- **Phase 380 (current)**: decodes the King-only "M"/"F" line's own
+  trailing dynamic-state block -- `AKGEN_embedded_catalogs.json.txt
+  gw_format.records.king_extension` names every field of what this
+  project's own Phase 320/322/323 addenda had already found (a King's
+  own Gender marker, then a "genuine per-leader-per-turn tracked
+  state" block of unconfirmed shape) but never parsed at all.
+  - **Empirically confirmed against both real fixtures before writing
+    any dataclass**: the JSON's own `numeric_count_rule` ("96 + king_
+    count") predicts exactly 106 tokens for `GW3__T1`/`GW3__T5`
+    (`king_count = 10`) -- counting the real M-line's own tokens
+    confirms exactly 106, and mapping every one of the JSON's named
+    fields onto those 106 positions for King Babba Sissoko in both
+    turns reproduces every one of the JSON's own `longitudinal_
+    observations` (`B+1`/`B+2`/`B+6`/`B+7` constant, `B+0` unchanged
+    while unvisited, `B+8` at its own "100 initially" value) and shows
+    real dynamic change turn over turn (treasury 10->15, `break_treaty_
+    requests_bitmask` 0->512, `met_kings_bitmask` 0->770, `moves_read_
+    success` False->True) -- the same "verify against real data before
+    writing code" bar Phase 378's own treasure_only decode used.
+  - **A real, independent cross-check**: the JSON's own 64-boolean
+    `dknow` (discovery) range is an exact 64-for-64 match for `models/
+    discovery.py Discovery`'s own member count (ordinals 0-63),
+    confirmed by direct count before `GWKingExtension.discovered:
+    frozenset[Discovery]` was written -- this King-extension block is
+    literally each King's own Kingdom's real Discoveries of the Sages,
+    parseable for the first time from a live world file.
+  - New `parser/gw_world.py` additions: `KingSendMethod`/`KingStandby
+    State`/`DiplomaticRelation` enums (`ksendmeth`/`standby`/`kallst`),
+    `GWKingExtension` dataclass (30 fields), `parse_gw_king_
+    extensions()` (reuses `parse_gw_leaders`'s own King-detection shape
+    to locate each King, then reads and validates the following M-line
+    against `GWHeader.king_count`). `parser/gw_world_writer.py` gets
+    the exact inverse, `write_gw_king_extension()`.
+  - **Not attempted this phase**: the King-only Title/Epithet/player-
+    name lines that appear between a King's own base record and this
+    M-line -- still real, still unparsed, and not implied by anything
+    this phase's own source names.
+  - Ran the full suite before writing new tests (non-breaking check;
+    no regressions), wrote 6 new tests (2 real-fixture field-mapping
+    assertions across both turns including the longitudinal-change
+    proof, 1 confirming the discovered range never exceeds the real
+    `Discovery` enum, 1 malformed-line parse-error test, 1 synthetic
+    writer round trip exercising real nonzero discoveries plus fields
+    no real fixture covers, 1 real round trip re-serializing all 10
+    Kings across both fixtures), ran again, updated README, ran once
+    more before commit -- the standing per-phase workflow. Full suite:
+    3663 passed before, 3669 after (6 new tests).
 
 ## Setup
 

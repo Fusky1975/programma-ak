@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import FeatureType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
@@ -22,15 +23,20 @@ from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.parser.gw_world import (
+    DiplomaticRelation,
     GameType,
     GWArmyRecord,
     GWHeader,
+    GWKingExtension,
     GWLeaderRecord,
     GWOfficeMeritRecord,
     GWOfficeStateEntry,
+    KingSendMethod,
+    KingStandbyState,
     parse_gw_armies,
     parse_gw_features,
     parse_gw_header,
+    parse_gw_king_extensions,
     parse_gw_leaders,
     parse_gw_offices,
     parse_gw_treasures_only,
@@ -41,6 +47,7 @@ from ak_engine.parser.gw_world_writer import (
     write_gw_army_record,
     write_gw_feature_record,
     write_gw_header,
+    write_gw_king_extension,
     write_gw_leader_record,
     write_gw_office_records,
     write_gw_province_record,
@@ -206,6 +213,107 @@ def test_write_gw_treasure_only_record_round_trips_the_real_t1_and_t5_blocks(tmp
         path.write_text(text, encoding="utf-8")
 
         assert parse_gw_treasures_only(path) == records
+
+
+def test_write_gw_king_extension_round_trips_a_synthetic_record_with_real_discoveries(tmp_path: Path):
+    # Real fixtures happen to have `discovered == frozenset()` for every
+    # King (Discovery: none acquired yet by turn 5) -- this synthetic
+    # record exercises the 64-boolean discovered range with real
+    # nonzero flags, plus other fields real fixtures don't cover
+    # (election sentinel 31000, an active blackmailer id, a non-NO
+    # standby state).
+    header = GWHeader(
+        king_count=2,
+        army_count=0,
+        game_turn=1,
+        raw_04=-1,
+        setup_fee_cents=0,
+        treasure_count=0,
+        feature_count=0,
+        map_left_x=0,
+        map_right_x=17,
+        map_top_y=0,
+        map_bottom_y=8,
+        game_version=1,
+        game_number=1,
+        due_day=1,
+        due_month=1,
+        due_year=2007,
+        turn_length_days=14,
+        diplomacy_type=0,
+        header_revision=30,
+        original_turn=1,
+        turn_cost_cents=0,
+        game_type=GameType.NORMAL,
+        total_fees=0,
+        last_leader_index=0,
+        valhalla_alignment_rotation_mask=0,
+        visiting_king=255,
+        max_feature_index=0,
+        setup_extra_1=0,
+        office_merit_record_count=0,
+        office_state_table_present=0,
+        compatibility_revision_31=1,
+        mine_write_flags=0,
+        misc_write_flags=0,
+    )
+    king = _king("Test King", kingdom_id=0)
+    record = GWKingExtension(
+        is_male=False,
+        treasury=500,
+        alliance_requests_bitmask=3,
+        break_treaty_requests_bitmask=1,
+        account_number=42,
+        player_mode=1,
+        met_kings_bitmask=1,
+        send_method=KingSendMethod.DISK,
+        election_request_or_previous_choice=31000,
+        payment_percent=50,
+        miscellaneous_fee=5,
+        turn_funds_received=10,
+        consecutive_missed_turns=0,
+        standby_state=KingStandbyState.WAITING,
+        standby_max_percent=80,
+        prize_credit=0,
+        raw_administrative_flag=1,
+        moves_read_success=True,
+        order_interpreter_version=27,
+        diplomatic_relations=(DiplomaticRelation.ALLIED, DiplomaticRelation.TEAMED),
+        discovered=frozenset({Discovery(0), Discovery(63), Discovery(30)}),
+        valhalla_visit_count=2,
+        king_information_flags=1,
+        disk_delivery_flags=0,
+        king_power_or_votes_cast=7,
+        moves_insurance=True,
+        team_state=1,
+        active_blackmailer_king_id=1,
+        pending_blackmailer_king_id=None,
+        power_percent=75,
+        trailing_compatibility_zeros=(0, 0, 0, 0, 0),
+    )
+
+    text = "\n".join((write_gw_header(header), write_gw_leader_record(king), write_gw_king_extension(record)))
+    path = tmp_path / "synthetic_king_extension"
+    path.write_text(text, encoding="utf-8")
+
+    assert parse_gw_king_extensions(path) == [record]
+
+
+def test_write_gw_king_extension_round_trips_every_real_king_across_both_fixtures(tmp_path: Path):
+    for fixture in (FIXTURE, FIXTURE.parent / "GW3__T5"):
+        header = parse_gw_header(fixture)
+        king_extensions = parse_gw_king_extensions(fixture)
+        kings = [leader for leader in parse_gw_leaders(fixture) if leader.is_king]
+        assert len(kings) == len(king_extensions)
+
+        lines = [write_gw_header(header)]
+        for king, extension in zip(kings, king_extensions):
+            lines.append(write_gw_leader_record(king))
+            lines.append(write_gw_king_extension(extension))
+        path = tmp_path / f"king_extensions_{fixture.name}"
+        path.write_text("\n".join(lines), encoding="utf-8")
+
+        assert parse_gw_king_extensions(path) == king_extensions
 
 
 def test_write_gw_army_record_round_trips_every_real_army(tmp_path: Path):
