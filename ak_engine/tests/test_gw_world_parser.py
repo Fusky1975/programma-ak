@@ -59,7 +59,23 @@ def test_province_header_tolerates_a_nonzero_mystery_field(tmp_path: Path):
     assert records[0].name == "Somewhere"
     assert records[0].tax == 6
     assert records[0].terrain is Terrain.FOREST
+    assert records[0].effects_bitmask == 256
     assert records[0].race is Race.ELVEN
+
+
+def test_province_header_tolerates_nonzero_exploitation_and_alternate_terrain(tmp_path: Path):
+    # Phase 373: the header's own 5th/6th tokens are real Pascal fields
+    # too (exploitation_percent/alternate_terrain), not the "0"/"6"
+    # structural anchors Phase 340's own regex assumed -- they simply
+    # never varied in this project's own 12-turn corpus. A province
+    # whose own values genuinely differ must still parse.
+    text = "Somewhere\n6 3 256 1 42 2\n 1 0  15 0 \n47\n"
+    path = tmp_path / "gw_with_nonzero_exploitation_and_alt_terrain"
+    path.write_text(text, encoding="utf-8")
+    records = parse_gw_world(path)
+    assert len(records) == 1
+    assert records[0].exploitation_percent == 42
+    assert records[0].alternate_terrain is Terrain.JUNGLE
 
 
 def test_records_match_real_tax_race_terrain_from_the_letter_reports():
@@ -72,7 +88,10 @@ def test_records_match_real_tax_race_terrain_from_the_letter_reports():
         name="Macondo",
         tax=4,
         terrain=Terrain.JUNGLE,
+        effects_bitmask=0,
         race=Race.ORCISH,
+        exploitation_percent=0,
+        alternate_terrain=Terrain.NO_TERRAIN,
         governor_leader_id=None,
         recruit_type_1=ArmyType.PHALANX,
         recruit_type_2=None,

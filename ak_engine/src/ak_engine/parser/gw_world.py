@@ -1226,7 +1226,7 @@ from ak_engine.models.treasure import Treasure
 from ak_engine.parser.errors import K1ParseError
 from ak_engine.turn.combat import Quality
 
-_PROVINCE_HEADER_RE = re.compile(r"^(\d+) (\d+) (\d+) (\d+) 0 6$")
+_PROVINCE_HEADER_RE = re.compile(r"^(\d+) (\d+) (\d+) (\d+) (\d+) (\d+)$")
 
 # Line 3's own two real ordinals, decoded (Phase 278) -- see the module
 # docstring's "Recruiting Types (Mod_PAT)" section for the full
@@ -1262,10 +1262,45 @@ class GWParseError(K1ParseError):
 
 @dataclass(slots=True)
 class GWProvinceRecord:
+    """Phase 373 addendum -- the header line's own 3rd and 5th tokens,
+    long treated as an undeciphered discard (`Phase 340`) and a fixed
+    `0` literal, are real Pascal fields after all, per a static
+    reverse engineering of `AKGEN.EXE`
+    (`gw_format.records.province.ordered_stats_storage`): the header
+    line stores 6 real values, `ptax, pterr, termod, prace, pex, pt2`
+    (`tax, terrain, effects_bitmask, race, exploitation_percent,
+    alternate_terrain`) -- not 4 real fields flanked by two structural
+    anchors. `effects_bitmask` is exactly Phase 340's own "undeciphered
+    per-province bitmask" (`termod`, still not further decoded here,
+    but now correctly named and stored rather than discarded);
+    `exploitation_percent` (`pex`) and `alternate_terrain` (`pt2`) were
+    never even suspected to exist before this phase, since both read a
+    constant value (`0`, `Terrain.NO_TERRAIN`) across every real
+    `GW3__T1`-`GW3__T12` province row this project has ever checked --
+    indistinguishable from a fixed anchor without the disassembly's own
+    field list. `alternate_terrain` reuses this project's own `Terrain`
+    enum directly: the real sentinel ordinal for "no alternate terrain"
+    (`pt2 == 6`) is exactly `Terrain.NO_TERRAIN`'s own ordinal, already
+    a real member.
+    """
+
     name: str
     tax: int
     terrain: Terrain
+    # Phase 373: `termod` -- a real, confirmed Pascal field (Phase 340's
+    # own "undeciphered per-province bitmask", now correctly named and
+    # stored instead of discarded). Its own bit-level meaning is still
+    # undeciphered.
+    effects_bitmask: int
     race: Race
+    # Phase 373: `pex` -- reads `0` for every province in this project's
+    # own 12-turn corpus so far (no real nonzero example exists yet to
+    # confirm the field's own effective range/rounding).
+    exploitation_percent: int
+    # Phase 373: `pt2` -- reads `Terrain.NO_TERRAIN` (the real "no
+    # alternate terrain" sentinel) for every province in this project's
+    # own 12-turn corpus so far.
+    alternate_terrain: Terrain
     # The governing leader's own leader id (`None` for the `255`
     # unowned sentinel) -- NOT a kingdom id; see the module docstring's
     # "Philo(70)" cross-check. Resolving this to an owning kingdom needs
@@ -1284,12 +1319,14 @@ def parse_gw_world(path: Path) -> list[GWProvinceRecord]:
     """Parses every province record out of a world file.
 
     Scans the whole file for the province-header line's own fixed shape
-    (`"<tax> <terrain> <mystery> <race> 0 6"`) rather than assuming a
-    fixed byte offset, since that shape is confirmed unique to the
-    province block (a file-wide regex scan against every real `GW3__T1`
-    through `GW3__T12` sample returns exactly 162 matches each -- the
-    real, user-confirmed province count per world -- with no false
-    positives from the file's other, differently-shaped record blocks).
+    (6 space-separated integers: `"<tax> <terrain> <effects_bitmask>
+    <race> <exploitation_percent> <alternate_terrain>"`) rather than
+    assuming a fixed byte offset, since that shape is confirmed unique
+    to the province block (a file-wide regex scan against every real
+    `GW3__T1` through `GW3__T12` sample returns exactly 162 matches
+    each -- the real, user-confirmed province count per world -- with
+    no false positives from the file's other, differently-shaped record
+    blocks).
 
     Phase 340 correction: the 3rd token (between terrain and race) was
     originally hard-coded as a literal `0`, since it happened to be `0`
@@ -1302,13 +1339,20 @@ def parse_gw_world(path: Path) -> list[GWProvinceRecord]:
     progresses, not a constant. Hard-coding it as `0` silently dropped
     any province whose bitmask happened to be nonzero at that turn --
     `GW3__T5` alone was missing 3 of its 162 real provinces (Katmai,
-    Maplehaven, Khalturin) before this fix. This field's own real
-    meaning is still undeciphered and is deliberately discarded (not
-    stored on `GWProvinceRecord`) rather than guessed at. The final `0`
-    before the trailing `6` anchor, by contrast, was checked against the
-    same 12-file corpus and never observed to be anything but `0` --
-    left as a literal since loosening it changes nothing this project
-    has ever seen.
+    Maplehaven, Khalturin) before this fix.
+
+    Phase 373 correction: the same "hard-coded because it never varied
+    in the sample checked" mistake applied to the header's own 5th and
+    6th tokens too (`exploitation_percent`/`alternate_terrain`,
+    real Pascal fields per `AKGEN.EXE` -- see `GWProvinceRecord`'s own
+    docstring), not "0" and "6" structural anchors as the regex's own
+    Phase 340 comment assumed. Loosening both to accept any integer and
+    re-scanning all 12 real `GW3__T1`-`GW3__T12` files still yields
+    exactly 162 matches per file with no false positives -- the row
+    shape (6 space-separated integers on their own line, immediately
+    preceded by a name line and followed by the 4-token recruiting-types
+    line) stays unique in the file regardless of which specific values
+    the trailing two tokens hold.
     """
 
     text = path.read_text(encoding="utf-8", errors="replace")
@@ -1333,8 +1377,13 @@ def parse_gw_world(path: Path) -> list[GWProvinceRecord]:
             )
 
         name = lines[name_idx].strip()
-        tax_raw, terrain_raw, _mystery_field, race_raw = match.groups()
+        tax_raw, terrain_raw, effects_raw, race_raw, exploitation_raw, alt_terrain_raw = match.groups()
         tax, terrain_ordinal, race_ordinal = int(tax_raw), int(terrain_raw), int(race_raw)
+        effects_bitmask, exploitation_percent, alt_terrain_ordinal = (
+            int(effects_raw),
+            int(exploitation_raw),
+            int(alt_terrain_raw),
+        )
         recruit_type_1, recruit_type_2 = _parse_recruit_types(lines[line3_idx], line3_idx)
         governor_raw = lines[owner_idx].strip()
         if not governor_raw.lstrip("-").isdigit():
@@ -1350,7 +1399,10 @@ def parse_gw_world(path: Path) -> list[GWProvinceRecord]:
                 name=name,
                 tax=tax,
                 terrain=Terrain(terrain_ordinal),
+                effects_bitmask=effects_bitmask,
                 race=Race(race_ordinal),
+                exploitation_percent=exploitation_percent,
+                alternate_terrain=Terrain(alt_terrain_ordinal),
                 governor_leader_id=None if governor == 255 else governor,
                 recruit_type_1=recruit_type_1,
                 recruit_type_2=recruit_type_2,

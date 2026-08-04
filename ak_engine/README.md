@@ -15399,7 +15399,7 @@ section.
     quality-change fallback. Ran again, updated README, ran once more
     before commit -- the standing per-phase workflow. Full suite: 3597
     passed before, 3602 after (5 new tests).
-- **Phase 372 (current)**: wires the real, confirmed post-battle
+- **Phase 372**: wires the real, confirmed post-battle
   quality-change formula (`turn/aftermath.py base_quality_change_percent`,
   Phase 350) into `roll_quality_change`/`turn/battle_orchestrator.py`'s
   own call sites -- the second, and last, of Phase 370's own two deferred
@@ -15448,6 +15448,41 @@ section.
     different improve-chance thresholds), ran again, updated README, ran
     once more before commit -- the standing per-phase workflow. Full
     suite: 3602 passed before, 3611 after (9 new tests).
+- **Phase 373 (current)**: corrects `parser/gw_world.py`'s
+  `GWProvinceRecord`, discovered while researching the byte-exact GW
+  writer the user actually asked for (`AKGEN_reverse_engineering_report.md`
+  + `AKGEN_embedded_catalogs.json.txt`'s own `gw_format.records.province`
+  block, a real static disassembly of `AKGEN.EXE`/`AK.EXE`/`AK.OVR`).
+  - The province header line's 3rd token was previously discarded as an
+    "undeciphered mystery field," and its 5th/6th tokens were hardcoded
+    as literal `0`/`6` "structural anchors" (`_PROVINCE_HEADER_RE` was
+    `^(\d+) (\d+) (\d+) (\d+) 0 6$`). AKGEN's own field-by-field decode
+    of `ordered_stats_storage` names all 6 tokens as real, always-stored
+    Pascal fields: `ptax, pterr, termod, prace, pex, pt2` (`tax, terrain,
+    effects_bitmask, race, exploitation_percent, alternate_terrain`).
+    `pex`/`pt2` read as a constant `0`/`6` (`Terrain.NO_TERRAIN`) across
+    every one of 162 provinces in the entire available 12-turn fixture
+    corpus -- which is exactly why the earlier, purely-empirical
+    Phase 340 reverse-engineering mistook them for fixed anchors instead
+    of real fields that simply never vary in this data.
+  - Widened `_PROVINCE_HEADER_RE` to `^(\d+) (\d+) (\d+) (\d+) (\d+)
+    (\d+)$`, re-verified it still matches exactly 162 lines with no
+    false positives across the real `GW3__T1`/`GW3__T5` fixtures before
+    writing any code (this project's standing empirical-first rule).
+    Added `effects_bitmask: int` (still undeciphered at the bit level),
+    `exploitation_percent: int`, and `alternate_terrain: Terrain` to
+    `GWProvinceRecord`, and `parse_gw_world()` now populates all 6 real
+    fields instead of discarding/hardcoding 3 of them.
+    `parser/gw_world_bridge.py` needed no change -- it already reads
+    `GWProvinceRecord` fields by keyword only.
+  - Wrote `test_province_header_tolerates_a_nonzero_mystery_field`'s new
+    `effects_bitmask == 256` assertion, a new synthetic-fixture test for
+    nonzero `exploitation_percent`/`alternate_terrain`, and updated the
+    real-fixture equality test's expected `GWProvinceRecord` for
+    "Macondo" to include all 3 new fields. Ran the parser/bridge/end-to-
+    end suite, then the full suite, updated README, ran once more before
+    commit -- the standing per-phase workflow. Full suite: 3611 passed
+    before, 3612 after (1 new test).
 
 ## Setup
 
