@@ -10,6 +10,7 @@ from ak_engine.models.game_state import GameState, KingdomState, LeaderState, Pr
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.office_holder import (
     ALL_OFFICES,
     RANKED_OFFICES,
@@ -137,8 +138,8 @@ def test_resolve_all_office_holders_covers_every_real_office():
     holders = resolve_all_office_holders(state)
 
     assert set(holders.keys()) == set(ALL_OFFICES)
-    assert len(ALL_OFFICES) == 29
-    assert len(RANKED_OFFICES) == 28
+    assert len(ALL_OFFICES) == 47
+    assert len(RANKED_OFFICES) == 46
 
 
 def test_resolve_office_holder_evilking_none_for_good_kingdom():
@@ -210,3 +211,89 @@ def test_resolve_office_holder_race_title_special_race_needs_an_owned_province()
     holder = resolve_office_holder(state, Office.DRAGON_LORD)
     assert holder is not None
     assert holder.leader_id == 1
+
+
+# -- Phase 379: 18 more leader-scoped royal titles ---------------------------
+
+
+def test_resolve_office_holder_ele_mage_reads_the_tally():
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    leader.merit_tally.elemental_spell_casts = 25
+    state.add_leader(leader)
+
+    holder = resolve_office_holder(state, Office.ELE_MAGE)
+
+    assert holder is not None
+    assert holder.leader_id == 1
+    assert holder.merit_points == 25
+
+
+def test_resolve_office_holder_plains_king_open_to_a_hero():
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    hero = LeaderState(50, 1, "Ranger", HOME)
+    hero.merit_tally.plains_explorations = 10
+    state.add_leader(hero)
+
+    holder = resolve_office_holder(state, Office.PLAINS_KING)
+
+    assert holder is not None
+    assert holder.leader_id == 50
+
+
+def test_resolve_office_holder_battle_fool_ranks_the_worst_combined_record():
+    state = make_state()
+    fool = LeaderState(1, 1, "Bumbler", HOME, is_king=True)
+    fool.merit_tally.land_battles_won_points = 0
+    fool.merit_tally.land_battles_lost_points = 5  # -5 combined
+    hero = LeaderState(2, 2, "Champion", HexCoord(1, 1), is_king=True)
+    hero.merit_tally.land_battles_won_points = 0
+    hero.merit_tally.land_battles_lost_points = 2  # -2 combined
+    state.add_leader(fool)
+    state.add_leader(hero)
+
+    holder = resolve_office_holder(state, Office.BATTLE_FOOL)
+
+    assert holder is not None
+    assert holder.leader_id == 1  # -(-5) = 5 beats -(-2) = 2
+    assert holder.merit_points == 5
+
+
+def test_resolve_office_holder_curator_counts_held_items():
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    state.add_leader(leader)
+    state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=1)
+    state.add_item(Treasure.WAND_CHARM, owner_leader_id=1)
+    state.add_item(Treasure.WAND_BLESS, owner_leader_id=1)
+
+    holder = resolve_office_holder(state, Office.CURATOR)
+
+    assert holder is not None
+    assert holder.leader_id == 1
+    assert holder.merit_points == 3
+
+
+def test_resolve_office_holder_bravest_none_below_the_minimum():
+    # Office.BRAVEST has OFFICE_MIN_POINTS == 15 (models/office.py).
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    leader.merit_tally.bravery_merit = 14
+    state.add_leader(leader)
+
+    assert resolve_office_holder(state, Office.BRAVEST) is None
+
+    leader.merit_tally.bravery_merit = 15
+    holder = resolve_office_holder(state, Office.BRAVEST)
+    assert holder is not None
+    assert holder.leader_id == 1
+
+
+def test_resolve_office_holder_air_force_praetor_flagship_are_not_modeled():
+    # Deliberately deferred -- see turn/merit_points.py's own Phase 379
+    # addendum: these 3 are army-scoped, not leader-scoped, and don't fit
+    # RANKED_OFFICES/OfficeHolder's leader_id-only shape.
+    assert Office.AIR_FORCE not in RANKED_OFFICES
+    assert Office.PRAETOR not in RANKED_OFFICES
+    assert Office.FLAGSHIP not in RANKED_OFFICES

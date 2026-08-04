@@ -15670,7 +15670,7 @@ section.
     request that the flat threshold would reject), ran again, updated
     README, ran once more before commit -- the standing per-phase
     workflow. Full suite: 3624 passed before, 3632 after (8 new tests).
-- **Phase 378 (current)**: adds `GWTreasureOnlyRecord`/`parse_gw_
+- **Phase 378**: adds `GWTreasureOnlyRecord`/`parse_gw_
   treasures_only()`/`write_gw_treasure_only_record()` -- a whole record
   type this project had never read at all, found while finishing the
   AKGEN research audit begun in Phase 375-377.
@@ -15709,6 +15709,89 @@ section.
     round trip), ran again, updated README, ran once more before commit
     -- the standing per-phase workflow. Full suite: 3632 passed before,
     3636 after (4 new tests).
+- **Phase 379 (current)**: implements 18 of the 23 Imperial Offices
+  found unmodeled in the second AKGEN research audit -- `office_holder.
+  py`'s own `RANKED_OFFICES`/`ALL_OFFICES` previously covered only 29 of
+  `models/office.py Office`'s 52 real ordinals; `AKGEN_embedded_
+  catalogs.json.txt gw_format.royal_title_system.entries` has real,
+  sourced formulas for essentially all of the missing 23 (2 are the
+  non-title sentinels `NO_OFFICE`/`NO_TITLE`, needing no formula at
+  all).
+  - 16 new `MeritTally` fields (`models/game_state.py`) and 16 new
+    `turn/merit_points.py` formula functions for the 4 magic-school
+    titles (Master of Elements/Amazing Houdini/Sorceror of Black
+    Magic/Master Mind), the 6 terrain-King titles (Ranger of the
+    Plains/Desert Rat/Lord of the Jungle/Warden of the Forests/Mountain
+    Man/Ruler of the Waves), Professor Whizdumb, Grandfather of
+    Assassins, Captain of the Musketeers, Air Force Commander, King of
+    Cowards, and Bravest of the Brave -- every one a `Tit_Pts(leader,
+    title)`-shaped cumulative counter the source names but doesn't
+    (yet) have a real in-project writer for, the same "field exists, no
+    populating consumer yet" shape Phase 227 already established for
+    Chancellor's own discovery terms. No writer is invented this phase;
+    the exact per-event magnitude for several of these (Duellist's
+    transferred merit value, Cravenest/Bravest's per-encounter points,
+    Wingman's "other encounter awards") is named by the source without
+    being pinned down, so nothing is guessed.
+  - 2 more formulas needed no new tally field: **Fool of Battles**
+    (`battlefool_merit_points()`) is `-(lgenp+ladmp)`, computed directly
+    from the same `land_battles_won/lost_points`/`naval_battles_won/
+    lost_points` fields Marshal/Admiral already read -- fully live
+    today, no writer gap at all. **Curator of Artifacts**
+    (`curator_merit_points()`) counts held items outside 4 categories
+    that clearly aren't "magic items" (`GOLD_HOARD`/`SENTINEL`/
+    `UNUSED_EXTENSION`/`QUEST_ITEM`) -- a documented approximation of
+    the source's own unconfirmed exact `hla..rali` Treasure-ordinal
+    range, not the precise range itself.
+  - **3 titles the source also names are deliberately not modeled**:
+    `AIR_FORCE`/`PRAETOR`/`FLAGSHIP` are army-scoped ("eligible: army:
+    quality Crack or Elite...", `score_formula: current Army_Str(...)`),
+    not leader-scoped -- they don't fit `OfficeHolder.leader_id`/
+    `RANKED_OFFICES`'s shape at all, and their shared `Army_Str` term
+    needs `turn/strength.py compute_effective_strength()`'s battle-only
+    parameters (terrain, is_defender, ...) outside any actual battle
+    context, which this project has no confirmed value for at rest.
+    Reproducing it here would mean guessing which subset applies --
+    against this project's own standing rule never to invent unsourced
+    magnitudes. Left for a future phase that can address the structural
+    gap and the formula honestly together, rather than silently
+    dropping them from "the 23" or faking a plausible-looking number.
+  - `RANKED_OFFICES` grows from 28 to 46 real offices (`ALL_OFFICES`
+    including Emperor: 29 to 47); `office_holder.py _leader_merit_
+    points()` gets 18 new `if office is Office.X:` branches, one per
+    new leader-scoped title, dispatched the same way Phase 368's 8
+    alignment/skill titles already are (no generic table dispatch,
+    since these 18 don't share one common formula shape). None of the
+    18 grant Victory Points and none is exempted from the death penalty
+    -- `royal_title_system.death_rule`'s own text ("the separate 25%
+    death reduction ... is not generalized to Tit_Pts") directly
+    confirms `MeritTally.apply_death_penalty()` (Phase 377) is right to
+    leave every `Tit_Pts`-style field, these 16 included, untouched.
+  - Fixed two stale hardcoded office counts this phase's own growth
+    exposed: `resolve_office_holder()`'s `ValueError` message and
+    `resolve_all_office_holders()`'s own docstring both still said "21
+    real Imperial Offices" (already wrong before this phase -- the true
+    pre-Phase-379 count was 29/28) -- both corrected to 47/46 alongside
+    the new count, rather than left further out of date.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4 pre-existing tests failed, all of them asserting the *exact*
+    office count/list `ALL_OFFICES`-driven composers produce
+    (`test_resolve_all_office_holders_covers_every_real_office`, two
+    `test_compose_letter_report_*` full-report-text tests, and
+    `test_describe_imperial_office_report_none_at_present_for_every_
+    office_with_no_leaders`) -- expected fallout from extending
+    `ALL_OFFICES`, fixed by updating the expected counts/lines to match
+    the new 18 offices in `office_holder.py`'s own `RANKED_OFFICES`
+    order. Wrote 27 new tests (21 in `test_merit_points.py` covering
+    all 18 formulas plus Battle Fool/Curator's edge cases and an
+    all-fields-default-to-zero sweep, 6 in `test_office_holder.py`
+    covering full Rank-contest resolution for a magic-school title, an
+    open-to-a-Hero terrain title, Battle Fool's worst-record ranking,
+    Curator's item count, Bravest's minimum-points gate, and the 3
+    army-scoped titles' deliberate absence from `RANKED_OFFICES`), ran
+    again, updated README, ran once more before commit -- the standing
+    per-phase workflow. Full suite: 3636 passed before, 3663 after (27
+    new tests).
 
 ## Setup
 

@@ -117,6 +117,17 @@ for an ineligible leader on its own (King-only, alignment-gated where
 stated), so this generic Rank-contest loop needs no additional
 special-casing for any of the 8, the same "eligibility lives in the
 formula, not the loop" shape Phase 277 established.
+
+**Phase 379: 18 more leader-scoped royal titles join** (4 magic-school,
+6 terrain-King, Battle Fool, Curator, Teacher, Assassin, Duellist,
+Wingman, Cravenest, Bravest) -- one `if` branch each in `_leader_merit_
+points()`, same shape as Phase 368's 8. None of the 18 grant Victory
+Points and none is exempted from the death penalty (see `turn/merit_
+points.py`'s own Phase 379 addendum, which also explains why the
+remaining 3 titles the source names -- `AIR_FORCE`/`PRAETOR`/
+`FLAGSHIP` -- are deliberately **not** modeled here: they're
+army-scoped, not leader-scoped, and don't fit this module's
+`OfficeHolder.leader_id`-only shape at all.
 """
 
 from __future__ import annotations
@@ -128,24 +139,42 @@ from ak_engine.models.office import OFFICE_MIN_POINTS, Office
 from ak_engine.models.race import Race
 from ak_engine.turn.merit_points import (
     admiral_merit_points,
+    assassin_merit_points,
+    battlefool_merit_points,
+    bravest_merit_points,
     chancellor_merit_points,
     chiefofstaff_merit_points,
+    cravenest_merit_points,
+    curator_merit_points,
     defender_merit_points,
+    desertking_merit_points,
     divinearchangel_merit_points,
     druidking_merit_points,
+    duellist_merit_points,
+    elementalmage_merit_points,
     emperor_merit_points,
     evilking_merit_points,
+    forestking_merit_points,
     goodking_merit_points,
+    illusionistmage_merit_points,
+    jungleking_merit_points,
     mage_merit_points,
     marshal_merit_points,
     merit_point_tiebreak_key,
+    mountainking_merit_points,
+    necromancermage_merit_points,
     neutralking_merit_points,
     paganking_merit_points,
+    plainsking_merit_points,
     priest_merit_points,
+    psychicmage_merit_points,
+    seaking_merit_points,
     silvertongue_merit_points,
+    teacher_merit_points,
     thiefprince_merit_points,
     treasurer_merit_points,
     undeadking_merit_points,
+    wingman_merit_points,
 )
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE, RACE_TITLE_TURN_GATE, race_title_merit_points
 
@@ -174,13 +203,34 @@ RANKED_OFFICES: tuple[Office, ...] = (
     Office.UNDEAD_KING,
     Office.CHIEF_OF_STAFF,
     Office.DIPLOMAT,
+    Office.ELE_MAGE,
+    Office.ILLUS_MAGE,
+    Office.NECRO_MAGE,
+    Office.PSYCHIC_MAGE,
+    Office.PLAINS_KING,
+    Office.DESERT_KING,
+    Office.JUNGLE_KING,
+    Office.FOREST_KING,
+    Office.MOUNTAIN_KING,
+    Office.SEA_KING,
+    Office.BATTLE_FOOL,
+    Office.CURATOR,
+    Office.TEACHER,
+    Office.ASSASSIN,
+    Office.DUELLIST,
+    Office.WINGMAN,
+    Office.CRAVENEST,
+    Office.BRAVEST,
 )
 
-# All 29 real Imperial Offices this project models, in the rulebook's own
+# All 47 real Imperial Offices this project models, in the rulebook's own
 # table order (EVIL_KING/THIEF_PRINCE appended Phase 277, the 11 race
 # titles appended Phase 367, the 6 alignment-King titles plus Chief of
-# Staff/Silver Tongue appended Phase 368 -- see each phase's own module
-# docstring note).
+# Staff/Silver Tongue appended Phase 368, 18 more leader-scoped royal
+# titles appended Phase 379 -- see each phase's own module docstring
+# note). AIR_FORCE/PRAETOR/FLAGSHIP (army-scoped, not leader-scoped) are
+# deliberately not modeled here -- see `turn/merit_points.py`'s own
+# Phase 379 addendum.
 ALL_OFFICES: tuple[Office, ...] = (Office.EMPEROR, *RANKED_OFFICES)
 
 
@@ -225,6 +275,42 @@ def _leader_merit_points(office: Office, state: GameState, leader: LeaderState) 
         return chiefofstaff_merit_points(state, leader)
     if office is Office.DIPLOMAT:
         return silvertongue_merit_points(state, leader)
+    if office is Office.ELE_MAGE:
+        return elementalmage_merit_points(leader)
+    if office is Office.ILLUS_MAGE:
+        return illusionistmage_merit_points(leader)
+    if office is Office.NECRO_MAGE:
+        return necromancermage_merit_points(leader)
+    if office is Office.PSYCHIC_MAGE:
+        return psychicmage_merit_points(leader)
+    if office is Office.PLAINS_KING:
+        return plainsking_merit_points(leader)
+    if office is Office.DESERT_KING:
+        return desertking_merit_points(leader)
+    if office is Office.JUNGLE_KING:
+        return jungleking_merit_points(leader)
+    if office is Office.FOREST_KING:
+        return forestking_merit_points(leader)
+    if office is Office.MOUNTAIN_KING:
+        return mountainking_merit_points(leader)
+    if office is Office.SEA_KING:
+        return seaking_merit_points(leader)
+    if office is Office.BATTLE_FOOL:
+        return battlefool_merit_points(leader)
+    if office is Office.CURATOR:
+        return curator_merit_points(state, leader)
+    if office is Office.TEACHER:
+        return teacher_merit_points(leader)
+    if office is Office.ASSASSIN:
+        return assassin_merit_points(leader)
+    if office is Office.DUELLIST:
+        return duellist_merit_points(leader)
+    if office is Office.WINGMAN:
+        return wingman_merit_points(leader)
+    if office is Office.CRAVENEST:
+        return cravenest_merit_points(leader)
+    if office is Office.BRAVEST:
+        return bravest_merit_points(leader)
     if office in _OFFICE_RACE:
         return race_title_merit_points(state, leader, _OFFICE_RACE[office])
     raise ValueError(f"{office} is not a ranked office -- Emperor is resolved via resolve_office_holder() directly")
@@ -253,7 +339,7 @@ def resolve_office_holder(state: GameState, office: Office) -> OfficeHolder | No
         return OfficeHolder(leader_id, emperor_merit_points(state, state.emperor_kingdom_id))
 
     if office not in RANKED_OFFICES:
-        raise ValueError(f"{office} is not one of the 21 real Imperial Offices this project models")
+        raise ValueError(f"{office} is not one of the 47 real Imperial Offices this project models")
 
     if office in _OFFICE_RACE:
         turn_gate = RACE_TITLE_TURN_GATE[_OFFICE_RACE[office]]
@@ -277,7 +363,7 @@ def resolve_office_holder(state: GameState, office: Office) -> OfficeHolder | No
 
 
 def resolve_all_office_holders(state: GameState) -> dict[Office, OfficeHolder | None]:
-    """All 21 real Imperial Offices at once, each resolved via
+    """All 47 real Imperial Offices at once, each resolved via
     `resolve_office_holder()`.
     """
 

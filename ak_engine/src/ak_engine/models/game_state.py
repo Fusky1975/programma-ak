@@ -443,6 +443,63 @@ class MeritTally:
     # alliance execution mechanic at all.
     diplomatic_merit_points: float = 0.0
 
+    # Phase 379 -- 16 new `Tit_Pts`-style counters for the 18 remaining
+    # real `royal_title_system` titles (`AKGEN_embedded_catalogs.json.txt
+    # gw_format.royal_title_system.entries`, ids 16/21/28/30-35/37/40/
+    # 42-44/46/48-50), the same "field exists, no populating consumer
+    # yet" convention this class has used since Phase 59 -- see
+    # `turn/merit_points.py`'s own Phase 379 addendum for each title's
+    # real formula and which of these already has a live writer.
+    # Master of Elements/Amazing Houdini/Sorceror of Black Magic/Master
+    # Mind: +1 per successful cast of the matching spell school that
+    # reaches the compiled title-award branch (ids 16/21/28/46).
+    elemental_spell_casts: int = 0
+    illusionist_spell_casts: int = 0
+    necromancy_spell_casts: int = 0
+    psychic_spell_casts: int = 0
+    # The 6 terrain-King titles (ids 30-35): +1 per Explore result
+    # recorded in the matching terrain.
+    plains_explorations: int = 0
+    desert_explorations: int = 0
+    jungle_explorations: int = 0
+    forest_explorations: int = 0
+    mountain_explorations: int = 0
+    sea_explorations: int = 0
+    # Professor Whizdumb (Office.TEACHER, id 42): +1 per another
+    # character's own effective Practice/teaching interaction with this
+    # leader as the higher-skilled co-practicer.
+    teaching_interactions: int = 0
+    # Grandfather of Assassins (Office.ASSASSIN, id 43): +1 per
+    # successful assassination -- this project has no Assassinate
+    # mechanic yet, so this field has no writer at all (not even a
+    # partial one), unlike most of this class's own "no writer yet"
+    # fields.
+    successful_assassinations: int = 0
+    # Captain of the Musketeers (Office.DUELLIST, id 44): "duel merit is
+    # transferred: the winner gains the duel's own merit value and the
+    # loser loses the same value" -- the disassembly never names that
+    # per-duel magnitude, so this stays a raw running total a future
+    # phase can increment once (if ever) that value is sourced.
+    duel_merit_net: int = 0
+    # Air Force Commander (Office.WINGMAN, id 48): the source's own
+    # *confirmed* term only -- "+1 for an air-unit victory and -1 for an
+    # air-unit defeat"; its own "other encounter awards can add larger
+    # values" is left unsourced and not reflected here.
+    air_combat_merit: int = 0
+    # King of Cowards (Office.CRAVENEST, id 49): the disassembly's own
+    # signed courage/encounter scorer "suppresses a positive winner
+    # award for this title and subtracts merit from the loser" -- the
+    # real corpus itself only ever shows negative values here (no real
+    # positive-award event has ever been observed, let alone sourced),
+    # so this field is expected to only ever decrease in practice.
+    courage_encounter_merit: int = 0
+    # Bravest of the Brave (Office.BRAVEST, id 50): "cumulative bravery
+    # merit from high-risk personal encounters/challenges" -- real,
+    # observed range 0..28 in the source's own corpus, but no per-event
+    # magnitude rule survives to reproduce it from a specific encounter
+    # outcome.
+    bravery_merit: int = 0
+
     def apply_death_penalty(self) -> None:
         """Phase 377 -- a leader who dies loses 25% of their own
         accumulated office merit (`AKGEN_embedded_catalogs.json.txt`
@@ -483,7 +540,15 @@ class MeritTally:
         state the same death-penalty rule for) and `RaceTitleTally`
         (Phase 367's own separate race-fanaticism title system) -- both
         left as an honest "not verified for these" gap rather than an
-        assumed blanket rule.
+        assumed blanket rule. **Phase 379's own 16 new fields (the
+        remaining `royal_title_system` titles) are excluded for the
+        exact same reason, now with the source's own explicit
+        confirmation**: `gw_format.royal_title_system.death_rule` states
+        outright that "the separate 25% death reduction documented for
+        lgenp/ladmp/lmhpp is not generalized to Tit_Pts" -- every title
+        this method skips is a `Tit_Pts`-style counter, so this isn't a
+        guess extended from the two examples above, it's the source
+        directly ruling the exclusion in.
         """
 
         for field_name in (

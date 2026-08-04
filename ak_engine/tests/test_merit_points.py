@@ -19,18 +19,36 @@ from ak_engine.turn.merit_points import (
     LEGENDARY_ITEM_BONUS_TREASURES,
     MARSHAL_QUALITY_POINTS,
     admiral_merit_points,
+    assassin_merit_points,
     battle_quality_points,
+    battlefool_merit_points,
+    bravest_merit_points,
     chancellor_merit_points,
+    cravenest_merit_points,
+    curator_merit_points,
     defender_merit_points,
+    desertking_merit_points,
+    duellist_merit_points,
+    elementalmage_merit_points,
     emperor_merit_points,
     evilking_merit_points,
+    forestking_merit_points,
+    illusionistmage_merit_points,
+    jungleking_merit_points,
     legendary_item_victory_point_bonus_count,
     mage_merit_points,
     marshal_merit_points,
     merit_point_tiebreak_key,
+    mountainking_merit_points,
+    necromancermage_merit_points,
+    plainsking_merit_points,
     priest_merit_points,
+    psychicmage_merit_points,
+    seaking_merit_points,
+    teacher_merit_points,
     thiefprince_merit_points,
     treasurer_merit_points,
+    wingman_merit_points,
 )
 
 HOME = HexCoord(0, 0)
@@ -304,3 +322,203 @@ def test_thiefprince_merit_points_works_for_a_king_too():
     king.merit_tally.successful_thefts = 1
 
     assert thiefprince_merit_points(state, king) == 1
+
+
+# -- Phase 379: 18 leader-scoped royal titles -------------------------------
+# See turn/merit_points.py's own Phase 379 addendum for the full sourcing
+# (AKGEN_embedded_catalogs.json.txt gw_format.royal_title_system.entries).
+# Most of these are single-field readers with no writer yet ("field
+# exists, no populating consumer yet"); BATTLE_FOOL and CURATOR are the
+# two computed exceptions and get more thorough coverage below.
+
+
+def test_elementalmage_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.elemental_spell_casts = 3
+
+    assert elementalmage_merit_points(leader) == 3
+
+
+def test_illusionistmage_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.illusionist_spell_casts = 2
+
+    assert illusionistmage_merit_points(leader) == 2
+
+
+def test_necromancermage_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.necromancy_spell_casts = 4
+
+    assert necromancermage_merit_points(leader) == 4
+
+
+def test_psychicmage_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.psychic_spell_casts = 1
+
+    assert psychicmage_merit_points(leader) == 1
+
+
+def test_plainsking_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.plains_explorations = 5
+
+    assert plainsking_merit_points(leader) == 5
+
+
+def test_desertking_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.desert_explorations = 6
+
+    assert desertking_merit_points(leader) == 6
+
+
+def test_jungleking_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.jungle_explorations = 7
+
+    assert jungleking_merit_points(leader) == 7
+
+
+def test_forestking_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.forest_explorations = 8
+
+    assert forestking_merit_points(leader) == 8
+
+
+def test_mountainking_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.mountain_explorations = 9
+
+    assert mountainking_merit_points(leader) == 9
+
+
+def test_seaking_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.sea_explorations = 10
+
+    assert seaking_merit_points(leader) == 10
+
+
+def test_battlefool_merit_points_is_the_negative_of_combined_land_and_naval_merit():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.land_battles_won_points = 5
+    leader.merit_tally.land_battles_lost_points = 8
+    leader.merit_tally.naval_battles_won_points = 1
+    leader.merit_tally.naval_battles_lost_points = 3
+
+    # land = 5 - 8 = -3, naval = 1 - 3 = -2 -> -(-3 + -2) = 5
+    assert battlefool_merit_points(leader) == 5
+
+
+def test_battlefool_merit_points_negative_when_the_combined_record_is_positive():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.land_battles_won_points = 10
+    leader.merit_tally.land_battles_lost_points = 1
+
+    assert battlefool_merit_points(leader) == -9
+
+
+def test_curator_merit_points_counts_items_outside_the_excluded_categories():
+    state = make_state()
+    state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=1)  # SPELL_WAND, counted
+    state.add_item(Treasure.BOOK_WHITE, owner_leader_id=1)  # SKILL_BOOK, counted
+    state.add_item(Treasure.GOLD_HOARD_LARGE, owner_leader_id=1)  # excluded
+    state.add_item(Treasure.QUEST_SNOW_QUEST, owner_leader_id=1)  # excluded
+    state.add_item(Treasure.NO_TREASURE, owner_leader_id=1)  # SENTINEL, excluded
+
+    assert curator_merit_points(state, state.leaders[1]) == 2
+
+
+def test_curator_merit_points_zero_with_no_items():
+    state = make_state()
+
+    assert curator_merit_points(state, state.leaders[1]) == 0
+
+
+def test_teacher_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.teaching_interactions = 3
+
+    assert teacher_merit_points(leader) == 3
+
+
+def test_assassin_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.successful_assassinations = 2
+
+    assert assassin_merit_points(leader) == 2
+
+
+def test_duellist_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.duel_merit_net = -4
+
+    assert duellist_merit_points(leader) == -4
+
+
+def test_wingman_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.air_combat_merit = 6
+
+    assert wingman_merit_points(leader) == 6
+
+
+def test_cravenest_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.courage_encounter_merit = 5
+
+    assert cravenest_merit_points(leader) == 5
+
+
+def test_bravest_merit_points_reads_the_tally():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.merit_tally.bravery_merit = 15
+
+    assert bravest_merit_points(leader) == 15
+
+
+def test_all_18_phase_379_fields_default_to_zero():
+    # No writer populates any of these 16 MeritTally fields yet -- a
+    # fresh leader reads 0 for all 18 formulas (2 of the 18, BATTLE_FOOL
+    # and CURATOR, are computed rather than raw-field reads and are
+    # covered on their own above).
+    state = make_state()
+    leader = state.leaders[1]
+
+    assert elementalmage_merit_points(leader) == 0
+    assert illusionistmage_merit_points(leader) == 0
+    assert necromancermage_merit_points(leader) == 0
+    assert psychicmage_merit_points(leader) == 0
+    assert plainsking_merit_points(leader) == 0
+    assert desertking_merit_points(leader) == 0
+    assert jungleking_merit_points(leader) == 0
+    assert forestking_merit_points(leader) == 0
+    assert mountainking_merit_points(leader) == 0
+    assert seaking_merit_points(leader) == 0
+    assert teacher_merit_points(leader) == 0
+    assert assassin_merit_points(leader) == 0
+    assert duellist_merit_points(leader) == 0
+    assert wingman_merit_points(leader) == 0
+    assert cravenest_merit_points(leader) == 0
+    assert bravest_merit_points(leader) == 0

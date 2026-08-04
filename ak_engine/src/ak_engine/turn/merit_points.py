@@ -281,6 +281,85 @@ Hero** -- the JSON's own `general_assignment.multiple_titles` note is
 explicit: "Heroes may hold titles except the seven alignment-King
 titles," and Diplomat/id 41 isn't one of those seven.
 
+## The 18 leader-scoped royal titles (Phase 379)
+`AKGEN_embedded_catalogs.json.txt gw_format.royal_title_system.entries`
+names 23 more Imperial Offices (`models/office.py Office`) this project
+had never modeled at all: 2 blank sentinels (`NO_OFFICE`=8, `NO_TITLE`
+=51, no formula needed) and 21 real titles. Three of those 21 --
+`AIR_FORCE`, `PRAETOR`, `FLAGSHIP` -- are **deliberately not attempted
+here**: they're ARMY-scoped, not leader-scoped (`"eligible": "army:
+quality Crack or Elite..."`), and their shared `score_formula` term
+("current Army_Str(...)") needs the effective-strength calculator
+outside an actual battle context; `turn/strength.py
+compute_effective_strength()` requires terrain/is_defender/other
+battle-only parameters this project has no confirmed value for at rest,
+so reproducing "Army_Str" here would mean guessing which subset applies
+-- against this project's own standing rule. They also don't fit
+`OfficeHolder`'s `leader_id`-only shape at all, a structural gap, not
+just a missing formula; left for a future phase that can address both
+honestly. The other 18 -- all leader-scoped, all `Tit_Pts(leader,
+title)`-shaped cumulative counters or a live skill/holding count -- are
+implemented below, each reading one of 16 new `MeritTally` fields
+(`models/game_state.py`, Phase 379) or, for `BATTLE_FOOL`/`CURATOR`,
+composed from data that already exists:
+
+- **4 magic-school titles** (`ELE_MAGE`/`ILLUS_MAGE`/`NECRO_MAGE`/
+  `PSYCHIC_MAGE`, ids 16/21/28/46): `Tit_Pts`, "+1 cumulative point when
+  a successful [school]-school spell reaches the compiled title-award
+  branch." No writer yet increments these counters (no cast-execution
+  call site is touched this phase) -- same "field exists, no populating
+  consumer yet" shape as Chancellor's own discovery terms above.
+- **6 terrain-King titles** (`PLAINS_KING`/`DESERT_KING`/`JUNGLE_KING`/
+  `FOREST_KING`/`MOUNTAIN_KING`/`SEA_KING`, ids 30-35): `Tit_Pts`, "+1
+  cumulative point when an Explore result is recorded in [terrain]
+  terrain." Also field-only for now.
+- **`BATTLE_FOOL`** (id 37, "Fool of Battles"): `-(lgenp+ladmp)` --
+  the *negative* of the combined land-and-naval battle-merit total,
+  i.e. whoever has the *worst* combined record. Computed directly from
+  the same `land_battles_won/lost_points`/`naval_battles_won/lost_
+  points` fields `marshal_merit_points()`/`admiral_merit_points()`
+  already read -- no new `MeritTally` field needed, and this one's
+  fully live today (those fields already have real writers).
+- **`CURATOR`** (id 40, "Curator of Artifacts"): `NT_Owned(leader,hla,
+  rali)` -- "current count of magic items in the main hla..rali range."
+  The exact Treasure-ordinal range bounds aren't named by the
+  disassembly; this project approximates it as every held item *except*
+  the four categories that clearly aren't "magic items" in the
+  rulebook sense (`GOLD_HOARD`, `SENTINEL`, `UNUSED_EXTENSION`,
+  `QUEST_ITEM`) -- a documented approximation, not the exact range.
+- **`TEACHER`** (id 42, "Professor Whizdumb"): `Tit_Pts`, "+1 cumulative
+  point when another character completes an effective Practice/teaching
+  interaction with this teacher." Field-only; `turn/practice_
+  execution.py execute_practice_group()` is the plausible future writer.
+- **`ASSASSIN`** (id 43, "Grandfather of Assassins"): `Tit_Pts`, "+1
+  per successful assassination." No Assassinate mechanic exists
+  anywhere in this project -- field-only, no plausible writer yet.
+- **`DUELLIST`** (id 44, "Captain of the Musketeers"): `Tit_Pts`, "duel
+  merit is transferred: the winner gains the duel's own merit value and
+  the loser loses the same value." The transferred magnitude is never
+  named by the source -- field-only (`duel_merit_net`), no writer.
+- **`WINGMAN`** (id 48, "Air Force Commander"): `Tit_Pts`, "cumulative
+  air-combat merit: compiled army-result path awards +1 for an air-unit
+  victory and -1 for an air-unit defeat; other encounter awards can add
+  larger values" -- only the +1/-1 term is confirmed. Field-only
+  (`air_combat_merit`) this phase; a future phase could wire the
+  confirmed +1/-1 term via `turn/battle_orchestrator.py`.
+- **`CRAVENEST`** (id 49, "King of Cowards") / **`BRAVEST`** (id 50,
+  "Bravest of the Brave"): both `Tit_Pts`-shaped, both sourced from
+  "high-risk personal encounters/challenges" scoring whose exact
+  per-event magnitude isn't named -- field-only (`courage_encounter_
+  merit`/`bravery_merit`), no writer.
+
+**None of these 18 grant Victory Points** (`models/office.py
+OFFICE_VALUE` already reflects this, Phase 81, same as every royal
+title before them) and **none is exempted from the death penalty**:
+`royal_title_system.death_rule` states plainly "the separate 25% death
+reduction documented for lgenp/ladmp/lmhpp is not generalized to
+Tit_Pts" -- confirming `MeritTally.apply_death_penalty()` (Phase 377)
+is right to leave all `Tit_Pts`-style fields, these 16 included,
+untouched on a leader's death. See `models/game_state.py`'s own Phase
+379 addendum on `apply_death_penalty()`.
+
 ## Tie-break (rulebook footnote 3, extended Phase 377)
 "Se due personaggi hanno pari punteggio per una Carica Imperiale, il
 primo posto viene assegnato in base prima all'ammontare del tesoro e poi
@@ -592,6 +671,148 @@ def silvertongue_merit_points(state: GameState, leader: LeaderState) -> float:
     """
 
     return leader.merit_tally.diplomatic_merit_points
+
+
+# Phase 379: the 4 magic-school title categories that clearly aren't
+# "magic items" in Curator's own rulebook sense -- see module docstring.
+_CURATOR_EXCLUDED_CATEGORIES: frozenset[TreasureCategory] = frozenset(
+    {
+        TreasureCategory.GOLD_HOARD,
+        TreasureCategory.SENTINEL,
+        TreasureCategory.UNUSED_EXTENSION,
+        TreasureCategory.QUEST_ITEM,
+    }
+)
+
+
+def elementalmage_merit_points(leader: LeaderState) -> int:
+    """Master of Elements (Office.ELE_MAGE, id 16) -- see module
+    docstring's Phase 379 addendum: field-only, no writer yet.
+    """
+
+    return leader.merit_tally.elemental_spell_casts
+
+
+def illusionistmage_merit_points(leader: LeaderState) -> int:
+    """Amazing Houdini (Office.ILLUS_MAGE, id 21) -- field-only."""
+
+    return leader.merit_tally.illusionist_spell_casts
+
+
+def necromancermage_merit_points(leader: LeaderState) -> int:
+    """Sorceror of Black Magic (Office.NECRO_MAGE, id 28) -- field-only."""
+
+    return leader.merit_tally.necromancy_spell_casts
+
+
+def psychicmage_merit_points(leader: LeaderState) -> int:
+    """Master Mind (Office.PSYCHIC_MAGE, id 46) -- field-only."""
+
+    return leader.merit_tally.psychic_spell_casts
+
+
+def plainsking_merit_points(leader: LeaderState) -> int:
+    """Ranger of the Plains (Office.PLAINS_KING, id 30) -- field-only."""
+
+    return leader.merit_tally.plains_explorations
+
+
+def desertking_merit_points(leader: LeaderState) -> int:
+    """Desert Rat (Office.DESERT_KING, id 31) -- field-only."""
+
+    return leader.merit_tally.desert_explorations
+
+
+def jungleking_merit_points(leader: LeaderState) -> int:
+    """Lord of the Jungle (Office.JUNGLE_KING, id 32) -- field-only."""
+
+    return leader.merit_tally.jungle_explorations
+
+
+def forestking_merit_points(leader: LeaderState) -> int:
+    """Warden of the Forests (Office.FOREST_KING, id 33) -- field-only."""
+
+    return leader.merit_tally.forest_explorations
+
+
+def mountainking_merit_points(leader: LeaderState) -> int:
+    """Mountain Man (Office.MOUNTAIN_KING, id 34) -- field-only."""
+
+    return leader.merit_tally.mountain_explorations
+
+
+def seaking_merit_points(leader: LeaderState) -> int:
+    """Ruler of the Waves (Office.SEA_KING, id 35) -- field-only."""
+
+    return leader.merit_tally.sea_explorations
+
+
+def battlefool_merit_points(leader: LeaderState) -> int:
+    """Fool of Battles (Office.BATTLE_FOOL, id 37) -- the negative of the
+    combined land-and-naval battle-merit total (`-(lgenp+ladmp)`,
+    "worst combined cumulative land and naval battle merit"). Fully
+    live: reuses the same `MeritTally` fields `marshal_merit_points()`/
+    `admiral_merit_points()` already read.
+    """
+
+    tally = leader.merit_tally
+    land = tally.land_battles_won_points - tally.land_battles_lost_points
+    naval = tally.naval_battles_won_points - tally.naval_battles_lost_points
+    return -(land + naval)
+
+
+def curator_merit_points(state: GameState, leader: LeaderState) -> int:
+    """Curator of Artifacts (Office.CURATOR, id 40) -- current count of
+    held items outside the 4 clearly-non-magic-item categories. See
+    module docstring's Phase 379 addendum for why this is a documented
+    approximation of the source's own unconfirmed `hla..rali` range.
+    """
+
+    return sum(
+        1
+        for item in state.items_held_by(leader.leader_id)
+        if TREASURE_CATEGORY.get(item.treasure) not in _CURATOR_EXCLUDED_CATEGORIES
+    )
+
+
+def teacher_merit_points(leader: LeaderState) -> int:
+    """Professor Whizdumb (Office.TEACHER, id 42) -- field-only."""
+
+    return leader.merit_tally.teaching_interactions
+
+
+def assassin_merit_points(leader: LeaderState) -> int:
+    """Grandfather of Assassins (Office.ASSASSIN, id 43) -- field-only,
+    no Assassinate mechanic exists in this project yet.
+    """
+
+    return leader.merit_tally.successful_assassinations
+
+
+def duellist_merit_points(leader: LeaderState) -> int:
+    """Captain of the Musketeers (Office.DUELLIST, id 44) -- field-only,
+    the transferred duel-merit magnitude is unconfirmed by the source.
+    """
+
+    return leader.merit_tally.duel_merit_net
+
+
+def wingman_merit_points(leader: LeaderState) -> int:
+    """Air Force Commander (Office.WINGMAN, id 48) -- field-only."""
+
+    return leader.merit_tally.air_combat_merit
+
+
+def cravenest_merit_points(leader: LeaderState) -> int:
+    """King of Cowards (Office.CRAVENEST, id 49) -- field-only."""
+
+    return leader.merit_tally.courage_encounter_merit
+
+
+def bravest_merit_points(leader: LeaderState) -> int:
+    """Bravest of the Brave (Office.BRAVEST, id 50) -- field-only."""
+
+    return leader.merit_tally.bravery_merit
 
 
 def legendary_item_victory_point_bonus_count(state: GameState, leader_id: int) -> int:

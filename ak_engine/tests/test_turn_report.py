@@ -4538,6 +4538,24 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Angel of Death: None at present",
         "Chief of Staff: None at present",
         "Silver Tongue: None at present",
+        "Master of Elements: None at present",
+        "Amazing Houdini: None at present",
+        "Sorceror of Black Magic: None at present",
+        "Master Mind: None at present",
+        "Ranger of the Plains: None at present",
+        "Desert Rat: None at present",
+        "Lord of the Jungle: None at present",
+        "Warden of the Forests: None at present",
+        "Mountain Man: None at present",
+        "Ruler of the Waves: None at present",
+        "Fool of Battles: None at present",
+        "Curator of Artifacts: None at present",
+        "Professor Whizdumb: None at present",
+        "Grandfather of Assassins: None at present",
+        "Captain of the Musketeers: None at present",
+        "Air Force Commander: None at present",
+        "King of Cowards: None at present",
+        "Bravest of the Brave: None at present",
         "ADVENTURE",
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
@@ -4644,6 +4662,24 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "Angel of Death: None at present",
         "Chief of Staff: None at present",
         "Silver Tongue: None at present",
+        "Master of Elements: None at present",
+        "Amazing Houdini: None at present",
+        "Sorceror of Black Magic: None at present",
+        "Master Mind: None at present",
+        "Ranger of the Plains: None at present",
+        "Desert Rat: None at present",
+        "Lord of the Jungle: None at present",
+        "Warden of the Forests: None at present",
+        "Mountain Man: None at present",
+        "Ruler of the Waves: None at present",
+        "Fool of Battles: None at present",
+        "Curator of Artifacts: None at present",
+        "Professor Whizdumb: None at present",
+        "Grandfather of Assassins: None at present",
+        "Captain of the Musketeers: None at present",
+        "Air Force Commander: None at present",
+        "King of Cowards: None at present",
+        "Bravest of the Brave: None at present",
         "ADVENTURE",
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
@@ -4772,7 +4808,7 @@ def test_describe_imperial_office_report_none_at_present_for_every_office_with_n
     assert lines.count("Prince of Thieves: None at present") == 1
     assert lines.count("Savior of Humankind: None at present") == 1
     assert lines.count("Dragon Lord: None at present") == 1
-    assert len(lines) == 30  # header + 29 offices
+    assert len(lines) == 48  # header + 47 offices
 
 
 def test_describe_imperial_office_report_shows_a_real_office_holder():
