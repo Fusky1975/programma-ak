@@ -15122,10 +15122,10 @@ section.
     These titles don't grant Victory Points (unlike the 8 majors and
     King of Pain/Prince of Thieves) -- `OFFICE_VALUE` already reflects
     this correctly, so nothing needed changing there.
-  - One honest naming gap, not guessed past: Werefolk's own named-
-    monster bonus ("Renegade priest") matches no entry in this
-    project's own `Monster` catalog, so `RACE_TITLE_NAMED_MONSTERS
-    [Race.WEREFOLK]` is deliberately empty.
+  - Werefolk's own named-monster bonus ("Renegade priest") matches
+    `Monster.WHITE_MAGE` exactly -- its own `MONSTER_NAMES` display
+    name is "Renegade Priest" -- so `RACE_TITLE_NAMED_MONSTERS
+    [Race.WEREFOLK]` is `frozenset({Monster.WHITE_MAGE})`.
   - `describe_imperial_office_report()` already iterates `ALL_OFFICES`
     generically (Phase 277's own design), so it automatically gains all
     11 new rows too -- 4 pre-existing `tests/test_turn_report.py`/

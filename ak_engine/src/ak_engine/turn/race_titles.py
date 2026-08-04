@@ -70,14 +70,16 @@ per-race parameters each term plugs into):
   resolve_office_holder()`, not in the score formula itself (so a
   caller inspecting raw points still sees the true accumulated total).
 
-**One genuine, honest naming gap**: Werefolk's own named-monster term
-("Se si uccide uno di questi mostri si ottiene un punto: Renegade
-priest") names a monster this project's own `models/monster.py Monster`
-catalog has no matching entry for (every caster-type monster this
-project already models -- `WHITE_MAGE`/`NEC_MAGE`/`ELE_MAGE`/
-`PSY_MAGE`/`ILL_MAGE`/`WITCH` -- uses a different name) -- so `RACE_
-TITLE_NAMED_MONSTERS[Race.WEREFOLK]` is deliberately empty rather than
-guessing which entry "Renegade priest" was meant to be.
+**Werefolk's own named-monster term** ("Se si uccide uno di questi
+mostri si ottiene un punto: Renegade priest") matches `Monster.
+WHITE_MAGE` exactly -- `MONSTER_NAMES[Monster.WHITE_MAGE] ==
+"Renegade Priest"` (this project's own already-transcribed
+`models/monster.py` display-name table, not a new lookup). Several of
+this project's caster-type `Monster` members have a display name that
+doesn't match their own Python identifier at all (`WHITE_MAGE`/
+`NEC_MAGE`/`PSY_MAGE`/`ILL_MAGE` are each "Renegade ..." in
+`MONSTER_NAMES`), so this only turns up by checking the name table,
+not by grepping enum *member* names for "RENEGADE".
 """
 
 from __future__ import annotations
@@ -156,7 +158,14 @@ RACE_TITLE_NAMED_MONSTERS: dict[Race, frozenset[Monster]] = {
     Race.MERMISH: frozenset({Monster.ELASMOSAURUS, Monster.GI_CLAM, Monster.GI_OCTOPUS, Monster.MERMAID}),
     Race.ENTISH: frozenset({Monster.R_DRAGON, Monster.GR_DRAGON, Monster.B_DRAGON}),
     Race.TROLLISH: frozenset({Monster.S_DRAGON, Monster.GO_DRAGON}),
-    Race.WEREFOLK: frozenset(),
+    # "Renegade priest" is Monster.WHITE_MAGE's own confirmed display
+    # name (MONSTER_NAMES[Monster.WHITE_MAGE] == "Renegade Priest") --
+    # not a naming gap after all, just not findable by grepping enum
+    # *member* names for "RENEGADE" (several of this project's monster
+    # enum members use a display name that doesn't match their own
+    # Python identifier at all, e.g. WHITE_MAGE/NEC_MAGE/PSY_MAGE/
+    # ILL_MAGE are all "Renegade ..." in MONSTER_NAMES).
+    Race.WEREFOLK: frozenset({Monster.WHITE_MAGE}),
 }
 
 # "Se si possiede l'oggetto [nome] si ottengono due punti" -- None for

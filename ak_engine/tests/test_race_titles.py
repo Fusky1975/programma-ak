@@ -74,8 +74,12 @@ def test_only_the_4_core_humanoid_races_skip_the_owned_province_prerequisite():
     }
 
 
-def test_werefolk_named_monsters_is_empty_renegade_priest_has_no_match():
-    assert RACE_TITLE_NAMED_MONSTERS[Race.WEREFOLK] == frozenset()
+def test_werefolk_named_monster_is_the_renegade_priest():
+    # "Renegade priest" is Monster.WHITE_MAGE's own confirmed display
+    # name (MONSTER_NAMES[Monster.WHITE_MAGE] == "Renegade Priest").
+    from ak_engine.models.monster import Monster
+
+    assert RACE_TITLE_NAMED_MONSTERS[Race.WEREFOLK] == frozenset({Monster.WHITE_MAGE})
 
 
 def test_human_title_sums_every_tally_term_no_owned_province_needed():
