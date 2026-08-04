@@ -15139,7 +15139,9 @@ section.
     Great Druid of Life, Defender of Freedom, Warlock of the Pagan
     Gods, Angel of Death) and the 2 fully generic titles (Chief of
     Staff, Silver Tongue).
-- **Phase 368 (current)**: `turn/merit_points.py` -- the 6
+- **Phase 368** (**formulas superseded by Phase 369** -- see that
+  bullet below; kept here as the historical record of what was built
+  and why): `turn/merit_points.py` -- the 6
   alignment-King titles Phase 367 deferred, plus the 2 fully generic
   titles (Chief of Staff, Silver Tongue), closing out `CARICHE E
   ABLITÀ.txt`'s entire "cariche minori" section. `models/office.py`
@@ -15207,6 +15209,84 @@ section.
     Phase 367 touched for the same reason). Full suite: 3604 passed
     before, 3614 after (10 new tests, `tests/test_alignment_and_
     generic_titles.py`).
+- **Phase 369 (current)**: corrects the "cariche minori" formulas
+  Phases 277/367/368 built from `CARICHE E ABILITÀ.txt` -- the user
+  supplied two new files, `AKGEN_reverse_engineering_report.md`/
+  `AKGEN_embedded_catalogs.json`, a real static disassembly of
+  `AKGEN.EXE`/`AK.EXE`/`AK.OVR` (offsets, formulas, and enum tables
+  extracted directly from the compiled binaries, cross-verified against
+  all 12 `GW3__T1..T12` historical saves, including a worked check that
+  the real formulas reproduce all 8 major offices' actual winners in
+  `GW3__T12`). Comparing it against this project's own implementation
+  showed `CARICHE E ABILITÀ.txt` doesn't match the real compiled
+  formulas for King of Pain, the 11 race titles, Chief of Staff, Silver
+  Tongue, or Prince of Thieves -- likely a fan-written or otherwise
+  unofficial variant, not `CTBOTH.PAS`/`REPORTS.PAS` transcribed. The 8
+  rulebook-page-51 majors (Phase 227) and the other 42-9=33 race/
+  alignment titles this project hasn't touched were independently
+  confirmed accurate by the same disassembly, so only the five affected
+  titles change:
+  - **The 7 alignment-King titles** (King of Pain plus the 6 Phase 368
+    added): the real formula is plain `Tax_Base(King)` -- literally
+    Emperor's own formula, gated to the King of the matching
+    `Alignment` -- for all 7, not the elaborate tax+skills+monster-kill
+    formulas built from the user doc. `_alignment_king_merit_points()`
+    replaces all 7 title-specific bodies with one 2-line shared
+    implementation; the 4 now-fictional `MeritTally` monster-kill/Charm
+    fields Phase 368 added are removed outright rather than kept as
+    dead flavor.
+  - **The 11 race titles** (`turn/race_titles.py`): the real formula is
+    a single cumulative `Tit_Pts` counter (+1 per won battle, **-2**
+    per lost battle -- not the -1 this project had guessed), **doubled
+    outright if the candidate leader's own `Race` matches the title's
+    race** -- a mechanic the user doc never mentioned at all. The other
+    six Phase 367 terms (crack-units-commanded, heroes-in-service,
+    provinces-owned, rival-race kills, named-monster kills, legendary-
+    item bonus) don't exist in the real formula and are removed; one
+    real term the disassembly names but can't fully specify ("an
+    additional positive battle award in a proportional/random branch")
+    is left an honest, documented gap rather than guessed at.
+  - **Chief of Staff**: the real formula is `M_Skill(Tactical)+M_
+    Skill(Forced March)+M_Skill(Naval)+M_Skill(Druidism)` -- a plain
+    live 4-skill sum, replacing the unit-recruitment/commanded-unit-
+    quality formula (`CHIEF_OF_STAFF_QUALITY_BONUS` removed).
+  - **Silver Tongue**: the real formula is a single cumulative
+    diplomatic-merit counter (`MeritTally.diplomatic_merit_points`,
+    replacing the alliance/DR-skill/discovery-trade terms), and it's
+    **open to a King or a Hero** -- the "(solo per i RE)" King-only
+    restriction Phase 368 read from the user doc's title line doesn't
+    hold in the real `eligibility`/`multiple_titles` data.
+  - **Prince of Thieves**: the real formula is `+1` per successful
+    theft result, full stop -- replacing the TH-skill-plus-gold-plus-
+    5x-items formula from Phase 277's own reading of the user doc.
+  - Not touched, flagged for the user's own judgment call instead:
+    Chancellor's `discoveries_found_not_first` term (Phase 271, worth 2
+    points) has no counterpart in the real `ldiscp` formula (only
+    "first" and "espionage" score) -- but that term was an explicit,
+    dated user override of the rulebook's own text ("a user-specified,
+    project-original scoring rule, confirmed 2026-07-29"), not a
+    research gap, so it's left as-is pending the user's own decision
+    rather than silently overwritten. Similarly, Phase 308's quality-
+    weighted Marshal/Admiral table (from `Regolamento AK.txt`'s own
+    "NUOVE REGOLE" appendix) differs from this same disassembly's own
+    confirmed base formula ("+1 per enemy unit if won, -1 per own unit
+    if lost") -- left alone since `Regolamento AK.txt` was already
+    established as a deliberate house-rule variant, not a
+    transcription error.
+  - `models/game_state.py MeritTally`/`RaceTitleTally`: every now-
+    disproven field from Phases 277/367/368 removed (`monsters_killed_
+    in_realm_province`, `successful_thief_tactics`, `gold_stolen`,
+    `magic_items_stolen`, the 3 alignment-filtered kill counters,
+    `ch_undead_transformations`, `military_units_recruited`,
+    `alliances_formed`, `alliance_upkeep_points`, `discoveries_traded`,
+    `rival_race_units_destroyed`, `monsters_killed_in_race_province`,
+    `named_monster_kills`); replaced with `successful_thefts` and
+    `diplomatic_merit_points`.
+  - Run full suite before writing new Phase 369 tests, write/update
+    tests, run again, update README, run once more before commit --
+    the standing per-phase workflow. Full suite: 3614 passed before,
+    3609 after (test count dropped since several now-fictional-formula
+    tests were removed rather than replaced 1:1).
 
 ## Setup
 

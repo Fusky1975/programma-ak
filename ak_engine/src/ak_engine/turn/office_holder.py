@@ -98,12 +98,20 @@ Tongue join too**, via 8 new `turn/merit_points.py` formula functions
 one `if` branch each in `_leader_merit_points()`, not a generic table
 dispatch like the race titles, since these 8 don't share one common
 formula shape the way the 11 race titles do (different `Ability`
-pairs, different eligibility rules per title). Like the 11 race titles
-and King of Pain/Prince of Thieves before them, none of these 8 grant
-Victory Points (`models/office.py OFFICE_VALUE` already reflects this,
-Phase 81), and none of the 6 alignment-King titles has a turn gate
-stated in the source -- unlike the 11 race titles, no office-level
-cutoff is applied here. Each formula function already returns 0/None
+pairs, different eligibility rules per title). **Phase 369 corrected
+every one of these 8 formulas** (plus King of Pain/Prince of Thieves
+and the 11 race titles) against a real disassembly of `AKGEN.EXE`/
+`AK.EXE`/`AK.OVR` -- the `CARICHE E ABILITÀ.txt` source these phases
+built from turned out not to match the real compiled formulas. See
+`turn/merit_points.py`/`turn/race_titles.py`'s own Phase 369 addenda
+for exactly what changed; this module's own dispatch shape (which
+branch calls which function) didn't need to change, only what each
+function computes. Like the 11 race titles and King of Pain/Prince of
+Thieves before them, none of these 8 grant Victory Points (`models/
+office.py OFFICE_VALUE` already reflects this, Phase 81), and none of
+the 6 alignment-King titles has a turn gate stated in the source --
+unlike the 11 race titles, no office-level cutoff is applied here.
+Each formula function already returns 0/None
 for an ineligible leader on its own (King-only, alignment-gated where
 stated), so this generic Rank-contest loop needs no additional
 special-casing for any of the 8, the same "eligibility lives in the

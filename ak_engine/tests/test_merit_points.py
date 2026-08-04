@@ -270,32 +270,33 @@ def test_evilking_merit_points_zero_when_kingdom_not_evil():
     assert evilking_merit_points(state, king) == 0
 
 
-def test_evilking_merit_points_combines_tax_base_skills_and_tally():
+def test_evilking_merit_points_is_plain_tax_base():
+    # Phase 369: the real disassembled formula is exactly Emperor's own
+    # Tax_Base(King), restricted to the Evil-aligned King -- no skill or
+    # tally terms at all (see turn/merit_points.py's own Phase 369 note).
     state = make_evil_state()
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=6))
     king = state.leaders[1]
     king.skills = skills_with(NECROMANCY=3, THIEF=2)
-    king.merit_tally.monsters_killed_in_realm_province = 4
-    king.merit_tally.successful_thief_tactics = 1
 
-    assert evilking_merit_points(state, king) == 6 + 3 + 2 + 4 + 1
+    assert evilking_merit_points(state, king) == 6
 
 
-def test_thiefprince_merit_points_open_to_a_hero():
-    # Unlike King of Pain, Prince of Thieves has no King-only/alignment gate.
+def test_thiefprince_merit_points_reads_the_single_successful_thefts_tally():
+    # Phase 369: the real formula is +1 per successful theft result, no
+    # TH-skill term and no gold-vs-item distinction.
     state = make_state()
     hero = LeaderState(9, 1, "Sneak", HOME)
     hero.skills = skills_with(THIEF=3)
-    hero.merit_tally.gold_stolen = 10
-    hero.merit_tally.magic_items_stolen = 2
+    hero.merit_tally.successful_thefts = 4
     state.add_leader(hero)
 
-    assert thiefprince_merit_points(state, hero) == 3 + 10 + 5 * 2
+    assert thiefprince_merit_points(state, hero) == 4
 
 
 def test_thiefprince_merit_points_works_for_a_king_too():
     state = make_state()
     king = state.leaders[1]
-    king.skills = skills_with(THIEF=1)
+    king.merit_tally.successful_thefts = 1
 
     assert thiefprince_merit_points(state, king) == 1

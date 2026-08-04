@@ -3786,11 +3786,12 @@ def _skills_with(**levels: int) -> SkillTable:
 
 
 def test_describe_finances_report_shows_black_knights_note_for_this_kingdoms_king_of_pain():
+    # Phase 369: King of Pain's real formula is plain Tax_Base(King).
     state = GameState()
     state.add_kingdom(KingdomState(1, "Mordoth", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0), treasury=50))
     king = LeaderState(1, 1, "Vaelgor", HexCoord(0, 0), is_king=True)
-    king.merit_tally.monsters_killed_in_realm_province = 30  # comfortably above OFFICE_MIN_POINTS
     state.add_leader(king)
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
 
     lines = describe_finances_report(state, 1)
 
@@ -3803,7 +3804,7 @@ def test_describe_finances_report_omits_black_knights_note_for_another_kingdoms_
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     state.add_kingdom(KingdomState(2, "Mordoth", Race.HUMAN, Alignment.EVIL, HexCoord(1, 1)))
     other_king = LeaderState(2, 2, "Vaelgor", HexCoord(1, 1), is_king=True)
-    other_king.merit_tally.monsters_killed_in_realm_province = 30
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, tax=30))
     state.add_leader(other_king)
 
     lines = describe_finances_report(state, 1)
@@ -3821,10 +3822,12 @@ def test_describe_finances_report_omits_black_knights_note_when_nobody_holds_kin
 
 
 def test_describe_finances_report_shows_thieves_guild_note_for_this_kingdoms_king_holder():
+    # Phase 369: Prince of Thieves' real formula is +1 per successful
+    # theft result, no TH-skill term.
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0), treasury=50))
     king = LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True)
-    king.skills = _skills_with(THIEF=5)
+    king.merit_tally.successful_thefts = 5
     state.add_leader(king)
 
     lines = describe_finances_report(state, 1)
@@ -3840,7 +3843,7 @@ def test_describe_finances_report_shows_thieves_guild_note_credited_to_holders_o
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0), treasury=50))
     state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
     hero = LeaderState(50, 1, "Sneak", HexCoord(0, 0))
-    hero.merit_tally.gold_stolen = 20
+    hero.merit_tally.successful_thefts = 20
     state.add_leader(hero)
 
     lines = describe_finances_report(state, 1)
@@ -3853,7 +3856,7 @@ def test_describe_finances_report_omits_thieves_guild_note_for_another_kingdoms_
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
     other_king = LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True)
-    other_king.skills = _skills_with(THIEF=5)
+    other_king.merit_tally.successful_thefts = 5
     state.add_leader(other_king)
 
     lines = describe_finances_report(state, 1)
@@ -3874,16 +3877,16 @@ def test_describe_finances_report_shows_both_notes_in_order_when_both_are_earned
     state = GameState()
     state.add_kingdom(KingdomState(1, "Mordoth", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0), treasury=50))
     king = LeaderState(1, 1, "Vaelgor", HexCoord(0, 0), is_king=True)
-    king.merit_tally.monsters_killed_in_realm_province = 30
-    king.skills = _skills_with(THIEF=5)
+    king.merit_tally.successful_thefts = 5
     state.add_leader(king)
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
 
     lines = describe_finances_report(state, 1)
 
     assert lines[2] == "Gold in treasury: 50"
     assert lines[3] == "(Including +5 Black Knights)"
     assert lines[4] == "(Including +10 Thieves Guild)"
-    assert lines[5] == "Expected Revenues: 0"
+    assert lines[5] == "Expected Revenues: 30"
 
 
 # -- Phase 220: describe_provinces_report() -- the "PROVINCES" section --

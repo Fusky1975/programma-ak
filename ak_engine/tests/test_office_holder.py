@@ -133,11 +133,12 @@ def test_resolve_office_holder_evilking_none_for_good_kingdom():
 
 
 def test_resolve_office_holder_evilking_resolves_for_an_evil_king():
+    # Phase 369: King of Pain's real formula is plain Tax_Base(King).
     state = GameState()
     state.add_kingdom(KingdomState(1, "Mordoth", Race.HUMAN, Alignment.EVIL, HOME, treasury=10))
     king = LeaderState(1, 1, "Vaelgor", HOME, is_king=True)
-    king.merit_tally.monsters_killed_in_realm_province = 30  # comfortably above OFFICE_MIN_POINTS
     state.add_leader(king)
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
 
     holder = resolve_office_holder(state, Office.EVIL_KING)
 
@@ -150,7 +151,7 @@ def test_resolve_office_holder_thiefprince_open_to_a_hero():
     state = make_state()
     state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
     hero = LeaderState(50, 1, "Sneak", HOME)
-    hero.merit_tally.gold_stolen = 20
+    hero.merit_tally.successful_thefts = 20
     state.add_leader(hero)
 
     holder = resolve_office_holder(state, Office.THIEF_PRINCE)

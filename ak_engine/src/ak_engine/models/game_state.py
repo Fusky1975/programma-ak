@@ -354,18 +354,24 @@ class MeritTally:
     that supersedes the rulebook's own flat "+2 per Invention found
     first" figure -- see that module's own note).
 
-    **Phase 277**: four new fields support the two newly-modeled
-    non-major offices, `Office.EVIL_KING`/`Office.THIEF_PRINCE` (see
-    `turn/merit_points.py evilking_merit_points()`/`thiefprince_merit_
-    points()`) -- `monsters_killed_in_realm_province`, `successful_
-    thief_tactics`, `gold_stolen`, `magic_items_stolen`. None has a
-    writer yet, the same "field exists, no populating consumer yet"
-    starting state most of this class's own fields had for many phases.
-
-    **Phase 368**: nine more fields support the 6 alignment-King titles
-    plus Chief of Staff/Silver Tongue (see `turn/merit_points.py`'s own
-    Phase 368 addendum for each formula) -- none has a writer yet,
-    same convention.
+    **Phase 369 correction**: `AKGEN_reverse_engineering_report.md`/
+    `AKGEN_embedded_catalogs.json` (a real static disassembly of
+    `AKGEN.EXE`/`AK.EXE`/`AK.OVR`, verified against the 12 `GW3__T1..
+    T12` historical saves) proved `CARICHE E ABILITÀ.txt` -- the
+    user-supplied source Phases 277/367/368 all built their own "cariche
+    minori" formulas from -- does **not** match the real compiled
+    formulas for King of Pain, Prince of Thieves, the 6 other
+    alignment-King titles, Chief of Staff, or Silver Tongue. Every
+    field those four phases added for those titles' own elaborate,
+    now-disproven terms (`monsters_killed_in_realm_province`,
+    `successful_thief_tactics`, `gold_stolen`, `magic_items_stolen`,
+    the 3 alignment-filtered monster-kill counters, `ch_undead_
+    transformations`, `military_units_recruited`, `alliances_formed`,
+    `alliance_upkeep_points`, `discoveries_traded`) is removed here --
+    see `turn/merit_points.py`'s own Phase 369 addendum for the real,
+    disassembly-confirmed formulas that replace them (`successful_
+    thefts`, `diplomatic_merit_points`, and plain `Tax_Base` reuse for
+    all 7 alignment-King titles, no tally at all).
 
     All default to 0: a leader who has fought no battles,
     killed no monsters, cast no Resurrection/Bless, or been the first to
@@ -420,95 +426,56 @@ class MeritTally:
     discoveries_found_first: int = 0
     discoveries_found_not_first: int = 0
     discoveries_via_espionage: int = 0
-    # King of Pain (Office.EVIL_KING, Phase 277): a flat +1 per monster
-    # kill in a province of the King's own realm -- a documented
-    # different shape from Defender's monster_hp_defeated (HP-based, no
-    # realm-province restriction), so it needs its own counter. Also
-    # +1 per successful Steal tactic against a monster, or against a
-    # Hero/King of a kingdom currently at war with the acting leader's
-    # own kingdom -- no writer for either field yet (the same "field
-    # exists, no populating consumer yet" convention this class has used
-    # since Phase 59).
-    monsters_killed_in_realm_province: int = 0
-    successful_thief_tactics: int = 0
-    # Prince of Thieves (Office.THIEF_PRINCE, Phase 277): +1 per gold
-    # piece stolen from a monster, Hero, or King; +5 per magic item
-    # stolen from any of the same. No writer yet -- turn/search_
-    # execution.py's own Steal tactic doesn't currently model *what* is
-    # stolen (gold amount vs. item), only whether the attempt succeeds.
-    gold_stolen: int = 0
-    magic_items_stolen: int = 0
-    # The 6 alignment-King titles (Office.DIVINE_KING/GOOD_KING/DRUID_
-    # KING/UNDEAD_KING, Phase 368): each counts monster kills in a realm
-    # province, but with a different alignment filter per title --
-    # Divine Archangel wants Anti-Holy only, Good/Druid Kings share the
-    # same "Anti-Holy or Evil" filter, and Angel of Death wants "Good,
-    # Druid, or Neutral". No writer yet, the same "field exists, no
-    # populating consumer yet" convention as monsters_killed_in_realm_
-    # province above (reused as-is by Defender of Freedom/Warlock of the
-    # Pagan Gods, whose own source text is the unfiltered "per ogni
-    # mostro" King of Pain already uses).
-    monsters_killed_anti_holy_in_realm_province: int = 0
-    monsters_killed_anti_holy_or_evil_in_realm_province: int = 0
-    monsters_killed_good_druid_neutral_in_realm_province: int = 0
-    # Angel of Death (Office.UNDEAD_KING, Phase 368): +1 per successful
-    # Charm (CH) cast that transforms a Hero into an Undead. No writer
-    # yet -- turn/cast_execution.py's own _execute_charm() models
-    # Charm's free-hire/escape-combat modes only, not an Undead-
-    # transformation outcome.
-    ch_undead_transformations: int = 0
-    # Chief of Staff (Office.CHIEF_OF_STAFF, Phase 368): +1 per military
-    # unit recruited (cumulative, game-long). No writer yet -- turn/
-    # recruit_execution.py's own execute_recruit() doesn't touch
-    # MeritTally.
-    military_units_recruited: int = 0
-    # Silver Tongue (Office.DIPLOMAT, Phase 368): +1 per successful Treat
-    # (alliance formed); alliance_upkeep_points accumulates +0.5 per
-    # turn for every alliance still active at that turn's own end; +1
-    # per Discovery traded away. No writer yet -- this project has no
-    # Treat/alliance or Discovery-trade execution mechanic at all yet.
-    alliances_formed: int = 0
-    alliance_upkeep_points: float = 0.0
-    discoveries_traded: int = 0
+    # Prince of Thieves (Office.THIEF_PRINCE, Phase 277, reformulated
+    # Phase 369): +1 per successful theft result -- the disassembly's
+    # own `Tit_Pts(leader,title)`, "two separate compiled success paths
+    # award the point" (`AKGEN_embedded_catalogs.json gw_format.
+    # royal_title_system` id 36). No writer yet -- turn/search_
+    # execution.py's own Steal tactic doesn't feed MeritTally.
+    successful_thefts: int = 0
+    # Silver Tongue (Office.DIPLOMAT, Phase 277-adjacent, reformulated
+    # Phase 369): a single cumulative `Tit_Pts`-style diplomatic-merit
+    # counter -- the disassembly confirms +1/+2/+5 award sites in
+    # contact/relationship/treaty routines but can't prove which of the
+    # two higher values names which real event (same source, id 41), so
+    # this stays one undifferentiated running total rather than inventing
+    # named sub-events. No writer yet -- this project has no Treat/
+    # alliance execution mechanic at all.
+    diplomatic_merit_points: float = 0.0
 
 
 @dataclass(slots=True)
 class RaceTitleTally:
-    """Cumulative inputs to the 11 race-fanaticism title Merit Point
-    formulas (Phase 367, ``turn/race_titles.py`` -- ``CARICHE E
-    ABILITÀ.txt``'s own "cariche minori" section). One instance per
-    race a leader has ever accrued points for
-    (``LeaderState.race_title_tally``, a ``dict[Race, RaceTitleTally]``).
+    """Cumulative input to the 11 race-fanaticism title Merit Point
+    formulas (Phase 367, ``turn/race_titles.py``). One instance per race
+    a leader has ever accrued points for (``LeaderState.race_title_
+    tally``, a ``dict[Race, RaceTitleTally]``).
 
-    Deliberately **not** stored here, all computed live instead: "Crack+
-    units of this race currently commanded" (a momentarily-true count
-    that rises and falls with the roster, not a cumulative one -- see
-    ``turn/race_titles.py``'s own module docstring for why this only
-    resolves for the 7 special races, not the 4 humanoid ones), Heroes
-    of this race in service and provinces of this race owned (both
-    genuinely live via ``GameState.leaders``/``.provinces``), and
-    legendary-item possession (live via ``GameState.items_held_by()``).
+    **Phase 369 correction**: this class originally had five fields,
+    built from ``CARICHE E ABILITÀ.txt`` (crack-units-commanded,
+    heroes-in-service, provinces-owned, rival-race kills, monster-in-
+    province kills, named-monster kills, legendary-item bonus -- several
+    computed live rather than stored, see that phase's own docstring).
+    `AKGEN_embedded_catalogs.json gw_format.royal_title_system` (a real
+    disassembly of ``AK.EXE``/``AK.OVR``, verified against the 12
+    ``GW3__T1..T12`` historical saves) proved the real compiled formula
+    is far simpler: a single cumulative ``Tit_Pts`` counter (+1 per won
+    battle, -2 per lost battle -- not the -1 this project had guessed),
+    doubled outright when the candidate's own race matches the title's
+    race. None of the other five terms exist in the real formula, so
+    they're removed rather than kept as unused flavor. The source also
+    names one more real term this project can't yet build: "an
+    additional positive battle award in a proportional/random branch" --
+    an honest, documented gap, not folded into the two fields below by
+    guesswork.
 
-    All default to 0, the same "field exists, no populating consumer
-    yet" convention ``MeritTally`` already uses -- no battle/encounter/
-    cast call site increments these yet.
+    Default 0, the same "field exists, no populating consumer yet"
+    convention ``MeritTally`` uses -- no battle call site increments
+    these yet.
     """
 
-    # +1 per own-race unit in the front line, per battle won; +1 per
-    # own-race unit in the front line, per battle lost (subtracted by
-    # the formula).
     front_line_battles_won_points: int = 0
     front_line_battles_lost_points: int = 0
-    # +0.5 per unit of this race's own confirmed "rival" race(s)
-    # destroyed -- by battle, spell, Plague, or Tornado alike (`turn/
-    # race_titles.py RACE_TITLE_RIVAL_RACES`).
-    rival_race_units_destroyed: int = 0
-    # +1 per monster killed in a province of this race (any monster,
-    # not just the named ones below).
-    monsters_killed_in_race_province: int = 0
-    # +1 per kill of one of this race's own specific named monster
-    # species (`turn/race_titles.py RACE_TITLE_NAMED_MONSTERS`).
-    named_monster_kills: int = 0
 
 
 @dataclass(slots=True)
