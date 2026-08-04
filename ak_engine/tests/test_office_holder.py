@@ -6,7 +6,7 @@ offices' genuine Merit Point Rank contest).
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState, RaceTitleTally
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
@@ -119,8 +119,8 @@ def test_resolve_all_office_holders_covers_every_real_office():
     holders = resolve_all_office_holders(state)
 
     assert set(holders.keys()) == set(ALL_OFFICES)
-    assert len(ALL_OFFICES) == 10
-    assert len(RANKED_OFFICES) == 9
+    assert len(ALL_OFFICES) == 21
+    assert len(RANKED_OFFICES) == 20
 
 
 def test_resolve_office_holder_evilking_none_for_good_kingdom():
@@ -157,3 +157,37 @@ def test_resolve_office_holder_thiefprince_open_to_a_hero():
 
     assert holder is not None
     assert holder.leader_id == 50
+
+
+def test_resolve_office_holder_race_title_blocked_before_the_turn_gate():
+    # Human's own title (Office.HUMAN_KING) doesn't award a winner
+    # before turn 4, even with points that clear OFFICE_MIN_POINTS.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, HOME, treasury=10))
+    king = LeaderState(1, 1, "Aldric", HOME, is_king=True, race=Race.HUMAN)
+    state.add_leader(king)
+    king.race_title_tally[Race.HUMAN] = RaceTitleTally(front_line_battles_won_points=50)
+    state.turn_number = 1
+
+    assert resolve_office_holder(state, Office.HUMAN_KING) is None
+
+    state.turn_number = 4
+    holder = resolve_office_holder(state, Office.HUMAN_KING)
+    assert holder is not None
+    assert holder.leader_id == 1
+
+
+def test_resolve_office_holder_race_title_special_race_needs_an_owned_province():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Wyrmreach", Race.HUMAN, Alignment.NEUTRAL, HOME, treasury=10))
+    king = LeaderState(1, 1, "Aldric", HOME, is_king=True, race=Race.HUMAN)
+    state.add_leader(king)
+    king.race_title_tally[Race.DRAGONS] = RaceTitleTally(front_line_battles_won_points=50)
+    state.turn_number = 10  # past Dragon Lord's own turn-6 gate
+
+    assert resolve_office_holder(state, Office.DRAGON_LORD) is None
+
+    state.add_province(ProvinceState(HexCoord(3, 3), Terrain.MTNS, Race.DRAGONS, owner_kingdom_id=1))
+    holder = resolve_office_holder(state, Office.DRAGON_LORD)
+    assert holder is not None
+    assert holder.leader_id == 1

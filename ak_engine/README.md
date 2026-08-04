@@ -15020,7 +15020,7 @@ section.
   - This closes the 4-phase pipeline-integration sub-plan (Phase
     362-365), and with it the whole world-generation arc opened at
     Phase 352.
-- **Phase 366 (current)**: corrects Phase 152 (`models/province_names.py`)
+- **Phase 366**: corrects Phase 152 (`models/province_names.py`)
   and Phase 339 (`models/hero_roster.py`), replacing both
   project-original catalogs with real recovered Pascal sources, found by
   a later reverse-engineering pass over `AKGEN.EXE`
@@ -15077,6 +15077,68 @@ section.
     `tests/test_gw3_t5_end_to_end.py` tests whose own assertions had
     baked in the old (now known-wrong) data. Full suite: 3586 passed
     before, 3591 after.
+- **Phase 367 (current)**: `turn/race_titles.py` (new) -- the 11
+  race-fanaticism Imperial title Merit Point formulas (Savior of
+  Humankind, First Elder of Elvenkind, King Under the Mountain, Khan of
+  the Orcish Hordes, Dragon Lord, Ace of Eagles, Whale League
+  Commissioner, King of Atlantis, Tsar of the Trees, High Mucky-Muck of
+  Trolls, Lord of Lycanthropes), continuing `CARICHE E ABILITÀ.txt`
+  (the same user-supplied source Phase 277 already used for King of
+  Pain/Prince of Thieves) into the "cariche minori" section that phase
+  explicitly deferred. `models/office.py OFFICE_MIN_POINTS`/
+  `OFFICE_VALUE` already carried real, Phase-81-sourced entries for all
+  11 -- only the scoring formula that fills `Ofc_Pts` was missing,
+  closing that half of the gap.
+  - New `models/game_state.py RaceTitleTally` (`LeaderState.
+    race_title_tally: dict[Race, RaceTitleTally]`) holds the cumulative,
+    unpopulated counters each formula's own non-live terms need (front-
+    line battle win/loss points, rival-race kills, monster-in-province
+    kills, named-monster kills) -- the same "field exists, no
+    populating consumer yet" convention `MeritTally` already
+    established.
+  - Three terms resolve fully live, no tally needed: Heroes of this
+    race in a King's own service and provinces of this race owned
+    (both King-only, via `GameState.leaders`/`.provinces`), and
+    legendary-item possession (via `GameState.items_held_by()`).
+    "Crack-or-better units of this race currently commanded" is live
+    only for the 7 special races (`models.army_type.MONSTROUS_ARMY_
+    RACE`'s own exact `ArmyType`<->`Race` correspondence) -- a
+    documented 0 for the 4 core humanoid races, since ordinary
+    `ArmyType`s carry no race marker there (`models/army_type.py`'s own
+    pre-existing "any humanoid army type in any humanoid province"
+    note).
+  - Two eligibility rules enforced outside the score itself: the 7
+    special races' own "0 points without an owned province"
+    prerequisite (Kingdom-scoped, so an independent Hero always reads
+    0 for these 7), and the office-level turn gate ("questa carica
+    entra in gioco alla fine del turno N", 4/6/8 depending on race) --
+    `turn/office_holder.py resolve_office_holder()` now returns `None`
+    for these 11 offices before their own gate, even if a leader's
+    tally already clears `OFFICE_MIN_POINTS`.
+  - `turn/office_holder.py`: `RANKED_OFFICES`/`ALL_OFFICES` extended
+    from 9/10 to 20/21 real offices; dispatches all 11 through one
+    generic `_OFFICE_RACE` lookup rather than 11 separate `if`
+    branches, since every race shares the identical formula shape.
+    These titles don't grant Victory Points (unlike the 8 majors and
+    King of Pain/Prince of Thieves) -- `OFFICE_VALUE` already reflects
+    this correctly, so nothing needed changing there.
+  - One honest naming gap, not guessed past: Werefolk's own named-
+    monster bonus ("Renegade priest") matches no entry in this
+    project's own `Monster` catalog, so `RACE_TITLE_NAMED_MONSTERS
+    [Race.WEREFOLK]` is deliberately empty.
+  - `describe_imperial_office_report()` already iterates `ALL_OFFICES`
+    generically (Phase 277's own design), so it automatically gains all
+    11 new rows too -- 4 pre-existing `tests/test_turn_report.py`/
+    `tests/test_office_holder.py` tests updated for the new office
+    count. Full suite: 3591 passed before, 3604 after (13 new tests:
+    11 in `tests/test_race_titles.py`, 2 in `tests/test_office_holder.py`
+    for the turn-gate/owned-province wiring).
+  - Deliberately deferred to a follow-up phase, the same "~13 titles
+    left for later" scoping Phase 277 already used: the 6 remaining
+    alignment/divine titles (Divine Archangel, Most Blessed of Kings,
+    Great Druid of Life, Defender of Freedom, Warlock of the Pagan
+    Gods, Angel of Death) and the 2 fully generic titles (Chief of
+    Staff, Silver Tongue).
 
 ## Setup
 

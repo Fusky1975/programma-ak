@@ -4544,6 +4544,17 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Arch-Mage Palatine: None at present",
         "King of Pain: None at present",
         "Prince of Thieves: None at present",
+        "Savior of Humankind: None at present",
+        "First Elder of Elvenkind: None at present",
+        "King Under the Mountain: None at present",
+        "Khan of the Orcish Hordes: None at present",
+        "Dragon Lord: None at present",
+        "Ace of Eagles: None at present",
+        "Whale League Commissioner: None at present",
+        "King of Atlantis: None at present",
+        "Tsar of the Trees: None at present",
+        "High Mucky-Muck of Trolls: None at present",
+        "Lord of Lycanthropes: None at present",
         "ADVENTURE",
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
@@ -4631,6 +4642,17 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "Arch-Mage Palatine: None at present",
         "King of Pain: None at present",
         "Prince of Thieves: None at present",
+        "Savior of Humankind: None at present",
+        "First Elder of Elvenkind: None at present",
+        "King Under the Mountain: None at present",
+        "Khan of the Orcish Hordes: None at present",
+        "Dragon Lord: None at present",
+        "Ace of Eagles: None at present",
+        "Whale League Commissioner: None at present",
+        "King of Atlantis: None at present",
+        "Tsar of the Trees: None at present",
+        "High Mucky-Muck of Trolls: None at present",
+        "Lord of Lycanthropes: None at present",
         "ADVENTURE",
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
@@ -4757,7 +4779,9 @@ def test_describe_imperial_office_report_none_at_present_for_every_office_with_n
     assert lines.count("Arch-Mage Palatine: None at present") == 1
     assert lines.count("King of Pain: None at present") == 1
     assert lines.count("Prince of Thieves: None at present") == 1
-    assert len(lines) == 11  # header + 10 offices
+    assert lines.count("Savior of Humankind: None at present") == 1
+    assert lines.count("Dragon Lord: None at present") == 1
+    assert len(lines) == 22  # header + 21 offices
 
 
 def test_describe_imperial_office_report_shows_a_real_office_holder():

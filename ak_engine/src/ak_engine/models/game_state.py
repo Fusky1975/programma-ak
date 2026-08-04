@@ -436,6 +436,45 @@ class MeritTally:
 
 
 @dataclass(slots=True)
+class RaceTitleTally:
+    """Cumulative inputs to the 11 race-fanaticism title Merit Point
+    formulas (Phase 367, ``turn/race_titles.py`` -- ``CARICHE E
+    ABILITÀ.txt``'s own "cariche minori" section). One instance per
+    race a leader has ever accrued points for
+    (``LeaderState.race_title_tally``, a ``dict[Race, RaceTitleTally]``).
+
+    Deliberately **not** stored here, all computed live instead: "Crack+
+    units of this race currently commanded" (a momentarily-true count
+    that rises and falls with the roster, not a cumulative one -- see
+    ``turn/race_titles.py``'s own module docstring for why this only
+    resolves for the 7 special races, not the 4 humanoid ones), Heroes
+    of this race in service and provinces of this race owned (both
+    genuinely live via ``GameState.leaders``/``.provinces``), and
+    legendary-item possession (live via ``GameState.items_held_by()``).
+
+    All default to 0, the same "field exists, no populating consumer
+    yet" convention ``MeritTally`` already uses -- no battle/encounter/
+    cast call site increments these yet.
+    """
+
+    # +1 per own-race unit in the front line, per battle won; +1 per
+    # own-race unit in the front line, per battle lost (subtracted by
+    # the formula).
+    front_line_battles_won_points: int = 0
+    front_line_battles_lost_points: int = 0
+    # +0.5 per unit of this race's own confirmed "rival" race(s)
+    # destroyed -- by battle, spell, Plague, or Tornado alike (`turn/
+    # race_titles.py RACE_TITLE_RIVAL_RACES`).
+    rival_race_units_destroyed: int = 0
+    # +1 per monster killed in a province of this race (any monster,
+    # not just the named ones below).
+    monsters_killed_in_race_province: int = 0
+    # +1 per kill of one of this race's own specific named monster
+    # species (`turn/race_titles.py RACE_TITLE_NAMED_MONSTERS`).
+    named_monster_kills: int = 0
+
+
+@dataclass(slots=True)
 class LeaderState:
     leader_id: int
     kingdom_id: int | None  # None = independent Hero, not in any kingdom's service
@@ -484,6 +523,11 @@ class LeaderState:
     # Phase 227: this leader's own cumulative Merit Point inputs -- see
     # MeritTally's own docstring and turn/merit_points.py.
     merit_tally: MeritTally = field(default_factory=MeritTally)
+    # Phase 367: cumulative inputs to the 11 race-fanaticism title Merit
+    # Point formulas, one entry per race this leader has ever accrued
+    # points for -- see RaceTitleTally's own docstring and turn/
+    # race_titles.py.
+    race_title_tally: dict[Race, RaceTitleTally] = field(default_factory=dict)
     # Phase 259: True for a Royal Heir automatically installed on the
     # throne by remove_leader() when a King dies, until either a new
     # King is created on top of it (a future phase) or a Resurrection
