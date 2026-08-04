@@ -1166,11 +1166,18 @@ def test_run_turn_defend_battle_loss_blocks_a_later_redeclaration():
 
 def test_run_turn_defend_battle_win_does_not_block_a_later_redeclaration():
     # seed 0: the defender wins this exact matchup -- verified
-    # deterministic for this fixture (same geometry/armies as the loss
-    # case above, only the rng seed differs). (Phase 296: reselected
-    # after fight_battle()'s own new terrain-line-length-cap roll shifted
-    # the RNG stream -- seed 15 no longer lands here.)
+    # deterministic for this fixture. (Phase 370: the shared
+    # _defend_loss_state()'s own GARRISON/GREEN defender is categorically
+    # outmatched by an ELITE HVY_CAVALRY attacker under the real,
+    # deterministic column_bres formula -- luck's own bounded R_s
+    # multiplier, up to ~2.5x/4x, was never going to be enough to flip
+    # that big a strength gap, unlike the pre-Phase-370 model's plain
+    # probability-then-coin-flip win roll. Evened the defender's own army
+    # up to the attacker's own type/quality so a genuine coin-flip battle
+    # -- decided by the real luck draws, not an unwinnable mismatch -- is
+    # possible again; seed 0 still lands a defender win at this matchup.)
     state = _defend_loss_state()
+    state.add_army(ArmyState(901, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_HOME, commanded_by=100))
     state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=DL_FIRST_ATTACKER_ORIGIN))
     state.add_army(
         ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_FIRST_ATTACKER_ORIGIN, commanded_by=200, movement_points=3)

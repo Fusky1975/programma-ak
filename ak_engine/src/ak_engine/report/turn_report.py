@@ -27,15 +27,15 @@ it names** -- not guessed:
   per-column result integer (``bres``) bucketed into 11 template files --
   MINUS5..MINUS1, ZERO, PLUS1..PLUS5 -- via
   ``CASE bres OF -32000..-5: FD('minus5',...); ... 5..32000: FD('plus5',...)``.
-  **This project's Pascal archive has no surviving source for the formula
-  that produces `bres` itself** (only the case boundaries are confirmed);
-  ``margin_bucket()`` derives an analogous margin from
-  ``BattleColumnResult.attacker_win_probability`` (the exact 0.0-1.0 value
-  ``turn/battle_line.py estimate_win_probability`` already computes for
-  that same column) instead of guessing at ``bres``'s own scale -- a
-  documented, unsourced bucketing choice, the same convention
-  ``turn/aftermath.py``'s constants already established for a rule with no
-  numbers in the rulebook.
+  **Phase 370 update**: a real static disassembly of `AK.EXE`/`AK.OVR`
+  (`turn/combat.py column_bres`) now gives the real, confirmed `bres`
+  formula itself, not just these case boundaries -- ``turn/battle_
+  resolution.py resolve_battle`` computes and stores it directly on
+  ``BattleColumnResult.bres``, so this renderer reads that real value
+  straight, no reconstruction needed. (The pre-Phase-370 version of this
+  module derived an analogous margin from a win-probability estimate,
+  documented then as an unsourced bucketing choice -- superseded now
+  that the real value exists.)
 - ``_BWinner``: ``FD('winner',S_Batt,3)`` on an attacker win. A defender
   win reuses ``HostAK/TP/PROSE/DEFWIN.X`` (present in the same directory,
   its content structured identically to WINNER.X -- an attacker-vs-defender
@@ -231,6 +231,13 @@ real via `SAY.PAS`'s own `_BTac`/`_ANem` dispatch (~lines 1058-1064 and
   [7.2]) -- the same "documented, unsourced bucketing choice" precedent
   `margin_bucket()` already established for `bres`, not a recovered
   formula for `battac` itself.
+  **Phase 370 note**: `margin_bucket()` itself no longer exists -- a real
+  disassembly gave the true `bres` formula directly (`turn/combat.py
+  column_bres`), so `render_column_clash` now reads `BattleColumnResult.
+  bres` straight instead of reconstructing it. `tactical_margin_bucket()`
+  is unaffected (`battac`'s own formula is still untraced) and keeps its
+  own "documented, unsourced bucketing choice" status on its own merits,
+  no longer by analogy to a sibling function that's since become real.
 - ``NEMESIS.X2`` (header ``"100 1"``, only 15 of the declared 100
   choices populated) is modeled more conservatively: `NEMESIS_TEMPLATE`
   stores all 15 real lines verbatim, keyed by their own raw file
@@ -1361,23 +1368,6 @@ def pick_variant(choices: list[str], rng: random.Random) -> str:
     return rng.choice(choices)
 
 
-# Documented, unsourced bucket width (see module docstring: no surviving
-# source for the real "bres" formula, only its -5..+5 case boundaries).
-_MARGIN_BUCKET_WIDTH = 0.1
-
-
-def margin_bucket(attacker_win_probability: float) -> int:
-    """Buckets a battle column's win probability into the ``bres``-style
-    -5..+5 scale ``SAY.PAS _BRes`` dispatches on. Positive = the attacker
-    did well in this column. See module docstring for why the bucket
-    *boundaries* are sourced but the input formula is a documented,
-    unsourced design choice.
-    """
-
-    raw = (attacker_win_probability - 0.5) / _MARGIN_BUCKET_WIDTH
-    return max(-5, min(5, round(raw)))
-
-
 # HostAK/TP/PROSE/TACTICS.X2, verbatim (mini-language intact, ^A control
 # byte transcribed). See module docstring's Phase 109 addendum.
 _TACTICS_TEMPLATE: dict[int, str] = {
@@ -1576,8 +1566,7 @@ def render_column_clash(
 
     opening = render("= fought/Rbattled {with }", {"=": attacker_army_name}, rng=rng)
     defender_clause = render("=", {"=": defender_army_name}, rng=rng)
-    bucket = margin_bucket(column.attacker_win_probability)
-    variant = pick_variant(_MARGIN_TEMPLATES[bucket], rng)
+    variant = pick_variant(_MARGIN_TEMPLATES[column.bres], rng)
     result_clause = render(variant, rng=rng, is_sea=is_sea)
     return f"{opening}{defender_clause} and{result_clause}"
 

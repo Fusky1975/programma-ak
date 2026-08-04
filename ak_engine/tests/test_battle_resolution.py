@@ -5,8 +5,10 @@ import random
 import pytest
 
 from ak_engine.models.army_type import ArmyType
-from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability
+from ak_engine.turn.battle_line import BattleUnit
+from ak_engine.turn.battle_luck import luck_strength_multiplier
 from ak_engine.turn.battle_resolution import resolve_battle
+from ak_engine.turn.combat import column_bres
 
 from _helpers import ScriptedRandom
 
@@ -19,64 +21,100 @@ def unit(strength: float, army_type: ArmyType = ArmyType.BOWMEN, *, druidic_rear
     )
 
 
-def test_resolve_battle_with_no_luck_events_uses_plain_win_probability():
-    # random() sequence: attacker-col-luck-skip, defender-col-luck-skip,
-    # battle-luck-skip, win-roll.
-    probability = estimate_win_probability(10, 10)
-    win_roll = probability - 0.1  # below probability -> attacker wins
-    rng = ScriptedRandom([0.9, 0.9, 0.9, win_roll])
+def _luck_draws(num_columns: int, *, g1: float = 0.5, g2: float = 0.5, local: float = 0.5) -> list[float]:
+    """A whole-battle global draw pair plus one local draw pair per
+    column (Phase 370's real, always-applied luck consumption order),
+    followed by a 2-value safety pair (`0.1, 0.9`) appended at the end:
+    if a scripted battle's own summed `BRES` nets to exactly zero,
+    `break_bres_tie` needs a couple more draws, and `0.1, 0.9` guarantees
+    an immediate mismatch (side1 heads, side2 tails) on its first round
+    rather than running the scripted rng dry.
+    """
 
-    result = resolve_battle([unit(10)], [unit(10)], rng=rng)
+    draws = [g1, g2]
+    for _ in range(num_columns):
+        draws.extend([local, local])
+    draws.extend([0.1, 0.9])
+    return draws
 
-    assert result.battle_luck is None
-    assert result.columns[0].attacker_column_luck is None
-    assert result.columns[0].defender_column_luck is None
-    assert result.columns[0].attacker_strength == 10
+
+def test_resolve_battle_neutral_luck_matches_the_real_bres_formula():
+    # All four luck draws at 0.0 -> r1 = r2 = 1 (identity multiplier, see
+    # turn/battle_luck.py luck_strength_multiplier's own R_s = 1 +
+    # k*(g+l) formula) -- what decides the column (and, with only one
+    # column, the whole battle) is then column_bres's own deterministic
+    # sign over the raw strength ratio.
+    rng = ScriptedRandom([0.0, 0.0, 0.0, 0.0])
+
+    result = resolve_battle([unit(20)], [unit(10)], rng=rng)
+
+    expected_bres = column_bres(20, 10, 1.0, 1.0)
+    assert expected_bres > 0  # attacker is twice as strong
+    assert result.columns[0].attacker_strength == 20
     assert result.columns[0].defender_strength == 10
+    assert result.columns[0].bres == expected_bres
     assert result.columns[0].attacker_won is True
+    assert result.total_bres == expected_bres
     assert result.winner == "attacker"
     assert result.attacker_columns_won == 1
     assert result.defender_columns_won == 0
 
 
-def test_resolve_battle_defender_wins_when_roll_is_above_probability():
-    probability = estimate_win_probability(10, 10)
-    win_roll = probability + 0.1  # above probability -> defender wins
-    rng = ScriptedRandom([0.9, 0.9, 0.9, win_roll])
+def test_resolve_battle_neutral_luck_favors_the_defender_when_the_ratio_is_reversed():
+    rng = ScriptedRandom([0.0, 0.0, 0.0, 0.0])
 
-    result = resolve_battle([unit(10)], [unit(10)], rng=rng)
+    result = resolve_battle([unit(10)], [unit(20)], rng=rng)
 
+    expected_bres = column_bres(10, 20, 1.0, 1.0)
+    assert expected_bres < 0
+    assert result.columns[0].bres == expected_bres
     assert result.columns[0].attacker_won is False
     assert result.winner == "defender"
 
 
-def test_resolve_battle_applies_battle_luck_to_chosen_side_totals():
-    # random() sequence: attacker-col-luck-skip, defender-col-luck-skip,
-    # battle-luck-triggers (< 0.55), then .uniform() consumes one more
-    # random() call for the multiplier, then the win-roll.
-    rng = ScriptedRandom([0.9, 0.9, 0.1, 0.5, 0.99], choice_indices=[1])  # index 1 -> "defender"
+def test_resolve_battle_global_luck_favors_a_side_when_raw_strength_is_equal():
+    # g1=0.9 lifts R1 well above R2=1 (g2=l1=l2=0) -- enough to flip an
+    # otherwise-tied 10-vs-10 raw strength column in the attacker's
+    # favor via column_bres's own real formula, not a probability roll
+    # (Phase 370 no longer has one).
+    rng = ScriptedRandom([0.9, 0.0, 0.0, 0.0])
 
     result = resolve_battle([unit(10)], [unit(10)], rng=rng)
 
-    expected_multiplier = 1.01 + (1.10 - 1.01) * 0.5
-    assert result.battle_luck is not None
-    assert result.battle_luck.side == "defender"
-    assert result.battle_luck.multiplier == pytest.approx(expected_multiplier)
+    r1 = luck_strength_multiplier(0.9, 0.0, is_first_turn=True)
+    r2 = luck_strength_multiplier(0.0, 0.0, is_first_turn=True)
+    expected_bres = column_bres(10, 10, r1, r2)
+    assert expected_bres > 0
+    assert result.columns[0].bres == expected_bres
+    assert result.winner == "attacker"
+    # The column's own *reported* strength stays the deterministic,
+    # pre-luck value -- luck only feeds column_bres, it never mutates
+    # attacker_strength/defender_strength (unlike the pre-Phase-370
+    # model, which replaced the front-line BattleUnit outright).
     assert result.columns[0].attacker_strength == 10
-    assert result.columns[0].defender_strength == pytest.approx(10 * expected_multiplier)
+    assert result.columns[0].defender_strength == 10
 
 
-def test_resolve_battle_applies_column_luck_to_front_line_unit():
-    # attacker-col-luck triggers (< 0.75), bonus branch (< 0.5), uniform() consumes
-    # one more random() call; defender-col-luck-skip; battle-luck-skip; win-roll.
-    rng = ScriptedRandom([0.5, 0.2, 0.5, 0.9, 0.9, 0.99])
+def test_resolve_battle_local_luck_is_drawn_fresh_per_column():
+    # Two equal-raw-strength columns, neutral global luck (g1=g2=0) --
+    # any difference between the two columns' own outcomes must come
+    # from their own separate local draws.
+    attacker_units = [unit(10), unit(10)]
+    defender_units = [unit(10), unit(10)]
+    # g1, g2, col1: l1=0.9/l2=0.0, col2: l1=0.0/l2=0.3
+    rng = ScriptedRandom([0.0, 0.0, 0.9, 0.0, 0.0, 0.3])
 
-    result = resolve_battle([unit(10)], [unit(10)], rng=rng)
+    result = resolve_battle(attacker_units, defender_units, rng=rng)
 
-    expected_multiplier = 1.10 + (1.50 - 1.10) * 0.5
-    assert result.columns[0].attacker_column_luck is not None
-    assert result.columns[0].attacker_column_luck.is_bonus is True
-    assert result.columns[0].attacker_strength == pytest.approx(10 * expected_multiplier)
+    assert len(result.columns) == 2
+    assert result.columns[0].bres == 1  # attacker's own local draw favored it
+    assert result.columns[0].attacker_won is True
+    assert result.columns[1].bres == 0  # defender's own local draw wasn't enough to flip an exact tie
+    assert result.columns[1].attacker_won is False
+    assert result.attacker_columns_won == 1
+    assert result.defender_columns_won == 0
+    assert result.total_bres == 1
+    assert result.winner == "attacker"
 
 
 def test_resolve_battle_rejects_empty_side():
@@ -93,13 +131,19 @@ def test_resolve_battle_structural_invariants_with_real_rng_multi_column():
 
     line_length = min(len(attacker), len(defender))
     assert len(result.columns) == line_length
-    assert result.attacker_columns_won + result.defender_columns_won == line_length
-    if result.attacker_columns_won > result.defender_columns_won:
+    # A per-column BRES of exactly 0 is a genuine tie -- it contributes to
+    # neither side's own column count (Phase 370), so the two counts only
+    # bound line_length from above, they don't have to sum to it.
+    assert result.attacker_columns_won + result.defender_columns_won <= line_length
+    assert result.total_bres == sum(column.bres for column in result.columns)
+    if result.total_bres > 0:
         assert result.winner == "attacker"
-    elif result.defender_columns_won > result.attacker_columns_won:
+    elif result.total_bres < 0:
         assert result.winner == "defender"
     else:
-        assert result.winner == "tie"
+        # break_bres_tie always resolves an exact-zero sum to one side or
+        # the other -- resolve_battle itself never reports "tie".
+        assert result.winner in ("attacker", "defender")
     for column in result.columns:
         assert column.attacker_strength >= 0
         assert column.defender_strength >= 0
@@ -109,7 +153,7 @@ def test_resolve_battle_applies_nemesis_penalty_before_column_strength_is_report
     # Phalanx is Legion's nemesis-victim (see turn/battle_line.py's
     # apply_nemesis_penalties) -- the attacker's reported column strength
     # should already reflect the 2/3 penalty, before any luck is rolled.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.5])
+    rng = ScriptedRandom(_luck_draws(1))
 
     result = resolve_battle([unit(10, ArmyType.PHALANX)], [unit(10, ArmyType.LEGION)], rng=rng)
 
@@ -126,9 +170,8 @@ def test_resolve_battle_runs_tactical_switches_before_nemesis_penalties_and_luck
     # per side into one stacked column instead of two separate ones.
     attacker_units = [unit(10, ArmyType.PHALANX), unit(9, ArmyType.HVY_CAVALRY)]
     defender_units = [unit(10, ArmyType.LEGION), unit(9, ArmyType.BOWMEN)]
-    # atk-switch-roll, def-switch-roll, atk-col-luck-skip, def-col-luck-skip,
-    # battle-luck-skip, win-roll.
-    rng = ScriptedRandom([0.0, 0.0, 0.9, 0.9, 0.9, 0.5])
+    # atk-switch-roll, def-switch-roll, then the real global+local luck draws.
+    rng = ScriptedRandom([0.0, 0.0, *_luck_draws(1)])
 
     result = resolve_battle(
         attacker_units,
@@ -156,7 +199,7 @@ def test_resolve_battle_defaults_to_no_switching():
     # switch_chance is 0, so even a nemesis-eligible column never swaps.
     attacker_units = [unit(10, ArmyType.PHALANX), unit(9, ArmyType.HVY_CAVALRY)]
     defender_units = [unit(10, ArmyType.LEGION)]
-    rng = ScriptedRandom([0.0, 0.9, 0.9, 0.9, 0.5])  # atk-switch-roll (consumed, fails), rest as usual
+    rng = ScriptedRandom([0.0, *_luck_draws(1)])  # atk-switch-roll (consumed, fails), then real luck
 
     result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=1, rng=rng)
 
@@ -175,7 +218,7 @@ def test_resolve_battle_opposing_overflight_unit_boosts_second_line_to_full_stre
     # Mermen, not Bowmen.)
     attacker_units = [unit(10, ArmyType.WHALES)]
     defender_units = [unit(10, ArmyType.BOWMEN), unit(9, ArmyType.AXEMEN)]
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.5])
+    rng = ScriptedRandom(_luck_draws(1))
 
     result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=1, rng=rng)
 
@@ -189,7 +232,7 @@ def test_resolve_battle_druidic_blocked_overflight_unit_does_not_trigger_rear_ta
     # defender's second-line Axemen stays at ordinary 50%, not boosted.
     attacker_units = [unit(10, ArmyType.WHALES, druidic_rear_targeting_blocked=True)]
     defender_units = [unit(10, ArmyType.BOWMEN), unit(9, ArmyType.AXEMEN)]
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.5])
+    rng = ScriptedRandom(_luck_draws(1))
 
     result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=1, rng=rng)
 
@@ -197,29 +240,6 @@ def test_resolve_battle_druidic_blocked_overflight_unit_does_not_trigger_rear_ta
     # treatment, but it's alone at depth 0 so that part reads the same
     # either way (100%) -- the defender side is where the difference shows.
     assert result.columns[0].attacker_strength == pytest.approx(10)
-    assert result.columns[0].defender_strength == pytest.approx(10 * 1.0 + 9 * 0.5)
-
-
-def test_resolve_battle_druidic_blocked_flag_survives_front_line_luck():
-    # Regression (Phase 43): _apply_front_line_luck replaces the front-line
-    # unit with a new BattleUnit when a luck event lands -- the held-back
-    # flag must survive that replacement too, or a later opposing-side
-    # column_has_overflight_unit check downstream would misread it.
-    attacker_units = [unit(10, ArmyType.WHALES, druidic_rear_targeting_blocked=True)]
-    defender_units = [unit(10, ArmyType.BOWMEN), unit(9, ArmyType.AXEMEN)]
-    # No tactical switching happens either side (ability=0 default, and
-    # the check bails before consuming rng -- see the sibling boost test
-    # above for the same structural setup). Sequence: attacker column-luck
-    # chance (0.05, under COLUMN_LUCK_CHANCE=0.75 -> event triggers),
-    # is_bonus roll, uniform's internal random() call; defender column-luck
-    # chance (0.9, no event); battle-luck chance (0.9, no event); the
-    # single column's win roll (0.5).
-    rng = ScriptedRandom([0.05, 0.5, 0.5, 0.9, 0.9, 0.5])
-
-    result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=1, rng=rng)
-
-    # Still no rear-targeting boost for the defender's second-line unit,
-    # proving the flag wasn't reset to False by the luck-driven replacement.
     assert result.columns[0].defender_strength == pytest.approx(10 * 1.0 + 9 * 0.5)
 
 
@@ -233,9 +253,7 @@ def test_resolve_battle_numeric_superiority_boosts_second_line_to_full_strength(
     # terrain allows" and the attacker (numerically superior) is eligible.
     attacker_units = [unit(10), unit(10), unit(10), unit(10)]
     defender_units = [unit(10), unit(10)]
-    # 2 attacker column-luck skips, 2 defender column-luck skips, 1
-    # battle-luck skip, 2 win rolls (one per column).
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.5, 0.5])
+    rng = ScriptedRandom(_luck_draws(2))
 
     result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=5, rng=rng)
 
@@ -253,7 +271,7 @@ def test_resolve_battle_numeric_superiority_not_eligible_when_terrain_is_the_bin
     # terrain allows, not shorter, so the outflanking boost doesn't apply.
     attacker_units = [unit(10), unit(10), unit(10), unit(10)]
     defender_units = [unit(10), unit(10)]
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.5, 0.5])
+    rng = ScriptedRandom(_luck_draws(2))
 
     result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=2, rng=rng)
 
@@ -268,7 +286,7 @@ def test_resolve_battle_numeric_superiority_not_eligible_with_no_terrain_cap():
     # its second line despite being numerically superior.
     attacker_units = [unit(10), unit(10), unit(10), unit(10)]
     defender_units = [unit(10), unit(10)]
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.5, 0.5])
+    rng = ScriptedRandom(_luck_draws(2))
 
     result = resolve_battle(attacker_units, defender_units, rng=rng)
 

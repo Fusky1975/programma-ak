@@ -1129,6 +1129,7 @@ def fight_battle(
         terrain_line_length_cap=terrain_line_length_cap,
         attacker_tactical_ability=attacker_ability_level,
         defender_tactical_ability=defender_ability_level,
+        is_first_turn=state.turn_number <= 1,
         rng=rng,
     )
 

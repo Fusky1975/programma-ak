@@ -68,7 +68,6 @@ from ak_engine.report.turn_report import (
     describe_trail,
     describe_trail_intelligence,
     describe_use_mi,
-    margin_bucket,
     parse_template_choices,
     pick_variant,
     record_battle_world_events,
@@ -239,14 +238,13 @@ from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 from _helpers import ScriptedRandom
 
 
-def _column(attacker_win_probability: float, attacker_source_id: int = 1, defender_source_id: int = 2) -> BattleColumnResult:
+def _column(bres: int, attacker_source_id: int = 1, defender_source_id: int = 2) -> BattleColumnResult:
     return BattleColumnResult(
         attacker_strength=10.0,
         defender_strength=10.0,
-        attacker_win_probability=attacker_win_probability,
-        attacker_won=attacker_win_probability >= 0.5,
-        attacker_column_luck=None,
-        defender_column_luck=None,
+        bres=bres,
+        attacker_won=bres > 0,
+        cluck_index=20,
         attacker_units=[BattleUnit(ArmyType.GARRISON, 10.0, source_id=attacker_source_id)],
         defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=defender_source_id)],
     )
@@ -285,63 +283,39 @@ def test_pick_variant_uses_the_rng_choice_hook():
     assert pick_variant(["a", "b", "c"], rng) == "b"
 
 
-# -- margin_bucket ---------------------------------------------------------
-
-
-def test_margin_bucket_is_zero_at_an_even_fight():
-    assert margin_bucket(0.5) == 0
-
-
-def test_margin_bucket_is_positive_when_attacker_favored():
-    assert margin_bucket(0.8) == 3
-
-
-def test_margin_bucket_is_negative_when_attacker_disfavored():
-    assert margin_bucket(0.2) == -3
-
-
-def test_margin_bucket_clamps_at_plus_five():
-    assert margin_bucket(1.0) == 5
-
-
-def test_margin_bucket_clamps_at_minus_five():
-    assert margin_bucket(0.0) == -5
-
-
 # -- render_column_clash ----------------------------------------------------
 
 
 def test_render_column_clash_names_both_armies_and_picks_a_margin_sentence():
-    # attacker_win_probability=0.5 -> bucket 0 ("zero" templates). All /R and
-    # {} draws scripted to their "right/include" branch (0.9).
-    column = _column(attacker_win_probability=0.5)
+    # bres=0 (a genuine per-column tie). All /R and {} draws scripted to
+    # their "right/include" branch (0.9).
+    column = _column(bres=0)
     rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9], choice_indices=[0])
     result = render_column_clash(column, "the 260th Garrison", "the 45th Orcs", rng)
     assert result == "the 260th Garrison battled with the 45th Orcs and battled them to a standstill."
 
 
 def test_render_column_clash_appends_a_plus_bucket_sentence():
-    # attacker_win_probability=0.8 -> bucket 3. All draws scripted "left/exclude" (0.1).
-    column = _column(attacker_win_probability=0.8)
+    # bres=3. All draws scripted "left/exclude" (0.1).
+    column = _column(bres=3)
     rng = ScriptedRandom([0.1, 0.1, 0.1, 0.1], choice_indices=[0])
     result = render_column_clash(column, "Attackia's host", "Defendia's line", rng)
     assert result == "Attackia's host fought Defendia's line and advanced at will."
 
 
 def test_render_column_clash_resolves_sea_marker():
-    # Phase 74: attacker_win_probability=0.4 -> bucket -1, variant 0
-    # (" gradually gave_ground/Swas_pushed_back.") carries only a "/S"
-    # marker, no "/R" -- the opening clause's own "/R" (fought/battled)
-    # and "{with }" inclusion each still consume one draw (0.1 -> left
-    # choice / excluded).
-    column = _column(attacker_win_probability=0.4)
+    # Phase 74: bres=-1, variant 0 (" gradually gave_ground/Swas_pushed_back.")
+    # carries only a "/S" marker, no "/R" -- the opening clause's own "/R"
+    # (fought/battled) and "{with }" inclusion each still consume one draw
+    # (0.1 -> left choice / excluded).
+    column = _column(bres=-1)
     rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
     result = render_column_clash(column, "A", "B", rng, is_sea=True)
     assert result == "A fought B and gradually was pushed back."
 
 
 def test_render_column_clash_land_default_resolves_sea_marker_left():
-    column = _column(attacker_win_probability=0.4)
+    column = _column(bres=-1)
     rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
     result = render_column_clash(column, "A", "B", rng)
     assert result == "A fought B and gradually gave ground."
@@ -439,7 +413,7 @@ def test_render_retreat_resolves_optional_blocks_for_other_variants():
 
 
 def test_describe_battle_assembles_clash_winner_and_destroyed_sentences_in_order():
-    column = _column(attacker_win_probability=0.8, attacker_source_id=10, defender_source_id=20)
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
     battle_result = BattleResult(winner="attacker", columns=[column])
     report = BattleReport(battle_result=battle_result, conquered=True, destroyed_army_ids=[20])
 
@@ -470,7 +444,7 @@ def test_describe_battle_threads_is_sea_to_every_sub_renderer():
     # Phase 74: is_sea propagates to both the per-column clash sentence
     # (bucket -1 variant 0, "/S" only) and the winner sentence (DEFWIN
     # variant 1, "/S" x2 + "/R").
-    column = _column(attacker_win_probability=0.4, attacker_source_id=10, defender_source_id=20)
+    column = _column(bres=-1, attacker_source_id=10, defender_source_id=20)
     battle_result = BattleResult(winner="defender", columns=[column])
     report = BattleReport(battle_result=battle_result, conquered=False)
 
@@ -499,10 +473,9 @@ def test_describe_battle_skips_unnamed_armies_and_ties_without_erroring():
     column = BattleColumnResult(
         attacker_strength=10.0,
         defender_strength=10.0,
-        attacker_win_probability=0.5,
+        bres=0,
         attacker_won=False,
-        attacker_column_luck=None,
-        defender_column_luck=None,
+        cluck_index=20,
         attacker_units=[BattleUnit(ArmyType.GARRISON, 10.0, source_id=None)],
         defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=2)],
     )
@@ -532,7 +505,7 @@ def test_build_battle_army_names_uses_the_armys_own_kingdom_when_still_present()
     # the type this function names by (the column's own BattleUnit), not
     # whatever type the backing ArmyState happens to carry.
     state.add_army(ArmyState(10, 1, ArmyType.GARRISON, Quality.AVERAGE, HexCoord(0, 0)))
-    column = _column(attacker_win_probability=0.8, attacker_source_id=10, defender_source_id=20)
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
     report = BattleReport(battle_result=BattleResult(winner="attacker", columns=[column]), conquered=False)
 
     names = build_battle_army_names(state, report)
@@ -547,7 +520,7 @@ def test_build_battle_army_names_falls_back_to_battle_report_kingdom_when_army_a
     # id 20 was destroyed and removed from state.armies before this runs --
     # same "GameState.remove_army() already ran" ordering describe_battle()
     # itself operates under.
-    column = _column(attacker_win_probability=0.8, attacker_source_id=10, defender_source_id=20)
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
     report = BattleReport(
         battle_result=BattleResult(winner="attacker", columns=[column]),
         conquered=False,
@@ -568,10 +541,9 @@ def test_build_battle_army_names_uses_monstrous_army_race_over_kingdom_race():
     column = BattleColumnResult(
         attacker_strength=10.0,
         defender_strength=10.0,
-        attacker_win_probability=0.8,
+        bres=3,
         attacker_won=True,
-        attacker_column_luck=None,
-        defender_column_luck=None,
+        cluck_index=20,
         attacker_units=[BattleUnit(ArmyType.DRAGON_WING, 10.0, source_id=10)],
         defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
     )
@@ -587,7 +559,7 @@ def test_build_battle_army_names_uses_monstrous_army_race_over_kingdom_race():
 
 def test_build_battle_army_names_defaults_to_human_with_no_kingdom_data_at_all():
     state = GameState()
-    column = _column(attacker_win_probability=0.8, attacker_source_id=10, defender_source_id=20)
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
     report = BattleReport(battle_result=BattleResult(winner="attacker", columns=[column]), conquered=False)
 
     names = build_battle_army_names(state, report)

@@ -15209,7 +15209,7 @@ section.
     Phase 367 touched for the same reason). Full suite: 3604 passed
     before, 3614 after (10 new tests, `tests/test_alignment_and_
     generic_titles.py`).
-- **Phase 369 (current)**: corrects the "cariche minori" formulas
+- **Phase 369**: corrects the "cariche minori" formulas
   Phases 277/367/368 built from `CARICHE E ABILITÀ.txt` -- the user
   supplied two new files, `AKGEN_reverse_engineering_report.md`/
   `AKGEN_embedded_catalogs.json`, a real static disassembly of
@@ -15287,6 +15287,70 @@ section.
     the standing per-phase workflow. Full suite: 3614 passed before,
     3609 after (test count dropped since several now-fictional-formula
     tests were removed rather than replaced 1:1).
+- **Phase 370 (current)**: finishes wiring the real, confirmed
+  `AK.EXE`/`AK.OVR` battle-resolution luck and win-decision formulas
+  Phases 346-349 already reverse-engineered and standalone-tested from
+  the AKGEN disassembly (`AKGEN_reverse_engineering_report.md`/
+  `AKGEN_embedded_catalogs.json`) but left unwired, since rewiring meant
+  replacing `turn/battle_resolution.py resolve_battle()`'s entire
+  win-decision path rather than swapping in one formula. Two structural
+  changes from the pre-Phase-370 model:
+  - **Luck is no longer a triggered event with a chance to occur.** The
+    old model rolled a 75%-chance column event and a 55%-chance
+    battle-wide event that multiplied strength *if* it fired
+    (`ColumnLuckEvent`/`BattleLuckEvent`/`roll_column_luck()`/
+    `roll_battle_luck()`, now removed from `turn/battle_luck.py`). The
+    real mechanic has no trigger chance at all: one global luck draw per
+    side (`G1`/`G2`, once per battle) and one local luck draw per side
+    (`L1`/`L2`, fresh per column) combine into `R_s = 1 + k*(G_s+L_s)`
+    (`k` = 0.75 turn 1, 1.5 turn 2+) -- **always applied**, every
+    column, every battle. `draw_global_luck`/`draw_local_luck`/
+    `luck_strength_multiplier`/`bluck_event_index`/`cluck_event_index`/
+    `break_bres_tie` (Phase 346) are now the sole luck mechanism.
+  - **The column winner is a deterministic sign, not a probability
+    draw.** `turn/combat.py column_bres()` (Phase 347, `BRES =
+    clamp(-5,5, round(R1*sqrt(r) - R2/sqrt(r)))`, `r` = the
+    deterministic post-modifier strength ratio) decides each column by
+    its own sign -- no further random win-roll. **The overall battle
+    winner is the sign of the summed signed `BRES` across every
+    column**, not a count of columns won ("the engine weighs the size of
+    each column result, not merely the number of columns won"); an
+    exact-zero sum is broken by `break_bres_tie()` rather than ever
+    reported as a genuine tie, so `resolve_battle()` itself never
+    returns `winner == "tie"` in practice.
+  - `BattleColumnResult`/`BattleResult` (`turn/battle_resolution.py`)
+    reshaped to match: `attacker_win_probability`/`attacker_column_luck`/
+    `defender_column_luck`/`battle_luck` replaced with `bres`,
+    `cluck_index`, and (on `BattleResult`) `bluck_index`/`total_bres`;
+    columns' own reported `attacker_strength`/`defender_strength` stay
+    the deterministic, pre-luck values -- luck only feeds `column_bres`,
+    it never mutates a `BattleUnit` in place (unlike the old model's
+    front-line-luck unit replacement).
+  - `report/turn_report.py render_column_clash()` now reads
+    `column.bres` straight into `_MARGIN_TEMPLATES` (keyed `-5..5`,
+    exactly `BRES`'s own range) instead of reconstructing a bucket from
+    a probability via the now-deleted `margin_bucket()`.
+    `tactical_margin_bucket()` (a separate `TACTICS.X2` formula) is
+    unaffected.
+  - Deliberately deferred, each needing its own separate design pass:
+    wiring `turn/combat.py direct_destruction_probability()` (Phase
+    347/348, also real and confirmed) into `battle_orchestrator.py`'s
+    actual unit-destruction logic; wiring the real quality-change
+    formula (`turn/aftermath.py`, Phase 350), blocked on
+    formation-depth/merit-score state tracking this project doesn't have
+    yet.
+  - Run full suite before writing new Phase 370 tests, write/update
+    tests (`tests/test_battle_luck.py` trimmed to the still-correct
+    primitives; `tests/test_battle_resolution.py` fully rewritten around
+    the new RNG-consumption order; `tests/test_turn_report.py`'s
+    `_column()` helper and every `margin_bucket`-era call site updated;
+    one `tests/test_turn_processor.py` fixture's defender army evened up
+    to its attacker's own type/quality, since a `GARRISON`/`GREEN` vs.
+    `HVY_CAVALRY`/`ELITE` mismatch turned out to be categorically
+    unwinnable for the defender under the real deterministic formula,
+    unlike the old probability-roll model), run again, update README,
+    run once more before commit -- the standing per-phase workflow. Full
+    suite: 3592 passed before Phase 370's own test fixes, 3597 after.
 
 ## Setup
 
