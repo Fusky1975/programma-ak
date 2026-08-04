@@ -9,6 +9,7 @@ from ak_engine.models.monster import (
     MONSTER_HP_BANDS,
     MONSTER_MAGIC_ABILITIES,
     MONSTER_NAMES,
+    MONSTER_RUNTIME_PROFILE,
     MONSTER_STATS,
     GATE_DEMON_TYPE_PERCENT,
     HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
@@ -23,11 +24,16 @@ from ak_engine.models.monster import (
     Monster,
     MonsterCombatStats,
     MonsterEngagementState,
+    MonsterIntelligence,
+    MonsterRuntimeProfile,
     MonsterSpeed,
     MonsterStats,
     roll_gate_demon_type,
     roll_monster_alignment,
 )
+from ak_engine.models.temper import Temper
+from ak_engine.models.weapon import MONSTER_MELEE_WEAPON, MONSTER_RANGED_WEAPON, Weapon
+from ak_engine.turn.encounter import TALK_MONSTER_DRUID_LEVEL_REQUIRED
 
 from _helpers import ScriptedRandom
 
@@ -474,3 +480,92 @@ def test_hand_of_death_anti_holy_monsters_is_a_strict_subset_of_ice_suspension_i
     # merged without misclassifying those four species.
     assert HAND_OF_DEATH_ANTI_HOLY_MONSTERS < ICE_SUSPENSION_IMMUNE_MONSTERS
     assert HAND_OF_DEATH_ANTI_HOLY_MONSTERS != ICE_SUSPENSION_IMMUNE_MONSTERS
+
+
+# -- Phase 381: MONSTER_RUNTIME_PROFILE (CTME.PAS runtime constants) --------
+
+
+def test_monster_runtime_profile_covers_every_real_species():
+    for monster in Monster:
+        if monster is Monster.NOMONSTER:
+            continue
+        assert monster in MONSTER_RUNTIME_PROFILE
+
+
+def test_monster_runtime_profile_nomonster_sentinel_has_no_entry():
+    assert Monster.NOMONSTER not in MONSTER_RUNTIME_PROFILE
+
+
+def test_monster_runtime_profile_roc_matches_the_real_ctme_constants():
+    # AKGEN_embedded_catalogs.json.txt tables.monster_profiles.entries[0]
+    # (Roc): mtbasehp=30, mtmelee=1, mtmeldam=12, mtarch=0, mtmisdam=0,
+    # mtspeed=Fast, mtemper=Brave, mintel=Semi, mview=Animal (->
+    # Alignment.PAGAN, see module docstring), mvvar=0, basegold=2,
+    # mtmate=True.
+    profile = MONSTER_RUNTIME_PROFILE[Monster.ROC]
+    assert profile == MonsterRuntimeProfile(
+        average_hit_points=30,
+        melee_skill=1,
+        melee_damage_parameter=12,
+        missile_skill=0,
+        missile_damage_parameter=0,
+        speed=MonsterSpeed.FAST,
+        temper=Temper.BRAVE,
+        intelligence=MonsterIntelligence.SEMI,
+        base_view=Alignment.PAGAN,
+        view_variation=0,
+        base_gold_parameter=2,
+        can_offer_mate_quest=True,
+    )
+
+
+def test_monster_runtime_profile_golem_is_the_sole_mechanical_intelligence():
+    # Golem is the only species whose real mintel is Mech, matching its
+    # own Alignment.MECHANICAL base_view -- Giant Amoeba shares Mech
+    # intelligence (a compiled-engine classification, not exclusive to
+    # true constructs) but keeps Alignment.PAGAN as its base_view.
+    golem = MONSTER_RUNTIME_PROFILE[Monster.GOLEM]
+    assert golem.intelligence is MonsterIntelligence.MECH
+    assert golem.base_view is Alignment.MECHANICAL
+
+    mech_intelligence_monsters = {m for m, p in MONSTER_RUNTIME_PROFILE.items() if p.intelligence is MonsterIntelligence.MECH}
+    assert mech_intelligence_monsters == {Monster.GOLEM, Monster.GI_AMOEBA}
+
+
+def test_monster_runtime_profile_base_view_only_uses_the_nine_real_pascal_outlook_names():
+    # base_view_mview's 9 real values are an exact subset of Alignment's
+    # own 10 real Pascal outlook names -- Alignment.SPECIAL never
+    # appears (no monster species uses it as a base view).
+    used_views = {profile.base_view for profile in MONSTER_RUNTIME_PROFILE.values()}
+    assert Alignment.SPECIAL not in used_views
+    assert used_views == {
+        Alignment.DIVINE,
+        Alignment.GOOD,
+        Alignment.DRUID,
+        Alignment.NEUTRAL,
+        Alignment.PAGAN,
+        Alignment.EVIL,
+        Alignment.ANTI_HOLY,
+        Alignment.UNDEAD,
+        Alignment.MECHANICAL,
+    }
+
+
+def test_monster_runtime_profile_talkdiff_already_matches_encounter_druid_gate():
+    # minimum_druidism_to_talk_talkdiff is deliberately NOT duplicated
+    # in MonsterRuntimeProfile -- confirmed identical to the existing
+    # TALK_MONSTER_DRUID_LEVEL_REQUIRED table for every real species
+    # before being left out (see module docstring's Phase 381 addendum).
+    # Roc's own real talkdiff is 1.
+    assert TALK_MONSTER_DRUID_LEVEL_REQUIRED[Monster.ROC] == 1
+
+
+def test_monster_runtime_profile_weapons_already_match_existing_weapon_tables():
+    # melee_weapon_mtweap1/missile_weapon_mtrweap are deliberately NOT
+    # duplicated in MonsterRuntimeProfile -- confirmed identical to
+    # MONSTER_MELEE_WEAPON/MONSTER_RANGED_WEAPON (Phase 94) for every
+    # real species before being left out.
+    assert MONSTER_MELEE_WEAPON[Monster.ROC] is Weapon.TALONS
+    assert MONSTER_RANGED_WEAPON[Monster.ROC] is Weapon.NO_WEAP
+    assert MONSTER_MELEE_WEAPON[Monster.R_DRAGON] is Weapon.JAWS
+    assert MONSTER_RANGED_WEAPON[Monster.R_DRAGON] is Weapon.FLAME_BREATH

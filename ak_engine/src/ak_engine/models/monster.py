@@ -350,6 +350,7 @@ from enum import Enum
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
+from ak_engine.models.temper import Temper
 
 
 class Monster(Enum):
@@ -585,6 +586,147 @@ MONSTER_COMBAT_STATS: dict[Monster, MonsterCombatStats] = {
     Monster.GI_CLAM: MonsterCombatStats((14, 27), 0, (1, 6), 0, None, MonsterSpeed.SLOW),
     Monster.GW_WHALE: MonsterCombatStats((25, 35), 2, (1, 8), 0, None, MonsterSpeed.MEDIUM),
     Monster.MERMAID: MonsterCombatStats((8, 11), 0, (1, 6), 0, None, MonsterSpeed.MEDIUM),
+}
+
+
+class MonsterIntelligence(Enum):
+    """CTME.PAS `mintel` -- a species' own compiled intelligence tier,
+    six real values (`Semi`/`Low`/`Medium`/`High`/`Godlike`/`Mech`,
+    ``MECH`` reserved for the sole mechanical species, `Golem`). See
+    module docstring's own Phase 381 addendum. Distinct from `models/
+    magic_feature.py`-style intelligence concepts elsewhere in this
+    project -- this one is monster-specific runtime data.
+    """
+
+    SEMI = "Semi"
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    GODLIKE = "Godlike"
+    MECH = "Mech"
+
+
+@dataclass(frozen=True, slots=True)
+class MonsterRuntimeProfile:
+    average_hit_points: int
+    melee_skill: int
+    melee_damage_parameter: int
+    missile_skill: int
+    missile_damage_parameter: int
+    speed: MonsterSpeed
+    temper: Temper
+    intelligence: MonsterIntelligence
+    base_view: Alignment
+    view_variation: int
+    base_gold_parameter: int
+    can_offer_mate_quest: bool
+
+
+# **Phase 381** -- `AKGEN_embedded_catalogs.json.txt tables.monster_
+# profiles` (a real static disassembly of AKGEN.EXE/AK.EXE, `CTME.PAS`'s
+# own compiled `mt*`/`m*` runtime constants) gives real per-species data
+# for all 60 species that `MONSTER_COMBAT_STATS`'s own Phase 154 module
+# docstring explicitly says is "not in any available source (rulebook,
+# Pascal, or the 10 real move files)" -- this table is that real source,
+# now that it exists. **Deliberately additive, not a replacement**:
+# `MONSTER_COMBAT_STATS` (Phase 154, project-original, user-compiled)
+# is left completely untouched and still backs every existing combat
+# consumer -- swapping live gameplay values to this newly-confirmed
+# runtime layer is a separate, larger decision this phase does not make
+# unilaterally, consistent with this project's own "empirically verify
+# before changing live behavior" standard. Two fields the JSON's own
+# `monster_profiles.entries` also carries are deliberately NOT
+# duplicated here because this project already has them, cross-checked
+# exact for every one of the 60 species before being left out:
+# `minimum_druidism_to_talk_talkdiff` (== `turn/encounter.py TALK_
+# MONSTER_DRUID_LEVEL_REQUIRED`) and `feature_range` (== `models/
+# feature.py MONSTER_GUARDED_FEATURE_TYPES`, Phase 79). Likewise
+# `melee_weapon_mtweap1`/`missile_weapon_mtrweap` are omitted -- both
+# already match `models/weapon.py MONSTER_MELEE_WEAPON`/`MONSTER_
+# RANGED_WEAPON` (Phase 94) exactly, confirmed species-by-species.
+#
+# `base_view_mview`'s own 9 real values (`Heavenly`/`Good`/`Druidic`/
+# `Worldly`/`Animal`/`Evil`/`Hellish`/`Undead`/`Mechanical`) are an
+# exact, independent match for `models/alignment.py Alignment`'s own
+# 9-of-10 real Pascal `outlook` names (everything but `Special`,
+# `models/alignment.py`'s own Phase 80 docstring) -- reused directly
+# rather than inventing a parallel enum; `view_variation_mvvar` is the
+# raw modifier CTME.PAS applies on top of that base view and is kept as
+# a plain int, its own exact effect unconfirmed by this source.
+# `temper_mtemper`'s 4 values and `speed`'s 3 values are likewise an
+# exact match for this module's own pre-existing `Temper`/`MonsterSpeed`
+# enums, reused directly.
+#
+# **30 of these 60 entries carry a real, sourced `source_conflicts` note
+# in the JSON** where this runtime layer disagrees with the separate
+# `documented_profile` layer (`Mostri.md`, the same lineage `MONSTER_
+# COMBAT_STATS` itself descends from) -- e.g. Roc: runtime Melee skill 1
+# vs. documented 2; Sphinx: runtime average HP 20 vs. documented range
+# 13-16. Both sides are real, sourced numbers describing two different
+# documented layers of the same compiled engine, not a typo in either
+# -- this table stores only the `runtime`/CTME.PAS side; it makes no
+# attempt to reconcile or silently prefer one over the other.
+MONSTER_RUNTIME_PROFILE: dict[Monster, MonsterRuntimeProfile] = {
+    Monster.ROC: MonsterRuntimeProfile(30, 1, 12, 0, 0, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.SEMI, Alignment.PAGAN, 0, 2, True),
+    Monster.GRYPHON: MonsterRuntimeProfile(25, 1, 8, 0, 0, MonsterSpeed.FAST, Temper.BERSERK, MonsterIntelligence.LOW, Alignment.PAGAN, 0, 1, True),
+    Monster.COUATL: MonsterRuntimeProfile(20, 3, 6, 0, 0, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.GODLIKE, Alignment.GOOD, 1, 4, True),
+    Monster.GI_EAGLE: MonsterRuntimeProfile(15, 2, 6, 0, 0, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.MEDIUM, Alignment.NEUTRAL, 1, 1, True),
+    Monster.SPHINX: MonsterRuntimeProfile(25, 2, 8, 0, 0, MonsterSpeed.FAST, Temper.BERSERK, MonsterIntelligence.HIGH, Alignment.NEUTRAL, 1, 6, True),
+    Monster.R_DRAGON: MonsterRuntimeProfile(35, 3, 10, 2, 12, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.HIGH, Alignment.EVIL, 1, 10, True),
+    Monster.B_DRAGON: MonsterRuntimeProfile(30, 2, 8, 2, 10, MonsterSpeed.FAST, Temper.CAUTIOUS, MonsterIntelligence.MEDIUM, Alignment.EVIL, 1, 8, True),
+    Monster.GR_DRAGON: MonsterRuntimeProfile(25, 2, 6, 2, 7, MonsterSpeed.FAST, Temper.COWARDLY, MonsterIntelligence.HIGH, Alignment.PAGAN, 1, 6, True),
+    Monster.S_DRAGON: MonsterRuntimeProfile(30, 2, 9, 2, 10, MonsterSpeed.FAST, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.DRUID, 1, 9, True),
+    Monster.GO_DRAGON: MonsterRuntimeProfile(40, 3, 12, 2, 15, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.GODLIKE, Alignment.GOOD, 1, 12, True),
+    Monster.GI_WORM: MonsterRuntimeProfile(35, 0, 15, 0, 0, MonsterSpeed.MEDIUM, Temper.BRAVE, MonsterIntelligence.SEMI, Alignment.PAGAN, 0, 6, True),
+    Monster.TITAN: MonsterRuntimeProfile(40, 4, 20, 0, 0, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.GODLIKE, Alignment.GOOD, 1, 12, True),
+    Monster.GIANT: MonsterRuntimeProfile(25, 1, 10, 1, 10, MonsterSpeed.MEDIUM, Temper.BRAVE, MonsterIntelligence.LOW, Alignment.NEUTRAL, 1, 4, True),
+    Monster.BIGFOOT: MonsterRuntimeProfile(18, 0, 8, 0, 0, MonsterSpeed.MEDIUM, Temper.CAUTIOUS, MonsterIntelligence.LOW, Alignment.PAGAN, 1, 1, True),
+    Monster.ARCHER: MonsterRuntimeProfile(10, 1, 6, 3, 6, MonsterSpeed.MEDIUM, Temper.BRAVE, MonsterIntelligence.MEDIUM, Alignment.NEUTRAL, 2, 3, False),
+    Monster.SWORDSMAN: MonsterRuntimeProfile(10, 3, 6, 0, 0, MonsterSpeed.MEDIUM, Temper.BERSERK, MonsterIntelligence.MEDIUM, Alignment.NEUTRAL, 2, 3, False),
+    Monster.WHITE_MAGE: MonsterRuntimeProfile(10, 1, 6, 0, 0, MonsterSpeed.MEDIUM, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.NEUTRAL, 2, 4, False),
+    Monster.NEC_MAGE: MonsterRuntimeProfile(10, 1, 6, 0, 0, MonsterSpeed.MEDIUM, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.NEUTRAL, 2, 5, False),
+    Monster.ELE_MAGE: MonsterRuntimeProfile(10, 1, 6, 0, 0, MonsterSpeed.MEDIUM, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.NEUTRAL, 2, 4, False),
+    Monster.PSY_MAGE: MonsterRuntimeProfile(10, 1, 6, 0, 0, MonsterSpeed.MEDIUM, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.NEUTRAL, 2, 5, False),
+    Monster.ILL_MAGE: MonsterRuntimeProfile(10, 1, 6, 0, 0, MonsterSpeed.MEDIUM, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.NEUTRAL, 2, 4, False),
+    Monster.WITCH: MonsterRuntimeProfile(10, 1, 4, 0, 0, MonsterSpeed.SLOW, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.PAGAN, 1, 6, False),
+    Monster.DRYAD: MonsterRuntimeProfile(10, 0, 4, 0, 0, MonsterSpeed.MEDIUM, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.NEUTRAL, 1, 2, False),
+    Monster.CENTAUR: MonsterRuntimeProfile(12, 1, 6, 2, 6, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.MEDIUM, Alignment.NEUTRAL, 1, 2, True),
+    Monster.GENIE: MonsterRuntimeProfile(20, 2, 8, 0, 0, MonsterSpeed.MEDIUM, Temper.BRAVE, MonsterIntelligence.GODLIKE, Alignment.DIVINE, 1, 6, False),
+    Monster.GOLEM: MonsterRuntimeProfile(25, 2, 10, 0, 0, MonsterSpeed.SLOW, Temper.BERSERK, MonsterIntelligence.MECH, Alignment.MECHANICAL, 0, 6, False),
+    Monster.GARGOYLE: MonsterRuntimeProfile(15, 1, 8, 0, 0, MonsterSpeed.MEDIUM, Temper.BERSERK, MonsterIntelligence.LOW, Alignment.EVIL, 0, 2, True),
+    Monster.BASILISK: MonsterRuntimeProfile(20, 1, 8, 2, 15, MonsterSpeed.SLOW, Temper.BRAVE, MonsterIntelligence.SEMI, Alignment.PAGAN, 0, 2, True),
+    Monster.MEDUSA: MonsterRuntimeProfile(10, 0, 4, 2, 15, MonsterSpeed.SLOW, Temper.CAUTIOUS, MonsterIntelligence.MEDIUM, Alignment.PAGAN, 1, 3, False),
+    Monster.BAL_DEMON: MonsterRuntimeProfile(30, 3, 12, 0, 0, MonsterSpeed.FAST, Temper.BERSERK, MonsterIntelligence.GODLIKE, Alignment.ANTI_HOLY, 0, 8, False),
+    Monster.MAR_DEMON: MonsterRuntimeProfile(25, 4, 10, 0, 0, MonsterSpeed.MEDIUM, Temper.BRAVE, MonsterIntelligence.HIGH, Alignment.ANTI_HOLY, 0, 10, False),
+    Monster.SUCCUBUS: MonsterRuntimeProfile(20, 1, 6, 0, 0, MonsterSpeed.FAST, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.EVIL, 1, 5, False),
+    Monster.RAKSHASHA: MonsterRuntimeProfile(25, 2, 8, 0, 0, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.HIGH, Alignment.EVIL, 1, 4, True),
+    Monster.ICE_DEVIL: MonsterRuntimeProfile(30, 3, 12, 0, 0, MonsterSpeed.SLOW, Temper.BERSERK, MonsterIntelligence.HIGH, Alignment.ANTI_HOLY, 0, 9, True),
+    Monster.BONE_DEVIL: MonsterRuntimeProfile(20, 2, 8, 0, 0, MonsterSpeed.MEDIUM, Temper.BRAVE, MonsterIntelligence.HIGH, Alignment.ANTI_HOLY, 0, 7, False),
+    Monster.IMP: MonsterRuntimeProfile(12, 1, 6, 0, 0, MonsterSpeed.MEDIUM, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.ANTI_HOLY, 1, 1, False),
+    Monster.WEREWOLF: MonsterRuntimeProfile(12, 1, 6, 0, 0, MonsterSpeed.MEDIUM, Temper.BERSERK, MonsterIntelligence.MEDIUM, Alignment.PAGAN, 1, 2, True),
+    Monster.CHIMERA: MonsterRuntimeProfile(25, 2, 10, 2, 10, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.SEMI, Alignment.EVIL, 0, 6, True),
+    Monster.HYDRA: MonsterRuntimeProfile(20, 2, 6, 0, 0, MonsterSpeed.SLOW, Temper.BRAVE, MonsterIntelligence.HIGH, Alignment.PAGAN, 1, 7, True),
+    Monster.BEHOLDER: MonsterRuntimeProfile(25, 1, 8, 0, 0, MonsterSpeed.SLOW, Temper.CAUTIOUS, MonsterIntelligence.SEMI, Alignment.PAGAN, 1, 5, True),
+    Monster.TROLL: MonsterRuntimeProfile(25, 1, 8, 0, 0, MonsterSpeed.MEDIUM, Temper.BERSERK, MonsterIntelligence.LOW, Alignment.EVIL, 0, 3, True),
+    Monster.MINOTAUR: MonsterRuntimeProfile(20, 1, 8, 0, 0, MonsterSpeed.SLOW, Temper.BERSERK, MonsterIntelligence.LOW, Alignment.PAGAN, 1, 4, False),
+    Monster.GI_WOLVERINE: MonsterRuntimeProfile(20, 2, 8, 0, 0, MonsterSpeed.FAST, Temper.BERSERK, MonsterIntelligence.SEMI, Alignment.PAGAN, 1, 2, True),
+    Monster.TREANT: MonsterRuntimeProfile(25, 1, 15, 0, 0, MonsterSpeed.MEDIUM, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.DRUID, 1, 1, True),
+    Monster.GI_AMOEBA: MonsterRuntimeProfile(15, 0, 4, 0, 0, MonsterSpeed.SLOW, Temper.BERSERK, MonsterIntelligence.MECH, Alignment.MECHANICAL, 0, 2, False),
+    Monster.GI_P_MANTIS: MonsterRuntimeProfile(15, 2, 6, 0, 0, MonsterSpeed.MEDIUM, Temper.BRAVE, MonsterIntelligence.SEMI, Alignment.PAGAN, 1, 1, False),
+    Monster.GI_SCORPION: MonsterRuntimeProfile(10, 1, 8, 0, 0, MonsterSpeed.MEDIUM, Temper.BERSERK, MonsterIntelligence.SEMI, Alignment.PAGAN, 1, 1, False),
+    Monster.GI_WASP: MonsterRuntimeProfile(10, 1, 8, 0, 0, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.SEMI, Alignment.PAGAN, 1, 1, False),
+    Monster.GI_SPIDER: MonsterRuntimeProfile(10, 1, 6, 0, 0, MonsterSpeed.MEDIUM, Temper.CAUTIOUS, MonsterIntelligence.SEMI, Alignment.PAGAN, 1, 2, True),
+    Monster.GHOST: MonsterRuntimeProfile(15, 1, 6, 0, 0, MonsterSpeed.MEDIUM, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.UNDEAD, 0, 3, True),
+    Monster.VAMPIRE: MonsterRuntimeProfile(20, 2, 8, 0, 0, MonsterSpeed.MEDIUM, Temper.BRAVE, MonsterIntelligence.HIGH, Alignment.UNDEAD, 0, 6, True),
+    Monster.MUMMY: MonsterRuntimeProfile(20, 1, 8, 0, 0, MonsterSpeed.SLOW, Temper.BRAVE, MonsterIntelligence.HIGH, Alignment.UNDEAD, 0, 8, True),
+    Monster.BANSHEE: MonsterRuntimeProfile(15, 1, 4, 2, 8, MonsterSpeed.MEDIUM, Temper.CAUTIOUS, MonsterIntelligence.HIGH, Alignment.UNDEAD, 0, 2, False),
+    Monster.LICH: MonsterRuntimeProfile(25, 1, 6, 0, 0, MonsterSpeed.SLOW, Temper.CAUTIOUS, MonsterIntelligence.GODLIKE, Alignment.UNDEAD, 1, 8, True),
+    Monster.SPECTRE: MonsterRuntimeProfile(20, 1, 6, 0, 0, MonsterSpeed.MEDIUM, Temper.BRAVE, MonsterIntelligence.HIGH, Alignment.UNDEAD, 0, 6, True),
+    Monster.GI_OCTOPUS: MonsterRuntimeProfile(25, 1, 8, 0, 0, MonsterSpeed.MEDIUM, Temper.BRAVE, MonsterIntelligence.SEMI, Alignment.PAGAN, 0, 8, True),
+    Monster.GI_CLAM: MonsterRuntimeProfile(20, 0, 8, 0, 0, MonsterSpeed.SLOW, Temper.CAUTIOUS, MonsterIntelligence.SEMI, Alignment.PAGAN, 0, 6, True),
+    Monster.ELASMOSAURUS: MonsterRuntimeProfile(25, 2, 10, 0, 0, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.SEMI, Alignment.PAGAN, 0, 4, True),
+    Monster.GW_WHALE: MonsterRuntimeProfile(30, 3, 12, 0, 0, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.LOW, Alignment.DRUID, 1, 2, True),
+    Monster.MERMAID: MonsterRuntimeProfile(10, 1, 6, 0, 0, MonsterSpeed.FAST, Temper.CAUTIOUS, MonsterIntelligence.MEDIUM, Alignment.DRUID, 1, 1, False),
 }
 
 

@@ -15792,7 +15792,7 @@ section.
     again, updated README, ran once more before commit -- the standing
     per-phase workflow. Full suite: 3636 passed before, 3663 after (27
     new tests).
-- **Phase 380 (current)**: decodes the King-only "M"/"F" line's own
+- **Phase 380**: decodes the King-only "M"/"F" line's own
   trailing dynamic-state block -- `AKGEN_embedded_catalogs.json.txt
   gw_format.records.king_extension` names every field of what this
   project's own Phase 320/322/323 addenda had already found (a King's
@@ -15839,6 +15839,52 @@ section.
     Kings across both fixtures), ran again, updated README, ran once
     more before commit -- the standing per-phase workflow. Full suite:
     3663 passed before, 3669 after (6 new tests).
+- **Phase 381 (current)**: adds `models/monster.py MONSTER_RUNTIME_
+  PROFILE`, real per-species CTME.PAS runtime constants for all 60
+  monster species (`AKGEN_embedded_catalogs.json.txt tables.monster_
+  profiles`) -- the exact data `MONSTER_COMBAT_STATS`'s own Phase 154
+  docstring names as "not in any available source (rulebook, Pascal,
+  or the 10 real move files)", now real and sourced.
+  - **Deliberately additive, not a replacement**: `MONSTER_COMBAT_
+    STATS` (Phase 154, project-original) is left completely untouched
+    and still backs every existing combat consumer. 30 of the 60
+    species carry a real, sourced `source_conflicts` note where this
+    runtime layer disagrees with `MONSTER_COMBAT_STATS`'s own
+    documented-layer lineage (e.g. Roc: runtime Melee skill 1 vs.
+    documented 2) -- swapping live gameplay values to the newly-
+    confirmed runtime layer is a separate, larger decision this phase
+    does not make unilaterally.
+  - **Three fields cross-checked exact against existing tables and
+    deliberately NOT duplicated**: `melee_weapon_mtweap1`/`missile_
+    weapon_mtrweap` already match `models/weapon.py MONSTER_MELEE_
+    WEAPON`/`MONSTER_RANGED_WEAPON` (Phase 94) species-by-species;
+    `minimum_druidism_to_talk_talkdiff` already matches `turn/
+    encounter.py TALK_MONSTER_DRUID_LEVEL_REQUIRED`; `feature_range`
+    already matches `models/feature.py MONSTER_GUARDED_FEATURE_TYPES`
+    (Phase 79) -- three more real, independent confirmations that this
+    project's own prior phases already got real Pascal data right.
+  - `base_view_mview`'s own 9 real values are an exact, independent
+    match for `models/alignment.py Alignment`'s own 9-of-10 real Pascal
+    `outlook` names (everything but `Special`) -- reused directly. New
+    `MonsterIntelligence` enum (`mintel`'s 6 real values, normalizing
+    the source's own `"HIgh"`/`"High"` typo) is the only genuinely new
+    vocabulary this phase adds; `temper_mtemper`/`speed` reuse this
+    module's own pre-existing `Temper`/`MonsterSpeed` enums exactly.
+  - `melee_damage_parameter`/`missile_damage_parameter` (`mtmeldam`/
+    `mtmisdam`) are kept as raw ints, not converted to `(lo, hi)` dice
+    tuples the way `MonsterCombatStats` stores them -- the JSON's own
+    `interpretation_notes` explicitly says this identity isn't proven
+    for every species.
+  - Ran the full suite before writing new tests (non-breaking check;
+    no regressions), wrote 7 new tests in `tests/test_monster.py`
+    (full 60-species coverage, the sentinel exclusion, the Roc
+    field-by-field match against the real JSON entry, Golem's
+    sole-Mech-intelligence check, the 9-of-10 `Alignment` base-view
+    coverage check, and the two already-covered-elsewhere cross-checks
+    against `TALK_MONSTER_DRUID_LEVEL_REQUIRED`/`MONSTER_MELEE_
+    WEAPON`+`MONSTER_RANGED_WEAPON`), ran again, updated README, ran
+    once more before commit -- the standing per-phase workflow. Full
+    suite: 3669 passed before, 3676 after (7 new tests).
 
 ## Setup
 
