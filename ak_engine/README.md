@@ -15483,7 +15483,7 @@ section.
     end suite, then the full suite, updated README, ran once more before
     commit -- the standing per-phase workflow. Full suite: 3611 passed
     before, 3612 after (1 new test).
-- **Phase 374 (current)**: adds `parser/gw_world_writer.py`, a byte-shape
+- **Phase 374**: adds `parser/gw_world_writer.py`, a byte-shape
   writer for every one of `gw_world.py`'s own six confirmed reader
   record types (`GWHeader`, the Phase 373-corrected `GWProvinceRecord`,
   `GWLeaderRecord`, `GWFeatureRecord`, `GWArmyRecord`,
@@ -15534,8 +15534,7 @@ section.
     parseable by `parser/k1_moves.py`'s own grammar, but not embedded by
     either the reader or this writer); the King-only `king_extension`
     block (Gender line, Title/Epithet/player-name lines, the trailing
-    ~128-token dynamic block); and the "15 `(min, max)` pairs"
-    kingdom-specific list. A file assembled purely from this phase's own
+    ~128-token dynamic block). A file assembled purely from this phase's own
     writers is therefore not a complete, engine-loadable `GW*` file --
     closing that gap needs a future phase to first port `king_extension`
     and Action Plans embedding into the *reader* (both now sourced in
@@ -15548,6 +15547,28 @@ section.
     again, updated README, ran once more before commit -- the standing
     per-phase workflow. Full suite: 3612 passed before, 3623 after (11
     new tests).
+- **Phase 375 (current)**: corrects a documentation-only mistake in
+  Phase 374's own module docstring, found while auditing
+  `AKGEN_reverse_engineering_report.md`/`AKGEN_embedded_catalogs.json.txt`
+  for anything still unused (a user question, not a code bug report).
+  `parser/gw_world_writer.py`'s own "explicitly out of scope" list named
+  a "15 `(min, max)` pairs kingdom-specific list" as one more not-yet-
+  written block -- carried over verbatim from Phase 321's own early,
+  still-open framing. That framing was itself already superseded twice
+  over, inside this project's own prior work, before Phase 374 was ever
+  written: Phase 325 identified the doubled/single 30-value list as the
+  leader's own 15-`(skill_level, aptitude)`-pair `SkillTable` (already
+  written by `write_gw_leader_record`, doubled for a King), and Phase
+  326 separately corrected Phase 321's "kingdom's own name" reading to
+  just be the King's own name opening that kingdom's block -- there was
+  never a second, genuinely-still-missing list. No code changed; only
+  the docstring's own "out of scope" bullet (removed) and a short
+  correction note (added) in `gw_world_writer.py`, plus this same fix
+  mirrored into Phase 374's own README entry above. Ran the full suite
+  before and after (no test changes needed, since no code changed),
+  updated README, ran once more before commit -- the standing per-phase
+  workflow, scaled to a docs-only change. Full suite: 3623 passed before
+  and after.
 
 ## Setup
 

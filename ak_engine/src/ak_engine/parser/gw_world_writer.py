@@ -38,8 +38,17 @@ isn't attempted, and shouldn't be assumed possible from this module alone:
   both Kings and Heroes; a written King record is real and round-trips
   through `parse_gw_leaders`, but is not a complete King record the way a
   written Hero record is a complete Hero record.
-- The "15 `(min, max)` pairs" kingdom-specific list (Phase 321/324) that
-  precedes a kingdom's own King record.
+**Phase 375 correction -- the "15 `(min, max)` pairs" list is NOT a
+separate excluded block.** An earlier draft of this docstring listed it
+as one more not-yet-covered piece, carried over from Phase 321's own
+still-open "kingdom-specific list" framing. Phase 325 (see
+`gw_world.py`'s own addendum) already resolved that same list as the
+leader's own doubled/single 15-`(skill_level, aptitude)`-pair skill
+table -- exactly `GWLeaderRecord.skills`/`SkillTable`, which `write_gw_
+leader_record` already writes (doubled for a King, single for a Hero).
+There was never a second, still-missing "kingdom-specific" list; Phase
+321's own "kingdom's own name" framing was itself later corrected (Phase
+326) to just be the King's own name opening that kingdom's block.
 
 **A leader header line's own 3 trailing tokens (positions 22-24 of 25)**
 are never populated by `GWLeaderRecord` -- `parse_gw_leaders`/
