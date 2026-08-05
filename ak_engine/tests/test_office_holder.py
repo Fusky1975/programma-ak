@@ -6,15 +6,20 @@ offices' genuine Merit Point Rank contest).
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState, RaceTitleTally
+from ak_engine.models.army_type import ArmyType
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState, RaceTitleTally
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.office_holder import (
     ALL_OFFICES,
+    ARMY_RANKED_OFFICES,
     RANKED_OFFICES,
+    resolve_all_army_office_holders,
     resolve_all_office_holders,
+    resolve_army_office_holder,
     resolve_office_holder,
 )
 
@@ -290,10 +295,111 @@ def test_resolve_office_holder_bravest_none_below_the_minimum():
     assert holder.leader_id == 1
 
 
-def test_resolve_office_holder_air_force_praetor_flagship_are_not_modeled():
-    # Deliberately deferred -- see turn/merit_points.py's own Phase 379
-    # addendum: these 3 are army-scoped, not leader-scoped, and don't fit
-    # RANKED_OFFICES/OfficeHolder's leader_id-only shape.
+def test_resolve_office_holder_air_force_praetor_flagship_are_not_leader_scoped():
+    # Army-scoped (Phase 394: resolve_army_office_holder()), not
+    # leader-scoped -- they don't fit RANKED_OFFICES/OfficeHolder's
+    # leader_id-only shape, so they stay out of it permanently, not just
+    # until some future phase (see turn/office_holder.py's own Phase 394
+    # addendum).
     assert Office.AIR_FORCE not in RANKED_OFFICES
     assert Office.PRAETOR not in RANKED_OFFICES
     assert Office.FLAGSHIP not in RANKED_OFFICES
+
+
+# -- Army-scoped Royal Titles: Airforce/Praetor/Flagship (Phase 394) ------
+
+
+def test_resolve_army_office_holder_airforce_picks_the_stronger_flying_army():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HOME))
+    state.add_army(ArmyState(201, 2, ArmyType.EAGLE_WING, Quality.CRACK, HexCoord(1, 1)))
+
+    holder = resolve_army_office_holder(state, Office.AIR_FORCE)
+
+    assert holder is not None
+    assert holder.army_id == 101  # Elite Dragon Wing beats Crack Eagle Wing
+
+
+def test_resolve_army_office_holder_airforce_excludes_non_flying_types():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, HOME))
+
+    assert resolve_army_office_holder(state, Office.AIR_FORCE) is None
+
+
+def test_resolve_army_office_holder_requires_crack_or_elite_quality():
+    # AVERAGE, not VETERAN: HOME is kingdom 1's own home province too, so
+    # the peacetime home-province +1 bonus (turn/army_quality.py) would
+    # otherwise lift VETERAN straight to CRACK and defeat the point of
+    # this test.
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, HOME))
+
+    assert resolve_army_office_holder(state, Office.AIR_FORCE) is None
+
+
+def test_resolve_army_office_holder_requires_a_valid_player_owner():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, None, ArmyType.DRAGON_WING, Quality.ELITE, HOME))  # mercenary
+
+    assert resolve_army_office_holder(state, Office.AIR_FORCE) is None
+
+
+def test_resolve_army_office_holder_praetor_excludes_flying_types():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HOME))
+
+    assert resolve_army_office_holder(state, Office.PRAETOR) is None
+
+
+def test_resolve_army_office_holder_praetor_picks_the_stronger_non_flying_army():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, HOME))
+    state.add_army(ArmyState(201, 2, ArmyType.LEGION, Quality.CRACK, HexCoord(1, 1)))
+
+    holder = resolve_army_office_holder(state, Office.PRAETOR)
+
+    assert holder is not None
+    assert holder.army_id == 101
+
+
+def test_resolve_army_office_holder_flagship_requires_a_naval_army_type():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.SEA, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.LEGION, Quality.ELITE, HOME))  # land, not naval
+
+    assert resolve_army_office_holder(state, Office.FLAGSHIP) is None
+
+
+def test_resolve_army_office_holder_flagship_picks_among_mermen_whale_fleet():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.SEA, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.SEA, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.WHALES, Quality.ELITE, HOME))
+    state.add_army(ArmyState(201, 2, ArmyType.FLEET, Quality.CRACK, HexCoord(1, 1)))
+
+    holder = resolve_army_office_holder(state, Office.FLAGSHIP)
+
+    assert holder is not None
+    assert holder.army_id == 101
+
+
+def test_resolve_all_army_office_holders_covers_all_three_titles():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HOME))
+
+    holders = resolve_all_army_office_holders(state)
+
+    assert set(holders) == set(ARMY_RANKED_OFFICES)
+    assert holders[Office.AIR_FORCE] is not None
+    assert holders[Office.PRAETOR] is None
+    assert holders[Office.FLAGSHIP] is None

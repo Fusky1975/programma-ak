@@ -125,18 +125,55 @@ points()`, same shape as Phase 368's 8. None of the 18 grant Victory
 Points and none is exempted from the death penalty (see `turn/merit_
 points.py`'s own Phase 379 addendum, which also explains why the
 remaining 3 titles the source names -- `AIR_FORCE`/`PRAETOR`/
-`FLAGSHIP` -- are deliberately **not** modeled here: they're
-army-scoped, not leader-scoped, and don't fit this module's
-`OfficeHolder.leader_id`-only shape at all.
+`FLAGSHIP` -- were deliberately **not** modeled there: they're
+army-scoped, not leader-scoped, and don't fit `OfficeHolder.leader_id`
+-only shape at all.
+
+**Phase 394 closes that gap** with a parallel, army-scoped resolution
+path: `ArmyOfficeHolder` (an `army_id`, not a `leader_id`),
+`ARMY_RANKED_OFFICES` (just the 3), `resolve_army_office_holder()`/
+`resolve_all_army_office_holders()`. Deliberately a *separate* set of
+functions rather than folded into `RANKED_OFFICES`/`resolve_office_
+holder()` -- every existing caller of those (`describe_imperial_office_
+report()` included) already assumes every holder has a `leader_id` and
+looks it up in `state.leaders`; forcing an army-scoped holder through
+that same path would either crash or need a leaked "is this an army or
+a leader" branch deep inside otherwise-uniform leader code. Each of the
+3 real scoring formulas needed one new piece this project didn't have
+before: `turn/army_quality.py army_peacetime_strength()`, an "Army_Str
+outside of battle" reading built on that module's own pre-existing
+`compute_army_modified_quality()` (Phase 279) -- see that function's
+own Phase 394 addendum for exactly which of `turn/strength.py compute_
+effective_strength()`'s many battle-only parameters do and don't have
+a coherent "at rest" value, the concern `turn/merit_points.py`'s own
+Phase 379 addendum raised and left for "a future phase that can
+address both honestly." Eligibility (`army: quality Crack or Elite,
+flying, with a valid player owner`, etc.) is gated on this same
+peacetime-modified quality, not raw `ArmyState.quality`, for the same
+reason the score itself is: both already run through `compute_army_
+modified_quality()`, so a bonus that lifts an army up to Crack (or a
+penalty that drops it below) is honored consistently by both.
+Praetorian Guard's own extra `+base movement speed of army type` term
+reads `models/army_type.py ARMY_TABLE[army_type].speed` directly, no
+new data needed. **No "current title holder" stickiness modeled** here
+either, matching this module's own pre-existing tie-break choice for
+every leader-scoped office (see `merit_point_tiebreak_key()`'s own
+docstring) -- the general rule's own "prefer the current holder" tier
+was never implemented for any of the other 47 offices, so adding it
+only for these 3 would be new, undocumented behavior, not consistency.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.army_type import OVERFLIGHT_AIR, ARMY_TABLE, ArmyType
+from ak_engine.models.enums import Ability
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.office import OFFICE_MIN_POINTS, Office
 from ak_engine.models.race import Race
+from ak_engine.turn.combat import Quality
+from ak_engine.turn.tax_base import compute_tax_base
 from ak_engine.turn.merit_points import (
     admiral_merit_points,
     assassin_merit_points,
@@ -368,3 +405,94 @@ def resolve_all_office_holders(state: GameState) -> dict[Office, OfficeHolder | 
     """
 
     return {office: resolve_office_holder(state, office) for office in ALL_OFFICES}
+
+
+# The 3 army-scoped Royal Titles (Phase 394) -- see module docstring's own
+# Phase 394 addendum. Kept out of RANKED_OFFICES/ALL_OFFICES: every
+# existing consumer of those (resolve_office_holder(), resolve_all_office_
+# holders(), describe_imperial_office_report()) assumes a leader_id.
+ARMY_RANKED_OFFICES: tuple[Office, ...] = (Office.AIR_FORCE, Office.PRAETOR, Office.FLAGSHIP)
+
+# Flagship's own "type Mermen, Whale League or Fleet" eligibility gate.
+_FLAGSHIP_ARMY_TYPES = frozenset({ArmyType.MERMEN, ArmyType.WHALES, ArmyType.FLEET})
+
+
+@dataclass(slots=True)
+class ArmyOfficeHolder:
+    army_id: int
+    merit_points: float
+
+
+def _army_office_eligible(office: Office, army: ArmyState, modified_quality: Quality) -> bool:
+    if army.kingdom_id is None:
+        return False
+    if modified_quality not in (Quality.CRACK, Quality.ELITE):
+        return False
+    if office is Office.AIR_FORCE:
+        return army.army_type in OVERFLIGHT_AIR
+    if office is Office.PRAETOR:
+        return army.army_type not in OVERFLIGHT_AIR
+    if office is Office.FLAGSHIP:
+        return army.army_type in _FLAGSHIP_ARMY_TYPES
+    raise ValueError(f"{office} is not one of the 3 army-scoped Royal Titles")
+
+
+def _army_office_tiebreak_key(state: GameState, army: ArmyState) -> tuple[int, int, int]:
+    """Same shape as `merit_point_tiebreak_key()` (treasury, tax base, lower
+    id wins) against the army's own owning Kingdom rather than a leader's.
+    """
+
+    kingdom = state.kingdoms[army.kingdom_id]
+    return (kingdom.treasury, compute_tax_base(state, army.kingdom_id), -army.army_id)
+
+
+def resolve_army_office_holder(state: GameState, office: Office) -> ArmyOfficeHolder | None:
+    """The army that currently holds one of the 3 army-scoped Royal
+    Titles (Airforce/Praetor/Flagship), and its own "Army_Str" score --
+    or `None` if no army qualifies yet. See module docstring's own Phase
+    394 addendum.
+
+    Local import of `turn/army_quality.py` (not a module-level one):
+    that module imports `turn/battle_orchestrator.py` for `druidic_
+    shortfall_for()`, which itself imports this module for `resolve_
+    office_holder()` (Phase 390's title-fanaticism check) -- a
+    module-level import here would close that into a real circular
+    import. Deferring to call time breaks the cycle without changing
+    what either module actually does.
+    """
+
+    from ak_engine.turn.army_quality import army_peacetime_strength, compute_army_modified_quality
+
+    if office not in ARMY_RANKED_OFFICES:
+        raise ValueError(f"{office} is not one of the 3 army-scoped Royal Titles this project models")
+
+    ability = Ability.NAVAL if office is Office.FLAGSHIP else Ability.TACTICAL
+    min_points = OFFICE_MIN_POINTS[office]
+    best: ArmyOfficeHolder | None = None
+    best_tiebreak: tuple[int, int, int] | None = None
+
+    for army_id, army in state.armies.items():
+        if army.kingdom_id is None:
+            continue
+        modified_quality = compute_army_modified_quality(state, army)
+        if not _army_office_eligible(office, army, modified_quality):
+            continue
+        score = army_peacetime_strength(state, army, ability)
+        if office is Office.PRAETOR:
+            score += ARMY_TABLE[army.army_type].speed
+        if score < min_points:
+            continue
+        tiebreak = _army_office_tiebreak_key(state, army)
+        if best is None or score > best.merit_points or (score == best.merit_points and tiebreak > best_tiebreak):
+            best = ArmyOfficeHolder(army_id, score)
+            best_tiebreak = tiebreak
+
+    return best
+
+
+def resolve_all_army_office_holders(state: GameState) -> dict[Office, ArmyOfficeHolder | None]:
+    """All 3 army-scoped Royal Titles at once, each resolved via
+    `resolve_army_office_holder()`.
+    """
+
+    return {office: resolve_army_office_holder(state, office) for office in ARMY_RANKED_OFFICES}

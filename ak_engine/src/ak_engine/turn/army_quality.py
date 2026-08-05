@@ -59,12 +59,14 @@ against `army.location` instead of a live battle's province.
 from __future__ import annotations
 
 from ak_engine.models.army_type import ArmyType, MONSTROUS_ARMY_RACE
+from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.map import Terrain
 from ak_engine.models.treasure import RACE_LEADERSHIP_TREASURE
 from ak_engine.turn.battle_orchestrator import druidic_shortfall_for
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.strength import modified_quality
+from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.strength import compute_effective_strength, modified_quality
 
 
 def compute_army_modified_quality(state: GameState, army: ArmyState) -> Quality:
@@ -104,4 +106,59 @@ def compute_army_modified_quality(state: GameState, army: ArmyState) -> Quality:
         is_home_province=is_home,
         druidic_shortfall=druidic_shortfall,
         race_item_bonus=race_item_bonus,
+    )
+
+
+def army_peacetime_strength(state: GameState, army: ArmyState, ability: Ability) -> float:
+    """Phase 394's own "current `Army_Str`" -- the Royal Air Force/
+    Praetorian Guard/Imperial Flag Squadron Royal Titles' shared score
+    term (`turn/office_holder.py`'s own Phase 394 addendum), the same
+    "rank the strongest qualifying army by its own effective strength,
+    outside of any active battle" question `compute_army_modified_
+    quality()` above already answers for the ARMIES report's peacetime
+    quality column -- just carried one step further, into a real
+    strength number instead of stopping at the discrete `Quality` tier.
+
+    Reuses `compute_army_modified_quality()` verbatim for the quality
+    input (so home-province/desert-without-camels/Druidic-shortfall/
+    race-item bonuses are already baked in), then feeds that into
+    `turn/strength.py compute_effective_strength()` with every other
+    battle-only parameter left at its neutral default -- `modified_
+    quality()` is idempotent when given no further deltas, so this
+    doesn't double-apply any of those four. `combat_ability_level` is
+    the one parameter this function adds beyond what `compute_army_
+    modified_quality()` already covers: the commanding leader's own
+    ``ability`` skill level (`Ability.TACTICAL` for Airforce/Praetor,
+    `Ability.NAVAL` for Flagship -- the exact two terms AKGEN's own
+    confirmed `score_formula` names, "Army_Str(... Tactical ...)"/
+    "Army_Str(... Naval ...)"), 0 for an unled army -- the same "no
+    commander, no bonus" default `_select_side_commander()`'s own
+    garrison-fallback path already establishes for a real battle.
+
+    This is deliberately narrower than a real battle's own strength
+    calculation: `is_defender`, `is_fanatical`, exploration, Phantasmal
+    Armies, an opponent's army type, and Illusory Fog all stay at their
+    neutral off/0 defaults, since none of them has a coherent meaning
+    outside an actual battle -- see `turn/office_holder.py`'s own Phase
+    394 addendum for why this is the one subset of `compute_effective_
+    strength()`'s many parameters that *does* have a real "at rest"
+    value, closing the gap `turn/merit_points.py`'s own Phase 379
+    addendum left open.
+    """
+
+    kingdom = state.kingdoms[army.kingdom_id]
+    province = state.provinces.get(army.location)
+    terrain = province.effective_terrain() if province is not None else Terrain.PLAINS
+    is_island = province.is_island if province is not None else False
+    army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race)
+    quality = compute_army_modified_quality(state, army)
+
+    ability_level = 0
+    if army.commanded_by is not None:
+        leader = state.leaders.get(army.commanded_by)
+        if leader is not None:
+            ability_level = effective_skill_level(state, leader, ability)
+
+    return compute_effective_strength(
+        army.army_type, army_race, quality, terrain, combat_ability_level=ability_level, is_island=is_island,
     )

@@ -16468,7 +16468,7 @@ section.
     item-triggered defection, for a further follow-up phase; Druidic
     monster assistance stays a documented, deliberately-unimplemented
     gap (no fixed percentage in the source).
-- **Phase 393 (current)**: closes out the fourth and final AKGEN
+- **Phase 393**: closes out the fourth and final AKGEN
   research-audit item ("Narrazione battaglia + eventi speciali") with
   the last unimplemented piece, AKGEN's own confirmed
   `battle_engine.special_events` "Dragon/Eagle/Whale summoning item"
@@ -16529,6 +16529,59 @@ section.
     fixed percentage in the source at all, deliberately left
     unimplemented, not a guess. This closes the fourth and final item
     of the user's original AKGEN research-audit batch.
+- **Phase 394 (current)**: a full pass over the entire AKGEN research
+  report (not just the 4-item batch Phases 385-393 closed) turned up
+  two genuinely unexploited findings never previously flagged: 3 of the
+  42 Royal Titles (`Airforce`/`Praetor`/`Flagship`) were left unmodeled
+  by Phase 379's own `turn/merit_points.py` addendum because they're
+  army-scoped, not leader-scoped, and their shared `Army_Str` score
+  term needed an "at rest" (outside of battle) strength reading this
+  project didn't have yet. This phase closes that gap.
+  - **`turn/army_quality.py army_peacetime_strength()`, new**: the
+    missing piece -- builds on this module's own pre-existing
+    `compute_army_modified_quality()` (Phase 279, the ARMIES report's
+    peacetime quality column) and feeds it into `turn/strength.py
+    compute_effective_strength()` with every genuinely battle-only
+    parameter left at its neutral default. The one parameter this adds
+    beyond `compute_army_modified_quality()`: the commanding leader's
+    own Tactical (or Naval, for Flagship) skill level -- the exact term
+    AKGEN's own confirmed `score_formula` names, `0` for an unled army.
+  - **`turn/office_holder.py resolve_army_office_holder()`/
+    `resolve_all_army_office_holders()`, new**: a parallel resolution
+    path alongside (not merged into) the existing leader-scoped
+    `resolve_office_holder()` -- every existing consumer of
+    `RANKED_OFFICES`/`ALL_OFFICES` assumes a `leader_id`, so a new
+    `ArmyOfficeHolder`/`ARMY_RANKED_OFFICES` pair keeps that shape
+    intact. Eligibility (`army: quality Crack or Elite, flying/
+    non-flying, valid player owner`, or `type Mermen/Whale League/
+    Fleet` for Flagship) is gated on the same peacetime-modified
+    quality the score itself uses, for internal consistency. Praetorian
+    Guard's own extra `+base movement speed of army type` term reads
+    `models/army_type.py ARMY_TABLE[army_type].speed` directly. No
+    "current title holder" stickiness, matching this module's own
+    pre-existing choice for all 47 other offices.
+  - **Local (not module-level) import inside `resolve_army_office_
+    holder()`**: `turn/army_quality.py` imports `turn/battle_
+    orchestrator.py` (for `druidic_shortfall_for()`), which itself
+    imports `turn/office_holder.py` (Phase 390's title-fanaticism
+    check) -- a module-level import here would close a real circular
+    import. Deferring to call time breaks the cycle without changing
+    either module's behavior.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), wrote 9 new tests in `test_office_holder.py` (the
+    stronger-candidate pick for all 3 titles, the flying/non-flying/
+    naval-type eligibility gates, the Crack-or-Elite quality gate, the
+    valid-owner gate, and `resolve_all_army_office_holders()` covering
+    all 3), ran again, updated README, ran once more before commit --
+    the standing per-phase workflow. Full suite: 3776 passed before,
+    3785 after (9 new tests).
+  - **Two more real findings from the same full-report pass, left for
+    later phases**: the spell moderator's `splate` legality table (4
+    classes: illegal on another's land, on another's character, etc.)
+    has no implementation anywhere in this project yet; the fixed-map
+    Europe_V/Earth_V game mode (an alternative to the normal random
+    world generation this project already models) is a deliberate,
+    documented scope exclusion, not a gap.
 
 ## Setup
 
