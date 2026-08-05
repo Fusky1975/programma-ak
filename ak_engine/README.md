@@ -16797,7 +16797,7 @@ section.
     unchanged at 3807 before and after) -- whether to author
     project-original prose for owner/adjacent-owners, mirroring Trail's
     own precedent, is a decision left to the user rather than assumed.
-- **Phase 400 (current)**: closes ASpy's own remaining owner/adjacent
+- **Phase 400**: closes ASpy's own remaining owner/adjacent
   -owners gap Phase 399 narrowed down to -- at the user's own direct
   request ("Vorrei che le due frasi le creassi tu"), this project
   authored the two project-original sentences itself, the same
@@ -16848,6 +16848,58 @@ section.
     above), updated README, ran once more before commit -- the
     standing per-phase workflow. Full suite: 3807 passed before, 3813
     after (6 new tests).
+- **Phase 401 (current)**: re-verifies, line by line, the user's own
+  suspicion that the Search/Encounter "Not yet implemented" paragraph
+  (written at Phase 153) had gone stale -- "una vittoria imposta solo
+  `Feature.looted = True` -- nessun modello di proprietà-oggetto
+  magico esiste ... tiro Fire Arrow non sorgente, Scout/Flee/Steal non
+  risolti, solo 6/61 mostri con statistiche di combattimento". Checked
+  every named claim against `turn/search_execution.py`'s own
+  (currently-maintained) docstring and the code directly, rather than
+  trusting the suspicion wholesale:
+  - **Monster combat stats**: the "6 species" count is literally true
+    of `models/monster.py MONSTER_STATS` (RULES.AK's own
+    explicitly-partial "Monster Table"), but that is not the dict
+    Search actually reads. `MONSTER_COMBAT_STATS` (Phase 154,
+    project-original, compiled by the user from `Desktop/MOSTRI con
+    statistiche.txt`) covers all 60 real species and is what
+    `execute_search()` uses -- the old paragraph named the wrong dict.
+  - **Tactic coverage**: every `Maneuver` except **Give**
+    (structurally inapplicable to Search -- its target is always the
+    guardian monster) now resolves for real: Melee/Fire Arrow/Flee
+    (Phase 132), Scout (Phase 274, post-processing step), Steal (Phase
+    239), Cast (Phases 209-238), Talk/Say (Phase 240), Fulfill (Phase
+    258), Beg (Phase 241), Use_MI (Phase 274). Fire Arrow's own duel
+    (`resolve_fire_arrow_duel`) is sourced to rulebook [5.2] -- it is a
+    real free-attack exchange, not the "unsourced hit-chance formula"
+    the old paragraph worried about.
+  - **Looting**: a win has granted the feature's own world-generated
+    `treasure` via `GameState.add_item()` since **Phase 242** (the
+    same mechanism Phase 398 traced end-to-end for Use_MI) --
+    `Feature.looted = True` is still set too, but was never the only
+    effect from Phase 242 onward. The old paragraph's core complaint
+    was already wrong three phases after it was written and was never
+    corrected across the 8+ later phases that closed it.
+  - **Cast/Use_MI's sub-object**: both already resolve to a real
+    `Spell`/`Treasure` (see tactic-coverage above) -- only **Give**'s
+    sub-object stays an unresolved raw int, and only because Give
+    itself doesn't apply here, not from a missing table.
+  - **Genuinely new finding, not previously documented anywhere in
+    this project**: `Maneuver.SQUEEZE` (`manab`'s own `'SQ'`
+    abbreviation) has a real, sourced prose dispatch in `SAY.PAS`
+    (`_LSquee: FD2('squeeze',S_PCom,5)`, 5 real templates) that was
+    never transcribed or wired to any mechanic -- and, unlike Give, is
+    not even mentioned in `search_execution.py`'s own "every other
+    maneuver isn't wired" fallback comment. A real, narrow, still-open
+    gap, now documented in both this README and that comment.
+  - Corrected the stale paragraph in place (same convention as Phases
+    396-400: `~~strikethrough~~` + a `stale as of Phase 401` note with
+    citations), and added a matching bullet to
+    `search_execution.py`'s own tactic-walk fallback comment
+    documenting the Squeeze gap.
+  - Pure documentation/comment correction -- no behavior changed. Full
+    suite: 3813 passed before, 3813 after (0 new tests; nothing to
+    test since nothing executes differently).
 
 ## Setup
 
@@ -17135,7 +17187,7 @@ rulebook before being turned into named, typed fields:
     Search itself -- see that phase's note below), so this gap is
     narrower than it was, not closed.~~ -- **stale as of Phase 153**:
     `turn/search_execution.py execute_search()` (Phase 132) closed this,
-    reusing `turn/encounter.py`'s Melee resolver directly. Genuinely
+    reusing `turn/encounter.py`'s Melee resolver directly. ~~Genuinely
     still open, by design, not oversight (see that module's own
     docstring): only 6 of 61 real monster species have sourced combat
     stats (`models/monster.py MONSTER_STATS`, RULES.AK's own "Monster
@@ -17146,7 +17198,56 @@ rulebook before being turned into named, typed fields:
     -- no treasure-instance/magic-item-ownership model exists yet for
     [5.9]'s actual looting. A Cast/Use_MI/Give tactic's sub-object is
     also still just a raw int -- no decoded spell-id or magic-item-id
-    table exists in this project yet to resolve it further.
+    table exists in this project yet to resolve it further.~~ --
+    **stale as of Phase 401 (written at Phase 153, never revisited
+    across the 8+ later phases that closed almost everything it
+    names)**: re-verified line by line against `turn/search_execution
+    .py`'s own module docstring (kept current across Phases 154-274,
+    unlike this paragraph) and the code directly, not just trusted:
+    - **Monster combat stats**: `models/monster.py MONSTER_STATS` (6
+      species, RULES.AK's own explicitly-partial "Monster Table") is a
+      real but *different* dict from what Search actually reads.
+      `MONSTER_COMBAT_STATS` (Phase 154, project-original, compiled by
+      the user from `Desktop/MOSTRI con statistiche.txt`) covers all
+      60 real species and is what `execute_search()` genuinely uses --
+      confirmed by import and by that module's own docstring ("covering
+      all 60 real monster species"). Citing the wrong dict name made a
+      closed gap look open.
+    - **Tactic coverage**: every `Maneuver` except **Give** (Phase
+      274, structurally inapplicable -- Search's target is always the
+      guardian monster, and Give only ever moves an item between
+      Heroes/Kings) now resolves for real: Melee (Phase 132), Fire
+      Arrow/Shoot (Phase 132, `resolve_fire_arrow_duel`, sourced to
+      rulebook [5.2] -- the "unsourced hit-chance formula" this
+      paragraph worried about doesn't exist; it's a real free-attack
+      exchange, not a hit-chance roll), Flee (Phase 132), Scout (Phase
+      274, resolved as a post-processing step), Steal (Phase 239), Cast
+      (Phases 209-238, reusing `_resolve_cast_tactic`), Talk/Say (Phase
+      240), Fulfill (Phase 258), Beg (Phase 241), and Use_MI (Phase
+      274, resolves a wand's own spell through that same Cast
+      dispatcher, real `GameState.items` lookup, real charge
+      consumption).
+    - **Looting**: a win grants the feature's own world-generated
+      `treasure` via `GameState.add_item()` as of **Phase 242** (the
+      same mechanism Phase 398 traced end-to-end for Use_MI) --
+      `Feature.looted = True` is still set too, but it's no longer the
+      only effect.
+    - **Cast/Use_MI's sub-object**: both fully resolve to a real
+      `Spell`/`Treasure` via `GameState`/`TREASURE_WAND_SPELL` lookups
+      (see the tactic-coverage bullet above) -- only **Give**'s
+      sub-object stays an unresolved raw int, and only because Give
+      itself is structurally inapplicable here, not from any missing
+      table.
+    - **Genuinely still open, newly identified while re-verifying this
+      paragraph (not previously documented anywhere in this project)**:
+      `Maneuver.SQUEEZE` (`CTBOTH.PAS`'s own `manab` abbreviation
+      `'SQ'`) has a real, sourced prose dispatch in `SAY.PAS`
+      (`_LSquee: FD2('squeeze',S_PCom,5)` -- 5 real templates, never
+      transcribed) but is never mentioned, researched, or wired
+      anywhere in this project -- not even in the "every other maneuver
+      isn't wired" fallback comment in `search_execution.py`'s own
+      tactic-walk loop, which explains Give's exclusion but is silent
+      on Squeeze entirely.
   - ~~**Trade's remaining gap** (see Phase 20's note above): the whole
     module, not just execution -- `obj`/`extra`'s field meanings aren't
     confirmed, so there's nothing yet to safely execute even if a

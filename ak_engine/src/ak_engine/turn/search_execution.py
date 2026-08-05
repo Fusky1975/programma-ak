@@ -1928,6 +1928,13 @@ def _resolve_search_encounter(
         #   tactic walk finishes -- see `_apply_scout()`'s own docstring
         #   for why it can't simply take a branch here like every other
         #   tactic above.
+        # - **Squeeze** (`Maneuver.SQUEEZE`, `manab`'s own `'SQ'`, Phase
+        #   401): genuinely unresearched, not structurally excluded like
+        #   Give -- `SAY.PAS` has a real, sourced prose dispatch for it
+        #   (`_LSquee: FD2('squeeze',S_PCom,5)`, 5 templates, never
+        #   transcribed) but no rulebook mechanic for it was ever traced.
+        #   A real, narrow, still-open gap -- see README's own Phase 401
+        #   note.
 
     if combat_attempted:
         # Phase 178: the plan's own tactic list ran out without a winner
