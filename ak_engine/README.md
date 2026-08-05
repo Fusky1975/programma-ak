@@ -16028,7 +16028,7 @@ section.
     README, ran once more before commit -- the standing per-phase
     workflow. Full suite: 3686 passed before this phase's own new work,
     3703 after (4 pre-existing tests updated in place, 21 new tests).
-- **Phase 384 (current)**: **corrects Phase 382's own "cannot be
+- **Phase 384**: **corrects Phase 382's own "cannot be
   honestly shipped" conclusion about the Advanced Ability Schedule --
   it was reproducible after all**, once asked directly what the actual
   blocker was. New `worldgen/special_ability_level_schedule.py`
@@ -16086,6 +16086,55 @@ section.
     different `game_number`s actually diverge), ran again, updated
     README, ran once more before commit -- the standing per-phase
     workflow. Full suite: 3703 passed before, 3709 after (6 new tests).
+- **Phase 385 (current)**: a fourth AKGEN research audit (two parallel
+  research agents plus a third covering world-gen/parser/name-catalog
+  coverage) turned up several genuinely unexploited sections; the user
+  picked all of them. This phase closes the first: real hero skill and
+  aptitude generation formulas, `world_generation.hero_talents_and_
+  aptitudes`. New `worldgen/hero_talent_generation.py` implements
+  `roll_alignment()` ("1+trunc(Random*5)", Good/Druidic/Neutral/Pagan/
+  Evil each 20%), `roll_primary_ability()` (the real "50% hero_id AND
+  15, 50% IRand AND 15, reroll uniformly on the out-of-range 16th
+  value" formula, hand-verified self-consistent against all three of
+  the source's own quoted probability splits before being coded),
+  `primary_increment()` (1/2 at 62.5%/37.5%, Druidism forced to 1), the
+  independent 35%-each Archery/Melee/Sageness training roll, and
+  `roll_aptitude()` (`min(5, skill + trunc(U*V*5.7*Apt_Mod))`,
+  `Apt_Mod`=2 when the hero's alignment matches that ability's own
+  favored alignment). `FAVORED_ALIGNMENT` transcribes the source's own
+  15-entry table, cross-checked two independent ways before use: the 5
+  "never favored" abilities all carry the source's own sentinel value,
+  which is exactly `Alignment.SPECIAL`'s own real ordinal (Phase 162)
+  -- an alignment `roll_alignment()` never produces -- and the other 10
+  decode through this project's own `ALIGNMENT_BY_ORDINAL` to match the
+  source's own separately-stated `favored_pairs` table exactly, all 15
+  entries, zero discrepancies.
+  - Reuses this project's own pre-existing `SkillTable` (Phase 21,
+    `models/kingdom.py`) as the output shape rather than inventing a
+    new one -- `roll_skill_and_aptitude_table()` returns one directly,
+    filled in for all 15 `Ability` members; the table's own 31st
+    trailing value (still unconfirmed even what it represents, per
+    Phase 21) is left at 0, not modeled here either.
+  - Deliberately out of scope, same reasoning `worldgen/pascal_random.
+    py` already gives: the real DOS clock-word startup seed (so this
+    can't be run end-to-end against a real generated game), and
+    `post_generation_layers` (historical-country bonuses, Divine/
+    Undead King modifiers, the Valhalla special Hero sheet, later
+    places/items/discoveries/experience) -- each its own separate,
+    later mechanic. As with `internal_magical_locations.py` (Phase
+    361), the formula is real and testable even though the real seed
+    isn't reproducible; callers supply any `PascalRandom`.
+  - Ran the full suite before writing new tests (non-breaking check),
+    wrote `tests/test_hero_talent_generation.py` (Monte Carlo checks
+    against every one of the source's own quoted percentages: the 20%
+    alignment split, the primary-ability roll's 8/15 own-ordinal / 1/30
+    other-ability / uniform-1/15 edge-case splits, the 62.5/37.5%
+    increment split, and both `raw_increment_distribution_percent`
+    tables (`normal_m1`/`favored_m2`) for the aptitude roll -- plus
+    invariant checks (`skill <= aptitude <= 5`) and determinism for a
+    fixed seed), ran again, updated README, ran once more before commit
+    -- the standing per-phase workflow. Full suite: 3709 passed before,
+    3724 after (15 new tests).
 
 ## Setup
 
