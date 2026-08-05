@@ -16582,7 +16582,7 @@ section.
     Europe_V/Earth_V game mode (an alternative to the normal random
     world generation this project already models) is a deliberate,
     documented scope exclusion, not a gap.
-- **Phase 395 (current)**: closes the second of the two findings Phase
+- **Phase 395**: closes the second of the two findings Phase
   394 left open -- the spell moderator's hidden `splate` legality
   classification (4 classes: `0` always legal, `1` illegal only on
   another player's land, `2` illegal only on another player's
@@ -16618,6 +16618,43 @@ section.
   - This closes the second and final finding from Phase 394's own
     full-report gap audit -- together with Phase 394, both real,
     previously-unflagged AKGEN findings from that audit are now closed.
+- **Phase 396 (current)**: user-directed follow-up on Practice/Tactical's
+  own long-referenced "multi-leader pooling stays a solo-only
+  approximation" gap. Investigation found the premise itself stale: real
+  multi-character skill-rise coordination has resolved through
+  `turn/turn_processor.py run_turn()` since **Phase 46**, and Tactical's
+  own "armies pooled into the same training maneuvers" clause has been
+  real, tested, and reachable the same way since **Phase 304** -- this
+  README's own "Not yet implemented" section (`turn/practice_execution.
+  py`'s note above) never got its "Multi-leader army pooling for
+  Tactical stays a genuine, documented gap" bullet corrected once Phase
+  304 shipped, so it's fixed below rather than left to mislead a future
+  reader (the same Phase 55/153 self-correction policy already
+  established). The one genuinely still-open piece, verified directly
+  against `Regolamento AK.txt` [4.3.1] (not just the Pascal-derived
+  summary already in this codebase): Sageness's own device-discovery
+  roll wasn't extended to `execute_practice_group()`.
+  - **`turn/practice_execution.py _roll_sage_device_discovery()`,
+    extracted**: the solo path's own device-roll-plus-Discovery-grant
+    logic, unchanged in behavior, factored out so both `execute_
+    practice()` and `execute_practice_group()` can share it verbatim.
+  - **`execute_practice_group()` now rolls Sage's device discovery for
+    each co-practicer independently**, off their own pre-attempt skill
+    level -- [4.3.1]'s own text never conditions the 5%-per-level chance
+    on solo-vs-group practice at all, only on the practicing character's
+    current skill, so extending the already-trusted solo formula to
+    each member of a group is the same formula, not a new one. A
+    comatose co-practicer's device roll is skipped too, matching
+    `execute_practice()`'s own comatose short-circuit.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), wrote 4 new tests in `test_practice_execution.py` (each
+    co-practicer's own independent roll and grant, the pre-attempt-skill
+    rule holding under a tied-skill group roll, the comatose gate
+    skipping the extra roll too, and a non-Sage ability never consuming
+    the extra draw), ran again, updated README (including the stale-
+    bullet correction below), ran once more before commit -- the
+    standing per-phase workflow. Full suite: 3791 passed before, 3795
+    after (4 new tests).
 
 ## Setup
 
@@ -16939,9 +16976,12 @@ rulebook before being turned into named, typed fields:
     no Pascal source for.~~ **Executed as of Phase 44** -- see that
     phase's note above. The dice-roll procedure turned out to be fully
     sourced in `RULES.AK` (only the roll *sequencing* is a documented
-    design choice); only province-level multi-character grouping stays
-    genuinely unresolved, worked around via a documented conservative
-    "always solo" approximation. ~~Tactical's army-quality-training
+    design choice); province-level multi-character grouping is real and
+    tested via `run_turn()` as of Phase 46 -- see that phase's own note
+    above -- though `execute_practice()` itself (the lower-level entry
+    point `plan_dispatch.py` actually calls) still resolves solo-only
+    when driven directly, by design: it structurally has no visibility
+    into sibling leaders' same-phase orders. ~~Tactical's army-quality-training
     variant and Sage's extra device-discovery roll are separate,
     still-unmodeled special cases~~ -- **stale as of Phase 263**: both
     rolls are wired (`turn/practice_execution.py execute_practice`/
@@ -16951,8 +16991,14 @@ rulebook before being turned into named, typed fields:
     device-discovery roll fires (Phase 171) but the discovered device
     itself stays unmodeled, no item/effect system existing anywhere in
     this project to attach it to (see that phase's own note above).
-    Multi-leader army pooling for Tactical stays a genuine, documented
-    gap.
+    ~~Multi-leader army pooling for Tactical stays a genuine, documented
+    gap.~~ -- **stale as of Phase 304 (never corrected until Phase
+    396)**: `execute_practice_tactical_group()` (Phase 304) implements
+    RULES.AK [6.1]'s own "if two leaders Practice Tactics together,
+    their armies are pooled into the same training maneuvers" clause in
+    full, reachable via the same Phase 46 `run_turn()` grouping. Sage's
+    own device-discovery roll is likewise extended to each co-practicer
+    independently as of Phase 396 -- see that phase's own note above.
   - ~~**Cast's remaining gap** (see Phase 29's note above): only Charm
     and Kill_Enemy execute; the other 10 real spells' actual effects...
     need game-state logic not present anywhere in the available Pascal

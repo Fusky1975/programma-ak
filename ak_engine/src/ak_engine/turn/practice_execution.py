@@ -204,14 +204,20 @@ phase's scope for each:
   module docstring for why this figure supersedes the rulebook's own
   printed "+2 per Invention found first."
 
-  **Not extended to
-  ``execute_practice_group``**: the
+  **Extended to ``execute_practice_group`` (Phase 396)**: the
   multi-character pooling path resolves a *shared* skill-rise outcome
-  across co-practicers, but Sageness's own device-discovery roll is a
-  per-*character* mechanic with no stated interaction with group
-  practice at all -- flagged as a further future phase rather than
-  guessed at here, the same "don't silently expand scope" precedent
-  Phase 167 set for Tactical's own group-pooling gap.
+  across co-practicers via ``resolve_practice_group``, but Sageness's
+  own device-discovery roll is a genuinely independent per-*character*
+  mechanic -- [4.3.1]'s own text (confirmed directly against
+  `Regolamento AK.txt`, not just the Pascal-derived summary above) never
+  conditions the 5%-per-level chance on solo-vs-group practice at all,
+  only on the practicing character's own current skill level. Rather
+  than a guess, this is the same formula already trusted for the solo
+  case (extracted into the shared ``_roll_sage_device_discovery()``
+  helper both paths now call), applied once per co-practicer off their
+  own pre-attempt skill level -- exactly as if each practiced alone. A
+  comatose co-practicer's own skill/aptitude and device roll both stay
+  untouched (same short-circuit ``execute_practice()`` already applies).
 """
 
 from __future__ import annotations
@@ -424,6 +430,40 @@ def _select_discovery_to_grant(kingdom: KingdomState, rng: random.Random) -> Dis
     return rng.choice(available)
 
 
+def _roll_sage_device_discovery(
+    state: GameState, leader: LeaderState, current_skill: int, rng: random.Random
+) -> tuple[bool, Discovery | None]:
+    """Sage's own device-discovery roll ([4.3.1]), independent of the
+    ordinary [3.13] skill-rise roll ("on top of, not instead of") --
+    ``current_skill`` is the *pre*-attempt level, same reasoning as
+    ``execute_practice()``'s own original Phase 171/266 note. Extracted
+    (Phase 396) so ``execute_practice_group()`` can reuse it verbatim --
+    nothing in the rulebook's own [4.3.1] text conditions this roll on
+    solo-vs-group practice at all: the 5%-per-level chance is a pure
+    function of the practicing character's own skill level, so each
+    co-practicer gets their own independent roll off their own
+    pre-attempt level, exactly as if practicing alone. See module
+    docstring's own Phase 396 addendum.
+    """
+
+    device_discovered = rng.random() < current_skill * SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL
+    discovery_granted: Discovery | None = None
+    if device_discovered and leader.kingdom_id is not None:
+        kingdom = state.kingdoms.get(leader.kingdom_id)
+        if kingdom is not None:
+            discovery_granted = _select_discovery_to_grant(kingdom, rng)
+            if discovery_granted is not None:
+                kingdom.discoveries.add(discovery_granted)
+                # Phase 271 (Chancellor Merit Points, user-specified
+                # scoring): see execute_practice()'s own identical note.
+                if discovery_granted not in state.discoveries_first_found_by:
+                    state.discoveries_first_found_by[discovery_granted] = leader.kingdom_id
+                    leader.merit_tally.discoveries_found_first += 1
+                else:
+                    leader.merit_tally.discoveries_found_not_first += 1
+    return device_discovered, discovery_granted
+
+
 def execute_practice_tactical(state: GameState, leader_id: int, rng: random.Random | None = None) -> tuple[int, ...]:
     """[6.1]'s army-training mechanic for a single leader's own commanded armies.
 
@@ -561,26 +601,10 @@ def execute_practice(
     discovery_granted: Discovery | None = None
     if ability is Ability.SAGE:
         # Independent of the skill-rise roll above ("on top of, not
-        # instead of") -- see module docstring for why current_skill
-        # (pre-attempt) drives the chance, not outcome.new_skill.
-        device_discovered = rng.random() < current_skill * SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL
-        if device_discovered and leader.kingdom_id is not None:
-            kingdom = state.kingdoms.get(leader.kingdom_id)
-            if kingdom is not None:
-                discovery_granted = _select_discovery_to_grant(kingdom, rng)
-                if discovery_granted is not None:
-                    kingdom.discoveries.add(discovery_granted)
-                    # Phase 271 (Chancellor Merit Points, user-specified
-                    # scoring): the world's first hero/King ever to
-                    # discover this particular Discovery scores 3
-                    # points; every later, independent discoverer of the
-                    # same Discovery scores 2 -- see GameState.
-                    # discoveries_first_found_by's own docstring.
-                    if discovery_granted not in state.discoveries_first_found_by:
-                        state.discoveries_first_found_by[discovery_granted] = leader.kingdom_id
-                        leader.merit_tally.discoveries_found_first += 1
-                    else:
-                        leader.merit_tally.discoveries_found_not_first += 1
+        # instead of") -- see _roll_sage_device_discovery()'s own
+        # docstring for why current_skill (pre-attempt) drives the
+        # chance, not outcome.new_skill.
+        device_discovered, discovery_granted = _roll_sage_device_discovery(state, leader, current_skill, rng)
 
     return PracticeExecutionResult(
         ability=ability,
@@ -633,21 +657,34 @@ def execute_practice_group(
     outcomes = resolve_practice_group(pairs, rng)
 
     results = []
-    for leader_id, table, outcome in zip(leader_ids, skills_tables, outcomes):
-        if state.leaders[leader_id].is_comatose:
+    for leader_id, table, outcome, (current_skill, _current_aptitude) in zip(leader_ids, skills_tables, outcomes, pairs):
+        leader = state.leaders[leader_id]
+        if leader.is_comatose:
             # Phase 310: same comatose gate as execute_practice()'s own --
             # this leader's own real stored skill/aptitude never changes,
             # regardless of what resolve_practice_group() computed for
             # them; the other co-practicers' own outcomes are unaffected
             # (a documented, unsourced choice -- nothing in [3.13] covers
             # a comatose participant, and there's no reason a partner's
-            # own experience should suffer for it).
+            # own experience should suffer for it). No Sage device roll
+            # either, matching execute_practice()'s own comatose short-
+            # circuit (it returns before ever reaching that roll).
             results.append(PracticeExecutionResult(ability=ability))
             continue
         table.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
         if outcome.skill_rose or outcome.aptitude_rose:
             # Phase 259: same is_royal_heir-clearing rule as execute_practice()'s own.
-            state.leaders[leader_id].is_royal_heir = False
+            leader.is_royal_heir = False
+
+        # Phase 396: Sage's own device-discovery roll, extended to group
+        # practice -- see _roll_sage_device_discovery()'s own docstring
+        # for why each co-practicer gets an independent roll off their
+        # own pre-attempt skill level, the same as if practicing alone.
+        device_discovered = False
+        discovery_granted: Discovery | None = None
+        if ability is Ability.SAGE:
+            device_discovered, discovery_granted = _roll_sage_device_discovery(state, leader, current_skill, rng)
+
         results.append(
             PracticeExecutionResult(
                 ability=ability,
@@ -655,6 +692,8 @@ def execute_practice_group(
                 aptitude_rose=outcome.aptitude_rose,
                 new_skill=outcome.new_skill,
                 new_aptitude=outcome.new_aptitude,
+                device_discovered=device_discovered,
+                discovery_granted=discovery_granted,
             )
         )
     return results

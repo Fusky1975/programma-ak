@@ -821,3 +821,106 @@ def test_execute_practice_group_clears_is_royal_heir_only_for_the_leader_who_act
     assert results[1].skill_rose is False
     assert state.leaders[1].is_royal_heir is False  # rose -- cleared
     assert state.leaders[2].is_royal_heir is True  # didn't rise -- untouched
+
+
+# -- Phase 396: Sage's device-discovery roll extended to group practice ---
+
+
+def test_execute_practice_group_sage_rolls_device_discovery_independently_per_leader():
+    # Skill 2 (leader 1, the group's minimum -- guaranteed skill-rise
+    # roll, always succeeds regardless of the scripted value since its
+    # chance is 1.0) and skill 5 (leader 2, static/no roll). Device
+    # chances are pre-attempt-skill-based: leader 1 = 2*5% = 10%, leader
+    # 2 = 5*5% = 25%. 0.05 < 10% succeeds for leader 1; 0.30 >= 25% fails
+    # for leader 2 -- proving each co-practicer's own roll is genuinely
+    # independent, not shared or skipped.
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.SAGE, skill=2, aptitude=9),
+            2: _skills_with(Ability.SAGE, skill=5, aptitude=9),
+        },
+    )
+
+    results = execute_practice_group(
+        state, [1, 2], Ability.SAGE, rng=ScriptedRandom([0.5, 0.05, 0.30], choice_indices=[0])
+    )
+
+    assert results[0].skill_rose is True  # the guaranteed-lower-skill roll
+    assert results[0].device_discovered is True
+    assert results[0].discovery_granted is not None
+    assert results[0].discovery_granted in state.kingdoms[1].discoveries
+
+    assert results[1].skill_rose is False  # static -- not the group minimum
+    assert results[1].device_discovered is False
+    assert results[1].discovery_granted is None
+
+
+def test_execute_practice_group_sage_uses_each_leaders_own_pre_attempt_skill():
+    # Tied skill (3 each) -- both get the same 10%-tied skill-rise roll.
+    # Both succeed it (0.01), rising to 4 -- but the device roll must
+    # still use the *pre*-rise skill (3*5% = 15%), not the post-rise one
+    # (4*5% = 20%): 0.17 is above the correct 15% (fails) but below the
+    # wrong 20% (would incorrectly succeed).
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.SAGE, skill=3, aptitude=9),
+            2: _skills_with(Ability.SAGE, skill=3, aptitude=9),
+        },
+    )
+
+    results = execute_practice_group(state, [1, 2], Ability.SAGE, rng=ScriptedRandom([0.01, 0.01, 0.17, 0.17]))
+
+    assert results[0].skill_rose is True
+    assert results[0].new_skill == 4
+    assert results[0].device_discovered is False
+    assert results[1].skill_rose is True
+    assert results[1].new_skill == 4
+    assert results[1].device_discovered is False
+
+
+def test_execute_practice_group_sage_comatose_co_practicer_gets_no_device_roll():
+    # Leader 1 (skill 2, the group's minimum) is comatose -- Phase 310's
+    # own gate applies before ever reaching the device roll (matching
+    # execute_practice()'s own comatose short-circuit), so only leader
+    # 2's own draw is on the scripted list; a stray draw for leader 1
+    # would surface as an IndexError.
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.SAGE, skill=2, aptitude=9),
+            2: _skills_with(Ability.SAGE, skill=5, aptitude=9),
+        },
+    )
+    state.leaders[1].is_comatose = True
+
+    results = execute_practice_group(state, [1, 2], Ability.SAGE, rng=ScriptedRandom([0.5, 0.30]))
+
+    assert results[0].skill_rose is False
+    assert results[0].device_discovered is False
+    assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (2, 9)  # untouched
+    assert results[1].device_discovered is False  # 0.30 >= 25%
+
+
+def test_execute_practice_group_non_sage_ability_never_rolls_device_discovery():
+    # Only one scripted value, for the group skill-rise roll itself --
+    # proves no extra draw is consumed for a non-Sage ability (an
+    # IndexError would surface otherwise, same proof shape as the solo
+    # case's own equivalent test).
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.MELEE, skill=2, aptitude=9),
+            2: _skills_with(Ability.MELEE, skill=5, aptitude=9),
+        },
+    )
+
+    results = execute_practice_group(state, [1, 2], Ability.MELEE, rng=ScriptedRandom([0.5]))
+
+    assert all(not r.device_discovered for r in results)
+    assert all(r.discovery_granted is None for r in results)
