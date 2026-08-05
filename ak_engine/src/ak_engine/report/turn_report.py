@@ -1687,10 +1687,21 @@ def render_uncontested_conquest(
 
 
 def render_spy_report_opening(spy_name: str, province_name: str, rng: random.Random) -> str:
-    """Renders ASpy's report-opening sentence (SPY.X) -- see module docstring
-    for why only this one sentence renders: no sourced template exists
-    for the rest of ``turn/aspy_execution.py SpyReport``'s own facts
-    (owner, adjacent owners, recruitable types, capital status).
+    """Renders ASpy's report-opening sentence (SPY.X).
+
+    **Phase 399 correction**: this docstring previously said "no sourced
+    template exists for the rest of ``SpyReport``'s own facts (owner,
+    adjacent owners, recruitable types, capital status)" -- true when
+    written (Phase 63), but recruitable types (``_LSAT``,
+    ``render_spy_army_type``) and capital status (``_LSCap``,
+    ``render_spy_capital_province``) turned out to have real, sourced
+    ``SAY.PAS`` templates after all, found and wired in Phase 115/212.
+    Only **owner** and **adjacent owners** genuinely still have no
+    confirmed PROSE template anywhere in the available source -- see
+    module docstring's own Phase 63 addendum for the research trail
+    (``RUMORS.PAS Set_Intel`` checked and ruled out; the entire ASpy
+    ``Say(...)`` cluster in ``SAY.PAS`` immediately after ``_LSpy`` was
+    enumerated in Phase 115 and neither fact appears in it).
     """
 
     variant = pick_variant(_SPY_TEMPLATES, rng)

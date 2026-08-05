@@ -16716,7 +16716,7 @@ section.
     (including the two stale-bullet corrections above), ran once more
     before commit -- the standing per-phase workflow. Full suite: 3795
     passed before, 3805 after (10 new tests).
-- **Phase 398 (current)**: user-directed follow-up on Use_MI's own
+- **Phase 398**: user-directed follow-up on Use_MI's own
   README claim -- "deeper than Cast's -- there's no Pascal source for
   how item instances are even created" ("*Use_MI: gap più profondo di
   Cast — non esiste proprio una fonte Pascal per come vengono creati
@@ -16763,6 +16763,40 @@ section.
     updated README (including the stale-bullet correction), ran once
     more before commit -- the standing per-phase workflow. Full suite:
     3805 passed before, 3807 after (2 new tests).
+- **Phase 399 (current)**: user-directed follow-up on ASpy's own report
+  -generation claim -- "solo la prima frase del report si genera;
+  proprietario/adiacenti/tipi reclutabili/capitale non hanno un
+  template PROSE confermato nella fonte." Re-checked each of the four
+  named facts individually against `SAY.PAS` (rather than trusting the
+  claim as a block), the same discipline Phase 396-398 already
+  established:
+  - **Recruitable types (`_LSAT`) and capital status (`_LSCap`) both
+    turned out to have real, sourced templates after all** -- found in
+    Phase 115, wired into the full report body by `describe_aspy()` in
+    Phase 212. Neither the docstring this claim quotes
+    (`report/turn_report.py render_spy_report_opening()`) nor this
+    README's own "Not yet implemented" bullet was ever revisited once
+    those two phases closed them.
+  - **Owner and adjacent-owners genuinely still have no confirmed
+    PROSE template anywhere in the available source** -- re-verified
+    directly: `SPY.X`'s own 5 real opening-sentence variants
+    (`_SPY_TEMPLATES`) never mention ownership at all, and the full
+    ASpy `Say(...)` cluster in `SAY.PAS` (`_LSTax`/`_LSAT`/`_LSList`/
+    `_LSHere`/`_LSNone`/`_LSNoCh`/`_LSCap`/`_LSEtc`/`_LSLeads`/
+    `_LSGarr`, all enumerated in Phase 115) has no entry for either
+    fact either. The data itself is real and already computed
+    (`SpyReport.owner_kingdom_id`/`adjacent_owners`, Phase 62) -- only
+    the English sentence is missing, the same "data ready, no sourced
+    prose" shape Trail's own [3.17] payload had before the user
+    directly authorized project-original text for it (Phase 212).
+  - Corrected both the stale docstring (`render_spy_report_opening()`)
+    and the stale README bullet in place (same convention as Phase
+    396-398), narrowing the claim to precisely the two facts that are
+    genuinely still open.
+  - No behavior changed (documentation-only correction; full suite
+    unchanged at 3807 before and after) -- whether to author
+    project-original prose for owner/adjacent-owners, mirroring Trail's
+    own precedent, is a decision left to the user rather than assumed.
 
 ## Setup
 
@@ -17204,14 +17238,28 @@ rulebook before being turned into named, typed fields:
     logic that doesn't exist yet~~ -- **Defend's own reactive
     battle-joining shipped in Phase 57, and ASpy's report-data
     generation shipped in Phase 62** (`turn/aspy_execution.py`) -- see
-    those phases' own notes above. **Still open for ASpy**: only the
+    those phases' own notes above. ~~**Still open for ASpy**: only the
     report's *opening sentence* renders as of Phase 63
     (`report/turn_report.py render_spy_report_opening()`, SPY.X) --
     the actual owner/adjacent-owners/recruitable-types/capital facts
     have no confirmed PROSE template anywhere in the available source
     (see Phase 63's own note above for the research trail), so they
-    stay unrendered. ~~plus taxation reporting (no per-province
-    tax-base model exists)~~ -- **stale, corrected in Phase 265**:
+    stay unrendered.~~ -- **stale as of Phase 399 (half-corrected in
+    Phase 115/212, the claim itself never revisited)**: recruitable
+    types (`_LSAT`, `render_spy_army_type`) and capital status
+    (`_LSCap`, `render_spy_capital_province`) both turned out to have
+    real, sourced `SAY.PAS` templates after all -- found in Phase 115,
+    wired into the full report body by `describe_aspy()` in Phase 212.
+    **Genuinely still open**: only owner and adjacent-owners -- no
+    confirmed PROSE template for either exists anywhere in the
+    available source, despite dedicated research in both Phase 63
+    (`RUMORS.PAS Set_Intel` traced and ruled out) and Phase 115 (the
+    entire ASpy `Say(...)` cluster in `SAY.PAS` enumerated, neither
+    fact appears in it). The data itself is real
+    (`SpyReport.owner_kingdom_id`/`adjacent_owners`, Phase 62) --
+    only the English sentence is missing. ~~plus taxation reporting (no
+    per-province tax-base model exists)~~ -- **stale, corrected in
+    Phase 265**:
     taxation *is* real and rendered (Phase 253's own `tax_estimate` +
     `render_spy_tax_estimate()`), and as of Phase 265 is finally
     perturbed by [4.33]'s own Margin of Error, not the exact value.
