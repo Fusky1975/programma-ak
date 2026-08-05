@@ -17020,7 +17020,7 @@ section.
     figure once at turn end), ran again, updated README, ran once more
     before commit -- the standing per-phase workflow. Full suite: 3813
     passed before, 3818 after (5 new tests).
-- **Phase 405 (current)**: at the user's own request ("Controlla anche
+- **Phase 405**: at the user's own request ("Controlla anche
   il resto delle voci 'What's excluded from this phase' del README"),
   re-verified both remaining bullets in that section against the
   current code rather than trusting either.
@@ -17061,6 +17061,67 @@ section.
   - Corrected both bullets in place (`~~strikethrough~~` + a `stale as
     of Phase 405` note with citations, same convention as Phases
     396-403). Pure documentation correction -- no behavior changed.
+    Full suite: 3818 passed before, 3818 after (0 new tests).
+- **Phase 406 (current)**: at the user's own request ("Controlla anche
+  il resto delle voci 'Known-unresolved semantics' del README"),
+  re-verified every remaining bullet in that section against the
+  current code. Found this section badly stale in a specific way none
+  of Phases 396-405 had yet caught: a large, dedicated static
+  reverse-engineering effort against the original `AK.EXE`/`AK.OVR`
+  battle engine (Phases 346-393, unrelated to the `AKGEN.EXE`
+  world-generator work Phase 405 already covered) replaced several
+  "deliberate design choice, not a recovered rule" constants this
+  section still describes with real, confirmed formulas -- and this
+  section was never revisited to reflect any of it.
+  - **Battle luck event percentages/ranges**: the invented 75%/55%
+    chance model was fully replaced (Phase 346, wired Phase 370) by a
+    real global/local `U[0,1)` luck-draw formula, Monte Carlo-verified
+    against the source's own probability tables; the real BLUCK/CLUCK
+    narration text was recovered too (Phase 388).
+  - **Pursuit catching order**: the deterministic "slowest first"
+    pairing was replaced (Phase 349) by a real, confirmed piecewise
+    curve in pursuer/retreater strength ratio, verified against five
+    worked examples from the source. The pre-existing 25%/75%
+    infantry/cavalry attempt rates were independently confirmed exact
+    against the source too -- though which specific army types count
+    as "cavalry" membership-wise is still a documented reading, not
+    re-verified, so that narrower claim stays open.
+  - **Post-battle quality-change constants**: replaced (Phase 350,
+    wired Phase 372) by a real formula, `60 >> max(0, quality +
+    formation_divisor - 2)`, verified against the source's own 4x6
+    worked table. The gain side's own per-unit "merit" score input
+    remains genuinely unsourced and defaults to the formula's own
+    documented neutral case.
+  - **Multiple Contingents unite chances**: already closed by Phase
+    307 (a different, non-disassembly source, the real MARCH TABLE) --
+    this bullet was simply never updated after that phase shipped.
+  - **Battle outcome judged at the side level, not per-column**: the
+    whole interpretation was replaced (Phase 370) by a real decision
+    rule -- the battle winner is the side with the greater *sum* of
+    every column's own real, signed `BRES` score, not a per-column
+    count.
+  - **`is_native_to_province` approximated as race-compatibility**: the
+    same finding already made at Phase 402 (see that phase's own note
+    above) -- a duplicate copy of the bullet in this section was
+    missed. Corrected the same way: the real per-province `Mod_PAT`
+    list exists (Phase 278) but still isn't read by
+    `execute_recruit()`.
+  - Explicitly re-checked and confirmed **still accurate, not stale**:
+    `KingdomMoveHeader.raw_fields`/`PlanSegment.sp`/the 31st skill
+    value (all still bare, unconfirmed parser fields), the hex
+    adjacency scheme (already correctly marked resolved), humanoid-
+    army-type compatibility, the "Beasts" nemesis matchup,
+    `win_probability`'s own curve (still an approximation -- though its
+    *role* narrowed to Duel-only once Phase 370 gave the main battle
+    decision a real formula), `exploration_advantage_multiplier`'s
+    linear interpolation, which ability feeds
+    `combat_ability_multiplier`, conquest/sea-battle movement-cost
+    stacking, the attacker forced-retreat destination's "first
+    candidate" simplification, and the LMOVE hex-numbering section's
+    own named open questions.
+  - Corrected all stale spots in place (`~~strikethrough~~` + a `stale
+    as of Phase 406` note with citations, same convention as Phases
+    396-405). Pure documentation correction -- no behavior changed.
     Full suite: 3818 passed before, 3818 after (0 new tests).
 
 ## Setup
@@ -17128,7 +17189,7 @@ rulebook before being turned into named, typed fields:
   hits the first anchor exactly but gives 80%, not "assured", at 4:1 — an
   approximation flagged in the function's docstring, not a sourced
   formula. Revisit if a real battle result ever contradicts it.
-- **Battle luck event percentages/ranges** (`turn/battle_luck.py`) — the
+- ~~**Battle luck event percentages/ranges** (`turn/battle_luck.py`) — the
   rulebook confirms random battle events exist and gives their *shape*
   ("Each random event can as much as double the strength of the affected
   force... The first random event affects the whole battle, while
@@ -17139,7 +17200,18 @@ rulebook before being turned into named, typed fields:
   events, qualitative "no effect" up to "tremendous" magnitude tiers) but,
   like the rulebook, give no numbers either. The specific values (75%/55%
   chances, ±10-50% column luck, +1-10% single-side battle luck) are a
-  deliberate design choice made with the user, not a recovered rule.
+  deliberate design choice made with the user, not a recovered rule.~~ --
+  **stale as of Phase 406**: the invented 75%/55%-chance model this
+  bullet describes was entirely replaced (Phase 346, wired Phase 370)
+  by the real, confirmed `AK.EXE`/`AK.OVR` luck formula -- a global and
+  a local `U[0,1)` draw per side, combined via `R_s = 1 +
+  k*(G_s+L_s)` (`k` = 0.75 turn 1, 1.5 later), always applied, no
+  "does it trigger" gate at all -- verified by a 2,000,000-draw Monte
+  Carlo check against the source's own declared probability tables
+  (within 0.03pp, sampling noise). The real BLUCK/CLUCK narration text
+  itself was recovered too (Phase 388, from `AKGEN`'s own
+  `battle_engine` catalogs). See `turn/battle_luck.py`'s own module
+  docstring for the full derivation.
 - **`exploration_advantage_multiplier` scaling** (`turn/strength.py`) —
   the rulebook's only concrete data point is the 100%-vs-0%-explored case
   giving exactly the max +25%. Scaled linearly by the exploration-percent
@@ -17156,32 +17228,64 @@ rulebook before being turned into named, typed fields:
   mounted/fast land types (Lt/Hvy Cavalry, Chariots, Camel Corps, Warg
   Riders); everything else (including overflight/naval types) uses the
   25% infantry rate.
-- **Pursuit catching order** (`turn/pursuit.py resolve_pursuit`) — "army
+- ~~**Pursuit catching order** (`turn/pursuit.py resolve_pursuit`) — "army
   speed is the most important factor in catching the defenders" has no
   formula. Implemented as a deterministic pairing (pursuers matched
-  against the slowest retreating units first), not a probability model.
-- **Post-battle quality-change constants** (`turn/aftermath.py`) — the
+  against the slowest retreating units first), not a probability model.~~
+  -- **stale as of Phase 406**: the same `AK.EXE`/`AK.OVR` disassembly
+  (Phase 349) replaced this with a real, confirmed piecewise curve in
+  `r_p` (pursuer strength / retreater strength) -- verified against the
+  source's own five worked examples (`r_p` 0.8/1.0/1.25/1.5/2.0 ->
+  22.5%/50%/77.5%/91.667%/100%) -- plus a real independent `U[1,2)`
+  randomizer per pairing (`draw_pursuit_random_multiplier`). The same
+  disassembly also confirmed (not merely repeated) the pre-existing
+  25%/75% infantry/cavalry attempt-rate constants exactly. Which
+  *army types* count as cavalry membership-wise is still a documented
+  reading, not independently re-verified against the source -- that
+  narrower claim below stays open.
+- ~~**Post-battle quality-change constants** (`turn/aftermath.py`) — the
   rulebook gives *zero* numbers here (unlike `win_probability`'s two
   anchors) — only qualitative direction ("may", "probably", "decreases as
   quality increases"). Every constant in this module is an undsourced
   design choice; treat the whole module as more speculative than
-  everything else in this README.
+  everything else in this README.~~ -- **stale as of Phase 406**: the
+  same disassembly (Phase 350, wired Phase 372) supplied a real,
+  confirmed formula -- `base_percent = 60 >> max(0, quality +
+  formation_divisor - 2)` -- verified against the source's own 4x6
+  worked table. A losing front-line unit falls at exactly that rate
+  (Depleted excluded); a winning unit rises at `base_percent *
+  merit_multiplier`. **Genuinely still open**: the gain side's own
+  per-unit "merit" score input has no already-computed real number in
+  this project to source it from yet, so `roll_quality_change`'s new
+  `score` parameter defaults to the formula's own documented neutral
+  case (no reduction) rather than a guess.
 - **Conquest + sea-battle movement-cost stacking** (`turn/conquest.py`)
   — the rulebook states the conquest extra-point and the sea-battle
   extra-point as two independent rules with no stated interaction for
   when both apply. Treated as additive (both deduct).
-- **Multiple Contingents unite chances** (`turn/multiple_contingents.py`)
+- ~~**Multiple Contingents unite chances** (`turn/multiple_contingents.py`)
   — "very good chance" (same origin) and "probably... separate battles"
   (different directions) have no numbers; implemented as 85%/30%, a
-  deliberate design choice.
-- **Battle outcome judged at the side level, not per-column**
+  deliberate design choice.~~ -- **stale as of Phase 406, closed by
+  Phase 307** (see that phase's own note above): the invented 85%/30%
+  constants were replaced with the real MARCH TABLE (`MARCH_UNITE_
+  CHANCE`, keyed by Tactical level and distance), sourced independently
+  of the `AK.EXE`/`AK.OVR` disassembly work above.
+- ~~**Battle outcome judged at the side level, not per-column**
   (`turn/battle_orchestrator.py fight_battle`) — a side that loses every
   column is treated as fully defeated (destroyed, or retreat/disband);
   any other losing pattern (mixed, or a tie) leaves the province
   contested with no eliminations. The rulebook's own language ("the
   defeated army", "contested provinces") supports this reading, but it
   doesn't itself specify a per-column elimination rule for a *partially*
-  losing side, so this is an interpretation.
+  losing side, so this is an interpretation.~~ -- **stale as of Phase
+  406**: the same `AK.EXE`/`AK.OVR` disassembly (Phase 370) replaced
+  this whole interpretation with a real, confirmed decision rule --
+  each column computes a real, signed `BRES` score (`-5..+5`, Phase
+  347), and the battle winner is decided by the **sum of every
+  column's own signed `BRES`**, not by counting which side won more
+  columns. See `turn/battle_resolution.py`'s own Phase 370 addendum for
+  the full derivation.
 - **What `fight_battle` leaves out of the strength calculation**:
   ~~the exploration-advantage special factor, fanaticism, and the
   desert-without-camels penalty aren't wired in~~ **fanaticism (opt-in,
@@ -17228,16 +17332,22 @@ rulebook before being turned into named, typed fields:
   non-adjacent pairs represent (some are plausibly legitimate, e.g. a
   leader chasing a distant target; one suspiciously round jump, exactly
   170, might be a distinct sentinel value).
-- **`is_native_to_province` approximated as race-compatibility**
+- ~~**`is_native_to_province` approximated as race-compatibility**
   (`plan_dispatch._dispatch_recruit`) — the rulebook's real rule is
   "Each province has 1 or 2 army types that can be recruited from the
   populace", a specific per-province list `GameState`/`ProvinceState`
-  doesn't carry. Approximated instead with
-  `is_army_type_compatible_with_race()` (any humanoid type in a humanoid
-  province, or an exact race match for monstrous types) -- looser than
-  the real rule, so the double-cost path may trigger less often than it
-  should in-game. `PlanPhase.extra[0]` (always `0` in every sample) is
-  also still unconfirmed and unused.
+  doesn't carry.~~ -- **half-stale as of Phase 406 (same finding
+  already made at Phase 402, see that phase's own note above -- this
+  duplicate copy was missed)**: the specific per-province list *does*
+  exist now, precisely, as `ProvinceState.recruit_type_1`/
+  `recruit_type_2` (Phase 278, decoded from a real `GW3`-family world
+  file's own `Mod_PAT`) -- it's just never read by
+  `execute_recruit()`, which still only gates on
+  `is_army_type_compatible_with_race()` (any humanoid type in a
+  humanoid province, or an exact race match for monstrous types) --
+  looser than the real rule, so the double-cost path may trigger less
+  often than it should in-game. `PlanPhase.extra[0]` (always `0` in
+  every sample) is still unconfirmed and unused.
 
 ## Not yet implemented (by design, this phase)
 
