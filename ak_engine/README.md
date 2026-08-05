@@ -16763,7 +16763,7 @@ section.
     updated README (including the stale-bullet correction), ran once
     more before commit -- the standing per-phase workflow. Full suite:
     3805 passed before, 3807 after (2 new tests).
-- **Phase 399 (current)**: user-directed follow-up on ASpy's own report
+- **Phase 399**: user-directed follow-up on ASpy's own report
   -generation claim -- "solo la prima frase del report si genera;
   proprietario/adiacenti/tipi reclutabili/capitale non hanno un
   template PROSE confermato nella fonte." Re-checked each of the four
@@ -16797,6 +16797,57 @@ section.
     unchanged at 3807 before and after) -- whether to author
     project-original prose for owner/adjacent-owners, mirroring Trail's
     own precedent, is a decision left to the user rather than assumed.
+- **Phase 400 (current)**: closes ASpy's own remaining owner/adjacent
+  -owners gap Phase 399 narrowed down to -- at the user's own direct
+  request ("Vorrei che le due frasi le creassi tu"), this project
+  authored the two project-original sentences itself, the same
+  authorization shape Trail's own [3.17] payload already had (Phase
+  212's own "Prosa originale del progetto" instruction), just supplied
+  in reverse (the user delegated authorship rather than dictating text).
+  - **`SPY_OWNER_TEMPLATE`/`SPY_NO_OWNER_TEMPLATE`/`SPY_ADJACENT_
+    OWNERS_TEMPLATE`/`SPY_NO_ADJACENT_OWNERS_TEMPLATE`** (new,
+    `report/turn_report.py`) and their `render_spy_owner()`/
+    `render_spy_adjacent_owners()` wrappers -- both facts get a present
+    and an absent variant, matching this module's own "empty is a
+    fact, not silence" convention (`TRAIL_NO_TREASURES_TEMPLATE` and
+    neighbors) rather than skipping the line. `render_spy_adjacent_
+    owners()` reuses `report/prose.py`'s own Phase 118 `^L` list
+    -insertion ("X, Y and Z" conjunction join) for more than one owned
+    neighbor.
+  - **`describe_aspy()` gains two new required keyword-only
+    parameters**, `owner_name: str | None` and `adjacent_owner_names:
+    list[str]` -- already-resolved display-name strings, matching this
+    module's own "never looks up `GameState` itself" convention (the
+    caller resolves `SpyReport.owner_kingdom_id`/`adjacent_owners` via
+    the module's own pre-existing `_diplomacy_entry()`). Rendered right
+    after the opening sentence, before the capital/army-type/taxation
+    lines -- matching rulebook [3.14]'s own quoted fact order ("owner,
+    owners of adjacent provinces, taxation ... army types ... capital"),
+    the first time this module's own assembly order has followed that
+    quote rather than a Desktop-sample-cross-checked guess (owner and
+    adjacent-owners have no real sample data to check against at all).
+    Required, not optional-with-a-skip-default -- every real
+    `SpyReport` already carries both facts (Phase 62), so silently
+    omitting them for an unmigrated caller would be worse than forcing
+    every caller (all 8 pre-existing tests, and the one real production
+    call site in `describe_turn_results()`) to supply them explicitly.
+  - **Found and fixed a real, pre-existing test-fixture gap while
+    wiring the production call site**: `test_describe_turn_results_
+    renders_aspy` (`tests/test_describe_turn_results.py`) built a
+    `SpyReport(owner_kingdom_id=1)` against a `GameState` that never
+    registered kingdom 1 -- harmless while `owner_kingdom_id` was never
+    read, a real `KeyError` inside `_diplomacy_entry()` now that it
+    is. Fixed by registering a real `KingdomState` for kingdom 1 in
+    that test's own setup, not by weakening `_diplomacy_entry()`.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), wrote 6 new tests (both renderers' present/absent variants,
+    `describe_aspy()`'s own owner-and-adjacent-owners assembly-order
+    and no-owner/no-adjacent-owners cases), updated the 8 pre-existing
+    `describe_aspy()` tests' call sites for the new required
+    parameters, ran again (one real failure found and fixed, see
+    above), updated README, ran once more before commit -- the
+    standing per-phase workflow. Full suite: 3807 passed before, 3813
+    after (6 new tests).
 
 ## Setup
 

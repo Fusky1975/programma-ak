@@ -1709,6 +1709,48 @@ def render_spy_report_opening(spy_name: str, province_name: str, rng: random.Ran
     return render(variant, values, rng=rng)
 
 
+# Phase 400 -- owner and adjacent-owners are the two ASpy facts
+# ``render_spy_report_opening()``'s own Phase 399 correction confirms
+# have no PROSE source anywhere in the available archive. These four
+# templates are **project-original**, written at the user's own direct
+# request ("Vorrei che le due frasi le creassi tu") after Phase 399
+# re-confirmed no source exists -- the same "data ready, no sourced
+# prose" situation Trail's own [3.17] payload had before the user
+# authorized project-original text for it (Phase 212, see
+# ``TRAIL_TEMPER_TEMPLATE`` and neighbors below). Each fact gets both a
+# present and an absent variant, matching this module's own "an empty
+# result is a fact, not silence" convention (e.g. ``TRAIL_NO_TREASURES_
+# TEMPLATE``) rather than skipping the line entirely.
+SPY_OWNER_TEMPLATE = "@ is owned by |."
+SPY_NO_OWNER_TEMPLATE = "@ is not owned by any Kingdom."
+SPY_ADJACENT_OWNERS_TEMPLATE = "The provinces adjacent to @ are owned by ^L^V."
+SPY_NO_ADJACENT_OWNERS_TEMPLATE = "None of the provinces adjacent to @ are owned by any Kingdom."
+
+
+def render_spy_owner(province_name: str, owner_name: str | None, rng: random.Random) -> str:
+    """Renders ASpy's owner line item (project-original, Phase 400 -- see
+    module comment above). ``owner_name`` mirrors ``SpyReport.owner_
+    kingdom_id``'s own ``None`` = unowned convention.
+    """
+
+    if owner_name is None:
+        return render(SPY_NO_OWNER_TEMPLATE, {"@": province_name}, rng=rng)
+    return render(SPY_OWNER_TEMPLATE, {"@": province_name, "|": owner_name}, rng=rng)
+
+
+def render_spy_adjacent_owners(province_name: str, owner_names: list[str], rng: random.Random) -> str:
+    """Renders ASpy's adjacent-owners line item (project-original, Phase
+    400 -- see module comment above). ``owner_names`` is the list of
+    distinct owning Kingdoms' display names among the spied province's
+    neighbors (``SpyReport.adjacent_owners``'s own non-``None`` values,
+    already resolved by the caller); empty when none of them are owned.
+    """
+
+    if not owner_names:
+        return render(SPY_NO_ADJACENT_OWNERS_TEMPLATE, {"@": province_name}, rng=rng)
+    return render(SPY_ADJACENT_OWNERS_TEMPLATE, {"@": province_name}, rng=rng, lists={"^V": owner_names})
+
+
 # HostAK/TP/SAY.PAS _LSTax -- a single, real, hardcoded template (no
 # file). See module docstring's Phase 115 addendum.
 SPY_TAX_ESTIMATE_TEMPLATE = "Approximate Taxation: #"
@@ -1842,7 +1884,15 @@ def render_spy_garrison(army_names: list[str], rng: random.Random) -> str:
     return render(SPY_GARRISON_APPROXIMATELY_TEMPLATE, {}, rng=rng, lists={"^V": army_names})
 
 
-def describe_aspy(report: SpyReport, *, spy_name: str, province_name: str, rng: random.Random) -> list[str]:
+def describe_aspy(
+    report: SpyReport,
+    *,
+    spy_name: str,
+    province_name: str,
+    owner_name: str | None,
+    adjacent_owner_names: list[str],
+    rng: random.Random,
+) -> list[str]:
     """Assembles ASpy's full report body from an already-computed
     ``SpyReport`` (``turn/aspy_execution.py execute_aspy()``, Phase 62,
     extended Phase 212) -- the first real assembly of the ``SAY.PAS``
@@ -1855,14 +1905,27 @@ def describe_aspy(report: SpyReport, *, spy_name: str, province_name: str, rng: 
     available archive gives each line item's own template
     (``SAY.PAS``'s ``CONST`` declarations, Phase 115's own docstring),
     not the surrounding ``Imp_Code`` control flow that decides which
-    fire in what order. Opening sentence, then the capital-province
-    notice (if any), then the province's recruitable Army Types, then
-    Taxation (``_LSTax``, Phase 253), then the characters/forces block
-    (``_LSNone`` if neither characters nor forces are present;
-    ``_LSList`` + ``_LSNoCh`` if forces but no characters; ``_LSList``
-    + one ``_LSHere`` per spotted character (``_LSLeads`` immediately
-    after any character who leads an army) + ``_LSGarr`` if there's an
-    unled garrison), then the closing line.
+    fire in what order. Opening sentence, then owner and adjacent
+    -owners (Phase 400, project-original -- see rulebook [3.14]'s own
+    "owner, owners of adjacent provinces, taxation ... army types ...
+    capital" order, quoted in full in ``turn/aspy_execution.py``'s own
+    module docstring), then the capital-province notice (if any), then
+    the province's recruitable Army Types, then Taxation (``_LSTax``,
+    Phase 253), then the characters/forces block (``_LSNone`` if
+    neither characters nor forces are present; ``_LSList`` + ``_LSNoCh``
+    if forces but no characters; ``_LSList`` + one ``_LSHere`` per
+    spotted character (``_LSLeads`` immediately after any character who
+    leads an army) + ``_LSGarr`` if there's an unled garrison), then the
+    closing line.
+
+    **Owner and adjacent-owners (Phase 400)**: ``owner_name``/
+    ``adjacent_owner_names`` are already-resolved display-name strings
+    -- this module never looks up ``GameState`` itself (see module
+    docstring), so the caller resolves ``SpyReport.owner_kingdom_id``/
+    ``adjacent_owners`` into names first (e.g. via this module's own
+    ``_diplomacy_entry()``). Always rendered, present or absent, per
+    ``render_spy_owner()``/``render_spy_adjacent_owners()``'s own
+    "empty is a fact" convention.
 
     **Taxation (``_LSTax``, Phase 253)**: "Approximate Taxation: N"
     renders right after the recruitable-Army-Type lines and before the
@@ -1884,6 +1947,8 @@ def describe_aspy(report: SpyReport, *, spy_name: str, province_name: str, rng: 
     """
 
     lines = [render_spy_report_opening(spy_name, province_name, rng)]
+    lines.append(render_spy_owner(province_name, owner_name, rng))
+    lines.append(render_spy_adjacent_owners(province_name, adjacent_owner_names, rng))
     if report.is_capital:
         lines.append(render_spy_capital_province(province_name, rng))
     for index, army_type in enumerate(report.recruitable_army_types, start=1):
@@ -3696,7 +3761,24 @@ def describe_turn_results(
             continue
         elif entry.action is ActionCode.ASPY and isinstance(entry.result, SpyReport):
             province_name = _province_label(state, entry.result.province)
-            lines.extend(describe_aspy(entry.result, spy_name=caster_name, province_name=province_name, rng=rng))
+            owner_name = (
+                _diplomacy_entry(state, entry.result.owner_kingdom_id)
+                if entry.result.owner_kingdom_id is not None
+                else None
+            )
+            adjacent_owner_names = [
+                _diplomacy_entry(state, kid) for kid in entry.result.adjacent_owners.values() if kid is not None
+            ]
+            lines.extend(
+                describe_aspy(
+                    entry.result,
+                    spy_name=caster_name,
+                    province_name=province_name,
+                    owner_name=owner_name,
+                    adjacent_owner_names=adjacent_owner_names,
+                    rng=rng,
+                )
+            )
             continue
         elif entry.action is ActionCode.EXPLORE and isinstance(entry.result, ExploreResult):
             for feature in entry.result.discovered_features:

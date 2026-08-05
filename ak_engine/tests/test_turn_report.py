@@ -177,6 +177,7 @@ from ak_engine.report.turn_report import (
     render_search_feature_already_sacked,
     render_skeletal_army_fervor,
     render_sneak_detected,
+    render_spy_adjacent_owners,
     render_spy_army_type,
     render_spy_capital_province,
     render_spy_character_here,
@@ -185,6 +186,7 @@ from ak_engine.report.turn_report import (
     render_spy_leads,
     render_spy_no_characters,
     render_spy_no_characters_or_forces,
+    render_spy_owner,
     render_spy_report_closing,
     render_spy_report_opening,
     render_spy_tax_estimate,
@@ -4891,7 +4893,9 @@ def test_describe_aspy_no_characters_or_forces():
     report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1)
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
 
-    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
 
     assert lines[0] == render_spy_report_opening("Aldric", "Greenfield", ScriptedRandom([0.1] * 4, choice_indices=[0]))
     assert "there were no conspicuous characters or forces in Greenfield." in lines
@@ -4905,7 +4909,9 @@ def test_describe_aspy_forces_but_no_characters():
     report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1, garrison_army_names=("241st Axemen",))
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
 
-    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
 
     assert "the following elements are present in Greenfield:  " in lines
     assert "there were no conspicuous characters in Greenfield." in lines
@@ -4926,7 +4932,9 @@ def test_describe_aspy_characters_with_and_without_armies():
     )
     rng = ScriptedRandom([0.1] * 30, choice_indices=[0])
 
-    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
 
     assert "Borin  is here." in lines
     assert "Commander Vale  is here." in lines
@@ -4938,7 +4946,9 @@ def test_describe_aspy_includes_capital_notice_when_capital():
     report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1, is_capital=True)
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
 
-    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
 
     assert "Greenfield is the kingdom's capital province." in lines
 
@@ -4947,7 +4957,9 @@ def test_describe_aspy_omits_capital_notice_when_not_capital():
     report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1, is_capital=False)
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
 
-    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
 
     assert "Greenfield is the kingdom's capital province." not in lines
 
@@ -4958,7 +4970,9 @@ def test_describe_aspy_lists_recruitable_army_types_in_order():
     )
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
 
-    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
 
     assert "Province Army Type 1: Bowmen" in lines
     assert "Province Army Type 2: Axemen" in lines
@@ -4971,7 +4985,9 @@ def test_describe_aspy_renders_taxation_between_army_types_and_characters():
     )
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
 
-    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
 
     assert "Approximate Taxation: 250" in lines
     tax_index = lines.index("Approximate Taxation: 250")
@@ -4983,9 +4999,66 @@ def test_describe_aspy_omits_taxation_when_never_recorded():
     report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1)  # tax_estimate defaults to None
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
 
-    lines = describe_aspy(report, spy_name="Aldric", province_name="Greenfield", rng=rng)
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
 
     assert not any("Taxation" in line for line in lines)
+
+
+# -- Phase 400: render_spy_owner / render_spy_adjacent_owners (project-original) --
+
+
+def test_render_spy_owner_present():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
+    assert render_spy_owner("Greenfield", "Aldric (#3)", rng) == "Greenfield is owned by Aldric (#3)."
+
+
+def test_render_spy_owner_absent():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
+    assert render_spy_owner("Greenfield", None, rng) == "Greenfield is not owned by any Kingdom."
+
+
+def test_render_spy_adjacent_owners_present():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
+    result = render_spy_adjacent_owners("Greenfield", ["Aldric (#3)", "Boru (#5)"], rng)
+    # report/prose.py's own ^L "X, Y and Z" conjunction join, Phase 118.
+    assert result == "The provinces adjacent to Greenfield are owned by Aldric (#3) and Boru (#5)."
+
+
+def test_render_spy_adjacent_owners_absent():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
+    result = render_spy_adjacent_owners("Greenfield", [], rng)
+    assert result == "None of the provinces adjacent to Greenfield are owned by any Kingdom."
+
+
+def test_describe_aspy_renders_owner_and_adjacent_owners_right_after_opening():
+    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1)
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(
+        report,
+        spy_name="Aldric",
+        province_name="Greenfield",
+        owner_name="Boru (#1)",
+        adjacent_owner_names=["Cedric (#2)"],
+        rng=rng,
+    )
+
+    assert lines[1] == "Greenfield is owned by Boru (#1)."
+    assert lines[2] == "The provinces adjacent to Greenfield are owned by Cedric (#2)."
+
+
+def test_describe_aspy_renders_no_owner_and_no_adjacent_owners_as_real_facts():
+    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=None)
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
+
+    assert lines[1] == "Greenfield is not owned by any Kingdom."
+    assert lines[2] == "None of the provinces adjacent to Greenfield are owned by any Kingdom."
 
 
 # -- Phase 231: record_battle_world_events() / describe_general_intelligence_report() --

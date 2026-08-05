@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import GameState, LeaderState, ProvinceState
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
@@ -343,6 +344,12 @@ def test_describe_turn_results_renders_search():
 
 def test_describe_turn_results_renders_aspy():
     state = _state_with_leaders(_leader(1, "Aldric"))
+    # Phase 400: describe_aspy() now resolves owner_kingdom_id into a real
+    # display name (_diplomacy_entry()), so a report claiming ownership by
+    # kingdom 1 needs that kingdom to actually be registered.
+    state.kingdoms[1] = KingdomState(
+        kingdom_id=1, name="Testia", race=Race.HUMAN, alignment=Alignment.GOOD, home_province=HexCoord(0, 0)
+    )
     result = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1)
     results = [
         PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.ASPY, result=result, error=None)
