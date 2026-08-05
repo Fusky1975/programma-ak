@@ -23,6 +23,15 @@ already used for Cast execution itself (Phase 172 implemented
 ``_execute_charm``/``_execute_kill_enemy`` as standalone, tested
 functions; Phase 173 wired them into ``plan_dispatch.py``).
 
+**Phase 386 correction**: "reservoir sampling" above is legacy
+terminology -- ``turn/cast_execution.py _gate_angel_register_candidate``
+no longer does that (see its own docstring for the real, non-uniform
+contention rule); the *shape* described here (later same-turn candidates
+can still overwrite the current winner, so this module must run last)
+is unchanged. This phase also replaces this module's own ``rng.choice(
+roster)`` hero pick with the real ``visitor_selection`` algorithm --
+see ``_select_visitor_template()`` below.
+
 **The recipient is the winning Kingdom's own King** ("I personaggi
 appariranno a fianco del Re" -- the visitor spawns at the King's own
 current location), found via ``LeaderState.is_king``. If the winning
@@ -55,10 +64,57 @@ turn-scoped visitor lifecycle tracking.
 
 from __future__ import annotations
 
+import math
 import random
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import GameState, LeaderState
-from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID
+from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID, ValhallaHero
+
+
+def _select_visitor_template(
+    state: GameState, alignment: Alignment, roster: tuple[ValhallaHero, ...], rng: random.Random
+) -> ValhallaHero:
+    """AKGEN's own confirmed ``visitor_selection`` (Phase 386, replacing
+    the earlier ``rng.choice(roster)`` placeholder): "turns 1-5 always
+    [use the] final roster record" -- confirmed by name, not just shape:
+    every one of this project's own 5 ``VALHALLA_ROSTER`` alignment
+    lists already ends with exactly the hero the source's own
+    ``distributed_defaults`` names for that alignment (Good/Quintilian,
+    Druidic/Bo, Neutral/Kitralus, Pagan/Kelderek, Evil/Dietrich) -- a
+    5-for-5 exact match. From turn 6 on: "(IRand MOD choices)+1 on first
+    invocation," then "advance with a randomly signed coprime stride,
+    producing a full permutation before repetition" -- the stride is
+    drawn once (uniformly among the roster-size's own coprime residues)
+    the first time this alignment is selected after turn 5, then reused
+    every later call, guaranteeing (by the standard modular-arithmetic
+    fact that a coprime step cycles through every residue before
+    repeating) that no hero repeats until the whole roster has been
+    visited. The source doesn't pin down exactly *how* the coprime
+    stride itself is chosen among the valid candidates -- picked
+    uniformly among them here, an honest, undocumented parameter choice
+    in an otherwise exactly-confirmed algorithm shape.
+    """
+
+    if state.turn_number <= 5:
+        return roster[-1]
+
+    n = len(roster)
+    if n == 1:
+        return roster[0]
+
+    sequence = state.valhalla_visitor_sequence.get(alignment)
+    if sequence is None:
+        index = rng.randrange(n)
+        coprime_strides = [s for s in range(1, n) if math.gcd(s, n) == 1]
+        stride = rng.choice(coprime_strides) if coprime_strides else 1
+        step = rng.choice((1, -1)) * stride
+    else:
+        previous_index, step = sequence
+        index = (previous_index + step) % n
+
+    state.valhalla_visitor_sequence[alignment] = (index, step)
+    return roster[index]
 
 
 def finalize_gate_angel_visit(state: GameState, rng: random.Random) -> LeaderState | None:
@@ -80,7 +136,7 @@ def finalize_gate_angel_visit(state: GameState, rng: random.Random) -> LeaderSta
     roster = VALHALLA_ROSTER.get(state.gate_angel_due_alignment, ())
     if not roster:
         return None
-    template = rng.choice(roster)
+    template = _select_visitor_template(state, state.gate_angel_due_alignment, roster, rng)
 
     kingdom = state.kingdoms[kingdom_id]
     king = next(

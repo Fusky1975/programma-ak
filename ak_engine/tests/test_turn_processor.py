@@ -1359,8 +1359,10 @@ def test_run_turn_spawns_a_valhalla_visitor_after_a_successful_gate_angel_cast()
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(3, 3)))
     state.add_leader(LeaderState(10, kingdom_id=1, name="Caster", location=HexCoord(3, 3), is_king=True))
     turn_leaders = [TurnLeader(_leader_with_phase(10, "Caster", "P0", _cast_gate_angel_phase("P0")), 1)]
-    # [0] -> due alignment GOOD (matches kingdom 1); [0] -> first GOOD hero (Basil)
-    rng = ScriptedRandom([], choice_indices=[0, 0])
+    # [0] -> due alignment GOOD (matches kingdom 1). GameState.turn_number
+    # defaults to 1, so visitor_selection is deterministic (Phase 386: the
+    # roster's own final record, no rng.choice consumed at all).
+    rng = ScriptedRandom([], choice_indices=[0])
 
     results = run_turn(turn_leaders, state, board_width=BOARD_WIDTH, rng=rng)
 
@@ -1370,7 +1372,7 @@ def test_run_turn_spawns_a_valhalla_visitor_after_a_successful_gate_angel_cast()
     assert visit_results[0].leader_id == VALHALLA_VISITOR_LEADER_ID
     assert visit_results[0].action is None
     assert visitor.leader_id == VALHALLA_VISITOR_LEADER_ID
-    assert visitor.name == VALHALLA_ROSTER[Alignment.GOOD][0].name
+    assert visitor.name == VALHALLA_ROSTER[Alignment.GOOD][-1].name
     assert state.leaders[VALHALLA_VISITOR_LEADER_ID] is visitor
     # Spawned beside kingdom 1's own King (leader 10), per the rulebook.
     assert visitor.location == HexCoord(3, 3)
@@ -1379,7 +1381,7 @@ def test_run_turn_spawns_a_valhalla_visitor_after_a_successful_gate_angel_cast()
     # flowed through run_turn() end to end.
     items = state.items_held_by(VALHALLA_VISITOR_LEADER_ID)
     assert len(items) == 1
-    assert items[0].treasure == VALHALLA_ROSTER[Alignment.GOOD][0].fixed_item
+    assert items[0].treasure == VALHALLA_ROSTER[Alignment.GOOD][-1].fixed_item
 
 
 def test_run_turn_produces_no_gate_angel_result_when_the_cast_targets_the_wrong_alignment():

@@ -1440,53 +1440,56 @@ def test_gate_angel_due_alignment_is_cached_for_the_rest_of_the_turn():
     assert second.applied is True  # kingdom 2 is DRUID, matches the cached due alignment
 
 
-def test_gate_angel_divine_kingdom_never_receives_a_visit():
+def test_gate_angel_divine_kingdom_receives_a_visit_when_good_is_due():
+    # Phase 386 correction: AKGEN's own confirmed validation_alignment_
+    # mapping clamps Divine to Good rather than excluding it outright.
     state = build_state()
     state.kingdoms[1].alignment = Alignment.DIVINE
     request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
-    rng = ScriptedRandom([], choice_indices=[0])  # GOOD due -- Divine is never eligible
+    rng = ScriptedRandom([], choice_indices=[0])  # GOOD due -- Divine clamps to Good
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
-    assert result.applied is False
-    assert result.reason == "not this alignment's turn for a Valhalla visit"
+    assert result.applied is True
+    assert state.last_gate_angel_kingdom == 1
 
 
-def test_gate_angel_undead_kingdom_never_receives_a_visit():
+def test_gate_angel_undead_kingdom_receives_a_visit_when_evil_is_due():
+    # Phase 386 correction: Undead clamps to Evil rather than being excluded.
     state = build_state()
     state.kingdoms[1].alignment = Alignment.UNDEAD
     request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
-    rng = ScriptedRandom([], choice_indices=[4])  # EVIL due -- Undead is never eligible
+    rng = ScriptedRandom([], choice_indices=[4])  # EVIL due -- Undead clamps to Evil
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
-    assert result.applied is False
-    assert result.reason == "not this alignment's turn for a Valhalla visit"
+    assert result.applied is True
+    assert state.last_gate_angel_kingdom == 1
 
 
-def test_gate_angel_reservoir_sampling_second_candidate_can_win():
+def test_gate_angel_contention_second_candidate_can_win():
+    # Phase 386 correction: the real rule is "later cast has 50% to
+    # replace the current incumbent" (rng.random() < 0.5), not reservoir
+    # sampling's rng.choice(range(n)).
     state = build_state()
     state.kingdoms[2].alignment = Alignment.GOOD
     state.add_leader(LeaderState(78, 2, "Second Good King", ELSEWHERE))
     request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
-    # [0] = GOOD due-alignment draw; [0] = reservoir swap for the 2nd
-    # candidate (rng.choice(range(2)) == 0 -> swap).
-    rng = ScriptedRandom([], choice_indices=[0, 0])
+    rng = ScriptedRandom([0.3], choice_indices=[0])  # GOOD due; 2nd candidate's roll < 0.5 -> replaces
 
     execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
     assert state.last_gate_angel_kingdom == 1  # first candidate wins outright, no roll needed
 
     execute_cast(state, kingdom_id=2, leader_id=78, request=request, rng=rng)
-    assert state.last_gate_angel_kingdom == 2  # the swap hands the visit to the 2nd candidate
+    assert state.last_gate_angel_kingdom == 2  # the 50% replace roll hands the visit to the 2nd candidate
 
 
-def test_gate_angel_reservoir_sampling_second_candidate_can_lose():
+def test_gate_angel_contention_second_candidate_can_lose():
     state = build_state()
     state.kingdoms[2].alignment = Alignment.GOOD
     state.add_leader(LeaderState(78, 2, "Second Good King", ELSEWHERE))
     request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
-    # [0] = GOOD due-alignment draw; [1] = no swap (rng.choice(range(2)) == 1).
-    rng = ScriptedRandom([], choice_indices=[0, 1])
+    rng = ScriptedRandom([0.7], choice_indices=[0])  # GOOD due; 2nd candidate's roll >= 0.5 -> nullified
 
     execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
     execute_cast(state, kingdom_id=2, leader_id=78, request=request, rng=rng)
@@ -1510,6 +1513,23 @@ def test_gate_angel_cycle_resets_once_all_5_alignments_are_visited():
 
     # cleared (all 5 were already visited), then exactly one freshly consumed
     assert len(state.gate_angel_cycle_visited) == 1
+
+
+def test_gate_angel_due_alignment_also_resets_on_the_turn_mod_5_equals_4_boundary():
+    # Phase 386: a second, independent reset condition -- the cycle now
+    # force-clears on this turn-count boundary even when fewer than 5
+    # alignments have actually been visited (e.g. no Gate Angel cast at
+    # all on some intervening turn).
+    state = build_state()
+    state.turn_number = 4  # 4 % 5 == 4
+    state.gate_angel_cycle_visited = {Alignment.GOOD, Alignment.DRUID}  # only 2 of 5, not a full cycle
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+    rng = ScriptedRandom([], choice_indices=[0])  # GOOD is remaining[0] after the forced reset
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.gate_angel_due_alignment is Alignment.GOOD
 
 
 def test_gate_angel_failed_roll_does_not_touch_any_state():

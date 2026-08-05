@@ -650,7 +650,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
-from ak_engine.models.alignment import Alignment
+from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.army_type import OVERFLIGHT_AIR, ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
@@ -738,6 +738,20 @@ GATE_ANGEL_ELIGIBLE_ALIGNMENTS = (
     Alignment.PAGAN,
     Alignment.EVIL,
 )
+
+
+def _gate_angel_clamped_alignment(alignment: Alignment) -> Alignment:
+    """AKGEN's own confirmed ``validation_alignment_mapping``: "clamp to
+    1..5, so Divine counts as Good and Undead as Evil" (Phase 386) --
+    ``Max(1, Min(5, Ord(alignment)))`` on this project's own real
+    ``ALIGNMENT_ORDINAL`` sequence. A Divine or Undead Kingdom is
+    therefore genuinely eligible for a Gate Angel visit on its clamped
+    alignment's own turn, not excluded outright as an earlier version of
+    this module assumed.
+    """
+
+    ordinal = max(1, min(5, ALIGNMENT_ORDINAL[alignment]))
+    return ALIGNMENT_BY_ORDINAL[ordinal]
 
 # Mystic Winds (Phase 204, user-supplied): "Each unit led by the affected
 # leader has its movement set at 5" -- a hard set, not a bonus. See the
@@ -2095,12 +2109,27 @@ def _gate_angel_due_alignment(state: GameState, rng: random.Random) -> Alignment
     5-turn cycle, the cycle resets and all 5 become eligible again --
     exactly the user's own worked example (turn 0 Druid, turn 1 picks
     from the remaining 4, ..., turn 5 restarts).
+
+    **Phase 386 correction**: AKGEN's own confirmed
+    ``recipient_selection.alignment_rotation`` gives this same "pick
+    uniformly among the alignments not yet used this cycle" behavior via
+    literal rejection sampling on a 5-bit mask (`choose (IRand MOD 5)+1
+    by rejection among bits not present`) -- mathematically identical to
+    ``rng.choice(remaining)`` below, so that part needed no change. But
+    it also names a **second, independent** reset condition this project
+    had missed: "clear... also on the internal gameturn MOD 5 = 4
+    boundary" -- the cycle now force-resets on that turn-count boundary
+    regardless of how many alignments have actually been visited (e.g. a
+    turn with no Gate Angel cast at all still advances the boundary).
     """
 
     if state.gate_angel_due_alignment_turn == state.turn_number:
         return state.gate_angel_due_alignment
 
-    if len(state.gate_angel_cycle_visited) >= len(GATE_ANGEL_ELIGIBLE_ALIGNMENTS):
+    if (
+        len(state.gate_angel_cycle_visited) >= len(GATE_ANGEL_ELIGIBLE_ALIGNMENTS)
+        or state.turn_number % 5 == 4
+    ):
         state.gate_angel_cycle_visited.clear()
 
     remaining = [a for a in GATE_ANGEL_ELIGIBLE_ALIGNMENTS if a not in state.gate_angel_cycle_visited]
@@ -2113,21 +2142,24 @@ def _gate_angel_due_alignment(state: GameState, rng: random.Random) -> Alignment
 
 
 def _gate_angel_register_candidate(state: GameState, kingdom_id: int, rng: random.Random) -> None:
-    """Reservoir sampling (k=1): each new same-turn, same-due-alignment
-    successful candidate replaces the current winner with probability
-    ``1/N`` (``N`` = candidates seen so far this turn, including this
-    one) -- produces a uniformly random winner among all of a turn's
-    candidates using a single forward pass, honoring "se c'è più di un
-    giocatore in un allineamento, la scelta verrà fatta a caso" / "If
-    more than one player casts the Gate Angel spell, one of the spells
-    will be nullified" without needing new end-of-turn batch-resolution
-    machinery. The first candidate each turn always wins outright (no
-    contention yet, no roll consumed).
+    """**Phase 386 correction**: AKGEN's own confirmed ``gate_angel.
+    multiple_casts``/``more_than_two_quirk`` replace what this function
+    used to do (reservoir sampling for a *uniformly* random winner) with
+    the real, much simpler -- and non-uniform -- rule: "first cast
+    occupies the slot; every later cast has 50% to be nullified and 50%
+    to replace the current incumbent." For ``n`` same-turn, same-due-
+    alignment candidates this makes the *last* candidate win with
+    probability 1/2, the second-to-last 1/4, and so on geometrically
+    back to the *first* candidate, who ties the second one at the tail
+    (1/2^(n-1) each) since it never gets an own "replace" roll, only
+    survival rolls -- confirmed by hand-deriving these exact fractions
+    from the rule before coding it, matching the source's own quoted
+    "last has 1/2, preceding 1/4, earlier decay geometrically."
     """
 
     state.gate_angel_candidates_this_turn += 1
     n = state.gate_angel_candidates_this_turn
-    won = n == 1 or rng.choice(range(n)) == 0
+    won = n == 1 or rng.random() < 0.5
     if won:
         state.last_gate_angel_kingdom = kingdom_id
         state.last_gate_angel_turn = state.turn_number
@@ -2145,20 +2177,20 @@ def _execute_gate_angel(
     195 -- see module docstring's "Secret spells" section for the full
     quote and design rationale).
 
-    Checks whether the caster's own Kingdom alignment matches this
-    turn's due alignment *before* rolling (the same "check applicability
-    first" order every other spell here uses); a successful roll enters
-    the reservoir-sampling drawing for who actually gets the visit
-    (``_gate_angel_register_candidate``). No new ``LeaderState`` hero is
-    synthesized -- this project has no character-generation data to
-    draw from (no per-alignment Valhalla roster has been supplied yet).
+    Checks whether the caster's own Kingdom alignment (clamped through
+    ``_gate_angel_clamped_alignment`` -- Phase 386: Divine counts as
+    Good, Undead as Evil, rather than being excluded outright) matches
+    this turn's due alignment *before* rolling (the same "check
+    applicability first" order every other spell here uses); a
+    successful roll enters the contention drawing for who actually gets
+    the visit (``_gate_angel_register_candidate``).
     """
 
     caster = state.leaders[leader_id]
     kingdom = state.kingdoms[kingdom_id]
 
     due_alignment = _gate_angel_due_alignment(state, rng)
-    if kingdom.alignment is not due_alignment:
+    if _gate_angel_clamped_alignment(kingdom.alignment) is not due_alignment:
         return CastExecutionResult(request, applied=False, reason="not this alignment's turn for a Valhalla visit")
 
     succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)

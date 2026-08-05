@@ -158,6 +158,14 @@ for the full rule text and design rationale; summarized here:
   a single turn as later candidates win the reservoir swap; the value
   after a turn's dispatch fully completes is authoritative.
 
+**Phase 386 correction**: the field comment above still says
+"reservoir winner" for historical continuity, but ``_gate_angel_
+register_candidate()`` no longer actually does reservoir sampling --
+AKGEN's own confirmed rule is simpler and non-uniform (see that
+function's own docstring). ``valhalla_visitor_sequence`` (below) is new
+this phase, backing the real post-turn-5 visitor-selection algorithm in
+``turn/valhalla_execution.py``.
+
 **Phase 196 addendum -- the user supplied all 5 per-alignment roster
 files** (``models/valhalla.py VALHALLA_ROSTER``, 137 named heroes
 total), unblocking real hero synthesis: ``turn/valhalla_execution.py
@@ -964,6 +972,14 @@ class GameState:
     # Reservoir-sampling counter: how many successful due-alignment
     # candidates have been seen so far this turn.
     gate_angel_candidates_this_turn: int = 0
+    # Phase 386: per-alignment (current_roster_index, signed_stride) for
+    # turn/valhalla_execution.py's own post-turn-5 visitor selection --
+    # AKGEN's confirmed "advance with a randomly signed coprime stride,
+    # producing a full permutation before repetition." Lazily populated
+    # on that alignment's first post-turn-5 visit; absent entries mean
+    # "not yet started" (turns 1-5 use the roster's own final record
+    # instead, needing no sequence state at all).
+    valhalla_visitor_sequence: dict[Alignment, tuple[int, int]] = field(default_factory=dict)
     # Emperor election (Phase 228, turn/emperor_election.py) -- rulebook
     # [10.2]. `emperor_kingdom_id` persists once a vote actually elects
     # someone (a failed/no-quorum vote never clears it -- see that

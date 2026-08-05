@@ -16086,7 +16086,7 @@ section.
     different `game_number`s actually diverge), ran again, updated
     README, ran once more before commit -- the standing per-phase
     workflow. Full suite: 3703 passed before, 3709 after (6 new tests).
-- **Phase 385 (current)**: a fourth AKGEN research audit (two parallel
+- **Phase 385**: a fourth AKGEN research audit (two parallel
   research agents plus a third covering world-gen/parser/name-catalog
   coverage) turned up several genuinely unexploited sections; the user
   picked all of them. This phase closes the first: real hero skill and
@@ -16135,6 +16135,71 @@ section.
     fixed seed), ran again, updated README, ran once more before commit
     -- the standing per-phase workflow. Full suite: 3709 passed before,
     3724 after (15 new tests).
+- **Phase 386 (current)**: closes the second AKGEN research-audit item,
+  `runtime_mechanics.valhalla`'s own real mechanics -- correcting three
+  confirmed bugs in the already-wired Gate Angel machinery
+  (`turn/cast_execution.py`) and replacing a placeholder in
+  `turn/valhalla_execution.py` with the real, source-confirmed
+  algorithm.
+  - **Contention resolution, corrected**: `_gate_angel_register_
+    candidate()` used to do reservoir sampling for a *uniformly* random
+    winner among same-turn, same-due-alignment candidates. AKGEN's own
+    confirmed rule is simpler and non-uniform: "first cast occupies the
+    slot; every later cast has 50% to be nullified and 50% to replace
+    the current incumbent" -- for `n` candidates this makes the *last*
+    win with probability 1/2, the second-to-last 1/4, geometrically back
+    to the *first*, who ties the second at the tail (never getting an
+    own "replace" roll, only survival rolls) -- hand-derived and
+    verified before coding.
+  - **Alignment eligibility, corrected**: Divine and Undead Kingdoms
+    used to be excluded from Gate Angel outright. AKGEN's own confirmed
+    `validation_alignment_mapping` clamps them instead ("Divine counts
+    as Good and Undead as Evil"), via a new `_gate_angel_clamped_
+    alignment()`.
+  - **Rotation reset, corrected**: `_gate_angel_due_alignment()`'s own
+    5-alignment cycle now also force-resets on the `turn_number % 5 ==
+    4` boundary (AKGEN's own second, independent reset condition),
+    not only once all 5 alignments have actually been visited --
+    matters when a turn passes with no Gate Angel cast at all.
+  - **Visitor selection, real algorithm**: `turn/valhalla_execution.py`
+    used to pick a uniformly random hero from the winning alignment's
+    roster every time. AKGEN's own confirmed `visitor_selection` says
+    turns 1-5 always use the roster's own *final* record -- verified,
+    not just plausible: every one of this project's own 5
+    `VALHALLA_ROSTER` alignment lists already ends with exactly the
+    hero the source's own `distributed_defaults` names for that
+    alignment, a 5-for-5 exact match found before trusting the
+    interpretation. From turn 6 on, a per-alignment sequence (new
+    `GameState.valhalla_visitor_sequence`) advances by a randomly
+    signed, coprime-to-roster-size stride, guaranteeing a full
+    permutation of the roster before any repeat -- the *fact* that the
+    stride must be coprime is exactly confirmed; *which* coprime value
+    gets picked isn't pinned down by the source, so it's drawn uniformly
+    among the valid candidates, an honest, documented parameter choice.
+  - Updated 8 pre-existing tests broken by these real corrections
+    (2 Divine/Undead-exclusion tests flipped to assert the real clamped-
+    inclusion behavior; 2 reservoir-sampling contention tests rewritten
+    for the real 50/50 rule; 4 visitor-identity assertions in `test_
+    valhalla_execution.py`/`test_turn_processor.py` updated from the
+    roster's first entry to its real final entry for early turns).
+  - Ran the full suite before writing new tests (non-breaking check,
+    which is what surfaced the 8 pre-existing breaks above), added a
+    turn-mod-5 reset test and a contention-outcome test to `test_cast_
+    execution.py`, and 4 new visitor-selection tests to `test_valhalla_
+    execution.py` (deterministic turns 1-5, full-permutation-before-
+    repeat with a small synthetic roster, single-hero-roster edge case,
+    and sequence-state persistence), ran again, updated README, ran
+    once more before commit -- the standing per-phase workflow. Full
+    suite: 3724 passed before, 3729 after (5 net new tests; 8
+    pre-existing tests updated in place for the real corrected
+    behavior).
+  - **Still not implemented, a real, separate, larger gap**:
+    `recipient_selection` -- the automatic/passive Valhalla visit that
+    runs independent of any Gate Angel cast (its own visit-count-based
+    King scoring, `(IRand AND 1023) - 1024*visit_count`, lowest-count-
+    wins). This needs a new persisted `valhalla_visit_count` per King
+    and a new automatic trigger point in `turn/turn_processor.py`, not
+    just a formula fix -- left for a real follow-up phase.
 
 ## Setup
 
