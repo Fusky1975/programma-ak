@@ -388,6 +388,66 @@ def test_dispatch_trade_stamps_the_request_onto_the_result():
     assert result.request.target_leader_id == recipient_id
 
 
+def test_dispatch_trade_self_targeted_secret_spell_ordinal_rewrites_to_cast():
+    # Phase 397: DEF2.PAS's own Trade branch reclassifies a self-targeted
+    # Give of a secret-spell ordinal (25-34) into a Cast -- see
+    # turn/trade_decode.py's module docstring. Gate Angel is a
+    # NO_TARGET_SPELLS member, so the rewrite's own forced target=0
+    # doesn't get in its way here.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=int(Spell.GATE_ANGEL), extra=[LEADER_ID, 3])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
+
+    assert isinstance(result, CastExecutionResult)
+    assert result.request.spell == Spell.GATE_ANGEL
+    assert result.request.target == 0
+
+
+def test_dispatch_trade_self_targeted_secret_spell_zeroes_a_normally_targeted_spells_target():
+    # Scar Terrain ordinarily needs a real province target -- the Trade->Cast
+    # rewrite forces target=0 regardless (DEF2.PAS: lextra[m] := 0), so it
+    # faithfully fails at execution rather than being "fixed" to keep working.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=int(Spell.SCAR_TERRAIN), extra=[LEADER_ID, 3])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
+
+    assert isinstance(result, CastExecutionResult)
+    assert result.applied is False
+    assert result.reason == "province not found or not in range"
+
+
+def test_dispatch_trade_ordinary_give_of_a_secret_spell_ordinal_is_not_rewritten():
+    # Same obj range, but not self-targeted (extra[0] != leader_id) -- an
+    # ordinary Give to leader 3 of "item/gold 25", not a Cast rewrite.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {}, treasury=1000)
+    recipient_id = 3
+    state.add_kingdom(KingdomState(2, "Recipient", Race.HUMAN, Alignment.GOOD, location, treasury=0))
+    state.add_leader(LeaderState(recipient_id, 2, "Recipient King", location, is_king=True))
+    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=int(Spell.GATE_ANGEL), extra=[0, recipient_id])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, TradeExecutionResult)
+
+
+def test_dispatch_trade_self_targeted_ordinary_gold_amount_is_not_rewritten():
+    # Self-targeted, but obj (24) is below the secret-spell range -- an
+    # ordinary (if unusual) self-Give, not a rewrite trigger.
+    state, army_id = _state_with_army(HexCoord(3, 9), {}, treasury=1000)
+    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=24, extra=[LEADER_ID, LEADER_ID])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, TradeExecutionResult)
+
+
 def test_dispatch_practice_executes_and_mutates_leader_skills():
     # Phase 44: PRACTICE now actually executes (always resolved as solo
     # practice -- see turn/practice_execution.py's module docstring).

@@ -374,7 +374,7 @@ from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_rec
 from ak_engine.turn.rumor import RUMOR_CHANCE_BY_ACTION, resolve_rumor_generation
 from ak_engine.turn.search_decode import decode_search_phase
 from ak_engine.turn.search_execution import SearchExecutionResult, execute_search
-from ak_engine.turn.trade_decode import decode_trade_phase
+from ak_engine.turn.trade_decode import decode_trade_phase, rewrite_trade_as_secret_spell_cast
 from ak_engine.turn.trade_execution import TradeExecutionResult, execute_give
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, execute_trail
@@ -559,6 +559,14 @@ def dispatch_phase(
         return _dispatch_fire(phase, state, leader_id)
 
     if action is ActionCode.TRADE:
+        # Phase 397: DEF2.PAS's own Trade branch reclassifies a self-
+        # targeted Give of a secret-spell ordinal (25-34) into a Cast --
+        # see turn/trade_decode.py's module docstring for the full
+        # decoded mechanic. Checked ahead of the ordinary Trade dispatch,
+        # exactly mirroring R_HPlan's own read-time rewrite order.
+        rewritten_cast = rewrite_trade_as_secret_spell_cast(phase, leader_id)
+        if rewritten_cast is not None:
+            return execute_cast(state, kingdom_id, leader_id, rewritten_cast, rng, board_width=board_width)
         return _dispatch_trade(phase, state, leader_id)
 
     if action is ActionCode.PRACTICE:

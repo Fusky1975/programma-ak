@@ -52,15 +52,21 @@ only spells) -- an independent confirmation of both the decode and the
 rulebook's own "must be an Action Spell" restriction [3.10], not just a
 plausible reading.
 
-**Deliberately not handled here: the Trade-\\>Cast rewrite for secret
-spells 25-34.** ``DEF2.PAS``'s ``Trade`` branch can reclassify a
-self-targeted Give phase into a Cast of a secret spell if the caster has
-the matching special ability (see ``turn/trade_decode.py``'s docstring).
-That rewrite happens to a *Trade*-ordinal phase before this module ever
-sees it -- ``cast_decode.py`` only decodes phases already tagged
-``ActionCode.CAST`` in the parsed token stream, and no real Trade phase
-(let alone this specific rewrite) exists in any sample file to validate
-against regardless.
+**Phase 397 correction -- the Trade->Cast rewrite for secret spells
+25-34 is no longer unhandled.** This section previously said the
+rewrite was "deliberately not handled here" since no real Trade phase
+existed in any sample file to validate against. That's still true
+empirically (0 real Trade phases of any kind exist across all 10
+``AK3__T*.K1`` fixtures), but direct reading of ``DEF2.PAS``'s own
+``Trade`` branch (``R_HPlan``, ~line 575) turned out to fully and
+precisely specify the rewrite structurally regardless -- see
+``turn/trade_decode.py``'s own module docstring for the decoded
+mechanic and ``rewrite_trade_as_secret_spell_cast()``, now wired into
+``turn/plan_dispatch.py``'s own ``ActionCode.TRADE`` branch ahead of
+``decode_trade_phase()``. That rewrite happens to a *Trade*-ordinal
+phase before this module (``cast_decode.py``) ever sees it --
+``cast_decode.py`` itself is unchanged, and still only ever decodes
+phases already tagged ``ActionCode.CAST`` in the parsed token stream.
 
 **Decode-only**: resolving what a successful Cast actually does (a
 province's tax/exploration effects, a character's death/resurrection,

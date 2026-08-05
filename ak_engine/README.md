@@ -438,15 +438,17 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   against the real `AK3__T9.K1`/`AK3__T10.K1` nested-Charm/Resurrection
   examples already covered by Phase 18's tests (now asserting real ids
   instead of `None`).
-  **Deliberately not modeled**: the Trade-\>Cast rewrite for secret
+  ~~**Deliberately not modeled**: the Trade-\>Cast rewrite for secret
   spells 25-34 (`DEF2.PAS`'s `Trade` branch can reclassify a
   self-targeted Give into a Cast if the caster has the matching special
   ability) -- confirmed to exist in the Pascal source but zero real
   examples anywhere, and it belongs to `trade_decode.py` if ever built,
-  not this module. **Decode-only** otherwise, same status as
-  Search/Trade/Practice: resolving what a successful Cast actually does
-  needs game-state mutation logic not present anywhere in the available
-  Pascal source.
+  not this module.~~ -- **built, Phase 397**: exactly where this
+  bullet predicted, `turn/trade_decode.py
+  rewrite_trade_as_secret_spell_cast()`. **Decode-only** otherwise, same
+  status as Search/Trade/Practice: resolving what a successful Cast
+  actually does needs game-state mutation logic not present anywhere in
+  the available Pascal source.
 - **Phase 24 (current)**: Use Magic Item decoding (rulebook [3.11]).
   Structurally distinct from Cast in one key way: Use_MI's `obj` is a
   **global item-instance id** (an index into three parallel Pascal
@@ -16618,7 +16620,7 @@ section.
   - This closes the second and final finding from Phase 394's own
     full-report gap audit -- together with Phase 394, both real,
     previously-unflagged AKGEN findings from that audit are now closed.
-- **Phase 396 (current)**: user-directed follow-up on Practice/Tactical's
+- **Phase 396**: user-directed follow-up on Practice/Tactical's
   own long-referenced "multi-leader pooling stays a solo-only
   approximation" gap. Investigation found the premise itself stale: real
   multi-character skill-rise coordination has resolved through
@@ -16655,6 +16657,65 @@ section.
     bullet correction below), ran once more before commit -- the
     standing per-phase workflow. Full suite: 3791 passed before, 3795
     after (4 new tests).
+- **Phase 397 (current)**: user-directed follow-up on Cast's three
+  named gaps -- "Hide_Feature e Clairvoyance bloccati dal sotto-sistema
+  'story event'; i 10 incantesimi di solo-combattimento-personale
+  aspettano il motore generale di sequenza-tattica; il 'Trade->Cast'
+  per i 10 incantesimi segreti resta non modellato." Investigation
+  found the first two premises stale (mirroring Phase 396's own
+  pattern) and the third genuinely closeable:
+  - **Hide_Feature and the 10 Personal-Combat-only spells were already
+    resolved**, just never corrected in this README's own "Not yet
+    implemented" section: Hide_Feature executes since **Phase 193**,
+    and the "general tactic-sequence engine" this README said didn't
+    exist was built inside `turn/search_execution.py
+    _resolve_cast_tactic()` across **Phases 209-238**, reaching all 10
+    Personal-Combat-only spells plus Words of Healing by **Phase 289**
+    -- `turn/cast_execution.py`'s own module docstring already
+    self-corrected this internally; this README's separate "Not yet
+    implemented" bullet just never got the same fix. Corrected below.
+    Clairvoyance's own "story event" gap is real and narrower than
+    stated: Phase 193 already registers the watching kingdom, only the
+    event feed to actually surface anything to it is missing -- a
+    separate, larger piece not attempted here.
+  - **The Trade->Cast rewrite is now modeled.** Direct reading of
+    `HostAK/TP/DEF2.PAS`'s `R_HPlan` procedure (~line 575, `Trade:`
+    branch) fully and precisely specifies the mechanism the codebase's
+    own "no real Trade phase exists to validate against" framing had
+    conflated with "mechanism unknown": a self-targeted Give
+    (`tl = sldr`, i.e. `phase.extra[0] == leader_id`) of a secret-spell
+    ordinal (`obj` in `[25, 34]`) reclassifies the phase from Trade to
+    Cast, unconditionally zeroing its target (`lextra[m] := 0`). The
+    one term that looked ambiguous, `modprog`, is confirmed
+    (`CTME.PAS:545`) to be a compile-time constant always `true` --
+    not a real blocker. `Has_SA` (caster ability possession) is
+    deliberately **not** modeled -- this project has no per-leader
+    granted-`AdvancedAbility` registry anywhere
+    (`worldgen/special_ability_level_schedule.py` reproduces the real
+    per-game grant schedule but is wired to nothing), and none of
+    `cast_execution.py`'s own already-wired secret-spell handlers
+    check `AdvancedAbility` possession either, relying solely on the
+    generic Action-spell `skill >= 1` gate. See
+    `turn/trade_decode.py`'s own module docstring for the full decoded
+    mechanic, including why a Trade->Cast rewrite of a normally
+    -targeted secret spell (Scar Terrain, Mystic Winds, Locate Object)
+    faithfully fails at execution rather than being "fixed" to keep
+    working.
+  - **`turn/trade_decode.py rewrite_trade_as_secret_spell_cast(phase,
+    leader_id) -> CastRequest | None`** (new), wired into
+    `turn/plan_dispatch.py`'s own `ActionCode.TRADE` branch ahead of
+    the ordinary `_dispatch_trade()` call, mirroring `R_HPlan`'s own
+    read-time rewrite order.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), wrote 10 new tests (`test_trade_decode.py`: every secret
+    -spell ordinal, self-targeting gate, obj-range gate;
+    `test_plan_dispatch.py`: Gate Angel rewrite dispatches as Cast, a
+    normally-targeted secret spell faithfully fails post-rewrite, an
+    ordinary Give of the same obj range is untouched when not
+    self-targeted or below the range), ran again, updated README
+    (including the two stale-bullet corrections above), ran once more
+    before commit -- the standing per-phase workflow. Full suite: 3795
+    passed before, 3805 after (10 new tests).
 
 ## Setup
 
@@ -17006,7 +17067,7 @@ rulebook before being turned into named, typed fields:
     Phases 59 and 60's own notes above), once `Regolamento AK.txt`
     supplied exact numbers `RULES.AK`/`ADDEND.AK` never gave, and
     `GameState.battle_graveyard` (Phase 60) gave Skeletal_Army and
-    Bless's own addendum something to read/clear. **Still open**:
+    Bless's own addendum something to read/clear. ~~**Still open**:
     Hide_Feature and Clairvoyance (blocked by their own distinct missing
     subsystem -- the unpopulated `Feature` stub and the "story event"
     model respectively), plus all 10 Personal-Combat-only spells, which
@@ -17017,7 +17078,25 @@ rulebook before being turned into named, typed fields:
     executed spell uniformly, real once a caster has `LeaderState.skills`
     data, always-succeeds otherwise. The Trade-
     \>Cast rewrite for secret spells 25-34 is also unmodeled (confirmed
-    to exist in Pascal, zero real examples).
+    to exist in Pascal, zero real examples).~~ -- **stale as of Phase
+    397 (three of these four claims never got corrected here as they
+    closed)**: Hide_Feature executes for real as of **Phase 193**
+    (`turn/cast_execution.py _execute_hide_feature`, hides every
+    `Feature` at the resolved coord); the general tactic-sequence engine
+    this bullet said didn't exist was in fact built inside
+    `turn/search_execution.py _resolve_cast_tactic()` across **Phases
+    209-238**, and by **Phase 289** covers all 10 Personal-Combat-only
+    spells plus Words of Healing; the Trade-\>Cast rewrite for secret
+    spells 25-34 is modeled as of **Phase 397**
+    (`turn/trade_decode.py rewrite_trade_as_secret_spell_cast()`, wired
+    into `plan_dispatch.py`'s own `ActionCode.TRADE` branch -- see that
+    module's docstring for the full decoded `DEF2.PAS` mechanic and its
+    honestly-scoped limits). **Genuinely still open**: Clairvoyance's
+    own second half -- Phase 193 registers the watching kingdom
+    (`LeaderState.clairvoyance_watchers`) but no per-character event
+    feed exists anywhere in this project to actually surface "what the
+    target did this turn" to that watcher; this is a real, separate,
+    larger piece (a turn-events log), not touched by Phase 397.
   - **Use_MI's remaining gap** (see Phase 24's note above): deeper than
     Cast's -- there's no Pascal source for how item instances are even
     created, so `item_instance_id` can never be resolved to a concrete

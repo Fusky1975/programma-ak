@@ -86,13 +86,95 @@ directly (Phase 133), while ``obj``'s item-vs-gold resolution stays a
 ``GameState``, which this decode module -- operating on the raw
 ``PlanPhase`` alone -- has no access to) made by ``turn/
 trade_execution.py execute_give()``.
+
+**Phase 397 -- the Trade->Cast rewrite for the 10 secret spells (25-34)
+is now modeled.** ``cast_decode.py``'s own docstring previously called
+this "deliberately not handled... no real Trade phase (let alone this
+specific rewrite) exists in any sample file to validate against
+regardless" -- true about empirical validation (still true: 0 real
+Trade phases of any kind exist across all 10 ``AK3__T*.K1`` fixtures,
+confirmed by direct enumeration), but not about the mechanism itself,
+which turned out to be fully and precisely specified structurally once
+``HostAK/TP/DEF2.PAS``'s ``R_HPlan`` procedure (~line 575) was read
+directly:
+
+    Trade: BEGIN
+      READ(miscfile,pexrec[m].n1); GhostR(abbrev);
+      IF tl = sldr THEN IF modprog THEN
+        IF lobjects[m] >= 25 THEN IF lobjects[m] <= 34 THEN
+          IF Has_SA(sldr,spdex[lobjects[m]]) THEN BEGIN
+            lextra[m]:= 0;
+            lactions[m]:= Cast;
+           END;
+      IF not abbrev THEN RS;
+      pexrec[m].ertype:= Numbers;
+     END;
+
+Decoded, term by term:
+
+- ``tl`` is not Trade-specific -- it's the *generic* per-action triple
+  read for every action before the ``CASE`` dispatch
+  (``READ(miscfile,la,lobjects[m],tl)``, ~line 550, immediately
+  followed by ``lextra[m]:= tl``), the exact same field
+  ``cast_decode.py`` already documents as ``extra[0]`` ("the spell's
+  target"). So ``tl = sldr`` means: this project's own
+  ``phase.extra[0] == leader_id`` -- the order is self-targeted.
+- ``modprog`` -- the one term that looked like it might be an
+  unresolved runtime flag -- is confirmed, directly in the source
+  (``CTME.PAS:545: CONST modprog = true;``), to be a compile-time
+  constant always equal to ``true`` in the shipped build. Not a
+  blocker; the condition it gates always holds.
+- ``lobjects[m]`` (``phase.obj``) in ``[25, 34]`` is exactly this
+  project's own ``Spell`` secret-spell ordinal range (Phase 23/84).
+- ``Has_SA(sldr, spdex[lobjects[m]])``: the caster must hold the
+  Special/Advanced Ability ``spdex`` maps that spell ordinal to (see
+  ``models/advanced_ability.py ADVANCED_ABILITY_GRANTS_SPELL``, whose
+  10-entry inverse mapping already matches ``spdex``'s own
+  ``(C_GA,C_WH,C_ST,C_GD,C_MW,C_LP,C_LO,C_AC,C_IF,C_IH)`` template
+  order 1:1 by abbreviation). **Not modeled here** -- this project has
+  no per-leader granted-``AdvancedAbility`` registry anywhere
+  (``worldgen/special_ability_level_schedule.py`` reproduces the real
+  per-game grant *schedule* but is wired to nothing; no
+  ``GameState.game_number`` field exists to even select a schedule).
+  This is not a new gap introduced by this rewrite: none of
+  ``turn/cast_execution.py``'s own already-wired secret-spell handlers
+  (Gate Angel, Scar Terrain, Mystic Winds, Locate Object, Illusory Fog)
+  check ``AdvancedAbility`` possession either -- every one of them
+  relies solely on the generic Action-spell ``skill >= 1`` gate in
+  ``_roll_cast_success``. This rewrite is therefore purely structural
+  (matching exactly what ``R_HPlan`` itself checks before ever
+  reaching ``Has_SA``'s own effect, i.e. self-target + ordinal range);
+  the resulting ``CastRequest``, once dispatched, is subject to that
+  same pre-existing generic skill gate like every other Cast -- no
+  stricter and no weaker than the rest of this project's own
+  secret-spell modeling.
+- ``lextra[m]:= 0``: the rewrite unconditionally **zeroes the
+  resulting Cast's target field**, regardless of which of the 10
+  secret spells it is -- even for Scar Terrain/Mystic Winds/Locate
+  Object, which ``cast_decode.py`` documents as needing a real
+  province/character/item target when cast the ordinary way. This is
+  exactly what the source says, not a simplification of it: a
+  Trade->Cast rewrite of one of those three will decode as a
+  zero-target ``CastRequest`` and, faithfully, fail at execution the
+  same way any other zero-target cast of a targeted spell would.
+  Gate Angel (``NO_TARGET_SPELLS``) and Words of Healing/Heal are
+  unaffected either way -- see ``ak_engine/turn/cast_decode.py``'s own
+  target-shape frozensets for which of the 10 need a real target at
+  all.
+
+See ``rewrite_trade_as_secret_spell_cast()`` below.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ak_engine.models.enums import Spell, spell_from_int
 from ak_engine.models.plan import PlanPhase
+from ak_engine.turn.cast_decode import CastRequest
+
+SECRET_SPELL_MIN = Spell.GATE_ANGEL  # 25
+SECRET_SPELL_MAX = Spell.ILLUS_HERO  # 34
 
 
 @dataclass(slots=True)
@@ -109,3 +191,23 @@ def decode_trade_phase(phase: PlanPhase) -> TradeRequest:
 
     target_leader_id = phase.extra[1] if len(phase.extra) > 1 else None
     return TradeRequest(obj=phase.obj, target_leader_id=target_leader_id, extra=list(phase.extra))
+
+
+def rewrite_trade_as_secret_spell_cast(phase: PlanPhase, leader_id: int) -> CastRequest | None:
+    """``DEF2.PAS R_HPlan``'s ``Trade:`` branch (Phase 397) -- see module docstring
+    for the full decoded mechanic. Returns a zero-target ``CastRequest`` for
+    ``phase.obj`` when the phase is self-targeted (``phase.extra[0] ==
+    leader_id``) and ``phase.obj`` is one of the 10 secret-spell ordinals
+    (25-34); ``None`` otherwise, meaning the phase decodes as an ordinary
+    Trade (``decode_trade_phase``) instead.
+
+    Deliberately does **not** check ``Has_SA`` (caster ability possession)
+    -- see module docstring for why that's consistent with, not weaker
+    than, every other secret-spell path already in this project.
+    """
+
+    if not phase.extra or phase.extra[0] != leader_id:
+        return None
+    if not (SECRET_SPELL_MIN <= phase.obj <= SECRET_SPELL_MAX):
+        return None
+    return CastRequest(spell=spell_from_int(phase.obj), target=0)
