@@ -16657,7 +16657,7 @@ section.
     bullet correction below), ran once more before commit -- the
     standing per-phase workflow. Full suite: 3791 passed before, 3795
     after (4 new tests).
-- **Phase 397 (current)**: user-directed follow-up on Cast's three
+- **Phase 397**: user-directed follow-up on Cast's three
   named gaps -- "Hide_Feature e Clairvoyance bloccati dal sotto-sistema
   'story event'; i 10 incantesimi di solo-combattimento-personale
   aspettano il motore generale di sequenza-tattica; il 'Trade->Cast'
@@ -16716,6 +16716,53 @@ section.
     (including the two stale-bullet corrections above), ran once more
     before commit -- the standing per-phase workflow. Full suite: 3795
     passed before, 3805 after (10 new tests).
+- **Phase 398 (current)**: user-directed follow-up on Use_MI's own
+  README claim -- "deeper than Cast's -- there's no Pascal source for
+  how item instances are even created" ("*Use_MI: gap più profondo di
+  Cast — non esiste proprio una fonte Pascal per come vengono creati
+  gli oggetti-istanza*"). Re-verified from scratch rather than trusted:
+  a full listing of every `.PAS` file in `Programma Pascal.zip`
+  confirms only 14 files exist and only one `Add_Tr` (the item-instance
+  constructor) call site anywhere in them, a narrow Valhalla-visitor
+  narrative case unrelated to general item creation -- so the original
+  claim's own Pascal-archive half is still exactly right. But three
+  *later* phases had already closed the practical gap by a different
+  route (world generation, not the runtime Pascal engine) without ever
+  correcting this bullet:
+  - Phase 242 (`turn/search_execution.py`): a Search win already calls
+    `GameState.add_item(feature.treasure, leader_id)` for any feature
+    carrying a `treasure`.
+  - Phase 360 (`worldgen/magic_item_placement.py`): recovered the real
+    `AKGEN.EXE` magic-item-placement algorithm from the disassembly
+    -derived reverse-engineering material -- not a project-original
+    guess, an actual confirmed formula (67-item cyclic cursor, 4
+    -gold/4-item repeating block pattern).
+  - Phase 365 (`worldgen/generate_new_game.py`): wires that cursor into
+    the real feature-creation loop, in real feature-index order.
+  - None of the three ever revisited this specific README claim, so it
+    sat stale describing a gap that was, by Phase 365, already closed.
+  - **New this phase**: no production code changed -- every piece
+    above was already real and already unit-tested in isolation, but
+    no test had ever chained them together. `tests/test_use_mi_item_
+    creation_integration.py` (new) proves the full loop end-to-end on a
+    real generated game: `generate_new_game()` places a real feature
+    with a real `treasure`, a leader Searches and defeats its guardian
+    (a fixed, reproducible RNG seed found by scanning outcomes, not
+    tuned), the granted item lands in `GameState.items`, and
+    `execute_use_mi()` genuinely reads it (in this scenario, a skill
+    book) and boosts the reader's own `Ability` -- confirming
+    `item_instance_id` really can be resolved end-to-end for a real
+    generated game's own items, closing the "can decode ever resolve
+    this" half of the original claim. The "zero real sample-file
+    Use_MI phases exist" half is unchanged and permanently unverifiable
+    (no such sample exists anywhere in this project's material).
+  - Corrected the stale bullet below (same "strike through, add a
+    dated correction" convention as Phase 396/397).
+  - Ran the full suite before writing the new test (non-breaking
+    check, clean), wrote the 2 new integration tests, ran again,
+    updated README (including the stale-bullet correction), ran once
+    more before commit -- the standing per-phase workflow. Full suite:
+    3805 passed before, 3807 after (2 new tests).
 
 ## Setup
 
@@ -17097,11 +17144,29 @@ rulebook before being turned into named, typed fields:
     feed exists anywhere in this project to actually surface "what the
     target did this turn" to that watcher; this is a real, separate,
     larger piece (a turn-events log), not touched by Phase 397.
-  - **Use_MI's remaining gap** (see Phase 24's note above): deeper than
-    Cast's -- there's no Pascal source for how item instances are even
-    created, so `item_instance_id` can never be resolved to a concrete
-    item/spell from this project's available data, not just "not
-    executed yet". Zero real examples either.
+  - ~~**Use_MI's remaining gap** (see Phase 24's note above): deeper
+    than Cast's -- there's no Pascal source for how item instances are
+    even created, so `item_instance_id` can never be resolved to a
+    concrete item/spell from this project's available data, not just
+    "not executed yet". Zero real examples either.~~ -- **stale as of
+    Phase 398 (closed in three separate, uncorrected steps)**: Phase
+    242 wired a Search win to grant a feature's own `treasure` via
+    `GameState.add_item()`; Phase 360 recovered the real `AKGEN.EXE`
+    magic-item-placement algorithm (`worldgen/magic_item_placement.py`,
+    from the disassembly-derived reverse-engineering material, not a
+    guess); Phase 365 wired that cursor into `generate_new_game()`'s
+    own feature-creation loop. `item_instance_id` *can* be resolved to
+    a concrete item now, for any item a real generated game actually
+    placed -- verified end-to-end (not just per-module) by Phase 398's
+    own integration test:
+    `generate_new_game()` -> `Feature.treasure` -> a Search win ->
+    `GameState.add_item()` -> `execute_use_mi()` successfully reads a
+    world-generated skill book and boosts the reader's own Ability.
+    Zero real *sample-file* Use_MI phases still exist, same as before
+    -- this closes the "can the id even be resolved at all" half of
+    the gap, not the "does a real player's own K1 file ever
+    demonstrate it" half, which stays permanently unverifiable (no
+    such sample exists in this project's own material).
   - ~~**Challenge/Pursue's remaining gap** (see Phase 25's note above):
     the King/Hero encounter-acceptance rules ([3.12]) and the Spy Table
     catch-up formula ([4.33], [3.16]) aren't modeled~~ -- **fully closed
