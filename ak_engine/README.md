@@ -16900,7 +16900,7 @@ section.
   - Pure documentation/comment correction -- no behavior changed. Full
     suite: 3813 passed before, 3813 after (0 new tests; nothing to
     test since nothing executes differently).
-- **Phase 402 (current)**: re-verifies the user's own suspicion about
+- **Phase 402**: re-verifies the user's own suspicion about
   Recruit's "remaining gaps" bullet (written at Phase 262) -- "1-2
   tipi reclutabili per provincia mai tracciato con precisione (solo
   approssimato via compatibilità di razza), e il progetto non blocca
@@ -16936,6 +16936,54 @@ section.
     wire `recruit_type_1`/`recruit_type_2` into `execute_recruit()`'s
     own enforcement is a design decision left to the user, not assumed
     here). Full suite: 3813 passed before, 3813 after (0 new tests).
+- **Phase 403 (current)**: at the user's own request ("Controlla anche
+  il resto delle voci 'Not yet implemented' del README"), systematically
+  re-verified every remaining claim in that section against the current
+  code, rather than trusting any of them by default. Found and corrected
+  three genuinely stale spots, all following the same pattern as Phases
+  396-402 -- a real gap description, correct when written, silently
+  closed by a later phase and never revisited:
+  - **ASpy's own owner/adjacent-owners paragraph**: still said
+    "Genuinely still open... only the English sentence is missing" --
+    but this session's own Phase 400 already closed exactly that gap
+    (project-original `SPY_OWNER_TEMPLATE`/`SPY_ADJACENT_OWNERS_
+    TEMPLATE`, wired into `describe_aspy()`). Phase 400's own edit
+    corrected a *different* mention of this gap (the Phase 63 section)
+    but missed this duplicate description inside "Not yet implemented"
+    -- corrected here.
+  - **"Populating a brand-new `GameState` from nothing at turn 0"**
+    (written at Phase 31): said a "load this Kingdom for the first
+    time" path remained entirely unbuilt. `worldgen/generate_new_
+    game.py` (Phase 365, the real disassembly-sourced `AKGEN.EXE`
+    pipeline) genuinely builds one -- terrain, race, tax, King
+    placement, initial armies, and features, each stage cited to a
+    real sourced formula. Narrowed to that module's own honestly-scoped
+    remaining gaps (independent lords/companions, ordinary humanoid
+    provinces' armies, Trollish armies, the `necromantic_home_
+    exception`, the extra mercenary band's caller-supplied inputs).
+  - **The closing "letter-report frame, financial report... still need
+    a turn-events log this project doesn't have yet"** (written at
+    Phase 245): badly stale. `compose_letter_report()` wires all 10
+    real sections as of **Phase 231**; FINANCES is extensively built
+    out (Phases 219-277); a real `state.world_events` turn-events log
+    exists (Phase 231, populated by battle/spell/plague/move sources
+    across Phases 231-257). Narrowed to what `describe_general_
+    intelligence_report()`'s own current docstring names as genuinely
+    still missing (the `S_Army`-tagged per-battle narrative cluster,
+    most non-province-effect spell notices, Scar Terrain's bystander
+    notice) and the PROVINCES/CHARACTERS/IMPERIAL OFFICE REPORT columns
+    those composers' own docstrings already flag as partial.
+  - Also explicitly re-checked and confirmed **still accurate, not
+    stale**: the Move chase-step multi-phase persistence rule
+    (`turn/move_execution.py`'s own docstring, still explicitly out of
+    scope), Clairvoyance's own per-character event feed (`LeaderState.
+    clairvoyance_watchers` is only ever written, never read anywhere),
+    and the ASpy/Defend `target_province` raw-int claim (still a bare
+    `int` on both request dataclasses today).
+  - Corrected all three stale spots in place (`~~strikethrough~~` + a
+    `stale as of Phase 403` note with citations, same convention as
+    Phases 396-402). Pure documentation correction -- no behavior
+    changed. Full suite: 3813 passed before, 3813 after (0 new tests).
 
 ## Setup
 
@@ -17466,14 +17514,23 @@ rulebook before being turned into named, typed fields:
     (`_LSCap`, `render_spy_capital_province`) both turned out to have
     real, sourced `SAY.PAS` templates after all -- found in Phase 115,
     wired into the full report body by `describe_aspy()` in Phase 212.
-    **Genuinely still open**: only owner and adjacent-owners -- no
+    ~~**Genuinely still open**: only owner and adjacent-owners -- no
     confirmed PROSE template for either exists anywhere in the
     available source, despite dedicated research in both Phase 63
     (`RUMORS.PAS Set_Intel` traced and ruled out) and Phase 115 (the
     entire ASpy `Say(...)` cluster in `SAY.PAS` enumerated, neither
     fact appears in it). The data itself is real
     (`SpyReport.owner_kingdom_id`/`adjacent_owners`, Phase 62) --
-    only the English sentence is missing. ~~plus taxation reporting (no
+    only the English sentence is missing.~~ -- **closed in Phase 400**:
+    since no confirmed source template exists for either fact, the
+    user directly authorized this project to author the two sentences
+    itself ("Vorrei che le due frasi le creassi tu"), the same
+    authorization shape Trail's own [3.17] payload already had (Phase
+    212). `SPY_OWNER_TEMPLATE`/`SPY_ADJACENT_OWNERS_TEMPLATE` (and
+    their present/absent variants) render right after the opening
+    sentence via `render_spy_owner()`/`render_spy_adjacent_owners()`,
+    wired into `describe_aspy()`'s own required parameters -- see
+    Phase 400's own note below for the full derivation. ~~plus taxation reporting (no
     per-province tax-base model exists)~~ -- **stale, corrected in
     Phase 265**:
     taxation *is* real and rendered (Phase 253's own `tax_estimate` +
@@ -17567,14 +17624,35 @@ rulebook before being turned into named, typed fields:
     _dispatch_contested_rebattles`, see that phase's own note below) --
     this bullet was left stale (not struck through) when Phase 55
     shipped; corrected here rather than left to mislead a future reader.
-- **Populating a brand-new `GameState` from nothing at turn 0** (see
+- ~~**Populating a brand-new `GameState` from nothing at turn 0** (see
   Phase 31's note above): `turn/kingdom_bridge.py` can only *enrich*
   `LeaderState`s that already exist -- there is no source anywhere in
   this project's available data (move files carry orders, not state) for
   a leader's starting location, a kingdom's race/alignment/home
   province, or its treasury, so a true "load this Kingdom for the first
   time" path remains unbuilt. Every `GameState` in this project's tests
-  is still hand-built by its caller.
+  is still hand-built by its caller.~~ -- **stale as of Phase 403
+  (written at Phase 31, never revisited across the ten-phase
+  world-generation sub-plan that closed almost all of it)**:
+  `worldgen/generate_new_game.py` (Phase 365, the real, disassembly-
+  sourced `AKGEN.EXE` pipeline order) genuinely builds a populated
+  `GameState` from nothing -- terrain, per-province race/tax/recruit
+  slots, King Home placement (owner/tax/race/location), initial armies,
+  and features (monster/type/alignment/magic-item), each stage cited to
+  a real sourced formula (Phases 354-364). **Genuinely still open**,
+  per that module's own "Deliberately NOT implemented" section:
+  independent lords/companions (no roster this project can draw an
+  "unused leader" from, and companions need a name generator not yet
+  integrated -- see the AKGEN name-catalog note below), ordinary
+  (non-Home, non-special-race) humanoid provinces' recruit slots/armies
+  (unsourced infantry-weighting table), Trollish special-race armies (no
+  budget formula survives), the `necromantic_home_exception` (source
+  never states the qualifying condition), and the extra mercenary
+  band's own recruit-type inputs (caller-supplied by design, since the
+  natural real inputs are the still-missing ordinary-province table
+  above). Every `GameState` in this project's *tests* is still
+  hand-built by its caller, unchanged -- but that's a test-authoring
+  convenience, not evidence the production path is missing.
 - **Feature discovery, monsters, treasures, rumors, battlefield reports**
   (rulebook [3.2]): `resolve_explore()` only computes the deterministic
   cumulative exploration percentage. Actually discovering *what* a
@@ -17606,11 +17684,36 @@ rulebook before being turned into named, typed fields:
   in-person-discovery template (as opposed to heard-by-rumor), is
   still not wired to any renderer.~~ **`describe_feature_discovery()`
   now renders it as of Phase 245**, closing [3.2] in full on the report
-  side too -- see that phase's own note above. Everything outside a
+  side too -- see that phase's own note above. ~~Everything outside a
   fought battle besides Explore/Search is still unbuilt: the
   letter-report frame, financial report, and general exploration
   narrative all still need a turn-events log this project doesn't have
-  yet.
+  yet.~~ -- **stale as of Phase 403 (written at Phase 245, never
+  revisited across the report-generation work that closed almost
+  everything it names)**: `report/turn_report.py compose_letter_
+  report()` wires all 10 real letter-report sections as of **Phase
+  231** (ACTION REPORT, LETTER REPORTS, DIPLOMACY, FINANCES, PROVINCES,
+  CHARACTERS, ARMIES, IMPERIAL OFFICE REPORT, ADVENTURE, GENERAL
+  INTELLIGENCE REPORT -- confirmed against real `SE3__T*.K*` section
+  order). FINANCES itself is extensively built out (Phases 219-277:
+  treasury, Expected Revenues/Expenses, Black Knights/Thieves Guild
+  notes, Invention Bonus, Discoveries list). A real `state.world_events`
+  turn-events log does exist (**Phase 231**, `models/game_state.py
+  WorldEvent`) and is populated by four real sources across six call
+  sites -- `record_battle_world_events()` (Phase 231), `record_spell_
+  world_events()` (Phase 232/235, five province-effect casts),
+  `record_plague_spread_world_events()` (Phase 234), and `record_move_
+  world_events()` (Phase 257) -- feeding `describe_general_
+  intelligence_report()`'s own cross-kingdom news feed. **Genuinely
+  still open**, per that composer's own current docstring: several
+  confirmed-real event types have no source yet (the much richer
+  `S_Army`-tagged per-battle narrative cluster, most non-province-effect
+  spell notices, Scar Terrain's bystander notice), and PROVINCES/
+  CHARACTERS/IMPERIAL OFFICE REPORT each still render only a real
+  subset of their own columns (see those composers' own docstrings,
+  cited from `compose_letter_report()`'s own "wired doesn't mean
+  complete" section). This is a narrower, still-real gap -- not the
+  "still entirely unbuilt" framing this bullet used before.
 ## What's excluded from this phase
 
 - `SE3__T*.K1` files: same extension as the move files, but these are
