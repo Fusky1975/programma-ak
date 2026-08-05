@@ -167,7 +167,7 @@ from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
-from ak_engine.models.race import Race
+from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.models.treasure import RACE_LEADERSHIP_TREASURE
 from ak_engine.turn.aftermath import FORMATION_DIVISOR, roll_quality_change
 from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability, roll_terrain_line_length_cap
@@ -489,6 +489,7 @@ def _build_battle_units(
                 source_id=army.army_id,
                 druidic_rear_targeting_blocked=rear_targeting_blocked,
                 led_by_insufficient_druid=druidic_shortfall > 0,
+                is_humanoid_race=kingdom.race in HUMANOID_RACES,
             )
         )
     return units
@@ -1196,6 +1197,44 @@ def _formation_divisors(battle_result: BattleResult) -> dict[int, int]:
     return divisors
 
 
+WEREBEAST_BITE_CHANCE = 0.40
+
+
+def _apply_werebeast_bites(battle_result: BattleResult, state: GameState, rng: random.Random) -> None:
+    """AKGEN's own confirmed `battle_engine.special_events` "Werebeasts
+    defeat humanoids" row: "bite and end-of-turn transformation; fleets
+    excluded" (Phase 392). Checked per column, per losing humanoid unit
+    (`turn/battle_line.py BattleUnit.is_humanoid_race`): if the column's
+    own winning side includes a Werebeast unit (`ArmyType.WEREBEASTS`)
+    and a losing unit is both humanoid-race and not a Fleet, a confirmed
+    40% chance queues that unit's own army id (`BattleUnit.source_id`)
+    in `GameState.werebeast_bitten_army_ids` for the real end-of-turn
+    transformation (`turn/turn_processor.py _apply_werebeast_
+    transformations`) -- not applied immediately, since "end-of-turn" is
+    explicit in the source and this project's own once-per-`run_turn()`
+    housekeeping point is the one clean, consistent place to apply it
+    regardless of which phase/battle triggered the bite.
+
+    A genuine per-column tie (`column.bres == 0`) is skipped outright --
+    nobody "defeated" anybody, so `BattleColumnResult.attacker_won`'s own
+    "False for both a defender win and a tie" collapse can't be trusted
+    to pick the real winning side here.
+    """
+
+    for column in battle_result.columns:
+        if column.bres == 0:
+            continue
+        winning_units = column.attacker_units if column.bres > 0 else column.defender_units
+        losing_units = column.defender_units if column.bres > 0 else column.attacker_units
+        if not any(unit.army_type is ArmyType.WEREBEASTS for unit in winning_units):
+            continue
+        for unit in losing_units:
+            if not unit.is_humanoid_race or unit.army_type is ArmyType.FLEET or unit.source_id is None:
+                continue
+            if rng.random() < WEREBEAST_BITE_CHANCE:
+                state.werebeast_bitten_army_ids.add(unit.source_id)
+
+
 def fight_battle(
     state: GameState,
     attacker_kingdom_id: int,
@@ -1319,6 +1358,8 @@ def fight_battle(
         is_first_turn=state.turn_number <= 1,
         rng=rng,
     )
+
+    _apply_werebeast_bites(battle_result, state, rng)
 
     defender_clean_swept = battle_result.winner == "attacker" and battle_result.defender_columns_won == 0
     attacker_clean_swept = battle_result.winner == "defender" and battle_result.attacker_columns_won == 0

@@ -19,6 +19,7 @@ from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.aftermath import FORMATION_DIVISOR
 from ak_engine.turn.battle_orchestrator import (
     MultiAttackerParty,
+    _apply_werebeast_bites,
     _build_battle_units,
     _commander_combatant,
     _direct_destruction_probabilities,
@@ -2491,3 +2492,123 @@ def test_fight_battle_uses_real_formation_depth_for_a_winning_seconds_line_army(
 
     assert state.armies[101].quality == Quality.VETERAN  # front: 0.20 < 0.30 -- improved
     assert state.armies[102].quality == Quality.AVERAGE  # second: 0.20 >= 0.15 -- unchanged
+
+
+# -- Werebeast bite-transform, battle-time half (Phase 392) ---------------
+
+
+def test_apply_werebeast_bites_queues_the_defeated_humanoid_armys_id_on_a_hit():
+    state = GameState()
+    column = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=5.0, bres=3, attacker_won=True, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.WEREBEASTS, 10.0, source_id=101)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 5.0, source_id=201, is_humanoid_race=True)],
+    )
+    battle_result = BattleResult(
+        columns=[column], winner="attacker", total_bres=3, attacker_columns_won=1, defender_columns_won=0
+    )
+    rng = ScriptedRandom([0.1])  # < 0.40 -- the bite hits
+
+    _apply_werebeast_bites(battle_result, state, rng)
+
+    assert state.werebeast_bitten_army_ids == {201}
+
+
+def test_apply_werebeast_bites_does_not_queue_on_a_miss():
+    state = GameState()
+    column = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=5.0, bres=3, attacker_won=True, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.WEREBEASTS, 10.0, source_id=101)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 5.0, source_id=201, is_humanoid_race=True)],
+    )
+    battle_result = BattleResult(
+        columns=[column], winner="attacker", total_bres=3, attacker_columns_won=1, defender_columns_won=0
+    )
+    rng = ScriptedRandom([0.99])  # >= 0.40 -- the bite misses
+
+    _apply_werebeast_bites(battle_result, state, rng)
+
+    assert state.werebeast_bitten_army_ids == set()
+
+
+def test_apply_werebeast_bites_never_rolled_for_a_non_humanoid_loser():
+    state = GameState()
+    column = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=5.0, bres=3, attacker_won=True, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.WEREBEASTS, 10.0, source_id=101)],
+        defender_units=[BattleUnit(ArmyType.DRAGON_WING, 5.0, source_id=201, is_humanoid_race=False)],
+    )
+    battle_result = BattleResult(
+        columns=[column], winner="attacker", total_bres=3, attacker_columns_won=1, defender_columns_won=0
+    )
+    rng = ScriptedRandom([])  # no roll should be attempted -- IndexError if one is
+
+    _apply_werebeast_bites(battle_result, state, rng)
+
+    assert state.werebeast_bitten_army_ids == set()
+
+
+def test_apply_werebeast_bites_excludes_fleets_even_if_humanoid_owned():
+    state = GameState()
+    column = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=5.0, bres=3, attacker_won=True, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.WEREBEASTS, 10.0, source_id=101)],
+        defender_units=[BattleUnit(ArmyType.FLEET, 5.0, source_id=201, is_humanoid_race=True)],
+    )
+    battle_result = BattleResult(
+        columns=[column], winner="attacker", total_bres=3, attacker_columns_won=1, defender_columns_won=0
+    )
+    rng = ScriptedRandom([])
+
+    _apply_werebeast_bites(battle_result, state, rng)
+
+    assert state.werebeast_bitten_army_ids == set()
+
+
+def test_apply_werebeast_bites_never_rolled_without_a_werebeast_on_the_winning_side():
+    state = GameState()
+    column = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=5.0, bres=3, attacker_won=True, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.HVY_CAVALRY, 10.0, source_id=101)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 5.0, source_id=201, is_humanoid_race=True)],
+    )
+    battle_result = BattleResult(
+        columns=[column], winner="attacker", total_bres=3, attacker_columns_won=1, defender_columns_won=0
+    )
+    rng = ScriptedRandom([])
+
+    _apply_werebeast_bites(battle_result, state, rng)
+
+    assert state.werebeast_bitten_army_ids == set()
+
+
+def test_apply_werebeast_bites_skips_a_genuine_column_tie():
+    state = GameState()
+    column = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=10.0, bres=0, attacker_won=False, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.WEREBEASTS, 10.0, source_id=101)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=201, is_humanoid_race=True)],
+    )
+    battle_result = BattleResult(columns=[column], winner="tie", total_bres=0, attacker_columns_won=0, defender_columns_won=0)
+    rng = ScriptedRandom([])
+
+    _apply_werebeast_bites(battle_result, state, rng)
+
+    assert state.werebeast_bitten_army_ids == set()
+
+
+def test_apply_werebeast_bites_checks_the_defender_side_when_the_defender_wins_the_column():
+    state = GameState()
+    column = BattleColumnResult(
+        attacker_strength=5.0, defender_strength=10.0, bres=-3, attacker_won=False, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.LEGION, 5.0, source_id=101, is_humanoid_race=True)],
+        defender_units=[BattleUnit(ArmyType.WEREBEASTS, 10.0, source_id=201)],
+    )
+    battle_result = BattleResult(
+        columns=[column], winner="defender", total_bres=-3, attacker_columns_won=0, defender_columns_won=1
+    )
+    rng = ScriptedRandom([0.1])
+
+    _apply_werebeast_bites(battle_result, state, rng)
+
+    assert state.werebeast_bitten_army_ids == {101}

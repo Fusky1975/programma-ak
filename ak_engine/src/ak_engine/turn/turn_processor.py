@@ -219,6 +219,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
@@ -515,6 +516,7 @@ def run_turn(
         )
 
     _revert_analytical_psychology_charms(state)
+    _apply_werebeast_transformations(state)
     decompose_graveyard(state)
 
     return results
@@ -538,6 +540,33 @@ def _revert_analytical_psychology_charms(state: GameState) -> None:
         if leader.analytical_psychology_revert_kingdom_id is not None:
             leader.kingdom_id = leader.analytical_psychology_revert_kingdom_id
             leader.analytical_psychology_revert_kingdom_id = None
+
+
+def _apply_werebeast_transformations(state: GameState) -> None:
+    """Phase 392: drains ``GameState.werebeast_bitten_army_ids`` -- the
+    real end-of-turn half of AKGEN's own confirmed "Werebeasts defeat
+    humanoids: bite and end-of-turn transformation" (`turn/battle_
+    orchestrator.py _apply_werebeast_bites`'s own docstring covers the
+    battle-time 40% roll that populates this set). "Transformation" is
+    read as the bitten *army* becoming a Werebeasts unit outright
+    (``ArmyType.WEREBEASTS``) rather than a Kingdom-wide race change --
+    Race is a Kingdom-level attribute in this project (``KingdomState.
+    race``), never per-army, so a literal "this army is now a
+    Werebeasts army" reading is the only one that doesn't require
+    inventing a per-army race override this project has no other use
+    for. An army id that no longer exists (destroyed before this point,
+    e.g. by the same battle's own clean-sweep) is silently skipped, the
+    same permissive-missing-data convention this module uses everywhere
+    else. Runs exactly once, at the very end of ``run_turn()`` --
+    matching the source's own "end-of-turn" wording literally, not
+    per-phase.
+    """
+
+    for army_id in state.werebeast_bitten_army_ids:
+        army = state.armies.get(army_id)
+        if army is not None:
+            army.army_type = ArmyType.WEREBEASTS
+    state.werebeast_bitten_army_ids.clear()
 
 
 _DEFEND_CANCELLING_ACTIONS = frozenset({ActionCode.LMOVE, ActionCode.PURSUE, ActionCode.TRAIL})

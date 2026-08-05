@@ -16396,7 +16396,7 @@ section.
     is off by default), ran again, updated README, ran once more before
     commit -- the standing per-phase workflow. Full suite: 3751 passed
     before, 3755 after (4 new tests).
-- **Phase 391 (current)**: continues the fourth AKGEN research-audit
+- **Phase 391**: continues the fourth AKGEN research-audit
   item with the Propaganda Megaphones countermeasure against Oratory.
   - **Implemented**: `turn/cast_execution.py _execute_oratory()` now
     checks, per army the target commands, whether that army's own
@@ -16422,6 +16422,52 @@ section.
     and Dragon/Eagle/Whale item-triggered defection, for further
     follow-up phases; Druidic monster assistance stays a documented,
     deliberately-unimplemented gap (no fixed percentage in the source).
+- **Phase 392 (current)**: continues the fourth AKGEN research-audit
+  item with Werebeast bite-transform, AKGEN's own confirmed "Werebeasts
+  defeat humanoids: bite and end-of-turn transformation; fleets
+  excluded" `special_events` row -- split battle-time/end-of-turn, the
+  same two-phase staging Phase 370/388 already established for
+  BLUCK/CLUCK.
+  - **`BattleUnit.is_humanoid_race`, new**: `turn/battle_line.py`'s
+    `BattleUnit` gains this field, set once at `turn/battle_orchestrator.py
+    _build_battle_units()` time (where Kingdom context still exists --
+    `kingdom.race in HUMANOID_RACES`, `models/race.py`'s own
+    Human/Elven/Dwarven/Orcish set) since a bare `BattleUnit` has no race
+    of its own to derive this from later.
+  - **`_apply_werebeast_bites()`, implemented**: called right after
+    `resolve_battle()` inside `fight_battle()` -- per column, if the
+    winning side includes a Werebeast unit (`ArmyType.WEREBEASTS`) and a
+    losing unit is both humanoid-race and not a Fleet, the confirmed 40%
+    roll queues that unit's own army id in the new `GameState.
+    werebeast_bitten_army_ids`. A genuine column tie (`bres == 0`) is
+    skipped outright, since `BattleColumnResult.attacker_won`'s own
+    "False for both a defender win and a tie" collapse can't be trusted
+    to pick the real winning side there.
+  - **`_apply_werebeast_transformations()`, implemented**: drains that
+    queue at the very end of `turn/turn_processor.py run_turn()`,
+    alongside the existing `_revert_analytical_psychology_charms`/
+    `decompose_graveyard` once-per-turn housekeeping -- matching the
+    source's own literal "end-of-turn" wording. "Transformation" is read
+    as the bitten *army* becoming `ArmyType.WEREBEASTS` outright, not a
+    Kingdom-wide race change -- Race is a Kingdom-level attribute in this
+    project (`KingdomState.race`), never per-army, so this is the only
+    reading that doesn't require inventing a per-army race override
+    nothing else in the project needs. An army id already destroyed
+    before this point is silently skipped.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean -- no existing test ever pairs a Werebeast unit against a
+    humanoid loser), wrote 10 new tests (7 in `test_battle_orchestrator.py`
+    covering the hit/miss roll, non-humanoid and Fleet exclusions, no
+    Werebeast on the winning side, the column-tie skip, and the
+    defender-wins-the-column direction; 3 in `test_turn_processor.py`
+    covering the actual transformation, an already-destroyed army id,
+    and the no-op case), ran again, updated README, ran once more before
+    commit -- the standing per-phase workflow. Full suite: 3758 passed
+    before, 3768 after (10 new tests).
+  - **Still open** from this AKGEN audit item: Dragon/Eagle/Whale
+    item-triggered defection, for a further follow-up phase; Druidic
+    monster assistance stays a documented, deliberately-unimplemented
+    gap (no fixed percentage in the source).
 
 ## Setup
 

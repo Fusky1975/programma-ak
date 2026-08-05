@@ -988,6 +988,16 @@ class GameState:
     # "caller's job" convention as ``recruited_this_turn``/``ArmyState.
     # movement_points`` above.
     action_casts_used: dict[tuple[int, Ability], int] = field(default_factory=dict)
+    # Phase 392: army ids a Werebeast column-win's own confirmed 40%
+    # "bite" roll (AKGEN's `battle_engine.special_events` "Werebeasts
+    # defeat humanoids") has queued for the real, real-formula-confirmed
+    # end-of-turn race transformation into Werebeasts (fleets excluded,
+    # per AKGEN's own text) -- see ``turn/battle_orchestrator.py``'s own
+    # Phase 392 addendum for where this is populated (mid-battle, at
+    # ``resolve_battle``'s own per-column granularity) and ``turn/
+    # turn_processor.py _apply_werebeast_transformations()`` for where
+    # it's drained, once, at the very end of ``run_turn()``.
+    werebeast_bitten_army_ids: set[int] = field(default_factory=set)
     # Emperor election (Phase 228, turn/emperor_election.py) -- rulebook
     # [10.2]. `emperor_kingdom_id` persists once a vote actually elects
     # someone (a failed/no-quorum vote never clears it -- see that

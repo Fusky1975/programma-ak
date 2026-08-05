@@ -80,6 +80,14 @@ class BattleUnit:
     # druidic_rear_targeting_blocked above, this isn't limited to
     # overflight units.
     led_by_insufficient_druid: bool = False
+    # Phase 392: this unit's own owning Kingdom's race is one of the four
+    # rulebook-defined humanoids (Human/Elven/Dwarven/Orcish, ``models/
+    # race.py HUMANOID_RACES``) -- set once at ``turn/battle_orchestrator.py
+    # _build_battle_units()`` time (where Kingdom context still exists;
+    # a bare ``BattleUnit`` has no race of its own to derive this from
+    # later). Consumed by the Werebeast bite-transform check -- see
+    # that module's own Phase 392 addendum.
+    is_humanoid_race: bool = False
 
 
 Column = list[BattleUnit]

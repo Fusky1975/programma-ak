@@ -22,6 +22,7 @@ from ak_engine.turn.plan_dispatch import NoOpResult
 from ak_engine.turn.turn_processor import (
     MultiAttackerMoveResult,
     TurnLeader,
+    _apply_werebeast_transformations,
     build_missed_deadline_turn_leaders,
     run_turn,
 )
@@ -1479,3 +1480,39 @@ def test_run_turn_decomposes_the_graveyard_once_at_turn_end_when_over_the_world_
     run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH)
 
     assert len(state.battle_graveyard[HexCoord(1, 1)]) == 18
+
+
+# -- Werebeast bite-transform, end-of-turn half (Phase 392) ---------------
+
+
+def test_apply_werebeast_transformations_converts_a_queued_army_to_werebeasts():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=HexCoord(9, 9))
+    state.add_army(army)
+    state.werebeast_bitten_army_ids.add(101)
+
+    _apply_werebeast_transformations(state)
+
+    assert state.armies[101].army_type is ArmyType.WEREBEASTS
+    assert state.werebeast_bitten_army_ids == set()
+
+
+def test_apply_werebeast_transformations_silently_skips_an_army_that_no_longer_exists():
+    state = GameState()
+    state.werebeast_bitten_army_ids.add(999)  # already destroyed before this point
+
+    _apply_werebeast_transformations(state)  # must not raise
+
+    assert state.werebeast_bitten_army_ids == set()
+
+
+def test_apply_werebeast_transformations_no_op_when_nothing_was_bitten():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=HexCoord(9, 9))
+    state.add_army(army)
+
+    _apply_werebeast_transformations(state)
+
+    assert state.armies[101].army_type is ArmyType.LEGION
