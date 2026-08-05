@@ -88,6 +88,7 @@ from ak_engine.models.army_type import (
     is_nemesis_of,
 )
 from ak_engine.models.map import Terrain
+from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.turn.cast_execution import illusory_fog_strength
 from ak_engine.turn.combat import DEFENDER_BONUS, NEMESIS_PENALTY, Quality
@@ -110,6 +111,35 @@ FANATICISM_CHANCE: dict[Alignment, float] = {
     Alignment.DIVINE: 0.50,
     Alignment.GOOD: 0.40,
     Alignment.EVIL: 0.25,
+}
+
+# Phase 390: the same `battle_engine.special_events` table's own
+# title-based fanaticism rows -- a *directly led* (``commanded_by`` is
+# not ``None``) army of the matching race has this per-unit chance of
+# becoming fanatical when its commander currently holds the
+# race-matching title (``turn/race_titles.py RACE_TITLE_OFFICE``, the
+# same "Savior of Humankind"/"First Elder of Elvenkind"/"King Under the
+# Mountain"/"Khan of the Orcish Hordes"/racial-monster-King titles
+# ``models/office.py OFFICE_NAME`` already carries flavor text for).
+# Independent of and additive with ``FANATICISM_CHANCE`` above (that
+# one keys off the *kingdom's* alignment; this one off the *army's own
+# race* and its *commander's* title). The seven racial-monster titles
+# (Dragon/Eagle/Whale/Merman/Ent/Troll/Werebeast) all share AKGEN's own
+# single "50%" row ("Dragon/Eagle/Whale/Merman/Ent/Troll/Werebeast
+# racial title"); Human/Elven/Dwarven/Orcish each have their own
+# distinct, lower confirmed percentage.
+TITLE_FANATICISM_CHANCE: dict[Office, float] = {
+    Office.HUMAN_KING: 0.20,
+    Office.ELVEN_KING: 0.35,
+    Office.DWARVEN_KING: 0.40,
+    Office.ORC_LORD: 0.45,
+    Office.DRAGON_LORD: 0.50,
+    Office.EAGLE_KING: 0.50,
+    Office.WHALE_KING: 0.50,
+    Office.MERMAN_KING: 0.50,
+    Office.ENT_KING: 0.50,
+    Office.TROLL_KING: 0.50,
+    Office.WERE_KING: 0.50,
 }
 
 # Phase 351 addendum: the same AK.EXE/AK.OVR static reverse engineering
@@ -180,6 +210,21 @@ def roll_fanaticism(alignment: Alignment, rng: random.Random, *, always_fanatica
     if always_fanatical:
         return True
     return rng.random() < FANATICISM_CHANCE.get(alignment, 0.0)
+
+
+def roll_title_fanaticism(office: Office | None, rng: random.Random) -> bool:
+    """Phase 390: the title-holder's own per-unit fanaticism roll --
+    ``office`` is the title (if any) this army's own commander currently
+    holds that matches the army's own race, resolved by the caller (see
+    ``turn/battle_orchestrator.py _build_battle_units``'s own Phase 390
+    addendum). ``None`` -- no matching title held, or the army is unled
+    -- is a deterministic no-roll, matching ``roll_fanaticism``'s own
+    "no chance recorded" convention.
+    """
+
+    if office is None:
+        return False
+    return rng.random() < TITLE_FANATICISM_CHANCE.get(office, 0.0)
 
 
 def modified_quality(

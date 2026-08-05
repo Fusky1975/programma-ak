@@ -16304,7 +16304,7 @@ section.
     assistance -- the last one has no fixed percentage in the source at
     all, by AKGEN's own explicit admission) remain for follow-up phases
     to close out this fourth audit item.
-- **Phase 389 (current)**: continues the fourth AKGEN research-audit
+- **Phase 389**: continues the fourth AKGEN research-audit
   item with `preliminary_commander_duel` -- AKGEN's own confirmed
   trigger/refusal/escape/consequence/coward-bluff rules for a Duel
   ([7.1]). Only one of the five is safely, honestly implementable right
@@ -16358,6 +16358,44 @@ section.
     ordinary resolution), ran again, updated README, ran once more
     before commit -- the standing per-phase workflow. Full suite: 3748
     passed before, 3751 after (3 new tests).
+- **Phase 390 (current)**: continues the fourth AKGEN research-audit
+  item with the first implementable slice of `special_events` --
+  title-based fanaticism (the four humanoid-race percentages plus the
+  seven racial-monster titles' shared 50%).
+  - **`TITLE_FANATICISM_CHANCE`, implemented**: `turn/strength.py` gains
+    the table and `roll_title_fanaticism(office, rng)`; `turn/battle_
+    orchestrator.py _build_battle_units()` rolls it (only when the
+    alignment-based fanaticism check didn't already succeed) for a
+    *directly led* army whose own race (`kingdom.race`) matches a title
+    its commander currently holds (`turn/office_holder.py resolve_
+    office_holder`, memoized per office for the call rather than
+    re-derived per unit). **Independently cross-confirmed**: every one
+    of the 11 percentages (20/35/40/45/50×7) exactly matches this
+    project's own pre-existing `models/office.py OFFICE_PERK_
+    DESCRIPTION` strings (e.g. `Office.HUMAN_KING: "20% Human
+    Fanaticism"`, Phase 103) -- a real, independent source corroborating
+    AKGEN's own `battle_engine.special_events` rows before any of this
+    phase's code was written.
+  - **Deliberately NOT modeled this phase**: the "supreme alignment
+    title" and "Captain of the Imperial Musketeers" rows are unit
+    *selection* ("one eligible random front-line unit"), not a per-unit
+    percentage roll -- `_build_battle_units()` runs before battle-line
+    assignment even exists, so there's no "front line" yet to select
+    from; a real follow-up needs to run after `assign_battle_lines`
+    instead, in `turn/battle_resolution.py`, not here. Werebeast
+    bite-transform, the Propaganda Megaphones countermeasure, and
+    Dragon/Eagle/Whale item defection remain for further follow-up
+    phases; Druidic monster assistance has no fixed percentage in the
+    source at all, by AKGEN's own explicit admission, and stays
+    undocumented-as-a-formula on purpose.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), wrote 4 new tests in `test_battle_orchestrator.py` (the real
+    20% roll cross-checked against `OFFICE_PERK_DESCRIPTION`, an unled
+    army never rolling it, a non-title-holder commander never rolling
+    it, and the whole mechanic staying silent when `apply_fanaticism`
+    is off by default), ran again, updated README, ran once more before
+    commit -- the standing per-phase workflow. Full suite: 3751 passed
+    before, 3755 after (4 new tests).
 
 ## Setup
 

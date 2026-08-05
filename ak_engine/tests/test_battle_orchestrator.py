@@ -9,7 +9,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver, Spell
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState, RaceTitleTally
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
@@ -678,6 +678,86 @@ def test_build_battle_units_fanaticism_enabled_rolls_the_kingdoms_real_chance():
     assert succeeds[0].effective_strength == fanatical_strength
     assert fails[0].effective_strength == baseline
     assert fanatical_strength > baseline
+
+
+# -- Title-based fanaticism (Phase 390) -----------------------------------
+
+
+def _human_king_state() -> tuple[GameState, ArmyState]:
+    state = GameState()
+    state.turn_number = 4  # HUMAN_KING's own turn gate (RACE_TITLE_TURN_GATE)
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    king = LeaderState(
+        501, kingdom_id=1, name="King", location=FIELD, race=Race.HUMAN, is_king=True,
+        race_title_tally={Race.HUMAN: RaceTitleTally(front_line_battles_won_points=10)},
+    )
+    state.add_leader(king)
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD, commanded_by=501)
+    state.add_army(army)
+    return state, army
+
+
+def test_build_battle_units_title_fanaticism_rolls_the_office_perk_descriptions_own_20_percent():
+    # Cross-confirmed independently by OFFICE_PERK_DESCRIPTION[Office.
+    # HUMAN_KING] == "20% Human Fanaticism" (Phase 103). Alignment.NEUTRAL
+    # has no alignment-fanaticism chance (0%), so the first roll_
+    # fanaticism() draw always happens but never succeeds -- only then
+    # does the title check consume a second draw.
+    state, army = _human_king_state()
+
+    succeeds = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=ScriptedRandom([0.99, 0.1]), apply_fanaticism=True,
+    )
+    fails = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=ScriptedRandom([0.99, 0.9]), apply_fanaticism=True,
+    )
+
+    fanatical_strength = compute_effective_strength(
+        ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_fanatical=True
+    )
+    baseline = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert succeeds[0].effective_strength == fanatical_strength
+    assert fails[0].effective_strength == baseline
+
+
+def test_build_battle_units_title_fanaticism_never_rolled_for_an_unled_army():
+    state, army = _human_king_state()
+    army.commanded_by = None
+    rng = ScriptedRandom([0.99])  # only the alignment draw -- a second draw raises IndexError
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng, apply_fanaticism=True,
+    )
+
+    baseline = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert units[0].effective_strength == baseline
+
+
+def test_build_battle_units_title_fanaticism_never_rolled_when_the_commander_isnt_the_title_holder():
+    state, army = _human_king_state()
+    army.commanded_by = 999  # some other leader, not the HUMAN_KING title holder
+    rng = ScriptedRandom([0.99])  # only the alignment draw
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng, apply_fanaticism=True,
+    )
+
+    baseline = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert units[0].effective_strength == baseline
+
+
+def test_build_battle_units_title_fanaticism_off_by_default_never_touches_a_second_rng_draw():
+    state, army = _human_king_state()
+    rng = ScriptedRandom([0.99])  # apply_fanaticism defaults False -- no draw at all
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng,
+    )
+
+    baseline = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert units[0].effective_strength == baseline
 
 
 def _skills_with_druid(level: int) -> SkillTable:

@@ -166,6 +166,7 @@ from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import RACE_LEADERSHIP_TREASURE
 from ak_engine.turn.aftermath import FORMATION_DIVISOR, roll_quality_change
@@ -181,7 +182,9 @@ from ak_engine.turn.initiative import character_initiative
 from ak_engine.turn.merit_points import battle_quality_points
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles
+from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
+from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
 from ak_engine.turn.retreat import attacker_retreat_candidates, find_retreat_destination
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.strength import (
@@ -190,6 +193,7 @@ from ak_engine.turn.strength import (
     compute_effective_strength,
     roll_elephants_strength,
     roll_fanaticism,
+    roll_title_fanaticism,
 )
 
 # Observation Balloons (Discovery.txt, Phase 270): "army strength is
@@ -287,6 +291,32 @@ def _build_battle_units(
     test suite for a mechanic most callers don't need precision on. A
     caller that wants real fanaticism opts in explicitly.
 
+    **Title-based fanaticism** (Phase 390, same ``apply_fanaticism`` opt-in):
+    AKGEN's own confirmed ``battle_engine.special_events`` rows for
+    "Savior of Humankind"/"First Elder of Elvenkind"/"King Under the
+    Mountain"/"Khan of the Orcish Hordes" (20%/35%/40%/45%) and the
+    seven racial-monster titles Dragon/Eagle/Whale/Merman/Ent/Troll/
+    Werebeast (50%, one shared row) -- a *directly led* army (``army.
+    commanded_by`` not ``None``) whose own race (``kingdom.race``, the
+    same "army's own race" this docstring's own Druidic-ability section
+    already uses) matches a title its commander *currently holds*
+    (``turn/office_holder.py resolve_office_holder``, resolved once per
+    relevant office and cached for this call, not re-derived per unit)
+    gets an independent, additive chance to be fanatical via
+    ``turn/strength.py roll_title_fanaticism``. Only rolled when the
+    alignment-based check above didn't already succeed (both fold into
+    the same ``is_fanatical`` -- one real strength bonus, two independent
+    ways to earn it) and only when a real title-race match exists, so a
+    caller with no matching King/Lord anywhere doesn't pay a new
+    ``rng.random()`` draw for this either. **Deliberately NOT modeled
+    this phase**: the "supreme alignment title" and "Captain of the
+    Imperial Musketeers" rows are unit *selection* ("one eligible random
+    front-line unit"), not a per-unit percentage roll -- this function
+    runs before battle-line assignment even exists, so there's no
+    "front line" yet to select from; a real follow-up needs to run after
+    ``assign_battle_lines`` instead, in ``turn/battle_resolution.py``,
+    not here.
+
     **Druidic ability** (Phase 41, rulebook [4.32]): a *led* army
     (``commanded_by`` is not ``None``) whose commander leads a race
     other than his own (both derived the same documented way as
@@ -383,6 +413,18 @@ def _build_battle_units(
         Discovery.OBSERVATION_BALLOONS in state.kingdoms[kid].discoveries for kid in opponent_kingdom_ids
     )
 
+    # Phase 390: memoized per office actually queried this call, since
+    # resolve_office_holder() re-derives merit points across every
+    # leader -- avoids repeating that work for every unit of a large
+    # army sharing the same race/title.
+    _title_office_holder_cache: dict[Office, int | None] = {}
+
+    def _title_holder_leader_id(office: Office) -> int | None:
+        if office not in _title_office_holder_cache:
+            holder = resolve_office_holder(state, office)
+            _title_office_holder_cache[office] = holder.leader_id if holder is not None else None
+        return _title_office_holder_cache[office]
+
     units = []
     for army in armies:
         kingdom = state.kingdoms[army.kingdom_id]
@@ -391,6 +433,13 @@ def _build_battle_units(
         # Short-circuited: roll_fanaticism (and its rng.random() call) never
         # runs at all when apply_fanaticism is False -- see docstring.
         is_fanatical = apply_fanaticism and roll_fanaticism(kingdom.alignment, rng)
+        if apply_fanaticism and not is_fanatical and army.commanded_by is not None:
+            # See this function's own Phase 390 addendum: an independent,
+            # additive second chance, only rolled (consuming rng) when a
+            # real title-race match exists.
+            title_office = RACE_TITLE_OFFICE.get(kingdom.race)
+            if title_office is not None and _title_holder_leader_id(title_office) == army.commanded_by:
+                is_fanatical = roll_title_fanaticism(title_office, rng)
         druidic_shortfall = druidic_shortfall_for(army, state, kingdom.race, province_coord)
         phantasmal_armies_level = _phantasmal_armies_level_for(army, state)
         mystic_winds_active = _mystic_winds_active_for(army, state)
