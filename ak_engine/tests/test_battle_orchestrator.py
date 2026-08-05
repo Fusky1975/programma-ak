@@ -1560,6 +1560,69 @@ def test_maybe_fight_duel_cast_charm_success_is_read_as_no_duel_occurring():
     assert attacker_units[0].effective_strength == 100.0
 
 
+# -- Maneuver.FLEE as the attacker's own first tactic (Phase 389) --------
+
+
+def test_maybe_fight_duel_flee_as_first_tactic_always_escapes_no_rng_consumed():
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+    rng = ScriptedRandom([])  # a guaranteed escape -- no roll, no combat resolved
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        duel_maneuvers=[Maneuver.FLEE],
+    )
+
+    assert outcome.attacker_commander_leader_id == 501
+    assert outcome.defender_commander_leader_id == 502
+    assert outcome.loser_side == "attacker"
+    assert attacker_units[0].effective_strength == 100.0 * 0.75  # DUEL_DEMORALIZATION_MULTIPLIER
+    assert defender_units[0].effective_strength == 10.0  # untouched -- attacker never landed a blow
+
+
+def test_maybe_fight_duel_flee_as_a_searchtactic_wrapper_is_also_honored():
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+    rng = ScriptedRandom([])
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        duel_maneuvers=[SearchTactic(Maneuver.FLEE)],
+    )
+
+    assert outcome.loser_side == "attacker"
+
+
+def test_maybe_fight_duel_flee_only_matters_as_the_first_tactic():
+    # A later Flee "attempts combat first" per AKGEN -- but this
+    # project has no standing Special Encounter Plan source to know a
+    # tactic list's real ordering intent beyond "first entry", so a
+    # non-first FLEE is simply not special-cased at all and falls
+    # through to the ordinary (approximated) duel resolution.
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+    rng = ScriptedRandom([0.01])  # attacker's huge strength edge -> wins the approximated duel
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        duel_maneuvers=[Maneuver.MELEE, Maneuver.FLEE],
+    )
+
+    assert outcome.loser_side == "defender"
+
+
 def test_maybe_fight_duel_cast_fireball_kill_demoralizes_the_loser():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))

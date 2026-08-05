@@ -837,6 +837,56 @@ def _maybe_fight_duel(
     Augur Combat's own "cast later -> acts as Flee" branch stays the
     same confirmed, unmodeled gap it already is for Challenge/Pursue (no
     Flee tactic/chance table exists for a Duel either).
+
+    **Phase 389 addendum -- ``Maneuver.FLEE`` as the attacker's own first
+    tactic, real and now wired.** AKGEN's own `battle_engine.
+    preliminary_commander_duel` confirms the rest of the "escape"/
+    "consequence" rules this docstring above already partially covers:
+    "Flee as the first tactic refuses immediately" (no combat is
+    resolved at all) and "Flee always succeeds at a battle duel...
+    units led by the fleeing... commander fight at strength 0.75" -- the
+    exact same ``apply_duel_demoralization`` penalty an ordinary duel
+    loss already applies. When ``duel_maneuvers``' own first entry is
+    ``Maneuver.FLEE``, this function now applies that penalty to the
+    attacker's own side directly and returns immediately, no rng
+    consumed (a guaranteed escape, not a roll) and no combat resolved.
+
+    **Deliberately still not modeled, three real, AKGEN-confirmed, but
+    genuinely blocked pieces of this same cluster:**
+    - **The duel's own trigger** ("an aggressive Special Encounter Plan
+      with no Flee issues a challenge") and a **later-than-first Flee's
+      own "attempts combat first" refusal ordering** both need a real,
+      parsed, per-leader *standing* Special Encounter Plan -- this
+      project has no parser/decoder anywhere for one (distinct from the
+      one-off tactics a CHALLENGE/PURSUE order itself carries, the same
+      gap this docstring's own Phase 273 addendum already named).
+      ``duel_maneuvers`` stays an optional caller-supplied stand-in, the
+      Phase 273 pattern.
+    - **The defender's own independent Flee option**: this function's
+      one shared ``duel_maneuvers`` list only ever represents the
+      *attacker's* own tactic sequence (mirroring how ``resolve_
+      challenge_combat`` already treats a Challenge's "caster" walking
+      their own tactics against a passively-defending target) -- there
+      is no second, defender-owned tactics list to check a symmetric
+      Flee against. A genuine structural limitation, not a guess at
+      which side "should" win a tie.
+    - **``coward_bluff``** ("entering the duel and temper refusing
+      combat, chance 2/3 to avoid the demoralization penalty") needs the
+      Temper Table's own flee-probability/refusal-to-Meet mechanic --
+      ``turn/encounter.py``'s own Phase 284 addendum already names this
+      exact mechanic and explicitly defers it project-wide as "a natural,
+      distinct follow-up phase," not something this function should
+      invent a bespoke version of just for Duels.
+    - A related, pre-existing (not new) ambiguity: **Charm's own "target
+      flees" and Augur Combat's own "caster flees" branches both collapse
+      into the same bare ``combat_result.fled`` boolean**, with no
+      direction recorded -- applying AKGEN's now-confirmed "Charm escape
+      has the same consequence" rule correctly would require knowing
+      *which* side fled, and ``_resolve_personal_combat_cast`` doesn't
+      carry that today. Safely disambiguating it needs a shared-code
+      change touching Challenge/Pursue too, not a narrow Duel-only fix --
+      left as its own explicit, documented follow-up rather than guessing
+      a direction that would misattribute the penalty half the time.
     """
 
     if attacker_commander is None or defender_commander is None:
@@ -844,6 +894,16 @@ def _maybe_fight_duel(
 
     attacker_commander_units = _units_led_by(attacker_armies, attacker_units, attacker_commander.leader_id)
     defender_commander_units = _units_led_by(defender_armies, defender_units, defender_commander.leader_id)
+
+    if duel_maneuvers:
+        first_tactic = duel_maneuvers[0]
+        first_maneuver = first_tactic if isinstance(first_tactic, Maneuver) else first_tactic.maneuver
+        if first_maneuver is Maneuver.FLEE:
+            demoralized_by_id = {u.source_id: u for u in apply_duel_demoralization(attacker_commander_units)}
+            for index, unit in enumerate(attacker_units):
+                if unit.source_id in demoralized_by_id:
+                    attacker_units[index] = demoralized_by_id[unit.source_id]
+            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, "attacker")
 
     if use_real_duel_combat and state is not None:
         attacker_combatant = _commander_combatant(attacker_commander, state)

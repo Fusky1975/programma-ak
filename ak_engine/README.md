@@ -16239,7 +16239,7 @@ section.
     updated README, ran once more before commit -- the standing
     per-phase workflow. Full suite: 3729 passed before, 3734 after
     (5 new tests).
-- **Phase 388 (current)**: starts on the fourth and final AKGEN
+- **Phase 388**: starts on the fourth and final AKGEN
   research-audit item (battle narration + special events) -- this one
   splits across multiple phases given its size; Phase 388 covers just
   `tables.battle_engine.global_event`/`local_column_event`'s own real
@@ -16304,6 +16304,60 @@ section.
     assistance -- the last one has no fixed percentage in the source at
     all, by AKGEN's own explicit admission) remain for follow-up phases
     to close out this fourth audit item.
+- **Phase 389 (current)**: continues the fourth AKGEN research-audit
+  item with `preliminary_commander_duel` -- AKGEN's own confirmed
+  trigger/refusal/escape/consequence/coward-bluff rules for a Duel
+  ([7.1]). Only one of the five is safely, honestly implementable right
+  now; the other four are real, sourced, but genuinely blocked on
+  missing plumbing elsewhere in this project -- see `turn/battle_
+  orchestrator.py _maybe_fight_duel`'s own Phase 389 addendum for the
+  full derivation of each.
+  - **`Maneuver.FLEE` as the attacker's own first tactic, implemented**:
+    AKGEN confirms "Flee always succeeds at a battle duel... units led
+    by the fleeing... commander fight at strength 0.75" -- when ``duel_
+    maneuvers``' own first entry is ``Maneuver.FLEE`` (or a
+    ``SearchTactic`` wrapping it), `_maybe_fight_duel` now applies
+    `apply_duel_demoralization`'s existing 0.75 penalty to the
+    attacker's own side directly and returns immediately -- no rng
+    consumed (a guaranteed escape, not a roll), no combat resolved. A
+    non-first Flee isn't special-cased (falls through to the ordinary
+    duel resolution) -- this project has no real Special Encounter Plan
+    source to know a tactic list's true ordering intent beyond
+    "first entry."
+  - **Four real, confirmed, but genuinely blocked pieces, documented,
+    not guessed**:
+    - The duel's own **trigger** ("an aggressive plan with no Flee
+      issues a challenge") and a later Flee's own "attempts combat
+      first" **refusal** ordering both need a real, parsed, per-leader
+      *standing* Special Encounter Plan this project has no
+      parser/decoder for anywhere (the same gap this function's own
+      Phase 273 addendum already named for Fire-Arrow-first duels).
+    - The **defender's own independent Flee option** doesn't exist
+      structurally: `_maybe_fight_duel`'s one shared `duel_maneuvers`
+      list only ever represents the *attacker's* own tactics (mirroring
+      how `resolve_challenge_combat` already treats a Challenge's
+      "caster" walking their own tactics against a passively-defending
+      target).
+    - **`coward_bluff`** (2/3 chance to avoid demoralization when
+      "temper refus[es] combat") needs the Temper Table's own
+      flee-probability/refusal-to-Meet mechanic -- `turn/encounter.py`'s
+      own Phase 284 addendum already named this exact mechanic and
+      explicitly deferred it project-wide as "a natural, distinct
+      follow-up phase."
+    - A related, **pre-existing** (not new) gap: Charm's "target flees"
+      and Augur Combat's "caster flees" branches both collapse into the
+      same bare `combat_result.fled` boolean with no direction recorded
+      -- correctly applying AKGEN's now-confirmed "Charm escape has the
+      same consequence" rule needs knowing *which* side fled, which
+      would mean a shared-code change touching Challenge/Pursue too, not
+      a narrow Duel-only fix.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), wrote 3 new tests in `test_battle_orchestrator.py` (the
+    escape itself with a bare `Maneuver.FLEE`, the same case wrapped in
+    a `SearchTactic`, and a non-first Flee correctly falling through to
+    ordinary resolution), ran again, updated README, ran once more
+    before commit -- the standing per-phase workflow. Full suite: 3748
+    passed before, 3751 after (3 new tests).
 
 ## Setup
 
