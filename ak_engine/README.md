@@ -16358,7 +16358,7 @@ section.
     ordinary resolution), ran again, updated README, ran once more
     before commit -- the standing per-phase workflow. Full suite: 3748
     passed before, 3751 after (3 new tests).
-- **Phase 390 (current)**: continues the fourth AKGEN research-audit
+- **Phase 390**: continues the fourth AKGEN research-audit
   item with the first implementable slice of `special_events` --
   title-based fanaticism (the four humanoid-race percentages plus the
   seven racial-monster titles' shared 50%).
@@ -16396,6 +16396,32 @@ section.
     is off by default), ran again, updated README, ran once more before
     commit -- the standing per-phase workflow. Full suite: 3751 passed
     before, 3755 after (4 new tests).
+- **Phase 391 (current)**: continues the fourth AKGEN research-audit
+  item with the Propaganda Megaphones countermeasure against Oratory.
+  - **Implemented**: `turn/cast_execution.py _execute_oratory()` now
+    checks, per army the target commands, whether that army's own
+    kingdom holds `Discovery.PROPAGANDA_MEGAPHONES` -- if so, the
+    quality-rank boost only lands with the confirmed 33% chance
+    (`PROPAGANDA_MEGAPHONES_AFFECTED_CHANCE`), the same Giant-Fan-style
+    per-army-defense convention this module already uses for Tornado.
+    `CastExecutionResult.discovery_defended` is set whenever any army
+    was checked against the megaphones, whether or not that particular
+    roll actually blocked the boost. **Independently cross-confirmed**:
+    this project's own pre-existing `Discovery.PROPAGANDA_MEGAPHONES`
+    flavor text (`models/discovery.py`) already quoted the identical
+    "33% chance of being affected" wording before this phase's own
+    AKGEN audit ever ran -- two independent sources, one figure.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean -- no existing test's kingdom holds the Discovery), wrote 3
+    new tests in `test_cast_execution.py` (the roll blocking the boost,
+    the roll still allowing it through, and the no-Discovery case never
+    touching the rng at all), ran again, updated README, ran once more
+    before commit -- the standing per-phase workflow. Full suite: 3755
+    passed before, 3758 after (3 new tests).
+  - **Still open** from this AKGEN audit item: Werebeast bite-transform
+    and Dragon/Eagle/Whale item-triggered defection, for further
+    follow-up phases; Druidic monster assistance stays a documented,
+    deliberately-unimplemented gap (no fixed percentage in the source).
 
 ## Setup
 

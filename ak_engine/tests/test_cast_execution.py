@@ -1028,6 +1028,55 @@ def test_oratory_is_not_cumulative_on_a_second_cast_the_same_turn():
     assert state.armies[1].quality is Quality.AVERAGE  # but only bumped once
 
 
+# -- Phase 391: Propaganda Megaphones (vs Oratory) --
+
+
+def test_oratory_propaganda_megaphones_blocks_the_boost_when_the_roll_misses():
+    state = build_state()
+    state.kingdoms[1].discoveries.add(Discovery.PROPAGANDA_MEGAPHONES)
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.ORATORY, target=78)
+
+    result = execute_cast(
+        state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.99])
+    )
+
+    assert result.applied is True
+    assert result.discovery_defended is Discovery.PROPAGANDA_MEGAPHONES
+    assert state.armies[1].quality is Quality.GREEN  # the 33% roll missed -- no boost
+
+
+def test_oratory_propaganda_megaphones_still_boosts_when_the_roll_hits():
+    state = build_state()
+    state.kingdoms[1].discoveries.add(Discovery.PROPAGANDA_MEGAPHONES)
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.ORATORY, target=78)
+
+    result = execute_cast(
+        state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.01])
+    )
+
+    assert result.applied is True
+    assert result.discovery_defended is Discovery.PROPAGANDA_MEGAPHONES
+    assert state.armies[1].quality is Quality.AVERAGE  # the 33% roll hit -- boosted anyway
+
+
+def test_oratory_without_propaganda_megaphones_never_rolls_and_always_boosts():
+    state = build_state()
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.ORATORY, target=78)
+    rng = ScriptedRandom([])  # no Discovery -- no per-army roll, IndexError if one is attempted
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert result.discovery_defended is None
+    assert state.armies[1].quality is Quality.AVERAGE
+
+
 # -- Phase 387: action_slots_per_school --
 
 

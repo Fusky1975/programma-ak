@@ -737,6 +737,14 @@ GIANT_FAN_QUALITY_DOWNGRADE_CHANCE = 0.50
 # 3 gold" -- a flat gold reduction, replacing the -100%-revenue effect
 # entirely (see ProvinceState.tax_flat_reduction).
 REINFORCED_CONCRETE_TAX_REDUCTION = 3
+# Propaganda Megaphones (vs Oratory, Phase 391 -- AKGEN's own confirmed
+# `battle_engine.special_events` row, independently corroborated by
+# this project's own pre-existing Discovery.txt flavor text, both
+# saying the exact same "33%" figure): "each opposing army will have
+# only a 33% chance of being affected by their leader's Oratory" --
+# checked per army (not per caster/target pair), against *that army's
+# own* kingdom_id, the same Giant-Fan-style per-army convention above.
+PROPAGANDA_MEGAPHONES_AFFECTED_CHANCE = 0.33
 
 # Scar Terrain (Phase 201, secret spell, user-supplied): "-2 Taxation...
 # reduced by 2 gold immediately and permanently." An add, not a set --
@@ -1672,6 +1680,14 @@ def _execute_oratory(
     strength-pipeline multiplier -- see ``turn/strength.py``'s own module
     docstring for why that's the more faithful reading of "becomes"
     Average/Veteran/etc.
+
+    **Propaganda Megaphones** (Phase 391): "each opposing army will have
+    only a 33% chance of being affected by their leader's Oratory" --
+    checked per army against *that army's own* ``kingdom_id``, the same
+    Giant-Fan-style per-army convention this module already uses for
+    Tornado. ``target.oratory_boosted_this_turn`` still gates the whole
+    cast to once per turn regardless of how many (if any) armies the
+    megaphones end up shielding.
     """
 
     caster = state.leaders[leader_id]
@@ -1685,11 +1701,18 @@ def _execute_oratory(
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
+    defended = False
     if not target.oratory_boosted_this_turn:
         for army in state.armies_commanded_by(request.target):
+            if army.kingdom_id is not None and Discovery.PROPAGANDA_MEGAPHONES in state.kingdoms[army.kingdom_id].discoveries:
+                defended = True
+                if rng.random() >= PROPAGANDA_MEGAPHONES_AFFECTED_CHANCE:
+                    continue
             army.quality = Quality(min(int(army.quality) + 1, Quality.ELITE))
         target.oratory_boosted_this_turn = True
-    return CastExecutionResult(request, applied=True)
+    return CastExecutionResult(
+        request, applied=True, discovery_defended=Discovery.PROPAGANDA_MEGAPHONES if defended else None
+    )
 
 
 def _execute_mystic_winds(
