@@ -16848,7 +16848,7 @@ section.
     above), updated README, ran once more before commit -- the
     standing per-phase workflow. Full suite: 3807 passed before, 3813
     after (6 new tests).
-- **Phase 401 (current)**: re-verifies, line by line, the user's own
+- **Phase 401**: re-verifies, line by line, the user's own
   suspicion that the Search/Encounter "Not yet implemented" paragraph
   (written at Phase 153) had gone stale -- "una vittoria imposta solo
   `Feature.looted = True` -- nessun modello di proprietà-oggetto
@@ -16900,6 +16900,42 @@ section.
   - Pure documentation/comment correction -- no behavior changed. Full
     suite: 3813 passed before, 3813 after (0 new tests; nothing to
     test since nothing executes differently).
+- **Phase 402 (current)**: re-verifies the user's own suspicion about
+  Recruit's "remaining gaps" bullet (written at Phase 262) -- "1-2
+  tipi reclutabili per provincia mai tracciato con precisione (solo
+  approssimato via compatibilità di razza), e il progetto non blocca
+  mai il reclutamento in una provincia non posseduta/non alleata."
+  - **The territory-block half is fully closed**: **Phase 303** (see
+    that phase's own note above) added exactly this gate
+    (`RecruitExecutionResult.territory_blocked`), sourced from RULES.AK
+    [3.4]'s "you can Recruit armies from the populace only if you own
+    the province." The bullet was never updated after Phase 303 closed
+    it.
+  - **The Recruiting Types half is only half-stale**: checked directly
+    against the code rather than trusted. The real per-province data
+    (`Mod_PAT(px,py,0)`/`Mod_PAT(px,py,1)`) genuinely *is* tracked with
+    precision as of **Phase 278** -- `ProvinceState.recruit_type_1`/
+    `recruit_type_2`, decoded straight from a real `GW3`-family world
+    file (see that phase's own note above) -- but that data only ever
+    feeds `describe_provinces_report()`'s PROVINCES table
+    (`report/turn_report.py`). `turn/recruit_execution.py
+    execute_recruit()` never reads either field -- `turn/recruit.py
+    is_army_type_compatible_with_race()` (the race-only approximation
+    the user's own suspicion already named) is still the sole gate on
+    which `ArmyType`s a Recruit order may actually levy. So the
+    genuinely still-open gap is narrower than the old bullet said, but
+    real: the precise per-province data exists and is displayed, but
+    is never enforced -- levying a real province's *third*,
+    race-compatible-but-not-`Mod_PAT`-listed army type still succeeds
+    today.
+  - Corrected the stale bullet in place (`~~strikethrough~~` + a
+    `stale as of Phase 402` note with citations, same convention as
+    Phases 396-401), narrowing it to the one genuinely open
+    enforcement gap.
+  - Pure documentation correction -- no behavior changed (whether to
+    wire `recruit_type_1`/`recruit_type_2` into `execute_recruit()`'s
+    own enforcement is a design decision left to the user, not assumed
+    here). Full suite: 3813 passed before, 3813 after (0 new tests).
 
 ## Setup
 
@@ -17135,10 +17171,38 @@ rulebook before being turned into named, typed fields:
     `has_treat_permission()`). ~~the "former home province, now an
     ally's" 4-unit bonus stays unmodeled~~ **fixed in Phase 262** -- see
     that phase's own note above (`FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT`).
-    Still open: the rulebook's more specific "1-2 recruitable types per
-    province" isn't tracked, only approximated via race-compatibility
-    (see Phase 12's note above); and this project still never blocks
-    recruiting in a non-owned, non-allied province at all.
+    ~~Still open: the rulebook's more specific "1-2 recruitable types
+    per province" isn't tracked, only approximated via
+    race-compatibility (see Phase 12's note above); and this project
+    still never blocks recruiting in a non-owned, non-allied province
+    at all.~~ -- **stale as of Phase 402 (written at Phase 262, never
+    revisited across the two later phases that closed one half of it
+    and re-shaped the other)**, re-verified against the real code
+    rather than trusted:
+    - **"Never blocks recruiting in a non-owned, non-allied
+      province"** is fully closed: **Phase 303** (see that phase's
+      own note above) added exactly this gate
+      (`RecruitExecutionResult.territory_blocked`), sourced from the
+      same [3.4] paragraph this bullet already cited.
+    - **"1-2 recruitable types per province isn't tracked"** is only
+      half true now. The real per-province data (`Mod_PAT(px,py,0)`/
+      `Mod_PAT(px,py,1)`) genuinely *is* tracked with precision as of
+      **Phase 278** -- `ProvinceState.recruit_type_1`/
+      `recruit_type_2`, decoded straight from a real `GW3`-family
+      world file (not a guess, not a lost formula -- see that phase's
+      own note above and `parser/gw_world.py`'s "Recruiting Types
+      (Mod_PAT)" docstring section) -- but that data only ever feeds
+      `describe_provinces_report()`'s PROVINCES table. Nothing in
+      `turn/recruit_execution.py execute_recruit()` reads either
+      field; `turn/recruit.py is_army_type_compatible_with_race()`
+      (the race-only approximation this bullet already named) is
+      still the sole gate on which `ArmyType`s a Recruit order may
+      actually levy. So the genuinely still-open gap is narrower than
+      before but real: the precise data exists and is displayed, but
+      is never enforced -- levying a real province's *third*,
+      race-compatible-but-not-`Mod_PAT`-listed army type still
+      succeeds today, when the rulebook's own Recruiting Types table
+      says it shouldn't.
   - **Hire's remaining gaps** (see Phase 17's note above): a Hero's own
     "required pay" (may be less than the offer, depends on
     temper/race/alignment compatibility -- `models/temper.py Temper`
