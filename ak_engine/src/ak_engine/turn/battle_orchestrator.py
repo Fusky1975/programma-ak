@@ -161,14 +161,14 @@ import random
 from dataclasses import dataclass, field
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ARMY_TABLE, ArmyType, is_overflight_unit
+from ak_engine.models.army_type import ARMY_TABLE, MONSTROUS_ARMY_RACE, ArmyType, is_overflight_unit
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES, Race
-from ak_engine.models.treasure import RACE_LEADERSHIP_TREASURE
+from ak_engine.models.treasure import MONSTER_SUMMONING_TREASURE, RACE_LEADERSHIP_TREASURE
 from ak_engine.turn.aftermath import FORMATION_DIVISOR, roll_quality_change
 from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability, roll_terrain_line_length_cap
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
@@ -180,7 +180,7 @@ from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant
 from ak_engine.turn.initiative import character_initiative
 from ak_engine.turn.merit_points import battle_quality_points
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
@@ -1235,6 +1235,116 @@ def _apply_werebeast_bites(battle_result: BattleResult, state: GameState, rng: r
                 state.werebeast_bitten_army_ids.add(unit.source_id)
 
 
+MONSTER_SUMMONING_INVASION_DEFECTION_CHANCE = 0.33
+MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE = 0.165
+
+
+def _apply_monster_summoning_aid(
+    units: list[BattleUnit],
+    commander: Commander | None,
+    state: GameState,
+    province_coord: HexCoord,
+    bounds: MapBounds,
+    *,
+    is_defender: bool,
+    terrain: Terrain,
+    combat_ability_level: int,
+    apply_fanaticism: bool,
+    own_explored_percent: int,
+    enemy_explored_percent: int,
+    opponent_kingdom_ids: frozenset[int],
+    is_island: bool,
+    rng: random.Random,
+) -> None:
+    """AKGEN's own confirmed `battle_engine.special_events` "Dragon/Eagle/
+    Whale summoning item" row: "adjacent unled matching units aid the
+    bearer" -- a side's Supreme Commander holding one of `models/
+    treasure.py MONSTER_SUMMONING_TREASURE`'s three race-matching items
+    (the same "commander only, no King-substitution carve-out" convention
+    `RACE_LEADERSHIP_TREASURE`/`turn/army_quality.py` already established
+    for this codebase) draws aid from every *unled* (`ArmyState.
+    commanded_by is None`) army of the matching monstrous race
+    (`models/army_type.py MONSTROUS_ARMY_RACE`) sitting in a province
+    directly adjacent (`turn/movement.py neighbors`) to the battle
+    province.
+
+    Each eligible adjacent army rolls independently: AKGEN's own
+    confirmed 33% chance during an "invasion" -- read here as
+    `ArmyState.kingdom_id is None`, this project's own Phase 97 mercenary
+    /unclaimed-army convention for a population with no strategic owner
+    at all, since AKGEN never defines "invasion" any more precisely than
+    that -- or half that, 16.5%, if the army is player-led (`kingdom_id
+    is not None`: it belongs to a kingdom even though it currently has no
+    personal field commander).
+
+    A successful roll contributes that army's battle strength to this
+    side for this battle only, then appends the resulting unit directly
+    to `units`. A player-led aiding army is built via the same
+    `_build_battle_units` machinery as every other unit on the side (it
+    has a real owning `KingdomState` to derive terrain/ability/
+    exploration/fanaticism/home-province context from, same as any other
+    army of that kingdom). A truly wild (`kingdom_id is None`) aiding
+    army has no `KingdomState` to derive any of that from, so it gets a
+    bare `compute_effective_strength` call instead -- quality and terrain
+    only, plus the same side-wide `combat_ability_level`/exploration
+    figures already uniformly applied to every unit on the side, with no
+    kingdom-derived bonuses (home province, race item, fanaticism,
+    Druidic shortfall) since none of those have any meaning for a
+    population that was never anyone's army.
+
+    Either way, the aiding `ArmyState` is deliberately never added to
+    `attacker_armies`/`defender_armies` (the lists `fight_battle` uses
+    for post-battle quality-change/retreat/destruction) -- matching
+    AKGEN's own "aid the bearer" wording, not "join the bearer's army":
+    the aiding army experiences none of a real participant's post-battle
+    consequences.
+    """
+
+    if commander is None or commander.leader_id is None:
+        return
+    held_treasures = {item.treasure for item in state.items_held_by(commander.leader_id)}
+    matching_race = next(
+        (race for race, treasure in MONSTER_SUMMONING_TREASURE.items() if treasure in held_treasures),
+        None,
+    )
+    if matching_race is None:
+        return
+    matching_army_type = next(
+        (army_type for army_type, race in MONSTROUS_ARMY_RACE.items() if race is matching_race),
+        None,
+    )
+    if matching_army_type is None:
+        return
+
+    for neighbor_coord in neighbors(province_coord, bounds):
+        for army in state.armies_at(neighbor_coord):
+            if army.army_type is not matching_army_type or army.commanded_by is not None:
+                continue
+            if army.kingdom_id is None:
+                defection_chance = MONSTER_SUMMONING_INVASION_DEFECTION_CHANCE
+            else:
+                defection_chance = MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE
+            if rng.random() >= defection_chance:
+                continue
+            if army.kingdom_id is None:
+                strength = compute_effective_strength(
+                    matching_army_type, matching_race, army.quality, terrain,
+                    is_defender=is_defender, combat_ability_level=combat_ability_level,
+                    own_explored_percent=own_explored_percent, enemy_explored_percent=enemy_explored_percent,
+                    is_island=is_island,
+                )
+                units.append(BattleUnit(matching_army_type, strength, source_id=army.army_id))
+            else:
+                units.extend(
+                    _build_battle_units(
+                        [army], state, is_defender=is_defender, terrain=terrain, province_coord=province_coord,
+                        rng=rng, combat_ability_level=combat_ability_level, apply_fanaticism=apply_fanaticism,
+                        own_explored_percent=own_explored_percent, enemy_explored_percent=enemy_explored_percent,
+                        opponent_kingdom_ids=opponent_kingdom_ids, is_island=is_island,
+                    )
+                )
+
+
 def fight_battle(
     state: GameState,
     attacker_kingdom_id: int,
@@ -1333,6 +1443,27 @@ def fight_battle(
         combat_ability_level=defender_ability_level, apply_fanaticism=apply_fanaticism,
         own_explored_percent=defender_explored, enemy_explored_percent=attacker_explored,
         opponent_kingdom_ids=attacker_kingdom_ids, is_island=is_island,
+    )
+
+    # Phase 393: Dragon/Eagle/Whale summoning-item aid, checked for both
+    # sides right after their own real units are built (so the aiding
+    # units get the same terrain/ability/exploration treatment) and
+    # before resolve_battle() runs -- see _apply_monster_summoning_aid's
+    # own docstring.
+    monster_summoning_bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    _apply_monster_summoning_aid(
+        attacker_units, attacker_commander, state, province_coord, monster_summoning_bounds,
+        is_defender=False, terrain=terrain, combat_ability_level=attacker_ability_level,
+        apply_fanaticism=apply_fanaticism, own_explored_percent=attacker_explored,
+        enemy_explored_percent=defender_explored, opponent_kingdom_ids=defender_kingdom_ids,
+        is_island=is_island, rng=rng,
+    )
+    _apply_monster_summoning_aid(
+        defender_units, defender_commander, state, province_coord, monster_summoning_bounds,
+        is_defender=True, terrain=terrain, combat_ability_level=defender_ability_level,
+        apply_fanaticism=apply_fanaticism, own_explored_percent=defender_explored,
+        enemy_explored_percent=attacker_explored, opponent_kingdom_ids=attacker_kingdom_ids,
+        is_island=is_island, rng=rng,
     )
 
     duel = _maybe_fight_duel(

@@ -387,6 +387,17 @@ RACE_LEADERSHIP_TREASURE: dict[Race, Treasure] = {
     Race.ORCISH: Treasure.LEADERSHIP_ORCISH,
 }
 
+# Phase 393: the same "which race does this item favor" convention as
+# ``RACE_LEADERSHIP_TREASURE`` above, for AKGEN's own confirmed
+# `battle_engine.special_events` "Dragon/Eagle/Whale summoning item" row
+# -- see ``turn/battle_orchestrator.py``'s own Phase 393 addendum for the
+# "adjacent unled matching units aid the bearer" mechanic this feeds.
+MONSTER_SUMMONING_TREASURE: dict[Race, Treasure] = {
+    Race.DRAGONS: Treasure.MONSTER_AID_DRAGON,
+    Race.EAGLES: Treasure.MONSTER_AID_EAGLE,
+    Race.WHALES: Treasure.MONSTER_AID_WHALE,
+}
+
 
 # HostAK/TP/PROSE/TREASAB.X2, verbatim, ordinals 0-92 (93 lines -- the file
 # ends exactly at "no treasure"; see module docstring for why ordinals

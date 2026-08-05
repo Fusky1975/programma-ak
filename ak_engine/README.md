@@ -16422,7 +16422,7 @@ section.
     and Dragon/Eagle/Whale item-triggered defection, for further
     follow-up phases; Druidic monster assistance stays a documented,
     deliberately-unimplemented gap (no fixed percentage in the source).
-- **Phase 392 (current)**: continues the fourth AKGEN research-audit
+- **Phase 392**: continues the fourth AKGEN research-audit
   item with Werebeast bite-transform, AKGEN's own confirmed "Werebeasts
   defeat humanoids: bite and end-of-turn transformation; fleets
   excluded" `special_events` row -- split battle-time/end-of-turn, the
@@ -16468,6 +16468,67 @@ section.
     item-triggered defection, for a further follow-up phase; Druidic
     monster assistance stays a documented, deliberately-unimplemented
     gap (no fixed percentage in the source).
+- **Phase 393 (current)**: closes out the fourth and final AKGEN
+  research-audit item ("Narrazione battaglia + eventi speciali") with
+  the last unimplemented piece, AKGEN's own confirmed
+  `battle_engine.special_events` "Dragon/Eagle/Whale summoning item"
+  row: "adjacent unled matching units aid the bearer", 33%
+  defection-chance during an "invasion", halved to 16.5% if
+  player-led.
+  - **`models/treasure.py MONSTER_SUMMONING_TREASURE`, new**: a
+    `dict[Race, Treasure]` mapping `Race.DRAGONS/EAGLES/WHALES` to
+    `Treasure.MONSTER_AID_DRAGON/EAGLE/WHALE` -- the same "commander
+    holds a race-matching item" shape `RACE_LEADERSHIP_TREASURE`
+    already established.
+  - **`turn/battle_orchestrator.py _apply_monster_summoning_aid()`,
+    implemented**: called for both sides in `fight_battle()`, right
+    after each side's own `_build_battle_units()` call and before
+    `resolve_battle()` runs. A side's Supreme Commander holding one of
+    the three items (checked the same "commander only, no
+    King-substitution carve-out" way `RACE_LEADERSHIP_TREASURE`
+    already reads) draws aid from every *unled* (`commanded_by is
+    None`) army of the matching race (`models/army_type.py
+    MONSTROUS_ARMY_RACE`) in a province directly adjacent
+    (`turn/movement.py neighbors`, `MapBounds(*NORMAL_MAP_BOUNDS)`) to
+    the battle. Each eligible army rolls independently.
+  - **"Invasion" vs "player-led" rate, resolved**: AKGEN never defines
+    "invasion" more precisely than the "player-led" contrast implies,
+    so it's read here as `ArmyState.kingdom_id is None` -- this
+    project's own Phase 97 convention for a population with no
+    strategic owner at all -- getting the full 33%
+    (`MONSTER_SUMMONING_INVASION_DEFECTION_CHANCE`), versus
+    `kingdom_id is not None` (belongs to a kingdom even though it
+    currently has no personal field commander) getting the halved
+    16.5% (`MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE`).
+  - **One-battle-only aid, not a permanent transfer**: a successful
+    roll appends a `BattleUnit` straight into the side's own `units`
+    list, but the aiding `ArmyState` is never added to
+    `attacker_armies`/`defender_armies` -- the lists `fight_battle`
+    uses for post-battle quality-change/retreat/destruction -- so the
+    aiding army experiences none of a real participant's post-battle
+    consequences, matching "presta aiuto" ("lends aid"), not "joins".
+  - **Kingdom-less aid built without `_build_battle_units`**: a
+    genuinely wild (`kingdom_id is None`) aiding army has no
+    `KingdomState` to derive terrain/home-province/fanaticism context
+    from, so it gets a bare `turn/strength.py
+    compute_effective_strength()` call (quality + terrain + the same
+    side-wide ability/exploration figures every unit on the side
+    already gets) instead of the full per-kingdom pipeline. A
+    player-led aiding army *does* have a real owning `KingdomState`, so
+    it's built via the normal `_build_battle_units()` machinery like
+    any other army of that kingdom.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), wrote 8 new tests in `test_battle_orchestrator.py`
+    (adjacent-aid strength, no-treasure/no-commander safety, led-army
+    and non-matching-type exclusion, non-adjacent-province exclusion,
+    and the 33%/16.5% rate-boundary split), ran again, updated README,
+    ran once more before commit -- the standing per-phase workflow.
+    Full suite: 3768 passed before, 3776 after (8 new tests).
+  - **Druidic monster assistance** stays the sole remaining honestly-
+    documented gap from this AKGEN audit item -- confirmed to have no
+    fixed percentage in the source at all, deliberately left
+    unimplemented, not a guess. This closes the fourth and final item
+    of the user's original AKGEN research-audit batch.
 
 ## Setup
 

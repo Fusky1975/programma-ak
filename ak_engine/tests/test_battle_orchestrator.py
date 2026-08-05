@@ -18,7 +18,10 @@ from ak_engine.models.treasure import Treasure
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.aftermath import FORMATION_DIVISOR
 from ak_engine.turn.battle_orchestrator import (
+    MONSTER_SUMMONING_INVASION_DEFECTION_CHANCE,
+    MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE,
     MultiAttackerParty,
+    _apply_monster_summoning_aid,
     _apply_werebeast_bites,
     _build_battle_units,
     _commander_combatant,
@@ -34,6 +37,7 @@ from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.duel import Commander, provincial_garrison_commander
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.strength import compute_effective_strength
 
@@ -2612,3 +2616,154 @@ def test_apply_werebeast_bites_checks_the_defender_side_when_the_defender_wins_t
     _apply_werebeast_bites(battle_result, state, rng)
 
     assert state.werebeast_bitten_army_ids == {101}
+
+
+# -- Dragon/Eagle/Whale summoning-item aid (Phase 393) ---------------------
+
+
+def _bearer_state(matching_treasure: Treasure) -> tuple[GameState, Commander]:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Beareria", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Bearer", location=FIELD))
+    state.add_item(matching_treasure, owner_leader_id=1)
+    commander = Commander(leader_id=1, contingent_size=1, tactical_ability=0)
+    return state, commander
+
+
+def _aid_kwargs(**overrides):
+    kwargs = dict(
+        is_defender=False, terrain=Terrain.PLAINS, combat_ability_level=0, apply_fanaticism=False,
+        own_explored_percent=0, enemy_explored_percent=0, opponent_kingdom_ids=frozenset(), is_island=False,
+    )
+    kwargs.update(overrides)
+    return kwargs
+
+
+def test_apply_monster_summoning_aid_adds_an_adjacent_unled_matching_army():
+    state, commander = _bearer_state(Treasure.MONSTER_AID_DRAGON)
+    aiding_army = ArmyState(301, None, ArmyType.DRAGON_WING, Quality.AVERAGE, location=DEFENDER_HOME)
+    state.add_army(aiding_army)
+    units: list[BattleUnit] = []
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    rng = ScriptedRandom([0.1])  # < 33% invasion chance -- hits
+
+    _apply_monster_summoning_aid(units, commander, state, FIELD, bounds, rng=rng, **_aid_kwargs())
+
+    assert len(units) == 1
+    assert units[0].army_type is ArmyType.DRAGON_WING
+    assert units[0].source_id == 301
+    expected = compute_effective_strength(ArmyType.DRAGON_WING, Race.DRAGONS, Quality.AVERAGE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_apply_monster_summoning_aid_no_treasure_no_roll():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Beareria", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Bearer", location=FIELD))
+    commander = Commander(leader_id=1, contingent_size=1, tactical_ability=0)
+    aiding_army = ArmyState(301, None, ArmyType.DRAGON_WING, Quality.AVERAGE, location=DEFENDER_HOME)
+    state.add_army(aiding_army)
+    units: list[BattleUnit] = []
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    rng = ScriptedRandom([])  # no roll should be attempted -- IndexError if one is
+
+    _apply_monster_summoning_aid(units, commander, state, FIELD, bounds, rng=rng, **_aid_kwargs())
+
+    assert units == []
+
+
+def test_apply_monster_summoning_aid_no_commander_no_roll():
+    state = GameState()
+    aiding_army = ArmyState(301, None, ArmyType.DRAGON_WING, Quality.AVERAGE, location=DEFENDER_HOME)
+    state.add_army(aiding_army)
+    units: list[BattleUnit] = []
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    rng = ScriptedRandom([])
+
+    _apply_monster_summoning_aid(units, None, state, FIELD, bounds, rng=rng, **_aid_kwargs())
+
+    assert units == []
+
+
+def test_apply_monster_summoning_aid_ignores_a_led_matching_army():
+    state, commander = _bearer_state(Treasure.MONSTER_AID_DRAGON)
+    state.add_leader(LeaderState(2, kingdom_id=1, name="Wrangler", location=DEFENDER_HOME))
+    aiding_army = ArmyState(301, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, location=DEFENDER_HOME, commanded_by=2)
+    state.add_army(aiding_army)
+    units: list[BattleUnit] = []
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    rng = ScriptedRandom([])  # never rolled -- the army is led
+
+    _apply_monster_summoning_aid(units, commander, state, FIELD, bounds, rng=rng, **_aid_kwargs())
+
+    assert units == []
+
+
+def test_apply_monster_summoning_aid_ignores_a_non_matching_army_type():
+    state, commander = _bearer_state(Treasure.MONSTER_AID_DRAGON)
+    aiding_army = ArmyState(301, None, ArmyType.EAGLE_WING, Quality.AVERAGE, location=DEFENDER_HOME)
+    state.add_army(aiding_army)
+    units: list[BattleUnit] = []
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    rng = ScriptedRandom([])
+
+    _apply_monster_summoning_aid(units, commander, state, FIELD, bounds, rng=rng, **_aid_kwargs())
+
+    assert units == []
+
+
+def test_apply_monster_summoning_aid_ignores_a_non_adjacent_province():
+    state, commander = _bearer_state(Treasure.MONSTER_AID_DRAGON)
+    far_coord = HexCoord(20, 20)
+    aiding_army = ArmyState(301, None, ArmyType.DRAGON_WING, Quality.AVERAGE, location=far_coord)
+    state.add_army(aiding_army)
+    units: list[BattleUnit] = []
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    rng = ScriptedRandom([])
+
+    _apply_monster_summoning_aid(units, commander, state, FIELD, bounds, rng=rng, **_aid_kwargs())
+
+    assert units == []
+
+
+def test_apply_monster_summoning_aid_uses_the_invasion_rate_for_a_kingdomless_army():
+    state, commander = _bearer_state(Treasure.MONSTER_AID_DRAGON)
+    aiding_army = ArmyState(301, None, ArmyType.DRAGON_WING, Quality.AVERAGE, location=DEFENDER_HOME)
+    state.add_army(aiding_army)
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    just_under = MONSTER_SUMMONING_INVASION_DEFECTION_CHANCE - 0.01
+    just_over = MONSTER_SUMMONING_INVASION_DEFECTION_CHANCE
+
+    hit_units: list[BattleUnit] = []
+    _apply_monster_summoning_aid(
+        hit_units, commander, state, FIELD, bounds, rng=ScriptedRandom([just_under]), **_aid_kwargs()
+    )
+    assert len(hit_units) == 1
+
+    miss_units: list[BattleUnit] = []
+    _apply_monster_summoning_aid(
+        miss_units, commander, state, FIELD, bounds, rng=ScriptedRandom([just_over]), **_aid_kwargs()
+    )
+    assert miss_units == []
+
+
+def test_apply_monster_summoning_aid_uses_the_halved_player_led_rate():
+    state, commander = _bearer_state(Treasure.MONSTER_AID_DRAGON)
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    aiding_army = ArmyState(301, 2, ArmyType.DRAGON_WING, Quality.AVERAGE, location=DEFENDER_HOME)
+    state.add_army(aiding_army)
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    just_under = MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE - 0.01
+    just_over = MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE
+
+    hit_units: list[BattleUnit] = []
+    _apply_monster_summoning_aid(
+        hit_units, commander, state, FIELD, bounds, rng=ScriptedRandom([just_under]), **_aid_kwargs()
+    )
+    assert len(hit_units) == 1
+
+    miss_units: list[BattleUnit] = []
+    _apply_monster_summoning_aid(
+        miss_units, commander, state, FIELD, bounds, rng=ScriptedRandom([just_over]), **_aid_kwargs()
+    )
+    assert miss_units == []
