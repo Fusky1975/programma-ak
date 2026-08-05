@@ -1155,6 +1155,13 @@ from ak_engine.report.prose import render
 from ak_engine.turn.army_quality import compute_army_modified_quality
 from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.battle_orchestrator import BattleReport
+from ak_engine.turn.battle_luck import (
+    CLUCK2_REVERSAL_PHRASE,
+    column_narration_eligible,
+    render_bluck_event,
+    render_cluck_event,
+    roll_cluck_reversal,
+)
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
@@ -1569,6 +1576,35 @@ def render_column_clash(
     variant = pick_variant(_MARGIN_TEMPLATES[column.bres], rng)
     result_clause = render(variant, rng=rng, is_sea=is_sea)
     return f"{opening}{defender_clause} and{result_clause}"
+
+
+def render_bluck_narration(battle_result: BattleResult) -> str:
+    """Renders the whole-battle BLUCK luck-narration sentence (Phase 388)
+    -- AKGEN's own confirmed `BLUCK.X2` text, keyed by `BattleResult.
+    bluck_index` (drawn once per battle, Phase 370). Unlike the margin
+    templates above there's only one confirmed wording per index, so no
+    ``rng``/variant choice is needed here.
+    """
+
+    return render_bluck_event(battle_result.bluck_index)
+
+
+def render_cluck_narration(column: BattleColumnResult, rng: random.Random) -> str | None:
+    """Renders one column's local CLUCK luck-narration sentence, plus its
+    CLUCK2 "fortune reversed itself" follow-up when AKGEN's own confirmed
+    reversal check fires (Phase 388). Returns ``None`` when the column
+    isn't "competitive" enough to be narrated at all -- AKGEN's own
+    confirmed `[0.4, 2.5]` pre-luck strength-ratio gate (`turn/battle_
+    luck.py column_narration_eligible`); local luck still affects the
+    column's own combat outcome even when it goes unnarrated.
+    """
+
+    if not column_narration_eligible(column.attacker_strength, column.defender_strength):
+        return None
+    text = render_cluck_event(column.cluck_index)
+    if roll_cluck_reversal(column.cluck_index, rng):
+        return f"{text}, {CLUCK2_REVERSAL_PHRASE}"
+    return text
 
 
 def render_battle_winner(

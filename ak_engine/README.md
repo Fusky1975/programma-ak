@@ -16200,7 +16200,7 @@ section.
     wins). This needs a new persisted `valhalla_visit_count` per King
     and a new automatic trigger point in `turn/turn_processor.py`, not
     just a formula fix -- left for a real follow-up phase.
-- **Phase 387 (current)**: closes the third AKGEN research-audit item,
+- **Phase 387**: closes the third AKGEN research-audit item,
   `runtime_mechanics.spellcasting`'s per-turn casting limits --
   implementing `action_slots_per_school` and honestly documenting the
   three siblings this project has no plumbing for yet.
@@ -16239,6 +16239,71 @@ section.
     updated README, ran once more before commit -- the standing
     per-phase workflow. Full suite: 3729 passed before, 3734 after
     (5 new tests).
+- **Phase 388 (current)**: starts on the fourth and final AKGEN
+  research-audit item (battle narration + special events) -- this one
+  splits across multiple phases given its size; Phase 388 covers just
+  `tables.battle_engine.global_event`/`local_column_event`'s own real
+  narration text (`BLUCK.X2`/`CLUCK.X2`) plus the `CLUCK2` "fortune
+  reverses" rewrite, none of which had ever been rendered into a
+  sentence -- Phase 370 only wired the *numeric* `bluck_index`/
+  `cluck_index`, see that phase's own `BattleResult`/`BattleColumnResult`
+  docstrings.
+  - **`BLUCK_ENTRIES`/`CLUCK_ENTRIES`, new**: `turn/battle_luck.py` gains
+    the verbatim 17-entry `BLUCK.X2` and 39-entry `CLUCK.X2` text
+    catalogs from AKGEN's own `global_event.entries`/`local_column_
+    event.entries`, plus `render_bluck_event(index)`/`render_cluck_
+    event(index)` to look a narration index up in them.
+  - **The CLUCK narration gate, implemented**: `column_narration_
+    eligible(attacker_strength, defender_strength)` -- a column's local
+    CLUCK text is only narrated when the deterministic pre-luck strength
+    ratio is "competitive", AKGEN's own confirmed `[0.4, 2.5]` gate;
+    outside it, Phase 370's `R_s` luck multiplier still applies to that
+    column's own combat, it just goes unnarrated.
+  - **The CLUCK2 reversal, implemented**: `roll_cluck_reversal(index,
+    rng)` -- when the raw CLUCK index falls in `[13, 27]`, a further 33%
+    check can rewrite the narration into CLUCK then CLUCK2 ("fortune
+    reversed itself"), without drawing any new strength factor. Verified
+    against the source's own stated aggregate ("a competitive column
+    shows the second event 30.9375% of the time on turn 1, 20.109375% on
+    turn 2+") by summing the source's own `probability_percent_turn_1`/
+    `_turn_2_plus` over indices 13-27 and multiplying by 33% -- both
+    reproduce the JSON's own stated figures exactly.
+  - **An honest, documented partial gap**: AKGEN's own report says the
+    CLUCK/CLUCK2 text *pair* is "chosen with further residues modulo 3",
+    but only ever captured `CLUCK.X2`'s own 39-entry catalog, never a
+    second `CLUCK2.X2` one the same way -- it only describes CLUCK2's
+    *concept* ("la sorte si capovolse" / "fortune reversed itself").
+    Rather than inventing a fake 39-entry `CLUCK2.X2` catalog (or a fake
+    mod-3 variant table) for text that was never actually sourced,
+    `CLUCK2_REVERSAL_PHRASE` is the report's own single confirmed
+    characterization, used as-is -- not a guess, an honest scope
+    boundary matching this project's own established convention (see
+    `turn/battle_luck.py`'s own Phase 388 docstring addendum for the
+    full derivation).
+  - **Wired into `report/turn_report.py`**: `render_bluck_narration
+    (battle_result)` and `render_cluck_narration(column, rng)` -- the
+    latter returns `None` when the column isn't narration-eligible,
+    otherwise the CLUCK sentence (plus the CLUCK2 follow-up when the
+    reversal roll fires), following this module's own existing
+    `render_column_clash`-style pattern of drawing narration-choice
+    randomness at render time, not at battle-resolution time.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), wrote 9 new tests in `test_battle_luck.py` (catalog lengths,
+    verbatim text at each index bound, the `[0.4, 2.5]` gate including
+    its non-positive-strength edge case, the reversal roll's range
+    boundaries and a Monte Carlo cross-check against the source's own
+    aggregate percentage) and 5 in `test_turn_report.py` (both new
+    renderers, including the not-competitive `None` case and both
+    reversal-fires/reversal-misses branches), ran again, updated README,
+    ran once more before commit -- the standing per-phase workflow. Full
+    suite: 3734 passed before, 3748 after (14 new tests).
+  - **Still open**: `preliminary_commander_duel` (trigger/refusal/
+    escape/coward-bluff) and the `special_events` cluster (title
+    fanaticism, Werebeast bite-transform, Propaganda Megaphones
+    countermeasure, Dragon/Eagle/Whale item defection, Druidic monster
+    assistance -- the last one has no fixed percentage in the source at
+    all, by AKGEN's own explicit admission) remain for follow-up phases
+    to close out this fourth audit item.
 
 ## Setup
 

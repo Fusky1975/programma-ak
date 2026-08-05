@@ -90,11 +90,13 @@ from ak_engine.report.turn_report import (
     render_attack_hit,
     render_attack_missed,
     render_battle_winner,
+    render_bluck_narration,
     render_boulder_throw_hit,
     render_boulder_throw_missed,
     render_breath_weapon_hit,
     render_breath_weapon_missed,
     render_caught_up,
+    render_cluck_narration,
     render_column_clash,
     render_commander_died_demoralized,
     render_commander_fled_demoralized,
@@ -218,6 +220,7 @@ from ak_engine.turn.aspy_execution import SpottedCharacter, SpyReport
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.battle_orchestrator import BattleReport
+from ak_engine.turn.battle_luck import CLUCK2_REVERSAL_PHRASE
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
@@ -319,6 +322,45 @@ def test_render_column_clash_land_default_resolves_sea_marker_left():
     rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
     result = render_column_clash(column, "A", "B", rng)
     assert result == "A fought B and gradually gave ground."
+
+
+# -- render_bluck_narration / render_cluck_narration (Phase 388) -----------
+
+
+def test_render_bluck_narration_reads_the_battle_results_own_index():
+    assert render_bluck_narration(BattleResult(bluck_index=9)) == "no significant fortune"
+    assert render_bluck_narration(BattleResult(bluck_index=1)) == "disastrous rear/supply rumor"
+
+
+def test_render_cluck_narration_reads_the_columns_own_index_when_competitive():
+    column = _column(bres=0)  # attacker_strength == defender_strength == 10.0, cluck_index=20
+    rng = ScriptedRandom([0.99])  # miss the reversal check
+    assert render_cluck_narration(column, rng) == "no decisive local event"
+
+
+def test_render_cluck_narration_returns_none_when_the_column_is_not_competitive():
+    column = BattleColumnResult(
+        attacker_strength=10.0,
+        defender_strength=1.0,  # ratio 10.0, outside the [0.4, 2.5] gate
+        bres=1,
+        attacker_won=True,
+        cluck_index=20,
+    )
+    rng = ScriptedRandom([])
+    assert render_cluck_narration(column, rng) is None
+
+
+def test_render_cluck_narration_appends_the_reversal_phrase_when_the_roll_fires():
+    column = _column(bres=0)  # cluck_index=20, inside the 13-27 reversal window
+    rng = ScriptedRandom([0.0])  # beats the 33% threshold
+    result = render_cluck_narration(column, rng)
+    assert result == f"no decisive local event, {CLUCK2_REVERSAL_PHRASE}"
+
+
+def test_render_cluck_narration_does_not_append_when_the_reversal_roll_misses():
+    column = _column(bres=0)
+    rng = ScriptedRandom([0.99])
+    assert render_cluck_narration(column, rng) == "no decisive local event"
 
 
 # -- render_battle_winner ----------------------------------------------------

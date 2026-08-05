@@ -46,6 +46,42 @@ template a report would pick) -- they don't gate or scale `R_s` itself.
 `bluck_event_index`, `cluck_event_index`, and `break_bres_tie` below are
 these confirmed primitives, now the sole luck mechanism
 `turn/battle_resolution.py resolve_battle` uses.
+
+**Phase 388 addendum -- the actual narration text.** Phase 370 only
+wired the *numeric* `bluck_index`/`cluck_index` (see
+`turn/battle_resolution.py BattleResult.bluck_index`/
+`BattleColumnResult.cluck_index`'s own docstrings) -- neither was ever
+rendered into a sentence. AKGEN's own `battle_engine.global_event.
+entries`/`local_column_event.entries` supply the real 17-entry `BLUCK.X2`
+and 39-entry `CLUCK.X2` text catalogs (verbatim below), plus two
+confirmed mechanics this module didn't have yet:
+
+- **The CLUCK narration gate**: a column's local CLUCK text is only
+  emitted when the column is "competitive" -- the deterministic
+  pre-luck strength ratio (attacker/defender, either direction, since
+  `1/0.4 == 2.5`) falls in `[0.4, 2.5]`. Outside that gate local luck
+  still affects the column's own combat outcome (`R_s` above is applied
+  unconditionally, every column, per Phase 370), it just goes unnarrated.
+- **The CLUCK2 "fortune reverses" rewrite**: when the raw CLUCK index
+  falls in `[13, 27]`, a further 33% check can rewrite the narration
+  into two opposed sentences -- first CLUCK's own text, then a CLUCK2
+  follow-up -- without drawing any new strength factor. Verified against
+  the source's own stated aggregate ("a competitive column shows the
+  second event 30.9375% of the time on turn 1, 20.109375% on turn 2+")
+  by summing `local_column_event.probability_percent_turn_1`/
+  `_turn_2_plus` over indices 13-27 and multiplying by 33% -- both
+  reproduce the JSON's own stated figures exactly (93.75%*33% =
+  30.9375%, 60.9375%*33% = 20.109375%).
+
+  The source's own report additionally says the CLUCK/CLUCK2 text *pair*
+  is "chosen with further residues modulo 3" -- but only describes
+  CLUCK2.X2's *concept* ("fortune reversed itself"), never captured a
+  second 39-entry `CLUCK2.X2` catalog the way it did for `CLUCK.X2`.
+  Rather than inventing a fake 39-entry catalog (or a fake mod-3 variant
+  table) for text that was never actually sourced, `CLUCK2_REVERSAL_
+  PHRASE` below is the report's own single confirmed characterization of
+  what the rewrite narrates, used as-is rather than per-index variants --
+  an honest, documented partial gap, not a guess.
 """
 
 from __future__ import annotations
@@ -55,6 +91,82 @@ from typing import Literal
 
 FIRST_TURN_LUCK_COEFFICIENT = 0.75
 LATER_TURN_LUCK_COEFFICIENT = 1.5
+
+# -- Phase 388: BLUCK.X2 (whole-battle) narration --
+
+BLUCK_ENTRIES: tuple[str, ...] = (
+    "disastrous rear/supply rumor",
+    "vanguard destroyed in ambush",
+    "terrible omen",
+    "mutiny",
+    "side caught unprepared",
+    "scouts lost",
+    "wind or sun against the side",
+    "failed ritual sacrifice",
+    "no significant fortune",
+    "well-hidden formations",
+    "enemy still wounded from an earlier clash",
+    "excellent morale",
+    "favorable observation position",
+    "native allies",
+    "good omen",
+    "favorable reinforcement rumor",
+    "enemy plans stolen",
+)
+
+# -- Phase 388: CLUCK.X2 (per-column) narration + CLUCK2 reversal --
+
+CLUCK_ENTRIES: tuple[str, ...] = (
+    "commander or standard falls",
+    "disastrous mascot/omen",
+    "feigned retreat becomes panic",
+    "hungry soldiers",
+    "battalion scattered",
+    "diversion by false alarm",
+    "enemy ramps or barrage",
+    "rocks or seaweed break formation",
+    "treacherous ground or currents",
+    "whirlwind or gryphon causes disorder",
+    "overextended charge repulsed",
+    "illness or after-effects",
+    "incapable or indisposed commander",
+    "incomplete crossing",
+    "premature looting",
+    "troops held by a fort",
+    "standard captured",
+    "seasickness or local food",
+    "tiny disorganization",
+    "no decisive local event",
+    "martial music",
+    "battle cry",
+    "promise of loot or medals",
+    "officer exhortation",
+    "charge takes the crest",
+    "artillery well employed",
+    "heroic noncombatant example",
+    "allied beasts break obstacle",
+    "heroic officer",
+    "attack before enemy fully deploys",
+    "deception about enemy rear",
+    "dead scouts provoke fury",
+    "successful feigned panic",
+    "local order or guild assists",
+    "stimulant or hallucinogenic mushroom",
+    "false surrender and surprise attack",
+    "infiltration behind enemy",
+    "hidden ambush force",
+    "omen makes every soldier fight as two",
+)
+
+CLUCK_NARRATION_GATE_LOW = 0.4
+CLUCK_NARRATION_GATE_HIGH = 2.5
+CLUCK_REVERSAL_INDEX_LOW = 13
+CLUCK_REVERSAL_INDEX_HIGH = 27
+CLUCK_REVERSAL_CHECK_PERCENT = 0.33
+
+# See this module's own Phase 388 docstring addendum for why this is one
+# confirmed phrase rather than a fabricated 39-entry variant catalog.
+CLUCK2_REVERSAL_PHRASE = "but then fortune reversed itself"
 
 
 def draw_global_luck(rng: random.Random) -> tuple[float, float]:
@@ -113,3 +225,49 @@ def break_bres_tie(rng: random.Random) -> Literal["side1", "side2"]:
         side2_heads = rng.random() < 0.5
         if side1_heads != side2_heads:
             return "side1" if side1_heads else "side2"
+
+
+def render_bluck_event(index: int) -> str:
+    """The whole-battle BLUCK narration sentence for `bluck_event_index`'s
+    own 1..17 index (verbatim AKGEN `BLUCK.X2` catalog, Phase 388)."""
+
+    return BLUCK_ENTRIES[index - 1]
+
+
+def render_cluck_event(index: int) -> str:
+    """One column's own local CLUCK narration sentence for
+    `cluck_event_index`'s own 1..39 index (verbatim AKGEN `CLUCK.X2`
+    catalog, Phase 388)."""
+
+    return CLUCK_ENTRIES[index - 1]
+
+
+def column_narration_eligible(attacker_strength: float, defender_strength: float) -> bool:
+    """A column's local CLUCK text is only narrated when the deterministic
+    pre-luck strength ratio is "competitive" -- AKGEN's own confirmed
+    gate, `[0.4, 2.5]` (Phase 388) -- otherwise local luck still affects
+    that column's own combat outcome (Phase 370's `R_s` is applied
+    unconditionally) but goes unnarrated. Symmetric: `a/d` and `d/a` land
+    on the same pass/fail outcome since `1/0.4 == 2.5`."""
+
+    if attacker_strength <= 0 or defender_strength <= 0:
+        return False
+    ratio = attacker_strength / defender_strength
+    return CLUCK_NARRATION_GATE_LOW <= ratio <= CLUCK_NARRATION_GATE_HIGH
+
+
+def roll_cluck_reversal(index: int, rng: random.Random) -> bool:
+    """AKGEN's own confirmed CLUCK2 "fortune reverses" check (Phase 388):
+    only rolled when the raw CLUCK index falls in `[13, 27]`; a further
+    33% chance rewrites the narration into CLUCK then CLUCK2 -- no new
+    strength factor is drawn, this is narration-only. Verified against
+    the source's own stated aggregate ("a competitive column shows the
+    second event 30.9375% of the time on turn 1, 20.109375% on turn 2+")
+    by summing `local_column_event.probability_percent_turn_1`/
+    `_turn_2_plus` over indices 13-27 and multiplying by 33% -- both
+    reproduce the JSON's own stated figures exactly.
+    """
+
+    if not (CLUCK_REVERSAL_INDEX_LOW <= index <= CLUCK_REVERSAL_INDEX_HIGH):
+        return False
+    return rng.random() < CLUCK_REVERSAL_CHECK_PERCENT
