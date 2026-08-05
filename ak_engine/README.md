@@ -16984,7 +16984,7 @@ section.
     `stale as of Phase 403` note with citations, same convention as
     Phases 396-402). Pure documentation correction -- no behavior
     changed. Full suite: 3813 passed before, 3813 after (0 new tests).
-- **Phase 404 (current)**: at the user's own direct request, closes
+- **Phase 404**: at the user's own direct request, closes
   the recurring per-turn Hero/army pay gap Phase 403's own audit had
   just narrowed down to -- rulebook [3.5] ("The Hero is paid ... at
   the end of each gameturn") and [6.3]'s own Pay column both describe a
@@ -17020,6 +17020,48 @@ section.
     figure once at turn end), ran again, updated README, ran once more
     before commit -- the standing per-phase workflow. Full suite: 3813
     passed before, 3818 after (5 new tests).
+- **Phase 405 (current)**: at the user's own request ("Controlla anche
+  il resto delle voci 'What's excluded from this phase' del README"),
+  re-verified both remaining bullets in that section against the
+  current code rather than trusting either.
+  - **`SE3__T*.K1` files "not used here"**: stale since `report/
+    turn_report.py` began (Phase 61) -- real `SE3__T*.K*` samples are
+    now this project's own primary cross-check evidence across 22
+    source files, from report prose to `turn/expenses.py`'s own real
+    cost figures to `parser/gw_world.py`'s own field derivations.
+  - **`GW3__T*` files, the kingdom/leader-header and Block A/B
+    content "genuinely unexplored"**: this was accurate at Phase 316,
+    an explicitly-labeled initial research pass -- but roughly 30
+    further addenda (Phases 317-344) this bullet was never updated to
+    reflect have since resolved almost all of it. Re-checked directly
+    against `parser/gw_world.py`'s own current module docstring and
+    code:
+    - The 128-row block's Feature/Monster-roster hypothesis, "falsified"
+      at Phase 316, was itself later reversed: a static disassembly of
+      `AKGEN.EXE` (Phases 342-344) decoded it as a real
+      `GWFeatureRecord`, confirmed 14-for-14 against real letters.
+    - The 218-row block is per-army, not per-Hero (Phase 317 already
+      overturned Phase 316's own reading before this bullet was
+      written), and all 10 fields now decode into a real
+      `GWArmyRecord` (Phases 331-337) -- not "7 still-unresolved
+      trailing fields."
+    - The kingdom/leader header block, including each leader's own
+      `"Action Plans:"` block, has a full parser (`parse_gw_leaders()`/
+      `GWLeaderRecord`, Phases 316-330/343) -- name, race, alignment,
+      temper, kingdom/Liege resolution, birth coordinate, hiring turn,
+      all three Imperial Office merit tracks, and more. The world
+      file's own 33-field header is fully decoded too
+      (`parse_gw_header()`/`GWHeader`, Phase 342).
+    - Genuinely still open, per the module's own current docstring: a
+      per-province header bitmask (Phase 340, undeciphered), resolving
+      a governor/Liege to its owning kingdom id (a deliberate scope
+      boundary, not a gap), row-major province coordinate ordering
+      (a lead, not confirmed), and a couple of named-but-unconverted
+      `GWLeaderRecord` fields.
+  - Corrected both bullets in place (`~~strikethrough~~` + a `stale as
+    of Phase 405` note with citations, same convention as Phases
+    396-403). Pure documentation correction -- no behavior changed.
+    Full suite: 3818 passed before, 3818 after (0 new tests).
 
 ## Setup
 
@@ -17755,19 +17797,74 @@ rulebook before being turned into named, typed fields:
   "still entirely unbuilt" framing this bullet used before.
 ## What's excluded from this phase
 
-- `SE3__T*.K1` files: same extension as the move files, but these are
+- ~~`SE3__T*.K1` files: same extension as the move files, but these are
   actually generated turn *reports* (narrative prose), not move data — kept
-  as future reference output for the report-generation phase, not used here.
+  as future reference output for the report-generation phase, not used here.~~
+  -- **stale as of Phase 405 (written at Phase 1, before any real
+  report-generation work existed to use them)**: since `report/
+  turn_report.py` began (Phase 61), real `SE3__T*.K*` samples have been
+  this project's own primary cross-check evidence for report prose,
+  financial figures, and world-file field recovery alike -- referenced
+  directly across 22 source files (e.g. `turn/expenses.py`'s own real
+  four/five-sample cost cross-checks, `parser/gw_world.py`'s own
+  province/leader/army field derivations). Far from "not used here."
 - ~~`GW3__T*` files: a different, denser numeric format — not yet
   investigated.~~ **Stale as of Phase 222** (this bullet was never
   updated once real work started on this file family): the province-
   record block has a full parser and `GameState` bridge since Phases
   222-224 (`parser/gw_world.py`/`gw_world_bridge.py`) -- tax, terrain,
   race, recruiting types, coordinates, and owner resolution are all
-  confirmed against real data. The content before and after that block
-  (kingdom/leader headers with embedded Action Plans; a 128-row block
-  falsified as a Feature/Monster roster; a 218-row block confirmed as a
-  per-Hero `leader_id`+`HexCoord` table with 7 still-unresolved trailing
-  fields) remains genuinely unexplored/only-partially-explored -- see
-  Phase 316's own note above and `parser/gw_world.py`'s own module
-  docstring for the details.
+  confirmed against real data. ~~The content before and after that
+  block (kingdom/leader headers with embedded Action Plans; a 128-row
+  block falsified as a Feature/Monster roster; a 218-row block
+  confirmed as a per-Hero `leader_id`+`HexCoord` table with 7
+  still-unresolved trailing fields) remains genuinely unexplored/
+  only-partially-explored -- see Phase 316's own note above and
+  `parser/gw_world.py`'s own module docstring for the details.~~ --
+  **stale as of Phase 405 (written at Phase 316, when this really was
+  an initial, unimplemented research pass -- overtaken by roughly 30
+  further addenda, Phases 317-344, that this bullet was never updated
+  to reflect)**: re-checked directly against `parser/gw_world.py`'s
+  own current module docstring and code rather than trusted --
+  - **The 128-row block**: Phase 316's own "falsified" verdict was
+    itself later reversed. A further reverse-engineering pass (working
+    from a direct disassembly of the original `AKGEN.EXE`
+    world-generator, Phases 342-344) decoded it as a real, full
+    `GWFeatureRecord` -- confirmed 14-for-14 against every Feature
+    named in 8 real provinces' own letters (guarding `Monster`,
+    `FeatureType`, `Treasure`, and per-coordinate row count all match
+    exactly). The "ruled out, not just unconfirmed" framing this
+    bullet inherited from Phase 316 was true only until Phase 341.
+  - **The 218-row block**: confirmed **per-army, not per-Hero** (Phase
+    317 already overturned Phase 316's own "one row per Hero" reading
+    before this bullet was written) -- a Hero can have many rows the
+    same turn, one per commanded army. All 10 fields are now decoded
+    into a real `GWArmyRecord` (Phases 331-337): commander, coordinate,
+    Race, `ArmyType`, `Quality`, `MonsterEngagementState`, a Skeletal/
+    mercenary marker, movement points, a death/transformation marker,
+    and a plague-survival counter -- not "7 still-unresolved trailing
+    fields."
+  - **The kingdom/leader header block**: has a full parser
+    (`parse_gw_leaders()`/`GWLeaderRecord`, Phases 316-330 plus the
+    `AKGEN.EXE`-sourced Phase 343 addendum) -- name, race, alignment,
+    temper, condition, coordinate, skills, kingdom/Liege resolution
+    (Hero via the Liege field, King via file order, both confirmed
+    against real letter rosters), birth coordinate, hiring turn, all
+    three Imperial Office merit tracks, Sage/Priest merit, an
+    experience accumulator, and several rarely-nonzero moderator/
+    bookkeeping fields. Each leader's own `"Action Plans:"` block (the
+    part this bullet called out by name) is real and already
+    machine-parseable in the exact same grammar `parser/k1_moves.py`
+    already uses. The world file's own 33-field header is fully decoded
+    too (`parse_gw_header()`/`GWHeader`, Phase 342).
+  - **Genuinely still open**, per the module's own current docstring:
+    the province header's own 3rd token (a per-province bitmask,
+    plausibly exploration-by-kingdom, exact meaning undeciphered,
+    Phase 340); resolving a `governor_leader_id`/Liege to its owning
+    kingdom id (deliberately left to a `GameState`-level lookup, not
+    this pure file parser); row-major province coordinate ordering
+    (a promising but unconfirmed lead); and a handful of named-but-
+    unconverted `GWLeaderRecord` fields (`birth_coord`'s own
+    out-of-range companion-slot values, `sex_raw`'s real default-by-id-
+    band rule, both confirmed real by the disassembly but not
+    independently decoded from real data yet).
