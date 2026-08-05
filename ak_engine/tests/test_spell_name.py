@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from ak_engine.models.enums import SPELL_ABBREVIATION, SPELL_BY_ABBREVIATION, SPELL_NAME, Spell
+from ak_engine.models.enums import (
+    SPELL_ABBREVIATION,
+    SPELL_BY_ABBREVIATION,
+    SPELL_LEGALITY_CLASS,
+    SPELL_NAME,
+    Spell,
+    SpellLegalityClass,
+)
 
 
 def test_spell_name_covers_exactly_the_35_real_spell_ordinals():
@@ -59,3 +66,69 @@ def test_spell_by_abbreviation_is_the_exact_inverse():
     assert len(SPELL_BY_ABBREVIATION) == 35
     for spell, abbreviation in SPELL_ABBREVIATION.items():
         assert SPELL_BY_ABBREVIATION[abbreviation] is spell
+
+
+# -- SPELL_LEGALITY_CLASS (Phase 395, the hidden `splate` moderator table) --
+
+
+def test_spell_legality_class_covers_exactly_the_35_real_spell_ordinals():
+    assert len(SPELL_LEGALITY_CLASS) == 35
+    assert set(SPELL_LEGALITY_CLASS.keys()) == {s for s in Spell if s.value <= 34}
+
+
+def test_spell_legality_class_excludes_nospell():
+    assert Spell.NOSPELL not in SPELL_LEGALITY_CLASS
+
+
+def test_spell_legality_class_3_illegal():
+    illegal = {
+        spell for spell, legality in SPELL_LEGALITY_CLASS.items() if legality is SpellLegalityClass.ILLEGAL
+    }
+    assert illegal == {
+        Spell.PLAGUE,
+        Spell.FLOOD,
+        Spell.EARTHQUAKE,
+        Spell.CLAIRVOYANCE,
+        Spell.ILLUS_TERRAIN,
+        Spell.GATE_ANGEL,
+    }
+
+
+def test_spell_legality_class_1_illegal_on_anothers_land():
+    illegal_on_land = {
+        spell
+        for spell, legality in SPELL_LEGALITY_CLASS.items()
+        if legality is SpellLegalityClass.ILLEGAL_ON_ANOTHER_PLAYERS_LAND
+    }
+    assert illegal_on_land == {
+        Spell.PART_SEA,
+        Spell.BLESS,
+        Spell.SKELETAL_ARMY,
+        Spell.TORNADO,
+        Spell.SCAR_TERRAIN,
+    }
+
+
+def test_spell_legality_class_2_illegal_on_anothers_character():
+    illegal_on_character = {
+        spell
+        for spell, legality in SPELL_LEGALITY_CLASS.items()
+        if legality is SpellLegalityClass.ILLEGAL_ON_ANOTHER_PLAYERS_CHARACTER
+    }
+    assert illegal_on_character == {
+        Spell.KILL_ENEMY,
+        Spell.CHARM,
+        Spell.ORATORY,
+        Spell.ILLUS_ARMIES,
+        Spell.MYSTIC_WINDS,
+    }
+
+
+def test_spell_legality_class_0_is_the_default_for_all_other_real_spells():
+    always_legal = {
+        spell for spell, legality in SPELL_LEGALITY_CLASS.items() if legality is SpellLegalityClass.ALWAYS_LEGAL
+    }
+    assert len(always_legal) == 35 - 6 - 5 - 5  # 19
+    assert Spell.RESURRECTION in always_legal
+    assert Spell.FIREBALL in always_legal
+    assert Spell.GATE_DEMON in always_legal

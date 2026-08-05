@@ -16529,7 +16529,7 @@ section.
     fixed percentage in the source at all, deliberately left
     unimplemented, not a guess. This closes the fourth and final item
     of the user's original AKGEN research-audit batch.
-- **Phase 394 (current)**: a full pass over the entire AKGEN research
+- **Phase 394**: a full pass over the entire AKGEN research
   report (not just the 4-item batch Phases 385-393 closed) turned up
   two genuinely unexploited findings never previously flagged: 3 of the
   42 Royal Titles (`Airforce`/`Praetor`/`Flagship`) were left unmodeled
@@ -16582,6 +16582,42 @@ section.
     Europe_V/Earth_V game mode (an alternative to the normal random
     world generation this project already models) is a deliberate,
     documented scope exclusion, not a gap.
+- **Phase 395 (current)**: closes the second of the two findings Phase
+  394 left open -- the spell moderator's hidden `splate` legality
+  classification (4 classes: `0` always legal, `1` illegal only on
+  another player's land, `2` illegal only on another player's
+  character, `3` illegal), never shown to players and confirmed by the
+  source's own Pascal comment.
+  - **`models/enums.py SpellLegalityClass`/`SPELL_LEGALITY_CLASS`,
+    new**: an `IntEnum` plus a `dict[Spell, SpellLegalityClass]`
+    covering all 35 real spell ordinals (6 class-3, 5 class-1, 5
+    class-2, the remaining 19 default to class-0), following the same
+    exhaustive-dict convention `SPELL_NAME`/`SPELL_ABBREVIATION`
+    already use in this same module.
+  - **Deliberately not wired into any live legality check**: AKGEN's
+    own text is explicit that this is "una classificazione del
+    controllo moderatoriale/late-move, non un divieto assoluto del
+    motore d'effetto" (a moderatorial/late-move review classification,
+    not an absolute block by the effect engine) -- it flags which
+    casts a *human moderator's* late-move review tooling needs to check
+    before letting a submitted turn process, not a rule the running
+    game engine enforces at cast time. `ak_engine` reimplements the
+    turn engine, not AKGEN's PBM administrative front-end -- the same
+    scope line already drawn for the GM admin main menu (`## Menu
+    principale ricostruito`) and the fixed-map Europe_V/Earth_V game
+    mode. Captured here as real, sourced vocabulary data with no
+    engine-side consumer, the same "field exists, no live rule to hang
+    it on" shape several earlier phases already used for genuinely
+    unwireable confirmed data.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), wrote 6 new tests in `test_spell_name.py` (full 35-spell
+    coverage, the `NOSPELL` exclusion, and the exact spell-set for each
+    of the 4 classes), ran again, updated README, ran once more before
+    commit -- the standing per-phase workflow. Full suite: 3785 passed
+    before, 3791 after (6 new tests).
+  - This closes the second and final finding from Phase 394's own
+    full-report gap audit -- together with Phase 394, both real,
+    previously-unflagged AKGEN findings from that audit are now closed.
 
 ## Setup
 

@@ -415,6 +415,81 @@ CAST_SPELL_OPENING_CONTINUED_TEMPLATE = "< cast a ~ spell and "
 CAST_SPELL_OPENING_COMPLETE_SPELLS = frozenset({Spell.TORNADO, Spell.BLESS, Spell.PLAGUE})
 
 
+class SpellLegalityClass(IntEnum):
+    """Phase 395: the `splate` table, a second, *hidden* classification
+    the AKGEN binary carries for each of the 35 real spells -- never
+    shown to players, and confirmed by the source's own Pascal comment:
+    "0 sempre legale; 1 illegale solo sulla terra di un altro giocatore;
+    2 illegale solo sul personaggio di un altro giocatore; 3 illegale"
+    (0 always legal; 1 illegal only on another player's land; 2 illegal
+    only on another player's character; 3 illegal).
+
+    **This is a moderatorial/late-move review classification, not a
+    live effect-engine block** -- AKGEN's own text is explicit: "È una
+    classificazione del controllo moderatoriale/late-move, non un
+    divieto assoluto del motore d'effetto." It flags which casts a
+    human moderator's late-move review tooling needs to check before
+    letting a submitted turn process, not a rule the running game
+    engine itself enforces at cast time. `ak_engine` reimplements the
+    turn engine, not the PBM moderator's administrative front-end (the
+    same "GM admin menu" scope line already drawn for `Approve`/`Find
+    Account`/`Status Sheet`/`Transmit World` and the rest of the main
+    menu, `## Menu principale ricostruito` in the AKGEN report) -- so
+    `SPELL_LEGALITY_CLASS` below is captured as real, sourced vocabulary
+    data, deliberately **not** wired into any live legality check in
+    `turn/cast_execution.py` or `turn/cast_decode.py`: there is no
+    engine-side rule to wire it into.
+    """
+
+    ALWAYS_LEGAL = 0
+    ILLEGAL_ON_ANOTHER_PLAYERS_LAND = 1
+    ILLEGAL_ON_ANOTHER_PLAYERS_CHARACTER = 2
+    ILLEGAL = 3
+
+
+# AKGEN report's own `splate` table (see `SpellLegalityClass`'s own
+# docstring), all 35 real spells classified -- `NOSPELL` (35) excluded,
+# same "sentinel, never a real cast target" reasoning `Spell`'s own
+# docstring already gives for leaving it out of tables like this one.
+SPELL_LEGALITY_CLASS: dict[Spell, SpellLegalityClass] = {
+    Spell.RESURRECTION: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.PART_SEA: SpellLegalityClass.ILLEGAL_ON_ANOTHER_PLAYERS_LAND,
+    Spell.BLESS: SpellLegalityClass.ILLEGAL_ON_ANOTHER_PLAYERS_LAND,
+    Spell.HOLY_SYMBOL: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.SKELETAL_ARMY: SpellLegalityClass.ILLEGAL_ON_ANOTHER_PLAYERS_LAND,
+    Spell.KILL_ENEMY: SpellLegalityClass.ILLEGAL_ON_ANOTHER_PLAYERS_CHARACTER,
+    Spell.PLAGUE: SpellLegalityClass.ILLEGAL,
+    Spell.HAND_OF_DEATH: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.FLOOD: SpellLegalityClass.ILLEGAL,
+    Spell.TORNADO: SpellLegalityClass.ILLEGAL_ON_ANOTHER_PLAYERS_LAND,
+    Spell.EARTHQUAKE: SpellLegalityClass.ILLEGAL,
+    Spell.FIREBALL: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.CHARM: SpellLegalityClass.ILLEGAL_ON_ANOTHER_PLAYERS_CHARACTER,
+    Spell.ORATORY: SpellLegalityClass.ILLEGAL_ON_ANOTHER_PLAYERS_CHARACTER,
+    Spell.CLAIRVOYANCE: SpellLegalityClass.ILLEGAL,
+    Spell.PSYCHIC_BLAST: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.ILLUS_TERRAIN: SpellLegalityClass.ILLEGAL,
+    Spell.ILLUS_ARMIES: SpellLegalityClass.ILLEGAL_ON_ANOTHER_PLAYERS_CHARACTER,
+    Spell.HIDE_FEATURE: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.INVISIBILITY: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.SPIRITWRACK: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.CONTROL_UNDEAD: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.ICE_SUSPEND: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.TELEK_STORM: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.MIRROR_IMAGE: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.GATE_ANGEL: SpellLegalityClass.ILLEGAL,
+    Spell.HEAL: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.SCAR_TERRAIN: SpellLegalityClass.ILLEGAL_ON_ANOTHER_PLAYERS_LAND,
+    Spell.GATE_DEMON: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.MYSTIC_WINDS: SpellLegalityClass.ILLEGAL_ON_ANOTHER_PLAYERS_CHARACTER,
+    Spell.LAVA_POOL: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.LOCATE_OBJECT: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.AUGUR_COMBAT: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.ILLUS_FOG: SpellLegalityClass.ALWAYS_LEGAL,
+    Spell.ILLUS_HERO: SpellLegalityClass.ALWAYS_LEGAL,
+}
+
+
 def spell_from_int(value: int) -> "Spell | int":
     """Map a raw spell int to ``Spell`` where valid, else keep it raw."""
 
