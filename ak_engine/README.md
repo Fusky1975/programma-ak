@@ -16135,7 +16135,7 @@ section.
     fixed seed), ran again, updated README, ran once more before commit
     -- the standing per-phase workflow. Full suite: 3709 passed before,
     3724 after (15 new tests).
-- **Phase 386 (current)**: closes the second AKGEN research-audit item,
+- **Phase 386**: closes the second AKGEN research-audit item,
   `runtime_mechanics.valhalla`'s own real mechanics -- correcting three
   confirmed bugs in the already-wired Gate Angel machinery
   (`turn/cast_execution.py`) and replacing a placeholder in
@@ -16200,6 +16200,45 @@ section.
     wins). This needs a new persisted `valhalla_visit_count` per King
     and a new automatic trigger point in `turn/turn_processor.py`, not
     just a formula fix -- left for a real follow-up phase.
+- **Phase 387 (current)**: closes the third AKGEN research-audit item,
+  `runtime_mechanics.spellcasting`'s per-turn casting limits --
+  implementing `action_slots_per_school` and honestly documenting the
+  three siblings this project has no plumbing for yet.
+  - **`action_slots_per_school`, implemented**: `turn/cast_execution.py`
+    gains `action_cast_slots(level)` (1 slot at skill level 1-2, 2 at
+    level 3, 3 at level 4+, matching AKGEN's own confirmed tiers) and
+    `_consume_action_cast_slot()`, wired into `_roll_cast_success()`
+    right after the existing "insufficient skill" guard -- the one
+    choke-point every real action-cast success roll passes through.
+    Slots are tracked per `(leader_id, Ability)` on the new `GameState.
+    action_casts_used` dict, so `same_action_spell_may_repeat: true` is
+    honored for free (the key is the *ability*, not the individual
+    spell) and `failed_attempt_consumes_slot: true` falls out naturally
+    (the slot is consumed before the success roll, not after). Wand
+    casts and skill-less casters both bypass the check, since they
+    return from `_roll_cast_success()` before reaching it -- matching
+    AKGEN's own scope, which only speaks of *learned* per-school action
+    casts.
+  - **Three siblings, deliberately not wired**: `combat_slots_per_school`
+    (a separate, per-encounter counter -- this project has no live
+    "spells cast this encounter" session state to hang it on yet),
+    `places_of_power_bonus_percentage_points: 20` (needs a live "leader
+    is standing on a Place of Power" location check that doesn't exist),
+    and `damp_magic`/`damp_college` (need a live "this feature/college
+    has an active damping Power" state). All three are real, AKGEN-
+    confirmed rules -- documented in a comment block in `cast_execution.
+    py` rather than guessed at with contrived, unverifiable plumbing,
+    matching this project's own established convention of naming a real
+    gap instead of faking a shape for it.
+  - Wrote 5 new tests in `test_cast_execution.py` (documented tier
+    formula, single-slot exhaustion at low level, two ability-scoped
+    casts allowed at level 3 regardless of which spell, a failed roll
+    still consuming its slot, wand casts never touching the slot
+    counter), ran the full suite before writing them (non-breaking
+    check -- clean, no pre-existing breaks this time), ran again after,
+    updated README, ran once more before commit -- the standing
+    per-phase workflow. Full suite: 3729 passed before, 3734 after
+    (5 new tests).
 
 ## Setup
 

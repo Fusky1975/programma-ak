@@ -678,6 +678,38 @@ ACTION_SPELL_CHANCE_CAP = 0.95
 # fuorche' quelli di Magia Bianca."
 PAGAN_MAGE_ORDER_BONUS = 0.10
 
+# AKGEN runtime_mechanics.spellcasting.action_slots_per_school (Phase 387):
+# how many real Cast orders a leader may attempt per Ability, per turn,
+# keyed by their own skill level in that Ability -- independent of the
+# success-chance formula above, and independent of *which* spell in that
+# Ability's own pool is attempted each time ("same_action_spell_may_
+# repeat": true -- confirmed by scoping the slot counter to (leader,
+# Ability) below, never to the specific Spell requested).
+ACTION_CAST_SLOTS_LEVEL_1_TO_2 = 1
+ACTION_CAST_SLOTS_LEVEL_3 = 2
+ACTION_CAST_SLOTS_LEVEL_4_PLUS = 3
+
+# The same AKGEN source also confirms 4 more real spellcasting rules,
+# deliberately NOT wired here (Phase 387) -- each needs real plumbing
+# this project doesn't have yet, not just a formula:
+# - `combat_slots_per_school` (1 slot at level 1, 2 at level 2+, per
+#   encounter): `turn/encounter.py resolve_personal_combat_spell_cast()`
+#   is a single, stateless roll with no per-encounter, per-(leader,
+#   Ability) call counter threaded through its own callers (`turn/
+#   search_execution.py`, `turn/challenge_execution.py`) to gate against.
+# - `places_of_power_bonus_percentage_points` (+20% to the roll): no
+#   code anywhere checks whether a caster's own current location is a
+#   Place of Power -- `models/power.py`'s own vocabulary exists, but
+#   there's no live "this province/feature currently grants this real
+#   bonus" state to consult.
+# - `damp_magic` (halves the roll) / `damp_college` (blocks a specific
+#   Ability's combat spells entirely inside that feature): same gap --
+#   `Power.DAMP_MAGIC`/`Power.DAMP_COLLEGE` exist as pure vocabulary
+#   (Phase 95), but no ProvinceState/Feature field records "this power
+#   is the one currently active here" the way a live game would need.
+# All 4 are real, confirmed rules -- left for a real follow-up phase
+# that builds the underlying state each one actually needs.
+
 # Regolamento AK.txt [4.25.3]: "10% di probabilita' di essere distrutte, piu'
 # un 10% per livello dell'autore dell'incantesimo" (Plague).
 PLAGUE_BASE_DESTROY_CHANCE = 0.10
@@ -909,6 +941,42 @@ def _caster_kingdom_is_pagan(state: GameState, caster: LeaderState) -> bool:
     return kingdom is not None and kingdom.alignment is Alignment.PAGAN
 
 
+def action_cast_slots(level: int) -> int:
+    """AKGEN's own confirmed ``action_slots_per_school``: 1 slot at
+    skill level 1-2, 2 at level 3, 3 at level 4 and up. ``level`` values
+    below 1 (untrained) get the same 1-slot floor as level 1-2 -- moot
+    in practice, since ``_roll_cast_success`` already rejects level < 1
+    with "insufficient skill" before this is ever consulted.
+    """
+
+    if level <= 2:
+        return ACTION_CAST_SLOTS_LEVEL_1_TO_2
+    if level == 3:
+        return ACTION_CAST_SLOTS_LEVEL_3
+    return ACTION_CAST_SLOTS_LEVEL_4_PLUS
+
+
+def _consume_action_cast_slot(state: GameState, leader_id: int, ability: Ability, level: int) -> bool:
+    """Spends one of this leader's own per-``Ability``, per-turn action-
+    cast slots. AKGEN's own confirmed ``failed_attempt_consumes_slot``
+    is true, so this is called (and the slot spent) whenever a real
+    success roll is about to happen -- win or lose -- not only on
+    success; a Cast order that never reaches a roll at all (e.g. an
+    invalid target, checked before ``_roll_cast_success`` by every
+    ``_execute_*`` handler's own "check applicability first" order)
+    never touches this counter. Returns ``False`` (no state mutated)
+    once ``action_cast_slots(level)`` is already exhausted for this
+    turn.
+    """
+
+    key = (leader_id, ability)
+    used = state.action_casts_used.get(key, 0)
+    if used >= action_cast_slots(level):
+        return False
+    state.action_casts_used[key] = used + 1
+    return True
+
+
 def _roll_cast_success(
     state: GameState,
     caster: LeaderState,
@@ -952,6 +1020,9 @@ def _roll_cast_success(
     level = effective_skill_level(state, caster, ability)
     if level < 1:
         return False, "insufficient skill"
+
+    if not _consume_action_cast_slot(state, caster.leader_id, ability, level):
+        return False, "no action-cast slots remaining this turn for this ability"
 
     chance = ACTION_SPELL_BASE_CHANCE + ACTION_SPELL_CHANCE_PER_LEVEL * level
     if ability is not Ability.WHITE and _caster_kingdom_is_pagan(state, caster):

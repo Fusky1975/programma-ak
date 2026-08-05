@@ -265,6 +265,7 @@ from dataclasses import dataclass, field
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
+from ak_engine.models.enums import Ability
 from ak_engine.models.feature import Feature
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.kingdom import SkillTable
@@ -980,6 +981,13 @@ class GameState:
     # "not yet started" (turns 1-5 use the roster's own final record
     # instead, needing no sequence state at all).
     valhalla_visitor_sequence: dict[Alignment, tuple[int, int]] = field(default_factory=dict)
+    # Phase 387: how many of this (leader, Ability) pair's own per-turn
+    # action-cast slots (``turn/cast_execution.py action_cast_slots()``,
+    # AKGEN's confirmed ``action_slots_per_school``) have already been
+    # consumed this turn. Not auto-cleared at a turn boundary -- same
+    # "caller's job" convention as ``recruited_this_turn``/``ArmyState.
+    # movement_points`` above.
+    action_casts_used: dict[tuple[int, Ability], int] = field(default_factory=dict)
     # Emperor election (Phase 228, turn/emperor_election.py) -- rulebook
     # [10.2]. `emperor_kingdom_id` persists once a vote actually elects
     # someone (a failed/no-quorum vote never clears it -- see that

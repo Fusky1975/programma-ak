@@ -26,6 +26,7 @@ from ak_engine.turn.cast_execution import (
     SCAR_TERRAIN_LAND_COLLAPSE_RACES,
     SCAR_TERRAIN_TAX_REDUCTION,
     LocateObjectResult,
+    action_cast_slots,
     apply_plague_exposure,
     execute_cast,
     illusory_fog_strength,
@@ -1025,6 +1026,82 @@ def test_oratory_is_not_cumulative_on_a_second_cast_the_same_turn():
     assert first.applied is True
     assert second.applied is True  # the cast itself still succeeds
     assert state.armies[1].quality is Quality.AVERAGE  # but only bumped once
+
+
+# -- Phase 387: action_slots_per_school --
+
+
+def test_action_cast_slots_matches_the_documented_level_tiers():
+    assert action_cast_slots(1) == 1
+    assert action_cast_slots(2) == 1
+    assert action_cast_slots(3) == 2
+    assert action_cast_slots(4) == 3
+    assert action_cast_slots(9) == 3
+
+
+def test_execute_cast_exhausts_the_single_slot_at_low_level():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 1)  # 1 action-cast slot
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.ORATORY, target=78)
+    rng = ScriptedRandom([0.01, 0.01])  # both rolls would succeed if a slot were available
+
+    first = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+    second = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert first.applied is True
+    assert second.applied is False
+    assert second.reason == "no action-cast slots remaining this turn for this ability"
+
+
+def test_execute_cast_slots_scoped_to_ability_allow_two_casts_at_level_3():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 3)  # 2 action-cast slots
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.ORATORY, target=78)
+    rng = ScriptedRandom([0.01, 0.01, 0.01])
+
+    first = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+    second = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+    third = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert first.applied is True
+    assert second.applied is True
+    assert third.applied is False
+    assert third.reason == "no action-cast slots remaining this turn for this ability"
+
+
+def test_execute_cast_a_failed_roll_still_consumes_a_slot():
+    # AKGEN's own confirmed failed_attempt_consumes_slot: true.
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 1)  # 1 action-cast slot
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.ORATORY, target=78)
+    rng = ScriptedRandom([0.99])  # fails the roll (base action-cast chance 30% at level 1)
+
+    first = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+    second = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert first.applied is False
+    assert first.reason == "spell failed"
+    assert second.applied is False
+    assert second.reason == "no action-cast slots remaining this turn for this ability"
+
+
+def test_execute_cast_wand_casts_never_consume_action_slots():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 1)
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.ORATORY, target=78)
+
+    for _ in range(5):
+        result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, wand_skill_level=2)
+        assert result.applied is True
+    assert state.action_casts_used == {}
 
 
 # ---------------------------------------------------------------------------
