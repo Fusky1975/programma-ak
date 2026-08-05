@@ -13,6 +13,7 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.expenses import (
+    apply_turn_maintenance,
     compute_army_maintenance,
     compute_expected_expenses,
     compute_leader_maintenance,
@@ -183,3 +184,55 @@ def test_compute_expected_expenses_matches_real_sample_file():
         state.add_army(ArmyState(army_id, 1, army_type, Quality.AVERAGE, HOME))
 
     assert compute_expected_expenses(state, 1) == 15
+
+
+# -- apply_turn_maintenance (Phase 404) -----------------------------------
+
+
+def test_apply_turn_maintenance_debits_treasury_by_expected_expenses():
+    state = make_state()
+    state.kingdoms[1].treasury = 100
+    state.add_leader(LeaderState(1, 1, "Bradipo I", HOME, is_king=True, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS))
+    state.add_leader(LeaderState(2, 1, "Adele", HOME, alignment=Alignment.GOOD, temper=Temper.BRAVE))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, HOME))
+
+    debited = apply_turn_maintenance(state)
+
+    # 2 (army) + 1 (Adele, distance 0) = 3.
+    assert debited == {1: 3, 2: 0}
+    assert state.kingdoms[1].treasury == 97
+
+
+def test_apply_turn_maintenance_covers_every_kingdom_independently():
+    state = make_state()
+    state.kingdoms[1].treasury = 10
+    state.kingdoms[2].treasury = 10
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, HOME))
+    state.add_army(ArmyState(2, 2, ArmyType.HVY_CAVALRY, Quality.AVERAGE, HOME))
+
+    debited = apply_turn_maintenance(state)
+
+    assert debited == {1: 2, 2: 3}
+    assert state.kingdoms[1].treasury == 8
+    assert state.kingdoms[2].treasury == 7
+
+
+def test_apply_turn_maintenance_is_a_noop_with_nothing_to_pay():
+    state = make_state()
+    state.kingdoms[1].treasury = 5
+
+    debited = apply_turn_maintenance(state)
+
+    assert debited == {1: 0, 2: 0}
+    assert state.kingdoms[1].treasury == 5
+
+
+def test_apply_turn_maintenance_unclamped_allows_negative_treasury():
+    state = make_state()
+    state.kingdoms[1].treasury = 1
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, HOME))
+
+    debited = apply_turn_maintenance(state)
+
+    assert debited[1] == 2
+    assert state.kingdoms[1].treasury == -1

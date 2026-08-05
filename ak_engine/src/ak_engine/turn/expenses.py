@@ -79,6 +79,24 @@ formula and King/Valhalla-visitor exclusions, rather than the CHARACTERS
 composer re-deriving them -- the same real-sample values (Bradipo I the
 King: 0; Adele: 1; Indra: 1, all from ``SE3__T1.K2``) confirm the shared
 formula renders correctly in both places.
+
+**Phase 404 -- ``apply_turn_maintenance()``, the real treasury debit.**
+Through Phase 280, ``compute_expected_expenses()`` only ever fed a
+report line -- nothing in this project actually subtracted it from
+``KingdomState.treasury``, even though rulebook [3.5] ("The Hero is
+paid ... at the end of each gameturn") and [6.3]'s own Pay column both
+describe a real, recurring cost, not merely a forecast. Wired here at
+the user's own direct request, once per ``turn/turn_processor.py
+run_turn()`` call -- both halves together (``ACost`` armies, ``LCost``
+leaders), not leader pay alone, so a kingdom's treasury never "forgets"
+to pay for its armies while genuinely paying its Heroes.
+
+**Deliberately unclamped**: ``KingdomState.treasury`` can go negative.
+No bankruptcy/default consequence (forced disbanding, blocked Hires,
+...) is modeled -- nothing in the available source describes one, and
+this project's standing policy is to leave a genuinely unsourced
+consequence undocumented rather than invent one, the same restraint
+Phase 162 already applied to the required-pay formula itself.
 """
 
 from __future__ import annotations
@@ -137,3 +155,22 @@ def compute_expected_expenses(state: GameState, kingdom_id: int) -> int:
     """
 
     return compute_army_maintenance(state, kingdom_id) + compute_leader_maintenance(state, kingdom_id)
+
+
+def apply_turn_maintenance(state: GameState) -> dict[int, int]:
+    """Debits every kingdom's own ``compute_expected_expenses()`` from its
+    treasury, once per turn -- see module docstring's Phase 404 section
+    for why this was a display-only figure through Phase 280 and what's
+    deliberately not modeled (bankruptcy consequences, clamping).
+
+    Returns the amount debited per kingdom, keyed by ``kingdom_id`` --
+    callers/tests that want to verify a specific debit don't need to
+    re-derive ``compute_expected_expenses()`` themselves.
+    """
+
+    debited: dict[int, int] = {}
+    for kingdom_id, kingdom in state.kingdoms.items():
+        amount = compute_expected_expenses(state, kingdom_id)
+        kingdom.treasury -= amount
+        debited[kingdom_id] = amount
+    return debited

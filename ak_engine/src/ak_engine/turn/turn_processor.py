@@ -236,6 +236,7 @@ from ak_engine.turn.challenge_execution import execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.defend_execution import defend_coverage_area
+from ak_engine.turn.expenses import apply_turn_maintenance
 from ak_engine.turn.contested_province import (
     attacker_can_force_rebattle,
     contested_battle_movement_cost,
@@ -321,14 +322,16 @@ def run_turn(
     raises on its own (mirrors ``run_leader_plan``'s own convention) --
     a failing phase is recorded with ``error`` set, dispatch continues.
 
-    Ends with two bare, unsurfaced once-per-turn housekeeping calls (no
-    ``PhaseDispatchResult`` recorded for either, same as each other):
-    ``_revert_analytical_psychology_charms`` and, as of Phase 309,
-    ``turn/skeletal_decay.py decompose_graveyard()`` -- the world-wide
-    350-unit-cap graveyard decay. One call to ``run_turn()`` is the one
-    unambiguous "once per game turn" boundary this phase-by-phase loop
-    offers; see that module's own docstring for why the decay lives
-    there rather than per-phase.
+    Ends with bare, unsurfaced once-per-turn housekeeping calls (no
+    ``PhaseDispatchResult`` recorded for any of them): ``_revert_
+    analytical_psychology_charms``, ``turn/skeletal_decay.py
+    decompose_graveyard()`` (Phase 309, the world-wide 350-unit-cap
+    graveyard decay), and, as of Phase 404, ``turn/expenses.py
+    apply_turn_maintenance()`` -- the real per-turn treasury debit for
+    every kingdom's own Expected Expenses (army + leader upkeep). One
+    call to ``run_turn()`` is the one unambiguous "once per game turn"
+    boundary this phase-by-phase loop offers; see each function's own
+    module docstring for why it lives here rather than per-phase.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -518,6 +521,7 @@ def run_turn(
     _revert_analytical_psychology_charms(state)
     _apply_werebeast_transformations(state)
     decompose_graveyard(state)
+    apply_turn_maintenance(state)
 
     return results
 

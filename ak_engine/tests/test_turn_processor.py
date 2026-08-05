@@ -1482,6 +1482,30 @@ def test_run_turn_decomposes_the_graveyard_once_at_turn_end_when_over_the_world_
     assert len(state.battle_graveyard[HexCoord(1, 1)]) == 18
 
 
+# -- Per-turn treasury maintenance debit (Phase 404) -----------------------
+
+
+def test_run_turn_debits_expected_expenses_from_treasury_once_at_turn_end():
+    # Phase 404: turn/expenses.py apply_turn_maintenance() runs once,
+    # alongside decompose_graveyard() -- see run_turn()'s own docstring.
+    # The King himself contributes 0 leader pay (see expenses.py's own
+    # leader_pay()), so the only expected debit here is the one Legion's
+    # army maintenance (2 gold, ARMY_TABLE), a concrete, non-circular
+    # expected value.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.kingdoms[1].treasury = 50
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=HexCoord(0, 0), is_king=True))
+    state.add_army(ArmyState(state.new_army_id(), 1, ArmyType.LEGION, Quality.AVERAGE, HexCoord(0, 0)))
+
+    p0 = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    leader = Leader(10, "A", ActionPlan(10, [PlanSegment(0, 1, (), {"P0": p0})]))
+
+    run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH)
+
+    assert state.kingdoms[1].treasury == 48
+
+
 # -- Werebeast bite-transform, end-of-turn half (Phase 392) ---------------
 
 

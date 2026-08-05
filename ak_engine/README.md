@@ -16936,7 +16936,7 @@ section.
     wire `recruit_type_1`/`recruit_type_2` into `execute_recruit()`'s
     own enforcement is a design decision left to the user, not assumed
     here). Full suite: 3813 passed before, 3813 after (0 new tests).
-- **Phase 403 (current)**: at the user's own request ("Controlla anche
+- **Phase 403**: at the user's own request ("Controlla anche
   il resto delle voci 'Not yet implemented' del README"), systematically
   re-verified every remaining claim in that section against the current
   code, rather than trusting any of them by default. Found and corrected
@@ -16984,6 +16984,42 @@ section.
     `stale as of Phase 403` note with citations, same convention as
     Phases 396-402). Pure documentation correction -- no behavior
     changed. Full suite: 3813 passed before, 3813 after (0 new tests).
+- **Phase 404 (current)**: at the user's own direct request, closes
+  the recurring per-turn Hero/army pay gap Phase 403's own audit had
+  just narrowed down to -- rulebook [3.5] ("The Hero is paid ... at
+  the end of each gameturn") and [6.3]'s own Pay column both describe a
+  real, recurring cost, but through Phase 280
+  `compute_expected_expenses()` only ever fed a report line; nothing
+  actually subtracted it from `KingdomState.treasury`. Asked the user
+  whether to wire the Hero's own recurring pay alone or both halves of
+  "Expected Expenses" together (armies, too, were equally
+  display-only) -- the user chose both together, to avoid a treasury
+  that pays its Heroes but "forgets" its armies.
+  - **`turn/expenses.py apply_turn_maintenance(state) -> dict[int,
+    int]`** (new): debits every kingdom's own `compute_expected_
+    expenses()` from `KingdomState.treasury` in one pass, returning the
+    amount debited per `kingdom_id`. Deliberately unclamped -- treasury
+    can go negative; no bankruptcy/default consequence (forced
+    disbanding, blocked Hires, ...) is modeled, since nothing in the
+    available source describes one and this project's standing policy
+    is to leave a genuinely unsourced consequence undocumented rather
+    than invent one (the same restraint Phase 162 already applied to
+    the required-pay formula itself).
+  - Wired into `turn/turn_processor.py run_turn()`, alongside the
+    other bare, unsurfaced once-per-turn housekeeping calls
+    (`_revert_analytical_psychology_charms`, `decompose_graveyard`) --
+    one call to `run_turn()` is the one unambiguous "once per game
+    turn" boundary this project's phase-by-phase loop offers.
+  - Corrected the now-stale "Recurring per-gameturn pay ... remains
+    open" bullet in Hire's own "remaining gaps" note in place.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), wrote 5 new tests (`test_expenses.py`: debits both halves
+    together, covers every kingdom independently, no-op when nothing's
+    owed, unclamped negative treasury; `test_turn_processor.py`: a
+    real `run_turn()` call debits exactly the expected army-maintenance
+    figure once at turn end), ran again, updated README, ran once more
+    before commit -- the standing per-phase workflow. Full suite: 3813
+    passed before, 3818 after (5 new tests).
 
 ## Setup
 
@@ -17277,9 +17313,12 @@ rulebook before being turned into named, typed fields:
     bypass routes) remains open, with no sourced formula~~ **fixed in
     Phase 264** -- see that phase's own note above
     (`RARE_ALIGNMENT_EXCEPTION_CHANCE`, a user-specified 15%, not a
-    recovered rule). Recurring per-gameturn pay (only the one-time
+    recovered rule). ~~Recurring per-gameturn pay (only the one-time
     hiring charge is modeled, matching Recruit's own established
-    simplification) remains open.
+    simplification) remains open.~~ -- **fixed in Phase 404** -- see
+    that phase's own note below (`turn/expenses.py apply_turn_
+    maintenance()`, a real per-turn treasury debit for army and leader
+    upkeep together, wired into `run_turn()`).
     ~~"Can't Hire a Hero who rules his
     own province" (no King flag)~~ **fixed in Phase 40** -- see below.
     ~~`run_leader_plan` doesn't dispatch a `PlanPhase.nested_plan`'s own
