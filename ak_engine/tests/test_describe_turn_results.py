@@ -3,7 +3,8 @@ from __future__ import annotations
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.army_type import ArmyType
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
@@ -21,7 +22,9 @@ from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.pursue_execution import PursueExecutionResult
+from ak_engine.turn.recruit_execution import RecruitedUnit, RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
 from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.trade_decode import TradeRequest
@@ -155,6 +158,43 @@ def test_describe_turn_results_skips_practice_without_ability_names_map():
         PhaseDispatchResult(
             leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.PRACTICE, result=result, error=None
         )
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_turn_results_renders_recruit():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    state.add_province(
+        ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor")
+    )
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), commanded_by=None))
+    result = RecruitExecutionResult(
+        request=None, recruited=[RecruitedUnit(army_id=100, army_type=ArmyType.BOWMEN, gold_paid=2)]
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.RECRUIT, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+
+    assert lines == [
+        "Aldric recruited Bowmen from among the people of Numenor, to serve under "
+        "the provincial garrison commander."
+    ]
+
+
+def test_describe_turn_results_skips_recruit_when_leader_has_no_province():
+    # _state_with_leaders() never registers a province at the leader's
+    # own location -- the RECRUIT branch should skip cleanly, not crash.
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    result = RecruitExecutionResult(
+        request=None, recruited=[RecruitedUnit(army_id=100, army_type=ArmyType.BOWMEN, gold_paid=2)]
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.RECRUIT, result=result, error=None)
     ]
 
     lines = describe_turn_results(results, state, ScriptedRandom([]))

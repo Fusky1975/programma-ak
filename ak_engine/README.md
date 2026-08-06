@@ -17614,7 +17614,7 @@ section.
     its `request`-missing/target-unknown skip cases; `ActionCode.PURSUE`
     narrating combat after its own catch-up sentence). Ran again: 3881
     passed (10 new).
-- **Phase 418 (current)**: documentation-only correction, found while
+- **Phase 418**: documentation-only correction, found while
   scoping "what's next" per the user's own request. `report/turn_report
   .py describe_turn_results()`'s own docstring still claimed `TRADE`
   "stays unwired" -- true when that paragraph was written, but stale
@@ -17641,6 +17641,52 @@ section.
     Phase 417's own field-threading, since it needs a new result type
     designed first, not just wiring an existing one. Left for a future
     phase, scoped and started fresh rather than folded into this one.
+- **Phase 419 (current)**: `RECRUIT` narration, the first of the
+  Recruit/Disband/Leave/Pick_Up/Defend/Move cluster Phase 418 flagged
+  as genuinely unexplored -- started here because, unlike the other
+  five, `RecruitExecutionResult` already had everything needed (a
+  required `request` field and a rich `recruited: list[RecruitedUnit]`
+  outcome, Phase 15/16) with no new result type to design first.
+  Sourced from the real `HostAK/TP/PROSE/RECRUIT.X` (4 style variants,
+  `<`=recruiter, `=`=army type designation, `@`=province, `[`=the
+  leader the new unit serves under) and its `SAY.PAS _ARecr` call site
+  (`FD('recruit', S_AA, 3)`).
+  - `report/turn_report.py`: new `RECRUIT_TEMPLATES` + `render_recruit_
+    unit()`, and `describe_recruit()` -- one sentence per `result.
+    recruited` unit. The blocked-request lists (`limit_blocked`,
+    `gold_blocked`, `incompatible`, `treat_blocked`, `territory_
+    blocked`) get no narration -- no sourced template exists for an
+    administrative rejection, the same stance this project already
+    took for Trade/Search/Challenge.
+  - **The `[` marker for an unled unit resolves deterministically, not
+    by guesswork**: `RUMORS.PAS Pronoun()`'s own `chief_on` branch
+    (armed around `_ARecr`'s `FD` call) says a monstrous province
+    (`not in HUMANOID_RACES`) renders `"the provincial <race>
+    chieftain"`; a humanoid one renders `"the provincial garrison
+    commander"` -- **not** `AC_Say`'s `"the acting commander"`, because
+    `Pronoun()`'s own `IF spytype <= S_Batt THEN AC_Say ELSE ...`
+    branches on the severity `FD` was called with, and `_ARecr`'s own
+    call fixes that at `S_AA` -- strictly above `S_Batt` in `CTBOTH.PAS`'s
+    own severity order, so the `ELSE` branch is the *only* real outcome
+    for this call site, not a runtime choice this project has to guess.
+  - `describe_turn_results()` gains a real `ActionCode.RECRUIT` branch --
+    resolves the acting leader's own province directly (`state.
+    provinces[leader.location]`, always known, unlike Trade/Pursue/
+    Challenge's need for a dispatcher-stamped `request`), so no
+    `plan_dispatch.py` change was needed this phase.
+  - **Deliberately not rendered**: `_AAPay` (the ally-fee sentence,
+    "< paid # gold to [ for the privilege...") -- `RecruitExecutionResult`
+    doesn't currently record which unit (if any) paid an ally fee or how
+    much, only each `RecruitedUnit.gold_paid`'s already-combined total.
+    Left for a future phase.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3881 passed unchanged from Phase 418), then added 16 new tests --
+    14 in `test_turn_report.py` (all 4 `render_recruit_unit()` variants,
+    plus `describe_recruit()`'s commanded/unled-humanoid/unled-monstrous/
+    multi-unit cases) and 2 in `test_describe_turn_results.py`
+    (`ActionCode.RECRUIT` rendering, and skipping cleanly when the
+    acting leader has no known province). Ran again: 3892 passed (16
+    new).
 
 ## Setup
 

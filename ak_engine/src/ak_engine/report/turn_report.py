@@ -1139,13 +1139,13 @@ from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ARMY_TYPE_DESIGNATION, ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE, is_overflight_unit
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature
-from ak_engine.models.game_state import ArmyState, GameState
+from ak_engine.models.game_state import ArmyState, GameState, ProvinceState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES, Monster
 from ak_engine.models.office import OFFICE_NAME, Office
 from ak_engine.models.quote import quote_of_the_week
-from ak_engine.models.race import RACE_NAME, Race
+from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, describe_discovery_line, sorted_kingdom_discoveries
 from ak_engine.models.temper import TEMPER_NAME
@@ -1176,6 +1176,7 @@ from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
+from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.tax_base import compute_invention_bonus_percent, compute_tax_base, province_tax_yield
 from ak_engine.turn.trade_execution import TradeExecutionResult
@@ -3088,6 +3089,94 @@ def describe_fire(
     return None
 
 
+# HostAK/TP/PROSE/RECRUIT.X -- one sentence per unit actually recruited
+# (Phase 419). Style variants only -- nothing in the source ties a
+# specific variant to the hired-mercenary-vs-freshly-levied distinction
+# (``RecruitedUnit.hired``), so ``pick_variant()`` chooses among all 4
+# uniformly, the same "no source, no guess" stance already applied to
+# every other flavor-only template cluster in this module.
+RECRUIT_TEMPLATES: list[str] = [
+    "< recruited/Rlevied = from among the people/Rpopulation of @, to serve under [.",
+    "< levied/Renlisted = in @ to serve [.",
+    "< announced  plea/Rcall for volunteers/Rrecruits in @ and was able to form/Renlist = to fight for [.",
+    "< enlisted/Rrecruited enough men in @ to create/Rform = for the army of [.",
+]
+
+
+def render_recruit_unit(
+    recruiter_name: str, province_name: str, army_type_name: str, commander_name: str, rng: random.Random
+) -> str:
+    """Renders RECRUIT.X's sentence for a single recruited unit -- ``<``
+    the recruiter, ``@`` the province, ``=`` the army type's designation
+    (Phase 419), ``[`` the leader the unit now serves under (see
+    ``describe_recruit()`` for how an unled unit's ``[`` is resolved).
+    """
+
+    variant = pick_variant(RECRUIT_TEMPLATES, rng)
+    values = {"<": recruiter_name, "@": province_name, "=": army_type_name, "[": commander_name}
+    return render(variant, values, rng=rng)
+
+
+def describe_recruit(
+    result: RecruitExecutionResult,
+    state: GameState,
+    *,
+    recruiter_name: str,
+    province: ProvinceState,
+    rng: random.Random,
+) -> list[str]:
+    """Assembles one RECRUIT.X sentence per ``result.recruited`` unit
+    (Phase 419) -- the blocked-request lists (``limit_blocked``,
+    ``gold_blocked``, ``incompatible``, ``treat_blocked``,
+    ``territory_blocked``) have no sourced narrative template, matching
+    this project's "no source, no guess" stance for administrative
+    rejections elsewhere (e.g. ``describe_encounter_combat()``'s own
+    Phase 417 precedent).
+
+    **The ``[`` (commander) marker, when a unit is unled**
+    (``ArmyState.commanded_by is None``): ``RUMORS.PAS Pronoun()``'s own
+    ``chief_on`` branch (set around ``_ARecr``'s ``FD`` call in
+    ``SAY.PAS``) resolves this deterministically, not by guesswork --
+    - the province's race is monstrous (``not in HUMANOID_RACES``) ->
+      ``"the provincial <race> chieftain"`` (``RACE_NAME``-driven,
+      exactly `Pronoun()`'s own ``Concat('the provincial ',
+      rname[...],' chieftain')``);
+    - otherwise -> ``"the provincial garrison commander"``, **not**
+      ``AC_Say``'s ``"the acting commander"`` -- `Pronoun()`'s own
+      ``IF spytype <= S_Batt THEN AC_Say ELSE Say('the provincial
+      garrison commander', spytype)`` branches on the report-severity
+      argument `FD` was called with, and `_ARecr`'s own call
+      (``FD('recruit', S_AA, 3)``) fixes that at ``S_AA`` -- strictly
+      greater than ``S_Batt`` in ``CTBOTH.PAS``'s own severity-constant
+      order (``S_Prev``..``S_Comm``), so the ``ELSE`` branch is the one
+      and only real outcome for this specific call site, not a
+      runtime-varying choice this project would have to guess between.
+
+    **Deliberately not rendered here**: ``_AAPay`` ("< paid # gold to
+    [ for the privilege of recruiting these troops.", the ally-fee
+    sentence) -- ``RecruitExecutionResult`` doesn't currently carry
+    which unit (if any) paid an ally fee, or how much, only each
+    ``RecruitedUnit.gold_paid``'s already-combined total (own cost +
+    ally fee). Left for a future phase rather than guessed here.
+    """
+
+    lines: list[str] = []
+    province_name = _province_label(state, province.coord)
+    for unit in result.recruited:
+        army = state.armies.get(unit.army_id)
+        commander_id = army.commanded_by if army is not None else None
+        commander_name = _leader_name(state, commander_id)
+        if commander_name is None:
+            commander_name = (
+                "the provincial garrison commander"
+                if province.race in HUMANOID_RACES
+                else f"the provincial {RACE_NAME[province.race]} chieftain"
+            )
+        army_type_name = ARMY_TYPE_DESIGNATION[unit.army_type]
+        lines.append(render_recruit_unit(recruiter_name, province_name, army_type_name, commander_name, rng))
+    return lines
+
+
 # HostAK/TP/PROSE/ALLY.X -- a successful Ally proposal. See module
 # docstring's Phase 116 addendum.
 _ALLY_TEMPLATES: list[str] = [
@@ -4023,6 +4112,17 @@ def describe_turn_results(
             for feature in entry.result.discovered_features:
                 province_name = _province_label(state, feature.coord)
                 lines.append(describe_feature_discovery(feature, caster_name, province_name, rng))
+            continue
+        elif entry.action is ActionCode.RECRUIT and isinstance(entry.result, RecruitExecutionResult):
+            leader = state.leaders.get(entry.leader_id)
+            if leader is None:
+                continue
+            province = state.provinces.get(leader.location)
+            if province is None:
+                continue
+            lines.extend(
+                describe_recruit(entry.result, state, recruiter_name=caster_name, province=province, rng=rng)
+            )
             continue
         else:
             continue

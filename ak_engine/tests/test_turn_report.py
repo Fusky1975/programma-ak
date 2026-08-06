@@ -33,6 +33,7 @@ from ak_engine.report.turn_report import (
     PRACTICE_ALREADY_MAXED_TEMPLATE,
     PRACTICE_TUTORED_TEMPLATE,
     QUEST_BUT_THEN_TEMPLATE,
+    RECRUIT_TEMPLATES,
     SEASON_NAME,
     SEARCH_FEATURE_ALREADY_SACKED_TEMPLATE,
     SNEAKUP_RANGE_BOW,
@@ -64,6 +65,7 @@ from ak_engine.report.turn_report import (
     describe_hire,
     describe_practice,
     describe_pursue,
+    describe_recruit,
     describe_rumor,
     describe_search,
     describe_steal,
@@ -144,6 +146,7 @@ from ak_engine.report.turn_report import (
     render_item_give,
     render_magic_feature_discovery,
     render_march,
+    render_recruit_unit,
     render_melee_attack,
     render_monster_offers_raid_truce,
     render_mortally_wounded,
@@ -239,6 +242,7 @@ from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
+from ak_engine.turn.recruit_execution import RecruitedUnit, RecruitExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.trade_execution import TradeExecutionResult
 from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult
@@ -758,6 +762,117 @@ def test_render_march_resolves_optional_block_and_choice_marker():
     rng = ScriptedRandom([0.9, 0.9], choice_indices=[2])
     result = render_march("Arthur", "Numenor", "0304", rng)
     assert result == "Arthur moved into Numenor 0304 with Arthur's high-spirited army."
+
+
+# -- Phase 419: render_recruit_unit (RECRUIT.X) + describe_recruit --
+
+
+def test_render_recruit_unit_first_variant_left_choices():
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+    result = render_recruit_unit("Arthur", "Numenor", "Bowmen", "Cedric", rng)
+    assert result == "Arthur recruited Bowmen from among the people of Numenor, to serve under Cedric."
+
+
+def test_render_recruit_unit_first_variant_right_choices():
+    rng = ScriptedRandom([0.6, 0.6], choice_indices=[0])
+    result = render_recruit_unit("Arthur", "Numenor", "Bowmen", "Cedric", rng)
+    assert result == "Arthur levied Bowmen from among the population of Numenor, to serve under Cedric."
+
+
+def test_render_recruit_unit_second_variant():
+    rng = ScriptedRandom([0.1], choice_indices=[1])
+    result = render_recruit_unit("Arthur", "Numenor", "Bowmen", "Cedric", rng)
+    assert result == "Arthur levied Bowmen in Numenor to serve Cedric."
+
+
+def test_render_recruit_unit_third_variant():
+    rng = ScriptedRandom([0.1, 0.1, 0.1], choice_indices=[2])
+    result = render_recruit_unit("Arthur", "Numenor", "Bowmen", "Cedric", rng)
+    assert result == (
+        "Arthur announced  plea for volunteers in Numenor and was able to form Bowmen to fight for Cedric."
+    )
+
+
+def test_render_recruit_unit_fourth_variant():
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[3])
+    result = render_recruit_unit("Arthur", "Numenor", "Bowmen", "Cedric", rng)
+    assert result == "Arthur enlisted enough men in Numenor to create Bowmen for the army of Cedric."
+
+
+def _recruit_state(*, province_race: Race = Race.HUMAN) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_province(
+        ProvinceState(HexCoord(3, 9), Terrain.PLAINS, province_race, owner_kingdom_id=1, name="Numenor")
+    )
+    state.add_leader(LeaderState(1, 1, "Arthur", HexCoord(3, 9)))
+    return state
+
+
+def test_describe_recruit_commanded_unit():
+    state = _recruit_state()
+    state.add_leader(LeaderState(2, 1, "Cedric", HexCoord(3, 9)))
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=2))
+    result = RecruitExecutionResult(
+        request=None, recruited=[RecruitedUnit(army_id=100, army_type=ArmyType.BOWMEN, gold_paid=2)]
+    )
+
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+    lines = describe_recruit(result, state, recruiter_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert lines == ["Arthur recruited Bowmen from among the people of Numenor, to serve under Cedric."]
+
+
+def test_describe_recruit_unled_humanoid_province_uses_garrison_commander():
+    state = _recruit_state(province_race=Race.HUMAN)
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=None))
+    result = RecruitExecutionResult(
+        request=None, recruited=[RecruitedUnit(army_id=100, army_type=ArmyType.BOWMEN, gold_paid=2)]
+    )
+
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+    lines = describe_recruit(result, state, recruiter_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert lines == [
+        "Arthur recruited Bowmen from among the people of Numenor, to serve under "
+        "the provincial garrison commander."
+    ]
+
+
+def test_describe_recruit_unled_monstrous_province_uses_race_chieftain():
+    state = _recruit_state(province_race=Race.DRAGONS)
+    state.add_army(ArmyState(100, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, HexCoord(3, 9), commanded_by=None))
+    result = RecruitExecutionResult(
+        request=None, recruited=[RecruitedUnit(army_id=100, army_type=ArmyType.DRAGON_WING, gold_paid=2)]
+    )
+
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+    lines = describe_recruit(result, state, recruiter_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert lines == [
+        "Arthur recruited Dragons from among the people of Numenor, to serve under "
+        "the provincial Dragon chieftain."
+    ]
+
+
+def test_describe_recruit_multiple_units_render_one_line_each():
+    state = _recruit_state()
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=None))
+    state.add_army(ArmyState(101, 1, ArmyType.AXEMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=None))
+    result = RecruitExecutionResult(
+        request=None,
+        recruited=[
+            RecruitedUnit(army_id=100, army_type=ArmyType.BOWMEN, gold_paid=2),
+            RecruitedUnit(army_id=101, army_type=ArmyType.AXEMEN, gold_paid=2),
+        ],
+    )
+
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0, 0])
+    lines = describe_recruit(result, state, recruiter_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert len(lines) == 2
+    assert "Bowmen" in lines[0]
+    assert "Axemen" in lines[1]
 
 
 # -- Phase 105: render_flee_failure (FLEEFAIL.X) + render_sneak_detected (SNEAKUP.X) --
