@@ -21,6 +21,7 @@ from ak_engine.turn.encounter import FireArrowShot, MeleeSwing
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.aspy_defend_decode import DefendRequest
+from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.plan_dispatch import ArmyListExecutionResult, FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
@@ -262,6 +263,23 @@ def test_describe_turn_results_renders_defend():
     lines = describe_turn_results(results, state, ScriptedRandom([]))
 
     assert lines == ["Aldric prepared Aldric's armies to defend Numenor and the surrounding provinces."]
+
+
+def test_describe_turn_results_renders_defend_reinforcement():
+    # Phase 422: a sentinel PhaseDispatchResult (action=None, segment_index=-1),
+    # same convention as the "gate-angel-visit"/"forced-rebattle" sentinels --
+    # matched by isinstance(entry.result, DefendReinforcement), not by action.
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor"))
+    state.add_province(ProvinceState(HexCoord(1, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Gondor"))
+    result = DefendReinforcement(origin=HexCoord(0, 0), target=HexCoord(1, 0))
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=-1, phase_label="defend-reinforcement", action=None, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.0, 0.0]))
+
+    assert lines == ["Aldric, responsible for the defense of Numenor, learned of an enemy attack on Gondor."]
 
 
 def test_describe_turn_results_renders_move():

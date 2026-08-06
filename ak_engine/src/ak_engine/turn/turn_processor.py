@@ -235,7 +235,7 @@ from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.challenge_execution import execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
-from ak_engine.turn.defend_execution import defend_coverage_area
+from ak_engine.turn.defend_execution import DefendCoverage, DefendReinforcement, defend_coverage_area
 from ak_engine.turn.expenses import apply_turn_maintenance
 from ak_engine.turn.contested_province import (
     attacker_can_force_rebattle,
@@ -338,7 +338,7 @@ def run_turn(
     rng = rng if rng is not None else random.Random()
     results: list[PhaseDispatchResult] = []
     bounds = MapBounds(*NORMAL_MAP_BOUNDS)
-    active_defends: dict[int, set[HexCoord]] = {}  # defender leader_id -> coverage area
+    active_defends: dict[int, DefendCoverage] = {}  # defender leader_id -> origin + coverage area
     active_pursuits: dict[int, _ActivePursuit] = {}  # pursuer/trailer leader_id -> ongoing chase
     active_patrols: dict[int, object] = {}  # patroller leader_id -> its own PursueRequest (standing order)
     # Rulebook [3.15]'s other Defend-cancellation trigger ("cancelled if
@@ -405,6 +405,23 @@ def run_turn(
 
         _apply_defend_cancellations(active_defends, entries)
         reinforced = _apply_defend_reinforcements(active_defends, move_targets, entries, state)
+        for defender_leader_id, reinforcement in reinforced.items():
+            # Phase 422: a synthetic, action-less entry (same convention as
+            # the "gate-angel-visit"/"forced-rebattle" sentinels below and
+            # elsewhere in this module) -- narrating a Defend reinforcement
+            # isn't tied to any real PlanPhase the reinforcing leader issued
+            # this turn, so describe_turn_results() matches it by result
+            # type instead of by ActionCode.
+            results.append(
+                PhaseDispatchResult(
+                    leader_id=defender_leader_id,
+                    segment_index=-1,
+                    phase_label="defend-reinforcement",
+                    action=None,
+                    result=reinforcement,
+                    error=None,
+                )
+            )
 
         for index, (tl, _segment_index, phase) in enumerate(entries):
             if phase.action is ActionCode.DEFEND:
@@ -413,11 +430,14 @@ def run_turn(
                     # Registered for *next* phase's reinforcement check, not this
                     # one -- see turn/defend_execution.py's own docstring and
                     # _apply_defend_reinforcements's for why.
-                    active_defends[tl.leader.leader_id] = defend_coverage_area(leader_state.location, bounds)
+                    active_defends[tl.leader.leader_id] = DefendCoverage(
+                        origin=leader_state.location,
+                        area=defend_coverage_area(leader_state.location, bounds),
+                    )
 
         reinforced_by_target: dict[HexCoord, list[int]] = {}
-        for defender_leader_id, target in reinforced.items():
-            reinforced_by_target.setdefault(target, []).append(defender_leader_id)
+        for defender_leader_id, reinforcement in reinforced.items():
+            reinforced_by_target.setdefault(reinforcement.target, []).append(defender_leader_id)
 
         target_groups: dict[HexCoord, list[int]] = {}
         for index, target in move_targets.items():
@@ -579,7 +599,7 @@ _DEFEND_CANCELLING_ACTIONS = frozenset({ActionCode.LMOVE, ActionCode.PURSUE, Act
 
 
 def _apply_defend_cancellations(
-    active_defends: dict[int, set[HexCoord]], entries: list[tuple[TurnLeader, int, PlanPhase]]
+    active_defends: dict[int, DefendCoverage], entries: list[tuple[TurnLeader, int, PlanPhase]]
 ) -> None:
     """Rulebook [3.15] (quoted in full, ``RULES.AK`` ~line 573-576): "A general with
     Defend orders may use the rest of his actions to practice, explore,
@@ -614,11 +634,11 @@ def _apply_defend_cancellations(
 
 
 def _apply_defend_reinforcements(
-    active_defends: dict[int, set[HexCoord]],
+    active_defends: dict[int, DefendCoverage],
     move_targets: dict[int, HexCoord],
     entries: list[tuple[TurnLeader, int, PlanPhase]],
     state: GameState,
-) -> dict[int, HexCoord]:
+) -> dict[int, DefendReinforcement]:
     """Rulebook [3.15]: relocates a Defending leader's own armies to an invaded
     covered province, so the existing battle-dispatch machinery (solo or
     Multiple Contingents) picks them up as defenders automatically -- the
@@ -643,14 +663,19 @@ def _apply_defend_reinforcements(
     not sourced -- the rulebook doesn't address a general reinforcing
     twice in the same turn).
 
-    Returns ``{defender_leader_id: target}`` for every reinforcement
-    performed this call -- ``run_turn()`` uses it to look up that same
-    battle's outcome once this phase's LMOVE dispatch resolves it, for
-    rule [3.15]'s other cancellation trigger (see ``_apply_defend_cancellations``'s
-    own docstring and ``_extract_battle_winner``).
+    Returns ``{defender_leader_id: DefendReinforcement(origin, target)}``
+    for every reinforcement performed this call -- ``run_turn()`` uses
+    ``.target`` to look up that same battle's outcome once this phase's
+    LMOVE dispatch resolves it, for rule [3.15]'s other cancellation
+    trigger (see ``_apply_defend_cancellations``'s own docstring and
+    ``_extract_battle_winner``). ``.origin`` (the defender's own province
+    before relocating) exists solely for ``describe_defend_reinforcement()``
+    (Phase 422, ``SAY.PAS _LHearInv``'s own ``@`` marker) -- captured here
+    because ``defender_state.location`` is overwritten to ``target``
+    a few lines below, before this function returns.
     """
 
-    reinforced: dict[int, HexCoord] = {}
+    reinforced: dict[int, DefendReinforcement] = {}
     if not active_defends:
         return reinforced
 
@@ -664,7 +689,7 @@ def _apply_defend_reinforcements(
             continue
 
         for target, indices in invaded_provinces.items():
-            if target not in coverage:
+            if target not in coverage.area:
                 continue
             target_province = state.provinces.get(target)
             if target_province is None or target_province.owner_kingdom_id is None:
@@ -683,9 +708,10 @@ def _apply_defend_reinforcements(
 
             for army in state.armies_commanded_by(defender_leader_id):
                 army.location = target
+            origin = coverage.origin
             defender_state.location = target
             del active_defends[defender_leader_id]
-            reinforced[defender_leader_id] = target
+            reinforced[defender_leader_id] = DefendReinforcement(origin=origin, target=target)
             break
 
     return reinforced

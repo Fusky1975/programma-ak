@@ -1162,6 +1162,7 @@ from ak_engine.turn.army_quality import compute_army_modified_quality
 from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.battle_orchestrator import BattleReport
+from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.battle_luck import (
     CLUCK2_REVERSAL_PHRASE,
     column_narration_eligible,
@@ -3385,22 +3386,55 @@ def describe_defend(state: GameState, *, leader_name: str, province: ProvinceSta
     (confirmed unused by that function, so resolving and narrating it
     here would be guessing at data the real mechanic never reads).
 
-    **Deliberately not attempted here**: the richer reinforcement/
-    cancellation narration this project's own real source also has
-    templates for -- ``_LHearInv`` (a covered leader learning of a
-    distant attack), ``_LSplit``/``_LRemain`` (splitting or
-    concentrating coverage across two provinces), and ``_ADefend``
-    (which armies actually got left/committed as reinforcement, via a
-    ``^L=`` list marker). All four need real per-leader outcome data
-    ``turn/turn_processor.py``'s own ``_apply_defend_reinforcements()``/
-    ``_apply_defend_cancellations()`` don't currently return (they
-    mutate ``active_defends``/battle state directly) -- a materially
-    bigger undertaking than this one sentence, left for a future phase.
+    **Deliberately not attempted here**: ``_LSplit``/``_LRemain``
+    (splitting or concentrating coverage across two provinces -- blocked
+    by ``DefendRequest.target_province``'s own confirmed-unconvertible
+    raw int, see ``turn/aspy_defend_decode.py``'s docstring) and
+    ``_ADefend`` (which armies actually got left/committed as
+    reinforcement, via a ``^L=`` list marker -- an ambiguous trigger not
+    confirmed to correspond to any data this project currently derives).
+    ``_LHearInv`` (a covered leader learning of a distant attack) is
+    narrated separately by ``describe_defend_reinforcement()`` below
+    (Phase 422), once real per-leader reinforcement outcome data became
+    available via ``turn/turn_processor.py``'s ``DefendReinforcement``.
     """
 
     province_name = _province_label(state, province.coord)
     is_sea = province.effective_terrain() is Terrain.SEA
     return render_defend(leader_name, province_name, rng, is_sea=is_sea)
+
+
+# SAY.PAS _LHearInv: "<, responsible for the defense of @, learned/Rgot_wind
+# of an enemy attack/Rmove on ^S." Two /R alternations ("learned/Rgot_wind",
+# "attack/Rmove"), no /S, no {}, no pick_variant() -- two rng draws, same
+# render() convention as DEFEND_TEMPLATE above.
+DEFEND_REINFORCEMENT_TEMPLATE = (
+    "<, responsible for the defense of @, learned/Rgot_wind of an enemy attack/Rmove on ^S."
+)
+
+
+def render_defend_reinforcement(
+    defender_name: str, origin_name: str, target_name: str, rng: random.Random
+) -> str:
+    """Renders ``_LHearInv``'s sentence for a Defend reinforcement (Phase 422)."""
+
+    values = {"<": defender_name, "@": origin_name, "^S": target_name}
+    return render(DEFEND_REINFORCEMENT_TEMPLATE, values, rng=rng)
+
+
+def describe_defend_reinforcement(
+    result: DefendReinforcement, state: GameState, *, defender_name: str, rng: random.Random
+) -> str:
+    """Assembles the ``_LHearInv`` sentence for a real Defend reinforcement
+    (Phase 422) -- ``result.origin`` is ``@`` (the defender's own province,
+    where they were standing by), ``result.target`` is ``^S`` (the invaded
+    province they relocated to cover), both resolved via ``turn/
+    turn_processor.py _apply_defend_reinforcements()``'s real outcome data.
+    """
+
+    origin_name = _province_label(state, result.origin)
+    target_name = _province_label(state, result.target)
+    return render_defend_reinforcement(defender_name, origin_name, target_name, rng)
 
 
 def describe_move(
@@ -4407,6 +4441,14 @@ def describe_turn_results(
             if province is None:
                 continue
             lines.append(describe_defend(state, leader_name=caster_name, province=province, rng=rng))
+            continue
+        elif isinstance(entry.result, DefendReinforcement):
+            # Phase 422: matched by result type, not entry.action -- this is
+            # one of the sentinel PhaseDispatchResult entries (action=None,
+            # segment_index=-1) turn_processor.py appends for events with no
+            # real originating PlanPhase this turn, same convention as the
+            # "gate-angel-visit"/"forced-rebattle" sentinels.
+            lines.append(describe_defend_reinforcement(entry.result, state, defender_name=caster_name, rng=rng))
             continue
         elif entry.action is ActionCode.LMOVE and isinstance(entry.result, MoveExecutionResult):
             if board_width is None:

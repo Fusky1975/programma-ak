@@ -33,6 +33,7 @@ from ak_engine.report.turn_report import (
     PRACTICE_ALREADY_MAXED_TEMPLATE,
     PRACTICE_TUTORED_TEMPLATE,
     DEFEND_TEMPLATE,
+    DEFEND_REINFORCEMENT_TEMPLATE,
     DISBAND_TEMPLATE,
     LEAVE_TEMPLATES,
     PICKUP_TEMPLATES,
@@ -68,6 +69,7 @@ from ak_engine.report.turn_report import (
     describe_give,
     describe_hire,
     describe_defend,
+    describe_defend_reinforcement,
     describe_disband,
     describe_leave,
     describe_move,
@@ -155,6 +157,7 @@ from ak_engine.report.turn_report import (
     render_item_give,
     render_magic_feature_discovery,
     render_defend,
+    render_defend_reinforcement,
     render_disband_unit,
     render_leave_unit,
     render_march,
@@ -253,6 +256,7 @@ from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.aspy_defend_decode import DefendRequest
+from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.plan_dispatch import ArmyListExecutionResult, FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
@@ -1086,6 +1090,29 @@ def test_describe_defend_resolves_sea_from_province_terrain():
     state = _leave_state(terrain=Terrain.SEA)
     result = describe_defend(state, leader_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=ScriptedRandom([]))
     assert result == "Arthur prepared Arthur's forces to defend Numenor and the surrounding provinces."
+
+
+# -- Phase 422: render_defend_reinforcement (_LHearInv) + describe_defend_reinforcement --
+
+
+def test_render_defend_reinforcement_left_variants():
+    result = render_defend_reinforcement("Arthur", "Numenor", "Gondor", ScriptedRandom([0.0, 0.0]))
+    assert result == "Arthur, responsible for the defense of Numenor, learned of an enemy attack on Gondor."
+
+
+def test_render_defend_reinforcement_right_variants():
+    result = render_defend_reinforcement("Arthur", "Numenor", "Gondor", ScriptedRandom([0.9, 0.9]))
+    assert result == "Arthur, responsible for the defense of Numenor, got wind of an enemy move on Gondor."
+
+
+def test_describe_defend_reinforcement_resolves_origin_and_target_names():
+    state = _leave_state()
+    state.add_province(ProvinceState(HexCoord(4, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Gondor"))
+    result = DefendReinforcement(origin=HexCoord(3, 9), target=HexCoord(4, 9))
+
+    line = describe_defend_reinforcement(result, state, defender_name="Arthur", rng=ScriptedRandom([0.0, 0.0]))
+
+    assert line == "Arthur, responsible for the defense of Numenor, learned of an enemy attack on Gondor."
 
 
 # -- Phase 421: describe_move (MARCH.X, wiring render_march() for the first time) --

@@ -39,6 +39,8 @@ expand it.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from ak_engine.models.map import HexCoord
 from ak_engine.turn.movement import MapBounds, neighbors
 
@@ -52,3 +54,29 @@ def defend_coverage_area(leader_location: HexCoord, bounds: MapBounds) -> set[He
     """
 
     return set(neighbors(leader_location, bounds))
+
+
+@dataclass(slots=True)
+class DefendCoverage:
+    """Phase 422: ``turn/turn_processor.py``'s own ``active_defends`` registry
+    used to store a bare ``defend_coverage_area()`` result (the coverage
+    *set*), discarding the defender's own original province -- fine
+    while nothing needed to narrate the reinforcement event, but
+    ``origin`` is exactly ``@`` in ``SAY.PAS _LHearInv``'s own real
+    template ("<, responsible for the defense of @, ... on ^S."), so
+    it has to survive alongside ``area`` now.
+    """
+
+    origin: HexCoord
+    area: set[HexCoord]
+
+
+@dataclass(slots=True)
+class DefendReinforcement:
+    """Phase 422: ``turn/turn_processor.py _apply_defend_reinforcements()``'s
+    own per-defender outcome -- ``origin`` (``@``) and ``target`` (``^S``)
+    are exactly ``_LHearInv``'s own two province markers.
+    """
+
+    origin: HexCoord
+    target: HexCoord

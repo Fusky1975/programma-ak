@@ -17744,7 +17744,7 @@ section.
     `render_disband_unit()`, and each composer's commanded/unled/
     skip cases) and 3 in `test_describe_turn_results.py` (one real
     end-to-end render per action). Ran again: 3916 passed (24 new).
-- **Phase 421 (current)**: `DEFEND`/`LMOVE` narration, closing the
+- **Phase 421**: `DEFEND`/`LMOVE` narration, closing the
   Recruit/Disband/Leave/Pick_Up/Defend/Move cluster Phase 418 first
   flagged -- the last two, bundled together since the user asked for
   both in one request. Deliberately scoped to the single order-
@@ -17793,6 +17793,53 @@ section.
     `test_describe_turn_results.py` (one real end-to-end render each
     for Defend and Move, plus Move's board-width-omitted skip). Ran
     again: 3927 passed (11 new).
+- **Phase 422 (current)**: Defend's real reinforcement narration
+  (`SAY.PAS _LHearInv`), the deeper mechanic Phase 421 deliberately
+  deferred -- "a covered leader learning of a distant attack," not
+  just the order-confirmation sentence.
+  - `turn/defend_execution.py` gains two new dataclasses: `DefendCoverage`
+    (`origin` + `area`, replacing the bare `set[HexCoord]`
+    `turn_processor.py`'s own `active_defends` registry used to store,
+    since the reinforcement sentence's `@` marker needs the defender's
+    own origin province, which the old bare-set shape discarded) and
+    `DefendReinforcement` (`origin` + `target`, `_LHearInv`'s own two
+    province markers). `defend_coverage_area()` itself is unchanged.
+  - `turn/turn_processor.py _apply_defend_reinforcements()` now returns
+    `dict[int, DefendReinforcement]` instead of `dict[int, HexCoord]` --
+    `origin` is captured before `defender_state.location` is overwritten
+    to `target` a few lines later. `run_turn()` appends one synthetic,
+    action-less `PhaseDispatchResult` per reinforcement (`segment_index
+    =-1`, `phase_label="defend-reinforcement"`, same sentinel convention
+    already used for "gate-angel-visit"/"forced-rebattle") so the event
+    reaches `describe_turn_results()` despite having no real originating
+    `PlanPhase` this turn.
+  - `report/turn_report.py` gains `DEFEND_REINFORCEMENT_TEMPLATE`
+    (`"<, responsible for the defense of @, learned/Rgot_wind of an
+    enemy attack/Rmove on ^S."` -- two `/R` alternations, no `/S`, no
+    `{}`, so `render()` is called directly, the same `_LDefend`-style
+    shape Phase 421 already established), `render_defend_reinforcement()`,
+    and `describe_defend_reinforcement()` (resolves `@`/`^S` via
+    `_province_label()` from `result.origin`/`result.target`).
+    `describe_turn_results()` gains a new branch matched by
+    `isinstance(entry.result, DefendReinforcement)` rather than by
+    `entry.action` (which is `None` for these sentinel entries) --
+    placed right after the existing `ActionCode.DEFEND` branch.
+  - **Still deliberately not attempted**: `_LSplit`/`_LRemain` (splitting
+    or concentrating coverage across two provinces) remain blocked by
+    `DefendRequest.target_province`'s own confirmed-unconvertible raw
+    int (no numbering scheme exists for ASpy/Defend's province
+    references, unlike LMOVE's own `hex_numbering.py`). `_ADefend`
+    (which armies actually got left/committed as reinforcement, via a
+    `^L=` list marker) remains an ambiguous trigger not confirmed to
+    correspond to any data this project currently derives -- left
+    unattempted per "no source, no guess" rather than guessed at.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3927 passed unchanged from Phase 421), then added 4 new tests -- 3
+    in `test_turn_report.py` (`render_defend_reinforcement()`'s two `/R`
+    variant combinations, `describe_defend_reinforcement()`'s real
+    origin/target resolution) and 1 in `test_describe_turn_results.py`
+    (one real end-to-end render of the sentinel `PhaseDispatchResult`
+    wiring). Ran again: 3931 passed (4 new).
 
 ## Setup
 
