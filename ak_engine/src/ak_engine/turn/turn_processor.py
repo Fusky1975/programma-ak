@@ -253,6 +253,7 @@ from ak_engine.turn.practice_execution import execute_practice_group
 from ak_engine.turn.patrol_execution import execute_patrol
 from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue
 from ak_engine.turn.skeletal_decay import decompose_graveyard
+from ak_engine.turn.tax_base import apply_turn_revenue
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail
 from ak_engine.turn.valhalla_execution import finalize_gate_angel_visit
@@ -521,6 +522,7 @@ def run_turn(
     _revert_analytical_psychology_charms(state)
     _apply_werebeast_transformations(state)
     decompose_graveyard(state)
+    apply_turn_revenue(state)
     apply_turn_maintenance(state)
 
     return results

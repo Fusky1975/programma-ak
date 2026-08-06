@@ -1530,6 +1530,30 @@ def test_run_turn_debits_expected_expenses_from_treasury_once_at_turn_end():
     assert state.kingdoms[1].treasury == 48
 
 
+# -- Per-turn treasury revenue credit (Phase 412) --------------------------
+
+
+def test_run_turn_credits_expected_revenues_to_treasury_before_debiting_expenses():
+    # Phase 412: turn/tax_base.py apply_turn_revenue() now runs once per
+    # turn, before apply_turn_maintenance() -- rulebook [9]'s own explicit
+    # "si incassano le rendite, quindi si paga il mantenimento" ordering.
+    # Same one-Legion-army expected debit (2 gold) as the Phase 404 test
+    # above, plus a real 10-gold province tax base as the new credit.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.kingdoms[1].treasury = 50
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=HexCoord(0, 0), is_king=True))
+    state.add_army(ArmyState(state.new_army_id(), 1, ArmyType.LEGION, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=10))
+
+    p0 = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    leader = Leader(10, "A", ActionPlan(10, [PlanSegment(0, 1, (), {"P0": p0})]))
+
+    run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH)
+
+    assert state.kingdoms[1].treasury == 58
+
+
 # -- Werebeast bite-transform, end-of-turn half (Phase 392) ---------------
 
 

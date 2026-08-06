@@ -6,10 +6,16 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
-from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
-from ak_engine.turn.tax_base import compute_invention_bonus_percent, compute_tax_base, province_tax_yield
+from ak_engine.turn.tax_base import (
+    apply_turn_revenue,
+    compute_invention_bonus_percent,
+    compute_office_gold_bonus,
+    compute_tax_base,
+    province_tax_yield,
+)
 
 HOME = HexCoord(0, 0)
 
@@ -121,3 +127,78 @@ def test_compute_invention_bonus_percent_sums_only_revenue_discoveries():
     }
 
     assert compute_invention_bonus_percent(kingdom) == 3
+
+
+# -- Phase 412: compute_office_gold_bonus() + apply_turn_revenue() --------
+
+
+def test_compute_office_gold_bonus_credits_this_kingdoms_king_of_pain():
+    # King of Pain's own merit-point formula is plain Tax_Base(King)
+    # (Phase 369), gated at OFFICE_MIN_POINTS[EVIL_KING] == 25 -- a real
+    # province tax base is needed to actually clear the Rank contest.
+    state = make_state()
+    state.kingdoms[1].alignment = Alignment.EVIL
+    state.add_leader(LeaderState(1, 1, "Vaelgor", HOME, is_king=True))
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
+
+    assert compute_office_gold_bonus(state, 1) == 5
+
+
+def test_compute_office_gold_bonus_credits_this_kingdoms_prince_of_thieves():
+    state = make_state()
+    king = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    king.merit_tally.successful_thefts = 5
+    state.add_leader(king)
+
+    assert compute_office_gold_bonus(state, 1) == 10
+
+
+def test_compute_office_gold_bonus_sums_both_offices_when_both_are_earned():
+    state = make_state()
+    state.kingdoms[1].alignment = Alignment.EVIL
+    king = LeaderState(1, 1, "Vaelgor", HOME, is_king=True)
+    king.merit_tally.successful_thefts = 5
+    state.add_leader(king)
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
+
+    assert compute_office_gold_bonus(state, 1) == 15
+
+
+def test_compute_office_gold_bonus_ignores_another_kingdoms_holder():
+    state = make_state()
+    state.kingdoms[2].alignment = Alignment.EVIL
+    state.add_leader(LeaderState(2, 2, "Borin", HOME, is_king=True))
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, tax=30))
+
+    assert compute_office_gold_bonus(state, 1) == 0
+
+
+def test_compute_office_gold_bonus_zero_when_nobody_holds_either_office():
+    state = make_state()
+
+    assert compute_office_gold_bonus(state, 1) == 0
+
+
+def test_apply_turn_revenue_credits_tax_base_plus_office_bonus_to_treasury():
+    state = make_state()
+    state.kingdoms[1].alignment = Alignment.EVIL
+    state.kingdoms[1].treasury = 50
+    state.add_leader(LeaderState(1, 1, "Vaelgor", HOME, is_king=True))
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
+
+    credited = apply_turn_revenue(state)
+
+    assert credited == {1: 35, 2: 0}
+    assert state.kingdoms[1].treasury == 85
+
+
+def test_apply_turn_revenue_credits_each_kingdom_independently():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=4))
+    state.add_province(ProvinceState(HexCoord(0, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, tax=6))
+
+    credited = apply_turn_revenue(state)
+
+    assert credited == {1: 4, 2: 6}
+    assert state.kingdoms[1].treasury == 4
+    assert state.kingdoms[2].treasury == 6

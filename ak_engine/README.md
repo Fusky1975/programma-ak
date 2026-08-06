@@ -17301,7 +17301,7 @@ section.
     skips an unconquered move, skips a missing leader), ran again,
     updated README, ran once more before commit. Full suite: 3838 passed
     before (1 corrected), 3845 after (7 new tests).
-- **Phase 411 (current)**: at the user's own direct request, investigated
+- **Phase 411**: at the user's own direct request, investigated
   Scar Terrain's own bystander notice (`SAY.PAS` `_STZero`/`_STFite`,
   ~747-748) as the next candidate GIR gap. Both are real, fully-sourced
   inline `Say()` strings -- no missing `PROSE/*.X2` file, unlike the
@@ -17323,6 +17323,48 @@ section.
   own docstring (`report/turn_report.py`) was corrected from "still
   unwired" to the full citation -- no behavior changed. Full suite:
   3845 passed before, 3845 after (0 new tests).
+- **Phase 412 (current)**: at the user's own direct request, closes the
+  tax/revenue system's real missing half -- rulebook [9] (quoted in
+  `turn/tax_base.py`'s own docstring): "Alla fine del turno si
+  incassano le rendite, quindi si paga il mantenimento degli Eroi e poi
+  quello delle unità militari" (collect revenue, *then* pay Hero
+  upkeep, *then* pay military upkeep). Through Phase 411,
+  `compute_tax_base()` (Phase 222-224) was only ever read by report
+  composers -- `turn/expenses.py apply_turn_maintenance()` (Phase 404)
+  really debits the expense side every turn, but nothing ever credited
+  the matching revenue side to `KingdomState.treasury`.
+  - `turn/tax_base.py`: new `OFFICE_GOLD_BONUS` dict (`Office.EVIL_KING:
+    5`, `Office.THIEF_PRINCE: 10`, the real magnitudes already named in
+    `models/office.py OFFICE_PERK_DESCRIPTION`), `compute_office_gold_
+    bonus()` (mirrors `describe_finances_report()`'s own "(Including
+    +N ...)" note logic, via a deferred import of `turn/office_holder.py`
+    to avoid closing an existing circular-import cycle), and
+    `apply_turn_revenue()`, which credits each kingdom's own
+    `compute_tax_base()` plus `compute_office_gold_bonus()` to its
+    treasury once per turn and returns the amount credited per kingdom.
+  - `turn/turn_processor.py run_turn()`: calls `apply_turn_revenue(state)`
+    immediately before the existing `apply_turn_maintenance(state)` call,
+    matching [9]'s own explicit ordering.
+  - **Deliberately not folded into the credited amount** (all three
+    confirmed, not merely undiscovered -- see `tax_base.py`'s own
+    Phase 412 docstring section): `Inv_Bonus`
+    (`compute_invention_bonus_percent()`) stays report-display-only per
+    Phase 268's own existing design choice, since nothing in the
+    available source confirms it modifies the real gold credited rather
+    than being a report-only percentage; a per-race `Racial_Tax` bonus
+    (`CTBOTH.PAS:330-399`) turned out, on closer inspection prompted by
+    the user's own play experience, to sit entirely inside a Pascal
+    COMMENT block (developer design notes), never referenced live
+    anywhere -- almost certainly unshipped, not a real gap; and [9.2]'s
+    own monster-devastation tax reduction is real rulebook text with a
+    partially-tracked trigger (`MonsterEngagementState.BOLD`) but no
+    recoverable probability or magnitude anywhere in the source.
+  - Ran the full suite before writing new tests (non-breaking check) --
+    3845 passed. Added 7 tests to `test_tax_base.py`
+    (`compute_office_gold_bonus`'s five cases, `apply_turn_revenue`'s
+    two) and 1 to `test_turn_processor.py` (`run_turn()` credits revenue
+    before debiting expenses), ran again, updated README, ran once more
+    before commit. Full suite: 3853 passed (8 new tests).
 
 ## Setup
 
