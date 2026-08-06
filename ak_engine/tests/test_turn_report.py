@@ -113,6 +113,7 @@ from ak_engine.report.turn_report import (
     render_finance_treasury,
     render_finance_unpaid_armies,
     render_fire_arrow_attack,
+    render_squeeze_attack,
     render_fire_hireling,
     render_flee_failure,
     render_funeral_pyre,
@@ -1151,6 +1152,57 @@ def test_fire_arrow_attack_and_missed_concatenate_into_one_sentence():
     attack = render_fire_arrow_attack("Aldric", "Borin", rng)
     miss = render_attack_missed("Aldric", "Borin", "arrow", rng)
     assert attack + miss == "Aldric Fired an arrow at Borin and missed."
+
+
+# -- Phase 413: Hand of Death's own per-round squeeze narration ------------
+
+
+def test_render_squeeze_attack_heart_variant_left_choices_omit_the_adverb():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_squeeze_attack("Aldric", "Borin", rng)
+    assert result == "Aldric curled Aldric's phantasmal hand around Borin's heart and squeezed it"
+
+
+def test_render_squeeze_attack_heart_variant_right_choices_include_the_adverb():
+    rng = ScriptedRandom([0.9] * 10, choice_indices=[0])
+    result = render_squeeze_attack("Aldric", "Borin", rng)
+    assert result == "Aldric wrapped Aldric's phantasmal hand around Borin's heart and squeezed it mercilessly"
+
+
+def test_render_squeeze_attack_innards_variant_omits_tightly():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_squeeze_attack("Aldric", "Borin", rng)
+    assert result == "Aldric clenched Aldric's fist, squeezing the innards of Borin"
+
+
+def test_render_squeeze_attack_innards_variant_includes_tightly():
+    rng = ScriptedRandom([0.9] * 10, choice_indices=[2])
+    result = render_squeeze_attack("Aldric", "Borin", rng)
+    assert result == "Aldric clenched Aldric's fist tightly, squeezing the innards of Borin"
+
+
+def test_render_squeeze_attack_tearing_variant_left_choices():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[4])
+    result = render_squeeze_attack("Aldric", "Borin", rng)
+    assert result == "Aldric brought Aldric's hands together and yanked them apart in a ripping gesture, provoking a squeal from Borin"
+
+
+def test_render_squeeze_attack_tearing_variant_right_choices():
+    rng = ScriptedRandom([0.9] * 10, choice_indices=[4])
+    result = render_squeeze_attack("Aldric", "Borin", rng)
+    assert result == (
+        "Aldric brought Aldric's hands together and pulled them apart in a tearing motion, "
+        "provoking a blood-curdling squeal of pain from Borin"
+    )
+
+
+def test_squeeze_attack_and_hit_concatenate_into_one_sentence():
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
+    attack = render_squeeze_attack("Aldric", "Borin", rng)
+    hit = render_attack_hit("Borin", 3, rng)
+    assert attack + hit == (
+        "Aldric curled Aldric's phantasmal hand around Borin's heart and squeezed it and inflicted 3 damage points."
+    )
 
 
 # -- hit / devastate / mortal-wound continuations (Phase 112) ---------------
@@ -3226,6 +3278,47 @@ def test_describe_search_shot_narration_appears_before_the_mortal_wound_line():
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
         "The Red Dragon breathes, and the impact deals 9 damage points.",
+        "Aldric was mortally wounded.",
+    ]
+
+
+# -- Phase 413: Hand of Death's own per-round squeeze narration ------------
+
+
+def test_describe_search_squeeze_hits_narrated_for_a_leader_win():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner="leader",
+        feature_looted=True,
+        squeeze_hits=(3, 2),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric curled Aldric's phantasmal hand around guardian's heart and squeezed it and inflicted 3 damage points.",
+        "Aldric curled Aldric's phantasmal hand around guardian's heart and squeezed it and inflicted 2 damage points.",
+    ]
+
+
+def test_describe_search_squeeze_hits_narrated_before_the_mortal_wound_line_for_a_monster_win():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner="monster",
+        leader_killed=True,
+        squeeze_hits=(4,),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "guardian curled guardian's phantasmal hand around Aldric's heart and squeezed it and inflicted 4 damage points.",
         "Aldric was mortally wounded.",
     ]
 

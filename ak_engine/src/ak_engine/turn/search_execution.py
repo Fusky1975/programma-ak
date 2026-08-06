@@ -656,6 +656,17 @@ class SearchExecutionResult:
     # report/turn_report.py's own Phase 175 addendum to dispatch each shot
     # to the right narrative renderer (species-flavored or generic).
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
+    # Phase 413: per-round Hand of Death damage (empty unless a Cast
+    # tactic actually channeled Hand of Death to a kill) -- see
+    # `turn/encounter.py resolve_hand_of_death_channel()`'s own Phase
+    # 413 addendum and `report/turn_report.py render_squeeze_attack()`.
+    # Only the winning (killing) channel is captured here -- a channel
+    # interrupted mid-squeeze (the caster gets hit and falls through to
+    # a normal tactic) returns `None` from `_resolve_cast_tactic()`
+    # without a terminal `SearchExecutionResult` to attach to, the same
+    # documented limit `fire_arrow_shots` above already accepts for its
+    # own inconclusive case.
+    squeeze_hits: tuple[int, ...] = ()
     guardian_monster: Monster | None = None
     # Phase 213: the originating request, so a caller (report/turn_report.py
     # describe_turn_results()) can resolve the searched feature's own id.
@@ -1190,7 +1201,15 @@ def _resolve_search_encounter(
                 # "a" in resolve_hand_of_death_channel's own convention always
                 # means the caster -- translate to the leader/monster "a"/"b"
                 # convention _outcome_from() expects.
-                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                outcome = _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                if outcome is not None:
+                    # Phase 413: the winning channel's own per-round damage,
+                    # for report/turn_report.py render_squeeze_attack() --
+                    # see SearchExecutionResult.squeeze_hits's own Phase 413
+                    # note for why an interrupted (non-winning) channel isn't
+                    # captured here.
+                    outcome.squeeze_hits = channel_result.squeeze_hits
+                return outcome
             return None
 
         if spell is Spell.MIRROR_IMAGE:
@@ -1929,12 +1948,20 @@ def _resolve_search_encounter(
         #   for why it can't simply take a branch here like every other
         #   tactic above.
         # - **Squeeze** (`Maneuver.SQUEEZE`, `manab`'s own `'SQ'`, Phase
-        #   401): genuinely unresearched, not structurally excluded like
-        #   Give -- `SAY.PAS` has a real, sourced prose dispatch for it
-        #   (`_LSquee: FD2('squeeze',S_PCom,5)`, 5 templates, never
-        #   transcribed) but no rulebook mechanic for it was ever traced.
-        #   A real, narrow, still-open gap -- see README's own Phase 401
-        #   note.
+        #   401): `SAY.PAS`'s `_LSquee: FD2('squeeze',S_PCom,5)` prose
+        #   itself is recovered as of Phase 413 -- turns out to be Hand
+        #   of Death's own per-round narration (real turn-report text
+        #   across 8 files, confirmed by the user's own direct play
+        #   experience to be Hand of Death's output specifically), now
+        #   wired via `resolve_hand_of_death_channel()`'s own
+        #   `squeeze_hits` + `report/turn_report.py
+        #   render_squeeze_attack()` -- not a separate combat tactic at
+        #   all, so nothing here dispatches on `Maneuver.SQUEEZE` itself.
+        #   `Maneuver.SQUEEZE` the enum value remains genuinely unwired
+        #   as a player-selectable tactic (this project has no Pascal
+        #   source to confirm whether one exists independently of Hand
+        #   of Death) -- narrower than Phase 401 left it, not fully
+        #   closed.
 
     if combat_attempted:
         # Phase 178: the plan's own tactic list ran out without a winner

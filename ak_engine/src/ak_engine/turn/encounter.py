@@ -2474,6 +2474,14 @@ class EncounterCombatResult:
     # Empty for every Melee duel and for every existing caller before
     # this phase.
     shots: tuple[FireArrowShot, ...] = ()
+    # Phase 413: per-round Hand of Death damage, one entry per successful
+    # squeeze (the caster's own attack always lands -- no hit/miss flag
+    # needed, unlike `shots` above). Always the caster's own side; the
+    # victim's own Melee counter-attack that ends the channel is not
+    # logged here. Empty for every other resolver. See
+    # `resolve_hand_of_death_channel()`'s own Phase 413 addendum and
+    # `report/turn_report.py render_squeeze_attack()`.
+    squeeze_hits: tuple[int, ...] = ()
 
 
 @dataclass(slots=True)
@@ -2799,6 +2807,16 @@ def resolve_hand_of_death_channel(
     MONSTERS`` for a monster target, or ``leader.alignment in {UNDEAD,
     ANTI_HOLY}`` for a leader target) -- "inefficace contro" mechanical/
     Undead/anti-holy targets, the spell simply never engages.
+
+    **Phase 413**: the caster's own damage from every round is now also
+    recorded, in order, into the returned ``EncounterCombatResult.
+    squeeze_hits`` -- the same "per-round detail for narrating each hit
+    individually" role ``FireArrowShot``/``EncounterCombatResult.shots``
+    already plays for Fire Arrow, needed to feed
+    ``report/turn_report.py render_squeeze_attack()``. Only the caster's
+    own squeeze lands here (Hand of Death's own attack always hits, see
+    above); the victim's own Melee counter-attack that ends the channel
+    isn't a squeeze and isn't logged.
     """
 
     if target_is_immune:
@@ -2806,6 +2824,7 @@ def resolve_hand_of_death_channel(
 
     caster_skill = hand_of_death_caster_melee_defense_skill(skill_level)
     victim_skill = effective_melee_skill(victim)
+    squeeze_hits: list[int] = []
     round_number = 0
     for round_number in range(1, max_rounds + 1):
         order = (caster, victim) if _acts_first(caster_skill, victim_skill, rng) else (victim, caster)
@@ -2813,9 +2832,11 @@ def resolve_hand_of_death_channel(
             if caster.hit_points <= 0 or victim.hit_points <= 0:
                 continue
             if actor is caster:
-                victim.hit_points -= roll_hand_of_death_damage(skill_level, rng)
+                damage = roll_hand_of_death_damage(skill_level, rng)
+                squeeze_hits.append(damage)
+                victim.hit_points -= damage
                 if victim.hit_points <= 0:
-                    return EncounterCombatResult(winner="a", rounds=round_number)
+                    return EncounterCombatResult(winner="a", rounds=round_number, squeeze_hits=tuple(squeeze_hits))
             else:
                 damage = roll_melee_attack(
                     rng,
@@ -2824,9 +2845,9 @@ def resolve_hand_of_death_channel(
                 )
                 if damage > 0:
                     caster.hit_points -= damage
-                    return EncounterCombatResult(winner=None, rounds=round_number)
+                    return EncounterCombatResult(winner=None, rounds=round_number, squeeze_hits=tuple(squeeze_hits))
         _apply_end_of_round_regeneration(caster, victim)
-    return EncounterCombatResult(winner=None, rounds=round_number)
+    return EncounterCombatResult(winner=None, rounds=round_number, squeeze_hits=tuple(squeeze_hits))
 
 
 # Phase 210 -- Mirror-Image Phantasm [MI]'s own per-species intelligence

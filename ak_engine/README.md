@@ -17323,7 +17323,7 @@ section.
   own docstring (`report/turn_report.py`) was corrected from "still
   unwired" to the full citation -- no behavior changed. Full suite:
   3845 passed before, 3845 after (0 new tests).
-- **Phase 412 (current)**: at the user's own direct request, closes the
+- **Phase 412**: at the user's own direct request, closes the
   tax/revenue system's real missing half -- rulebook [9] (quoted in
   `turn/tax_base.py`'s own docstring): "Alla fine del turno si
   incassano le rendite, quindi si paga il mantenimento degli Eroi e poi
@@ -17365,6 +17365,60 @@ section.
     two) and 1 to `test_turn_processor.py` (`run_turn()` credits revenue
     before debiting expenses), ran again, updated README, ran once more
     before commit. Full suite: 3853 passed (8 new tests).
+- **Phase 413 (current)**: at the user's own direct request, investigated
+  `Maneuver.SQUEEZE` (`CTBOTH.PAS`'s `manab` abbreviation `'SQ'`), the
+  README's own "genuinely still open" gap flagged at Phase 401:
+  `SAY.PAS`'s `_LSquee: FD2('squeeze',S_PCom,5)` names 5 real narrative
+  templates, never transcribed. This project's Pascal source
+  (`HostAK/TP/`) is no longer present in the workspace to check what
+  `_LSquee` is actually called from -- real per-round "squeeze" text was
+  found in 8 independent real turn-report files (`SE3__T1.K9`,
+  `SE3__T2.K9`, `SE3__T7.K8`, `SE3__T8.K1/K4/K5/K8`, `SE3__T10.K7/K8/K9`,
+  `SE3__T11.K9`), every instance narrating the **Hand of Death**
+  Necromancy spell's own channeled damage ("curled his phantasmal hand
+  around X's heart and squeezed it..."), not a separate combat tactic --
+  but `Maneuver.SQUEEZE`'s own position in the Encounter Plan tactic
+  enum (grouped with Talk/Say/Give/Beg, not Melee/Shoot) left real
+  ambiguity a Pascal-source check alone could have resolved. **Confirmed
+  by the user's own direct play experience** ("Sono i report di quando
+  si usa HAND OF DEATH, ne sono sicuro") to be Hand of Death's own
+  output -- proceeded on that basis, per the same "user's own confirmed
+  play experience is a valid source" precedent Phase 412's `Racial_Tax`
+  correction already established.
+  - `turn/encounter.py resolve_hand_of_death_channel()`: now records
+    every round of the caster's own damage, in order, into a new
+    `EncounterCombatResult.squeeze_hits: tuple[int, ...]` field -- the
+    same per-round-detail role `FireArrowShot`/`.shots` already plays
+    for Fire Arrow. Only a winning channel's own hits ever reach
+    `SearchExecutionResult.squeeze_hits` (wired at the `Spell.HAND_OF_
+    DEATH` branch in `turn/search_execution.py _resolve_cast_tactic()`)
+    -- an interrupted, non-winning channel's partial hits are a
+    documented, un-captured gap, the same limit `fire_arrow_shots`'
+    own inconclusive case already accepts.
+  - `report/turn_report.py render_squeeze_attack()` (new): the 5
+    `_LSquee` templates, reconstructed from the real turn-report text
+    above (not guessed) using this project's own established `/R`/
+    `{...}` prose-engine conventions, immediately followed by the
+    already-existing `render_attack_hit()` (Hand of Death's own attack
+    always lands, so `render_attack_missed()` never applies) -- the
+    same shape `render_fire_arrow_attack()` established. Wired into
+    `describe_search()` right after the existing Fire Arrow shot
+    narration.
+  - `turn/search_execution.py`'s own tactic-walk fallback comment
+    corrected: Squeeze's prose gap is closed, but `Maneuver.SQUEEZE`
+    the enum value itself remains genuinely unwired as a possible
+    player-selectable tactic -- narrower than Phase 401 left it, not
+    fully closed.
+  - Ran the full suite before writing new tests (non-breaking check) --
+    3853 passed. Added 9 tests to `test_turn_report.py`
+    (`render_squeeze_attack`'s 3 template pairs + concatenation, 2
+    `describe_search()` wiring cases); strengthened 3 existing
+    `resolve_hand_of_death_channel` tests in `test_encounter.py` and 1
+    existing `execute_search()` Hand of Death test in
+    `test_search_execution.py` with new `squeeze_hits` assertions
+    rather than adding separate test functions, ran again, updated
+    README, ran once more before commit. Full suite: 3862 passed (9 new
+    tests).
 
 ## Setup
 

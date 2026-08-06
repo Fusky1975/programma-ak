@@ -1643,6 +1643,7 @@ def test_resolve_hand_of_death_channel_immune_target_returns_immediately_no_roll
     assert result.rounds == 0
     assert victim.hit_points == CHARACTER_HIT_POINTS
     assert caster.hit_points == CHARACTER_HIT_POINTS
+    assert result.squeeze_hits == ()
 
 
 def test_resolve_hand_of_death_channel_caster_kills_victim_without_ever_being_hit():
@@ -1660,6 +1661,10 @@ def test_resolve_hand_of_death_channel_caster_kills_victim_without_ever_being_hi
     assert result.winner == "a"
     assert victim.hit_points <= 0
     assert caster.hit_points == 10
+    # Phase 413: the caster's own 2-damage attack, once per round it acted
+    # (round 3's killing blow included) -- see report/turn_report.py
+    # render_squeeze_attack()'s own Phase 413 addendum.
+    assert result.squeeze_hits == (2, 2, 2)
 
 
 def test_resolve_hand_of_death_channel_ends_the_instant_the_caster_is_hit():
@@ -1673,6 +1678,9 @@ def test_resolve_hand_of_death_channel_ends_the_instant_the_caster_is_hit():
     assert result.rounds == 1
     assert caster.hit_points < 10
     assert victim.hit_points == 10 - 2  # the caster's own round-1 attack still landed first
+    # Phase 413: the one round the caster did get to squeeze, even though
+    # the channel itself ended without a winner.
+    assert result.squeeze_hits == (2,)
 
 
 def test_resolve_hand_of_death_channel_respects_max_rounds_cap():

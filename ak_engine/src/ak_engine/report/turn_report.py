@@ -2585,6 +2585,53 @@ def render_fire_arrow_attack(character_name: str, opponent_name: str, rng: rando
     return render(variant, values, rng=rng)
 
 
+# HostAK/TP/SAY.PAS _LSquee (Phase 413) -- Hand of Death's own per-round
+# attack-action clause, the same FARR.X-shaped role ``render_fire_arrow_
+# attack()`` plays for Fire Arrow, immediately followed by
+# ``render_attack_hit()`` to form one complete sentence (Hand of Death's
+# own attack always lands -- see ``turn/encounter.py resolve_hand_of_
+# death_channel()``'s own docstring -- so, unlike Fire Arrow, there is no
+# miss continuation to choose between). **Never transcribed from the
+# original source** (`_LSquee: FD2('squeeze',S_PCom,5)` names 5 real
+# templates and nothing else survives in the available archive) --
+# reconstructed instead from real per-round Hand of Death narration
+# across 8 independent turn-report files (`SE3__T1.K9`, `SE3__T2.K9`,
+# `SE3__T7.K8`, `SE3__T8.K1/K4/K5/K8`, `SE3__T10.K7/K8/K9`,
+# `SE3__T11.K9`), each line ending in the same shared ANDINFL.X
+# continuation this project already models (`render_attack_hit()`) --
+# confirmed by the user's own direct play experience to be Hand of
+# Death's own output, not a separate mechanic. The opening "began making
+# squeezing motions" line seen in the same files is a different, already
+# -modeled template (`SPELL_CAST_ANNOUNCEMENT[Spell.HAND_OF_DEATH]`,
+# Phase 122) -- not one of these 5.
+_SQUEEZE_TEMPLATES: list[str] = [
+    "< curled/Rwrapped > phantasmal hand around ['s heart and squeezed it{ viciously/Rmercilessly}",
+    "< curled/Rwrapped > phantasmal hand around ['s liver and squeezed it{ viciously/Rmercilessly}",
+    "< clenched > fist{ tightly}, squeezing the innards of [",
+    "< clenched > fist, squeezing the intestines of [",
+    "< brought > hands together and yanked/Rpulled them apart in a ripping/Rtearing gesture/Rmotion, "
+    "provoking a{ terrible/Rblood-curdling} squeal{ of pain} from [",
+]
+
+
+def render_squeeze_attack(character_name: str, opponent_name: str, rng: random.Random) -> str:
+    """Renders ``_LSquee``'s sentence for Hand of Death's own per-round
+    squeeze -- no trailing punctuation, meant to be immediately followed
+    by ``render_attack_hit()`` (Hand of Death's own attack always lands,
+    so ``render_attack_missed()`` never applies here) to form one
+    complete sentence, the same shape ``render_fire_arrow_attack()``
+    established.
+    """
+
+    variant = pick_variant(_SQUEEZE_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "[": opponent_name,
+        ">": f"{character_name}'s",
+    }
+    return render(variant, values, rng=rng)
+
+
 # HostAK/TP/PROSE/ANDMISS.X -- the miss continuation clause, shared by
 # every attack-action sentence (Fire Arrow's FARR.X here; Melee's
 # SWANGAT.X in a future phase). See module docstring's Phase 111
@@ -5354,6 +5401,15 @@ def describe_search(
       that found Phase 148's own skill-book-read gap (`TREASAB.X2`/
       `TREASURE.X2` are inventory-view text, not a Search-victory
       narration), not merely unsearched.
+    - **Phase 413: each round of a winning Hand of Death channel
+      (``result.squeeze_hits``) is narrated individually**, right after
+      the Fire Arrow shots above, via ``render_squeeze_attack()`` +
+      ``render_attack_hit()`` (Hand of Death's own attack always lands,
+      so ``render_attack_missed()`` never applies). Whichever side cast
+      the winning channel is read straight off ``result.winner`` --
+      ``squeeze_hits`` is only ever populated for a winning channel (see
+      ``SearchExecutionResult.squeeze_hits``'s own Phase 413 note for
+      why an interrupted, non-winning channel isn't captured here).
 
     **Phase 213: now wired into ``describe_turn_results()``.**
     ``SearchExecutionResult`` gained a ``request`` field (stamped by
@@ -5404,6 +5460,20 @@ def describe_search(
                 else render_attack_missed(attacker_name, defender_name, "arrow", rng, is_sea=is_sea)
             )
             lines.append(attack_line)
+
+    # Phase 413: each round of a winning Hand of Death channel, narrated
+    # individually via render_squeeze_attack() -- the caster's own attack
+    # always lands (turn/encounter.py resolve_hand_of_death_channel()'s
+    # own docstring), so every entry here always pairs with
+    # render_attack_hit(), never render_attack_missed(). Whichever side
+    # cast the winning channel is read off result.winner itself (only a
+    # winning channel ever populates squeeze_hits at all -- see
+    # SearchExecutionResult.squeeze_hits's own Phase 413 note).
+    squeeze_attacker, squeeze_defender = (
+        (monster_name, character_name) if result.winner == "monster" else (character_name, monster_name)
+    )
+    for damage in result.squeeze_hits:
+        lines.append(render_squeeze_attack(squeeze_attacker, squeeze_defender, rng) + render_attack_hit(squeeze_defender, damage, rng))
 
     if result.combat_resolved and result.winner == "monster" and result.leader_killed:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))

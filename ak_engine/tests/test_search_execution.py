@@ -1246,12 +1246,15 @@ def test_execute_search_cast_hand_of_death_caster_wins_instantly():
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
     ) as mock_channel:
-        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=3)
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=3, squeeze_hits=(2, 2, 3))
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert mock_channel.call_args.kwargs["target_is_immune"] is False
     assert result.winner == "leader"
     assert result.feature_looted is True
+    # Phase 413: the winning channel's own per-round damage log, threaded
+    # through for report/turn_report.py render_squeeze_attack().
+    assert result.squeeze_hits == (2, 2, 3)
 
 
 def test_execute_search_cast_hand_of_death_broken_channel_falls_through_to_melee():
