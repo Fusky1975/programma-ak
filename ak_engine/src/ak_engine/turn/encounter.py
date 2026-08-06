@@ -2817,6 +2817,29 @@ def resolve_hand_of_death_channel(
     own squeeze lands here (Hand of Death's own attack always hits, see
     above); the victim's own Melee counter-attack that ends the channel
     isn't a squeeze and isn't logged.
+
+    **Phase 414 correction**: Phase 413's own citation for `_LSquee`
+    (SAY.PAS) said this project's Pascal source was no longer available
+    to check. It was -- just not at the path searched. Re-checked
+    directly: `CTME.PAS` declares `Death = (Squeeze,Batter,Crush,...)`,
+    a per-weapon damage-narration category (`weapkill: weapdeath =
+    array[weapon] of death`), and `weapkill`'s own entry for weapon
+    `Tentacles` -- `mtweap1`'s sole owner of that weapon -- is **Giant
+    Octopus** (`monster` index 55), not any spell. `_LSquee` is
+    therefore confirmed, formally, to be a weapon/species damage-
+    narration category first, not spell-specific in its own
+    declaration. Its real *caller* (the code that decides when
+    `Say(_LSquee,...)` fires, and whether Hand of Death's own attack
+    ever routes through it) is still missing from the 13 surviving
+    `.PAS` files, same as many other gaps this project already
+    documents -- genuinely unconfirmed either way from source alone.
+    No real turn-report combat log against a Giant Octopus was found in
+    this project's own sample files to test the alternate reading
+    against (every real Giant Octopus encounter found either fled or
+    never reached combat). This module's own wiring is kept exactly as
+    Phase 413 built it -- the user's own direct play experience is the
+    basis, not the Pascal source -- see `report/turn_report.py
+    render_squeeze_attack()`'s own Phase 414 note for the full citation.
     """
 
     if target_is_immune:

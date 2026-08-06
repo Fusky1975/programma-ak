@@ -2604,6 +2604,25 @@ def render_fire_arrow_attack(character_name: str, opponent_name: str, rng: rando
 # squeezing motions" line seen in the same files is a different, already
 # -modeled template (`SPELL_CAST_ANNOUNCEMENT[Spell.HAND_OF_DEATH]`,
 # Phase 122) -- not one of these 5.
+#
+# **Phase 414 correction**: this project's Pascal source turned out to
+# still be reachable (just not at the path Phase 413 searched). Re-
+# checked `_LSquee` directly against it: `CTME.PAS`'s `Death` enum
+# (`Squeeze,Batter,Crush,Slash,...`) is a per-weapon damage-narration
+# category, not a spell-specific one -- `weapkill[Tentacles] = Squeeze`,
+# and Giant Octopus (`mtweap1`'s sole `Tentacles`-armed monster) is the
+# category's own formally-declared owner, not Hand of Death. `_LSquee`'s
+# real *caller* -- the code deciding when it actually fires, and whether
+# Hand of Death's own attack narration routes through the same category
+# -- is still missing from the 13 surviving `.PAS` files, the same
+# "declared, caller lost" gap this project already documents elsewhere
+# (`Tax_Base`, `ACost`/`LCost`). No real Giant Octopus combat log exists
+# in this project's own sample turn-report files to test the alternate
+# reading against -- every sampled encounter with it either fled or
+# never reached combat. The wiring below is kept exactly as Phase 413
+# built it: the user's own direct play experience is its real basis,
+# not this newer, more precisely-sourced-but-still-inconclusive Pascal
+# citation.
 _SQUEEZE_TEMPLATES: list[str] = [
     "< curled/Rwrapped > phantasmal hand around ['s heart and squeezed it{ viciously/Rmercilessly}",
     "< curled/Rwrapped > phantasmal hand around ['s liver and squeezed it{ viciously/Rmercilessly}",

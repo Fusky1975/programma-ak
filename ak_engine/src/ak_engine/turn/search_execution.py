@@ -1949,19 +1949,30 @@ def _resolve_search_encounter(
         #   tactic above.
         # - **Squeeze** (`Maneuver.SQUEEZE`, `manab`'s own `'SQ'`, Phase
         #   401): `SAY.PAS`'s `_LSquee: FD2('squeeze',S_PCom,5)` prose
-        #   itself is recovered as of Phase 413 -- turns out to be Hand
-        #   of Death's own per-round narration (real turn-report text
-        #   across 8 files, confirmed by the user's own direct play
-        #   experience to be Hand of Death's output specifically), now
-        #   wired via `resolve_hand_of_death_channel()`'s own
-        #   `squeeze_hits` + `report/turn_report.py
-        #   render_squeeze_attack()` -- not a separate combat tactic at
-        #   all, so nothing here dispatches on `Maneuver.SQUEEZE` itself.
-        #   `Maneuver.SQUEEZE` the enum value remains genuinely unwired
-        #   as a player-selectable tactic (this project has no Pascal
-        #   source to confirm whether one exists independently of Hand
-        #   of Death) -- narrower than Phase 401 left it, not fully
-        #   closed.
+        #   itself is recovered as of Phase 413 and wired via
+        #   `resolve_hand_of_death_channel()`'s own `squeeze_hits` +
+        #   `report/turn_report.py render_squeeze_attack()`, on the
+        #   theory it's Hand of Death's own per-round narration (real
+        #   turn-report text across 8 files, confirmed by the user's own
+        #   direct play experience). **Phase 414 correction**: this
+        #   project's Pascal source turned out to still be reachable,
+        #   and a direct check found `_LSquee` is formally declared as a
+        #   per-*weapon* damage-narration category (`CTME.PAS`'s `Death`
+        #   enum, `weapkill[Tentacles] = Squeeze`), whose only real owner
+        #   is Giant Octopus -- not a spell. `_LSquee`'s real *caller*
+        #   is still missing from the surviving source either way, so
+        #   this stayed genuinely unconfirmed; the wiring is kept as
+        #   Phase 413 built it, per the user's own explicit choice (the
+        #   play-experience confirmation, not the Pascal source, is its
+        #   real basis) -- see `report/turn_report.py
+        #   render_squeeze_attack()`'s own Phase 414 note for the full
+        #   citation. `Maneuver.SQUEEZE` the enum value itself remains
+        #   genuinely unwired as a possible player-selectable tactic --
+        #   `CTBOTH.PAS`'s own `maneuver` enum confirms `CSqueeze` really
+        #   is a distinct value from `CCast`, not a spell-casting alias,
+        #   which if anything favors the Giant-Octopus reading -- still
+        #   nothing here dispatches on it, narrower than Phase 401 left
+        #   it, not fully closed.
 
     if combat_attempted:
         # Phase 178: the plan's own tactic list ran out without a winner

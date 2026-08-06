@@ -17365,7 +17365,7 @@ section.
     two) and 1 to `test_turn_processor.py` (`run_turn()` credits revenue
     before debiting expenses), ran again, updated README, ran once more
     before commit. Full suite: 3853 passed (8 new tests).
-- **Phase 413 (current)**: at the user's own direct request, investigated
+- **Phase 413**: at the user's own direct request, investigated
   `Maneuver.SQUEEZE` (`CTBOTH.PAS`'s `manab` abbreviation `'SQ'`), the
   README's own "genuinely still open" gap flagged at Phase 401:
   `SAY.PAS`'s `_LSquee: FD2('squeeze',S_PCom,5)` names 5 real narrative
@@ -17419,6 +17419,42 @@ section.
     rather than adding separate test functions, ran again, updated
     README, ran once more before commit. Full suite: 3862 passed (9 new
     tests).
+- **Phase 414 (current)**: documentation-only correction. Phase 413 said
+  this project's Pascal source (`HostAK/TP/`) was no longer present in
+  the workspace to check `_LSquee` against. **That was wrong** -- a
+  stray backgrounded shell search from earlier in the same session
+  found it, just not at the path Phase 413's own (narrower) search had
+  covered. Re-checked `_LSquee` directly against the real source:
+  `CTME.PAS` declares `Death = (Squeeze,Batter,Crush,Slash,...)`, a
+  per-*weapon* damage-narration category (`weapkill: weapdeath =
+  array[weapon] of death`) -- not spell-specific in its own
+  declaration. `weapkill[Tentacles] = Squeeze`, and `mtweap1` (CTME.PAS,
+  the per-monster primary-weapon table) names exactly one Tentacles-
+  armed monster: **Giant Octopus**. `CTBOTH.PAS`'s own `maneuver` enum
+  (`CCast,CUse_MI,CSqueeze,CTalk,...`) further confirms `CSqueeze` is a
+  distinct value from `CCast`, not a spell-casting alias -- if anything
+  favoring the Giant-Octopus reading over Phase 413's Hand-of-Death one.
+  - **Still genuinely unconfirmed either way**: `_LSquee`'s own real
+    *caller* -- the code deciding when it fires, and whether Hand of
+    Death's own attack narration happens to route through the same
+    category -- is missing from all 13 surviving `.PAS` files, the same
+    "declared, caller lost" gap this project already documents for
+    `Tax_Base`/`ACost`/`LCost`. This project's own sample turn-report
+    files were checked for a real Giant Octopus combat log to test the
+    alternate reading against -- none exists (every sampled encounter
+    with it either fled or never reached combat).
+  - **Per the user's own explicit choice, Phase 413's wiring is kept
+    exactly as built** -- the user's own direct play experience remains
+    its real basis, not this newer, more precisely-sourced-but-still-
+    inconclusive Pascal citation. Corrected in place (not struck
+    through, since the underlying behavior is unchanged and still the
+    user's own considered choice): `turn/encounter.py resolve_hand_of_
+    death_channel()`'s own docstring, `report/turn_report.py`'s
+    `_SQUEEZE_TEMPLATES`/`render_squeeze_attack()` comment block, and
+    `turn/search_execution.py`'s own tactic-walk fallback comment all
+    gained a Phase 414 addendum with the full citation above.
+  - No test changes (documentation-only). Full suite: 3862 passed
+    before and after.
 
 ## Setup
 
