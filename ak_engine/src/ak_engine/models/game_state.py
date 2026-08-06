@@ -748,6 +748,17 @@ class ProvinceState:
     owner_kingdom_id: int | None = None
     explored_percent: int = 0
     contested_by_kingdom_id: int | None = None
+    # Phase 409 -- the coordinate `contested_by_kingdom_id`'s attacker
+    # originally invaded from, so a later forced-rebattle (turn/turn_
+    # processor.py _dispatch_contested_rebattles()) can still honor
+    # rulebook [7.4]'s real forced-attacker-retreat rule ("must retreat
+    # into the same province they invaded from, or a province adjacent
+    # to it") instead of falling back to the wrong, defender-style
+    # nearest-friendly-neighbor rule for lack of an origin to pass. Set
+    # alongside `contested_by_kingdom_id` in `turn/battle_orchestrator.py
+    # fight_battle()`'s own [7.6] "mixed result" branch, cleared in the
+    # same two branches that clear `contested_by_kingdom_id`.
+    contested_from_coord: HexCoord | None = None
     # How many of each ArmyType have been recruited from this province so
     # far this gameturn (rulebook [3.4]: normally 1 per type per province
     # per turn, 2 in a King's home province). Not auto-reset at turn start

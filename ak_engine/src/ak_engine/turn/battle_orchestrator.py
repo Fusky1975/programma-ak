@@ -109,7 +109,20 @@ ak_engine/README.md:**
   even for an attacker forced to retreat -- the more precise "back to the
   province it invaded from, or adjacent to that" rule
   (``retreat.attacker_retreat_candidates``) is used when
-  ``attacker_origin`` is supplied, and skipped otherwise. **Whales are
+  ``attacker_origin`` is supplied, and skipped otherwise. **As of Phase
+  409, every real caller supplies it**: ``move_execution.py``,
+  ``pursue_execution.py``, and ``fight_multi_attacker_battle()`` already
+  did; ``turn_processor.py _dispatch_contested_rebattles()`` was the one
+  gap (a forced rebattle for an already-contested province had no
+  origin to pass), now closed via ``ProvinceState.contested_from_coord``
+  (see that field's own docstring) -- so the wrong-rule fallback is now
+  dead code for every path this project drives, kept only as a defensive
+  default for a hypothetical future caller that genuinely doesn't know
+  the origin. **Still genuinely unresolved, left alone**: among the
+  origin-or-adjacent candidates the rule allows, this project always
+  picks the origin itself (``attacker_retreat_candidates(...)[0]``) --
+  the rulebook names no "best" candidate among them, so no tie-break was
+  invented. **Whales are
   the one exception** (Phase 37): "When fighting in any terrain other
   than Sea, they have zero strength [``compute_effective_strength``'s
   own early-return]. However, if they lose a battle in such terrain,
@@ -1650,14 +1663,20 @@ def fight_battle(
     if defender_clean_swept:
         province.owner_kingdom_id = attacker_kingdom_id
         province.contested_by_kingdom_id = None
+        province.contested_from_coord = None
     elif attacker_clean_swept:
         # Invasion cleanly repelled -- defender keeps the province outright,
         # no ongoing contest.
         province.contested_by_kingdom_id = None
+        province.contested_from_coord = None
     else:
         # Mixed result (including a tie): attacker failed to take the
         # province outright, but wasn't destroyed either -- contested [7.6].
         province.contested_by_kingdom_id = attacker_kingdom_id
+        # Phase 409: persist attacker_origin (when known) so a later
+        # forced-rebattle can still honor the real attacker-retreat rule --
+        # see ProvinceState.contested_from_coord's own docstring.
+        province.contested_from_coord = attacker_origin
 
     return report
 

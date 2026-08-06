@@ -111,6 +111,68 @@ def test_fight_battle_report_carries_the_provinces_own_battle_identity():
     assert report.defender_kingdom_id == 2
 
 
+# -- Phase 409: attacker forced-retreat destination + ProvinceState.contested_from_coord --
+
+
+def test_attacker_forced_retreat_uses_the_origin_when_supplied():
+    # Rulebook [7.4]: "If the attacker was forced to retreat, his armies
+    # must retreat into the same province they invaded from." seed=1 is a
+    # decisive defender win (GREEN attacker vs. ELITE defender) found by
+    # search -- deterministic under real_random.Random(1).
+    origin = HexCoord(0, 1)
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, origin))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    # Pre-set as if this were a forced rebattle continuing an earlier
+    # contest, to also verify a clean sweep clears both fields.
+    state.provinces[FIELD].contested_by_kingdom_id = 1
+    state.provinces[FIELD].contested_from_coord = origin
+    state.add_army(ArmyState(101, 1, ArmyType.GARRISON, Quality.GREEN, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+        attacker_origin=origin, rng=random.Random(1),
+    )
+
+    assert 101 in report.retreated_army_ids
+    assert state.armies[101].location == origin
+    assert state.provinces[FIELD].contested_by_kingdom_id is None
+    assert state.provinces[FIELD].contested_from_coord is None
+
+
+def test_fight_battle_records_contested_from_coord_on_a_mixed_result():
+    # seed=32 is a genuine mixed/contested result (neither side clean
+    # swept) found by search for this 3-vs-3 multi-type battle -- see
+    # ProvinceState.contested_from_coord's own docstring for why this
+    # needs persisting (a later forced rebattle has no other way to learn
+    # the original invasion origin).
+    origin = HexCoord(0, 1)
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, origin))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.AVERAGE, FIELD))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD))
+    state.add_army(ArmyState(103, 1, ArmyType.GARRISON, Quality.AVERAGE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.AVERAGE, FIELD))
+    state.add_army(ArmyState(202, 2, ArmyType.BOWMEN, Quality.AVERAGE, FIELD))
+    state.add_army(ArmyState(203, 2, ArmyType.GARRISON, Quality.AVERAGE, FIELD))
+
+    fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101, 102, 103],
+        attacker_origin=origin, rng=random.Random(32),
+    )
+
+    assert state.provinces[FIELD].contested_by_kingdom_id == 1
+    assert state.provinces[FIELD].contested_from_coord == origin
+
+
 def test_overwhelming_attacker_conquers_and_defender_is_destroyed_when_no_retreat_allowed():
     state = build_state()
     rng = no_luck_overwhelming_attacker_rng()

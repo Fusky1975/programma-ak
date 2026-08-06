@@ -17154,7 +17154,7 @@ section.
     per-phase workflow. Full suite: 3818 passed before, 3822 after (4
     new tests).
 
-- **Phase 408 (current)**: at the user's own direct request (following up
+- **Phase 408**: at the user's own direct request (following up
   on Clairvoyance's own "no event feed exists" gap), traced that gap all
   the way to its real Pascal mechanism and found something bigger than
   Clairvoyance: `RUMORS.PAS Get_News(kng): boolean` ("Does foreign kng
@@ -17209,6 +17209,38 @@ section.
     widening needs a known province owner), ran again, updated README,
     ran once more before commit. Full suite: 3822 passed before, 3835
     after (13 new tests).
+- **Phase 409 (current)**: at the user's own direct request, closed the
+  real half of the "attacker forced-retreat destination" gap flagged in
+  the Phase 406 audit: `fight_battle()`'s rulebook-correct "back to the
+  province invaded from, or adjacent to it" rule ([7.4]) was only ever
+  used when a caller supplied `attacker_origin` -- three of four real
+  callers already did (`move_execution.py`, `pursue_execution.py`,
+  `fight_multi_attacker_battle()`), but `turn_processor.py
+  _dispatch_contested_rebattles()` (a forced rebattle for an
+  already-contested province) had no origin to pass, so it silently fell
+  back to the wrong, defender-style nearest-friendly-neighbor rule.
+  - Added `ProvinceState.contested_from_coord: HexCoord | None` (mirrors
+    `contested_by_kingdom_id`'s own lifecycle): `fight_battle()`'s own
+    [7.6] "mixed result" branch now persists `attacker_origin` there
+    alongside setting `contested_by_kingdom_id`, and clears both on
+    either clean-sweep branch. `_dispatch_contested_rebattles()` now
+    reads it back and passes it through, closing the gap for every real
+    path this project drives.
+  - **Deliberately left alone**: among the origin-or-adjacent candidates
+    the rule allows, this project still always picks the origin itself
+    (`attacker_retreat_candidates(...)[0]`) -- the rulebook names no
+    "best" candidate among them, so no tie-break was invented. This half
+    of the original gap is genuinely unresolved, not merely undiscovered.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), added 2 tests to `test_battle_orchestrator.py` (retreat uses
+    the origin when supplied, `contested_from_coord` is recorded on a
+    genuine mixed/contested result -- both against real, unscripted
+    `random.Random(seed)` sequences found by search, not hand-picked
+    luck rolls) and 1 to `test_turn_processor.py` (the forced-rebattle
+    wiring itself, using a deliberately-non-adjacent-to-TARGET origin so
+    the old wrong fallback could never have produced it), ran again,
+    updated README, ran once more before commit. Full suite: 3835 passed
+    before, 3838 after (3 new tests).
 
 ## Setup
 
@@ -17396,10 +17428,17 @@ rulebook before being turned into named, typed fields:
 - **Attacker forced-retreat destination** (`fight_battle`
   `attacker_origin`) — when supplied, uses the rulebook-correct "back to
   the province invaded from, or adjacent to it" rule, but always picks
-  the first candidate rather than a "best" one (none is defined); when
-  omitted, falls back to the general nearest-friendly-neighbor logic
-  instead, which is not what the rulebook actually specifies for a
-  forced attacker retreat.
+  the first candidate rather than a "best" one (none is defined) --
+  **still true, no tie-break invented, see Phase 409's own note above**.
+  ~~when omitted, falls back to the general nearest-friendly-neighbor
+  logic instead, which is not what the rulebook actually specifies for a
+  forced attacker retreat~~ -- **fixed as of Phase 409**: the one real
+  caller that omitted it (`turn_processor.py
+  _dispatch_contested_rebattles()`) now reads
+  `ProvinceState.contested_from_coord` and supplies it, so every real
+  path through this project uses the correct rule; the wrong-rule
+  fallback is unreachable dead code for every driven path, kept only as
+  a defensive default.
 - **The LMOVE hex-number encoding itself** (`turn/hex_numbering.py`) —
   unlike every other assumption in this README, this one is backed by an
   empirical test against real move-file data, strengthened in Phase 315:

@@ -1017,7 +1017,14 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
             continue
 
         army_ids = [army.army_id for army in attacker_armies]
-        report = fight_battle(state, attacker_kingdom_id, coord, army_ids, rng=rng)
+        # Phase 409: pass the original invasion origin through, when known,
+        # so this rebattle still honors the real forced-attacker-retreat
+        # rule (rulebook [7.4]) instead of falling back to the wrong
+        # defender-style nearest-friendly-neighbor rule -- see
+        # ProvinceState.contested_from_coord's own docstring.
+        report = fight_battle(
+            state, attacker_kingdom_id, coord, army_ids, attacker_origin=province.contested_from_coord, rng=rng
+        )
 
         cost = contested_battle_movement_cost(conquered=report.conquered)
         for army_id in army_ids:

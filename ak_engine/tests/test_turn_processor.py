@@ -497,6 +497,30 @@ def test_run_turn_does_not_force_a_rebattle_when_no_defender_remains():
     assert [r for r in results if r.phase_label == "forced-rebattle"] == []
 
 
+def test_run_turn_forced_rebattle_retreat_uses_the_original_invasion_origin():
+    # Phase 409: without ProvinceState.contested_from_coord, this rebattle
+    # had no origin to pass to fight_battle(), so a clean-swept attacker
+    # fell back to the wrong (defender-style, nearest-friendly-neighbor-
+    # of-TARGET) rule instead of the real rulebook [7.4] one. FAR_ORIGIN
+    # is deliberately not adjacent to TARGET at all, so the old fallback
+    # could never have produced it -- only reading contested_from_coord
+    # can. seed=1 is a decisive defender win (GREEN attacker vs. ELITE
+    # defender) found by search.
+    far_origin = HexCoord(8, 8)
+    state = _base_state()
+    state.add_province(ProvinceState(far_origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.provinces[TARGET].contested_by_kingdom_id = 1
+    state.provinces[TARGET].contested_from_coord = far_origin
+    state.add_army(ArmyState(101, 1, ArmyType.GARRISON, Quality.GREEN, TARGET, movement_points=3))
+    state.armies[201].quality = Quality.ELITE
+    state.armies[201].army_type = ArmyType.HVY_CAVALRY
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert 101 in state.armies
+    assert state.armies[101].location == far_origin
+
+
 def test_run_turn_ignores_a_province_with_no_contested_flag():
     state = _base_state()  # TARGET's contested_by_kingdom_id defaults to None
     state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET, movement_points=3))
