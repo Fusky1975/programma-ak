@@ -32,6 +32,9 @@ from ak_engine.report.turn_report import (
     NEMESIS_TEMPLATE,
     PRACTICE_ALREADY_MAXED_TEMPLATE,
     PRACTICE_TUTORED_TEMPLATE,
+    DISBAND_TEMPLATE,
+    LEAVE_TEMPLATES,
+    PICKUP_TEMPLATES,
     QUEST_BUT_THEN_TEMPLATE,
     RECRUIT_TEMPLATES,
     SEASON_NAME,
@@ -63,6 +66,9 @@ from ak_engine.report.turn_report import (
     describe_fire,
     describe_give,
     describe_hire,
+    describe_disband,
+    describe_leave,
+    describe_pick_up,
     describe_practice,
     describe_pursue,
     describe_recruit,
@@ -145,7 +151,10 @@ from ak_engine.report.turn_report import (
     render_insufficient_gold,
     render_item_give,
     render_magic_feature_discovery,
+    render_disband_unit,
+    render_leave_unit,
     render_march,
+    render_pickup_unit,
     render_recruit_unit,
     render_melee_attack,
     render_monster_offers_raid_truce,
@@ -239,7 +248,7 @@ from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
-from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
+from ak_engine.turn.plan_dispatch import ArmyListExecutionResult, FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.recruit_execution import RecruitedUnit, RecruitExecutionResult
@@ -873,6 +882,179 @@ def test_describe_recruit_multiple_units_render_one_line_each():
     assert len(lines) == 2
     assert "Bowmen" in lines[0]
     assert "Axemen" in lines[1]
+
+
+# -- Phase 420: render_leave_unit (LEAVE.X) + describe_leave --
+
+
+def test_render_leave_unit_first_variant():
+    rng = ScriptedRandom([], choice_indices=[0])
+    result = render_leave_unit("Arthur", "Numenor", "Bowmen", "Cedric", rng)
+    assert result == "Arthur left Bowmen with Cedric in Numenor."
+
+
+def test_render_leave_unit_second_variant():
+    rng = ScriptedRandom([], choice_indices=[1])
+    result = render_leave_unit("Arthur", "Numenor", "Bowmen", "Cedric", rng)
+    assert result == "Arthur dropped off Bowmen in Numenor for Cedric."
+
+
+def test_render_leave_unit_third_variant_excludes_optional_block():
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[2])
+    result = render_leave_unit("Arthur", "Numenor", "Bowmen", "Cedric", rng)
+    assert result == "Arthur ordered Bowmen to remain in Numenor with Cedric."
+
+
+def test_render_leave_unit_third_variant_includes_optional_block_land():
+    rng = ScriptedRandom([0.6, 0.6], choice_indices=[2])
+    result = render_leave_unit("Arthur", "Numenor", "Bowmen", "Cedric", rng, is_sea=False)
+    assert result == "Arthur directed Bowmen to remain encamped in Numenor with Cedric."
+
+
+def test_render_leave_unit_third_variant_includes_optional_block_sea():
+    rng = ScriptedRandom([0.6, 0.6], choice_indices=[2])
+    result = render_leave_unit("Arthur", "Numenor", "Bowmen", "Cedric", rng, is_sea=True)
+    assert result == "Arthur directed Bowmen to remain anchored in Numenor with Cedric."
+
+
+def test_render_leave_unit_fourth_variant():
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[3])
+    result = render_leave_unit("Arthur", "Numenor", "Bowmen", "Cedric", rng)
+    assert result == "Arthur instructed Bowmen to stay behind in Numenor with Cedric."
+
+
+def test_render_leave_unit_fifth_variant():
+    rng = ScriptedRandom([0.1], choice_indices=[4])
+    result = render_leave_unit("Arthur", "Numenor", "Bowmen", "Cedric", rng)
+    assert result == "Arthur transferred Bowmen to Cedric in Numenor."
+
+
+def _leave_state(*, province_race: Race = Race.HUMAN, terrain: Terrain = Terrain.PLAINS) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(3, 9), terrain, province_race, owner_kingdom_id=1, name="Numenor"))
+    state.add_leader(LeaderState(1, 1, "Arthur", HexCoord(3, 9)))
+    return state
+
+
+def test_describe_leave_commanded_unit():
+    state = _leave_state()
+    state.add_leader(LeaderState(2, 1, "Cedric", HexCoord(3, 9)))
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=2))
+    result = ArmyListExecutionResult(request=None, succeeded=[100])
+
+    rng = ScriptedRandom([], choice_indices=[0])
+    lines = describe_leave(result, state, leader_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert lines == ["Arthur left Bowmen with Cedric in Numenor."]
+
+
+def test_describe_leave_unled_humanoid_uses_garrison_commander():
+    state = _leave_state(province_race=Race.HUMAN)
+    state.add_army(ArmyState(100, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=None))
+    result = ArmyListExecutionResult(request=None, succeeded=[100])
+
+    rng = ScriptedRandom([], choice_indices=[0])
+    lines = describe_leave(result, state, leader_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert lines == ["Arthur left Bowmen with the provincial garrison commander in Numenor."]
+
+
+def test_describe_leave_skips_army_not_found():
+    state = _leave_state()
+    result = ArmyListExecutionResult(request=None, succeeded=[999])
+
+    lines = describe_leave(result, state, leader_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=ScriptedRandom([]))
+
+    assert lines == []
+
+
+# -- Phase 420: render_pickup_unit (PICKUP.X) + describe_pick_up --
+
+
+def test_render_pickup_unit_first_variant():
+    rng = ScriptedRandom([], choice_indices=[0])
+    result = render_pickup_unit("Arthur", "Numenor", "Bowmen", rng)
+    assert result == "Arthur picked up Bowmen in Numenor."
+
+
+def test_render_pickup_unit_second_variant_land():
+    rng = ScriptedRandom([0.1], choice_indices=[1])
+    result = render_pickup_unit("Arthur", "Numenor", "Bowmen", rng, is_sea=False)
+    assert result == "in Numenor, Arthur ordered Bowmen to join forces with Arthur's army."
+
+
+def test_render_pickup_unit_second_variant_sea():
+    rng = ScriptedRandom([0.1], choice_indices=[1])
+    result = render_pickup_unit("Arthur", "Numenor", "Fleet", rng, is_sea=True)
+    assert result == "in Numenor, Arthur ordered Fleet to join forces with Arthur's navy."
+
+
+def test_render_pickup_unit_third_variant():
+    rng = ScriptedRandom([0.1], choice_indices=[2])
+    result = render_pickup_unit("Arthur", "Numenor", "Bowmen", rng)
+    assert result == "Arthur strengthened Arthur's forces in Numenor with Bowmen."
+
+
+def test_render_pickup_unit_fourth_variant_land():
+    rng = ScriptedRandom([], choice_indices=[3])
+    result = render_pickup_unit("Arthur", "Numenor", "Bowmen", rng, is_sea=False)
+    assert result == "Arthur added Bowmen to Arthur's host in Numenor."
+
+
+def test_render_pickup_unit_fourth_variant_sea():
+    rng = ScriptedRandom([], choice_indices=[3])
+    result = render_pickup_unit("Arthur", "Numenor", "Fleet", rng, is_sea=True)
+    assert result == "Arthur added Fleet to Arthur's fleet in Numenor."
+
+
+def test_describe_pick_up_resolves_sea_marker_from_army_type():
+    state = _leave_state()
+    state.add_army(ArmyState(100, None, ArmyType.FLEET, Quality.AVERAGE, HexCoord(3, 9), commanded_by=1))
+    result = ArmyListExecutionResult(request=None, succeeded=[100])
+
+    rng = ScriptedRandom([], choice_indices=[3])
+    lines = describe_pick_up(result, state, leader_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert lines == ["Arthur added Fleet to Arthur's fleet in Numenor."]
+
+
+def test_describe_pick_up_skips_army_not_found():
+    state = _leave_state()
+    result = ArmyListExecutionResult(request=None, succeeded=[999])
+
+    lines = describe_pick_up(
+        result, state, leader_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=ScriptedRandom([])
+    )
+
+    assert lines == []
+
+
+# -- Phase 420: render_disband_unit (_ADisb) + describe_disband --
+
+
+def test_render_disband_unit():
+    result = render_disband_unit("Arthur", "Bowmen", ScriptedRandom([]))
+    assert result == "Arthur disbanded Bowmen."
+
+
+def test_describe_disband_renders_one_line_per_succeeded_army():
+    state = _leave_state()
+    state.add_army(ArmyState(100, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=None))
+    result = ArmyListExecutionResult(request=None, succeeded=[100])
+
+    lines = describe_disband(result, state, leader_name="Arthur", rng=ScriptedRandom([]))
+
+    assert lines == ["Arthur disbanded Bowmen."]
+
+
+def test_describe_disband_skips_army_not_found():
+    state = _leave_state()
+    result = ArmyListExecutionResult(request=None, succeeded=[999])
+
+    lines = describe_disband(result, state, leader_name="Arthur", rng=ScriptedRandom([]))
+
+    assert lines == []
 
 
 # -- Phase 105: render_flee_failure (FLEEFAIL.X) + render_sneak_detected (SNEAKUP.X) --

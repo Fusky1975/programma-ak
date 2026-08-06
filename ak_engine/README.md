@@ -17641,7 +17641,7 @@ section.
     Phase 417's own field-threading, since it needs a new result type
     designed first, not just wiring an existing one. Left for a future
     phase, scoped and started fresh rather than folded into this one.
-- **Phase 419 (current)**: `RECRUIT` narration, the first of the
+- **Phase 419**: `RECRUIT` narration, the first of the
   Recruit/Disband/Leave/Pick_Up/Defend/Move cluster Phase 418 flagged
   as genuinely unexplored -- started here because, unlike the other
   five, `RecruitExecutionResult` already had everything needed (a
@@ -17687,6 +17687,63 @@ section.
     (`ActionCode.RECRUIT` rendering, and skipping cleanly when the
     acting leader has no known province). Ran again: 3892 passed (16
     new).
+- **Phase 420 (current)**: `LEAVE`/`PICK_UP`/`DISBAND` narration, closing
+  the rest of the cluster Phase 418 flagged -- bundled together (same
+  precedent Phase 13 already set for their own decoding) since all
+  three share `ArmyListRequest` and the same per-army mutate-or-skip
+  shape.
+  - `turn/plan_dispatch.py`: new `ArmyListExecutionResult` (`request`,
+    `succeeded: list[int]`, `skipped: list[int]`) replaces the bare
+    `ArmyListRequest` `_dispatch_leave()`/`_dispatch_pick_up()`/
+    `_dispatch_disband()` used to hand back -- the same gap
+    `FireExecutionResult` (Phase 143) already closed for Fire. Two
+    existing `test_plan_dispatch.py` assertions (`isinstance(result,
+    ArmyListRequest)`) and one real-file dispatch test updated for the
+    new shape; no other production code referenced `ArmyListRequest`
+    directly outside `army_list_decode.py`/`plan_dispatch.py`, so the
+    change was otherwise non-breaking (confirmed via a full-repo grep).
+  - Sourced from the real `HostAK/TP/PROSE/LEAVE.X` (5 variants) and
+    `PICKUP.X` (4 variants), plus `SAY.PAS`'s `_ADisb` -- a single
+    hardcoded sentence, not a file (`"< disbanded =."`, no `/R`, no
+    `{}`, so `render_disband_unit()` calls `render()` directly instead
+    of going through `pick_variant()`).
+  - `report/turn_report.py`: `_unled_army_commander_name()` factors out
+    `describe_recruit()`'s own Phase 419 unled-commander fallback (`[`
+    marker, monstrous-province-chieftain vs. garrison-commander) so
+    `describe_leave()` can reuse it verbatim -- `_ALeave`'s own `FD`
+    call is also at `S_AA` severity, so the exact same sourcing from
+    Phase 419's docstring applies unchanged. `describe_pick_up()` needs
+    no such fallback -- PICKUP.X carries no `[` marker at all, since a
+    Pick_Up's new commander is always the acting leader itself (`>`).
+    `describe_disband()` needs neither a province nor a commander --
+    the plainest of the three.
+  - **`/S` means two different things across these three phases' own
+    templates, not a bug**: `LEAVE.X`'s own `{encamped/Sanchored }`
+    resolves from province terrain (`Terrain.SEA`, this project's
+    established Phase 74 convention); `PICKUP.X`'s own `army/Snavy`/
+    `host/Sfleet` resolves from whether the *picked-up unit itself* is
+    `ArmyType.FLEET` (the project's only naval army type, Phase 5) --
+    two legitimate, independently-sourced uses of the same generic
+    `is_sea` parameter `render()` already exposed (Phase 74).
+    `describe_disband()`'s own template has no `/S` (or any marker
+    beyond `<`/`=`) at all.
+  - `describe_turn_results()` gains real `ActionCode.LEAVE`/
+    `PICK_UP`/`DISBAND` branches -- `LEAVE`/`PICK_UP` resolve the
+    acting leader's own province the same way `RECRUIT`'s own branch
+    already does (Phase 419); `DISBAND` needs no province lookup at
+    all, matching its own composer.
+  - **Deliberately not rendered**: `result.skipped` (army not found /
+    not co-located) has no sourced narrative template for any of the
+    three, the same "no source, no guess" stance already applied
+    throughout this project.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3892 passed unchanged from Phase 419), then added 24 new tests --
+    21 in `test_turn_report.py` (all 5 `render_leave_unit()` variants
+    including both `is_sea` branches of its own optional block, all 4
+    `render_pickup_unit()` variants including both `is_sea` branches,
+    `render_disband_unit()`, and each composer's commanded/unled/
+    skip cases) and 3 in `test_describe_turn_results.py` (one real
+    end-to-end render per action). Ran again: 3916 passed (24 new).
 
 ## Setup
 

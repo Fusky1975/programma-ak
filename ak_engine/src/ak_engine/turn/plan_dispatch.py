@@ -350,7 +350,7 @@ it.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from ak_engine.models.enums import ActionCode
@@ -451,6 +451,25 @@ class FireExecutionResult:
     request: FireRequest
     fired: bool
     reason: str | None = None  # set when fired is False
+
+
+@dataclass(slots=True)
+class ArmyListExecutionResult:
+    """Phase 420: replaces ``_dispatch_leave()``/``_dispatch_pick_up()``/
+    ``_dispatch_disband()``'s previous bare ``ArmyListRequest`` return,
+    which gave a caller no way to know which of the requested armies
+    were actually affected versus silently skipped (not found / not
+    co-located) -- the same gap ``FireExecutionResult`` (Phase 143)
+    already closed for Fire. One shared type for all three actions:
+    each already iterates the same decoded ``target_ids`` list and
+    either mutates or skips each army by id, with no other per-action
+    outcome data to track (no sourced narrative exists for a skip
+    reason either, so none is recorded).
+    """
+
+    request: ArmyListRequest
+    succeeded: list[int] = field(default_factory=list)  # army_ids actually affected
+    skipped: list[int] = field(default_factory=list)  # requested but not found/not co-located
 
 
 @dataclass(slots=True)
@@ -729,15 +748,23 @@ def _dispatch_trail(
     return result
 
 
-def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListRequest:
+def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListExecutionResult:
+    """Phase 420: returns a real ``ArmyListExecutionResult`` instead of the
+    bare ``ArmyListRequest`` this used to hand back -- see that type's
+    own docstring for why (``describe_turn_results()`` needs to know
+    which armies actually left, not just what was requested).
+    """
+
     request = decode_army_list_phase(phase)
     target_ids = (
         [army.army_id for army in state.armies_commanded_by(leader_id)] if request.all_armies else request.army_ids
     )
+    result = ArmyListExecutionResult(request=request)
 
     for army_id in target_ids:
         army = state.armies.get(army_id)
         if army is None:
+            result.skipped.append(army_id)
             continue
         army.commanded_by = request.target_leader_id
         province = state.provinces.get(army.location)
@@ -750,11 +777,16 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
             # "If you Leave an army in an ally's province, the army then
             # belongs to the ally." (rulebook [3.8])
             army.kingdom_id = province.owner_kingdom_id
+        result.succeeded.append(army_id)
 
-    return request
+    return result
 
 
-def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListRequest:
+def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListExecutionResult:
+    """Phase 420: returns a real ``ArmyListExecutionResult`` -- see
+    ``_dispatch_leave()``'s own note above.
+    """
+
     request = decode_army_list_phase(phase)
     acting_leader = state.leaders[leader_id]
 
@@ -766,16 +798,23 @@ def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
     else:
         target_ids = request.army_ids
 
+    result = ArmyListExecutionResult(request=request)
     for army_id in target_ids:
         army = state.armies.get(army_id)
         if army is None or army.location != acting_leader.location:
+            result.skipped.append(army_id)
             continue  # rulebook: can only pick up a co-located army
         army.commanded_by = leader_id
+        result.succeeded.append(army_id)
 
-    return request
+    return result
 
 
-def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListRequest:
+def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListExecutionResult:
+    """Phase 420: returns a real ``ArmyListExecutionResult`` -- see
+    ``_dispatch_leave()``'s own note above.
+    """
+
     request = decode_army_list_phase(phase)
     target_ids = (
         [army.army_id for army in state.armies_commanded_by(leader_id)] if request.all_armies else request.army_ids
@@ -783,9 +822,11 @@ def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
     acting_leader = state.leaders.get(leader_id)
     is_king = acting_leader is not None and acting_leader.is_king
 
+    result = ArmyListExecutionResult(request=request)
     for army_id in target_ids:
         army = state.armies.get(army_id)
         if army is None:
+            result.skipped.append(army_id)
             continue
         # "Releases the army(s) into mercenary status" (rulebook [3.6]:
         # "A King may Disband any army at any time. A character can
@@ -793,11 +834,13 @@ def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
         # ownerless and unled, available to be hired later. A Hero must
         # be co-located with the army; a King (Phase 40) bypasses that.
         if not is_king and (acting_leader is None or army.location != acting_leader.location):
+            result.skipped.append(army_id)
             continue
         army.kingdom_id = None
         army.commanded_by = None
+        result.succeeded.append(army_id)
 
-    return request
+    return result
 
 
 def _dispatch_hire(

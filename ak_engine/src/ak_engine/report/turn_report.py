@@ -1137,7 +1137,13 @@ from ak_engine.models.enums import (
 )
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.army_naming import make_army_name
-from ak_engine.models.army_type import ARMY_TYPE_DESIGNATION, ARMY_TYPE_NAME, MONSTROUS_ARMY_RACE, is_overflight_unit
+from ak_engine.models.army_type import (
+    ARMY_TYPE_DESIGNATION,
+    ARMY_TYPE_NAME,
+    MONSTROUS_ARMY_RACE,
+    ArmyType,
+    is_overflight_unit,
+)
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature
 from ak_engine.models.game_state import ArmyState, GameState, ProvinceState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
@@ -1173,7 +1179,12 @@ from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.expenses import compute_expected_expenses, leader_pay
 from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders, resolve_office_holder
-from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
+from ak_engine.turn.plan_dispatch import (
+    ArmyListExecutionResult,
+    FireExecutionResult,
+    HireExecutionResult,
+    PhaseDispatchResult,
+)
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
@@ -3103,6 +3114,25 @@ RECRUIT_TEMPLATES: list[str] = [
 ]
 
 
+def _unled_army_commander_name(province: ProvinceState) -> str:
+    """Resolves the ``[`` marker for an army whose ``commanded_by`` is
+    ``None`` -- shared by ``describe_recruit()`` (Phase 419) and
+    ``describe_leave()`` (Phase 420), since both narrate through an
+    ``FD`` call at ``S_AA`` severity (``_ARecr``/``_ALeave`` in
+    ``SAY.PAS``) and so both resolve `RUMORS.PAS Pronoun()`'s own
+    ``chief_on`` branch identically -- see ``describe_recruit()``'s own
+    docstring for the full sourcing of why ``S_AA > S_Batt`` makes the
+    ``"the provincial garrison commander"`` branch the only real
+    outcome here, not ``AC_Say``'s ``"the acting commander"``.
+    """
+
+    return (
+        "the provincial garrison commander"
+        if province.race in HUMANOID_RACES
+        else f"the provincial {RACE_NAME[province.race]} chieftain"
+    )
+
+
 def render_recruit_unit(
     recruiter_name: str, province_name: str, army_type_name: str, commander_name: str, rng: random.Random
 ) -> str:
@@ -3151,6 +3181,8 @@ def describe_recruit(
       order (``S_Prev``..``S_Comm``), so the ``ELSE`` branch is the one
       and only real outcome for this specific call site, not a
       runtime-varying choice this project would have to guess between.
+      Shared with ``describe_leave()`` (Phase 420) via
+      ``_unled_army_commander_name()``.
 
     **Deliberately not rendered here**: ``_AAPay`` ("< paid # gold to
     [ for the privilege of recruiting these troops.", the ally-fee
@@ -3167,13 +3199,156 @@ def describe_recruit(
         commander_id = army.commanded_by if army is not None else None
         commander_name = _leader_name(state, commander_id)
         if commander_name is None:
-            commander_name = (
-                "the provincial garrison commander"
-                if province.race in HUMANOID_RACES
-                else f"the provincial {RACE_NAME[province.race]} chieftain"
-            )
+            commander_name = _unled_army_commander_name(province)
         army_type_name = ARMY_TYPE_DESIGNATION[unit.army_type]
         lines.append(render_recruit_unit(recruiter_name, province_name, army_type_name, commander_name, rng))
+    return lines
+
+
+# HostAK/TP/PROSE/LEAVE.X -- one sentence per unit actually left behind
+# (Phase 420). The lone ``{encamped/Sanchored }`` optional block (variant
+# 3) resolves via terrain-based ``is_sea`` (Phase 74's own convention),
+# unlike PICKUP.X's own ``/S`` below (army-type-based, not terrain).
+LEAVE_TEMPLATES: list[str] = [
+    "< left = with [ in @.",
+    "< dropped off = in @ for [.",
+    "< ordered/Rdirected = to remain {encamped/Sanchored }in @ with [.",
+    "< instructed/Rcommanded = to stay_behind/Rremain in @ with [.",
+    "< transferred/Rassigned = to [ in @.",
+]
+
+
+def render_leave_unit(
+    leader_name: str,
+    province_name: str,
+    army_type_name: str,
+    commander_name: str,
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
+) -> str:
+    """Renders LEAVE.X's sentence for a single left-behind unit -- ``<``
+    the leaving leader, ``@`` the province, ``=`` the army type's
+    designation, ``[`` the leader (or unled fallback, Phase 420) the
+    unit now serves under.
+    """
+
+    variant = pick_variant(LEAVE_TEMPLATES, rng)
+    values = {"<": leader_name, "@": province_name, "=": army_type_name, "[": commander_name}
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+def describe_leave(
+    result: ArmyListExecutionResult,
+    state: GameState,
+    *,
+    leader_name: str,
+    province: ProvinceState,
+    rng: random.Random,
+) -> list[str]:
+    """Assembles one LEAVE.X sentence per ``result.succeeded`` army id
+    (Phase 420) -- ``result.skipped`` (army not found) has no sourced
+    narrative, same "no source, no guess" stance as ``describe_recruit()``.
+
+    ``[`` for an unled army (``ArmyListRequest.target_leader_id is
+    None``) resolves via ``_unled_army_commander_name()``, shared with
+    ``describe_recruit()`` -- ``_ALeave``'s own ``FD`` call is also at
+    ``S_AA`` severity (``SAY.PAS``), so the exact same sourcing applies.
+    """
+
+    lines: list[str] = []
+    province_name = _province_label(state, province.coord)
+    is_sea = province.effective_terrain() is Terrain.SEA
+    for army_id in result.succeeded:
+        army = state.armies.get(army_id)
+        if army is None:
+            continue
+        commander_name = _leader_name(state, army.commanded_by)
+        if commander_name is None:
+            commander_name = _unled_army_commander_name(province)
+        army_type_name = ARMY_TYPE_DESIGNATION[army.army_type]
+        lines.append(
+            render_leave_unit(leader_name, province_name, army_type_name, commander_name, rng, is_sea=is_sea)
+        )
+    return lines
+
+
+# HostAK/TP/PROSE/PICKUP.X -- one sentence per unit actually picked up
+# (Phase 420). No ``[`` marker here at all -- Pick_Up's own new
+# commander is always the acting leader itself (``>``), never
+# ambiguous, unlike Recruit/Leave's unled fallback. ``/S`` alternates
+# on whether the picked-up unit is itself a Fleet (``ArmyType.FLEET``
+# is the project's only naval army type, Phase 5), not on province
+# terrain -- a different use of the same marker than LEAVE.X's own.
+PICKUP_TEMPLATES: list[str] = [
+    "< picked up = in @.",
+    "in @, < ordered/Rcommanded = to join forces with > army/Snavy.",
+    "< strengthened/Raugmented > forces in @ with =.",
+    "< added = to > host/Sfleet in @.",
+]
+
+
+def render_pickup_unit(
+    leader_name: str, province_name: str, army_type_name: str, rng: random.Random, *, is_sea: bool = False
+) -> str:
+    """Renders PICKUP.X's sentence for a single picked-up unit -- ``<``
+    the acting leader, ``@`` the province, ``=`` the army type's
+    designation, ``>`` the leader's own possessive.
+    """
+
+    variant = pick_variant(PICKUP_TEMPLATES, rng)
+    values = {"<": leader_name, "@": province_name, "=": army_type_name, ">": f"{leader_name}'s"}
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+def describe_pick_up(
+    result: ArmyListExecutionResult, state: GameState, *, leader_name: str, province: ProvinceState, rng: random.Random
+) -> list[str]:
+    """Assembles one PICKUP.X sentence per ``result.succeeded`` army id
+    (Phase 420) -- ``result.skipped`` (not found / not co-located) has
+    no sourced narrative.
+    """
+
+    lines: list[str] = []
+    province_name = _province_label(state, province.coord)
+    for army_id in result.succeeded:
+        army = state.armies.get(army_id)
+        if army is None:
+            continue
+        is_sea = army.army_type is ArmyType.FLEET
+        lines.append(
+            render_pickup_unit(leader_name, province_name, ARMY_TYPE_DESIGNATION[army.army_type], rng, is_sea=is_sea)
+        )
+    return lines
+
+
+# SAY.PAS _ADisb -- a single hardcoded template, not a PROSE file (Phase
+# 420): "< disbanded =." No randomness at all (no /R, no {}), so
+# render() is called directly rather than through pick_variant().
+DISBAND_TEMPLATE = "< disbanded =."
+
+
+def render_disband_unit(leader_name: str, army_type_name: str, rng: random.Random) -> str:
+    """Renders ``_ADisb``'s sentence for a single disbanded unit."""
+
+    return render(DISBAND_TEMPLATE, {"<": leader_name, "=": army_type_name}, rng=rng)
+
+
+def describe_disband(
+    result: ArmyListExecutionResult, state: GameState, *, leader_name: str, rng: random.Random
+) -> list[str]:
+    """Assembles one ``_ADisb`` sentence per ``result.succeeded`` army id
+    (Phase 420). Unlike Leave/Pick_Up, Disband's own template needs no
+    province or commander data at all, so it's the only one of the
+    three that doesn't take a ``province`` argument.
+    """
+
+    lines: list[str] = []
+    for army_id in result.succeeded:
+        army = state.armies.get(army_id)
+        if army is None:
+            continue
+        lines.append(render_disband_unit(leader_name, ARMY_TYPE_DESIGNATION[army.army_type], rng))
     return lines
 
 
@@ -4123,6 +4298,27 @@ def describe_turn_results(
             lines.extend(
                 describe_recruit(entry.result, state, recruiter_name=caster_name, province=province, rng=rng)
             )
+            continue
+        elif entry.action is ActionCode.LEAVE and isinstance(entry.result, ArmyListExecutionResult):
+            leader = state.leaders.get(entry.leader_id)
+            if leader is None:
+                continue
+            province = state.provinces.get(leader.location)
+            if province is None:
+                continue
+            lines.extend(describe_leave(entry.result, state, leader_name=caster_name, province=province, rng=rng))
+            continue
+        elif entry.action is ActionCode.PICK_UP and isinstance(entry.result, ArmyListExecutionResult):
+            leader = state.leaders.get(entry.leader_id)
+            if leader is None:
+                continue
+            province = state.provinces.get(leader.location)
+            if province is None:
+                continue
+            lines.extend(describe_pick_up(entry.result, state, leader_name=caster_name, province=province, rng=rng))
+            continue
+        elif entry.action is ActionCode.DISBAND and isinstance(entry.result, ArmyListExecutionResult):
+            lines.extend(describe_disband(entry.result, state, leader_name=caster_name, rng=rng))
             continue
         else:
             continue

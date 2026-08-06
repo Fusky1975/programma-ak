@@ -20,7 +20,7 @@ from ak_engine.turn.challenge_pursue_decode import ChallengeRequest, PursueReque
 from ak_engine.turn.encounter import FireArrowShot, MeleeSwing
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
-from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
+from ak_engine.turn.plan_dispatch import ArmyListExecutionResult, FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.pursue_execution import PursueExecutionResult
@@ -200,6 +200,51 @@ def test_describe_turn_results_skips_recruit_when_leader_has_no_province():
     lines = describe_turn_results(results, state, ScriptedRandom([]))
 
     assert lines == []
+
+
+def test_describe_turn_results_renders_leave():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    state.add_province(
+        ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor")
+    )
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), commanded_by=None))
+    result = ArmyListExecutionResult(request=None, succeeded=[100])
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.LEAVE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([], choice_indices=[0]))
+
+    assert lines == ["Aldric left Bowmen with the provincial garrison commander in Numenor."]
+
+
+def test_describe_turn_results_renders_pick_up():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    state.add_province(
+        ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor")
+    )
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), commanded_by=1))
+    result = ArmyListExecutionResult(request=None, succeeded=[100])
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.PICK_UP, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([], choice_indices=[0]))
+
+    assert lines == ["Aldric picked up Bowmen in Numenor."]
+
+
+def test_describe_turn_results_renders_disband():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    state.add_army(ArmyState(100, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), commanded_by=None))
+    result = ArmyListExecutionResult(request=None, succeeded=[100])
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.DISBAND, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([]))
+
+    assert lines == ["Aldric disbanded Bowmen."]
 
 
 def test_describe_turn_results_skips_trade_without_a_request():

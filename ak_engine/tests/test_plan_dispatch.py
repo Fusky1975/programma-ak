@@ -19,6 +19,7 @@ from ak_engine.turn.army_list_decode import ArmyListRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.plan_dispatch import (
+    ArmyListExecutionResult,
     FireExecutionResult,
     HireExecutionResult,
     NoOpResult,
@@ -738,7 +739,8 @@ def test_dispatch_leave_transfers_command_to_target_leader():
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, ArmyListRequest)
+    assert isinstance(result, ArmyListExecutionResult)
+    assert result.succeeded == [army_id]
     assert state.armies[army_id].commanded_by == 2
 
 
@@ -805,8 +807,9 @@ def test_dispatch_disband_releases_army_into_mercenary_status():
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
-    assert isinstance(result, ArmyListRequest)
-    assert result.army_ids == [army_id]
+    assert isinstance(result, ArmyListExecutionResult)
+    assert result.request.army_ids == [army_id]
+    assert result.succeeded == [army_id]
     assert army_id in state.armies  # not removed -- still exists as an unowned mercenary
     assert state.armies[army_id].kingdom_id is None
     assert state.armies[army_id].commanded_by is None
@@ -1227,9 +1230,10 @@ def test_real_move_file_leader_leave_phase_dispatches():
 
     result = dispatch_phase(leave_phase, state, kingdom_id=1, leader_id=18, army_ids=[], board_width=BOARD_WIDTH)
 
-    assert isinstance(result, ArmyListRequest)
-    assert result.target_leader_id == 1
-    assert result.army_ids == [108, 109, 110]
+    assert isinstance(result, ArmyListExecutionResult)
+    assert result.request.target_leader_id == 1
+    assert result.request.army_ids == [108, 109, 110]
+    assert result.succeeded == [108, 109, 110]
     assert all(state.armies[aid].commanded_by == 1 for aid in (108, 109, 110))
 
 
