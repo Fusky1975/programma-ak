@@ -26,12 +26,15 @@ to dispatch automatically:
   ally's treasury too, if recruiting in allied territory) and creates a
   new ``ArmyState`` per successfully recruited unit, enforcing the
   per-type per-turn limit via ``ProvinceState.recruited_this_turn``.
-  ``is_native_to_province`` is approximated as race-compatibility
-  (``turn/recruit.py is_army_type_compatible_with_race``) since
-  ``GameState`` doesn't track the rulebook's more specific "1-2
-  recruitable types per province" data -- a documented simplification,
-  not the literal rule. See ``turn/recruit_execution.py``'s docstring for
-  the cost-table verification done before writing this.
+  ``is_native_to_province`` reads the real per-province "1-2 recruitable
+  types" list (``ProvinceState.recruit_type_1``/``recruit_type_2``,
+  Phase 278) when the province was bridged from a real world file
+  (Phase 407); it falls back to the race-compatibility approximation
+  (``turn/recruit.py is_army_type_compatible_with_race``) only for a
+  ``GameState`` never bridged that way. See
+  ``turn/recruit_execution.py``'s docstring for the cost-table
+  verification done before writing this and the Phase 407 addendum for
+  the real-data wiring.
 - **LEAVE** and **PICK_UP** actually mutate ``ArmyState.commanded_by``
   (Phase 14's leader-army command model, ``models.game_state.LeaderState``)
   -- Leave transfers command to the requested leader (or clears it, for

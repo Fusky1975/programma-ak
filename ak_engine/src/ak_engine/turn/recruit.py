@@ -29,11 +29,18 @@ below only answers "can this army type be recruited in a province of
 this race at all" -- never "which exactly two `ArmyType`s does the real
 Recruiting Types table cell for *this specific province* name"
 (``Mod_PAT(px,py,0)``/``Mod_PAT(px,py,1)``). `Mod_PAT` is never defined
-anywhere in the available Pascal archive -- confirmed absent, re-audited
-and closed as of Phase 275 (``report/turn_report.py
+anywhere in the available Pascal archive as a *formula* -- confirmed
+absent, re-audited and closed as of Phase 275 (``report/turn_report.py
 compose_letter_report()``'s own Phase 275 addendum has the full
 declaration-search citation; ``describe_provinces_report()``'s own
-docstring is the other consumer of this same gap).
+docstring is the other consumer of this same gap). The *data* itself
+was recovered a different way (Phase 278, straight from a real world
+file) and is now read by ``turn/recruit_execution.py`` when known --
+see that module's own Phase 407 addendum. This module's own
+``is_army_type_compatible_with_race()`` still gates whether an army
+type can be recruited *at all*; the caller decides native-vs-double-
+cost from the real per-province list when it has one, falling back to
+this function's own broader approximation otherwise.
 """
 
 from __future__ import annotations

@@ -83,6 +83,29 @@ paragraph's later "You can never Recruit armies belonging to another
 kingdom") needed no separate fix -- ``GameState.mercenaries_at()``
 already only returns ``kingdom_id is None`` armies, so a kingdom-owned
 army was never mistakenly hireable as a mercenary in the first place.
+
+**Real per-province native types, when known (Phase 407)**: through
+Phase 406, ``is_native_to_province`` was always computed from
+``is_army_type_compatible_with_race()`` -- the exact same test
+``turn/recruit.py resolve_recruit()`` already uses to decide whether an
+army type can be recruited *at all*, so by construction it could never
+observe a compatible-but-non-native type here; the double-cost path
+this project had already built for that case (``RecruitResolution.
+is_double_cost``) was consequently unreachable dead code. Real
+per-province data has existed since Phase 278
+(``ProvinceState.recruit_type_1``/``recruit_type_2``, decoded from a
+real world file's own ``Mod_PAT``) but was never read here. Now, when
+a province was bridged from a real world file (``recruit_type_1 is not
+None``), an army type is "native" only if it's exactly
+``recruit_type_1`` or ``recruit_type_2`` -- a race-compatible but
+un-listed type still recruits (nothing in the rulebook text this
+project has blocks it outright), just at double cost, the same
+mechanic Phase 4 already built for this exact case. For a province
+``GameState`` never bridged from a real world file
+(``recruit_type_1 is None``, e.g. every hand-built test fixture), this
+falls back to the pre-existing race-compatibility approximation
+unchanged -- no real per-province list to check yet, so nothing to
+enforce more precisely.
 """
 
 from __future__ import annotations
@@ -160,7 +183,10 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         return result
 
     for army_type in request.army_types:
-        is_native = is_army_type_compatible_with_race(army_type, province.race)
+        if province.recruit_type_1 is not None:
+            is_native = army_type in (province.recruit_type_1, province.recruit_type_2)
+        else:
+            is_native = is_army_type_compatible_with_race(army_type, province.race)
         try:
             resolution = resolve_recruit(
                 army_type,

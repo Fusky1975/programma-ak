@@ -311,6 +311,58 @@ def test_new_army_ids_do_not_collide_across_multiple_recruits():
     assert len(ids) == len(set(ids)) == 2
 
 
+# -- Real per-province Mod_PAT native types (Phase 407) -------------------
+
+
+def test_recruit_type_1_costs_single_when_mod_pat_known():
+    state = build_state()
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.LEGION])  # pay 2
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited[0].gold_paid == 2
+    assert state.kingdoms[1].treasury == 98
+
+
+def test_recruit_type_2_also_counts_as_native():
+    state = build_state()
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    state.provinces[LOCATION].recruit_type_2 = ArmyType.BOWMEN
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])  # pay 2
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited[0].gold_paid == 2
+
+
+def test_race_compatible_but_unlisted_type_costs_double_when_mod_pat_known():
+    state = build_state()
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    # Bowmen is humanoid-compatible (race-approximation would call it
+    # "native"), but this province's own real Mod_PAT list only names
+    # Legion -- still recruitable, just at double cost.
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])  # pay 2 -> 4
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited[0].gold_paid == 4
+    assert result.recruited[0].army_type == ArmyType.BOWMEN
+
+
+def test_mod_pat_unknown_falls_back_to_race_compatibility_single_cost():
+    # No recruit_type_1 set (unbridged GameState) -- the pre-existing
+    # approximation applies unchanged: any race-compatible type is
+    # treated as native, single cost.
+    state = build_state()
+    assert state.provinces[LOCATION].recruit_type_1 is None
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.LEGION])  # pay 2
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited[0].gold_paid == 2
+
+
 def test_recruit_hires_colocated_mercenary_instead_of_levying_new_army():
     state = build_state()
     state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION))

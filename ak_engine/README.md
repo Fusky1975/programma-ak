@@ -17062,7 +17062,7 @@ section.
     of Phase 405` note with citations, same convention as Phases
     396-403). Pure documentation correction -- no behavior changed.
     Full suite: 3818 passed before, 3818 after (0 new tests).
-- **Phase 406 (current)**: at the user's own request ("Controlla anche
+- **Phase 406**: at the user's own request ("Controlla anche
   il resto delle voci 'Known-unresolved semantics' del README"),
   re-verified every remaining bullet in that section against the
   current code. Found this section badly stale in a specific way none
@@ -17123,6 +17123,36 @@ section.
     as of Phase 406` note with citations, same convention as Phases
     396-405). Pure documentation correction -- no behavior changed.
     Full suite: 3818 passed before, 3818 after (0 new tests).
+- **Phase 407 (current)**: at the user's own direct request, wires the
+  real per-province `Mod_PAT` recruit-type list (Phase 278) into
+  `execute_recruit()`, closing the enforcement gap Phase 402/406
+  narrowed down to. `is_native_to_province` was always computed from
+  the exact same `is_army_type_compatible_with_race()` test that
+  already gates whether a type can be recruited at all, so by
+  construction it could never see a compatible-but-non-native type --
+  the double-cost path this project's own Phase 4 design already built
+  for exactly that case (`RecruitResolution.is_double_cost`) was
+  consequently unreachable dead code.
+  - `turn/recruit_execution.py execute_recruit()`: when a province was
+    bridged from a real world file (`recruit_type_1 is not None`), an
+    army type is "native" only if it equals `recruit_type_1` or
+    `recruit_type_2` -- a race-compatible but un-listed type still
+    recruits (nothing in the rulebook text this project has blocks it
+    outright), just at double cost, the pre-existing mechanic Phase 4
+    already built. For a `GameState` never bridged that way
+    (`recruit_type_1 is None`, every hand-built test fixture), this
+    falls back to the pre-existing race-compatibility approximation
+    unchanged.
+  - Updated `turn/recruit.py`'s and `turn/plan_dispatch.py`'s own
+    docstrings to stop describing the approximation as unconditional.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), wrote 4 new tests (`test_recruit_execution.py`: `recruit_
+    type_1` costs single, `recruit_type_2` also counts as native, a
+    race-compatible-but-unlisted type costs double when Mod_PAT is
+    known, unbridged provinces keep the old single-cost fallback), ran
+    again, updated README, ran once more before commit -- the standing
+    per-phase workflow. Full suite: 3818 passed before, 3822 after (4
+    new tests).
 
 ## Setup
 
