@@ -17793,7 +17793,7 @@ section.
     `test_describe_turn_results.py` (one real end-to-end render each
     for Defend and Move, plus Move's board-width-omitted skip). Ran
     again: 3927 passed (11 new).
-- **Phase 422 (current)**: Defend's real reinforcement narration
+- **Phase 422**: Defend's real reinforcement narration
   (`SAY.PAS _LHearInv`), the deeper mechanic Phase 421 deliberately
   deferred -- "a covered leader learning of a distant attack," not
   just the order-confirmation sentence.
@@ -17840,6 +17840,48 @@ section.
     origin/target resolution) and 1 in `test_describe_turn_results.py`
     (one real end-to-end render of the sentinel `PhaseDispatchResult`
     wiring). Ran again: 3931 passed (4 new).
+- **Phase 423 (current)**: wires `score=` into every `turn/
+  aftermath.py roll_quality_change()` call site in `battle_
+  orchestrator.py` -- the one real input that stayed genuinely
+  unwired even after Phase 372's own quality-change formula work,
+  because nothing then confirmed what the source's own gain-side
+  merit multiplier actually reads.
+  - Re-reading `AKGEN_reverse_engineering_report.md`'s own battle-
+    engine section for this phase (the same disassembly `turn/
+    combat.py column_bres` already comes from) found the multiplier's
+    own input already described, under the name `P` ("100% se il
+    confronto effettivo restituisce P>=0, 60% con P=-1, 20% con P=-2,
+    0% con P<=-3") -- the exact same `-5..+5`-anchored thresholds
+    `MERIT_MULTIPLIER` already used, sitting immediately after that
+    same report's own `BRES` writeup. The report still never writes
+    "P = BRES" as an equation, and no raw `AK.EXE`/`AK.OVR` binary is
+    available in this project to disassemble further and settle it.
+  - **Wired anyway, as a documented, unconfirmed interpretation, not a
+    recovered formula** (explicit user instruction). New `turn/
+    battle_orchestrator.py _column_bres_by_army_id()` reads each
+    army's own column's real `BRES`, oriented to that army's own side
+    (an attacker's own army keeps `bres` as-is; a defender's own army
+    gets `-bres`, both so a positive value means "my own side did
+    well in this column") -- the same per-column-to-per-army_id
+    lookup shape `_formation_divisors()` (Phase 372) already
+    established. Threaded as `score=` into all four
+    `roll_quality_change()` call sites that actually consume it (both
+    `is_winner=True` branches, both `is_winner=False`/contested
+    branches -- the `retreated=True` branch never touches `score` at
+    all, so it's untouched). `turn/aftermath.py`'s own module
+    docstring gets a matching addendum; a future phase that finds a
+    real, sourced answer should replace this outright, not treat it
+    as settled.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3931 passed unchanged from Phase 422; one pre-existing test's
+    mock-call assertion needed updating for the new `score=` keyword
+    argument, not a behavior regression), then added 3 new tests in
+    `test_battle_orchestrator.py` (`_column_bres_by_army_id()`'s own
+    per-side orientation and multi-column coverage, plus a real
+    `fight_battle()` end-to-end test proving a column's own bad
+    `BRES` zeroes out that specific army's own improve chance even
+    while its side wins the battle overall). Ran again: 3934 passed
+    (3 new).
 
 ## Setup
 

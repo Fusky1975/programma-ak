@@ -47,22 +47,33 @@ reads exactly that, no new state needed. `improve_chance`/
 outright, not kept dead, since nothing else in the project ever needs a
 from-scratch flat rate again.
 
-The other real input, a unit's own per-unit "merit" battle-performance
-`score` (used only by the *gain* side's `quality_gain_merit_multiplier`)
-genuinely is still missing, and unlike formation depth there's no
-already-computed real number sitting in this project's battle-line data
-that the source confirms is the right substitute -- `column_bres` is
-tempting (it *is* a real, per-column performance number), but the
-source never says the engine's own "score" reuses `BRES`, and guessing
-that mapping would misrepresent an unconfirmed interpretation as a
-recovered formula. `roll_quality_change`'s new `score` parameter
-defaults to `0` -- the gain formula's own documented "score >= 0 -->
-multiplier 1.0" case, i.e. *no* reduction -- the same "missing data
+**Phase 423 addendum -- `score` wired, as a documented, unconfirmed
+interpretation, not a recovered formula.** The other real input, a
+unit's own per-unit "merit" battle-performance `score` (used only by
+the *gain* side's `quality_gain_merit_multiplier`), stayed genuinely
+missing through Phase 372 -- `column_bres` was tempting (it *is* a
+real, per-column performance number) but nothing in this project's
+source material said the engine's own "score" reuses `BRES`.
+`AKGEN_reverse_engineering_report.md`'s own battle-engine section
+(re-read directly for this phase) turned out to already describe the
+gain multiplier's own input, calling it `P` ("100% se il confronto
+effettivo restituisce P>=0, 60% con P=-1, 20% con P=-2, 0% con
+P<=-3") -- the exact same `-5..+5`-anchored thresholds
+`MERIT_MULTIPLIER` already used, described immediately after that same
+report's own `BRES` writeup. The report still never writes "P = BRES"
+as an equation, and no raw `AK.EXE`/`AK.OVR` binary is available in
+this project to disassemble further and settle it either way -- so
+`turn/battle_orchestrator.py _column_bres_by_army_id()` now feeds
+`column_bres` in as `score` anyway, explicitly labeled (in its own
+docstring and this one) as the project's best-motivated guess at what
+`P` is, not a confirmed identity. A future phase that finds a real,
+sourced answer should replace it outright, not treat this as settled.
+`roll_quality_change`'s `score` parameter still defaults to `0` for any
+caller that doesn't pass one -- the gain formula's own documented
+"score >= 0 --> multiplier 1.0" neutral case, the same "missing data
 defaults to a neutral, not a guessed, value" convention this project
 already uses elsewhere (see `turn/battle_orchestrator.py
-_build_battle_units`'s own exploration-advantage default). A future
-phase can source and wire a real `score` the moment a source confirms
-one; nothing here forecloses that.
+_build_battle_units`'s own exploration-advantage default).
 """
 
 from __future__ import annotations

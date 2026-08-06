@@ -24,6 +24,7 @@ from ak_engine.turn.battle_orchestrator import (
     _apply_monster_summoning_aid,
     _apply_werebeast_bites,
     _build_battle_units,
+    _column_bres_by_army_id,
     _commander_combatant,
     _direct_destruction_probabilities,
     _formation_divisors,
@@ -2368,8 +2369,11 @@ def test_fight_battle_winning_army_led_by_insufficient_druid_passes_the_penalty_
         report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
     assert report.battle_result.winner == "attacker"
+    # Phase 423: score= is the attacker's own column's real BRES (a
+    # documented, unconfirmed interpretation -- see aftermath.py's own
+    # docstring), threaded alongside formation_divisor now.
     mock_roll.assert_called_once_with(
-        Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True, formation_divisor=1
+        Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True, formation_divisor=1, score=1
     )
 
 
@@ -2520,6 +2524,88 @@ def test_formation_divisors_covers_both_sides_across_multiple_columns():
         202: FORMATION_DIVISOR["second"],
         203: FORMATION_DIVISOR["front"],
     }
+
+
+# -- Phase 423: score= for roll_quality_change's own gain-side merit
+# multiplier -- a documented, unconfirmed interpretation of column_bres
+# as the source's own unnamed "P" (see _column_bres_by_army_id's own
+# docstring), not a recovered formula --
+
+
+def test_column_bres_by_army_id_orients_score_by_side():
+    # bres favors the attacker (+3): the attacker's own army keeps that
+    # sign ("my side did well"), the defender's own army gets the
+    # opposite sign ("my side did poorly in this column").
+    column = BattleColumnResult(
+        attacker_strength=20.0, defender_strength=5.0, bres=3, attacker_won=True, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.HVY_CAVALRY, 20.0, source_id=101)],
+        defender_units=[BattleUnit(ArmyType.GARRISON, 5.0, source_id=201)],
+    )
+    battle_result = BattleResult(columns=[column], winner="attacker", total_bres=3)
+
+    scores = _column_bres_by_army_id(battle_result)
+
+    assert scores == {101: 3, 201: -3}
+
+
+def test_column_bres_by_army_id_covers_both_sides_across_multiple_columns():
+    column_one = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=10.0, bres=2, attacker_won=True, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.HVY_CAVALRY, 10.0, source_id=101)],
+        defender_units=[BattleUnit(ArmyType.GARRISON, 5.0, source_id=201)],
+    )
+    column_two = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=10.0, bres=-4, attacker_won=False, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.HVY_CAVALRY, 10.0, source_id=102)],
+        defender_units=[BattleUnit(ArmyType.GARRISON, 5.0, source_id=202)],
+    )
+    battle_result = BattleResult(columns=[column_one, column_two], winner="attacker", total_bres=-2)
+
+    scores = _column_bres_by_army_id(battle_result)
+
+    assert scores == {101: 2, 201: -2, 102: -4, 202: 4}
+
+
+def test_fight_battle_uses_real_per_column_bres_as_the_gain_side_merit_score():
+    # Two winning attacker armies, each front-line in its own column: 101's
+    # own column went well (bres=+5, score=5 -> full 1.0 merit multiplier),
+    # 102's own column went badly despite the overall attacker win
+    # (bres=-3, score=-3 -> the source's own "P<=-3" 0.0 multiplier, no
+    # gain possible at all regardless of the roll). AVERAGE's own real
+    # front-line improve chance is 30% -- a scripted roll of 0.25 clears
+    # 101's own (unmodified) 30% chance but can never clear 102's own
+    # forced-to-zero chance, proving score reaches roll_quality_change
+    # through a real fight_battle() call with the right per-army sign.
+    state = build_state()
+    state.armies[101].quality = Quality.AVERAGE
+    state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.AVERAGE, FIELD))
+    column_one = BattleColumnResult(
+        attacker_strength=20.0, defender_strength=5.0, bres=5, attacker_won=True, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.HVY_CAVALRY, 20.0, source_id=101)],
+        defender_units=[BattleUnit(ArmyType.GARRISON, 5.0, source_id=201)],
+    )
+    column_two = BattleColumnResult(
+        attacker_strength=8.0, defender_strength=10.0, bres=-3, attacker_won=False, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.HVY_CAVALRY, 8.0, source_id=102)],
+        defender_units=[BattleUnit(ArmyType.GARRISON, 10.0, source_id=202)],
+    )
+    battle_result = BattleResult(
+        columns=[column_one, column_two], winner="attacker", total_bres=2,
+        attacker_columns_won=1, defender_columns_won=0,
+    )
+    # One draw for fight_battle's own terrain-line-length-cap roll (value
+    # irrelevant -- resolve_battle is patched), then the two scripted
+    # improve rolls.
+    rng = ScriptedRandom([0.9, 0.25, 0.25])
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result):
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101, 102],
+            loser_retreats=False, rng=rng,
+        )
+
+    assert state.armies[101].quality == Quality.VETERAN  # score=5: full 30% chance, 0.25 < 0.30 -- improved
+    assert state.armies[102].quality == Quality.AVERAGE  # score=-3: 0% chance -- unchanged regardless of roll
 
 
 def test_fight_battle_uses_real_formation_depth_for_a_winning_seconds_line_army():

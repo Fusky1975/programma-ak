@@ -1210,6 +1210,48 @@ def _formation_divisors(battle_result: BattleResult) -> dict[int, int]:
     return divisors
 
 
+def _column_bres_by_army_id(battle_result: BattleResult) -> dict[int, int]:
+    """Phase 423: each army's own column's real `BRES` score (`turn/
+    combat.py column_bres`), oriented to *that army's own side* and
+    keyed by `army_id`, for `turn/aftermath.py roll_quality_change`'s
+    own `score` parameter.
+
+    **A documented, unconfirmed interpretation -- not a recovered
+    formula.** `AKGEN_reverse_engineering_report.md`'s own battle-engine
+    section (the same disassembly `column_bres` itself comes from)
+    describes the quality-*gain* multiplier's own input as a value it
+    calls `P` ("100% se il confronto effettivo restituisce P>=0, 60% con
+    P=-1, 20% con P=-2, 0% con P<=-3"), sitting immediately after its own
+    `BRES` writeup and sharing the same `-5..+5`-scale thresholds
+    `MERIT_MULTIPLIER` already uses -- but the report never writes the
+    equation "P = BRES" outright, and no raw `AK.EXE`/`AK.OVR` binary is
+    available in this project to disassemble further and settle it. This
+    function assumes the two are the same value, which is the only real
+    per-column performance number this project has, rather than leaving
+    `score` at its own neutral default forever -- explicitly flagged
+    here (and in `roll_quality_change`'s own call sites below) so a
+    future phase that finds a real, sourced answer can replace it
+    outright, not silently build on top of a guess mistaken for fact.
+
+    `BRES > 0` favors side 1 (attacker) in `column_bres`'s own
+    convention (confirmed by `battle_resolution.py`'s own `winning_units
+    = column.attacker_units if column.bres > 0 else column.defender_
+    units`) -- so an attacker's own army keeps `bres` as-is, and a
+    defender's own army gets `-bres`, both oriented so a positive value
+    means "my own side did well in this column."
+    """
+
+    scores: dict[int, int] = {}
+    for column in battle_result.columns:
+        for unit in column.attacker_units:
+            if unit.source_id is not None:
+                scores[unit.source_id] = column.bres
+        for unit in column.defender_units:
+            if unit.source_id is not None:
+                scores[unit.source_id] = -column.bres
+    return scores
+
+
 WEREBEAST_BITE_CHANCE = 0.40
 
 
@@ -1556,6 +1598,12 @@ def fight_battle(
     # new state, just reading data this project already had.
     formation_divisor_by_army_id = _formation_divisors(battle_result)
 
+    # Phase 423: score= for roll_quality_change's own gain-side merit
+    # multiplier -- see _column_bres_by_army_id's own docstring for why
+    # this is a documented, unconfirmed interpretation (BRES assumed to
+    # be the source's own unnamed "P"), not a recovered formula.
+    score_by_army_id = _column_bres_by_army_id(battle_result)
+
     attacker_pursuit_destroyed: set[int] = set()
     if attacker_clean_swept and loser_retreats:
         attacker_pursuit_destroyed = _apply_pursuit(
@@ -1572,10 +1620,11 @@ def fight_battle(
             continue
         led_by_insufficient_druid = led_by_insufficient_druid_by_army_id.get(army.army_id, False)
         formation_divisor = formation_divisor_by_army_id.get(army.army_id, FORMATION_DIVISOR["front"])
+        score = score_by_army_id.get(army.army_id, 0)
         if battle_result.winner == "attacker":
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid,
-                formation_divisor=formation_divisor,
+                formation_divisor=formation_divisor, score=score,
             )
             report.quality_changes[army.army_id] = army.quality
         elif attacker_clean_swept and _whale_forced_retreat_applies(army, terrain):
@@ -1612,6 +1661,7 @@ def fight_battle(
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=False, retreated=False,
                 led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
+                score=score,
             )
             report.quality_changes[army.army_id] = army.quality
 
@@ -1620,10 +1670,11 @@ def fight_battle(
             continue
         led_by_insufficient_druid = led_by_insufficient_druid_by_army_id.get(army.army_id, False)
         formation_divisor = formation_divisor_by_army_id.get(army.army_id, FORMATION_DIVISOR["front"])
+        score = score_by_army_id.get(army.army_id, 0)
         if battle_result.winner == "defender":
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid,
-                formation_divisor=formation_divisor,
+                formation_divisor=formation_divisor, score=score,
             )
             report.quality_changes[army.army_id] = army.quality
         elif defender_clean_swept and _whale_forced_retreat_applies(army, terrain):
@@ -1657,6 +1708,7 @@ def fight_battle(
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=False, retreated=False,
                 led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
+                score=score,
             )
             report.quality_changes[army.army_id] = army.quality
 
