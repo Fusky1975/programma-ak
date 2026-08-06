@@ -57,6 +57,15 @@ from ak_engine.worldgen.pascal_random import PascalRandom
 _KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
 _SEARCHER_LEADER_ID = 999
 _SEARCH_WIN_SEED = 30
+# Phase 426 note: generate_new_game(seed=1)'s own feature roster is a
+# fixed, reproducible fact of this scenario, re-checked after Phase 426
+# added hero-pool RNG consumption before place_all_features() (which
+# shifted which treasure lands on which feature id). feature_id 56
+# (GI_AMOEBA guarding BOOK_THIEF) is the SKILL_BOOK-category feature
+# this test now targets -- chosen over feature_id 37 (B_DRAGON guarding
+# BOOK_TACTICAL), which a search-seed scan up to 400 never won.
+_BOOK_FEATURE_ID = 56
+_BOOK_SEARCH_WIN_SEED = 5
 
 
 def _generate_game(king_count: int = 10) -> GameState:
@@ -94,19 +103,19 @@ def test_world_generated_treasure_reaches_state_items_via_a_search_win():
 
 
 def test_a_world_generated_and_search_won_book_is_directly_usable_via_use_mi():
-    # This project's real generate_new_game(seed=1) scenario happens to
-    # place a BOOK_PSYCHIC on the first treasure+guardian feature -- not
-    # tuned for that, just what this fixed, reproducible generation run
-    # produces. Any SKILL_BOOK category member would exercise the same
-    # chain; this is simply the one this scenario actually yields.
+    # This project's real generate_new_game(seed=1) scenario places a
+    # BOOK_THIEF on feature_id 56 (guarded by a GI_AMOEBA) -- not tuned
+    # for that, just what this fixed, reproducible generation run
+    # produces (see _BOOK_FEATURE_ID's own Phase 426 note above). Any
+    # SKILL_BOOK category member would exercise the same chain.
     state = _generate_game()
-    feature = next(f for f in state.features.values() if f.treasure is not None and f.guardian_monster is not None)
+    feature = next(f for f in state.features.values() if f.feature_id == _BOOK_FEATURE_ID)
     assert TREASURE_CATEGORY[feature.treasure] is TreasureCategory.SKILL_BOOK
     state.leaders[_SEARCHER_LEADER_ID] = LeaderState(
         leader_id=_SEARCHER_LEADER_ID, kingdom_id=0, name="Searcher", location=feature.coord, skills=None
     )
     request = SearchRequest(feature_id=feature.feature_id, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.MELEE)])
-    execute_search(state, _SEARCHER_LEADER_ID, request, rng=random.Random(_SEARCH_WIN_SEED))
+    execute_search(state, _SEARCHER_LEADER_ID, request, rng=random.Random(_BOOK_SEARCH_WIN_SEED))
     item_id, item = next(iter(state.items.items()))
     expected_ability = TREASURE_BOOK_ABILITY[item.treasure]
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.hero_roster import STANDARD_HERO_ROSTER
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.power import Power
@@ -9,6 +10,7 @@ from ak_engine.models.race import Race
 from ak_engine.worldgen.feature_generation import feature_count
 from ak_engine.worldgen.generate_new_game import STARTING_TREASURY, KingSetup, generate_new_game
 from ak_engine.worldgen.initial_armies import BEST_ATYPE, COMMANDER_NONE
+from ak_engine.worldgen.leader_placement import COMPANIONS_PER_KING, owner_leader_count
 from ak_engine.worldgen.magic_item_placement import item_slot_count
 from ak_engine.worldgen.pascal_random import PascalRandom
 from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH
@@ -16,6 +18,7 @@ from ak_engine.worldgen.province_tax import HOME_OVERRIDE_TAX
 from ak_engine.worldgen.special_race_placement import SPECIAL_RACE_BASE_COUNT
 
 _KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
+_HUMANOID_RACES = {Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH}
 
 
 def _setup(king_count: int = 10) -> tuple[GameState, list[KingSetup]]:
@@ -159,3 +162,88 @@ def test_every_kings_treasury_starts_at_the_confirmed_real_value():
     for king in kings:
         kingdom_id = result.leaders[king.leader_id].kingdom_id
         assert result.kingdoms[kingdom_id].treasury == STARTING_TREASURY
+
+
+def test_every_king_gets_exactly_two_companions_at_their_own_home():
+    # Phase 426: "per ogni Re vengono poi scelti due leader inutilizzati
+    # e collocati nella sua Home. Il primo eredita la razza del Re; il
+    # secondo riceve casualmente una delle quattro razze umanoidi" --
+    # leader_placement.py's own already-confirmed companion rule, wired
+    # here for the first time.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        king_kingdom_id = result.leaders[king.leader_id].kingdom_id
+        companions = [
+            leader
+            for leader in result.leaders.values()
+            if leader.leader_id != king.leader_id
+            and leader.kingdom_id == king_kingdom_id
+            and leader.location == king.home_coord
+        ]
+        assert len(companions) == COMPANIONS_PER_KING
+        races = {companion.race for companion in companions}
+        assert king.race in races
+        assert len(races) == 2  # the second companion is never the King's own race
+        for companion in companions:
+            assert companion.race in _HUMANOID_RACES
+            assert companion.skills is not None
+            assert companion.alignment is not None
+            assert companion.is_king is False
+            assert companion.name == STANDARD_HERO_ROSTER[companion.leader_id]
+
+
+def test_independent_lords_govern_free_humanoid_provinces_as_independent_heroes():
+    # Phase 426: "le altre province umanoidi libere ricevono un leader
+    # non ancora usato. Il leader diventa Hired... la propria razza
+    # viene resa uguale alla razza nativa della provincia" -- lords are
+    # independent (kingdom_id=None, the Phase 104 "independent Hero"
+    # convention), not owned by any King's kingdom.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    king_ids = {king.leader_id for king in kings}
+    king_homes = {king.home_coord for king in kings}
+    lords = [
+        leader for leader in result.leaders.values() if leader.leader_id not in king_ids and leader.kingdom_id is None
+    ]
+    assert lords
+    for lord in lords:
+        assert lord.location not in king_homes
+        province = result.provinces[lord.location]
+        assert province.race in _HUMANOID_RACES
+        assert lord.race == province.race
+        assert lord.skills is not None
+        assert lord.alignment is not None
+        assert lord.name == STANDARD_HERO_ROSTER[lord.leader_id]
+
+
+def test_lord_count_matches_the_confirmed_owner_leader_count_formula():
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    king_ids = {king.leader_id for king in kings}
+    lord_count = sum(
+        1 for leader in result.leaders.values() if leader.leader_id not in king_ids and leader.kingdom_id is None
+    )
+    humanoid_count = sum(1 for province in result.provinces.values() if province.race in _HUMANOID_RACES)
+    expected_lord_count = owner_leader_count(humanoid_count, 100, len(kings)) - len(kings)
+    assert lord_count == expected_lord_count
+
+
+def test_no_leader_id_is_reused_across_kings_lords_and_companions():
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    king_ids = {king.leader_id for king in kings}
+    non_king_count = sum(1 for leader_id in result.leaders if leader_id not in king_ids)
+    lord_count = sum(
+        1 for leader in result.leaders.values() if leader.leader_id not in king_ids and leader.kingdom_id is None
+    )
+    companion_count = COMPANIONS_PER_KING * len(kings)
+    assert non_king_count == lord_count + companion_count

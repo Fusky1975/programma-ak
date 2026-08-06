@@ -73,28 +73,59 @@ this project has a real, sourced formula for:
    (Phase 176), the same "confirmed, tested, previously unwired"
    mechanism ``turn/world_generation.py`` (Phase 246) already reuses
    for its own, unrelated feature-generation path.
+8. **Independent lords + King companions (Phase 426)** -- "place Kings,
+   independent lords, companions and remaining mercenary heroes"'s own
+   remaining two roles, closing the gap Phase 365 originally left open
+   (it had blocked on "no roster leader" and "no name generator"; both
+   were closed in between by ``models.hero_roster.py`` (Phase 366, real
+   ``LNAMES.PAS`` names) and ``worldgen.hero_talent_generation.py``
+   (Phase 385, the real "Init Tr" alignment/skill/aptitude formula) but
+   never wired back into this pipeline until now). For every id in
+   ``range(leader_count)`` except the King ids and the reserved last
+   slot, rolls a real ``Alignment``/``SkillTable`` via ``roll_alignment()``
+   + ``roll_skill_and_aptitude_table()`` (matching the source's own
+   "Init Tr runs before Place L" order: the *entire* pool's talents are
+   rolled before any placement happens) and looks up its real
+   ``STANDARD_HERO_ROSTER`` name. Independent lords then take the free
+   humanoid provinces (``leader_placement.owner_leader_count()`` minus
+   ``king_count``, via ``independent_lord_effects()`` -- ``kingdom_id=
+   None``, the same "independent Hero" convention Phase 104 already
+   established, since ``ProvinceState`` has no leader-level ownership
+   field of its own to set separately from ``owner_kingdom_id``'s
+   kingdom-level one). Each King then gets exactly
+   ``COMPANIONS_PER_KING=2`` companions at their own Home
+   (``kingdom_id`` = that King's own kingdom, first companion the
+   King's own race, second via the already-confirmed
+   ``draw_second_companion_race()``).
+
+**Two selection-order details are project-original, not recovered**
+(both already flagged as unsourced narratives by Phase 357, not newly
+discovered gaps): which of the free humanoid provinces each lord lands
+on, and which unused roster id fills which role. This project resolves
+both deterministically -- provinces in this function's own existing
+``grid`` iteration order (the same order the province-building loop
+below already uses), roster ids in ascending numeric order -- rather
+than leaving lords/companions unplaced. Treat the *identity* of which
+specific Hero ends up where as a project-original convention, not a
+recovered fact; the *counts*, *race rules*, and *talent formula* are
+all real and sourced as described above.
 
 **Deliberately NOT implemented here**, each a genuine, separately
 documented gap carried over from the phases that already found it --
 none invented past here:
 
-- **Independent lords and companions** ("place Kings, independent
-  lords, companions and remaining mercenary heroes"): Kings are the
-  only leader roster entries this project has a real identity for
-  (interactive selection, per ``leader_placement.py``'s own confirmed
-  ``"selection": "interactive roster choice"``). Independent lords need
-  an "unused roster leader" this project has no such roster for (real
-  leaders only ever enter this project via a parsed ``.K1`` file or
-  explicit caller data, never generated from nothing), and the
-  selection *order* across free humanoid provinces was already flagged
-  as an unsourced narrative gap by Phase 357. Companions have a fully
-  confirmed race/location rule (first companion same race as King,
-  second via the already-implemented
-  ``draw_second_companion_race()``, both at King Home) but still need a
-  *name* this project has no in-scope generator for (the AKGEN name
-  catalogs are a separate, not-yet-integrated discrepancy -- see
-  README). Both are left as an honest gap rather than inventing
-  placeholder identities.
+- **Remaining mercenary heroes**: after lords and companions, any
+  leftover roster ids (``remaining_mercenary_count()``) are simply never
+  materialized as a ``LeaderState`` -- their non-``Earth_V`` "resting"
+  location is confirmed absent from the source (only the ``Earth_V``-
+  mode *repositioning* rule survived, not where an ordinary-mode
+  mercenary starts before it), so inventing one would be a guess.
+- **The reserved last roster id**: excluded from ``hero_pool`` entirely
+  (no talents rolled, no ``LeaderState`` created) -- its own "attached
+  separately to a Home" placement rule was already flagged by Phase 357
+  as too ambiguous to code (this is the Valhalla-visitor-reserved slot,
+  ``models/valhalla.py``'s own separate mechanic, not a King-loadable
+  Hero).
 - **Ordinary (non-Home, non-special-race) humanoid provinces' recruit
   slots and armies**: ``humanoid_first_slot``'s terrain-weighted
   infantry table was never sourced (Phase 358's own documented gap) --
@@ -125,21 +156,31 @@ native recruit slot; ``feature_count(gamevers)`` features exist, each
 with a real coordinate/monster/type/alignment and a real (possibly
 ``MagicFeature.NONE``) magic location; the magic-item cursor assigns
 treasures to exactly the confirmed ``item_slot_count()`` of them, in a
-single shared cycling sequence.
+single shared cycling sequence; every King has exactly
+``COMPANIONS_PER_KING`` companion ``LeaderState``s at their own Home,
+each with a real name/``Alignment``/``SkillTable``, the first sharing
+the King's own race and the second one of the other three humanoid
+races; the independent-lord count matches
+``owner_leader_count(...) - king_count`` exactly, each lord located at
+a distinct free humanoid province with that province's own race.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.feature import Feature
-from ak_engine.models.game_state import ArmyState, GameState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
+from ak_engine.models.hero_roster import LEADER_COUNT_BY_GAME_VERSION, STANDARD_HERO_ROSTER
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import roll_monster_alignment
 from ak_engine.models.race import Race
 from ak_engine.turn.movement import MapBounds
 from ak_engine.worldgen.feature_placement import place_all_features
+from ak_engine.worldgen.hero_talent_generation import roll_alignment, roll_skill_and_aptitude_table
 from ak_engine.worldgen.initial_armies import (
     COMMANDER_NONE,
     INITIAL_ARMY_QUALITY,
@@ -152,7 +193,13 @@ from ak_engine.worldgen.initial_armies import (
     whale_budget,
 )
 from ak_engine.worldgen.internal_magical_locations import resolve_power, resolve_visible_location
-from ak_engine.worldgen.leader_placement import king_home_effects
+from ak_engine.worldgen.leader_placement import (
+    COMPANIONS_PER_KING,
+    draw_second_companion_race,
+    independent_lord_effects,
+    king_home_effects,
+    owner_leader_count,
+)
 from ak_engine.worldgen.magic_item_placement import (
     cursor_to_treasure,
     feature_gets_item_slot,
@@ -186,6 +233,21 @@ STARTING_TREASURY = 10
 _FLYING_OR_SPECIAL_BUDGET_RACES: frozenset[Race] = frozenset(
     {Race.DRAGONS, Race.EAGLES, Race.MERMISH, Race.ENTISH, Race.WEREFOLK}
 )
+
+# Phase 426: the four humanoid races -- provinces bearing one of these
+# (after special-race overwrite and King Home overwrite) are the "H"
+# province count leader_placement.owner_leader_count() takes, and the
+# pool independent lords are placed into. Same set leader_placement.py's
+# own private _HUMANOID_RACES already uses for draw_second_companion_race().
+_HUMANOID_RACES: frozenset[Race] = frozenset({Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH})
+
+# Phase 426: default hero-roster size -- models.hero_roster's own
+# confirmed "100 for game version 3 and earlier" (LNAMES.PAS's own
+# leader_count by game version). This project's generate_new_game()
+# only ever models the pre-Arcanes_V/pre-v4 pipeline (no gametyp
+# parameter), so this is the only one of the three real values that
+# applies here; a caller may still override it via leader_count=.
+_DEFAULT_LEADER_COUNT = LEADER_COUNT_BY_GAME_VERSION["game_version_3_or_earlier"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +284,7 @@ def generate_new_game(
     height: int = DEFAULT_HEIGHT,
     gamevers: int = 1,
     new_rules: bool = True,
+    leader_count: int = _DEFAULT_LEADER_COUNT,
 ) -> GameState:
     """Runs the full sourced pipeline in-place against ``game_state``, returning it."""
 
@@ -261,6 +324,65 @@ def generate_new_game(
         leader.location = effects.leader_current_coord
         leader.birth_x = effects.leader_born_coord.x
         game_state.kingdoms[leader.kingdom_id].treasury = STARTING_TREASURY
+
+    # Phase 426: independent lords + King companions ("place Kings,
+    # independent lords, companions and remaining mercenary heroes",
+    # world_generation.province_population_order stage 5) -- see module
+    # docstring's own Phase 426 addendum for exactly what's implemented
+    # here versus still deferred (mercenaries, the reserved roster slot).
+    king_leader_ids = frozenset(king.leader_id for king in kings)
+    reserved_roster_id = leader_count - 1
+    hero_pool: dict[int, tuple[Alignment, SkillTable]] = {}
+    for hero_id in range(leader_count):
+        if hero_id in king_leader_ids or hero_id == reserved_roster_id:
+            continue
+        alignment = roll_alignment(rng)
+        hero_pool[hero_id] = (alignment, roll_skill_and_aptitude_table(hero_id, alignment, rng))
+    unused_hero_ids = iter(sorted(hero_pool))
+
+    humanoid_coords = [coord for coord in grid if race_grid[coord] in _HUMANOID_RACES]
+    lord_count = max(0, owner_leader_count(len(humanoid_coords), leader_count, king_count) - king_count)
+    lord_coords = [coord for coord in humanoid_coords if coord not in king_home_set][:lord_count]
+
+    for coord in lord_coords:
+        hero_id = next(unused_hero_ids, None)
+        if hero_id is None:
+            break
+        alignment, skills = hero_pool[hero_id]
+        lord_effects = independent_lord_effects(hero_id, coord, race_grid[coord])
+        game_state.add_leader(
+            LeaderState(
+                leader_id=hero_id,
+                kingdom_id=None,
+                name=STANDARD_HERO_ROSTER[hero_id],
+                location=lord_effects.leader_current_coord,
+                skills=skills,
+                birth_x=lord_effects.leader_born_coord.x,
+                alignment=alignment,
+                race=lord_effects.leader_race,
+            )
+        )
+
+    for king in kings:
+        king_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
+        for companion_index in range(COMPANIONS_PER_KING):
+            hero_id = next(unused_hero_ids, None)
+            if hero_id is None:
+                break
+            alignment, skills = hero_pool[hero_id]
+            companion_race = king.race if companion_index == 0 else draw_second_companion_race(king.race, rng)
+            game_state.add_leader(
+                LeaderState(
+                    leader_id=hero_id,
+                    kingdom_id=king_kingdom_id,
+                    name=STANDARD_HERO_ROSTER[hero_id],
+                    location=king.home_coord,
+                    skills=skills,
+                    birth_x=king.home_coord.x,
+                    alignment=alignment,
+                    race=companion_race,
+                )
+            )
 
     for coord, terrain in grid.items():
         race = race_grid[coord]
