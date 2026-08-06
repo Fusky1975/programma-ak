@@ -2809,6 +2809,17 @@ def render_melee_attack(
     return render(variant, values, rng=rng)
 
 
+# Phase 415: describe_search()'s own default when narrating a
+# SearchExecutionResult.melee_swing -- this project has no per-character
+# weapon model (turn/encounter.py Combatant carries no weapon field), so
+# there's no source to vary $S by. A fixed, project-original default,
+# not a guess at a specific sourced verb -- matches SWANGAT.X's own
+# first template's literal "assailed/Rattacked" wording (_SWANGAT_
+# TEMPLATES[0] above), so it stays consistent with the real source
+# text's own vocabulary even though it isn't itself sourced per-call.
+_MELEE_ATTACK_METHOD = "Attacked"
+
+
 # Project-original, not sourced from PROSE.TXT (Phase 155) -- see module
 # docstring's own Phase 155 addendum for the user's exact footnote text
 # and provenance. Each is a single, complete sentence (unlike FARR.X's
@@ -5429,6 +5440,20 @@ def describe_search(
       ``squeeze_hits`` is only ever populated for a winning channel (see
       ``SearchExecutionResult.squeeze_hits``'s own Phase 413 note for
       why an interrupted, non-winning channel isn't captured here).
+    - **Phase 415: each ordinary Melee swing (``result.melee_swings``) is
+      narrated individually**, right after the Hand of Death/Squeeze
+      narration above, via ``render_melee_attack()`` (``SWANGAT.X``,
+      Phase 113 -- built but never called from anywhere until this
+      phase) + ``render_attack_hit()``/``render_attack_missed()``. Each
+      ``MeleeSwing`` already carries its own ``attacker`` (``"a"``/
+      ``"b"``), unlike Squeeze's one-directional ``result.winner``
+      convention, since ordinary Melee is genuinely bidirectional round
+      to round. ``attack_method`` (``PROSE.TXT``'s own ``$S`` marker)
+      has no source anywhere in this project -- no per-character weapon
+      model exists (``turn/encounter.py Combatant`` carries no weapon
+      field) -- so every swing uses the fixed, project-original
+      ``_MELEE_ATTACK_METHOD = "Attacked"`` default rather than a
+      guessed sourced verb; see that constant's own Phase 415 note.
 
     **Phase 213: now wired into ``describe_turn_results()``.**
     ``SearchExecutionResult`` gained a ``request`` field (stamped by
@@ -5493,6 +5518,27 @@ def describe_search(
     )
     for damage in result.squeeze_hits:
         lines.append(render_squeeze_attack(squeeze_attacker, squeeze_defender, rng) + render_attack_hit(squeeze_defender, damage, rng))
+
+    # Phase 415: each Melee swing (result.melee_swings, chronological
+    # across every round actually fought at melee range) narrated
+    # individually via render_melee_attack() (SWANGAT.X, Phase 113 --
+    # built but never called from anywhere until now) + render_attack_
+    # hit()/render_attack_missed(). Unlike squeeze_hits (one-directional,
+    # tied to result.winner), each MeleeSwing already carries its own
+    # attacker ("a"/"b") -- ordinary Melee is genuinely bidirectional
+    # round to round, so there's no single "the attacker" to read off
+    # result.winner here.
+    for swing in result.melee_swings:
+        melee_attacker, melee_defender = (
+            (character_name, monster_name) if swing.attacker == "a" else (monster_name, character_name)
+        )
+        attack_line = render_melee_attack(melee_attacker, melee_defender, _MELEE_ATTACK_METHOD, rng)
+        attack_line += (
+            render_attack_hit(melee_defender, swing.damage, rng)
+            if swing.hit
+            else render_attack_missed(melee_attacker, melee_defender, "blade", rng, is_sea=is_sea)
+        )
+        lines.append(attack_line)
 
     if result.combat_resolved and result.winner == "monster" and result.leader_killed:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))

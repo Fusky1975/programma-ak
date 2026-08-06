@@ -497,6 +497,7 @@ from ak_engine.turn.encounter import (
     CombatRange,
     EncounterCombatResult,
     FireArrowShot,
+    MeleeSwing,
     MirrorImageIntelligenceTier,
     StealTargetCunning,
     TalkReaction,
@@ -667,6 +668,14 @@ class SearchExecutionResult:
     # documented limit `fire_arrow_shots` above already accepts for its
     # own inconclusive case.
     squeeze_hits: tuple[int, ...] = ()
+    # Phase 415: per-swing Melee detail, chronological across every round
+    # actually fought at MELEE_RANGE (round-stepped or the atomic
+    # resolve_melee_duel() fast path alike) -- see `turn/encounter.py
+    # MeleeSwing`'s own Phase 415 addendum for the hit-vs-damage split.
+    # `_resolve_steal()`'s own combat-range fallback populates this too
+    # (a self-contained atomic duel, not part of the tactic-walk's own
+    # accumulator).
+    melee_swings: tuple[MeleeSwing, ...] = ()
     guardian_monster: Monster | None = None
     # Phase 213: the originating request, so a caller (report/turn_report.py
     # describe_turn_results()) can resolve the searched feature's own id.
@@ -1563,6 +1572,13 @@ def _resolve_search_encounter(
     combat_attempted = False
     fire_arrow_resolved = False
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
+    # Phase 415: accumulates across every round actually fought at melee
+    # range in this tactic walk -- both the round-stepping path (`_resolve_
+    # melee_range_round()`'s own Melee-vs-Melee branch, extended on EVERY
+    # call, decisive or not) and the atomic `resolve_melee_duel()` fast
+    # path (extended once, from the duel's own already-aggregated result),
+    # mirroring `fire_arrow_shots`'s own accumulator pattern above.
+    melee_swings: list[MeleeSwing] = []
 
     def _finish_melee_outcome(combat_result: EncounterCombatResult) -> SearchExecutionResult:
         """Wraps ``_outcome_from()`` for a genuinely concluded Melee duel
@@ -1577,6 +1593,7 @@ def _resolve_search_encounter(
 
         outcome = _outcome_from(combat_result) or SearchExecutionResult(accepted=True, combat_resolved=True, winner=None)
         outcome.fire_arrow_shots = fire_arrow_shots
+        outcome.melee_swings = tuple(melee_swings)
         outcome.guardian_monster = feature.guardian_monster
         return outcome
 
@@ -1623,6 +1640,7 @@ def _resolve_search_encounter(
 
         if leader_tactic.maneuver is Maneuver.MELEE and monster_tactic is None:
             round_outcome = resolve_one_melee_round(leader_combatant, monster_combatant, rng)
+            melee_swings.extend(round_outcome.swings)
             # This Melee entry in the guardian's own plan has now been
             # "used" for this round -- advance past it so a later CAST
             # further down its plan (e.g. Dryad's/Mermaid's own trailing
@@ -1717,9 +1735,12 @@ def _resolve_search_encounter(
         if outcome is not None:
             return outcome
         if combat_range is CombatRange.MELEE_RANGE:
-            return _outcome_from(
-                resolve_melee_duel(leader_combatant, monster_combatant, rng, skip_temper_setup=melee_setup_done)
-            )
+            melee_duel_result = resolve_melee_duel(leader_combatant, monster_combatant, rng, skip_temper_setup=melee_setup_done)
+            outcome = _outcome_from(melee_duel_result)
+            if outcome is not None:
+                outcome.melee_swings = melee_duel_result.melee_swings
+                outcome.guardian_monster = feature.guardian_monster
+            return outcome
         duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng)
         outcome = _outcome_from(duel_result)
         if outcome is not None:
@@ -1893,9 +1914,9 @@ def _resolve_search_encounter(
                 # non-last MELEE already ran it via round-stepping (e.g.
                 # `[MELEE, TALK, MELEE]`) -- inert (False) for every
                 # ordinary plan, where this is the first Melee reached.
-                return _finish_melee_outcome(
-                    resolve_melee_duel(leader_combatant, monster_combatant, rng, skip_temper_setup=melee_setup_done)
-                )
+                duel_result = resolve_melee_duel(leader_combatant, monster_combatant, rng, skip_temper_setup=melee_setup_done)
+                melee_swings.extend(duel_result.melee_swings)
+                return _finish_melee_outcome(duel_result)
             while True:
                 outcome = _resolve_melee_range_round(tactic, leader_tactic_index=tactic_index)
                 if outcome is not None:
@@ -1992,9 +2013,9 @@ def _resolve_search_encounter(
             # Fast path -- see the Melee tactic branch's own identical
             # comment above (including the Phase 297 skip_temper_setup
             # note).
-            return _finish_melee_outcome(
-                resolve_melee_duel(leader_combatant, monster_combatant, rng, skip_temper_setup=melee_setup_done)
-            )
+            duel_result = resolve_melee_duel(leader_combatant, monster_combatant, rng, skip_temper_setup=melee_setup_done)
+            melee_swings.extend(duel_result.melee_swings)
+            return _finish_melee_outcome(duel_result)
         synthetic_leader_tactic = SearchTactic(maneuver=Maneuver.MELEE)
         while True:
             outcome = _resolve_melee_range_round(synthetic_leader_tactic, leader_tactic_index=len(request.tactics))

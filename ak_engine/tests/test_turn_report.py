@@ -229,7 +229,7 @@ from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
-from ak_engine.turn.encounter import CombatRange, FireArrowShot
+from ak_engine.turn.encounter import CombatRange, FireArrowShot, MeleeSwing
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
@@ -3320,6 +3320,70 @@ def test_describe_search_squeeze_hits_narrated_before_the_mortal_wound_line_for_
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
         "guardian curled guardian's phantasmal hand around Aldric's heart and squeezed it and inflicted 4 damage points.",
         "Aldric was mortally wounded.",
+    ]
+
+
+# -- Phase 415: ordinary Melee's own per-swing narration --------------------
+
+
+def test_describe_search_melee_swings_narrated_in_chronological_order_both_directions():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner="leader",
+        feature_looted=True,
+        melee_swings=(
+            MeleeSwing(attacker="a", hit=True, damage=5),
+            MeleeSwing(attacker="b", hit=False, damage=0),
+        ),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 8, 0, 8, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric Attacked guardian and inflicted 5 damage points.",
+        "guardian Attacked Aldric and missed.",
+    ]
+
+
+def test_describe_search_melee_swings_narrated_before_the_mortal_wound_line_for_a_monster_win():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner="monster",
+        leader_killed=True,
+        melee_swings=(MeleeSwing(attacker="b", hit=True, damage=6),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 8, 0, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "guardian Attacked Aldric and inflicted 6 damage points.",
+        "Aldric was mortally wounded.",
+    ]
+
+
+def test_describe_search_melee_swings_narrated_after_squeeze_hits():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner="leader",
+        feature_looted=True,
+        squeeze_hits=(3,),
+        melee_swings=(MeleeSwing(attacker="a", hit=True, damage=2),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 8, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric curled Aldric's phantasmal hand around guardian's heart and squeezed it and inflicted 3 damage points.",
+        "Aldric Attacked guardian and inflicted 2 damage points.",
     ]
 
 

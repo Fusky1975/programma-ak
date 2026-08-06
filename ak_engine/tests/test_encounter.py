@@ -360,11 +360,18 @@ def test_resolve_melee_duel_matches_looping_resolve_one_melee_round():
     b2 = Combatant("B", melee_skill=0, hit_points=10)
     rng2 = ScriptedRandom(block * 15)
     round_number = 1
+    all_swings = []
     outcome = resolve_one_melee_round(a2, b2, rng2, round_number=round_number)
+    all_swings.extend(outcome.swings)
     while outcome.result is None:
         round_number += 1
         outcome = resolve_one_melee_round(a2, b2, rng2, round_number=round_number)
+        all_swings.extend(outcome.swings)
 
+    # Phase 415: resolve_melee_duel() aggregates melee_swings across every
+    # round onto its own returned result; a manual per-round loop has to
+    # do the same aggregation itself for a fair comparison here.
+    outcome.result.melee_swings = tuple(all_swings)
     assert outcome.result == result
     assert a2.hit_points == a1.hit_points
     assert b2.hit_points == b1.hit_points

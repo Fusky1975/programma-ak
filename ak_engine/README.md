@@ -17419,7 +17419,7 @@ section.
     rather than adding separate test functions, ran again, updated
     README, ran once more before commit. Full suite: 3862 passed (9 new
     tests).
-- **Phase 414 (current)**: documentation-only correction. Phase 413 said
+- **Phase 414**: documentation-only correction. Phase 413 said
   this project's Pascal source (`HostAK/TP/`) was no longer present in
   the workspace to check `_LSquee` against. **That was wrong** -- a
   stray backgrounded shell search from earlier in the same session
@@ -17455,6 +17455,61 @@ section.
     gained a Phase 414 addendum with the full citation above.
   - No test changes (documentation-only). Full suite: 3862 passed
     before and after.
+- **Phase 415 (current)**: ordinary Melee combat finally gets round-by-
+  round narration -- the biggest remaining report-generation gap, found
+  by a targeted "what's still missing from the reports?" audit:
+  `render_melee_attack()` (`SWANGAT.X`, built since Phase 113) and
+  `MeleeRoundOutcome` (built since Phase 292) had *never* been wired
+  into `describe_search()`, unlike Fire Arrow (Phase 175) and Hand of
+  Death/Squeeze (Phase 413), which both already had this treatment.
+  - `turn/encounter.py`: new `MeleeSwing(attacker, hit, damage)`
+    dataclass -- `hit` reads the *raw* attack roll before Spiritwrack's
+    `melee_damage_dealt_reduction` is subtracted, since a real hit's own
+    net `damage` can be floored to 0 by that reduction (`damage > 0`
+    alone can't stand in for `hit` the way it safely does for Fire
+    Arrow's own default damage range). `EncounterCombatResult.melee_
+    swings` and `MeleeRoundOutcome.swings` fields added.
+    `resolve_one_melee_round()` now populates `outcome.swings` for its
+    own single round; `resolve_melee_duel()` now accumulates every
+    round's own swings into the returned result's `melee_swings`.
+  - `turn/search_execution.py`: `SearchExecutionResult.melee_swings`
+    field added. A nonlocal accumulator (mirroring `fire_arrow_shots`'s
+    own pattern) collects swings across every melee-range call site:
+    the atomic `resolve_melee_duel()` fast path (both the Melee-tactic
+    branch and the exhausted-tactic-list default), and the round-
+    stepping engine's own Melee-vs-Melee branch (`_resolve_melee_range_
+    round()`, extended on *every* call, not just decisive ones, since a
+    non-decisive round's own swing still happened and still needs
+    narrating). `_resolve_steal()`'s own combat-range fallback is a
+    separate, self-contained atomic duel (not part of the tactic walk),
+    so it copies `melee_swings` straight off its own `resolve_melee_
+    duel()` call, mirroring how `fire_arrow_shots` is handled at that
+    same site. **Deliberately left out of scope**: the Melee-vs-Cast
+    branches (`resolve_reactive_melee_swing()`, a bare-int return with
+    no `MeleeSwing` produced) -- a genuinely different, one-directional
+    swing shape from ordinary Melee-vs-Melee, not yet wired into this
+    logging.
+  - `report/turn_report.py`: `render_melee_attack()` + `render_attack_
+    hit()`/`render_attack_missed()` wired into `describe_search()`,
+    narrating `result.melee_swings` right after the Hand of Death/
+    Squeeze narration. Unlike Squeeze (one-directional, tied to `result.
+    winner`), each `MeleeSwing` already carries its own `attacker`
+    ("a"/"b"), since ordinary Melee is genuinely bidirectional round to
+    round. `attack_method` (`PROSE.TXT`'s own `$S` marker) has no source
+    anywhere in this project -- no per-character weapon model exists
+    (`turn/encounter.py Combatant` carries no weapon field) -- so a
+    fixed, project-original `_MELEE_ATTACK_METHOD = "Attacked"` default
+    is used instead of a guessed sourced verb, chosen to match `SWANGAT.
+    X`'s own first template's literal "assailed/Rattacked" wording.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3862 passed), then added 6 new tests -- 3 in `test_turn_report.py`
+    (`describe_search()` narrating melee swings in chronological order
+    across both attackers, before the mortal-wound line for a monster
+    win, and after squeeze hits) and 3 in `test_search_execution.py`
+    (`melee_swings` surfacing through the atomic fast path, accumulating
+    across multiple rounds in the round-stepping engine, and surfacing
+    through `_resolve_steal()`'s own combat-range fallback). Ran again:
+    3868 passed (6 new).
 
 ## Setup
 

@@ -2456,13 +2456,32 @@ class FireArrowShot:
     """One Fire Arrow shot's outcome (Phase 175) -- ``shooter`` is ``"a"``/``"b"``,
     matching ``EncounterCombatResult.winner``'s own convention.
     ``damage`` is ``0`` on a miss. Only ``resolve_fire_arrow_duel()``
-    populates these; ``resolve_melee_duel()`` has no per-swing log and
-    always returns an empty ``shots`` tuple.
+    populates these; ``resolve_melee_duel()`` has its own analogous
+    ``MeleeSwing``/``melee_swings`` log instead (Phase 415).
     """
 
     shooter: str  # "a" / "b"
     hit: bool
     damage: int
+
+
+@dataclass(slots=True)
+class MeleeSwing:
+    """One Melee swing's outcome (Phase 415), in chronological order --
+    ``attacker`` is ``"a"``/``"b"``, matching ``EncounterCombatResult.
+    winner``'s own convention. ``hit`` reads the *attack roll* itself
+    (``roll_melee_attack()``'s own return, before ``melee_damage_dealt_
+    reduction`` is subtracted) -- Spiritwrack can floor a real hit's own
+    net ``damage`` to 0, so ``damage > 0`` alone can't stand in for
+    ``hit`` the way it safely can for Fire Arrow's own default damage
+    range. Only ``resolve_melee_duel()``/``resolve_one_melee_round()``
+    populate these; every other resolver's own ``melee_swings`` stays
+    empty.
+    """
+
+    attacker: str  # "a" / "b"
+    hit: bool
+    damage: int  # net, post-reduction -- 0 on a miss, possibly also 0 on a reduced hit
 
 
 @dataclass(slots=True)
@@ -2482,6 +2501,13 @@ class EncounterCombatResult:
     # `resolve_hand_of_death_channel()`'s own Phase 413 addendum and
     # `report/turn_report.py render_squeeze_attack()`.
     squeeze_hits: tuple[int, ...] = ()
+    # Phase 415: every Melee swing across every round, in order, for
+    # narrating each individually -- the same per-swing-detail role
+    # `shots` plays for Fire Arrow. Only `resolve_melee_duel()` (via
+    # `resolve_one_melee_round()`) populates this; empty for every other
+    # resolver. See `report/turn_report.py render_melee_attack()`'s own
+    # Phase 415 addendum.
+    melee_swings: tuple[MeleeSwing, ...] = ()
 
 
 @dataclass(slots=True)
@@ -2500,6 +2526,13 @@ class MeleeRoundOutcome:
     when the attacker missed AND when the attacker never attacked --
     callers that need to tell those apart use the corresponding
     ``*_attacked`` flag alongside the damage figure.
+
+    ``swings`` (Phase 415) is the same round's own detail again, but in
+    chronological attack order and shaped as ``MeleeSwing`` for a
+    narration caller (``report/turn_report.py``) that wants to render
+    each swing as its own sentence -- the two representations coexist
+    because ``damage_dealt_to_a``/``b`` already has real callers
+    (``resolve_spell_disruption``) that read it by *side*, not in order.
     """
 
     result: EncounterCombatResult | None  # set once a combatant's hit points reach 0 this round
@@ -2507,6 +2540,7 @@ class MeleeRoundOutcome:
     damage_dealt_to_b: int = 0  # a's landed Melee damage against b this round
     a_attacked: bool = False
     b_attacked: bool = False
+    swings: tuple[MeleeSwing, ...] = ()
 
 
 def resolve_one_melee_round(
@@ -2530,16 +2564,19 @@ def resolve_one_melee_round(
     skill_a, skill_b = effective_melee_skill(a), effective_melee_skill(b)
     first, second = (a, b) if _acts_first(skill_a, skill_b, rng) else (b, a)
     outcome = MeleeRoundOutcome(result=None)
+    swings: list[MeleeSwing] = []
     for attacker, defender in ((first, second), (second, first)):
         if attacker.hit_points <= 0 or defender.hit_points <= 0:
             continue
-        damage = roll_melee_attack(
+        raw_damage = roll_melee_attack(
             rng,
             damage_range=attacker.melee_damage_range,
             hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
         )
-        damage = max(0, damage - attacker.melee_damage_dealt_reduction)
+        damage = max(0, raw_damage - attacker.melee_damage_dealt_reduction)
         defender.hit_points -= damage
+        attacker_side = "a" if attacker is a else "b"
+        swings.append(MeleeSwing(attacker=attacker_side, hit=raw_damage > 0, damage=damage))
         if attacker is a:
             outcome.damage_dealt_to_b = damage
             outcome.a_attacked = True
@@ -2548,8 +2585,10 @@ def resolve_one_melee_round(
             outcome.b_attacked = True
         if defender.hit_points <= 0:
             outcome.result = EncounterCombatResult(winner=("a" if defender is b else "b"), rounds=round_number)
+            outcome.swings = tuple(swings)
             return outcome
     _apply_end_of_round_regeneration(a, b)
+    outcome.swings = tuple(swings)
     return outcome
 
 
@@ -2629,15 +2668,27 @@ def resolve_melee_duel(
     or the exhausted-tactic-list default) ran it again, compounding
     Berserk's own bonus hit points and Cautious'/Slancio's own hit-chance
     multipliers.
+
+    **Phase 415**: the returned ``EncounterCombatResult.melee_swings``
+    now carries every swing across every round, in order -- the same
+    per-swing-detail role ``shots`` already plays for Fire Arrow, needed
+    to feed ``report/turn_report.py render_melee_attack()``. Collected
+    by concatenating each round's own ``MeleeRoundOutcome.swings`` (see
+    ``resolve_one_melee_round()``'s own Phase 415 addendum); every pre-
+    Phase-415 caller is unaffected since nothing previously read this
+    field.
     """
 
     if not skip_temper_setup:
         apply_temper_melee_setup(a, b, rng)
+    all_swings: list[MeleeSwing] = []
     for round_number in range(1, max_rounds + 1):
         outcome = resolve_one_melee_round(a, b, rng, round_number=round_number)
+        all_swings.extend(outcome.swings)
         if outcome.result is not None:
+            outcome.result.melee_swings = tuple(all_swings)
             return outcome.result
-    return EncounterCombatResult(winner=None, rounds=max_rounds)
+    return EncounterCombatResult(winner=None, rounds=max_rounds, melee_swings=tuple(all_swings))
 
 
 def _apply_end_of_round_regeneration(a: Combatant, b: Combatant) -> None:

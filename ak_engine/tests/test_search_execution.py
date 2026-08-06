@@ -21,6 +21,7 @@ from ak_engine.turn.encounter import (
     EncounterCombatResult,
     FireArrowShot,
     MeleeRoundOutcome,
+    MeleeSwing,
 )
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.search_execution import (
@@ -746,6 +747,83 @@ def test_execute_search_melee_only_has_empty_fire_arrow_shots_but_still_sets_gua
 
     assert result.fire_arrow_shots == ()
     assert result.guardian_monster is Monster.GARGOYLE
+
+
+# -- Phase 415: per-swing Melee detail (turn/encounter.py MeleeSwing) --
+
+
+def test_execute_search_melee_fast_path_surfaces_the_duels_own_melee_swings():
+    # The "whole plan is Melee, nothing else pending" fast path calls
+    # resolve_melee_duel() once for the entire duel -- its own returned
+    # EncounterCombatResult.melee_swings (already aggregated across every
+    # round internally, Phase 415) must reach SearchExecutionResult
+    # unchanged.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    swings = (MeleeSwing(attacker="a", hit=True, damage=4), MeleeSwing(attacker="b", hit=False, damage=0))
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1, melee_swings=swings)
+        result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert result.melee_swings == swings
+
+
+def test_execute_search_melee_round_stepping_accumulates_swings_across_rounds():
+    # A bare [MELEE] leader plan still round-steps (instead of taking the
+    # atomic resolve_melee_duel() fast path) whenever the guardian's own
+    # plan has a CAST pending somewhere later (_monster_has_more_casts_
+    # pending()). Two guardian MELEE entries before that CAST keep
+    # _peek_monster_action() returning None (its own "guardian's next
+    # tactic is Melee" convention) for both of the first two rounds, so
+    # the ordinary mutual Melee-vs-Melee branch (resolve_one_melee_round())
+    # actually fires twice -- each round's own MeleeRoundOutcome.swings
+    # must accumulate across both, not just the decisive one.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    monster_plan = (
+        SearchTactic(maneuver=Maneuver.MELEE),
+        SearchTactic(maneuver=Maneuver.MELEE),
+        SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),
+    )
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch(
+        "ak_engine.turn.search_execution.resolve_one_melee_round"
+    ) as mock_round:
+        mock_round.side_effect = [
+            MeleeRoundOutcome(result=None, swings=(MeleeSwing(attacker="a", hit=False, damage=0),)),
+            MeleeRoundOutcome(
+                result=EncounterCombatResult(winner="a", rounds=2),
+                swings=(MeleeSwing(attacker="a", hit=True, damage=3),),
+            ),
+        ]
+        result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.5]))
+
+    assert result.melee_swings == (
+        MeleeSwing(attacker="a", hit=False, damage=0),
+        MeleeSwing(attacker="a", hit=True, damage=3),
+    )
+
+
+def test_execute_search_steal_caught_melee_range_surfaces_melee_swings():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _steal_request(1)
+    swings = (MeleeSwing(attacker="b", hit=True, damage=5),)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
+    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_steal_evasion", return_value=False
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel",
+        return_value=EncounterCombatResult(winner="b", rounds=1, melee_swings=swings),
+    ) as mock_melee:
+        rng = ScriptedRandom([0.5] * 20, choice_indices=[2])  # MELEE_RANGE
+        result = execute_search(state, LEADER_ID, request, rng)
+
+    assert mock_melee.called
+    assert result.melee_swings == swings
 
 
 def test_execute_search_shoot_exhausted_with_no_further_tactic_defaults_to_melee():
