@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_type import ArmyType
+from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.hero_roster import STANDARD_HERO_ROSTER
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.power import Power
 from ak_engine.models.race import Race
+from ak_engine.turn.movement import MapBounds, hex_distance, neighbors
 from ak_engine.worldgen.feature_generation import feature_count
 from ak_engine.worldgen.generate_new_game import STARTING_TREASURY, KingSetup, generate_new_game
 from ak_engine.worldgen.initial_armies import BEST_ATYPE, COMMANDER_NONE
+from ak_engine.worldgen.king_home_placement import MIN_HOME_DISTANCE
 from ak_engine.worldgen.leader_placement import COMPANIONS_PER_KING, owner_leader_count
 from ak_engine.worldgen.magic_item_placement import item_slot_count
 from ak_engine.worldgen.pascal_random import PascalRandom
@@ -19,6 +24,7 @@ from ak_engine.worldgen.special_race_placement import SPECIAL_RACE_BASE_COUNT
 
 _KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
 _HUMANOID_RACES = {Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH}
+_NON_SEA_NON_DESERT_TERRAINS = {Terrain.PLAINS, Terrain.JUNGLE, Terrain.FOREST, Terrain.MTNS}
 
 
 def _setup(king_count: int = 10) -> tuple[GameState, list[KingSetup]]:
@@ -247,3 +253,69 @@ def test_no_leader_id_is_reused_across_kings_lords_and_companions():
     )
     companion_count = COMPANIONS_PER_KING * len(kings)
     assert non_king_count == lord_count + companion_count
+
+
+def _setup_naval(king_count: int = 3) -> tuple[GameState, list[KingSetup]]:
+    # Phase 427: home_coord=None for every King, so generate_new_game()
+    # auto-selects it. King 0 is pre-marked Naval (a nonzero Ability.NAVAL
+    # skill level) via its own pre-created LeaderState.skills, matching
+    # the "caller sets this up before calling generate_new_game()"
+    # convention every other per-leader ability datum already uses.
+    game_state = GameState()
+    kings: list[KingSetup] = []
+    for i in range(king_count):
+        race = _KING_RACES[i % 4]
+        skills = None
+        if i == 0:
+            skills = SkillTable(raw_values=[0] * 31)
+            skills.set_pair_for_ability(Ability.NAVAL, 1, 0)
+        game_state.kingdoms[i] = KingdomState(
+            kingdom_id=i, name=f"K{i}", race=race, alignment=Alignment.NEUTRAL, home_province=HexCoord(0, 0)
+        )
+        game_state.leaders[i] = LeaderState(
+            leader_id=i, kingdom_id=i, name=f"King{i}", location=HexCoord(0, 0), is_king=True, race=race, skills=skills
+        )
+        kings.append(KingSetup(leader_id=i, race=race, home_coord=None))
+    return game_state, kings
+
+
+def test_auto_selected_king_homes_respect_the_minimum_distance_and_terrain_rules():
+    game_state, kings = _setup_naval()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    homes = [result.leaders[king.leader_id].location for king in kings]
+    for i, a in enumerate(homes):
+        for b in homes[i + 1 :]:
+            assert hex_distance(a, b) >= MIN_HOME_DISTANCE
+        province = result.provinces[a]
+        assert province.terrain in _NON_SEA_NON_DESERT_TERRAINS
+
+
+def test_auto_selected_naval_king_home_has_a_sea_neighbor_and_a_fleet_second_slot():
+    game_state, kings = _setup_naval()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    naval_king = kings[0]
+    home_coord = result.leaders[naval_king.leader_id].location
+    province = result.provinces[home_coord]
+    bounds = MapBounds(DEFAULT_WIDTH, DEFAULT_HEIGHT)
+
+    assert any(result.provinces[n].terrain is Terrain.SEA for n in neighbors(home_coord, bounds))
+    assert province.recruit_type_2 is ArmyType.FLEET
+    assert province.recruit_type_1 == BEST_ATYPE[naval_king.race]
+
+
+def test_auto_selected_non_naval_king_second_slot_matches_the_terrain_rule():
+    game_state, kings = _setup_naval()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings[1:]:  # every King except the pre-marked Naval one
+        home_coord = result.leaders[king.leader_id].location
+        province = result.provinces[home_coord]
+        if province.terrain is Terrain.JUNGLE:
+            assert province.recruit_type_2 is ArmyType.ELEPHANTS
+        else:
+            assert province.recruit_type_2 in {ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY, ArmyType.CHARIOTS}

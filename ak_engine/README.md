@@ -17962,7 +17962,7 @@ section.
     `test_generate_new_game.py` (every King's own treasury equals
     `STARTING_TREASURY` after a real `generate_new_game()` run). Ran
     again: 3944 passed (1 new).
-- **Phase 426 (current)**: independent lords + King companions, closing
+- **Phase 426**: independent lords + King companions, closing
   `generate_new_game()`'s own oldest documented gap ("place Kings,
   independent lords, companions and remaining mercenary heroes" --
   Phase 365 had only ever placed Kings). The user asked directly: "Ogni
@@ -18015,6 +18015,54 @@ section.
     `owner_leader_count(...) - king_count` exactly; no leader id is
     double-assigned across Kings/lords/companions). Ran again: 3948
     passed (4 new).
+- **Phase 427 (current)**: automatic King Home province selection --
+  the other half of Phase 357's own "distance/giocabilità controls"
+  gap the AKGEN material names but never specifies. The user asked
+  directly: "In pratica ti manca come assegnare il RE alla provincia
+  di partenza?" then supplied the real rule from their own play
+  experience with the game (not from the Pascal disassembly, and
+  explicitly flagged as such): Home provinces at least 3 hexes apart;
+  terrain never Sea, never Desert; a King who chose Naval as an
+  initial talent gets a Home with real sea access and Fleet as the
+  second recruit slot; otherwise the Home terrain is drawn among
+  Plains/Jungle/Forest/Mtns, with Jungle giving Elephants and the
+  other three giving a uniform draw among Light Cavalry/Heavy
+  Cavalry/Chariots (no percentage split for that specific draw exists
+  anywhere in the AKGEN material -- re-checked directly -- so the user
+  confirmed an equal-probability project-original default).
+  - New `worldgen/king_home_placement.py`: `king_is_naval()` (reads
+    the King's own pre-set `LeaderState.skills` for a nonzero
+    `Ability.NAVAL` level, since Kings don't roll random talents the
+    way non-King Heroes do), `eligible_home_coords()`/
+    `choose_king_home()` (terrain/race/distance/sea-adjacency filter +
+    uniform draw), `second_recruit_slot()`.
+  - `generate_new_game.py KingSetup.home_coord` is now optional --
+    `None` triggers automatic selection; an explicit coordinate still
+    bypasses it unchanged, so every existing caller keeps working.
+  - Found and fixed a real, previously-latent crash while wiring this
+    in: `ArmyType.ELEPHANTS` has no `BASE_STRENGTH` entry (rulebook
+    "Str" is "V", variable, deliberately excluded -- see `models/
+    army_type.py`'s own docstring), so a Jungle-terrain King Home's
+    new Elephants second slot crashed `build_initial_armies()`'s
+    default strength lookup with a `KeyError`. Fixed with a King-Home-
+    specific `strength_of` closure that resolves Elephants via the
+    already-confirmed, already-used-elsewhere `turn/strength.py
+    ELEPHANTS_STRENGTH_RANGE` instead.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3948 passed unchanged from Phase 426) -- the same seed=1 fixture
+    test broke again for the same reason as Phase 426 (new RNG
+    consumption before `place_all_features()`, this time from the
+    King-Home second-slot draw), fixed the same way: retargeted at the
+    feature id (8, `GI_CLAM` guarding `BOOK_ELEMENTAL`) this run now
+    produces, with a matching search-win seed. Added 8 new tests in
+    `tests/test_king_home_placement.py` (pure-function coverage:
+    `king_is_naval`, terrain/race/distance/sea-adjacency filtering,
+    the `ValueError` when nothing is eligible, and the second-slot
+    rules) and 3 new integration tests in `test_generate_new_game.py`
+    (auto-selected Homes respect the distance/terrain rules; a Naval
+    King's Home has a real sea neighbor and Fleet as its second slot;
+    a non-Naval King's second slot matches the terrain rule). Ran
+    again: 3959 passed (11 new).
 
 ## Setup
 

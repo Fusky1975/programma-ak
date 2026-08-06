@@ -30,11 +30,15 @@ real ``execute_use_mi()`` call -- proving the chain
 -> ``GameState.add_item()`` -> ``execute_use_mi()`` is genuinely closed,
 not just closed in separate pieces.
 
-``seed=30`` (search RNG) was found by scanning outcomes for this exact
+``seed=5`` (search RNG) was found by scanning outcomes for this exact
 scenario until the leader won -- Melee combat's own win/loss roll has
 no simpler deterministic lever available (see ``turn/encounter.py``);
 recorded here as a fixed, reproducible fact about this scenario, not a
-tuned probability.
+tuned probability. (Originally ``seed=30`` against a different feature;
+re-scanned after Phase 427 added King-Home second-recruit-slot RNG
+consumption before ``place_all_features()``, which -- like Phase 426
+before it -- shifted which treasure lands on which feature id for this
+same ``generate_new_game(seed=1)`` scenario.)
 """
 
 from __future__ import annotations
@@ -56,15 +60,15 @@ from ak_engine.worldgen.pascal_random import PascalRandom
 
 _KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
 _SEARCHER_LEADER_ID = 999
-_SEARCH_WIN_SEED = 30
-# Phase 426 note: generate_new_game(seed=1)'s own feature roster is a
-# fixed, reproducible fact of this scenario, re-checked after Phase 426
-# added hero-pool RNG consumption before place_all_features() (which
-# shifted which treasure lands on which feature id). feature_id 56
-# (GI_AMOEBA guarding BOOK_THIEF) is the SKILL_BOOK-category feature
-# this test now targets -- chosen over feature_id 37 (B_DRAGON guarding
-# BOOK_TACTICAL), which a search-seed scan up to 400 never won.
-_BOOK_FEATURE_ID = 56
+_SEARCH_WIN_SEED = 5
+# Phase 427 note: generate_new_game(seed=1)'s own feature roster is a
+# fixed, reproducible fact of this scenario, re-checked after Phase 427
+# added King-Home second-recruit-slot RNG consumption before
+# place_all_features() (which, like Phase 426 before it, shifted which
+# treasure lands on which feature id). feature_id 8 (GI_CLAM guarding
+# BOOK_ELEMENTAL) is the SKILL_BOOK-category feature this test now
+# targets.
+_BOOK_FEATURE_ID = 8
 _BOOK_SEARCH_WIN_SEED = 5
 
 
@@ -104,9 +108,9 @@ def test_world_generated_treasure_reaches_state_items_via_a_search_win():
 
 def test_a_world_generated_and_search_won_book_is_directly_usable_via_use_mi():
     # This project's real generate_new_game(seed=1) scenario places a
-    # BOOK_THIEF on feature_id 56 (guarded by a GI_AMOEBA) -- not tuned
+    # BOOK_ELEMENTAL on feature_id 8 (guarded by a GI_CLAM) -- not tuned
     # for that, just what this fixed, reproducible generation run
-    # produces (see _BOOK_FEATURE_ID's own Phase 426 note above). Any
+    # produces (see _BOOK_FEATURE_ID's own Phase 427 note above). Any
     # SKILL_BOOK category member would exercise the same chain.
     state = _generate_game()
     feature = next(f for f in state.features.values() if f.feature_id == _BOOK_FEATURE_ID)

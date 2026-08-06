@@ -54,7 +54,18 @@ this project has a real, sourced formula for:
    one showing "Gold in treasury: 10" verbatim -- distinct from
    `HOME_OVERRIDE_TAX=10` (Phase 356/357), which is those same reports'
    own separate "Expected Revenues: 10" line (the Home province's tax
-   yield, not starting cash).
+   yield, not starting cash). **Phase 427 addendum**: ``KingSetup.
+   home_coord`` is now optional -- ``None`` triggers automatic selection
+   via ``worldgen.king_home_placement.choose_king_home()``, a project-
+   original (user-confirmed, not Pascal-sourced) fill for the real,
+   confirmed-but-undocumented "distance/giocabilità" constraints the
+   AKGEN material only ever names, never specifies (re-verified
+   directly: no distance formula or scan order exists anywhere in that
+   material). See that module's own docstring for the exact rules
+   (minimum 3-hex separation, terrain never Sea/Desert, Naval-talent-
+   gated sea-adjacency) and which three points came from the user's own
+   direct clarification rather than being invented. An explicit
+   ``home_coord`` still bypasses all of it, unchanged.
 6. Initial armies: King Home provinces via
    ``worldgen.initial_armies.home_first_slot()`` + the confirmed
    ``KING_HOME_BUDGET=7`` (Phase 358); special-race provinces via
@@ -163,6 +174,18 @@ the King's own race and the second one of the other three humanoid
 races; the independent-lord count matches
 ``owner_leader_count(...) - king_count`` exactly, each lord located at
 a distinct free humanoid province with that province's own race.
+Re-verified after Phase 427 with ``home_coord=None`` for every King on
+the same 18x9/``king_count=10`` map: every pair of auto-selected Homes
+is at least ``MIN_HOME_DISTANCE`` hexes apart, every Home's own terrain
+is never Sea/Desert, a King pre-marked Naval (a nonzero
+``Ability.NAVAL`` skill) always lands on a Home with a real Sea
+neighbor and gets ``ArmyType.FLEET`` as its second recruit slot, and a
+non-Naval King's second slot always matches the terrain rule (Jungle ->
+Elephants, otherwise Light Cavalry/Heavy Cavalry/Chariots) -- including
+the Jungle/Elephants case, which required its own real-but-previously-
+unwired ``ELEPHANTS_STRENGTH_RANGE`` fix (see ``_king_home_strength_of()``'s
+own docstring) since ``build_initial_armies()``'s default strength
+lookup has no fixed entry for Elephants' rulebook "variable" Str.
 """
 
 from __future__ import annotations
@@ -170,7 +193,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ArmyType
+from ak_engine.models.army_type import BASE_STRENGTH, ArmyType
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.hero_roster import LEADER_COUNT_BY_GAME_VERSION, STANDARD_HERO_ROSTER
@@ -179,6 +202,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import roll_monster_alignment
 from ak_engine.models.race import Race
 from ak_engine.turn.movement import MapBounds
+from ak_engine.turn.strength import ELEPHANTS_STRENGTH_RANGE
 from ak_engine.worldgen.feature_placement import place_all_features
 from ak_engine.worldgen.hero_talent_generation import roll_alignment, roll_skill_and_aptitude_table
 from ak_engine.worldgen.initial_armies import (
@@ -193,6 +217,7 @@ from ak_engine.worldgen.initial_armies import (
     whale_budget,
 )
 from ak_engine.worldgen.internal_magical_locations import resolve_power, resolve_visible_location
+from ak_engine.worldgen.king_home_placement import choose_king_home, king_is_naval, second_recruit_slot
 from ak_engine.worldgen.leader_placement import (
     COMPANIONS_PER_KING,
     draw_second_companion_race,
@@ -252,17 +277,28 @@ _DEFAULT_LEADER_COUNT = LEADER_COUNT_BY_GAME_VERSION["game_version_3_or_earlier"
 
 @dataclass(frozen=True, slots=True)
 class KingSetup:
-    """One caller-supplied King: the interactively-chosen leader/race/Home
-    coordinate this project has no automatic generation for -- see module
-    docstring. ``game_state.leaders[leader_id]`` must already exist with a
-    real ``kingdom_id`` set (this orchestrator only mutates its
+    """One caller-supplied King: the interactively-chosen leader/race, and
+    optionally a Home coordinate -- see module docstring.
+    ``game_state.leaders[leader_id]`` must already exist with a real
+    ``kingdom_id`` set (this orchestrator only mutates its
     ``location``/``birth_x``, never creates or reassigns kingdom
     membership).
+
+    **Phase 427**: ``home_coord`` is now optional. ``None`` means "pick
+    it automatically" via ``worldgen/king_home_placement.py``'s own
+    project-original (user-confirmed, not Pascal-sourced) rules --
+    terrain never Sea/Desert, at least ``MIN_HOME_DISTANCE`` hexes from
+    every other King's Home, and (if this King's own pre-set
+    ``LeaderState.skills`` show Naval training) at least one Sea-
+    adjacent neighbor. An explicit ``home_coord`` bypasses all of that
+    and is honored as-is (this project's original "interactively-chosen"
+    convention, unchanged) -- it still only needs to satisfy whatever
+    the caller already trusts it to.
     """
 
     leader_id: int
     race: Race
-    home_coord: HexCoord
+    home_coord: HexCoord | None = None
 
 
 def _special_race_army_budget(race: Race, tax: int, rng: PascalRandom) -> int | None:
@@ -273,6 +309,32 @@ def _special_race_army_budget(race: Race, tax: int, rng: PascalRandom) -> int | 
     if race in _FLYING_OR_SPECIAL_BUDGET_RACES:
         return flying_or_special_budget(tax, rng)
     return None
+
+
+def _king_home_strength_of(rng: PascalRandom):
+    """Phase 427: ``build_initial_armies()``'s own default ``strength_of``
+    (``BASE_STRENGTH`` lookup) has no entry for ``ArmyType.ELEPHANTS`` --
+    its rulebook "Str" is listed as "V" (variable), deliberately excluded
+    from that fixed table (see ``models/army_type.py``'s own docstring).
+    King Home's own second recruit slot can now genuinely be Elephants
+    (a Jungle-terrain, non-Naval King), so this closure -- unlike the
+    module-level default -- resolves that one case via the already-
+    confirmed, already-used-elsewhere ``turn/strength.py
+    ELEPHANTS_STRENGTH_RANGE`` (``turn/battle_orchestrator.py``'s own
+    ``roll_elephants_strength()``), reimplemented against this project's
+    own ``PascalRandom`` rather than the ``random.Random`` that function
+    expects -- the same "same real range, different RNG on hand"
+    adaptation this project already used elsewhere (e.g. ``leader_
+    placement.py draw_second_companion_race()``).
+    """
+
+    def strength_of(army_type: ArmyType) -> int:
+        if army_type is ArmyType.ELEPHANTS:
+            low, high = ELEPHANTS_STRENGTH_RANGE
+            return low + rng.irand() % (high - low + 1)
+        return BASE_STRENGTH[army_type]
+
+    return strength_of
 
 
 def generate_new_game(
@@ -294,9 +356,23 @@ def generate_new_game(
 
     race_grid: dict[HexCoord, Race] = {coord: draw_base_race(terrain, rng) for coord, terrain in grid.items()}
 
-    king_homes = [king.home_coord for king in kings]
+    # Phase 427: resolve each King's own Home coordinate -- an explicit
+    # KingSetup.home_coord is honored as-is; None triggers the
+    # project-original (user-confirmed) automatic selection. Kept as a
+    # separate lookup rather than mutating the frozen KingSetup.
+    home_coord_by_king: dict[int, HexCoord] = {}
+    for king in kings:
+        if king.home_coord is not None:
+            home_coord_by_king[king.leader_id] = king.home_coord
+            continue
+        naval = king_is_naval(game_state.leaders[king.leader_id].skills)
+        home_coord_by_king[king.leader_id] = choose_king_home(
+            grid, race_grid, bounds, list(home_coord_by_king.values()), rng, naval=naval
+        )
+
+    king_homes = [home_coord_by_king[king.leader_id] for king in kings]
     king_home_set = frozenset(king_homes)
-    king_by_coord = {king.home_coord: king for king in kings}
+    king_by_coord = {home_coord_by_king[king.leader_id]: king for king in kings}
 
     special_race_placements = place_all_special_races(
         grid, race_grid, bounds, king_home_set, rng, new_rules=new_rules
@@ -317,9 +393,10 @@ def generate_new_game(
             tax_grid[coord] = recompute_tax(coord, grid[coord], grid, bounds, bounds.height - 1, rng)
 
     for king in kings:
-        effects = king_home_effects(king.leader_id, king.race, king.home_coord)
-        race_grid[king.home_coord] = effects.province_race
-        tax_grid[king.home_coord] = effects.province_tax
+        home_coord = home_coord_by_king[king.leader_id]
+        effects = king_home_effects(king.leader_id, king.race, home_coord)
+        race_grid[home_coord] = effects.province_race
+        tax_grid[home_coord] = effects.province_tax
         leader = game_state.leaders[king.leader_id]
         leader.location = effects.leader_current_coord
         leader.birth_x = effects.leader_born_coord.x
@@ -365,6 +442,7 @@ def generate_new_game(
 
     for king in kings:
         king_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
+        home_coord = home_coord_by_king[king.leader_id]
         for companion_index in range(COMPANIONS_PER_KING):
             hero_id = next(unused_hero_ids, None)
             if hero_id is None:
@@ -376,9 +454,9 @@ def generate_new_game(
                     leader_id=hero_id,
                     kingdom_id=king_kingdom_id,
                     name=STANDARD_HERO_ROSTER[hero_id],
-                    location=king.home_coord,
+                    location=home_coord,
                     skills=skills,
-                    birth_x=king.home_coord.x,
+                    birth_x=home_coord.x,
                     alignment=alignment,
                     race=companion_race,
                 )
@@ -390,14 +468,22 @@ def generate_new_game(
         is_king_home = coord in king_home_set
 
         recruit_type_1: ArmyType | None = None
+        recruit_type_2: ArmyType | None = None
         owner_kingdom_id: int | None = None
         army_types: list[ArmyType] = []
 
         if is_king_home:
             king = king_by_coord[coord]
             recruit_type_1 = home_first_slot(king.race)
+            # Phase 427: the Home province's own second recruit slot --
+            # see worldgen/king_home_placement.py's own module docstring
+            # for the user-confirmed terrain/Naval-talent rules.
+            naval = king_is_naval(game_state.leaders[king.leader_id].skills)
+            recruit_type_2 = second_recruit_slot(terrain, rng, naval=naval)
             owner_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
-            army_types = build_initial_armies(recruit_type_1, None, KING_HOME_BUDGET)
+            army_types = build_initial_armies(
+                recruit_type_1, recruit_type_2, KING_HOME_BUDGET, strength_of=_king_home_strength_of(rng)
+            )
         elif race in SPECIAL_RACE_BASE_COUNT:
             recruit_type_1 = special_race_recruit_slot(race)
             budget = _special_race_army_budget(race, tax, rng)
@@ -411,6 +497,7 @@ def generate_new_game(
             owner_kingdom_id=owner_kingdom_id,
             tax=tax,
             recruit_type_1=recruit_type_1,
+            recruit_type_2=recruit_type_2,
         )
 
         commander = resolve_commander(None, is_king_home)
