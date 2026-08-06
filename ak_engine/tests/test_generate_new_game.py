@@ -7,7 +7,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.power import Power
 from ak_engine.models.race import Race
 from ak_engine.worldgen.feature_generation import feature_count
-from ak_engine.worldgen.generate_new_game import KingSetup, generate_new_game
+from ak_engine.worldgen.generate_new_game import STARTING_TREASURY, KingSetup, generate_new_game
 from ak_engine.worldgen.initial_armies import BEST_ATYPE, COMMANDER_NONE
 from ak_engine.worldgen.magic_item_placement import item_slot_count
 from ak_engine.worldgen.pascal_random import PascalRandom
@@ -144,3 +144,18 @@ def test_generate_new_game_is_deterministic_for_a_fixed_seed():
 
 def test_commander_none_sentinel_matches_the_confirmed_value():
     assert COMMANDER_NONE == 255
+
+
+def test_every_kings_treasury_starts_at_the_confirmed_real_value():
+    # Phase 425: caught by an actual multi-turn playtest -- every real
+    # Turn-0 "Gold in treasury" line (SE0__T0.K0.txt, SE3__T0.K1/K2/K3)
+    # reads 10, but generate_new_game() never set KingdomState.treasury
+    # at all before this phase, leaving every fresh game at the
+    # dataclass default of 0.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        kingdom_id = result.leaders[king.leader_id].kingdom_id
+        assert result.kingdoms[kingdom_id].treasury == STARTING_TREASURY

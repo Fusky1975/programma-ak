@@ -43,7 +43,18 @@ this project has a real, sourced formula for:
    own ``location``/``birth_x`` (the ``leader_born_coord`` this formula
    returns -- ``LeaderState`` has no full born-*coordinate* field, only
    the birth *x* Phase 139 already modeled for Temper_Est, so only that
-   component is set).
+   component is set). **Phase 425 addendum**: also sets that King's own
+   ``KingdomState.treasury`` to ``STARTING_TREASURY`` -- a real, sourced
+   fact this pipeline never set at all before this phase (every
+   ``KingdomState`` a caller builds defaults to ``treasury=0``), caught
+   by an actual multi-turn playtest showing 0 gold at "turn 0" when the
+   user's own real reference reports all show 10. Confirmed across four
+   independent real Turn-0 "BIRTHRIGHT REPORT"/FINANCES sections
+   (`SE0__T0.K0.txt` "Mathlon the Newby", `SE3__T0.K1`/`K2`/`K3`), every
+   one showing "Gold in treasury: 10" verbatim -- distinct from
+   `HOME_OVERRIDE_TAX=10` (Phase 356/357), which is those same reports'
+   own separate "Expected Revenues: 10" line (the Home province's tax
+   yield, not starting cash).
 6. Initial armies: King Home provinces via
    ``worldgen.initial_armies.home_first_slot()`` + the confirmed
    ``KING_HOME_BUDGET=7`` (Phase 358); special-race provinces via
@@ -107,7 +118,8 @@ none invented past here:
 ``king_count=10``) for internal consistency -- every one of the 162
 provinces gets a real terrain/race/tax; every King Home has tax 10,
 the King's own race, and a real initial-army list starting with
-``BEST_ATYPE[king race]``; every special-race province's race matches
+``BEST_ATYPE[king race]``; every King's own ``KingdomState.treasury``
+is exactly ``STARTING_TREASURY`` (Phase 425); every special-race province's race matches
 one of the seven confirmed special races and carries that race's own
 native recruit slot; ``feature_count(gamevers)`` features exist, each
 with a real coordinate/monster/type/alignment and a real (possibly
@@ -161,6 +173,13 @@ from ak_engine.worldgen.special_race_placement import (
     place_all_special_races,
     recompute_tax,
 )
+
+# Phase 425: every King's own starting treasury -- confirmed verbatim
+# ("Gold in treasury: 10") across four independent real Turn-0 reports
+# (SE0__T0.K0.txt, SE3__T0.K1/K2/K3). See module docstring's own Phase
+# 425 addendum for why this is distinct from HOME_OVERRIDE_TAX (that
+# same reports' own separate "Expected Revenues: 10" line).
+STARTING_TREASURY = 10
 
 # Special-race army budget formula, by race -- see module docstring for
 # why Trollish has no entry (no sourced budget formula).
@@ -241,6 +260,7 @@ def generate_new_game(
         leader = game_state.leaders[king.leader_id]
         leader.location = effects.leader_current_coord
         leader.birth_x = effects.leader_born_coord.x
+        game_state.kingdoms[leader.kingdom_id].treasury = STARTING_TREASURY
 
     for coord, terrain in grid.items():
         race = race_grid[coord]
