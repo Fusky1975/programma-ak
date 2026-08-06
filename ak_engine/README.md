@@ -17209,7 +17209,7 @@ section.
     widening needs a known province owner), ran again, updated README,
     ran once more before commit. Full suite: 3822 passed before, 3835
     after (13 new tests).
-- **Phase 409 (current)**: at the user's own direct request, closed the
+- **Phase 409**: at the user's own direct request, closed the
   real half of the "attacker forced-retreat destination" gap flagged in
   the Phase 406 audit: `fight_battle()`'s rulebook-correct "back to the
   province invaded from, or adjacent to it" rule ([7.4]) was only ever
@@ -17241,6 +17241,66 @@ section.
     the old wrong fallback could never have produced it), ran again,
     updated README, ran once more before commit. Full suite: 3835 passed
     before, 3838 after (3 new tests).
+- **Phase 410 (current)**: at the user's own direct request, closed the
+  `S_Army`-tagged battle-narrative-cluster gap from the Phase 401-407
+  audit -- and found it was two different things tangled together. The
+  richer per-column clash narrative (`_BClash`/`_BRes`, commander names,
+  the `invas` opening line, `_BConq`'s own tax-base reveal) turned out
+  to be a closed question, not a remaining gap: `record_battle_world_
+  events()`'s own docstring already documents, against real fixture
+  text, that only the outer winner/conquest sentence appears in real
+  GIR paragraphs -- `WINNER.X`/`DEFWIN.X` (Phase 61) and `CONQ.X`
+  (Phase 63) were already the right, complete port. But going to verify
+  why `CONQ.X`'s own renderer (`render_uncontested_conquest()`) had
+  never been wired into anything uncovered a real, previously
+  undiscovered mechanics gap: **uncontested conquest itself was never
+  implemented**. `turn/move_execution.py execute_move()`'s own "no
+  defenders present" branch just relocated the mover and left
+  `ProvinceState.owner_kingdom_id` untouched -- the *only* place in this
+  entire project that ever transferred province ownership was
+  `fight_battle()`'s own `defender_clean_swept` branch. Moving an army
+  into an unowned or undefended-enemy province cost the ordinary
+  movement point and nothing else happened, contradicting rulebook
+  [7.7]'s own framing of conquest as a property of *entering* a
+  province, not of winning a fight there.
+  - `turn/move_execution.py execute_move()`: when no real battle occurs
+    and the mover brought at least one army, entering an unowned
+    province or one owned by a non-ally now transfers ownership
+    immediately and sets the new `MoveExecutionResult.conquered` flag --
+    a lone character moving alone still conquers nothing (Phase 410's
+    own reading of [7.7]'s "a military unit... enters" framing).
+  - `turn/conquest.py movement_cost_for_move()`'s own `conquered` extra
+    movement-point cost -- previously unreachable outside a battle --
+    now applies correctly to this path too, since it reads the same
+    fact regardless of how the conquest happened; that stale docstring
+    assumption ("conquered implies a battle happened") is corrected.
+  - `report/turn_report.py record_uncontested_conquest_world_events()`
+    (new, mirrors `record_battle_world_events()`'s own shape): finally
+    gives `render_uncontested_conquest()` -- fully built and tested
+    since Phase 63 with nothing to feed it -- a real event source,
+    skipping any conquest that already has a real `BattleReport` (to
+    avoid double-recording what `record_battle_world_events()` already
+    covers). `describe_general_intelligence_report()`'s own docstring
+    updated: five real sources now, and the stale "flagged but not
+    attempted" framing around the `S_Army` cluster corrected to explain
+    which half was already closed and which half was a real gap.
+  - The mover's own private letter (their King's own report, as opposed
+    to GIR) still doesn't narrate its own moves at all -- no such
+    section exists anywhere in `compose_letter_report()` today, for any
+    Move outcome, battle or not. Extending that is a separate, larger,
+    still-open follow-up, not attempted here.
+  - Ran the full suite before writing new tests (non-breaking check) --
+    1 pre-existing test failed as expected (`test_uncontested_move_
+    relocates_army_and_spends_one_point`, renamed and corrected: its own
+    scenario, an enemy-owned province with no defenders, was already the
+    real uncontested-conquest case, just asserting the old incomplete
+    behavior). Added 3 tests to `test_move_execution.py` (unowned
+    province also conquers, allied territory doesn't, a lone leader
+    doesn't conquer) and 4 to `test_turn_report.py` (records a real
+    conquest event, skips a battle-won one to avoid double-recording,
+    skips an unconquered move, skips a missing leader), ran again,
+    updated README, ran once more before commit. Full suite: 3838 passed
+    before (1 corrected), 3845 after (7 new tests).
 
 ## Setup
 

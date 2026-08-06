@@ -74,6 +74,7 @@ from ak_engine.report.turn_report import (
     record_move_world_events,
     record_plague_spread_world_events,
     record_spell_world_events,
+    record_uncontested_conquest_world_events,
     render_bystander_spell_notice,
     render_flood_world_event,
     render_fly_move_world_event,
@@ -5587,5 +5588,87 @@ def test_record_move_world_events_skips_a_result_that_did_not_move():
     ]
 
     record_move_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
+# -- Phase 410: record_uncontested_conquest_world_events() --------------
+
+
+def _fake_conquest_result(conquered: bool, new_location: HexCoord | None, battle_report=None):
+    class _FakeConquestResult:
+        pass
+
+    result = _FakeConquestResult()
+    result.conquered = conquered
+    result.new_location = new_location
+    result.battle_report = battle_report
+    return result
+
+
+def test_record_uncontested_conquest_world_events_records_a_conquest_event():
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Attackia", battle_coord))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_conquest_result(True, battle_coord), error=None,
+        )
+    ]
+
+    record_uncontested_conquest_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+
+    assert len(state.world_events) == 1
+    event = state.world_events[0]
+    assert event.coord == battle_coord
+    assert event.lines == ["In late summer, Attackia's forces conquered Border Fort without any major battles."]
+
+
+def test_record_uncontested_conquest_world_events_skips_a_battle_won_conquest():
+    # A real BattleReport means record_battle_world_events() already
+    # recorded this one via its own winner sentence -- must not double-record.
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Attackia", battle_coord))
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker"), conquered=True,
+        province_coord=battle_coord, attacker_kingdom_id=1, defender_kingdom_id=2,
+    )
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_conquest_result(True, battle_coord, battle_report=report), error=None,
+        )
+    ]
+
+    record_uncontested_conquest_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
+def test_record_uncontested_conquest_world_events_skips_an_unconquered_move():
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Attackia", battle_coord))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_conquest_result(False, battle_coord), error=None,
+        )
+    ]
+
+    record_uncontested_conquest_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
+def test_record_uncontested_conquest_world_events_skips_when_leader_missing():
+    state, battle_coord, _watcher_coord = _gir_state()
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_conquest_result(True, battle_coord), error=None,
+        )
+    ]
+
+    record_uncontested_conquest_world_events(state, results, ScriptedRandom([]))
 
     assert state.world_events == []

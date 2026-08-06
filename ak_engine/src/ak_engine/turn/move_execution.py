@@ -30,6 +30,30 @@ Wires together, in order:
    mover's surviving armies where ``fight_battle()`` put them, not at the
    target) and the province's exploration-percent update.
 
+**Phase 410 addendum -- uncontested conquest was never wired in until
+now.** Steps 3-4 above describe the battle-driven path only
+(``fight_battle()``'s own ``defender_clean_swept`` branch was, until
+this phase, the *only* place in this project that ever set
+``ProvinceState.owner_kingdom_id``). Rulebook [7.7] (quoted in the
+module docstring's own citation) frames "conquering an enemy province"
+as a property of *entering* it, not of winning a fight there -- and
+``report/turn_report.py``'s own ``render_uncontested_conquest()``
+(``HostAK/TP/PROSE/CONQ.X``, Phase 63, "a Move that conquers an
+undefended enemy province -- no ``_BClash``/``_BWinner`` battle dispatch
+involved at all") had been fully built and tested since Phase 63 with
+nothing to actually feed it: no code path ever produced a real
+uncontested conquest to render. Now, when the target holds no defenders
+at all (the ``else`` branch below, not ``occupied_by_enemy``) and the
+mover brought at least one army, entering an unowned or enemy-owned
+province transfers ownership immediately, matching the same "own it the
+instant you're standing in it unopposed" rule a battle-won conquest
+already implements. ``turn/conquest.py movement_cost_for_move()``'s own
+``conquered`` extra-cost point -- previously unreachable outside a
+battle, despite its own module docstring's "conquering an enemy
+province slows an army down" text never mentioning a fight as a
+precondition -- now applies correctly here too, since it reads this
+same ``conquered`` fact regardless of path.
+
 Still out of scope: ``turn/contested_province.py``'s other two functions
 -- ``attacker_can_force_rebattle``/``contested_battle_movement_cost`` --
 since automatically forcing a rebattle "in the next phase" without a new
@@ -145,6 +169,12 @@ class MoveExecutionResult:
     new_location: HexCoord | None
     reached_target: bool = True
     stopped_chasing: bool = False
+    # Phase 410 -- True for *either* a battle-won conquest
+    # (``battle_report.conquered``, mirrored here for a single flag
+    # callers can check regardless of path) or a real, uncontested one
+    # (``battle_report is None``, no defenders were present at all) --
+    # see ``execute_move()``'s own Phase 410 addendum.
+    conquered: bool = False
 
 
 def _classify_hex_ownership(state: GameState, kingdom_id: int, coord: HexCoord) -> HexOwnershipTier:
@@ -322,6 +352,19 @@ def execute_move(
         moved = conquered
     else:
         moved = True
+        # Phase 410 -- rulebook [7.7]: entering an enemy or unowned
+        # province, uncontested (no defenders present at all -- a real
+        # battle is handled above), still conquers it. `armies` (not
+        # `army_ids`) gates this on a genuine military presence, matching
+        # [7.7]'s own framing ("a military unit... enters an enemy
+        # province") -- a leader moving alone conquers nothing.
+        needs_conquest = target_province.owner_kingdom_id is None or (
+            target_province.owner_kingdom_id != kingdom_id
+            and not state.is_allied(target_province.owner_kingdom_id, kingdom_id)
+        )
+        if armies and needs_conquest:
+            target_province.owner_kingdom_id = kingdom_id
+            conquered = True
 
     cost = movement_cost_for_move(
         is_sea_province=target_province.effective_terrain() == Terrain.SEA,
@@ -350,4 +393,5 @@ def execute_move(
         new_location=actual_target if moved else None,
         reached_target=reached_target,
         stopped_chasing=False,
+        conquered=conquered,
     )

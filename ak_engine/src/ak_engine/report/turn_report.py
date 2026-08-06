@@ -6906,6 +6906,53 @@ def record_move_world_events(state: GameState, results: list[PhaseDispatchResult
         state.record_world_event(new_location, [prefix + line])
 
 
+def record_uncontested_conquest_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
+    """Populates ``state.world_events`` (Phase 410) from every Move that
+    conquered a province with no battle at all -- the fifth real event
+    *source* wired for GENERAL INTELLIGENCE REPORT, alongside
+    ``record_battle_world_events()``/``record_spell_world_events()``/
+    ``record_plague_spread_world_events()``/``record_move_world_events()``.
+    Same "call once per turn, before any ``compose_letter_report()`` call"
+    contract as those four.
+
+    ``render_uncontested_conquest()`` (``HostAK/TP/PROSE/CONQ.X``, Phase
+    63) had been fully built since Phase 63 with nothing to feed it --
+    no code path ever produced a real uncontested conquest until Phase
+    410 wired the mechanic itself into ``turn/move_execution.py
+    execute_move()`` (see that function's own Phase 410 addendum).
+    ``result.conquered and result.battle_report is None`` is exactly
+    that case -- a battle-won conquest (``battle_report`` present) is
+    already covered by ``record_battle_world_events()``'s own winner
+    sentence and must not be double-recorded here.
+
+    Duck-types ``result.moved``/``result.conquered``/``result.battle_
+    report``/``result.new_location`` the same way ``record_move_world_
+    events()`` does -- only ``turn/move_execution.py
+    MoveExecutionResult`` carries ``conquered`` today (``turn_processor.py
+    MultiAttackerMoveResult`` always goes through a real battle, so it
+    never needs this path), but duck-typing keeps this consistent with
+    every other recorder here rather than importing a concrete type to
+    ``isinstance``-check.
+    """
+
+    for entry in results:
+        result = entry.result
+        if not getattr(result, "conquered", False) or getattr(result, "battle_report", None) is not None:
+            continue
+        new_location = getattr(result, "new_location", None)
+        if new_location is None:
+            continue
+        leader = state.leaders.get(entry.leader_id)
+        province = state.provinces.get(new_location)
+        if leader is None or province is None:
+            continue
+        province_name = _province_label(state, new_location)
+        is_sea = province.effective_terrain() == Terrain.SEA
+        prefix = _season_phrase_for_phase_label(entry.phase_label)
+        line = render_uncontested_conquest(leader.name, province_name, rng, is_sea=is_sea)
+        state.record_world_event(new_location, [prefix + line])
+
+
 _GENERAL_INTELLIGENCE_REPORT_HEADER = "GENERAL INTELLIGENCE REPORT"
 _GENERAL_INTELLIGENCE_REPORT_NONE = "None at present"
 
@@ -6953,39 +7000,56 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
     follows.** The real letters show many distinct event types --
     movement ("X flew over to Y"), plagues, terrain illusions, Skeletal
     Army risings, other cast-spell narrations, and a much richer
-    per-battle narrative -- and as of Phase 257 this project populates
-    four real sources across six call sites: battle results
+    per-battle narrative -- and as of Phase 410 this project populates
+    five real sources across seven call sites: battle results
     (`record_battle_world_events()`), five real `S_Comm` province-effect
     casts -- Plague, Illusory Terrain, Flood, Part Sea, Earthquake
     (`record_spell_world_events()`, Phases 232/235) -- Plague's own
     spread-to-adjacent-provinces mechanic
     (`record_plague_spread_world_events()`, Phase 234, reusing Plague's
     own real notice text -- the rulebook draws no distinction between a
-    directly-cast and a spread-caused affliction), and Movement
+    directly-cast and a spread-caused affliction), Movement
     (`record_move_world_events()`, Phase 257 -- see that function's own
     module-level comment for the corrected "`S_Army` or higher, not
     `S_Comm`-only" GIR-visibility threshold this discovery required, the
     documented overflight-army heuristic that decides "flew" vs. the
     ordinary private march, and why Mystic Winds wind-walking's own
-    matching `S_Army` notice stays unwired).
+    matching `S_Army` notice stays unwired), and uncontested conquest
+    (`record_uncontested_conquest_world_events()`, Phase 410 -- see that
+    function's own docstring for why nothing fed
+    `render_uncontested_conquest()`'s already-built CONQ.X template
+    until the underlying ownership-transfer mechanic itself was wired
+    into `turn/move_execution.py execute_move()` the same phase).
 
     **`S_AA`-tagged content (Skeletal Army risings, `_ARises:
     Sps(Skeletal_Army,S_AA)`) is still correctly excluded even under
-    the corrected threshold**: `S_AA`'s own ordinal (6) sits below
-    `S_Army`'s (8) on `CTBOTH.PAS`'s own severity scale, so this was
-    never a false negative from the old "`S_Comm`-only" restriction --
-    genuinely narrower-than-`S_Army` content, confirmed, not merely
+    the "`S_Army` or higher" threshold**: `S_AA`'s own ordinal (6) sits
+    below `S_Army`'s (8) on `CTBOTH.PAS`'s own severity scale, so this
+    was never a false negative from the old "`S_Comm`-only" restriction
+    -- genuinely narrower-than-`S_Army` content, confirmed, not merely
     unconsidered (Skeletal Army would also need this project's
     still-missing army-naming system, a second, independent reason).
     Every other spell without a confirmed `S_Army`-or-higher `SAY.PAS`
     notice (the personal-combat spells already covered by the encounter
     engine, Bless's plausible-but-unconfirmed `S_Admin`, ...) is
     likewise a confirmed-real, deliberately-deferred follow-up -- as is
-    the much larger `S_Army`-tagged per-battle narrative cluster
-    (`FD('invas'/'conq'/'invwin'/'defwin'/'heavp', S_Army, ...)`) and
-    Scar Terrain's own bystander notice, both flagged but not attempted
-    in Phase 257 (see `record_move_world_events()`'s own module-level
-    comment for why).
+    Scar Terrain's own bystander notice, still unwired (Phase 257's own
+    module-level comment explains why).
+
+    **The rest of the `S_Army`-tagged per-battle narrative cluster
+    (`FD('invas'/'conq'/'invwin'/'defwin', S_Army, ...)`) is not a
+    remaining gap, it's a closed question**: `WINNER.X`/`DEFWIN.X` were
+    already ported as `render_battle_winner()` (Phase 61) and `CONQ.X`
+    as `render_uncontested_conquest()` (Phase 63) -- `record_battle_
+    world_events()`'s own docstring documents, against real fixture
+    text (`SE3__T2.K2`), that the richer per-column clash narrative
+    `describe_battle()` can also render (`_BClash`/`_BRes`, `invas`'s
+    own opening line, commander names, the `_BConq` tax-base reveal)
+    genuinely doesn't appear in real GIR paragraphs -- only the outer
+    winner/conquest sentence does. Phase 410 confirmed this holds for
+    uncontested conquest too, by construction: `render_uncontested_
+    conquest()` renders the exact same outer-sentence shape as `render_
+    battle_winner()`, just for the no-battle case.
 
     Always returns at least the header + "None at present" fallback
     (the same convention `describe_diplomacy_report()`/`describe_

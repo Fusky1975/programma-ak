@@ -30,16 +30,61 @@ def base_state() -> GameState:
     return state
 
 
-def test_uncontested_move_relocates_army_and_spends_one_point():
+def test_uncontested_move_relocates_army_and_conquers_the_undefended_province():
+    # Phase 410: TARGET is owned by kingdom 2 (an enemy) with no defenders
+    # at all -- rulebook [7.7]'s own real uncontested-conquest case, which
+    # now transfers ownership and costs the conquest's extra movement
+    # point (1 base + 1 conquest = 2), not just an ordinary move.
     state = base_state()
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
 
     assert result.moved is True
     assert result.battle_report is None
-    assert result.movement_points_spent == 1
+    assert result.conquered is True
+    assert state.provinces[TARGET].owner_kingdom_id == 1
+    assert result.movement_points_spent == 2
     assert state.armies[101].location == TARGET
-    assert state.armies[101].movement_points == 2
+    assert state.armies[101].movement_points == 1
+
+
+def test_uncontested_move_conquers_an_unowned_province_too():
+    # [7.7]'s own real case covers "an enemy province", but this project's
+    # own reading treats "unowned" the same way -- nobody already holds
+    # it, so any army moving in unopposed takes it, matching the same
+    # "own it the instant you're standing in it unopposed" principle a
+    # battle-won conquest already implements.
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = None
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.conquered is True
+    assert state.provinces[TARGET].owner_kingdom_id == 1
+    assert result.movement_points_spent == 2
+
+
+def test_uncontested_move_does_not_conquer_allied_territory():
+    state = base_state()
+    state.allied_kingdoms.add(frozenset({1, 2}))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.conquered is False
+    assert state.provinces[TARGET].owner_kingdom_id == 2
+    assert result.movement_points_spent == 1
+
+
+def test_leader_moving_alone_does_not_conquer():
+    # A lone character brings no military unit -- [7.7]'s own framing
+    # ("a military unit... enters an enemy province") never applies.
+    state = base_state()
+    state.add_leader(LeaderState(1, 1, "King", ORIGIN))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[], target=TARGET, leader_id=1)
+
+    assert result.conquered is False
+    assert state.provinces[TARGET].owner_kingdom_id == 2
 
 
 def test_uncontested_move_applies_partial_exploration():
