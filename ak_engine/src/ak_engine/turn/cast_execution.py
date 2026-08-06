@@ -444,6 +444,20 @@ text directly, one at a time.
      member, compatible with every non-monstrous type at once) -- "the"
      suitable army type for an Orc collapse is left unresolved, a
      genuine gap with no formula given, not silently guessed.
+  4. **Phase 411 addendum -- the bystander report notice for this
+     collapse was investigated and confirmed permanently unreachable,
+     not merely unwired.** ``SAY.PAS`` ``_STZero``/``_STFite`` (~747-748)
+     are real, fully-sourced inline ``Say()`` strings (no missing
+     ``PROSE/*.X2`` file) for GENERAL INTELLIGENCE REPORT's own
+     bystander view of a collapsed province -- but since ``scar_terrain_
+     collapse()`` above is never called from any real dispatch path (the
+     same tax-base precondition this addendum's own point 2 already
+     established this project can't check), no ``report/turn_report.py``
+     world-events recorder has anything to call it from. Wiring the
+     notice itself would be trivial; the blocker is entirely upstream,
+     in the missing tax/revenue system. See ``report/turn_report.py
+     describe_general_intelligence_report()``'s own docstring for the
+     full citation.
 
 - **Mystic Winds** (``AdvancedAbility.MYSTIC_WINDS_SPELL``,
   ``Ability.ELEMENTAL``, Phase 204) -- the user's own quoted rule text

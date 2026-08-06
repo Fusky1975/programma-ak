@@ -17241,7 +17241,7 @@ section.
     the old wrong fallback could never have produced it), ran again,
     updated README, ran once more before commit. Full suite: 3835 passed
     before, 3838 after (3 new tests).
-- **Phase 410 (current)**: at the user's own direct request, closed the
+- **Phase 410**: at the user's own direct request, closed the
   `S_Army`-tagged battle-narrative-cluster gap from the Phase 401-407
   audit -- and found it was two different things tangled together. The
   richer per-column clash narrative (`_BClash`/`_BRes`, commander names,
@@ -17301,6 +17301,28 @@ section.
     skips an unconquered move, skips a missing leader), ran again,
     updated README, ran once more before commit. Full suite: 3838 passed
     before (1 corrected), 3845 after (7 new tests).
+- **Phase 411 (current)**: at the user's own direct request, investigated
+  Scar Terrain's own bystander notice (`SAY.PAS` `_STZero`/`_STFite`,
+  ~747-748) as the next candidate GIR gap. Both are real, fully-sourced
+  inline `Say()` strings -- no missing `PROSE/*.X2` file, unlike the
+  `invas`/`conq`/`invwin`/`defwin` cluster Phase 410 investigated --
+  but confirmed permanently unreachable from this project's own state,
+  not merely unwired: both notices only fire when `turn/cast_execution.py
+  scar_terrain_collapse()` actually runs, and that function is never
+  called from any real dispatch path, because its own precondition
+  ("when the tax base reaches 0 gold") needs a real per-province tax
+  base this project has no revenue-collection system to supply (the
+  same gap `ProvinceState.tax_modifier_percent`'s own docstring already
+  flags). The land-collapse race choice (`_STFite`'s own "a wandering
+  tribe of...") is separately unspecified by the rulebook itself
+  ("usually by immigration from an adjacent province," an external fact
+  with no formula). Documentation-only, per the user's own explicit
+  choice: `_execute_scar_terrain()`'s own docstring (`turn/cast_
+  execution.py`) gained a Phase 411 addendum citing both real templates
+  and the exact blocker, and `describe_general_intelligence_report()`'s
+  own docstring (`report/turn_report.py`) was corrected from "still
+  unwired" to the full citation -- no behavior changed. Full suite:
+  3845 passed before, 3845 after (0 new tests).
 
 ## Setup
 
