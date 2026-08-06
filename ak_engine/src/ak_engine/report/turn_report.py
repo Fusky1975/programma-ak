@@ -1159,6 +1159,7 @@ from ak_engine.models.treasure import TREASURE_NAME
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
 from ak_engine.report.prose import render
 from ak_engine.turn.army_quality import compute_army_modified_quality
+from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_luck import (
@@ -1175,6 +1176,7 @@ from ak_engine.turn.combat import QUALITY_NAME
 from ak_engine.turn.emperor_election import alignment_victory_point_reduction_percent
 from ak_engine.turn.encounter import CombatRange, FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
+from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.expenses import compute_expected_expenses, leader_pay
@@ -3352,6 +3354,83 @@ def describe_disband(
     return lines
 
 
+# SAY.PAS _LDefend -- a single hardcoded template, not a PROSE file
+# (Phase 421, same shape as _ADisb's own Phase 420 precedent): "<
+# prepared > armies/Sforces to defend @ and the surrounding
+# provinces." One /S alternation, no /R, no {} -- one rng draw at most
+# (none at all, since /S never consumes one), so render() is called
+# directly rather than through pick_variant(). ``is_sea`` resolves
+# from the defended province's own terrain, this project's established
+# Phase 74 convention for a bare /S marker with no other precedent
+# (the same reading LEAVE.X's own {encamped/Sanchored } already got in
+# Phase 420) -- not independently confirmed against a real defended-sea
+# -province sample, since none exists in this project's fixture data.
+DEFEND_TEMPLATE = "< prepared > armies/Sforces to defend @ and the surrounding provinces."
+
+
+def render_defend(leader_name: str, province_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+    """Renders ``_LDefend``'s sentence for a Defend order."""
+
+    values = {"<": leader_name, ">": f"{leader_name}'s", "@": province_name}
+    return render(DEFEND_TEMPLATE, values, rng=rng, is_sea=is_sea)
+
+
+def describe_defend(state: GameState, *, leader_name: str, province: ProvinceState, rng: random.Random) -> str:
+    """Assembles the ``_LDefend`` order-confirmation sentence (Phase 421).
+
+    ``@`` is the defending leader's own current province -- the same
+    basis ``turn/defend_execution.py defend_coverage_area()`` already
+    uses for the real reinforcement mechanic (every neighbor of the
+    leader's own location), not ``DefendRequest.target_province``
+    (confirmed unused by that function, so resolving and narrating it
+    here would be guessing at data the real mechanic never reads).
+
+    **Deliberately not attempted here**: the richer reinforcement/
+    cancellation narration this project's own real source also has
+    templates for -- ``_LHearInv`` (a covered leader learning of a
+    distant attack), ``_LSplit``/``_LRemain`` (splitting or
+    concentrating coverage across two provinces), and ``_ADefend``
+    (which armies actually got left/committed as reinforcement, via a
+    ``^L=`` list marker). All four need real per-leader outcome data
+    ``turn/turn_processor.py``'s own ``_apply_defend_reinforcements()``/
+    ``_apply_defend_cancellations()`` don't currently return (they
+    mutate ``active_defends``/battle state directly) -- a materially
+    bigger undertaking than this one sentence, left for a future phase.
+    """
+
+    province_name = _province_label(state, province.coord)
+    is_sea = province.effective_terrain() is Terrain.SEA
+    return render_defend(leader_name, province_name, rng, is_sea=is_sea)
+
+
+def describe_move(
+    result: MoveExecutionResult, state: GameState, *, character_name: str, board_width: int, rng: random.Random
+) -> str | None:
+    """Assembles MARCH.X's sentence for a completed Move (Phase 421),
+    wiring the already-built ``render_march()`` (Phase 104) into a real
+    caller for the first time -- it existed but was never reached from
+    ``describe_turn_results()``, the same kind of gap Phase 214 already
+    closed for Trade.
+
+    Returns ``None`` for a Move that didn't actually relocate the
+    leader (``result.moved`` is ``False``, or ``result.new_location``
+    is unset -- e.g. an illegal/blocked Move, which has its own
+    separate narrative templates, Phase 127) -- no sourced sentence
+    exists for "you tried to move and failed" beyond those.
+    ``province_number`` is ``PROSE.TXT``'s own ``^P`` marker, the same
+    ``str(encode_hex_number(...))`` convention ``describe_rumor()``'s
+    own Phase 247 precedent already established.
+    """
+
+    if not result.moved or result.new_location is None:
+        return None
+    province = state.provinces.get(result.new_location)
+    province_name = _province_label(state, result.new_location)
+    province_number = str(encode_hex_number(result.new_location, board_width))
+    is_sea = province is not None and province.effective_terrain() is Terrain.SEA
+    return render_march(character_name, province_name, province_number, rng, is_sea=is_sea)
+
+
 # HostAK/TP/PROSE/ALLY.X -- a successful Ally proposal. See module
 # docstring's Phase 116 addendum.
 _ALLY_TEMPLATES: list[str] = [
@@ -4319,6 +4398,22 @@ def describe_turn_results(
             continue
         elif entry.action is ActionCode.DISBAND and isinstance(entry.result, ArmyListExecutionResult):
             lines.extend(describe_disband(entry.result, state, leader_name=caster_name, rng=rng))
+            continue
+        elif entry.action is ActionCode.DEFEND and isinstance(entry.result, DefendRequest):
+            leader = state.leaders.get(entry.leader_id)
+            if leader is None:
+                continue
+            province = state.provinces.get(leader.location)
+            if province is None:
+                continue
+            lines.append(describe_defend(state, leader_name=caster_name, province=province, rng=rng))
+            continue
+        elif entry.action is ActionCode.LMOVE and isinstance(entry.result, MoveExecutionResult):
+            if board_width is None:
+                continue
+            line = describe_move(entry.result, state, character_name=caster_name, board_width=board_width, rng=rng)
+            if line is not None:
+                lines.append(line)
             continue
         else:
             continue

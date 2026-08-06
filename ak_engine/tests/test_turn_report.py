@@ -32,6 +32,7 @@ from ak_engine.report.turn_report import (
     NEMESIS_TEMPLATE,
     PRACTICE_ALREADY_MAXED_TEMPLATE,
     PRACTICE_TUTORED_TEMPLATE,
+    DEFEND_TEMPLATE,
     DISBAND_TEMPLATE,
     LEAVE_TEMPLATES,
     PICKUP_TEMPLATES,
@@ -66,8 +67,10 @@ from ak_engine.report.turn_report import (
     describe_fire,
     describe_give,
     describe_hire,
+    describe_defend,
     describe_disband,
     describe_leave,
+    describe_move,
     describe_pick_up,
     describe_practice,
     describe_pursue,
@@ -151,6 +154,7 @@ from ak_engine.report.turn_report import (
     render_insufficient_gold,
     render_item_give,
     render_magic_feature_discovery,
+    render_defend,
     render_disband_unit,
     render_leave_unit,
     render_march,
@@ -248,6 +252,8 @@ from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
+from ak_engine.turn.aspy_defend_decode import DefendRequest
+from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.plan_dispatch import ArmyListExecutionResult, FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
@@ -1055,6 +1061,72 @@ def test_describe_disband_skips_army_not_found():
     lines = describe_disband(result, state, leader_name="Arthur", rng=ScriptedRandom([]))
 
     assert lines == []
+
+
+# -- Phase 421: render_defend (_LDefend) + describe_defend --
+
+
+def test_render_defend_land():
+    result = render_defend("Arthur", "Numenor", ScriptedRandom([]), is_sea=False)
+    assert result == "Arthur prepared Arthur's armies to defend Numenor and the surrounding provinces."
+
+
+def test_render_defend_sea():
+    result = render_defend("Arthur", "Numenor", ScriptedRandom([]), is_sea=True)
+    assert result == "Arthur prepared Arthur's forces to defend Numenor and the surrounding provinces."
+
+
+def test_describe_defend_uses_leader_own_province():
+    state = _leave_state(terrain=Terrain.PLAINS)
+    result = describe_defend(state, leader_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=ScriptedRandom([]))
+    assert result == "Arthur prepared Arthur's armies to defend Numenor and the surrounding provinces."
+
+
+def test_describe_defend_resolves_sea_from_province_terrain():
+    state = _leave_state(terrain=Terrain.SEA)
+    result = describe_defend(state, leader_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=ScriptedRandom([]))
+    assert result == "Arthur prepared Arthur's forces to defend Numenor and the surrounding provinces."
+
+
+# -- Phase 421: describe_move (MARCH.X, wiring render_march() for the first time) --
+
+
+def _move_result(*, moved: bool = True, new_location: HexCoord | None = HexCoord(3, 9)) -> MoveExecutionResult:
+    return MoveExecutionResult(
+        moved=moved,
+        battle_report=None,
+        exploration=None,
+        movement_points_spent=1,
+        new_location=new_location,
+    )
+
+
+def test_describe_move_renders_march_land():
+    state = _leave_state(terrain=Terrain.PLAINS)
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+    line = describe_move(_move_result(), state, character_name="Arthur", board_width=20, rng=rng)
+    assert line == "Arthur marched on Numenor 183 with Arthur's command."
+
+
+def test_describe_move_resolves_sea_marker_from_terrain():
+    state = _leave_state(terrain=Terrain.SEA)
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+    line = describe_move(_move_result(), state, character_name="Arthur", board_width=20, rng=rng)
+    assert line == "Arthur sailed into Numenor 183 with Arthur's command."
+
+
+def test_describe_move_returns_none_when_not_moved():
+    state = _leave_state()
+    line = describe_move(_move_result(moved=False), state, character_name="Arthur", board_width=20, rng=ScriptedRandom([]))
+    assert line is None
+
+
+def test_describe_move_returns_none_without_new_location():
+    state = _leave_state()
+    line = describe_move(
+        _move_result(new_location=None), state, character_name="Arthur", board_width=20, rng=ScriptedRandom([])
+    )
+    assert line is None
 
 
 # -- Phase 105: render_flee_failure (FLEEFAIL.X) + render_sneak_detected (SNEAKUP.X) --

@@ -17687,7 +17687,7 @@ section.
     (`ActionCode.RECRUIT` rendering, and skipping cleanly when the
     acting leader has no known province). Ran again: 3892 passed (16
     new).
-- **Phase 420 (current)**: `LEAVE`/`PICK_UP`/`DISBAND` narration, closing
+- **Phase 420**: `LEAVE`/`PICK_UP`/`DISBAND` narration, closing
   the rest of the cluster Phase 418 flagged -- bundled together (same
   precedent Phase 13 already set for their own decoding) since all
   three share `ArmyListRequest` and the same per-army mutate-or-skip
@@ -17744,6 +17744,55 @@ section.
     `render_disband_unit()`, and each composer's commanded/unled/
     skip cases) and 3 in `test_describe_turn_results.py` (one real
     end-to-end render per action). Ran again: 3916 passed (24 new).
+- **Phase 421 (current)**: `DEFEND`/`LMOVE` narration, closing the
+  Recruit/Disband/Leave/Pick_Up/Defend/Move cluster Phase 418 first
+  flagged -- the last two, bundled together since the user asked for
+  both in one request. Deliberately scoped to the single order-
+  confirmation sentence each already has a real, sourced template for,
+  not the deeper mechanics either action also has real (but far
+  bigger) narration for.
+  - **Defend**: sourced from `SAY.PAS _LDefend` -- a single hardcoded
+    template (`"< prepared > armies/Sforces to defend @ and the
+    surrounding provinces."`), not a `PROSE` file, so `render_defend()`
+    calls `render()` directly rather than through `pick_variant()`
+    (the same `_ADisb`-style shape Phase 420 already established).
+    `@` resolves from the defending leader's own current province --
+    the same basis `turn/defend_execution.py defend_coverage_area()`
+    already uses for the real reinforcement mechanic -- not
+    `DefendRequest.target_province`, confirmed unused by that
+    function. `describe_turn_results()` gains a real
+    `ActionCode.DEFEND` branch (previously bare-decode-only, `_dispatch_
+    defend()` had never been wired to any narration at all).
+    **Investigated but deliberately not attempted**: `SAY.PAS`'s own
+    `_LHearInv`/`_LSplit`/`_LRemain`/`_ADefend` (defend-cancellation,
+    coverage-splitting, and which armies actually reinforced, the last
+    via a real `^L=` list marker) are all real, sourced templates too --
+    but all four need per-leader outcome data `turn/turn_processor.py`'s
+    own `_apply_defend_reinforcements()`/`_apply_defend_cancellations()`
+    don't currently return (they mutate `active_defends`/battle state
+    directly, Phase 57/67/72). A materially bigger undertaking than one
+    sentence, left for a future phase.
+  - **Move**: `render_march()` (`MARCH.X`, Phase 104) existed but was
+    never reached from `describe_turn_results()` at all -- the same
+    kind of gap Phase 214 already closed for Trade. New
+    `describe_move()` wires it to a real `MoveExecutionResult`,
+    resolving `@`/`^P` from `result.new_location` directly (`^P` via
+    `str(encode_hex_number(...))`, `describe_rumor()`'s own Phase 247
+    convention) and `is_sea` from that province's own terrain. Returns
+    `None` for a Move that didn't relocate the leader (illegal/blocked
+    Moves have their own separate templates, Phase 127) -- no sourced
+    sentence exists for that case beyond those. Threads the existing
+    `board_width` opt-in parameter (`describe_rumor()`'s own Phase 247
+    precedent) -- omitted, Move narration is skipped entirely rather
+    than guessing a board width.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3916 passed unchanged from Phase 420), then added 11 new tests --
+    8 in `test_turn_report.py` (`render_defend()`'s land/sea variants,
+    `describe_defend()`'s own-province/sea-terrain cases,
+    `describe_move()`'s land/sea/not-moved/no-location cases) and 3 in
+    `test_describe_turn_results.py` (one real end-to-end render each
+    for Defend and Move, plus Move's board-width-omitted skip). Ran
+    again: 3927 passed (11 new).
 
 ## Setup
 

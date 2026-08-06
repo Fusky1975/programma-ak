@@ -20,6 +20,8 @@ from ak_engine.turn.challenge_pursue_decode import ChallengeRequest, PursueReque
 from ak_engine.turn.encounter import FireArrowShot, MeleeSwing
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
+from ak_engine.turn.aspy_defend_decode import DefendRequest
+from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.plan_dispatch import ArmyListExecutionResult, FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.combat import Quality
@@ -245,6 +247,52 @@ def test_describe_turn_results_renders_disband():
     lines = describe_turn_results(results, state, ScriptedRandom([]))
 
     assert lines == ["Aldric disbanded Bowmen."]
+
+
+def test_describe_turn_results_renders_defend():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    state.add_province(
+        ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor")
+    )
+    result = DefendRequest(target_province=0, unconfirmed_extra0=0)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.DEFEND, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([]))
+
+    assert lines == ["Aldric prepared Aldric's armies to defend Numenor and the surrounding provinces."]
+
+
+def test_describe_turn_results_renders_move():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    state.add_province(
+        ProvinceState(HexCoord(3, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor")
+    )
+    result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1, new_location=HexCoord(3, 9)
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.LMOVE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1, 0.1], choice_indices=[0]), board_width=20)
+
+    assert lines == ["Aldric marched on Numenor 183 with Aldric's command."]
+
+
+def test_describe_turn_results_skips_move_without_board_width():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1, new_location=HexCoord(0, 0)
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.LMOVE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([]))
+
+    assert lines == []
 
 
 def test_describe_turn_results_skips_trade_without_a_request():
