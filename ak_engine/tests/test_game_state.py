@@ -107,6 +107,31 @@ def test_is_allied_none_kingdom_id_is_allied_with_nobody():
     assert state.is_allied(None, None) is False
 
 
+def test_has_met_true_for_same_kingdom():
+    # Phase 408 -- mirrors is_allied's own same-kingdom shortcut.
+    state = make_state()
+    assert state.has_met(1, 1) is True
+
+
+def test_has_met_false_without_recorded_contact():
+    state = make_state()
+    assert state.has_met(1, 2) is False
+
+
+def test_has_met_true_when_contact_recorded():
+    state = make_state()
+    state.kingdoms_met.add(frozenset({1, 2}))
+    assert state.has_met(1, 2) is True
+    assert state.has_met(2, 1) is True
+
+
+def test_has_met_none_kingdom_id_has_met_nobody():
+    state = make_state()
+    assert state.has_met(None, 1) is False
+    assert state.has_met(1, None) is False
+    assert state.has_met(None, None) is False
+
+
 def test_independent_heroes_at_returns_only_ownerless_leaders_at_that_location():
     state = make_state()
     state.add_leader(LeaderState(50, None, "Wandering Hero", FIELD))

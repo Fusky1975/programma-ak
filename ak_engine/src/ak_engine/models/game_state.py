@@ -117,6 +117,18 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   ``terrain_override``/``illusory_terrain`` above). Not auto-cleared at
   a turn boundary, same "caller's job to reset" convention as
   ``oratory_boosted_this_turn``.
+  **Phase 408 addendum**: the real mechanism that would have surfaced
+  this to the watcher was found and traced all the way down --
+  ``RUMORS.PAS Set_Intel(x,y)``'s own Clairvoyance/``Counter_Science``
+  block, the thing that would grant the caster's kingdom `S_Priv`-tier
+  ("everything") visibility on the target -- and it turned out to be
+  dead code: its only call site is inside a branch its own author
+  marked "no longer in use" and gated behind a debug halt, unreachable
+  from every caller in the available archive. See ``turn/world_events.py``'s
+  own module docstring for the full citation trail. This field
+  therefore stays exactly as Phase 193 left it, now with a confirmed
+  reason no reader will be built: not "not yet implemented," but "the
+  sourced mechanism is dead code."
 
 **Gate Angel / VALHALLA fields (Phase 194, corrected Phase 195)**: a
 secret spell (``AdvancedAbility.GATE_ANGEL_SPELL``, ordinal 25, outside
@@ -1013,6 +1025,16 @@ class GameState:
     # ``compose_letter_report()`` call for that turn -- every King's own
     # report reads the same shared list, filtered by ``is_visible_to()``.
     world_events: list[WorldEvent] = field(default_factory=list)
+    # Phase 408 -- mirrors `RUMORS.PAS`/`REPORTS.PAS`'s own `kkmet` bitmask
+    # (`Check_KKSugg`, `REPORTS.PAS` ~173-202): once two kingdoms' own
+    # territories have ever bordered each other, `frozenset({a, b})` is
+    # added here and never removed -- a monotone "have we ever had
+    # diplomatic contact" fact, distinct from `allied_kingdoms` (an
+    # alliance is a separate, revocable relationship; this is a one-way
+    # ratchet). See `turn/world_events.py record_kingdom_contacts()`'s
+    # own docstring for the real `Get_News()` clause this feeds and for
+    # why only this one clause of that function is implemented.
+    kingdoms_met: set[frozenset[int]] = field(default_factory=set)
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
         self.kingdoms[kingdom.kingdom_id] = kingdom
@@ -1208,6 +1230,18 @@ class GameState:
         if kingdom_a == kingdom_b:
             return True
         return frozenset({kingdom_a, kingdom_b}) in self.allied_kingdoms
+
+    def has_met(self, kingdom_a: int | None, kingdom_b: int | None) -> bool:
+        """Phase 408 -- mirrors ``kkmet``'s own read side (``SAY.PAS`` ~101,
+        ``Get_News``'s ``kkmet[Min(kng,playking)] and (1 Shl Max(kng,playking))``
+        test). See ``kingdoms_met``'s own field docstring.
+        """
+
+        if kingdom_a is None or kingdom_b is None:
+            return False
+        if kingdom_a == kingdom_b:
+            return True
+        return frozenset({kingdom_a, kingdom_b}) in self.kingdoms_met
 
     def has_treat_permission(self, owner_kingdom_id: int, recruiter_kingdom_id: int) -> bool:
         """Whether ``owner_kingdom_id`` has issued a Treat order this turn

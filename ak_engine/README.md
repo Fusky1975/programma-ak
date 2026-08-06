@@ -17123,7 +17123,7 @@ section.
     as of Phase 406` note with citations, same convention as Phases
     396-405). Pure documentation correction -- no behavior changed.
     Full suite: 3818 passed before, 3818 after (0 new tests).
-- **Phase 407 (current)**: at the user's own direct request, wires the
+- **Phase 407**: at the user's own direct request, wires the
   real per-province `Mod_PAT` recruit-type list (Phase 278) into
   `execute_recruit()`, closing the enforcement gap Phase 402/406
   narrowed down to. `is_native_to_province` was always computed from
@@ -17153,6 +17153,62 @@ section.
     again, updated README, ran once more before commit -- the standing
     per-phase workflow. Full suite: 3818 passed before, 3822 after (4
     new tests).
+
+- **Phase 408 (current)**: at the user's own direct request (following up
+  on Clairvoyance's own "no event feed exists" gap), traced that gap all
+  the way to its real Pascal mechanism and found something bigger than
+  Clairvoyance: `RUMORS.PAS Get_News(kng): boolean` ("Does foreign kng
+  get a copy of the string in his general intelligence report?") is the
+  real `Rep_Intel`-equivalent procedure `turn/world_events.py`'s own
+  docstring had previously (wrongly) declared lost. Its real gate is an
+  OR of three clauses -- a diplomatic-contact one (`kkmet`/`S_IDipl`)
+  and two intel-level ones (`spy_lev[kng]`/`intel_lev[kng]`, the latter
+  computed by `RUMORS.PAS Set_Intel(x,y)`, which is also where
+  Clairvoyance's own "the caster knows everything that happens to the
+  target" grant would have been modeled).
+  - Deep-traced every one of `Set_Intel`'s own inputs before porting
+    anything: its only call site in the entire available archive is
+    inside a branch its own author marked "no longer in use" and gated
+    behind a debug halt, unreachable from every caller found by
+    grepping the whole archive for anything that could produce a code
+    in that branch's range. `spy_lev[kng]`'s only assignment is inside
+    that same dead branch. Neither array has a surviving declaration
+    (both presumably live in the missing `DEFINES.PAS`), so even their
+    real per-turn baseline can't be recovered. **Conclusion: `intel_lev`/
+    `spy_lev`/`Set_Intel` -- and with them, Clairvoyance's own event-feed
+    grant -- are confirmed dead code, not merely undiscovered.** Per
+    this project's standing rule against porting invented-but-dressed-
+    as-sourced behavior, none of that branch was implemented.
+    `LeaderState.clairvoyance_watchers` stays exactly as Phase 193 left
+    it, now for a confirmed reason (see that field's own Phase 408
+    addendum and `turn/cast_execution.py`'s own updated docstring).
+  - The **diplomatic-contact clause survived the same scrutiny**: its
+    inputs are independently confirmed live (`kkmet` populated every
+    turn by `Check_KKSugg`, called from real, non-dead diplomacy
+    reporting). Implemented as `GameState.kingdoms_met`/`has_met()`
+    (mirrors `allied_kingdoms`/`is_allied()`'s own shape -- a monotone
+    "have these two kingdoms ever bordered" fact, never cleared) and
+    `turn/world_events.py record_kingdom_contacts()` (mirrors
+    `Check_KKSugg`'s own per-province-adjacency scan). `is_visible_to()`
+    gained an additive `event_lev: int | None = None` parameter: when
+    the caller passes the highest tier (`S_IDIPL`, transcribed from
+    `CTBOTH.PAS`'s full 11-value `spytype` vocabulary alongside it) and
+    the two kingdoms have ever bordered, visibility widens beyond the
+    existing own-or-adjacent-province test -- passing `None` (every
+    existing caller, unchanged) reproduces the exact pre-408 behavior.
+    No renderer in this project tags anything at the `S_IDIPL` tier yet,
+    so this is a real, sourced, ready mechanism with no observable
+    effect on current output until a future renderer earns that tag.
+  - Ran the full suite before writing new tests (non-breaking check,
+    clean), added `GameState.has_met()` tests (`test_game_state.py`)
+    and `record_kingdom_contacts()`/`is_visible_to(event_lev=...)` tests
+    (`test_world_events.py`: adjacency marks contact, far-apart/unowned
+    provinces don't, contact is monotone across an ownership change,
+    `event_lev=None` matches old behavior, `S_IDIPL` widens visibility
+    with contact and stays false without it, a lower tier doesn't widen,
+    widening needs a known province owner), ran again, updated README,
+    ran once more before commit. Full suite: 3822 passed before, 3835
+    after (13 new tests).
 
 ## Setup
 

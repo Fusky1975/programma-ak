@@ -204,7 +204,14 @@ correcting two Phase 60-era blocker claims above:**
    `LeaderState.clairvoyance_watchers` in `models/game_state.py`'s own
    docstring: a successful cast adds the caster's `kingdom_id` to the
    target's watcher set. No event feed exists to actually surface
-   anything to that watcher yet.
+   anything to that watcher yet. **Phase 408**: traced this gap to its
+   real Pascal mechanism (`RUMORS.PAS Set_Intel`'s own Clairvoyance
+   block) and confirmed it's unreachable dead code in the available
+   archive -- see `LeaderState.clairvoyance_watchers`'s own Phase 408
+   addendum and `turn/world_events.py`'s module docstring for the full
+   citation trail. No event-feed reader is planned; this isn't a "not
+   yet built" gap anymore, it's a "the source never really did this"
+   finding.
 
 Neither spell gained a co-location/adjacency precondition beyond what
 was already sourced: Hide_Feature reuses the standard same-or-adjacent
