@@ -3802,14 +3802,15 @@ def describe_turn_results(
     `_province_label()`'s own Phase 158/212 precedent already
     established for an unnamed province, not a new invented rule.
 
-    **`TRADE` (`describe_give()`) stays unwired, a narrower gap than
-    before**: `TradeExecutionResult` could get the same `request`
-    treatment, but `describe_give()`'s own successful-item-transfer
-    branch (`_LTrade`) still needs a caller-supplied `item_name` this
-    project has no synthesis for (`TradeExecutionResult` doesn't even
-    record *which* `ItemInstance` moved, only a bare `item_transferred:
-    bool`) -- a distinct, still-open gap, not attempted here.
-    `describe_battle()` also stays out of this dispatch -- it needs a
+    **`TRADE` was closed by Phase 214** (this paragraph's original "stays
+    unwired" claim went stale then and was never corrected until Phase
+    418): `TradeExecutionResult` gained a `request` field and a real
+    `item: ItemInstance | None` field (Phase 214), so the branch below
+    resolves `item_name` itself via `TREASURE_NAME[entry.result.item
+    .treasure]` and calls `describe_give()` directly -- see that
+    function's own docstring for the full item/gold/failure-reason
+    breakdown.
+    `describe_battle()` stays out of this dispatch -- it needs a
     `BattleReport` and multi-army name maps no `PhaseDispatchResult`
     alone carries. Province/terrain/army-list Cast spells and Use_MI's
     skill-book path are skipped the same way, for the same reason Phase

@@ -17553,7 +17553,7 @@ section.
     melee_swing()`'s own hit-vs-damage split in `test_encounter.py`
     (including the Spiritwrack-floors-a-real-hit-to-zero case). Ran
     again: 3871 passed (3 new).
-- **Phase 417 (current)**: Challenge and Pursue's own armyless personal
+- **Phase 417**: Challenge and Pursue's own armyless personal
   combat get real narration for the first time -- a much bigger gap
   than the "add fire_arrow_shots/melee_swings to a composer" plan this
   phase started from (per the user's own "come proseguiamo?"): `Challenge
@@ -17614,6 +17614,33 @@ section.
     its `request`-missing/target-unknown skip cases; `ActionCode.PURSUE`
     narrating combat after its own catch-up sentence). Ran again: 3881
     passed (10 new).
+- **Phase 418 (current)**: documentation-only correction, found while
+  scoping "what's next" per the user's own request. `report/turn_report
+  .py describe_turn_results()`'s own docstring still claimed `TRADE`
+  "stays unwired" -- true when that paragraph was written, but stale
+  since **Phase 214**, which gave `TradeExecutionResult` a real
+  `request` field and a real `item: ItemInstance | None` field and
+  wired a genuine `ActionCode.TRADE` branch resolving `item_name` via
+  `TREASURE_NAME[entry.result.item.treasure]` before calling
+  `describe_give()`. The code was already correct; only the docstring
+  paragraph describing it was never corrected when Phase 214 landed --
+  fixed here per this project's own "correct via addendum, don't
+  rewrite history" convention (same pattern as Phase 414's own
+  correction of Phase 413). No production code changed; full suite
+  re-run to confirm (3881 passed, unchanged).
+  - **Investigated but not started**: `describe_turn_results()` has no
+    branch at all for `RECRUIT`/`DISBAND`/`LEAVE`/`PICK_UP`/`DEFEND`/
+    `LMOVE` -- unlike `TRADE`, these aren't documented as deliberately
+    skipped anywhere in the function's own docstring, so this looks
+    like genuinely unexplored territory, not a diagnosed gap. Spot-
+    checked `plan_dispatch.py`'s own `_dispatch_leave()`/
+    `_dispatch_pick_up()`/`_dispatch_disband()`: all three return a
+    bare `ArmyListRequest` (the decoded order itself), with no per-army
+    outcome dataclass recording which armies actually left/were picked
+    up/were disbanded and why -- a materially bigger undertaking than
+    Phase 417's own field-threading, since it needs a new result type
+    designed first, not just wiring an existing one. Left for a future
+    phase, scoped and started fresh rather than folded into this one.
 
 ## Setup
 
