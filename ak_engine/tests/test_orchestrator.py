@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+from pathlib import Path
+from unittest.mock import patch
+
+from ak_engine.models.alignment import Alignment
+from ak_engine.models.enums import ActionCode
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader, SkillTable
+from ak_engine.models.leader import Leader
+from ak_engine.models.map import HexCoord
+from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
+from ak_engine.models.race import Race
+from ak_engine.orchestrator import process_turn
+
+from _helpers import ScriptedRandom
+
+BOARD_WIDTH = 10
+
+
+def _wait_leader(leader_id: int, name: str) -> Leader:
+    phase = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    return Leader(leader_id, name, ActionPlan(leader_id, [PlanSegment(0, 0, (), {"P0": phase})]))
+
+
+def _kingdom(kingdom_number: int, king_name: str, leaders: list[Leader]) -> Kingdom:
+    return Kingdom(
+        source_filename="fake.K1",
+        king_name=king_name,
+        king_title=None,
+        header=KingdomMoveHeader(raw_fields=[kingdom_number, 1, 0]),
+        skills=SkillTable(raw_values=[0] * 31),
+        leaders=leaders,
+    )
+
+
+def _base_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Arthur", location=HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="Cedric", location=HexCoord(0, 0), is_king=True))
+    return state
+
+
+def test_process_turn_syncs_bridges_dispatches_and_narrates():
+    state = _base_state()
+    kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+
+    # kingdom_bridge's own real, authoritative King-identification sync ran:
+    # Arthur (name-matched to kingdom.king_name) stays is_king=True, Cedric
+    # -- not the identified King in this file's own data -- gets corrected
+    # to False even though the test fixture started him as True.
+    assert state.leaders[10].kingdom_id == 1
+    assert state.leaders[10].is_king is True
+    assert state.leaders[20].is_king is False
+
+    assert {r.leader_id for r in outcome.results} == {10, 20}
+    assert isinstance(outcome.report_lines, list)
+    assert outcome.bridge_reports[1].not_found_leader_ids == []
+
+
+def test_process_turn_skips_a_leader_with_no_matching_leaderstate():
+    state = _base_state()
+    kingdom = _kingdom(
+        1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric"), _wait_leader(99, "Ghost")]
+    )
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+
+    assert outcome.bridge_reports[1].not_found_leader_ids == [99]
+    assert 99 not in {r.leader_id for r in outcome.results}
+
+
+def test_process_turn_combines_multiple_kingdoms_orders_into_one_run_turn_call():
+    state = _base_state()
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 0)))
+    state.add_leader(LeaderState(30, kingdom_id=2, name="Baldric", location=HexCoord(1, 0), is_king=True))
+
+    kingdom_a = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
+    kingdom_b = _kingdom(2, "Baldric", [_wait_leader(30, "Baldric")])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", side_effect=[kingdom_a, kingdom_b]):
+        outcome = process_turn(
+            state, [Path("a.K1"), Path("b.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([])
+        )
+
+    assert {r.leader_id for r in outcome.results} == {10, 20, 30}
+    assert set(outcome.bridge_reports) == {1, 2}

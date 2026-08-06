@@ -17840,7 +17840,7 @@ section.
     origin/target resolution) and 1 in `test_describe_turn_results.py`
     (one real end-to-end render of the sentinel `PhaseDispatchResult`
     wiring). Ran again: 3931 passed (4 new).
-- **Phase 423 (current)**: wires `score=` into every `turn/
+- **Phase 423**: wires `score=` into every `turn/
   aftermath.py roll_quality_change()` call site in `battle_
   orchestrator.py` -- the one real input that stayed genuinely
   unwired even after Phase 372's own quality-change formula work,
@@ -17882,6 +17882,62 @@ section.
     `BRES` zeroes out that specific army's own improve chance even
     while its side wins the battle overall). Ran again: 3934 passed
     (3 new).
+- **Phase 424 (current)**: the missing orchestration layer -- every
+  individual stage (parser, world generation, `turn_processor.
+  run_turn()`, `describe_turn_results()`) was already real and tested,
+  but nothing tied them into one runnable "process a turn" pipeline, and
+  `GameState` had no way to persist between turns at all. Answers "is
+  this playable yet?" with a real, working answer: yes, turn-by-turn,
+  via three new top-level modules and a real CLI.
+  - New `persistence.py`: `save_game_state()`/`load_game_state()`,
+    pickle-based. Documented why pickle, not JSON, and why not a
+    reproduction of the original (unavailable, per `turn/kingdom_
+    bridge.py`'s own docstring) save format -- every model here is a
+    plain `@dataclass` with `HexCoord`/enum-keyed `dict`/`set` fields,
+    exactly what `pickle` round-trips for free and JSON cannot without
+    a large bespoke encode/decode layer that would itself be new,
+    unsourced code. Documented real limits: no forward/backward
+    compatibility promise across model changes, and the standard
+    `pickle.load`-on-untrusted-input security caveat.
+  - New `orchestrator.py`: `process_turn(state, order_file_paths,
+    board_width=..., rng=...) -> TurnOutcome`. Parses every `.K1` move
+    file (`parser/k1_moves.py parse_k1_moves_file()`), syncs each
+    kingdom's real move-file data into `state` (`turn/kingdom_bridge.py
+    sync_leaders_from_kingdom()`), combines every kingdom's leaders into
+    one flat list (`run_turn()`'s own same-phase Multiple Contingents
+    detection needs every kingdom in the same call, not one call per
+    kingdom), dispatches the turn, and narrates it
+    (`describe_turn_results()`). Explicitly scoped to one combined
+    turn narrative, not personalized per-King letters -- the real
+    `^B`/`^E` King-exclusion "narrator perspective" system
+    `report/turn_report.py`'s own Phase 96/108 addenda already document
+    as elided rather than guessed at is a separate, unbuilt feature,
+    not silently faked here.
+  - New `cli.py`: `python -m ak_engine.cli new-game --config kings.json
+    --out save.pkl` (builds each King's own `KingdomState`/`LeaderState`
+    from a caller-supplied JSON roster -- name/race/alignment/home
+    province, the same data `worldgen/generate_new_game.py KingSetup`'s
+    own docstring already says this project has no source to invent --
+    then runs the real, sourced `generate_new_game()` pipeline) and
+    `python -m ak_engine.cli run-turn --state save.pkl --orders *.K1
+    --board-width W --report report.txt` (the repeatable per-turn step:
+    `process_turn()`, write the narrative, save the updated state,
+    surface any `KingdomBridgeReport.not_found_leader_ids`/
+    `king_not_identified` warnings to stderr instead of them silently
+    vanishing). Verified with a real, unmocked `new-game` run (2 Kings,
+    default 18x9/162-province map) in addition to the test suite.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3934 passed unchanged from Phase 423), then added 9 new tests --
+    3 in `test_persistence.py` (round-trip, overwrite, independence of
+    the loaded copy from the original), 3 in `test_orchestrator.py`
+    (sync+bridge+dispatch+narrate, skipping an unmatched leader id,
+    combining multiple kingdoms' orders into one `run_turn()` call --
+    all via a hand-built `Kingdom` double, `parse_k1_moves_file` mocked
+    at the call site rather than hand-writing the real `.K1` grammar by
+    text), and 3 in `test_cli.py` (`new-game` producing a loadable,
+    populated save; `run-turn` writing a report and saving updated
+    state; `--save-as` leaving the original state file untouched). Ran
+    again: 3943 passed (9 new).
 
 ## Setup
 
