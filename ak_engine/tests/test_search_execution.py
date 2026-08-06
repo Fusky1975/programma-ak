@@ -22,6 +22,7 @@ from ak_engine.turn.encounter import (
     FireArrowShot,
     MeleeRoundOutcome,
     MeleeSwing,
+    ReactiveMeleeSwingResult,
 )
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.search_execution import (
@@ -2811,7 +2812,8 @@ def test_execute_search_melee_round_steps_when_guardian_has_a_cast_pending_beyon
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel"
     ) as mock_duel, patch("ak_engine.turn.search_execution.resolve_one_melee_round") as mock_round, patch(
-        "ak_engine.turn.search_execution.resolve_reactive_melee_swing", return_value=0
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=False, damage=0),
     ), patch(
         "ak_engine.turn.search_execution.resolve_spell_disruption_from_missed_attack", return_value=False
     ), patch(
@@ -2837,7 +2839,8 @@ def test_execute_search_guardians_own_cast_disrupted_by_a_landed_swing_never_att
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch(
         "ak_engine.turn.search_execution.resolve_one_melee_round"
     ) as mock_round, patch(
-        "ak_engine.turn.search_execution.resolve_reactive_melee_swing", return_value=5
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=True, damage=5),
     ) as mock_swing, patch(
         "ak_engine.turn.search_execution.resolve_spell_disruption", return_value=True
     ) as mock_disrupt, patch(
@@ -2852,12 +2855,15 @@ def test_execute_search_guardians_own_cast_disrupted_by_a_landed_swing_never_att
             MeleeRoundOutcome(result=None),
             MeleeRoundOutcome(result=EncounterCombatResult(winner="a", rounds=2)),
         ]
-        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
 
     assert mock_swing.called
     assert mock_disrupt.called
     assert not mock_miss_disrupt.called  # a landed hit uses the damage-scaled formula, not the flat-miss one
     assert not mock_cast.called  # disrupted -- "the caster loses a turn," no cast-chance roll at all
+    # Phase 416: the leader's own reactive swing (attacker="a") is narrated
+    # even though the cast it disrupted never reached _resolve_cast().
+    assert result.melee_swings == (MeleeSwing(attacker="a", hit=True, damage=5),)
 
 
 def test_execute_search_guardians_own_cast_disrupted_by_a_missed_swing_uses_the_flat_30_percent():
@@ -2872,7 +2878,8 @@ def test_execute_search_guardians_own_cast_disrupted_by_a_missed_swing_uses_the_
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch(
         "ak_engine.turn.search_execution.resolve_one_melee_round"
     ) as mock_round, patch(
-        "ak_engine.turn.search_execution.resolve_reactive_melee_swing", return_value=0
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=False, damage=0),
     ), patch("ak_engine.turn.search_execution.resolve_spell_disruption") as mock_damage_disrupt, patch(
         "ak_engine.turn.search_execution.resolve_spell_disruption_from_missed_attack", return_value=True
     ) as mock_miss_disrupt, patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_cast:
@@ -2907,7 +2914,8 @@ def test_execute_search_leaders_own_cast_after_a_non_last_melee_tactic_can_be_di
     )
 
     with patch("ak_engine.turn.search_execution.resolve_one_melee_round") as mock_round, patch(
-        "ak_engine.turn.search_execution.resolve_reactive_melee_swing", return_value=5
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=True, damage=5),
     ) as mock_swing, patch(
         "ak_engine.turn.search_execution.resolve_spell_disruption", return_value=True
     ) as mock_disrupt, patch(
@@ -2915,12 +2923,15 @@ def test_execute_search_leaders_own_cast_after_a_non_last_melee_tactic_can_be_di
     ) as mock_cast, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_duel:
         mock_round.return_value = MeleeRoundOutcome(result=None)
         mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
-        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
 
     assert mock_swing.called
     assert mock_disrupt.called
     assert not mock_cast.called
     assert state.features[1].discovered_by_kingdom == {}  # nowhere to record it
+    # Phase 416: the guardian's own reactive swing (attacker="b", since
+    # this branch is "monster swings while the leader casts") is narrated.
+    assert MeleeSwing(attacker="b", hit=True, damage=5) in result.melee_swings
 
 
 # -- Phase 297: exhausted-fallback's own resolve_melee_duel() must not

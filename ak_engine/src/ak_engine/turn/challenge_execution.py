@@ -988,7 +988,13 @@ def resolve_challenge_combat(
             continue
         if tactic.maneuver is Maneuver.CAST:
             if current_range is CombatRange.MELEE_RANGE:
-                damage = resolve_reactive_melee_swing(target, caster, rng)
+                # Phase 416: resolve_reactive_melee_swing() now returns a
+                # ReactiveMeleeSwingResult (hit + damage) instead of a bare
+                # int, for turn/search_execution.py's own narration needs
+                # -- Challenge has no per-swing narration of its own
+                # (ChallengeCombatOutcome carries no melee_swings field),
+                # so only .damage is used here, unchanged from before.
+                damage = resolve_reactive_melee_swing(target, caster, rng).damage
                 if caster.hit_points <= 0:
                     return ChallengeCombatOutcome(
                         winner="b", steal_outcome=steal_outcome, steal_capture_range=steal_capture_range

@@ -55,6 +55,7 @@ from ak_engine.turn.encounter import (
     CombatRange,
     MeleeRoundOutcome,
     MirrorImageIntelligenceTier,
+    ReactiveMeleeSwingResult,
     _acts_first,
     effective_archery_skill,
     effective_melee_skill,
@@ -75,6 +76,7 @@ from ak_engine.turn.encounter import (
     resolve_melee_duel,
     resolve_one_melee_round,
     resolve_personal_combat_spell_cast,
+    resolve_reactive_melee_swing,
     resolve_spell_disruption,
     resolve_spell_disruption_from_missed_attack,
     roll_fire_arrow_attack,
@@ -719,6 +721,48 @@ def test_resolve_spell_disruption_from_missed_attack_always_consumes_a_roll():
     # there's no "zero" shortcut here.
     rng = ScriptedRandom([0.99])
     resolve_spell_disruption_from_missed_attack(rng)
+
+
+# -- Phase 416: resolve_reactive_melee_swing()'s own hit-vs-damage split --
+
+
+def test_resolve_reactive_melee_swing_hit_returns_hit_true_and_positive_damage():
+    attacker = Combatant("A", melee_skill=1)
+    defender = Combatant("B", hit_points=10)
+    rng = ScriptedRandom([0.49, 0.5])  # under 50% -> hit, then the damage roll
+
+    result = resolve_reactive_melee_swing(attacker, defender, rng)
+
+    assert result == ReactiveMeleeSwingResult(hit=True, damage=result.damage)
+    assert result.hit is True
+    assert 1 <= result.damage <= 6
+    assert defender.hit_points == 10 - result.damage
+
+
+def test_resolve_reactive_melee_swing_miss_returns_hit_false_and_zero_damage():
+    attacker = Combatant("A")
+    defender = Combatant("B", hit_points=10)
+    rng = ScriptedRandom([0.5])  # exactly at the 50% boundary -> miss (strict <)
+
+    result = resolve_reactive_melee_swing(attacker, defender, rng)
+
+    assert result == ReactiveMeleeSwingResult(hit=False, damage=0)
+    assert defender.hit_points == 10
+
+
+def test_resolve_reactive_melee_swing_spiritwrack_reduction_can_floor_a_real_hit_to_zero_damage():
+    # A landed hit (raw roll > 0) whose net damage is fully absorbed by
+    # the attacker's own Spiritwrack reduction must still report hit=True
+    # -- damage > 0 alone can't stand in for hit, the same reasoning
+    # MeleeSwing's own Phase 415 addendum already documents.
+    attacker = Combatant("A", melee_skill=1, melee_damage_dealt_reduction=999)
+    defender = Combatant("B", hit_points=10)
+    rng = ScriptedRandom([0.49, 0.5])  # under 50% -> hit, then the damage roll
+
+    result = resolve_reactive_melee_swing(attacker, defender, rng)
+
+    assert result == ReactiveMeleeSwingResult(hit=True, damage=0)
+    assert defender.hit_points == 10  # fully absorbed -- no net damage taken
 
 
 # -- Phase 180: Holy Symbol [HO] --

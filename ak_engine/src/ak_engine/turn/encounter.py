@@ -2485,6 +2485,23 @@ class MeleeSwing:
 
 
 @dataclass(slots=True)
+class ReactiveMeleeSwingResult:
+    """``resolve_reactive_melee_swing()``'s own hit-vs-damage detail
+    (Phase 416), mirroring ``MeleeSwing``'s own Phase 415 split for the
+    same reason -- Spiritwrack can floor a real hit's own net ``damage``
+    to 0, so ``damage > 0`` alone can't stand in for ``hit``. Kept
+    separate from ``MeleeSwing`` itself because this function has no
+    ``"a"``/``"b"`` side label of its own (only the caller, matching
+    ``leader_combatant``/``monster_combatant`` to a side, knows that) --
+    a caller narrating this swing wraps it into a real ``MeleeSwing``
+    itself, supplying the label.
+    """
+
+    hit: bool
+    damage: int  # net, post-reduction -- 0 on a miss, possibly also 0 on a reduced hit
+
+
+@dataclass(slots=True)
 class EncounterCombatResult:
     winner: str | None  # "a" / "b" / None (both survived -- see each resolver's docstring)
     rounds: int
@@ -2592,7 +2609,7 @@ def resolve_one_melee_round(
     return outcome
 
 
-def resolve_reactive_melee_swing(attacker: Combatant, defender: Combatant, rng: random.Random) -> int:
+def resolve_reactive_melee_swing(attacker: Combatant, defender: Combatant, rng: random.Random) -> ReactiveMeleeSwingResult:
     """One one-directional Melee swing (Phase 292) -- ``attacker`` swings at
     ``defender``, who does not swing back this round because it is
     casting instead of fighting. Models rulebook [5.1]'s own "melee
@@ -2604,23 +2621,27 @@ def resolve_reactive_melee_swing(attacker: Combatant, defender: Combatant, rng: 
     assumed to keep swinging Melee every round the caster spends
     casting instead of answering in kind.
 
-    Returns the damage dealt (0 on a miss) so the caller can feed it
-    straight into ``resolve_spell_disruption``/``resolve_spell_
-    disruption_from_missed_attack`` -- the damage-taken-or-missed-swing
-    disruption check this exists to make possible. Mutates ``defender.
-    hit_points`` in place; the caller checks for death itself (the same
-    convention every other Personal-Combat spell effect in this module
-    already follows for its own target/caster hit-point checks).
+    Returns a ``ReactiveMeleeSwingResult`` (Phase 416) -- ``.damage`` is
+    this function's own original return value (0 on a miss), so the
+    caller can still feed it straight into ``resolve_spell_disruption``/
+    ``resolve_spell_disruption_from_missed_attack`` exactly as before
+    (unchanged: disruption's own "hit" reading stays ``damage > 0``, not
+    ``.hit`` -- see that call site's own Phase 416 note for why); ``.hit``
+    is new, for narration callers that need the raw roll the same way
+    ``MeleeSwing`` already does. Mutates ``defender.hit_points`` in
+    place; the caller checks for death itself (the same convention every
+    other Personal-Combat spell effect in this module already follows
+    for its own target/caster hit-point checks).
     """
 
-    damage = roll_melee_attack(
+    raw_damage = roll_melee_attack(
         rng,
         damage_range=attacker.melee_damage_range,
         hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
     )
-    damage = max(0, damage - attacker.melee_damage_dealt_reduction)
+    damage = max(0, raw_damage - attacker.melee_damage_dealt_reduction)
     defender.hit_points -= damage
-    return damage
+    return ReactiveMeleeSwingResult(hit=raw_damage > 0, damage=damage)
 
 
 def resolve_melee_duel(

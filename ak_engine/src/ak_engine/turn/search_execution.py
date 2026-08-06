@@ -1621,7 +1621,14 @@ def _resolve_search_encounter(
           actual damage; a miss rolls ``resolve_spell_disruption_from_
           missed_attack()``'s own flat 30% instead. A disrupted cast
           never reaches ``_resolve_cast()`` at all ("the caster loses a
-          turn").
+          turn"). **Phase 416**: this swing is now also appended to the
+          nonlocal ``melee_swings`` accumulator (as a real ``MeleeSwing``,
+          reading ``.hit``/``.damage`` off ``resolve_reactive_melee_
+          swing()``'s own ``ReactiveMeleeSwingResult``) -- disruption
+          itself is unchanged, still keyed off ``.damage > 0`` exactly as
+          before, not ``.hit`` (a reduced-to-zero hit still disrupts
+          nothing, the same pre-existing behavior Phase 416 doesn't
+          touch).
         - **Cast vs Cast**: both sides attempt their own cast, no
           swings, no disruption check (neither side is attacking this
           round).
@@ -1654,7 +1661,9 @@ def _resolve_search_encounter(
             return _finish_melee_outcome(round_outcome.result) if round_outcome.result is not None else None
 
         if leader_tactic.maneuver is Maneuver.MELEE:
-            damage = resolve_reactive_melee_swing(leader_combatant, monster_combatant, rng)
+            swing_result = resolve_reactive_melee_swing(leader_combatant, monster_combatant, rng)
+            damage = swing_result.damage
+            melee_swings.append(MeleeSwing(attacker="a", hit=swing_result.hit, damage=swing_result.damage))
             if monster_combatant.hit_points <= 0:
                 return _finish_melee_outcome(EncounterCombatResult(winner="a", rounds=0))
             disrupted = (
@@ -1668,7 +1677,9 @@ def _resolve_search_encounter(
 
         # leader_tactic.maneuver is Maneuver.CAST from here on
         if monster_tactic is None:
-            damage = resolve_reactive_melee_swing(monster_combatant, leader_combatant, rng)
+            swing_result = resolve_reactive_melee_swing(monster_combatant, leader_combatant, rng)
+            damage = swing_result.damage
+            melee_swings.append(MeleeSwing(attacker="b", hit=swing_result.hit, damage=swing_result.damage))
             if leader_combatant.hit_points <= 0:
                 return _finish_melee_outcome(EncounterCombatResult(winner="b", rounds=0))
             disrupted = (

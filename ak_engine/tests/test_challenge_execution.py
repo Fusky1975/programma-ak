@@ -29,7 +29,13 @@ from ak_engine.turn.challenge_execution import (
 )
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, CombatRange, EncounterCombatResult, MeleeRoundOutcome
+from ak_engine.turn.encounter import (
+    CHARACTER_HIT_POINTS,
+    CombatRange,
+    EncounterCombatResult,
+    MeleeRoundOutcome,
+    ReactiveMeleeSwingResult,
+)
 from ak_engine.turn.search_decode import SearchTactic
 
 from _helpers import ScriptedRandom
@@ -661,7 +667,8 @@ def test_resolve_challenge_combat_cast_at_melee_range_disrupted_by_a_landed_hit_
     tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.HEAL.value)]
 
     with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
-        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing", return_value=5
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=True, damage=5),
     ) as mock_swing, patch("ak_engine.turn.challenge_execution.resolve_spell_disruption", return_value=True) as mock_disrupt, patch(
         "ak_engine.turn.challenge_execution.resolve_spell_disruption_from_missed_attack"
     ) as mock_miss_disrupt, patch(
@@ -686,7 +693,8 @@ def test_resolve_challenge_combat_cast_at_melee_range_disrupted_by_a_missed_swin
     tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.HEAL.value)]
 
     with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
-        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing", return_value=0
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=False, damage=0),
     ), patch("ak_engine.turn.challenge_execution.resolve_spell_disruption") as mock_damage_disrupt, patch(
         "ak_engine.turn.challenge_execution.resolve_spell_disruption_from_missed_attack", return_value=True
     ) as mock_miss_disrupt, patch(
@@ -710,7 +718,8 @@ def test_resolve_challenge_combat_cast_at_melee_range_not_disrupted_still_attemp
     tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.HEAL.value)]
 
     with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
-        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing", return_value=2
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=True, damage=2),
     ), patch("ak_engine.turn.challenge_execution.resolve_spell_disruption", return_value=False), patch(
         "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True
     ) as mock_cast, patch("ak_engine.turn.challenge_execution.words_of_healing_heal") as mock_heal, patch(
@@ -733,7 +742,7 @@ def test_resolve_challenge_combat_reactive_swing_killing_the_caster_ends_combat_
 
     def _lethal_swing(attacker, defender, rng):
         defender.hit_points -= 5
-        return 5
+        return ReactiveMeleeSwingResult(hit=True, damage=5)
 
     with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
         "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing", side_effect=_lethal_swing

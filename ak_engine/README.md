@@ -17455,7 +17455,7 @@ section.
     gained a Phase 414 addendum with the full citation above.
   - No test changes (documentation-only). Full suite: 3862 passed
     before and after.
-- **Phase 415 (current)**: ordinary Melee combat finally gets round-by-
+- **Phase 415**: ordinary Melee combat finally gets round-by-
   round narration -- the biggest remaining report-generation gap, found
   by a targeted "what's still missing from the reports?" audit:
   `render_melee_attack()` (`SWANGAT.X`, built since Phase 113) and
@@ -17510,6 +17510,49 @@ section.
     across multiple rounds in the round-stepping engine, and surfacing
     through `_resolve_steal()`'s own combat-range fallback). Ran again:
     3868 passed (6 new).
+- **Phase 416 (current)**: closes Phase 415's own deliberately-left-out
+  gap, at the user's own direct follow-up request ("Ci occupiamo di
+  Melee-vs-Cast?") -- the Melee-vs-Cast reactive swings inside
+  `_resolve_melee_range_round()` (one side swinging in Melee while the
+  other casts) now feed the same `melee_swings` narration `describe_
+  search()` already renders generically, closing the last un-narrated
+  Melee shape.
+  - `turn/encounter.py`: `resolve_reactive_melee_swing()` now returns a
+    new `ReactiveMeleeSwingResult(hit, damage)` dataclass instead of a
+    bare `int` -- the same `hit`-vs-`damage` split `MeleeSwing` already
+    needed (Spiritwrack can floor a real hit's own net `damage` to 0),
+    kept as a separate dataclass from `MeleeSwing` itself since this
+    function has no `"a"`/`"b"` side label of its own to attach (only
+    the caller, matching combatants to sides, knows that). `.damage` is
+    exactly the function's own prior return value, so every existing
+    disruption-check call site (`resolve_spell_disruption(damage, rng)
+    if damage > 0 else ...`) is unchanged -- disruption still keys off
+    `.damage > 0`, not `.hit`; a reduced-to-zero hit still disrupts
+    nothing, same as before this phase.
+  - `turn/search_execution.py`: both Melee-vs-Cast branches inside
+    `_resolve_melee_range_round()` now append a real `MeleeSwing`
+    (`attacker="a"` for the leader's own swing, `"b"` for the
+    guardian's) to the same nonlocal `melee_swings` accumulator Phase
+    415 built, reading `.hit`/`.damage` off the new `ReactiveMeleeSwingResult`.
+  - `turn/challenge_execution.py`: this function is shared with
+    Challenge's own combat resolution, which has no per-swing narration
+    of its own (`ChallengeCombatOutcome` carries no `melee_swings`
+    field) -- its one call site was updated mechanically to read
+    `.damage` off the new return type, with no behavior change and no
+    new narration capability added there (a separate, larger phase if
+    ever wanted).
+  - `report/turn_report.py`: **no changes needed** -- `describe_search()`
+    already narrates every entry in `result.melee_swings` generically
+    (Phase 415), regardless of which code path populated it.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3868 passed), then updated 9 existing mocked tests across `test_
+    search_execution.py`/`test_challenge_execution.py` to return
+    `ReactiveMeleeSwingResult` instead of a bare int (mechanical fix for
+    the new return type), extended 2 of them with `melee_swings`
+    assertions, and added 3 new direct unit tests for `resolve_reactive_
+    melee_swing()`'s own hit-vs-damage split in `test_encounter.py`
+    (including the Spiritwrack-floors-a-real-hit-to-zero case). Ran
+    again: 3871 passed (3 new).
 
 ## Setup
 
