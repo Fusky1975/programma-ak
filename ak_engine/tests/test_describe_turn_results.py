@@ -14,7 +14,9 @@ from ak_engine.report.turn_report import describe_turn_results
 from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
-from ak_engine.turn.challenge_pursue_decode import PursueRequest
+from ak_engine.turn.challenge_execution import ChallengeExecutionResult
+from ak_engine.turn.challenge_pursue_decode import ChallengeRequest, PursueRequest
+from ak_engine.turn.encounter import FireArrowShot, MeleeSwing
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.plan_dispatch import FireExecutionResult, HireExecutionResult, PhaseDispatchResult
@@ -267,6 +269,85 @@ def test_describe_turn_results_skips_pursue_when_target_unknown():
     )
     results = [
         PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.PURSUE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_turn_results_renders_pursue_combat_after_the_catch_up_sentence():
+    # Phase 417: the armyless personal-duel case's own combat now gets
+    # narrated too, right after the pre-existing _LCatch sentence.
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(2, "Borin"))
+    state.provinces[HexCoord(0, 0)] = ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, name="Eldoria")
+    result = PursueExecutionResult(
+        caught_up=True,
+        combat_occurred=True,
+        winner_leader_id=1,
+        loser_leader_id=2,
+        loser_killed=True,
+        melee_swings=(MeleeSwing(attacker="a", hit=True, damage=4),),
+        request=PursueRequest(target_character_id=2, unconfirmed_extra0=0),
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.PURSUE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[8, 0, 0]))
+
+    assert lines == [
+        "Aldric caught up with Borin in Eldoria.",
+        "Aldric Attacked Borin and inflicted 4 damage points.",
+        "Borin was mortally wounded.",
+    ]
+
+
+def test_describe_turn_results_renders_challenge_combat():
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(2, "Borin"))
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        fire_arrow_shots=(FireArrowShot(shooter="a", hit=True, damage=5),),
+        request=ChallengeRequest(target_character_id=2, unconfirmed_extra0=0),
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CHALLENGE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0, 0]))
+
+    assert lines == ["Aldric Fired an arrow at Borin and inflicted 5 damage points."]
+
+
+def test_describe_turn_results_skips_challenge_without_a_request():
+    # A direct execute_challenge() caller (every existing unit test
+    # included) never gets .request stamped -- only plan_dispatch.py's
+    # own _dispatch_challenge() does (Phase 417).
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1,
+            segment_index=0,
+            phase_label="P0",
+            action=ActionCode.CHALLENGE,
+            result=ChallengeExecutionResult(accepted=True, combat_occurred=False),
+            error=None,
+        ),
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_turn_results_skips_challenge_when_target_unknown():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    result = ChallengeExecutionResult(
+        accepted=True, combat_occurred=True, request=ChallengeRequest(target_character_id=999, unconfirmed_extra0=0)
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CHALLENGE, result=result, error=None)
     ]
 
     lines = describe_turn_results(results, state, ScriptedRandom([]))

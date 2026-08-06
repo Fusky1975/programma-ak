@@ -155,7 +155,14 @@ from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted, resolve_challenge_combat
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, CombatRange, loot_defeated_leader
+from ak_engine.turn.encounter import (
+    CHARACTER_HIT_POINTS,
+    Combatant,
+    CombatRange,
+    FireArrowShot,
+    MeleeSwing,
+    loot_defeated_leader,
+)
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance, neighbors
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 
@@ -224,6 +231,12 @@ class PursueExecutionResult:
     # goes through `fight_battle()` instead, out of [5.9]'s own personal-
     # combat scope.
     looted_item_ids: list[int] = field(default_factory=list)
+    # Phase 417: same field, same reason as `turn/challenge_execution.py
+    # ChallengeExecutionResult`'s own Phase 417 addendum -- set for the
+    # armyless-combat branch only, copied straight from `ChallengeCombat
+    # Outcome`.
+    fire_arrow_shots: tuple[FireArrowShot, ...] = ()
+    melee_swings: tuple[MeleeSwing, ...] = ()
 
 
 def _fight_army_pursuit_battle(
@@ -320,6 +333,8 @@ def execute_pursue(
             fled=True,
             steal_outcome=combat_result.steal_outcome,
             steal_capture_range=combat_result.steal_capture_range,
+            fire_arrow_shots=combat_result.fire_arrow_shots,
+            melee_swings=combat_result.melee_swings,
         )
     if combat_result.winner is None:
         return PursueExecutionResult(
@@ -327,6 +342,8 @@ def execute_pursue(
             combat_occurred=True,
             steal_outcome=combat_result.steal_outcome,
             steal_capture_range=combat_result.steal_capture_range,
+            fire_arrow_shots=combat_result.fire_arrow_shots,
+            melee_swings=combat_result.melee_swings,
         )
 
     winner_id, loser_id = (
@@ -346,6 +363,8 @@ def execute_pursue(
         looted_item_ids=[item.item_id for item in looted_items],
         steal_outcome=combat_result.steal_outcome,
         steal_capture_range=combat_result.steal_capture_range,
+        fire_arrow_shots=combat_result.fire_arrow_shots,
+        melee_swings=combat_result.melee_swings,
     )
 
 

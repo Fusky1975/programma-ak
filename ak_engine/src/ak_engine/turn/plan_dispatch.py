@@ -645,10 +645,18 @@ def _dispatch_challenge(
     the same cross-leader, same-phase visibility Multiple Contingents and
     Practice's own multi-character coordination needed -- a declared
     follow-up for ``turn/turn_processor.py``, not attempted here.
+
+    Phase 417: stamps the decoded ``request`` onto the returned result
+    here, at the dispatcher, the same "one real call site, don't touch
+    every internal early-return" reasoning ``_dispatch_pursue()``'s own
+    Phase 213 addendum already established for its own sibling result
+    type.
     """
 
     request = decode_challenge_phase(phase)
-    return execute_challenge(state, leader_id, request, rng)
+    result = execute_challenge(state, leader_id, request, rng)
+    result.request = request
+    return result
 
 
 def _dispatch_pursue(

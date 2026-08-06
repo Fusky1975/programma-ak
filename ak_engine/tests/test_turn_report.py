@@ -57,6 +57,8 @@ from ak_engine.report.turn_report import (
     describe_aspy,
     describe_battle,
     describe_cast,
+    describe_challenge,
+    describe_encounter_combat,
     describe_fire,
     describe_give,
     describe_hire,
@@ -1549,6 +1551,78 @@ def test_describe_steal_also_accepts_a_pursue_execution_result():
 
     assert line is not None
     assert "Aldric" in line and "Borin" in line
+
+
+# -- describe_encounter_combat / describe_challenge (Phase 417) -------------
+
+
+def test_describe_encounter_combat_narrates_fire_arrow_shots_and_melee_swings_in_order():
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        fire_arrow_shots=(FireArrowShot(shooter="a", hit=True, damage=5),),
+        melee_swings=(MeleeSwing(attacker="b", hit=False, damage=0),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 8, 0])
+
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+
+    assert lines == [
+        "Aldric Fired an arrow at Borin and inflicted 5 damage points.",
+        "Borin Attacked Aldric and missed.",
+    ]
+
+
+def test_describe_encounter_combat_narrates_the_mortal_wound_line_for_the_loser():
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        winner_leader_id=1,
+        loser_leader_id=2,
+        loser_killed=True,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+
+    assert lines == ["Borin was mortally wounded."]
+
+
+def test_describe_encounter_combat_narrates_the_steal_line_first():
+    result = ChallengeExecutionResult(accepted=True, combat_occurred=True, steal_outcome="ransom")
+    rng = ScriptedRandom([0.1] * 10)
+
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+
+    assert len(lines) == 1
+    assert "Aldric" in lines[0] and "Borin" in lines[0] and "ransom" in lines[0]
+
+
+def test_describe_encounter_combat_returns_empty_when_no_combat_occurred():
+    result = ChallengeExecutionResult(accepted=False, reason="encounter refused")
+    rng = ScriptedRandom([])
+
+    assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
+
+
+def test_describe_encounter_combat_returns_empty_for_a_peaceful_accepted_plan():
+    result = ChallengeExecutionResult(accepted=True, combat_occurred=False)
+    rng = ScriptedRandom([])
+
+    assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
+
+
+def test_describe_challenge_delegates_to_describe_encounter_combat():
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        melee_swings=(MeleeSwing(attacker="a", hit=True, damage=3),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[8, 0])
+
+    lines = describe_challenge(result, challenger_leader_id=1, challenger_name="Aldric", target_name="Borin", rng=rng)
+
+    assert lines == ["Aldric Attacked Borin and inflicted 3 damage points."]
 
 
 # -- ASpy report body (Phase 115) --------------------------------------------

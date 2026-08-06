@@ -3387,6 +3387,127 @@ def describe_pursue(
     return render_caught_up(pursuer_name, target_name, province_name, rng)
 
 
+def describe_encounter_combat(
+    result: ChallengeExecutionResult | PursueExecutionResult,
+    *,
+    a_leader_id: int,
+    a_name: str,
+    b_name: str,
+    rng: random.Random,
+    is_sea: bool = False,
+) -> list[str]:
+    """Phase 417: the personal-combat narration Challenge's and Pursue's
+    own armyless-duel case have had zero narration for since either was
+    first implemented (Phase 50/51) -- `ChallengeCombatOutcome`/
+    `ChallengeExecutionResult`/`PursueExecutionResult` all gained `fire_
+    arrow_shots`/`melee_swings` fields this phase, mirroring `turn/
+    search_execution.py SearchExecutionResult`'s own Phase 175/415/416
+    fields, but Search's own `describe_search()` can't be reused directly
+    -- Challenge/Pursue's opponent is always another character, never a
+    monster, so there's no species-flavor branching to thread through,
+    and `a`/`b` name generically rather than "leader"/"guardian".
+
+    Shared by `describe_challenge()` below and `describe_turn_results()`'s
+    own `ActionCode.PURSUE` branch (which still opens with `describe_
+    pursue()`'s own `_LCatch` sentence separately, unchanged) -- the same
+    "shared field names, no isinstance check" reuse `describe_steal()`
+    already established for these same two result types (Phase 306).
+
+    Returns `[]` outright when `result.combat_occurred` is `False` --
+    covers every administrative rejection (not accepted, not co-located,
+    refused) *and* a genuinely peaceful accepted plan in one check, since
+    every one of `execute_challenge()`/`execute_pursue()`'s own early
+    returns before real combat leaves `combat_occurred` at its `False`
+    default. No sourced sentence exists for a refused/peaceful encounter
+    either way (the same "no source, no guess" policy `describe_give()`
+    already states), and a successful Charm/Augur-first flee
+    (`result.fled`) has no sourced sentence of its own -- only the real
+    swings that happened before it are narrated, not the flee itself.
+
+    Order: `describe_steal()`'s own sub-event line (if any) first --
+    Steal, when present, always happens *before* whatever combat follows
+    getting caught, chronologically -- then every Fire Arrow shot, then
+    every Melee swing (both in `result` order, i.e. chronological), then
+    `render_mortally_wounded()` if `result.loser_killed` (the same
+    MORTWOUN.X sentence every other personal-combat death already uses).
+    `a_leader_id` resolves which of `a_name`/`b_name` is the loser from
+    `result.loser_leader_id` -- `resolve_challenge_combat()`'s own "a" is
+    always the challenger/pursuer, "b" always the target, so `a_name`/
+    `b_name` here must be supplied in that same order.
+    """
+
+    if not result.combat_occurred:
+        return []
+
+    lines: list[str] = []
+    steal_line = describe_steal(result, thief_name=a_name, victim_name=b_name, rng=rng)
+    if steal_line is not None:
+        lines.append(steal_line)
+
+    for shot in result.fire_arrow_shots:
+        attacker_name, defender_name = (a_name, b_name) if shot.shooter == "a" else (b_name, a_name)
+        attack_line = render_fire_arrow_attack(attacker_name, defender_name, rng)
+        attack_line += (
+            render_attack_hit(defender_name, shot.damage, rng)
+            if shot.hit
+            else render_attack_missed(attacker_name, defender_name, "arrow", rng, is_sea=is_sea)
+        )
+        lines.append(attack_line)
+
+    for swing in result.melee_swings:
+        attacker_name, defender_name = (a_name, b_name) if swing.attacker == "a" else (b_name, a_name)
+        attack_line = render_melee_attack(attacker_name, defender_name, _MELEE_ATTACK_METHOD, rng)
+        attack_line += (
+            render_attack_hit(defender_name, swing.damage, rng)
+            if swing.hit
+            else render_attack_missed(attacker_name, defender_name, "blade", rng, is_sea=is_sea)
+        )
+        lines.append(attack_line)
+
+    if result.loser_killed:
+        loser_name = a_name if result.loser_leader_id == a_leader_id else b_name
+        lines.append(render_mortally_wounded(loser_name, rng, is_sea=is_sea))
+
+    return lines
+
+
+def describe_challenge(
+    result: ChallengeExecutionResult,
+    *,
+    challenger_leader_id: int,
+    challenger_name: str,
+    target_name: str,
+    rng: random.Random,
+    is_sea: bool = False,
+) -> list[str]:
+    """Assembles Challenge's own turn-report lines from an already-computed
+    ``ChallengeExecutionResult`` (``turn/challenge_execution.py
+    execute_challenge()``, Phase 50/290/292/305/306/417) -- Challenge's
+    own report presence, from zero: `describe_turn_results()` never had
+    an ``ActionCode.CHALLENGE`` branch before this phase, since
+    ``ChallengeExecutionResult`` had no ``request`` field for it to
+    resolve ``target_name`` from at all (see this dataclass's own Phase
+    417 addendum, mirroring ``PursueExecutionResult.request``'s own
+    Phase 213 field).
+
+    A thin wrapper over ``describe_encounter_combat()`` (this module's
+    own shared Challenge/Pursue personal-combat narration) -- see that
+    function's own docstring for the full composition order and the
+    "no source, no guess" reasoning behind every case it renders nothing
+    for (a refused/peaceful encounter, a successful flee's own final
+    beat).
+    """
+
+    return describe_encounter_combat(
+        result,
+        a_leader_id=challenger_leader_id,
+        a_name=challenger_name,
+        b_name=target_name,
+        rng=rng,
+        is_sea=is_sea,
+    )
+
+
 def describe_trail(
     result: TrailExecutionResult,
     *,
@@ -3799,10 +3920,50 @@ def describe_turn_results(
             target_name = _leader_name(state, request.target_character_id)
             if target_name is None:
                 continue
-            province_name = _province_label(state, state.leaders[entry.leader_id].location)
-            line = describe_pursue(
+            leader_location = state.leaders[entry.leader_id].location
+            province_name = _province_label(state, leader_location)
+            catch_up_line = describe_pursue(
                 entry.result, pursuer_name=caster_name, target_name=target_name, province_name=province_name, rng=rng
             )
+            if catch_up_line is not None:
+                lines.append(catch_up_line)
+            # Phase 417: the armyless personal-duel case's own combat --
+            # `_fight_army_pursuit_battle()`'s own army-vs-army case has
+            # no fire_arrow_shots/melee_swings at all (empty tuples), so
+            # this is a genuine no-op for that branch, not a special case.
+            province = state.provinces.get(leader_location)
+            is_sea = province is not None and province.effective_terrain() is Terrain.SEA
+            lines.extend(
+                describe_encounter_combat(
+                    entry.result,
+                    a_leader_id=entry.leader_id,
+                    a_name=caster_name,
+                    b_name=target_name,
+                    rng=rng,
+                    is_sea=is_sea,
+                )
+            )
+            continue
+        elif entry.action is ActionCode.CHALLENGE and isinstance(entry.result, ChallengeExecutionResult):
+            request = entry.result.request
+            if request is None:
+                continue
+            target_name = _leader_name(state, request.target_character_id)
+            if target_name is None:
+                continue
+            province = state.provinces.get(state.leaders[entry.leader_id].location)
+            is_sea = province is not None and province.effective_terrain() is Terrain.SEA
+            lines.extend(
+                describe_challenge(
+                    entry.result,
+                    challenger_leader_id=entry.leader_id,
+                    challenger_name=caster_name,
+                    target_name=target_name,
+                    rng=rng,
+                    is_sea=is_sea,
+                )
+            )
+            continue
         elif entry.action is ActionCode.TRAIL and isinstance(entry.result, TrailExecutionResult):
             request = entry.result.request
             if request is None:

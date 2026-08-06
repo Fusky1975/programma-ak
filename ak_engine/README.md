@@ -17510,7 +17510,7 @@ section.
     across multiple rounds in the round-stepping engine, and surfacing
     through `_resolve_steal()`'s own combat-range fallback). Ran again:
     3868 passed (6 new).
-- **Phase 416 (current)**: closes Phase 415's own deliberately-left-out
+- **Phase 416**: closes Phase 415's own deliberately-left-out
   gap, at the user's own direct follow-up request ("Ci occupiamo di
   Melee-vs-Cast?") -- the Melee-vs-Cast reactive swings inside
   `_resolve_melee_range_round()` (one side swinging in Melee while the
@@ -17553,6 +17553,67 @@ section.
     melee_swing()`'s own hit-vs-damage split in `test_encounter.py`
     (including the Spiritwrack-floors-a-real-hit-to-zero case). Ran
     again: 3871 passed (3 new).
+- **Phase 417 (current)**: Challenge and Pursue's own armyless personal
+  combat get real narration for the first time -- a much bigger gap
+  than the "add fire_arrow_shots/melee_swings to a composer" plan this
+  phase started from (per the user's own "come proseguiamo?"): `Challenge
+  ExecutionResult` had no `request` field at all, so `describe_turn_
+  results()` had **no `ActionCode.CHALLENGE` branch whatsoever** --
+  a Challenge order produced zero report lines, not even who won or
+  died. `describe_steal()` (Phase 306) existed but was never actually
+  called from anywhere either. Corrected scope confirmed with the user
+  via `AskUserQuestion` before proceeding ("Chiusura completa").
+  - `turn/challenge_execution.py`: `ChallengeCombatOutcome`/`Challenge
+    ExecutionResult` both gain `fire_arrow_shots`/`melee_swings` fields
+    (mirroring `SearchExecutionResult`'s own Phase 175/415/416 fields).
+    `resolve_challenge_combat()` refactored around a local `_outcome()`
+    helper (replacing ~10 near-duplicate `ChallengeCombatOutcome(...)`
+    constructions) that threads the two new fields through every real
+    combat call site -- the atomic Fire-Arrow/Melee duels, the round-
+    stepping Melee-vs-Melee branch (`resolve_one_melee_round()`, its own
+    `.swings` accumulated on *every* call, not just decisive ones), and
+    the Melee-vs-Cast reactive swing (`attacker="b"`, since the *target*
+    is the one swinging while the caster/"a" attempts to cast). `Challenge
+    ExecutionResult` also gains a `request` field, stamped by `plan_
+    dispatch.py _dispatch_challenge()` (new, mirroring `_dispatch_pursue()`'s
+    own Phase 213 pattern) rather than `execute_challenge()` itself, to
+    avoid touching its own half-dozen early-return sites for a field only
+    the report layer needs.
+  - `turn/pursue_execution.py`: `PursueExecutionResult` gains the same two
+    fields, copied from `combat_result` at its own three combat-outcome
+    return points in `execute_pursue()` -- `_fight_army_pursuit_battle()`'s
+    own army-vs-army branch never touches them (stays at the `()` default),
+    since it goes through `fight_battle()` instead, out of [5.9]'s own
+    personal-combat scope.
+  - `report/turn_report.py`: new `describe_encounter_combat()` -- the
+    shared Challenge/Pursue personal-combat narrator (steal sub-event
+    first via the now-actually-wired `describe_steal()`, then every Fire
+    Arrow shot, then every Melee swing, then `render_mortally_wounded()`
+    if the loser died) -- and `describe_challenge()`, a thin wrapper over
+    it giving Challenge its own named composer (mirroring `describe_
+    search()`/`describe_pursue()`'s own direct-callable convention).
+    Returns `[]` outright whenever `result.combat_occurred` is `False`,
+    covering every administrative rejection *and* a genuinely peaceful
+    plan in one check -- no sourced sentence exists for either, nor for
+    a successful Charm/Augur-first flee's own final beat (only the real
+    swings that happened before it are narrated). Challenge/Pursue's own
+    opponent is always another character, never a monster, so this reuses
+    none of `describe_search()`'s species-flavor branching -- a genuinely
+    simpler, separate implementation, not a shared helper with Search.
+    `describe_turn_results()` gains a real `ActionCode.CHALLENGE` branch
+    (new) and the existing `ActionCode.PURSUE` branch now also calls
+    `describe_encounter_combat()` after its own pre-existing `_LCatch`
+    sentence -- `describe_pursue()` itself is untouched (still just the
+    catch-up sentence, same `str | None` return type, no test breakage).
+  - Ran the full suite before writing new tests (non-breaking check:
+    3871 passed), then added 10 new tests -- 6 in `test_turn_report.py`
+    (`describe_encounter_combat()`'s own shot/swing ordering, mortal-
+    wound resolution, steal-first ordering, and both empty-combat cases;
+    `describe_challenge()`'s own delegation) and 4 in `test_describe_
+    turn_results.py` (`ActionCode.CHALLENGE` rendering combat and both
+    its `request`-missing/target-unknown skip cases; `ActionCode.PURSUE`
+    narrating combat after its own catch-up sentence). Ran again: 3881
+    passed (10 new).
 
 ## Setup
 

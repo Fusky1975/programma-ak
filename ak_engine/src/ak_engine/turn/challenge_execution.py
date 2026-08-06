@@ -213,6 +213,8 @@ from ak_engine.turn.encounter import (
     Combatant,
     CombatRange,
     EncounterCombatResult,
+    FireArrowShot,
+    MeleeSwing,
     apply_temper_melee_setup,
     blocks_cast_and_archery,
     control_undead_failure_new_hit_points,
@@ -687,6 +689,15 @@ class ChallengeCombatOutcome:
     # the capture-combat happened at, needed to pick the right `SNEAKUP_
     # RANGE_*` clause.
     steal_capture_range: CombatRange | None = None
+    # Phase 417: per-shot/per-swing combat detail, mirroring `turn/
+    # search_execution.py SearchExecutionResult`'s own `fire_arrow_shots`/
+    # `melee_swings` fields (Phase 175/415/416) -- accumulated across
+    # every real combat call site in `resolve_challenge_combat()` below,
+    # not just whichever one happened to be decisive, so `report/
+    # turn_report.py` can narrate the whole encounter, not only its
+    # final blow.
+    fire_arrow_shots: tuple[FireArrowShot, ...] = ()
+    melee_swings: tuple[MeleeSwing, ...] = ()
 
 
 def _close_to(target_range: CombatRange, current_range: CombatRange) -> CombatRange:
@@ -956,6 +967,25 @@ def resolve_challenge_combat(
     # when a later tactic decides the encounter's actual winner.
     steal_outcome: str | None = None
     steal_capture_range: CombatRange | None = None
+    # Phase 417: accumulated across every real combat call site below,
+    # regardless of whether that particular call ended the encounter --
+    # mirrors `turn/search_execution.py`'s own `fire_arrow_shots`/
+    # `melee_swings` nonlocal-accumulator pattern (Phase 175/415), just
+    # as plain locals here since this function has no nested closures.
+    fire_arrow_shots: list[FireArrowShot] = []
+    melee_swings: list[MeleeSwing] = []
+
+    def _outcome(
+        *, winner: str | None = None, fled: bool = False
+    ) -> ChallengeCombatOutcome:
+        return ChallengeCombatOutcome(
+            winner=winner,
+            fled=fled,
+            steal_outcome=steal_outcome,
+            steal_capture_range=steal_capture_range,
+            fire_arrow_shots=tuple(fire_arrow_shots),
+            melee_swings=tuple(melee_swings),
+        )
 
     for index, tactic in enumerate(tactics):
         if tactic.maneuver is Maneuver.SHOOT:
@@ -963,42 +993,37 @@ def resolve_challenge_combat(
                 continue  # [5.0]: only spells or Melee are usable in the melee zone
             current_range = _close_to(CombatRange.BOW_RANGE, current_range)
             result = resolve_fire_arrow_duel(caster, target, rng)
+            fire_arrow_shots.extend(result.shots)
             if result.winner is not None:
-                return ChallengeCombatOutcome(
-                    winner=result.winner, steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
-                )
+                return _outcome(winner=result.winner)
             continue
         if tactic.maneuver is Maneuver.MELEE:
             current_range = _close_to(CombatRange.MELEE_RANGE, current_range)
             if index == len(tactics) - 1:
                 result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
-                return ChallengeCombatOutcome(
-                    winner=result.winner, steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
-                )
+                melee_swings.extend(result.melee_swings)
+                return _outcome(winner=result.winner)
             if not melee_setup_done:
                 apply_temper_melee_setup(caster, target, rng)
                 melee_setup_done = True
             round_outcome = resolve_one_melee_round(caster, target, rng)
+            melee_swings.extend(round_outcome.swings)
             if round_outcome.result is not None:
-                return ChallengeCombatOutcome(
-                    winner=round_outcome.result.winner,
-                    steal_outcome=steal_outcome,
-                    steal_capture_range=steal_capture_range,
-                )
+                return _outcome(winner=round_outcome.result.winner)
             continue
         if tactic.maneuver is Maneuver.CAST:
             if current_range is CombatRange.MELEE_RANGE:
-                # Phase 416: resolve_reactive_melee_swing() now returns a
-                # ReactiveMeleeSwingResult (hit + damage) instead of a bare
-                # int, for turn/search_execution.py's own narration needs
-                # -- Challenge has no per-swing narration of its own
-                # (ChallengeCombatOutcome carries no melee_swings field),
-                # so only .damage is used here, unchanged from before.
-                damage = resolve_reactive_melee_swing(target, caster, rng).damage
+                # Phase 417: the target's own reactive swing (attacker="b",
+                # since the caster="a" is the one attempting to cast here)
+                # is now logged into melee_swings too, reading .hit/.damage
+                # off resolve_reactive_melee_swing()'s own Phase 416
+                # ReactiveMeleeSwingResult -- disruption itself is
+                # unchanged, still keyed off .damage > 0, not .hit.
+                swing_result = resolve_reactive_melee_swing(target, caster, rng)
+                damage = swing_result.damage
+                melee_swings.append(MeleeSwing(attacker="b", hit=swing_result.hit, damage=swing_result.damage))
                 if caster.hit_points <= 0:
-                    return ChallengeCombatOutcome(
-                        winner="b", steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
-                    )
+                    return _outcome(winner="b")
                 disrupted = (
                     resolve_spell_disruption(damage, rng)
                     if damage > 0
@@ -1010,25 +1035,17 @@ def resolve_challenge_combat(
                 caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=(index == 0)
             )
             if outcome == "fled":
-                return ChallengeCombatOutcome(
-                    winner=None, fled=True, steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
-                )
+                return _outcome(fled=True)
             if outcome in ("a", "b"):
-                return ChallengeCombatOutcome(
-                    winner=outcome, steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
-                )
+                return _outcome(winner=outcome)
             bonus_winner = _consume_bonus_attacks(caster, target, rng)
             if bonus_winner is not None:
-                return ChallengeCombatOutcome(
-                    winner=bonus_winner, steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
-                )
+                return _outcome(winner=bonus_winner)
             continue
         if tactic.maneuver is Maneuver.STEAL:
             steal_outcome = _resolve_steal_tactic(caster_leader, target_leader, state, rng)
             if steal_outcome == "executed":
-                return ChallengeCombatOutcome(
-                    winner="b", steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
-                )
+                return _outcome(winner="b")
             if steal_outcome == "combat":
                 # Phase 306 correction: a real worked example ([11.3] "CA-IN,
                 # ST, FL, ME") confirms getting caught doesn't atomically
@@ -1051,9 +1068,8 @@ def resolve_challenge_combat(
             continue  # success / evaded / ransom / unresolved -- plan continues
         # every other tactic is unwired -- skip it and keep walking
     result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
-    return ChallengeCombatOutcome(
-        winner=result.winner, steal_outcome=steal_outcome, steal_capture_range=steal_capture_range
-    )
+    melee_swings.extend(result.melee_swings)
+    return _outcome(winner=result.winner)
 
 
 @dataclass(slots=True)
@@ -1080,6 +1096,18 @@ class ChallengeExecutionResult:
     # None) when `loser_killed` is True but the loser owned nothing; stays
     # `[]` when there's no death at all.
     looted_item_ids: list[int] = field(default_factory=list)
+    # Phase 417: same field, same reason as `ChallengeCombatOutcome`'s own
+    # Phase 417 addendum -- copied straight through so `report/turn_
+    # report.py` can narrate the whole encounter's combat, not only its
+    # final blow.
+    fire_arrow_shots: tuple[FireArrowShot, ...] = ()
+    melee_swings: tuple[MeleeSwing, ...] = ()
+    # Phase 417: the originating request, so a caller (report/turn_report.py
+    # describe_turn_results()) can resolve the target's own display name --
+    # set by plan_dispatch.py's own dispatcher, not by execute_challenge()
+    # itself, the same Phase 213 convention `PursueExecutionResult.request`/
+    # `SearchExecutionResult.request` already established.
+    request: ChallengeRequest | None = None
 
 
 def execute_challenge(
@@ -1132,6 +1160,8 @@ def execute_challenge(
             fled=True,
             steal_outcome=combat_result.steal_outcome,
             steal_capture_range=combat_result.steal_capture_range,
+            fire_arrow_shots=combat_result.fire_arrow_shots,
+            melee_swings=combat_result.melee_swings,
         )
     if combat_result.winner is None:
         return ChallengeExecutionResult(
@@ -1139,6 +1169,8 @@ def execute_challenge(
             combat_occurred=True,
             steal_outcome=combat_result.steal_outcome,
             steal_capture_range=combat_result.steal_capture_range,
+            fire_arrow_shots=combat_result.fire_arrow_shots,
+            melee_swings=combat_result.melee_swings,
         )
 
     winner_id, loser_id = (
@@ -1158,4 +1190,6 @@ def execute_challenge(
         looted_item_ids=[item.item_id for item in looted_items],
         steal_outcome=combat_result.steal_outcome,
         steal_capture_range=combat_result.steal_capture_range,
+        fire_arrow_shots=combat_result.fire_arrow_shots,
+        melee_swings=combat_result.melee_swings,
     )
