@@ -18358,7 +18358,7 @@ section.
     test file's own local `_ADVENTURE_UNKNOWN_RICHES` constant (same
     27-space indent fix). Ran again: 3988 passed (0 new -- existing
     tests rewritten in place).
-- **Phase 435 (current)**: closes the pixel-perfect turn-0 report layout
+- **Phase 435**: closes the pixel-perfect turn-0 report layout
   project (Phases 431-435) with the two remaining, deliberately small
   fixes the approved plan called out: IMPERIAL OFFICE REPORT's office-
   name column width, and FINANCES' three gold figures' own numeric
@@ -18396,6 +18396,31 @@ section.
     percentage columns, CHARACTERS' item-ownership tick marks, etc.)
     explicitly documented as a deliberate, narrower-than-real scope
     rather than a silent gap.
+- **Phase 436 (current)**: closes the first of the three deliberate
+  simplifications Phase 435's own closing note listed -- ARMIES' real
+  per-province column suppression (`REPORTS.PAS Rep_Armies Doit`'s own
+  nested `Check_None`-equivalent `pac`/`none` state, ~lines 954-971):
+  the first army at a given province still gets the full province name
+  (padded 18); the *second* army at that same province now gets
+  `"(#" + province_code() + ")"` instead of repeating the name (the
+  real `apres >= 2` guard is automatically true whenever a second army
+  at the same province exists at all, so this project's own simplified
+  Hired-only pass can drop that guard); every later army at that
+  province gets a fully blank 18-char field
+  (`_ARMIES_BLANK_PROVINCE_COLUMN`). **Still not reproduced**: the real
+  grouping is actually keyed by province+leader (armies are iterated
+  leader-by-leader, not by flat `army_id` order) -- since the column-
+  suppression pattern only depends on how many armies have already
+  been printed at a province, not on which leader owns them, it
+  reproduces correctly regardless of iteration order, but the real
+  leader-grouping order itself is a separate, still-open gap.
+  - Ran the full suite before writing new tests (non-breaking check:
+    all pre-existing tests passed unchanged, since none of them had
+    exercised more than one army at the same province). Added one new
+    test (`test_describe_armies_report_suppresses_province_column_
+    after_the_second_army`, 3 armies at one province, captured via the
+    same scratch-script technique as earlier phases). Ran again: 3989
+    passed (1 new).
 
 ## Setup
 

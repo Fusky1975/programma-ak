@@ -6803,6 +6803,16 @@ _ARMIES_REPORT_NONE_AT_PRESENT = "None at present"
 _ARMIES_CAPTION_LINE_1 = "                                                              Normal  Modified"
 _ARMIES_COLUMN_HEADER = "Province          Leader         Designation           Race   Quality  Quality"
 
+# REPORTS.PAS Doit's own `Check_None`-equivalent province-column
+# suppression (Phase 436): the real per-province `none`/`pac` state --
+# the first army at a province gets the full province field, the second
+# gets `'(#'+ps+')'` (`ELSE IF ((pac = 2) and (apres >= 2)) THEN s:=
+# Concat('(#',ps,')')`, `apres>=2` always true once a second army at
+# the same province exists), and every later army gets `WRITE(s,'':18-
+# Length(s))` with `s:= ''` -- i.e. a fully blank 18-char field, not a
+# repeated province name.
+_ARMIES_BLANK_PROVINCE_COLUMN = " " * 18
+
 
 def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
     """Lists every army this kingdom currently owns, grouped by province --
@@ -6849,21 +6859,33 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
       ~lines 945-950 -- province 18, leader 15, designation 20, race 7,
       quality 9, modified quality 9, cross-checked by slicing the joined
       header string against each real `WRITE(...,'':N-Length(s))`/`:N`
-      field-width call). **Still not reproduced**: the real procedure's
-      per-province/per-leader *grouping* (the province name is only
-      printed once per group of armies sharing a province+leader, blank
-      or `"(#code)"` on repeats) -- this composer still emits the full
-      province label on every line, now just padded/truncated to the
-      real 18-char field width instead of left as free text. The real
-      header itself is also lazy (`strip` flag): it's only ever printed
-      before the *first* eligible army line, never at all if this
-      kingdom owns no armies -- reproduced here via the same `if not
-      owned: return` early-out already in place, so "None at present"
-      appears with no header, unlike CHARACTERS' own caption block
-      (`Rep_Leaders` prints its header unconditionally at the top of the
-      procedure, before the loop -- a genuine structural difference
-      between the two real procedures, not an inconsistency introduced
-      here).
+      field-width call). The real header itself is also lazy (`strip`
+      flag): it's only ever printed before the *first* eligible army
+      line, never at all if this kingdom owns no armies -- reproduced
+      here via the same `if not owned: return` early-out already in
+      place, so "None at present" appears with no header, unlike
+      CHARACTERS' own caption block (`Rep_Leaders` prints its header
+      unconditionally at the top of the procedure, before the loop -- a
+      genuine structural difference between the two real procedures,
+      not an inconsistency introduced here).
+    - **Phase 436 adds the real per-province column suppression**
+      (`Check_None`'s own `pac`/`none` state, `REPORTS.PAS` ~lines
+      954-971): the *first* army at a given province gets the full
+      province field; the *second* gets `"(#" + province_code() + ")"`
+      (the real `apres >= 2` guard is trivially satisfied whenever a
+      second army at the same province exists at all); every later army
+      at that province gets a fully blank 18-char field
+      (`_ARMIES_BLANK_PROVINCE_COLUMN`), not a repeated province name.
+      **Still not reproduced**: the real grouping is actually keyed by
+      *province+leader* (the outer loop iterates leaders first, armies
+      second), so a province with multiple leaders present would, in
+      the real table, interleave leader-groups rather than list every
+      army in flat `army_id` order the way this composer's own
+      pre-existing sort does -- since the province-column suppression
+      pattern itself only depends on how many armies have been printed
+      at this province so far (not on which leader they belong to), it
+      reproduces correctly regardless of iteration order, but the
+      real leader-grouping order itself is not attempted.
 
     Each army's race is resolved via `models/army_type.py
     MONSTROUS_ARMY_RACE` (the army type's fixed race for monstrous types,
@@ -6897,12 +6919,26 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
     lines.append(_ARMIES_COLUMN_HEADER)
 
     owned.sort(key=lambda army: (army.location.x, army.location.y, army.army_id))
+
+    province_index = 0
+    previous_coord: HexCoord | None = None
     for army in owned:
-        province = state.provinces.get(army.location)
-        if province is not None and province.name:
-            province_label = province.name
+        if army.location != previous_coord:
+            previous_coord = army.location
+            province_index = 0
+
+        if province_index == 0:
+            province = state.provinces.get(army.location)
+            if province is not None and province.name:
+                province_field = f"{province.name[:18]:<18}"
+            else:
+                province_field = f"{f'({army.location.x}, {army.location.y})'[:18]:<18}"
+        elif province_index == 1:
+            province_field = f"{f'(#{province_code(army.location)})':<18}"
         else:
-            province_label = f"({army.location.x}, {army.location.y})"
+            province_field = _ARMIES_BLANK_PROVINCE_COLUMN
+        province_index += 1
+
         if army.commanded_by is not None and army.commanded_by in state.leaders:
             leader_label = state.leaders[army.commanded_by].name
         else:
@@ -6916,7 +6952,7 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
         quality_name = QUALITY_NAME[army.quality]
         modified_quality_name = QUALITY_NAME[compute_army_modified_quality(state, army)]
         lines.append(
-            f"{province_label[:18]:<18}{leader_label[:15]:<15}{designation[:20]:<20}"
+            f"{province_field}{leader_label[:15]:<15}{designation[:20]:<20}"
             f"{race_name:>7}{quality_name:>9}{modified_quality_name:>9}"
         )
 

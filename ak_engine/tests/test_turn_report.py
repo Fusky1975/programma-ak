@@ -4003,6 +4003,24 @@ def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
     ]
 
 
+def test_describe_armies_report_suppresses_province_column_after_the_second_army():
+    # Phase 436: REPORTS.PAS Check_None's own pac/none state -- the
+    # first army at a province gets the full name, the second gets
+    # "(#code)", every later one gets a fully blank 18-char field.
+    state = _armies_state()
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_army(ArmyState(2, 1, ArmyType.AXEMEN, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_army(ArmyState(3, 1, ArmyType.PHALANX, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[4:] == [
+        "Capital City      Garrison       Bowmen                Human  Average  Veteran",
+        "(#0)              Garrison       Axemen                Human  Average  Veteran",
+        "                  Garrison       Phalanx               Human  Average  Veteran",
+    ]
+
+
 def test_describe_armies_report_skeletal_army_uses_skel_designation():
     # Phase 281, REPORTS.PAS:988-992 (Doit, inside Rep_Armies): a
     # Zomboid-state army renders "Skel <atdesig>", not the ordinary
