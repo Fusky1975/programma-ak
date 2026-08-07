@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from ak_engine.models.alignment import Alignment
@@ -4819,6 +4821,7 @@ def test_describe_characters_report_renders_own_leader_with_no_recorded_data():
         _CHARACTERS_OPENING,
         "Aldric -- Capital City, Unknown, Unknown, Human, Pay 0",
         _NO_SKILLS_LINE,
+        _NO_SKILLS_LINE,
     ]
 
 
@@ -4876,6 +4879,7 @@ def test_describe_characters_report_renders_recorded_skill_levels():
     lines = describe_characters_report(state, 1)
 
     assert lines[3] == "Ta0 Ma2 Na4 Ar6 Me8 Wh10 Ne12 El14 Ps16 Il18 Dr20 Th22 Ex24 Sp26 Sa28"
+    assert lines[4] == "Ta1 Ma3 Na5 Ar7 Me9 Wh11 Ne13 El15 Ps17 Il19 Dr21 Th23 Ex25 Sp27 Sa29"
 
 
 def test_describe_characters_report_sorts_by_leader_id():
@@ -4887,7 +4891,7 @@ def test_describe_characters_report_sorts_by_leader_id():
     lines = describe_characters_report(state, 1)
 
     assert lines[2].startswith("Aldric")
-    assert lines[4].startswith("Elena")
+    assert lines[5].startswith("Elena")
 
 
 def test_describe_characters_report_pay_matches_real_sample_values():
@@ -4905,8 +4909,8 @@ def test_describe_characters_report_pay_matches_real_sample_values():
     lines = describe_characters_report(state, 1)
 
     assert lines[2].endswith(", Pay 0")
-    assert lines[4].endswith(", Pay 1")
-    assert lines[6].endswith(", Pay 1")
+    assert lines[5].endswith(", Pay 1")
+    assert lines[8].endswith(", Pay 1")
 
 
 def test_describe_characters_report_hero_pay_reflects_alignment_distance():
@@ -4921,7 +4925,7 @@ def test_describe_characters_report_hero_pay_reflects_alignment_distance():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[4].endswith(", Pay 2")
+    assert lines[5].endswith(", Pay 2")
 
 
 def test_describe_characters_report_lists_held_items():
@@ -4934,7 +4938,7 @@ def test_describe_characters_report_lists_held_items():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[4] == f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}, {TREASURE_NAME[Treasure.WAND_FIREBALL]}"
+    assert lines[5] == f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}, {TREASURE_NAME[Treasure.WAND_FIREBALL]}"
 
 
 def test_describe_characters_report_omits_items_line_when_leader_holds_nothing():
@@ -4944,7 +4948,7 @@ def test_describe_characters_report_omits_items_line_when_leader_holds_nothing()
 
     lines = describe_characters_report(state, 1)
 
-    assert len(lines) == 4  # header, opening, name line, skills line -- no Items line
+    assert len(lines) == 5  # header, opening, name line, skill line, aptitude line -- no Items line
     assert not any(line.startswith("Items:") for line in lines)
 
 
@@ -4959,10 +4963,11 @@ def test_describe_characters_report_only_lists_items_owned_by_that_leader():
 
     lines = describe_characters_report(state, 1)
 
-    # Aldric's own two lines (name + skills) are immediately followed by
-    # Elena's name line, not an Items line -- his own entry has none.
+    # Aldric's own three lines (name + skill + aptitude) are immediately
+    # followed by Elena's name line, not an Items line -- his own entry
+    # has none.
     aldric_index = next(i for i, line in enumerate(lines) if line.startswith("Aldric"))
-    assert not lines[aldric_index + 2].startswith("Items:")
+    assert not lines[aldric_index + 3].startswith("Items:")
     assert f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}" in lines
 
 
@@ -4975,12 +4980,27 @@ _ADVENTURE_OPENING = (
     "terrorize the populace by night.  Here are these lairs:"
 )
 _ADVENTURE_COLUMN_HEADER = "Province             %Exp  Features and F#     Monster         Special"
+_ADVENTURE_UNKNOWN_RICHES = "  /Guarding unknown riches"
+
+
+class _AlwaysTrueRandom(random.Random):
+    """Forces the Phase 430 treasure-reveal roll to always succeed."""
+
+    def random(self) -> float:
+        return 0.0
+
+
+class _AlwaysFalseRandom(random.Random):
+    """Forces the Phase 430 treasure-reveal roll to always fail."""
+
+    def random(self) -> float:
+        return 0.999
 
 
 def test_describe_adventure_report_opening_lines():
     state = GameState()
 
-    lines = describe_adventure_report(state, 1)
+    lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[0] == "ADVENTURE"
     assert lines[1] == _ADVENTURE_OPENING
@@ -4991,7 +5011,7 @@ def test_describe_adventure_report_no_discovered_features_renders_none_at_presen
     state = GameState()
     state.add_feature(Feature(1, HexCoord(0, 0), FeatureType.CAVE, guardian_monster=Monster.SWORDSMAN))
 
-    lines = describe_adventure_report(state, 1)
+    lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == ["None at present"]
 
@@ -5010,11 +5030,12 @@ def test_describe_adventure_report_lists_a_discovered_feature():
         )
     )
 
-    lines = describe_adventure_report(state, 1)
+    lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == [
         "Mongu (100% explored)",
         "  Cave (F#2) -- Swordsman",
+        _ADVENTURE_UNKNOWN_RICHES,
     ]
 
 
@@ -5024,7 +5045,7 @@ def test_describe_adventure_report_looted_feature_shows_sacked_and_looted():
         Feature(3, HexCoord(1, 1), FeatureType.CRYPT, guardian_monster=Monster.GARGOYLE, looted=True, discovered_by_kingdom={1: 3})
     )
 
-    lines = describe_adventure_report(state, 1)
+    lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == [
         "(1, 1) (0% explored)",
@@ -5038,11 +5059,12 @@ def test_describe_adventure_report_discovery_level_1_renders_question_mark():
         Feature(4, HexCoord(2, 2), FeatureType.TOMB, guardian_monster=Monster.MUMMY, discovered_by_kingdom={1: 1})
     )
 
-    lines = describe_adventure_report(state, 1)
+    lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == [
         "(2, 2) (0% explored)",
         "  Tomb (F#4) -- Mummy ?",
+        _ADVENTURE_UNKNOWN_RICHES,
     ]
 
 
@@ -5050,7 +5072,7 @@ def test_describe_adventure_report_undiscovered_feature_is_excluded():
     state = GameState()
     state.add_feature(Feature(5, HexCoord(4, 4), FeatureType.DUNGEON, guardian_monster=Monster.TROLL))
 
-    lines = describe_adventure_report(state, 1)
+    lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == ["None at present"]
 
@@ -5061,7 +5083,7 @@ def test_describe_adventure_report_only_shows_this_kingdoms_own_discovery():
         Feature(6, HexCoord(0, 0), FeatureType.CAVE, guardian_monster=Monster.GIANT, discovered_by_kingdom={2: 3})
     )
 
-    lines = describe_adventure_report(state, 1)
+    lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == ["None at present"]
 
@@ -5072,11 +5094,12 @@ def test_describe_adventure_report_monster_name_prefix_is_stripped():
         Feature(7, HexCoord(0, 0), FeatureType.PET_FOREST, guardian_monster=Monster.GI_EAGLE, discovered_by_kingdom={1: 3})
     )
 
-    lines = describe_adventure_report(state, 1)
+    lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == [
         "(0, 0) (0% explored)",
         "  Petrified Forest (F#7) -- Eagle",
+        _ADVENTURE_UNKNOWN_RICHES,
     ]
 
 
@@ -5084,11 +5107,12 @@ def test_describe_adventure_report_no_guardian_recorded_omits_monster_segment():
     state = GameState()
     state.add_feature(Feature(8, HexCoord(0, 0), FeatureType.CAVE, discovered_by_kingdom={1: 3}))
 
-    lines = describe_adventure_report(state, 1)
+    lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == [
         "(0, 0) (0% explored)",
         "  Cave (F#8)",
+        _ADVENTURE_UNKNOWN_RICHES,
     ]
 
 
@@ -5104,14 +5128,107 @@ def test_describe_adventure_report_sorts_provinces_then_features_by_id():
         Feature(3, HexCoord(0, 0), FeatureType.CRYPT, guardian_monster=Monster.GHOST, discovered_by_kingdom={1: 3})
     )
 
-    lines = describe_adventure_report(state, 1)
+    lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == [
         "(0, 0) (0% explored)",
         "  Tomb (F#1) -- Mummy",
+        _ADVENTURE_UNKNOWN_RICHES,
         "  Crypt (F#3) -- Ghost",
+        _ADVENTURE_UNKNOWN_RICHES,
         "(1, 1) (0% explored)",
         "  Cave (F#2) -- Giant",
+        _ADVENTURE_UNKNOWN_RICHES,
+    ]
+
+
+def test_describe_adventure_report_reveals_treasure_when_the_roll_succeeds():
+    # Phase 430: a feature with a real Treasure gets the revealed line
+    # instead of "Guarding unknown riches" when the reveal roll succeeds.
+    state = GameState()
+    state.add_feature(
+        Feature(
+            9,
+            HexCoord(0, 0),
+            FeatureType.CRYPT,
+            guardian_monster=Monster.GARGOYLE,
+            discovered_by_kingdom={1: 3},
+            treasure=Treasure.GOLD_HOARD_LARGE,
+        )
+    )
+
+    lines = describe_adventure_report(state, 1, _AlwaysTrueRandom())
+
+    assert lines[3:] == [
+        "(0, 0) (0% explored)",
+        "  Crypt (F#9) -- Gargoyle",
+        "  /Large Hoard of Gold (#9): 10-25 gold",
+    ]
+
+
+def test_describe_adventure_report_hides_treasure_when_the_roll_fails():
+    state = GameState()
+    state.add_feature(
+        Feature(
+            10,
+            HexCoord(0, 0),
+            FeatureType.CRYPT,
+            guardian_monster=Monster.GARGOYLE,
+            discovered_by_kingdom={1: 3},
+            treasure=Treasure.GOLD_HOARD_LARGE,
+        )
+    )
+
+    lines = describe_adventure_report(state, 1, _AlwaysFalseRandom())
+
+    assert lines[3:] == [
+        "(0, 0) (0% explored)",
+        "  Crypt (F#10) -- Gargoyle",
+        _ADVENTURE_UNKNOWN_RICHES,
+    ]
+
+
+def test_describe_adventure_report_reveals_a_magic_item_treasure():
+    state = GameState()
+    state.add_feature(
+        Feature(
+            11,
+            HexCoord(0, 0),
+            FeatureType.PYRAMID,
+            guardian_monster=Monster.LICH,
+            discovered_by_kingdom={1: 3},
+            treasure=Treasure.WAND_ILLUS_ARMIES,
+        )
+    )
+
+    lines = describe_adventure_report(state, 1, _AlwaysTrueRandom())
+
+    assert lines[3:] == [
+        "(0, 0) (0% explored)",
+        "  Pyramid (F#11) -- Lich",
+        '  /Reflector of Armies (#11): Cast "Phantasmal Armies" at skill-2',
+    ]
+
+
+def test_describe_adventure_report_looted_feature_never_shows_a_treasure_line():
+    state = GameState()
+    state.add_feature(
+        Feature(
+            12,
+            HexCoord(0, 0),
+            FeatureType.CRYPT,
+            guardian_monster=Monster.GARGOYLE,
+            looted=True,
+            discovered_by_kingdom={1: 3},
+            treasure=Treasure.GOLD_HOARD_LARGE,
+        )
+    )
+
+    lines = describe_adventure_report(state, 1, _AlwaysTrueRandom())
+
+    assert lines[3:] == [
+        "(0, 0) (0% explored)",
+        "  Crypt (F#12) -- sacked & looted",
     ]
 
 
@@ -5172,9 +5289,12 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "shows pay and abilities; line 2 shows move precedence and aptitude.)",
         "Aldric -- Capital City, Unknown, Unknown, Human, Pay 0",
         "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
+        "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
         "Borin -- Capital City, Unknown, Unknown, Human, Pay 1",
         "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
+        "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
         "Elena -- Capital City, Unknown, Unknown, Human, Pay 1",
+        "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
         "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
         "ARMIES",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "

@@ -16,6 +16,7 @@ from ak_engine.worldgen.generate_new_game import STARTING_TREASURY, KingSetup, g
 from ak_engine.worldgen.initial_armies import BEST_ATYPE, COMMANDER_NONE
 from ak_engine.worldgen.king_home_placement import MIN_HOME_DISTANCE
 from ak_engine.worldgen.leader_placement import COMPANIONS_PER_KING, owner_leader_count
+from ak_engine.models.treasure import TREASURE_CATEGORY, TreasureCategory
 from ak_engine.worldgen.magic_item_placement import item_slot_count
 from ak_engine.worldgen.pascal_random import PascalRandom
 from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH
@@ -134,8 +135,17 @@ def test_magic_item_cursor_assigns_treasure_to_exactly_the_confirmed_slot_count(
     rng = PascalRandom(seed=6)
     result = generate_new_game(rng, game_state, kings, gamevers=1)
 
+    # Phase 430: every feature now carries a real Treasure -- the other
+    # half (gold-slot features) used to get `treasure=None`.
     with_treasure = sum(1 for f in result.features.values() if f.treasure is not None)
-    assert with_treasure == item_slot_count(feature_count(1))
+    assert with_treasure == feature_count(1)
+
+    magic_item_treasure = sum(
+        1
+        for f in result.features.values()
+        if f.treasure is not None and TREASURE_CATEGORY[f.treasure] is not TreasureCategory.GOLD_HOARD
+    )
+    assert magic_item_treasure == item_slot_count(feature_count(1))
 
 
 def test_generate_new_game_is_deterministic_for_a_fixed_seed():

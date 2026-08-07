@@ -18093,7 +18093,7 @@ section.
     `explored_percent`/`explored_percent_by_kingdom` equal 100; every
     King Home carries exactly 2 features). Ran again: 3961 passed (2
     new).
-- **Phase 429 (current)**: King Home's own 2 pre-placed features are now
+- **Phase 429**: King Home's own 2 pre-placed features are now
   actually visible in the ADVENTURE section. Asked the user to re-run
   the playtest after Phase 428 to confirm; the ADVENTURE section still
   showed "None at present" for both Kings.
@@ -18122,6 +18122,70 @@ section.
     `compose_letter_report()` call: both Kings' own ADVENTURE sections
     now render their 2 Home features with a real `"?"`, matching the
     real reports exactly.
+- **Phase 430 (current)**: three more real gaps closed, all spotted by
+  the user comparing the Phase 429 playtest against real Turn-0
+  reports and their own real-game rulebook.
+  - **Duplicate guardian monsters**: a King Home's two features could
+    share the same guardian monster (`place_feature()`'s own draw had
+    no occupancy tracking) -- real reports never show this.
+    `worldgen/feature_placement.py place_all_features()` now excludes
+    a King Home's already-used monsters from that Home's remaining
+    draws (project-original -- the AKGEN material's own confirmed
+    "duplicate non-Home coordinates are allowed" note only ever
+    describes later-placement features, never monster duplication).
+  - **Feature "Special" line (treasure reveal)**: real reports show
+    either the revealed treasure/magic item (e.g. "Large Hoard of Gold
+    (#17): 10-25 gold", "Reflector of Armies (#7): Cast \"Phantasmal
+    Armies\" at skill-2") or "Guarding unknown riches" beneath each
+    feature entry -- `describe_adventure_report()` never rendered this
+    line at all. Now renders it with a 33% reveal chance (the user's
+    own real-game estimate, unsourced from AKGEN -- same "explicitly
+    flagged domain knowledge" category as `king_home_placement.py`'s
+    distance/terrain rules) using the already-populated `Feature.
+    treasure`. Also closed a supporting gap: a gold-slot feature
+    (`feature_gets_item_slot()` false) previously got `treasure=None`
+    outright -- `magic_item_placement.py`'s own confirmed "the other
+    half get gold" was documented but never implemented. Now draws
+    uniformly among the 3 `GOLD_HOARD` tiers (`_GOLD_HOARD_TIERS`,
+    unsourced which tier).
+  - **CHARACTERS aptitude line**: the real header text
+    (`_CHARACTERS_OPENING`) always promised "line 2 shows move
+    precedence and aptitude", but `describe_characters_report()` only
+    ever rendered one number-row (skill) per leader, never aptitude --
+    even though `SkillTable` already carries it
+    (`hero_talent_generation.py roll_skill_and_aptitude_table()`,
+    Phase 385, already populates real aptitude for every Hero). Now
+    renders a real second row (`pair_for_ability(ability)[1]`).
+  - **The King's own initial `SkillTable`**: the user supplied
+    rulebook [2.1] verbatim -- a King's own talent allocation (<=4
+    points, <=2 per Ability) is the player's choice, not a Pascal-RNG
+    draw, plus automatic +1 Melee/Archery/Sage, Divine/Undead White<->
+    Necromancy overrides, and aptitude = min(5, skill+2). New
+    `worldgen/king_talent.py build_king_skill_table()` implements this
+    exactly -- independently corroborated by `models/kingdom.py
+    SkillTable`'s own Phase-21 docstring, which had already stated and
+    verified this same formula against a real `AK3__T1.K1` sample
+    (Undead King: `Necromancy=(3,5)`, `White=(0,0)`) long before this
+    phase ever wired it up. Deliberately **not** called by
+    `generate_new_game()` itself -- same "caller sets `KingSetup`'s
+    own pre-existing `LeaderState.skills`" architecture already
+    established for `home_coord`/`race`; a caller (a real signup flow,
+    or this project's own playtest script) calls it directly first.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3962 passed, 0 new -- confirmed the RNG-order shift from the
+    monster-dedup/gold-tier fixes only affected existing fixture-based
+    tests, which were updated in place rather than counted as new).
+    Added tests for `place_all_features()`'s monster-dedup guarantee,
+    the gold-tier assignment, the CHARACTERS aptitude line, the
+    ADVENTURE treasure-reveal roll (both outcomes, gold and magic-item
+    shapes, and the looted-feature exclusion), and a full
+    `test_king_talent.py` (automatic bonuses, allocation validation,
+    the aptitude formula and its cap, both alignment overrides, and
+    the real `AK3__T1.K1` cross-check). Ran again: 3980 passed (18
+    new). Re-ran the playtest end-to-end: the King Home features that
+    previously showed a duplicate monster now show two distinct ones;
+    both Kings' own CHARACTERS entries show a real, non-zero aptitude
+    row now that they're constructed via `build_king_skill_table()`.
 
 ## Setup
 

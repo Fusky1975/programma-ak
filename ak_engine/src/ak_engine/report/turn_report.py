@@ -1155,7 +1155,7 @@ from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, describe_discovery_line, sorted_kingdom_discoveries
 from ak_engine.models.temper import TEMPER_NAME
-from ak_engine.models.treasure import TREASURE_NAME
+from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_CATEGORY, TREASURE_LABEL, TREASURE_NAME, Treasure, TreasureCategory
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
 from ak_engine.report.prose import render
 from ak_engine.turn.army_quality import compute_army_modified_quality
@@ -6607,7 +6607,16 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     `SkillTable.pair_for_ability(ability)[0]` -- 0 for every ability if
     `LeaderState.skills` is `None`, the same "no ability data recorded"
     fallback `turn/cast_execution.py _roll_cast_success` already
-    established.
+    established. **A third line (Phase 430, previously missing) lists
+    the matching aptitude** (`pair_for_ability(ability)[1]`, same
+    fallback) -- `_CHARACTERS_OPENING`'s own real text always promised
+    this ("line 2 shows move precedence and aptitude"), but no aptitude
+    line existed at all before this phase, even though `SkillTable`
+    already carried the data (`worldgen/hero_talent_generation.py
+    roll_skill_and_aptitude_table()`, Phase 385, already populates real
+    aptitude for every non-King leader) -- caught by the user comparing
+    a playtest run directly against real Turn-0 CHARACTERS tables, which
+    always show two number-rows per leader, not one.
 
     **Pay (Phase 280)**: the real table's own `Ini` column (`LCost(ldr,
     kng)`) renders via `turn/expenses.py leader_pay()` -- the exact
@@ -6648,10 +6657,9 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
       at all) for a leader holding nothing, rather than an empty "Items:"
       line -- there is nothing to itemize, not a placeholder for
       missing data.
-    - **Move precedence/aptitude** (the real line 2's other own
-      content, per `_CHARACTERS_OPENING`'s own text) isn't modeled;
-      this composer's own "line 2" is entirely the skill-level list
-      above instead.
+    - **Move precedence** (the real line 2's other own content, per
+      `_CHARACTERS_OPENING`'s own text) still isn't modeled -- aptitude
+      is, as of Phase 430 (see above).
     - Fixed-width columns aren't reproduced -- the same documented
       choice every other section composer in this module already made.
     """
@@ -6679,10 +6687,13 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
 
         skills = leader.skills
         skill_tokens = []
+        aptitude_tokens = []
         for ability in Ability:
-            level = skills.pair_for_ability(ability)[0] if skills is not None else 0
+            level, aptitude = skills.pair_for_ability(ability) if skills is not None else (0, 0)
             skill_tokens.append(f"{ABILITY_ABBREVIATION[ability]}{level}")
+            aptitude_tokens.append(f"{ABILITY_ABBREVIATION[ability]}{aptitude}")
         lines.append(" ".join(skill_tokens))
+        lines.append(" ".join(aptitude_tokens))
 
         held_items = state.items_held_by(leader.leader_id)
         if held_items:
@@ -6897,7 +6908,38 @@ def describe_imperial_office_report(state: GameState) -> list[str]:
     return lines
 
 
-def describe_adventure_report(state: GameState, kingdom_id: int) -> list[str]:
+_ADVENTURE_UNKNOWN_RICHES = "  /Guarding unknown riches"
+# Phase 430: unsourced -- no AKGEN reverse-engineering note covers how
+# often the real "Special" line actually shows a feature's own treasure
+# instead of "Guarding unknown riches" (the real ``trowner[fn] <>
+# fn+256`` item-ownership condition this depends on is confirmed to
+# exist, but not its own trigger rate). The user supplied this figure
+# directly from their own real-game experience, the same "explicitly
+# flagged domain-knowledge" category already used for ``worldgen/
+# king_home_placement.py``'s distance/terrain rules.
+_ADVENTURE_TREASURE_REVEAL_CHANCE = 0.33
+
+
+def _adventure_treasure_label(treasure: Treasure, feature_id: int) -> str:
+    """The real "Special" line's revealed-treasure text, e.g. "Large
+    Hoard of Gold (#17): 10-25 gold" or "Reflector of Armies (#7): Cast
+    "Phantasmal Armies" at skill-2" -- confirmed verbatim against real
+    Turn-0 reports for both shapes. Gold hoards use their own tier name
+    (``GOLD_HOARD_DISPLAY_NAME``, since ``TREASURE_NAME`` only has the
+    bare "Hoard"); every other category uses ``TREASURE_NAME`` +
+    ``TREASURE_LABEL`` directly. One line, not the real two (this
+    module's own "readable single line" convention, already used
+    throughout this composer's siblings).
+    """
+
+    if TREASURE_CATEGORY[treasure] is TreasureCategory.GOLD_HOARD:
+        name = GOLD_HOARD_DISPLAY_NAME[treasure]
+    else:
+        name = TREASURE_NAME[treasure]
+    return f"  /{name} (#{feature_id}): {TREASURE_LABEL[treasure]}"
+
+
+def describe_adventure_report(state: GameState, kingdom_id: int, rng: random.Random) -> list[str]:
     """Lists every ``Feature`` this kingdom has discovered (Phase 216) --
     a deliberately narrower slice of ``REPORTS.PAS Desc_Adventure`` (the
     real "ADVENTURE" section of the end-of-turn letter report), the same
@@ -6920,17 +6962,28 @@ def describe_adventure_report(state: GameState, kingdom_id: int) -> list[str]:
     board, not just this kingdom's own provinces -- feature discovery is
     independent of province ownership), not just this kingdom's own.
 
+    **The "Special"/treasure line (Phase 430, previously unrendered)**:
+    every discovered, non-looted feature with a real ``Feature.treasure``
+    now gets a third line -- either the revealed treasure
+    (``_adventure_treasure_label()``, matching real reports like "Large
+    Hoard of Gold (#17): 10-25 gold" or "Reflector of Armies (#7): Cast
+    "Phantasmal Armies" at skill-2" exactly) with probability
+    ``_ADVENTURE_TREASURE_REVEAL_CHANCE``, or ``_ADVENTURE_UNKNOWN_RICHES``
+    ("Guarding unknown riches") otherwise -- unsourced trigger rate, see
+    that constant's own docstring. A feature with no recorded
+    ``treasure`` (created outside world generation, e.g. most existing
+    tests) always renders ``_ADVENTURE_UNKNOWN_RICHES``, matching this
+    module's existing "no source, no silent default" convention rather
+    than a guessed reveal. `rng` is a new required parameter for this
+    reason -- every pre-Phase-430 caller must now supply one (this
+    composer's own single caller, `compose_letter_report()`, already
+    threads one through for its other sections).
+
     **What this deliberately does NOT reproduce, and why**:
-    - The real "Special" column's fuller cases (``fdisc`` level 2's
-      magic-power hint, level 3's full ``List_Treas`` treasure listing)
-      need data this project doesn't have: a per-feature ``MagicFeature``
-      link, and a feature's own treasure *instance* -- ``models/
-      feature.py``'s own docstring confirms both are still unmodeled
-      (world generation is the blocking gap, same as Phase 77's own
-      note). Only level 1's real, single-character ``"?"`` is rendered.
-    - The "Guarding unknown riches" line (``last_line = 1``) depends on
-      an item-ownership condition (``trowner[fn] <> fn+256``) tied to
-      this same missing treasure-instance data -- not rendered either.
+    - The real "Special" column's own level-2/level-3 magic-power-hint
+      cases (``fdisc`` level 2/3, a per-feature ``MagicFeature`` link)
+      still aren't modeled -- only level 1's ``"?"`` plus the plain
+      revealed-or-hidden treasure line above.
     - Fixed-width columns aren't reproduced (one readable line per
       province/feature instead), the same documented choice
       ``describe_armies_report()``'s own docstring already made.
@@ -6974,6 +7027,12 @@ def describe_adventure_report(state: GameState, kingdom_id: int) -> list[str]:
             if feature.discovery_level(kingdom_id) == 1:
                 entry += " ?"
             lines.append(entry)
+
+            if not feature.looted:
+                if feature.treasure is not None and rng.random() < _ADVENTURE_TREASURE_REVEAL_CHANCE:
+                    lines.append(_adventure_treasure_label(feature.treasure, feature.feature_id))
+                else:
+                    lines.append(_ADVENTURE_UNKNOWN_RICHES)
 
     return lines
 
@@ -8081,7 +8140,7 @@ def compose_letter_report(
     if imperial_office_lines:
         lines.extend(imperial_office_lines)
 
-    adventure_lines = describe_adventure_report(state, kingdom_id)
+    adventure_lines = describe_adventure_report(state, kingdom_id, rng)
     if adventure_lines:
         lines.extend(adventure_lines)
 

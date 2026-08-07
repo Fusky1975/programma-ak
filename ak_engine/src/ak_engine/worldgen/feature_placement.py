@@ -49,7 +49,11 @@ terrain-incompatible, forcing the rejection loop to actually retry
 before landing on a valid non-Home cell). `place_all_features()` is
 checked to produce exactly ``feature_count(gamevers)`` placements and
 to never place any feature on a King Home coordinate once past the
-first ``2*king_count`` indices.
+first ``2*king_count`` indices. **Phase 430 addendum**: also checked
+that no King Home coordinate's own first-2K features ever share a
+guardian monster (`excluded_monsters` correctly threaded through), and
+that `place_feature()` still honors a non-empty `excluded_monsters` set
+directly (redraws until landing on an unexcluded monster).
 """
 
 from __future__ import annotations
@@ -89,9 +93,27 @@ def place_feature(
     grid: dict[HexCoord, Terrain],
     bounds: MapBounds,
     rng: PascalRandom,
+    *,
+    excluded_monsters: frozenset[Monster] = frozenset(),
 ) -> FeaturePlacement:
     """One feature's full propose/reject cycle -- fixed Home coordinate for the first 2K indexes,
-    a rejected-and-redrawn random coordinate otherwise."""
+    a rejected-and-redrawn random coordinate otherwise.
+
+    **``excluded_monsters`` (Phase 430)**: project-original, not sourced
+    from ``later_placement``'s own confirmed "duplicate non-Home
+    coordinates are allowed" text -- that text only ever describes
+    *later* (non-King-Home) features, and says nothing about whether two
+    of a King Home's own first-2K features can share the same guardian
+    monster. Real Turn-0 reports confirmed the opposite ever happens (a
+    generated playtest produced the same monster guarding both of one
+    King Home's own features, which the user's own real-game experience
+    confirmed never happens in practice) -- the same "fill the
+    confirmed-silent gap with the user's own domain knowledge" category
+    already used for ``worldgen/king_home_placement.py``'s distance/
+    terrain rules. ``place_all_features()`` only ever passes a non-empty
+    set for a first-2K feature (the monster(s) already placed at that
+    same King Home), never for a later-placement one -- unchanged there.
+    """
 
     is_first_2k = feature_index < 2 * king_count
 
@@ -99,6 +121,8 @@ def place_feature(
         coord = king_homes[first_2k_home_index(feature_index, king_count)]
         for _ in range(MAX_ATTEMPTS):
             monster = propose_monster(rng)
+            if monster in excluded_monsters:
+                continue
             feature_type = propose_feature_type(monster, rng)
             terrain = grid[coord]
             if is_terrain_compatible(feature_type, terrain, rng):
@@ -127,10 +151,28 @@ def place_all_features(
     *,
     gamevers: int,
 ) -> list[FeaturePlacement]:
-    """Places every one of ``feature_count(gamevers)`` features, in feature-index order."""
+    """Places every one of ``feature_count(gamevers)`` features, in feature-index order.
+
+    **Phase 430**: tracks which guardian monsters have already been used
+    at each King Home coordinate (first-2K features only) and excludes
+    them from that Home's remaining draws -- see ``place_feature()``'s
+    own Phase 430 note for why this is project-original, not sourced.
+    """
 
     count = feature_count(gamevers)
-    return [
-        place_feature(feature_index, king_homes, king_count, grid, bounds, rng)
-        for feature_index in range(count)
-    ]
+    king_count_local = king_count
+    used_monsters_by_home: dict[HexCoord, set[Monster]] = {}
+    placements: list[FeaturePlacement] = []
+    for feature_index in range(count):
+        is_first_2k = feature_index < 2 * king_count_local
+        excluded: frozenset[Monster] = frozenset()
+        if is_first_2k:
+            coord = king_homes[first_2k_home_index(feature_index, king_count_local)]
+            excluded = frozenset(used_monsters_by_home.get(coord, set()))
+        placement = place_feature(
+            feature_index, king_homes, king_count, grid, bounds, rng, excluded_monsters=excluded
+        )
+        if is_first_2k:
+            used_monsters_by_home.setdefault(placement.coord, set()).add(placement.monster)
+        placements.append(placement)
+    return placements

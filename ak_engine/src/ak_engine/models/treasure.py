@@ -387,6 +387,20 @@ RACE_LEADERSHIP_TREASURE: dict[Race, Treasure] = {
     Race.ORCISH: Treasure.LEADERSHIP_ORCISH,
 }
 
+# Phase 430: the real ADVENTURE-report display name for a gold-hoard
+# feature ("Large Hoard of Gold (#N): 10-25 gold" etc.), confirmed
+# against real Turn-0 reports for the LARGE tier and directly from this
+# module's own enum-member names (`GOLD_HOARD_HUGE`/`_FABULOUS`, in turn
+# from the Pascal identifiers `HugeTr`/`FabTr`) for the other two --
+# distinct from `TREASURE_NAME`'s own bare "Hoard" (TREASURE.X2's own
+# flavor-name extraction, not what the report actually prints).
+GOLD_HOARD_DISPLAY_NAME: dict[Treasure, str] = {
+    Treasure.GOLD_HOARD_LARGE: "Large Hoard of Gold",
+    Treasure.GOLD_HOARD_HUGE: "Huge Hoard of Gold",
+    Treasure.GOLD_HOARD_FABULOUS: "Fabulous Hoard of Gold",
+}
+
+
 # Phase 393: the same "which race does this item favor" convention as
 # ``RACE_LEADERSHIP_TREASURE`` above, for AKGEN's own confirmed
 # `battle_engine.special_events` "Dragon/Eagle/Whale summoning item" row

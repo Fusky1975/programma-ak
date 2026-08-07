@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import defaultdict
+
 from ak_engine.models.feature import FeatureType
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.movement import MapBounds
@@ -66,6 +68,43 @@ def test_place_all_features_produces_exactly_the_confirmed_count():
     placements = place_all_features(king_homes, king_count, grid, bounds, rng, gamevers=1)
     assert len(placements) == feature_count(1) == 128
     assert [p.feature_index for p in placements] == list(range(128))
+
+
+def test_place_feature_first_2k_excludes_already_used_monsters_at_the_same_home():
+    # Phase 430: place_feature() must redraw rather than return a
+    # monster already present in excluded_monsters, for a first-2K
+    # (King Home) feature.
+    bounds = MapBounds(3, 3)
+    grid = _uniform_grid(3, 3, Terrain.PLAINS)
+    king_homes = [HexCoord(1, 1)]
+    king_count = 1
+    rng = PascalRandom(seed=7)
+
+    first = place_feature(0, king_homes, king_count, grid, bounds, rng)
+    rng2 = PascalRandom(seed=7)
+    second = place_feature(
+        1, king_homes, king_count, grid, bounds, rng2, excluded_monsters=frozenset({first.monster})
+    )
+
+    assert second.monster != first.monster
+
+
+def test_place_all_features_never_repeats_a_monster_within_the_same_king_home():
+    # Phase 430: real Turn-0 reports never show a King Home's own two
+    # features guarded by the same monster -- confirmed by the user
+    # against multiple independent real games.
+    bounds = MapBounds(18, 9)
+    grid = _uniform_grid(18, 9, Terrain.PLAINS)
+    king_homes = [HexCoord(x, 0) for x in range(10)]
+    king_count = 10
+    for seed in range(20):
+        rng = PascalRandom(seed=seed)
+        placements = place_all_features(king_homes, king_count, grid, bounds, rng, gamevers=1)
+        monsters_by_home: dict[HexCoord, list] = defaultdict(list)
+        for placement in placements[: 2 * king_count]:
+            monsters_by_home[placement.coord].append(placement.monster)
+        for home, monsters in monsters_by_home.items():
+            assert len(monsters) == len(set(monsters)), f"seed={seed} home={home} monsters={monsters}"
 
 
 def test_place_all_features_later_placements_never_use_a_king_home():

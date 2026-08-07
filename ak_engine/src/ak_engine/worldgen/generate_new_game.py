@@ -110,6 +110,23 @@ this project has a real, sourced formula for:
    (Phase 176), the same "confirmed, tested, previously unwired"
    mechanism ``turn/world_generation.py`` (Phase 246) already reuses
    for its own, unrelated feature-generation path.
+   **Phase 430 addendum**: two more real gaps closed, both spotted by
+   the user directly comparing a playtest run against real Turn-0
+   reports again. First, a King Home's own first-2K features could
+   share the same guardian monster (``place_feature()``'s own draw had
+   no occupancy tracking at all) -- the real reports never show this,
+   so ``place_all_features()`` now excludes a King Home's already-used
+   monsters from that Home's remaining draws (see ``worldgen/
+   feature_placement.py``'s own Phase 430 note; project-original, the
+   AKGEN material's own confirmed "duplicate non-Home coordinates are
+   allowed" note never says anything about *monster* duplication, and
+   only ever describes later-placement features anyway). Second, a
+   gold-slot feature (``feature_gets_item_slot()`` false) previously
+   got `treasure=None` outright -- `magic_item_placement.py`'s own
+   confirmed "the other half get gold" was never actually implemented,
+   only documented. It now draws uniformly among the 3 `GOLD_HOARD`
+   tiers (unsourced which tier -- no AKGEN note covers it -- so a plain
+   project-original uniform draw, `_GOLD_HOARD_TIERS`).
 8. **Independent lords + King companions (Phase 426)** -- "place Kings,
    independent lords, companions and remaining mercenary heroes"'s own
    remaining two roles, closing the gap Phase 365 originally left open
@@ -134,6 +151,32 @@ this project has a real, sourced formula for:
    (``kingdom_id`` = that King's own kingdom, first companion the
    King's own race, second via the already-confirmed
    ``draw_second_companion_race()``).
+
+9. **The King's own initial ``SkillTable`` (Phase 430)** -- unlike a
+   Hero's, a King's own talent allocation is a genuine player choice at
+   signup (rulebook [2.1], supplied verbatim by the user), not a
+   Pascal-RNG draw, so it can't be rolled the way ``hero_talent_
+   generation.py`` rolls a Hero's. ``worldgen.king_talent.
+   build_king_skill_table()`` is a new, deliberately standalone pure
+   function (no ``PascalRandom`` parameter -- the whole formula is
+   deterministic) implementing that rule text exactly: the caller's own
+   `talent_allocation` (<=4 points total, <=2 per Ability) plus every
+   King's automatic +1 Melee/Archery/Sage, the Divine/Undead White<->
+   Necromancy overrides, and aptitude = min(5, skill+2) with the same
+   two overrides forced to 0. **Not called by ``generate_new_game()``
+   itself** -- the same "caller sets ``KingSetup``'s own pre-existing
+   ``LeaderState.skills`` before calling in" architecture already
+   established for ``home_coord``/``race`` (this function's own
+   docstring confirms `game_state.leaders[leader_id]` "must already
+   exist" with real data). A caller (a real signup flow, or this
+   project's own playtest script) calls ``build_king_skill_table()``
+   directly and assigns the result before ever calling
+   ``generate_new_game()``. **Independently corroborated, not a fresh
+   guess**: ``models/kingdom.py SkillTable``'s own Phase-21 docstring
+   already stated this exact formula (aptitude = skill+2 max 5, same
+   Divine/Undead overrides) and had already verified it against a real
+   ``AK3__T1.K1`` skill line -- this phase is the first time that
+   already-confirmed formula became callable code.
 
 **Two selection-order details are project-original, not recovered**
 (both already flagged as unsourced narratives by Phase 357, not newly
@@ -192,8 +235,12 @@ one of the seven confirmed special races and carries that race's own
 native recruit slot; ``feature_count(gamevers)`` features exist, each
 with a real coordinate/monster/type/alignment and a real (possibly
 ``MagicFeature.NONE``) magic location; the magic-item cursor assigns
-treasures to exactly the confirmed ``item_slot_count()`` of them, in a
-single shared cycling sequence; every King has exactly
+a real magic-item ``Treasure`` to exactly the confirmed
+``item_slot_count()`` of them, in a single shared cycling sequence, and
+every other feature gets a real ``GOLD_HOARD`` tier instead (Phase
+430 -- every feature now carries a real ``Treasure``, never `None`);
+no King Home's own two features ever share a guardian monster (Phase
+430); every King has exactly
 ``COMPANIONS_PER_KING`` companion ``LeaderState``s at their own Home,
 each with a real name/``Alignment``/``SkillTable``, the first sharing
 the King's own race and the second one of the other three humanoid
@@ -237,6 +284,7 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import roll_monster_alignment
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.movement import MapBounds
 from ak_engine.turn.strength import ELEPHANTS_STRENGTH_RANGE
 from ak_engine.worldgen.feature_placement import place_all_features
@@ -345,6 +393,14 @@ def _special_race_army_budget(race: Race, tax: int, rng: PascalRandom) -> int | 
     if race in _FLYING_OR_SPECIAL_BUDGET_RACES:
         return flying_or_special_budget(tax, rng)
     return None
+
+
+# Phase 430: see the gold-tier-assignment call site's own comment below.
+_GOLD_HOARD_TIERS: tuple[Treasure, ...] = (
+    Treasure.GOLD_HOARD_LARGE,
+    Treasure.GOLD_HOARD_HUGE,
+    Treasure.GOLD_HOARD_FABULOUS,
+)
 
 
 def _king_home_strength_of(rng: PascalRandom):
@@ -577,10 +633,21 @@ def generate_new_game(
     placements = place_all_features(king_homes, king_count, grid, bounds, rng, gamevers=gamevers)
     cursor = initial_item_cursor(rng)
     for placement in placements:
-        treasure = None
         if feature_gets_item_slot(placement.feature_index):
             treasure = cursor_to_treasure(cursor)
             cursor = next_item_cursor(cursor)
+        else:
+            # Phase 430: `feature_gets_item_slot()` only ever says
+            # *which* half of the 4-gold/4-item repeating pattern a
+            # feature falls in (magic_item_placement.py's own docstring:
+            # "the other half get gold") -- it never assigns the actual
+            # gold-tier treasure. Which of the 3 GOLD_HOARD tiers a gold
+            # feature gets is unsourced (no AKGEN reverse-engineering
+            # note covers it), so this is a project-original uniform
+            # draw across the 3 tiers -- the same "no source, uniform
+            # default" convention already used elsewhere in this module
+            # (e.g. `second_recruit_slot()`'s own cavalry/chariots draw).
+            treasure = _GOLD_HOARD_TIERS[rng.irand() % len(_GOLD_HOARD_TIERS)]
 
         magic_location = resolve_visible_location(
             placement.feature_type, placement.feature_index, placement.coord.x
