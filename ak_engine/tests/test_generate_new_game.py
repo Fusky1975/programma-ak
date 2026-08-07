@@ -353,3 +353,22 @@ def test_every_kings_home_carries_exactly_two_features():
         home_coord = result.leaders[king.leader_id].location
         features_here = [f for f in result.features.values() if f.coord == home_coord]
         assert len(features_here) == 2
+
+
+def test_every_kings_home_features_are_already_detected_by_their_own_kingdom():
+    # Phase 429: Phase 428's explored_percent_by_kingdom fix was necessary
+    # but not sufficient -- report/turn_report.py describe_adventure_report()
+    # actually gates on a *different* field, Feature.discovered_by_kingdom
+    # (discovery_level() > 0), confirmed by the same real Turn-0 reports
+    # showing a "?" (discovery_level 1: detected, riches unknown) next to
+    # each Home feature's own guardian monster.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        home_coord = result.leaders[king.leader_id].location
+        kingdom_id = result.leaders[king.leader_id].kingdom_id
+        features_here = [f for f in result.features.values() if f.coord == home_coord]
+        for feature in features_here:
+            assert feature.discovery_level(kingdom_id) == 1

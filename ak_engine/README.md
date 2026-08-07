@@ -18063,7 +18063,7 @@ section.
     King's Home has a real sea neighbor and Fleet as its second slot;
     a non-Naval King's second slot matches the terrain rule). Ran
     again: 3959 passed (11 new).
-- **Phase 428 (current)**: every King Home starts fully explored, with
+- **Phase 428**: every King Home starts fully explored, with
   its 2 already-placed features actually visible. The user spotted this
   re-reading the playtest report against the real Turn-0 files they'd
   supplied: "la provincia natale di ogni giocatore è esplorata al 100%
@@ -18093,6 +18093,35 @@ section.
     `explored_percent`/`explored_percent_by_kingdom` equal 100; every
     King Home carries exactly 2 features). Ran again: 3961 passed (2
     new).
+- **Phase 429 (current)**: King Home's own 2 pre-placed features are now
+  actually visible in the ADVENTURE section. Asked the user to re-run
+  the playtest after Phase 428 to confirm; the ADVENTURE section still
+  showed "None at present" for both Kings.
+  - Root cause: `report/turn_report.py describe_adventure_report()`
+    gates on `Feature.discovery_level(kingdom_id) > 0`, a *different*
+    field from `explored_percent_by_kingdom` (which Phase 428 set) --
+    the latter only feeds the "(X% explored)" display text once a
+    province already has at least one qualifying feature; it was never
+    the actual gate. Nothing had ever set `discovered_by_kingdom` for a
+    fresh Home province's own features.
+  - Confirmed the exact discovery level from the same four real Turn-0
+    reports already cited in Phase 428/425: each Home feature shows a
+    literal `"?"` next to its guardian monster -- `describe_adventure_
+    report()`'s own rendering rule for `discovery_level(kingdom_id) ==
+    1` ("detected, riches unknown") matches exactly.
+  - Fix: `generate_new_game()` now sets
+    `Feature.discovered_by_kingdom[owner_kingdom_id] = 1` for each King
+    Home's own 2 features at creation time, via a `kingdom_id_by_home_
+    coord` lookup built alongside the existing King-Home bookkeeping.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3961 passed unchanged from Phase 428, no RNG-order shift -- another
+    pure additive field assignment). Added 1 new test in
+    `test_generate_new_game.py` (every King Home feature's own
+    `discovery_level(owner_kingdom_id)` equals exactly 1). Ran again:
+    3962 passed (1 new). Re-ran the playtest end-to-end via a real
+    `compose_letter_report()` call: both Kings' own ADVENTURE sections
+    now render their 2 Home features with a real `"?"`, matching the
+    real reports exactly.
 
 ## Setup
 

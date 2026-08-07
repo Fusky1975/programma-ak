@@ -72,15 +72,26 @@ this project has a real, sourced formula for:
    verbatim ("Expl% 100%") across the same four independent real Turn-0
    PROVINCES sections cited above for Phase 425, spotted directly by the
    user re-reading the playtest report against those same real files.
-   This closes a real, previously-invisible gap: `worldgen.
-   feature_placement.place_all_features()`'s own `first_2k_home_index()`
-   (Phase 364) already correctly guaranteed exactly 2 features per King
-   Home (also confirmed against the same four reports, each showing
-   exactly 2 ADVENTURE entries for the Home province) -- the features
-   were always there, `describe_adventure_report()`
-   (`report/turn_report.py`) just never revealed them, since it gates on
-   `explored_percent_by_kingdom`, which nothing had ever set for a fresh
-   Home province before this phase.
+   `worldgen.feature_placement.place_all_features()`'s own
+   `first_2k_home_index()` (Phase 364) already correctly guaranteed
+   exactly 2 features per King Home (also confirmed against the same
+   four reports, each showing exactly 2 ADVENTURE entries for the Home
+   province) -- the features were always there, just not yet fully
+   visible in the ADVENTURE section (see the Phase 429 addendum right
+   below for the second, separate field that closes that). **Phase 429
+   addendum**: each King Home's own 2 pre-placed features now also get
+   `Feature.discovered_by_kingdom[owner_kingdom_id] = 1` at creation
+   time. `report/turn_report.py describe_adventure_report()` turned out
+   to gate on a *different* field than the Phase 428 fix above assumed
+   -- `Feature.discovery_level(kingdom_id) > 0`, not
+   `explored_percent_by_kingdom` (that field only feeds the "(X%
+   explored)" display text once a province already qualifies) -- caught
+   by actually re-running the playtest after Phase 428 and finding the
+   ADVENTURE section still empty. Level `1` ("detected, riches unknown")
+   is confirmed exactly right: the same four real Turn-0 reports show a
+   literal `"?"` next to each Home feature's own guardian, matching
+   `describe_adventure_report()`'s own `discovery_level(kingdom_id) ==
+   1` rendering rule precisely.
 6. Initial armies: King Home provinces via
    ``worldgen.initial_armies.home_first_slot()`` + the confirmed
    ``KING_HOME_BUDGET=7`` (Phase 358); special-race provinces via
@@ -205,7 +216,12 @@ Re-verified after Phase 428: every King Home's own
 ``explored_percent``/``explored_percent_by_kingdom[owner_kingdom_id]``
 equal exactly ``100``, and each Home carries exactly 2 features (the
 same real Turn-0 reports cited in Phase 428's own addendum above each
-show exactly 2 ADVENTURE entries per Home).
+show exactly 2 ADVENTURE entries per Home). Re-verified after Phase
+429: each of those 2 features' own ``discovery_level(owner_kingdom_id)``
+equals exactly ``1`` -- and, end-to-end, an actual
+``report.turn_report.compose_letter_report()`` call for a fresh Home
+now renders both features under ADVENTURE with a real ``"?"``, matching
+the real reports exactly, instead of "None at present".
 """
 
 from __future__ import annotations
@@ -548,6 +564,16 @@ def generate_new_game(
                 )
             )
 
+    # Phase 429: which King's own kingdom owns each Home coordinate --
+    # used below to seed that King Home's own 2 features as already
+    # "detected" (Feature.discovered_by_kingdom, level 1: "?" -- riches
+    # unknown) for their own kingdom, matching the same real Turn-0
+    # reports Phase 428 already cited: each shows both Home features
+    # with a "?" in the Special column, not "None at present".
+    kingdom_id_by_home_coord = {
+        coord: game_state.leaders[king.leader_id].kingdom_id for coord, king in king_by_coord.items()
+    }
+
     placements = place_all_features(king_homes, king_count, grid, bounds, rng, gamevers=gamevers)
     cursor = initial_item_cursor(rng)
     for placement in placements:
@@ -561,6 +587,11 @@ def generate_new_game(
         )
         magic_power = resolve_power(magic_location, placement.feature_index, placement.feature_type.value)
 
+        discovered_by_kingdom: dict[int, int] = {}
+        home_kingdom_id = kingdom_id_by_home_coord.get(placement.coord)
+        if home_kingdom_id is not None:
+            discovered_by_kingdom[home_kingdom_id] = 1
+
         game_state.add_feature(
             Feature(
                 feature_id=game_state.new_feature_id(),
@@ -571,6 +602,7 @@ def generate_new_game(
                 guardian_alignment=roll_monster_alignment(placement.monster, rng),
                 magic_location=magic_location,
                 magic_power=magic_power,
+                discovered_by_kingdom=discovered_by_kingdom,
             )
         )
 
