@@ -5408,14 +5408,21 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "",
         "IMPERIAL OFFICE REPORT",
         "",
-        "World Emperor             None at present",
-        "Esteemed High Chancellor  None at present",
-        "Imperial Treasurer        None at present",
-        "Imperial Grand Marshal    None at present",
-        "Imperial Grand Admiral    None at present",
-        "Lord High Defender        None at present",
-        "High Priest Palatine      None at present",
-        "Arch-Mage Palatine        None at present",
+        "World Emperor             Aldric (0 points, rank 1, None)",
+        "Esteemed High Chancellor  Aldric (0 points, rank 1, None)",
+        "                          Borin (0 points, rank 1, None)",
+        "Imperial Treasurer        Aldric (0 points, rank 1, None)",
+        "                          Borin (0 points, rank 1, None)",
+        "Imperial Grand Marshal    Aldric (0 points, rank 1, None)",
+        "                          Borin (0 points, rank 1, None)",
+        "Imperial Grand Admiral    Aldric (0 points, rank 1, None)",
+        "                          Borin (0 points, rank 1, None)",
+        "Lord High Defender        Aldric (0 points, rank 1, None)",
+        "                          Borin (0 points, rank 1, None)",
+        "High Priest Palatine      Aldric (0 points, rank 1, None)",
+        "                          Borin (0 points, rank 1, None)",
+        "Arch-Mage Palatine        Aldric (0 points, rank 1, None)",
+        "                          Borin (0 points, rank 1, None)",
         "King of Pain              None at present",
         "Prince of Thieves         None at present",
         "Savior of Humankind       None at present",
@@ -5752,7 +5759,7 @@ def test_compose_letter_report_omits_alignment_reduction_before_any_emperor_elec
 def test_describe_imperial_office_report_none_at_present_for_every_office_with_no_leaders():
     state = _armies_state()
 
-    lines = describe_imperial_office_report(state)
+    lines = describe_imperial_office_report(state, 1)
 
     assert lines[0] == "IMPERIAL OFFICE REPORT"
     assert lines.count("World Emperor             None at present") == 1
@@ -5765,23 +5772,114 @@ def test_describe_imperial_office_report_none_at_present_for_every_office_with_n
 
 
 def test_describe_imperial_office_report_shows_a_real_office_holder():
+    # Phase 440: name/points now come with real rank/Riv% too -- "None"
+    # for Riv% since nobody outside Testland is even a candidate.
     state = _armies_state()
     state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
     state.leaders[1].merit_tally.resurrection_bless_casts = 3
 
-    lines = describe_imperial_office_report(state)
+    lines = describe_imperial_office_report(state, 1)
 
-    assert "High Priest Palatine      Aldric (3 points)" in lines
+    assert "High Priest Palatine      Aldric (3 points, rank 1, None)" in lines
 
 
-def test_describe_imperial_office_report_same_content_regardless_of_kingdom_id():
-    # Unlike every other section, this one takes no kingdom_id -- it's
-    # the same world-wide office standings for every King's own report.
+def test_describe_imperial_office_report_differs_per_kingdom_before_the_emperor_election():
+    # Phase 440: the report is genuinely per-Kingdom pre-election -- each
+    # King's own report shows only his own Kingdom's "Best Hope", not the
+    # true global leader. Testland's own Aldric is a real (if 0-point)
+    # King candidate for World Emperor; Otherland has no leaders at all.
     state = _armies_state()
     state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
     state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
 
-    assert describe_imperial_office_report(state) == describe_imperial_office_report(state)
+    testland_lines = describe_imperial_office_report(state, 1)
+    otherland_lines = describe_imperial_office_report(state, 2)
+
+    assert "World Emperor             Aldric (0 points, rank 1, None)" in testland_lines
+    assert "World Emperor             None at present" in otherland_lines
+
+
+def test_describe_imperial_office_report_converges_after_the_emperor_election():
+    # Phase 440: once an Emperor is elected, every Kingdom's own report
+    # shows the same true global winner for Emperor, even a Kingdom
+    # (Otherland) that never had a candidate of its own.
+    state = _armies_state()
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.emperor_kingdom_id = 1
+
+    testland_lines = describe_imperial_office_report(state, 1)
+    otherland_lines = describe_imperial_office_report(state, 2)
+
+    expected = "World Emperor             Aldric (0 points, rank 1, None)"
+    assert expected in testland_lines
+    assert expected in otherland_lines
+
+
+def test_describe_imperial_office_report_riv_percent_and_runner_up_are_kingdom_scoped():
+    # Phase 440: Rank()/Riv% are always relative to the ROW's own holder
+    # (real REPORTS.PAS Rank(bestldr,...)/Rank(nextldr,...), each deriving
+    # their own rival kingdom from their own leader) -- not the report's
+    # own viewing Kingdom. Aldric (Testland) globally wins Defender at 10
+    # points; Cassian (Rivalland) is Testland's only rival at 4 points.
+    state = _armies_state()
+    state.add_kingdom(KingdomState(2, "Rivalland", Race.DWARVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    aldric = LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True)
+    aldric.merit_tally.monster_hp_defeated = 10
+    cassian = LeaderState(2, 2, "Cassian", HexCoord(1, 1), is_king=True)
+    cassian.merit_tally.monster_hp_defeated = 4
+    state.add_leader(aldric)
+    state.add_leader(cassian)
+    state.emperor_kingdom_id = 1  # settles the election so the true global winner is shown
+
+    testland_lines = describe_imperial_office_report(state, 1)
+    rivalland_lines = describe_imperial_office_report(state, 2)
+
+    # Both Kingdoms' own reports show the same true winner (Aldric),
+    # scored against his own real rival (Cassian, 4 points -> 250%).
+    assert "Lord High Defender        Aldric (10 points, rank 1, 250%)" in testland_lines
+    assert "Lord High Defender        Aldric (10 points, rank 1, 250%)" in rivalland_lines
+    # Testland has no runner-up of its own (Aldric is its only candidate).
+    assert not any(l.startswith(" " * 26 + "Cassian") for l in testland_lines)
+    # Rivalland's own runner-up is Cassian himself -- rank 2 (beaten only
+    # by Aldric), scored against Rivalland's own real rival (Aldric, 10
+    # points -> 40%).
+    assert "                          Cassian (4 points, rank 2, 40%)" in rivalland_lines
+
+
+def test_describe_imperial_office_report_extended_title_suppressed_below_minimum_points():
+    # Phase 440: an extended title (Office.DUELLIST, min 2 points) whose
+    # own pre-election "Best Hope" clears the real ftoppts/2 gate (1 >=
+    # half of the rival's 2) but not OFFICE_MIN_POINTS (1 < 2) must still
+    # render "None at present" -- the real second `IF bestpts <
+    # minpts[ofc]` check, distinct from the ftoppts/2 one.
+    state = _armies_state()
+    state.add_kingdom(KingdomState(2, "Rivalland", Race.DWARVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    aldric = LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True)
+    aldric.merit_tally.duel_merit_net = 1
+    cassian = LeaderState(2, 2, "Cassian", HexCoord(1, 1), is_king=True)
+    cassian.merit_tally.duel_merit_net = 2
+    state.add_leader(aldric)
+    state.add_leader(cassian)
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert "Captain of the Musketeers None at present" in lines
+
+
+def test_describe_imperial_office_report_extended_title_shown_above_both_thresholds():
+    state = _armies_state()
+    state.add_kingdom(KingdomState(2, "Rivalland", Race.DWARVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    aldric = LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True)
+    aldric.merit_tally.duel_merit_net = 5
+    cassian = LeaderState(2, 2, "Cassian", HexCoord(1, 1), is_king=True)
+    cassian.merit_tally.duel_merit_net = 2
+    state.add_leader(aldric)
+    state.add_leader(cassian)
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert "Captain of the Musketeers Aldric (5 points, rank 1, 250%)" in lines
 
 
 def test_compose_letter_report_includes_imperial_office_report_between_armies_and_adventure():

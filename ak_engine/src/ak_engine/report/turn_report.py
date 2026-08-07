@@ -1148,7 +1148,7 @@ from ak_engine.models.game_state import ArmyState, GameState, LeaderState, Provi
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 from ak_engine.models.monster import MONSTER_NAMES, Monster
-from ak_engine.models.office import OFFICE_NAME, Office
+from ak_engine.models.office import OFFICE_MIN_POINTS, OFFICE_NAME, Office
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
@@ -1181,7 +1181,15 @@ from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.expenses import compute_expected_expenses, leader_pay
-from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders, resolve_office_holder
+from ak_engine.turn.office_holder import (
+    ALL_OFFICES,
+    OfficeHolder,
+    kingdom_best_candidate,
+    kingdom_runner_up,
+    leader_office_rank,
+    office_rival_best_points,
+    resolve_office_holder,
+)
 from ak_engine.turn.plan_dispatch import (
     ArmyListExecutionResult,
     FireExecutionResult,
@@ -7068,40 +7076,108 @@ _IMPERIAL_OFFICE_REPORT_HEADER = "IMPERIAL OFFICE REPORT"
 _IMPERIAL_OFFICE_REPORT_NONE = "None at present"
 
 
-def describe_imperial_office_report(state: GameState) -> list[str]:
-    """Assembles the "IMPERIAL OFFICE REPORT" section (Phase 230) --
-    real, sourced content (`REPORTS.PAS Rep_Office`'s own per-office
-    loop, ~line 1596-1730) this project could never render before Phase
-    227/228/230 gave it the pieces: real Merit Point formulas
-    (`turn/merit_points.py`), the real Emperor election result
-    (`turn/emperor_election.py`), and the Rank-contest resolution itself
-    (`turn/office_holder.py resolve_all_office_holders()`).
+def _riv_percent_display(points: int | float, rival_points: int | float) -> str:
+    """Real `rivstr`: `"None"` when there's no rival at all (`ftoppts ==
+    0`), otherwise `points` as a percentage of the best rival's own
+    score, capped at the real `LMin(30000, ...)` ceiling. Phase 440.
+    """
 
-    **This is the same content for every kingdom's own report** -- unlike
-    every other section here, the real procedure loops over *every*
-    leader in the game, not just this kingdom's own, so there's no
-    `kingdom_id` parameter.
+    if rival_points == 0:
+        return "None"
+    return f"{min(30000, int(100 * points / rival_points))}%"
 
-    One readable line per office (`models/office.py OFFICE_NAME`, the
-    real Pascal `ofcname` display string). A holder's own Merit Points
-    are shown; an office nobody yet qualifies for (`models/office.py
-    OFFICE_MIN_POINTS`) renders `"None at present"`, not a guess.
 
-    **Phase 435**: the office-name column is now padded to the real
-    26-char field width (`REPORTS.PAS Rep_Office` ~line 1628: `ostr:=
-    ofcname[ofc]; While Length(ostr) < 26 DO ostr:= Concat(ostr,' ')`)
-    -- confirmed against every real `OFFICE_NAME` entry topping out at
-    25 characters, so none get truncated. **Still not reproduced**: the
-    real table's own rank-number/percentage-of-leader/runner-up columns
-    (`Rank()`, `ftoppts`, `rivstr`, `nextldr`) -- this project models
-    the underlying Merit Point scores (`turn/merit_points.py`) and the
-    Rank-1 winner (`turn/office_holder.py resolve_all_office_holders()`)
-    but not a full leaderboard percentage/second-place readout, a
-    substantially larger feature this phase's own narrow "fixed-width"
-    scope doesn't extend to. The holder's own name and points keep this
-    composer's existing "readable trailing text" convention rather than
-    the real columns, the same "narrower than the real procedure,
-    documented why" precedent every other section composer here uses.
+def _office_candidate_line(state: GameState, office: Office, holder: OfficeHolder, *, prefix: str) -> str:
+    """One real Rank/Riv%-annotated line for `holder` (either the row's
+    own top candidate or its runner-up) -- `prefix` carries the leading
+    column text (the padded office name, or a blank indent for a
+    runner-up line). `Rank()`/`ftoppts` are always computed relative to
+    `holder`'s own Kingdom (real `REPORTS.PAS Rank(bestldr,...)`/
+    `Rank(nextldr,...)`, each deriving `lak` from their own respective
+    leader, not the report's own viewing Kingdom) -- matters when `top`
+    is the true global winner from a *different* Kingdom than the one
+    reading this report. Phase 440.
+    """
+
+    name = state.leaders[holder.leader_id].name
+    rank = leader_office_rank(state, office, holder.leader_id)
+    rival_points = office_rival_best_points(state, office, state.leaders[holder.leader_id].kingdom_id)
+    riv = _riv_percent_display(holder.merit_points, rival_points)
+    return f"{prefix}{name} ({holder.merit_points} points, rank {rank}, {riv})"
+
+
+def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[str]:
+    """Assembles the "IMPERIAL OFFICE REPORT" section (Phase 230; full
+    rank/percentage/runner-up columns added Phase 440) -- real, sourced
+    content (`REPORTS.PAS Pray_Report`'s own per-office loop, ~line
+    1580-1730) this project could never render before Phase 227/228/230
+    gave it the underlying pieces (real Merit Point formulas, the real
+    Emperor election result, Rank-contest resolution), and Phase 438/439
+    gave it the rest (per-Kingdom ranking primitives, the real alignment
+    Victory Point decay formula).
+
+    **This report is genuinely per-Kingdom and changes shape around the
+    Emperor election** -- confirmed by direct re-read of the real source
+    this phase, correcting this composer's own previous claim that its
+    content was "the same for every kingdom's own report" (only true
+    post-election): before any Emperor is elected
+    (`state.emperor_kingdom_id is None`), each Kingdom's own report shows
+    only *its own* best candidate for each office (`turn/office_holder.py
+    kingdom_best_candidate()`, the real ungated pre-election "Best Hope"
+    scan) -- not the true global leader. After an Emperor is elected, it
+    shows the true global Rank-1 winner (`resolve_office_holder()`,
+    unchanged from Phase 230) instead. **A second, always-present line**
+    shows this Kingdom's own runner-up (`kingdom_runner_up()`, the real
+    `nextldr` -- always scoped to this report's own Kingdom, regardless
+    of whether the top line's own holder belongs to a different Kingdom
+    entirely) when one exists.
+
+    Both the top candidate's and the runner-up's own real-world standing
+    are shown: `rank` (`leader_office_rank()`, the real `Rank()` --
+    1 + however many other real candidates in the whole game strictly
+    outscore them) and a `Riv%` figure (`office_rival_best_points()`,
+    the real `ftoppts`/`rivstr` -- their own points as a percentage of
+    the best score held by anyone in a *different* Kingdom, or `"None"`
+    when there is no rival at all).
+
+    **The real extra display gate** (`REPORTS.PAS` ~line 1648-1650:
+    `IF ofc > Mage THEN IF bestpts < ftoppts DIV 2 THEN GOTO 90`, plus a
+    second `IF bestpts < minpts[ofc] THEN GOTO 90` right after) applies
+    only to the 39 offices *past* the 8 "majors" (`office.value >
+    Office.MAGE.value`, `Office.MAGE.value == 7` in this project's own
+    enum) -- those rows are suppressed entirely (`"None at present"`) if
+    nobody at all qualifies, if the top candidate's own points are below
+    half the best rival's, or if they're below `OFFICE_MIN_POINTS[office]`
+    (this second check is what actually keeps a 0-point pre-election
+    "Best Hope" from appearing for an extended title whose real threshold
+    is nonzero, since `kingdom_best_candidate()` itself never gates on
+    it). The 8
+    majors keep this composer's original, simpler "show if this Kingdom
+    has any candidate at all" behavior -- including, faithfully, a real
+    0-point "Best Hope" row pre-election if that's genuinely this
+    Kingdom's own best candidate (the real pre-election scan never gates
+    on `OFFICE_MIN_POINTS` either; see `kingdom_best_candidate()`'s own
+    docstring). **Post-election, the 8 majors still implicitly respect
+    `OFFICE_MIN_POINTS`** through `resolve_office_holder()`'s own
+    existing gate (unchanged since Phase 230, deliberately not reopened
+    here) -- an asymmetry versus the pre-election path that is a direct,
+    documented consequence of reusing that already-tested function for
+    the post-election "true global winner" lookup, not an oversight.
+
+    One readable line per office (`models/office.py OFFICE_NAME`, padded
+    to the real 26-char field width, Phase 435), keeping this composer's
+    existing "readable trailing text" convention (not the real literal
+    fixed-width `Rep_Office` columns) for the new rank/percentage fields
+    too -- the same "narrower than the real procedure, documented why"
+    precedent every other section composer here uses.
+
+    **Victory Points are computed but not printed inline here**, matching
+    the real source exactly: `turn/victory_points.py office_victory_
+    points()` (Phase 439) is a real, available function, but the actual
+    `Rep_Office`/`Pray_Report` procedure never writes `ofcpoints` to the
+    printed report at all -- it's an internal scoring input consumed
+    elsewhere (end-game standings), not part of this letter section's own
+    text. Any future end-game scoring report can call it directly.
 
     **Chancellor's own discovery-attribution Merit Point terms, and
     Marshal/Admiral/Defender/Priest's own battle/monster/cast tally
@@ -7116,15 +7192,26 @@ def describe_imperial_office_report(state: GameState) -> list[str]:
     """
 
     lines = [_IMPERIAL_OFFICE_REPORT_HEADER]
-    holders = resolve_all_office_holders(state)
+    election_settled = state.emperor_kingdom_id is not None
     for office in ALL_OFFICES:
         office_name = f"{OFFICE_NAME[office]:<26}"
-        holder = holders[office]
-        if holder is None:
+        top = resolve_office_holder(state, office) if election_settled else kingdom_best_candidate(state, office, kingdom_id)
+
+        if top is None:
             lines.append(f"{office_name}{_IMPERIAL_OFFICE_REPORT_NONE}")
             continue
-        holder_name = state.leaders[holder.leader_id].name
-        lines.append(f"{office_name}{holder_name} ({holder.merit_points} points)")
+
+        if office.value > Office.MAGE.value:
+            top_rival_points = office_rival_best_points(state, office, state.leaders[top.leader_id].kingdom_id)
+            if top.merit_points < top_rival_points / 2 or top.merit_points < OFFICE_MIN_POINTS[office]:
+                lines.append(f"{office_name}{_IMPERIAL_OFFICE_REPORT_NONE}")
+                continue
+
+        lines.append(_office_candidate_line(state, office, top, prefix=office_name))
+
+        runner_up = kingdom_runner_up(state, office, kingdom_id, exclude_leader_id=top.leader_id)
+        if runner_up is not None:
+            lines.append(_office_candidate_line(state, office, runner_up, prefix=f"{'':26}"))
     return lines
 
 
@@ -8345,10 +8432,11 @@ def compose_letter_report(
     return their own header as their first line (the same Phase ~158
     convention Phase 216/218/219/220/221's own composers reuse), so no
     header is added here for any of them; adding one would duplicate it.
-    Unlike the others, `describe_imperial_office_report()` takes no
-    `kingdom_id` -- the real procedure's own office-holder loop covers
-    every leader in the game, not just this kingdom's own, so its output
-    is identical across every King's own report.
+    **Phase 440**: `describe_imperial_office_report()` now takes this
+    same `kingdom_id` too -- the real procedure's own report is
+    genuinely per-Kingdom (see that composer's own docstring for the
+    full derivation: pre-election "Best Hope" vs. post-election true
+    global winner, always alongside this Kingdom's own runner-up).
 
     **GENERAL INTELLIGENCE REPORT** (Phase 231, extended Phases 232/234)
     wraps `describe_general_intelligence_report()` as-is, same
@@ -8438,7 +8526,7 @@ def compose_letter_report(
     if armies_lines:
         _emit_section(armies_lines[0], armies_lines[1:])
 
-    imperial_office_lines = describe_imperial_office_report(state)
+    imperial_office_lines = describe_imperial_office_report(state, kingdom_id)
     if imperial_office_lines:
         _emit_section(imperial_office_lines[0], imperial_office_lines[1:])
 

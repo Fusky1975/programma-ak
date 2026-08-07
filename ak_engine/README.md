@@ -18511,7 +18511,7 @@ section.
     exclusion and its zero-rival case, the min-points-free "Best Hope"
     scan, runner-up selection/absence, and Emperor's own special-cased
     scoring path. Ran again: 3998 passed (8 new).
-- **Phase 439 (current)**: the second of the 3-phase arc -- new
+- **Phase 439**: the second of the 3-phase arc -- new
   `turn/victory_points.py`, closing `models/office.py OFFICE_VALUE`'s own
   long-standing docstring note (Phase 81) that its `ofcval` figures "feed
   a separate points-decay formula ... whose own `reduct` term isn't
@@ -18555,6 +18555,49 @@ section.
     alignment distances, Emperor's own office scoring itself, and
     `OUTLOOK_REDUCTION`'s own real values. Ran again: 4005 passed
     (7 new).
+- **Phase 440 (current)**: the third and last of the arc -- rewrites
+  `describe_imperial_office_report()` itself, now taking a `kingdom_id`
+  (correcting its own previous docstring claim that its content was "the
+  same for every kingdom's own report" -- only true post-election). Per
+  office: `top` is `resolve_office_holder()` (the true global Rank-1
+  winner, unchanged since Phase 230) once `state.emperor_kingdom_id` is
+  set, else Phase 438's ungated `kingdom_best_candidate()` -- the real
+  pre-election "Best Hope" scan. A second, always-present line shows this
+  Kingdom's own runner-up (`kingdom_runner_up()`) when one exists,
+  regardless of whether the top line's own holder belongs to a different
+  Kingdom entirely. Both lines carry real `rank`/`Riv%`
+  (`leader_office_rank()`/`office_rival_best_points()`, computed relative
+  to *that row's own holder's* Kingdom, not the report's viewing Kingdom
+  -- matches `REPORTS.PAS Rank(bestldr,...)`/`Rank(nextldr,...)` each
+  deriving their own rival kingdom independently). The 39 extended titles
+  (`office.value > Office.MAGE.value`) get the real extra suppression
+  gate the 8 majors are exempt from -- `top.merit_points` below half the
+  best rival's, **or** below `OFFICE_MIN_POINTS[office]` (a second,
+  independent check this phase added after the first pass over-showed
+  0-point "Best Hope" rows for extended titles with a nonzero real
+  threshold, caught by the suite's own diff against a Silver-Tongue-style
+  fixture). Victory Points (`turn/victory_points.py`, Phase 439) are
+  real and available but, matching the source exactly, never appear
+  inline in this printed row -- `Rep_Office`/`Pray_Report` never writes
+  `ofcpoints` to the letter report itself.
+  - Ran the full suite before writing new tests (non-breaking check:
+    4005 passed unchanged -- the signature change alone breaks nothing
+    until a caller is updated). Updated `compose_letter_report()`'s own
+    call site and 3 pre-existing tests to the new signature/format
+    (captured via the established scratch-script technique, not
+    hand-transcribed); replaced the old, misleadingly-named
+    `..._same_content_regardless_of_kingdom_id` test (which never
+    actually varied `kingdom_id`) with two real ones covering pre-election
+    divergence and post-election convergence. Added 4 new tests covering
+    Rank/Riv% computed relative to the holder's own Kingdom, the
+    runner-up's own presence/absence, and the extended-title gate's two
+    independent conditions. Ran again: 4009 passed (net +4: 7 new, -3
+    replaced-in-place, +1 from the same_content split into two).
+
+This closes the IMPERIAL OFFICE REPORT rank/percentage/runner-up gap the
+Phase 435 plan had flagged as "a substantially larger feature" -- the
+last of the three residual report-layout details from the user's own
+follow-up request after the original 431-435 plan shipped.
 
 ## Setup
 
