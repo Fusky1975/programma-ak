@@ -6297,6 +6297,12 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
     titchar[ThiefPrince]) = kng` check (the gold always credits the
     holder's own King's kingdom, even when a Hero holds the title).
 
+    **Phase 435**: all three gold figures ("Gold in treasury"/"Expected
+    Revenues"/"Expected Expenses") are now right-justified to the real
+    `:3` field width, confirmed verbatim at `REPORTS.PAS` lines 314/319/
+    322 (`WRITELN(playfile,'  Gold in treasury:  ',lgold[kng]:3)` and
+    its two siblings) -- previously rendered unpadded.
+
     **Phase 268 closes the "+Invention Bonus" line and the Discoveries
     of the Sages list**, both previously confirmed-absent (no per-
     kingdom Discovery-tracking field existed anywhere in this project
@@ -6314,7 +6320,7 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
     lines = [
         "FINANCES",
         _FINANCES_OPENING,
-        f"Gold in treasury: {kingdom.treasury}",
+        f"Gold in treasury: {kingdom.treasury:>3}",
     ]
     evilking_holder = resolve_office_holder(state, Office.EVIL_KING)
     if evilking_holder is not None and state.leaders[evilking_holder.leader_id].kingdom_id == kingdom_id:
@@ -6322,8 +6328,8 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
     thiefprince_holder = resolve_office_holder(state, Office.THIEF_PRINCE)
     if thiefprince_holder is not None and state.leaders[thiefprince_holder.leader_id].kingdom_id == kingdom_id:
         lines.append("(Including +10 Thieves Guild)")
-    lines.append(f"Expected Revenues: {compute_tax_base(state, kingdom_id)}")
-    lines.append(f"Expected Expenses: {compute_expected_expenses(state, kingdom_id)}")
+    lines.append(f"Expected Revenues: {compute_tax_base(state, kingdom_id):>3}")
+    lines.append(f"Expected Expenses: {compute_expected_expenses(state, kingdom_id):>3}")
     invention_bonus_percent = compute_invention_bonus_percent(kingdom)
     if invention_bonus_percent > 0:
         lines.append(f"+Invention Bonus: {invention_bonus_percent}%")
@@ -6992,13 +6998,25 @@ def describe_imperial_office_report(state: GameState) -> list[str]:
     `kingdom_id` parameter.
 
     One readable line per office (`models/office.py OFFICE_NAME`, the
-    real Pascal `ofcname` display string), not the real procedure's own
-    fixed-width columns/percentage-vs-runner-up layout -- the same
-    "readable line, not exact Pascal layout" precedent every other
-    section composer in this module already established. A holder's own
-    Merit Points are shown; an office nobody yet qualifies for (`models/
-    office.py OFFICE_MIN_POINTS`) renders `"None at present"`, not a
-    guess.
+    real Pascal `ofcname` display string). A holder's own Merit Points
+    are shown; an office nobody yet qualifies for (`models/office.py
+    OFFICE_MIN_POINTS`) renders `"None at present"`, not a guess.
+
+    **Phase 435**: the office-name column is now padded to the real
+    26-char field width (`REPORTS.PAS Rep_Office` ~line 1628: `ostr:=
+    ofcname[ofc]; While Length(ostr) < 26 DO ostr:= Concat(ostr,' ')`)
+    -- confirmed against every real `OFFICE_NAME` entry topping out at
+    25 characters, so none get truncated. **Still not reproduced**: the
+    real table's own rank-number/percentage-of-leader/runner-up columns
+    (`Rank()`, `ftoppts`, `rivstr`, `nextldr`) -- this project models
+    the underlying Merit Point scores (`turn/merit_points.py`) and the
+    Rank-1 winner (`turn/office_holder.py resolve_all_office_holders()`)
+    but not a full leaderboard percentage/second-place readout, a
+    substantially larger feature this phase's own narrow "fixed-width"
+    scope doesn't extend to. The holder's own name and points keep this
+    composer's existing "readable trailing text" convention rather than
+    the real columns, the same "narrower than the real procedure,
+    documented why" precedent every other section composer here uses.
 
     **Chancellor's own discovery-attribution Merit Point terms, and
     Marshal/Admiral/Defender/Priest's own battle/monster/cast tally
@@ -7015,13 +7033,13 @@ def describe_imperial_office_report(state: GameState) -> list[str]:
     lines = [_IMPERIAL_OFFICE_REPORT_HEADER]
     holders = resolve_all_office_holders(state)
     for office in ALL_OFFICES:
-        office_name = OFFICE_NAME[office]
+        office_name = f"{OFFICE_NAME[office]:<26}"
         holder = holders[office]
         if holder is None:
-            lines.append(f"{office_name}: {_IMPERIAL_OFFICE_REPORT_NONE}")
+            lines.append(f"{office_name}{_IMPERIAL_OFFICE_REPORT_NONE}")
             continue
         holder_name = state.leaders[holder.leader_id].name
-        lines.append(f"{office_name}: {holder_name} ({holder.merit_points} points)")
+        lines.append(f"{office_name}{holder_name} ({holder.merit_points} points)")
     return lines
 
 

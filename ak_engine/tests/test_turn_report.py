@@ -4349,8 +4349,8 @@ def test_describe_finances_report_shows_treasury():
         "FINANCES",
         _FINANCES_OPENING,
         "Gold in treasury: 250",
-        "Expected Revenues: 0",
-        "Expected Expenses: 0",
+        "Expected Revenues:   0",
+        "Expected Expenses:   0",
         _FINANCES_DISCOVERIES_INTRO,
         "None at present",
     ]
@@ -4362,7 +4362,7 @@ def test_describe_finances_report_zero_treasury():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[2] == "Gold in treasury: 0"
+    assert lines[2] == "Gold in treasury:   0"
 
 
 def test_describe_finances_report_discoveries_none_at_present_when_kingdom_owns_none():
@@ -4432,7 +4432,7 @@ def test_describe_finances_report_reads_only_the_given_kingdoms_own_treasury():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[2] == "Gold in treasury: 10"
+    assert lines[2] == "Gold in treasury:  10"
 
 
 def test_describe_finances_report_expected_revenues_uses_compute_tax_base():
@@ -4449,7 +4449,7 @@ def test_describe_finances_report_expected_revenues_uses_compute_tax_base():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[3] == "Expected Revenues: 10"
+    assert lines[3] == "Expected Revenues:  10"
 
 
 # -- Phase 277: King of Pain / Prince of Thieves FINANCES bonus notes --
@@ -4474,7 +4474,7 @@ def test_describe_finances_report_shows_black_knights_note_for_this_kingdoms_kin
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[2] == "Gold in treasury: 50"
+    assert lines[2] == "Gold in treasury:  50"
     assert lines[3] == "(Including +5 Black Knights)"
 
 
@@ -4562,10 +4562,10 @@ def test_describe_finances_report_shows_both_notes_in_order_when_both_are_earned
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[2] == "Gold in treasury: 50"
+    assert lines[2] == "Gold in treasury:  50"
     assert lines[3] == "(Including +5 Black Knights)"
     assert lines[4] == "(Including +10 Thieves Guild)"
-    assert lines[5] == "Expected Revenues: 30"
+    assert lines[5] == "Expected Revenues:  30"
 
 
 # -- Phase 220: describe_provinces_report() -- the "PROVINCES" section --
@@ -5326,9 +5326,9 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "",
         "O Great One, I submit for thy examination the following figures "
         "concerning the finances of our great nation:",
-        "Gold in treasury: 0",
-        "Expected Revenues: 0",
-        "Expected Expenses: 4",
+        "Gold in treasury:   0",
+        "Expected Revenues:   0",
+        "Expected Expenses:   4",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
         "None at present",
         "",
@@ -5370,53 +5370,53 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "",
         "IMPERIAL OFFICE REPORT",
         "",
-        "World Emperor: None at present",
-        "Esteemed High Chancellor: None at present",
-        "Imperial Treasurer: None at present",
-        "Imperial Grand Marshal: None at present",
-        "Imperial Grand Admiral: None at present",
-        "Lord High Defender: None at present",
-        "High Priest Palatine: None at present",
-        "Arch-Mage Palatine: None at present",
-        "King of Pain: None at present",
-        "Prince of Thieves: None at present",
-        "Savior of Humankind: None at present",
-        "First Elder of Elvenkind: None at present",
-        "King Under the Mountain: None at present",
-        "Khan of the Orcish Hordes: None at present",
-        "Dragon Lord: None at present",
-        "Ace of Eagles: None at present",
-        "Whale League Commissioner: None at present",
-        "King of Atlantis: None at present",
-        "Tsar of the Trees: None at present",
-        "High Mucky-Muck of Trolls: None at present",
-        "Lord of Lycanthropes: None at present",
-        "Divine Archangel: None at present",
-        "Most Blessed of Kings: None at present",
-        "Great Druid of Life: None at present",
-        "Defender of Freedom: None at present",
-        "Warlock of the Pagan Gods: None at present",
-        "Angel of Death: None at present",
-        "Chief of Staff: None at present",
-        "Silver Tongue: None at present",
-        "Master of Elements: None at present",
-        "Amazing Houdini: None at present",
-        "Sorceror of Black Magic: None at present",
-        "Master Mind: None at present",
-        "Ranger of the Plains: None at present",
-        "Desert Rat: None at present",
-        "Lord of the Jungle: None at present",
-        "Warden of the Forests: None at present",
-        "Mountain Man: None at present",
-        "Ruler of the Waves: None at present",
-        "Fool of Battles: None at present",
-        "Curator of Artifacts: None at present",
-        "Professor Whizdumb: None at present",
-        "Grandfather of Assassins: None at present",
-        "Captain of the Musketeers: None at present",
-        "Air Force Commander: None at present",
-        "King of Cowards: None at present",
-        "Bravest of the Brave: None at present",
+        "World Emperor             None at present",
+        "Esteemed High Chancellor  None at present",
+        "Imperial Treasurer        None at present",
+        "Imperial Grand Marshal    None at present",
+        "Imperial Grand Admiral    None at present",
+        "Lord High Defender        None at present",
+        "High Priest Palatine      None at present",
+        "Arch-Mage Palatine        None at present",
+        "King of Pain              None at present",
+        "Prince of Thieves         None at present",
+        "Savior of Humankind       None at present",
+        "First Elder of Elvenkind  None at present",
+        "King Under the Mountain   None at present",
+        "Khan of the Orcish Hordes None at present",
+        "Dragon Lord               None at present",
+        "Ace of Eagles             None at present",
+        "Whale League Commissioner None at present",
+        "King of Atlantis          None at present",
+        "Tsar of the Trees         None at present",
+        "High Mucky-Muck of Trolls None at present",
+        "Lord of Lycanthropes      None at present",
+        "Divine Archangel          None at present",
+        "Most Blessed of Kings     None at present",
+        "Great Druid of Life       None at present",
+        "Defender of Freedom       None at present",
+        "Warlock of the Pagan Gods None at present",
+        "Angel of Death            None at present",
+        "Chief of Staff            None at present",
+        "Silver Tongue             None at present",
+        "Master of Elements        None at present",
+        "Amazing Houdini           None at present",
+        "Sorceror of Black Magic   None at present",
+        "Master Mind               None at present",
+        "Ranger of the Plains      None at present",
+        "Desert Rat                None at present",
+        "Lord of the Jungle        None at present",
+        "Warden of the Forests     None at present",
+        "Mountain Man              None at present",
+        "Ruler of the Waves        None at present",
+        "Fool of Battles           None at present",
+        "Curator of Artifacts      None at present",
+        "Professor Whizdumb        None at present",
+        "Grandfather of Assassins  None at present",
+        "Captain of the Musketeers None at present",
+        "Air Force Commander       None at present",
+        "King of Cowards           None at present",
+        "Bravest of the Brave      None at present",
         "",
         "",
         "ADVENTURE",
@@ -5505,9 +5505,9 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "",
         "O Great One, I submit for thy examination the following figures "
         "concerning the finances of our great nation:",
-        "Gold in treasury: 0",
-        "Expected Revenues: 0",
-        "Expected Expenses: 0",
+        "Gold in treasury:   0",
+        "Expected Revenues:   0",
+        "Expected Expenses:   0",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
         "None at present",
         "",
@@ -5542,53 +5542,53 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "",
         "IMPERIAL OFFICE REPORT",
         "",
-        "World Emperor: None at present",
-        "Esteemed High Chancellor: None at present",
-        "Imperial Treasurer: None at present",
-        "Imperial Grand Marshal: None at present",
-        "Imperial Grand Admiral: None at present",
-        "Lord High Defender: None at present",
-        "High Priest Palatine: None at present",
-        "Arch-Mage Palatine: None at present",
-        "King of Pain: None at present",
-        "Prince of Thieves: None at present",
-        "Savior of Humankind: None at present",
-        "First Elder of Elvenkind: None at present",
-        "King Under the Mountain: None at present",
-        "Khan of the Orcish Hordes: None at present",
-        "Dragon Lord: None at present",
-        "Ace of Eagles: None at present",
-        "Whale League Commissioner: None at present",
-        "King of Atlantis: None at present",
-        "Tsar of the Trees: None at present",
-        "High Mucky-Muck of Trolls: None at present",
-        "Lord of Lycanthropes: None at present",
-        "Divine Archangel: None at present",
-        "Most Blessed of Kings: None at present",
-        "Great Druid of Life: None at present",
-        "Defender of Freedom: None at present",
-        "Warlock of the Pagan Gods: None at present",
-        "Angel of Death: None at present",
-        "Chief of Staff: None at present",
-        "Silver Tongue: None at present",
-        "Master of Elements: None at present",
-        "Amazing Houdini: None at present",
-        "Sorceror of Black Magic: None at present",
-        "Master Mind: None at present",
-        "Ranger of the Plains: None at present",
-        "Desert Rat: None at present",
-        "Lord of the Jungle: None at present",
-        "Warden of the Forests: None at present",
-        "Mountain Man: None at present",
-        "Ruler of the Waves: None at present",
-        "Fool of Battles: None at present",
-        "Curator of Artifacts: None at present",
-        "Professor Whizdumb: None at present",
-        "Grandfather of Assassins: None at present",
-        "Captain of the Musketeers: None at present",
-        "Air Force Commander: None at present",
-        "King of Cowards: None at present",
-        "Bravest of the Brave: None at present",
+        "World Emperor             None at present",
+        "Esteemed High Chancellor  None at present",
+        "Imperial Treasurer        None at present",
+        "Imperial Grand Marshal    None at present",
+        "Imperial Grand Admiral    None at present",
+        "Lord High Defender        None at present",
+        "High Priest Palatine      None at present",
+        "Arch-Mage Palatine        None at present",
+        "King of Pain              None at present",
+        "Prince of Thieves         None at present",
+        "Savior of Humankind       None at present",
+        "First Elder of Elvenkind  None at present",
+        "King Under the Mountain   None at present",
+        "Khan of the Orcish Hordes None at present",
+        "Dragon Lord               None at present",
+        "Ace of Eagles             None at present",
+        "Whale League Commissioner None at present",
+        "King of Atlantis          None at present",
+        "Tsar of the Trees         None at present",
+        "High Mucky-Muck of Trolls None at present",
+        "Lord of Lycanthropes      None at present",
+        "Divine Archangel          None at present",
+        "Most Blessed of Kings     None at present",
+        "Great Druid of Life       None at present",
+        "Defender of Freedom       None at present",
+        "Warlock of the Pagan Gods None at present",
+        "Angel of Death            None at present",
+        "Chief of Staff            None at present",
+        "Silver Tongue             None at present",
+        "Master of Elements        None at present",
+        "Amazing Houdini           None at present",
+        "Sorceror of Black Magic   None at present",
+        "Master Mind               None at present",
+        "Ranger of the Plains      None at present",
+        "Desert Rat                None at present",
+        "Lord of the Jungle        None at present",
+        "Warden of the Forests     None at present",
+        "Mountain Man              None at present",
+        "Ruler of the Waves        None at present",
+        "Fool of Battles           None at present",
+        "Curator of Artifacts      None at present",
+        "Professor Whizdumb        None at present",
+        "Grandfather of Assassins  None at present",
+        "Captain of the Musketeers None at present",
+        "Air Force Commander       None at present",
+        "King of Cowards           None at present",
+        "Bravest of the Brave      None at present",
         "",
         "",
         "ADVENTURE",
@@ -5717,12 +5717,12 @@ def test_describe_imperial_office_report_none_at_present_for_every_office_with_n
     lines = describe_imperial_office_report(state)
 
     assert lines[0] == "IMPERIAL OFFICE REPORT"
-    assert lines.count("World Emperor: None at present") == 1
-    assert lines.count("Arch-Mage Palatine: None at present") == 1
-    assert lines.count("King of Pain: None at present") == 1
-    assert lines.count("Prince of Thieves: None at present") == 1
-    assert lines.count("Savior of Humankind: None at present") == 1
-    assert lines.count("Dragon Lord: None at present") == 1
+    assert lines.count("World Emperor             None at present") == 1
+    assert lines.count("Arch-Mage Palatine        None at present") == 1
+    assert lines.count("King of Pain              None at present") == 1
+    assert lines.count("Prince of Thieves         None at present") == 1
+    assert lines.count("Savior of Humankind       None at present") == 1
+    assert lines.count("Dragon Lord               None at present") == 1
     assert len(lines) == 48  # header + 47 offices
 
 
@@ -5733,7 +5733,7 @@ def test_describe_imperial_office_report_shows_a_real_office_holder():
 
     lines = describe_imperial_office_report(state)
 
-    assert "High Priest Palatine: Aldric (3 points)" in lines
+    assert "High Priest Palatine      Aldric (3 points)" in lines
 
 
 def test_describe_imperial_office_report_same_content_regardless_of_kingdom_id():

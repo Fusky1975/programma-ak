@@ -18323,7 +18323,7 @@ section.
     3988 passed (0 new -- existing tests rewritten in place, not added
     to, since the real column layout doesn't introduce any new case this
     composer didn't already cover).
-- **Phase 434 (current)**: `describe_adventure_report()` rewritten to
+- **Phase 434**: `describe_adventure_report()` rewritten to
   the real ADVENTURE table's own fixed-width columns, continuing the
   same multi-phase project. `REPORTS.PAS Desc_Adventure`'s nested `It`/
   `Check_None` (~lines 2012-2029) turned out to build **one single line
@@ -18358,6 +18358,44 @@ section.
     test file's own local `_ADVENTURE_UNKNOWN_RICHES` constant (same
     27-space indent fix). Ran again: 3988 passed (0 new -- existing
     tests rewritten in place).
+- **Phase 435 (current)**: closes the pixel-perfect turn-0 report layout
+  project (Phases 431-435) with the two remaining, deliberately small
+  fixes the approved plan called out: IMPERIAL OFFICE REPORT's office-
+  name column width, and FINANCES' three gold figures' own numeric
+  width.
+  - **`describe_imperial_office_report()`**: the office-name column is
+    now padded to the real 26-char field width (`REPORTS.PAS Rep_
+    Office` ~line 1628: `ostr:= ofcname[ofc]; While Length(ostr) < 26
+    DO ostr:= Concat(ostr,' ')`) -- confirmed against every real
+    `OFFICE_NAME` entry topping out at 25 characters, so none get
+    truncated. **Still not reproduced**: the real table's own rank-
+    number/percentage-of-leader/runner-up columns (`Rank()`, `ftoppts`,
+    `rivstr`, `nextldr`) -- a substantially larger feature (this
+    project models the underlying Merit Point scores and the Rank-1
+    winner, but not a full leaderboard readout) this phase's own narrow
+    "fixed-width" scope doesn't extend to; documented as a deliberate,
+    narrower-than-real gap, the same precedent every other section
+    composer here uses.
+  - **`describe_finances_report()`**: "Gold in treasury"/"Expected
+    Revenues"/"Expected Expenses" are now right-justified to the real
+    `:3` field width, confirmed verbatim at `REPORTS.PAS` lines 314/319/
+    322 (`WRITELN(playfile,'  Gold in treasury:  ',lgold[kng]:3)` and
+    its two siblings) -- previously rendered unpadded.
+  - Ran the full suite before writing new tests (non-breaking check: 10
+    pre-existing tests failed as expected -- all asserted the old
+    unpadded office-name/gold-figure text). Fixed all 10 in place
+    (simple numeric-padding corrections, no new behavior to add new
+    tests for). Ran again: 3988 passed (0 new).
+  - **This closes the multi-phase "pixel-perfect turn-0 report layout"
+    project** (Phases 431-435, the user's own "tutto il report, pixel-
+    perfect" scope decision): every section's real fixed-width columns
+    and real blank-line spacing are now reproduced wherever the
+    available Pascal source and this project's own existing data model
+    make that tractable, with every remaining simplification (ARMIES'
+    province-grouping suppression, IMPERIAL OFFICE REPORT's rank/
+    percentage columns, CHARACTERS' item-ownership tick marks, etc.)
+    explicitly documented as a deliberate, narrower-than-real scope
+    rather than a silent gap.
 
 ## Setup
 
