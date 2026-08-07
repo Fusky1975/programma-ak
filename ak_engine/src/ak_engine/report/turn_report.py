@@ -6941,10 +6941,28 @@ _ADVENTURE_REPORT_NONE_AT_PRESENT = "None at present"
 # (~line 2056-2059): "Renegade "/"Giant "/"Great " are dropped from the
 # monster's own display name before printing (a 4th case, truncating at
 # "Elemen[tal]", is part of that same procedure's fixed-width-column
-# truncation logic and isn't reproduced -- this composer doesn't reproduce
-# fixed-width columns at all, same precedent as describe_armies_report()'s
-# own docstring).
+# truncation logic and isn't reproduced -- Phase 434 reproduces the real
+# field widths, but not this one further truncation-and-dot-insertion
+# edge case).
 _ADVENTURE_MONSTER_NAME_PREFIXES = ("Renegade ", "Giant ", "Great ")
+
+# REPORTS.PAS Desc_Adventure's own `Check_None` (~lines 2018-2029) and
+# `sacked &looted` literal (~line 2068) -- Phase 434, verbatim: the
+# real 16-char monster-column literal used whenever `fstate[fn] = Dead`
+# instead of a monster name (`WRITE(playfile,'sacked &looted  ')` --
+# already exactly 16 characters long in the source, no format
+# specifier needed).
+_ADVENTURE_SACKED_AND_LOOTED = "sacked &looted  "
+
+# The real per-province column-suppression width (`WRITE(playfile,
+# '':27)`, Check_None's own `ELSE` branch) -- every feature after the
+# first at a given province gets 27 blank columns instead of repeating
+# the province/code/%exp block. The same real `'':27` literal is reused
+# for the "Special"/treasure line's own indent below (REPORTS.PAS
+# ~line 2089: `WRITELN(playfile,'':27,'/Guarding unknown riches...')`)
+# -- Phase 430 had used a 2-space indent there, unsourced; Phase 434
+# corrects it to the real 27-space width.
+_ADVENTURE_BLANK_PROVINCE_COLUMNS = " " * 27
 
 
 def _adventure_monster_label(monster: Monster) -> str:
@@ -7007,7 +7025,7 @@ def describe_imperial_office_report(state: GameState) -> list[str]:
     return lines
 
 
-_ADVENTURE_UNKNOWN_RICHES = "  /Guarding unknown riches"
+_ADVENTURE_UNKNOWN_RICHES = f"{_ADVENTURE_BLANK_PROVINCE_COLUMNS}/Guarding unknown riches"
 # Phase 430: unsourced -- no AKGEN reverse-engineering note covers how
 # often the real "Special" line actually shows a feature's own treasure
 # instead of "Guarding unknown riches" (the real ``trowner[fn] <>
@@ -7028,14 +7046,16 @@ def _adventure_treasure_label(treasure: Treasure, feature_id: int) -> str:
     bare "Hoard"); every other category uses ``TREASURE_NAME`` +
     ``TREASURE_LABEL`` directly. One line, not the real two (this
     module's own "readable single line" convention, already used
-    throughout this composer's siblings).
+    throughout this composer's siblings). Indented by the real
+    `_ADVENTURE_BLANK_PROVINCE_COLUMNS` 27-space width (Phase 434 --
+    Phase 430 had used an unsourced 2-space indent).
     """
 
     if TREASURE_CATEGORY[treasure] is TreasureCategory.GOLD_HOARD:
         name = GOLD_HOARD_DISPLAY_NAME[treasure]
     else:
         name = TREASURE_NAME[treasure]
-    return f"  /{name} (#{feature_id}): {TREASURE_LABEL[treasure]}"
+    return f"{_ADVENTURE_BLANK_PROVINCE_COLUMNS}/{name} (#{feature_id}): {TREASURE_LABEL[treasure]}"
 
 
 def describe_adventure_report(state: GameState, kingdom_id: int, rng: random.Random) -> list[str]:
@@ -7078,18 +7098,62 @@ def describe_adventure_report(state: GameState, kingdom_id: int, rng: random.Ran
     composer's own single caller, `compose_letter_report()`, already
     threads one through for its other sections).
 
+    **Phase 434 rewrites the per-feature line to the real fixed-width
+    columns** (`REPORTS.PAS Desc_Adventure`'s nested `It`/`Check_None`,
+    ~lines 2012-2029), the user's own "tutto il report, pixel-perfect"
+    scope decision: province name (truncated to 14, padded to 15) + one
+    literal space + `province_code()` (Phase 431, unpadded -- the real
+    `ps` string has no format specifier of its own) + two literal spaces
+    + `%exp` (width 3, right-just.) + two literal spaces, **only on the
+    first feature at a given province** -- every later feature at that
+    same province gets `_ADVENTURE_BLANK_PROVINCE_COLUMNS` (27 blank
+    columns) instead, matching the real `Check_None`'s own `ELSE
+    WRITE('':27)` branch. Feature type (width 15), feature number (width
+    3, right-just., + 2 literal spaces), then the monster column (width
+    16) -- `_ADVENTURE_SACKED_AND_LOOTED` (the real, verbatim "sacked
+    &looted  " literal) when looted, the guardian monster's own label
+    otherwise (blank if none recorded), plus `"    ?"` (4 literal spaces
+    + `?`) appended when `discovery_level(kingdom_id) == 1` (an
+    unconfirmed-riches feature). All of this is now **one single line
+    per feature**, not the previous three (province/feature/treasure) --
+    matching the real procedure's own single-`WRITE`-sequence-per-
+    feature shape; only the Special/treasure line (below) stays separate,
+    since the real source does keep that as its own `WRITELN`.
+
+    **The "Special"/treasure line (Phase 430, previously unrendered;
+    Phase 434 corrects its indent)**: every discovered, non-looted
+    feature with a real ``Feature.treasure`` still gets its own
+    following line -- either the revealed treasure
+    (``_adventure_treasure_label()``, matching real reports like "Large
+    Hoard of Gold (#17): 10-25 gold" or "Reflector of Armies (#7): Cast
+    "Phantasmal Armies" at skill-2" exactly) with probability
+    ``_ADVENTURE_TREASURE_REVEAL_CHANCE``, or ``_ADVENTURE_UNKNOWN_RICHES``
+    ("Guarding unknown riches") otherwise -- unsourced trigger rate, see
+    that constant's own docstring. Both now indented by the real 27-space
+    `_ADVENTURE_BLANK_PROVINCE_COLUMNS` width (`REPORTS.PAS` ~line 2089:
+    `WRITELN(playfile,'':27,'/Guarding unknown riches...')`) -- Phase 430
+    had used an unsourced 2-space indent. A feature with no recorded
+    ``treasure`` (created outside world generation, e.g. most existing
+    tests) always renders ``_ADVENTURE_UNKNOWN_RICHES``, matching this
+    module's existing "no source, no silent default" convention rather
+    than a guessed reveal. `rng` is a required parameter for this reason
+    -- every caller must supply one (this composer's own single caller,
+    `compose_letter_report()`, already threads one through for its other
+    sections).
+
     **What this deliberately does NOT reproduce, and why**:
     - The real "Special" column's own level-2/level-3 magic-power-hint
       cases (``fdisc`` level 2/3, a per-feature ``MagicFeature`` link)
       still aren't modeled -- only level 1's ``"?"`` plus the plain
       revealed-or-hidden treasure line above.
-    - Fixed-width columns aren't reproduced (one readable line per
-      province/feature instead), the same documented choice
-      ``describe_armies_report()``'s own docstring already made.
+    - The real feature-type-name truncation's own dot-insertion rule
+      (`Delete`/`Insert('.',tmp,4)` for names over 14 characters
+      containing a space) isn't reproduced -- this composer just
+      truncates/pads to the real 15-char field width, plain.
 
     A feature with no ``guardian_monster`` recorded (a data gap this
     project's own ``Feature`` model allows, unlike real Pascal's always-
-    populated ``fmonst`` array) renders no monster segment at all, rather
+    populated ``fmonst`` array) renders a blank monster column, rather
     than guessing one.
     """
 
@@ -7114,17 +7178,27 @@ def describe_adventure_report(state: GameState, kingdom_id: int, rng: random.Ran
         explored_percent = 0
         if province is not None:
             explored_percent = province.explored_percent_by_kingdom.get(kingdom_id, 0)
-        lines.append(f"{province_label} ({explored_percent}% explored)")
+        code = province_code(coord)
 
-        for feature in sorted(by_province[coord], key=lambda f: f.feature_id):
-            kind_name = FEATURE_TYPE_NAMES[feature.kind]
-            entry = f"  {kind_name} (F#{feature.feature_id})"
+        for index, feature in enumerate(sorted(by_province[coord], key=lambda f: f.feature_id)):
+            if index == 0:
+                name_field = f"{province_label[:14]:<15}"
+                prefix = f"{name_field} {code}  {explored_percent:>3}  "
+            else:
+                prefix = _ADVENTURE_BLANK_PROVINCE_COLUMNS
+
+            kind_field = f"{FEATURE_TYPE_NAMES[feature.kind][:15]:<15}"
+            number_field = f"{feature.feature_id:>3}  "
             if feature.looted:
-                entry += " -- sacked & looted"
+                monster_field = _ADVENTURE_SACKED_AND_LOOTED
             elif feature.guardian_monster is not None:
-                entry += f" -- {_adventure_monster_label(feature.guardian_monster)}"
+                monster_field = f"{_adventure_monster_label(feature.guardian_monster)[:16]:<16}"
+            else:
+                monster_field = f"{'':<16}"
+
+            entry = f"{prefix}{kind_field}{number_field}{monster_field}"
             if feature.discovery_level(kingdom_id) == 1:
-                entry += " ?"
+                entry += "    ?"
             lines.append(entry)
 
             if not feature.looted:

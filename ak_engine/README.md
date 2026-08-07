@@ -18286,7 +18286,7 @@ section.
     same technique Phase 431 used); added `ALIGNMENT_ABBREVIATION`/
     `TEMPER_ABBREVIATION` coverage tests to `test_alignment.py`/
     `test_temper.py`. Ran again: 3988 passed (4 new).
-- **Phase 433 (current)**: `describe_armies_report()` rewritten to the
+- **Phase 433**: `describe_armies_report()` rewritten to the
   real ARMIES table's own fixed-width columns, continuing the same
   multi-phase project.
   - **The 2-line caption block** (`_ARMIES_CAPTION_LINE_1`/
@@ -18323,6 +18323,41 @@ section.
     3988 passed (0 new -- existing tests rewritten in place, not added
     to, since the real column layout doesn't introduce any new case this
     composer didn't already cover).
+- **Phase 434 (current)**: `describe_adventure_report()` rewritten to
+  the real ADVENTURE table's own fixed-width columns, continuing the
+  same multi-phase project. `REPORTS.PAS Desc_Adventure`'s nested `It`/
+  `Check_None` (~lines 2012-2029) turned out to build **one single line
+  per feature** (province+code+%exp, feature type, feature#, monster,
+  all in one `WRITE` sequence), not the three separate lines (province/
+  feature/treasure) this composer had used since Phase 216 -- Phase 434
+  merges the first two into one real fixed-width line per feature,
+  keeping only the Special/treasure line separate (the real source does
+  too, as its own trailing `WRITELN`).
+  - Real widths, confirmed by slicing the source's own `WRITE(...,
+    '':N-Length(s))`/`:N` calls: province name (truncated 14, padded
+    15) + 1 space + `province_code()` (Phase 431, unpadded) + 2 spaces
+    + `%exp` (width 3) + 2 spaces -- **only on the first feature at a
+    given province**; every later feature at that same province gets
+    `_ADVENTURE_BLANK_PROVINCE_COLUMNS` (27 blank columns) instead,
+    reproducing the real `Check_None`'s own per-province suppression
+    (a grouping rule this project *does* now implement, unlike
+    ARMIES' own deliberately-simplified Phase 433 scope). Then feature
+    type (width 15), feature# (width 3 + 2 literal spaces), monster
+    (width 16 -- `_ADVENTURE_SACKED_AND_LOOTED`, the real verbatim
+    "sacked &looted  " literal, when looted), plus `"    ?"` (4 literal
+    spaces + `?`) for a discovery-level-1 feature.
+  - **The Special/treasure line's indent corrected from an unsourced
+    2 spaces (Phase 430) to the real 27-space `_ADVENTURE_BLANK_
+    PROVINCE_COLUMNS` width** (`REPORTS.PAS` ~line 2089: `WRITELN(
+    playfile,'':27,'/Guarding unknown riches...')`) -- the one fix the
+    approved plan had explicitly called out for this phase.
+  - Ran the full suite before writing new tests (non-breaking check:
+    10 pre-existing tests failed as expected -- all asserted the old
+    3-line-per-feature shape). Rewrote all 10 affected tests (captured
+    via the same scratch-script technique as Phases 432/433) plus the
+    test file's own local `_ADVENTURE_UNKNOWN_RICHES` constant (same
+    27-space indent fix). Ran again: 3988 passed (0 new -- existing
+    tests rewritten in place).
 
 ## Setup
 

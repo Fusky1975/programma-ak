@@ -5032,7 +5032,10 @@ _ADVENTURE_OPENING = (
     "terrorize the populace by night.  Here are these lairs:"
 )
 _ADVENTURE_COLUMN_HEADER = "Province             %Exp  Features and F#     Monster         Special"
-_ADVENTURE_UNKNOWN_RICHES = "  /Guarding unknown riches"
+# Phase 434: the real 27-space column-blank width (`REPORTS.PAS`
+# `Check_None`'s own `'':27`), replacing Phase 430's unsourced 2-space
+# indent -- see turn_report.py's own `_ADVENTURE_BLANK_PROVINCE_COLUMNS`.
+_ADVENTURE_UNKNOWN_RICHES = " " * 27 + "/Guarding unknown riches"
 
 
 class _AlwaysTrueRandom(random.Random):
@@ -5085,8 +5088,7 @@ def test_describe_adventure_report_lists_a_discovered_feature():
     lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == [
-        "Mongu (100% explored)",
-        "  Cave (F#2) -- Swordsman",
+        "Mongu           305  100  Cave             2  Swordsman       ",
         _ADVENTURE_UNKNOWN_RICHES,
     ]
 
@@ -5100,8 +5102,7 @@ def test_describe_adventure_report_looted_feature_shows_sacked_and_looted():
     lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == [
-        "(1, 1) (0% explored)",
-        "  Crypt (F#3) -- sacked & looted",
+        "(1, 1)          101    0  Crypt            3  sacked &looted  ",
     ]
 
 
@@ -5114,8 +5115,7 @@ def test_describe_adventure_report_discovery_level_1_renders_question_mark():
     lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == [
-        "(2, 2) (0% explored)",
-        "  Tomb (F#4) -- Mummy ?",
+        "(2, 2)          202    0  Tomb             4  Mummy               ?",
         _ADVENTURE_UNKNOWN_RICHES,
     ]
 
@@ -5149,8 +5149,7 @@ def test_describe_adventure_report_monster_name_prefix_is_stripped():
     lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == [
-        "(0, 0) (0% explored)",
-        "  Petrified Forest (F#7) -- Eagle",
+        "(0, 0)          0    0  Petrified Fores  7  Eagle           ",
         _ADVENTURE_UNKNOWN_RICHES,
     ]
 
@@ -5162,8 +5161,7 @@ def test_describe_adventure_report_no_guardian_recorded_omits_monster_segment():
     lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == [
-        "(0, 0) (0% explored)",
-        "  Cave (F#8)",
+        "(0, 0)          0    0  Cave             8                  ",
         _ADVENTURE_UNKNOWN_RICHES,
     ]
 
@@ -5183,13 +5181,11 @@ def test_describe_adventure_report_sorts_provinces_then_features_by_id():
     lines = describe_adventure_report(state, 1, random.Random(0))
 
     assert lines[3:] == [
-        "(0, 0) (0% explored)",
-        "  Tomb (F#1) -- Mummy",
+        "(0, 0)          0    0  Tomb             1  Mummy           ",
         _ADVENTURE_UNKNOWN_RICHES,
-        "  Crypt (F#3) -- Ghost",
+        "                           Crypt            3  Ghost           ",
         _ADVENTURE_UNKNOWN_RICHES,
-        "(1, 1) (0% explored)",
-        "  Cave (F#2) -- Giant",
+        "(1, 1)          101    0  Cave             2  Giant           ",
         _ADVENTURE_UNKNOWN_RICHES,
     ]
 
@@ -5212,9 +5208,8 @@ def test_describe_adventure_report_reveals_treasure_when_the_roll_succeeds():
     lines = describe_adventure_report(state, 1, _AlwaysTrueRandom())
 
     assert lines[3:] == [
-        "(0, 0) (0% explored)",
-        "  Crypt (F#9) -- Gargoyle",
-        "  /Large Hoard of Gold (#9): 10-25 gold",
+        "(0, 0)          0    0  Crypt            9  Gargoyle        ",
+        "                           /Large Hoard of Gold (#9): 10-25 gold",
     ]
 
 
@@ -5234,8 +5229,7 @@ def test_describe_adventure_report_hides_treasure_when_the_roll_fails():
     lines = describe_adventure_report(state, 1, _AlwaysFalseRandom())
 
     assert lines[3:] == [
-        "(0, 0) (0% explored)",
-        "  Crypt (F#10) -- Gargoyle",
+        "(0, 0)          0    0  Crypt           10  Gargoyle        ",
         _ADVENTURE_UNKNOWN_RICHES,
     ]
 
@@ -5256,9 +5250,8 @@ def test_describe_adventure_report_reveals_a_magic_item_treasure():
     lines = describe_adventure_report(state, 1, _AlwaysTrueRandom())
 
     assert lines[3:] == [
-        "(0, 0) (0% explored)",
-        "  Pyramid (F#11) -- Lich",
-        '  /Reflector of Armies (#11): Cast "Phantasmal Armies" at skill-2',
+        "(0, 0)          0    0  Pyramid         11  Lich            ",
+        '                           /Reflector of Armies (#11): Cast "Phantasmal Armies" at skill-2',
     ]
 
 
@@ -5279,8 +5272,7 @@ def test_describe_adventure_report_looted_feature_never_shows_a_treasure_line():
     lines = describe_adventure_report(state, 1, _AlwaysTrueRandom())
 
     assert lines[3:] == [
-        "(0, 0) (0% explored)",
-        "  Crypt (F#12) -- sacked & looted",
+        "(0, 0)          0    0  Crypt           12  sacked &looted  ",
     ]
 
 
