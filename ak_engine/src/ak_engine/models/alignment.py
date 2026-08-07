@@ -110,3 +110,24 @@ ALIGNMENT_ORDINAL: dict[Alignment, int] = {
 ALIGNMENT_BY_ORDINAL: tuple[Alignment, ...] = tuple(
     sorted(ALIGNMENT_ORDINAL, key=lambda member: ALIGNMENT_ORDINAL[member])
 )
+
+# CTBOTH.PAS `outab: outstrs = ('Divin','Good','Druid','Neutr','Pagan',
+# 'Evil','Hell','Undea','Mech','Spec')` (~line 1671-1672) -- the real
+# CHARACTERS-table column abbreviation (width 6, `outab[lalign[ldr]]:6`,
+# `REPORTS.PAS` ~line 858), distinct from `outname`'s own full display
+# word. Positionally verbatim against the real Pascal ordinal sequence
+# (`ALIGNMENT_ORDINAL` above), not this module's own declaration order --
+# cross-checked entry-by-entry (e.g. ordinal 7 = 'Undea' = UNDEAD, matching
+# `outname`'s own ordinal-7 = 'Undead').
+ALIGNMENT_ABBREVIATION: dict[Alignment, str] = {
+    Alignment.DIVINE: "Divin",
+    Alignment.GOOD: "Good",
+    Alignment.DRUID: "Druid",
+    Alignment.NEUTRAL: "Neutr",
+    Alignment.PAGAN: "Pagan",
+    Alignment.EVIL: "Evil",
+    Alignment.ANTI_HOLY: "Hell",
+    Alignment.UNDEAD: "Undea",
+    Alignment.MECHANICAL: "Mech",
+    Alignment.SPECIAL: "Spec",
+}

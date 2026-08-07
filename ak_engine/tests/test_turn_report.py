@@ -4805,7 +4805,25 @@ _CHARACTERS_OPENING = (
     "shows pay and abilities; line 2 shows move precedence and aptitude.)"
 )
 
-_NO_SKILLS_LINE = "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0"
+# REPORTS.PAS Rep_Leaders (~lines 818-824), verbatim -- see turn_report.py's
+# own module-level constants of the same names.
+_CHARACTERS_CAPTION_LINE_1 = "                                         Pay Modified Skills/Aptitudes:"
+_CHARACTERS_CAPTION_LINE_2 = "             Province                     /  Combat     Magical    Other"
+_CHARACTERS_COLUMN_HEADER = "Character      Loc Align  Temp M/F  Race Ini TaMaNaArMe WhNeElPsIl DrThExSpSa"
+_CHARACTERS_HEADER_LINES = [
+    "CHARACTERS",
+    _CHARACTERS_OPENING,
+    "",
+    _CHARACTERS_CAPTION_LINE_1,
+    _CHARACTERS_CAPTION_LINE_2,
+    _CHARACTERS_COLUMN_HEADER,
+]
+
+# The real skill row (`_ability_value_row(..., tactical_widens=True)`) and
+# aptitude row (`_ability_value_row(..., tactical_widens=False)` prefixed by
+# the Total_Skill+March*2 leading value) for 15 all-zero `Ability` values.
+_NO_SKILLS_LINE = "  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0"
+_NO_APTITUDE_LINE = " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0"
 
 
 def test_describe_characters_report_renders_own_leader_with_no_recorded_data():
@@ -4817,11 +4835,9 @@ def test_describe_characters_report_renders_own_leader_with_no_recorded_data():
     lines = describe_characters_report(state, 1)
 
     assert lines == [
-        "CHARACTERS",
-        _CHARACTERS_OPENING,
-        "Aldric -- Capital City, Unknown, Unknown, Human, Pay 0",
-        _NO_SKILLS_LINE,
-        _NO_SKILLS_LINE,
+        *_CHARACTERS_HEADER_LINES,
+        f"Aldric           0  Unkn  Unkn     Human  0 {_NO_SKILLS_LINE}",
+        _NO_APTITUDE_LINE,
     ]
 
 
@@ -4831,7 +4847,7 @@ def test_describe_characters_report_none_at_present_when_no_leaders_owned():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines == ["CHARACTERS", _CHARACTERS_OPENING, "None at present"]
+    assert lines == [*_CHARACTERS_HEADER_LINES, "None at present"]
 
 
 def test_describe_characters_report_ignores_other_kingdoms_leaders():
@@ -4842,17 +4858,17 @@ def test_describe_characters_report_ignores_other_kingdoms_leaders():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines == ["CHARACTERS", _CHARACTERS_OPENING, "None at present"]
+    assert lines == [*_CHARACTERS_HEADER_LINES, "None at present"]
 
 
-def test_describe_characters_report_falls_back_to_coordinate_when_unnamed_province():
+def test_describe_characters_report_falls_back_to_province_code_when_unnamed_province():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(2, 3)))
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[2] == "Aldric -- (2, 3), Unknown, Unknown, Human, Pay 1"
+    assert lines[6] == f"Aldric         203  Unkn  Unkn     Human  1 {_NO_SKILLS_LINE}"
 
 
 def test_describe_characters_report_uses_recorded_alignment_temper_and_race():
@@ -4866,7 +4882,7 @@ def test_describe_characters_report_uses_recorded_alignment_temper_and_race():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[2] == "Aldric -- (0, 0), Good, Brave, Elf, Pay 1"
+    assert lines[6] == f"Aldric           0  Good Brave       Elf  1 {_NO_SKILLS_LINE}"
 
 
 def test_describe_characters_report_renders_recorded_skill_levels():
@@ -4878,8 +4894,12 @@ def test_describe_characters_report_renders_recorded_skill_levels():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[3] == "Ta0 Ma2 Na4 Ar6 Me8 Wh10 Ne12 El14 Ps16 Il18 Dr20 Th22 Ex24 Sp26 Sa28"
-    assert lines[4] == "Ta1 Ma3 Na5 Ar7 Me9 Wh11 Ne13 El15 Ps17 Il19 Dr21 Th23 Ex25 Sp27 Sa29"
+    # Skill row uses effective_skill_level() (discovery-bonus-inclusive,
+    # capped at MAX_SKILL_LEVEL=9); aptitude row uses the raw stored
+    # aptitude (uncapped) prefixed by Total_Skill(leader) +
+    # effective_skill_level(leader, MARCH)*2 == 110 + 2*2 == 114.
+    assert lines[6] == "Aldric           0  Unkn  Unkn     Human  1   0 2 4 6 8  9 9 9 9 9  9 9 9 9 9"
+    assert lines[7] == "114   1 3 5 7 9 1113151719 2123252729"
 
 
 def test_describe_characters_report_sorts_by_leader_id():
@@ -4890,8 +4910,8 @@ def test_describe_characters_report_sorts_by_leader_id():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[2].startswith("Aldric")
-    assert lines[5].startswith("Elena")
+    assert lines[6].startswith("Aldric")
+    assert lines[8].startswith("Elena")
 
 
 def test_describe_characters_report_pay_matches_real_sample_values():
@@ -4908,9 +4928,9 @@ def test_describe_characters_report_pay_matches_real_sample_values():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[2].endswith(", Pay 0")
-    assert lines[5].endswith(", Pay 1")
-    assert lines[8].endswith(", Pay 1")
+    assert lines[6] == f"Bradipo I        0  Good  Caut     Human  0 {_NO_SKILLS_LINE}"
+    assert lines[8] == f"Adele            0  Good Brave     Human  1 {_NO_SKILLS_LINE}"
+    assert lines[10] == f"Indra            0  Good  Caut     Human  1 {_NO_SKILLS_LINE}"
 
 
 def test_describe_characters_report_hero_pay_reflects_alignment_distance():
@@ -4925,7 +4945,7 @@ def test_describe_characters_report_hero_pay_reflects_alignment_distance():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[5].endswith(", Pay 2")
+    assert lines[8] == f"Hero             0  Good  Caut     Human  2 {_NO_SKILLS_LINE}"
 
 
 def test_describe_characters_report_lists_held_items():
@@ -4938,7 +4958,7 @@ def test_describe_characters_report_lists_held_items():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[5] == f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}, {TREASURE_NAME[Treasure.WAND_FIREBALL]}"
+    assert lines[8] == f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}, {TREASURE_NAME[Treasure.WAND_FIREBALL]}"
 
 
 def test_describe_characters_report_omits_items_line_when_leader_holds_nothing():
@@ -4948,7 +4968,7 @@ def test_describe_characters_report_omits_items_line_when_leader_holds_nothing()
 
     lines = describe_characters_report(state, 1)
 
-    assert len(lines) == 5  # header, opening, name line, skill line, aptitude line -- no Items line
+    assert len(lines) == 8  # 6 header lines, name line, aptitude line -- no Items line
     assert not any(line.startswith("Items:") for line in lines)
 
 
@@ -4963,11 +4983,10 @@ def test_describe_characters_report_only_lists_items_owned_by_that_leader():
 
     lines = describe_characters_report(state, 1)
 
-    # Aldric's own three lines (name + skill + aptitude) are immediately
-    # followed by Elena's name line, not an Items line -- his own entry
-    # has none.
+    # Aldric's own two lines (name + aptitude) are immediately followed by
+    # Elena's name line, not an Items line -- his own entry has none.
     aldric_index = next(i for i, line in enumerate(lines) if line.startswith("Aldric"))
-    assert not lines[aldric_index + 3].startswith("Items:")
+    assert not lines[aldric_index + 2].startswith("Items:")
     assert f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}" in lines
 
 
@@ -5303,15 +5322,16 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "My Lord, Great indeed are the leaders of our proud kingdom.  Though thee "
         "knows them well, I list them here for thy consideration (the first line "
         "shows pay and abilities; line 2 shows move precedence and aptitude.)",
-        "Aldric -- Capital City, Unknown, Unknown, Human, Pay 0",
-        "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
-        "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
-        "Borin -- Capital City, Unknown, Unknown, Human, Pay 1",
-        "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
-        "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
-        "Elena -- Capital City, Unknown, Unknown, Human, Pay 1",
-        "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
-        "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
+        "",
+        "                                         Pay Modified Skills/Aptitudes:",
+        "             Province                     /  Combat     Magical    Other",
+        "Character      Loc Align  Temp M/F  Race Ini TaMaNaArMe WhNeElPsIl DrThExSpSa",
+        "Aldric           0  Unkn  Unkn     Human  0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        "Borin            0  Unkn  Unkn     Human  1   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        "Elena            0  Unkn  Unkn     Human  1   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         "",
         "",
         "ARMIES",
@@ -5479,6 +5499,10 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "My Lord, Great indeed are the leaders of our proud kingdom.  Though thee "
         "knows them well, I list them here for thy consideration (the first line "
         "shows pay and abilities; line 2 shows move precedence and aptitude.)",
+        "",
+        "                                         Pay Modified Skills/Aptitudes:",
+        "             Province                     /  Combat     Magical    Other",
+        "Character      Loc Align  Temp M/F  Race Ini TaMaNaArMe WhNeElPsIl DrThExSpSa",
         "None at present",
         "",
         "",

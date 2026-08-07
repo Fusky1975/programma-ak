@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
+from ak_engine.models.alignment import ALIGNMENT_ABBREVIATION, ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 
 
 def test_alignment_has_10_declared_values():
@@ -60,3 +60,27 @@ def test_alignment_good_to_pagan_distance_is_three():
     # distance for the same pair (which would be different).
     distance = abs(ALIGNMENT_ORDINAL[Alignment.GOOD] - ALIGNMENT_ORDINAL[Alignment.PAGAN])
     assert distance == 3
+
+
+# -- Phase 432: CHARACTERS table column abbreviation --------------------
+
+
+def test_alignment_abbreviation_verbatim_pascal_outab_values():
+    # CTBOTH.PAS `outab: outstrs = ('Divin','Good','Druid','Neutr','Pagan',
+    # 'Evil','Hell','Undea','Mech','Spec')`, positionally verbatim with the
+    # real Pascal `outlook` ordinal sequence (ALIGNMENT_ORDINAL), not this
+    # module's own declaration order.
+    assert ALIGNMENT_ABBREVIATION[Alignment.DIVINE] == "Divin"
+    assert ALIGNMENT_ABBREVIATION[Alignment.GOOD] == "Good"
+    assert ALIGNMENT_ABBREVIATION[Alignment.DRUID] == "Druid"
+    assert ALIGNMENT_ABBREVIATION[Alignment.NEUTRAL] == "Neutr"
+    assert ALIGNMENT_ABBREVIATION[Alignment.PAGAN] == "Pagan"
+    assert ALIGNMENT_ABBREVIATION[Alignment.EVIL] == "Evil"
+    assert ALIGNMENT_ABBREVIATION[Alignment.ANTI_HOLY] == "Hell"
+    assert ALIGNMENT_ABBREVIATION[Alignment.UNDEAD] == "Undea"
+    assert ALIGNMENT_ABBREVIATION[Alignment.MECHANICAL] == "Mech"
+    assert ALIGNMENT_ABBREVIATION[Alignment.SPECIAL] == "Spec"
+
+
+def test_alignment_abbreviation_covers_every_member():
+    assert set(ALIGNMENT_ABBREVIATION) == set(Alignment)

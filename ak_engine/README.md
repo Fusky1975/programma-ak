@@ -18186,7 +18186,7 @@ section.
     previously showed a duplicate monster now show two distinct ones;
     both Kings' own CHARACTERS entries show a real, non-zero aptitude
     row now that they're constructed via `build_king_skill_table()`.
-- **Phase 431 (current)**: first of a multi-phase project to make the
+- **Phase 431**: first of a multi-phase project to make the
   end-of-turn letter report's *layout* match the real Pascal output
   exactly (fixed-width columns, real blank-line spacing) -- the user's
   own explicit follow-up request, distinct from Phase 430's *content*
@@ -18233,6 +18233,59 @@ section.
     padding) and a dedicated blank-line-spacing test (no leading blanks
     before the very first section, exactly one after every header,
     exactly two between sections). Ran again: 3984 passed (4 new).
+- **Phase 432 (current)**: `describe_characters_report()` rewritten to
+  the real CHARACTERS table's own fixed-width columns and 3-line caption
+  block, per the user's own explicit "tutto il report, pixel-perfect"
+  scope decision -- replacing the "one readable prose line per leader"
+  style every phase since 221 used.
+  - **The 3-line caption block** (`_CHARACTERS_CAPTION_LINE_1`/`_2`/
+    `_CHARACTERS_COLUMN_HEADER`), quoted verbatim from `REPORTS.PAS`
+    `Rep_Leaders` (~lines 818-824), now precedes each leader's own
+    entry.
+  - **Line 1** (~lines 847-864): name (width 14), `province_code()`
+    (Phase 431) as the "Loc" column (width 4), `ALIGNMENT_ABBREVIATION`/
+    `TEMPER_ABBREVIATION` (both new -- sourced verbatim from `CTBOTH.PAS
+    outab`/`tempab`, positionally cross-checked against `ALIGNMENT_
+    ORDINAL`/`Temper`'s own real ordinal sequences), a blank width-3
+    "M/F" field (Gender confirmed absent -- no such concept exists
+    anywhere in this project, the real column position is kept but left
+    blank rather than guessed), race name (width 7), Pay (width 3 + one
+    literal trailing space), then the skill row -- one `effective_skill_
+    level()` value per `Ability` (this project's already-established
+    "M_Skill" equivalent), width 2 except width 3 at the first ability
+    of each group-of-5 (ordinals 0/5/10, matching the header's own
+    "TaMaNaArMe WhNeElPsIl DrThExSpSa" grouping).
+  - **Line 2 -- the aptitude row**: re-derived this session after an
+    earlier research pass wrongly concluded no such line existed in the
+    real procedure at all (contradicted by every real sample report,
+    which always shows two number-rows per leader) -- re-investigating
+    `REPORTS.PAS` directly surfaced `Desc_Apt`, a nested procedure inside
+    `List_Treas` (~lines 511-526), called from `Rep_Leaders` (line 876)
+    for every owned leader unconditionally. Its leading value -- per the
+    user's own explicit confirmation ("Implementa Total_Skill per
+    intero") -- is the *real, full* formula: `Total_Skill(leader) +
+    M_Skill(leader, ForcedMarch)*2` (new `_total_skill()` helper: sums
+    `effective_skill_level()` across all 15 `Ability` members), not a
+    placeholder. Followed by two literal spaces, then one raw stored
+    aptitude value (`SkillTable.pair_for_ability(ability)[1]`, uncapped,
+    no discovery-bonus wrapper unlike the skill row) per `Ability`, via
+    the same width rule as line 1 **except Tactical(0) is excluded**
+    from the "wide" group (only White(5)/Druid(10) widen) -- confirmed
+    explicit in the real source (`aptitude^[tro,sk]:2+ord((sk <>
+    Tactical) and (ord(sk) MOD 5 = 0))`).
+  - New shared `_ability_value_row(values, *, tactical_widens)` helper
+    reproduces both group-width rules from one function.
+  - The Phase 287 simplified "Items: X, Y" line is kept unchanged
+    (still out of scope: the real interleaved item+aptitude row layout
+    `List_Treas` itself produces).
+  - Ran the full suite before writing new tests (non-breaking check: 13
+    pre-existing tests failed as expected -- all asserted the old
+    format). Rewrote the 12 `describe_characters_report()` tests and
+    the 2 full-fixture `compose_letter_report()` tests to the new
+    format (captured via a scratch script rather than hand-transcribed,
+    same technique Phase 431 used); added `ALIGNMENT_ABBREVIATION`/
+    `TEMPER_ABBREVIATION` coverage tests to `test_alignment.py`/
+    `test_temper.py`. Ran again: 3988 passed (4 new).
 
 ## Setup
 

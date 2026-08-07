@@ -62,3 +62,16 @@ TEMPER_NAME: dict[Temper, str] = {
     Temper.BRAVE: "Brave",
     Temper.BERSERK: "Berserk",
 }
+
+# CTBOTH.PAS `tempab: tempstrs = ('Cowrd','Caut','Brave','Bersk')`
+# (~line 1670) -- the real CHARACTERS-table column abbreviation (width 6,
+# `tempab[ltemper[ldr]]:6`, `REPORTS.PAS` ~line 858), distinct from
+# `tempername`'s own full display word. Positionally verbatim against
+# `Temper`'s own declared order above (both this module's declaration
+# order and the Pascal ordinal order already match, unlike Alignment).
+TEMPER_ABBREVIATION: dict[Temper, str] = {
+    Temper.COWARDLY: "Cowrd",
+    Temper.CAUTIOUS: "Caut",
+    Temper.BRAVE: "Brave",
+    Temper.BERSERK: "Bersk",
+}

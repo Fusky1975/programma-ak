@@ -1125,7 +1125,6 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.enums import (
-    ABILITY_ABBREVIATION,
     ActionCode,
     Ability,
     CAST_SPELL_OPENING_COMPLETE_SPELLS,
@@ -1135,7 +1134,7 @@ from ak_engine.models.enums import (
     SPELL_NAME,
     Spell,
 )
-from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
+from ak_engine.models.alignment import ALIGNMENT_ABBREVIATION, ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import (
     ARMY_TYPE_DESIGNATION,
@@ -1145,16 +1144,16 @@ from ak_engine.models.army_type import (
     is_overflight_unit,
 )
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature
-from ak_engine.models.game_state import ArmyState, GameState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
-from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
+from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 from ak_engine.models.monster import MONSTER_NAMES, Monster
 from ak_engine.models.office import OFFICE_NAME, Office
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, describe_discovery_line, sorted_kingdom_discoveries
-from ak_engine.models.temper import TEMPER_NAME
+from ak_engine.models.temper import TEMPER_ABBREVIATION, TEMPER_NAME
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_CATEGORY, TREASURE_LABEL, TREASURE_NAME, Treasure, TreasureCategory
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
 from ak_engine.report.prose import render
@@ -1180,6 +1179,7 @@ from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.expenses import compute_expected_expenses, leader_pay
 from ak_engine.turn.office_holder import ALL_OFFICES, resolve_all_office_holders, resolve_office_holder
 from ak_engine.turn.plan_dispatch import (
@@ -6560,6 +6560,66 @@ _CHARACTERS_OPENING = (
 
 _CHARACTERS_NONE_AT_PRESENT = "None at present"
 
+# REPORTS.PAS Rep_Leaders (~lines 818-824) -- the real column-caption
+# block, verbatim (Phase 432). Quoted even though the middle line's own
+# "Modified... Combat/Magical/Other" grouping only really matters once
+# printer underline (`UL`/`NUL`, a terminal escape code with no plain-
+# text equivalent) highlighted the column header beneath it -- kept for
+# fidelity regardless.
+_CHARACTERS_CAPTION_LINE_1 = "                                         Pay Modified Skills/Aptitudes:"
+_CHARACTERS_CAPTION_LINE_2 = "             Province                     /  Combat     Magical    Other"
+_CHARACTERS_COLUMN_HEADER = "Character      Loc Align  Temp M/F  Race Ini TaMaNaArMe WhNeElPsIl DrThExSpSa"
+
+# Unsourced, documented placeholder (Phase 432) -- real `lalign`/`ltemper`
+# are always populated; this project's own "None = not recorded"
+# convention needs *some* short abbreviated string to fill the real
+# 6-wide column when a leader has neither, and there's no real Pascal
+# text for "not recorded" to quote.
+_CHARACTERS_UNKNOWN_ABBREVIATION = "Unkn"
+
+
+def _ability_value_row(values: list[int], *, tactical_widens: bool) -> str:
+    """Renders 15 per-`Ability` values (enum order) as the real report's
+    own fixed-width row -- each value right-justified width 2, except
+    the first ability of every group-of-5 (indices 0, 5, 10, matching
+    the header's own "TaMaNaArMe WhNeElPsIl DrThExSpSa" group spacing)
+    gets width 3 instead, reproducing the real `WRITE(...,
+    M_Skill(ldr,sk):2 -space_sub +ord(ord(sk) MOD 5 = 0))` (skill row,
+    Phase 432, `REPORTS.PAS` ~line 864) -- `space_sub` (an item-
+    ownership tick-mark adjustment) is always 0 here, that gap still
+    confirmed absent (see this function's own caller's docstring).
+
+    **`tactical_widens`**: the skill row's own group rule includes index
+    0 (Tactical) in the "widen" set; the *aptitude* row's own separate
+    real formula (`Desc_Apt`, `REPORTS.PAS` ~line 525:
+    `aptitude^[tro,sk]:2+ord((sk <> Tactical) and (ord(sk) MOD 5 = 0))`)
+    explicitly excludes Tactical from it -- its own leading column is a
+    different value entirely (`Total_Skill`+March bonus, occupying the
+    "Ini" position), so Tactical's own aptitude value doesn't need the
+    extra separating space the skill row's Tactical does.
+    """
+
+    parts = []
+    for index, value in enumerate(values):
+        widen = index % 5 == 0 and (tactical_widens or index != 0)
+        parts.append(f"{value:>{3 if widen else 2}}")
+    return "".join(parts)
+
+
+def _total_skill(state: GameState, leader: LeaderState) -> int:
+    """`Total_Skill(leader)` -- the sum of `effective_skill_level()`
+    ("M_Skill", this project's already-established real equivalent,
+    `turn/discovery_effects.py`, `turn/merit_points.py
+    _skill_level_sum()`'s own precedent) across all 15 `Ability`
+    members. Feeds `describe_characters_report()`'s own aptitude-row
+    leading value (`Total_Skill(leader) + M_Skill(leader,
+    ForcedMarch)*2`, `Desc_Apt`, `REPORTS.PAS` ~line 525) -- the user's
+    own explicit "Implementa Total_Skill per intero" choice, not a
+    placeholder.
+    """
+
+    return sum(effective_skill_level(state, leader, ability) for ability in Ability)
+
 
 def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     """Assembles the "CHARACTERS" section (Phase 221) -- a deliberately
@@ -6582,59 +6642,69 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     `compose_letter_report()`'s own docstring already names) -- so
     neither pass is attempted here.
 
-    **Rendered, one readable two-line entry per owned leader** (not the
-    real fixed-width columns -- the same documented choice every other
-    section composer in this module already made): name, province
-    location (or a `(x, y)` coordinate fallback, the same convention
-    `describe_armies_report()` uses), Alignment (`LeaderState.alignment.
-    value`, already the real Pascal `outname` display string --
-    `models/alignment.py`'s own docstring confirms this), Temperament
-    (`TEMPER_NAME`), Race (`LeaderState.race` if set, else the
-    kingdom's own `KingdomState.race` -- `LeaderState.race`'s own
-    docstring confirms this fallback is the real, general-case
-    behavior; only a Valhalla visitor keeps an independent race), and
-    Pay (see this function's own Phase 280 note below). A
-    leader with no recorded Alignment/Temperament renders "Unknown" for
-    that field -- a documented, unsourced placeholder for genuinely
-    missing data, not a guess at a real value (the real Pascal `lalign`/
-    `ltemper` arrays are always populated; this project's own "None =
-    not recorded" convention, `LeaderState.alignment`/`.temper`'s own
-    docstrings, allows a gap the real engine never has).
+    **Phase 432 rewrites this composer to the real fixed-width table**
+    (the user's own explicit "tutto il report, pixel-perfect" scope
+    decision) -- the 3-line caption block (`_CHARACTERS_CAPTION_LINE_1`/
+    `_2`/`_CHARACTERS_COLUMN_HEADER`, quoted verbatim from `REPORTS.PAS`
+    ~lines 818-824) followed by two fixed-width numeric-column lines per
+    owned leader, replacing the previous "readable prose line" style
+    every earlier phase here used.
 
-    The second line lists this leader's skill level for all 15
-    `Ability` members, via `models/enums.py ABILITY_ABBREVIATION`
-    (sourced verbatim from this same procedure's own column header) and
-    `SkillTable.pair_for_ability(ability)[0]` -- 0 for every ability if
-    `LeaderState.skills` is `None`, the same "no ability data recorded"
-    fallback `turn/cast_execution.py _roll_cast_success` already
-    established. **A third line (Phase 430, previously missing) lists
-    the matching aptitude** (`pair_for_ability(ability)[1]`, same
-    fallback) -- `_CHARACTERS_OPENING`'s own real text always promised
-    this ("line 2 shows move precedence and aptitude"), but no aptitude
-    line existed at all before this phase, even though `SkillTable`
-    already carried the data (`worldgen/hero_talent_generation.py
-    roll_skill_and_aptitude_table()`, Phase 385, already populates real
-    aptitude for every non-King leader) -- caught by the user comparing
-    a playtest run directly against real Turn-0 CHARACTERS tables, which
-    always show two number-rows per leader, not one.
+    **Line 1** (`REPORTS.PAS` ~lines 847-864): name left-justified width
+    14 (`Get_HName(ldr,14,s)`); `province_code(leader.location)` right-
+    justified width 4 (`Get_PN`, the real "Loc" column -- `models/map.py
+    province_code()`, Phase 431); alignment abbreviation right-justified
+    width 6 (`ALIGNMENT_ABBREVIATION`, `models/alignment.py`, sourced
+    from `CTBOTH.PAS outab`); temper abbreviation right-justified width
+    6 (`TEMPER_ABBREVIATION`, `models/temper.py`, sourced from `CTBOTH.
+    PAS tempab`); a blank width-3 "M/F" field (**Gender confirmed
+    absent** -- no `Gender()` concept or field exists anywhere in this
+    project; the real column position is kept, but left blank rather
+    than guessed); race name right-justified width 7 (`LeaderState.race`
+    if set, else the kingdom's own `KingdomState.race` -- `LeaderState.
+    race`'s own docstring confirms this fallback is the real, general-
+    case behavior; only a Valhalla visitor keeps an independent race);
+    Pay right-justified width 3 plus one literal trailing space (`turn/
+    expenses.py leader_pay()`, the same formula/exclusions FINANCES'
+    own "Expected Expenses" line uses -- confirmed against `SE3__T1.K2`'s
+    real CHARACTERS table, Phase 280); then the skill row, one value per
+    `Ability` member via `_ability_value_row(..., tactical_widens=True)`
+    -- `effective_skill_level(state, leader, ability)` (this project's
+    already-established "M_Skill" equivalent, discovery-bonus-inclusive,
+    0 unconditionally if `LeaderState.skills` is `None` or the leader is
+    comatose).
 
-    **Pay (Phase 280)**: the real table's own `Ini` column (`LCost(ldr,
-    kng)`) renders via `turn/expenses.py leader_pay()` -- the exact
-    formula/exclusions FINANCES' own "Expected Expenses" line already
-    uses for the identical recurring figure (rulebook [3.5]: "paid when
-    he signs up and at the end of each gameturn," the same amount both
-    places). 0 for the King himself and for a Valhalla visitor, `turn/
-    hire_pay.py required_pay()` otherwise. Confirmed against
-    `SE3__T1.K2`'s own real CHARACTERS table: Bradipo I (the King) -- 0;
-    Adele -- 1; Indra -- 1, all reproduced exactly. Re-opens and closes
-    (Phase 275 had called this "confirmed absent" -- true only of a
-    Pascal *formula*, the same "formula lost, inputs sourced" category
-    already closed for `ptax`/`Mod_PAT`/`Qual_Modfr` before it).
+    A leader with no recorded Alignment/Temperament renders
+    `_CHARACTERS_UNKNOWN_ABBREVIATION` ("Unkn") for that field -- a
+    documented, unsourced placeholder for genuinely missing data, not a
+    guess at a real value (the real Pascal `lalign`/`ltemper` arrays are
+    always populated; this project's own "None = not recorded"
+    convention, `LeaderState.alignment`/`.temper`'s own docstrings,
+    allows a gap the real engine never has).
+
+    **Line 2 -- the aptitude row** (`Desc_Apt`, nested inside `List_Treas`,
+    `REPORTS.PAS` ~lines 511-526, called unconditionally for every owned
+    leader from `Rep_Leaders` line 876 -- re-derived this session after
+    an earlier research pass wrongly concluded no such line existed at
+    all in the real procedure, then was corrected by re-checking directly
+    against `REPORTS.PAS` once the real sample reports contradicted it):
+    the leading value, occupying the same column position as line 1's
+    Pay/"Ini", is **`Total_Skill(leader) + M_Skill(leader,
+    ForcedMarch)*2`** (`_total_skill()` below + `effective_skill_level(
+    state, leader, Ability.MARCH) * 2`) -- a derived score, *not* a
+    second Pay value, per the user's own explicit confirmation ("Implementa
+    Total_Skill per intero") after this exact ambiguity was raised.
+    Right-justified width 2, then two literal spaces (`WRITE(playfile,
+    ...:2,'  ')`), then one raw `aptitude^[tro,sk]` value per `Ability`
+    member via `_ability_value_row(..., tactical_widens=False)` -- the
+    *raw* stored aptitude (`SkillTable.pair_for_ability(ability)[1]`, no
+    discovery-bonus wrapper, unlike the skill row), and a **different**
+    group-width rule than line 1's: only White(5)/Druid(10) get the wide
+    treatment, Tactical(0) does not (`aptitude^[tro,sk]:2+ord((sk <>
+    Tactical) and (ord(sk) MOD 5 = 0))` -- the exclusion is explicit in
+    the real source).
 
     **What this deliberately does NOT reproduce, and why**:
-    - **Gender** (`M/F`) is confirmed absent -- no `Gender()` concept
-      or field exists anywhere in this project; nothing computes or
-      stores it.
     - **The Discovery-based skill-modifier row** (`sk_mod`'s own `^`/
       `^^` markers above each ability column, driven by `dknow[kng,
       discovery]`) is confirmed absent for the same reason
@@ -6646,26 +6716,28 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
       item boosts) are still left out -- reconstructing that would need
       matching each held item back to `models/treasure.py TREASURE_
       ABILITY_ITEM`'s own positional mapping and re-rendering the skill
-      line itself, a finer-grained change than this composer's own
-      "readable line, not the full real table" precedent asks for.
-    - **The per-leader treasure list** (`List_Treas(ldr,false)`) **is
-      now rendered (Phase 287)**: a third line per leader, `state.
-      items_held_by(leader.leader_id)` (Phase 140's own registry) joined
-      via `TREASURE_NAME` -- the same "join TREASURE_NAME per held item"
-      pattern `describe_trail_report()`'s own treasure-list rendering
-      already established (Phase 117). Omitted entirely (no third line
-      at all) for a leader holding nothing, rather than an empty "Items:"
-      line -- there is nothing to itemize, not a placeholder for
-      missing data.
-    - **Move precedence** (the real line 2's other own content, per
-      `_CHARACTERS_OPENING`'s own text) still isn't modeled -- aptitude
-      is, as of Phase 430 (see above).
-    - Fixed-width columns aren't reproduced -- the same documented
-      choice every other section composer in this module already made.
+      line itself, a finer-grained change than this phase's own scope.
+    - **The per-leader treasure list** (`List_Treas(ldr,false)`'s own
+      item-name interleaving, which is *where* the real `Desc_Apt` call
+      itself lives) is still rendered separately (Phase 287's own
+      simplified "Items: X, Y" line, kept unchanged) rather than
+      reproducing the real interleaved item+aptitude row layout -- the
+      project's own established "readable line, not the full real
+      table" convention, kept for this one sub-piece even though the
+      surrounding table itself is now pixel-perfect.
+    - **Move precedence** (the real line 2's other own real-world
+      content, alongside aptitude) still isn't modeled.
     """
 
     kingdom = state.kingdoms[kingdom_id]
-    lines = ["CHARACTERS", _CHARACTERS_OPENING]
+    lines = [
+        "CHARACTERS",
+        _CHARACTERS_OPENING,
+        "",
+        _CHARACTERS_CAPTION_LINE_1,
+        _CHARACTERS_CAPTION_LINE_2,
+        _CHARACTERS_COLUMN_HEADER,
+    ]
 
     owned = [leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id]
     if not owned:
@@ -6676,24 +6748,26 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
 
     owned.sort(key=lambda leader: leader.leader_id)
     for leader in owned:
-        province = state.provinces.get(leader.location)
-        location_label = province.name if province is not None and province.name else f"({leader.location.x}, {leader.location.y})"
-        alignment_label = leader.alignment.value if leader.alignment is not None else "Unknown"
-        temper_label = TEMPER_NAME[leader.temper] if leader.temper is not None else "Unknown"
+        loc = province_code(leader.location)
+        alignment_label = ALIGNMENT_ABBREVIATION[leader.alignment] if leader.alignment is not None else _CHARACTERS_UNKNOWN_ABBREVIATION
+        temper_label = TEMPER_ABBREVIATION[leader.temper] if leader.temper is not None else _CHARACTERS_UNKNOWN_ABBREVIATION
         race = leader.race if leader.race is not None else kingdom.race
         race_label = RACE_NAME[race]
         pay = leader_pay(leader, king)
-        lines.append(f"{leader.name} -- {location_label}, {alignment_label}, {temper_label}, {race_label}, Pay {pay}")
+
+        skill_row = _ability_value_row(
+            [effective_skill_level(state, leader, ability) for ability in Ability],
+            tactical_widens=True,
+        )
+        lines.append(
+            f"{leader.name:<14}{loc:>4}{alignment_label:>6}{temper_label:>6}   {race_label:>7}{pay:>3} {skill_row}"
+        )
 
         skills = leader.skills
-        skill_tokens = []
-        aptitude_tokens = []
-        for ability in Ability:
-            level, aptitude = skills.pair_for_ability(ability) if skills is not None else (0, 0)
-            skill_tokens.append(f"{ABILITY_ABBREVIATION[ability]}{level}")
-            aptitude_tokens.append(f"{ABILITY_ABBREVIATION[ability]}{aptitude}")
-        lines.append(" ".join(skill_tokens))
-        lines.append(" ".join(aptitude_tokens))
+        aptitude_values = [skills.pair_for_ability(ability)[1] if skills is not None else 0 for ability in Ability]
+        aptitude_row = _ability_value_row(aptitude_values, tactical_widens=False)
+        total_skill_and_march = _total_skill(state, leader) + effective_skill_level(state, leader, Ability.MARCH) * 2
+        lines.append(f"{total_skill_and_march:>2}  {aptitude_row}")
 
         held_items = state.items_held_by(leader.leader_id)
         if held_items:
