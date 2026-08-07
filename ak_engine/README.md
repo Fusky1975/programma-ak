@@ -18421,7 +18421,7 @@ section.
     after_the_second_army`, 3 armies at one province, captured via the
     same scratch-script technique as earlier phases). Ran again: 3989
     passed (1 new).
-- **Phase 437 (current)**: closes the second of the three deliberate
+- **Phase 437**: closes the second of the three deliberate
   simplifications -- CHARACTERS' real magic-item-ownership tick marks on
   the skill row (`REPORTS.PAS Rep_Leaders`, ~lines 862-870: `NT_Owned`).
   `NT_Owned`'s own definition was searched for exhaustively across every
@@ -18457,6 +18457,60 @@ section.
     ownership_tick_marks`, a leader owning 1x and 2x ability items,
     captured via the same scratch-script technique). Ran again: 3990
     passed (1 new).
+- **Phase 438 (current)**: the first of a 3-phase arc (438/439/440)
+  closing the third and last of the deliberate simplifications Phase 435
+  flagged -- IMPERIAL OFFICE REPORT's own rank-number/percentage-of-
+  rival/per-Kingdom-runner-up columns (`REPORTS.PAS Rank()` ~lines
+  1198-1250, `Pray_Report`'s per-office loop ~lines 1580-1730). Research
+  this phase (a fresh re-extraction and full search of all 14 `.PAS`
+  files, not just the ones already on hand) found the real procedure is
+  per-Kingdom and changes shape around the Emperor election ("Best Hope"
+  -- this Kingdom's own top candidate -- before any Emperor is elected,
+  vs. the true global "Imperial Officer" next to this Kingdom's own
+  "Royal Officer" after), plus a real alignment/team Victory Point
+  decay formula (`ofcpoints:= ofcval[ofc] * (1.0 - reduct)`) whose own
+  `outred` table `models/office.py OFFICE_VALUE`'s docstring had flagged
+  since Phase 81 as "not traced further." `outred` is now confirmed real
+  (`CTBOTH.PAS` ~line 1673, 10 values keyed by the same real `outlook`
+  ordinal sequence `models/alignment.py ALIGNMENT_ORDINAL`/
+  `ALIGNMENT_BY_ORDINAL` already uses) -- Phase 439 will wire it.
+  `kteam` (the formula's own per-Kingdom "team" id) is confirmed
+  genuinely absent from the entire archive, read in several places but
+  declared/assigned nowhere in the surviving source -- the same "missing
+  global" category Phase 137 already established for other `Ofc_Pts`
+  inputs; this project has never modeled a multiplayer "team" concept,
+  so treating every Kingdom as `kteam = 0` (no team) is the real,
+  correct default for a non-team game, not a guessed magnitude.
+  `turn/office_holder.py` gains 4 new, additive ranking primitives (pure
+  additions -- `resolve_office_holder()`/`resolve_all_office_holders()`
+  keep their existing signature and behavior for their other callers,
+  `turn/battle_orchestrator.py`/`turn/tax_base.py`):
+  - `leader_office_rank(state, office, leader_id)` -- the real `Rank()`:
+    1 + how many other real candidates strictly outscore this leader
+    (ties share a rank).
+  - `office_rival_best_points(state, office, kingdom_id)` -- the real
+    `ftoppts`: the best score among candidates whose own Kingdom isn't
+    `kingdom_id` (`0` if there is none).
+  - `kingdom_best_candidate(state, office, kingdom_id)` -- this
+    Kingdom's own top-scoring candidate, deliberately **not** gated by
+    `OFFICE_MIN_POINTS` (the real pre-election scan never gates on it
+    either -- that gate is a separate, later "should this row even
+    print" question, Phase 440's own job).
+  - `kingdom_runner_up(state, office, kingdom_id, exclude_leader_id)` --
+    this Kingdom's own second-best candidate, excluding the one already
+    chosen as its top pick (the real `nextldr`, always scoped to this
+    Kingdom regardless of Emperor-election state).
+  - Ties within a Kingdom go to the lower `leader_id` (stable scan
+    order) rather than the real nested `Rank()`-based tiebreak Pascal
+    only invokes on an exact points tie -- the same "readable, not
+    exhaustively pixel-perfect" simplification this module's prose
+    sections already use elsewhere.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3990 passed unchanged -- pure additions). Added 8 new tests in
+    `tests/test_office_holder.py` covering tied ranks, `ftoppts`
+    exclusion and its zero-rival case, the min-points-free "Best Hope"
+    scan, runner-up selection/absence, and Emperor's own special-cased
+    scoring path. Ran again: 3998 passed (8 new).
 
 ## Setup
 

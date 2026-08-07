@@ -161,6 +161,17 @@ every leader-scoped office (see `merit_point_tiebreak_key()`'s own
 docstring) -- the general rule's own "prefer the current holder" tier
 was never implemented for any of the other 47 offices, so adding it
 only for these 3 would be new, undocumented behavior, not consistency.
+
+**Phase 438 adds the real per-Kingdom ranking primitives** (`leader_
+office_rank()`, `office_rival_best_points()`, `kingdom_best_candidate()`,
+`kingdom_runner_up()`) that `report/turn_report.py describe_imperial_
+office_report()` (Phase 440) needs to reproduce `REPORTS.PAS Pray_
+Report`'s own rank-number/percentage-of-rival/per-Kingdom-runner-up
+columns -- the gap that same composer's own docstring had flagged since
+Phase 435 as "a substantially larger feature." These are pure additions;
+`resolve_office_holder()`/`resolve_all_office_holders()` keep their
+existing signature and behavior unchanged for their other callers
+(`turn/battle_orchestrator.py`, `turn/tax_base.py`).
 """
 
 from __future__ import annotations
@@ -405,6 +416,111 @@ def resolve_all_office_holders(state: GameState) -> dict[Office, OfficeHolder | 
     """
 
     return {office: resolve_office_holder(state, office) for office in ALL_OFFICES}
+
+
+def _ranking_candidates(state: GameState, office: Office) -> list[tuple[int, int | float]]:
+    """(leader_id, points) for every real candidate for `office`, with
+    **no** `OFFICE_MIN_POINTS` gate -- Phase 438, backing the ranking
+    primitives below (`leader_office_rank`/`office_rival_best_points`/
+    `kingdom_best_candidate`/`kingdom_runner_up`). The real `Rank()`
+    (`REPORTS.PAS` ~line 1198-1250) never gates on `minpts` either; that
+    gate only decides whether a row gets *printed*, a separate question
+    `describe_imperial_office_report()` handles on its own (Phase 440).
+
+    Same leader population `resolve_office_holder()`'s own scan already
+    uses (every `state.leaders` entry, independent Heroes included, per
+    that function's own docstring: "Anche un Eroe può aggiudicarsi una
+    carica") -- deliberately not the real Pascal's own stricter `tlak <
+    nkings` owning-King requirement, so ranking and "who holds it" stay
+    consistent with each other within this project.
+
+    **Emperor is a genuine special case**, same as `resolve_office_holder()`
+    already treats it: only a Kingdom's own King is a candidate, scored via
+    `emperor_merit_points()` (Tax_Base-based), not `_leader_merit_points()`
+    (which explicitly refuses Emperor).
+    """
+
+    candidates: list[tuple[int, int | float]] = []
+    for leader_id, leader in state.leaders.items():
+        if office is Office.EMPEROR:
+            if not leader.is_king or leader.kingdom_id is None:
+                continue
+            points = emperor_merit_points(state, leader.kingdom_id)
+        else:
+            points = _leader_merit_points(office, state, leader)
+        candidates.append((leader_id, points))
+    return candidates
+
+
+def leader_office_rank(state: GameState, office: Office, leader_id: int) -> int:
+    """The real `Rank()`: 1 + how many other real candidates for `office`
+    strictly outscore this leader. Ties share a rank -- only strictly
+    greater scores count towards `betters`, matching `Rank:= betters+1`
+    exactly. Phase 438.
+    """
+
+    leader = state.leaders[leader_id]
+    own_points = (
+        emperor_merit_points(state, leader.kingdom_id)
+        if office is Office.EMPEROR and leader.kingdom_id is not None
+        else _leader_merit_points(office, state, leader)
+    )
+    betters = sum(
+        1 for other_id, points in _ranking_candidates(state, office) if other_id != leader_id and points > own_points
+    )
+    return betters + 1
+
+
+def office_rival_best_points(state: GameState, office: Office, kingdom_id: int) -> int | float:
+    """The real `ftoppts`: the best score among candidates whose own
+    Kingdom isn't `kingdom_id` -- `0` if nobody outside this Kingdom is
+    even a candidate, matching the real `ftoppts:= 0` initializer never
+    being overwritten in that case. Phase 438.
+    """
+
+    rival_scores = [
+        points for other_id, points in _ranking_candidates(state, office) if state.leaders[other_id].kingdom_id != kingdom_id
+    ]
+    return max(rival_scores, default=0)
+
+
+def kingdom_best_candidate(state: GameState, office: Office, kingdom_id: int) -> OfficeHolder | None:
+    """This Kingdom's own top-scoring candidate for `office`, **not**
+    gated by `OFFICE_MIN_POINTS` -- the real pre-election "Best Hope" scan
+    (`REPORTS.PAS Pray_Report` ~line 1605-1626) never applies that gate
+    either; `describe_imperial_office_report()` (Phase 440) applies it
+    separately, only when deciding whether to print a row at all. Ties go
+    to the lower `leader_id` (stable scan order) -- simpler than the real
+    nested `Rank()`-based tiebreak Pascal only invokes for an exact points
+    tie, the same "readable, not exhaustively pixel-perfect" simplification
+    this composer's prose sections already use elsewhere. Phase 438.
+    """
+
+    best: OfficeHolder | None = None
+    for leader_id, points in _ranking_candidates(state, office):
+        if state.leaders[leader_id].kingdom_id != kingdom_id:
+            continue
+        if best is None or points > best.merit_points:
+            best = OfficeHolder(leader_id, points)
+    return best
+
+
+def kingdom_runner_up(state: GameState, office: Office, kingdom_id: int, exclude_leader_id: int) -> OfficeHolder | None:
+    """This Kingdom's own second-best candidate for `office`, excluding
+    the leader already chosen as its top candidate -- the real `nextldr`
+    (always scoped `lak = kng`, regardless of Emperor-election state).
+    Phase 438.
+    """
+
+    best: OfficeHolder | None = None
+    for leader_id, points in _ranking_candidates(state, office):
+        if leader_id == exclude_leader_id:
+            continue
+        if state.leaders[leader_id].kingdom_id != kingdom_id:
+            continue
+        if best is None or points > best.merit_points:
+            best = OfficeHolder(leader_id, points)
+    return best
 
 
 # The 3 army-scoped Royal Titles (Phase 394) -- see module docstring's own

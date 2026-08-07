@@ -17,6 +17,10 @@ from ak_engine.turn.office_holder import (
     ALL_OFFICES,
     ARMY_RANKED_OFFICES,
     RANKED_OFFICES,
+    kingdom_best_candidate,
+    kingdom_runner_up,
+    leader_office_rank,
+    office_rival_best_points,
     resolve_all_army_office_holders,
     resolve_all_office_holders,
     resolve_army_office_holder,
@@ -403,3 +407,100 @@ def test_resolve_all_army_office_holders_covers_all_three_titles():
     assert holders[Office.AIR_FORCE] is not None
     assert holders[Office.PRAETOR] is None
     assert holders[Office.FLAGSHIP] is None
+
+
+# -- Phase 438: office ranking primitives (Rank/ftoppts/per-Kingdom Best Hope/runner-up) --
+
+
+def _ranking_state() -> GameState:
+    # Aldric and Cedric (both Attackia, kingdom 1) tie at 10 Defender
+    # points; Borin (Defendia, kingdom 2) trails at 5.
+    state = make_state()
+    aldric = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    aldric.merit_tally.monster_hp_defeated = 10
+    cedric = LeaderState(3, 1, "Cedric", HOME)
+    cedric.merit_tally.monster_hp_defeated = 10
+    borin = LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True)
+    borin.merit_tally.monster_hp_defeated = 5
+    state.add_leader(aldric)
+    state.add_leader(cedric)
+    state.add_leader(borin)
+    return state
+
+
+def test_leader_office_rank_ties_share_the_same_rank():
+    state = _ranking_state()
+
+    assert leader_office_rank(state, Office.DEFENDER, 1) == 1  # Aldric: nobody strictly beats 10
+    assert leader_office_rank(state, Office.DEFENDER, 3) == 1  # Cedric: tied with Aldric, not beaten
+    assert leader_office_rank(state, Office.DEFENDER, 2) == 3  # Borin: beaten by both Aldric and Cedric
+
+
+def test_office_rival_best_points_excludes_the_querying_kingdom():
+    state = _ranking_state()
+
+    assert office_rival_best_points(state, Office.DEFENDER, 1) == 5  # Attackia's own rival is Borin (5)
+    assert office_rival_best_points(state, Office.DEFENDER, 2) == 10  # Defendia's own rival is Aldric/Cedric (10)
+
+
+def test_office_rival_best_points_zero_when_nobody_else_is_a_candidate():
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+
+    assert office_rival_best_points(state, Office.DEFENDER, 1) == 0
+
+
+def test_kingdom_best_candidate_picks_the_kingdoms_own_top_scorer():
+    state = _ranking_state()
+
+    best = kingdom_best_candidate(state, Office.DEFENDER, 1)
+
+    assert best is not None
+    assert best.leader_id == 1  # Aldric, tied with Cedric but encountered first
+    assert best.merit_points == 10
+
+
+def test_kingdom_best_candidate_ignores_the_minimum_points_gate():
+    # Unlike resolve_office_holder(), the real pre-election "Best Hope"
+    # scan never gates on OFFICE_MIN_POINTS -- a 0-point candidate is
+    # still this kingdom's own best (and only) candidate.
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))  # 0 Merit Points
+
+    assert resolve_office_holder(state, Office.MARSHAL) is None
+    best = kingdom_best_candidate(state, Office.MARSHAL, 1)
+    assert best is not None
+    assert best.leader_id == 1
+    assert best.merit_points == 0
+
+
+def test_kingdom_runner_up_is_the_kingdoms_own_second_best_excluding_the_top():
+    state = _ranking_state()
+
+    runner_up = kingdom_runner_up(state, Office.DEFENDER, 1, exclude_leader_id=1)
+
+    assert runner_up is not None
+    assert runner_up.leader_id == 3  # Cedric, Attackia's own remaining candidate
+    assert runner_up.merit_points == 10
+
+
+def test_kingdom_runner_up_none_when_the_kingdom_has_only_one_candidate():
+    state = _ranking_state()
+
+    assert kingdom_runner_up(state, Office.DEFENDER, 2, exclude_leader_id=2) is None
+
+
+def test_leader_office_rank_and_kingdom_best_candidate_handle_emperor():
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    state.add_leader(LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True))
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=8))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, tax=3))
+
+    assert leader_office_rank(state, Office.EMPEROR, 1) == 1  # Aldric's Tax_Base (8) beats Borin's (3)
+    assert leader_office_rank(state, Office.EMPEROR, 2) == 2
+
+    best = kingdom_best_candidate(state, Office.EMPEROR, 2)
+    assert best is not None
+    assert best.leader_id == 2
+    assert best.merit_points == 3
