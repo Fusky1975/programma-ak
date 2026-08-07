@@ -6788,6 +6788,15 @@ _ARMIES_REPORT_OPENING = (
 
 _ARMIES_REPORT_NONE_AT_PRESENT = "None at present"
 
+# REPORTS.PAS Rep_Armies Doit (~lines 945-950), Hired-pass variant,
+# verbatim (Phase 433): `WRITE(...,'':18-Length(s))` province field +
+# `WRITE(...,'  Modified')`/`WRITE(...,'  Quality')` appended directly
+# after the shared "...Normal"/"...Quality" line (real column widths
+# 18/15/20/7/9/9, confirmed by slicing the joined string against each
+# `WRITE(...,'':N-Length(s))`/`:N` field-width call).
+_ARMIES_CAPTION_LINE_1 = "                                                              Normal  Modified"
+_ARMIES_COLUMN_HEADER = "Province          Leader         Designation           Race   Quality  Quality"
+
 
 def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
     """Lists every army this kingdom currently owns, grouped by province --
@@ -6829,13 +6838,26 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
       not reopened here). Cross-checked against the same real sample
       `turn/army_naming.py`'s own docstring already cites
       (`SE3__T0.K1:135`, "108th Skel Bowmen").
-    - The real table's exact fixed-width column layout (province-name
-      truncation/suffix rules, per-army-per-leader grouping markers) is
-      not reproduced -- this composer emits one readable line per army
-      instead, a documented, unsourced formatting choice (matching the
-      project's own precedent of choosing a clear equivalent over
-      guessing at column-width semantics with no testable source of
-      truth, e.g. `turn/aftermath.py`'s own constants).
+    - **Phase 433 adds the real column widths** (`_ARMIES_CAPTION_LINE_1`/
+      `_ARMIES_COLUMN_HEADER`, quoted verbatim from `REPORTS.PAS Doit`
+      ~lines 945-950 -- province 18, leader 15, designation 20, race 7,
+      quality 9, modified quality 9, cross-checked by slicing the joined
+      header string against each real `WRITE(...,'':N-Length(s))`/`:N`
+      field-width call). **Still not reproduced**: the real procedure's
+      per-province/per-leader *grouping* (the province name is only
+      printed once per group of armies sharing a province+leader, blank
+      or `"(#code)"` on repeats) -- this composer still emits the full
+      province label on every line, now just padded/truncated to the
+      real 18-char field width instead of left as free text. The real
+      header itself is also lazy (`strip` flag): it's only ever printed
+      before the *first* eligible army line, never at all if this
+      kingdom owns no armies -- reproduced here via the same `if not
+      owned: return` early-out already in place, so "None at present"
+      appears with no header, unlike CHARACTERS' own caption block
+      (`Rep_Leaders` prints its header unconditionally at the top of the
+      procedure, before the loop -- a genuine structural difference
+      between the two real procedures, not an inconsistency introduced
+      here).
 
     Each army's race is resolved via `models/army_type.py
     MONSTROUS_ARMY_RACE` (the army type's fixed race for monstrous types,
@@ -6865,6 +6887,9 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
         lines.append(_ARMIES_REPORT_NONE_AT_PRESENT)
         return lines
 
+    lines.append(_ARMIES_CAPTION_LINE_1)
+    lines.append(_ARMIES_COLUMN_HEADER)
+
     owned.sort(key=lambda army: (army.location.x, army.location.y, army.army_id))
     for army in owned:
         province = state.provinces.get(army.location)
@@ -6885,8 +6910,8 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
         quality_name = QUALITY_NAME[army.quality]
         modified_quality_name = QUALITY_NAME[compute_army_modified_quality(state, army)]
         lines.append(
-            f"{province_label} -- {leader_label}: {designation} "
-            f"({race_name}, {quality_name}, Modified {modified_quality_name})"
+            f"{province_label[:18]:<18}{leader_label[:15]:<15}{designation[:20]:<20}"
+            f"{race_name:>7}{quality_name:>9}{modified_quality_name:>9}"
         )
 
     return lines

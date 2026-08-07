@@ -3915,6 +3915,13 @@ def test_describe_armies_report_no_armies_renders_none_at_present():
     assert lines[2:] == ["None at present"]
 
 
+# REPORTS.PAS Rep_Armies Doit (~lines 945-950), Hired-pass variant,
+# verbatim (Phase 433) -- see turn_report.py's own module-level constants
+# of the same names/values.
+_ARMIES_CAPTION_LINE_1 = "                                                              Normal  Modified"
+_ARMIES_COLUMN_HEADER = "Province          Leader         Designation           Race   Quality  Quality"
+
+
 def test_describe_armies_report_led_army_line():
     state = _armies_state()
     state.add_leader(LeaderState(1, 1, "Sir Aldric", HexCoord(0, 0)))
@@ -3922,7 +3929,11 @@ def test_describe_armies_report_led_army_line():
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["Capital City -- Sir Aldric: Bowmen (Human, Average, Modified Veteran)"]
+    assert lines[2:] == [
+        _ARMIES_CAPTION_LINE_1,
+        _ARMIES_COLUMN_HEADER,
+        "Capital City      Sir Aldric     Bowmen                Human  Average  Veteran",
+    ]
 
 
 def test_describe_armies_report_unled_army_shows_garrison():
@@ -3931,7 +3942,11 @@ def test_describe_armies_report_unled_army_shows_garrison():
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["Capital City -- Garrison: Phalanx (Human, Veteran, Modified Crack)"]
+    assert lines[2:] == [
+        _ARMIES_CAPTION_LINE_1,
+        _ARMIES_COLUMN_HEADER,
+        "Capital City      Garrison       Phalanx               Human  Veteran    Crack",
+    ]
 
 
 def test_describe_armies_report_monstrous_army_uses_its_own_fixed_race():
@@ -3940,7 +3955,11 @@ def test_describe_armies_report_monstrous_army_uses_its_own_fixed_race():
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["Capital City -- Garrison: Dragons (Dragon, Elite, Modified Elite)"]
+    assert lines[2:] == [
+        _ARMIES_CAPTION_LINE_1,
+        _ARMIES_COLUMN_HEADER,
+        "Capital City      Garrison       Dragons              Dragon    Elite    Elite",
+    ]
 
 
 def test_describe_armies_report_excludes_other_kingdoms_armies():
@@ -3961,7 +3980,11 @@ def test_describe_armies_report_unnamed_province_falls_back_to_coordinates():
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["(3, 4) -- Garrison: Bowmen (Human, Average, Modified Average)"]
+    assert lines[2:] == [
+        _ARMIES_CAPTION_LINE_1,
+        _ARMIES_COLUMN_HEADER,
+        "(3, 4)            Garrison       Bowmen                Human  Average  Average",
+    ]
 
 
 def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
@@ -3973,8 +3996,10 @@ def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
     lines = describe_armies_report(state, 1)
 
     assert lines[2:] == [
-        "Capital City -- Garrison: Bowmen (Human, Average, Modified Veteran)",
-        "Second Province -- Garrison: Axemen (Human, Average, Modified Average)",
+        _ARMIES_CAPTION_LINE_1,
+        _ARMIES_COLUMN_HEADER,
+        "Capital City      Garrison       Bowmen                Human  Average  Veteran",
+        "Second Province   Garrison       Axemen                Human  Average  Average",
     ]
 
 
@@ -3988,7 +4013,11 @@ def test_describe_armies_report_skeletal_army_uses_skel_designation():
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["Capital City -- Garrison: Skel Lt Cav (Human, Average, Modified Veteran)"]
+    assert lines[2:] == [
+        _ARMIES_CAPTION_LINE_1,
+        _ARMIES_COLUMN_HEADER,
+        "Capital City      Garrison       Skel Lt Cav           Human  Average  Veteran",
+    ]
 
 
 def test_describe_armies_report_non_skeletal_army_still_uses_atname():
@@ -3999,7 +4028,11 @@ def test_describe_armies_report_non_skeletal_army_still_uses_atname():
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["Capital City -- Garrison: Light Cavalry (Human, Average, Modified Veteran)"]
+    assert lines[2:] == [
+        _ARMIES_CAPTION_LINE_1,
+        _ARMIES_COLUMN_HEADER,
+        "Capital City      Garrison       Light Cavalry         Human  Average  Veteran",
+    ]
 
 
 # -- Phase 217: describe_letter_reports() -- the "LETTER REPORTS" section --
@@ -5338,7 +5371,9 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
-        "Capital City -- Garrison: Bowmen (Human, Average, Modified Veteran)",
+        "                                                              Normal  Modified",
+        "Province          Leader         Designation           Race   Quality  Quality",
+        "Capital City      Garrison       Bowmen                Human  Average  Veteran",
         "",
         "",
         "IMPERIAL OFFICE REPORT",

@@ -18233,7 +18233,7 @@ section.
     padding) and a dedicated blank-line-spacing test (no leading blanks
     before the very first section, exactly one after every header,
     exactly two between sections). Ran again: 3984 passed (4 new).
-- **Phase 432 (current)**: `describe_characters_report()` rewritten to
+- **Phase 432**: `describe_characters_report()` rewritten to
   the real CHARACTERS table's own fixed-width columns and 3-line caption
   block, per the user's own explicit "tutto il report, pixel-perfect"
   scope decision -- replacing the "one readable prose line per leader"
@@ -18286,6 +18286,43 @@ section.
     same technique Phase 431 used); added `ALIGNMENT_ABBREVIATION`/
     `TEMPER_ABBREVIATION` coverage tests to `test_alignment.py`/
     `test_temper.py`. Ran again: 3988 passed (4 new).
+- **Phase 433 (current)**: `describe_armies_report()` rewritten to the
+  real ARMIES table's own fixed-width columns, continuing the same
+  multi-phase project.
+  - **The 2-line caption block** (`_ARMIES_CAPTION_LINE_1`/
+    `_ARMIES_COLUMN_HEADER`), quoted verbatim from `REPORTS.PAS Doit`
+    (nested inside `Rep_Armies`, ~lines 945-950, Hired-pass variant --
+    the only pass this composer models), now precedes the per-army
+    lines. Real column widths confirmed by slicing the joined header
+    string against each real `WRITE(...,'':N-Length(s))`/`:N` field call:
+    Province 18, Leader 15, Designation 20, Race 7 (right-just.), Normal
+    Quality 9 (right-just.), Modified Quality 9 (right-just.).
+  - **The header is lazy in the real source** (guarded by a `strip`
+    flag, only printed before the first eligible army line, never at
+    all if the kingdom owns none) -- reproduced by keeping the header
+    lines *after* the existing `if not owned: return` early-out, so
+    "None at present" still renders with no caption above it. This is a
+    genuine structural difference from CHARACTERS' own `Rep_Leaders`
+    (whose caption always prints unconditionally, before its own loop),
+    not an inconsistency introduced this phase.
+  - **Still not reproduced**: the real procedure's per-province/
+    per-leader grouping (the Province column is only populated once per
+    group of armies sharing a province+leader; repeats get blank or
+    `"(#code)"`). This composer keeps its own pre-existing "print the
+    full province label on every line" simplification, now just padded/
+    truncated to the real 18-char field width instead of left as free
+    text -- documented as a deliberate, narrower-than-real scope, the
+    same precedent every other section composer in this module already
+    established.
+  - Ran the full suite before writing new tests (non-breaking check: 8
+    pre-existing tests failed as expected -- all asserted the old
+    "province -- leader: designation (race, quality, Modified quality)"
+    prose line). Rewrote all 7 affected `describe_armies_report()` tests
+    and the one `compose_letter_report()` full-fixture ARMIES section,
+    using the same captured-output technique as Phase 432. Ran again:
+    3988 passed (0 new -- existing tests rewritten in place, not added
+    to, since the real column layout doesn't introduce any new case this
+    composer didn't already cover).
 
 ## Setup
 
