@@ -18457,7 +18457,7 @@ section.
     ownership_tick_marks`, a leader owning 1x and 2x ability items,
     captured via the same scratch-script technique). Ran again: 3990
     passed (1 new).
-- **Phase 438 (current)**: the first of a 3-phase arc (438/439/440)
+- **Phase 438**: the first of a 3-phase arc (438/439/440)
   closing the third and last of the deliberate simplifications Phase 435
   flagged -- IMPERIAL OFFICE REPORT's own rank-number/percentage-of-
   rival/per-Kingdom-runner-up columns (`REPORTS.PAS Rank()` ~lines
@@ -18511,6 +18511,50 @@ section.
     exclusion and its zero-rival case, the min-points-free "Best Hope"
     scan, runner-up selection/absence, and Emperor's own special-cased
     scoring path. Ran again: 3998 passed (8 new).
+- **Phase 439 (current)**: the second of the 3-phase arc -- new
+  `turn/victory_points.py`, closing `models/office.py OFFICE_VALUE`'s own
+  long-standing docstring note (Phase 81) that its `ofcval` figures "feed
+  a separate points-decay formula ... whose own `reduct` term isn't
+  traced further here." That formula (`REPORTS.PAS Pray_Report`
+  ~lines 1685-1693: `ofcpoints[ofc]:= ofcval[ofc] * (1.0 - reduct)`,
+  `reduct:= outred[kalign] * diff_steps` capped at `1.0`) is now real and
+  wired: `outred` -- confirmed at `CTBOTH.PAS` ~line 1673 (`outred:
+  outreals = (0.20, 0.12, 0.15, 0.20, 0.15, 0.12, 0.20, 0.20, 0.20,
+  0.20)`) -- is exposed as `OUTLOOK_REDUCTION: dict[Alignment, float]`,
+  built via this project's own pre-existing `models/alignment.py
+  ALIGNMENT_BY_ORDINAL` (the real `outlook` ordinal sequence, not this
+  project's own `Alignment` enum declaration order) so each value lands
+  on the right `Alignment`. `diff_steps` (`abs(Min(ord(kalign),
+  ord(Hellish)) - Min(ord(Hellish),ord(empalign)))`) is
+  `_alignment_distance_capped_at_hellish()`, via the same pre-existing
+  `ALIGNMENT_ORDINAL`. `kalign`/`empalign` read each Kingdom's own
+  `KingdomState.alignment` -- the same "a King's own real alignment is
+  `KingdomState.alignment`" convention `turn/hire_pay.py`'s own docstring
+  already established, not a new call.
+  `office_victory_points(state, office, kingdom_id)` returns `0.0`
+  before any Emperor is elected (matching the real `IF emp <> No_King`
+  guard around the entire `ofcpoints` block) and `0.0` for every Kingdom
+  except the office's own real Rank-1 holder (`turn/office_holder.py
+  resolve_office_holder()`) -- Victory Points are genuinely global,
+  awarded once to the office's own true winning Kingdom, not something
+  every Kingdom accrues independently for its own local candidate.
+  **No `kteam` (team) term**: searched for across all 14 `.PAS` files
+  (re-extracted fresh from `Programma Pascal.zip` this phase, not reused
+  from an earlier partial extraction) and confirmed genuinely absent --
+  read in several places (`REPORTS.PAS`, `RUMORS.PAS`) but declared and
+  assigned nowhere in the surviving source, the same "missing global"
+  category Phase 137 already established for other `Ofc_Pts` inputs.
+  This project has never modeled a multiplayer "team" concept, so every
+  Kingdom is implicitly `kteam = 0` -- the real `IF kteam[...] <> 0`
+  guard means the team discount simply never fires in that case, the
+  actual correct behavior for a non-team game, not a guessed magnitude.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3998 passed unchanged -- a wholly new module). Added 7 new tests in
+    `tests/test_victory_points.py` covering the pre-election zero case,
+    non-holder zero case, full-value/reduced-value/capped-at-zero
+    alignment distances, Emperor's own office scoring itself, and
+    `OUTLOOK_REDUCTION`'s own real values. Ran again: 4005 passed
+    (7 new).
 
 ## Setup
 
