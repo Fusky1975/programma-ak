@@ -319,3 +319,37 @@ def test_auto_selected_non_naval_king_second_slot_matches_the_terrain_rule():
             assert province.recruit_type_2 is ArmyType.ELEPHANTS
         else:
             assert province.recruit_type_2 in {ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY, ArmyType.CHARIOTS}
+
+
+def test_every_kings_home_starts_fully_explored():
+    # Phase 428: confirmed verbatim ("Expl% 100%") across four independent
+    # real Turn-0 PROVINCES sections -- SE0__T0.K0.txt "Acacia", SE3__
+    # T0.K1/K2/K3 "the Dolphin Sea"/"Mongu"/"Ngara". Checks both the
+    # shared scalar (PROVINCES table) and the King's own per-kingdom
+    # entry (ADVENTURE section).
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        home_coord = result.leaders[king.leader_id].location
+        kingdom_id = result.leaders[king.leader_id].kingdom_id
+        province = result.provinces[home_coord]
+        assert province.explored_percent == 100
+        assert province.explored_percent_by_kingdom.get(kingdom_id) == 100
+
+
+def test_every_kings_home_carries_exactly_two_features():
+    # Phase 428: confirmed verbatim (exactly 2 ADVENTURE entries per Home)
+    # across the same four independent real Turn-0 reports as above --
+    # already correctly implemented by feature_generation.py's own
+    # first_2k_home_index() (Phase 364), just previously invisible in a
+    # report because explored_percent was never set to reveal it.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        home_coord = result.leaders[king.leader_id].location
+        features_here = [f for f in result.features.values() if f.coord == home_coord]
+        assert len(features_here) == 2

@@ -65,7 +65,22 @@ this project has a real, sourced formula for:
    (minimum 3-hex separation, terrain never Sea/Desert, Naval-talent-
    gated sea-adjacency) and which three points came from the user's own
    direct clarification rather than being invented. An explicit
-   ``home_coord`` still bypasses all of it, unchanged.
+   ``home_coord`` still bypasses all of it, unchanged. **Phase 428
+   addendum**: every King Home's own ``ProvinceState.explored_percent``
+   (the shared scalar) and ``explored_percent_by_kingdom[owner_kingdom_id]``
+   (the King's own per-kingdom entry) are now set to ``100`` -- confirmed
+   verbatim ("Expl% 100%") across the same four independent real Turn-0
+   PROVINCES sections cited above for Phase 425, spotted directly by the
+   user re-reading the playtest report against those same real files.
+   This closes a real, previously-invisible gap: `worldgen.
+   feature_placement.place_all_features()`'s own `first_2k_home_index()`
+   (Phase 364) already correctly guaranteed exactly 2 features per King
+   Home (also confirmed against the same four reports, each showing
+   exactly 2 ADVENTURE entries for the Home province) -- the features
+   were always there, `describe_adventure_report()`
+   (`report/turn_report.py`) just never revealed them, since it gates on
+   `explored_percent_by_kingdom`, which nothing had ever set for a fresh
+   Home province before this phase.
 6. Initial armies: King Home provinces via
    ``worldgen.initial_armies.home_first_slot()`` + the confirmed
    ``KING_HOME_BUDGET=7`` (Phase 358); special-race provinces via
@@ -186,6 +201,11 @@ the Jungle/Elephants case, which required its own real-but-previously-
 unwired ``ELEPHANTS_STRENGTH_RANGE`` fix (see ``_king_home_strength_of()``'s
 own docstring) since ``build_initial_armies()``'s default strength
 lookup has no fixed entry for Elephants' rulebook "variable" Str.
+Re-verified after Phase 428: every King Home's own
+``explored_percent``/``explored_percent_by_kingdom[owner_kingdom_id]``
+equal exactly ``100``, and each Home carries exactly 2 features (the
+same real Turn-0 reports cited in Phase 428's own addendum above each
+show exactly 2 ADVENTURE entries per Home).
 """
 
 from __future__ import annotations
@@ -471,6 +491,8 @@ def generate_new_game(
         recruit_type_2: ArmyType | None = None
         owner_kingdom_id: int | None = None
         army_types: list[ArmyType] = []
+        explored_percent = 0
+        explored_percent_by_kingdom: dict[int, int] = {}
 
         if is_king_home:
             king = king_by_coord[coord]
@@ -484,6 +506,16 @@ def generate_new_game(
             army_types = build_initial_armies(
                 recruit_type_1, recruit_type_2, KING_HOME_BUDGET, strength_of=_king_home_strength_of(rng)
             )
+            # Phase 428: every King Home starts 100% explored (confirmed
+            # verbatim -- "Expl% 100%" -- across four independent real
+            # Turn-0 PROVINCES sections: SE0__T0.K0.txt "Acacia", SE3__
+            # T0.K1/K2/K3 "the Dolphin Sea"/"Mongu"/"Ngara"). Both the
+            # shared scalar (PROVINCES table) and the King's own kingdom
+            # entry in the per-kingdom tracker (ADVENTURE section) are
+            # set -- see describe_provinces_report()/describe_adventure_
+            # report()'s own read sites in report/turn_report.py.
+            explored_percent = 100
+            explored_percent_by_kingdom = {owner_kingdom_id: 100}
         elif race in SPECIAL_RACE_BASE_COUNT:
             recruit_type_1 = special_race_recruit_slot(race)
             budget = _special_race_army_budget(race, tax, rng)
@@ -498,6 +530,8 @@ def generate_new_game(
             tax=tax,
             recruit_type_1=recruit_type_1,
             recruit_type_2=recruit_type_2,
+            explored_percent=explored_percent,
+            explored_percent_by_kingdom=explored_percent_by_kingdom,
         )
 
         commander = resolve_commander(None, is_king_home)

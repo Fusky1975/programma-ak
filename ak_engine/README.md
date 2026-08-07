@@ -18015,7 +18015,7 @@ section.
     `owner_leader_count(...) - king_count` exactly; no leader id is
     double-assigned across Kings/lords/companions). Ran again: 3948
     passed (4 new).
-- **Phase 427 (current)**: automatic King Home province selection --
+- **Phase 427**: automatic King Home province selection --
   the other half of Phase 357's own "distance/giocabilità controls"
   gap the AKGEN material names but never specifies. The user asked
   directly: "In pratica ti manca come assegnare il RE alla provincia
@@ -18063,6 +18063,36 @@ section.
     King's Home has a real sea neighbor and Fleet as its second slot;
     a non-Naval King's second slot matches the terrain rule). Ran
     again: 3959 passed (11 new).
+- **Phase 428 (current)**: every King Home starts fully explored, with
+  its 2 already-placed features actually visible. The user spotted this
+  re-reading the playtest report against the real Turn-0 files they'd
+  supplied: "la provincia natale di ogni giocatore è esplorata al 100%
+  (invece nel report è allo 0%) e dentro ci dovrebbero essere sempre due
+  feature."
+  - Confirmed verbatim ("Expl% 100%", exactly 2 ADVENTURE entries) across
+    four independent real Turn-0 PROVINCES/ADVENTURE sections:
+    `SE0__T0.K0.txt` "Acacia", `SE3__T0.K1`/`K2`/`K3` "the Dolphin
+    Sea"/"Mongu"/"Ngara".
+  - The 2-features-per-Home part was already correct --
+    `worldgen/feature_placement.py`'s own `first_2k_home_index()` (Phase
+    364) already guarantees it. The real, previously-invisible bug was
+    narrower: `generate_new_game()` never set
+    `ProvinceState.explored_percent`/`explored_percent_by_kingdom` for
+    King Homes, so `report/turn_report.py describe_adventure_report()`
+    (which gates on `explored_percent_by_kingdom`) always rendered "None
+    at present" even though the features genuinely existed in
+    `GameState.features`.
+  - Fix: both fields are now set to `100` (the shared scalar and the
+    King's own kingdom entry) at King Home construction time, in the
+    same per-coordinate loop that already builds the Home's
+    `ProvinceState`.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3959 passed unchanged from Phase 427, no RNG-order shift this time
+    since the fix is a pure additive field assignment). Added 2 new
+    tests in `test_generate_new_game.py` (every King Home's
+    `explored_percent`/`explored_percent_by_kingdom` equal 100; every
+    King Home carries exactly 2 features). Ran again: 3961 passed (2
+    new).
 
 ## Setup
 
