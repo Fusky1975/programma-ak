@@ -1,7 +1,7 @@
 from ak_engine.models.enums import ABILITY_ABBREVIATION, ABILITY_NAME, Ability, ActionCode, action_from_int
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.kingdom import SkillTable
-from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
+from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 
 
 def test_action_from_int_maps_known_codes():
@@ -18,6 +18,25 @@ def test_skill_table_pair_for_ability():
     table = SkillTable(raw_values=raw)
     assert table.pair_for_ability(Ability.TACTICAL) == (0, 1)
     assert table.pair_for_ability(Ability.SAGE) == (28, 29)
+
+
+def test_province_code_matches_the_real_mongu_sample():
+    # Phase 431: turn/movement.py's own docstring cites the real report
+    # narrative naming Mongu as "#305" -- confirmed (number // 100, number
+    # % 100) == (x, y).
+    assert province_code(HexCoord(3, 5)) == 305
+
+
+def test_province_code_matches_the_real_acacia_sample():
+    # Same citation category: Acacia's own CHARACTERS/ADVENTURE "Loc"
+    # field in the real SE0__T0.K0.txt sample reads "2103".
+    assert province_code(HexCoord(21, 3)) == 2103
+
+
+def test_province_code_has_no_leading_zero_padding():
+    # Mongu's own real code is exactly "305", not "0305" -- province_code()
+    # returns an int, not a zero-padded string; a caller formats it.
+    assert str(province_code(HexCoord(3, 5))) == "305"
 
 
 def test_feature_defaults_to_undiscovered():

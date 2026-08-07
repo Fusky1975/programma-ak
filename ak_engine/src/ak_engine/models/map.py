@@ -79,3 +79,20 @@ TERRAIN_NAME: dict[Terrain, str] = {
 class HexCoord:
     x: int
     y: int
+
+
+def province_code(coord: HexCoord) -> int:
+    """The real report file's own per-province numeric code (e.g. "#2103",
+    "#305") -- confirmed real (Phase 431), not a guess: ``turn/movement.py``'s
+    own docstring already cites real ``SE3__T*.K*`` narrative text naming
+    neighbor provinces this way ("Mongu (#305)", "Shasta (#304)", ...) and
+    derived the split ``(number // 100, number % 100)`` == ``(x, y)`` from it
+    to resolve an unrelated adjacency-parity question -- that citation is the
+    source here too, just finally turned into a reusable encoder instead of
+    only ever being an analysis input. No leading-zero padding (Mongu's own
+    real code is exactly "305", not "0305"); a caller that needs a fixed
+    field width (e.g. ``report/turn_report.py``'s CHARACTERS "Loc" column,
+    real width 4) right-justifies the formatted string itself.
+    """
+
+    return coord.x * 100 + coord.y

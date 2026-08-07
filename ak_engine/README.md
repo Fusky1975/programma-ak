@@ -18122,7 +18122,7 @@ section.
     `compose_letter_report()` call: both Kings' own ADVENTURE sections
     now render their 2 Home features with a real `"?"`, matching the
     real reports exactly.
-- **Phase 430 (current)**: three more real gaps closed, all spotted by
+- **Phase 430**: three more real gaps closed, all spotted by
   the user comparing the Phase 429 playtest against real Turn-0
   reports and their own real-game rulebook.
   - **Duplicate guardian monsters**: a King Home's two features could
@@ -18186,6 +18186,53 @@ section.
     previously showed a duplicate monster now show two distinct ones;
     both Kings' own CHARACTERS entries show a real, non-zero aptitude
     row now that they're constructed via `build_king_skill_table()`.
+- **Phase 431 (current)**: first of a multi-phase project to make the
+  end-of-turn letter report's *layout* match the real Pascal output
+  exactly (fixed-width columns, real blank-line spacing) -- the user's
+  own explicit follow-up request, distinct from Phase 430's *content*
+  fixes. Every section composer in this module has, since Phase 216,
+  deliberately rendered "one readable line per item" instead of the
+  real `WRITE(playfile, ..., :N)` fixed-width columns -- a documented,
+  repeated choice, not an oversight (PROVINCES, Phase 288, is the one
+  existing exception). Full scope tracked in the project's own
+  multi-phase plan (431-435); this phase lays the foundation two later
+  phases will build on:
+  - **`models/map.py province_code()`** (new): the real report file's
+    own per-province numeric code (e.g. "#2103", "#305") -- confirmed
+    real, not a guess. `turn/movement.py`'s own docstring already cited
+    real `SE3__T*.K*` narrative text naming neighbor provinces this way
+    ("Mongu (#305)", "Shasta (#304)") and derived `(number // 100,
+    number % 100) == (x, y)` from it to resolve an unrelated
+    adjacency-parity question years ago -- that citation is the source
+    here too, just finally turned into a reusable `HexCoord -> int`
+    encoder (needed for CHARACTERS' own real "Loc" column, Phase 432).
+  - **Blank-line spacing** (`compose_letter_report()`): the real
+    source's own universal idiom, confirmed directly in `REPORTS.PAS`/
+    `YAK.PAS` -- every section opens with `PR2` (two blank lines)
+    before its header, and the shared `Expand_Write` header routine
+    never emits its own trailing blank line, so every caller adds
+    exactly one `PR1` (one blank line) right after the header itself.
+    Both rules are universal regardless of a section's own internal
+    content, so they're applied at the stitching layer via a new
+    `_emit_section()` helper -- `""` list entries are blank lines once
+    a caller joins the return value with `"\n"`. There was previously
+    **zero** blank-line insertion anywhere in this function; sections
+    ran together with no separation at all -- likely the single
+    biggest visible gap versus the real reports. The real source's
+    *other* `PR1` calls (one after each individual narrative paragraph
+    -- e.g. DIPLOMACY has three separate paragraphs, each needing its
+    own trailing blank line before that paragraph's own data) are
+    **not** attempted here -- that needs each composer to restructure
+    its own body, deferred to Phases 432-435.
+  - Ran the full suite before writing new tests (non-breaking check:
+    2 pre-existing fixture tests failed as expected -- both asserted
+    the full literal `compose_letter_report()` output, now missing the
+    new blank lines -- updated in place with the real captured output,
+    not hand-derived, to avoid transcription errors). Added tests for
+    `province_code()` (the Mongu/Acacia real samples, no leading-zero
+    padding) and a dedicated blank-line-spacing test (no leading blanks
+    before the very first section, exactly one after every header,
+    exactly two between sections). Ran again: 3984 passed (4 new).
 
 ## Setup
 

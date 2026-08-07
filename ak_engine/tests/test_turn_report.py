@@ -5252,8 +5252,12 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
 
     assert lines == [
         "ACTION REPORT",
+        "",
         "Aldric spoke to Borin and convinced Borin to pledge Borin's allegiance to Aldric.",
+        "",
+        "",
         "LETTER REPORTS",
+        "",
         "O King of Kings, thy heroes have travelled around the globe in "
         "search of adventure and conquest.  I have faithfully kept their "
         "correspondence, and now I present it to thee:",
@@ -5262,14 +5266,20 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Honored Sovereign,",
         "Borin spoke to Elena and convinced Elena to pledge Elena's allegiance to Borin.",
         "Thy humble servant,   Borin",
+        "",
+        "",
         "DIPLOMACY",
+        "",
         "My lord, the following Kings have wisely allied with thy ever-victorious majesty:",
         "None at present",
         "My lord, the following Kings are foolishly at war with thy ever-victorious majesty:",
         "None at present",
         "My lord, the following Kings are cautiously neutral with thy ever-victorious majesty:",
         "None at present",
+        "",
+        "",
         "FINANCES",
+        "",
         "O Great One, I submit for thy examination the following figures "
         "concerning the finances of our great nation:",
         "Gold in treasury: 0",
@@ -5277,13 +5287,19 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Expected Expenses: 4",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
         "None at present",
+        "",
+        "",
         "PROVINCES",
+        "",
         "O superfluous one, I have kept well a list of all provinces which have had "
         "the wisdom to submit to thy yoke.  Here, then, are the lands of thy Empire:",
         "                                                    Recruiting Types:",
         "Province            Tax   Race   Terrain  Expl%     Type 1     Type 2",
         "Capital City              Human    Plain     0%                      ",
+        "",
+        "",
         "CHARACTERS",
+        "",
         "My Lord, Great indeed are the leaders of our proud kingdom.  Though thee "
         "knows them well, I list them here for thy consideration (the first line "
         "shows pay and abilities; line 2 shows move precedence and aptitude.)",
@@ -5296,11 +5312,17 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Elena -- Capital City, Unknown, Unknown, Human, Pay 1",
         "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
         "Ta0 Ma0 Na0 Ar0 Me0 Wh0 Ne0 El0 Ps0 Il0 Dr0 Th0 Ex0 Sp0 Sa0",
+        "",
+        "",
         "ARMIES",
+        "",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
         "Capital City -- Garrison: Bowmen (Human, Average, Modified Veteran)",
+        "",
+        "",
         "IMPERIAL OFFICE REPORT",
+        "",
         "World Emperor: None at present",
         "Esteemed High Chancellor: None at present",
         "Imperial Treasurer: None at present",
@@ -5348,13 +5370,19 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Air Force Commander: None at present",
         "King of Cowards: None at present",
         "Bravest of the Brave: None at present",
+        "",
+        "",
         "ADVENTURE",
+        "",
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
         "terrorize the populace by night.  Here are these lairs:",
         "Province             %Exp  Features and F#     Monster         Special",
         "None at present",
+        "",
+        "",
         "GENERAL INTELLIGENCE REPORT",
+        "",
         "None at present",
     ]
 
@@ -5366,6 +5394,25 @@ def test_compose_letter_report_omits_action_report_when_this_kingdom_has_no_king
 
     assert "ACTION REPORT" not in lines
     assert lines[0] == "LETTER REPORTS"
+
+
+def test_compose_letter_report_blank_line_spacing_matches_the_real_pr1_pr2_idiom():
+    # Phase 431: no leading blank lines before the very first section (the
+    # real PR2 is "two blank lines before a header", not "before the
+    # report"), exactly one blank line right after every header (PR1,
+    # REPORTS.PAS's own Expand_Write never emits its own trailing blank),
+    # and exactly two blank lines between every pair of sections (PR2).
+    state = _armies_state()
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    assert lines[0] == "LETTER REPORTS"
+    assert lines[1] == ""  # PR1 right after the first header
+    diplomacy_index = lines.index("DIPLOMACY")
+    assert lines[diplomacy_index - 1] == ""
+    assert lines[diplomacy_index - 2] == ""
+    assert lines[diplomacy_index - 3] != ""  # exactly two, not more
+    assert lines[diplomacy_index + 1] == ""  # PR1 right after DIPLOMACY too
 
 
 def test_compose_letter_report_filters_results_to_only_this_kingdoms_own_leaders():
@@ -5393,15 +5440,22 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
 
     assert lines == [
         "LETTER REPORTS",
+        "",
         "There are no letters from anyone at this time.",
+        "",
+        "",
         "DIPLOMACY",
+        "",
         "My lord, the following Kings have wisely allied with thy ever-victorious majesty:",
         "None at present",
         "My lord, the following Kings are foolishly at war with thy ever-victorious majesty:",
         "None at present",
         "My lord, the following Kings are cautiously neutral with thy ever-victorious majesty:",
         "None at present",
+        "",
+        "",
         "FINANCES",
+        "",
         "O Great One, I submit for thy examination the following figures "
         "concerning the finances of our great nation:",
         "Gold in treasury: 0",
@@ -5409,22 +5463,34 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "Expected Expenses: 0",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
         "None at present",
+        "",
+        "",
         "PROVINCES",
+        "",
         "O superfluous one, I have kept well a list of all provinces which have had "
         "the wisdom to submit to thy yoke.  Here, then, are the lands of thy Empire:",
         "                                                    Recruiting Types:",
         "Province            Tax   Race   Terrain  Expl%     Type 1     Type 2",
         "Capital City              Human    Plain     0%                      ",
+        "",
+        "",
         "CHARACTERS",
+        "",
         "My Lord, Great indeed are the leaders of our proud kingdom.  Though thee "
         "knows them well, I list them here for thy consideration (the first line "
         "shows pay and abilities; line 2 shows move precedence and aptitude.)",
         "None at present",
+        "",
+        "",
         "ARMIES",
+        "",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
         "None at present",
+        "",
+        "",
         "IMPERIAL OFFICE REPORT",
+        "",
         "World Emperor: None at present",
         "Esteemed High Chancellor: None at present",
         "Imperial Treasurer: None at present",
@@ -5472,13 +5538,19 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "Air Force Commander: None at present",
         "King of Cowards: None at present",
         "Bravest of the Brave: None at present",
+        "",
+        "",
         "ADVENTURE",
+        "",
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
         "terrorize the populace by night.  Here are these lairs:",
         "Province             %Exp  Features and F#     Monster         Special",
         "None at present",
+        "",
+        "",
         "GENERAL INTELLIGENCE REPORT",
+        "",
         "None at present",
     ]
 

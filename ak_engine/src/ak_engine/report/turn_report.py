@@ -8094,9 +8094,37 @@ def compose_letter_report(
     REPORTS) -- `None` by default, so a full end-to-end letter report
     still narrates zero rumors unless the caller opts in, matching
     every pre-Phase-248 caller's exact existing output.
+
+    **Blank-line spacing (Phase 431)**: the real source's own universal
+    idiom, confirmed directly in `REPORTS.PAS`/`YAK.PAS` -- every section
+    opens with `PR2` (two blank lines) before its header, and `Expand_
+    Write` (the shared header-printing routine) never emits its own
+    trailing blank line, so every caller adds exactly one `PR1` (one
+    blank line) right after the header itself. Both of those rules are
+    universal regardless of what's inside a given section, so they're
+    applied here, at the stitching layer, via `_emit_section()` --
+    `""` list entries are blank lines once a caller joins this
+    function's return value with `"\n"`. The real source's *other* `PR1`
+    calls (one after each individual narrative paragraph, e.g. DIPLOMACY
+    has three separate "My lord, the following Kings..." paragraphs,
+    each needing its own trailing blank line before that paragraph's own
+    data) are **not** attempted here -- that needs each composer to
+    restructure its own body, not just this stitching function, and is
+    deferred to the section-specific phases that will rewrite each
+    composer's own fixed-width layout (432-435 per the project plan).
     """
 
     lines: list[str] = []
+
+    def _emit_section(header: str, body: list[str]) -> None:
+        if not body:
+            return
+        if lines:
+            lines.append("")
+            lines.append("")
+        lines.append(header)
+        lines.append("")
+        lines.extend(body)
 
     kingdom_leader_ids = {
         leader.leader_id for leader in state.leaders.values() if leader.kingdom_id == kingdom_id
@@ -8106,50 +8134,48 @@ def compose_letter_report(
     king_leader_id = _king_leader_id(state, kingdom_id)
     king_results = [entry for entry in kingdom_results if entry.leader_id == king_leader_id]
     action_lines = describe_turn_results(king_results, state, rng, ability_names=ability_names, board_width=board_width)
-    if action_lines:
-        lines.append("ACTION REPORT")
-        lines.extend(action_lines)
+    _emit_section("ACTION REPORT", action_lines)
 
     letter_lines = describe_letter_reports(
         kingdom_results, state, kingdom_id, rng, ability_names=ability_names, board_width=board_width
     )
     if letter_lines:
-        lines.extend(letter_lines)
+        _emit_section(letter_lines[0], letter_lines[1:])
 
     diplomacy_lines = describe_diplomacy_report(state, kingdom_id)
     if diplomacy_lines:
-        lines.extend(diplomacy_lines)
+        _emit_section(diplomacy_lines[0], diplomacy_lines[1:])
 
     finances_lines = describe_finances_report(state, kingdom_id)
     if finances_lines:
-        lines.extend(finances_lines)
+        _emit_section(finances_lines[0], finances_lines[1:])
 
     provinces_lines = describe_provinces_report(state, kingdom_id)
     if provinces_lines:
-        lines.extend(provinces_lines)
+        _emit_section(provinces_lines[0], provinces_lines[1:])
 
     characters_lines = describe_characters_report(state, kingdom_id)
     if characters_lines:
-        lines.extend(characters_lines)
+        _emit_section(characters_lines[0], characters_lines[1:])
 
     armies_lines = describe_armies_report(state, kingdom_id)
     if armies_lines:
-        lines.extend(armies_lines)
+        _emit_section(armies_lines[0], armies_lines[1:])
 
     imperial_office_lines = describe_imperial_office_report(state)
     if imperial_office_lines:
-        lines.extend(imperial_office_lines)
+        _emit_section(imperial_office_lines[0], imperial_office_lines[1:])
 
     adventure_lines = describe_adventure_report(state, kingdom_id, rng)
     if adventure_lines:
-        lines.extend(adventure_lines)
+        _emit_section(adventure_lines[0], adventure_lines[1:])
 
     general_intelligence_lines = describe_general_intelligence_report(state, kingdom_id)
     if general_intelligence_lines:
-        lines.extend(general_intelligence_lines)
+        _emit_section(general_intelligence_lines[0], general_intelligence_lines[1:])
 
     alignment_reduction_lines = describe_alignment_victory_point_reduction(state)
     if alignment_reduction_lines:
-        lines.extend(alignment_reduction_lines)
+        _emit_section(alignment_reduction_lines[0], alignment_reduction_lines[1:])
 
     return lines
