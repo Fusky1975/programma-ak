@@ -6589,20 +6589,21 @@ def _ability_value_row(values: list[int], *, tactical_widens: bool) -> str:
     own fixed-width row -- each value right-justified width 2, except
     the first ability of every group-of-5 (indices 0, 5, 10, matching
     the header's own "TaMaNaArMe WhNeElPsIl DrThExSpSa" group spacing)
-    gets width 3 instead, reproducing the real `WRITE(...,
-    M_Skill(ldr,sk):2 -space_sub +ord(ord(sk) MOD 5 = 0))` (skill row,
-    Phase 432, `REPORTS.PAS` ~line 864) -- `space_sub` (an item-
-    ownership tick-mark adjustment) is always 0 here, that gap still
-    confirmed absent (see this function's own caller's docstring).
+    gets width 3 instead.
 
-    **`tactical_widens`**: the skill row's own group rule includes index
-    0 (Tactical) in the "widen" set; the *aptitude* row's own separate
-    real formula (`Desc_Apt`, `REPORTS.PAS` ~line 525:
-    `aptitude^[tro,sk]:2+ord((sk <> Tactical) and (ord(sk) MOD 5 = 0))`)
-    explicitly excludes Tactical from it -- its own leading column is a
-    different value entirely (`Total_Skill`+March bonus, occupying the
-    "Ini" position), so Tactical's own aptitude value doesn't need the
-    extra separating space the skill row's Tactical does.
+    **Now only used for the aptitude row** (`Desc_Apt`, `REPORTS.PAS`
+    ~line 525: `aptitude^[tro,sk]:2+ord((sk <> Tactical) and (ord(sk)
+    MOD 5 = 0))`, `tactical_widens=False` -- its own group rule
+    explicitly excludes Tactical, unlike the skill row's own rule; its
+    leading column is a different value entirely, `Total_Skill`+March
+    bonus occupying the "Ini" position, so Tactical's own aptitude value
+    doesn't need the extra separating space the skill row's Tactical
+    does). **The skill row moved to its own `_skill_row_with_item_ticks()`
+    (Phase 437)** once the real magic-item-ownership tick marks
+    (`space_sub`) needed weaving into its own per-ability width
+    calculation -- this function's own flat `values: list[int]` shape
+    can't carry that extra state, so it stayed simple rather than
+    growing a tick-mark parameter only the skill row would ever use.
     """
 
     parts = []
@@ -6625,6 +6626,41 @@ def _total_skill(state: GameState, leader: LeaderState) -> int:
     """
 
     return sum(effective_skill_level(state, leader, ability) for ability in Ability)
+
+
+def _skill_row_with_item_ticks(state: GameState, leader: LeaderState) -> str:
+    """CHARACTERS line 1's own skill row, interleaved with the real
+    magic-item-ownership tick marks (`REPORTS.PAS` ~lines 863-870, Phase
+    437 -- see `describe_characters_report()`'s own docstring for the
+    full derivation, including why `NT_Owned`'s own missing definition
+    doesn't block this: its observable return value at this call site is
+    just "how many of this one item type does this leader own", which
+    `state.items_held_by()` already answers directly).
+
+    Width per ability: 2, plus 1 if this is the first ability of a
+    group-of-5 (`ord(sk) MOD 5 = 0` -- matches `_ability_value_row(...,
+    tactical_widens=True)`'s own rule), minus 1 if the *previous*
+    ability's own tick mark was printed (`space_sub`, clamped to at most
+    1 regardless of how many duplicate items are owned -- a `"` costs
+    the same one character as a `'`).
+    """
+
+    parts = []
+    previous_owned_count = 0
+    for index, ability in enumerate(Ability):
+        widen = index % 5 == 0
+        width = 2 - min(previous_owned_count, 1) + (1 if widen else 0)
+        value = effective_skill_level(state, leader, ability)
+        parts.append(f"{value:>{width}}")
+
+        ability_item = Treasure(ability.value)
+        owned_count = sum(1 for item in state.items_held_by(leader.leader_id) if item.treasure == ability_item)
+        if owned_count == 1:
+            parts.append("'")
+        elif owned_count >= 2:
+            parts.append('"')
+        previous_owned_count = owned_count
+    return "".join(parts)
 
 
 def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
@@ -6673,12 +6709,34 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     Pay right-justified width 3 plus one literal trailing space (`turn/
     expenses.py leader_pay()`, the same formula/exclusions FINANCES'
     own "Expected Expenses" line uses -- confirmed against `SE3__T1.K2`'s
-    real CHARACTERS table, Phase 280); then the skill row, one value per
-    `Ability` member via `_ability_value_row(..., tactical_widens=True)`
-    -- `effective_skill_level(state, leader, ability)` (this project's
-    already-established "M_Skill" equivalent, discovery-bonus-inclusive,
-    0 unconditionally if `LeaderState.skills` is `None` or the leader is
+    real CHARACTERS table, Phase 280); then the skill row (`_skill_row_
+    with_item_ticks()`, Phase 437), one `effective_skill_level(state,
+    leader, ability)` value per `Ability` member (this project's already-
+    established "M_Skill" equivalent, discovery-bonus-inclusive, 0
+    unconditionally if `LeaderState.skills` is `None` or the leader is
     comatose).
+
+    **Magic-item-ownership tick marks (Phase 437)**: `REPORTS.PAS`'s own
+    skill-row loop (~lines 863-870) interleaves a `'`/`"` marker after
+    each ability's number whenever this leader owns an item that boosts
+    that specific ability -- `tr:= treasure(ord(sk)+ord(hla))` (`hla` is
+    Treasure ordinal 0, so `tr` is exactly `models/treasure.py
+    TREASURE_ABILITY_ITEM`'s own reverse mapping, `Treasure(ability.
+    value)`) then `space_sub:= NT_Owned(ldr,tr,tr,trdex)`. `NT_Owned`
+    itself has no surviving definition in the available Pascal archive
+    (confirmed absent -- searched every `.PAS` file in the source zip,
+    not just `REPORTS.PAS`), but its *observable* return value at this
+    call site is fully derivable without it: called with the same
+    treasure type as both range bounds, it can only be counting how many
+    items of that one type this leader owns -- exactly what `state.
+    items_held_by(leader.leader_id)` already answers directly, the same
+    "formula lost, inputs sourced" category `turn/army_quality.py
+    compute_army_modified_quality()` already closed for `Qual_Modfr`.
+    Real formatting: `'` when exactly one is owned, `"` when two or
+    more; the tick mark then eats one character off the *next* ability's
+    own number field width (`M_Skill(ldr,sk):2 -space_sub +...`, clamped
+    so a `"` never costs more than the `'` case does) so the row's total
+    width stays constant regardless of how many items a leader holds.
 
     A leader with no recorded Alignment/Temperament renders
     `_CHARACTERS_UNKNOWN_ABBREVIATION` ("Unkn") for that field -- a
@@ -6717,12 +6775,6 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
       `describe_finances_report()`'s own Discoveries list always
       renders empty: no per-kingdom Discovery-tracking field exists
       anywhere in this project.
-    - **Magic-item-ownership tick marks** (`'`/`"` suffixes on a skill
-      column, from `NT_Owned`, marking *which ability column* an owned
-      item boosts) are still left out -- reconstructing that would need
-      matching each held item back to `models/treasure.py TREASURE_
-      ABILITY_ITEM`'s own positional mapping and re-rendering the skill
-      line itself, a finer-grained change than this phase's own scope.
     - **The per-leader treasure list** (`List_Treas(ldr,false)`'s own
       item-name interleaving, which is *where* the real `Desc_Apt` call
       itself lives) is still rendered separately (Phase 287's own
@@ -6761,10 +6813,7 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         race_label = RACE_NAME[race]
         pay = leader_pay(leader, king)
 
-        skill_row = _ability_value_row(
-            [effective_skill_level(state, leader, ability) for ability in Ability],
-            tactical_widens=True,
-        )
+        skill_row = _skill_row_with_item_ticks(state, leader)
         lines.append(
             f"{leader.name:<14}{loc:>4}{alignment_label:>6}{temper_label:>6}   {race_label:>7}{pay:>3} {skill_row}"
         )

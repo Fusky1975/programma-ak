@@ -5012,6 +5012,26 @@ def test_describe_characters_report_lists_held_items():
     assert lines[8] == f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}, {TREASURE_NAME[Treasure.WAND_FIREBALL]}"
 
 
+def test_describe_characters_report_skill_row_shows_magic_item_ownership_tick_marks():
+    # Phase 437: REPORTS.PAS ~lines 862-870 -- ' for exactly one owned
+    # ability-boosting item, " for two or more, eating one character off
+    # the *next* ability's own number-field width (`space_sub`, clamped to
+    # at most 1). Aldric owns 1x Naval item (index 2) and 2x Melee item
+    # (index 4), so the tick marks land after Naval's and Melee's values,
+    # and Archery's (index 3) and White magic's (index 5) fields each
+    # shrink by one character.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0)))
+    state.add_item(Treasure.ABILITY_NAVAL, owner_leader_id=1)
+    state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=1)
+    state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=1)
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[6] == "Aldric           0  Unkn  Unkn     Human  1   0 0 0'0 0\" 0 0 0 0 0  0 0 0 0 0"
+
+
 def test_describe_characters_report_omits_items_line_when_leader_holds_nothing():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))

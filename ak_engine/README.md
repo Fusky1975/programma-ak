@@ -18396,7 +18396,7 @@ section.
     percentage columns, CHARACTERS' item-ownership tick marks, etc.)
     explicitly documented as a deliberate, narrower-than-real scope
     rather than a silent gap.
-- **Phase 436 (current)**: closes the first of the three deliberate
+- **Phase 436**: closes the first of the three deliberate
   simplifications Phase 435's own closing note listed -- ARMIES' real
   per-province column suppression (`REPORTS.PAS Rep_Armies Doit`'s own
   nested `Check_None`-equivalent `pac`/`none` state, ~lines 954-971):
@@ -18420,6 +18420,42 @@ section.
     test (`test_describe_armies_report_suppresses_province_column_
     after_the_second_army`, 3 armies at one province, captured via the
     same scratch-script technique as earlier phases). Ran again: 3989
+    passed (1 new).
+- **Phase 437 (current)**: closes the second of the three deliberate
+  simplifications -- CHARACTERS' real magic-item-ownership tick marks on
+  the skill row (`REPORTS.PAS Rep_Leaders`, ~lines 862-870: `NT_Owned`).
+  `NT_Owned`'s own definition was searched for exhaustively across every
+  `.PAS` file in `Programma Pascal.zip` (all 13 files under `HostAK/TP/`
+  plus the one under `HostAK/MS/`) and confirmed genuinely absent from
+  the entire available source archive -- not just "not found in the one
+  file already read." Its *observable effect* at this one call site is
+  still fully reproducible without the missing formula: `NT_Owned(ldr,
+  tr,tr,trdex)` passes the same treasure type as both range bounds, so
+  its return value is provably just "how many of this one item type
+  does this leader own" -- exactly what this project's own pre-existing
+  `state.items_held_by()` registry (Phase 140) already answers. Same
+  "formula lost, inputs sourced" resolution this project already used
+  for `Qual_Modfr` in `turn/army_quality.py`. New
+  `_skill_row_with_item_ticks(state, leader)` (`turn_report.py`)
+  replaces the old `_ability_value_row(..., tactical_widens=True)` call
+  for the skill row only (`_ability_value_row` itself is now aptitude-
+  row-only -- confirmed via direct re-read of `Desc_Apt`, ~lines
+  511-526, that the aptitude row has no tick-mark logic at all).
+  Interleaves a `'` (exactly 1 owned) or `"` (2 or more owned) after
+  each ability's number, and shrinks the *next* ability's own number
+  field by 1 character when the previous one printed a tick
+  (`space_sub`, clamped to at most 1 -- a `"` costs the same one
+  character as a `'`). `tr := treasure(ord(sk)+ord(hla))` resolved as
+  exactly `Treasure(ability.value)`, matching this project's own
+  pre-existing `TREASURE_ABILITY_ITEM` reverse mapping in
+  `models/treasure.py`.
+  - Ran the full suite before writing new tests (non-breaking check:
+    3989 passed unchanged -- no pre-existing scenario had a leader
+    owning an ability-boosting item, so the new tick-mark path had
+    never actually been exercised). Added one new test
+    (`test_describe_characters_report_skill_row_shows_magic_item_
+    ownership_tick_marks`, a leader owning 1x and 2x ability items,
+    captured via the same scratch-script technique). Ran again: 3990
     passed (1 new).
 
 ## Setup
