@@ -43,16 +43,24 @@ leader with no Kingdom (`kingdom_id is None`, an independent Hero) is
 never eligible for Treasurer -- there's no treasury to measure, not a
 guessed 0.
 
-**Still not attempted here, the same documented gap `turn/merit_points.py`
-already names**: Chancellor's three discovery-attribution Merit Point
-terms (`features_discovered_first`/`discoveries_found_first`/
-`discoveries_via_espionage`) always read 0 from a fresh `MeritTally`
-until some future phase wires real "who found this first" tracking --
-this module resolves Chancellor using whatever `MeritTally` state a
-caller has already populated (possibly all zeros), the same as every
-other office. Likewise Marshal/Admiral/Defender/Priest's own tally
-counters resolve from whatever a caller has populated; no battle/
-encounter/cast call site increments them automatically yet.
+**This module resolves every office from whatever `MeritTally` state a
+caller has already populated** -- for Chancellor, Marshal, Admiral,
+Defender, and Priest specifically, that state is fully live in real
+turn execution, not a future TODO: Chancellor's three discovery-
+attribution terms are credited by `plan_dispatch.py`'s own EXPLORE
+branch (Phase 256), `practice_execution.py`'s SAGE branch (Phase 271),
+and `aspy_execution.py execute_aspy()` (Phase 267); Marshal/Admiral's
+battle counters by `battle_orchestrator.py _record_battle_merit()`
+(Phase 254, quality-weighted since Phase 308); Defender's two monster-HP
+counters by `search_execution.py` (Phase 255 and Phase 258); Priest's
+cast counter by `cast_execution.py` (Phase 251) -- see `turn/merit_
+points.py`'s own per-office sections for the exact write sites. (Phase
+441: this paragraph itself had drifted stale, still describing the
+pre-Phase-254 state of the world well after every one of these writers
+had landed -- corrected here, no behavior change.) Any *other*
+`MeritTally` field an office formula might read in the future should be
+checked against `merit_points.py`'s own "field-only, no writer"
+comments before assuming it's live.
 
 **Phase 277: `Office.EVIL_KING`/`Office.THIEF_PRINCE` join the Rank
 contest**, using the same generic loop as the other 7 non-Emperor

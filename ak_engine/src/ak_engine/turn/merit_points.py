@@ -164,9 +164,13 @@ sums the caller observed; `defender_merit_points()` applies the halving
 search_execution.py execute_search()`'s own `_outcome_from()` credits
 the guardian's starting hit points whenever the leader wins the
 encounter (Melee, Fire Arrow, or a Cast-tactic instant kill). The
-negotiated half, `monster_hp_neutralized`, still has no writer -- it
-needs the Fulfill/Talk-Say mechanic `turn/search_execution.py`'s own
-docstring already flags as unwired.
+negotiated half, `monster_hp_neutralized`, is **also live, as of Phase
+258** (bugfixed Phase 301 against a double-halving mistake, see that
+function's own addendum): `_resolve_fulfill()`, same module, credits
+the raw unhalved HP total when a prior turn's Talk-negotiated deal is
+successfully honored. Both writers confirmed current as of Phase
+441 -- this paragraph itself had drifted stale after Phase 258 landed,
+still describing the pre-258 state until corrected.
 
 ## Gran Sacerdote / Priest (10%)
 "Per ogni incantesimo Resurrection o Bless riuscito +1" (either spell,

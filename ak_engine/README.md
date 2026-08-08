@@ -18555,7 +18555,7 @@ section.
     alignment distances, Emperor's own office scoring itself, and
     `OUTLOOK_REDUCTION`'s own real values. Ran again: 4005 passed
     (7 new).
-- **Phase 440 (current)**: the third and last of the arc -- rewrites
+- **Phase 440**: the third and last of the arc -- rewrites
   `describe_imperial_office_report()` itself, now taking a `kingdom_id`
   (correcting its own previous docstring claim that its content was "the
   same for every kingdom's own report" -- only true post-election). Per
@@ -18598,6 +18598,35 @@ This closes the IMPERIAL OFFICE REPORT rank/percentage/runner-up gap the
 Phase 435 plan had flagged as "a substantially larger feature" -- the
 last of the three residual report-layout details from the user's own
 follow-up request after the original 431-435 plan shipped.
+
+- **Phase 441 (current)**: documentation-only correction, no behavior
+  change. The user asked to return to closing genuine engine-wiring
+  gaps, specifically naming Marshal/Admiral/Defender/Priest's own
+  `MeritTally` counters as "read by the formulas but never incremented
+  anywhere." A research pass (tracing every write site by grep across
+  `src/`, not trusting in-repo comments) found the premise was already
+  stale: all 7 relevant fields (Marshal/Admiral's 4 battle counters,
+  Defender's 2 monster-HP counters, Priest's cast counter) have real
+  production writers, reached through `plan_dispatch.py`'s live
+  `ActionCode` dispatch -- `battle_orchestrator.py _record_battle_merit()`
+  (Phase 254/308) for Marshal/Admiral, `search_execution.py` (Phase
+  255/258) for Defender, `cast_execution.py` (Phase 251) for Priest.
+  What genuinely *was* stale: two module docstrings --
+  `turn/merit_points.py`'s own Defender section (still said
+  `monster_hp_neutralized` "has no writer" years after Phase 258 gave it
+  one) and `turn/office_holder.py`'s own module docstring (still said
+  "no battle/encounter/cast call site increments them automatically
+  yet" for all four offices) -- both corrected here to describe the
+  actual, already-wired state, with pointers to each real write site.
+  The genuinely open backlog turned out to be elsewhere in `MeritTally`:
+  `successful_thefts`, `diplomatic_merit_points`, the 4 magic-school
+  counters, the 6 terrain-King counters, `teaching_interactions`,
+  `successful_assassinations`, `duel_merit_net`, `air_combat_merit`,
+  `courage_encounter_merit`, `bravery_merit` all confirmed by grep to
+  have zero production write sites anywhere in `src/` -- candidates for
+  a future phase, not addressed here.
+  - Ran the full suite before and after (docstring-only edit, no test
+    changes needed): 4009 passed unchanged both times.
 
 ## Setup
 
