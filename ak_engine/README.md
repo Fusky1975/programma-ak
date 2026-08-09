@@ -18749,7 +18749,7 @@ follow-up request after the original 431-435 plan shipped.
     losing-air, air-vs-air (both credited oppositely), non-air-vs-non-air
     (no-op), Vampires excluded, no-commanding-leader no-op, genuine
     column tie no-op. Ran again: 4027 passed (7 new).
-- **Phase 445 (current)**: wires `MeritTally.diplomatic_merit_points`
+- **Phase 445**: wires `MeritTally.diplomatic_merit_points`
   (Office.DIPLOMAT, "Silver Tongue") -- the 5th of the 5 fields resolved
   this session, and the one requiring genuinely new plumbing rather than
   a single new call site.
@@ -18794,6 +18794,59 @@ follow-up request after the original 431-435 plan shipped.
     Kingless Kingdom skipped without raising, and accumulation across
     multiple simultaneously-allied partners. Ran again: 4035 passed (8
     new).
+- **Phase 446 (current)**: wires `MeritTally.teaching_interactions`
+  (Office.TEACHER, "Professor Whizdumb") -- the last of the 5 fields
+  resolved this session (`AKGEN_reverse_engineering_report (2).md`
+  SS20.1-2).
+
+  Real formula: `+1` to a "selected teacher" per real natural skill
+  level a co-practicing student actually gains -- never for the shared
+  100-credit Practice path alone, never for an aptitude-only rise,
+  never when the group is skill-tied (no strictly-higher-skilled
+  co-practicer exists to select). The selected teacher is the current
+  Teacher officeholder if they're among the qualifying co-practicers,
+  otherwise the highest pre-attempt-skill candidate.
+
+  This maps directly onto `turn/practice_execution.py execute_practice_
+  group()`'s own existing `resolve_practice_group()` gate: the
+  `minimum_skill` co-practicers already get the guaranteed-rise roll
+  *because* some other pooled member has strictly higher skill -- the
+  same real condition the source's own teacher-advantage gate requires
+  -- and the `TIED_SKILL_PRACTICE_CHANCE` branch (all equal) never has a
+  strictly-higher candidate either, so "no teacher when tied" falls out
+  for free with no special case. New `_select_teacher()` picks among the
+  other group members with strictly higher pre-attempt skill than the
+  student, preferring `resolve_office_holder(state, Office.TEACHER)`
+  when they qualify, else the highest-skill candidate (ties broken by
+  lowest `leader_id`). Called once per student in the results loop, only
+  when `outcome.skill_rose` is `True`.
+
+  **Fixed a real circular import along the way**: `office_holder.py` ->
+  `merit_points.py` -> `discovery_effects.py` -> `practice_execution.py`
+  (for `MAX_SKILL_LEVEL`) already existed; a top-level `resolve_office_
+  holder` import in `practice_execution.py` broke module loading for
+  the whole package. Deferred to a local import inside `_select_teacher()`
+  itself, the same convention `turn/tax_base.py` already established for
+  its own `resolve_office_holder` use.
+
+  Deliberately **not** implemented: the source's own temporary `+1`
+  effective-aptitude bonus the Teacher officeholder grants their own
+  selected session (a separate effect on the roll itself, not the merit
+  formula) -- flagged in `_select_teacher()`'s own docstring as a future
+  addendum.
+
+  `merit_points.py teacher_merit_points()`'s docstring, and the
+  module's own backlog-summary paragraph, updated to point at the new
+  writer.
+  - Ran the full suite before writing new tests -- hit the circular
+    import immediately (29 collection errors), fixed it, then confirmed
+    a clean non-breaking baseline: 4035 passed unchanged. Added 5 new
+    tests to `tests/test_practice_execution.py`: real level-up credits
+    the higher-skill partner, tied skill credits nobody even on a rise,
+    the current officeholder is preferred among multiple qualified
+    candidates, falls back to the highest-skill candidate without an
+    officeholder, and an aptitude-only rise credits nobody. Ran again:
+    4040 passed (5 new).
 
 ## Setup
 

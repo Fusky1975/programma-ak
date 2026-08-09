@@ -229,6 +229,7 @@ from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
+from ak_engine.models.office import Office
 from ak_engine.turn.combat import Quality
 
 # Rulebook [3.13].
@@ -617,6 +618,50 @@ def execute_practice(
     )
 
 
+def _select_teacher(
+    state: GameState, leader_ids: list[int], pairs: list[tuple[int, int]], student_index: int
+) -> int | None:
+    """Phase 446: Professor Whizdumb (Office.TEACHER, id 42) merit's own
+    "selected teacher" -- AKGEN_reverse_engineering_report (2).md
+    SS20.2. Among this practice group's *other* co-practicers with
+    strictly higher *pre-attempt* skill than the student at ``student_
+    index``, picks the current Teacher officeholder if they qualify
+    (the source's own documented priority), otherwise the candidate with
+    the highest pre-attempt skill (ties broken by lowest ``leader_id``,
+    an unsourced-but-immaterial tie-break like others in this project).
+    Returns ``None`` when no co-practicer has strictly higher skill --
+    including the tied-skill case, since no candidate then qualifies at
+    all, matching the source's "no teacher when tied" rule without
+    needing a special case.
+
+    Deliberately **not** implemented here: the source's own temporary
+    ``+1`` effective-aptitude bonus the Teacher officeholder grants their
+    own selected session (SS20.2) -- a separate effect on the roll
+    itself, not the merit formula, left for a future phase.
+    """
+
+    student_skill = pairs[student_index][0]
+    candidates = [
+        (leader_ids[i], pairs[i][0]) for i in range(len(leader_ids)) if i != student_index and pairs[i][0] > student_skill
+    ]
+    if not candidates:
+        return None
+
+    # Deferred import (same convention as turn/tax_base.py's own resolve_
+    # office_holder use): office_holder.py -> merit_points.py -> discovery_
+    # effects.py -> practice_execution.py (for MAX_SKILL_LEVEL) is a real
+    # circular import at module-load time; a top-level import here breaks it.
+    from ak_engine.turn.office_holder import resolve_office_holder
+
+    holder = resolve_office_holder(state, Office.TEACHER)
+    if holder is not None:
+        for candidate_id, _ in candidates:
+            if candidate_id == holder.leader_id:
+                return candidate_id
+
+    return max(candidates, key=lambda c: (c[1], -c[0]))[0]
+
+
 def execute_practice_group(
     state: GameState, leader_ids: list[int], ability: Ability | int, rng: random.Random | None = None
 ) -> list[PracticeExecutionResult]:
@@ -657,7 +702,9 @@ def execute_practice_group(
     outcomes = resolve_practice_group(pairs, rng)
 
     results = []
-    for leader_id, table, outcome, (current_skill, _current_aptitude) in zip(leader_ids, skills_tables, outcomes, pairs):
+    for index, (leader_id, table, outcome, (current_skill, _current_aptitude)) in enumerate(
+        zip(leader_ids, skills_tables, outcomes, pairs)
+    ):
         leader = state.leaders[leader_id]
         if leader.is_comatose:
             # Phase 310: same comatose gate as execute_practice()'s own --
@@ -675,6 +722,14 @@ def execute_practice_group(
         if outcome.skill_rose or outcome.aptitude_rose:
             # Phase 259: same is_royal_heir-clearing rule as execute_practice()'s own.
             leader.is_royal_heir = False
+
+        if outcome.skill_rose:
+            # Phase 446: Teacher merit -- +1 to the selected teacher per
+            # real natural skill level gained (never for an aptitude-only
+            # rise) -- see _select_teacher()'s own docstring.
+            teacher_id = _select_teacher(state, leader_ids, pairs, index)
+            if teacher_id is not None:
+                state.leaders[teacher_id].merit_tally.teaching_interactions += 1
 
         # Phase 396: Sage's own device-discovery roll, extended to group
         # practice -- see _roll_sage_device_discovery()'s own docstring

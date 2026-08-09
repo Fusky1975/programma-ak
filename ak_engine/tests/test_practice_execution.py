@@ -559,6 +559,102 @@ def test_execute_practice_group_three_leaders_only_minimum_skill_ones_roll():
     assert results[2].skill_rose is True
 
 
+# -- Phase 446: Teacher merit (Office.TEACHER) -----------------------------
+
+
+def test_execute_practice_group_credits_teacher_merit_when_the_student_actually_levels_up():
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=9),
+            2: _skills_with(Ability.NECROMANCY, skill=3, aptitude=9),
+        },
+    )
+
+    execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.01]))
+
+    assert state.leaders[2].merit_tally.teaching_interactions == 1
+    assert state.leaders[1].merit_tally.teaching_interactions == 0
+
+
+def test_execute_practice_group_tied_skill_credits_no_teacher_even_on_a_rise():
+    # No co-practicer has strictly higher skill when tied, so no
+    # candidate ever qualifies -- matches the source's "no teacher when
+    # tied" rule without a special case.
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=2, aptitude=9),
+            2: _skills_with(Ability.NECROMANCY, skill=2, aptitude=9),
+        },
+    )
+
+    execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.05, 0.5]))
+
+    assert state.leaders[1].merit_tally.teaching_interactions == 0
+    assert state.leaders[2].merit_tally.teaching_interactions == 0
+
+
+def test_execute_practice_group_credits_only_the_current_officeholder_among_qualified_candidates():
+    state = _state_with_leaders(
+        1,
+        2,
+        3,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=9),
+            2: _skills_with(Ability.NECROMANCY, skill=5, aptitude=9),
+            3: _skills_with(Ability.NECROMANCY, skill=3, aptitude=9),
+        },
+    )
+    # Leader 3 already qualifies as the current Teacher officeholder
+    # (Office.TEACHER minpts=5) despite having lower skill than leader 2.
+    state.leaders[3].merit_tally.teaching_interactions = 10
+
+    execute_practice_group(state, [1, 2, 3], Ability.NECROMANCY, rng=ScriptedRandom([0.01]))
+
+    assert state.leaders[3].merit_tally.teaching_interactions == 11
+    assert state.leaders[2].merit_tally.teaching_interactions == 0
+
+
+def test_execute_practice_group_falls_back_to_the_highest_skill_candidate_without_an_officeholder():
+    state = _state_with_leaders(
+        1,
+        2,
+        3,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=9),
+            2: _skills_with(Ability.NECROMANCY, skill=5, aptitude=9),
+            3: _skills_with(Ability.NECROMANCY, skill=3, aptitude=9),
+        },
+    )
+
+    execute_practice_group(state, [1, 2, 3], Ability.NECROMANCY, rng=ScriptedRandom([0.01]))
+
+    assert state.leaders[2].merit_tally.teaching_interactions == 1
+    assert state.leaders[3].merit_tally.teaching_interactions == 0
+
+
+def test_execute_practice_group_credits_no_teacher_for_an_aptitude_only_rise():
+    # Aptitude rise != skill rise -- Teacher merit only ever credits a
+    # real natural skill level actually gained.
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=0),
+            2: _skills_with(Ability.NECROMANCY, skill=3, aptitude=9),
+        },
+    )
+
+    results = execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.99, 0.01]))
+
+    assert results[0].skill_rose is False
+    assert results[0].aptitude_rose is True
+    assert state.leaders[2].merit_tally.teaching_interactions == 0
+
+
 def test_execute_practice_group_attaches_fresh_skill_tables_when_none_recorded():
     state = _state_with_leaders(1, 2)  # neither has skills recorded
 

@@ -341,10 +341,13 @@ composed from data that already exists:
   the four categories that clearly aren't "magic items" in the
   rulebook sense (`GOLD_HOARD`, `SENTINEL`, `UNUSED_EXTENSION`,
   `QUEST_ITEM`) -- a documented approximation, not the exact range.
-- **`TEACHER`** (id 42, "Professor Whizdumb"): `Tit_Pts`, "+1 cumulative
-  point when another character completes an effective Practice/teaching
-  interaction with this teacher." Field-only; `turn/practice_
-  execution.py execute_practice_group()` is the plausible future writer.
+- **`TEACHER`** (id 42, "Professor Whizdumb"): `Tit_Pts` -- **live as of
+  Phase 446**, credited by `turn/practice_execution.py execute_practice_
+  group()` via `_select_teacher()`: `+1` per real natural skill level a
+  co-practicing student actually gains, to the selected teacher (current
+  officeholder preferred among qualified candidates, else the
+  highest-skill one) -- `AKGEN_reverse_engineering_report (2).md`
+  SS20.1-2.
 - **`ASSASSIN`** (id 43, "Grandfather of Assassins"): `Tit_Pts`, "+1
   per successful assassination." No Assassinate mechanic exists
   anywhere in this project -- field-only, no plausible writer yet.
@@ -809,7 +812,14 @@ def curator_merit_points(state: GameState, leader: LeaderState) -> int:
 
 
 def teacher_merit_points(leader: LeaderState) -> int:
-    """Professor Whizdumb (Office.TEACHER, id 42) -- field-only."""
+    """Professor Whizdumb (Office.TEACHER, id 42) -- **live as of Phase
+    446**. Credited by `turn/practice_execution.py execute_practice_
+    group()`, via `_select_teacher()`: `+1` to the selected teacher per
+    real natural skill level a co-practicing student actually gains
+    (never for an aptitude-only rise, never when all co-practicers are
+    tied), preferring the current Teacher officeholder among qualified
+    candidates (`AKGEN_reverse_engineering_report (2).md` SS20.1-2).
+    """
 
     return leader.merit_tally.teaching_interactions
 
