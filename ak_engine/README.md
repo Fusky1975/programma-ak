@@ -18710,7 +18710,7 @@ follow-up request after the original 431-435 plan shipped.
     bravery, no-op on draw/fled) plus 4 `execute_challenge()`-level
     integration tests covering the same four routing branches. Ran
     again: 4020 passed (9 new).
-- **Phase 444 (current)**: wires `MeritTally.air_combat_merit`
+- **Phase 444**: wires `MeritTally.air_combat_merit`
   (Office.WINGMAN, "Air Force Commander") off the same dossier
   (`AKGEN_reverse_engineering_report (2).md` SS19) -- the 4th of the 5
   fields resolved this session.
@@ -18749,6 +18749,51 @@ follow-up request after the original 431-435 plan shipped.
     losing-air, air-vs-air (both credited oppositely), non-air-vs-non-air
     (no-op), Vampires excluded, no-commanding-leader no-op, genuine
     column tie no-op. Ran again: 4027 passed (7 new).
+- **Phase 445 (current)**: wires `MeritTally.diplomatic_merit_points`
+  (Office.DIPLOMAT, "Silver Tongue") -- the 5th of the 5 fields resolved
+  this session, and the one requiring genuinely new plumbing rather than
+  a single new call site.
+
+  Real formula (`AKGEN_reverse_engineering_report (2).md` SS18.3): per
+  ordered Kingdom pair `(receiver, partner)` per turn, `+1` to the
+  receiver if the partner's relation is at least Allied, `+2` more if
+  their territories are adjacent, `+5` per Discovery actually
+  transferred to the receiver via Scientific Treaty that turn --
+  verified exactly against a real 10-Kingdom GW corpus transition (e.g.
+  an allied, adjacent partner that also transfers a Discovery is worth
+  `+8`).
+
+  New `turn/diplomatic_merit.py apply_diplomatic_merit(state, treaty_
+  results, *, board_width, board_height)`, called once per turn
+  alongside `turn/scientific_treaty.py execute_scientific_treaties()`
+  (whose own output it consumes directly, never recomputing treaties
+  itself). `GameState.is_allied()` is the sourced, correct proxy for "at
+  least Allied" -- this project only ever modeled a binary alliance
+  relation, never a separate Enemy/Neutral/Allied/Teamed four-state or
+  any "Teamed" concept at all, the same missing-global category Phase
+  137 already established for several other `Ofc_Pts` inputs. Adjacency
+  is a new, narrower `_kingdoms_are_adjacent()` -- deliberately
+  duplicating just the province-adjacency half of `turn/scientific_
+  treaty.py _kingdoms_in_contact()`'s own broader "adjacent OR a leader
+  is present" access rule, since the dossier's own Silver Tongue text is
+  adjacency-only. Credited to the receiving Kingdom's own King (`Ofc_
+  Pts`/`Tit_Pts` are always leader-keyed, never Kingdom-keyed) via a
+  small local `_king_leader_id()` lookup; a Kingless Kingdom simply
+  receives nothing that turn.
+
+  `merit_points.py silvertongue_merit_points()`'s docstring, and the
+  module's own Phase 368/369 Silver Tongue section, updated to record
+  the resolution -- the ambiguity that section had flagged ("can't prove
+  which of the two higher values names which real event") is now fully
+  closed.
+  - Ran the full suite before writing new tests (non-breaking check:
+    4027 passed unchanged). Added new `tests/test_diplomatic_merit.py`
+    (8 tests): allied-only (+1), allied+adjacent (+3), allied+adjacent+
+    transfer in each direction (+8 / +6), non-allied (0), only the
+    King's own leader credited (a co-Kingdom Hero gets nothing), a
+    Kingless Kingdom skipped without raising, and accumulation across
+    multiple simultaneously-allied partners. Ran again: 4035 passed (8
+    new).
 
 ## Setup
 

@@ -269,7 +269,7 @@ is this project's own `Ability.MARCH` (the "Ma" abbreviation `CTBOTH.
 PAS anoun` already established). **Open to a King or a Hero**
 (`"eligible": "leader (King or Hero)"`), unchanged from Phase 368.
 
-## Silver Tongue / Office.DIPLOMAT (Phase 368, reformulated Phase 369)
+## Silver Tongue / Office.DIPLOMAT (Phase 368, reformulated Phase 369, wired Phase 445)
 Phase 368 built this from `CARICHE E ABLITÀ.txt`: alliances formed +
 alliance upkeep + Druidic skill + Discoveries traded, and made it
 King-only per the source's own "(solo per i RE)" title-line marker.
@@ -277,13 +277,23 @@ King-only per the source's own "(solo per i RE)" title-line marker.
 (id 41) gives `Tit_Pts(leader,title)`: a single cumulative diplomatic-
 merit counter, no live skill term at all -- "+1, +2 and +5 award sites
 in contact/relationship/treaty routines; +1 accompanies establishment
-of contact," but the surviving symbol-free code can't prove which of
-the two higher values names which real event, so this project keeps it
-as one undifferentiated running total (`MeritTally.diplomatic_merit_
-points`) rather than inventing named sub-events. **Open to a King or a
-Hero** -- the JSON's own `general_assignment.multiple_titles` note is
-explicit: "Heroes may hold titles except the seven alignment-King
-titles," and Diplomat/id 41 isn't one of those seven.
+of contact," but at the time the surviving symbol-free code couldn't
+prove which of the two higher values named which real event, so this
+project kept it as one undifferentiated running total (`MeritTally.
+diplomatic_merit_points`) rather than inventing named sub-events.
+**Open to a King or a Hero** -- the JSON's own `general_assignment.
+multiple_titles` note is explicit: "Heroes may hold titles except the
+seven alignment-King titles," and Diplomat/id 41 isn't one of those
+seven.
+
+**Phase 445 resolves the ambiguity fully**: `AKGEN_reverse_engineering_
+report (2).md` SS18.3 names the exact three sites and their real
+per-partner deltas -- `+1` for an Allied-or-better relation, `+2` more
+for territorial adjacency, `+5` per Discovery actually transferred via
+Scientific Treaty -- verified exactly against a real 10-Kingdom GW
+corpus transition. `turn/diplomatic_merit.py apply_diplomatic_merit()`
+now writes the field per-turn; see `silvertongue_merit_points()`'s own
+docstring below for the writer.
 
 ## The 18 leader-scoped royal titles (Phase 379)
 `AKGEN_embedded_catalogs.json.txt gw_format.royal_title_system.entries`
@@ -683,6 +693,14 @@ def silvertongue_merit_points(state: GameState, leader: LeaderState) -> float:
     reformulated Phase 369: a single cumulative diplomatic-merit
     counter, no live skill term, no King-only gate. See module
     docstring's Phase 369 addendum.
+
+    **Live as of Phase 445**: credited by `turn/diplomatic_merit.py
+    apply_diplomatic_merit()`, called once per turn -- `+1` per allied
+    Kingdom, `+2` more if adjacent, `+5` per Discovery actually
+    transferred via Scientific Treaty (`AKGEN_reverse_engineering_report
+    (2).md` SS18.3). Only the receiving Kingdom's own King is credited
+    (the field is leader-keyed, not Kingdom-keyed); a Kingless Kingdom
+    receives nothing that turn.
     """
 
     return leader.merit_tally.diplomatic_merit_points
