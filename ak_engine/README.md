@@ -19100,7 +19100,7 @@ follow-up request after the original 431-435 plan shipped.
     province scan's success/ineligible/failed-roll/looted/no-guardian/
     wrong-province/column-collision/scan-order cases. Ran again: 4078
     passed (19 new).
-- **Phase 453 (current)**: wires Druidic monster battle assistance
+- **Phase 453**: wires Druidic monster battle assistance
   (Phase 452) into real combat -- `turn/battle_resolution.py resolve_
   battle()` gains optional `attacker_column_bonus`/`defender_column_
   bonus: dict[int, int] | None` parameters, added directly into that
@@ -19143,6 +19143,54 @@ follow-up request after the original 431-435 plan shipped.
     hand-script every one of `fight_battle()`'s own many other rng
     draws), and the same setup with a non-Druidic Kingdom proving no
     assistance is granted at all. Ran again: 4084 passed (6 new).
+- **Phase 454 (current)**: end-of-game standings -- `kingpoints` and
+  the real composite ranking key, new `turn/final_standings.py`,
+  sourced from `AKGEN_reverse_engineering_report (2).md` SS14.6.
+  Deliberately out of scope: the real prize-money formula (`prcred`,
+  `totfees`/`prizeperc`) is moderator/real-money turn-fee bookkeeping,
+  not in-game state this project models anywhere -- same documented
+  boundary as `turn/victory_points.py`'s own `kteam` note. Also
+  deliberately not replicated: the dossier's own confirmed compiled bug
+  in the real team-ranking code (`kingpoints[team2]` misreading a team
+  index as a Kingdom index) -- this project has never modeled a "team"
+  concept at all, so there is no team-ranking path to reproduce that bug
+  in.
+
+  `kingdom_points()`: `0.0` before any Emperor is elected (mirrors
+  `turn/victory_points.py office_victory_points()`'s own "nothing until
+  an Emperor exists" gate -- recomputed every turn after coronation, not
+  a one-time "game over" event, matching the real engine's own
+  recompute-on-every-report behavior). Otherwise sums the real
+  Alignment-discounted `office_victory_points()` over every
+  `turn/office_holder.py ALL_OFFICES` member (`Office.EMPEROR` included,
+  no special case -- the elected Emperor's own Kingdom banks its own
+  Emperor Victory Points too, the real source's own uniform loop), plus
+  this Kingdom's own `trvic=1` legendary-item count (`turn/emperor_
+  election.py _kingdom_treasure_vote_points()`, Phase 450's own exact
+  real 10-item set, reused directly and left undiscounted, matching the
+  dossier's own "these items don't take the alignment reduction").
+  `kingdom_sort_key()`: the real composite integer key,
+  `int(kingdom_points*65536) + Tax_Base*256 + treasury` -- not a
+  lexicographic tuple comparison, so a very high `Tax_Base` can flip a
+  naive points-first ordering (verified with a worked example: Kingdom A
+  with fewer points but `Tax_Base=1000` outranks Kingdom B with more
+  points and no Tax_Base, `321536 > 131072`). `final_standings()`: every
+  Kingdom ID sorted descending by `kingdom_sort_key()`, ties broken by
+  original iteration order (`sorted(..., reverse=True)`'s own documented
+  stability guarantee) -- the real engine's own "share the rank"
+  behavior, no further tie-break named anywhere in the dossier.
+  - Ran the full suite after writing the new module: unaffected (4084
+    passed unchanged) -- an entirely new, unwired module, no circular
+    imports among `final_standings.py`/`emperor_election.py`/
+    `office_holder.py`/`tax_base.py`/`victory_points.py`. Added 6 tests
+    to new `tests/test_final_standings.py`: `kingdom_points()` zero
+    before an Emperor exists, a worked example combining an Emperor's own
+    Office/Treasurer titles and a treasure item (20+10+1==31, cross-
+    checked via a scratch script), the treasure term staying undiscounted
+    for a Kingdom far from the Emperor's own Alignment, the composite-key
+    worked example proving the naive-tuple-flip case, `final_standings()`
+    ordering 3 Kingdoms, and a genuine 2-way tie preserving iteration
+    order. Ran again: 4090 passed (6 new).
 
 ## Setup
 
