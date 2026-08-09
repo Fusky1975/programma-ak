@@ -4538,8 +4538,9 @@ def describe_practice(
 
     - ``render_practice_already_maxed`` (``_LAlrMax``) fires when the
       attempt started at ``MAX_SKILL_LEVEL`` (9, ``CTBOTH.PAS``'s own
-      ``skillrange`` ceiling): ``attempt_skill_rise()`` short-circuits
-      to ``skill_rose=False`` with ``new_skill`` unchanged in that case,
+      ``skillrange`` ceiling): ``turn/practice_execution.py
+      _resolve_practice_attempt()`` short-circuits to ``skill_rose=False``
+      with ``new_skill`` unchanged in that case,
       the *only* way ``new_skill == MAX_SKILL_LEVEL`` can coexist with
       ``skill_rose is False`` (a failed roll from any lower level
       leaves ``new_skill`` at that lower level, never at 9).

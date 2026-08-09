@@ -34,46 +34,77 @@ That last table matches ``CTME.PAS``'s ``apt_rise: array[0..10] OF byte
 = (0,10,25,50,100,80,60,40,20,0,0);`` exactly (indices 9-10 unused --
 skill can't exceed 9, ``CTBOTH.PAS``'s ``skillrange = 0..9``).
 
-**Roll sequencing** (design choice, since no Pascal source shows the
-actual dice-roll site): for a given attempt at ``base_chance`` (100% /
-10% / 5%, before aptitude), compute ``levels_beyond_aptitude =
-max(0, (current_skill + 1) - aptitude)``, halve ``base_chance`` that
-many times, and roll once against the result -- the same "one threshold
-roll per attempt" pattern already used everywhere else in this project
-(fanaticism, luck events, Cast's success roll). On failure, **only if
-aptitude actually constrained the chance** (``levels_beyond_aptitude >
-0`` -- i.e. the character really was "due to rise... but can't because
-of low aptitude", not just unlucky on an unconstrained roll), roll a
-second time against ``APT_RISE_CHANCE[current_skill]`` for an aptitude
-increase instead.
+**Roll sequencing -- rewritten with a real source (Phase 449)**:
+``AKGEN_reverse_engineering_report (2).md`` SS2/SS6 gives the real,
+disassembly-confirmed two-stage model, superseding this module's
+original "one threshold roll per attempt" design choice (Phase 44) --
+this section previously stated no Pascal source showed the actual
+dice-roll site; SS2 does. Every attempt (guaranteed / tied / solo alike)
+first rolls the **same** aptitude gate, ``roll_practice_aptitude_gate()``:
+``P = 2^-max(0, target_skill - aptitude)``, ``target_skill =
+current_skill + 1`` -- identical to this module's own original halving
+curve, just no longer scaled by a separate "base chance" first (the real
+engine has no such per-context base chance at the gate itself). On gate
+**failure**, the existing ``APT_RISE_CHANCE[current_skill]`` aptitude-
+increase roll fires (unconditionally, not gated on "aptitude actually
+constrained the chance" the way Phase 44's design guessed -- SS2's own
+text ties it to "due to rise... but can't", which this module still
+reads as requiring ``levels_beyond_aptitude > 0``, so that condition is
+kept). On gate **success**, the outcome depends on context: a strictly-
+higher-skilled co-practicer present -> the skill rises *immediately*, no
+credit involved; otherwise the attempt earns **persistent credit**
+toward the same ability -- ``PRACTICE_CREDIT_TIED_GAIN`` (10) if tied
+with at least one co-practicer this phase, ``PRACTICE_CREDIT_SOLO_GAIN``
+(5) if practicing alone -- stored in ``LeaderState.practice_credit``
+(keyed by ``Ability.value``, see that field's own docstring). Once a
+practicer's own credit for that ability reaches ``PRACTICE_CREDIT_RISE_
+THRESHOLD`` (100), the skill rises immediately and 100 is subtracted --
+no second gate roll needed for the threshold-crossing attempt itself.
 
-**Multi-character coordination -- now resolved (Phase 46)**:
-``resolve_practice_pair``/``resolve_practice_group`` implement the
-rulebook's multi-character case (guaranteed-if-lower / 10%-each-if-tied,
-generalized to N >= 2 -- see "Extending to N > 2" below);
-``execute_practice_group`` wraps that with the same ``LeaderState.
-skills`` read/write plumbing ``execute_practice`` uses. **Reachable as
-of Phase 46** via ``turn/turn_processor.py run_turn()``, which detects
-2+ leaders co-located (same current province) and Practicing the same
-ability in the same phase, and routes them through
-``execute_practice_group`` instead of each dispatching solo --
-``plan_dispatch.py``'s own per-leader ``dispatch_phase`` still can't see
-this (it has no visibility into other leaders' same-phase orders), so
-``execute_practice`` (wired there) keeps resolving solo-only when driven
-directly, same as before -- a caller going through `run_leader_plan`
-alone (bypassing `run_turn`) still gets the conservative solo-only
-approximation.
+**Multi-character coordination -- resolved Phase 46, credit model
+Phase 449**: ``resolve_practice_pair``/``resolve_practice_group``
+implement the rulebook's multi-character case (immediate-rise-if-lower /
+credit-if-tied, generalized to N >= 2 -- see "Extending to N > 2"
+below); ``execute_practice_group`` wraps that with the same
+``LeaderState.skills``/``practice_credit`` read/write plumbing
+``execute_practice`` uses. **Reachable as of Phase 46** via ``turn/
+turn_processor.py run_turn()``, which detects 2+ leaders co-located
+(same current province) and Practicing the same ability in the same
+phase, and routes them through ``execute_practice_group`` instead of
+each dispatching solo -- ``plan_dispatch.py``'s own per-leader
+``dispatch_phase`` still can't see this (it has no visibility into
+other leaders' same-phase orders), so ``execute_practice`` (wired there)
+keeps resolving solo-only when driven directly, same as before -- a
+caller going through `run_leader_plan` alone (bypassing `run_turn`)
+still gets the conservative solo-only approximation.
 
 **Extending to N > 2 co-practicers** (only relevant to
 ``resolve_practice_group``, itself only reachable the same way
 ``resolve_practice_pair`` is): the rulebook's own examples only ever
 describe exactly two characters. Generalized here as: if every
-practicer shares the same skill level, the 10%-each rule applies to the
-whole group; otherwise, whoever sits at the group's *minimum* skill
-level gets the guaranteed-subject-to-aptitude roll, and everyone above
-that minimum gets nothing this phase -- a natural but **undsourced**
-extension of the two-character rule, flagged as an interpretation, not
-a quote.
+practicer shares the same skill level, the tied-credit rule applies to
+the whole group; otherwise, whoever sits at the group's *minimum* skill
+level gets the immediate-rise-subject-to-aptitude-gate attempt, and
+everyone above that minimum gets nothing this phase (no gate roll, no
+credit) -- a natural but **undsourced** extension of the two-character
+rule, flagged as an interpretation, not a quote; unchanged by Phase 449,
+which only replaced *what a successful gate does*, not *who gets to
+roll*.
+
+**Why resolvers still take raw ``(skill, aptitude, credit)`` values,
+not ``LeaderState`` directly (a deliberate Phase 449 deviation from an
+earlier draft of this design)**: ``execute_practice_group()``'s own
+comatose gate (Phase 310) must leave a comatose co-practicer's stored
+state completely untouched -- skill, aptitude, *and now credit* -- even
+though that practicer's *pre-attempt* skill still has to participate in
+the group's own tied/minimum comparison. Keeping the resolvers pure
+functions of frozen input values (as Phase 46 originally designed them)
+lets the comatose gate skip persisting a resolver's output for exactly
+one practicer without the resolver ever touching ``LeaderState`` itself
+-- writing ``practice_credit`` *inside* the resolver would leak a
+comatose practicer's credit mutation before the caller ever gets a
+chance to gate it, since the group resolver runs before that gate is
+even checked (it needs everyone's frozen pre-attempt skill first).
 
 **The magic-item override is not modeled**: "if one character has
 higher skill only because of a magic item, both characters have only a
@@ -222,6 +253,16 @@ phase's scope for each:
   own pre-attempt skill level -- exactly as if each practiced alone. A
   comatose co-practicer's own skill/aptitude and device roll both stay
   untouched (same short-circuit ``execute_practice()`` already applies).
+
+**Phase 449 (persistent credit accumulator, real source)**: rewrites the
+skill-rise mechanic itself off ``AKGEN_reverse_engineering_report
+(2).md`` SS2/SS6 -- see "Roll sequencing" above for the full formula and
+"Why resolvers still take raw values" for why ``LeaderState.
+practice_credit`` is written by the ``execute_practice*`` callers, not
+by ``resolve_practice_solo``/``_pair``/``_group`` themselves.
+``GUARANTEED_PRACTICE_CHANCE``/``TIED_SKILL_PRACTICE_CHANCE``/``SOLO_
+PRACTICE_CHANCE`` are removed (the real gate has no such per-context
+base chance); ``APT_RISE_CHANCE``/``MAX_SKILL_LEVEL`` are unchanged.
 """
 
 from __future__ import annotations
@@ -236,11 +277,6 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.office import Office
 from ak_engine.turn.combat import Quality
 
-# Rulebook [3.13].
-SOLO_PRACTICE_CHANCE = 0.05
-TIED_SKILL_PRACTICE_CHANCE = 0.10
-GUARANTEED_PRACTICE_CHANCE = 1.0
-
 # CTME.PAS: apt_rise: array[0..10] OF byte = (0,10,25,50,100,80,60,40,20,0,0);
 # Indexed by *current* skill level (0-9); indices 9-10 are unreachable
 # padding (skill can't exceed 9, CTBOTH.PAS's skillrange = 0..9) but kept
@@ -249,6 +285,15 @@ APT_RISE_CHANCE: tuple[float, ...] = (0.0, 0.10, 0.25, 0.50, 1.0, 0.80, 0.60, 0.
 
 # SkillTable's documented range (Phase 21): each pair value is 0-9.
 MAX_SKILL_LEVEL = 9
+
+# Phase 449 (AKGEN_reverse_engineering_report (2).md SS2/SS6): a
+# successful aptitude-gate roll earns persistent credit toward the same
+# ability instead of an immediate rise, unless a strictly-higher-skilled
+# co-practicer is present (that case still rises immediately -- no
+# credit involved). See module docstring's "Roll sequencing" section.
+PRACTICE_CREDIT_SOLO_GAIN = 5
+PRACTICE_CREDIT_TIED_GAIN = 10
+PRACTICE_CREDIT_RISE_THRESHOLD = 100
 
 # Rulebook [4.3.1] Sageness: "un 5% di probabilita per livello di
 # inventare o scoprire qualcosa di utile" -- see module docstring.
@@ -272,19 +317,36 @@ class PracticeOutcome:
     aptitude_rose: bool
     new_skill: int
     new_aptitude: int
+    # Phase 449: the practicer's own post-attempt practice_credit total
+    # for this ability, whenever the credit path was actually exercised
+    # (a successful gate that wasn't an immediate rise) -- None means the
+    # credit dict is untouched this attempt (immediate rise, failed gate,
+    # already-maxed skill, or "not this call's turn to roll" in a group).
+    # The caller (execute_practice/execute_practice_group) persists this
+    # into LeaderState.practice_credit itself -- see module docstring's
+    # "Why resolvers still take raw values" for why the resolvers below
+    # never write LeaderState directly.
+    new_credit: int | None = None
 
 
-def _chance_after_aptitude_halving(base_chance: float, current_skill: int, aptitude: int) -> float:
-    """Rulebook: "chance of rising 1 level is halved for each level beyond his natural aptitude."
+def roll_practice_aptitude_gate(current_skill: int, aptitude: int, rng: random.Random) -> bool:
+    """The real per-PR aptitude gate (AKGEN_reverse_engineering_report (2).md SS2):
+    ``P = 2^-max(0, target_skill - aptitude)``, ``target_skill = current_skill + 1``.
 
-    Halved relative to the *target* level (``current_skill + 1``), per
-    the rulebook's own worked example (aptitude 1: level 1 unaffected,
-    level 2 halved once, level 3 halved twice, ...).
+    Rulebook [3.13]: "chance of rising 1 level is halved for each level
+    beyond his natural aptitude" -- halved relative to the *target*
+    level, per the rulebook's own worked example (aptitude 1: level 1
+    unaffected, level 2 halved once, level 3 halved twice, ...). Unlike
+    this module's original design (Phase 44), the real gate has no
+    separate per-context "base chance" to halve -- every attempt (solo,
+    tied, guaranteed-if-lower) rolls against this exact same gate; see
+    module docstring's "Roll sequencing" section for what differs by
+    context (what a *successful* gate does next).
     """
 
     target_level = current_skill + 1
     levels_beyond_aptitude = max(0, target_level - aptitude)
-    return base_chance / (2**levels_beyond_aptitude)
+    return rng.random() < 1.0 / (2**levels_beyond_aptitude)
 
 
 def _maybe_raise_aptitude(current_skill: int, aptitude: int, rng: random.Random) -> bool:
@@ -294,26 +356,46 @@ def _maybe_raise_aptitude(current_skill: int, aptitude: int, rng: random.Random)
     return rng.random() < chance
 
 
-def attempt_skill_rise(current_skill: int, aptitude: int, base_chance: float, rng: random.Random) -> PracticeOutcome:
-    """Core per-attempt roll: try to rise 1 skill level at ``base_chance`` (aptitude-halved);
-    on failure caused by insufficient aptitude, try an aptitude rise instead.
+def _resolve_practice_attempt(
+    current_skill: int,
+    aptitude: int,
+    credit: int,
+    rng: random.Random,
+    *,
+    immediate_rise: bool,
+    credit_delta: int,
+) -> PracticeOutcome:
+    """Core per-practicer attempt: aptitude gate, then either an immediate rise,
+    persistent credit accumulation (with a threshold-crossing rise), or
+    (on gate failure) an aptitude-rise attempt.
 
-    Shared by every base-chance case (guaranteed / tied / solo) -- see
-    module docstring for the full rulebook citation and roll-sequencing
-    rationale.
+    Shared by every practice context (guaranteed-if-lower / tied / solo)
+    -- see module docstring's "Roll sequencing" section for the full
+    AKGEN-sourced formula this implements.
     """
 
     if current_skill >= MAX_SKILL_LEVEL:
         return PracticeOutcome(skill_rose=False, aptitude_rose=False, new_skill=current_skill, new_aptitude=aptitude)
 
-    levels_beyond_aptitude = max(0, (current_skill + 1) - aptitude)
-    final_chance = _chance_after_aptitude_halving(base_chance, current_skill, aptitude)
-
-    if rng.random() < final_chance:
+    if roll_practice_aptitude_gate(current_skill, aptitude, rng):
+        if immediate_rise:
+            return PracticeOutcome(
+                skill_rose=True, aptitude_rose=False, new_skill=current_skill + 1, new_aptitude=aptitude
+            )
+        new_credit = credit + credit_delta
+        if new_credit >= PRACTICE_CREDIT_RISE_THRESHOLD:
+            return PracticeOutcome(
+                skill_rose=True,
+                aptitude_rose=False,
+                new_skill=current_skill + 1,
+                new_aptitude=aptitude,
+                new_credit=new_credit - PRACTICE_CREDIT_RISE_THRESHOLD,
+            )
         return PracticeOutcome(
-            skill_rose=True, aptitude_rose=False, new_skill=current_skill + 1, new_aptitude=aptitude
+            skill_rose=False, aptitude_rose=False, new_skill=current_skill, new_aptitude=aptitude, new_credit=new_credit
         )
 
+    levels_beyond_aptitude = max(0, (current_skill + 1) - aptitude)
     if levels_beyond_aptitude > 0 and _maybe_raise_aptitude(current_skill, aptitude, rng):
         return PracticeOutcome(
             skill_rose=False, aptitude_rose=True, new_skill=current_skill, new_aptitude=aptitude + 1
@@ -322,14 +404,17 @@ def attempt_skill_rise(current_skill: int, aptitude: int, base_chance: float, rn
     return PracticeOutcome(skill_rose=False, aptitude_rose=False, new_skill=current_skill, new_aptitude=aptitude)
 
 
-def resolve_practice_solo(current_skill: int, aptitude: int, rng: random.Random) -> PracticeOutcome:
-    """Rulebook [3.13]: "A character who Practices alone has a 5% chance of rising 1 level."."""
+def resolve_practice_solo(current_skill: int, aptitude: int, credit: int, rng: random.Random) -> PracticeOutcome:
+    """Rulebook [3.13]: "A character who Practices alone has a 5% chance of rising 1 level" --
+    Phase 449: real formula is the aptitude gate + PRACTICE_CREDIT_SOLO_GAIN,
+    not a flat 5%. See module docstring.
+    """
 
-    return attempt_skill_rise(current_skill, aptitude, SOLO_PRACTICE_CHANCE, rng)
+    return _resolve_practice_attempt(current_skill, aptitude, credit, rng, immediate_rise=False, credit_delta=PRACTICE_CREDIT_SOLO_GAIN)
 
 
 def resolve_practice_pair(
-    skill_a: int, aptitude_a: int, skill_b: int, aptitude_b: int, rng: random.Random
+    skill_a: int, aptitude_a: int, credit_a: int, skill_b: int, aptitude_b: int, credit_b: int, rng: random.Random
 ) -> tuple[PracticeOutcome, PracticeOutcome]:
     """Rulebook [3.13]'s fully-sourced two-character case.
 
@@ -338,22 +423,22 @@ def resolve_practice_pair(
 
     if skill_a == skill_b:
         return (
-            attempt_skill_rise(skill_a, aptitude_a, TIED_SKILL_PRACTICE_CHANCE, rng),
-            attempt_skill_rise(skill_b, aptitude_b, TIED_SKILL_PRACTICE_CHANCE, rng),
+            _resolve_practice_attempt(skill_a, aptitude_a, credit_a, rng, immediate_rise=False, credit_delta=PRACTICE_CREDIT_TIED_GAIN),
+            _resolve_practice_attempt(skill_b, aptitude_b, credit_b, rng, immediate_rise=False, credit_delta=PRACTICE_CREDIT_TIED_GAIN),
         )
     if skill_a < skill_b:
         return (
-            attempt_skill_rise(skill_a, aptitude_a, GUARANTEED_PRACTICE_CHANCE, rng),
+            _resolve_practice_attempt(skill_a, aptitude_a, credit_a, rng, immediate_rise=True, credit_delta=0),
             PracticeOutcome(skill_rose=False, aptitude_rose=False, new_skill=skill_b, new_aptitude=aptitude_b),
         )
     return (
         PracticeOutcome(skill_rose=False, aptitude_rose=False, new_skill=skill_a, new_aptitude=aptitude_a),
-        attempt_skill_rise(skill_b, aptitude_b, GUARANTEED_PRACTICE_CHANCE, rng),
+        _resolve_practice_attempt(skill_b, aptitude_b, credit_b, rng, immediate_rise=True, credit_delta=0),
     )
 
 
 def resolve_practice_group(
-    skills_and_aptitudes: list[tuple[int, int]], rng: random.Random
+    skills_aptitudes_credits: list[tuple[int, int, int]], rng: random.Random
 ) -> list[PracticeOutcome]:
     """Generalizes ``resolve_practice_pair`` to N >= 2 co-practicers -- see module docstring's
     "Extending to N > 2" section for the undsourced generalization this applies.
@@ -361,21 +446,21 @@ def resolve_practice_group(
     Not reachable from ``plan_dispatch.py`` -- see module docstring.
     """
 
-    if len(skills_and_aptitudes) < 2:
+    if len(skills_aptitudes_credits) < 2:
         raise ValueError("resolve_practice_group needs at least 2 co-practicers; use resolve_practice_solo for 1")
 
-    skills = [skill for skill, _ in skills_and_aptitudes]
+    skills = [skill for skill, _, _ in skills_aptitudes_credits]
     if len(set(skills)) == 1:
         return [
-            attempt_skill_rise(skill, aptitude, TIED_SKILL_PRACTICE_CHANCE, rng)
-            for skill, aptitude in skills_and_aptitudes
+            _resolve_practice_attempt(skill, aptitude, credit, rng, immediate_rise=False, credit_delta=PRACTICE_CREDIT_TIED_GAIN)
+            for skill, aptitude, credit in skills_aptitudes_credits
         ]
 
     minimum_skill = min(skills)
     outcomes = []
-    for skill, aptitude in skills_and_aptitudes:
+    for skill, aptitude, credit in skills_aptitudes_credits:
         if skill == minimum_skill:
-            outcomes.append(attempt_skill_rise(skill, aptitude, GUARANTEED_PRACTICE_CHANCE, rng))
+            outcomes.append(_resolve_practice_attempt(skill, aptitude, credit, rng, immediate_rise=True, credit_delta=0))
         else:
             outcomes.append(PracticeOutcome(skill_rose=False, aptitude_rose=False, new_skill=skill, new_aptitude=aptitude))
     return outcomes
@@ -621,8 +706,11 @@ def execute_practice(
     skills = _get_or_create_skills(leader)
 
     current_skill, aptitude = skills.pair_for_ability(ability)
-    outcome = resolve_practice_solo(current_skill, aptitude, rng)
+    credit = leader.practice_credit.get(ability.value, 0)
+    outcome = resolve_practice_solo(current_skill, aptitude, credit, rng)
     skills.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
+    if outcome.new_credit is not None:
+        leader.practice_credit[ability.value] = outcome.new_credit
     if outcome.skill_rose or outcome.aptitude_rose:
         # Phase 259: RULES.AK [4.21.1] -- a Royal Heir loses the
         # Resurrection-restores-the-old-King option the instant Practice
@@ -731,8 +819,12 @@ def execute_practice_group(
 
     skills_tables = [_get_or_create_skills(state.leaders[leader_id]) for leader_id in leader_ids]
     pairs = [table.pair_for_ability(ability) for table in skills_tables]
+    triples = [
+        (skill, aptitude, state.leaders[leader_id].practice_credit.get(ability.value, 0))
+        for leader_id, (skill, aptitude) in zip(leader_ids, pairs)
+    ]
 
-    outcomes = resolve_practice_group(pairs, rng)
+    outcomes = resolve_practice_group(triples, rng)
 
     results = []
     for index, (leader_id, table, outcome, (current_skill, _current_aptitude)) in enumerate(
@@ -741,17 +833,20 @@ def execute_practice_group(
         leader = state.leaders[leader_id]
         if leader.is_comatose:
             # Phase 310: same comatose gate as execute_practice()'s own --
-            # this leader's own real stored skill/aptitude never changes,
-            # regardless of what resolve_practice_group() computed for
-            # them; the other co-practicers' own outcomes are unaffected
-            # (a documented, unsourced choice -- nothing in [3.13] covers
-            # a comatose participant, and there's no reason a partner's
-            # own experience should suffer for it). No Sage device roll
+            # this leader's own real stored skill/aptitude (and, as of
+            # Phase 449, practice_credit) never changes, regardless of
+            # what resolve_practice_group() computed for them; the other
+            # co-practicers' own outcomes are unaffected (a documented,
+            # unsourced choice -- nothing in [3.13] covers a comatose
+            # participant, and there's no reason a partner's own
+            # experience should suffer for it). No Sage device roll
             # either, matching execute_practice()'s own comatose short-
             # circuit (it returns before ever reaching that roll).
             results.append(PracticeExecutionResult(ability=ability))
             continue
         table.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
+        if outcome.new_credit is not None:
+            leader.practice_credit[ability.value] = outcome.new_credit
         if outcome.skill_rose or outcome.aptitude_rose:
             # Phase 259: same is_royal_heir-clearing rule as execute_practice()'s own.
             leader.is_royal_heir = False

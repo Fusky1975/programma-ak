@@ -738,6 +738,23 @@ class LeaderState:
     # resurrection, curing a coma never changes ``kingdom_id``, even
     # when cast by a hero/King of a different kingdom (same source).
     is_comatose: bool = False
+    # Phase 449: persistent per-ability Practice credit accumulator,
+    # keyed by Ability.value -- AKGEN_reverse_engineering_report (2).md
+    # SS2/SS6's real two-stage model (aptitude gate first, then a
+    # persistent credit that rises the skill outright at >=100, see
+    # turn/practice_execution.py's own module docstring for the full
+    # formula). Absent key == 0, the same convention as skills' own
+    # "None == fresh SkillTable" default. Deliberately NOT merged into
+    # SkillTable.raw_values (which mirrors real GW file bytes, including
+    # an already-documented unexplained 31st trailing value) -- this
+    # counter has no confirmed real-file representation of its own to
+    # preserve, so it stays a pure in-memory simulation field. The real
+    # byte is shared with Add_Experience, which this project doesn't
+    # implement (no combat/movement/cast-triggered skill growth exists
+    # yet, only Practice) -- this counter only ever receives Practice's
+    # own contribution until a future phase adds real action-based
+    # experience growth.
+    practice_credit: dict[int, int] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

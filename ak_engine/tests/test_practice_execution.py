@@ -16,12 +16,13 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.practice_execution import (
     APT_RISE_CHANCE,
     MAX_SKILL_LEVEL,
+    PRACTICE_CREDIT_RISE_THRESHOLD,
+    PRACTICE_CREDIT_SOLO_GAIN,
+    PRACTICE_CREDIT_TIED_GAIN,
     SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL,
-    SOLO_PRACTICE_CHANCE,
     TACTICAL_TRAINING_CHANCE,
     PracticeExecutionResult,
     _select_discovery_to_grant,
-    attempt_skill_rise,
     execute_practice,
     execute_practice_group,
     execute_practice_tactical,
@@ -29,6 +30,7 @@ from ak_engine.turn.practice_execution import (
     resolve_practice_group,
     resolve_practice_pair,
     resolve_practice_solo,
+    roll_practice_aptitude_gate,
 )
 
 from _helpers import ScriptedRandom
@@ -41,70 +43,35 @@ def test_apt_rise_chance_matches_ctme_pas_table_exactly():
     assert APT_RISE_CHANCE == (0.0, 0.10, 0.25, 0.50, 1.0, 0.80, 0.60, 0.40, 0.20, 0.0, 0.0)
 
 
-def test_attempt_skill_rise_succeeds_and_does_not_touch_aptitude():
-    rng = ScriptedRandom([0.01])  # well under any base chance
-    outcome = attempt_skill_rise(current_skill=2, aptitude=5, base_chance=SOLO_PRACTICE_CHANCE, rng=rng)
-
-    assert outcome.skill_rose is True
-    assert outcome.aptitude_rose is False
-    assert outcome.new_skill == 3
-    assert outcome.new_aptitude == 5
+def test_practice_credit_constants_match_the_real_formula():
+    # AKGEN_reverse_engineering_report (2).md SS2/SS6 (Phase 449).
+    assert PRACTICE_CREDIT_SOLO_GAIN == 5
+    assert PRACTICE_CREDIT_TIED_GAIN == 10
+    assert PRACTICE_CREDIT_RISE_THRESHOLD == 100
 
 
-def test_attempt_skill_rise_failure_within_aptitude_never_rolls_for_aptitude():
-    # aptitude(5) >= target level (3) -> levels_beyond_aptitude == 0, so a
-    # failed skill roll is NOT "because of low aptitude" -- only 1 rng
-    # call total; a 2nd .random() call would raise IndexError.
-    rng = ScriptedRandom([0.99])
-    outcome = attempt_skill_rise(current_skill=2, aptitude=5, base_chance=SOLO_PRACTICE_CHANCE, rng=rng)
-
-    assert outcome.skill_rose is False
-    assert outcome.aptitude_rose is False
-    assert outcome.new_skill == 2
-    assert outcome.new_aptitude == 5
-
-
-def test_attempt_skill_rise_failure_beyond_aptitude_rolls_for_aptitude_increase():
-    # aptitude(0), target level 1 -> 1 level beyond aptitude -> the skill
-    # roll's own failure is "because of low aptitude", triggering the
-    # apt_rise roll. APT_RISE_CHANCE[0] == 0.0 (current skill 0), so a
-    # near-1.0 roll still fails -- confirms the 2nd roll actually ran
-    # (would raise IndexError on ScriptedRandom's queue underflow if not).
-    rng = ScriptedRandom([0.99, 0.99])
-    outcome = attempt_skill_rise(current_skill=0, aptitude=0, base_chance=SOLO_PRACTICE_CHANCE, rng=rng)
-
-    assert outcome.skill_rose is False
-    assert outcome.aptitude_rose is False
-    assert outcome.new_skill == 0
-    assert outcome.new_aptitude == 0
+def test_roll_practice_aptitude_gate_matches_rulebooks_own_worked_example():
+    # "aptitude of 1: no trouble attaining level 1 (100%), 50% for level
+    # 2, 25% for level 3, 12.5% for level 4."
+    assert roll_practice_aptitude_gate(current_skill=0, aptitude=1, rng=ScriptedRandom([0.999])) is True
+    assert roll_practice_aptitude_gate(current_skill=1, aptitude=1, rng=ScriptedRandom([0.49])) is True
+    assert roll_practice_aptitude_gate(current_skill=1, aptitude=1, rng=ScriptedRandom([0.51])) is False
+    assert roll_practice_aptitude_gate(current_skill=2, aptitude=1, rng=ScriptedRandom([0.24])) is True
+    assert roll_practice_aptitude_gate(current_skill=2, aptitude=1, rng=ScriptedRandom([0.26])) is False
+    assert roll_practice_aptitude_gate(current_skill=3, aptitude=1, rng=ScriptedRandom([0.124])) is True
+    assert roll_practice_aptitude_gate(current_skill=3, aptitude=1, rng=ScriptedRandom([0.126])) is False
 
 
-def test_attempt_skill_rise_aptitude_increase_succeeds():
-    # current_skill=4 -> APT_RISE_CHANCE[4] == 1.0 (guaranteed).
-    rng = ScriptedRandom([0.99, 0.01])
-    outcome = attempt_skill_rise(current_skill=4, aptitude=4, base_chance=SOLO_PRACTICE_CHANCE, rng=rng)
-
-    assert outcome.skill_rose is False
-    assert outcome.aptitude_rose is True
-    assert outcome.new_skill == 4
-    assert outcome.new_aptitude == 5
-
-
-def test_attempt_skill_rise_noop_when_skill_already_at_cap():
-    # SkillTable's documented 0-9 range -- no roll at all, no rng consumed.
-    rng = ScriptedRandom([])
-    outcome = attempt_skill_rise(current_skill=MAX_SKILL_LEVEL, aptitude=9, base_chance=1.0, rng=rng)
-
-    assert outcome.skill_rose is False
-    assert outcome.aptitude_rose is False
-    assert outcome.new_skill == MAX_SKILL_LEVEL
-    assert outcome.new_aptitude == 9
+def test_roll_practice_aptitude_gate_always_succeeds_once_aptitude_covers_the_target():
+    # deficit == 0 -> P == 1.0 -- rng.random() always returns < 1.0, so
+    # the gate can never fail once aptitude already covers target_skill.
+    assert roll_practice_aptitude_gate(current_skill=4, aptitude=9, rng=ScriptedRandom([0.999999])) is True
 
 
 def test_maybe_raise_aptitude_guard_consumes_no_rng_when_aptitude_already_at_cap():
     # Defensive guard: _maybe_raise_aptitude itself never rolls once
     # aptitude is already at MAX_SKILL_LEVEL -- in practice unreachable
-    # via attempt_skill_rise (aptitude=9 always makes levels_beyond_
+    # via the real resolvers (aptitude=9 always makes levels_beyond_
     # aptitude 0 there, short-circuiting before this is even called), so
     # tested directly against the empty-list ScriptedRandom guard instead.
     from ak_engine.turn.practice_execution import _maybe_raise_aptitude
@@ -112,38 +79,96 @@ def test_maybe_raise_aptitude_guard_consumes_no_rng_when_aptitude_already_at_cap
     assert _maybe_raise_aptitude(current_skill=4, aptitude=9, rng=ScriptedRandom([])) is False
 
 
-def test_chance_after_aptitude_halving_matches_rulebooks_own_worked_example():
-    from ak_engine.turn.practice_execution import _chance_after_aptitude_halving
-
-    # "aptitude of 1: no trouble attaining level 1 (100%), 50% for level
-    # 2, 25% for level 3, 12.5% for level 4."
-    assert _chance_after_aptitude_halving(1.0, current_skill=0, aptitude=1) == pytest.approx(1.0)
-    assert _chance_after_aptitude_halving(1.0, current_skill=1, aptitude=1) == pytest.approx(0.5)
-    assert _chance_after_aptitude_halving(1.0, current_skill=2, aptitude=1) == pytest.approx(0.25)
-    assert _chance_after_aptitude_halving(1.0, current_skill=3, aptitude=1) == pytest.approx(0.125)
+# -- resolve_practice_solo (Phase 449: gate + persistent credit) -----------
 
 
-def test_resolve_practice_solo_uses_the_5_percent_base_chance():
-    rng = ScriptedRandom([0.04])  # just under 5%
-    outcome = resolve_practice_solo(current_skill=0, aptitude=9, rng=rng)
-    assert outcome.skill_rose is True
+def test_resolve_practice_solo_gate_success_earns_credit_not_an_immediate_rise():
+    rng = ScriptedRandom([0.01])  # unconstrained (aptitude 9 >= target 1) -- gate always succeeds
+    outcome = resolve_practice_solo(current_skill=0, aptitude=9, credit=0, rng=rng)
 
-    rng = ScriptedRandom([0.06])  # just over 5%
-    outcome = resolve_practice_solo(current_skill=0, aptitude=9, rng=rng)
     assert outcome.skill_rose is False
+    assert outcome.new_skill == 0
+    assert outcome.new_credit == PRACTICE_CREDIT_SOLO_GAIN
 
 
-def test_resolve_practice_pair_guaranteed_rise_for_the_lower_skill_partner():
-    # skill_a(1) < skill_b(3) -> a is guaranteed (subject to aptitude);
-    # b gets nothing this action -- 0 rng calls for b confirmed via the
-    # single-value scripted queue underflowing if b were rolled too.
+def test_resolve_practice_solo_credit_crossing_the_threshold_rises_the_skill():
+    rng = ScriptedRandom([0.01])
+    outcome = resolve_practice_solo(current_skill=3, aptitude=9, credit=96, rng=rng)
+
+    assert outcome.skill_rose is True
+    assert outcome.new_skill == 4
+    assert outcome.new_aptitude == 9
+    assert outcome.new_credit == 1  # 96 + 5 - 100
+
+
+def test_resolve_practice_solo_gate_failure_within_aptitude_never_rolls_for_aptitude():
+    # aptitude(5) >= target level (3) -> deficit == 0 -> gate can never
+    # fail (see test_roll_practice_aptitude_gate_always_succeeds...), so
+    # this exercises the credit path instead -- only 1 rng call total; a
+    # 2nd .random() call would raise IndexError.
+    rng = ScriptedRandom([0.99])
+    outcome = resolve_practice_solo(current_skill=2, aptitude=5, credit=0, rng=rng)
+
+    assert outcome.skill_rose is False
+    assert outcome.new_skill == 2
+    assert outcome.new_credit == PRACTICE_CREDIT_SOLO_GAIN
+
+
+def test_resolve_practice_solo_gate_failure_beyond_aptitude_rolls_for_aptitude_increase():
+    # current_skill=2, aptitude=1 -> target 3, deficit 2, gate P=0.25.
+    # First roll (0.99) fails the gate; deficit>0 triggers the aptitude-
+    # rise roll (APT_RISE_CHANCE[2]==0.25); 0.99 also fails that.
+    rng = ScriptedRandom([0.99, 0.99])
+    outcome = resolve_practice_solo(current_skill=2, aptitude=1, credit=0, rng=rng)
+
+    assert outcome.skill_rose is False
+    assert outcome.aptitude_rose is False
+    assert outcome.new_skill == 2
+    assert outcome.new_aptitude == 1
+    assert outcome.new_credit is None  # gate failed -- credit path never reached
+
+
+def test_resolve_practice_solo_aptitude_increase_succeeds():
+    # current_skill=4, aptitude=0 -> target 5, deficit 5, gate P=2^-5.
+    # APT_RISE_CHANCE[4] == 1.0 (guaranteed) once the gate fails.
+    rng = ScriptedRandom([0.99, 0.01])
+    outcome = resolve_practice_solo(current_skill=4, aptitude=0, credit=0, rng=rng)
+
+    assert outcome.skill_rose is False
+    assert outcome.aptitude_rose is True
+    assert outcome.new_skill == 4
+    assert outcome.new_aptitude == 1
+    assert outcome.new_credit is None
+
+
+def test_resolve_practice_solo_noop_when_skill_already_at_cap():
+    # SkillTable's documented 0-9 range -- no roll at all, no rng consumed.
+    rng = ScriptedRandom([])
+    outcome = resolve_practice_solo(current_skill=MAX_SKILL_LEVEL, aptitude=9, credit=50, rng=rng)
+
+    assert outcome.skill_rose is False
+    assert outcome.aptitude_rose is False
+    assert outcome.new_skill == MAX_SKILL_LEVEL
+    assert outcome.new_aptitude == 9
+    assert outcome.new_credit is None  # credit dict untouched
+
+
+# -- resolve_practice_pair --------------------------------------------------
+
+
+def test_resolve_practice_pair_immediate_rise_for_the_lower_skill_partner():
+    # skill_a(1) < skill_b(3) -> a rises immediately (subject to
+    # aptitude), no credit involved; b gets nothing this action -- 0 rng
+    # calls for b confirmed via the single-value scripted queue
+    # underflowing if b were rolled too.
     rng = ScriptedRandom([0.01])
     outcome_a, outcome_b = resolve_practice_pair(
-        skill_a=1, aptitude_a=9, skill_b=3, aptitude_b=9, rng=rng
+        skill_a=1, aptitude_a=9, credit_a=0, skill_b=3, aptitude_b=9, credit_b=0, rng=rng
     )
 
     assert outcome_a.skill_rose is True
     assert outcome_a.new_skill == 2
+    assert outcome_a.new_credit is None  # immediate rise, not credit
     assert outcome_b.skill_rose is False
     assert outcome_b.new_skill == 3
 
@@ -151,7 +176,7 @@ def test_resolve_practice_pair_guaranteed_rise_for_the_lower_skill_partner():
 def test_resolve_practice_pair_reverse_order_still_favors_the_lower_skill_partner():
     rng = ScriptedRandom([0.01])
     outcome_a, outcome_b = resolve_practice_pair(
-        skill_a=5, aptitude_a=9, skill_b=2, aptitude_b=9, rng=rng
+        skill_a=5, aptitude_a=9, credit_a=0, skill_b=2, aptitude_b=9, credit_b=0, rng=rng
     )
 
     assert outcome_a.skill_rose is False
@@ -159,34 +184,45 @@ def test_resolve_practice_pair_reverse_order_still_favors_the_lower_skill_partne
     assert outcome_b.new_skill == 3
 
 
-def test_resolve_practice_pair_tied_skill_rolls_10_percent_each_independently():
-    rng = ScriptedRandom([0.05, 0.5])  # a succeeds (< 10%), b fails (>= 10%)
+def test_resolve_practice_pair_tied_skill_earns_credit_independently():
+    rng = ScriptedRandom([0.01, 0.01])
     outcome_a, outcome_b = resolve_practice_pair(
-        skill_a=2, aptitude_a=9, skill_b=2, aptitude_b=9, rng=rng
+        skill_a=2, aptitude_a=9, credit_a=0, skill_b=2, aptitude_b=9, credit_b=95, rng=rng
     )
 
-    assert outcome_a.skill_rose is True
-    assert outcome_b.skill_rose is False
+    assert outcome_a.skill_rose is False
+    assert outcome_a.new_credit == PRACTICE_CREDIT_TIED_GAIN
+    assert outcome_b.skill_rose is True  # 95 + 10 crosses the threshold
+    assert outcome_b.new_skill == 3
+    assert outcome_b.new_credit == 5
+
+
+# -- resolve_practice_group --------------------------------------------------
 
 
 def test_resolve_practice_group_requires_at_least_two_practicers():
     with pytest.raises(ValueError):
-        resolve_practice_group([(0, 9)], rng=random.Random(0))
+        resolve_practice_group([(0, 9, 0)], rng=random.Random(0))
 
 
-def test_resolve_practice_group_all_equal_uses_tied_chance_for_everyone():
-    rng = ScriptedRandom([0.05, 0.05, 0.5])
-    outcomes = resolve_practice_group([(2, 9), (2, 9), (2, 9)], rng=rng)
+def test_resolve_practice_group_all_equal_earns_tied_credit_for_everyone():
+    rng = ScriptedRandom([0.01, 0.01, 0.01])
+    outcomes = resolve_practice_group([(2, 9, 0), (2, 9, 90), (2, 9, 0)], rng=rng)
 
-    assert [o.skill_rose for o in outcomes] == [True, True, False]
+    assert outcomes[0].skill_rose is False
+    assert outcomes[0].new_credit == PRACTICE_CREDIT_TIED_GAIN
+    assert outcomes[1].skill_rose is True  # 90 + 10 crosses the threshold
+    assert outcomes[1].new_skill == 3
+    assert outcomes[1].new_credit == 0
+    assert outcomes[2].new_credit == PRACTICE_CREDIT_TIED_GAIN
 
 
 def test_resolve_practice_group_only_the_minimum_skill_members_roll():
     # Two tied at the group minimum (1), one strictly higher (4) -- only
-    # the two at the minimum get a (guaranteed, aptitude-permitting) roll;
-    # the higher-skill member gets nothing, no rng consumed for them.
+    # the two at the minimum get an immediate-rise (aptitude-permitting)
+    # attempt; the higher-skill member gets nothing, no rng consumed.
     rng = ScriptedRandom([0.01, 0.01])
-    outcomes = resolve_practice_group([(1, 9), (4, 9), (1, 9)], rng=rng)
+    outcomes = resolve_practice_group([(1, 9, 0), (4, 9, 0), (1, 9, 0)], rng=rng)
 
     assert outcomes[0].skill_rose is True
     assert outcomes[1].skill_rose is False
@@ -204,16 +240,19 @@ def _state_with_leader(skills: SkillTable | None) -> GameState:
 def test_execute_practice_attaches_a_fresh_skill_table_when_none_recorded():
     state = _state_with_leader(skills=None)
 
-    # Second value pads Sage's own device-discovery roll (Phase 171) --
-    # moot here since current_skill=0 (pre-rise) gives it a 0% chance.
+    # skill=0, aptitude=0 -> target 1, deficit 1, gate P=0.5; 0.01
+    # succeeds, earning solo credit (not an immediate rise). Second value
+    # pads Sage's own device-discovery roll (Phase 171) -- moot here
+    # since current_skill=0 (pre-attempt) gives it a 0% chance.
     result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01, 0.9]))
 
     assert isinstance(result, PracticeExecutionResult)
-    assert result.skill_rose is True
-    assert result.new_skill == 1
+    assert result.skill_rose is False
+    assert result.new_skill == 0
     assert result.new_aptitude == 0
     assert state.leaders[1].skills is not None
-    assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (1, 0)
+    assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (0, 0)
+    assert state.leaders[1].practice_credit[Ability.SAGE.value] == PRACTICE_CREDIT_SOLO_GAIN
 
 
 def test_execute_practice_reuses_and_only_touches_the_practiced_abilitys_pair():
@@ -224,10 +263,12 @@ def test_execute_practice_reuses_and_only_touches_the_practiced_abilitys_pair():
 
     execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01, 0.9]))
 
-    # Sage rose from the fresh-zero baseline...
-    assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (1, 0)
-    # ...but Necromancy's own pair is untouched.
+    # Sage earned credit off the fresh-zero baseline...
+    assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (0, 0)
+    assert state.leaders[1].practice_credit[Ability.SAGE.value] == PRACTICE_CREDIT_SOLO_GAIN
+    # ...but Necromancy's own pair (and credit) are untouched.
     assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (3, 5)
+    assert Ability.NECROMANCY.value not in state.leaders[1].practice_credit
 
 
 def test_execute_practice_blocked_while_comatose():
@@ -242,8 +283,9 @@ def test_execute_practice_blocked_while_comatose():
 
     assert result.skill_rose is False
     assert result.aptitude_rose is False
-    # The real stored pair is untouched.
+    # The real stored pair (and credit dict) are untouched.
     assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (3, 0)
+    assert state.leaders[1].practice_credit == {}
 
 
 def test_execute_practice_tactical_still_works_while_comatose():
@@ -271,6 +313,8 @@ def test_execute_practice_tactical_does_not_touch_personal_skill():
 
 
 # -- Phase 167: Ability.TACTICAL's own army-training mechanic ([6.1]) -------
+# Unaffected by Phase 449 -- Tactical never routes through the skill-rise
+# mechanic at all, see module docstring.
 
 
 def _army(army_id: int, quality: Quality, *, commanded_by: int | None = 1) -> ArmyState:
@@ -470,15 +514,17 @@ def test_execute_practice_raw_out_of_range_ability_is_not_implemented():
     assert state.leaders[1].skills is None
 
 
-def test_execute_practice_sages_own_skill_still_rises_normally():
-    # Sage's own ordinary [3.13] skill rise runs like any other ability,
-    # independent of its own extra device-discovery roll (Phase 171).
+def test_execute_practice_sages_own_credit_still_accrues_normally():
+    # Sage's own ordinary [3.13] skill-credit accrual runs like any
+    # other ability, independent of its own extra device-discovery roll
+    # (Phase 171).
     state = _state_with_leader(skills=None)
 
     result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01, 0.9]))
 
     assert result.not_implemented_for_ability is False
-    assert result.skill_rose is True
+    assert result.skill_rose is False
+    assert state.leaders[1].practice_credit[Ability.SAGE.value] == PRACTICE_CREDIT_SOLO_GAIN
 
 
 # --- execute_practice_group (Phase 46) ------------------------------------
@@ -502,7 +548,7 @@ def _skills_with(ability: Ability, skill: int, aptitude: int) -> SkillTable:
     return SkillTable(raw)
 
 
-def test_execute_practice_group_lower_skill_member_gets_guaranteed_roll():
+def test_execute_practice_group_lower_skill_member_gets_immediate_rise():
     state = _state_with_leaders(
         1,
         2,
@@ -521,9 +567,10 @@ def test_execute_practice_group_lower_skill_member_gets_guaranteed_roll():
     assert results[1].new_skill == 3
     assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (2, 9)
     assert state.leaders[2].skills.pair_for_ability(Ability.NECROMANCY) == (3, 9)
+    assert Ability.NECROMANCY.value not in state.leaders[1].practice_credit  # immediate rise, no credit
 
 
-def test_execute_practice_group_tied_skill_rolls_independently_for_each():
+def test_execute_practice_group_tied_skill_earns_credit_independently_for_each():
     state = _state_with_leaders(
         1,
         2,
@@ -533,10 +580,35 @@ def test_execute_practice_group_tied_skill_rolls_independently_for_each():
         },
     )
 
-    results = execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.05, 0.5]))
+    results = execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.01, 0.01]))
 
-    assert results[0].skill_rose is True  # 0.05 < 10%
-    assert results[1].skill_rose is False  # 0.5 >= 10%
+    assert results[0].skill_rose is False
+    assert results[1].skill_rose is False
+    assert state.leaders[1].practice_credit[Ability.NECROMANCY.value] == PRACTICE_CREDIT_TIED_GAIN
+    assert state.leaders[2].practice_credit[Ability.NECROMANCY.value] == PRACTICE_CREDIT_TIED_GAIN
+
+
+def test_execute_practice_group_tied_skill_credit_threshold_crossing_still_gives_no_teacher():
+    # No co-practicer has strictly higher skill when tied, so no
+    # candidate ever qualifies -- matches the source's "no teacher when
+    # tied" rule, even when the credit accumulator itself does cross the
+    # threshold and genuinely raises a skill level this call.
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=2, aptitude=9),
+            2: _skills_with(Ability.NECROMANCY, skill=2, aptitude=9),
+        },
+    )
+    state.leaders[1].practice_credit[Ability.NECROMANCY.value] = 95
+
+    results = execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.01, 0.01]))
+
+    assert results[0].skill_rose is True  # 95 + 10 crosses the threshold
+    assert results[0].new_skill == 3
+    assert state.leaders[1].merit_tally.teaching_interactions == 0
+    assert state.leaders[2].merit_tally.teaching_interactions == 0
 
 
 def test_execute_practice_group_three_leaders_only_minimum_skill_ones_roll():
@@ -559,6 +631,27 @@ def test_execute_practice_group_three_leaders_only_minimum_skill_ones_roll():
     assert results[2].skill_rose is True
 
 
+def test_execute_practice_group_comatose_co_practicer_credit_stays_untouched():
+    # Direct proof of the Phase 449 comatose/credit interaction: a tied
+    # scenario would normally earn +10 credit for both co-practicers,
+    # but a comatose participant's own practice_credit must stay
+    # completely untouched, exactly like their skill/aptitude.
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=2, aptitude=9),
+            2: _skills_with(Ability.NECROMANCY, skill=2, aptitude=9),
+        },
+    )
+    state.leaders[1].is_comatose = True
+
+    execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.01, 0.01]))
+
+    assert Ability.NECROMANCY.value not in state.leaders[1].practice_credit
+    assert state.leaders[2].practice_credit[Ability.NECROMANCY.value] == PRACTICE_CREDIT_TIED_GAIN
+
+
 # -- Phase 446: Teacher merit (Office.TEACHER) -----------------------------
 
 
@@ -576,25 +669,6 @@ def test_execute_practice_group_credits_teacher_merit_when_the_student_actually_
 
     assert state.leaders[2].merit_tally.teaching_interactions == 1
     assert state.leaders[1].merit_tally.teaching_interactions == 0
-
-
-def test_execute_practice_group_tied_skill_credits_no_teacher_even_on_a_rise():
-    # No co-practicer has strictly higher skill when tied, so no
-    # candidate ever qualifies -- matches the source's "no teacher when
-    # tied" rule without a special case.
-    state = _state_with_leaders(
-        1,
-        2,
-        skills_by_id={
-            1: _skills_with(Ability.NECROMANCY, skill=2, aptitude=9),
-            2: _skills_with(Ability.NECROMANCY, skill=2, aptitude=9),
-        },
-    )
-
-    execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.05, 0.5]))
-
-    assert state.leaders[1].merit_tally.teaching_interactions == 0
-    assert state.leaders[2].merit_tally.teaching_interactions == 0
 
 
 def test_execute_practice_group_credits_only_the_current_officeholder_among_qualified_candidates():
@@ -707,14 +781,16 @@ def test_sage_device_discovery_chance_per_level_is_5_percent():
 def test_execute_practice_sage_device_discovery_succeeds():
     # Skill 4, aptitude 9 (unconstrained) -- the rulebook's own worked
     # example ("a level-4 character... will average one discovery per
-    # turn"). Chance = 4 * 5% = 20%. First roll (0.99) fails the ordinary
-    # skill-rise attempt; second roll (0.15) succeeds the independent
-    # device-discovery roll. A successful roll now also grants a real
-    # Discovery (Phase 266) -- choice_indices=[0] picks the first eligible
-    # not-yet-owned Discovery deterministically. Phase 448: a fresh state's
-    # ``discoveries_first_found_by`` is empty, so the picked candidate
-    # isn't yet owned by any Kingdom in the world -- a third scripted roll
-    # (0.01) is needed for the 5% world-diffusion keep check.
+    # turn"). Chance = 4 * 5% = 20%. First roll (0.99) is the aptitude
+    # gate, which always succeeds when unconstrained (Phase 449 -- earns
+    # solo credit, not an immediate rise); second roll (0.15) succeeds
+    # the independent device-discovery roll. A successful roll now also
+    # grants a real Discovery (Phase 266) -- choice_indices=[0] picks the
+    # first eligible not-yet-owned Discovery deterministically. Phase
+    # 448: a fresh state's ``discoveries_first_found_by`` is empty, so
+    # the picked candidate isn't yet owned by any Kingdom in the world --
+    # a third scripted roll (0.01) is needed for the 5% world-diffusion
+    # keep check.
     state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=4, aptitude=9))
 
     result = execute_practice(
@@ -722,6 +798,7 @@ def test_execute_practice_sage_device_discovery_succeeds():
     )
 
     assert result.skill_rose is False
+    assert state.leaders[1].practice_credit[Ability.SAGE.value] == PRACTICE_CREDIT_SOLO_GAIN
     assert result.device_discovered is True
     assert result.discovery_granted is not None
     assert result.discovery_granted in state.kingdoms[1].discoveries
@@ -739,9 +816,9 @@ def test_execute_practice_sage_device_discovery_fails_above_chance():
 def test_execute_practice_sage_device_discovery_is_zero_chance_at_skill_zero():
     # A fresh (skill=0, aptitude=0) Sageness practicer has a 0 * 5% = 0%
     # discovery chance -- even an almost-zero roll must still fail. Three
-    # values: skill-rise roll (fails), the aptitude-rise roll it also
-    # triggers (aptitude 0 constrains skill-rise, see attempt_skill_rise),
-    # then the device-discovery roll itself.
+    # values: the aptitude gate (fails, deficit=1 -> P=0.5), the
+    # aptitude-rise roll it also triggers (APT_RISE_CHANCE[0]==0.0, so
+    # any roll fails), then the device-discovery roll itself.
     state = _state_with_leader(skills=None)
 
     result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.99, 0.001]))
@@ -750,11 +827,15 @@ def test_execute_practice_sage_device_discovery_is_zero_chance_at_skill_zero():
 
 
 def test_execute_practice_sage_device_discovery_uses_pre_attempt_skill():
-    # Skill 1 rises to 2 this same call (roll 0.01 < the unconstrained 5%
-    # solo chance), but the discovery roll must still use the *pre*-rise
-    # skill (1 * 5% = 5%), not the post-rise one (2 * 5% = 10%) -- 0.07 is
-    # below the wrong 10% chance but above the correct 5% one.
+    # Skill 1, aptitude 9 (unconstrained), with credit already at 96 so
+    # this call's own +5 gate success crosses the PRACTICE_CREDIT_RISE_
+    # THRESHOLD and genuinely rises the skill this same call (1 -> 2).
+    # The discovery roll must still use the *pre*-rise skill (1 * 5% =
+    # 5%), not the post-rise one (2 * 5% = 10%) -- 0.07 is above the
+    # correct 5% (fails) but below the wrong 10% (would incorrectly
+    # succeed).
     state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=1, aptitude=9))
+    state.leaders[1].practice_credit[Ability.SAGE.value] = 96
 
     result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01, 0.07]))
 
@@ -931,6 +1012,7 @@ def test_execute_practice_sage_discovery_credits_a_later_independent_discoverer(
 
 def test_execute_practice_clears_is_royal_heir_when_skill_rises():
     state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
+    state.leaders[1].practice_credit[Ability.MELEE.value] = 96  # +5 this call crosses the threshold
     state.leaders[1].is_royal_heir = True
 
     result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
@@ -943,7 +1025,7 @@ def test_execute_practice_leaves_is_royal_heir_when_nothing_rises():
     state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
     state.leaders[1].is_royal_heir = True
 
-    # skill=0, aptitude=0 -- both the skill roll and the aptitude-rise
+    # skill=0, aptitude=0 -- both the aptitude gate and the aptitude-rise
     # roll it triggers fail (APT_RISE_CHANCE[0] == 0.0 too).
     result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.99, 0.99]))
 
@@ -954,6 +1036,7 @@ def test_execute_practice_leaves_is_royal_heir_when_nothing_rises():
 
 def test_execute_practice_non_heir_is_royal_heir_stays_false():
     state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
+    state.leaders[1].practice_credit[Ability.MELEE.value] = 96
 
     result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
 
@@ -985,9 +1068,9 @@ def test_execute_practice_group_clears_is_royal_heir_only_for_the_leader_who_act
 
 
 def test_execute_practice_group_sage_rolls_device_discovery_independently_per_leader():
-    # Skill 2 (leader 1, the group's minimum -- guaranteed skill-rise
-    # roll, always succeeds regardless of the scripted value since its
-    # chance is 1.0) and skill 5 (leader 2, static/no roll). Device
+    # Skill 2 (leader 1, the group's minimum -- immediate-rise roll,
+    # always succeeds regardless of the scripted value since deficit is
+    # 0 at aptitude 9) and skill 5 (leader 2, static/no roll). Device
     # chances are pre-attempt-skill-based: leader 1 = 2*5% = 10%, leader
     # 2 = 5*5% = 25%. 0.05 < 10% succeeds for leader 1; 0.30 >= 25% fails
     # for leader 2 -- proving each co-practicer's own roll is genuinely
@@ -1007,7 +1090,7 @@ def test_execute_practice_group_sage_rolls_device_discovery_independently_per_le
         state, [1, 2], Ability.SAGE, rng=ScriptedRandom([0.5, 0.05, 0.01, 0.30], choice_indices=[0])
     )
 
-    assert results[0].skill_rose is True  # the guaranteed-lower-skill roll
+    assert results[0].skill_rose is True  # the immediate-rise (lower-skill) roll
     assert results[0].device_discovered is True
     assert results[0].discovery_granted is not None
     assert results[0].discovery_granted in state.kingdoms[1].discoveries
@@ -1018,11 +1101,12 @@ def test_execute_practice_group_sage_rolls_device_discovery_independently_per_le
 
 
 def test_execute_practice_group_sage_uses_each_leaders_own_pre_attempt_skill():
-    # Tied skill (3 each) -- both get the same 10%-tied skill-rise roll.
-    # Both succeed it (0.01), rising to 4 -- but the device roll must
-    # still use the *pre*-rise skill (3*5% = 15%), not the post-rise one
-    # (4*5% = 20%): 0.17 is above the correct 15% (fails) but below the
-    # wrong 20% (would incorrectly succeed).
+    # Tied skill (3 each), both already at credit 95 so this call's own
+    # +10 tied gain crosses the threshold for both -- a real skill rise
+    # (3 -> 4) via the credit accumulator, not an immediate rise. The
+    # device roll must still use the *pre*-rise skill (3*5% = 15%), not
+    # the post-rise one (4*5% = 20%): 0.17 is above the correct 15%
+    # (fails) but below the wrong 20% (would incorrectly succeed).
     state = _state_with_leaders(
         1,
         2,
@@ -1031,6 +1115,8 @@ def test_execute_practice_group_sage_uses_each_leaders_own_pre_attempt_skill():
             2: _skills_with(Ability.SAGE, skill=3, aptitude=9),
         },
     )
+    state.leaders[1].practice_credit[Ability.SAGE.value] = 95
+    state.leaders[2].practice_credit[Ability.SAGE.value] = 95
 
     results = execute_practice_group(state, [1, 2], Ability.SAGE, rng=ScriptedRandom([0.01, 0.01, 0.17, 0.17]))
 
@@ -1067,7 +1153,7 @@ def test_execute_practice_group_sage_comatose_co_practicer_gets_no_device_roll()
 
 
 def test_execute_practice_group_non_sage_ability_never_rolls_device_discovery():
-    # Only one scripted value, for the group skill-rise roll itself --
+    # Only one scripted value, for the group's own immediate-rise roll --
     # proves no extra draw is consumed for a non-Sage ability (an
     # IndexError would surface otherwise, same proof shape as the solo
     # case's own equivalent test).
@@ -1083,4 +1169,3 @@ def test_execute_practice_group_non_sage_ability_never_rolls_device_discovery():
     results = execute_practice_group(state, [1, 2], Ability.MELEE, rng=ScriptedRandom([0.5]))
 
     assert all(not r.device_discovered for r in results)
-    assert all(r.discovery_granted is None for r in results)

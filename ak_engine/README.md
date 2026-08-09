@@ -18887,7 +18887,7 @@ follow-up request after the original 431-435 plan shipped.
     Berserk-counterattack tests (one where the caster dies, read via
     `state.dead_leaders`) all assert `0`. Ran again: 4040 passed
     unchanged (same 5 tests, now asserting more).
-- **Phase 448 (current)**: real Sage-device Discovery selection
+- **Phase 448**: real Sage-device Discovery selection
   (`turn/practice_execution.py _select_discovery_to_grant()`), sourced
   from `AKGEN_reverse_engineering_report (2).md` SS4.2.1 -- supersedes
   Phase 266's original uniform-random design choice now that a real
@@ -18920,6 +18920,73 @@ follow-up request after the original 431-435 plan shipped.
     `.random()` calls consumed, proving the roll is skipped entirely),
     and a seeded reroll case exercising both the 95%-reroll and
     5%-keep branches. Ran again: 4044 passed (4 new).
+- **Phase 449 (current)**: real Practice mechanic -- persistent
+  per-ability credit accumulator, sourced from `AKGEN_reverse_
+  engineering_report (2).md` SS2/SS6 -- supersedes Phase 44's original
+  single-threshold-roll design now that a real source is available.
+
+  Real per-`PR` sequence: (1) roll the aptitude gate,
+  `roll_practice_aptitude_gate()` -- `P = 2^-max(0, target_skill -
+  aptitude)`, identical to Phase 44's own halving curve, just no longer
+  scaled by a separate per-context "base chance" first (the real engine
+  has none: solo/tied/guaranteed-if-lower all roll the exact same gate).
+  (2) On gate **failure**, the existing `APT_RISE_CHANCE[current_skill]`
+  aptitude-increase roll fires, unchanged from Phase 44. (3) On gate
+  **success**: a strictly-higher-skilled co-practicer present -> the
+  skill rises *immediately*, same as before; otherwise the attempt earns
+  **persistent credit** toward that ability -- `PRACTICE_CREDIT_TIED_
+  GAIN` (10) if tied with a co-practicer this phase, `PRACTICE_CREDIT_
+  SOLO_GAIN` (5) if solo -- stored in new `LeaderState.practice_credit:
+  dict[int, int]` (keyed by `Ability.value`). Once a practicer's own
+  credit for that ability reaches `PRACTICE_CREDIT_RISE_THRESHOLD` (100),
+  the skill rises immediately and 100 is subtracted -- no second gate
+  roll needed for the threshold-crossing attempt itself.
+
+  `practice_credit` is deliberately **not** merged into `SkillTable.
+  raw_values` (which mirrors real GW file bytes, including an
+  already-documented unexplained 31st trailing value) -- this counter has
+  no confirmed real-file representation to preserve, so it stays a pure
+  in-memory field. Documented in its own docstring as sharing the real
+  byte with `Add_Experience`, which this project doesn't implement (no
+  combat/movement/cast-triggered skill growth exists yet, only Practice).
+
+  `GUARANTEED_PRACTICE_CHANCE`/`TIED_SKILL_PRACTICE_CHANCE`/`SOLO_
+  PRACTICE_CHANCE` and `attempt_skill_rise()`/`_chance_after_aptitude_
+  halving()` are removed (the real gate has no per-context base chance to
+  halve); `APT_RISE_CHANCE`/`MAX_SKILL_LEVEL` are unchanged. New
+  `roll_practice_aptitude_gate()` replaces the old fused gate-and-rise
+  function; a new internal `_resolve_practice_attempt()` is the shared
+  core every context (solo/pair/group) now calls.
+
+  **Design choice**: `resolve_practice_solo`/`_pair`/`_group` still take
+  raw `(skill, aptitude, credit)` values, not `LeaderState` directly, even
+  though the real formula is credit-based -- `execute_practice_group()`'s
+  own Phase 310 comatose gate must leave a comatose co-practicer's stored
+  state completely untouched (skill, aptitude, *and now credit*) while
+  still using their *pre-attempt* skill in the group's own tied/minimum
+  comparison; keeping the resolvers pure functions of frozen input values
+  lets the comatose gate skip persisting a resolver's output for exactly
+  one practicer without ever touching `LeaderState` inside the resolver
+  itself. See `practice_execution.py`'s own module docstring for the full
+  rationale.
+  - Ran the full suite before writing new tests: only `tests/test_
+    practice_execution.py` imports the removed names (1 collection
+    error) -- confirmed via a repo-wide grep before touching anything.
+    Rewrote the file's ~50 tests for the new two-stage gate-then-credit
+    model: unaffected sections (Tactical training, Sage discovery
+    selection/granting, most Teacher-merit scenarios, every "immediate
+    rise for the strictly-lower-skill partner" scenario) carried over
+    unchanged, since the immediate-rise branch behaves identically to
+    the old guaranteed-chance path at unconstrained aptitude; tied/solo
+    scenarios that used to assert an instant skill rise from a single
+    roll were rewritten to assert credit accumulation instead (crossing
+    `PRACTICE_CREDIT_RISE_THRESHOLD` via a pre-seeded `practice_credit`
+    value where the original test's intent required a same-call rise,
+    e.g. the Royal-Heir-clearing and Sage pre-attempt-skill tests). Added
+    a new direct test proving a comatose co-practicer's `practice_credit`
+    stays untouched even in a tied scenario that would otherwise write
+    it. Ran again: 4047 passed (3 net new after the ~6 solo/tied tests
+    that collapsed into fewer, more targeted credit-accumulator tests).
 
 ## Setup
 
