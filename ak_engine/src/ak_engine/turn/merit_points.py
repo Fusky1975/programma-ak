@@ -338,10 +338,12 @@ composed from data that already exists:
 - **`ASSASSIN`** (id 43, "Grandfather of Assassins"): `Tit_Pts`, "+1
   per successful assassination." No Assassinate mechanic exists
   anywhere in this project -- field-only, no plausible writer yet.
-- **`DUELLIST`** (id 44, "Captain of the Musketeers"): `Tit_Pts`, "duel
-  merit is transferred: the winner gains the duel's own merit value and
-  the loser loses the same value." The transferred magnitude is never
-  named by the source -- field-only (`duel_merit_net`), no writer.
+- **`DUELLIST`** (id 44, "Captain of the Musketeers"): `Tit_Pts` -- **live
+  as of Phase 443**, credited by `turn/challenge_execution.py
+  _apply_duel_encounter_merit()` at the personal CHALLENGE encounter's
+  own close point: winner +stake/loser -stake, stake 2 for a decisive
+  combat or 1 for an ordinary refusal (`AKGEN_reverse_engineering_report
+  (2).md` SS17).
 - **`WINGMAN`** (id 48, "Air Force Commander"): `Tit_Pts`, "cumulative
   air-combat merit: compiled army-result path awards +1 for an air-unit
   victory and -1 for an air-unit defeat; other encounter awards can add
@@ -349,10 +351,14 @@ composed from data that already exists:
   (`air_combat_merit`) this phase; a future phase could wire the
   confirmed +1/-1 term via `turn/battle_orchestrator.py`.
 - **`CRAVENEST`** (id 49, "King of Cowards") / **`BRAVEST`** (id 50,
-  "Bravest of the Brave"): both `Tit_Pts`-shaped, both sourced from
-  "high-risk personal encounters/challenges" scoring whose exact
-  per-event magnitude isn't named -- field-only (`courage_encounter_
-  merit`/`bravery_merit`), no writer.
+  "Bravest of the Brave"): both `Tit_Pts`-shaped -- **live as of Phase
+  443**, credited by the same `_apply_duel_encounter_merit()` call as
+  Duellist. Cravenest is loser-only (`-1`, no winner credit -- the real
+  dispatcher deliberately skips that branch, making the title's own
+  positive `minpts=5` threshold structurally unreachable). Bravest
+  credits only the CHALLENGE's own protagonist (the challenger) on a
+  decisive win, equal to their own un-recovered hit points
+  (`AKGEN_reverse_engineering_report (2).md` SS18).
 
 **None of these 18 grant Victory Points** (`models/office.py
 OFFICE_VALUE` already reflects this, Phase 81, same as every royal
@@ -800,8 +806,13 @@ def assassin_merit_points(leader: LeaderState) -> int:
 
 
 def duellist_merit_points(leader: LeaderState) -> int:
-    """Captain of the Musketeers (Office.DUELLIST, id 44) -- field-only,
-    the transferred duel-merit magnitude is unconfirmed by the source.
+    """Captain of the Musketeers (Office.DUELLIST, id 44) -- **live as of
+    Phase 443**. Credited by ``turn/challenge_execution.py
+    _apply_duel_encounter_merit()`` at the personal CHALLENGE encounter's
+    own close point: the winner gains and the loser loses a stake of 2
+    for a decisive combat or 1 for an ordinary refused/avoided challenge
+    -- see that function's own docstring for the full sourced formula
+    (``AKGEN_reverse_engineering_report (2).md`` SS17).
     """
 
     return leader.merit_tally.duel_merit_net
@@ -814,13 +825,33 @@ def wingman_merit_points(leader: LeaderState) -> int:
 
 
 def cravenest_merit_points(leader: LeaderState) -> int:
-    """King of Cowards (Office.CRAVENEST, id 49) -- field-only."""
+    """King of Cowards (Office.CRAVENEST, id 49) -- **live as of Phase
+    443**. Credited by the same ``turn/challenge_execution.py
+    _apply_duel_encounter_merit()`` call as Duellist: the *loser* of
+    every ordinary personal-encounter result (refusal or decisive
+    combat) is docked ``-1``; the real compiled dispatcher deliberately
+    skips the winner's own branch for this title. That asymmetry makes
+    this title structurally unreachable in the real build -- a
+    negative-only accumulator can never cross the positive ``minpts=5``
+    threshold (``AKGEN_reverse_engineering_report (2).md`` SS18.5-18.6) --
+    and this port replicates that faithfully rather than "fixing" it.
+    """
 
     return leader.merit_tally.courage_encounter_merit
 
 
 def bravest_merit_points(leader: LeaderState) -> int:
-    """Bravest of the Brave (Office.BRAVEST, id 50) -- field-only."""
+    """Bravest of the Brave (Office.BRAVEST, id 50) -- **live as of Phase
+    443**. Credited by the same ``turn/challenge_execution.py
+    _apply_duel_encounter_merit()`` call, but only to the CHALLENGE's own
+    protagonist (the challenger) when they win a decisive combat: the
+    gain is however many of their own starting hit points they never got
+    back (``CHARACTER_HIT_POINTS - challenger_combatant.hit_points``) --
+    zero for an unscathed win, never credited on a loss, refusal, draw,
+    or magical escape. Not a transfer -- the loser (or the target, if
+    they were the one who won) never loses Bravest points
+    (``AKGEN_reverse_engineering_report (2).md`` SS18.7).
+    """
 
     return leader.merit_tally.bravery_merit
 

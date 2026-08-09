@@ -1123,6 +1123,69 @@ class ChallengeExecutionResult:
     request: ChallengeRequest | None = None
 
 
+def _apply_duel_encounter_merit(
+    challenger: LeaderState,
+    target: LeaderState,
+    *,
+    accepted: bool,
+    winner_leader: LeaderState | None,
+    loser_leader: LeaderState | None,
+    challenger_combatant: Combatant | None,
+) -> None:
+    """Phase 443: Duellist (id 44), Cravenest/King of Cowards (id 49), and
+    Bravest of the Brave (id 50) merit, wired at the personal CHALLENGE
+    encounter's own close point -- ``AKGEN_reverse_engineering_report
+    (2).md`` SS17/SS18 give the exact, disassembly-sourced formulas (all
+    three share the same real "close encounter" dispatcher). Scope:
+    leader-vs-leader CHALLENGE only -- this project's ``execute_challenge``
+    never faces a monster opponent (that path is ``search_execution.py``/
+    ``turn/encounter.py``'s own wandering-encounter mechanics).
+
+    ``accepted=False`` (ordinary refusal, ``_LAvoid``/``_LCow``) is the
+    "avoided" case: stake is 1 rather than 2, and the *refusing* leader
+    (``target``, since ``is_encounter_accepted`` decides whether the
+    target accepts) is the Cravenest loser. A magical escape (``fled``)
+    or an inconclusive draw (``winner is None``) are both excluded from
+    all three titles -- the source's own "successful Cowardly bluff"
+    exclusion (recoded result outside the +-1/+-2 range) is the closest
+    real analogue for an exceptional non-ordinary outcome, so neither
+    caller passes ``winner_leader``/``loser_leader`` for those cases and
+    this function is simply not called for them.
+
+    Cravenest's dispatcher deliberately skips the *winner's* branch --
+    only the loser is ever credited (``-1``), which is exactly why the
+    source shows ``King of Cowards`` as structurally unreachable in the
+    real build (a positive ``minpts=5`` threshold a negative-only
+    accumulator can never cross). That is replicated faithfully here, not
+    "fixed".
+
+    Bravest is not a transfer: only the *protagonist* (the challenger, in
+    this project's framing -- the leader whose own CHALLENGE order is
+    executing) is ever credited, and only when they win, for however many
+    of their own starting hit points they never got back
+    (``CHARACTER_HIT_POINTS - challenger_combatant.hit_points``). A
+    challenger who wins unscathed is credited 0, not skipped -- the
+    ``Inc_Tit`` triplet still gets created, per the source.
+    """
+
+    if not accepted:
+        challenger.merit_tally.duel_merit_net += 1
+        target.merit_tally.duel_merit_net -= 1
+        target.merit_tally.courage_encounter_merit -= 1
+        return
+
+    if winner_leader is None or loser_leader is None:
+        return
+
+    winner_leader.merit_tally.duel_merit_net += 2
+    loser_leader.merit_tally.duel_merit_net -= 2
+    loser_leader.merit_tally.courage_encounter_merit -= 1
+
+    if winner_leader is challenger and challenger_combatant is not None:
+        bravery_gain = CHARACTER_HIT_POINTS - challenger_combatant.hit_points
+        winner_leader.merit_tally.bravery_merit += bravery_gain
+
+
 def execute_challenge(
     state: GameState,
     challenger_leader_id: int,
@@ -1158,6 +1221,9 @@ def execute_challenge(
         rng=rng,
     )
     if not accepted:
+        _apply_duel_encounter_merit(
+            challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
+        )
         return ChallengeExecutionResult(accepted=False, reason="encounter refused")
 
     challenger_combatant = _leader_combatant(challenger, state)
@@ -1190,6 +1256,15 @@ def execute_challenge(
         (challenger_leader_id, request.target_character_id)
         if combat_result.winner == "a"
         else (request.target_character_id, challenger_leader_id)
+    )
+    winner_leader, loser_leader = (challenger, target) if combat_result.winner == "a" else (target, challenger)
+    _apply_duel_encounter_merit(
+        challenger,
+        target,
+        accepted=True,
+        winner_leader=winner_leader,
+        loser_leader=loser_leader,
+        challenger_combatant=challenger_combatant,
     )
     state.remove_leader(loser_id)
     looted_items = loot_defeated_leader(state, winner_id=winner_id, loser_id=loser_id)

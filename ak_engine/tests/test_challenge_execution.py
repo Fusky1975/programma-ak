@@ -17,6 +17,7 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.challenge_execution import (
     ChallengeExecutionResult,
+    _apply_duel_encounter_merit,
     _apply_successful_theft,
     _close_to,
     _leader_combatant,
@@ -31,6 +32,7 @@ from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
+    Combatant,
     CombatRange,
     EncounterCombatResult,
     MeleeRoundOutcome,
@@ -906,6 +908,186 @@ def test_apply_successful_theft_credits_the_thief_prince_merit_tally():
 
     assert thief.merit_tally.successful_thefts == 2
     assert victim.merit_tally.successful_thefts == 0
+
+
+# -- Phase 443: Duellist/Cravenest/Bravest merit -------------------------
+
+
+def test_apply_duel_encounter_merit_refusal_credits_stake_one_and_cravenest_penalty():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_duel_encounter_merit(
+        challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
+    )
+
+    assert challenger.merit_tally.duel_merit_net == 1
+    assert target.merit_tally.duel_merit_net == -1
+    assert target.merit_tally.courage_encounter_merit == -1
+    assert challenger.merit_tally.courage_encounter_merit == 0
+    assert challenger.merit_tally.bravery_merit == 0
+    assert target.merit_tally.bravery_merit == 0
+
+
+def test_apply_duel_encounter_merit_decisive_win_credits_stake_two_cravenest_and_bravery():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    # Challenger won but took 3 hit points of damage along the way.
+    challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS - 3)
+
+    _apply_duel_encounter_merit(
+        challenger,
+        target,
+        accepted=True,
+        winner_leader=challenger,
+        loser_leader=target,
+        challenger_combatant=challenger_combatant,
+    )
+
+    assert challenger.merit_tally.duel_merit_net == 2
+    assert target.merit_tally.duel_merit_net == -2
+    assert target.merit_tally.courage_encounter_merit == -1
+    assert challenger.merit_tally.courage_encounter_merit == 0
+    assert challenger.merit_tally.bravery_merit == 3
+    assert target.merit_tally.bravery_merit == 0
+
+
+def test_apply_duel_encounter_merit_decisive_win_unscathed_credits_zero_bravery():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS)
+
+    _apply_duel_encounter_merit(
+        challenger,
+        target,
+        accepted=True,
+        winner_leader=challenger,
+        loser_leader=target,
+        challenger_combatant=challenger_combatant,
+    )
+
+    assert challenger.merit_tally.bravery_merit == 0
+
+
+def test_apply_duel_encounter_merit_target_wins_credits_no_bravery_to_anyone():
+    # Bravest of the Brave only ever credits the protagonist (the
+    # challenger) -- a target who successfully defends gets Duellist/
+    # Cravenest credit but never Bravest, matching the source's own
+    # protagonist-only semantics.
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS - 5)
+
+    _apply_duel_encounter_merit(
+        challenger,
+        target,
+        accepted=True,
+        winner_leader=target,
+        loser_leader=challenger,
+        challenger_combatant=challenger_combatant,
+    )
+
+    assert target.merit_tally.duel_merit_net == 2
+    assert challenger.merit_tally.duel_merit_net == -2
+    assert challenger.merit_tally.courage_encounter_merit == -1
+    assert target.merit_tally.bravery_merit == 0
+    assert challenger.merit_tally.bravery_merit == 0
+
+
+def test_apply_duel_encounter_merit_no_op_when_no_winner_or_loser():
+    # Draw or magical escape (fled) -- excluded from all three titles.
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_duel_encounter_merit(
+        challenger, target, accepted=True, winner_leader=None, loser_leader=None, challenger_combatant=None
+    )
+
+    assert challenger.merit_tally.duel_merit_net == 0
+    assert target.merit_tally.duel_merit_net == 0
+    assert challenger.merit_tally.courage_encounter_merit == 0
+    assert target.merit_tally.courage_encounter_merit == 0
+    assert challenger.merit_tally.bravery_merit == 0
+    assert target.merit_tally.bravery_merit == 0
+
+
+def test_execute_challenge_refusal_credits_duellist_and_cravenest_merit():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD, is_king=True))
+
+    result = execute_challenge(state, 1, _melee_request(2), rng=ScriptedRandom([]))
+
+    assert result.accepted is False
+    assert state.leaders[1].merit_tally.duel_merit_net == 1
+    assert state.leaders[2].merit_tally.duel_merit_net == -1
+    assert state.leaders[2].merit_tally.courage_encounter_merit == -1
+    assert state.leaders[1].merit_tally.bravery_merit == 0
+
+
+def test_execute_challenge_decisive_combat_credits_duellist_cravenest_and_bravery_merit():
+    state = _base_state()
+    state.add_leader(
+        LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.MELEE, 3, 9))
+    )
+    state.add_leader(
+        LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 0, 9))
+    )
+    rng = ScriptedRandom([0.1, 0.5, 0.9] * 15)
+
+    result = execute_challenge(state, 1, _melee_request(2), rng=rng)
+
+    assert result.winner_leader_id == 1
+    winner = state.leaders[1]
+    assert winner.merit_tally.duel_merit_net == 2
+    assert winner.merit_tally.courage_encounter_merit == 0
+    # B always missed in this scripted combat, so the winner took no damage.
+    assert winner.merit_tally.bravery_merit == 0
+
+
+def test_execute_challenge_fled_credits_no_duel_encounter_merit():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.CHARM, Maneuver.MELEE)
+
+    result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.1]))
+
+    assert result.fled is True
+    assert state.leaders[1].merit_tally.duel_merit_net == 0
+    assert state.leaders[2].merit_tally.duel_merit_net == 0
+    assert state.leaders[1].merit_tally.courage_encounter_merit == 0
+    assert state.leaders[2].merit_tally.courage_encounter_merit == 0
+
+
+def test_execute_challenge_draw_credits_no_duel_encounter_merit():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    rng = ScriptedRandom([0.99] * 3000)
+
+    result = execute_challenge(state, 1, _melee_request(2), rng=rng)
+
+    assert result.winner_leader_id is None
+    assert state.leaders[1].merit_tally.duel_merit_net == 0
+    assert state.leaders[2].merit_tally.duel_merit_net == 0
+    assert state.leaders[1].merit_tally.courage_encounter_merit == 0
+    assert state.leaders[2].merit_tally.courage_encounter_merit == 0
 
 
 def test_resolve_steal_tactic_success_applies_theft():

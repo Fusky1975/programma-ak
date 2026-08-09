@@ -18627,7 +18627,7 @@ follow-up request after the original 431-435 plan shipped.
   a future phase, not addressed here.
   - Ran the full suite before and after (docstring-only edit, no test
     changes needed): 4009 passed unchanged both times.
-- **Phase 442 (current)**: the first real wiring phase off that backlog
+- **Phase 442**: the first real wiring phase off that backlog
   -- `MeritTally.successful_thefts` (Office.THIEF_PRINCE, "+1 per
   successful theft result, full stop", `thiefprince_merit_points()`'s
   own Phase 369 addendum quoting "the compiled code contains two
@@ -18653,6 +18653,63 @@ follow-up request after the original 431-435 plan shipped.
     own math, a different, still-valid concern from testing the real
     writers) needed no changes and stay green. Ran again: 4011 passed
     (2 new).
+- **Phase 443 (current)**: wires 3 more of the backlog fields --
+  `MeritTally.duel_merit_net` (Office.DUELLIST, "Captain of the
+  Musketeers"), `courage_encounter_merit` (Office.CRAVENEST, "King of
+  Cowards"), and `bravery_merit` (Office.BRAVEST, "Bravest of the
+  Brave") -- off a newly user-supplied reverse-engineering dossier
+  (`AKGEN_reverse_engineering_report (2).md` SS17-18, NOT a project
+  file, never committed) that names exact disassembly-sourced formulas
+  the earlier catalog only flagged as "magnitude never named."
+
+  All three share one real "close encounter" dispatcher, mapped onto
+  this project's `turn/challenge_execution.py execute_challenge()` --
+  the personal CHALLENGE encounter (rulebook [3.12]), not `turn/
+  duel.py`'s Supreme Commander duel (the user's own initial guess,
+  corrected after research showed the source names no battle/command
+  context, only a generic personal encounter, matching the "Captain of
+  the Musketeers"/personal-swordplay theme). A new helper,
+  `_apply_duel_encounter_merit()`, is called from each of `execute_
+  challenge()`'s four outcomes:
+  - **Ordinary refusal** (`accepted=False`): Duellist stake is 1 (not
+    2, the "avoided" case) -- challenger +1, refusing target -1.
+    Cravenest docks the refuser -1.
+  - **Decisive combat**: Duellist stake is 2 -- winner +2, loser -2.
+    Cravenest docks the loser -1 only -- the real compiled dispatcher
+    deliberately skips the winner's own branch for this title, which is
+    exactly why the dossier shows `King of Cowards` as structurally
+    unreachable in the real build (a negative-only accumulator can
+    never cross the positive `minpts=5` threshold). Replicated
+    faithfully, not "fixed". Bravest credits only the *protagonist*
+    (the challenger, in this project's framing) when they win, equal to
+    `CHARACTER_HIT_POINTS - challenger_combatant.hit_points` (hit
+    points never recovered, zero for an unscathed win) -- not a
+    transfer; nobody else's Bravest total changes.
+  - **Magical escape** (`fled=True`) and **inconclusive draw**
+    (`combat_result.winner is None`): excluded from all three, mirroring
+    the dossier's own "successful Cowardly bluff" exclusion (a recoded
+    result outside the real `+-1/+-2` range).
+
+  Scope: leader-vs-leader CHALLENGE only -- this project's `execute_
+  challenge()` never faces a monster opponent (that belongs to `search_
+  execution.py`/`turn/encounter.py`'s own wandering-encounter path, out
+  of scope here). `merit_points.py duellist_merit_points()`/`cravenest_
+  merit_points()`/`bravest_merit_points()` docstrings, and the module's
+  own backlog-summary paragraph, updated to point at the new writer.
+
+  The other 3 backlog fields the same dossier resolves --
+  `air_combat_merit` (Wingman, SS19), `diplomatic_merit_points` (Silver
+  Tongue, SS18.3), `teaching_interactions` (Teacher, SS20.1-4), and
+  `successful_assassinations` (Assassin, SS20.5-10) -- are each
+  independent wiring points, planned as their own follow-up phases
+  (444-447), not attempted here.
+  - Ran the full suite before writing new tests (non-breaking check:
+    4011 passed unchanged). Added 9 new tests to `tests/test_challenge_
+    execution.py`: 5 direct unit tests of `_apply_duel_encounter_merit()`
+    (refusal, decisive win with/without damage, target-wins-credits-no-
+    bravery, no-op on draw/fled) plus 4 `execute_challenge()`-level
+    integration tests covering the same four routing branches. Ran
+    again: 4020 passed (9 new).
 
 ## Setup
 
