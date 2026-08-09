@@ -348,9 +348,13 @@ composed from data that already exists:
   officeholder preferred among qualified candidates, else the
   highest-skill one) -- `AKGEN_reverse_engineering_report (2).md`
   SS20.1-2.
-- **`ASSASSIN`** (id 43, "Grandfather of Assassins"): `Tit_Pts`, "+1
-  per successful assassination." No Assassinate mechanic exists
-  anywhere in this project -- field-only, no plausible writer yet.
+- **`ASSASSIN`** (id 43, "Grandfather of Assassins"): `Tit_Pts` --
+  **live as of Phase 447**, credited by `turn/cast_execution.py
+  _execute_kill_enemy()`: `+1` to the caster only at the real lethal
+  branch (success roll passed, not neutralized by Hidden Tattoos) --
+  the "Spy Assassination" ability and the title's own Guild free-attempt
+  perk have no reachable merit credit of their own
+  (`AKGEN_reverse_engineering_report (2).md` SS20.5-10).
 - **`DUELLIST`** (id 44, "Captain of the Musketeers"): `Tit_Pts` -- **live
   as of Phase 443**, credited by `turn/challenge_execution.py
   _apply_duel_encounter_merit()` at the personal CHALLENGE encounter's
@@ -825,8 +829,16 @@ def teacher_merit_points(leader: LeaderState) -> int:
 
 
 def assassin_merit_points(leader: LeaderState) -> int:
-    """Grandfather of Assassins (Office.ASSASSIN, id 43) -- field-only,
-    no Assassinate mechanic exists in this project yet.
+    """Grandfather of Assassins (Office.ASSASSIN, id 43) -- **live as of
+    Phase 447**. Credited by `turn/cast_execution.py _execute_kill_
+    enemy()`: `+1` to the caster only when Kill Enemy (Necromancy)
+    actually kills its target -- not on spell failure (the Berserk
+    counterattack is a different combat), not when Hidden Tattoos
+    neutralizes the kill into disease instead. The separate Spy
+    Assassination ability and the title's own Guild free-attempt perk
+    have no reachable merit credit of their own -- Kill Enemy is the
+    real, only reachable path (`AKGEN_reverse_engineering_report (2).md`
+    SS20.5-10).
     """
 
     return leader.merit_tally.successful_assassinations

@@ -215,6 +215,9 @@ def test_kill_enemy_puts_a_colocated_target_into_a_coma():
     assert result.applied is True
     assert 78 in state.leaders  # comatose, not removed
     assert state.leaders[78].is_comatose is True
+    # Phase 447: Grandfather of Assassins merit -- credited only at this
+    # real lethal branch.
+    assert state.leaders[CASTER_ID].merit_tally.successful_assassinations == 1
 
 
 def test_kill_enemy_fails_when_target_not_colocated():
@@ -253,6 +256,8 @@ def test_kill_enemy_neutralized_by_hidden_tattoos():
     assert result.discovery_defended is Discovery.HIDDEN_TATTOOS
     assert 78 in state.leaders  # survives
     assert state.leaders[78].is_comatose is False  # the ward blocks the coma too
+    # Phase 447: disease, not death -- no Assassin merit credited.
+    assert state.leaders[CASTER_ID].merit_tally.successful_assassinations == 0
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +278,7 @@ def test_kill_enemy_fails_outright_against_a_king_no_roll_consumed():
     assert result.reason == "target is a King, immune to Kill Enemy"
     assert 78 in state.leaders
     assert state.leaders[78].is_comatose is False
+    assert state.leaders[CASTER_ID].merit_tally.successful_assassinations == 0
 
 
 def test_kill_enemy_halves_the_chance_against_an_army_leading_hero():
@@ -350,6 +356,8 @@ def test_kill_enemy_berserk_counterattack_kills_the_caster_on_a_failed_cast():
     # Phase 313, rulebook [5.9]: the retaliator loots the dead caster's items.
     assert result.looted_item_ids == [item.item_id]
     assert state.items[item.item_id].owner_leader_id == 78
+    # Phase 447: a failed cast (Berserk counterattack) never credits Assassin merit.
+    assert state.dead_leaders[CASTER_ID].merit_tally.successful_assassinations == 0
 
 
 def test_kill_enemy_berserk_counterattack_caster_survives_and_kills_the_retaliator():
@@ -372,6 +380,8 @@ def test_kill_enemy_berserk_counterattack_caster_survives_and_kills_the_retaliat
     # Phase 313, rulebook [5.9]: the surviving caster loots the retaliator.
     assert result.looted_item_ids == [item.item_id]
     assert state.items[item.item_id].owner_leader_id == CASTER_ID
+    # Phase 447: a failed cast (Berserk counterattack) never credits Assassin merit.
+    assert state.leaders[CASTER_ID].merit_tally.successful_assassinations == 0
 
 
 def test_charm_succeeds_on_a_real_roll_under_the_casters_chance():

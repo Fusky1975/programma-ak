@@ -18794,7 +18794,7 @@ follow-up request after the original 431-435 plan shipped.
     Kingless Kingdom skipped without raising, and accumulation across
     multiple simultaneously-allied partners. Ran again: 4035 passed (8
     new).
-- **Phase 446 (current)**: wires `MeritTally.teaching_interactions`
+- **Phase 446**: wires `MeritTally.teaching_interactions`
   (Office.TEACHER, "Professor Whizdumb") -- the last of the 5 fields
   resolved this session (`AKGEN_reverse_engineering_report (2).md`
   SS20.1-2).
@@ -18847,6 +18847,46 @@ follow-up request after the original 431-435 plan shipped.
     candidates, falls back to the highest-skill candidate without an
     officeholder, and an aptitude-only rise credits nobody. Ran again:
     4040 passed (5 new).
+- **Phase 447 (current)**: wires `MeritTally.successful_assassinations`
+  (Office.ASSASSIN, "Grandfather of Assassins") off the same dossier
+  (`AKGEN_reverse_engineering_report (2).md` SS20.5-10) -- the last of
+  the 6 backlog fields (`duel_merit_net`, `courage_encounter_merit`,
+  `bravery_merit`, `air_combat_merit`, `diplomatic_merit_points`,
+  `teaching_interactions`, `successful_assassinations`) this session's
+  reverse-engineering dossier resolved, all now wired (Phases 443-447).
+
+  Real formula: `+1` to the caster only when Kill Enemy (Necromancy)
+  actually kills its target -- not on spell failure (the Berserk
+  counterattack is a wholly separate combat, `_execute_kill_enemy()`'s
+  own earlier Phase 310 addendum), not when Hidden Tattoos neutralizes
+  the kill into disease instead. A second compiled call site in the
+  source is confirmed dead code (a logically unreachable flag
+  condition) and is deliberately not replicated. The separate Spy
+  Assassination ability and the title's own Guild free-assassination-
+  attempt perk both have no reachable merit credit of their own in the
+  real build -- Kill Enemy is the only real path, closing this
+  project's own long-standing "no Assassinate mechanic exists" note,
+  which turns out to have been about the wrong mechanic (the Guild
+  perk) rather than Kill Enemy (already implemented since Phase 310).
+
+  One line added to `turn/cast_execution.py _execute_kill_enemy()`, at
+  the exact real lethal branch (success roll passed, Hidden Tattoos
+  check already `False`): `caster.merit_tally.successful_
+  assassinations += 1`, immediately before `target.is_comatose = True`.
+
+  `merit_points.py assassin_merit_points()`'s docstring, and the
+  module's own backlog-summary paragraph, updated to point at the new
+  writer.
+  - Ran the full suite before writing new tests (non-breaking check:
+    4040 passed unchanged). Extended 5 existing `tests/test_cast_
+    execution.py` Kill Enemy tests in place (no new test functions
+    needed -- the real lethal/defended/failed branches were already
+    each covered by their own dedicated test) with Assassin-merit
+    assertions: the coma-success test now also asserts `+1`; the Hidden
+    Tattoos test asserts `0`; the King-immunity and both real-RNG
+    Berserk-counterattack tests (one where the caster dies, read via
+    `state.dead_leaders`) all assert `0`. Ran again: 4040 passed
+    unchanged (same 5 tests, now asserting more).
 
 ## Setup
 

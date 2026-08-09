@@ -1328,6 +1328,13 @@ def _execute_kill_enemy(
     if target.kingdom_id is not None and Discovery.HIDDEN_TATTOOS in state.kingdoms[target.kingdom_id].discoveries:
         return CastExecutionResult(request, applied=True, discovery_defended=Discovery.HIDDEN_TATTOOS)
 
+    # Phase 447: Grandfather of Assassins (Office.ASSASSIN, id 43) merit
+    # -- AKGEN_reverse_engineering_report (2).md SS20.5-10 -- credits the
+    # caster only at this real lethal branch (success roll passed, not
+    # Hidden-Tattoos-defended). Not credited on spell failure (the
+    # Berserk-counterattack branch above is a different combat entirely)
+    # or on a Hidden Tattoos defense (disease, no kill).
+    caster.merit_tally.successful_assassinations += 1
     target.is_comatose = True
     return CastExecutionResult(request, applied=True)
 
