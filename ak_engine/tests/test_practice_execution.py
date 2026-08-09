@@ -710,12 +710,15 @@ def test_execute_practice_sage_device_discovery_succeeds():
     # turn"). Chance = 4 * 5% = 20%. First roll (0.99) fails the ordinary
     # skill-rise attempt; second roll (0.15) succeeds the independent
     # device-discovery roll. A successful roll now also grants a real
-    # Discovery (Phase 266) -- choice_indices=[0] picks the first
-    # not-yet-owned Discovery deterministically.
+    # Discovery (Phase 266) -- choice_indices=[0] picks the first eligible
+    # not-yet-owned Discovery deterministically. Phase 448: a fresh state's
+    # ``discoveries_first_found_by`` is empty, so the picked candidate
+    # isn't yet owned by any Kingdom in the world -- a third scripted roll
+    # (0.01) is needed for the 5% world-diffusion keep check.
     state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=4, aptitude=9))
 
     result = execute_practice(
-        state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15], choice_indices=[0])
+        state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15, 0.01], choice_indices=[0])
     )
 
     assert result.skill_rose is False
@@ -774,32 +777,91 @@ def test_execute_practice_non_sage_ability_never_sets_device_discovered():
 # -- Phase 266: Sage device-discovery acquisition (granting a real Discovery) --
 
 
-def test_select_discovery_to_grant_picks_uniformly_among_not_yet_owned():
+def test_select_discovery_to_grant_excludes_already_owned():
+    state = GameState()
     kingdom = KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION)
     kingdom.discoveries = {Discovery.LAND_SHIP, Discovery.SCYTHED_CHARIOTS}
+    state.discoveries_first_found_by[Discovery.PONY_EXPRESS] = 1  # keep deterministic: no diffusion roll needed
 
     # choice_indices=[0] picks the first entry of the *filtered* list --
-    # confirms the two already-owned discoveries were excluded from it.
-    granted = _select_discovery_to_grant(kingdom, ScriptedRandom([], choice_indices=[0]))
+    # confirms the two already-owned discoveries were excluded from it
+    # (PONY_EXPRESS, ordinal 2, is the first eligible one left).
+    granted = _select_discovery_to_grant(state, kingdom, ScriptedRandom([], choice_indices=[0]))
 
-    assert granted is not None
-    assert granted not in {Discovery.LAND_SHIP, Discovery.SCYTHED_CHARIOTS}
+    assert granted is Discovery.PONY_EXPRESS
 
 
 def test_select_discovery_to_grant_returns_none_when_kingdom_owns_everything():
+    state = GameState()
     kingdom = KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION)
     kingdom.discoveries = set(Discovery)
 
-    granted = _select_discovery_to_grant(kingdom, ScriptedRandom([], choice_indices=[]))
+    granted = _select_discovery_to_grant(state, kingdom, ScriptedRandom([], choice_indices=[]))
 
     assert granted is None
+
+
+def test_select_discovery_to_grant_permanently_excludes_hieroglyphic_and_scientific_method():
+    # AKGEN_reverse_engineering_report (2).md SS4.2.1: these two ordinals
+    # are never selected by ordinary research, even when they're the only
+    # discoveries the kingdom doesn't already own.
+    state = GameState()
+    kingdom = KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION)
+    kingdom.discoveries = set(Discovery) - {
+        Discovery.LAND_SHIP,
+        Discovery.HIEROGLYPHIC_TRANSLATION,
+        Discovery.SCIENTIFIC_METHOD,
+    }
+    state.discoveries_first_found_by[Discovery.LAND_SHIP] = 1  # skip the diffusion roll
+
+    granted = _select_discovery_to_grant(state, kingdom, ScriptedRandom([], choice_indices=[0]))
+
+    assert granted is Discovery.LAND_SHIP
+
+
+def test_select_discovery_to_grant_returns_none_when_only_excluded_ordinals_remain():
+    state = GameState()
+    kingdom = KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION)
+    kingdom.discoveries = set(Discovery) - {Discovery.HIEROGLYPHIC_TRANSLATION, Discovery.SCIENTIFIC_METHOD}
+
+    granted = _select_discovery_to_grant(state, kingdom, ScriptedRandom([], choice_indices=[]))
+
+    assert granted is None
+
+
+def test_select_discovery_to_grant_always_keeps_a_candidate_the_world_already_owns():
+    # No scripted .random() values at all -- an IndexError would surface
+    # if the diffusion-bias roll were consumed, proving it's skipped
+    # entirely whenever some Kingdom in the world already has it.
+    state = GameState()
+    kingdom = KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION)
+    state.discoveries_first_found_by[Discovery.LAND_SHIP] = 7
+
+    granted = _select_discovery_to_grant(state, kingdom, ScriptedRandom([], choice_indices=[0]))
+
+    assert granted is Discovery.LAND_SHIP
+
+
+def test_select_discovery_to_grant_rerolls_95_percent_of_the_time_when_world_lacks_it():
+    # Neither candidate is in discoveries_first_found_by. The first pick
+    # (LAND_SHIP, index 0) rolls 0.5 -- above the 5% keep chance, so it's
+    # rerolled; the second pick (SCYTHED_CHARIOTS, index 1) rolls 0.01 --
+    # below 5%, so it's kept.
+    state = GameState()
+    kingdom = KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION)
+
+    granted = _select_discovery_to_grant(
+        state, kingdom, ScriptedRandom([0.5, 0.01], choice_indices=[0, 1])
+    )
+
+    assert granted is Discovery.SCYTHED_CHARIOTS
 
 
 def test_execute_practice_sage_discovery_grants_a_real_discovery_to_the_kingdom():
     state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=4, aptitude=9))
 
     result = execute_practice(
-        state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15], choice_indices=[0])
+        state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15, 0.01], choice_indices=[0])
     )
 
     assert result.device_discovered is True
@@ -836,7 +898,7 @@ def test_execute_practice_sage_discovery_credits_the_worlds_first_discoverer():
     state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=4, aptitude=9))
 
     result = execute_practice(
-        state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15], choice_indices=[0])
+        state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.15, 0.01], choice_indices=[0])
     )
 
     assert result.discovery_granted is Discovery.LAND_SHIP
@@ -929,7 +991,9 @@ def test_execute_practice_group_sage_rolls_device_discovery_independently_per_le
     # chances are pre-attempt-skill-based: leader 1 = 2*5% = 10%, leader
     # 2 = 5*5% = 25%. 0.05 < 10% succeeds for leader 1; 0.30 >= 25% fails
     # for leader 2 -- proving each co-practicer's own roll is genuinely
-    # independent, not shared or skipped.
+    # independent, not shared or skipped. The third scripted roll (0.01)
+    # is leader 1's own world-diffusion keep check (Phase 448) -- a fresh
+    # state's discoveries_first_found_by is empty.
     state = _state_with_leaders(
         1,
         2,
@@ -940,7 +1004,7 @@ def test_execute_practice_group_sage_rolls_device_discovery_independently_per_le
     )
 
     results = execute_practice_group(
-        state, [1, 2], Ability.SAGE, rng=ScriptedRandom([0.5, 0.05, 0.30], choice_indices=[0])
+        state, [1, 2], Ability.SAGE, rng=ScriptedRandom([0.5, 0.05, 0.01, 0.30], choice_indices=[0])
     )
 
     assert results[0].skill_rose is True  # the guaranteed-lower-skill roll

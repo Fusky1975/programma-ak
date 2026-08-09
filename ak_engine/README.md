@@ -18847,7 +18847,7 @@ follow-up request after the original 431-435 plan shipped.
     candidates, falls back to the highest-skill candidate without an
     officeholder, and an aptitude-only rise credits nobody. Ran again:
     4040 passed (5 new).
-- **Phase 447 (current)**: wires `MeritTally.successful_assassinations`
+- **Phase 447**: wires `MeritTally.successful_assassinations`
   (Office.ASSASSIN, "Grandfather of Assassins") off the same dossier
   (`AKGEN_reverse_engineering_report (2).md` SS20.5-10) -- the last of
   the 6 backlog fields (`duel_merit_net`, `courage_encounter_merit`,
@@ -18887,6 +18887,39 @@ follow-up request after the original 431-435 plan shipped.
     Berserk-counterattack tests (one where the caster dies, read via
     `state.dead_leaders`) all assert `0`. Ran again: 4040 passed
     unchanged (same 5 tests, now asserting more).
+- **Phase 448 (current)**: real Sage-device Discovery selection
+  (`turn/practice_execution.py _select_discovery_to_grant()`), sourced
+  from `AKGEN_reverse_engineering_report (2).md` SS4.2.1 -- supersedes
+  Phase 266's original uniform-random design choice now that a real
+  source is available.
+
+  Two real rules: (1) ordinals 18/19 (`Discovery.HIEROGLYPHIC_
+  TRANSLATION`/`Discovery.SCIENTIFIC_METHOD`) are permanently excluded
+  from ordinary research -- only obtainable via starting equipment or
+  trade; (2) a "world diffusion bias" -- a candidate discovery already
+  owned by *some* Kingdom in the world (`GameState.discoveries_first_
+  found_by`, already tracked permanently) is always kept, but a
+  candidate no Kingdom has ever owned is kept only 5% of the time
+  (`DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE`), rerolling 95% of the time --
+  biasing the world toward discoveries that already exist somewhere
+  rather than spreading first-ever discoveries evenly.
+
+  `_select_discovery_to_grant()`'s signature grows a `state: GameState`
+  parameter (its one caller, `_roll_sage_device_discovery()`, already had
+  `state` in scope); the reroll loop is capped at 200 attempts
+  (`_DISCOVERY_SELECTION_MAX_ATTEMPTS`), a defensive, non-authoritative
+  bound guaranteeing termination, not a sourced magnitude.
+  - Ran the full suite before writing new tests: 6 pre-existing tests
+    failed, all needing an extra scripted `.random()` value for the new
+    diffusion-bias roll or the new `state` parameter -- no other
+    regressions (4034 passed, 6 failed, matching the expected blast
+    radius exactly). Rewrote those 6 and added 4 new ones to `tests/
+    test_practice_execution.py`: permanent 18/19 exclusion (even when
+    they're the only "missing" discoveries), `None` when only excluded
+    ordinals remain, a world-already-has-it candidate always kept (zero
+    `.random()` calls consumed, proving the roll is skipped entirely),
+    and a seeded reroll case exercising both the 95%-reroll and
+    5%-keep branches. Ran again: 4044 passed (4 new).
 
 ## Setup
 

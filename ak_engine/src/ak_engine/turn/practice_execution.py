@@ -180,15 +180,19 @@ phase's scope for each:
   ``models/discovery.py``'s own confirmed data (``discval`` is a pure
   *display-order* key, not a difficulty/weight) gives no basis for
   weighting one of the 64 discoveries over another. ``_select_discovery_
-  to_grant()`` therefore picks uniformly at random among the kingdom's
+  to_grant()`` originally picked uniformly at random among the kingdom's
   not-yet-owned discoveries -- an explicit, unsourced design choice in
   the same category as ``turn/spy_table.py estimate_reported_value()``'s
   own uniform perturbation shape (Phase 265): no information favors any
-  other distribution. A kingdom that has somehow already collected all
-  64 (exhausted) or a leader with no ``kingdom_id`` (an independent Hero
-  -- nowhere to grant a *kingdom*-level Discovery to) both leave
-  ``discovery_granted`` at ``None`` while ``device_discovered`` still
-  reports the roll's own outcome honestly. The discovered device's own
+  other distribution. **Phase 448 supersedes this** with the real
+  engine's own selection rule, now sourced via
+  ``AKGEN_reverse_engineering_report (2).md`` SS4.2.1 -- see
+  ``_select_discovery_to_grant()``'s own docstring for the diffusion-bias
+  and permanent-exclusion details. A kingdom that has somehow already
+  collected all 64 (exhausted) or a leader with no ``kingdom_id`` (an
+  independent Hero -- nowhere to grant a *kingdom*-level Discovery to)
+  both leave ``discovery_granted`` at ``None`` while ``device_discovered``
+  still reports the roll's own outcome honestly. The discovered device's own
   mechanical effect (``models/discovery.py``'s ability-bonus/anti-spell/
   revenue-bonus data) is now wired into real gameplay too -- see
   ``turn/discovery_effects.py`` (Phase 269, ability bonuses) and ``turn/
@@ -419,16 +423,45 @@ def _get_or_create_skills(leader: LeaderState) -> SkillTable:
     return leader.skills
 
 
-def _select_discovery_to_grant(kingdom: KingdomState, rng: random.Random) -> Discovery | None:
-    """Uniformly picks a ``Discovery`` the kingdom doesn't already own -- see
-    module docstring's Phase 266 note for why uniform, unweighted selection
-    is the documented, unsourced design choice here. Returns ``None`` if
-    the kingdom already owns all 64 (exhausted)."""
+DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE = 0.05
 
-    available = [d for d in Discovery if d not in kingdom.discoveries]
+# AKGEN_reverse_engineering_report (2).md SS4.2.1: these two ordinals are
+# never selected by ordinary Sage-device research in the real engine --
+# only obtainable via starting equipment or trade.
+DISCOVERY_RESEARCH_EXCLUDED = (Discovery.HIEROGLYPHIC_TRANSLATION, Discovery.SCIENTIFIC_METHOD)
+
+# Defensive, non-authoritative bound guaranteeing _select_discovery_to_grant
+# terminates: the real diffusion-bias reroll loop has no documented cap, but
+# every retry independently has at least a 5% keep chance, so 200 attempts
+# is astronomically more than enough while still being a hard stop.
+_DISCOVERY_SELECTION_MAX_ATTEMPTS = 200
+
+
+def _select_discovery_to_grant(state: GameState, kingdom: KingdomState, rng: random.Random) -> Discovery | None:
+    """Picks a ``Discovery`` the kingdom doesn't already own, per the real engine's
+    diffusion-biased selection (AKGEN_reverse_engineering_report (2).md
+    SS4.2.1, Phase 448) -- supersedes Phase 266's original uniform-random
+    design choice now that a real source is available. Ordinals 18/19
+    (``DISCOVERY_RESEARCH_EXCLUDED``) are permanently excluded from ordinary
+    research. Among the remaining not-yet-owned discoveries, a candidate
+    already owned by *some* Kingdom in the world (``GameState.discoveries_
+    first_found_by``) is always kept; a candidate no Kingdom has ever owned
+    is kept only 5% of the time (``DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE``),
+    biasing the world toward discoveries that already exist somewhere.
+    Returns ``None`` if no eligible discovery remains (kingdom owns
+    everything eligible) or the retry bound is exhausted."""
+
+    available = [d for d in Discovery if d not in kingdom.discoveries and d not in DISCOVERY_RESEARCH_EXCLUDED]
     if not available:
         return None
-    return rng.choice(available)
+
+    for _ in range(_DISCOVERY_SELECTION_MAX_ATTEMPTS):
+        candidate = rng.choice(available)
+        if candidate in state.discoveries_first_found_by:
+            return candidate
+        if rng.random() < DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE:
+            return candidate
+    return None
 
 
 def _roll_sage_device_discovery(
@@ -452,7 +485,7 @@ def _roll_sage_device_discovery(
     if device_discovered and leader.kingdom_id is not None:
         kingdom = state.kingdoms.get(leader.kingdom_id)
         if kingdom is not None:
-            discovery_granted = _select_discovery_to_grant(kingdom, rng)
+            discovery_granted = _select_discovery_to_grant(state, kingdom, rng)
             if discovery_granted is not None:
                 kingdom.discoveries.add(discovery_granted)
                 # Phase 271 (Chancellor Merit Points, user-specified
