@@ -1729,6 +1729,12 @@ def _resolve_search_encounter(
             return None  # this attempt found nothing -- plan continues
         level = effective_skill_level(state, leader, Ability.THIEF)
         if resolve_steal_attempt(level, rng):
+            # Phase 442: one of the real compiled formula's own "two
+            # separate success paths that award the [Prince of Thieves]
+            # point" (turn/merit_points.py thiefprince_merit_points()'s
+            # own Phase 369 addendum) -- this one, Search's own Steal
+            # against a guarded feature's hoard.
+            leader.merit_tally.successful_thefts += 1
             return _outcome_from(EncounterCombatResult(winner="a", rounds=0))
         if resolve_steal_evasion(level, rng):
             return None  # failed, but not caught -- plan continues

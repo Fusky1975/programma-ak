@@ -890,6 +890,24 @@ def test_apply_successful_theft_is_a_no_op_when_the_victim_holds_nothing():
     assert state.items_held_by(1) == []
 
 
+def test_apply_successful_theft_credits_the_thief_prince_merit_tally():
+    # Phase 442: MeritTally.successful_thefts -- one of the real compiled
+    # formula's own "two separate success paths" (thiefprince_merit_
+    # points()'s own Phase 369 addendum). Credited regardless of whether
+    # the victim actually held an item to take.
+    state = _base_state()
+    thief = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)
+    victim = LeaderState(2, kingdom_id=2, name="Victim", location=FIELD)
+    state.add_leader(thief)
+    state.add_leader(victim)
+
+    _apply_successful_theft(state, thief, victim)
+    _apply_successful_theft(state, thief, victim)
+
+    assert thief.merit_tally.successful_thefts == 2
+    assert victim.merit_tally.successful_thefts == 0
+
+
 def test_resolve_steal_tactic_success_applies_theft():
     state = _base_state()
     thief = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)

@@ -618,8 +618,21 @@ def _apply_successful_theft(state: GameState, thief: LeaderState, victim: Leader
     matching ``turn/trade_execution.py execute_give()``'s own established
     "one item per order" convention, this project's only other real
     item-transfer mechanic, rather than guessing at "all of them."
+
+    **Phase 442**: also credits ``MeritTally.successful_thefts`` -- the
+    other of the real compiled formula's own "two separate success paths
+    that award the [Prince of Thieves] point" (`turn/merit_points.py
+    thiefprince_merit_points()`'s own Phase 369 addendum), sibling to
+    `turn/search_execution.py _resolve_steal()`'s own credit for a
+    guarded-feature Steal. This one fires on every real theft ["success"]
+    outcome, regardless of whether the victim held an item to actually
+    take -- the rulebook's own "+1 per successful theft result" reads as
+    "the Steal attempt itself succeeded," not "and something was
+    physically stolen," matching the unconditional gold-or-item wording
+    that already treats an empty-handed success as still a success.
     """
 
+    thief.merit_tally.successful_thefts += 1
     items = state.items_held_by(victim.leader_id)
     if items:
         state.transfer_item(items[0].item_id, thief.leader_id)

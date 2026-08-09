@@ -2056,6 +2056,24 @@ def test_execute_search_steal_success_loots_the_feature():
     assert feature.looted is True
 
 
+def test_execute_search_steal_success_credits_the_thief_prince_merit_tally():
+    # Phase 442: MeritTally.successful_thefts -- the other of the real
+    # compiled formula's own "two separate success paths" (thiefprince_
+    # merit_points()'s own Phase 369 addendum), sibling to challenge_
+    # execution.py's own character-vs-character Steal credit.
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    request = _steal_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
+    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert state.leaders[LEADER_ID].merit_tally.successful_thefts == 1
+
+
 def test_execute_search_steal_failure_evades_falls_through():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))

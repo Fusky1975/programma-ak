@@ -580,7 +580,13 @@ def evilking_merit_points(state: GameState, leader: LeaderState) -> int:
 def thiefprince_merit_points(state: GameState, leader: LeaderState) -> int:
     """Prince of Thieves (Office.THIEF_PRINCE) -- open to a King or a
     Hero, reformulated Phase 369: `+1` per successful theft result.
-    `successful_thefts` currently always reads 0 (no writer yet).
+    `successful_thefts` is **live as of Phase 442**, credited at both of
+    this project's own real Steal-success sites: `turn/challenge_
+    execution.py _apply_successful_theft()` (character-vs-character
+    Steal, Phase 305) and `turn/search_execution.py _resolve_steal()`
+    (Steal against a guarded feature's hoard, Phase 132/239) -- the two
+    places in this port that mirror the real compiled formula's own "two
+    separate success paths that award the point."
     """
 
     return leader.merit_tally.successful_thefts

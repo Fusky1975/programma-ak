@@ -18599,7 +18599,7 @@ Phase 435 plan had flagged as "a substantially larger feature" -- the
 last of the three residual report-layout details from the user's own
 follow-up request after the original 431-435 plan shipped.
 
-- **Phase 441 (current)**: documentation-only correction, no behavior
+- **Phase 441**: documentation-only correction, no behavior
   change. The user asked to return to closing genuine engine-wiring
   gaps, specifically naming Marshal/Admiral/Defender/Priest's own
   `MeritTally` counters as "read by the formulas but never incremented
@@ -18627,6 +18627,32 @@ follow-up request after the original 431-435 plan shipped.
   a future phase, not addressed here.
   - Ran the full suite before and after (docstring-only edit, no test
     changes needed): 4009 passed unchanged both times.
+- **Phase 442 (current)**: the first real wiring phase off that backlog
+  -- `MeritTally.successful_thefts` (Office.THIEF_PRINCE, "+1 per
+  successful theft result, full stop", `thiefprince_merit_points()`'s
+  own Phase 369 addendum quoting "the compiled code contains two
+  separate success paths that award the point"). Credited at both of
+  this project's own real Steal-success sites, matching that "two
+  separate paths" description: `turn/challenge_execution.py
+  _apply_successful_theft()` (character-vs-character Steal, rulebook
+  [5.5], Phase 305 -- fires on every real theft regardless of whether
+  the victim held an item to actually take, since the rulebook's own
+  "+1 per successful theft result" is about the attempt succeeding, not
+  about loot changing hands) and `turn/search_execution.py
+  _resolve_steal()` (Steal against a guarded feature's hoard, rulebook
+  [5.4], Phase 132/239). `merit_points.py thiefprince_merit_points()`'s
+  own docstring updated to point at both real write sites, replacing its
+  old "currently always reads 0 (no writer yet)" line.
+  - Ran the full suite before writing new tests (non-breaking check:
+    4009 passed unchanged). Added 2 new tests: `tests/test_challenge_
+    execution.py test_apply_successful_theft_credits_the_thief_prince_
+    merit_tally` and `tests/test_search_execution.py test_execute_
+    search_steal_success_credits_the_thief_prince_merit_tally` -- the
+    two existing formula-level `test_merit_points.py` tests (which
+    already hand-set the field to unit-test `thiefprince_merit_points()`'s
+    own math, a different, still-valid concern from testing the real
+    writers) needed no changes and stay green. Ran again: 4011 passed
+    (2 new).
 
 ## Setup
 
