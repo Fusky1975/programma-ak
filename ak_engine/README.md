@@ -19021,7 +19021,7 @@ follow-up request after the original 431-435 plan shipped.
     for those titles so the tests isolate the mechanic under test,
     documented inline rather than silently avoided. Ran again: 4054
     passed (7 new).
-- **Phase 451 (current)**: real Emperor election win condition --
+- **Phase 451**: real Emperor election win condition --
   `tally_emperor_vote()` rewritten off `AKGEN_reverse_engineering_report
   (2).md` SS13.3/SS13.5 -- supersedes this module's original design
   (Phase 228) of comparing a candidate's share against the sum of
@@ -19061,6 +19061,45 @@ follow-up request after the original 431-435 plan shipped.
     at turn >= 25, a genuine tie resolved by ascending-voter-scan order,
     and a below-R-for-everyone no-winner case. Ran again: 4059 passed (5
     new after the 4-test signature fix).
+- **Phase 452 (current)**: Druidic monster battle assistance -- core
+  formulas, new `turn/druidic_monster_aid.py`, sourced from `AKGEN_
+  reverse_engineering_report (2).md` SS5. Nothing like this mechanic
+  existed in this project before: a Feature's own guardian monster may
+  join a Druidic-aligned side's battle line, strengthening one column,
+  without ever being recruited or placed under anyone's command. Phase
+  453 will wire the result into real combat; this phase only builds the
+  three pure formulas plus the per-province scan.
+
+  `monster_effective_alignment()`: the real `Agent_Align` formula --
+  `q = 256 + feature_id + monster_id`, `direction` fixed by `q`'s own
+  bit 3, walks up to `view_variation` steps from `base_view`, stopping
+  early the moment `q` goes even, clamped to ordinals 0-8
+  (`Alignment.DIVINE`..`Alignment.MECHANICAL` -- `Alignment.SPECIAL`,
+  ordinal 9, is never a reachable walk endpoint, matching this project's
+  other Alignment-ordinal tables' own confirmed gap for it).
+  `monster_join_probability()`: `d_D >= d_E` (the effective alignment's
+  own distance from Druidic is no smaller than its distance from the
+  enemy) means 0% eligible -- including the degenerate Druidic-vs-
+  Druidic case, handled without a division by zero; otherwise
+  `1 - d_D/d_E`. `monster_strength_bonus()`: `floor(hit_points *
+  (melee_damage + missile_damage) / 50)` -- the Gold Dragon's own real
+  stats give exactly 21, the source's own worked example.
+  `find_druidic_monster_assistance()` scans every unlooted, guardian-
+  bearing Feature at a province (ascending `feature_id` order), rolls
+  each eligible monster's own join chance once, and assigns a random
+  0-based battle column on success -- a column an earlier monster in the
+  same scan already claimed discards the later one outright, no retry.
+  - Ran the full suite before writing new tests: unaffected (4059
+    passed unchanged) -- an entirely new, unwired module. Added 19 tests
+    to new `tests/test_druidic_monster_aid.py`: the alignment walk's
+    early-break/multi-step/both-boundary-clamp cases (worked examples
+    computed and cross-checked via a scratch script before writing
+    assertions, not hand-derived), the probability formula's certain/
+    worked-example/zero/Druidic-vs-Druidic cases, the strength bonus's
+    Gold Dragon worked example and its own floor behavior, and the
+    province scan's success/ineligible/failed-roll/looted/no-guardian/
+    wrong-province/column-collision/scan-order cases. Ran again: 4078
+    passed (19 new).
 
 ## Setup
 
