@@ -183,12 +183,13 @@ from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.models.treasure import MONSTER_SUMMONING_TREASURE, RACE_LEADERSHIP_TREASURE
 from ak_engine.turn.aftermath import FORMATION_DIVISOR, roll_quality_change
-from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability, roll_terrain_line_length_cap
+from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability, line_length_for_battle, roll_terrain_line_length_cap
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit, quality_one_level_down
 from ak_engine.turn.challenge_execution import resolve_challenge_combat
 from ak_engine.turn.combat import Quality, direct_destruction_probability
 from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.druidic_monster_aid import find_druidic_monster_assistance
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant
 from ak_engine.turn.initiative import character_initiative
@@ -1573,6 +1574,36 @@ def fight_battle(
     # same real terrain already resolved above.
     terrain_line_length_cap = roll_terrain_line_length_cap(terrain, rng)
 
+    # Druidic monster battle assistance (Phase 453, AKGEN_reverse_
+    # engineering_report (2).md SS5) -- whichever side is Druidic-aligned
+    # may get help from a Feature's own guardian monster at this
+    # province. See turn/druidic_monster_aid.py's own module docstring
+    # for the full formula; a Druidic side fighting another Druidic side
+    # is a natural no-op via monster_join_probability's own d_D >= d_E
+    # rule, so no special case is needed beyond computing it for
+    # whichever side(s) actually qualify. The attacker's own Alignment is
+    # always known (a real acting Kingdom); the defender's is the
+    # province's owning Kingdom's own Alignment -- unclaimed/wilderness
+    # provinces (no owner) simply can't supply an enemy_alignment for the
+    # attacker's own assistance roll, matching how Exploration advantage
+    # above already treats a None owner as "nothing to compare against".
+    attacker_column_bonus: dict[int, int] | None = None
+    defender_column_bonus: dict[int, int] | None = None
+    attacker_alignment = state.kingdoms[attacker_kingdom_id].alignment
+    defender_alignment = state.kingdoms[defender_kingdom_id].alignment if defender_kingdom_id is not None else None
+    if Alignment.DRUID in (attacker_alignment, defender_alignment):
+        line_length = line_length_for_battle(
+            len(attacker_units), len(defender_units), terrain_line_length_cap=terrain_line_length_cap
+        )
+        if attacker_alignment is Alignment.DRUID and defender_alignment is not None:
+            attacker_column_bonus = find_druidic_monster_assistance(
+                state, province_coord, defender_alignment, line_length, rng
+            )
+        if defender_alignment is Alignment.DRUID:
+            defender_column_bonus = find_druidic_monster_assistance(
+                state, province_coord, attacker_alignment, line_length, rng
+            )
+
     battle_result = resolve_battle(
         attacker_units,
         defender_units,
@@ -1580,6 +1611,8 @@ def fight_battle(
         attacker_tactical_ability=attacker_ability_level,
         defender_tactical_ability=defender_ability_level,
         is_first_turn=state.turn_number <= 1,
+        attacker_column_bonus=attacker_column_bonus,
+        defender_column_bonus=defender_column_bonus,
         rng=rng,
     )
 

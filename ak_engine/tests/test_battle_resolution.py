@@ -72,6 +72,49 @@ def test_resolve_battle_neutral_luck_favors_the_defender_when_the_ratio_is_rever
     assert result.winner == "defender"
 
 
+# -- Phase 453: Druidic monster battle assistance column bonus --------------
+
+
+def test_resolve_battle_attacker_column_bonus_adds_directly_to_that_columns_strength():
+    rng = ScriptedRandom([0.0, 0.0, 0.0, 0.0])
+
+    result = resolve_battle([unit(10)], [unit(10)], attacker_column_bonus={0: 15}, rng=rng)
+
+    assert result.columns[0].attacker_strength == 25
+    assert result.columns[0].defender_strength == 10
+    assert result.winner == "attacker"
+
+
+def test_resolve_battle_defender_column_bonus_adds_directly_to_that_columns_strength():
+    rng = ScriptedRandom([0.0, 0.0, 0.0, 0.0])
+
+    result = resolve_battle([unit(10)], [unit(10)], defender_column_bonus={0: 15}, rng=rng)
+
+    assert result.columns[0].attacker_strength == 10
+    assert result.columns[0].defender_strength == 25
+    assert result.winner == "defender"
+
+
+def test_resolve_battle_column_bonus_out_of_range_index_is_ignored():
+    # Equal raw strength with no real bonus applied nets to a BRES tie,
+    # needing break_bres_tie()'s own extra draws -- same 0.1/0.9 safety
+    # pair convention as this module's own _luck_draws() helper.
+    rng = ScriptedRandom([0.0, 0.0, 0.0, 0.0, 0.1, 0.9])
+
+    result = resolve_battle([unit(10)], [unit(10)], attacker_column_bonus={5: 100}, rng=rng)
+
+    assert result.columns[0].attacker_strength == 10
+
+
+def test_resolve_battle_no_column_bonus_by_default():
+    rng = ScriptedRandom([0.0, 0.0, 0.0, 0.0, 0.1, 0.9])
+
+    result = resolve_battle([unit(10)], [unit(10)], rng=rng)
+
+    assert result.columns[0].attacker_strength == 10
+    assert result.columns[0].defender_strength == 10
+
+
 def test_resolve_battle_global_luck_favors_a_side_when_raw_strength_is_equal():
     # g1=0.9 lifts R1 well above R2=1 (g2=l1=l2=0) -- enough to flip an
     # otherwise-tied 10-vs-10 raw strength column in the attacker's

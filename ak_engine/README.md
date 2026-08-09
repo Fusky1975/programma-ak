@@ -19061,7 +19061,7 @@ follow-up request after the original 431-435 plan shipped.
     at turn >= 25, a genuine tie resolved by ascending-voter-scan order,
     and a below-R-for-everyone no-winner case. Ran again: 4059 passed (5
     new after the 4-test signature fix).
-- **Phase 452 (current)**: Druidic monster battle assistance -- core
+- **Phase 452**: Druidic monster battle assistance -- core
   formulas, new `turn/druidic_monster_aid.py`, sourced from `AKGEN_
   reverse_engineering_report (2).md` SS5. Nothing like this mechanic
   existed in this project before: a Feature's own guardian monster may
@@ -19100,6 +19100,49 @@ follow-up request after the original 431-435 plan shipped.
     province scan's success/ineligible/failed-roll/looted/no-guardian/
     wrong-province/column-collision/scan-order cases. Ran again: 4078
     passed (19 new).
+- **Phase 453 (current)**: wires Druidic monster battle assistance
+  (Phase 452) into real combat -- `turn/battle_resolution.py resolve_
+  battle()` gains optional `attacker_column_bonus`/`defender_column_
+  bonus: dict[int, int] | None` parameters, added directly into that
+  side's own per-column strength right after `column_strength()`'s own
+  computation and before the luck/`column_bres` loop (the only seam that
+  exists -- columns aren't addressable objects until built inside this
+  function, confirmed no earlier injection point during Phase 452's own
+  research). `turn/battle_orchestrator.py fight_battle()` is the sole
+  production caller: right before its own `resolve_battle()` call, it
+  checks whether either side is Druidic-aligned (the attacker's own
+  Alignment vs. the defending province's owner's own Alignment -- the
+  same "province owner represents the defending side" convention
+  Exploration advantage already uses in this same function), and for
+  whichever side(s) qualify, calls `find_druidic_monster_assistance()`
+  with the real battle `line_length` (`turn/battle_line.py line_length_
+  for_battle()`, the same helper `resolve_battle()` itself uses
+  internally) and the opposing side's own Alignment. A Druidic side
+  fighting another Druidic side is a natural no-op via `monster_join_
+  probability()`'s own `d_D >= d_E` rule, so no special-case branch was
+  needed.
+  - Ran the full suite before writing new tests: unaffected (4078
+    passed unchanged) -- no existing fixture combines a Druidic-aligned
+    Kingdom with a guarded Feature at the same battle province, so the
+    new code path was a pure no-op everywhere it already ran. Added 4
+    new tests to `tests/test_battle_resolution.py` (the bonus applying
+    to the right side's own strength, a defensive out-of-range-column
+    guard, and the parameter-absent default) and 2 end-to-end tests to
+    `tests/test_battle_orchestrator.py`: a Druidic attacker with a
+    Silver Dragon-guarded Feature at the battle province produces the
+    real `(30*19)//50 == 11` strength bonus on `resolve_battle()`'s own
+    `attacker_column_bonus` argument (verified via `unittest.mock.patch`
+    on `resolve_battle` itself, this file's own established pattern for
+    isolating `fight_battle()` from that function's internal complexity;
+    `feature_id=2` was chosen so the real `Agent_Align` formula's own
+    `q` comes out even, guaranteeing the dragon's effective Alignment
+    never walks away from its own Druidic `base_view`, and `build_
+    state()`'s 1-vs-1 army setup guarantees `line_length == 1` so the
+    real `randrange(1)` call can only ever land on column 0 -- both
+    chosen so the scenario is fully deterministic without needing to
+    hand-script every one of `fight_battle()`'s own many other rng
+    draws), and the same setup with a non-Druidic Kingdom proving no
+    assistance is granted at all. Ran again: 4084 passed (6 new).
 
 ## Setup
 

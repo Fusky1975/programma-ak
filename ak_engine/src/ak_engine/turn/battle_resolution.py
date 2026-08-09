@@ -145,6 +145,8 @@ def resolve_battle(
     attacker_tactical_ability: int = 0,
     defender_tactical_ability: int = 0,
     is_first_turn: bool = True,
+    attacker_column_bonus: dict[int, int] | None = None,
+    defender_column_bonus: dict[int, int] | None = None,
     rng: random.Random | None = None,
 ) -> BattleResult:
     """Line up both sides, apply the real luck formula, and decide a
@@ -165,6 +167,17 @@ def resolve_battle(
     turn-1 luck range) since most of this project's own existing callers
     predate turn-number tracking and a caller that doesn't pass real turn
     state shouldn't silently get the larger turn-2+ range instead.
+
+    ``attacker_column_bonus``/``defender_column_bonus`` (Phase 453):
+    ``{column_index: strength_bonus}`` from ``turn/druidic_monster_aid.py
+    find_druidic_monster_assistance()`` -- a Druidic side's own assisting
+    Feature monsters, added directly into that side's own per-column
+    strength (after ``column_strength()``'s own computation, before the
+    luck/``column_bres`` loop) since columns don't exist as addressable
+    objects until they're built inside this function -- no earlier seam
+    exists for a caller to inject a per-column bonus. ``None``/an absent
+    key both mean "no bonus for that column", the default for every
+    caller that isn't fighting a Druidic side.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -212,6 +225,17 @@ def resolve_battle(
         column_strength(d_col, outflank_second_line=defender_outflank_eligible or column_has_overflight_unit(a_col))
         for a_col, d_col in zip(attacker_columns, defender_columns)
     ]
+
+    # Druidic monster battle assistance (Phase 453) -- see this
+    # function's own docstring for why the injection has to happen here.
+    if attacker_column_bonus:
+        for column_index, bonus in attacker_column_bonus.items():
+            if 0 <= column_index < len(attacker_strengths):
+                attacker_strengths[column_index] += bonus
+    if defender_column_bonus:
+        for column_index, bonus in defender_column_bonus.items():
+            if 0 <= column_index < len(defender_strengths):
+                defender_strengths[column_index] += bonus
 
     # Real luck (Phase 370): one global draw per side, once per battle.
     g1, g2 = draw_global_luck(rng)

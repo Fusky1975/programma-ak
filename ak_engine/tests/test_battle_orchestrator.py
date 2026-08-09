@@ -9,9 +9,11 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver, Spell
+from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState, RaceTitleTally
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
@@ -2739,6 +2741,54 @@ def test_fight_battle_uses_real_formation_depth_for_a_winning_seconds_line_army(
 
     assert state.armies[101].quality == Quality.VETERAN  # front: 0.20 < 0.30 -- improved
     assert state.armies[102].quality == Quality.AVERAGE  # second: 0.20 >= 0.15 -- unchanged
+
+
+# -- Druidic monster battle assistance wiring (Phase 453) -------------------
+
+
+def test_fight_battle_wires_druidic_monster_assistance_into_the_attackers_column_bonus():
+    # Kingdom 1 (attacker) is Druidic; a Silver Dragon guards a Feature
+    # at the battle province. feature_id=2 + Monster.S_DRAGON.value(8)
+    # -> q=266 (even) -> Agent_Align never walks, so the dragon's own
+    # effective alignment stays exactly its base_view (Druidic) -- the
+    # source's own d_D==0 case, always eligible (probability 1.0)
+    # regardless of the padded rng's own 0.9 filler value. build_state()
+    # is a 1-vs-1 battle (line_length==1), so find_druidic_monster_
+    # assistance's own randrange(1) can only ever land on column 0.
+    # Silver Dragon's own real stats (hp=30, melee=9, missile=10) give a
+    # (30*19)//50 == 11 strength bonus.
+    state = build_state()
+    state.kingdoms[1].alignment = Alignment.DRUID
+    state.add_feature(Feature(2, FIELD, FeatureType.CAVE, guardian_monster=Monster.S_DRAGON))
+    battle_result = BattleResult(columns=[], winner="attacker", total_bres=1)
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result) as mock_resolve:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    assert mock_resolve.call_args.kwargs["attacker_column_bonus"] == {0: 11}
+    assert mock_resolve.call_args.kwargs["defender_column_bonus"] is None
+
+
+def test_fight_battle_grants_no_druidic_assistance_to_a_non_druidic_side():
+    # Same guarded Feature as above, but Kingdom 1 stays its own default
+    # (non-Druidic) Alignment -- neither side qualifies, so both bonus
+    # dicts stay None, proving the wiring is conditional on the real
+    # Alignment check, not unconditionally on/off.
+    state = build_state()
+    state.add_feature(Feature(2, FIELD, FeatureType.CAVE, guardian_monster=Monster.S_DRAGON))
+    battle_result = BattleResult(columns=[], winner="attacker", total_bres=1)
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result) as mock_resolve:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    assert mock_resolve.call_args.kwargs["attacker_column_bonus"] is None
+    assert mock_resolve.call_args.kwargs["defender_column_bonus"] is None
 
 
 # -- Werebeast bite-transform, battle-time half (Phase 392) ---------------
