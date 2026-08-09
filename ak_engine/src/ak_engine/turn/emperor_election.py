@@ -48,14 +48,33 @@ preference this turn. An abstaining King casts no ballot at all, so his
 own revenue isn't "votes" for anyone -- the rulebook's own "più del 50%
 dei voti" reads naturally as a share of votes actually *cast*, not of
 every King's revenue whether cast or not. Each voter's ballot weight is
-that voter's own `compute_tax_base()` "alla fine di quel turno" (the
-voting turn, not the request turn -- the caller passes a `state` already
-advanced to that turn). A candidate needs a strict majority (>50%) of
-the total weight cast to win; a below-quorum spread across candidates
-(or zero ballots) elects nobody, the same "se nessun giocatore supera il
-quorum" no-Emperor outcome the rulebook describes. `resolve_emperor_
-election()` tallies and records the outcome onto `GameState` in one
-step.
+that voter's own `kingdom_election_vote_weight()` "alla fine di quel
+turno" (the voting turn, not the request turn -- the caller passes a
+`state` already advanced to that turn). A candidate needs a strict
+majority (>50%) of the total weight cast to win; a below-quorum spread
+across candidates (or zero ballots) elects nobody, the same "se nessun
+giocatore supera il quorum" no-Emperor outcome the rulebook describes.
+`resolve_emperor_election()` tallies and records the outcome onto
+`GameState` in one step.
+
+**Phase 450 (real vote weight, sourced)**: `kingdom_election_vote_
+weight()` supersedes this module's original bare-`compute_tax_base()`
+ballot weight (Phase 228, the rulebook's own literal "un numero di voti
+pari alla rendita" reading) now that `AKGEN_reverse_engineering_report
+(2).md` SS13.2 gives the real, disassembly-confirmed formula: `V_k =
+Tax_Base(k) + 5*office_points(k) + 5*treasure_points(k)`, for
+`gamevers >= 4` ("new rules" -- this project has no old/new-rules
+toggle, so this is simply *the* formula unconditionally, the same
+precedent Phase 439's own alignment-decay formula set). `office_points`
+sums the raw, undiscounted `models/office.py OFFICE_VALUE[office]` for
+every real Imperial Office whose current winning holder (`turn/office_
+holder.py resolve_all_office_holders()`) belongs to that Kingdom -- the
+*raw* value, not `turn/victory_points.py office_victory_points()`'s own
+alignment-discounted figure, since no Emperor exists yet during the vote
+that elects one. `treasure_points` counts `turn/merit_points.py
+LEGENDARY_ITEM_BONUS_TREASURES` (the real 10-item `trvic=1` set) owned
+by any of that Kingdom's own leaders, reusing the exact set Phase 271's
+own Discovery Merit Points formula already established.
 
 ## Alignment-based Victory Point reduction
 The rulebook's own paragraph immediately after the vote result: every
@@ -93,6 +112,9 @@ from dataclasses import dataclass
 
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.game_state import GameState
+from ak_engine.models.office import OFFICE_VALUE
+from ak_engine.turn.merit_points import LEGENDARY_ITEM_BONUS_TREASURES
+from ak_engine.turn.office_holder import resolve_all_office_holders
 from ak_engine.turn.tax_base import compute_tax_base
 
 ELECTION_REQUEST_THRESHOLD_PERCENT = 55
@@ -133,6 +155,65 @@ def _alliance_component(state: GameState, kingdom_id: int) -> set[int]:
                     component.add(other)
                     frontier.append(other)
     return component
+
+
+def _kingdom_office_vote_points(state: GameState, kingdom_id: int) -> int:
+    """Sum of `OFFICE_VALUE[office]` for every real Imperial Office whose current
+    winning holder belongs to `kingdom_id` -- Phase 450's own office-points
+    term of `kingdom_election_vote_weight()`. Uses the raw, undiscounted
+    `OFFICE_VALUE` table (not `turn/victory_points.py office_victory_
+    points()`'s own alignment-discounted figure) since no Emperor exists
+    yet during the very vote that elects one -- no alignment-distance term
+    can apply at this point. See module docstring's Phase 450 note.
+    """
+
+    total = 0
+    for office, holder in resolve_all_office_holders(state).items():
+        if holder is None:
+            continue
+        leader = state.leaders.get(holder.leader_id)
+        if leader is None or leader.kingdom_id != kingdom_id:
+            continue
+        total += OFFICE_VALUE[office]
+    return total
+
+
+def _kingdom_treasure_vote_points(state: GameState, kingdom_id: int) -> int:
+    """Count of `LEGENDARY_ITEM_BONUS_TREASURES` (the real 10-item `trvic=1`
+    set, rulebook page 51) owned by any of `kingdom_id`'s own leaders --
+    Phase 450's own treasure-points term of `kingdom_election_vote_
+    weight()`.
+    """
+
+    total = 0
+    for item in state.items.values():
+        if item.treasure not in LEGENDARY_ITEM_BONUS_TREASURES:
+            continue
+        if item.owner_leader_id is None:
+            continue
+        leader = state.leaders.get(item.owner_leader_id)
+        if leader is None or leader.kingdom_id != kingdom_id:
+            continue
+        total += 1
+    return total
+
+
+def kingdom_election_vote_weight(state: GameState, kingdom_id: int) -> int:
+    """`V_k = Tax_Base(k) + 5*office_points(k) + 5*treasure_points(k)` -- the
+    real Emperor-election vote weight (AKGEN_reverse_engineering_report
+    (2).md SS13.2, `gamevers >= 4` "new rules"; this project has no
+    old/new-rules toggle, so this is simply *the* formula, unconditionally,
+    matching how Phase 439's own alignment-decay formula was adopted).
+    Supersedes this module's original bare-`compute_tax_base()` weight
+    (Phase 228) now that a real source is available -- see module
+    docstring's Phase 450 note.
+    """
+
+    return (
+        compute_tax_base(state, kingdom_id)
+        + 5 * _kingdom_office_vote_points(state, kingdom_id)
+        + 5 * _kingdom_treasure_vote_points(state, kingdom_id)
+    )
 
 
 def election_threshold_percent(current_turn: int) -> int:
@@ -209,7 +290,7 @@ def tally_emperor_vote(state: GameState, ballots: dict[int, int]) -> ElectionRes
 
     votes_by_candidate: dict[int, int] = {}
     for voter_kingdom_id, candidate_kingdom_id in ballots.items():
-        weight = compute_tax_base(state, voter_kingdom_id)
+        weight = kingdom_election_vote_weight(state, voter_kingdom_id)
         votes_by_candidate[candidate_kingdom_id] = votes_by_candidate.get(candidate_kingdom_id, 0) + weight
 
     total_votes_cast = sum(votes_by_candidate.values())

@@ -18920,7 +18920,7 @@ follow-up request after the original 431-435 plan shipped.
     `.random()` calls consumed, proving the roll is skipped entirely),
     and a seeded reroll case exercising both the 95%-reroll and
     5%-keep branches. Ran again: 4044 passed (4 new).
-- **Phase 449 (current)**: real Practice mechanic -- persistent
+- **Phase 449**: real Practice mechanic -- persistent
   per-ability credit accumulator, sourced from `AKGEN_reverse_
   engineering_report (2).md` SS2/SS6 -- supersedes Phase 44's original
   single-threshold-roll design now that a real source is available.
@@ -18987,6 +18987,40 @@ follow-up request after the original 431-435 plan shipped.
     stays untouched even in a tied scenario that would otherwise write
     it. Ran again: 4047 passed (3 net new after the ~6 solo/tied tests
     that collapsed into fewer, more targeted credit-accumulator tests).
+- **Phase 450 (current)**: real Emperor election vote weight --
+  `turn/emperor_election.py kingdom_election_vote_weight()`, sourced from
+  `AKGEN_reverse_engineering_report (2).md` SS13.2 -- supersedes this
+  module's original bare-`compute_tax_base()` ballot weight (Phase 228)
+  now that a real source is available.
+
+  Real formula: `V_k = Tax_Base(k) + 5*office_points(k) + 5*treasure_
+  points(k)`. `office_points` sums the raw `models/office.py OFFICE_
+  VALUE[office]` for every real Imperial Office whose current winning
+  holder (`turn/office_holder.py resolve_all_office_holders()`) belongs
+  to that Kingdom -- the undiscounted value, not `turn/victory_points.py
+  office_victory_points()`'s own alignment-discounted figure, since no
+  Emperor exists yet during the vote that elects one. `treasure_points`
+  counts `turn/merit_points.py LEGENDARY_ITEM_BONUS_TREASURES` (the real
+  10-item `trvic=1` set, already established by Phase 271's own Discovery
+  Merit Points formula) owned by any of that Kingdom's own leaders.
+  `tally_emperor_vote()`'s ballot loop now calls this instead of bare
+  `compute_tax_base()`.
+  - Ran the full suite before writing new tests: unaffected (4047
+    passed unchanged) -- no existing fixture holds an office or a
+    legendary item, so every prior ballot weight stayed exactly its own
+    Tax_Base. Added 7 new tests to `tests/test_emperor_election.py`: the
+    two new helpers in isolation (`_kingdom_office_vote_points`/
+    `_kingdom_treasure_vote_points`, including "ignores other Kingdoms'
+    holdings" and "ignores unowned items"), the combined three-term
+    formula, and a `tally_emperor_vote()` scenario where a lower-Tax_
+    Base Kingdom overtakes a higher one purely via a legendary item.
+    Discovered along the way that a lone King with enough Tax_Base
+    auto-wins their own alignment-title office (e.g. `Office.GOOD_KING`)
+    for free when no rival King of that alignment exists -- every new
+    fixture deliberately keeps Tax_Base under `OFFICE_MIN_POINTS` (25)
+    for those titles so the tests isolate the mechanic under test,
+    documented inline rather than silently avoided. Ran again: 4054
+    passed (7 new).
 
 ## Setup
 

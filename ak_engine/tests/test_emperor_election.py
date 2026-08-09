@@ -5,14 +5,18 @@ the full rulebook [10.2] derivation this exercises.
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.emperor_election import (
     ELECTION_REQUEST_THRESHOLD_PERCENT,
+    _kingdom_office_vote_points,
+    _kingdom_treasure_vote_points,
     alignment_victory_point_reduction_percent,
     can_request_election,
     election_threshold_percent,
+    kingdom_election_vote_weight,
     resolve_emperor_election,
     tally_emperor_vote,
 )
@@ -139,6 +143,68 @@ def test_can_request_election_uses_the_eroded_threshold_at_a_late_turn():
     assert can_request_election(state, 1, current_turn=30) is True
 
 
+# -- kingdom_election_vote_weight (Phase 450: real vote weight) ----------
+
+
+def test_kingdom_election_vote_weight_is_just_tax_base_with_nothing_else():
+    state = make_state()
+    give_tax(state, 1, HOME, 40)
+
+    assert kingdom_election_vote_weight(state, 1) == 40
+
+
+def test_kingdom_office_vote_points_sums_held_offices_own_value():
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    state.kingdoms[1].treasury = 10  # wins Office.TREASURER (OFFICE_VALUE == 10)
+
+    assert _kingdom_office_vote_points(state, 1) == 10
+
+
+def test_kingdom_office_vote_points_ignores_other_kingdoms_offices():
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    state.kingdoms[1].treasury = 10
+
+    assert _kingdom_office_vote_points(state, 2) == 0
+
+
+def test_kingdom_treasure_vote_points_counts_only_the_real_legendary_set():
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    state.add_item(Treasure.WEAPON_1, owner_leader_id=1)  # Holy Sword -- in the real trvic=1 set
+    state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=1)  # not in it
+
+    assert _kingdom_treasure_vote_points(state, 1) == 1
+
+
+def test_kingdom_treasure_vote_points_ignores_unowned_and_other_kingdoms_items():
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    state.add_leader(LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True))
+    state.add_item(Treasure.WEAPON_1, owner_leader_id=2)
+    state.add_item(Treasure.WEAPON_2, owner_leader_id=None)
+
+    assert _kingdom_treasure_vote_points(state, 1) == 0
+
+
+def test_kingdom_election_vote_weight_combines_all_three_terms():
+    # Tax kept below every alignment-King title's own OFFICE_MIN_POINTS
+    # (25) so Treasurer is the *only* office this lone King wins --
+    # otherwise a Good-aligned King with enough Tax_Base also
+    # auto-wins Office.GOOD_KING for free (no other Good King exists to
+    # compete with), which would make this test's arithmetic depend on
+    # that unrelated mechanic instead of the one under test here.
+    state = make_state()
+    give_tax(state, 1, HOME, 10)
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    state.kingdoms[1].treasury = 10  # +10 office points (Treasurer)
+    state.add_item(Treasure.WEAPON_1, owner_leader_id=1)  # +1 treasure point
+
+    # 10 (Tax_Base) + 5*10 (office) + 5*1 (treasure) == 65
+    assert kingdom_election_vote_weight(state, 1) == 65
+
+
 # -- tally_emperor_vote / resolve_emperor_election -----------------------
 
 
@@ -154,6 +220,27 @@ def test_tally_emperor_vote_clear_majority_wins():
     assert result.elected_emperor_kingdom_id == 1
     assert result.votes_by_candidate == {1: 80, 2: 20}
     assert result.total_votes_cast == 100
+
+
+def test_tally_emperor_vote_weighs_office_and_treasure_holdings_too():
+    # Kingdom 2 has less Tax_Base than Kingdom 3, but holds a legendary
+    # item that closes the gap: 20 + 5*1 == 25 > Kingdom 3's bare 24.
+    # Kingdom 2's own tax is kept below 25 (Office.NEUTRAL_KING's own
+    # OFFICE_MIN_POINTS) so the lone King here doesn't also auto-win that
+    # title for free -- see test_kingdom_election_vote_weight_combines_
+    # all_three_terms's own comment for why that would confound this
+    # test's arithmetic.
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 60)
+    give_tax(state, 2, HexCoord(1, 1), 20)
+    give_tax(state, 3, HexCoord(2, 2), 24)
+    state.add_leader(LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True))
+    state.add_item(Treasure.WEAPON_1, owner_leader_id=2)
+    ballots = {2: 2, 3: 3}
+
+    result = tally_emperor_vote(state, ballots)
+
+    assert result.votes_by_candidate == {2: 25, 3: 24}
 
 
 def test_tally_emperor_vote_no_quorum_elects_nobody():
