@@ -23,6 +23,7 @@ from ak_engine.turn.battle_orchestrator import (
     MultiAttackerParty,
     _apply_monster_summoning_aid,
     _apply_werebeast_bites,
+    _apply_wingman_merit,
     _build_battle_units,
     _column_bres_by_army_id,
     _commander_combatant,
@@ -2423,6 +2424,100 @@ def test_direct_destruction_probabilities_skips_a_genuine_column_tie():
     battle_result = BattleResult(columns=[column], winner="attacker", total_bres=0)
 
     assert _direct_destruction_probabilities(battle_result) == {}
+
+
+# -- Phase 444: Wingman (air_combat_merit) --------------------------------
+
+
+def _wingman_state(attacker_type: ArmyType, defender_type: ArmyType) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Attacker Leader", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Defender Leader", location=FIELD))
+    state.add_army(ArmyState(101, 1, attacker_type, Quality.ELITE, FIELD, commanded_by=1))
+    state.add_army(ArmyState(201, 2, defender_type, Quality.GREEN, FIELD, commanded_by=2))
+    return state
+
+
+def test_apply_wingman_merit_credits_winning_air_unit_and_ignores_losing_non_air():
+    state = _wingman_state(ArmyType.DRAGON_WING, ArmyType.GARRISON)
+    column = _direct_destruction_column(5, ArmyType.DRAGON_WING, ArmyType.GARRISON)
+    battle_result = BattleResult(columns=[column], winner="attacker", total_bres=5)
+
+    _apply_wingman_merit(state, battle_result)
+
+    assert state.leaders[1].merit_tally.air_combat_merit == 1
+    assert state.leaders[2].merit_tally.air_combat_merit == 0
+
+
+def test_apply_wingman_merit_docks_losing_air_unit_and_ignores_winning_non_air():
+    state = _wingman_state(ArmyType.GARRISON, ArmyType.DRAGON_WING)
+    column = _direct_destruction_column(5, ArmyType.GARRISON, ArmyType.DRAGON_WING)
+    battle_result = BattleResult(columns=[column], winner="attacker", total_bres=5)
+
+    _apply_wingman_merit(state, battle_result)
+
+    assert state.leaders[1].merit_tally.air_combat_merit == 0
+    assert state.leaders[2].merit_tally.air_combat_merit == -1
+
+
+def test_apply_wingman_merit_air_vs_air_credits_both_oppositely():
+    state = _wingman_state(ArmyType.DRAGON_WING, ArmyType.EAGLE_WING)
+    column = _direct_destruction_column(5, ArmyType.DRAGON_WING, ArmyType.EAGLE_WING)
+    battle_result = BattleResult(columns=[column], winner="attacker", total_bres=5)
+
+    _apply_wingman_merit(state, battle_result)
+
+    assert state.leaders[1].merit_tally.air_combat_merit == 1
+    assert state.leaders[2].merit_tally.air_combat_merit == -1
+
+
+def test_apply_wingman_merit_non_air_vs_non_air_is_a_no_op():
+    state = _wingman_state(ArmyType.HVY_CAVALRY, ArmyType.GARRISON)
+    column = _direct_destruction_column(5, ArmyType.HVY_CAVALRY, ArmyType.GARRISON)
+    battle_result = BattleResult(columns=[column], winner="attacker", total_bres=5)
+
+    _apply_wingman_merit(state, battle_result)
+
+    assert state.leaders[1].merit_tally.air_combat_merit == 0
+    assert state.leaders[2].merit_tally.air_combat_merit == 0
+
+
+def test_apply_wingman_merit_excludes_vampires():
+    # The real Wingman predicate is called with a literal `false` for its
+    # include_vampires flag -- unlike some other overflight checks in
+    # this project, Vampires never count here.
+    state = _wingman_state(ArmyType.VAMPIRES, ArmyType.GARRISON)
+    column = _direct_destruction_column(5, ArmyType.VAMPIRES, ArmyType.GARRISON)
+    battle_result = BattleResult(columns=[column], winner="attacker", total_bres=5)
+
+    _apply_wingman_merit(state, battle_result)
+
+    assert state.leaders[1].merit_tally.air_combat_merit == 0
+    assert state.leaders[2].merit_tally.air_combat_merit == 0
+
+
+def test_apply_wingman_merit_skips_a_unit_with_no_commanding_leader():
+    state = _wingman_state(ArmyType.DRAGON_WING, ArmyType.GARRISON)
+    state.armies[101].commanded_by = None
+    column = _direct_destruction_column(5, ArmyType.DRAGON_WING, ArmyType.GARRISON)
+    battle_result = BattleResult(columns=[column], winner="attacker", total_bres=5)
+
+    _apply_wingman_merit(state, battle_result)  # must not raise
+
+    assert state.leaders[1].merit_tally.air_combat_merit == 0
+
+
+def test_apply_wingman_merit_skips_a_genuine_column_tie():
+    state = _wingman_state(ArmyType.DRAGON_WING, ArmyType.EAGLE_WING)
+    column = _direct_destruction_column(0, ArmyType.DRAGON_WING, ArmyType.EAGLE_WING)
+    battle_result = BattleResult(columns=[column], winner="attacker", total_bres=0)
+
+    _apply_wingman_merit(state, battle_result)
+
+    assert state.leaders[1].merit_tally.air_combat_merit == 0
+    assert state.leaders[2].merit_tally.air_combat_merit == 0
 
 
 def test_fight_battle_destroys_a_non_clean_swept_defenders_front_line_column_loser():

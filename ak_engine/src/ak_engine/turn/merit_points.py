@@ -344,12 +344,11 @@ composed from data that already exists:
   own close point: winner +stake/loser -stake, stake 2 for a decisive
   combat or 1 for an ordinary refusal (`AKGEN_reverse_engineering_report
   (2).md` SS17).
-- **`WINGMAN`** (id 48, "Air Force Commander"): `Tit_Pts`, "cumulative
-  air-combat merit: compiled army-result path awards +1 for an air-unit
-  victory and -1 for an air-unit defeat; other encounter awards can add
-  larger values" -- only the +1/-1 term is confirmed. Field-only
-  (`air_combat_merit`) this phase; a future phase could wire the
-  confirmed +1/-1 term via `turn/battle_orchestrator.py`.
+- **`WINGMAN`** (id 48, "Air Force Commander"): `Tit_Pts` -- **live as of
+  Phase 444**, credited by `turn/battle_orchestrator.py _apply_wingman_
+  merit()`: +1 to the leader commanding a winning Dragons/Eagles unit in
+  a resolved battle column, -1 to the leader commanding a losing one
+  (Vampires excluded, `AKGEN_reverse_engineering_report (2).md` SS19).
 - **`CRAVENEST`** (id 49, "King of Cowards") / **`BRAVEST`** (id 50,
   "Bravest of the Brave"): both `Tit_Pts`-shaped -- **live as of Phase
   443**, credited by the same `_apply_duel_encounter_merit()` call as
@@ -819,7 +818,14 @@ def duellist_merit_points(leader: LeaderState) -> int:
 
 
 def wingman_merit_points(leader: LeaderState) -> int:
-    """Air Force Commander (Office.WINGMAN, id 48) -- field-only."""
+    """Air Force Commander (Office.WINGMAN, id 48) -- **live as of Phase
+    444**. Credited by `turn/battle_orchestrator.py _apply_wingman_
+    merit()`, called from `fight_battle()`: +1 to the leader commanding
+    a winning Dragons/Eagles unit in a resolved column contest, -1 to
+    the leader commanding a losing one (Vampires excluded, matching the
+    real `Air_Unit(army, false)` predicate's own literal flag) --
+    `AKGEN_reverse_engineering_report (2).md` SS19.
+    """
 
     return leader.merit_tally.air_combat_merit
 

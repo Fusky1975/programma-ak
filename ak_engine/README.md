@@ -18653,7 +18653,7 @@ follow-up request after the original 431-435 plan shipped.
     own math, a different, still-valid concern from testing the real
     writers) needed no changes and stay green. Ran again: 4011 passed
     (2 new).
-- **Phase 443 (current)**: wires 3 more of the backlog fields --
+- **Phase 443**: wires 3 more of the backlog fields --
   `MeritTally.duel_merit_net` (Office.DUELLIST, "Captain of the
   Musketeers"), `courage_encounter_merit` (Office.CRAVENEST, "King of
   Cowards"), and `bravery_merit` (Office.BRAVEST, "Bravest of the
@@ -18710,6 +18710,45 @@ follow-up request after the original 431-435 plan shipped.
     bravery, no-op on draw/fled) plus 4 `execute_challenge()`-level
     integration tests covering the same four routing branches. Ran
     again: 4020 passed (9 new).
+- **Phase 444 (current)**: wires `MeritTally.air_combat_merit`
+  (Office.WINGMAN, "Air Force Commander") off the same dossier
+  (`AKGEN_reverse_engineering_report (2).md` SS19) -- the 4th of the 5
+  fields resolved this session.
+
+  Real formula: per unit-vs-unit column contest resolved in battle,
+  `+1` to the leader commanding a winning Dragons/Eagles unit, `-1` to
+  the leader commanding a losing one. Neither side needs to itself be
+  air-typed for the other's credit to apply; no multipliers of any kind.
+  `models/army_type.py OVERFLIGHT_AIR` (Dragons + Eagles, Vampires
+  already excluded) turned out to be an exact match for the real
+  `Air_Unit(army, false)` predicate's own literal `false` flag -- no new
+  constant needed.
+
+  Wired as a new `turn/battle_orchestrator.py _apply_wingman_merit()`,
+  reading the exact same per-column granularity `_direct_destruction_
+  probabilities()` (Phase 371) already established: for each
+  `battle_result.columns` entry with `bres != 0`, both the winning and
+  losing front unit (`column.attacker_units[0]`/`defender_units[0]`,
+  oriented by `bres`'s sign) are checked against `OVERFLIGHT_AIR`, and
+  the owning `ArmyState.commanded_by` leader (looked up via `state.
+  armies`/`state.leaders`) is credited `+-1`. A unit with no commanding
+  leader (`commanded_by is None`) or no matching army/leader record
+  credits nobody, matching the real `aleader = 255` no-op. Called from
+  `fight_battle()` right alongside `_record_battle_merit()` -- covers
+  `fight_multi_attacker_battle()` too, since that function only ever
+  reaches battle resolution by calling `fight_battle()` itself, never
+  building a second, separate `BattleResult`.
+
+  `merit_points.py wingman_merit_points()`'s docstring, and the
+  module's own backlog-summary paragraph, updated to point at the new
+  writer.
+  - Ran the full suite before writing new tests (non-breaking check:
+    4020 passed unchanged). Added 7 new tests to `tests/test_battle_
+    orchestrator.py`, reusing the existing `_direct_destruction_column()`
+    test helper: winning-air-vs-losing-non-air, winning-non-air-vs-
+    losing-air, air-vs-air (both credited oppositely), non-air-vs-non-air
+    (no-op), Vampires excluded, no-commanding-leader no-op, genuine
+    column tie no-op. Ran again: 4027 passed (7 new).
 
 ## Setup
 

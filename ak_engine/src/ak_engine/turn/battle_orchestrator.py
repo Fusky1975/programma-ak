@@ -174,7 +174,7 @@ import random
 from dataclasses import dataclass, field
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ARMY_TABLE, MONSTROUS_ARMY_RACE, ArmyType, is_overflight_unit
+from ak_engine.models.army_type import ARMY_TABLE, MONSTROUS_ARMY_RACE, OVERFLIGHT_AIR, ArmyType, is_overflight_unit
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
@@ -1170,6 +1170,44 @@ def _direct_destruction_probabilities(battle_result: BattleResult) -> dict[int, 
     return probabilities
 
 
+def _apply_wingman_merit(state: GameState, battle_result: BattleResult) -> None:
+    """Phase 444: Air Force Commander (Office.WINGMAN, id 48) merit --
+    ``AKGEN_reverse_engineering_report (2).md`` SS19. Per unit-vs-unit
+    column contest resolved in battle (the same granularity ``_direct_
+    destruction_probabilities`` already reads): ``+1`` to the leader
+    commanding a winning Dragons/Eagles unit, ``-1`` to the leader
+    commanding a losing one. ``OVERFLIGHT_AIR`` (Dragons + Eagles only,
+    Vampires excluded) is an exact match for the real ``Air_Unit(army,
+    false)`` predicate's own literal ``false`` flag -- no new constant
+    needed. Independent per column; the opposing unit need not itself be
+    an air unit, and neither side needs multipliers of any kind. A unit
+    with no commanding leader (``ArmyState.commanded_by is None``, or no
+    matching army/leader record at all) credits nobody, matching the
+    real ``aleader = 255`` no-op.
+    """
+
+    for column in battle_result.columns:
+        if column.bres == 0:
+            continue
+        attacker_front = column.attacker_units[0]
+        defender_front = column.defender_units[0]
+        if column.bres > 0:
+            winner_unit, loser_unit = attacker_front, defender_front
+        else:
+            winner_unit, loser_unit = defender_front, attacker_front
+
+        for unit, delta in ((winner_unit, 1), (loser_unit, -1)):
+            if unit.army_type not in OVERFLIGHT_AIR or unit.source_id is None:
+                continue
+            army = state.armies.get(unit.source_id)
+            if army is None or army.commanded_by is None:
+                continue
+            leader = state.leaders.get(army.commanded_by)
+            if leader is None:
+                continue
+            leader.merit_tally.air_combat_merit += delta
+
+
 _FORMATION_DIVISOR_BY_DEPTH = (
     FORMATION_DIVISOR["front"],
     FORMATION_DIVISOR["second"],
@@ -1566,6 +1604,8 @@ def fight_battle(
         duel.attacker_commander_leader_id, duel.defender_commander_leader_id,
         attacker_armies, defender_armies,
     )
+
+    _apply_wingman_merit(state, battle_result)
 
     # Phase 298: rulebook [7.5]'s own Druidic insufficient-ability quality-
     # improve-chance penalty (turn/aftermath.py roll_quality_change()'s
