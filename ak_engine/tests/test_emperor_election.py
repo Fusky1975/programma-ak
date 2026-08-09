@@ -209,17 +209,22 @@ def test_kingdom_election_vote_weight_combines_all_three_terms():
 
 
 def test_tally_emperor_vote_clear_majority_wins():
+    # Phase 451: the win check short-circuits the instant a running share
+    # exceeds 50% of V_world, matching the real engine's own early-exit --
+    # voter 1 (Kingdom 1's own 60 weight, scanned first in ascending
+    # Kingdom-ID order) alone already exceeds 60/100 == 60%, so kingdom
+    # 2's own ballot is never even reached/tallied.
     state = make_state()
     give_tax(state, 1, HexCoord(0, 0), 60)
     give_tax(state, 2, HexCoord(1, 1), 20)
     give_tax(state, 3, HexCoord(2, 2), 20)
-    ballots = {1: 1, 2: 1, 3: 2}  # kingdom 1 gets 60+20=80 votes, kingdom 2 gets 20
+    ballots = {1: 1, 2: 1, 3: 2}
 
-    result = tally_emperor_vote(state, ballots)
+    result = tally_emperor_vote(state, ballots, current_turn=5)
 
     assert result.elected_emperor_kingdom_id == 1
-    assert result.votes_by_candidate == {1: 80, 2: 20}
-    assert result.total_votes_cast == 100
+    assert result.votes_by_candidate == {1: 60}
+    assert result.total_votes_cast == 100  # Phase 451: this is V_world, not the sum of tallied ballots
 
 
 def test_tally_emperor_vote_weighs_office_and_treasure_holdings_too():
@@ -238,7 +243,7 @@ def test_tally_emperor_vote_weighs_office_and_treasure_holdings_too():
     state.add_item(Treasure.WEAPON_1, owner_leader_id=2)
     ballots = {2: 2, 3: 3}
 
-    result = tally_emperor_vote(state, ballots)
+    result = tally_emperor_vote(state, ballots, current_turn=5)
 
     assert result.votes_by_candidate == {2: 25, 3: 24}
 
@@ -249,7 +254,7 @@ def test_tally_emperor_vote_no_quorum_elects_nobody():
     give_tax(state, 2, HexCoord(1, 1), 50)
     ballots = {1: 1, 2: 2}
 
-    result = tally_emperor_vote(state, ballots)
+    result = tally_emperor_vote(state, ballots, current_turn=5)
 
     assert result.elected_emperor_kingdom_id is None
 
@@ -257,10 +262,94 @@ def test_tally_emperor_vote_no_quorum_elects_nobody():
 def test_tally_emperor_vote_no_ballots_elects_nobody():
     state = make_state()
 
-    result = tally_emperor_vote(state, {})
+    result = tally_emperor_vote(state, {}, current_turn=5)
 
     assert result.elected_emperor_kingdom_id is None
     assert result.total_votes_cast == 0
+
+
+# -- Phase 451: real win condition (world denominator + decaying threshold) --
+
+
+def test_tally_emperor_vote_early_win_counts_abstainers_in_the_denominator():
+    # Kingdom 3 abstains but still owns Tax_Base -- proving the real
+    # denominator is V_world (every Kingdom's own vote weight, including
+    # non-voters), not the sum of expressed ballots: 80/100 == 80% still
+    # clears >50% even with the abstainer's own 20 counted against it.
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 70)
+    give_tax(state, 2, HexCoord(1, 1), 10)
+    give_tax(state, 3, HexCoord(2, 2), 20)  # abstains
+    ballots = {1: 1, 2: 1}
+
+    result = tally_emperor_vote(state, ballots, current_turn=5)
+
+    assert result.elected_emperor_kingdom_id == 1
+    assert result.total_votes_cast == 100
+
+
+def test_tally_emperor_vote_world_denominator_can_block_a_win_expressed_votes_alone_would_grant():
+    # Kingdom 1 gets 100% of *expressed* ballots (50 out of 50 cast), but
+    # Kingdom 3's own large abstaining Tax_Base dilutes the real V_world
+    # denominator enough that the share never even reaches the turn-5
+    # 55% decayed threshold, let alone 50%: 50/110 == 45.4%.
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 40)
+    give_tax(state, 2, HexCoord(1, 1), 10)
+    give_tax(state, 3, HexCoord(2, 2), 60)  # abstains, but still counts toward V_world
+    ballots = {1: 1, 2: 1}
+
+    result = tally_emperor_vote(state, ballots, current_turn=5)
+
+    assert result.elected_emperor_kingdom_id is None
+
+
+def test_tally_emperor_vote_wins_below_50_percent_via_the_decayed_threshold_at_a_late_turn():
+    # Share is only 30% of V_world -- well below the outright-win 50%,
+    # and below the flat 55% threshold too, but turn 30's own decayed R
+    # (25%, election_threshold_percent's own floor) is low enough.
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 30)
+    give_tax(state, 2, HexCoord(1, 1), 20)  # abstains
+    give_tax(state, 3, HexCoord(2, 2), 50)  # abstains
+    ballots = {1: 1}
+
+    result_early = tally_emperor_vote(state, ballots, current_turn=5)
+    result_late = tally_emperor_vote(state, ballots, current_turn=30)
+
+    assert result_early.elected_emperor_kingdom_id is None  # 30% < 55% at turn 5
+    assert result_late.elected_emperor_kingdom_id == 1  # 30% >= 25% at turn 30
+
+
+def test_tally_emperor_vote_tie_broken_by_ascending_voter_scan_order():
+    # Two candidates end up with the exact same share (25% each) of
+    # V_world at turn 30 (R == 25%, so both qualify) -- the real engine's
+    # own "first to reach the eventual best share while scanning voters
+    # in Kingdom-ID order" tie-break means candidate 3 wins: voter 1
+    # (ascending order) reaches 25% before voter 2 does.
+    state = GameState()
+    for kingdom_id, alignment in ((1, Alignment.GOOD), (2, Alignment.NEUTRAL), (3, Alignment.EVIL), (4, Alignment.PAGAN)):
+        state.add_kingdom(KingdomState(kingdom_id, f"K{kingdom_id}", Race.HUMAN, alignment, HexCoord(kingdom_id, 0)))
+        give_tax(state, kingdom_id, HexCoord(kingdom_id, 0), 25)
+    ballots = {1: 3, 2: 4}  # voter 1 -> candidate 3, voter 2 -> candidate 4, both weight 25
+
+    result = tally_emperor_vote(state, ballots, current_turn=30)
+
+    assert result.votes_by_candidate == {3: 25, 4: 25}
+    assert result.elected_emperor_kingdom_id == 3
+
+
+def test_tally_emperor_vote_below_decayed_threshold_for_everyone_elects_nobody():
+    # Three-way split, none reaching even turn 5's own 55% threshold.
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 34)
+    give_tax(state, 2, HexCoord(1, 1), 33)
+    give_tax(state, 3, HexCoord(2, 2), 33)
+    ballots = {1: 1, 2: 2, 3: 3}
+
+    result = tally_emperor_vote(state, ballots, current_turn=5)
+
+    assert result.elected_emperor_kingdom_id is None
 
 
 def test_resolve_emperor_election_records_winner_and_vote_turn():

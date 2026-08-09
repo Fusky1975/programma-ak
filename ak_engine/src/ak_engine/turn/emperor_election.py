@@ -50,12 +50,32 @@ dei voti" reads naturally as a share of votes actually *cast*, not of
 every King's revenue whether cast or not. Each voter's ballot weight is
 that voter's own `kingdom_election_vote_weight()` "alla fine di quel
 turno" (the voting turn, not the request turn -- the caller passes a
-`state` already advanced to that turn). A candidate needs a strict
-majority (>50%) of the total weight cast to win; a below-quorum spread
-across candidates (or zero ballots) elects nobody, the same "se nessun
-giocatore supera il quorum" no-Emperor outcome the rulebook describes.
-`resolve_emperor_election()` tallies and records the outcome onto
-`GameState` in one step.
+`state` already advanced to that turn). `resolve_emperor_election()`
+tallies and records the outcome onto `GameState` in one step.
+
+**Phase 451 (real win condition, sourced)**: the win check itself is
+rewritten off `AKGEN_reverse_engineering_report (2).md` SS13.3/SS13.5,
+superseding this module's original design (Phase 228) of comparing a
+candidate's share against the sum of *expressed* ballots only. The real
+denominator is `V_world` -- every Kingdom's own `kingdom_election_vote_
+weight()` summed, **including non-voters/abstainers** -- not the sum of
+ballots actually cast. A candidate wins immediately once their running
+share of `V_world` exceeds 50% (checked ballot-by-ballot, in ascending
+voter-Kingdom-ID order, so the win can be detected as early as possible,
+matching the real engine's own short-circuit). If nobody clears 50%
+outright, the candidate with the single highest share that still clears
+the **time-decaying** threshold `R` (`election_threshold_percent()`,
+already correct and already used for the *request*-to-call-a-vote gate
+-- directly reused here, no new formula needed) wins instead; ties in
+that second pass are broken by whichever candidate's own share was the
+first, scanning voters in ascending Kingdom-ID order, to reach the
+eventual best value -- replicated here by only replacing `best_share`
+on a strict `>` comparison, never on a tie, so the earliest-scanned
+candidate to reach a given share keeps priority. A world with zero total
+vote weight, or where nobody reaches even the decayed `R`, elects nobody
+-- the same "se nessun giocatore supera il quorum" outcome. `ElectionResult.
+total_votes_cast` now holds `V_world` (docstring updated, field name kept
+to avoid a wider ripple).
 
 **Phase 450 (real vote weight, sourced)**: `kingdom_election_vote_
 weight()` supersedes this module's original bare-`compute_tax_base()`
@@ -278,30 +298,50 @@ def can_request_election(state: GameState, requesting_kingdom_id: int, current_t
 class ElectionResult:
     elected_emperor_kingdom_id: int | None
     votes_by_candidate: dict[int, int]
+    # Phase 451: holds V_world (every Kingdom's own vote weight summed,
+    # including abstainers) -- the real win-condition denominator, not
+    # the sum of expressed ballots this field's own name might suggest.
+    # Field name kept (not renamed) to avoid a wider ripple; see this
+    # module's own Phase 451 docstring note.
     total_votes_cast: int
 
 
-def tally_emperor_vote(state: GameState, ballots: dict[int, int]) -> ElectionResult:
+def tally_emperor_vote(state: GameState, ballots: dict[int, int], current_turn: int) -> ElectionResult:
     """``ballots``: ``{voter_kingdom_id: candidate_kingdom_id}`` for every
     King who cast a preference this turn -- see module docstring for
     exactly what "votes" means here and why an abstention isn't counted
-    as a vote for nobody.
+    as a vote for nobody. ``current_turn``: the turn the vote is being
+    held on (used for the decaying threshold `R`, see module docstring's
+    Phase 451 note).
     """
 
+    world_total = sum(kingdom_election_vote_weight(state, kingdom_id) for kingdom_id in state.kingdoms)
+    if world_total <= 0:
+        return ElectionResult(None, {}, world_total)
+
     votes_by_candidate: dict[int, int] = {}
-    for voter_kingdom_id, candidate_kingdom_id in ballots.items():
+    for voter_kingdom_id in sorted(state.kingdoms):
+        candidate_kingdom_id = ballots.get(voter_kingdom_id)
+        if candidate_kingdom_id is None:
+            continue
         weight = kingdom_election_vote_weight(state, voter_kingdom_id)
         votes_by_candidate[candidate_kingdom_id] = votes_by_candidate.get(candidate_kingdom_id, 0) + weight
+        if votes_by_candidate[candidate_kingdom_id] * 100 > ELECTION_WIN_THRESHOLD_PERCENT * world_total:
+            return ElectionResult(candidate_kingdom_id, votes_by_candidate, world_total)
 
-    total_votes_cast = sum(votes_by_candidate.values())
-    winner: int | None = None
-    if total_votes_cast > 0:
-        for candidate_kingdom_id, votes in votes_by_candidate.items():
-            if votes * 100 > ELECTION_WIN_THRESHOLD_PERCENT * total_votes_cast:
-                winner = candidate_kingdom_id
-                break
+    threshold_percent = election_threshold_percent(current_turn)
+    best_candidate: int | None = None
+    best_share = -1.0
+    for voter_kingdom_id in sorted(state.kingdoms):
+        candidate_kingdom_id = ballots.get(voter_kingdom_id)
+        if candidate_kingdom_id is None:
+            continue
+        share = votes_by_candidate[candidate_kingdom_id] / world_total
+        if share * 100 >= threshold_percent and share > best_share:
+            best_candidate = candidate_kingdom_id
+            best_share = share
 
-    return ElectionResult(winner, votes_by_candidate, total_votes_cast)
+    return ElectionResult(best_candidate, votes_by_candidate, world_total)
 
 
 def resolve_emperor_election(state: GameState, ballots: dict[int, int], vote_turn: int) -> ElectionResult:
@@ -314,7 +354,7 @@ def resolve_emperor_election(state: GameState, ballots: dict[int, int], vote_tur
     not silently clear or overwrite a still-standing previous Emperor.
     """
 
-    result = tally_emperor_vote(state, ballots)
+    result = tally_emperor_vote(state, ballots, vote_turn)
     state.last_emperor_vote_turn = vote_turn
     if result.elected_emperor_kingdom_id is not None:
         state.emperor_kingdom_id = result.elected_emperor_kingdom_id

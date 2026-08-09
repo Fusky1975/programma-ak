@@ -18987,7 +18987,7 @@ follow-up request after the original 431-435 plan shipped.
     stays untouched even in a tied scenario that would otherwise write
     it. Ran again: 4047 passed (3 net new after the ~6 solo/tied tests
     that collapsed into fewer, more targeted credit-accumulator tests).
-- **Phase 450 (current)**: real Emperor election vote weight --
+- **Phase 450**: real Emperor election vote weight --
   `turn/emperor_election.py kingdom_election_vote_weight()`, sourced from
   `AKGEN_reverse_engineering_report (2).md` SS13.2 -- supersedes this
   module's original bare-`compute_tax_base()` ballot weight (Phase 228)
@@ -19021,6 +19021,46 @@ follow-up request after the original 431-435 plan shipped.
     for those titles so the tests isolate the mechanic under test,
     documented inline rather than silently avoided. Ran again: 4054
     passed (7 new).
+- **Phase 451 (current)**: real Emperor election win condition --
+  `tally_emperor_vote()` rewritten off `AKGEN_reverse_engineering_report
+  (2).md` SS13.3/SS13.5 -- supersedes this module's original design
+  (Phase 228) of comparing a candidate's share against the sum of
+  *expressed* ballots only.
+
+  Real denominator is `V_world` -- every Kingdom's own `kingdom_
+  election_vote_weight()` summed, **including non-voters/abstainers**.
+  A candidate wins immediately once their running share (accumulated by
+  scanning ballots in ascending voter-Kingdom-ID order) exceeds 50% of
+  `V_world` -- the real engine's own early-exit, so `votes_by_candidate`
+  may reflect only a partial tally when an early win is found, not every
+  ballot. If nobody clears 50% outright, whoever has the single highest
+  share that still clears the **time-decaying** threshold `R`
+  (`election_threshold_percent()`, already correct, already used for the
+  *request*-to-call-a-vote gate -- directly reused, no new formula
+  needed) wins instead, ties broken by whichever candidate's share was
+  the first (in ascending voter-scan order) to reach the eventual best
+  value. `tally_emperor_vote()` gains a required `current_turn`
+  parameter (its one caller, `resolve_emperor_election()`, already
+  receives `vote_turn` and forwards it). `ElectionResult.total_votes_
+  cast` now holds `V_world`, not a sum of cast ballots (docstring
+  updated, field name kept to avoid a wider ripple).
+  - Ran the full suite before writing new tests: 4 pre-existing tests
+    failed on the new required `current_turn` parameter alone (4050
+    passed, 4 failed) -- confirmed the blast radius was exactly the
+    direct `tally_emperor_vote()` callers, nothing downstream. Added
+    `current_turn` to those 4 and discovered a 5th needed a real
+    behavioral fix: the early-exit short-circuit means a landslide
+    winner's own `votes_by_candidate` no longer includes every ballot,
+    only what was tallied before the win was detected -- updated that
+    assertion to match the real engine's own short-circuit rather than
+    working around it. Added 5 new tests to `tests/test_emperor_
+    election.py`: an early >50% win where an abstainer's own Tax_Base
+    still counts in the denominator, a case where that same world-
+    denominator dilution *blocks* a win 100%-of-expressed-votes-alone
+    would have granted, a sub-50%-but-above-decayed-R win only reachable
+    at turn >= 25, a genuine tie resolved by ascending-voter-scan order,
+    and a below-R-for-everyone no-winner case. Ran again: 4059 passed (5
+    new after the 4-test signature fix).
 
 ## Setup
 
