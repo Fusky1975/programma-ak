@@ -165,7 +165,7 @@ def test_charm_undead_caster_uses_necromancy_instead_of_psychic():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)
     state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
     request = CastRequest(spell=Spell.CHARM, target=78)
-    rng = ScriptedRandom([0.44])  # 15% + 15%*2 = 45% chance
+    rng = ScriptedRandom([0.44, 0.5, 0.5])  # 15% + 15%*2 = 45% chance
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -195,7 +195,7 @@ def test_charm_non_undead_caster_still_uses_psychic():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 2)
     state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
     request = CastRequest(spell=Spell.CHARM, target=78)
-    rng = ScriptedRandom([0.44])  # 15% + 15%*2 = 45% chance
+    rng = ScriptedRandom([0.44, 0.5, 0.5])  # 15% + 15%*2 = 45% chance
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -323,7 +323,7 @@ def test_kill_enemy_full_chance_against_an_unled_hero_in_an_ordinary_province():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
-    rng = ScriptedRandom([0.20])
+    rng = ScriptedRandom([0.20, 0.5, 0.5])
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -390,7 +390,7 @@ def test_charm_succeeds_on_a_real_roll_under_the_casters_chance():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 2)
     state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
     request = CastRequest(spell=Spell.CHARM, target=78)
-    rng = ScriptedRandom([0.44])
+    rng = ScriptedRandom([0.44, 0.5, 0.5])
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -430,7 +430,7 @@ def test_kill_enemy_success_roll_uses_necromancy_skill():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
-    rng = ScriptedRandom([0.29])  # 15% + 15%*1 = 30% chance
+    rng = ScriptedRandom([0.29, 0.5, 0.5])  # 15% + 15%*1 = 30% chance
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -798,7 +798,7 @@ def test_tornado_destroys_units_that_roll_under_the_per_level_chance():
     state.add_army(ArmyState(2, 2, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))  # enemy army
     request = CastRequest(spell=Spell.TORNADO, target=_target(LOCATION))
     # rolls: [0] cast-success roll, [1] army 1 destroy roll (hits), [2] army 2 destroy roll (misses)
-    rng = ScriptedRandom([0.01, 0.19, 0.99])
+    rng = ScriptedRandom([0.01, 0.19, 0.99, 0.5, 0.5])
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -831,7 +831,7 @@ def test_tornado_giant_fan_downgrades_quality_instead_of_destroying():
     state.add_army(ArmyState(2, 2, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))
     request = CastRequest(spell=Spell.TORNADO, target=_target(LOCATION))
     # rolls: [0] cast-success roll, [1] army 2's downgrade roll (hits, at flat 50%)
-    rng = ScriptedRandom([0.01, 0.49])
+    rng = ScriptedRandom([0.01, 0.49, 0.5, 0.5])
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -973,7 +973,7 @@ def test_illus_armies_sets_the_casters_illusion_level_on_a_colocated_target():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.ILLUSION, 3)
     state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
     request = CastRequest(spell=Spell.ILLUS_ARMIES, target=78)
-    rng = ScriptedRandom([0.01])  # 15% + 15%*3 = 60% chance
+    rng = ScriptedRandom([0.01, 0.5, 0.5])  # 15% + 15%*3 = 60% chance
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -985,7 +985,7 @@ def test_illus_armies_can_target_the_caster_himself():
     state = build_state()
     state.leaders[CASTER_ID].skills = _skills_with(Ability.ILLUSION, 2)
     request = CastRequest(spell=Spell.ILLUS_ARMIES, target=CASTER_ID)
-    rng = ScriptedRandom([0.01])  # 15% + 15%*2 = 45% chance
+    rng = ScriptedRandom([0.01, 0.5, 0.5])  # 15% + 15%*2 = 45% chance
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -1104,7 +1104,10 @@ def test_execute_cast_exhausts_the_single_slot_at_low_level():
     state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
     state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
     request = CastRequest(spell=Spell.ORATORY, target=78)
-    rng = ScriptedRandom([0.01, 0.01])  # both rolls would succeed if a slot were available
+    # both cast rolls would succeed if a slot were available; the second
+    # call fails at the slot check, before any roll, so only the first
+    # (successful) call's own Add_Experience draws need padding.
+    rng = ScriptedRandom([0.01, 0.5, 0.5, 0.01])
 
     first = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
     second = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
@@ -1120,7 +1123,9 @@ def test_execute_cast_slots_scoped_to_ability_allow_two_casts_at_level_3():
     state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
     state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
     request = CastRequest(spell=Spell.ORATORY, target=78)
-    rng = ScriptedRandom([0.01, 0.01, 0.01])
+    # third call fails at the slot check, before any roll -- only the
+    # first two (successful) calls' own Add_Experience draws need padding.
+    rng = ScriptedRandom([0.01, 0.5, 0.5, 0.01, 0.5, 0.5])
 
     first = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
     second = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
@@ -1174,7 +1179,7 @@ def test_plague_destroys_humanoid_units_that_roll_under_the_chance():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # 10% + 10% = 20%
     state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
     request = CastRequest(spell=Spell.PLAGUE, target=_target(LOCATION))
-    rng = ScriptedRandom([0.01, 0.19])  # [0] cast success, [1] per-unit destroy roll (hits)
+    rng = ScriptedRandom([0.01, 0.19, 0.5, 0.5])  # [0] cast success, [1] per-unit destroy roll (hits)
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -1190,7 +1195,7 @@ def test_plague_skips_non_humanoid_and_mercenary_armies():
     state.add_army(ArmyState(1, 2, ArmyType.DRAGON_WING, Quality.AVERAGE, LOCATION))  # non-humanoid race
     state.add_army(ArmyState(2, None, ArmyType.LEGION, Quality.AVERAGE, LOCATION))  # mercenary, race unknown
     request = CastRequest(spell=Spell.PLAGUE, target=_target(LOCATION))
-    rng = ScriptedRandom([0.01])  # only the cast-success roll is ever consumed
+    rng = ScriptedRandom([0.01, 0.5, 0.5])  # [0] cast success, [1:] Add_Experience gain draws
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -1372,7 +1377,7 @@ def test_bless_cleanup_chance_scales_with_white_magic_level():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 2)  # cast 45%, cleanup 30%
     state.battle_graveyard[LOCATION] = [GraveyardEntry(ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2)]
     request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
-    rng = ScriptedRandom([0.01, 0.25])  # [0] cast success, [1] cleanup roll (0.25 < 30%)
+    rng = ScriptedRandom([0.01, 0.25, 0.5, 0.5])  # [0] cast success, [1] cleanup roll (0.25 < 30%)
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -1390,7 +1395,7 @@ def test_skeletal_army_raises_a_unit_from_the_casters_own_province_graveyard():
     state.battle_graveyard[LOCATION] = [GraveyardEntry(ArmyType.LEGION, Quality.VETERAN, kingdom_id=2)]
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # level 1 -> raise up to 1
     request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
-    rng = ScriptedRandom([0.01])  # cast-success roll only -- raising itself is deterministic
+    rng = ScriptedRandom([0.01, 0.5, 0.5])  # [0] cast success -- raising itself is deterministic, [1:] Add_Experience gain draws
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -1424,7 +1429,7 @@ def test_skeletal_army_caps_the_raised_count_at_the_casters_necromancy_level():
     ]
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)  # level 2 -> raise at most 2 of the 3
     request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
-    rng = ScriptedRandom([0.01])
+    rng = ScriptedRandom([0.01, 0.5, 0.5])  # [0] cast success, [1:] Add_Experience gain draws
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -1695,7 +1700,7 @@ def test_action_spell_chance_caps_at_95_percent_even_at_high_skill_level():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 10)
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
-    rng = ScriptedRandom([0.94])  # under the 95% cap
+    rng = ScriptedRandom([0.94, 0.5, 0.5])  # [0] under the 95% cap, [1:] Add_Experience gain draws
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -1728,7 +1733,7 @@ def test_pagan_kingdom_caster_gets_a_10_percent_spell_cast_bonus():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
-    rng = ScriptedRandom([0.35])  # over the un-bonused 30%, under the bonused 40%
+    rng = ScriptedRandom([0.35, 0.5, 0.5])  # [0] over the un-bonused 30%, under the bonused 40%, [1:] Add_Experience gain draws
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -2014,3 +2019,52 @@ def test_illusory_fog_strength_halves_when_affected():
 
 def test_illusory_fog_strength_unchanged_when_not_affected():
     assert illusory_fog_strength(20.0, affected=False) == 20.0
+
+
+# ---------------------------------------------------------------------------
+# Add_Experience wiring for spell-school casts (Phase 460) --
+# AKGEN_reverse_engineering_report (2).md SS3.3's spell-school row
+# ---------------------------------------------------------------------------
+
+
+def test_execute_cast_awards_real_add_experience_credit_on_a_successful_relevant_cast():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    rng = ScriptedRandom([0.29, 0.5, 0.5])  # [0] under the 45% chance, [1:] Add_Experience gain draws
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].experience_credit == 10  # round(10*(1+0.5-0.5))
+
+
+def test_execute_cast_with_no_recorded_skill_grants_no_add_experience_credit():
+    # caster.skills is None -- _roll_cast_success's own automatic-success
+    # bypass lets the cast succeed, but SS3.3's own "skill 0 resta esclusa"
+    # clause still applies since the caster's real skill is unrecorded.
+    state = build_state()
+    state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].experience_credit == 0
+
+
+def test_execute_cast_wand_triggered_cast_at_natural_skill_0_grants_no_add_experience_credit():
+    # wand_skill_level bypasses _roll_cast_success's own skill check, but
+    # the caster's real (natural) Psychic skill is still 0 here -- the
+    # bypass must not leak into Add_Experience eligibility.
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # unrelated ability
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.ORATORY, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, wand_skill_level=2)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].experience_credit == 0

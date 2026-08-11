@@ -683,6 +683,7 @@ from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, loot_defeated_leader, resolve_melee_duel
+from ak_engine.turn.experience import add_experience
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, is_adjacent
 
@@ -899,47 +900,78 @@ def execute_cast(
     spell = request.spell
 
     if spell is Spell.CHARM:
-        return _execute_charm(state, kingdom_id, leader_id, request, rng, wand_skill_level)
-    if spell is Spell.KILL_ENEMY:
-        return _execute_kill_enemy(state, leader_id, request, rng, wand_skill_level)
-    if spell is Spell.RESURRECTION:
-        return _execute_resurrection(state, kingdom_id, leader_id, request, rng, wand_skill_level)
-    if spell is Spell.PART_SEA:
-        return _execute_part_sea(state, leader_id, request, rng, board_width, wand_skill_level)
-    if spell is Spell.FLOOD:
-        return _execute_flood(state, leader_id, request, rng, board_width, wand_skill_level)
-    if spell is Spell.TORNADO:
-        return _execute_tornado(state, leader_id, request, rng, board_width, wand_skill_level)
-    if spell is Spell.EARTHQUAKE:
-        return _execute_earthquake(state, leader_id, request, rng, board_width, wand_skill_level)
-    if spell is Spell.BLESS:
-        return _execute_bless(state, leader_id, request, rng, board_width, wand_skill_level)
-    if spell is Spell.ILLUS_TERRAIN:
-        return _execute_illus_terrain(state, leader_id, request, rng, board_width, wand_skill_level)
-    if spell is Spell.ILLUS_ARMIES:
-        return _execute_illus_armies(state, leader_id, request, rng, wand_skill_level)
-    if spell is Spell.ORATORY:
-        return _execute_oratory(state, leader_id, request, rng, wand_skill_level)
-    if spell is Spell.PLAGUE:
-        return _execute_plague(state, leader_id, request, rng, board_width, wand_skill_level)
-    if spell is Spell.SCAR_TERRAIN:
-        return _execute_scar_terrain(state, leader_id, request, rng, board_width, wand_skill_level)
-    if spell is Spell.SKELETAL_ARMY:
-        return _execute_skeletal_army(state, kingdom_id, leader_id, request, rng, wand_skill_level)
-    if spell is Spell.CLAIRVOYANCE:
-        return _execute_clairvoyance(state, kingdom_id, leader_id, request, rng, wand_skill_level)
-    if spell is Spell.HIDE_FEATURE:
-        return _execute_hide_feature(state, leader_id, request, rng, board_width, wand_skill_level)
-    if spell is Spell.GATE_ANGEL:
-        return _execute_gate_angel(state, kingdom_id, leader_id, request, rng, wand_skill_level)
-    if spell is Spell.MYSTIC_WINDS:
-        return _execute_mystic_winds(state, leader_id, request, rng, wand_skill_level)
-    if spell is Spell.LOCATE_OBJECT:
-        return _execute_locate_object(state, leader_id, request, rng, wand_skill_level)
-    if spell is Spell.ILLUS_FOG:
-        return _execute_illus_fog(state, leader_id, request, rng, board_width, wand_skill_level)
+        result = _execute_charm(state, kingdom_id, leader_id, request, rng, wand_skill_level)
+    elif spell is Spell.KILL_ENEMY:
+        result = _execute_kill_enemy(state, leader_id, request, rng, wand_skill_level)
+    elif spell is Spell.RESURRECTION:
+        result = _execute_resurrection(state, kingdom_id, leader_id, request, rng, wand_skill_level)
+    elif spell is Spell.PART_SEA:
+        result = _execute_part_sea(state, leader_id, request, rng, board_width, wand_skill_level)
+    elif spell is Spell.FLOOD:
+        result = _execute_flood(state, leader_id, request, rng, board_width, wand_skill_level)
+    elif spell is Spell.TORNADO:
+        result = _execute_tornado(state, leader_id, request, rng, board_width, wand_skill_level)
+    elif spell is Spell.EARTHQUAKE:
+        result = _execute_earthquake(state, leader_id, request, rng, board_width, wand_skill_level)
+    elif spell is Spell.BLESS:
+        result = _execute_bless(state, leader_id, request, rng, board_width, wand_skill_level)
+    elif spell is Spell.ILLUS_TERRAIN:
+        result = _execute_illus_terrain(state, leader_id, request, rng, board_width, wand_skill_level)
+    elif spell is Spell.ILLUS_ARMIES:
+        result = _execute_illus_armies(state, leader_id, request, rng, wand_skill_level)
+    elif spell is Spell.ORATORY:
+        result = _execute_oratory(state, leader_id, request, rng, wand_skill_level)
+    elif spell is Spell.PLAGUE:
+        result = _execute_plague(state, leader_id, request, rng, board_width, wand_skill_level)
+    elif spell is Spell.SCAR_TERRAIN:
+        result = _execute_scar_terrain(state, leader_id, request, rng, board_width, wand_skill_level)
+    elif spell is Spell.SKELETAL_ARMY:
+        result = _execute_skeletal_army(state, kingdom_id, leader_id, request, rng, wand_skill_level)
+    elif spell is Spell.CLAIRVOYANCE:
+        result = _execute_clairvoyance(state, kingdom_id, leader_id, request, rng, wand_skill_level)
+    elif spell is Spell.HIDE_FEATURE:
+        result = _execute_hide_feature(state, leader_id, request, rng, board_width, wand_skill_level)
+    elif spell is Spell.GATE_ANGEL:
+        result = _execute_gate_angel(state, kingdom_id, leader_id, request, rng, wand_skill_level)
+    elif spell is Spell.MYSTIC_WINDS:
+        result = _execute_mystic_winds(state, leader_id, request, rng, wand_skill_level)
+    elif spell is Spell.LOCATE_OBJECT:
+        result = _execute_locate_object(state, leader_id, request, rng, wand_skill_level)
+    elif spell is Spell.ILLUS_FOG:
+        result = _execute_illus_fog(state, leader_id, request, rng, board_width, wand_skill_level)
+    else:
+        return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
 
-    return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
+    if result.applied:
+        _award_cast_experience(state, leader_id, spell, rng)
+    return result
+
+
+def _award_cast_experience(state: GameState, leader_id: int, spell: Spell, rng: random.Random) -> None:
+    """Phase 460: AKGEN_reverse_engineering_report (2).md SS3.3's own
+    spell-school row (base 10, "lancio pertinente riuscito; skill 0 resta
+    esclusa" -- a relevant successful cast; skill 0 stays excluded).
+    ``execute_cast()``'s own ``result.applied`` already means "this spell
+    genuinely resolved" -- the real trigger this row names -- for every
+    spell this project executes, in one choke point, rather than
+    threading a separate call into each of the ~19 ``_execute_*``
+    handlers individually.
+
+    The "skill 0 excluded" clause needs an explicit check here even
+    though ``_roll_cast_success()`` already refuses ``level < 1`` for the
+    ordinary case -- ``wand_skill_level is not None`` (Phase 141, a
+    wand-triggered cast always succeeds) and ``caster.skills is None``
+    (unrecorded, treated as an automatic success) both bypass that gate
+    entirely, and neither represents the caster's own real skill genuinely
+    being 1+, so both must still be excluded from credit here.
+    """
+
+    caster = state.leaders[leader_id]
+    ability = _spell_ability(caster, spell)
+    natural_skill = caster.skills.pair_for_ability(ability)[0] if caster.skills is not None else 0
+    if natural_skill < 1:
+        return
+    add_experience(caster, ability, 10, rng)
 
 
 def _spell_ability(caster: LeaderState, spell: Spell) -> Ability:

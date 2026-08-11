@@ -19370,7 +19370,7 @@ follow-up request after the original 431-435 plan shipped.
     test, `test_execute_aspy_awards_real_add_experience_credit` (the
     exact `round(10*(1+0.5-0.5))==10` worked example). Ran again: 4114
     passed (1 new).
-- **Phase 459 (current)**: wires `add_experience()` into its third real
+- **Phase 459**: wires `add_experience()` into its third real
   call site -- `AKGEN_reverse_engineering_report (2).md` SS3.3's own
   Druid row (base 10, "evento druidico qualificante"); SS3.4 names the
   real trigger explicitly: "interazioni druidiche con creature/mostri"
@@ -19393,6 +19393,41 @@ follow-up request after the original 431-435 plan shipped.
     grants no credit at all, and the DR gate passing grants real credit
     regardless of the reaction that follows. Ran again: 4116 passed
     (2 new).
+- **Phase 460 (current)**: wires `add_experience()` into its fourth real
+  call site -- `AKGEN_reverse_engineering_report (2).md` SS3.3's own
+  spell-school row (base 10, "lancio pertinente riuscito; skill 0 resta
+  esclusa" -- a relevant successful cast; skill 0 stays excluded), covering
+  the five spell schools at once (White/Necromancy/Elemental/Psychic/
+  Illusionist). Rather than duplicating a call into each of `turn/
+  cast_execution.py`'s own ~19 `_execute_*` spell handlers, the top-level
+  `execute_cast()` dispatcher was restructured to capture each handler's
+  own `CastExecutionResult` and call a single new helper,
+  `_award_cast_experience()`, once, uniformly, after dispatch, keyed off
+  `result.applied` -- one choke point instead of 19 separate opportunities
+  to forget the wiring. The "skill 0 stays excluded" clause needed an
+  explicit, independent check inside that helper (`caster.skills.
+  pair_for_ability(ability)[0]`, or `0` if unrecorded) rather than trusting
+  `_roll_cast_success()`'s own `level < 1` gate to have already enforced
+  it -- two real bypass paths there (`wand_skill_level is not None`,
+  Phase 141's wand-triggered casts always succeed; and `caster.skills is
+  None`, an unrecorded skill treated as an automatic success) both skip
+  that gate entirely without the caster's own real skill genuinely being
+  1+.
+  - Ran the full suite before writing new tests: 18 pre-existing `tests/
+    test_cast_execution.py` tests broke the same way Phase 457/458's own
+    wiring did (the new `add_experience()` call consumes two more
+    `random()` draws than their `ScriptedRandom` queues had scripted) --
+    fixed by padding each queue by two values, or leaving them unpadded
+    where the credit path is genuinely never reached (skill 0, `applied=
+    False`, or a later call in a shared-`rng` sequence that fails before
+    any roll). Added 3 new tests: a worked-example proof
+    (`test_execute_cast_awards_real_add_experience_credit_on_a_successful_
+    relevant_cast`, the exact `round(10*(1+0.5-0.5))==10` case) and two
+    "skill 0 stays excluded" proofs covering both bypass paths
+    (`test_execute_cast_with_no_recorded_skill_grants_no_add_experience_
+    credit` for `caster.skills is None`, and `test_execute_cast_wand_
+    triggered_cast_at_natural_skill_0_grants_no_add_experience_credit` for
+    `wand_skill_level`). Ran again: 4119 passed (3 new).
 
 ## Setup
 
