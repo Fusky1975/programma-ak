@@ -19303,7 +19303,7 @@ follow-up request after the original 431-435 plan shipped.
     cross-ability credit-sharing proof `turn/experience.py`'s own side
     of the mechanism needs (Melee's own gain carrying into a later
     Necromancy threshold crossing). Ran again: 4111 passed (11 new).
-- **Phase 457 (current)**: wires `turn/experience.py add_experience()`
+- **Phase 457**: wires `turn/experience.py add_experience()`
   (Phase 456) into its first two real, non-Practice call sites --
   `AKGEN_reverse_engineering_report (2).md` SS3.3's own Thief row (base
   15, "furto e azioni avanzate di banditry/piracy"), the single fully-
@@ -19348,6 +19348,28 @@ follow-up request after the original 431-435 plan shipped.
     test_execute_search_steal_success_awards_real_add_experience_
     credit` (the guarded-feature Steal path's own sibling proof). Ran
     again: 4113 passed (2 new).
+- **Phase 458 (current)**: wires `add_experience()` into its second real
+  call site -- `AKGEN_reverse_engineering_report (2).md` SS3.3's own Spy
+  row (base 10, "evento informativo qualificante"); SS3.4 names the real
+  trigger set explicitly: "Spy, Trail, Pursue e attivita' informative
+  pertinenti." `turn/aspy_execution.py execute_aspy()` has no success/
+  failure roll of its own -- every call that resolves to a real
+  `SpyReport` (the caster's location is a known province) is a genuine
+  informational event, so `add_experience(leader, Ability.SPY, 10, rng)`
+  now fires unconditionally right before that report is built.
+  **Not wired here**: Trail (`turn/trail_execution.py`) and Pursue
+  (`turn/pursue_execution.py`) -- SS3.4 names all three under one row,
+  but each is its own action executor with its own real "qualifying"
+  moment to identify first, left for a future phase rather than assumed
+  identical to ASpy's own always-fires shape.
+  - Ran the full suite before writing new tests: 8 pre-existing
+    `tests/test_aspy_execution.py` tests broke the same way Phase 457's
+    own Thief wiring did (the new `add_experience()` call consumes two
+    more `random()` draws than their `ScriptedRandom` queues had
+    scripted) -- fixed by padding each queue by two values. Added 1 new
+    test, `test_execute_aspy_awards_real_add_experience_credit` (the
+    exact `round(10*(1+0.5-0.5))==10` worked example). Ran again: 4114
+    passed (1 new).
 
 ## Setup
 

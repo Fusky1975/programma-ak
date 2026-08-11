@@ -144,6 +144,23 @@ now. See ``_army_display_name()``'s own docstring for how an army's
 race (needed only to decide whether a short non-Human tag is appended)
 is resolved, including the explicit ``Race.HUMAN`` fallback for a
 mercenary army with no owning Kingdom.
+
+**Phase 458 -- Add_Experience's own Spy call site.** ``AKGEN_reverse_
+engineering_report (2).md`` SS3.3's own Spy row gives a fixed base
+value (10) for "evento informativo qualificante" (a qualifying
+informational event); SS3.4 names the real trigger set explicitly:
+"Spy, Trail, Pursue e attivita' informative pertinenti" (Spy, Trail,
+Pursue, and relevant informational activities). ``execute_aspy()``
+has no success/failure roll of its own -- every call that reaches a
+real ``SpyReport`` (the caster's location resolves to a known
+province) is a genuine informational event, so ``turn/experience.py
+add_experience(leader, Ability.SPY, 10, rng)`` fires unconditionally
+right before that report is built. **Not wired here**: Trail
+(``turn/trail_execution.py``) and Pursue (``turn/pursue_execution.py``)
+-- SS3.4's own text names all three under one row, but each is its
+own action executor with its own real "qualifying" moment to identify
+first, left for its own future phase rather than assumed identical to
+ASpy's own always-fires shape.
 """
 
 from __future__ import annotations
@@ -162,6 +179,7 @@ from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.experience import add_experience
 from ak_engine.turn.intelligence_estimate import estimate_alignment, estimate_temper
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.practice_execution import SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL
@@ -360,6 +378,13 @@ def execute_aspy(
     )
     if discoveries_obtained:
         leader.merit_tally.discoveries_via_espionage += len(discoveries_obtained)
+
+    # Phase 458: AKGEN_reverse_engineering_report (2).md SS3.3's own Spy
+    # row (base 10) -- see module docstring's own Phase 458 addendum for
+    # why every real report this function produces (there's no success/
+    # failure roll gating ASpy itself) counts as the "evento informativo
+    # qualificante" (qualifying informational event) that row names.
+    add_experience(leader, Ability.SPY, 10, rng)
 
     return SpyReport(
         province=leader.location,

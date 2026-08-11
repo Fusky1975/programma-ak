@@ -99,7 +99,7 @@ def test_execute_aspy_reports_the_provinces_tax_estimate_unperturbed_at_zero_off
     # simplest possible assertion (no margin-of-error math needed).
     state = _state()
     state.provinces[HOME].tax = 5
-    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.5]))
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.5, 0.5, 0.5]))
 
     assert report.tax_estimate == 5
 
@@ -109,7 +109,7 @@ def test_execute_aspy_tax_estimate_is_perturbed_at_zero_spy_skill():
     # (70%). rng.random()=1.0 pushes the offset to its maximum (+70%).
     state = _state()
     state.provinces[HOME].tax = 10
-    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([1.0]))
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([1.0, 0.5, 0.5]))
 
     assert report.tax_estimate == 17  # round(10 * 1.70)
 
@@ -123,7 +123,7 @@ def test_execute_aspy_tax_estimate_margin_shrinks_with_spy_skill():
         [0] * (Ability.SPY.value * 2) + [4, 6] + [0] * (30 - Ability.SPY.value * 2 - 2)
     )
 
-    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([1.0]))
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([1.0, 0.5, 0.5]))
 
     assert report.tax_estimate == 12  # round(10 * 1.15)
 
@@ -131,14 +131,16 @@ def test_execute_aspy_tax_estimate_margin_shrinks_with_spy_skill():
 def test_execute_aspy_tax_estimate_floors_at_zero():
     state = _state()
     state.provinces[HOME].tax = 1
-    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.0]))  # maximum negative offset
+    report = execute_aspy(
+        state, LEADER_ID, _request(), rng=ScriptedRandom([0.0, 0.5, 0.5])
+    )  # maximum negative offset
 
     assert report.tax_estimate == 0
 
 
 def test_execute_aspy_reports_none_tax_estimate_when_never_recorded():
     state = _state()  # ProvinceState.tax defaults to None
-    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([]))
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.5, 0.5]))
 
     assert report.tax_estimate is None
 
@@ -396,7 +398,7 @@ def test_execute_aspy_obtains_discoveries_via_espionage_and_credits_merit():
     state.leaders[LEADER_ID].skills = SkillTable(raw_values=[0] * 30)
     state.leaders[LEADER_ID].skills.set_pair_for_ability(Ability.SPY, 4, 0)  # chance = 2*4*5% = 40%
 
-    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.1]))
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.1, 0.5, 0.5]))
 
     assert report.discoveries_obtained == (Discovery.SEXTANT,)
     assert state.kingdoms[1].discoveries == {Discovery.SEXTANT}
@@ -409,11 +411,24 @@ def test_execute_aspy_reports_no_discoveries_when_the_roll_fails():
     state.leaders[LEADER_ID].skills = SkillTable(raw_values=[0] * 30)
     state.leaders[LEADER_ID].skills.set_pair_for_ability(Ability.SPY, 4, 0)  # chance = 40%
 
-    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.9]))
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.9, 0.5, 0.5]))
 
     assert report.discoveries_obtained == ()
     assert state.kingdoms[1].discoveries == set()
     assert state.leaders[LEADER_ID].merit_tally.discoveries_via_espionage == 0
+
+
+def test_execute_aspy_awards_real_add_experience_credit():
+    # Phase 458: AKGEN_reverse_engineering_report (2).md SS3.3's own Spy
+    # row (base 10) -- every real ASpy report (no success/failure roll
+    # gates this action at all) credits the caster's own shared
+    # experience_credit counter (Phase 456).
+    state = _state()
+    state.provinces[HOME].tax = 5
+
+    execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.5, 0.5, 0.5]))
+
+    assert state.leaders[LEADER_ID].experience_credit == 10  # round(10 * (1 + 0.5 - 0.5))
 
 
 def test_execute_aspy_reports_no_discoveries_for_an_unowned_province():
@@ -428,8 +443,8 @@ def test_execute_aspy_reports_no_discoveries_when_target_kingdom_has_none():
     state = _state(owner_kingdom_id=2)
     state.add_kingdom(_kingdom(2))
 
-    # No candidates -- no rng consumed at all beyond what the rest of the
-    # report needs (an empty script would raise IndexError otherwise).
-    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([]))
+    # No discovery candidates -- but Phase 458's own Add_Experience call
+    # still needs its two triangular-gain draws.
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.5, 0.5]))
 
     assert report.discoveries_obtained == ()
