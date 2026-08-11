@@ -19191,7 +19191,7 @@ follow-up request after the original 431-435 plan shipped.
     worked example proving the naive-tuple-flip case, `final_standings()`
     ordering 3 Kingdoms, and a genuine 2-way tie preserving iteration
     order. Ran again: 4090 passed (6 new).
-- **Phase 455 (current)**: all-star + Valhalla induction thresholds,
+- **Phase 455**: all-star + Valhalla induction thresholds,
   extending `turn/final_standings.py`, sourced from `AKGEN_reverse_
   engineering_report (2).md` SS14.7. `qualifies_for_all_star()`:
   `kingdom_points() >= 7.5` -- the real new-rules cut (the dossier's own
@@ -19239,6 +19239,70 @@ follow-up request after the original 431-435 plan shipped.
     20 while a different Kingdom is really #1, below 20 and not #1,
     and 0 individual points but genuinely #1). Ran again: 4100 passed
     (10 new).
+- **Phase 456 (current)**: Add_Experience -- the real engine's own
+  non-Practice skill-growth routine, sourced from `AKGEN_reverse_
+  engineering_report (2).md` SS3, new `turn/experience.py`. Also
+  **corrects a Phase 449 modeling error** discovered while reading this
+  section closely: SS2.2's own words are explicit that Practice's own
+  credit accumulator is "un singolo byte per personaggio, condiviso con
+  l'esperienza" (**one shared byte per leader, not one per ability**) --
+  Phase 449 had modeled it as `LeaderState.practice_credit: dict[int,
+  int]` keyed by `Ability.value` instead, a choice that happened to look
+  correct because every Phase 449 test only ever exercised one ability
+  at a time. `LeaderState.practice_credit` is renamed to `LeaderState.
+  experience_credit: int` (a bare shared counter); every read/write site
+  in `turn/practice_execution.py` (`execute_practice`/`execute_practice_
+  group`) and every affected test in `tests/test_practice_execution.py`
+  is updated to match -- same behavior for every existing single-ability
+  scenario, but now genuinely correct for the cross-ability case, proved
+  by a new end-to-end test where credit earned practicing Sage carries
+  over and raises Necromancy instead.
+
+  `add_experience()`: `base_points == 100` is a sentinel that raises the
+  named ability's skill directly (unless already at `MAX_SKILL_LEVEL`),
+  bypassing the credit counter entirely. Every other `base_points`
+  (SS3.3's own real call-site values, 5/10/15) instead perturbs that
+  base through two independent uniform draws -- `round(base_points * (1
+  + U1 - U2))`, a triangular distribution centered on `base_points` --
+  and adds the result to the leader's own shared `experience_credit`
+  **unconditionally**, no gate roll first (unlike Practice's own
+  gate-before-credit sequencing -- the two mechanisms share the same
+  counter and the same two sub-rolls, just applied in a different
+  order). Once the shared counter reaches >= 100, the same aptitude gate
+  Practice uses (`turn/practice_execution.py roll_practice_aptitude_
+  gate()`) is rolled once for the ability whose own attempt crossed the
+  threshold -- success raises the skill, failure triggers the same
+  `APT_RISE_CHANCE`-driven aptitude-rise attempt Practice's own gate
+  failure uses (`_maybe_raise_aptitude()`, reused directly) -- and 100
+  is subtracted from the credit either way.
+
+  **Deliberately out of scope this phase**: wiring `add_experience()`
+  into the ~11 real call sites SS3.3/SS3.4 name (Tactical/March/Naval/
+  Archery/Melee/the five spell schools/Druid/Thief/Explorer/Spy/Sage) --
+  a separate, considerably larger follow-up phase, the same "core
+  formula first, wiring later" split this project already used for
+  Discovery selection (Phase 448) and Druidic monster battle assistance
+  (Phase 452 core, Phase 453 wiring). Also out of scope: any Royal-Heir/
+  comatose eligibility gating, which belongs at each future call site's
+  own action executor, not duplicated into this shared formula -- the
+  source names no such gate inside `Add_Experience` itself.
+  - Ran the full suite before writing new tests: unaffected (4100
+    passed unchanged) -- the `practice_credit` -> `experience_credit`
+    rename is a pure behavior-preserving refactor for every existing
+    single-ability scenario, and the new module is entirely unwired.
+    Added 1 test to `tests/test_practice_execution.py` (credit earned
+    practicing Sage carries over and raises Necromancy instead, proving
+    the corrected shared-counter model end to end) and 10 tests to new
+    `tests/test_experience.py`: the `base_points==100` sentinel (direct
+    raise, and no rise at max skill), the triangular-gain formula below
+    threshold (worked example cross-checked via a scratch script),
+    threshold-crossing gate success, threshold-crossing gate failure
+    with both a zero-percent and a real aptitude-rise outcome,
+    threshold-crossing at max skill (credit still subtracted, no rise),
+    a fresh `SkillTable` auto-attached when none recorded, and the same
+    cross-ability credit-sharing proof `turn/experience.py`'s own side
+    of the mechanism needs (Melee's own gain carrying into a later
+    Necromancy threshold crossing). Ran again: 4111 passed (11 new).
 
 ## Setup
 

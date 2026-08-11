@@ -52,21 +52,23 @@ text ties it to "due to rise... but can't", which this module still
 reads as requiring ``levels_beyond_aptitude > 0``, so that condition is
 kept). On gate **success**, the outcome depends on context: a strictly-
 higher-skilled co-practicer present -> the skill rises *immediately*, no
-credit involved; otherwise the attempt earns **persistent credit**
-toward the same ability -- ``PRACTICE_CREDIT_TIED_GAIN`` (10) if tied
-with at least one co-practicer this phase, ``PRACTICE_CREDIT_SOLO_GAIN``
-(5) if practicing alone -- stored in ``LeaderState.practice_credit``
-(keyed by ``Ability.value``, see that field's own docstring). Once a
-practicer's own credit for that ability reaches ``PRACTICE_CREDIT_RISE_
-THRESHOLD`` (100), the skill rises immediately and 100 is subtracted --
-no second gate roll needed for the threshold-crossing attempt itself.
+credit involved; otherwise the attempt earns **persistent credit** --
+``PRACTICE_CREDIT_TIED_GAIN`` (10) if tied with at least one co-
+practicer this phase, ``PRACTICE_CREDIT_SOLO_GAIN`` (5) if practicing
+alone -- stored in ``LeaderState.experience_credit``, **one shared
+counter per leader, not one per ability** (Phase 456 corrects Phase
+449's own per-ability-dict model -- see that field's own docstring for
+the exact source quote). Once the leader's own shared credit reaches
+``PRACTICE_CREDIT_RISE_THRESHOLD`` (100), *the ability whose attempt
+crossed the threshold* rises immediately and 100 is subtracted -- no
+second gate roll needed for the threshold-crossing attempt itself.
 
 **Multi-character coordination -- resolved Phase 46, credit model
-Phase 449**: ``resolve_practice_pair``/``resolve_practice_group``
+Phase 449/456**: ``resolve_practice_pair``/``resolve_practice_group``
 implement the rulebook's multi-character case (immediate-rise-if-lower /
 credit-if-tied, generalized to N >= 2 -- see "Extending to N > 2"
 below); ``execute_practice_group`` wraps that with the same
-``LeaderState.skills``/``practice_credit`` read/write plumbing
+``LeaderState.skills``/``experience_credit`` read/write plumbing
 ``execute_practice`` uses. **Reachable as of Phase 46** via ``turn/
 turn_processor.py run_turn()``, which detects 2+ leaders co-located
 (same current province) and Practicing the same ability in the same
@@ -101,7 +103,7 @@ the group's own tied/minimum comparison. Keeping the resolvers pure
 functions of frozen input values (as Phase 46 originally designed them)
 lets the comatose gate skip persisting a resolver's output for exactly
 one practicer without the resolver ever touching ``LeaderState`` itself
--- writing ``practice_credit`` *inside* the resolver would leak a
+-- writing ``experience_credit`` *inside* the resolver would leak a
 comatose practicer's credit mutation before the caller ever gets a
 chance to gate it, since the group resolver runs before that gate is
 even checked (it needs everyone's frozen pre-attempt skill first).
@@ -258,11 +260,23 @@ phase's scope for each:
 skill-rise mechanic itself off ``AKGEN_reverse_engineering_report
 (2).md`` SS2/SS6 -- see "Roll sequencing" above for the full formula and
 "Why resolvers still take raw values" for why ``LeaderState.
-practice_credit`` is written by the ``execute_practice*`` callers, not
+experience_credit`` is written by the ``execute_practice*`` callers, not
 by ``resolve_practice_solo``/``_pair``/``_group`` themselves.
 ``GUARANTEED_PRACTICE_CHANCE``/``TIED_SKILL_PRACTICE_CHANCE``/``SOLO_
 PRACTICE_CHANCE`` are removed (the real gate has no such per-context
 base chance); ``APT_RISE_CHANCE``/``MAX_SKILL_LEVEL`` are unchanged.
+
+**Phase 456 (corrects the credit field's own shape, real source)**:
+``LeaderState.practice_credit`` (a ``dict[int, int]`` keyed by
+``Ability.value``) is renamed to ``LeaderState.experience_credit`` (a
+bare ``int``) -- AKGEN_reverse_engineering_report (2).md SS2.2's own
+words are explicit: "un singolo byte per personaggio, condiviso con
+l'esperienza" (a single byte per character, shared with experience),
+not one byte per ability. Every credit read/write below now goes
+through that one shared counter regardless of which ability the current
+Practice attempt is on; see ``turn/experience.py`` (new this phase) for
+the other real contributor to this same counter, Add_Experience's own
+triangular-distribution gain from non-Practice actions.
 """
 
 from __future__ import annotations
@@ -317,13 +331,13 @@ class PracticeOutcome:
     aptitude_rose: bool
     new_skill: int
     new_aptitude: int
-    # Phase 449: the practicer's own post-attempt practice_credit total
-    # for this ability, whenever the credit path was actually exercised
-    # (a successful gate that wasn't an immediate rise) -- None means the
-    # credit dict is untouched this attempt (immediate rise, failed gate,
+    # Phase 449/456: the leader's own post-attempt shared experience_
+    # credit total, whenever the credit path was actually exercised (a
+    # successful gate that wasn't an immediate rise) -- None means the
+    # counter is untouched this attempt (immediate rise, failed gate,
     # already-maxed skill, or "not this call's turn to roll" in a group).
     # The caller (execute_practice/execute_practice_group) persists this
-    # into LeaderState.practice_credit itself -- see module docstring's
+    # into LeaderState.experience_credit itself -- see module docstring's
     # "Why resolvers still take raw values" for why the resolvers below
     # never write LeaderState directly.
     new_credit: int | None = None
@@ -706,11 +720,11 @@ def execute_practice(
     skills = _get_or_create_skills(leader)
 
     current_skill, aptitude = skills.pair_for_ability(ability)
-    credit = leader.practice_credit.get(ability.value, 0)
+    credit = leader.experience_credit
     outcome = resolve_practice_solo(current_skill, aptitude, credit, rng)
     skills.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
     if outcome.new_credit is not None:
-        leader.practice_credit[ability.value] = outcome.new_credit
+        leader.experience_credit = outcome.new_credit
     if outcome.skill_rose or outcome.aptitude_rose:
         # Phase 259: RULES.AK [4.21.1] -- a Royal Heir loses the
         # Resurrection-restores-the-old-King option the instant Practice
@@ -820,7 +834,7 @@ def execute_practice_group(
     skills_tables = [_get_or_create_skills(state.leaders[leader_id]) for leader_id in leader_ids]
     pairs = [table.pair_for_ability(ability) for table in skills_tables]
     triples = [
-        (skill, aptitude, state.leaders[leader_id].practice_credit.get(ability.value, 0))
+        (skill, aptitude, state.leaders[leader_id].experience_credit)
         for leader_id, (skill, aptitude) in zip(leader_ids, pairs)
     ]
 
@@ -834,7 +848,7 @@ def execute_practice_group(
         if leader.is_comatose:
             # Phase 310: same comatose gate as execute_practice()'s own --
             # this leader's own real stored skill/aptitude (and, as of
-            # Phase 449, practice_credit) never changes, regardless of
+            # Phase 449/456, experience_credit) never changes, regardless of
             # what resolve_practice_group() computed for them; the other
             # co-practicers' own outcomes are unaffected (a documented,
             # unsourced choice -- nothing in [3.13] covers a comatose
@@ -846,7 +860,7 @@ def execute_practice_group(
             continue
         table.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
         if outcome.new_credit is not None:
-            leader.practice_credit[ability.value] = outcome.new_credit
+            leader.experience_credit = outcome.new_credit
         if outcome.skill_rose or outcome.aptitude_rose:
             # Phase 259: same is_royal_heir-clearing rule as execute_practice()'s own.
             leader.is_royal_heir = False

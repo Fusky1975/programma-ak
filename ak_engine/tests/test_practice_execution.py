@@ -252,7 +252,7 @@ def test_execute_practice_attaches_a_fresh_skill_table_when_none_recorded():
     assert result.new_aptitude == 0
     assert state.leaders[1].skills is not None
     assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (0, 0)
-    assert state.leaders[1].practice_credit[Ability.SAGE.value] == PRACTICE_CREDIT_SOLO_GAIN
+    assert state.leaders[1].experience_credit == PRACTICE_CREDIT_SOLO_GAIN
 
 
 def test_execute_practice_reuses_and_only_touches_the_practiced_abilitys_pair():
@@ -263,12 +263,46 @@ def test_execute_practice_reuses_and_only_touches_the_practiced_abilitys_pair():
 
     execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01, 0.9]))
 
-    # Sage earned credit off the fresh-zero baseline...
+    # Sage earned credit off the fresh-zero baseline, into the leader's
+    # own single shared counter (Phase 456: not a per-ability dict)...
     assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (0, 0)
-    assert state.leaders[1].practice_credit[Ability.SAGE.value] == PRACTICE_CREDIT_SOLO_GAIN
-    # ...but Necromancy's own pair (and credit) are untouched.
+    assert state.leaders[1].experience_credit == PRACTICE_CREDIT_SOLO_GAIN
+    # ...and Necromancy's own skill/aptitude pair (untouched by this call) is unaffected.
     assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (3, 5)
-    assert Ability.NECROMANCY.value not in state.leaders[1].practice_credit
+
+
+def test_execute_practice_credit_carries_over_and_raises_a_different_ability():
+    # Phase 456's own real "occult rule" (AKGEN_reverse_engineering_
+    # report (2).md SS3.3): the shared credit counter doesn't belong to
+    # any one ability -- whichever ability's own attempt happens to push
+    # it past 100 is the one that rises, even if most of that credit was
+    # earned practicing something else entirely.
+    state = _state_with_leader(skills=SkillTable([0] * 30))
+
+    # Earns +5 solo credit on Sage (skill=0, aptitude=0 -> deficit=1,
+    # gate P=0.5; second scripted value pads Sage's own moot device-
+    # discovery roll, skill 0 gives it 0% chance regardless).
+    execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01, 0.9]))
+    assert state.leaders[1].experience_credit == PRACTICE_CREDIT_SOLO_GAIN
+    assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (0, 0)
+
+    # Fast-forward the shared counter to just below threshold, then
+    # practice a *different* ability (Necromancy, skill=2/aptitude=9 so
+    # the gate is guaranteed) -- its own +5 solo gain is what crosses
+    # 100, so Necromancy rises, not Sage.
+    state.leaders[1].experience_credit = 96
+    raw = [0] * 30
+    raw[Ability.NECROMANCY.value * 2] = 2
+    raw[Ability.NECROMANCY.value * 2 + 1] = 9
+    state.leaders[1].skills = SkillTable(raw)
+
+    result = execute_practice(state, leader_id=1, ability=Ability.NECROMANCY, rng=ScriptedRandom([0.01]))
+
+    assert result.skill_rose is True
+    assert result.new_skill == 3
+    assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (3, 9)
+    assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (0, 0)  # never touched by the credit it earned
+    assert state.leaders[1].experience_credit == 1  # 96 + 5 - 100
 
 
 def test_execute_practice_blocked_while_comatose():
@@ -283,9 +317,9 @@ def test_execute_practice_blocked_while_comatose():
 
     assert result.skill_rose is False
     assert result.aptitude_rose is False
-    # The real stored pair (and credit dict) are untouched.
+    # The real stored pair (and shared experience credit) are untouched.
     assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (3, 0)
-    assert state.leaders[1].practice_credit == {}
+    assert state.leaders[1].experience_credit == 0
 
 
 def test_execute_practice_tactical_still_works_while_comatose():
@@ -524,7 +558,7 @@ def test_execute_practice_sages_own_credit_still_accrues_normally():
 
     assert result.not_implemented_for_ability is False
     assert result.skill_rose is False
-    assert state.leaders[1].practice_credit[Ability.SAGE.value] == PRACTICE_CREDIT_SOLO_GAIN
+    assert state.leaders[1].experience_credit == PRACTICE_CREDIT_SOLO_GAIN
 
 
 # --- execute_practice_group (Phase 46) ------------------------------------
@@ -567,7 +601,7 @@ def test_execute_practice_group_lower_skill_member_gets_immediate_rise():
     assert results[1].new_skill == 3
     assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (2, 9)
     assert state.leaders[2].skills.pair_for_ability(Ability.NECROMANCY) == (3, 9)
-    assert Ability.NECROMANCY.value not in state.leaders[1].practice_credit  # immediate rise, no credit
+    assert state.leaders[1].experience_credit == 0  # immediate rise, no credit
 
 
 def test_execute_practice_group_tied_skill_earns_credit_independently_for_each():
@@ -584,8 +618,8 @@ def test_execute_practice_group_tied_skill_earns_credit_independently_for_each()
 
     assert results[0].skill_rose is False
     assert results[1].skill_rose is False
-    assert state.leaders[1].practice_credit[Ability.NECROMANCY.value] == PRACTICE_CREDIT_TIED_GAIN
-    assert state.leaders[2].practice_credit[Ability.NECROMANCY.value] == PRACTICE_CREDIT_TIED_GAIN
+    assert state.leaders[1].experience_credit == PRACTICE_CREDIT_TIED_GAIN
+    assert state.leaders[2].experience_credit == PRACTICE_CREDIT_TIED_GAIN
 
 
 def test_execute_practice_group_tied_skill_credit_threshold_crossing_still_gives_no_teacher():
@@ -601,7 +635,7 @@ def test_execute_practice_group_tied_skill_credit_threshold_crossing_still_gives
             2: _skills_with(Ability.NECROMANCY, skill=2, aptitude=9),
         },
     )
-    state.leaders[1].practice_credit[Ability.NECROMANCY.value] = 95
+    state.leaders[1].experience_credit = 95
 
     results = execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.01, 0.01]))
 
@@ -632,10 +666,10 @@ def test_execute_practice_group_three_leaders_only_minimum_skill_ones_roll():
 
 
 def test_execute_practice_group_comatose_co_practicer_credit_stays_untouched():
-    # Direct proof of the Phase 449 comatose/credit interaction: a tied
-    # scenario would normally earn +10 credit for both co-practicers,
-    # but a comatose participant's own practice_credit must stay
-    # completely untouched, exactly like their skill/aptitude.
+    # Direct proof of the Phase 449/456 comatose/credit interaction: a
+    # tied scenario would normally earn +10 credit for both co-
+    # practicers, but a comatose participant's own experience_credit
+    # must stay completely untouched, exactly like their skill/aptitude.
     state = _state_with_leaders(
         1,
         2,
@@ -648,8 +682,8 @@ def test_execute_practice_group_comatose_co_practicer_credit_stays_untouched():
 
     execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.01, 0.01]))
 
-    assert Ability.NECROMANCY.value not in state.leaders[1].practice_credit
-    assert state.leaders[2].practice_credit[Ability.NECROMANCY.value] == PRACTICE_CREDIT_TIED_GAIN
+    assert state.leaders[1].experience_credit == 0
+    assert state.leaders[2].experience_credit == PRACTICE_CREDIT_TIED_GAIN
 
 
 # -- Phase 446: Teacher merit (Office.TEACHER) -----------------------------
@@ -798,7 +832,7 @@ def test_execute_practice_sage_device_discovery_succeeds():
     )
 
     assert result.skill_rose is False
-    assert state.leaders[1].practice_credit[Ability.SAGE.value] == PRACTICE_CREDIT_SOLO_GAIN
+    assert state.leaders[1].experience_credit == PRACTICE_CREDIT_SOLO_GAIN
     assert result.device_discovered is True
     assert result.discovery_granted is not None
     assert result.discovery_granted in state.kingdoms[1].discoveries
@@ -835,7 +869,7 @@ def test_execute_practice_sage_device_discovery_uses_pre_attempt_skill():
     # correct 5% (fails) but below the wrong 10% (would incorrectly
     # succeed).
     state = _state_with_leader(skills=_skills_with(Ability.SAGE, skill=1, aptitude=9))
-    state.leaders[1].practice_credit[Ability.SAGE.value] = 96
+    state.leaders[1].experience_credit = 96
 
     result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.01, 0.07]))
 
@@ -1012,7 +1046,7 @@ def test_execute_practice_sage_discovery_credits_a_later_independent_discoverer(
 
 def test_execute_practice_clears_is_royal_heir_when_skill_rises():
     state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
-    state.leaders[1].practice_credit[Ability.MELEE.value] = 96  # +5 this call crosses the threshold
+    state.leaders[1].experience_credit = 96  # +5 this call crosses the threshold
     state.leaders[1].is_royal_heir = True
 
     result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
@@ -1036,7 +1070,7 @@ def test_execute_practice_leaves_is_royal_heir_when_nothing_rises():
 
 def test_execute_practice_non_heir_is_royal_heir_stays_false():
     state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
-    state.leaders[1].practice_credit[Ability.MELEE.value] = 96
+    state.leaders[1].experience_credit = 96
 
     result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
 
@@ -1115,8 +1149,8 @@ def test_execute_practice_group_sage_uses_each_leaders_own_pre_attempt_skill():
             2: _skills_with(Ability.SAGE, skill=3, aptitude=9),
         },
     )
-    state.leaders[1].practice_credit[Ability.SAGE.value] = 95
-    state.leaders[2].practice_credit[Ability.SAGE.value] = 95
+    state.leaders[1].experience_credit = 95
+    state.leaders[2].experience_credit = 95
 
     results = execute_practice_group(state, [1, 2], Ability.SAGE, rng=ScriptedRandom([0.01, 0.01, 0.17, 0.17]))
 
