@@ -874,7 +874,7 @@ def test_apply_successful_theft_transfers_the_victims_first_held_item():
     first = state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=2)
     second = state.add_item(Treasure.ABILITY_MARCH, owner_leader_id=2)
 
-    _apply_successful_theft(state, thief, victim)
+    _apply_successful_theft(state, thief, victim, ScriptedRandom([0.5, 0.5]))
 
     assert state.items[first.item_id].owner_leader_id == 1
     assert state.items[second.item_id].owner_leader_id == 2  # only one item changes hands
@@ -887,7 +887,7 @@ def test_apply_successful_theft_is_a_no_op_when_the_victim_holds_nothing():
     state.add_leader(thief)
     state.add_leader(victim)
 
-    _apply_successful_theft(state, thief, victim)  # must not raise
+    _apply_successful_theft(state, thief, victim, ScriptedRandom([0.5, 0.5]))  # must not raise
 
     assert state.items_held_by(1) == []
 
@@ -903,11 +903,26 @@ def test_apply_successful_theft_credits_the_thief_prince_merit_tally():
     state.add_leader(thief)
     state.add_leader(victim)
 
-    _apply_successful_theft(state, thief, victim)
-    _apply_successful_theft(state, thief, victim)
+    _apply_successful_theft(state, thief, victim, ScriptedRandom([0.5, 0.5]))
+    _apply_successful_theft(state, thief, victim, ScriptedRandom([0.5, 0.5]))
 
     assert thief.merit_tally.successful_thefts == 2
     assert victim.merit_tally.successful_thefts == 0
+
+
+def test_apply_successful_theft_also_awards_real_add_experience_credit():
+    # Phase 457: AKGEN_reverse_engineering_report (2).md SS3.3's own
+    # Thief row -- base 15, the shared LeaderState.experience_credit
+    # counter (Phase 456) gains round(15*(1+0.5-0.5)) == 15.
+    state = _base_state()
+    thief = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)
+    victim = LeaderState(2, kingdom_id=2, name="Victim", location=FIELD)
+    state.add_leader(thief)
+    state.add_leader(victim)
+
+    _apply_successful_theft(state, thief, victim, ScriptedRandom([0.5, 0.5]))
+
+    assert thief.experience_credit == 15
 
 
 # -- Phase 443: Duellist/Cravenest/Bravest merit -------------------------
@@ -1098,7 +1113,7 @@ def test_resolve_steal_tactic_success_applies_theft():
     state.add_leader(victim)
     item = state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=2)
 
-    outcome = _resolve_steal_tactic(thief, victim, state, ScriptedRandom([0.1]))  # < 15% base chance
+    outcome = _resolve_steal_tactic(thief, victim, state, ScriptedRandom([0.1, 0.5, 0.5]))  # < 15% base chance
 
     assert outcome == "success"
     assert state.items[item.item_id].owner_leader_id == 1

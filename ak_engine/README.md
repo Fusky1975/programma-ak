@@ -19239,7 +19239,7 @@ follow-up request after the original 431-435 plan shipped.
     20 while a different Kingdom is really #1, below 20 and not #1,
     and 0 individual points but genuinely #1). Ran again: 4100 passed
     (10 new).
-- **Phase 456 (current)**: Add_Experience -- the real engine's own
+- **Phase 456**: Add_Experience -- the real engine's own
   non-Practice skill-growth routine, sourced from `AKGEN_reverse_
   engineering_report (2).md` SS3, new `turn/experience.py`. Also
   **corrects a Phase 449 modeling error** discovered while reading this
@@ -19303,6 +19303,51 @@ follow-up request after the original 431-435 plan shipped.
     cross-ability credit-sharing proof `turn/experience.py`'s own side
     of the mechanism needs (Melee's own gain carrying into a later
     Necromancy threshold crossing). Ran again: 4111 passed (11 new).
+- **Phase 457 (current)**: wires `turn/experience.py add_experience()`
+  (Phase 456) into its first two real, non-Practice call sites --
+  `AKGEN_reverse_engineering_report (2).md` SS3.3's own Thief row (base
+  15, "furto e azioni avanzate di banditry/piracy"), the single fully-
+  sourced base value among the dossier's own ~11 real call sites (every
+  other row lists "variable"/"contextual", not a fixed number). Two
+  genuine "qualifying theft event" successes already existed in this
+  project, both already crediting the identical Phase 442 `MeritTally.
+  successful_thefts` the dossier's own Prince of Thieves formula names
+  as "two separate success paths" -- `turn/challenge_execution.py
+  _apply_successful_theft()` (character-vs-character Steal) and `turn/
+  search_execution.py _resolve_steal()`'s own success branch (guarded-
+  feature Steal) -- both now also call `add_experience(thief, Ability.
+  THIEF, 15, rng)`.
+
+  **Deliberately not wired here**: Practice's own Banditry/Piracy side
+  effects (`turn/practice_execution.py`'s own SS2.5 addendum) -- those
+  fire only as a byproduct of a `PR TH` session, whose own skill growth
+  is already fully accounted for by Practice's own credit mechanism
+  (SS2's general rule); wiring Add_Experience there too would double-
+  credit the same session. Only the two genuine Steal-tactic successes
+  above are events Practice never already covers -- read here as the
+  real, distinct trigger SS3.3's own "furto" half of that table row
+  refers to, a documented interpretation of a summary description, not
+  a literal quote of the compiled call site (see `_apply_successful_
+  theft()`'s own Phase 457 addendum for the full reasoning). The
+  remaining ~10 real call sites (Tactical/March/Naval/Archery/Melee/the
+  five spell schools/Druid/Explorer/Spy) stay unwired, left for future
+  phases -- each carries its own real ambiguity about the exact
+  triggering moment that a single phase shouldn't rush through wholesale.
+  - Ran the full suite before writing new tests: 4 pre-existing
+    `tests/test_challenge_execution.py` tests broke (`_apply_successful_
+    theft()` gained a required `rng` parameter, and the new `add_
+    experience()` call consumes two more `random()` draws than their
+    `ScriptedRandom` queues had scripted) -- fixed by threading a real
+    `rng` argument through and padding each queue by two values;
+    `tests/test_search_execution.py`'s own Steal tests were unaffected
+    (they already use `random.Random(seed)`, which has unlimited real
+    entropy, not a fixed scripted queue). Added 2 new tests: `tests/
+    test_challenge_execution.py test_apply_successful_theft_also_
+    awards_real_add_experience_credit` (the exact `round(15*(1+0.5-
+    0.5))==15` worked example) and `tests/test_search_execution.py
+    test_execute_search_steal_success_awards_real_add_experience_
+    credit` (the guarded-feature Steal path's own sibling proof). Ran
+    again: 4113 passed (2 new).
 
 ## Setup
 

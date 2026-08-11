@@ -2074,6 +2074,24 @@ def test_execute_search_steal_success_credits_the_thief_prince_merit_tally():
     assert state.leaders[LEADER_ID].merit_tally.successful_thefts == 1
 
 
+def test_execute_search_steal_success_awards_real_add_experience_credit():
+    # Phase 457: AKGEN_reverse_engineering_report (2).md SS3.3's own
+    # Thief row (base 15) -- the same real credit challenge_execution.py
+    # _apply_successful_theft() awards for the character-vs-character
+    # Steal path, sibling-wired here for the guarded-feature Steal path.
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    request = _steal_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
+    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert state.leaders[LEADER_ID].experience_credit > 0
+
+
 def test_execute_search_steal_failure_evades_falls_through():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))

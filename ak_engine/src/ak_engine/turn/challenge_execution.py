@@ -190,6 +190,32 @@ those bonus swings resolved immediately via ``_consume_bonus_attacks()``
 rule Search's own docstring already establishes, simplified here since
 the bonus attacker is always the caster and the bonus defender is
 always the target (no monster-side complexity to thread through).
+
+**Phase 457 -- Add_Experience's own Thief call site.** ``AKGEN_reverse_
+engineering_report (2).md`` SS3.3's own table gives Thief a fixed,
+fully-sourced base value (15, unlike the "variable"/"contextual" entries
+every other ability's own row carries) for "furto e azioni avanzate di
+banditry/piracy" (theft and advanced banditry/piracy actions). Two real,
+non-Practice-triggered "qualifying theft event" moments already exist in
+this project, both already sitting next to the identical Phase 442
+``MeritTally.successful_thefts`` credit the dossier's own Prince of
+Thieves formula names as "two separate success paths" -- this module's
+own ``_apply_successful_theft()`` (character-vs-character Steal) and
+``turn/search_execution.py _resolve_steal()``'s own success branch
+(guarded-feature Steal) -- so both now also call ``turn/experience.py
+add_experience(thief, Ability.THIEF, 15, rng)``. **Not** wired here:
+Practice's own Banditry/Piracy side effects (``turn/practice_execution.
+py``'s own SS2.5 addendum) -- those fire only as a byproduct of a ``PR
+TH`` session, whose own skill growth is already fully accounted for by
+Practice's own credit mechanism (SS2's general rule); wiring Add_
+Experience there too would double-credit the same session. Only the two
+genuine Steal-tactic successes above are events *Practice never already
+covers*, and are read here as the real, distinct trigger SS3.3's own
+"furto" half of that table row refers to -- a documented interpretation
+of a summary description, not a literal quote of the compiled call site
+(the same category of judgment call this project's own "eligibility
+lives in the formula, not the loop" and similar unsourced-but-documented
+choices already fall into elsewhere).
 """
 
 from __future__ import annotations
@@ -248,6 +274,7 @@ from ak_engine.turn.encounter import (
     spiritwrack_melee_damage_reduction,
     words_of_healing_heal,
 )
+from ak_engine.turn.experience import add_experience
 from ak_engine.turn.search_decode import SearchTactic
 
 _COMBAT_MANEUVERS = frozenset({Maneuver.MELEE, Maneuver.SHOOT})
@@ -608,7 +635,7 @@ def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, rng: random
     return None
 
 
-def _apply_successful_theft(state: GameState, thief: LeaderState, victim: LeaderState) -> None:
+def _apply_successful_theft(state: GameState, thief: LeaderState, victim: LeaderState, rng: random.Random) -> None:
     """The theft's own tangible effect -- Phase 305: "oro o uno o piu'
     oggetti magici (sempre che siano presenti)", with no quantity formula
     for either resource. Gold theft stays unmodeled (see module
@@ -630,12 +657,21 @@ def _apply_successful_theft(state: GameState, thief: LeaderState, victim: Leader
     "the Steal attempt itself succeeded," not "and something was
     physically stolen," matching the unconditional gold-or-item wording
     that already treats an empty-handed success as still a success.
+
+    **Phase 457**: also awards the thief's own real ``Add_Experience``
+    credit (`turn/experience.py`, `AKGEN_reverse_engineering_report
+    (2).md` SS3.3's own Thief row -- base 15, "evento di furto
+    qualificante"). See module docstring's own Phase 457 addendum for
+    why this specific success branch (not Practice's own Banditry/
+    Piracy side effects) is the real, non-Practice-triggered "qualifying
+    theft event" this base-15 call site refers to.
     """
 
     thief.merit_tally.successful_thefts += 1
     items = state.items_held_by(victim.leader_id)
     if items:
         state.transfer_item(items[0].item_id, thief.leader_id)
+    add_experience(thief, Ability.THIEF, 15, rng)
 
 
 def _resolve_steal_tactic(
@@ -668,7 +704,7 @@ def _resolve_steal_tactic(
     level = effective_skill_level(state, caster_leader, Ability.THIEF)
     target_leads_army = bool(state.armies_commanded_by(target_leader.leader_id))
     if resolve_steal_attempt(level, rng, target_leads_army=target_leads_army):
-        _apply_successful_theft(state, caster_leader, target_leader)
+        _apply_successful_theft(state, caster_leader, target_leader, rng)
         return "success"
     if resolve_steal_evasion(level, rng):
         return "evaded"

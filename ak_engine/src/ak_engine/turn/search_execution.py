@@ -541,6 +541,7 @@ from ak_engine.turn.encounter import (
     words_of_healing_heal,
 )
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_WAND_SPELL, TreasureCategory
+from ak_engine.turn.experience import add_experience
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 
 # Desktop/MOSTRI con statistiche.txt footnote (*): "The Troll regenerates
@@ -1735,6 +1736,13 @@ def _resolve_search_encounter(
             # own Phase 369 addendum) -- this one, Search's own Steal
             # against a guarded feature's hoard.
             leader.merit_tally.successful_thefts += 1
+            # Phase 457: the same real Add_Experience credit (base 15,
+            # AKGEN_reverse_engineering_report (2).md SS3.3's own Thief
+            # row) turn/challenge_execution.py _apply_successful_theft()
+            # awards for the character-vs-character Steal path -- see
+            # that function's own Phase 457 addendum for why this and
+            # that are the two real "qualifying theft event" triggers.
+            add_experience(leader, Ability.THIEF, 15, rng)
             return _outcome_from(EncounterCombatResult(winner="a", rounds=0))
         if resolve_steal_evasion(level, rng):
             return None  # failed, but not caught -- plan continues
