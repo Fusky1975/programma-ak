@@ -19143,7 +19143,7 @@ follow-up request after the original 431-435 plan shipped.
     hand-script every one of `fight_battle()`'s own many other rng
     draws), and the same setup with a non-Druidic Kingdom proving no
     assistance is granted at all. Ran again: 4084 passed (6 new).
-- **Phase 454 (current)**: end-of-game standings -- `kingpoints` and
+- **Phase 454**: end-of-game standings -- `kingpoints` and
   the real composite ranking key, new `turn/final_standings.py`,
   sourced from `AKGEN_reverse_engineering_report (2).md` SS14.6.
   Deliberately out of scope: the real prize-money formula (`prcred`,
@@ -19191,6 +19191,54 @@ follow-up request after the original 431-435 plan shipped.
     worked example proving the naive-tuple-flip case, `final_standings()`
     ordering 3 Kingdoms, and a genuine 2-way tie preserving iteration
     order. Ran again: 4090 passed (6 new).
+- **Phase 455 (current)**: all-star + Valhalla induction thresholds,
+  extending `turn/final_standings.py`, sourced from `AKGEN_reverse_
+  engineering_report (2).md` SS14.7. `qualifies_for_all_star()`:
+  `kingdom_points() >= 7.5` -- the real new-rules cut (the dossier's own
+  old-rules `>= 15` value is recorded in the module docstring as the
+  sourced alternative for a hypothetical old-rules mode this project
+  doesn't have, not wired, the same "new rules, unconditionally" posture
+  Phase 439/450 already established). `qualifies_for_valhalla_
+  induction()`: `individual_king_points() >= 20` or first place in
+  `final_standings()`.
+
+  `individual_king_points()` (new) is the dossier's own stricter
+  `k_indivpoints`, not a reuse of `kingdom_points()`: a title only counts
+  when its true winner is the Kingdom's own King (`LeaderState.is_king`),
+  not any Hero who might hold it instead; a `trvic` item only counts when
+  the King himself directly owns it, not any Hero of that Kingdom. Both
+  terms otherwise reuse the same real point values `kingdom_points()`
+  does -- `turn/victory_points.py office_victory_points()` for a title
+  genuinely won by the King, `turn/merit_points.py legendary_item_
+  victory_point_bonus_count()` for the King's own item holdings -- only
+  the eligibility is narrowed. A Kingdom with no registered King scores
+  `0.0`. Deliberately not replicated: the dossier's own confirmed second
+  compiled bug in the real `k_indivpoints` (a military-office win checks
+  only `bestldr < nkings`, but `bestldr` is an **army index** in that
+  branch, so a low-numbered army can be miscredited as the King's own
+  point) -- reproducing it would require modeling which offices are
+  army-scoped in a way this function has no other reason to know, the
+  same documented bug-compatibility decline already established for the
+  team-ranking `kingpoints[team2]` bug in Phase 454's own module
+  docstring.
+  - Ran the full suite before writing new tests: unaffected (4090 passed
+    unchanged). Added 10 tests to `tests/test_final_standings.py`:
+    `individual_king_points()` matching `kingdom_points()` when the King
+    holds everything himself, excluding a treasure item held by a Hero
+    instead of the King (Treasurer stays the King's own via the real
+    tied-Merit-Points/lower-leader_id tiebreak, so only the item term
+    drops, 31.0 -> 30.0), excluding an office genuinely won by a Hero
+    (a Hero with a real Chancellor-qualifying Merit tally outranks the
+    King's own zero, cross-checked via a scratch script), zero with no
+    King registered, zero before an Emperor is elected;
+    `qualifies_for_all_star()`'s own at/above/below-7.5 boundary (via
+    `unittest.mock.patch` on `kingdom_points()`, this project's own
+    established pattern for isolating one function's threshold logic
+    from another function's arithmetic); `qualifies_for_valhalla_
+    induction()`'s own three branches (individual points alone clearing
+    20 while a different Kingdom is really #1, below 20 and not #1,
+    and 0 individual points but genuinely #1). Ran again: 4100 passed
+    (10 new).
 
 ## Setup
 
