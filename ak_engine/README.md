@@ -19348,7 +19348,7 @@ follow-up request after the original 431-435 plan shipped.
     test_execute_search_steal_success_awards_real_add_experience_
     credit` (the guarded-feature Steal path's own sibling proof). Ran
     again: 4113 passed (2 new).
-- **Phase 458 (current)**: wires `add_experience()` into its second real
+- **Phase 458**: wires `add_experience()` into its second real
   call site -- `AKGEN_reverse_engineering_report (2).md` SS3.3's own Spy
   row (base 10, "evento informativo qualificante"); SS3.4 names the real
   trigger set explicitly: "Spy, Trail, Pursue e attivita' informative
@@ -19370,6 +19370,29 @@ follow-up request after the original 431-435 plan shipped.
     test, `test_execute_aspy_awards_real_add_experience_credit` (the
     exact `round(10*(1+0.5-0.5))==10` worked example). Ran again: 4114
     passed (1 new).
+- **Phase 459 (current)**: wires `add_experience()` into its third real
+  call site -- `AKGEN_reverse_engineering_report (2).md` SS3.3's own
+  Druid row (base 10, "evento druidico qualificante"); SS3.4 names the
+  real trigger explicitly: "interazioni druidiche con creature/mostri"
+  (druidic interactions with creatures/monsters). `turn/search_execution
+  .py _resolve_talk()`'s own DR gate (`can_talk_to_monster()`) is exactly
+  that interaction -- the leader's own Druid skill is what lets them
+  communicate with a feature's guardian at all -- so `add_experience
+  (leader, Ability.DRUID, 10, rng)` now fires the instant that gate
+  passes, regardless of which reaction (Attack/Ignore/Deal) follows.
+  Confirmed by grep to be the only real, gameplay-consequential
+  `Ability.DRUID` skill check anywhere in this project -- every other
+  consumer is a strength-penalty or title-scoring formula, not an action
+  a leader takes.
+  - Ran the full suite before writing new tests: unaffected (4114 passed
+    unchanged) -- every existing Talk-tactic test already scripts a
+    generously-padded `ScriptedRandom` queue (`[x] * 20`), so the two new
+    `add_experience()` draws were already absorbed; no test needed
+    fixing this time, unlike Phase 457/458's own Thief/Spy wiring. Added
+    2 new tests to `tests/test_search_execution.py`: the DR gate failing
+    grants no credit at all, and the DR gate passing grants real credit
+    regardless of the reaction that follows. Ran again: 4116 passed
+    (2 new).
 
 ## Setup
 

@@ -452,6 +452,21 @@ unbuilt" -- two specific, narrower gaps):**
    in this same phase alongside the narrower Words of Healing fix, the
    same "one clear gap per phase" discipline this project has followed
    throughout.
+
+**Phase 459 -- Add_Experience's own Druid call site.** ``AKGEN_reverse_
+engineering_report (2).md`` SS3.3's own Druid row gives a fixed base
+value (10) for "evento druidico qualificante" (a qualifying druidic
+event); SS3.4 names the real trigger explicitly: "interazioni druidiche
+con creature/mostri" (druidic interactions with creatures/monsters).
+``_resolve_talk()``'s own DR gate (``can_talk_to_monster()``) is exactly
+that interaction -- the leader's own Druid skill is what lets them
+communicate with a feature's guardian at all -- so ``turn/experience.py
+add_experience(leader, Ability.DRUID, 10, rng)`` now fires the instant
+that gate passes, regardless of which reaction (Attack/Ignore/Deal)
+follows. This is the only real, gameplay-consequential ``Ability.DRUID``
+skill check anywhere in this project (confirmed by grep) -- every other
+consumer is either a strength-penalty formula or a title-scoring
+formula, not an action a leader takes.
 """
 
 from __future__ import annotations
@@ -1791,6 +1806,15 @@ def _resolve_search_encounter(
         druid_level = effective_skill_level(state, leader, Ability.DRUID)
         if not can_talk_to_monster(feature.guardian_monster, druid_level):
             return None
+        # Phase 459: AKGEN_reverse_engineering_report (2).md SS3.3's own
+        # Druid row (base 10, "evento druidico qualificante") -- SS3.4
+        # names the real trigger explicitly: "interazioni druidiche con
+        # creature/mostri" (druidic interactions with creatures/
+        # monsters). The DR gate just passed *is* that interaction --
+        # the leader's own Druid skill was what let them communicate
+        # with this guardian at all -- so this fires regardless of which
+        # reaction (Attack/Ignore/Deal) follows.
+        add_experience(leader, Ability.DRUID, 10, rng)
         caster_is_druidic = leader.alignment is Alignment.DRUID
         reaction = resolve_talk_reaction(rng, caster_is_druidic=caster_is_druidic)
         if reaction is TalkReaction.DEAL:

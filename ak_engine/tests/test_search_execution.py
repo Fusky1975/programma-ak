@@ -2192,6 +2192,37 @@ def test_execute_search_talk_dr_gate_not_met_falls_through():
     assert result.winner == "leader"
 
 
+def test_execute_search_talk_dr_gate_not_met_awards_no_add_experience_credit():
+    # Phase 459: the DR gate failing means no real druidic interaction
+    # happened at all -- no Add_Experience credit either.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert state.leaders[LEADER_ID].experience_credit == 0
+
+
+def test_execute_search_talk_dr_gate_met_awards_real_add_experience_credit():
+    # Phase 459: AKGEN_reverse_engineering_report (2).md SS3.3's own
+    # Druid row (base 10) -- the DR gate passing (regardless of which
+    # reaction follows) is the real "interazione druidica" this credits.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert state.leaders[LEADER_ID].experience_credit > 0
+
+
 def test_execute_search_talk_attack_reaction_falls_through():
     # Archer needs Druid level 0 -- any leader can talk to it. A low roll
     # (below the 40% Attack threshold) reads Attack -- no special effect,
