@@ -20158,7 +20158,7 @@ follow-up request after the original 431-435 plan shipped.
     skill both feed the formula correctly, and a successful/failed
     attempt alike never touches either side's `MeritTally`. Ran again:
     4231 passed (11 new).
-- **Phase 478 (current)**: end-to-end verification, not a new mechanic.
+- **Phase 478**: end-to-end verification, not a new mechanic.
   With the dossier (`AKGEN_reverse_engineering_report (2).md`) audited
   section-by-section and found fully mined (every sourced formula/
   constant/rule already implemented or explicitly out-of-scope -- no
@@ -20191,6 +20191,40 @@ follow-up request after the original 431-435 plan shipped.
   - Ran the new test module in isolation first: 5 passed. Ran the full
     suite: 4236 passed (5 new), confirming no regression from adding a
     second real-data fixture file.
+- **Phase 479**: extends the same real-turn validation to `GW3__T2`
+  (real turn 1), cross-checked against `SE3__T1.K1`. New `tests/
+  test_gw3_t2_end_to_end.py`: Uga-Buga Makumb's own conquest of the
+  Virgo Sea then the Jellyfish Sea (ending the turn there, matching his
+  letter's own final narrated move), and Guerin/Teleko both staying at
+  the Kingdom's home province (the Dolphin Sea) with no move narrated
+  for either. `GW3__T2` parses and bridges cleanly (162/10/90, no
+  unresolved records) -- another confirmation pass, not a bugfix.
+  - Ran in isolation: 3 passed. Ran the full suite: 4239 passed (3 new).
+- **Phase 480**: extends real-turn validation to `GW3__T3` (real turn
+  2), cross-checked against `SE3__T2.K1`. New `tests/
+  test_gw3_t3_end_to_end.py` catches a genuinely interesting real case
+  this letter documents: Uga-Buga Makumb's own Charm spell converting
+  Melantheus to Undead alignment (`leader_id=30`, matching the letter's
+  own "Melantheus changed to Undead alignment!"), plus Guerin's
+  Falkenheim-then-Mare-Tarkium campaign and Teleko's own contested-
+  province rebattle at the Mermaid Sea (won outright, then re-fought
+  when "Lallipugh rallied his men and decided to fight for" it again --
+  the real-world case for this project's own Phase 55 contested-
+  province forced-rebattle mechanic -- before "The Mermaid Sea was
+  overrun by the forces of Teleko" on the second pass). Also cross-
+  checks Guerin's own in-letter judgment of Tao-Li's alignment/temper
+  ("Evil, Brave") against the bridged `LeaderState`.
+  - Ran in isolation: 3 passed. Ran the full suite: 4242 passed (3 new).
+- **Phase 481 (current)**: extends real-turn validation to `GW3__T4`
+  (real turn 3), cross-checked against `SE3__T3.K1`. New `tests/
+  test_gw3_t4_end_to_end.py` catches three real Charm conversions in a
+  single turn (Lallipugh and Odysseus to Undead, but Amalric to Evil --
+  confirming Charm's real target alignment isn't always Undead, matching
+  each letter's own distinct "changed to X alignment!" line exactly),
+  plus Guerin's Hollabrand conquest and Teleko's Icaria-Sea-then-Near-
+  Beer-Sea campaign, both ending the turn at their own letter's final
+  narrated location.
+  - Ran in isolation: 4 passed. Ran the full suite: 4246 passed (4 new).
 
 ## Setup
 
