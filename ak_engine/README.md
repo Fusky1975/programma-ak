@@ -19428,7 +19428,7 @@ follow-up request after the original 431-435 plan shipped.
     credit` for `caster.skills is None`, and `test_execute_cast_wand_
     triggered_cast_at_natural_skill_0_grants_no_add_experience_credit` for
     `wand_skill_level`). Ran again: 4119 passed (3 new).
-- **Phase 461 (current)**: wires `add_experience()` into its fifth and
+- **Phase 461**: wires `add_experience()` into its fifth and
   sixth real call sites -- Trail (`turn/trail_execution.py execute_trail()`)
   and Pursue (`turn/pursue_execution.py execute_pursue()`), the two
   remaining action executors `AKGEN_reverse_engineering_report (2).md`
@@ -19467,6 +19467,42 @@ follow-up request after the original 431-435 plan shipped.
     add_experience_credit` (the exact `round(10*(1+0.5-0.5))==10` case),
     plus a failed-catch-up sibling for each proving no credit is granted
     when the roll misses. Ran again: 4123 passed (4 new).
+- **Phase 462 (current)**: closes the last confirmed gap in the four
+  merit-title sections (SS17-20) a research pass found already fully
+  wired from earlier sessions -- `AKGEN_reverse_engineering_report
+  (2).md` SS17.3's own compiled filter for Duellist (Captain of the
+  Musketeers)/Cravenest (King of Cowards)/Bravest of the Brave merit
+  (`turn/challenge_execution.py _apply_duel_encounter_merit()`, Phase
+  443) also updates against "un mostro nel gruppo compilato 12..21"
+  (Giant through Witch) one-sided, not only leader-vs-leader Challenge
+  -- a branch that Phase 443's own docstring explicitly scoped out
+  ("this project's `execute_challenge` never faces a monster opponent").
+  `models/monster.py DUEL_MERIT_MONSTERS` names the exact ten-species
+  group (Titan, ordinal 11, stays excluded -- one slot short of the
+  range, per the source's own note); `turn/search_execution.py
+  _apply_monster_duel_merit()` wires it into `_outcome_from()`, the
+  single point every real kill/death in a Search encounter against a
+  guardian monster already funnels through (melee, fire arrow, or a
+  spell's own instant-kill branch alike) -- mirroring Phase 443's own
+  formula reduced to its one-sided monster-opponent half: `duel_merit_
+  net +/- 2`, `courage_encounter_merit -1` on a leader loss only
+  (Cravenest's own dispatcher always skips the winner's branch), and
+  `bravery_merit` credited only on a leader win, equal to hit points
+  never recovered.
+  - Ran the full suite before writing new tests: unaffected (4123
+    passed unchanged) -- a pure `merit_tally` mutation with no new
+    `rng.random()` draws, so no existing `ScriptedRandom` queue needed
+    padding, unlike every prior Add_Experience wiring phase. Added 4
+    new tests to `tests/test_search_execution.py`: a worked-example win
+    (`round`-free exact `bravery_merit` credit against `Monster.
+    BIGFOOT`, a missile-skill-0 member of the eligible group so no Fire
+    Arrow phase perturbs the leader's own hit points before the mocked
+    Melee win), a win against an ineligible monster (`Monster.
+    GARGOYLE`) granting nothing, a loss against `Monster.WITCH` (the
+    range's other endpoint) docking both `duel_merit_net` and `courage_
+    encounter_merit`, and a loss against `Monster.TITAN` (ordinal 11,
+    the source's own deliberate off-by-one exclusion) docking nothing.
+    Ran again: 4127 passed (4 new).
 
 ## Setup
 

@@ -340,6 +340,19 @@ this module already established (Phase 176) -- new here rather than in
 `advanced_ability.py` itself, since that module is deliberately kept
 100% declarative (no functions, no `random` import) and already
 imports from this one, so the reverse import would be circular.
+
+**Phase 462 addendum -- the "Duellist merit" monster group, SS17.3.**
+`AKGEN_reverse_engineering_report (2).md` SS17.3 quotes the compiled
+filter for Captain of the Musketeers/King of Cowards/Bravest of the
+Brave merit (`turn/challenge_execution.py _apply_duel_encounter_merit()`,
+Phase 443): a personal-combat opponent counts toward these three merit
+tallies only when it's another leader, or a monster in the exact
+compiled ordinal range `12..21` -- Giant through Witch. `Titan` (11) is
+one ordinal short of the range and is deliberately excluded, matching
+the source's own "resta fuori per un solo posto dall'intervallo" note.
+`DUEL_MERIT_MONSTERS` names this group by species rather than by a bare
+ordinal comparison, the same self-documenting convention every other
+monster-group set in this module already follows.
 """
 
 from __future__ import annotations
@@ -1058,6 +1071,25 @@ HAND_OF_DEATH_ANTI_HOLY_MONSTERS: frozenset[Monster] = frozenset(
 
 HAND_OF_DEATH_IMMUNE_MONSTERS: frozenset[Monster] = (
     SPIRITWRACK_MECHANICAL_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS | HAND_OF_DEATH_ANTI_HOLY_MONSTERS
+)
+
+# Phase 462 -- AKGEN_reverse_engineering_report (2).md SS17.3's own
+# compiled ordinal range 12..21 (Giant..Witch) for Duellist/Cravenest/
+# Bravest of the Brave merit against a monster opponent. See module
+# docstring's own Phase 462 addendum for why Titan (11) stays excluded.
+DUEL_MERIT_MONSTERS: frozenset[Monster] = frozenset(
+    {
+        Monster.GIANT,
+        Monster.BIGFOOT,
+        Monster.ARCHER,
+        Monster.SWORDSMAN,
+        Monster.WHITE_MAGE,
+        Monster.NEC_MAGE,
+        Monster.ELE_MAGE,
+        Monster.PSY_MAGE,
+        Monster.ILL_MAGE,
+        Monster.WITCH,
+    }
 )
 
 

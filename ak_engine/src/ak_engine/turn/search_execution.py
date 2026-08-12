@@ -479,6 +479,7 @@ from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.monster import (
+    DUEL_MERIT_MONSTERS,
     HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
     HAND_OF_DEATH_IMMUNE_MONSTERS,
     ICE_SUSPENSION_FLYING_MONSTERS,
@@ -839,6 +840,55 @@ def _apply_scout(
     feature.discovered_by_kingdom[leader.kingdom_id] = new_level
 
 
+def _apply_monster_duel_merit(
+    leader: LeaderState,
+    guardian_monster: Monster,
+    *,
+    leader_won: bool,
+    leader_combatant: Combatant,
+) -> None:
+    """Phase 462: Duellist (id 44), Cravenest/King of Cowards (id 49), and
+    Bravest of the Brave (id 50) merit's own monster-opponent branch --
+    ``AKGEN_reverse_engineering_report (2).md`` SS17.3 quotes the exact
+    compiled filter: these three merit tallies are also updated against
+    "un mostro nel gruppo compilato 12..21" (``DUEL_MERIT_MONSTERS``,
+    ``models/monster.py``), one-sided, since ``Inc_Tit`` rejects any ID
+    outside the real leader range -- the monster side of the encounter
+    never receives or loses merit, only the leader does. Mirrors ``turn/
+    challenge_execution.py _apply_duel_encounter_merit()``'s own formula
+    exactly (Phase 443), just reduced to its one-sided monster-opponent
+    half: no ``target``/``accepted=False`` branch exists here, since a
+    Search encounter against a guardian has no leader-vs-leader
+    "refused" concept to replicate.
+
+    ``leader_won=True``: decisive win, stake 2 -- ``duel_merit_net += 2``
+    plus Bravest's own protagonist-only, winner-only credit (``CHARACTER_
+    HIT_POINTS - leader_combatant.hit_points``, 0 for an unscathed win,
+    per SS18.7 -- the leader executing this SEARCH order is always the
+    encounter's own "protagonist" against a monster, there being no
+    separate challenger/target split to resolve as there is in a real
+    Challenge). Cravenest's dispatcher always skips the winner's own
+    branch (SS18.5), so no courage-merit change here either.
+
+    ``leader_won=False``: decisive loss (the guardian killed the leader)
+    -- ``duel_merit_net -= 2`` and ``courage_encounter_merit -= 1``
+    (SS18.5's "penalizzato di un punto qualunque leader perda un
+    incontro ordinario", regardless of temperament). No bravery merit --
+    that credit is winner-only.
+    """
+
+    if guardian_monster not in DUEL_MERIT_MONSTERS:
+        return
+
+    if leader_won:
+        leader.merit_tally.duel_merit_net += 2
+        bravery_gain = CHARACTER_HIT_POINTS - leader_combatant.hit_points
+        leader.merit_tally.bravery_merit += bravery_gain
+    else:
+        leader.merit_tally.duel_merit_net -= 2
+        leader.merit_tally.courage_encounter_merit -= 1
+
+
 def _resolve_search_encounter(
     state: GameState,
     leader_id: int,
@@ -939,6 +989,11 @@ def _resolve_search_encounter(
         centralized point every kill/death in this module funnels
         through -- including the instant-win/instant-death branches
         ``_resolve_cast_tactic()`` synthesizes for its various spells.
+
+        Phase 462: also the single centralized point for the Duellist/
+        Cravenest/Bravest of the Brave monster-opponent merit branch
+        (``_apply_monster_duel_merit()`` below) -- see that helper's own
+        docstring.
         """
 
         if combat_result.winner == "a":
@@ -957,8 +1012,10 @@ def _resolve_search_encounter(
             # credited, not the halved figure -- that halving is
             # `defender_merit_points()`'s own job, not this raw tally's.
             leader.merit_tally.monster_hp_defeated += monster_starting_hit_points
+            _apply_monster_duel_merit(leader, feature.guardian_monster, leader_won=True, leader_combatant=leader_combatant)
             return SearchExecutionResult(accepted=True, combat_resolved=True, winner="leader", feature_looted=True)
         if combat_result.winner == "b":
+            _apply_monster_duel_merit(leader, feature.guardian_monster, leader_won=False, leader_combatant=leader_combatant)
             state.remove_leader(leader_id)
             return SearchExecutionResult(accepted=True, combat_resolved=True, winner="monster", leader_killed=True)
         return None

@@ -18,6 +18,7 @@ from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_DAMAGE_RANGE,
+    Combatant,
     EncounterCombatResult,
     FireArrowShot,
     MeleeRoundOutcome,
@@ -312,6 +313,78 @@ def test_execute_search_leader_loss_credits_nothing():
     # The leader is dead -- nothing left in state.leaders to credit, and
     # the monster (the winner here) has no MeritTally of its own either.
     assert LEADER_ID not in state.leaders
+
+
+# -- Phase 462: Duellist/Cravenest/Bravest monster-opponent merit --
+
+
+def test_execute_search_leader_win_against_eligible_monster_awards_duel_and_bravery_merit():
+    # Monster.BIGFOOT is ordinal 13, inside the compiled Giant..Witch
+    # (12..21) group -- AKGEN_reverse_engineering_report (2).md SS17.3.
+    # Missile-skill 0 (no Fire Arrow phase) keeps the mocked Melee win
+    # the only thing that touches the leader's own hit points.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.BIGFOOT))
+    wounded_combatant = Combatant(name="Searcher", hit_points=CHARACTER_HIT_POINTS - 4, melee_skill=0, archery_skill=0)
+
+    with patch("ak_engine.turn.search_execution._leader_combatant", return_value=wounded_combatant), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert result.winner == "leader"
+    tally = state.leaders[LEADER_ID].merit_tally
+    assert tally.duel_merit_net == 2
+    assert tally.bravery_merit == 4  # CHARACTER_HIT_POINTS - 4 hit points left
+    assert tally.courage_encounter_merit == 0
+
+
+def test_execute_search_leader_win_against_ineligible_monster_awards_no_duel_merit():
+    # Monster.GARGOYLE is outside the compiled group entirely.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert result.winner == "leader"
+    tally = state.leaders[LEADER_ID].merit_tally
+    assert tally.duel_merit_net == 0
+    assert tally.bravery_merit == 0
+
+
+def test_execute_search_leader_loss_against_eligible_monster_docks_duel_and_courage_merit():
+    # Monster.WITCH is ordinal 21, the other end of the compiled group.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.WITCH))
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner="b", rounds=1)
+        result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert result.winner == "monster"
+    tally = state.dead_leaders[LEADER_ID].merit_tally
+    assert tally.duel_merit_net == -2
+    assert tally.courage_encounter_merit == -1
+    assert tally.bravery_merit == 0
+
+
+def test_execute_search_leader_loss_against_ineligible_monster_docks_nothing():
+    # Titan (ordinal 11) sits one slot short of the compiled 12..21
+    # range -- the source's own deliberate off-by-one exclusion.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.TITAN))
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner="b", rounds=1)
+        result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert result.winner == "monster"
+    tally = state.dead_leaders[LEADER_ID].merit_tally
+    assert tally.duel_merit_net == 0
+    assert tally.courage_encounter_merit == 0
 
 
 # -- Phase 155: Troll regeneration wiring --
