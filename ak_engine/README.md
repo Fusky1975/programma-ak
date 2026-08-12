@@ -19467,7 +19467,7 @@ follow-up request after the original 431-435 plan shipped.
     add_experience_credit` (the exact `round(10*(1+0.5-0.5))==10` case),
     plus a failed-catch-up sibling for each proving no credit is granted
     when the roll misses. Ran again: 4123 passed (4 new).
-- **Phase 462 (current)**: closes the last confirmed gap in the four
+- **Phase 462**: closes the last confirmed gap in the four
   merit-title sections (SS17-20) a research pass found already fully
   wired from earlier sessions -- `AKGEN_reverse_engineering_report
   (2).md` SS17.3's own compiled filter for Duellist (Captain of the
@@ -19503,6 +19503,48 @@ follow-up request after the original 431-435 plan shipped.
     encounter_merit`, and a loss against `Monster.TITAN` (ordinal 11,
     the source's own deliberate off-by-one exclusion) docking nothing.
     Ran again: 4127 passed (4 new).
+- **Phase 463 (current)**: wires the second confirmed gap the same
+  merit-title research pass found in Mirror-Image Phantasm (SS21) --
+  `AKGEN_reverse_engineering_report (2).md` SS21.4's own compiled `D`
+  term (`T = 20(I+1) + 25D + 25R - 15(Le+H)`): a flat +25 percentage
+  points to whichever combatant is currently rolling to disbelieve an
+  illusion, if they hold the advanced ability Detect Illusions
+  (`models/advanced_ability.py AdvancedAbility.DETECT_ILLUSIONS_TALENT`,
+  ordinal 84) -- previously defined only as vocabulary/catalog text,
+  never wired into the actual disbelief formula anywhere. New
+  `turn/encounter.py DETECT_ILLUSIONS_DISBELIEF_BONUS = 0.25`; `resolve_
+  mirror_image_duel()`/`resolve_illusory_hero_duel()` both gain two new
+  keyword-only parameters, `opponent_has_detect_illusions`/`caster_has_
+  detect_illusions` (both default `False`, so every existing caller is
+  unaffected), applied to Stage 1's `base_chance` (the real opponent's
+  own check) and Stage 2's `master_chance` (the caster's own check)
+  respectively -- SS21.7's own "opera anche sui personaggi che non sono
+  il lanciatore" confirms Detect Illusions belongs to whichever party is
+  the disbeliever at that moment, not fixed to one role.
+  **Deliberately not wired any further this phase**: this project has no
+  per-leader `AdvancedAbility` possession/acquisition model anywhere
+  (confirmed by an explore pass -- `ADVANCED_ABILITY_POOL` is a
+  catalog of which advanced abilities exist per base `Ability`, not a
+  record of which leader has acquired which one), so there is currently
+  no real call site that can pass `True` for either new parameter --
+  this phase adds the sourced, independently-testable formula capability
+  only, the same "confirmed mechanic modeled before its consuming
+  pipeline exists" pattern this module's own Phase 179/180 primitives
+  already established, rather than inventing a possession-tracking
+  system no source describes.
+  - Ran the full suite before writing new tests: unaffected (4127
+    passed unchanged) -- both new parameters default `False` and are
+    additive-only, so no existing call site or `ScriptedRandom` queue
+    needed any change. Added 4 new tests to `tests/test_encounter.py`:
+    a Stage-1 comparative pair (Low Human's 60% base roll that would NOT
+    disbelieve on its own DOES disbelieve once `opponent_has_detect_
+    illusions=True` adds the flat +25, for both `resolve_mirror_image_
+    duel()` and `resolve_illusory_hero_duel()`) and a Stage-2 pair
+    proving the same for `caster_has_detect_illusions` (the Mirror-Image
+    version happens to push a real 75% chance to a guaranteed 100%,
+    consuming one fewer roll than the no-bonus case; Illusory Hero's own
+    extra flat -15% keeps its version below 100%, so that test instead
+    reuses the same comparative-roll shape as Stage 1).
 
 ## Setup
 

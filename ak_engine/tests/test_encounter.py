@@ -1791,6 +1791,45 @@ def test_resolve_mirror_image_duel_leader_bonus_applies_on_top_of_the_table_valu
     assert result.rounds == 1
 
 
+def test_resolve_mirror_image_duel_opponent_detect_illusions_adds_flat_25_percent():
+    # Phase 463 -- SS21.4's own `D` term. Low Human base is 60% at level
+    # 0 -- 0.70 would NOT disbelieve on its own. Detect Illusions' flat
+    # +25 points raises it to 85%, so the same 0.70 roll DOES disbelieve.
+    caster = Combatant("Caster")
+    opponent = Combatant("Opponent")
+    rng = ScriptedRandom([0.70])
+
+    result = resolve_mirror_image_duel(
+        caster, opponent, MirrorImageIntelligenceTier.LOW_HUMAN, 0, rng, opponent_has_detect_illusions=True
+    )
+
+    assert result.winner is None
+    assert result.rounds == 1
+
+
+def test_resolve_mirror_image_duel_caster_detect_illusions_pushes_stage2_to_guaranteed_disbelief():
+    # Same Stage 1 setup as test_resolve_mirror_image_duel_stage2_caster_
+    # disbelieves_and_wins (tie-break -> illusion acts first, lands a hit
+    # + damage roll, mentally slaying the 1 hp opponent). Stage 2:
+    # without Detect Illusions the 105% master base minus 30% (level 2)
+    # is a real 75% chance that needs a roll; with caster_has_detect_
+    # illusions=True it's 130% minus 30% = 100%, clamped -- a guaranteed
+    # disbelief that consumes no further roll at all (only the 3 Stage-1
+    # values are scripted here, not the extra one a real 75%-chance roll
+    # would need).
+    caster = Combatant("Caster", hit_points=10, melee_skill=1)
+    opponent = Combatant("Opponent", hit_points=1, melee_skill=1)
+    rng = ScriptedRandom([0.1, 0.1, 0.5])
+
+    result = resolve_mirror_image_duel(
+        caster, opponent, MirrorImageIntelligenceTier.MECHANICAL, 2, rng, caster_has_detect_illusions=True
+    )
+
+    assert result.winner == "a"
+    assert result.rounds == 2
+    assert caster.hit_points == 10
+
+
 def test_resolve_mirror_image_duel_disbelieved_immediately_returns_no_winner_no_roll():
     caster = Combatant("Caster")
     opponent = Combatant("Opponent")
@@ -1914,6 +1953,56 @@ def test_resolve_illusory_hero_duel_leader_bonus_applies_on_top_of_the_table_val
 
     assert result.winner is None
     assert result.rounds == 1
+
+
+def test_resolve_illusory_hero_duel_opponent_detect_illusions_adds_flat_25_percent():
+    # Phase 463 -- SS21.4's own `D` term. Low Human base (60%) minus
+    # Illusory Hero's own flat 15% is 45% at level 0 -- 0.50 would NOT
+    # disbelieve on its own. Detect Illusions' +25 points raises the
+    # pre-Illusory-Hero chance to 85%, so after the same -15% it's 70% --
+    # the same 0.50 roll now disbelieves.
+    caster = Combatant("Caster", hit_points=10)
+    opponent = Combatant("Opponent", hit_points=10)
+    hero = Combatant("Hero", hit_points=10)
+    rng = ScriptedRandom([0.50])
+
+    result = resolve_illusory_hero_duel(
+        caster, opponent, hero, MirrorImageIntelligenceTier.LOW_HUMAN, 0, rng, opponent_has_detect_illusions=True
+    )
+
+    assert result.winner is None
+    assert result.rounds == 1
+
+
+def test_resolve_illusory_hero_duel_caster_detect_illusions_adds_flat_25_percent_to_stage2():
+    # Same Stage 1 setup as test_resolve_illusory_hero_duel_stage2_caster_
+    # disbelieves_and_wins (the hero-illusion's guaranteed hit-chance +
+    # damage roll kills the 1 hp opponent outright -- no tie-break needed
+    # since the hero's own skill 5 beats the opponent's 0). Stage 2:
+    # without Detect Illusions the master base (105%) minus 30% (level 2)
+    # minus the flat 15% Illusory Hero reduction is 60% -- 0.70 would NOT
+    # disbelieve on its own. With caster_has_detect_illusions=True the
+    # pre-Illusory-Hero chance is instead clamped to 100%, so after the
+    # same -15% it's 85% -- the same 0.70 roll now disbelieves.
+    caster = Combatant("Caster", hit_points=10, melee_skill=0)
+    opponent = Combatant("Opponent", hit_points=1, melee_skill=0)
+    hero = Combatant("Hero", hit_points=10, melee_skill=5, melee_damage_range=(10, 10))
+    rng = ScriptedRandom([0.1, 0.5, 0.70])
+
+    result = resolve_illusory_hero_duel(
+        caster,
+        opponent,
+        hero,
+        MirrorImageIntelligenceTier.MECHANICAL,
+        2,
+        rng,
+        turns_on_master=True,
+        caster_has_detect_illusions=True,
+    )
+
+    assert result.winner == "a"
+    assert result.rounds == 2
+    assert caster.hit_points == 10
 
 
 def test_resolve_illusory_hero_duel_stage1_win_without_turning_on_master_is_instant():

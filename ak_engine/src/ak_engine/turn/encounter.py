@@ -1755,6 +1755,19 @@ MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE = (
     MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.MEDIUM_HUMAN] + MIRROR_IMAGE_MASTER_DISBELIEF_BONUS
 )
 
+# Phase 463 -- AKGEN_reverse_engineering_report (2).md SS21.4's own `D`
+# term: "+25 punti percentuali a ogni cella" for whichever combatant is
+# rolling to disbelieve, if they hold the advanced ability Detect
+# Illusions (`models/advanced_ability.py AdvancedAbility.DETECT_
+# ILLUSIONS_TALENT`, ordinal 84 -- "gives the Illusionist a plus 25%
+# chance to disbelieve a magical illusion"). SS21.7 confirms this is
+# checked fresh on every single roll ("interrogato nuovamente a ogni
+# prova") and applies to *whichever* combatant is currently the
+# disbeliever, not only the caster: the real opponent in Stage 1, the
+# caster themselves in Stage 2 ("opera anche sui personaggi che non
+# sono il lanciatore").
+DETECT_ILLUSIONS_DISBELIEF_BONUS = 0.25
+
 
 def mirror_image_disbelief_chance(base_chance: float, caster_skill_level: int) -> float:
     """Mirror-Image's own per-round disbelief-chance formula: "15% per
@@ -3060,6 +3073,8 @@ def resolve_mirror_image_duel(
     rng: random.Random,
     *,
     opponent_disbelief_bonus: float = 0.0,
+    opponent_has_detect_illusions: bool = False,
+    caster_has_detect_illusions: bool = False,
     max_rounds: int = 1000,
 ) -> EncounterCombatResult:
     """The full two-stage outcome tree quoted in the module docstring's
@@ -3072,21 +3087,28 @@ def resolve_mirror_image_duel(
     disbelief()`` (keyed by ``opponent_tier``, plus ``opponent_
     disbelief_bonus`` added directly onto the table value -- see
     ``mirror_image_leader_disbelief_bonus()`` for a King/Hero opponent's
-    own Sage/Illusion-driven bonus, 0.0 for every other caller) may end
-    the illusion's power outright. Only ``opponent``'s and the throwaway
-    illusion's own hit points change here -- ``caster`` isn't in the
-    fight yet ("the caster must concentrate on his illusion, performing
-    no other actions"). If the illusion is disbelieved or loses the
-    duel, this returns ``winner=None`` (3a: "the caster must continue the
-    fight at the current combat range") -- whatever damage the real
-    opponent took from the illusion before it lost carries over into
-    that next fight.
+    own Sage/Illusion-driven bonus, 0.0 for every other caller -- and
+    ``DETECT_ILLUSIONS_DISBELIEF_BONUS`` if ``opponent_has_detect_
+    illusions``, Phase 463's own SS21.4 `D` term) may end the illusion's
+    power outright. Only ``opponent``'s and the throwaway illusion's own
+    hit points change here -- ``caster`` isn't in the fight yet ("the
+    caster must concentrate on his illusion, performing no other
+    actions"). If the illusion is disbelieved or loses the duel, this
+    returns ``winner=None`` (3a: "the caster must continue the fight at
+    the current combat range") -- whatever damage the real opponent took
+    from the illusion before it lost carries over into that next fight.
 
     **Stage 2** -- only reached if the illusion *wins* Stage 1 (opponent
     mentally slain). The illusion now turns on the real caster; the same
     per-round disbelief roll applies, this time at ``MIRROR_IMAGE_
     MASTER_DISBELIEF_BASE_CHANCE`` (Medium Human's own 80% base + a flat
-    25-point bonus), interleaved with a real Melee duel between
+    25-point bonus) plus ``DETECT_ILLUSIONS_DISBELIEF_BONUS`` if
+    ``caster_has_detect_illusions`` -- the *caster* is the one rolling to
+    disbelieve here, so it's their own Detect Illusions that matters, not
+    the opponent's (Phase 463's own SS21.7 "opera anche sui personaggi
+    che non sono il lanciatore" -- Detect Illusions belongs to whoever is
+    currently the disbeliever, not fixed to one role). Interleaved with a
+    real Melee duel between
     ``caster`` and the illusion. ``winner="a"`` (the caster) if the
     illusion is disbelieved or slain -- "the caster automatically
     finishes off the already-mentally-slain monster and claims the
@@ -3105,6 +3127,8 @@ def resolve_mirror_image_duel(
         melee_damage_range=opponent.melee_damage_range,
     )
     base_chance = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[opponent_tier] + opponent_disbelief_bonus
+    if opponent_has_detect_illusions:
+        base_chance += DETECT_ILLUSIONS_DISBELIEF_BONUS
 
     total_rounds = 0
     stage1_resolved = False
@@ -3127,6 +3151,8 @@ def resolve_mirror_image_duel(
         return EncounterCombatResult(winner=None, rounds=total_rounds)
 
     master_chance = MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE
+    if caster_has_detect_illusions:
+        master_chance += DETECT_ILLUSIONS_DISBELIEF_BONUS
     for _ in range(1, max_rounds + 1):
         total_rounds += 1
         if resolve_mirror_image_disbelief(master_chance, skill_level, rng):
@@ -3195,6 +3221,8 @@ def resolve_illusory_hero_duel(
     rng: random.Random,
     *,
     opponent_disbelief_bonus: float = 0.0,
+    opponent_has_detect_illusions: bool = False,
+    caster_has_detect_illusions: bool = False,
     turns_on_master: bool = False,
     max_rounds: int = 1000,
 ) -> EncounterCombatResult:
@@ -3210,9 +3238,10 @@ def resolve_illusory_hero_duel(
     **Stage 1** -- the hero-illusion fights the real ``opponent`` in
     Melee, gated each round by the opponent's own chance to disbelieve
     (``opponent_tier``, plus ``opponent_disbelief_bonus`` for a King/Hero
-    opponent's own Sage/Illusion bonus, same convention as ``resolve_
-    mirror_image_duel()``). Disbelieved or lost -> ``winner=None`` (the
-    caster resumes fighting for real).
+    opponent's own Sage/Illusion bonus, plus ``DETECT_ILLUSIONS_
+    DISBELIEF_BONUS`` if ``opponent_has_detect_illusions`` -- same
+    convention as ``resolve_mirror_image_duel()``). Disbelieved or lost
+    -> ``winner=None`` (the caster resumes fighting for real).
 
     **Stage 2** -- only reached if the illusion wins Stage 1 *and*
     ``turns_on_master`` is True (the caller's own ``illusory_hero_
@@ -3221,10 +3250,11 @@ def resolve_illusory_hero_duel(
     False, winning Stage 1 is an outright ``winner="a"`` (caster) with no
     further duel at all. If True, Stage 2 proceeds exactly like Mirror-
     Image's own second stage (the same ``MIRROR_IMAGE_MASTER_DISBELIEF_
-    BASE_CHANCE``, since no separate number is given for Illusory Hero's
-    own version of this branch): ``winner="a"`` if the caster disbelieves
-    or slays the illusion, ``winner="b"`` if the illusion kills the
-    caster instead.
+    BASE_CHANCE`` plus ``DETECT_ILLUSIONS_DISBELIEF_BONUS`` if
+    ``caster_has_detect_illusions``, since no separate number is given
+    for Illusory Hero's own version of this branch): ``winner="a"`` if
+    the caster disbelieves or slays the illusion, ``winner="b"`` if the
+    illusion kills the caster instead.
     """
 
     illusion = Combatant(
@@ -3234,6 +3264,8 @@ def resolve_illusory_hero_duel(
         melee_damage_range=hero.melee_damage_range,
     )
     base_chance = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[opponent_tier] + opponent_disbelief_bonus
+    if opponent_has_detect_illusions:
+        base_chance += DETECT_ILLUSIONS_DISBELIEF_BONUS
 
     total_rounds = 0
     stage1_resolved = False
@@ -3259,6 +3291,8 @@ def resolve_illusory_hero_duel(
         return EncounterCombatResult(winner="a", rounds=total_rounds)
 
     master_chance = MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE
+    if caster_has_detect_illusions:
+        master_chance += DETECT_ILLUSIONS_DISBELIEF_BONUS
     for _ in range(1, max_rounds + 1):
         total_rounds += 1
         if resolve_illusory_hero_disbelief(master_chance, skill_level, rng):
