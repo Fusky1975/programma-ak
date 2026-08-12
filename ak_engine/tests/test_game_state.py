@@ -132,6 +132,42 @@ def test_has_met_none_kingdom_id_has_met_nobody():
     assert state.has_met(None, None) is False
 
 
+def test_has_met_for_full_turn_true_for_same_kingdom():
+    # Phase 491 -- mirrors has_met()'s own same-kingdom shortcut.
+    state = make_state()
+    assert state.has_met_for_full_turn(1, 1) is True
+
+
+def test_has_met_for_full_turn_none_kingdom_id_has_met_nobody():
+    state = make_state()
+    assert state.has_met_for_full_turn(None, 1) is False
+    assert state.has_met_for_full_turn(1, None) is False
+
+
+def test_has_met_for_full_turn_false_without_any_recorded_contact():
+    state = make_state()
+    assert state.has_met_for_full_turn(1, 2) is False
+
+
+def test_has_met_for_full_turn_false_the_same_turn_contact_was_first_made():
+    state = make_state()
+    state.turn_number = 5
+    state.kingdoms_met.add(frozenset({1, 2}))
+    state.kingdoms_met_since[frozenset({1, 2})] = 5
+
+    assert state.has_met_for_full_turn(1, 2) is False
+
+
+def test_has_met_for_full_turn_true_once_a_full_turn_has_passed():
+    state = make_state()
+    state.turn_number = 6
+    state.kingdoms_met.add(frozenset({1, 2}))
+    state.kingdoms_met_since[frozenset({1, 2})] = 5
+
+    assert state.has_met_for_full_turn(1, 2) is True
+    assert state.has_met_for_full_turn(2, 1) is True
+
+
 def test_independent_heroes_at_returns_only_ownerless_leaders_at_that_location():
     state = make_state()
     state.add_leader(LeaderState(50, None, "Wandering Hero", FIELD))

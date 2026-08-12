@@ -113,6 +113,35 @@ def test_record_kingdom_contacts_is_monotone_across_turns():
     assert state.has_met(1, 2) is True
 
 
+def test_record_kingdom_contacts_stamps_the_turn_of_first_contact():
+    # Phase 491 -- World Emperor/Imperial Treasurer's own "known for at
+    # least one full turn" gate needs this turn stamp, not just the
+    # boolean kingdoms_met ratchet.
+    state = make_state()
+    state.turn_number = 3
+    neighbor_coord = neighbors(HOME, BOUNDS)[0]
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(neighbor_coord, Terrain.FOREST, Race.HUMAN, owner_kingdom_id=2))
+
+    record_kingdom_contacts(state, BOUNDS)
+
+    assert state.kingdoms_met_since[frozenset({1, 2})] == 3
+
+
+def test_record_kingdom_contacts_never_overwrites_the_first_contact_turn():
+    state = make_state()
+    neighbor_coord = neighbors(HOME, BOUNDS)[0]
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(neighbor_coord, Terrain.FOREST, Race.HUMAN, owner_kingdom_id=2))
+    state.turn_number = 3
+    record_kingdom_contacts(state, BOUNDS)
+
+    state.turn_number = 4
+    record_kingdom_contacts(state, BOUNDS)
+
+    assert state.kingdoms_met_since[frozenset({1, 2})] == 3
+
+
 def test_is_visible_to_event_lev_none_matches_pre_phase_408_behavior():
     state = make_state()
     far_coord = HexCoord(0, 0)

@@ -20384,7 +20384,7 @@ follow-up request after the original 431-435 plan shipped.
     (the titleholder gets `damage_reduction=1`; a non-titleholder, and
     the Duel's own leaderless garrison commander, get 0). Ran again:
     4286 passed (13 new).
-- **Phase 490 (current)**: closes out the Arch-Mage's own perk from the
+- **Phase 490**: closes out the Arch-Mage's own perk from the
   same Phase 488 audit (`OFFICE_PERK_DESCRIPTION[Office.MAGE]`, "Sense
   Magic Items in Province" -- `CARICHE E ABLITÀ.txt`'s full text: "The
   Wand has the power to sense the presence of other magic items in the
@@ -20421,6 +20421,43 @@ follow-up request after the original 431-435 plan shipped.
     `tests/test_plan_dispatch.py` (LMOVE populates `sensed_magic_items`
     for the Arch-Mage, leaves it `None` without the office). Ran again:
     4296 passed (10 new).
+- **Phase 491 (current)**: wires World Emperor's and Imperial
+  Treasurer's own passive intelligence perks (`OFFICE_PERK_DESCRIPTION`,
+  Phase 103) -- "Only the tax bases/Treasuries of kings bordering your
+  kingdom that you have known for at least one full turn will be
+  shown." Needed genuinely new state: `GameState.kingdoms_met` (Phase
+  408) is a pure boolean "have we ever met" ratchet with no time
+  dimension, so it can't answer "for how long." New `GameState.
+  kingdoms_met_since: dict[frozenset[int], int]`, stamped alongside
+  `kingdoms_met` by `turn/world_events.py record_kingdom_contacts()`'s
+  own `setdefault` (first-contact turn only, never overwritten), read
+  via the new `GameState.has_met_for_full_turn()` (`turn_number -
+  first_contact_turn >= 1`). New `turn/imperial_intelligence.py`:
+  `bordering_kingdoms()` (a fresh per-kingdom adjacency scan -- reusing
+  `record_kingdom_contacts()`'s own "who owns an adjacent province"
+  logic, since `kingdoms_met` is a monotone "ever bordered" ratchet, not
+  "currently bordering," and a province can change hands), then
+  `known_bordering_kingdom_tax_bases()`/`known_bordering_kingdom_
+  treasuries()`, each resolving `Office.EMPEROR`/`Office.TREASURER` via
+  `resolve_office_holder()` (the Phase 488/489/490 lookup convention)
+  and filtering `bordering_kingdoms()` down to the full-turn-known
+  subset. Deliberately no narrative rendering -- same "pure mechanic, no
+  report-composition touchpoint" scope Phase 489/490 already
+  established. High Chancellor's own remaining perk (an auto-success,
+  no-cost Clairvoyance cast bypass inside `turn/cast_execution.py
+  _execute_clairvoyance()`, plus a currently-nonexistent "offices/titles
+  held by the spied-upon kingdom" payload) is mechanically different --
+  a change to existing spell-execution behavior, not a purely additive
+  function -- and is deliberately left for its own dedicated phase.
+  - Ran the full suite before writing new tests: 4296 passed (non-
+    breaking). Wrote 17 new tests: 5 for `GameState.has_met_for_full_
+    turn()` in `tests/test_game_state.py`, 2 for `record_kingdom_
+    contacts()`'s new turn-stamping in `tests/test_world_events.py`, and
+    10 in the new `tests/test_imperial_intelligence.py` (adjacency scan
+    reflects current, not historical, ownership; both perks return
+    `None` without the office, exclude a kingdom known less than a full
+    turn, exclude a known-but-non-bordering kingdom, and include a
+    genuinely qualifying one). Ran again: 4313 passed (17 new).
 
 ## Setup
 

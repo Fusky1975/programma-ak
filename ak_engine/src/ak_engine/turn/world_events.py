@@ -144,6 +144,12 @@ def record_kingdom_contacts(state: GameState, bounds: MapBounds) -> None:
     **Must be called once per turn, before any ``is_visible_to()`` call
     that passes ``event_lev``** -- same "turn-global, single caller"
     contract as ``report/turn_report.py record_battle_world_events()``.
+
+    **Phase 491 addendum**: also stamps ``GameState.kingdoms_met_since``
+    with this turn's own ``state.turn_number`` the first time a pair is
+    ever added -- ``setdefault`` so an already-stamped pair keeps its
+    real first-contact turn on every later call, never overwritten to a
+    later one.
     """
 
     for coord, province in state.provinces.items():
@@ -154,4 +160,6 @@ def record_kingdom_contacts(state: GameState, bounds: MapBounds) -> None:
             neighbor = state.provinces.get(neighbor_coord)
             if neighbor is None or neighbor.owner_kingdom_id is None or neighbor.owner_kingdom_id == owner:
                 continue
-            state.kingdoms_met.add(frozenset((owner, neighbor.owner_kingdom_id)))
+            pair = frozenset((owner, neighbor.owner_kingdom_id))
+            state.kingdoms_met.add(pair)
+            state.kingdoms_met_since.setdefault(pair, state.turn_number)

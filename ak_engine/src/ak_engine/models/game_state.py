@@ -1094,6 +1094,18 @@ class GameState:
     # own docstring for the real `Get_News()` clause this feeds and for
     # why only this one clause of that function is implemented.
     kingdoms_met: set[frozenset[int]] = field(default_factory=set)
+    # Phase 491 -- a turn-stamped companion to ``kingdoms_met`` above:
+    # the turn number each pair was *first* added there. ``kingdoms_met``
+    # alone is a pure boolean ratchet with no time dimension, but the
+    # World Emperor/Imperial Treasurer perks (``OFFICE_PERK_DESCRIPTION``,
+    # Phase 103: "Only the tax bases/Treasuries of kings bordering your
+    # kingdom that you have known for at least one full turn will be
+    # shown") need exactly that -- see ``has_met_for_full_turn()`` below
+    # and ``turn/world_events.py record_kingdom_contacts()``'s own Phase
+    # 491 addendum, the only write site. A pair present here is always
+    # also present in ``kingdoms_met`` (written together, same call),
+    # but never removed once set, same one-way-ratchet convention.
+    kingdoms_met_since: dict[frozenset[int], int] = field(default_factory=dict)
     # Phase 475: AKGEN_reverse_engineering_report (2).md SS14.4's own
     # tier-1 tie-break, "per i titoli avanzati, il titolare precedente
     # conserva precedenza se è fra i pari" (for advanced titles, the
@@ -1319,6 +1331,22 @@ class GameState:
         if kingdom_a == kingdom_b:
             return True
         return frozenset({kingdom_a, kingdom_b}) in self.kingdoms_met
+
+    def has_met_for_full_turn(self, kingdom_a: int | None, kingdom_b: int | None) -> bool:
+        """Phase 491 -- World Emperor/Imperial Treasurer's own "known for
+        at least one full turn" gate. ``True`` for the same-kingdom case
+        (mirrors ``has_met()``'s own convention), ``False`` if either is
+        ``None`` or the pair has no recorded first-contact turn yet.
+        """
+
+        if kingdom_a is None or kingdom_b is None:
+            return False
+        if kingdom_a == kingdom_b:
+            return True
+        first_contact_turn = self.kingdoms_met_since.get(frozenset({kingdom_a, kingdom_b}))
+        if first_contact_turn is None:
+            return False
+        return self.turn_number - first_contact_turn >= 1
 
     def has_treat_permission(self, owner_kingdom_id: int, recruiter_kingdom_id: int) -> bool:
         """Whether ``owner_kingdom_id`` has issued a Treat order this turn
