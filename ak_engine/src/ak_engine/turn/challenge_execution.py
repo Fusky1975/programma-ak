@@ -115,9 +115,11 @@ target_is_monster: ... else: ...``), not a guess at new behavior:
   never apply either -- a leader target always falls through to the
   freeze-or-slow HP-threshold branch.
 - **Mirror-Image/Illusory Hero's own opponent-intelligence tier** is
-  always ``MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT`` (High Human)
-  plus the caster's own Sage/Illusion-driven bonus -- the same branch
-  Search already uses for its own leader-target case.
+  always ``MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT`` (Medium
+  Human, corrected from High Human by Phase 470 -- see that constant's
+  own docstring in ``turn/encounter.py``) plus the caster's own Sage/
+  Illusion-driven bonus -- the same branch Search already uses for its
+  own leader-target case.
 - **Gate Demon** still summons a real monster ``Combatant`` (the demon
   itself, not the opponent) via ``MONSTER_COMBAT_STATS``/``roll_gate_
   demon_type()`` -- this part is identical to Search's own code, a

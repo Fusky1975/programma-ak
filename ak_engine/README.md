@@ -19774,7 +19774,7 @@ follow-up request after the original 431-435 plan shipped.
     -- Attack/Ignore are indistinguishable at the `SearchExecutionResult`
     level, so black-box assertions alone couldn't prove the wiring). Ran
     again: 4166 passed (12 new).
-- **Phase 469 (current)**: closes the gap Phase 468 explicitly deferred --
+- **Phase 469**: closes the gap Phase 468 explicitly deferred --
   Bravest of the Brave's (`Office.BRAVEST`) own SS18.8 effect: "Il
   titolare ispira gli altri personaggi: quando parla a un Hero, il
   temperamento di quel Hero sale di un livello, salvo che sia gia' al
@@ -19812,6 +19812,42 @@ follow-up request after the original 431-435 plan shipped.
     plan still raise only one level, the effect fires alongside an
     accepted combat-intent plan too, a refused encounter never fires it).
     Ran again: 4175 passed (9 new).
+- **Phase 470 (current)**: corrects Mirror-Image Phantasm's own opponent-
+  intelligence tier for a King/Hero target, per an audit of `AKGEN_
+  reverse_engineering_report (2).md` SS21.4/21.7 against the codebase.
+  `turn/encounter.py MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT` was
+  `HIGH_HUMAN`, set from an earlier project-author verbal note ("RE ed
+  eroi... e' sempre High Human", Phase 187). SS21.4 later gave the real
+  compiled answer with **certain** confidence, directly contradicting
+  it: "Tutti i personaggi giocanti sono codificati direttamente come
+  Medium Human: se l'ID del combattente e' inferiore a 256, `AK.OVR
+  0x1DCAC-0x1DCB7` scrive (I=3)... l'intelligenza dei personaggi non va
+  dedotta dalle loro abilita', razza o aptitude; e' sempre Medium." Per
+  this project's own sourcing hierarchy (a disassembly-certain finding
+  outranks an earlier unverified verbal note -- the same precedent Phase
+  467's spell-cap fix already established off this same report), the
+  constant is corrected to `MEDIUM_HUMAN`. The Sage/Illusion-skill-based
+  additive bonus (`mirror_image_leader_disbelief_bonus()`, +2%/level
+  Sage, +1%/level Illusion) is untouched -- SS21.4 only addresses the
+  base intelligence classification, not any per-leader skill modifier
+  layered on top of it, so it isn't contradicted by the new finding, only
+  re-anchored to the corrected base table value in its own docstring.
+  Both of the constant's two real call sites (`turn/search_execution.py`
+  and `turn/challenge_execution.py`, Mirror Image and Illusory Hero's own
+  leader-target branches) reference the symbol directly, so both pick up
+  the corrected value automatically -- no call-site changes needed.
+  - Ran the full suite before writing new tests: 4175 passed (non-
+    breaking, since only the constant's own value changed, not its
+    shape). This is a magnitude correction, not new behavior: renamed and
+    updated the 3 existing tests that had hardcoded the old `HIGH_HUMAN`
+    expectation for a leader target specifically (`tests/test_encounter.
+    py test_mirror_image_leader_intelligence_tier_default_is_medium_
+    human`, `tests/test_search_execution.py`'s own Mirror-Image- and
+    Illusory-Hero-leader-target wiring tests) -- left untouched the two
+    tests asserting `HIGH_HUMAN` for a genuinely High-Human-tier *monster*
+    target (Sphinx, via the real per-species `MIRROR_IMAGE_MONSTER_
+    INTELLIGENCE_TIER` table), which this phase doesn't touch. Ran again:
+    4175 passed (net unchanged -- 3 tests renamed/updated, 0 new).
 
 ## Setup
 

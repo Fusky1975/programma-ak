@@ -1461,11 +1461,11 @@ def test_execute_search_cast_mirror_image_monster_target_uses_the_sourced_tier()
     assert mock_duel.call_args[0][2] is MirrorImageIntelligenceTier.HIGH_HUMAN
 
 
-def test_execute_search_cast_mirror_image_leader_target_uses_high_human_plus_the_sage_illusion_bonus():
+def test_execute_search_cast_mirror_image_leader_target_uses_medium_human_plus_the_sage_illusion_bonus():
     # The guardian's own rolled plan casts Mirror-Image at the leader --
-    # opponent_tier is always High Human for a King/Hero (confirmed by the
-    # user), plus a further bonus from the leader's own Sage/Illusion
-    # skill levels.
+    # opponent_tier is always Medium Human for a King/Hero (Phase 470,
+    # AKGEN_reverse_engineering_report (2).md SS21.4), plus a further
+    # bonus from the leader's own Sage/Illusion skill levels.
     leader = _skilled_leader(Ability.SAGE, 3)  # 3*2% = 6% bonus, 0% Illusion
     state = GameState()
     state.add_leader(leader)
@@ -1484,7 +1484,7 @@ def test_execute_search_cast_mirror_image_leader_target_uses_high_human_plus_the
 
     from ak_engine.turn.encounter import MirrorImageIntelligenceTier
 
-    assert mock_duel.call_args[0][2] is MirrorImageIntelligenceTier.HIGH_HUMAN
+    assert mock_duel.call_args[0][2] is MirrorImageIntelligenceTier.MEDIUM_HUMAN
     assert mock_duel.call_args.kwargs["opponent_disbelief_bonus"] == pytest.approx(0.06)
 
 
@@ -1575,7 +1575,7 @@ def test_execute_search_cast_illusory_hero_monster_target_uses_the_sourced_tier(
     assert mock_duel.call_args.kwargs["opponent_disbelief_bonus"] == 0.0
 
 
-def test_execute_search_cast_illusory_hero_leader_target_uses_high_human_plus_bonus():
+def test_execute_search_cast_illusory_hero_leader_target_uses_medium_human_plus_bonus():
     leader = _skilled_leader(Ability.SAGE, 3)  # 3*2% = 6% bonus, 0% Illusion
     state = GameState()
     state.add_leader(leader)
@@ -1595,7 +1595,7 @@ def test_execute_search_cast_illusory_hero_leader_target_uses_high_human_plus_bo
 
     from ak_engine.turn.encounter import MirrorImageIntelligenceTier
 
-    assert mock_duel.call_args[0][3] is MirrorImageIntelligenceTier.HIGH_HUMAN
+    assert mock_duel.call_args[0][3] is MirrorImageIntelligenceTier.MEDIUM_HUMAN
     assert mock_duel.call_args.kwargs["opponent_disbelief_bonus"] == pytest.approx(0.06)
 
 

@@ -3053,19 +3053,35 @@ MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER: dict[Monster, MirrorImageIntelligenceTie
 }
 
 # A King or Hero opponent's own intelligence tier for Mirror-Image's
-# Stage 1 disbelief roll -- confirmed directly by the user (project
-# author), not an inferred default: "L'intelligenza di RE ed eroi (per
-# quanto riguarda la difesa dall'incantesimo mirror image) e' sempre High
-# Human."
-MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT = MirrorImageIntelligenceTier.HIGH_HUMAN
+# Stage 1 disbelief roll.
+#
+# **Phase 470 correction.** Originally set to High Human, confirmed
+# directly by the user (project author) pre-disassembly: "L'intelligenza
+# di RE ed eroi (per quanto riguarda la difesa dall'incantesimo mirror
+# image) e' sempre High Human." ``AKGEN_reverse_engineering_report
+# (2).md`` SS21.4 later gave the real compiled answer, with certain
+# confidence, directly contradicting that verbal note: "Tutti i
+# personaggi giocanti sono codificati direttamente come Medium Human: se
+# l'ID del combattente e' inferiore a 256, `AK.OVR 0x1DCAC-0x1DCB7`
+# scrive (I=3)... l'intelligenza dei personaggi non va dedotta dalle loro
+# abilita', razza o aptitude; e' sempre Medium." Per this project's own
+# sourcing hierarchy (a disassembly-certain finding outranks an earlier
+# unverified verbal note, the same precedent Phase 467's spell-cap fix
+# already established off this same report), the default is corrected to
+# Medium Human here.
+MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT = MirrorImageIntelligenceTier.MEDIUM_HUMAN
 
-# On top of that fixed High Human base, a King or Hero's own real Sage
-# and Illusion skill levels add a further flat bonus to their own chance
-# of disbelieving the illusion -- confirmed by the user: "C'e' un bonus
-# di +2% sulla tabella per ogni livello in SA e +1% per ogni livello in
+# On top of that Medium Human base, a King or Hero's own real Sage and
+# Illusion skill levels add a further flat bonus to their own chance of
+# disbelieving the illusion -- confirmed by the user: "C'e' un bonus di
+# +2% sulla tabella per ogni livello in SA e +1% per ogni livello in
 # IL." Applied directly on top of the table value, before the caster's
 # own -15%/level (max 60%) reduction -- see ``resolve_mirror_image_
-# duel()``'s own ``opponent_disbelief_bonus`` parameter.
+# duel()``'s own ``opponent_disbelief_bonus`` parameter. SS21.4 doesn't
+# address this bonus at all (it only covers the base intelligence
+# classification, ``I``) -- so unlike the tier default just above, it
+# isn't contradicted by the new disassembly finding and stays unchanged
+# (Phase 470 only re-anchors which table value it's added on top of).
 MIRROR_IMAGE_LEADER_SAGE_DISBELIEF_BONUS_PER_LEVEL = 0.02
 MIRROR_IMAGE_LEADER_ILLUSION_DISBELIEF_BONUS_PER_LEVEL = 0.01
 
@@ -3073,11 +3089,13 @@ MIRROR_IMAGE_LEADER_ILLUSION_DISBELIEF_BONUS_PER_LEVEL = 0.01
 def mirror_image_leader_disbelief_bonus(sage_level: int, illusion_level: int) -> float:
     """A King or Hero's own flat bonus to their chance of disbelieving a
     Mirror-Image illusion cast against them: +2% per Sage level, +1% per
-    Illusion level, added directly to the ``HIGH_HUMAN`` table value (see
+    Illusion level, added directly to the ``MEDIUM_HUMAN`` table value
+    (Phase 470 -- see ``MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT``'s
+    own docstring for why the base tier changed from High Human; see
     ``MIRROR_IMAGE_LEADER_SAGE_DISBELIEF_BONUS_PER_LEVEL``/``MIRROR_
     IMAGE_LEADER_ILLUSION_DISBELIEF_BONUS_PER_LEVEL``'s own docstring for
-    the source). Monster opponents don't get this bonus -- it's specific
-    to Kings/Heroes, confirmed by the user.
+    the bonus's own source). Monster opponents don't get this bonus --
+    it's specific to Kings/Heroes, confirmed by the user.
     """
 
     return (

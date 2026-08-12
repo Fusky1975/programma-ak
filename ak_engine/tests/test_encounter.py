@@ -1766,10 +1766,13 @@ def test_mirror_image_monster_intelligence_tier_diverges_from_spiritwrack_for_th
         assert species in SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
 
 
-def test_mirror_image_leader_intelligence_tier_default_is_high_human():
-    # Confirmed by the user: a King or Hero's own intelligence, for
-    # Mirror-Image's own Stage 1 disbelief roll, is always High Human.
-    assert MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT is MirrorImageIntelligenceTier.HIGH_HUMAN
+def test_mirror_image_leader_intelligence_tier_default_is_medium_human():
+    # Phase 470: AKGEN_reverse_engineering_report (2).md SS21.4, certain
+    # from the disassembly (`AK.OVR 0x1DCAC-0x1DCB7`) -- every playing
+    # character (combatant id < 256) is hardcoded I=3 (Medium Human),
+    # superseding the earlier project-author verbal note that had said
+    # High Human.
+    assert MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT is MirrorImageIntelligenceTier.MEDIUM_HUMAN
 
 
 def test_mirror_image_leader_disbelief_bonus_matches_the_confirmed_rates():
