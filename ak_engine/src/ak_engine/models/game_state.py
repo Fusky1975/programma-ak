@@ -1052,6 +1052,16 @@ class GameState:
     # in a row" ban is checked against.
     emperor_kingdom_id: int | None = None
     last_emperor_vote_turn: int | None = None
+    # Phase 466: this project's own reading of the real Pascal `req_vote`
+    # global (report SS12.1/13.4-13.5) -- the turn a vote will actually
+    # be *tallied* on, if `turn/emperor_election.py evaluate_election_
+    # call()` scheduled one (`election_scheduled_next_turn`). `None`
+    # means no election is currently pending. Cleared back to `None` by
+    # `process_election_turn()` once that turn's vote is tallied (win,
+    # loss, or no quorum -- a vote being *held* clears the pending state
+    # regardless of its own outcome, same as `Refresh_Moves`'s own
+    # per-Kingdom `kprevgold` reset described in report SS12.2).
+    election_pending_turn: int | None = None
     # GENERAL INTELLIGENCE REPORT's own raw material (Phase 231) -- see
     # WorldEvent's own docstring. Populated by a caller (``report/
     # turn_report.py record_battle_world_events()`` today, the one real

@@ -6,11 +6,14 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.kingdom import VOTE_TURN_SENTINEL, KingdomMoveHeader
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.emperor_election import (
     ELECTION_REQUEST_THRESHOLD_PERCENT,
+    ElectionCallOutcome,
+    ElectionResult,
     _alignment_auto_trigger,
     _election_callers_weight,
     _highest_vote_weight_kingdom,
@@ -22,6 +25,7 @@ from ak_engine.turn.emperor_election import (
     election_threshold_percent,
     evaluate_election_call,
     kingdom_election_vote_weight,
+    process_election_turn,
     resolve_emperor_election,
     tally_emperor_vote,
 )
@@ -39,6 +43,12 @@ def make_state() -> GameState:
 
 def give_tax(state: GameState, kingdom_id: int, coord: HexCoord, tax: int) -> None:
     state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=kingdom_id, tax=tax))
+
+
+def _header(kprevgold: int = 15) -> KingdomMoveHeader:
+    # A generic real-shaped header (Phase 464 field order) whose only
+    # varying field for these tests is kprevgold -- the Vote field.
+    return KingdomMoveHeader(raw_fields=[27, 1, 0, 101, 1, kprevgold, 1])
 
 
 # -- can_request_election ----------------------------------------------
@@ -552,3 +562,68 @@ def test_evaluate_election_call_no_kingdoms_is_a_safe_no_op():
     assert outcome.world_total == 0
     assert outcome.immediate_coronation_kingdom_id is None
     assert outcome.election_scheduled_next_turn is False
+
+
+# -- Phase 466: process_election_turn() -----------------------------------
+
+
+def test_process_election_turn_immediate_coronation_updates_state():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 60)
+    give_tax(state, 2, HexCoord(1, 1), 20)
+    give_tax(state, 3, HexCoord(2, 2), 20)
+    headers = {1: _header(), 2: _header(), 3: _header()}
+
+    outcome = process_election_turn(state, headers, current_turn=5)
+
+    assert isinstance(outcome, ElectionCallOutcome)
+    assert outcome.immediate_coronation_kingdom_id == 1
+    assert state.emperor_kingdom_id == 1
+    assert state.last_emperor_vote_turn == 5
+    assert state.election_pending_turn is None
+
+
+def test_process_election_turn_callers_schedule_next_turns_vote():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 30)
+    give_tax(state, 2, HexCoord(1, 1), 30)
+    give_tax(state, 3, HexCoord(2, 2), 40)
+    headers = {1: _header(VOTE_TURN_SENTINEL), 2: _header(VOTE_TURN_SENTINEL), 3: _header()}
+
+    outcome = process_election_turn(state, headers, current_turn=5)
+
+    assert isinstance(outcome, ElectionCallOutcome)
+    assert outcome.election_scheduled_next_turn is True
+    assert state.election_pending_turn == 6
+    assert state.emperor_kingdom_id is None
+
+
+def test_process_election_turn_tallies_a_pending_votes_own_ballots():
+    state = make_state()
+    state.election_pending_turn = 6
+    give_tax(state, 1, HexCoord(0, 0), 60)
+    give_tax(state, 2, HexCoord(1, 1), 40)
+    headers = {1: _header(kprevgold=1), 2: _header(kprevgold=1)}  # both vote for Kingdom 1
+
+    result = process_election_turn(state, headers, current_turn=6)
+
+    assert isinstance(result, ElectionResult)
+    assert result.elected_emperor_kingdom_id == 1
+    assert state.emperor_kingdom_id == 1
+    assert state.election_pending_turn is None
+
+
+def test_process_election_turn_treats_an_invalid_candidate_as_abstention():
+    state = make_state()
+    state.election_pending_turn = 6
+    give_tax(state, 1, HexCoord(0, 0), 30)
+    give_tax(state, 2, HexCoord(1, 1), 30)
+    give_tax(state, 3, HexCoord(2, 2), 40)
+    # Kingdom 1's own "candidate" (999) isn't a real Kingdom id -> abstains.
+    headers = {1: _header(kprevgold=999), 2: _header(kprevgold=1), 3: _header(kprevgold=1)}
+
+    result = process_election_turn(state, headers, current_turn=6)
+
+    assert result.votes_by_candidate == {1: 70}  # only Kingdoms 2 (30) + 3 (40) counted
+    assert result.elected_emperor_kingdom_id == 1  # 70/100 > 50%
+    assert state.election_pending_turn is None

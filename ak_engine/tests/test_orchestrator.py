@@ -12,6 +12,7 @@ from ak_engine.models.map import HexCoord
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
 from ak_engine.orchestrator import process_turn
+from ak_engine.turn.emperor_election import ElectionCallOutcome
 
 from _helpers import ScriptedRandom
 
@@ -28,7 +29,7 @@ def _kingdom(kingdom_number: int, king_name: str, leaders: list[Leader]) -> King
         source_filename="fake.K1",
         king_name=king_name,
         king_title=None,
-        header=KingdomMoveHeader(raw_fields=[kingdom_number, 1, 0]),
+        header=KingdomMoveHeader(raw_fields=[kingdom_number, 1, 0, 101, 1, 15, 1]),
         skills=SkillTable(raw_values=[0] * 31),
         leaders=leaders,
     )
@@ -90,3 +91,24 @@ def test_process_turn_combines_multiple_kingdoms_orders_into_one_run_turn_call()
 
     assert {r.leader_id for r in outcome.results} == {10, 20, 30}
     assert set(outcome.bridge_reports) == {1, 2}
+
+
+def test_process_turn_wires_the_emperor_election_evaluation():
+    # Phase 466: process_turn() now runs turn/emperor_election.py
+    # process_election_turn() every turn, in the report's own SS13.1
+    # sequence (after the five phases, before report generation). No
+    # Kingdom here owns any taxed province, so V_world is 0 and nothing
+    # gets crowned/scheduled -- this just proves the wiring itself runs
+    # and surfaces its result on TurnOutcome, without needing a full
+    # tax-base scenario (already covered at the unit level in
+    # test_emperor_election.py).
+    state = _base_state()
+    kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+
+    assert isinstance(outcome.election_outcome, ElectionCallOutcome)
+    assert outcome.election_outcome.world_total == 0
+    assert state.emperor_kingdom_id is None
+    assert state.election_pending_turn is None

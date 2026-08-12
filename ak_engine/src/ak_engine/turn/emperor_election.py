@@ -161,6 +161,7 @@ from dataclasses import dataclass
 
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.game_state import GameState
+from ak_engine.models.kingdom import KingdomMoveHeader
 from ak_engine.models.office import OFFICE_VALUE
 from ak_engine.turn.merit_points import LEGENDARY_ITEM_BONUS_TREASURES
 from ak_engine.turn.office_holder import resolve_all_office_holders
@@ -600,3 +601,68 @@ def evaluate_election_call(
     alignment_trigger = _alignment_auto_trigger(state, current_turn, world_total)
 
     return ElectionCallOutcome(world_total, None, callers_qualify, alignment_trigger)
+
+
+def process_election_turn(
+    state: GameState,
+    kingdom_headers: dict[int, KingdomMoveHeader],
+    current_turn: int,
+) -> ElectionResult | ElectionCallOutcome:
+    """Phase 466 -- the real per-turn state machine tying `evaluate_
+    election_call()` and `tally_emperor_vote()` together, modeling report
+    SS12.1's own `req_vote` global as `GameState.election_pending_turn`
+    (see that field's own docstring).
+
+    ``kingdom_headers``: ``{kingdom_id: KingdomMoveHeader}`` for every
+    Kingdom that submitted a move this turn -- the caller's own
+    responsibility to assemble (mirrors `orchestrator.py process_turn()`'s
+    own per-Kingdom K1-parsing loop; not done here, since this function
+    doesn't otherwise need anything else that loop produces). A Kingdom
+    missing from this dict submitted no order this turn, which this
+    function treats as an abstention/non-request, exactly like a real
+    missed-deadline turn would (see `turn/missed_deadline.py`).
+
+    Two mutually exclusive branches, selected by whether a vote is
+    already pending for exactly this turn:
+
+    - **`state.election_pending_turn == current_turn`** (report SS12.1's
+      ``req_vote = Vote_Turn``): tally it. Each Kingdom's own `kprevgold`
+      now holds its candidate choice, not a request toggle -- collected
+      into a `ballots` dict, filtering out any value that isn't a real
+      Kingdom id in `state.kingdoms` (an abstention, a stale "No_King"
+      reset, or any other non-candidate value -- see `KingdomMoveHeader.
+      kprevgold`'s own docstring for why this project can't name the
+      exact "No_King" sentinel value, and why it doesn't need to: any
+      value that isn't a real Kingdom id is an abstention either way).
+      `election_pending_turn` is cleared regardless of the vote's own
+      outcome (a vote being *held* ends the pending state, win, loss, or
+      no quorum).
+    - **Otherwise**: evaluate whether this turn crowns someone outright
+      or schedules a vote for `current_turn + 1`
+      (`evaluate_election_call()`), using each Kingdom's own `kprevgold`
+      as a request toggle this time (`KingdomMoveHeader.is_vote_turn()`).
+      An immediate coronation sets `state.emperor_kingdom_id` directly
+      (no vote to hold, so nothing gets scheduled); a scheduled election
+      sets `state.election_pending_turn = current_turn + 1`.
+    """
+
+    if state.election_pending_turn == current_turn:
+        ballots = {
+            kingdom_id: header.kprevgold
+            for kingdom_id, header in kingdom_headers.items()
+            if header.kprevgold in state.kingdoms
+        }
+        result = resolve_emperor_election(state, ballots, current_turn)
+        state.election_pending_turn = None
+        return result
+
+    requesting_kingdom_ids = {
+        kingdom_id for kingdom_id, header in kingdom_headers.items() if header.is_vote_turn()
+    }
+    outcome = evaluate_election_call(state, requesting_kingdom_ids, current_turn)
+    if outcome.immediate_coronation_kingdom_id is not None:
+        state.emperor_kingdom_id = outcome.immediate_coronation_kingdom_id
+        state.last_emperor_vote_turn = current_turn
+    elif outcome.election_scheduled_next_turn:
+        state.election_pending_turn = current_turn + 1
+    return outcome

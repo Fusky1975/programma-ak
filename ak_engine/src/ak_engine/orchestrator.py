@@ -31,8 +31,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ak_engine.models.game_state import GameState
+from ak_engine.models.kingdom import KingdomMoveHeader
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.report.turn_report import describe_turn_results
+from ak_engine.turn.emperor_election import ElectionCallOutcome, ElectionResult, process_election_turn
 from ak_engine.turn.kingdom_bridge import KingdomBridgeReport, sync_leaders_from_kingdom
 from ak_engine.turn.turn_processor import PhaseDispatchResult, TurnLeader, run_turn
 
@@ -46,6 +48,12 @@ class TurnOutcome:
     results: list[PhaseDispatchResult]
     report_lines: list[str]
     bridge_reports: dict[int, KingdomBridgeReport] = field(default_factory=dict)  # kingdom_id -> report
+    # Phase 466: whichever of the two `turn/emperor_election.py
+    # process_election_turn()` shapes this turn produced -- an
+    # `ElectionResult` if a pending vote was tallied this turn, or an
+    # `ElectionCallOutcome` otherwise (whether or not it actually
+    # scheduled/crowned anything). See that function's own docstring.
+    election_outcome: ElectionResult | ElectionCallOutcome | None = None
 
 
 def process_turn(
@@ -70,6 +78,17 @@ def process_turn(
     (returned in ``TurnOutcome.bridge_reports``) records exactly which
     leader ids were skipped, so a caller can surface that to the user
     instead of it silently vanishing.
+
+    **Phase 466**: after the five phases run, evaluates the Emperor
+    election exactly where report SS13.1's own routine does -- after
+    "effetti e consolidamenti di fine turno" but before report
+    generation -- via ``turn/emperor_election.py process_election_turn()``,
+    fed with every Kingdom's own real ``KingdomMoveHeader`` collected
+    during the same parsing loop above (no second parse needed). The
+    result is returned as ``TurnOutcome.election_outcome``; state
+    mutations (a fresh ``state.emperor_kingdom_id``, an ``election_
+    pending_turn`` scheduled for next turn, or a just-tallied vote's own
+    result) happen inside that function, not here.
     """
 
     if rng is None:
@@ -77,6 +96,7 @@ def process_turn(
 
     turn_leaders: list[TurnLeader] = []
     bridge_reports: dict[int, KingdomBridgeReport] = {}
+    kingdom_headers: dict[int, KingdomMoveHeader] = {}
 
     for path in order_file_paths:
         kingdom = parse_k1_moves_file(path)
@@ -87,6 +107,7 @@ def process_turn(
         kingdom_id = kingdom.header.kingdom_number
         bridge_report = sync_leaders_from_kingdom(kingdom, state)
         bridge_reports[kingdom_id] = bridge_report
+        kingdom_headers[kingdom_id] = kingdom.header
 
         for leader in kingdom.leaders:
             if leader.leader_id in bridge_report.not_found_leader_ids:
@@ -94,6 +115,12 @@ def process_turn(
             turn_leaders.append(TurnLeader(leader, kingdom_id))
 
     results = run_turn(turn_leaders, state, board_width=board_width, rng=rng)
+    election_outcome = process_election_turn(state, kingdom_headers, state.turn_number)
     report_lines = describe_turn_results(results, state, rng, board_width=board_width)
 
-    return TurnOutcome(results=results, report_lines=report_lines, bridge_reports=bridge_reports)
+    return TurnOutcome(
+        results=results,
+        report_lines=report_lines,
+        bridge_reports=bridge_reports,
+        election_outcome=election_outcome,
+    )

@@ -52,7 +52,7 @@ def _fake_kingdom() -> Kingdom:
         source_filename="fake.K1",
         king_name="Arthur",
         king_title=None,
-        header=KingdomMoveHeader(raw_fields=[1, 1, 0]),
+        header=KingdomMoveHeader(raw_fields=[1, 1, 0, 101, 1, 15, 1]),
         skills=SkillTable(raw_values=[0] * 31),
         leaders=[_wait_leader(1, "Arthur")],
     )

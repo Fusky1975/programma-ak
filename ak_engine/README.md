@@ -19600,7 +19600,7 @@ follow-up request after the original 431-435 plan shipped.
     (`AK3__T1.K1`'s full real header decode, `AK3__T10.K1`'s differing
     `brreq`, and a malformed multi-character-sex file correctly raising
     `K1ParseError`). Ran again: 4137 passed (6 new).
-- **Phase 465 (current)**: the real, disassembly-sourced per-turn
+- **Phase 465**: the real, disassembly-sourced per-turn
   Emperor-election call/coronation evaluation (`AKGEN_reverse_
   engineering_report (2).md` SS13.4/13.6) -- runs every turn
   automatically, regardless of whether any King explicitly asked, unlike
@@ -19654,6 +19654,44 @@ follow-up request after the original 431-435 plan shipped.
     5-Kingdom alignment-bloc-only trigger where every individual Kingdom
     stays below threshold, and nothing-qualifies) plus an empty-world
     no-op. Ran again: 4149 passed (12 new).
+- **Phase 466 (current)**: wires `evaluate_election_call()`/`tally_
+  emperor_vote()` into the real per-turn pipeline, closing the loop the
+  Phase 465 docstring left open. New `GameState.election_pending_turn:
+  int | None` models report SS12.1's own `req_vote` global -- the turn a
+  scheduled vote will actually be *tallied* on, `None` when no election
+  is pending. New `turn/emperor_election.py process_election_turn(state,
+  kingdom_headers, current_turn) -> ElectionResult | ElectionCallOutcome`
+  is the real per-turn state machine: if `state.election_pending_turn ==
+  current_turn`, tallies the pending vote (each Kingdom's own `kprevgold`
+  now holds its candidate choice, collected into a `ballots` dict that
+  filters out any value that isn't a real Kingdom id -- an abstention,
+  a stale reset, or anything else, all treated identically since this
+  project can't name the exact Pascal "No_King" sentinel value); the
+  vote's own outcome clears `election_pending_turn` regardless of win,
+  loss, or no quorum. Otherwise, evaluates whether this turn crowns
+  someone outright or schedules next turn's vote (`evaluate_election_
+  call()`, this time reading each Kingdom's own `kprevgold` as a request
+  toggle via `KingdomMoveHeader.is_vote_turn()`) and mutates `state.
+  emperor_kingdom_id`/`election_pending_turn` accordingly.
+  `orchestrator.py process_turn()` now calls this every turn, in report
+  SS13.1's own real sequence (after the five phases and their
+  consolidation, before report generation) -- `kingdom_headers` comes
+  free from the same per-Kingdom K1-parsing loop `bridge_reports` already
+  builds, no second parse needed. New `TurnOutcome.election_outcome`
+  field surfaces the result to callers. Two pre-existing test fixtures
+  (`test_orchestrator.py _kingdom()`, `test_cli.py _fake_kingdom()`) had
+  a stale 3-element `raw_fields` list from before Phase 464's header fix
+  -- padded to the real 7-element shape so `process_election_turn()`'s
+  own `kprevgold`/`is_vote_turn()` access doesn't index out of range;
+  their own kprevgold defaults to the same non-sentinel `15` every real
+  sample file uses, so this changes no existing test's outcome.
+  - Ran the full suite before writing new tests: unaffected (4149 passed
+    unchanged). Added 5 new tests: 4 in `tests/test_emperor_election.py`
+    (`process_election_turn()`'s own immediate-coronation, callers-
+    schedule-next-turn, pending-vote-tally, and invalid-candidate-as-
+    abstention shapes) and 1 in `tests/test_orchestrator.py` proving
+    `process_turn()` itself now surfaces an `ElectionCallOutcome` on
+    `TurnOutcome.election_outcome`. Ran again: 4154 passed (5 new).
 
 ## Setup
 
