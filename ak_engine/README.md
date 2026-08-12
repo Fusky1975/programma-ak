@@ -19903,7 +19903,7 @@ follow-up request after the original 431-435 plan shipped.
     (`apply_duel_demoralization` carries the field through scaled, leaves
     an ineligible unit's own `None` untouched). Ran again: 4188 passed
     (13 new).
-- **Phase 472 (current)**: wires Wingman's (`Office.WINGMAN`) own §19.7
+- **Phase 472**: wires Wingman's (`Office.WINGMAN`) own §19.7
   recruitment bonus -- previously only its merit-accumulation half existed
   (`turn/merit_points.py wingman_merit_points()`, driven by `LeaderState.
   merit_tally.air_combat_merit`). `AKGEN_reverse_engineering_report
@@ -19940,6 +19940,54 @@ follow-up request after the original 431-435 plan shipped.
     the bonus only applies to the titleholder -- a different, non-acting
     leader holding Wingman changes nothing. Ran again: 4193 passed (5
     new).
+- **Phase 473 (current)**: closes Professor Whizdumb's (`Office.TEACHER`)
+  own remaining SS2.5 gap -- Phase 446's `_select_teacher()` already
+  implemented the Merit Points half (who gets credited as "the teacher"),
+  but its own docstring explicitly deferred the *other* half: "chi
+  pratica con il titolare riceve +1 all'aptitude effettiva del gate di
+  quella sessione. Il byte di aptitude naturale non viene incrementato
+  permanentemente" (whoever practices with the titleholder gets +1 to
+  that session's own effective gate aptitude -- the natural aptitude
+  byte itself is never permanently incremented). `turn/practice_
+  execution.py roll_practice_aptitude_gate()`/`_resolve_practice_
+  attempt()` gain an `aptitude_bonus` parameter, applied only to the
+  gate roll's own `a_eff` -- every other use of `aptitude` (the separate
+  SS2.4 aptitude-rise-on-failure check, and the outcome's own returned
+  `new_aptitude`) stays keyed to the unboosted natural value, per the
+  source's own explicit "never permanently incremented." `resolve_
+  practice_group()` gains a parallel `aptitude_bonuses` list (validated
+  same-length, defaults to no bonus for anyone). New `_teacher_aptitude_
+  bonus()` helper computes it off the same pre-attempt `pairs`
+  `_select_teacher()` already builds: a co-practicer qualifies (bonus 1)
+  iff the current Office.TEACHER holder is also in this same practice
+  group and has strictly higher pre-attempt skill than them -- the same
+  "qualifies as a candidate teacher" test `_select_teacher()` uses for
+  merit, reused since the source ties both effects to "practicing with a
+  genuinely superior titleholder." Deliberately independent of *which*
+  candidate `_select_teacher()` ultimately credits for merit when several
+  qualify -- this is a session-wide effect of the titleholder's mere
+  qualifying presence, not of being the one selected for Merit Points.
+  `execute_practice_group()` wires it straight into `resolve_practice_
+  group()`. Solo Practice (`execute_practice()`) and the already-
+  unreachable `resolve_practice_pair()` are untouched -- solo practice has
+  no co-practicer at all, so the titleholder-presence condition can never
+  fire there.
+  - Ran the full suite before writing new tests: 4193 passed (non-
+    breaking -- `aptitude_bonus`/`aptitude_bonuses` both default to zero/
+    empty, so every pre-existing call site behaves identically). Wrote 10
+    new tests in `tests/test_practice_execution.py`: a direct `roll_
+    practice_aptitude_gate` test showing the same roll fails unboosted and
+    succeeds with `aptitude_bonus=1`, a `resolve_practice_group` length-
+    mismatch guard and a threading test proving the same scripted roll
+    flips outcome with/without the bonus, four direct `_teacher_aptitude_
+    bonus()` tests (grants 1 to a strictly-lower-skilled co-practicer,
+    zero without an officeholder, zero when the officeholder is only tied
+    -- not strictly higher, zero when the officeholder isn't in this
+    group at all), and three `execute_practice_group()`-level end-to-end
+    tests (the bonus turns an otherwise-failing gate into a success, the
+    same roll still fails without an officeholder, and a tied-skill
+    officeholder grants nothing to either tied co-practicer). Ran again:
+    4203 passed (10 new).
 
 ## Setup
 

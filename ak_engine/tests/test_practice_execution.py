@@ -23,6 +23,7 @@ from ak_engine.turn.practice_execution import (
     TACTICAL_TRAINING_CHANCE,
     PracticeExecutionResult,
     _select_discovery_to_grant,
+    _teacher_aptitude_bonus,
     execute_practice,
     execute_practice_group,
     execute_practice_tactical,
@@ -66,6 +67,15 @@ def test_roll_practice_aptitude_gate_always_succeeds_once_aptitude_covers_the_ta
     # deficit == 0 -> P == 1.0 -- rng.random() always returns < 1.0, so
     # the gate can never fail once aptitude already covers target_skill.
     assert roll_practice_aptitude_gate(current_skill=4, aptitude=9, rng=ScriptedRandom([0.999999])) is True
+
+
+def test_roll_practice_aptitude_gate_aptitude_bonus_shrinks_the_effective_deficit():
+    # Phase 473: current_skill=1, aptitude=1 -> deficit=1, P=0.5 unboosted
+    # (0.6 fails); aptitude_bonus=1 -> deficit=0, P=1.0 (0.6 succeeds).
+    assert roll_practice_aptitude_gate(current_skill=1, aptitude=1, rng=ScriptedRandom([0.6])) is False
+    assert (
+        roll_practice_aptitude_gate(current_skill=1, aptitude=1, rng=ScriptedRandom([0.6]), aptitude_bonus=1) is True
+    )
 
 
 def test_maybe_raise_aptitude_guard_consumes_no_rng_when_aptitude_already_at_cap():
@@ -228,6 +238,23 @@ def test_resolve_practice_group_only_the_minimum_skill_members_roll():
     assert outcomes[1].skill_rose is False
     assert outcomes[1].new_skill == 4
     assert outcomes[2].skill_rose is True
+
+
+def test_resolve_practice_group_rejects_a_mismatched_aptitude_bonuses_length():
+    with pytest.raises(ValueError):
+        resolve_practice_group([(1, 1, 0), (4, 9, 0)], rng=random.Random(0), aptitude_bonuses=[1])
+
+
+def test_resolve_practice_group_aptitude_bonuses_thread_into_the_gate_roll():
+    # Phase 473: same 0.6 gate roll as the direct roll_practice_aptitude_
+    # gate test above -- unboosted (bonus 0) it fails the minimum-skill
+    # member's own gate; boosted (bonus 1) it succeeds.
+    rng = ScriptedRandom([0.6, 0.99])  # second value: the failing member's own aptitude-rise fallback
+    outcomes = resolve_practice_group([(1, 1, 0), (4, 9, 0)], rng=rng, aptitude_bonuses=[0, 0])
+    assert outcomes[0].skill_rose is False
+
+    outcomes = resolve_practice_group([(1, 1, 0), (4, 9, 0)], rng=ScriptedRandom([0.6]), aptitude_bonuses=[1, 0])
+    assert outcomes[0].skill_rose is True
 
 
 def _state_with_leader(skills: SkillTable | None) -> GameState:
@@ -761,6 +788,123 @@ def test_execute_practice_group_credits_no_teacher_for_an_aptitude_only_rise():
     assert results[0].skill_rose is False
     assert results[0].aptitude_rose is True
     assert state.leaders[2].merit_tally.teaching_interactions == 0
+
+
+# -- Phase 473: Professor Whizdumb's own aptitude-gate bonus (SS2.5) -------
+
+
+def test_teacher_aptitude_bonus_grants_one_to_a_strictly_lower_skilled_co_practicer():
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=1),
+            2: _skills_with(Ability.NECROMANCY, skill=5, aptitude=9),
+        },
+    )
+    state.leaders[2].merit_tally.teaching_interactions = 10  # qualifies as Office.TEACHER holder
+
+    assert _teacher_aptitude_bonus(state, [1, 2], [(1, 1), (5, 9)]) == [1, 0]
+
+
+def test_teacher_aptitude_bonus_is_zero_without_an_officeholder():
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=1),
+            2: _skills_with(Ability.NECROMANCY, skill=5, aptitude=9),
+        },
+    )
+
+    assert _teacher_aptitude_bonus(state, [1, 2], [(1, 1), (5, 9)]) == [0, 0]
+
+
+def test_teacher_aptitude_bonus_is_zero_when_officeholder_is_tied_not_strictly_higher():
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=3, aptitude=1),
+            2: _skills_with(Ability.NECROMANCY, skill=3, aptitude=9),
+        },
+    )
+    state.leaders[2].merit_tally.teaching_interactions = 10
+
+    assert _teacher_aptitude_bonus(state, [1, 2], [(3, 1), (3, 9)]) == [0, 0]
+
+
+def test_teacher_aptitude_bonus_is_zero_when_officeholder_is_not_in_this_group():
+    state = _state_with_leaders(
+        1,
+        2,
+        3,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=1),
+            2: _skills_with(Ability.NECROMANCY, skill=5, aptitude=9),
+            3: _skills_with(Ability.NECROMANCY, skill=9, aptitude=9),
+        },
+    )
+    state.leaders[3].merit_tally.teaching_interactions = 10  # officeholder, but absent from this group
+
+    assert _teacher_aptitude_bonus(state, [1, 2], [(1, 1), (5, 9)]) == [0, 0]
+
+
+def test_execute_practice_group_whizdumb_bonus_turns_a_failing_gate_into_a_success():
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=1),
+            2: _skills_with(Ability.NECROMANCY, skill=5, aptitude=9),
+        },
+    )
+    state.leaders[2].merit_tally.teaching_interactions = 10  # Office.TEACHER holder
+
+    # Leader 1's own gate: target=2, aptitude=1, deficit=1, P=0.5 unboosted;
+    # with the Whizdumb +1, deficit=0, P=1.0 -- 0.6 fails unboosted, succeeds boosted.
+    results = execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.6]))
+
+    assert results[0].skill_rose is True
+    assert results[0].new_skill == 2
+
+
+def test_execute_practice_group_no_whizdumb_bonus_without_an_officeholder():
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=1),
+            2: _skills_with(Ability.NECROMANCY, skill=5, aptitude=9),
+        },
+    )
+
+    # Same 0.6 gate roll as the boosted test above, but no officeholder --
+    # unboosted P=0.5 fails, falling through to the APT_RISE_CHANCE[1]=0.10
+    # aptitude-rise roll, which also fails at 0.99.
+    results = execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.6, 0.99]))
+
+    assert results[0].skill_rose is False
+
+
+def test_execute_practice_group_no_whizdumb_bonus_when_titleholder_tied_with_student():
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.NECROMANCY, skill=1, aptitude=1),
+            2: _skills_with(Ability.NECROMANCY, skill=1, aptitude=1),
+        },
+    )
+    state.leaders[2].merit_tally.teaching_interactions = 10  # Office.TEACHER holder, but tied skill
+
+    # Tied branch: both roll independently, neither boosted (holder isn't
+    # strictly higher-skilled than the other). Each gate (0.6) fails at
+    # unboosted P=0.5, then each aptitude-rise roll (0.99) fails too.
+    results = execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.6, 0.99, 0.6, 0.99]))
+
+    assert results[0].skill_rose is False
+    assert results[1].skill_rose is False
 
 
 def test_execute_practice_group_attaches_fresh_skill_tables_when_none_recorded():

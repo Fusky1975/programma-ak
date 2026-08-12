@@ -277,6 +277,23 @@ through that one shared counter regardless of which ability the current
 Practice attempt is on; see ``turn/experience.py`` (new this phase) for
 the other real contributor to this same counter, Add_Experience's own
 triangular-distribution gain from non-Practice actions.
+
+**Phase 473 (Professor Whizdumb's own aptitude-gate bonus, real
+source)**: ``_select_teacher()`` (Phase 446) deliberately left one piece
+of SS20.2/SS2.5 unimplemented -- the Teacher officeholder's own
+temporary ``+1`` effective-aptitude bonus to a qualifying student's gate
+roll, as opposed to the *merit* credit ``_select_teacher()`` already
+handles. This phase closes that gap: ``roll_practice_aptitude_gate()``
+and ``_resolve_practice_attempt()`` gain an ``aptitude_bonus`` parameter
+(added only to the gate roll's own ``a_eff``, per the source's own
+explicit "the natural aptitude byte is never permanently incremented");
+``resolve_practice_group()`` gains a parallel ``aptitude_bonuses`` list;
+``execute_practice_group()`` computes it via the new
+``_teacher_aptitude_bonus()`` helper, off the same pre-attempt ``pairs``
+``_select_teacher()`` already builds. Solo Practice (``execute_
+practice()``) and the unreachable ``resolve_practice_pair()`` are
+untouched -- solo practice has no co-practicer at all, so the
+titleholder-presence condition can never fire there.
 """
 
 from __future__ import annotations
@@ -343,7 +360,9 @@ class PracticeOutcome:
     new_credit: int | None = None
 
 
-def roll_practice_aptitude_gate(current_skill: int, aptitude: int, rng: random.Random) -> bool:
+def roll_practice_aptitude_gate(
+    current_skill: int, aptitude: int, rng: random.Random, *, aptitude_bonus: int = 0
+) -> bool:
     """The real per-PR aptitude gate (AKGEN_reverse_engineering_report (2).md SS2):
     ``P = 2^-max(0, target_skill - aptitude)``, ``target_skill = current_skill + 1``.
 
@@ -356,10 +375,22 @@ def roll_practice_aptitude_gate(current_skill: int, aptitude: int, rng: random.R
     tied, guaranteed-if-lower) rolls against this exact same gate; see
     module docstring's "Roll sequencing" section for what differs by
     context (what a *successful* gate does next).
+
+    ``aptitude_bonus`` (Phase 473): SS2.5's own Professor Whizdumb side
+    effect -- "chi pratica con il titolare riceve +1 all'aptitude
+    effettiva del gate di quella sessione" (whoever practices with the
+    titleholder gets +1 to that session's own effective gate aptitude).
+    Applied only to this roll's own ``a_eff`` -- the source is explicit
+    that "il byte di aptitude naturale non viene incrementato
+    permanentemente" (the natural aptitude byte is never permanently
+    incremented), so ``aptitude`` itself, and every other consumer of it
+    (the separate SS2.4 aptitude-rise-on-failure check, and the returned
+    outcome's own ``new_aptitude``), stay keyed to the unboosted natural
+    value -- see ``_teacher_aptitude_bonus()`` for who actually qualifies.
     """
 
     target_level = current_skill + 1
-    levels_beyond_aptitude = max(0, target_level - aptitude)
+    levels_beyond_aptitude = max(0, target_level - (aptitude + aptitude_bonus))
     return rng.random() < 1.0 / (2**levels_beyond_aptitude)
 
 
@@ -378,6 +409,7 @@ def _resolve_practice_attempt(
     *,
     immediate_rise: bool,
     credit_delta: int,
+    aptitude_bonus: int = 0,
 ) -> PracticeOutcome:
     """Core per-practicer attempt: aptitude gate, then either an immediate rise,
     persistent credit accumulation (with a threshold-crossing rise), or
@@ -385,13 +417,16 @@ def _resolve_practice_attempt(
 
     Shared by every practice context (guaranteed-if-lower / tied / solo)
     -- see module docstring's "Roll sequencing" section for the full
-    AKGEN-sourced formula this implements.
+    AKGEN-sourced formula this implements. ``aptitude_bonus`` (Phase 473)
+    is forwarded to the gate roll only -- see ``roll_practice_aptitude_
+    gate()``'s own docstring for why every other use of ``aptitude``
+    below stays unboosted.
     """
 
     if current_skill >= MAX_SKILL_LEVEL:
         return PracticeOutcome(skill_rose=False, aptitude_rose=False, new_skill=current_skill, new_aptitude=aptitude)
 
-    if roll_practice_aptitude_gate(current_skill, aptitude, rng):
+    if roll_practice_aptitude_gate(current_skill, aptitude, rng, aptitude_bonus=aptitude_bonus):
         if immediate_rise:
             return PracticeOutcome(
                 skill_rose=True, aptitude_rose=False, new_skill=current_skill + 1, new_aptitude=aptitude
@@ -452,29 +487,50 @@ def resolve_practice_pair(
 
 
 def resolve_practice_group(
-    skills_aptitudes_credits: list[tuple[int, int, int]], rng: random.Random
+    skills_aptitudes_credits: list[tuple[int, int, int]],
+    rng: random.Random,
+    *,
+    aptitude_bonuses: list[int] | None = None,
 ) -> list[PracticeOutcome]:
     """Generalizes ``resolve_practice_pair`` to N >= 2 co-practicers -- see module docstring's
     "Extending to N > 2" section for the undsourced generalization this applies.
 
     Not reachable from ``plan_dispatch.py`` -- see module docstring.
+
+    ``aptitude_bonuses`` (Phase 473, optional, parallel to
+    ``skills_aptitudes_credits``): per-practicer ``aptitude_bonus`` for
+    ``roll_practice_aptitude_gate()`` -- see ``_teacher_aptitude_bonus()``
+    for how ``execute_practice_group()`` computes these from Professor
+    Whizdumb's own SS2.5 side effect. Defaults to no bonus for anyone.
+    Only ever consumed for a practicer who actually rolls this call (the
+    tied branch, or the minimum-skill practicer(s) in the lower-skill
+    branch) -- a bonus entry for anyone else is harmless and unused,
+    since they get a no-op outcome regardless.
     """
 
     if len(skills_aptitudes_credits) < 2:
         raise ValueError("resolve_practice_group needs at least 2 co-practicers; use resolve_practice_solo for 1")
 
+    bonuses = aptitude_bonuses if aptitude_bonuses is not None else [0] * len(skills_aptitudes_credits)
+    if len(bonuses) != len(skills_aptitudes_credits):
+        raise ValueError("aptitude_bonuses must be the same length as skills_aptitudes_credits")
+
     skills = [skill for skill, _, _ in skills_aptitudes_credits]
     if len(set(skills)) == 1:
         return [
-            _resolve_practice_attempt(skill, aptitude, credit, rng, immediate_rise=False, credit_delta=PRACTICE_CREDIT_TIED_GAIN)
-            for skill, aptitude, credit in skills_aptitudes_credits
+            _resolve_practice_attempt(
+                skill, aptitude, credit, rng, immediate_rise=False, credit_delta=PRACTICE_CREDIT_TIED_GAIN, aptitude_bonus=bonus
+            )
+            for (skill, aptitude, credit), bonus in zip(skills_aptitudes_credits, bonuses)
         ]
 
     minimum_skill = min(skills)
     outcomes = []
-    for skill, aptitude, credit in skills_aptitudes_credits:
+    for (skill, aptitude, credit), bonus in zip(skills_aptitudes_credits, bonuses):
         if skill == minimum_skill:
-            outcomes.append(_resolve_practice_attempt(skill, aptitude, credit, rng, immediate_rise=True, credit_delta=0))
+            outcomes.append(
+                _resolve_practice_attempt(skill, aptitude, credit, rng, immediate_rise=True, credit_delta=0, aptitude_bonus=bonus)
+            )
         else:
             outcomes.append(PracticeOutcome(skill_rose=False, aptitude_rose=False, new_skill=skill, new_aptitude=aptitude))
     return outcomes
@@ -769,10 +825,14 @@ def _select_teacher(
     all, matching the source's "no teacher when tied" rule without
     needing a special case.
 
-    Deliberately **not** implemented here: the source's own temporary
-    ``+1`` effective-aptitude bonus the Teacher officeholder grants their
-    own selected session (SS20.2) -- a separate effect on the roll
-    itself, not the merit formula, left for a future phase.
+    The source's own temporary ``+1`` effective-aptitude bonus the
+    Teacher officeholder grants their own qualifying students (SS2.5) --
+    a separate effect on the gate roll itself, not this merit formula --
+    is implemented in ``_teacher_aptitude_bonus()`` (Phase 473), not
+    here: that effect keys off the officeholder simply *qualifying* as a
+    candidate for a given student (strictly higher skill), independent
+    of who this function ultimately selects as *the* credited teacher
+    when several candidates qualify.
     """
 
     student_skill = pairs[student_index][0]
@@ -795,6 +855,47 @@ def _select_teacher(
                 return candidate_id
 
     return max(candidates, key=lambda c: (c[1], -c[0]))[0]
+
+
+def _teacher_aptitude_bonus(state: GameState, leader_ids: list[int], pairs: list[tuple[int, int]]) -> list[int]:
+    """Phase 473: Professor Whizdumb's (Office.TEACHER) own SS2.5 side effect --
+
+        "Professor Whizdumb: chi pratica con il titolare riceve +1
+        all'aptitude effettiva del gate di quella sessione. Il byte di
+        aptitude naturale non viene incrementato permanentemente."
+
+    ("whoever practices with the titleholder gets +1 to that session's
+    own effective gate aptitude. The natural aptitude byte is never
+    permanently incremented.") Returns one ``aptitude_bonus`` entry per
+    ``leader_ids``, in order, for ``execute_practice_group()`` to pass
+    straight into ``resolve_practice_group()``.
+
+    A practicer at index ``i`` qualifies (bonus ``1``) iff the current
+    Office.TEACHER holder is *also* one of this same practice group's
+    co-practicers and has strictly higher pre-attempt skill than that
+    practicer -- the same "qualifies as a candidate teacher" test
+    ``_select_teacher()`` already uses for Merit Points, reused here
+    since the source ties both effects to "practicing with a genuinely
+    superior titleholder." Deliberately independent of which candidate
+    ``_select_teacher()`` ultimately credits for merit when several
+    qualify -- the aptitude bonus is a session-wide effect of the
+    titleholder's mere qualifying presence, not of being the one
+    selected for Merit Points. A titleholder present but *not* strictly
+    higher-skilled than a given student (tied or lower) grants that
+    student nothing, matching ``_select_teacher()``'s own "no teacher
+    when tied" rule. The titleholder never grants themselves a bonus.
+    """
+
+    # Deferred import -- see _select_teacher()'s own identical note.
+    from ak_engine.turn.office_holder import resolve_office_holder
+
+    holder = resolve_office_holder(state, Office.TEACHER)
+    if holder is None or holder.leader_id not in leader_ids:
+        return [0] * len(leader_ids)
+
+    holder_index = leader_ids.index(holder.leader_id)
+    holder_skill = pairs[holder_index][0]
+    return [1 if i != holder_index and holder_skill > pairs[i][0] else 0 for i in range(len(leader_ids))]
 
 
 def execute_practice_group(
@@ -838,7 +939,11 @@ def execute_practice_group(
         for leader_id, (skill, aptitude) in zip(leader_ids, pairs)
     ]
 
-    outcomes = resolve_practice_group(triples, rng)
+    # Phase 473: Professor Whizdumb's +1 effective-aptitude side effect
+    # (SS2.5) -- computed off the same pre-attempt pairs _select_teacher()
+    # uses for its own, separate merit-crediting decision below.
+    aptitude_bonuses = _teacher_aptitude_bonus(state, leader_ids, pairs)
+    outcomes = resolve_practice_group(triples, rng, aptitude_bonuses=aptitude_bonuses)
 
     results = []
     for index, (leader_id, table, outcome, (current_skill, _current_aptitude)) in enumerate(
