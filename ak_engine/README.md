@@ -19545,7 +19545,7 @@ follow-up request after the original 431-435 plan shipped.
     consuming one fewer roll than the no-bonus case; Illusory Hero's own
     extra flat -15% keeps its version below 100%, so that test instead
     reuses the same comparative-roll shape as Stage 1).
-- **Phase 464 (current)**: correctly decodes the Kingdom-header (`M ...`)
+- **Phase 464**: correctly decodes the Kingdom-header (`M ...`)
   line against the real Pascal source (`AKGEN_reverse_engineering_report
   (2).md` SS12, and `HostAK/TP/DEF2.PAS`'s own `Write_Moves`/`Read_Moves`
   read directly from the Desktop's `Programma Pascal.zip` extraction).
@@ -19600,6 +19600,60 @@ follow-up request after the original 431-435 plan shipped.
     (`AK3__T1.K1`'s full real header decode, `AK3__T10.K1`'s differing
     `brreq`, and a malformed multi-character-sex file correctly raising
     `K1ParseError`). Ran again: 4137 passed (6 new).
+- **Phase 465 (current)**: the real, disassembly-sourced per-turn
+  Emperor-election call/coronation evaluation (`AKGEN_reverse_
+  engineering_report (2).md` SS13.4/13.6) -- runs every turn
+  automatically, regardless of whether any King explicitly asked, unlike
+  `can_request_election()`'s own rulebook-literal "un singolo Re...
+  alleanza" reading (Phase 228). New `turn/emperor_election.py
+  evaluate_election_call(state, requesting_kingdom_ids, current_turn) ->
+  ElectionCallOutcome`, implementing the report's own numbered sequence:
+  1. find the Kingdom with the single highest `V_k`
+  (`_highest_vote_weight_kingdom`, ties keep the lowest Kingdom ID via a
+  strict `>` comparison); 2. if its own share of `V_world` already
+  reaches the turn-decaying threshold `R`, crown it immediately -- no
+  vote, no request needed at all (`immediate_coronation_kingdom_id`);
+  3.-4. otherwise sum the weight of every requesting Kingdom
+  (`_election_callers_weight` -- the real compiled routine has **no
+  alliance concept at all** here, unlike `can_request_election()`'s own
+  Phase 228 reading); if that share reaches `R`, `callers_qualify`;
+  5. independently, whether any of the 8 "ordinary" Alignments' own
+  combined world-power bloc share reaches `R`
+  (`alignment_bloc_vote_weights`/`_alignment_auto_trigger`) -- a pure
+  Alignment-bloc trigger the rulebook never mentions at all, with no
+  Kingdom needing to have "requested" anything. `_alignment_auto_trigger`
+  replicates the source's own `alvote` sentinel mechanic precisely: a
+  qualifying Alignment **overwrites** a running sentinel while scanning
+  in `ALIGNMENT_ORDINAL` order, so the *last* qualifier wins, not the
+  first reached or the highest share -- confirmed with a worked test
+  where the highest-share Alignment (GOOD, 40%) loses to a
+  later-scanned, lower-share qualifier (EVIL, 35%). `requesting_kingdom_
+  ids` (every Kingdom whose own `kprevgold` currently holds `VOTE_TURN_
+  SENTINEL`, Phase 464's `KingdomMoveHeader.is_vote_turn()`) is the
+  caller's own responsibility to assemble from that turn's parsed K1
+  files -- not wired here, the same "mechanic before the plan-file
+  wiring" order this module already uses elsewhere. `can_request_
+  election()` is kept, unchanged (no other module calls either function
+  yet) -- `evaluate_election_call()` supersedes it in spirit, the same
+  way Phase 450/451 superseded this module's own original vote-
+  weight/win-condition formulas.
+  **Deliberately out of scope**: the `gametyp` special-case branches
+  (Valhalla skips normal convocation; Arcane's Valor adds a separate
+  3-artifact win condition) -- this project has no `gametyp` concept
+  anywhere, the same "no source, no guess" boundary `turn/final_
+  standings.py`'s own Phase 454 docstring already drew around `kteam`.
+  - Ran the full suite before writing new tests: unaffected (4137 passed
+    unchanged -- purely additive, no existing function's signature or
+    behavior changed). Added 12 new tests to `tests/test_emperor_
+    election.py`: `_highest_vote_weight_kingdom`'s strict-`>` tie-break,
+    `_election_callers_weight`'s summation and unknown-id filtering,
+    `alignment_bloc_vote_weights`'s per-Alignment bucketing, the
+    `_alignment_auto_trigger` overwrite-semantics worked example above
+    plus a nobody-qualifies case, and `evaluate_election_call()`'s own
+    four outcome shapes (immediate coronation, callers-only trigger, a
+    5-Kingdom alignment-bloc-only trigger where every individual Kingdom
+    stays below threshold, and nothing-qualifies) plus an empty-world
+    no-op. Ran again: 4149 passed (12 new).
 
 ## Setup
 

@@ -11,11 +11,16 @@ from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.emperor_election import (
     ELECTION_REQUEST_THRESHOLD_PERCENT,
+    _alignment_auto_trigger,
+    _election_callers_weight,
+    _highest_vote_weight_kingdom,
     _kingdom_office_vote_points,
     _kingdom_treasure_vote_points,
+    alignment_bloc_vote_weights,
     alignment_victory_point_reduction_percent,
     can_request_election,
     election_threshold_percent,
+    evaluate_election_call,
     kingdom_election_vote_weight,
     resolve_emperor_election,
     tally_emperor_vote,
@@ -394,3 +399,156 @@ def test_alignment_reduction_none_for_alignments_the_table_doesnt_cover():
     assert alignment_victory_point_reduction_percent(Alignment.ANTI_HOLY, Alignment.GOOD) is None
     assert alignment_victory_point_reduction_percent(Alignment.MECHANICAL, Alignment.GOOD) is None
     assert alignment_victory_point_reduction_percent(Alignment.SPECIAL, Alignment.GOOD) is None
+
+
+# -- Phase 465: evaluate_election_call() and its helpers -----------------
+
+
+def test_highest_vote_weight_kingdom_picks_strictly_greater():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 30)
+    give_tax(state, 2, HexCoord(1, 1), 50)
+    give_tax(state, 3, HexCoord(2, 2), 20)
+
+    assert _highest_vote_weight_kingdom(state) == (2, 50)
+
+
+def test_highest_vote_weight_kingdom_ties_keep_lowest_id():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 40)
+    give_tax(state, 2, HexCoord(1, 1), 40)
+    give_tax(state, 3, HexCoord(2, 2), 10)
+
+    assert _highest_vote_weight_kingdom(state) == (1, 40)
+
+
+def test_election_callers_weight_sums_only_the_given_kingdoms():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 10)
+    give_tax(state, 2, HexCoord(1, 1), 20)
+    give_tax(state, 3, HexCoord(2, 2), 30)
+
+    assert _election_callers_weight(state, {1, 3}) == 40
+
+
+def test_election_callers_weight_ignores_unknown_kingdom_ids():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 10)
+
+    assert _election_callers_weight(state, {1, 999}) == 10
+
+
+def test_alignment_bloc_vote_weights_buckets_by_kingdom_alignment():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 10)  # GOOD
+    give_tax(state, 2, HexCoord(1, 1), 20)  # NEUTRAL
+    give_tax(state, 3, HexCoord(2, 2), 5)  # EVIL
+
+    weights = alignment_bloc_vote_weights(state)
+
+    assert weights[Alignment.GOOD] == 10
+    assert weights[Alignment.NEUTRAL] == 20
+    assert weights[Alignment.EVIL] == 5
+    assert weights[Alignment.DIVINE] == 0
+    assert Alignment.MECHANICAL not in weights
+    assert Alignment.SPECIAL not in weights
+
+
+def test_alignment_auto_trigger_overwrites_not_first_or_highest_share():
+    # Report SS13.6: a qualifying Alignment OVERWRITES a running sentinel
+    # while scanning in ALIGNMENT_ORDINAL order -- the *last* qualifier
+    # wins, not the first reached and not the highest share. GOOD (30%,
+    # ordinal 1) has the highest share of the three but is scanned first;
+    # NEUTRAL (25%, ordinal 3) and EVIL (35%, ordinal 5) both also
+    # qualify and are scanned later, so EVIL (scanned last) wins even
+    # though its own share isn't the highest.
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 40)  # GOOD, 40%
+    give_tax(state, 2, HexCoord(1, 1), 25)  # NEUTRAL, 25%
+    give_tax(state, 3, HexCoord(2, 2), 35)  # EVIL, 35%
+
+    assert _alignment_auto_trigger(state, current_turn=30, world_total=100) == Alignment.EVIL
+
+
+def test_alignment_auto_trigger_none_when_nobody_qualifies():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 34)
+    give_tax(state, 2, HexCoord(1, 1), 33)
+    give_tax(state, 3, HexCoord(2, 2), 33)
+
+    # current_turn=5 -> R=55%; no single Alignment bucket reaches it.
+    assert _alignment_auto_trigger(state, current_turn=5, world_total=100) is None
+
+
+def test_evaluate_election_call_immediate_coronation_skips_the_vote():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 60)
+    give_tax(state, 2, HexCoord(1, 1), 20)
+    give_tax(state, 3, HexCoord(2, 2), 20)
+
+    outcome = evaluate_election_call(state, requesting_kingdom_ids=set(), current_turn=5)
+
+    assert outcome.immediate_coronation_kingdom_id == 1
+    assert outcome.callers_qualify is False
+    assert outcome.alignment_trigger is None
+    assert outcome.election_scheduled_next_turn is False
+
+
+def test_evaluate_election_call_callers_trigger_next_turns_election():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 30)
+    give_tax(state, 2, HexCoord(1, 1), 30)
+    give_tax(state, 3, HexCoord(2, 2), 40)
+
+    outcome = evaluate_election_call(state, requesting_kingdom_ids={1, 2}, current_turn=5)
+
+    assert outcome.immediate_coronation_kingdom_id is None
+    assert outcome.callers_qualify is True
+    assert outcome.alignment_trigger is None
+    assert outcome.election_scheduled_next_turn is True
+
+
+def test_evaluate_election_call_alignment_bloc_alone_triggers_next_turns_election():
+    # Every individual Kingdom stays below the (turn-30-decayed) 25%
+    # threshold, so nobody is crowned immediately and nobody "requested"
+    # anything -- but the two GOOD Kingdoms combined (40%) clear it,
+    # scheduling next turn's election through the alignment path alone.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "A", Race.HUMAN, Alignment.GOOD, HOME))
+    state.add_kingdom(KingdomState(2, "B", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_kingdom(KingdomState(3, "C", Race.HUMAN, Alignment.EVIL, HexCoord(2, 2)))
+    state.add_kingdom(KingdomState(4, "D", Race.HUMAN, Alignment.PAGAN, HexCoord(3, 3)))
+    state.add_kingdom(KingdomState(5, "E", Race.HUMAN, Alignment.GOOD, HexCoord(4, 4)))
+    for kid, coord in [(1, HOME), (2, HexCoord(1, 1)), (3, HexCoord(2, 2)), (4, HexCoord(3, 3)), (5, HexCoord(4, 4))]:
+        give_tax(state, kid, coord, 20)
+
+    outcome = evaluate_election_call(state, requesting_kingdom_ids=set(), current_turn=30)
+
+    assert outcome.immediate_coronation_kingdom_id is None
+    assert outcome.callers_qualify is False
+    assert outcome.alignment_trigger == Alignment.GOOD
+    assert outcome.election_scheduled_next_turn is True
+
+
+def test_evaluate_election_call_nothing_qualifies():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 30)
+    give_tax(state, 2, HexCoord(1, 1), 30)
+    give_tax(state, 3, HexCoord(2, 2), 40)
+
+    outcome = evaluate_election_call(state, requesting_kingdom_ids=set(), current_turn=5)
+
+    assert outcome.immediate_coronation_kingdom_id is None
+    assert outcome.callers_qualify is False
+    assert outcome.alignment_trigger is None
+    assert outcome.election_scheduled_next_turn is False
+
+
+def test_evaluate_election_call_no_kingdoms_is_a_safe_no_op():
+    state = GameState()
+
+    outcome = evaluate_election_call(state, requesting_kingdom_ids=set(), current_turn=5)
+
+    assert outcome.world_total == 0
+    assert outcome.immediate_coronation_kingdom_id is None
+    assert outcome.election_scheduled_next_turn is False

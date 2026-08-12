@@ -30,6 +30,19 @@ Alignment-based Victory Point reduction -- for a future decoder to call,
 the same "mechanic before the plan-file wiring" order this project used
 for `turn/tax_base.py` (built before its own FINANCES report wiring).
 
+**Phase 465 (real per-turn call/coronation evaluation, sourced)**:
+`evaluate_election_call()` (bottom of this module) is the real,
+disassembly-sourced routine that decides -- **every turn**, automatically,
+regardless of whether any King explicitly asked -- whether an election
+gets scheduled or an Emperor gets crowned outright, per
+`AKGEN_reverse_engineering_report (2).md` SS13.4/13.6. It supersedes
+`can_request_election()` in spirit (that function's own rulebook-literal
+"un singolo Re... alleanza" reading, Phase 228, turns out to be an
+approximation of a routine with no alliance concept at all, plus an
+immediate-coronation short-circuit and a pure Alignment-bloc trigger the
+rulebook never mentions) -- see that new function's own docstring for the
+full account. `can_request_election()` itself is kept, unchanged.
+
 **Phase 464**: a genuinely *different* Vote mechanic -- `AKE.EXE`'s own
 `V` command (report SS12, not the plan-action [1.3] above) -- is now
 correctly decodable at the Kingdom-header level:
@@ -146,7 +159,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
+from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.game_state import GameState
 from ak_engine.models.office import OFFICE_VALUE
 from ak_engine.turn.merit_points import LEGENDARY_ITEM_BONUS_TREASURES
@@ -393,3 +406,197 @@ def alignment_victory_point_reduction_percent(king_alignment: Alignment, emperor
         return None
     distance = abs(ALIGNMENT_ORDINAL[king_alignment] - ALIGNMENT_ORDINAL[emperor_alignment])
     return per_step * distance
+
+
+def _world_vote_weight(state: GameState) -> int:
+    """Sum of `kingdom_election_vote_weight()` over every Kingdom -- the
+    real `V_world` denominator (report SS13.2/13.4), distinct from
+    `_world_tax_base()` (the older, bare-Tax_Base denominator `can_
+    request_election()` still uses -- see this module's own Phase 465
+    docstring note).
+    """
+
+    return sum(kingdom_election_vote_weight(state, kingdom_id) for kingdom_id in state.kingdoms)
+
+
+def _highest_vote_weight_kingdom(state: GameState) -> tuple[int, int] | None:
+    """The single Kingdom with the highest `V_k` -- report SS13.4 step 1.
+    Ties keep whichever Kingdom was reached first while scanning in
+    ascending Kingdom-ID order (the report's own "resta il Re incontrato
+    per primo, quindi il numero di Re più basso"), replicated by only
+    replacing the running best on a strict `>` comparison, never on a
+    tie. Returns `None` if `state.kingdoms` is empty.
+    """
+
+    best: tuple[int, int] | None = None
+    for kingdom_id in sorted(state.kingdoms):
+        weight = kingdom_election_vote_weight(state, kingdom_id)
+        if best is None or weight > best[1]:
+            best = (kingdom_id, weight)
+    return best
+
+
+def _election_callers_weight(state: GameState, requesting_kingdom_ids: set[int]) -> int:
+    """Sum of `V_k` for every Kingdom in `requesting_kingdom_ids` -- report
+    SS13.4 step 3 ("somma il peso dei Regni che hanno richiesto
+    l'elezione"). Unlike `can_request_election()`'s own rulebook-literal
+    single-King-or-alliance reading (Phase 228), the real compiled routine
+    has no alliance concept at all here -- it's a flat sum over every
+    Kingdom whose own `kprevgold` currently holds `VOTE_TURN_SENTINEL`
+    (`models/kingdom.py KingdomMoveHeader.is_vote_turn()`, Phase 464).
+    The caller is responsible for assembling that set from each Kingdom's
+    own parsed K1 file for this turn -- not done here, the same "mechanic
+    before the plan-file wiring" order this module's own docstring already
+    uses for the Call-for-Vote plan action.
+    """
+
+    return sum(
+        kingdom_election_vote_weight(state, kingdom_id)
+        for kingdom_id in requesting_kingdom_ids
+        if kingdom_id in state.kingdoms
+    )
+
+
+# The 8 "ordinary" Alignments report SS13.6 accumulates world power for --
+# every real Alignment except the two that were never a selectable
+# Kingdom alignment (Mechanical/Special), the same exclusion this module's
+# own ALIGNMENT_VP_REDUCTION_PER_STEP table already documents.
+_ORDINARY_ALIGNMENTS: tuple[Alignment, ...] = tuple(
+    member for member in ALIGNMENT_BY_ORDINAL if member not in (Alignment.MECHANICAL, Alignment.SPECIAL)
+)
+
+
+def alignment_bloc_vote_weights(state: GameState) -> dict[Alignment, int]:
+    """Per-Alignment sum of `V_k` across every Kingdom sharing that
+    Alignment -- report SS13.6's own `V_alignment[a]`, the world power
+    accumulated per ordinary Alignment and used by the alignment-bloc
+    election auto-trigger below. Only the 8 ordinary Alignments are keyed
+    (Mechanical/Special excluded, see `_ORDINARY_ALIGNMENTS`); a Kingdom
+    with one of those two Alignments (if this project's data ever
+    produces one) still contributes to `V_world` but to no bloc here,
+    matching the source's own "otto allineamenti ordinari" scope.
+    """
+
+    weights: dict[Alignment, int] = dict.fromkeys(_ORDINARY_ALIGNMENTS, 0)
+    for kingdom_id, kingdom in state.kingdoms.items():
+        if kingdom.alignment in weights:
+            weights[kingdom.alignment] += kingdom_election_vote_weight(state, kingdom_id)
+    return weights
+
+
+def _alignment_auto_trigger(state: GameState, current_turn: int, world_total: int) -> Alignment | None:
+    """Report SS13.6's own `alvote` sentinel mechanic: whichever ordinary
+    Alignment's own world-power share reaches the (turn-decaying)
+    threshold `R` **overwrites** a running `Mechanical`-sentinel value --
+    not a "best share wins" comparison like the vote-candidate tie-break
+    in `tally_emperor_vote()`, but a plain overwrite each time a
+    qualifying Alignment is reached while scanning. Since the source
+    doesn't specify the real Pascal enumeration order for this specific
+    loop, `ALIGNMENT_ORDINAL` order is assumed (the same real Pascal
+    ordinal sequence this project uses everywhere else an Alignment needs
+    a canonical order, e.g. `hire_pay.py _alignment_distance()`) -- so the
+    *last* qualifying Alignment in that order wins, not the first or the
+    highest share. Returns `None` (the "still Mechanical" sentinel) if no
+    ordinary Alignment reaches `R`, or if `world_total <= 0`.
+    """
+
+    if world_total <= 0:
+        return None
+    threshold_percent = election_threshold_percent(current_turn)
+    weights = alignment_bloc_vote_weights(state)
+    winner: Alignment | None = None
+    for alignment in _ORDINARY_ALIGNMENTS:
+        if weights[alignment] * 100 >= threshold_percent * world_total:
+            winner = alignment
+    return winner
+
+
+@dataclass(slots=True)
+class ElectionCallOutcome:
+    """The real compiled result of report SS13.4's per-turn "does an
+    election happen" evaluation -- see `evaluate_election_call()`.
+    """
+
+    world_total: int
+    immediate_coronation_kingdom_id: int | None
+    callers_qualify: bool
+    alignment_trigger: Alignment | None
+
+    @property
+    def election_scheduled_next_turn(self) -> bool:
+        """Whether `req_vote` would be set to `Vote_Turn` for next turn --
+        true if the callers' combined weight reached `R`, or an Alignment
+        bloc did (report SS13.4 steps 4-5), and nobody was already
+        crowned immediately this turn (an immediate coronation
+        short-circuits both, per step 3's own "soltanto se nessuno è
+        stato incoronato").
+        """
+
+        return self.immediate_coronation_kingdom_id is None and (
+            self.callers_qualify or self.alignment_trigger is not None
+        )
+
+
+def evaluate_election_call(
+    state: GameState, requesting_kingdom_ids: set[int], current_turn: int
+) -> ElectionCallOutcome:
+    """The real, disassembly-sourced per-turn Emperor-election evaluation
+    (report SS13.4/13.6, Phase 465) -- runs every turn automatically,
+    regardless of whether any King explicitly asked, unlike `can_request_
+    election()`'s own rulebook-literal reading (Phase 228, "un singolo
+    Re... alleanza di Re... possono richiedere"). The real compiled
+    routine has no alliance concept, and can trigger an election two ways
+    `can_request_election()` never modeled at all: an immediate
+    coronation that skips voting entirely (step 2 below), and a pure
+    Alignment-bloc trigger with no Kingdom having "requested" anything
+    (step 5). `can_request_election()` is kept, unchanged, as the
+    rulebook-literal approximation it always was -- this function
+    supersedes it in spirit, the same way Phase 450/451 superseded this
+    module's own original vote-weight/win-condition formulas, without
+    deleting the older one (it has its own tests, and neither function is
+    called by any other module yet).
+
+    ``requesting_kingdom_ids``: every Kingdom whose own `kprevgold`
+    currently holds `VOTE_TURN_SENTINEL` (`models/kingdom.py
+    KingdomMoveHeader.is_vote_turn()`, Phase 464) -- the caller's own
+    responsibility to assemble from that turn's parsed K1 files; not
+    wired here (see module docstring's own Phase 464 cross-reference).
+
+    Implements report SS13.4's own numbered sequence exactly:
+    1. find the Kingdom with the single highest `V_k`
+    (`_highest_vote_weight_kingdom`);
+    2. if its share of `V_world` already reaches `R`, crown it
+    immediately -- no vote, no request needed at all;
+    3.-4. otherwise, sum the weight of every requesting Kingdom
+    (`_election_callers_weight`); if that share reaches `R`, an election
+    is scheduled for next turn;
+    5. independently, check whether any ordinary Alignment's own bloc
+    share reaches `R` (`_alignment_auto_trigger`) -- also schedules next
+    turn's election if so.
+
+    Deliberately out of scope (report SS13.4's own text, not a gap in
+    this project's data model): the `gametyp` special-case branches
+    (Valhalla, `gametyp = 4`, skips normal convocation; Arcane's Valor,
+    `gametyp = 10`, adds a separate 3-artifact win condition) -- this
+    project has no `gametyp` concept anywhere, the same "no source, no
+    guess" boundary `turn/final_standings.py`'s own Phase 454 docstring
+    already drew around `kteam`.
+    """
+
+    world_total = _world_vote_weight(state)
+    if world_total <= 0:
+        return ElectionCallOutcome(world_total, None, False, None)
+
+    threshold_percent = election_threshold_percent(current_turn)
+
+    leader = _highest_vote_weight_kingdom(state)
+    if leader is not None:
+        leader_kingdom_id, leader_weight = leader
+        if leader_weight * 100 >= threshold_percent * world_total:
+            return ElectionCallOutcome(world_total, leader_kingdom_id, False, None)
+
+    callers_weight = _election_callers_weight(state, requesting_kingdom_ids)
+    callers_qualify = callers_weight * 100 >= threshold_percent * world_total
+    alignment_trigger = _alignment_auto_trigger(state, current_turn, world_total)
+
+    return ElectionCallOutcome(world_total, None, callers_qualify, alignment_trigger)
