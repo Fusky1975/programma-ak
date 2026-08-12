@@ -20075,7 +20075,7 @@ follow-up request after the original 431-435 plan shipped.
     written to `state.office_holders` even though it's included in
     `commit_office_holders()`'s own returned dict. Ran again: 4216
     passed (6 new).
-- **Phase 476 (current)**: closes the last self-contained gap the
+- **Phase 476**: closes the last self-contained gap the
   section-9-16 audit surfaced -- `turn/final_standings.py`'s own
   `kingdom_points()`/`final_standings()`/`qualifies_for_all_star()`/
   `qualifies_for_valhalla_induction()` (Phases 454/455) were already
@@ -20113,6 +20113,51 @@ follow-up request after the original 431-435 plan shipped.
     (`TurnOutcome.final_standings` stays `None` in the ordinary no-
     Emperor case, and gets populated once `state.emperor_kingdom_id` is
     pre-seeded). Ran again: 4220 passed (4 new).
+- **Phase 477 (current)**: implements Grandfather of Assassins'
+  (`Office.ASSASSIN`) own free assassination attempt -- `AKGEN_reverse_
+  engineering_report (2).md` SS20.9, real disassembly source: "L'effetto
+  successivo del titolo... resta: P_base = 50% - 5%*A - 10%*M, dove A e'
+  il numero di armate nella provincia del bersaglio e M la sua skill
+  Melee... richiesto con FI-re(character). Ogni fallimento raddoppia la
+  guardia e dimezza la probabilita' normale del tentativo seguente."
+  New `turn/assassin_guild.py`: `grandfather_of_assassins_base_success_
+  chance()` implements the formula exactly, floored at `0.0`;
+  `resolve_grandfather_of_assassins_attempt()` resolves one attempt
+  against a caller-supplied target on behalf of the current `Office.
+  ASSASSIN` holder (`turn/office_holder.py resolve_office_holder()`,
+  unchanged -- the title's own `minpts=2` was already correct since
+  Phase 379/438). Guard escalation is `effective_chance = base_chance *
+  0.5**failures`, backed by new `LeaderState.assassination_guild_
+  failed_attempts` (per-target, never reset -- no source names a
+  clearing condition). Refuses (returns `None`, no state mutated) a
+  missing target or a King (`Office.ASSASSIN`'s own quoted "puo' colpire
+  ovunque un personaggio non-Re"). A success removes the target via
+  `GameState.remove_leader()` -- real death, not Kill Enemy's own
+  Phase 310 coma variant (a *spell's* alternate outcome; the Guild's
+  non-magical kill has no comparable clause). **Deliberately never
+  credited to `MeritTally`**: SS20.7 explicitly lists the title's own
+  free successful Guild attempt as one of the confirmed-unreachable
+  paths to the real Assassin merit counter -- conflating the two would
+  be a real, sourced-against correctness bug, not a simplification.
+  **No real order-file shape for `FI-re(character)` has ever been seen**
+  (same category as Treat/Break Treaty/Call-For-Vote), so the target is
+  a plain caller-supplied parameter and there is deliberately **no
+  `turn_processor.py` wiring** -- the same "caller's job, no natural
+  once-per-turn hook exists" posture Phase 474/476 already established
+  for a comparable gap. This closes the last item on the original
+  post-Phase-459 shortlist that wasn't either already-implemented,
+  confirmed out-of-scope, or blocked on data this project has already
+  documented as permanently unrecoverable.
+  - Ran the full suite before writing new tests: 4220 passed (non-
+    breaking -- brand new module, nothing else calls it yet). Wrote 11
+    new tests in `tests/test_assassin_guild.py`: the formula's own exact
+    values and its floor at `0.0`, `None` without a qualifying
+    titleholder/for a missing target/for a King target, a success
+    removes the target into `dead_leaders`, a failure increments the
+    guard, guard escalation halves the next chance, army-count/Melee-
+    skill both feed the formula correctly, and a successful/failed
+    attempt alike never touches either side's `MeritTally`. Ran again:
+    4231 passed (11 new).
 
 ## Setup
 

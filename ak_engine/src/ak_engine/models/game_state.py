@@ -739,6 +739,20 @@ class LeaderState:
     # resurrection, curing a coma never changes ``kingdom_id``, even
     # when cast by a hero/King of a different kingdom (same source).
     is_comatose: bool = False
+    # Phase 477: AKGEN_reverse_engineering_report (2).md SS20.9's own
+    # "Grandfather of Assassins" title-perk guard escalation -- "Ogni
+    # fallimento raddoppia la guardia e dimezza la probabilità normale
+    # del tentativo seguente" (every failure doubles the guard and
+    # halves the normal chance of the following attempt). Counts this
+    # leader's own consecutive failed Assassins Guild attempts against
+    # them specifically (not the titleholder's own tally, and unrelated
+    # to `MeritTally`'s own Assassin counter -- see `turn/assassin_
+    # guild.py`'s own module docstring for why a successful Guild kill
+    # never touches that counter either). Never reset by anything in
+    # this project -- no source names a condition that clears it, so it
+    # stays a strictly monotonic "this specific target has survived N
+    # attempts" record.
+    assassination_guild_failed_attempts: int = 0
     # Phase 456 (corrects Phase 449's own per-ability dict): the real
     # engine keeps **one shared byte per leader**, not one per ability --
     # AKGEN_reverse_engineering_report (2).md SS2.2's own words, "un
