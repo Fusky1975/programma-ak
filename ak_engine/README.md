@@ -19654,7 +19654,7 @@ follow-up request after the original 431-435 plan shipped.
     5-Kingdom alignment-bloc-only trigger where every individual Kingdom
     stays below threshold, and nothing-qualifies) plus an empty-world
     no-op. Ran again: 4149 passed (12 new).
-- **Phase 466 (current)**: wires `evaluate_election_call()`/`tally_
+- **Phase 466**: wires `evaluate_election_call()`/`tally_
   emperor_vote()` into the real per-turn pipeline, closing the loop the
   Phase 465 docstring left open. New `GameState.election_pending_turn:
   int | None` models report SS12.1's own `req_vote` global -- the turn a
@@ -19692,6 +19692,40 @@ follow-up request after the original 431-435 plan shipped.
     abstention shapes) and 1 in `tests/test_orchestrator.py` proving
     `process_turn()` itself now surfaces an `ElectionCallOutcome` on
     `TurnOutcome.election_outcome`. Ran again: 4154 passed (5 new).
+- **Phase 467 (current)**: two report-audit closures. **(1) Real fix**:
+  `turn/encounter.py PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP` corrected
+  from `0.95` to `1.00`. The Phase 192 cap came from a rulebook quote
+  ("Le probabilità di successo... non possono mai superare il 95%"), but
+  `AKGEN_reverse_engineering_report (2).md` SS21.1 gives the real
+  compiled formula (`AK.OVR 0x18A75`, `clamp_0^100(30+15*L_c+10*P)`) and
+  its own worked table showing a level-4 Pagan caster reaching exactly
+  100% ("55%, 70%, 85%, 100%") -- the rulebook's own 95% claim was
+  wrong for this specific formula. `turn/cast_execution.py`'s own
+  `ACTION_SPELL_CHANCE_CAP` (Action-Cast spells, a different tactic
+  layer) is untouched: the disassembly evidence only covers the
+  Personal-Combat branch. **(2) Verification, no code change**: `turn/
+  merit_points.py`'s own Phase 227 core-8-office formulas (built from
+  the rulebook's own page-51 table, since report SS14.2's own Pascal
+  globals -- `lgenp`/`ladmp`/`lmhpp`/`lwmsp`/`lfdisc`/`ldiscp` -- stayed
+  unrecoverable) had never been cross-checked against SS14.2's own
+  compact disassembly formulas once that report arrived. Checked
+  term-by-term now: every term matches exactly or is a fully consistent
+  translation (Emperor/Treasurer/Priest's `2*(Druid+White)`/Mage's two
+  terms/Admiral's `tax>1` vs. this module's own `tax>=2` -- the same
+  integer threshold -- all match exactly; Chancellor/Marshal/Defender's
+  bare global names are consistent with, not contradicted by, this
+  module's own richer rulebook-sourced formulas). No confirmed
+  discrepancy found, so no formula changed -- the module's own docstring
+  now records this cross-check explicitly, closing the audit gap.
+  - Ran the full suite before writing new tests: 3 pre-existing tests in
+    `tests/test_encounter.py` failed on the (expected) 95%->100% cap
+    change. Fixed them in place (renamed `..._caps_at_95_percent` ->
+    `..._caps_at_100_percent` with a Pagan level-5 case now clamping from
+    115% instead of 105%; added a new test asserting the exact `55%,
+    70%, 85%, 100%` Pagan table SS21.1 itself quotes) rather than adding
+    net-new coverage, since this phase corrects an existing formula's
+    magnitude, not adds new behavior. Ran again: 4154 passed (net
+    unchanged -- 2 tests replaced by 2 new ones).
 
 ## Setup
 

@@ -1297,7 +1297,7 @@ def test_control_undead_failure_new_hit_points_at_the_high_end_of_the_range():
 def test_personal_combat_spell_cast_chance_constants():
     assert PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE == 0.30
     assert PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL == 0.15
-    assert PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP == 0.95
+    assert PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP == 1.00
     assert PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS == 0.10
 
 
@@ -1307,18 +1307,23 @@ def test_personal_combat_spell_cast_chance_scales_with_level():
     assert personal_combat_spell_cast_chance(2) == pytest.approx(0.60)
 
 
-def test_personal_combat_spell_cast_chance_caps_at_95_percent():
-    # Level 5: 30% + 15%*5 = 105%, uncapped -- clamped to 95%.
-    assert personal_combat_spell_cast_chance(5) == pytest.approx(0.95)
+def test_personal_combat_spell_cast_chance_matches_the_reports_own_pagan_table():
+    # AKGEN_reverse_engineering_report (2).md SS21.1's own worked table:
+    # "Ai livelli 1-4... per un Pagan diventano 55%, 70%, 85%, 100%."
+    assert personal_combat_spell_cast_chance(1, caster_is_pagan=True) == pytest.approx(0.55)
+    assert personal_combat_spell_cast_chance(2, caster_is_pagan=True) == pytest.approx(0.70)
+    assert personal_combat_spell_cast_chance(3, caster_is_pagan=True) == pytest.approx(0.85)
+    assert personal_combat_spell_cast_chance(4, caster_is_pagan=True) == pytest.approx(1.00)
+
+
+def test_personal_combat_spell_cast_chance_caps_at_100_percent():
+    # Level 5, Pagan: 30% + 15%*5 + 10% = 115%, clamped to 100% (Phase
+    # 467 -- corrected from the rulebook's own claimed 95% cap).
+    assert personal_combat_spell_cast_chance(5, caster_is_pagan=True) == pytest.approx(1.00)
 
 
 def test_personal_combat_spell_cast_chance_pagan_bonus():
     assert personal_combat_spell_cast_chance(1, caster_is_pagan=True) == pytest.approx(0.55)
-
-
-def test_personal_combat_spell_cast_chance_pagan_bonus_still_capped():
-    # 30% + 15%*4 = 90%, +10% Pagan = 100%, clamped to 95%.
-    assert personal_combat_spell_cast_chance(4, caster_is_pagan=True) == pytest.approx(0.95)
 
 
 def test_resolve_personal_combat_spell_cast_succeeds_under_the_chance():

@@ -24,6 +24,37 @@ thresholds).
 matched `models/office.py OFFICE_VALUE` exactly before this phase** --
 independent cross-confirmation the two sources describe the same system.
 
+**Phase 467 cross-check against `AKGEN_reverse_engineering_report
+(2).md` SS14.2's own compact disassembly table** (the same globals Phase
+137 found unrecoverable, now named alongside a one-line-each formula):
+every term below is either an exact match or a fully consistent
+translation, no confirmed discrepancy found, so no formula below changed
+as a result --
+- Emperor: `Tax_Base(Re)` -- exact match (`compute_tax_base()`).
+- Chancellor: `Spy + Sage + Explorer + 2*lfdisc + ldiscp` -- the skill
+  term matches exactly; `lfdisc`/`ldiscp` (bare global names, no further
+  disassembly detail in SS14.2) are consistent with this module's own
+  "+2 per Feature discovered first" and 3/2/1-point Discovery-attribution
+  terms below, read as two separate accumulators the compiled Chancellor
+  formula sums directly rather than recomputing.
+- Treasurer: `lgold` -- exact match (`KingdomState.treasury`).
+- Marshal: `lgenp` (bare global, no further SS14.2 detail) -- consistent
+  with the Phase 308 quality-weighted battle table below (the accumulator
+  that table increments).
+- Admiral: `ladmp + Naval + seatax`, `seatax` = sea provinces with tax >
+  1 -- the Naval-skill and sea-province terms match exactly (`tax > 1`
+  and this module's own `tax >= 2` are the same integer threshold);
+  `ladmp` (bare global) is consistent with the same Phase 308 battle
+  table, Admiral's own side of it.
+- Defender: `lmhpp` (bare global, no further SS14.2 detail) -- consistent
+  with the monster-HP-defeated/neutralized terms below.
+- Priest: `lwmsp + 2*(Druid + White)` -- the `2*(Druid+White)` term
+  matches exactly; `lwmsp` (bare global) is consistent with this module's
+  own Resurrection/Bless-cast counter.
+- Mage: "numero di oggetti-incantesimo `wcp..pic`" + "somma delle cinque
+  skill magiche" -- both terms match exactly (`SPELL_WAND` treasure count
+  + the 5-magic-skill sum below).
+
 ## Emperor (20%)
 "Ammontare della rendita di tasse alla fine del gioco" -- the kingdom's
 tax revenue at game end. This is exactly `turn/tax_base.py

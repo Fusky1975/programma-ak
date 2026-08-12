@@ -858,14 +858,20 @@ gates whether *any* of their already-modeled effects apply at all.
 
 `PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE = 0.30`,
 `PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL = 0.15`,
-`PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP = 0.95` (the same 95% ceiling
-`turn/cast_execution.py`'s own `ACTION_SPELL_CHANCE_CAP` uses for
-Action-Cast spells -- confirmed as one shared universal rule, but kept
-as its own citation-backed constant in each module rather than a
-cross-import, since the two modules serve genuinely different tactic
-layers). `personal_combat_spell_cast_chance(skill_level, *,
-caster_is_pagan=False)` computes the base+per-level chance, adds
-`PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS` (0.10) when
+`PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP` -- **corrected to `1.00` at
+Phase 467**: originally set to the same 0.95 ceiling `turn/cast_
+execution.py`'s own `ACTION_SPELL_CHANCE_CAP` uses for Action-Cast
+spells, on the assumption both caps were "one shared universal rule."
+`AKGEN_reverse_engineering_report (2).md` SS21.1 now gives the real
+compiled Personal-Combat-spell formula (`AK.OVR 0x18A75`,
+`clamp_0^100(30+15*L_c+10*P)`) and its own worked table showing a
+level-4 Pagan caster reaching exactly 100%, not 95% -- so the "shared
+rule" assumption was wrong for this side specifically (`ACTION_SPELL_
+CHANCE_CAP`'s own 95% is untouched: the disassembly evidence here only
+covers the Personal-Combat branch, not Action-Cast, so "no source, no
+guess" leaves that constant as-is). `personal_combat_spell_cast_chance(
+skill_level, *, caster_is_pagan=False)` computes the base+per-level
+chance, adds `PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS` (0.10) when
 `caster_is_pagan`, and clamps at the cap.
 `resolve_personal_combat_spell_cast(skill_level, rng, *,
 caster_is_pagan=False)` rolls it. Same "pure function, boolean-flag,
@@ -2045,9 +2051,21 @@ def control_undead_failure_new_hit_points(hit_points: int, rng: random.Random) -
 # Personal-Combat spell cast success chance, module docstring's own
 # Phase 192 addendum -- Regolamento AK.txt [3.10], retroactively
 # confirmed for all ten Personal-Combat spells.
+#
+# **Phase 467 correction**: the rulebook prose above claims a 95% cap
+# ("Le probabilità di successo... non possono mai superare il 95%"), but
+# `AKGEN_reverse_engineering_report (2).md` SS21.1 gives the real
+# compiled formula from `AK.OVR 0x18A75` directly: `P_cast = clamp_0^100
+# (30 + 15*L_c + 10*P)`, `L_c = min(level, 4)`, `P = 1` for a Pagan
+# caster. At level 4 a Pagan caster's own chance is exactly `30 + 60 +
+# 10 = 100`, not 95 -- the report's own worked table ("Ai livelli 1-4...
+# per un Pagan diventano 55%, 70%, 85%, 100%") confirms the clamp is
+# genuinely `100`, not the rulebook prose's own `95`. The cap is kept as
+# its own named constant (not simply removed) since `clamp_0^100` is
+# still a real ceiling, just a different number than first quoted.
 PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE = 0.30
 PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL = 0.15
-PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP = 0.95
+PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP = 1.00
 
 # "I Reami Pagani... un modificatore +10%... fuorché quelli di Magia
 # Bianca." Caller decides applicability (see docstring): pass
@@ -2059,7 +2077,10 @@ PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS = 0.10
 def personal_combat_spell_cast_chance(skill_level: int, *, caster_is_pagan: bool = False) -> float:
     """"Gli Incantesimi di Combattimento Individuale hanno una
     probabilità di riuscita del 30% più 15% per livello," capped at
-    ``PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP`` (95%). Adds
+    ``PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP`` -- **100%, corrected at
+    Phase 467** from the rulebook's own claimed 95%; see
+    ``AKGEN_reverse_engineering_report (2).md`` SS21.1 and this
+    constant's own module-level citation. Adds
     ``PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS`` when ``caster_is_pagan``
     -- the caller must already have excluded White Magic spells from
     setting this flag (see module docstring's Phase 192 addendum).
