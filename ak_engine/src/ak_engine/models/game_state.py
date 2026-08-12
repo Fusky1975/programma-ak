@@ -282,6 +282,7 @@ from ak_engine.models.feature import Feature
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.rumor import Rumor
 from ak_engine.models.sex import Sex
@@ -1079,6 +1080,24 @@ class GameState:
     # own docstring for the real `Get_News()` clause this feeds and for
     # why only this one clause of that function is implemented.
     kingdoms_met: set[frozenset[int]] = field(default_factory=set)
+    # Phase 475: AKGEN_reverse_engineering_report (2).md SS14.4's own
+    # tier-1 tie-break, "per i titoli avanzati, il titolare precedente
+    # conserva precedenza se è fra i pari" (for advanced titles, the
+    # previous titleholder retains precedence if tied) -- the last
+    # Office resolution's own winner, keyed by Office, leader_id valued.
+    # Written by ``turn/office_holder.py commit_office_holders()``, read
+    # by ``resolve_office_holder()``'s own tie-break -- see that
+    # function's docstring for why this is a caller-invoked commit step
+    # rather than something ``resolve_office_holder()`` updates itself
+    # (reading and writing the same "current" state in one resolution
+    # pass would make the tie-break see this turn's own still-in-
+    # progress winner instead of last turn's settled one). Never cleared
+    # automatically -- a title that currently has no qualifying
+    # candidate keeps its last known holder here (a title doesn't lose
+    # its "was recently held by" precedent just because nobody
+    # qualifies for a turn or two), the same "stale until overwritten"
+    # convention as `discoveries_first_found_by`.
+    office_holders: dict[Office, int] = field(default_factory=dict)
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
         self.kingdoms[kingdom.kingdom_id] = kingdom

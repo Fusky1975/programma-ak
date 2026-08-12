@@ -19,6 +19,7 @@ from ak_engine.turn.office_holder import (
     ARMY_RANKED_OFFICES,
     RANKED_OFFICES,
     apply_cravenest_temperament_escalation,
+    commit_office_holders,
     kingdom_best_candidate,
     kingdom_runner_up,
     leader_office_rank,
@@ -132,6 +133,95 @@ def test_resolve_office_holder_tiebreak_falls_through_to_lower_leader_id():
 
     assert holder is not None
     assert holder.leader_id == 3
+
+
+def test_resolve_office_holder_previous_holder_wins_a_tie_over_more_treasury():
+    # Phase 475: SS14.4 tier 1, ahead of treasury/tax base/leader_id --
+    # kingdom 2 has less treasury than kingdom 1 (see make_state()), but
+    # leader 2 is recorded as the previous DEFENDER titleholder.
+    state = make_state()
+    a = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    a.merit_tally.monster_hp_defeated = 10
+    b = LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True)
+    b.merit_tally.monster_hp_defeated = 10
+    state.add_leader(a)
+    state.add_leader(b)
+    state.office_holders[Office.DEFENDER] = 2
+
+    holder = resolve_office_holder(state, Office.DEFENDER)
+
+    assert holder is not None
+    assert holder.leader_id == 2
+
+
+def test_resolve_office_holder_stickiness_never_beats_a_genuinely_higher_score():
+    state = make_state()
+    previous_holder = LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True)
+    previous_holder.merit_tally.monster_hp_defeated = 5
+    challenger = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    challenger.merit_tally.monster_hp_defeated = 10
+    state.add_leader(previous_holder)
+    state.add_leader(challenger)
+    state.office_holders[Office.DEFENDER] = 2
+
+    holder = resolve_office_holder(state, Office.DEFENDER)
+
+    assert holder is not None
+    assert holder.leader_id == 1  # strictly more Merit Points wins outright
+
+
+def test_resolve_office_holder_no_stickiness_effect_without_a_recorded_previous_holder():
+    state = make_state()
+    a = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    a.merit_tally.monster_hp_defeated = 10
+    b = LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True)
+    b.merit_tally.monster_hp_defeated = 10
+    state.add_leader(a)
+    state.add_leader(b)
+
+    holder = resolve_office_holder(state, Office.DEFENDER)
+
+    # state.office_holders is empty -- falls through to the pre-existing
+    # treasury tier exactly as before Phase 475.
+    assert holder is not None
+    assert holder.leader_id == 1
+
+
+def test_commit_office_holders_persists_the_winner_for_the_next_resolution():
+    state = make_state()
+    a = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    a.merit_tally.monster_hp_defeated = 10
+    state.add_leader(a)
+
+    commit_office_holders(state)
+
+    assert state.office_holders[Office.DEFENDER] == 1
+
+
+def test_commit_office_holders_leaves_a_now_vacant_office_untouched():
+    state = make_state()
+    a = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    a.merit_tally.monster_hp_defeated = 10
+    state.add_leader(a)
+    commit_office_holders(state)
+    assert state.office_holders[Office.DEFENDER] == 1
+
+    a.merit_tally.monster_hp_defeated = 0  # no longer meets OFFICE_MIN_POINTS
+    commit_office_holders(state)
+
+    assert state.office_holders[Office.DEFENDER] == 1  # sticky, not cleared to None
+
+
+def test_commit_office_holders_never_writes_emperor():
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    state.emperor_kingdom_id = 1
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=8))
+
+    results = commit_office_holders(state)
+
+    assert results[Office.EMPEROR] is not None
+    assert Office.EMPEROR not in state.office_holders
 
 
 def test_resolve_office_holder_raises_for_a_non_office():

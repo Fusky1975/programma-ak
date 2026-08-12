@@ -164,11 +164,38 @@ penalty that drops it below) is honored consistently by both.
 Praetorian Guard's own extra `+base movement speed of army type` term
 reads `models/army_type.py ARMY_TABLE[army_type].speed` directly, no
 new data needed. **No "current title holder" stickiness modeled** here
-either, matching this module's own pre-existing tie-break choice for
-every leader-scoped office (see `merit_point_tiebreak_key()`'s own
-docstring) -- the general rule's own "prefer the current holder" tier
-was never implemented for any of the other 47 offices, so adding it
-only for these 3 would be new, undocumented behavior, not consistency.
+for these 3 army-scoped titles -- see the module docstring's own Phase
+475 addendum for why the 47 leader-scoped offices now have it (via
+`resolve_office_holder()`) but these 3 (`resolve_army_office_holder()`)
+deliberately don't yet: `GameState.office_holders` is keyed by `Office`
+regardless of scope, so extending it here is a natural, low-risk
+follow-up, just not attempted this same phase.
+
+**Phase 475 -- the real tier-1 tie-break, ``AKGEN_reverse_engineering_
+report (2).md`` SS14.4, real disassembly source**: "per i titoli
+avanzati, il titolare precedente conserva precedenza se è fra i pari"
+(for advanced titles, the previous titleholder retains precedence if
+tied) -- a tier this module's own tie-break had never implemented for
+any of the 47 leader-scoped offices, confirmed missing by this exact
+docstring's own prior wording ("the general rule's own 'prefer the
+current holder' tier was never implemented for any of the other 47
+offices"). `resolve_office_holder()` now reads `state.office_holders.
+get(office)` and prepends a `1`/`0` stickiness flag ahead of `turn/
+merit_points.py merit_point_tiebreak_key()`'s own 3-tuple (treasury,
+Tax_Base, `-leader_id`) -- deliberately done at the call site, not by
+changing `merit_point_tiebreak_key()`'s own signature, since that
+function's tuple shape is independently tested and has nothing to do
+with *which* office is being resolved. `GameState.office_holders`
+itself is never written by `resolve_office_holder()` -- reading and
+writing "the current winner" in the same resolution pass would let the
+tie-break see this turn's own still-in-progress result instead of last
+turn's settled one. `commit_office_holders()` (below) is the caller's
+own explicit "persist this turn's results for next turn's tie-break"
+step, the same "caller's job, no `turn_processor.py` wiring" convention
+`turn/scientific_treaty.py`'s own Phase 474 addendum already
+established for a comparable "no natural once-per-turn hook exists"
+gap. Emperor is unaffected (resolved via `state.emperor_kingdom_id`
+directly, never through this tie-break loop at all).
 
 **Phase 438 adds the real per-Kingdom ranking primitives** (`leader_
 office_rank()`, `office_rival_best_points()`, `kingdom_best_candidate()`,
@@ -383,8 +410,9 @@ def _king_leader_id(state: GameState, kingdom_id: int) -> int | None:
 def resolve_office_holder(state: GameState, office: Office) -> OfficeHolder | None:
     """The leader who currently holds `office`, and their own Merit
     Points -- or `None` if nobody qualifies yet. See module docstring
-    for Emperor's own special-cased resolution and the Rank-contest
-    rules governing the other 7.
+    for Emperor's own special-cased resolution, the Rank-contest rules
+    governing the other 47, and the Phase 475 addendum for the
+    ``state.office_holders``-backed tier-1 tie-break below.
     """
 
     if office is Office.EMPEROR:
@@ -404,14 +432,16 @@ def resolve_office_holder(state: GameState, office: Office) -> OfficeHolder | No
             return None
 
     min_points = OFFICE_MIN_POINTS[office]
+    previous_holder_id = state.office_holders.get(office)
     best: OfficeHolder | None = None
-    best_tiebreak: tuple[int, int, int] | None = None
+    best_tiebreak: tuple[int, int, int, int] | None = None
 
     for leader_id, leader in state.leaders.items():
         points = _leader_merit_points(office, state, leader)
         if points < min_points:
             continue
-        tiebreak = merit_point_tiebreak_key(state, leader)
+        stickiness = 1 if leader_id == previous_holder_id else 0
+        tiebreak = (stickiness, *merit_point_tiebreak_key(state, leader))
         if best is None or points > best.merit_points or (points == best.merit_points and tiebreak > best_tiebreak):
             best = OfficeHolder(leader_id, points)
             best_tiebreak = tiebreak
@@ -425,6 +455,31 @@ def resolve_all_office_holders(state: GameState) -> dict[Office, OfficeHolder | 
     """
 
     return {office: resolve_office_holder(state, office) for office in ALL_OFFICES}
+
+
+def commit_office_holders(state: GameState) -> dict[Office, OfficeHolder | None]:
+    """Phase 475: resolves every one of the 47 leader-scoped offices via
+    `resolve_all_office_holders()`, then persists each non-`None` result's
+    own `leader_id` into `state.office_holders` -- the caller's own
+    explicit "settle this turn's results for next turn's tie-break" step
+    (see `GameState.office_holders`'s own docstring for why this can't be
+    done implicitly inside `resolve_office_holder()` itself). An office
+    with no current qualifying candidate is left untouched in `state.
+    office_holders` (its last known holder stays sticky rather than being
+    cleared -- see that field's own docstring), not overwritten with
+    `None`. Emperor is included in the returned dict (via `resolve_all_
+    office_holders()`) but never written to `state.office_holders`,
+    since `resolve_office_holder(state, Office.EMPEROR)` never reads it
+    either -- Emperor's own resolution is a direct `state.emperor_
+    kingdom_id` lookup, not a Rank-contest tie-break.
+    """
+
+    results = resolve_all_office_holders(state)
+    for office, holder in results.items():
+        if office is Office.EMPEROR or holder is None:
+            continue
+        state.office_holders[office] = holder.leader_id
+    return results
 
 
 def _ranking_candidates(state: GameState, office: Office) -> list[tuple[int, int | float]]:

@@ -19988,7 +19988,7 @@ follow-up request after the original 431-435 plan shipped.
     same roll still fails without an officeholder, and a tied-skill
     officeholder grants nothing to either tied co-practicer). Ran again:
     4203 passed (10 new).
-- **Phase 474 (current)**: wires the real alignment-distance success gate
+- **Phase 474**: wires the real alignment-distance success gate
   into Scientific Treaties ([8.4], `turn/scientific_treaty.py`) --
   previously an unconditional exchange once adjacency/contact and a
   mutual Treat order between Allies held. `AKGEN_reverse_engineering_
@@ -20029,6 +20029,52 @@ follow-up request after the original 431-435 plan shipped.
     failed roll blocks the exchange, a successful roll allows it, and a
     `P=0.0` pair always blocks regardless of the roll). Ran again: 4210
     passed (7 new).
+- **Phase 475 (current)**: wires the real tier-1 tie-break for the 47
+  leader-scoped Imperial Offices ([10.1] Rank contest), `AKGEN_reverse_
+  engineering_report (2).md` SS14.4 (real disassembly source): "per i
+  titoli avanzati, il titolare precedente conserva precedenza se è fra i
+  pari" (for advanced titles, the previous titleholder retains
+  precedence if tied) -- a tier `turn/office_holder.py`'s own docstring
+  had explicitly flagged as never implemented for any of the 47 offices.
+  New `GameState.office_holders: dict[Office, int]` records each
+  office's own last-resolved `leader_id`. `resolve_office_holder()`
+  reads it and prepends a `1`/`0` stickiness flag ahead of `turn/
+  merit_points.py merit_point_tiebreak_key()`'s own existing 3-tuple
+  (treasury, Tax_Base, `-leader_id`) -- done at the call site, not by
+  changing that function's own independently-tested signature, since it
+  has nothing to do with *which* office is being resolved. New `commit_
+  office_holders()` resolves all 47 via `resolve_all_office_holders()`
+  and persists each non-`None` winner's own `leader_id` into `state.
+  office_holders` -- the caller's own explicit "settle this turn's
+  results for next turn's tie-break" step (no `resolve_office_holder()`
+  call writes `state.office_holders` itself, since reading and writing
+  "the current winner" in the same pass would let the tie-break see this
+  turn's own still-in-progress result instead of last turn's settled
+  one). An office with no current qualifying candidate keeps its last
+  known holder rather than being cleared to `None` -- a title doesn't
+  lose its "was recently held by" precedent just because nobody
+  qualifies for a turn or two. No `turn_processor.py` wiring, the same
+  "caller's job, no natural once-per-turn hook exists" convention Phase
+  474's own addendum already established for Scientific Treaties.
+  Emperor is unaffected either way (resolved via `state.emperor_
+  kingdom_id` directly, never through this tie-break loop). Deliberately
+  **not** extended to the 3 army-scoped Royal Titles (Air Force
+  Commander/Praetorian Guard/Imperial Flag Squadron, `resolve_army_
+  office_holder()`) this same phase -- `state.office_holders` is keyed
+  by `Office` regardless of scope, so it's a natural, low-risk follow-up,
+  just not attempted here.
+  - Ran the full suite before writing new tests: 4210 passed (non-
+    breaking -- `state.office_holders` starts empty, so `stickiness` is
+    always `0` for every pre-existing fixture/test). Wrote 6 new tests in
+    `tests/test_office_holder.py`: the previous holder wins a tie over a
+    kingdom with more treasury, stickiness never overrides a genuinely
+    higher score, no stickiness effect when `state.office_holders` is
+    empty (the pre-Phase-475 tie-break path, still reachable), `commit_
+    office_holders()` persists the winner, a now-vacant office keeps its
+    last known holder instead of being cleared, and Emperor is never
+    written to `state.office_holders` even though it's included in
+    `commit_office_holders()`'s own returned dict. Ran again: 4216
+    passed (6 new).
 
 ## Setup
 
