@@ -274,6 +274,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
@@ -776,6 +777,19 @@ class LeaderState:
     # that read or wrote it, is Phase 456's own correction now that Add_
     # Experience's SS2.2/SS3.3 text makes the sharing explicit.
     experience_credit: int = 0
+    # Phase 493 -- which of the 89 catalogued Advanced Abilities (Phase
+    # 128) this leader has actually been granted. A flat set, not keyed
+    # by Ability category: the source excerpt's own rule (``models/
+    # advanced_ability.py``'s module docstring) grants one *per level*
+    # reaching 5-9 within a category, not one per category overall, so a leader
+    # who trains a single Ability all the way up can hold several
+    # members from that same category at once -- and every ordinal
+    # across all 89 is already globally unique, so a flat set loses no
+    # information a `dict[Ability, ...]` shape would have preserved.
+    # Written by ``turn/practice_execution.py``'s own skill-rise path
+    # (currently only the 5 magic colleges -- see that module's Phase
+    # 493 addendum for why the other 10 categories aren't wired yet).
+    advanced_abilities: set[AdvancedAbility] = field(default_factory=set)
 
 
 @dataclass(slots=True)
@@ -961,6 +975,16 @@ class WorldEvent:
 @dataclass(slots=True)
 class GameState:
     turn_number: int = 1
+    # Phase 493 -- AKGEN.EXE's own per-game seed source for the real
+    # `spabord` Advanced Ability level-schedule build (``worldgen/
+    # special_ability_level_schedule.py``, Phase 384: `RandSeed = 50 *
+    # game_number`). No consumer set this before this phase -- see that
+    # module's own docstring for why the schedule it builds had no
+    # caller until now. Default `1` is an arbitrary placeholder (the
+    # real game-number value depends on data this project has no
+    # bridge for yet), matching this field's own "nothing derives a
+    # real value from parsed data" status, not a sourced default.
+    game_number: int = 1
     kingdoms: dict[int, KingdomState] = field(default_factory=dict)
     provinces: dict[HexCoord, ProvinceState] = field(default_factory=dict)
     armies: dict[int, ArmyState] = field(default_factory=dict)

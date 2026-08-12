@@ -4,6 +4,7 @@ import random
 
 import pytest
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
@@ -22,6 +23,7 @@ from ak_engine.turn.practice_execution import (
     SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL,
     TACTICAL_TRAINING_CHANCE,
     PracticeExecutionResult,
+    _maybe_grant_advanced_ability,
     _select_discovery_to_grant,
     _teacher_aptitude_bonus,
     execute_practice,
@@ -33,6 +35,7 @@ from ak_engine.turn.practice_execution import (
     resolve_practice_solo,
     roll_practice_aptitude_gate,
 )
+from ak_engine.worldgen.special_ability_level_schedule import MAGIC_COLLEGES, build_magic_ability_level_schedule
 
 from _helpers import ScriptedRandom
 
@@ -1347,3 +1350,158 @@ def test_execute_practice_group_non_sage_ability_never_rolls_device_discovery():
     results = execute_practice_group(state, [1, 2], Ability.MELEE, rng=ScriptedRandom([0.5]))
 
     assert all(not r.device_discovered for r in results)
+
+
+# -- Phase 493: Advanced Ability grant (5 magic colleges only) -----------
+
+
+def test_maybe_grant_advanced_ability_returns_none_without_a_skill_rise():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = LeaderState(1, kingdom_id=1, name="L1", location=LOCATION)
+    state.add_leader(leader)
+
+    granted = _maybe_grant_advanced_ability(state, leader, Ability.WHITE, skill_rose=False, new_skill=5)
+
+    assert granted is None
+    assert leader.advanced_abilities == set()
+
+
+def test_maybe_grant_advanced_ability_returns_none_for_a_non_magic_college():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = LeaderState(1, kingdom_id=1, name="L1", location=LOCATION)
+    state.add_leader(leader)
+
+    assert Ability.MELEE not in MAGIC_COLLEGES
+    granted = _maybe_grant_advanced_ability(state, leader, Ability.MELEE, skill_rose=True, new_skill=5)
+
+    assert granted is None
+    assert leader.advanced_abilities == set()
+
+
+def test_maybe_grant_advanced_ability_returns_none_when_new_skill_is_none():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = LeaderState(1, kingdom_id=1, name="L1", location=LOCATION)
+    state.add_leader(leader)
+
+    granted = _maybe_grant_advanced_ability(state, leader, Ability.WHITE, skill_rose=True, new_skill=None)
+
+    assert granted is None
+
+
+def test_maybe_grant_advanced_ability_grants_the_real_scheduled_ability():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = LeaderState(1, kingdom_id=1, name="L1", location=LOCATION)
+    state.add_leader(leader)
+
+    expected = build_magic_ability_level_schedule(state.game_number)[Ability.WHITE].get(5)
+
+    granted = _maybe_grant_advanced_ability(state, leader, Ability.WHITE, skill_rose=True, new_skill=5)
+
+    assert granted is expected
+    if expected is not None:
+        assert expected in leader.advanced_abilities
+
+
+def test_execute_practice_grants_advanced_ability_on_a_magic_college_skill_rise():
+    # skill=4, aptitude=9 -> target 5, deficit 0, gate guaranteed. credit
+    # starts at 95 so the +5 solo gain crosses the 100 threshold and
+    # rises White Magic straight from 4 to 5 this same call.
+    state = _state_with_leader(skills=_skills_with(Ability.WHITE, skill=4, aptitude=9))
+    state.leaders[1].experience_credit = 95
+
+    expected = build_magic_ability_level_schedule(state.game_number)[Ability.WHITE].get(5)
+
+    result = execute_practice(state, leader_id=1, ability=Ability.WHITE, rng=ScriptedRandom([0.01]))
+
+    assert result.skill_rose is True
+    assert result.new_skill == 5
+    assert result.advanced_ability_granted is expected
+    if expected is not None:
+        assert expected in state.leaders[1].advanced_abilities
+
+
+def test_execute_practice_grants_nothing_for_a_non_magic_college_skill_rise():
+    # Same guaranteed-rise shape as the test above, but Ability.MELEE
+    # isn't one of the 5 wired categories -- see _maybe_grant_advanced_
+    # ability()'s own docstring for why (real template content for the
+    # other 10 categories was never recovered from source material).
+    state = _state_with_leader(skills=_skills_with(Ability.MELEE, skill=4, aptitude=9))
+    state.leaders[1].experience_credit = 95
+
+    result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
+
+    assert result.skill_rose is True
+    assert result.new_skill == 5
+    assert result.advanced_ability_granted is None
+    assert state.leaders[1].advanced_abilities == set()
+
+
+def test_execute_practice_grants_nothing_for_an_aptitude_only_rise():
+    # current_skill=5 (already a valid schedule level, proving the guard
+    # is skill_rose itself, not "new_skill isn't a valid level"), aptitude
+    # =0 -> deficit 6, gate fails (0.99); APT_RISE_CHANCE[5]==0.80 succeeds
+    # (0.5). new_skill stays 5 -- an aptitude-only rise never touches spabord.
+    state = _state_with_leader(skills=_skills_with(Ability.WHITE, skill=5, aptitude=0))
+
+    result = execute_practice(state, leader_id=1, ability=Ability.WHITE, rng=ScriptedRandom([0.99, 0.5]))
+
+    assert result.skill_rose is False
+    assert result.aptitude_rose is True
+    assert result.new_skill == 5
+    assert result.advanced_ability_granted is None
+    assert state.leaders[1].advanced_abilities == set()
+
+
+def test_execute_practice_group_grants_advanced_ability_on_an_immediate_rise():
+    # Leader 1 (skill 4, the group's minimum, tied-loser role) gets an
+    # immediate rise to 5 because leader 2 has strictly higher skill --
+    # the immediate-rise branch also has to reach the new grant helper,
+    # not just the credit-accumulation branch covered by the solo test above.
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.WHITE, skill=4, aptitude=9),
+            2: _skills_with(Ability.WHITE, skill=6, aptitude=9),
+        },
+    )
+
+    expected = build_magic_ability_level_schedule(state.game_number)[Ability.WHITE].get(5)
+
+    results = execute_practice_group(state, [1, 2], Ability.WHITE, rng=ScriptedRandom([0.01]))
+
+    assert results[0].skill_rose is True
+    assert results[0].new_skill == 5
+    assert results[0].advanced_ability_granted is expected
+    if expected is not None:
+        assert expected in state.leaders[1].advanced_abilities
+    assert results[1].skill_rose is False
+    assert results[1].advanced_ability_granted is None
+
+
+def test_execute_practice_group_comatose_leader_never_reaches_the_grant_helper():
+    # Leader 1 is both the group's minimum skill (so resolve_practice_
+    # group() still computes -- and consumes one gate roll for -- its own
+    # would-be immediate rise) and comatose: execute_practice_group()'s
+    # own Phase 310 short-circuit discards that computed outcome before
+    # ever writing it back or reaching _maybe_grant_advanced_ability, so
+    # leader 1 ends up with no Advanced Ability despite the group-level
+    # computation having produced a skill-rise outcome for it.
+    state = _state_with_leaders(
+        1,
+        2,
+        skills_by_id={
+            1: _skills_with(Ability.WHITE, skill=4, aptitude=9),
+            2: _skills_with(Ability.WHITE, skill=6, aptitude=9),
+        },
+    )
+    state.leaders[1].is_comatose = True
+
+    results = execute_practice_group(state, [1, 2], Ability.WHITE, rng=ScriptedRandom([0.01]))
+
+    assert results[0].advanced_ability_granted is None
+    assert state.leaders[1].advanced_abilities == set()

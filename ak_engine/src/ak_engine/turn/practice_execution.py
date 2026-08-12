@@ -301,12 +301,14 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.office import Office
 from ak_engine.turn.combat import Quality
+from ak_engine.worldgen.special_ability_level_schedule import MAGIC_COLLEGES, build_magic_ability_level_schedule
 
 # CTME.PAS: apt_rise: array[0..10] OF byte = (0,10,25,50,100,80,60,40,20,0,0);
 # Indexed by *current* skill level (0-9); indices 9-10 are unreachable
@@ -560,6 +562,10 @@ class PracticeExecutionResult:
     # device_discovered is False, and also (honestly) when it's True but
     # nothing could be granted (no kingdom, or kingdom already complete).
     discovery_granted: Discovery | None = None
+    # Phase 493: the Advanced Ability (Phase 128) granted this call, if
+    # any -- see _maybe_grant_advanced_ability()'s own docstring for the
+    # narrow scope (5 of 15 categories currently wired).
+    advanced_ability_granted: AdvancedAbility | None = None
 
 
 def _get_or_create_skills(leader: LeaderState) -> SkillTable:
@@ -576,6 +582,37 @@ def _get_or_create_skills(leader: LeaderState) -> SkillTable:
     if leader.skills is None:
         leader.skills = SkillTable([0] * 30)
     return leader.skills
+
+
+def _maybe_grant_advanced_ability(
+    state: GameState, leader: LeaderState, ability: Ability, skill_rose: bool, new_skill: int | None
+) -> AdvancedAbility | None:
+    """Grants the real ``spabord`` Advanced Ability (Phase 128) for a natural skill
+    rise, using the one acquisition algorithm this project has actually verified
+    (``worldgen/special_ability_level_schedule.py``, Phase 384) -- the 5 magic
+    colleges (``MAGIC_COLLEGES``) only. The other 10 ``Ability`` categories'
+    own real ``spabord`` template content was never recovered from available
+    source material (see that module's own docstring), so this deliberately
+    returns ``None`` for them rather than guessing -- a documented, narrower
+    scope than the full 89-entry catalog, not a silent gap.
+
+    Fires only on an actual skill rise (never for an aptitude-only rise --
+    ``spabord`` is keyed by natural skill level, and an aptitude rise alone
+    never changes it) and only when ``new_skill`` lands on one of the
+    schedule's own reachable slots (5-9 in this engine -- ``LEVEL_SLOTS``
+    also includes 10, but ``MAX_SKILL_LEVEL`` makes that slot unreachable
+    here). Already-granted abilities are added again idempotently (``set``),
+    matching every other ``LeaderState.advanced_abilities`` write path.
+    """
+
+    if not skill_rose or ability not in MAGIC_COLLEGES or new_skill is None:
+        return None
+
+    schedule = build_magic_ability_level_schedule(state.game_number)
+    granted = schedule[ability].get(new_skill)
+    if granted is not None:
+        leader.advanced_abilities.add(granted)
+    return granted
 
 
 DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE = 0.05
@@ -789,6 +826,8 @@ def execute_practice(
         # (Resurrection-based) way this flag gets consumed.
         leader.is_royal_heir = False
 
+    advanced_ability_granted = _maybe_grant_advanced_ability(state, leader, ability, outcome.skill_rose, outcome.new_skill)
+
     device_discovered = False
     discovery_granted: Discovery | None = None
     if ability is Ability.SAGE:
@@ -806,6 +845,7 @@ def execute_practice(
         new_aptitude=outcome.new_aptitude,
         device_discovered=device_discovered,
         discovery_granted=discovery_granted,
+        advanced_ability_granted=advanced_ability_granted,
     )
 
 
@@ -970,6 +1010,8 @@ def execute_practice_group(
             # Phase 259: same is_royal_heir-clearing rule as execute_practice()'s own.
             leader.is_royal_heir = False
 
+        advanced_ability_granted = _maybe_grant_advanced_ability(state, leader, ability, outcome.skill_rose, outcome.new_skill)
+
         if outcome.skill_rose:
             # Phase 446: Teacher merit -- +1 to the selected teacher per
             # real natural skill level gained (never for an aptitude-only
@@ -996,6 +1038,7 @@ def execute_practice_group(
                 new_aptitude=outcome.new_aptitude,
                 device_discovered=device_discovered,
                 discovery_granted=discovery_granted,
+                advanced_ability_granted=advanced_ability_granted,
             )
         )
     return results

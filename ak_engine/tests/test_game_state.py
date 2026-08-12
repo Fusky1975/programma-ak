@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import ActionCode
@@ -380,6 +381,32 @@ def test_game_state_world_events_starts_empty():
     state = GameState()
 
     assert state.world_events == []
+
+
+# -- Phase 493: LeaderState.advanced_abilities / GameState.game_number ------
+
+
+def test_leader_state_advanced_abilities_defaults_to_an_empty_set():
+    leader = LeaderState(1, 1, "King", HOME)
+
+    assert leader.advanced_abilities == set()
+
+
+def test_leader_state_advanced_abilities_is_not_shared_between_instances():
+    # A mutable default-factory bug (a shared literal set) would let one
+    # leader's own grant leak into every other leader's own set.
+    leader_a = LeaderState(1, 1, "King", HOME)
+    leader_b = LeaderState(2, 1, "Hero", HOME)
+
+    leader_a.advanced_abilities.add(AdvancedAbility.HOLY_PLACES)
+
+    assert leader_b.advanced_abilities == set()
+
+
+def test_game_state_game_number_defaults_to_1():
+    state = GameState()
+
+    assert state.game_number == 1
 
 
 def test_record_world_event_appends_a_world_event():

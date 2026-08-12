@@ -20458,7 +20458,7 @@ follow-up request after the original 431-435 plan shipped.
     `None` without the office, exclude a kingdom known less than a full
     turn, exclude a known-but-non-bordering kingdom, and include a
     genuinely qualifying one). Ran again: 4313 passed (17 new).
-- **Phase 492 (current)**: closes out the 8-major-Office-perk audit
+- **Phase 492**: closes out the 8-major-Office-perk audit
   begun at Phase 488, wiring High Chancellor's own "Crystal Ball
   Clairvoyance" (`OFFICE_PERK_DESCRIPTION`, Phase 103): "just cast a
   Clairvoyance spell (CA-CL), which will automatically be successful
@@ -20490,6 +20490,55 @@ follow-up request after the original 431-435 plan shipped.
     `action_casts_used`, a Chancellor cast lists the target kingdom's
     real held office, and an ordinary cast leaves `clairvoyance_target_
     offices` at `None`. Ran again: 4317 passed (4 new).
+- **Phase 493 (current)**: the 89-entry Advanced Ability catalog (Phase
+  128/131) gets its first leader-side storage and its first real
+  acquisition wiring -- closing the gap flagged when that catalog was
+  first built: a fully-verified selection algorithm existed
+  (`worldgen/special_ability_level_schedule.py build_magic_ability_
+  level_schedule()`, Phase 384, the real `spabord` build reproduced
+  exactly against a worked example) but had no caller anywhere in the
+  engine, and `GameState` had no `game_number` to even invoke it with.
+  New storage: `LeaderState.advanced_abilities: set[AdvancedAbility]`
+  and `GameState.game_number: int = 1` (an arbitrary placeholder --
+  nothing in this project derives a real game number from parsed data
+  yet). New wiring, `turn/practice_execution.py _maybe_grant_advanced_
+  ability()`: fires only on an actual skill rise (never an aptitude-only
+  rise) landing on one of the schedule's own reachable levels, and only
+  for the 5 magic colleges (`MAGIC_COLLEGES`) -- the one acquisition
+  path this project has verified end-to-end. Deliberately, explicitly
+  out of scope this phase, same "narrow slice, defer the rest with a
+  documented reason" discipline as every earlier phase this session: the
+  other 10 `Ability` categories' own real `spabord` template content was
+  never recovered from available source material (see that module's own
+  docstring), so they grant nothing rather than guessing; none of the 89
+  abilities' own individual mechanical effects (talents, bonuses, the
+  still-un-gated secret spells beyond `ILLUSORY_HERO_SPELL`/`WORDS_OF_
+  HEALING_SPELL`) are wired either -- this phase only closes the
+  storage-and-acquisition gap, not the effects gap. Wired into both
+  `execute_practice()` and `execute_practice_group()` (the latter's own
+  immediate-rise branch, not just its credit-threshold branch), each
+  returning the grant via a new `PracticeExecutionResult.advanced_
+  ability_granted: AdvancedAbility | None` field, following the same
+  optional-side-effect-field pattern as `discovery_granted`.
+  - Ran the full suite before writing new tests: 4317 passed (non-
+    breaking). Wrote 14 new tests: 3 in `tests/test_game_state.py` for
+    the two new fields (default empty set, no shared-mutable-default
+    leak between leaders, `game_number` defaults to 1), and 11 in
+    `tests/test_practice_execution.py` covering `_maybe_grant_advanced_
+    ability()` directly (no skill rise, a non-magic-college ability, a
+    `new_skill=None` guard) and both `execute_practice()`/`execute_
+    practice_group()` call sites (a real guaranteed credit-threshold
+    rise granting the schedule's own real ability, a same-shaped rise on
+    a non-magic-college ability granting nothing, an aptitude-only rise
+    at an otherwise-valid schedule level granting nothing, the group's
+    own immediate-rise branch granting correctly, and a comatose group
+    member never reaching the grant helper despite the group-level
+    computation still producing a would-be rise for it). Ran again: 4329
+    passed (12 new -- one exploratory unreachable-level test was written
+    and then removed rather than committed, since `LEVEL_SLOTS`'s own
+    6-slot bijection means the schedule always has an entry for level 10
+    too, it's simply never reached in practice because `MAX_SKILL_LEVEL`
+    stops skill rises at 9 first).
 
 ## Setup
 
