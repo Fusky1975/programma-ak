@@ -120,9 +120,10 @@ def test_execute_pursue_same_kingdom_target_is_guaranteed_to_catch_up():
     state.add_leader(LeaderState(2, kingdom_id=1, name="Target", location=FAR_AWAY))
 
     # Same-Kingdom gives a 100% chance, but the catch-up roll is still made
-    # (any value < 1.0 succeeds against it) -- only one value is consumed
-    # since the peaceful request bypasses acceptance/combat entirely.
-    result = execute_pursue(state, 1, _peaceful_request(2), rng=ScriptedRandom([0.99]))
+    # (any value < 1.0 succeeds against it) -- [0] catch-up roll, [1:] the
+    # peaceful request bypasses acceptance/combat entirely, so the only
+    # further draws are Add_Experience's own gain rolls.
+    result = execute_pursue(state, 1, _peaceful_request(2), rng=ScriptedRandom([0.99, 0.5, 0.5]))
 
     assert result.caught_up is True
 
@@ -143,7 +144,7 @@ def test_execute_pursue_catches_up_when_roll_is_low_enough():
     state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))  # distance 0 -> chance 1.0
 
-    result = execute_pursue(state, 1, _peaceful_request(2), rng=ScriptedRandom([0.0]))
+    result = execute_pursue(state, 1, _peaceful_request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.caught_up is True
 
@@ -157,7 +158,7 @@ def test_execute_pursue_uses_pursuers_real_spy_skill():
 
     # Level-4 Spy skill gives a 250% base chance; /2 distance = 125% -> capped at
     # 100%, so even a near-1.0 roll still catches up.
-    result = execute_pursue(state, 1, _peaceful_request(2), rng=ScriptedRandom([0.99]))
+    result = execute_pursue(state, 1, _peaceful_request(2), rng=ScriptedRandom([0.99, 0.5, 0.5]))
 
     assert result.caught_up is True
 
@@ -170,7 +171,7 @@ def test_execute_pursue_peaceful_plan_bypasses_acceptance_and_combat():
     state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD, is_king=True))
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD, is_king=True))
 
-    result = execute_pursue(state, 1, _peaceful_request(2), rng=ScriptedRandom([0.0]))
+    result = execute_pursue(state, 1, _peaceful_request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result == PursueExecutionResult(caught_up=True, combat_occurred=False)
     assert 1 in state.leaders and 2 in state.leaders
@@ -183,7 +184,7 @@ def test_execute_pursue_king_target_refused_when_not_mutual():
 
     # catch-up roll (0.0, guaranteed at distance 0) then is_encounter_accepted's
     # King-target branch, which reads mutual_encounter directly with no roll.
-    result = execute_pursue(state, 1, _melee_request(2), rng=ScriptedRandom([0.0]))
+    result = execute_pursue(state, 1, _melee_request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.caught_up is True
     assert result.reason == "encounter refused"
@@ -200,7 +201,7 @@ def test_execute_pursue_combat_removes_the_decisive_loser():
     )
     # catch-up roll, then A always acts first (higher melee skill) and always
     # hits while B always misses.
-    rng = ScriptedRandom([0.0] + [0.1, 0.5, 0.9] * 15)
+    rng = ScriptedRandom([0.0, 0.5, 0.5] + [0.1, 0.5, 0.9] * 15)
 
     result = execute_pursue(state, 1, _melee_request(2), rng=rng)
 
@@ -223,7 +224,7 @@ def test_execute_pursue_combat_loots_the_decisive_losers_items():
         LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 0, 9))
     )
     item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=2)
-    rng = ScriptedRandom([0.0] + [0.1, 0.5, 0.9] * 15)
+    rng = ScriptedRandom([0.0, 0.5, 0.5] + [0.1, 0.5, 0.9] * 15)
 
     result = execute_pursue(state, 1, _melee_request(2), rng=rng)
 
@@ -268,7 +269,7 @@ def test_execute_pursue_mutual_king_encounter_can_result_in_combat():
     state.add_leader(
         LeaderState(2, kingdom_id=2, name="B", location=FIELD, is_king=True, skills=_skills_with(Ability.MELEE, 0, 9))
     )
-    rng = ScriptedRandom([0.0] + [0.1, 0.5, 0.9] * 15)
+    rng = ScriptedRandom([0.0, 0.5, 0.5] + [0.1, 0.5, 0.9] * 15)
 
     result = execute_pursue(state, 1, _melee_request(2), rng=rng, mutual_encounter=True)
 
@@ -316,7 +317,7 @@ def test_execute_pursue_army_vs_army_catch_up_with_no_province_data_is_not_fough
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
     # No ProvinceState registered at FIELD.
 
-    result = execute_pursue(state, 1, _melee_request(2), rng=ScriptedRandom([0.0]))
+    result = execute_pursue(state, 1, _melee_request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.caught_up is True
     assert result.combat_occurred is False
@@ -332,7 +333,7 @@ def test_execute_pursue_army_vs_army_catch_up_with_no_pursuer_kingdom_is_not_fou
     state.add_army(ArmyState(101, None, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=1))
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
 
-    result = execute_pursue(state, 1, _melee_request(2), rng=ScriptedRandom([0.0]))
+    result = execute_pursue(state, 1, _melee_request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.caught_up is True
     assert result.combat_occurred is False
@@ -382,6 +383,31 @@ def test_advance_pursuit_reports_not_found_when_pursuer_or_target_missing():
     assert result.reason == "pursuer or target not found"
 
 
+# -- Add_Experience wiring (Phase 461) ----------------------------------------
+
+
+def test_execute_pursue_catch_up_awards_real_add_experience_credit():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))  # distance 0 -> chance 1.0
+
+    result = execute_pursue(state, 1, _peaceful_request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert result.caught_up is True
+    assert state.leaders[1].experience_credit == 10  # round(10*(1+0.5-0.5))
+
+
+def test_execute_pursue_failed_catch_up_awards_no_add_experience_credit():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FAR_AWAY))  # distant, different Kingdom
+
+    result = execute_pursue(state, 1, _peaceful_request(2), rng=ScriptedRandom([0.99]))
+
+    assert result.caught_up is False
+    assert state.leaders[1].experience_credit == 0
+
+
 # -- Phase 290: armyless case reuses challenge_execution's Personal-Combat wiring --
 
 
@@ -394,8 +420,8 @@ def test_execute_pursue_cast_charm_success_makes_the_pursuer_flee():
         unconfirmed_extra0=0,
         tactics=[SearchTactic(Maneuver.CAST, Spell.CHARM.value), SearchTactic(Maneuver.MELEE)],
     )
-    # catch-up roll, then the cast's own success roll.
-    rng = ScriptedRandom([0.0, 0.1])
+    # catch-up roll, Add_Experience's own gain draws, then the cast's own success roll.
+    rng = ScriptedRandom([0.0, 0.5, 0.5, 0.1])
 
     result = execute_pursue(state, 1, request, rng=rng)
 
@@ -429,7 +455,7 @@ def test_execute_pursue_non_last_melee_tactic_steps_one_round_via_the_shared_eng
     ) as mock_duel:
         mock_round.return_value = MeleeRoundOutcome(result=None)
         mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
-        result = execute_pursue(state, 1, request, rng=ScriptedRandom([0.0]))
+        result = execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert mock_round.called
     assert mock_duel.called  # the exhausted-list fallback still ran afterward
@@ -455,6 +481,6 @@ def test_execute_pursue_non_last_melee_applies_temper_setup_exactly_once():
     ) as mock_setup, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
         mock_round.return_value = MeleeRoundOutcome(result=None)
         mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
-        execute_pursue(state, 1, request, rng=ScriptedRandom([0.0]))
+        execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert mock_setup.call_count == 1

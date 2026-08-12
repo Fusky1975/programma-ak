@@ -78,7 +78,7 @@ def test_execute_trail_allowed_when_only_target_leads_an_army():
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.spied_on is True
 
@@ -88,7 +88,7 @@ def test_execute_trail_same_kingdom_target_is_guaranteed_to_be_found():
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=1, name="Target", location=FAR_AWAY))
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.99]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.99, 0.5, 0.5]))
 
     assert result.spied_on is True
 
@@ -98,7 +98,7 @@ def test_execute_trail_same_province_target_is_guaranteed_to_be_found():
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.spied_on is True
 
@@ -122,7 +122,7 @@ def test_execute_trail_uses_trailers_real_spy_skill():
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=HexCoord(3, 1)))  # distance 2
 
     # Level-4 Spy gives 250% base, /2 distance = 125% -> capped at 100%.
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.99]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.99, 0.5, 0.5]))
 
     assert result.spied_on is True
 
@@ -136,7 +136,7 @@ def test_execute_trail_success_reports_targets_temper():
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD, temper=Temper.BRAVE))
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.temper is Temper.BRAVE
 
@@ -146,7 +146,7 @@ def test_execute_trail_success_reports_none_temper_when_not_recorded():
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.temper is None
 
@@ -156,7 +156,7 @@ def test_execute_trail_success_reports_targets_alignment():
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD, alignment=Alignment.PAGAN))
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.alignment is Alignment.PAGAN
 
@@ -166,7 +166,7 @@ def test_execute_trail_success_reports_none_alignment_when_not_recorded():
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.alignment is None
 
@@ -177,7 +177,7 @@ def test_execute_trail_success_reports_targets_race_via_kingdom():
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.race is Race.ELVEN
 
@@ -187,7 +187,7 @@ def test_execute_trail_success_reports_none_race_for_an_independent_hero():
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=None, name="Wandering Hero", location=FIELD))
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.race is None
 
@@ -202,7 +202,7 @@ def test_execute_trail_success_reports_king_intelligence_for_a_king_target():
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target King", location=FIELD, is_king=True))
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.king_intelligence == KingIntelligence(
         treasury=77,
@@ -216,7 +216,7 @@ def test_execute_trail_success_reports_none_king_intelligence_for_a_hero_target(
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=2, name="Target Hero", location=FIELD, is_king=False))
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.king_intelligence is None
 
@@ -228,7 +228,7 @@ def test_execute_trail_success_reports_targets_treasures_owned():
     state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=2)
     state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=1)  # trailer's own, not reported
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert len(result.treasures_owned) == 1
     assert result.treasures_owned[0].owner_leader_id == 2
@@ -241,7 +241,7 @@ def test_execute_trail_success_reports_targets_armies_led():
     army = ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2)
     state.add_army(army)
 
-    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0]))
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.armies_led == (army,)
 
@@ -292,3 +292,28 @@ def test_advance_trail_reports_not_found_when_trailer_or_target_missing():
 
     assert result.spied_on is False
     assert result.reason == "trailer or target not found"
+
+
+# -- Add_Experience wiring (Phase 461) ----------------------------------------
+
+
+def test_execute_trail_success_awards_real_add_experience_credit():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert result.spied_on is True
+    assert state.leaders[1].experience_credit == 10  # round(10*(1+0.5-0.5))
+
+
+def test_execute_trail_failed_catch_up_awards_no_add_experience_credit():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FAR_AWAY))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.99]))
+
+    assert result.spied_on is False
+    assert state.leaders[1].experience_credit == 0

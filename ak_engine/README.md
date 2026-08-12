@@ -19393,7 +19393,7 @@ follow-up request after the original 431-435 plan shipped.
     grants no credit at all, and the DR gate passing grants real credit
     regardless of the reaction that follows. Ran again: 4116 passed
     (2 new).
-- **Phase 460 (current)**: wires `add_experience()` into its fourth real
+- **Phase 460**: wires `add_experience()` into its fourth real
   call site -- `AKGEN_reverse_engineering_report (2).md` SS3.3's own
   spell-school row (base 10, "lancio pertinente riuscito; skill 0 resta
   esclusa" -- a relevant successful cast; skill 0 stays excluded), covering
@@ -19428,6 +19428,45 @@ follow-up request after the original 431-435 plan shipped.
     credit` for `caster.skills is None`, and `test_execute_cast_wand_
     triggered_cast_at_natural_skill_0_grants_no_add_experience_credit` for
     `wand_skill_level`). Ran again: 4119 passed (3 new).
+- **Phase 461 (current)**: wires `add_experience()` into its fifth and
+  sixth real call sites -- Trail (`turn/trail_execution.py execute_trail()`)
+  and Pursue (`turn/pursue_execution.py execute_pursue()`), the two
+  remaining action executors `AKGEN_reverse_engineering_report (2).md`
+  SS3.4's own Spy row names alongside ASpy ("Spy, Trail, Pursue e
+  attivita' informative pertinenti"), left unwired since Phase 458
+  deliberately deferred them ("each is its own action executor with its
+  own real 'qualifying' moment to identify first"). Both share the same
+  Spy Table catch-up shape: `add_experience(trailer, Ability.SPY, 10,
+  rng)` fires the instant `execute_trail()`'s own catch-up roll succeeds
+  (`spied_on=True`), right before the intelligence payload is assembled;
+  `add_experience(pursuer, Ability.SPY, 10, rng)` fires the instant
+  `execute_pursue()`'s own catch-up roll succeeds, before branching into
+  an army battle, an armyless encounter, or a bare "caught up, no combat
+  intent" result -- catching up itself is the informational event this
+  row names, not whatever combat (if any) follows it, which stays the
+  deliberately separate Melee/Archery abilities' own still-unwired
+  concern. Neither `advance_trail()` nor `advance_pursuit()` needed
+  separate wiring -- both always resolve through their own respective
+  `execute_trail()`/`execute_pursue()` call at their own tail, so every
+  multi-phase chase step gets credit through the identical single choke
+  point per ability.
+  - Ran the full suite before writing new tests: 32 pre-existing tests
+    broke the same way every prior wiring phase's own tests did (the new
+    `add_experience()` call consumes two more `random()` draws than their
+    `ScriptedRandom` queues had scripted) -- 14 in `tests/
+    test_trail_execution.py`, 13 in `tests/test_pursue_execution.py`, and
+    5 in `tests/test_turn_processor.py` (its own Trail/Pursue chase-
+    continuation tests, which dispatch through the same two functions) --
+    fixed by padding each queue by two values, appended at the end where
+    the credit path's own two draws are the last thing consumed, or
+    inserted immediately after the catch-up roll where further rolls
+    (melee combat, a Charm cast) follow it in the same scripted sequence.
+    Added 4 new tests: worked-example
+    proofs for both `test_execute_trail_success_awards_real_add_
+    experience_credit` and `test_execute_pursue_catch_up_awards_real_
+    add_experience_credit` (the exact `round(10*(1+0.5-0.5))==10` case),
+    plus a failed-catch-up sibling for each proving no credit is granted
+    when the roll misses. Ran again: 4123 passed (4 new).
 
 ## Setup
 

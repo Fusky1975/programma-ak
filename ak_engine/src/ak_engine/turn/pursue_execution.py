@@ -140,6 +140,27 @@ further production-code changes here. ``tests/test_pursue_execution.py``
 adds direct verification of that inheritance through ``execute_pursue()``'s
 own public API, mirroring the equivalent ``test_challenge_execution.py``
 tests.
+
+**Phase 461 -- wires ``turn/experience.py add_experience()`` into
+Pursue's own real "informational event" moment.**
+``AKGEN_reverse_engineering_report (2).md`` SS3.3's own Spy row (base
+10) and SS3.4's own explicit trigger set -- "Spy, Trail, Pursue e
+attivita' informative pertinenti" -- name Pursue as one of three real
+qualifying-event sources for ``Ability.SPY``; Phase 458 wired ASpy and
+this same phase wires Trail (``turn/trail_execution.py``) alongside
+Pursue, since both share the identical Spy Table catch-up shape Phase
+458's own docstring deferred them for. Pursue's own moment is exactly
+the successful catch-up roll immediately above, mirroring Trail's own
+``spied_on=True`` gate -- ``add_experience(pursuer, Ability.SPY, 10,
+rng)`` now fires there, before branching into an army battle, an
+armyless encounter, or a bare "caught up, no combat intent" result --
+catching up itself is the informational event this row names, not
+whatever combat (if any) follows it, which stays the deliberately
+separate Melee/Archery abilities' own still-unwired concern. A failed
+catch-up never reaches this call. ``advance_pursuit`` needs no separate
+wiring -- it always resolves through this same ``execute_pursue`` call
+at its own tail, so every multi-phase chase step gets credit through
+the identical single choke point.
 """
 
 from __future__ import annotations
@@ -163,6 +184,7 @@ from ak_engine.turn.encounter import (
     MeleeSwing,
     loot_defeated_leader,
 )
+from ak_engine.turn.experience import add_experience
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance, neighbors
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 
@@ -303,6 +325,8 @@ def execute_pursue(
     )
     if rng.random() >= chance:
         return PursueExecutionResult(caught_up=False, reason="did not catch up this phase")
+
+    add_experience(pursuer, Ability.SPY, 10, rng)
 
     if target_leads_army:  # pursuer_leads_army matches, per the check above
         return _fight_army_pursuit_battle(state, pursuer, target, rng)

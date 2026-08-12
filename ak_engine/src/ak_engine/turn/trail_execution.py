@@ -145,6 +145,24 @@ army may not be ordered to Trail" is already enforced by
 with the user for Pursue and carried over unchanged here: not
 auto-wired into ``turn/turn_processor.py``'s phase loop, no
 movement-point cost, a standalone explicitly-invoked primitive.
+
+**Phase 461 -- wires ``turn/experience.py add_experience()`` into
+Trail's own real "informational event" moment.**
+``AKGEN_reverse_engineering_report (2).md`` SS3.3's own Spy row (base
+10) and SS3.4's own explicit trigger set -- "Spy, Trail, Pursue e
+attivita' informative pertinenti" -- name Trail as one of three real
+qualifying-event sources for ``Ability.SPY``; Phase 458 wired ASpy
+(the first) and deliberately left Trail and Pursue for a later phase,
+since each is its own action executor with its own real "qualifying"
+moment to identify first. Trail's own moment is exactly the successful
+catch-up roll immediately above -- ``spied_on=True`` -- so
+``add_experience(trailer, Ability.SPY, 10, rng)`` now fires there,
+right before the intelligence payload is assembled, credited to the
+trailer (the leader performing the spying), not the target. A failed
+catch-up (``spied_on=False``) never reaches this call. ``advance_trail``
+needs no separate wiring -- it always resolves through this same
+``execute_trail`` call at its own tail, so every multi-phase chase step
+gets credit through the identical single choke point.
 """
 
 from __future__ import annotations
@@ -160,6 +178,7 @@ from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.experience import add_experience
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
 from ak_engine.turn.pursue_execution import step_toward_target
 from ak_engine.turn.spy_table import pursue_catch_up_chance
@@ -251,6 +270,8 @@ def execute_trail(
     )
     if rng.random() >= chance:
         return TrailExecutionResult(spied_on=False, reason="did not find the target this phase")
+
+    add_experience(trailer, Ability.SPY, 10, rng)
 
     race = state.kingdoms[target.kingdom_id].race if target.kingdom_id is not None else None
     king_intelligence = (

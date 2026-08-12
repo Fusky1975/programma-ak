@@ -887,7 +887,7 @@ def test_run_turn_unresolved_pursue_preempts_p1_and_continues_the_chase():
     pursuer = _three_phase_leader(10, "Pursuer", p0, p1, p2)
 
     results = run_turn(
-        [TurnLeader(pursuer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1])
+        [TurnLeader(pursuer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1, 0.5, 0.5])
     )
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
@@ -919,7 +919,7 @@ def test_run_turn_unresolved_trail_preempts_p1_and_continues_the_chase():
     trailer = _three_phase_leader(10, "Trailer", p0, p1, p2)
 
     results = run_turn(
-        [TurnLeader(trailer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1])
+        [TurnLeader(trailer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1, 0.5, 0.5])
     )
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
@@ -954,7 +954,7 @@ def test_run_turn_trail_backfills_the_targets_own_action_this_phase():
     )
 
     results = run_turn(
-        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.1])
+        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.1, 0.5, 0.5])
     )
 
     trail_result = next(r for r in results if r.leader_id == 10 and r.phase_label == "P0").result
@@ -970,7 +970,7 @@ def test_run_turn_trail_actions_is_none_when_target_has_no_order_this_phase():
     target = Leader(leader_id=20, name="Target", plan=ActionPlan(leader_id=20, segments=[PlanSegment(0, 0, (), {})]))
 
     results = run_turn(
-        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.1])
+        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.1, 0.5, 0.5])
     )
 
     trail_result = next(r for r in results if r.leader_id == 10 and r.phase_label == "P0").result
@@ -999,7 +999,7 @@ def test_run_turn_trail_continuation_backfills_the_targets_own_action():
     )
 
     results = run_turn(
-        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1])
+        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1, 0.5, 0.5])
     )
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
