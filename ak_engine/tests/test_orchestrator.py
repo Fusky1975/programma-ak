@@ -112,3 +112,33 @@ def test_process_turn_wires_the_emperor_election_evaluation():
     assert outcome.election_outcome.world_total == 0
     assert state.emperor_kingdom_id is None
     assert state.election_pending_turn is None
+
+
+def test_process_turn_final_standings_is_none_before_any_emperor_exists():
+    # Phase 476: the ordinary case -- no Emperor yet in this fixture (see
+    # test_process_turn_wires_the_emperor_election_evaluation above), so
+    # compose_final_standings_report() has nothing to report.
+    state = _base_state()
+    kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+
+    assert outcome.final_standings is None
+
+
+def test_process_turn_wires_final_standings_once_an_emperor_exists():
+    # Phase 476: SS14.1 -- coronation and the first "unified world"
+    # standings land in the same post-turn. Pre-seed an Emperor (as if
+    # crowned on an earlier turn) and confirm process_turn() surfaces the
+    # real snapshot, matching what calling compose_final_standings_report()
+    # directly would produce.
+    state = _base_state()
+    state.emperor_kingdom_id = 1
+    kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+
+    assert outcome.final_standings is not None
+    assert outcome.final_standings.standings == (1,)

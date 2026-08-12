@@ -35,6 +35,7 @@ from ak_engine.models.kingdom import KingdomMoveHeader
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.report.turn_report import describe_turn_results
 from ak_engine.turn.emperor_election import ElectionCallOutcome, ElectionResult, process_election_turn
+from ak_engine.turn.final_standings import FinalStandingsReport, compose_final_standings_report
 from ak_engine.turn.kingdom_bridge import KingdomBridgeReport, sync_leaders_from_kingdom
 from ak_engine.turn.turn_processor import PhaseDispatchResult, TurnLeader, run_turn
 
@@ -54,6 +55,13 @@ class TurnOutcome:
     # `ElectionCallOutcome` otherwise (whether or not it actually
     # scheduled/crowned anything). See that function's own docstring.
     election_outcome: ElectionResult | ElectionCallOutcome | None = None
+    # Phase 476: `turn/final_standings.py compose_final_standings_report()`'s
+    # own result -- `None` before any Emperor exists, otherwise the real
+    # "unified world" standings/points/all-star/Valhalla snapshot SS14.1
+    # says gets computed every post-turn from coronation onward. See that
+    # function's own docstring for why no report prose is composed for it
+    # here (same split `election_outcome` above already established).
+    final_standings: FinalStandingsReport | None = None
 
 
 def process_turn(
@@ -89,6 +97,16 @@ def process_turn(
     mutations (a fresh ``state.emperor_kingdom_id``, an ``election_
     pending_turn`` scheduled for next turn, or a just-tallied vote's own
     result) happen inside that function, not here.
+
+    **Phase 476**: immediately after that same election step, computes
+    ``turn/final_standings.py compose_final_standings_report()`` -- SS14.1
+    (real disassembly source): coronation, the final report, and the
+    "unified world" standings all land in the *same* post-turn, never a
+    turn later, so this call belongs right alongside ``process_election_
+    turn()``'s own, not deferred to some later step. Returns ``None``
+    before any Emperor exists; from the coronation turn onward, every
+    later turn recomputes it fresh (the real engine's own behavior, not a
+    one-time "game over" snapshot).
     """
 
     if rng is None:
@@ -116,6 +134,7 @@ def process_turn(
 
     results = run_turn(turn_leaders, state, board_width=board_width, rng=rng)
     election_outcome = process_election_turn(state, kingdom_headers, state.turn_number)
+    final_standings_report = compose_final_standings_report(state)
     report_lines = describe_turn_results(results, state, rng, board_width=board_width)
 
     return TurnOutcome(
@@ -123,4 +142,5 @@ def process_turn(
         report_lines=report_lines,
         bridge_reports=bridge_reports,
         election_outcome=election_outcome,
+        final_standings=final_standings_report,
     )

@@ -12,6 +12,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.final_standings import (
+    compose_final_standings_report,
     final_standings,
     individual_king_points,
     kingdom_points,
@@ -246,3 +247,36 @@ def test_qualifies_for_valhalla_induction_true_when_kingdom_is_first_despite_low
     with patch("ak_engine.turn.final_standings.individual_king_points", return_value=0.0):
         assert final_standings(state)[0] == 1
         assert qualifies_for_valhalla_induction(state, 1) is True
+
+
+# -- Phase 476: compose_final_standings_report() ---------------------------
+
+
+def test_compose_final_standings_report_is_none_before_any_emperor_is_elected():
+    state = _state_with_kingdom(1, Alignment.GOOD, HOME)
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+
+    assert compose_final_standings_report(state) is None
+
+
+def test_compose_final_standings_report_matches_the_individual_functions():
+    # Kingdom 1's own King holds Emperor (20, self, no discount) and
+    # Treasurer (10, treasury 7 > 0) -- kingdom_points/individual_king_
+    # points both 30.0, clearing both the all-star (>=7.5) and Valhalla
+    # (>=20) thresholds. Kingdom 2 has nothing at all (0.0, neither).
+    state = _state_with_kingdom(1, Alignment.GOOD, HOME)
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=10))
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    state.kingdoms[1].treasury = 7
+    state.emperor_kingdom_id = 1
+    state.add_kingdom(KingdomState(2, "B", Race.HUMAN, Alignment.EVIL, HexCoord(1, 1)))
+
+    report = compose_final_standings_report(state)
+
+    assert report is not None
+    assert report.standings == tuple(final_standings(state))
+    assert report.standings == (1, 2)
+    assert report.kingdom_points == {1: kingdom_points(state, 1), 2: kingdom_points(state, 2)}
+    assert report.kingdom_points == {1: 30.0, 2: 0.0}
+    assert report.all_star_qualifiers == (1,)
+    assert report.valhalla_qualifiers == (1,)

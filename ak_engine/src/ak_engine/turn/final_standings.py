@@ -83,9 +83,43 @@ that never touches `resolve_office_holder()`'s own leader-scoped offices
 at all) -- a deliberate, documented bug-compatibility decline, the same
 posture Phase 454's own module docstring already took for the team-
 ranking `kingpoints[team2]` bug.
+
+**Phase 476 -- wiring these functions into the real turn pipeline, SS14.1
+(real disassembly source), quoted in full**: "Da quel momento [dell'
+incoronazione] il codice cambia modalità: `Pray_Report` dichiara che il
+mondo è unificato e produce le graduatorie definitive... vengono
+stampati punteggi, premi, idoneità all'all-star game e Valhalla... Non
+esiste un ulteriore 'turno di celebrazione': l'incoronazione, il report
+finale e la chiusura avvengono nello stesso post-turno che ha verificato
+la soglia." Every function above already existed and was already
+correct (Phases 454/455) -- the gap this phase closes is architectural,
+not formulaic: nothing in this project ever *called* them from the real
+turn pipeline (`orchestrator.py process_turn()`), so a caller had no way
+to actually observe a Kingdom's own final standing without invoking
+these functions by hand. `compose_final_standings_report()` (below) is
+the single entry point `process_turn()` now calls once per turn, right
+alongside `turn/emperor_election.py process_election_turn()`'s own call
+(the same post-election, pre-report sequencing point SS14.1 itself
+describes -- coronation and the first "unified world" standings both
+land in the *same* post-turn, never a turn later) -- returns `None`
+before any Emperor exists (the same gate `kingdom_points()` itself
+already uses), so every turn before a coronation costs nothing extra.
+
+**Deliberately not attempted this phase**: rendering these results into
+actual report prose (`report/turn_report.py describe_turn_results()`
+never renders `TurnOutcome.election_outcome` either, despite that field
+existing since Phase 466 -- the same "populate the structured data, defer
+prose composition" split this project already established for the
+election result, not a newly-invented shortcut). Prize money itself
+stays out of scope per this module's own opening paragraph -- `Pray_
+Report`'s own "premi" (prizes) are real-money moderator bookkeeping this
+project has never modeled, not new information `compose_final_standings_
+report()` could add.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from ak_engine.models.game_state import GameState
 from ak_engine.turn.emperor_election import _kingdom_treasure_vote_points
@@ -175,3 +209,43 @@ def qualifies_for_valhalla_induction(state: GameState, kingdom_id: int) -> bool:
     """
 
     return individual_king_points(state, kingdom_id) >= 20 or final_standings(state)[0] == kingdom_id
+
+
+@dataclass(slots=True, frozen=True)
+class FinalStandingsReport:
+    """One post-coronation snapshot of every real "the code changes mode"
+    statistic SS14.1 says gets printed -- see module docstring's own
+    Phase 476 addendum. `compose_final_standings_report()` returns `None`
+    instead of this whenever there's nothing to report yet (no Emperor).
+    """
+
+    standings: tuple[int, ...]  # every Kingdom id, ranked descending -- final_standings()
+    kingdom_points: dict[int, float]  # kingdom_id -> kingdom_points(), same keys as standings
+    all_star_qualifiers: tuple[int, ...]  # subset of standings, in standings order
+    valhalla_qualifiers: tuple[int, ...]  # subset of standings, in standings order
+
+
+def compose_final_standings_report(state: GameState) -> FinalStandingsReport | None:
+    """The real per-turn "unified world" snapshot SS14.1 describes --
+    `None` before any Emperor exists (the same gate `kingdom_points()`
+    itself already uses), otherwise every Kingdom's own real standing,
+    points, and all-star/Valhalla eligibility, computed once. See module
+    docstring's own Phase 476 addendum for where `orchestrator.py
+    process_turn()` calls this and why no report prose is composed here.
+    """
+
+    if state.emperor_kingdom_id is None:
+        return None
+
+    standings = tuple(final_standings(state))
+    points = {kingdom_id: kingdom_points(state, kingdom_id) for kingdom_id in standings}
+    all_star_qualifiers = tuple(kingdom_id for kingdom_id in standings if qualifies_for_all_star(state, kingdom_id))
+    valhalla_qualifiers = tuple(
+        kingdom_id for kingdom_id in standings if qualifies_for_valhalla_induction(state, kingdom_id)
+    )
+    return FinalStandingsReport(
+        standings=standings,
+        kingdom_points=points,
+        all_star_qualifiers=all_star_qualifiers,
+        valhalla_qualifiers=valhalla_qualifiers,
+    )

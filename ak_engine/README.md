@@ -20029,7 +20029,7 @@ follow-up request after the original 431-435 plan shipped.
     failed roll blocks the exchange, a successful roll allows it, and a
     `P=0.0` pair always blocks regardless of the roll). Ran again: 4210
     passed (7 new).
-- **Phase 475 (current)**: wires the real tier-1 tie-break for the 47
+- **Phase 475**: wires the real tier-1 tie-break for the 47
   leader-scoped Imperial Offices ([10.1] Rank contest), `AKGEN_reverse_
   engineering_report (2).md` SS14.4 (real disassembly source): "per i
   titoli avanzati, il titolare precedente conserva precedenza se è fra i
@@ -20075,6 +20075,44 @@ follow-up request after the original 431-435 plan shipped.
     written to `state.office_holders` even though it's included in
     `commit_office_holders()`'s own returned dict. Ran again: 4216
     passed (6 new).
+- **Phase 476 (current)**: closes the last self-contained gap the
+  section-9-16 audit surfaced -- `turn/final_standings.py`'s own
+  `kingdom_points()`/`final_standings()`/`qualifies_for_all_star()`/
+  `qualifies_for_valhalla_induction()` (Phases 454/455) were already
+  correct, but nothing in the real turn pipeline ever *called* them:
+  `orchestrator.py process_turn()` had no equivalent of `AKGEN_reverse_
+  engineering_report (2).md` SS14.1's own "Da quel momento [dell'
+  incoronazione] il codice cambia modalità... vengono stampati
+  punteggi, premi, idoneità all'all-star game e Valhalla... Non esiste
+  un ulteriore 'turno di celebrazione': l'incoronazione, il report
+  finale e la chiusura avvengono nello stesso post-turno." New
+  `FinalStandingsReport` (standings/kingdom_points/all_star_qualifiers/
+  valhalla_qualifiers) and `compose_final_standings_report()` in `turn/
+  final_standings.py` -- `None` before any Emperor exists (the same gate
+  `kingdom_points()` itself already uses), otherwise every Kingdom's own
+  real snapshot computed once. `orchestrator.py process_turn()` now
+  calls it immediately after `turn/emperor_election.py process_
+  election_turn()` (the same post-election, pre-report sequencing SS14.1
+  itself describes) and returns the result as `TurnOutcome.final_
+  standings`. Deliberately **not** attempted this phase: rendering these
+  results into report prose -- `describe_turn_results()` never renders
+  `TurnOutcome.election_outcome` either, despite that field existing
+  since Phase 466, so this follows the same already-established
+  "populate the structured data, defer prose composition" split, not a
+  new shortcut. Prize money itself stays out of scope per this module's
+  own Phase 454 docstring (real-money moderator bookkeeping, no
+  in-game state to source it from).
+  - Ran the full suite before writing new tests: 4216 passed (non-
+    breaking -- `process_turn()`'s own new call returns `None` for every
+    pre-existing fixture, none of which pre-seeds an Emperor). Wrote 4
+    new tests: two in `tests/test_final_standings.py` (`None` before any
+    Emperor, and a worked example matching `compose_final_standings_
+    report()`'s own four fields against calling `final_standings()`/
+    `kingdom_points()`/`qualifies_for_all_star()`/`qualifies_for_
+    valhalla_induction()` directly), two in `tests/test_orchestrator.py`
+    (`TurnOutcome.final_standings` stays `None` in the ordinary no-
+    Emperor case, and gets populated once `state.emperor_kingdom_id` is
+    pre-seeded). Ran again: 4220 passed (4 new).
 
 ## Setup
 
