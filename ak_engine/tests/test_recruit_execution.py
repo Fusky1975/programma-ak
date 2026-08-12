@@ -482,3 +482,100 @@ def test_wingman_bonus_only_applies_to_the_titleholder_not_a_different_leader():
 
     assert len(result.recruited) == 1
     assert result.limit_blocked == [ArmyType.DRAGON_WING]
+
+
+# -- Grand Marshal/Grand Admiral's own recruitment bonuses (Phase 488) -----
+
+
+def test_no_marshal_or_admiral_bonus_by_default():
+    state = build_state()
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.LEGION, ArmyType.LEGION])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.limit_blocked == [ArmyType.LEGION]
+
+
+def test_marshal_grants_one_extra_land_unit():
+    state = build_state()
+    state.leaders[LEADER_ID].merit_tally.land_battles_won_points = 1  # meets OFFICE_MIN_POINTS[Office.MARSHAL]
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.LEGION, ArmyType.LEGION])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 2
+    assert result.limit_blocked == []
+
+
+def test_marshal_bonus_does_not_apply_to_a_flying_type():
+    state = build_dragon_state()
+    state.leaders[LEADER_ID].merit_tally.land_battles_won_points = 1
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DRAGON_WING, ArmyType.DRAGON_WING])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.limit_blocked == [ArmyType.DRAGON_WING]
+
+
+def test_marshal_bonus_does_not_apply_to_a_naval_type():
+    state = build_state()
+    state.leaders[LEADER_ID].merit_tally.land_battles_won_points = 1
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.FLEET, ArmyType.FLEET])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.limit_blocked == [ArmyType.FLEET]
+
+
+def test_admiral_grants_one_extra_naval_unit():
+    state = build_state()
+    state.leaders[LEADER_ID].merit_tally.naval_battles_won_points = 1  # meets OFFICE_MIN_POINTS[Office.ADMIRAL]
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.FLEET, ArmyType.FLEET])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 2
+    assert result.limit_blocked == []
+
+
+def test_admiral_bonus_does_not_apply_to_a_land_type():
+    state = build_state()
+    state.leaders[LEADER_ID].merit_tally.naval_battles_won_points = 1
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.LEGION, ArmyType.LEGION])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.limit_blocked == [ArmyType.LEGION]
+
+
+def test_marshal_and_admiral_bonuses_only_apply_to_the_titleholder():
+    state = build_state()
+    state.add_leader(LeaderState(2, 1, "Other Leader", LOCATION))
+    state.leaders[2].merit_tally.land_battles_won_points = 1
+    state.leaders[2].merit_tally.naval_battles_won_points = 1
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.LEGION, ArmyType.LEGION])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.limit_blocked == [ArmyType.LEGION]
+
+
+def test_same_leader_can_stack_marshal_and_admiral_bonuses_for_their_own_types():
+    # Rulebook [10.1]: "uno stesso personaggio puo aggiudicarsene piu di
+    # una" -- one leader may hold more than one Office at once.
+    state = build_state()
+    state.leaders[LEADER_ID].merit_tally.land_battles_won_points = 1
+    state.leaders[LEADER_ID].merit_tally.naval_battles_won_points = 1
+    request = RecruitRequest(
+        leader_id=None, army_types=[ArmyType.LEGION, ArmyType.LEGION, ArmyType.FLEET, ArmyType.FLEET]
+    )
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 4
+    assert result.limit_blocked == []

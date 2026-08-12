@@ -128,13 +128,36 @@ mechanic Phase 4 already built for this exact case. For a province
 falls back to the pre-existing race-compatibility approximation
 unchanged -- no real per-province list to check yet, so nothing to
 enforce more precisely.
+
+**Grand Marshal/Grand Admiral's own recruitment bonuses (Phase 488,
+"CARICHE E ABILITA.txt")**: "[Grand Marshal] will allow you to
+recruit one extra unit of any army type which can move overland
+(except for flying units)... [Grand Admiral] will allow you to recruit
+one extra unit of any army type which can move from sea to sea (except
+for flying units)" -- the same "acting leader currently holds this
+Office, raise that one type's own per-turn cap by one, gated on
+``is_native``" shape as Wingman's own bonus directly above, extended to
+the other two Offices whose real perk is also phrased as "recruit one
+extra unit." The three Offices partition ``ArmyType`` cleanly along the
+domain split this project already uses everywhere else (``models/
+army_type.py OVERFLIGHT_AIR``/``OVERFLIGHT_SEA``): Wingman's own bonus
+already claims the 2 flying types; Grand Admiral's own "sea to sea"
+types are the 3 already-classified naval movers (``OVERFLIGHT_SEA`` --
+Whales, Mermen -- plus ``ArmyType.FLEET``, the one naval type that set
+doesn't itself cover); Grand Marshal's own "overland" types are simply
+whatever's left -- every other, non-flying, non-naval type. A leader
+holding more than one of these three Offices at once (rare, but the
+rulebook never forbids it -- "uno stesso personaggio puo aggiudicarsene
+piu di una," rulebook [10.1]) gets each qualifying type's own bonus
+independently; the three domains are mutually exclusive, so no army
+type can ever double-count towards more than one Office's own bonus.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ak_engine.models.army_type import OVERFLIGHT_AIR, ArmyType
+from ak_engine.models.army_type import OVERFLIGHT_AIR, OVERFLIGHT_SEA, ArmyType
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.office import Office
 from ak_engine.turn.combat import Quality
@@ -208,6 +231,10 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
 
     wingman_holder = resolve_office_holder(state, Office.WINGMAN)
     leader_is_wingman = wingman_holder is not None and wingman_holder.leader_id == leader_id
+    marshal_holder = resolve_office_holder(state, Office.MARSHAL)
+    leader_is_marshal = marshal_holder is not None and marshal_holder.leader_id == leader_id
+    admiral_holder = resolve_office_holder(state, Office.ADMIRAL)
+    leader_is_admiral = admiral_holder is not None and admiral_holder.leader_id == leader_id
 
     for army_type in request.army_types:
         if province.recruit_type_1 is not None:
@@ -228,8 +255,11 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             continue
 
         wingman_bonus = 1 if leader_is_wingman and army_type in OVERFLIGHT_AIR and is_native else 0
+        is_naval_type = army_type in OVERFLIGHT_SEA or army_type is ArmyType.FLEET
+        marshal_bonus = 1 if leader_is_marshal and army_type not in OVERFLIGHT_AIR and not is_naval_type and is_native else 0
+        admiral_bonus = 1 if leader_is_admiral and is_naval_type and is_native else 0
         already_this_turn = province.recruited_this_turn.get(army_type, 0)
-        if already_this_turn >= resolution.max_units + wingman_bonus:
+        if already_this_turn >= resolution.max_units + wingman_bonus + marshal_bonus + admiral_bonus:
             result.limit_blocked.append(army_type)
             continue
 

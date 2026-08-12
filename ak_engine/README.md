@@ -20284,7 +20284,7 @@ follow-up request after the original 431-435 plan shipped.
   (89) -- a genuine game-progression fact, not a parser regression.
   - Ran in isolation: 6 passed (with Phase 485's own module). Ran the
     full suite: 4262 passed (3 new).
-- **Phase 487 (current)**: extends real-turn validation to `GW3__T12`
+- **Phase 487**: extends real-turn validation to `GW3__T12`
   (real turn 11), cross-checked against `SE3__T11.K1` -- the last
   remaining turn in the user's own `GW3__T1`-`T12` archive, completing
   this project's real-historical-data validation net across the entire
@@ -20296,6 +20296,51 @@ follow-up request after the original 431-435 plan shipped.
   conquests. No further `GW3__Tn` snapshots remain in the archive for
   future extension of this specific series.
   - Ran in isolation: 3 passed. Ran the full suite: 4265 passed (3 new).
+- **Phase 488 (current)**: a fresh audit of untapped user-supplied
+  reference files (`ABILITÀ SOPRA IL LIVELLO 4 OK.txt`, `CARICHE E
+  ABLITÀ.txt`, `Piani speciali d'incontro dei mostri.txt`,
+  `SUCCESSIONE.txt`, `TALK SAY FULFILL.txt`, `TABELLA ALLINEAMENTI.jpg`)
+  found the main dossier's own findings were only half the picture:
+  Succession, monster encounter plans, and Talk/Say/Fulfill were all
+  already fully modeled, but the 8 major Imperial Offices' own real
+  in-game perks (`models/office.py OFFICE_PERK_DESCRIPTION`, Phase 103)
+  had only ever been transcribed as prose -- nothing anywhere granted
+  them mechanically. Wires the two with the clearest existing hook and
+  the lowest risk of the eight: Grand Marshal's "recruit one extra unit
+  of any army type which can move overland (except flying)" and Grand
+  Admiral's "recruit one extra unit of any army type which can move
+  from sea to sea (except flying)," both extending `turn/
+  recruit_execution.py`'s own pre-existing Wingman bonus (Phase 472)
+  with the exact same shape -- acting leader currently holds the
+  Office, resolved once per call, raises that one army type's own
+  per-turn cap by one, gated on `is_native`. The three Offices
+  partition `models/army_type.py ArmyType` cleanly along the domain
+  split this project already uses everywhere (`OVERFLIGHT_AIR`/
+  `OVERFLIGHT_SEA`): Wingman keeps the 2 flying types, Grand Admiral
+  gets the 3 naval movers (`OVERFLIGHT_SEA` plus `ArmyType.FLEET`),
+  Grand Marshal gets everything else. The other 6 major perks (World
+  Emperor/High Chancellor/Imperial Treasurer's own passive "sense
+  bordering kings' tax bases/treasuries/alignments" reports, Lord High
+  Defender's -1 personal-combat damage, Arch-Mage's magic-item sensing)
+  need either a new report-composition touchpoint or changes threaded
+  through `turn/encounter.py`'s own large, delicate personal-combat
+  core (8+ separate damage-application sites) -- deliberately deferred
+  to a dedicated follow-up phase rather than risking a rushed pass
+  through that module this same phase, the same "narrow slice first"
+  discipline `turn/encounter.py`'s own Phase 48 docstring already
+  established. The 89-entry Advanced Ability catalog (`models/
+  advanced_ability.py`, Phase 128) and the alignment-Office minor
+  perks (Divine Archangel, Most Blessed of Kings, etc.) remain other
+  confirmed, sourced, currently-unwired gaps from this same audit, also
+  left for later phases.
+  - Ran the full suite before writing new tests: 4265 passed (non-
+    breaking). Wrote 8 new tests in `tests/test_recruit_execution.py`:
+    no bonus by default, Marshal grants one extra land unit, the bonus
+    doesn't apply to a flying or naval type, Admiral grants one extra
+    naval unit, its bonus doesn't apply to a land type, both bonuses
+    apply only to the titleholder (not a different leader), and the
+    same leader can stack both bonuses at once for their own respective
+    types. Ran again: 4273 passed (8 new).
 
 ## Setup
 
