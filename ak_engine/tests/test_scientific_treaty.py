@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import pytest
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
-from ak_engine.turn.scientific_treaty import execute_scientific_treaties
+from ak_engine.turn.scientific_treaty import alignment_check_success_chance, execute_scientific_treaties
+
+from _helpers import ScriptedRandom
 
 BOUNDS = {"board_width": 30, "board_height": 15}
 HOME_A = HexCoord(3, 3)
@@ -138,3 +142,69 @@ def test_does_not_touch_merit_tally_or_first_found_registry():
 
     assert state.leaders[1].merit_tally.discoveries_via_espionage == 0
     assert Discovery.COMPASS not in state.discoveries_first_found_by or state.discoveries_first_found_by[Discovery.COMPASS] == 1
+
+
+# -- Phase 474: real alignment-distance success gate (SS4.5/SS18.3) -------
+
+
+def test_alignment_check_success_chance_same_class_is_guaranteed():
+    assert alignment_check_success_chance(Alignment.GOOD, Alignment.GOOD) == 1.0
+
+
+def test_alignment_check_success_chance_decays_by_40_points_per_step():
+    assert alignment_check_success_chance(Alignment.GOOD, Alignment.DRUID) == pytest.approx(0.6)  # distance 1
+    assert alignment_check_success_chance(Alignment.GOOD, Alignment.NEUTRAL) == pytest.approx(0.2)  # distance 2
+
+
+def test_alignment_check_success_chance_floors_at_zero():
+    assert alignment_check_success_chance(Alignment.GOOD, Alignment.PAGAN) == 0.0  # distance 3 -> 1 - 1.2
+
+
+def test_distance_zero_pair_never_rolls_the_alignment_gate():
+    # Both kingdoms default to Alignment.GOOD -- P=1.0, so the gate must
+    # never call rng.random() at all; an empty ScriptedRandom would raise
+    # IndexError if it did.
+    state = build_state()
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+
+    results = execute_scientific_treaties(state, board_width=BOUNDS["board_width"], board_height=BOUNDS["board_height"], rng=ScriptedRandom([]))
+
+    assert len(results) == 1
+
+
+def test_alignment_distance_blocks_the_exchange_on_a_failed_roll():
+    state = build_state()
+    state.kingdoms[2].alignment = Alignment.DRUID  # distance 1 from Good -> 60% chance
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+
+    results = execute_scientific_treaties(
+        state, board_width=BOUNDS["board_width"], board_height=BOUNDS["board_height"], rng=ScriptedRandom([0.6])
+    )  # 0.6 >= 0.6 chance -> fails
+
+    assert results == []
+    assert Discovery.COMPASS not in state.kingdoms[2].discoveries
+
+
+def test_alignment_distance_allows_the_exchange_on_a_successful_roll():
+    state = build_state()
+    state.kingdoms[2].alignment = Alignment.DRUID
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+
+    results = execute_scientific_treaties(
+        state, board_width=BOUNDS["board_width"], board_height=BOUNDS["board_height"], rng=ScriptedRandom([0.59])
+    )  # 0.59 < 0.6 chance -> succeeds
+
+    assert len(results) == 1
+    assert Discovery.COMPASS in state.kingdoms[2].discoveries
+
+
+def test_alignment_distance_beyond_two_steps_always_blocks():
+    state = build_state()
+    state.kingdoms[2].alignment = Alignment.PAGAN  # distance 3 from Good -> P=0.0
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+
+    results = execute_scientific_treaties(
+        state, board_width=BOUNDS["board_width"], board_height=BOUNDS["board_height"], rng=ScriptedRandom([0.0])
+    )  # even the lowest possible roll still fails a P=0.0 gate
+
+    assert results == []

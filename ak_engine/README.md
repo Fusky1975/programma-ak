@@ -19940,7 +19940,7 @@ follow-up request after the original 431-435 plan shipped.
     the bonus only applies to the titleholder -- a different, non-acting
     leader holding Wingman changes nothing. Ran again: 4193 passed (5
     new).
-- **Phase 473 (current)**: closes Professor Whizdumb's (`Office.TEACHER`)
+- **Phase 473**: closes Professor Whizdumb's (`Office.TEACHER`)
   own remaining SS2.5 gap -- Phase 446's `_select_teacher()` already
   implemented the Merit Points half (who gets credited as "the teacher"),
   but its own docstring explicitly deferred the *other* half: "chi
@@ -19988,6 +19988,47 @@ follow-up request after the original 431-435 plan shipped.
     same roll still fails without an officeholder, and a tied-skill
     officeholder grants nothing to either tied co-practicer). Ran again:
     4203 passed (10 new).
+- **Phase 474 (current)**: wires the real alignment-distance success gate
+  into Scientific Treaties ([8.4], `turn/scientific_treaty.py`) --
+  previously an unconditional exchange once adjacency/contact and a
+  mutual Treat order between Allies held. `AKGEN_reverse_engineering_
+  report (2).md` SS4.5/SS18.3 (real disassembly source): "superamento
+  del controllo d'allineamento: stessa classe senza penalità, altrimenti
+  probabilità ridotta di 40 punti percentuali per ogni passo di
+  distanza" -- same alignment class, no penalty; otherwise `P = max(0, 1
+  - 0.40*distance)` (`models/alignment.py ALIGNMENT_ORDINAL` distance,
+  the real Pascal `outlook` ordinal sequence). New `alignment_check_
+  success_chance()` computes it; rolled **once per Kingdom pair** (gates
+  the whole pair's own exchange opportunity this turn, not each
+  direction separately -- SS18.3 frames it as one of the shared "normal
+  scientific treaty rules" a pair must satisfy, alongside adjacency/
+  contact). "The two Kings' own alignment" reuses `turn/hire_pay.py`'s
+  already-established proxy, `KingdomState.alignment` (not
+  `LeaderState.alignment`, usually unrecorded for a King). Distance 0
+  needs no roll at all (`P=1.0`), so every pre-existing test fixture
+  (same-alignment Kingdoms throughout) stays exactly as deterministic as
+  before -- non-breaking by construction, not just by luck.
+  Deliberately still unmodeled: Long-Range Trade Routes (`models/
+  advanced_ability.py AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES`,
+  a real named Advanced Ability since Phase 128), which the same source
+  says lets a pair exchange without adjacency by consuming an
+  availability from a Kingdom's own Explorer who possesses it -- this
+  needs a genuine per-leader "which Advanced Ability do you actually
+  have" possession registry this project has never built, since unlike
+  the 5 magic colleges (`worldgen/special_ability_level_schedule.py`,
+  Phase 384's own recovered `spabord` schedule), Explorer's own real
+  per-game 6-slot template was never recovered from either source --
+  a documented, sourced-but-blocked gap, not a silent one.
+  - Ran the full suite before writing new tests: 4203 passed (non-
+    breaking -- see above). Wrote 7 new tests in `tests/
+    test_scientific_treaty.py`: three direct `alignment_check_success_
+    chance()` tests (same class guaranteed, decays by exactly 0.40 per
+    step, floors at 0.0 past distance 2), and four `execute_scientific_
+    treaties()`-level tests (a distance-0 pair never rolls at all --
+    proven with an empty `ScriptedRandom` that would raise if it did, a
+    failed roll blocks the exchange, a successful roll allows it, and a
+    `P=0.0` pair always blocks regardless of the roll). Ran again: 4210
+    passed (7 new).
 
 ## Setup
 

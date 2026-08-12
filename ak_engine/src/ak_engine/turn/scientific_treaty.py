@@ -96,17 +96,64 @@ run_turn()`` itself (there is no "apply this turn's revenue to the
 treasury" phase to sequence after). ``execute_scientific_treaties()``
 is therefore a standalone resolver the caller invokes directly,
 alongside their own end-of-turn financial step -- the same "caller's
-job" convention ``treat_permissions`` itself already established, not
-a gap.
+job" convention ``treat_permissions`` itself established, not a gap.
+
+**Phase 474 -- the real alignment-distance success gate (``AKGEN_
+reverse_engineering_report (2).md`` SS4.5/SS18.3, real disassembly
+source)**: the rulebook text quoted above says nothing about the
+exchange ever *failing* once the adjacency/contact preconditions hold
+-- this module originally modeled it as unconditional. The disassembly
+source corrects that: "superamento del controllo d'allineamento: stessa
+classe senza penalità, altrimenti probabilità ridotta di 40 punti
+percentuali per ogni passo di distanza" (passing the alignment check:
+same class, no penalty; otherwise the probability is reduced by 40
+percentage points per step of distance) -- i.e. ``P = max(0, 1 -
+0.40*distance)``, rolled **once per Kingdom pair** (gating the whole
+pair's own exchange opportunity this turn, not each direction
+separately -- SS18.3 frames it as one of the "normal scientific treaty
+rules" a *pair* must satisfy before *any* exchange happens, alongside
+adjacency/contact, not as a separate per-direction hurdle). "The two
+Kings" ``distance`` reuses ``turn/hire_pay.py``'s own established
+proxy, ``KingdomState.alignment`` (not ``LeaderState.alignment``,
+which is usually unrecorded for a King) -- the same "a King's own real
+alignment" convention that module's own docstring already documents.
+Distance 0 needs no roll at all (``P=1.0`` -- the gate can never fail),
+so every pre-Phase-474 test fixture (all same-alignment Kingdoms)
+stays exactly as deterministic as before.
+
+**Deliberately still unmodeled**: Long-Range Trade Routes (``models/
+advanced_ability.py AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES``,
+already a real, named, described enum member since Phase 128) letting a
+pair exchange "without adjacency or an intermediary present" by
+consuming an availability from a Kingdom's own Explorer who possesses
+it. This needs a genuine per-leader "which Advanced Ability do you
+actually have" possession registry this project has never built --
+unlike the 5 magic colleges (``turn/office_holder.py``... no,
+``worldgen/special_ability_level_schedule.py``, Phase 384), Explorer's
+own real per-game ``spabord`` 6-slot template was never recovered from
+either the Pascal archive or the AKGEN material, so there is no sourced
+way to determine *which* Explorers in a given game actually hold this
+specific Advanced Ability rather than one of its 5 (or however many)
+siblings -- inventing an answer would be exactly the kind of guess this
+project's "no source, no guess" policy exists to prevent. ``_kingdoms_
+in_contact()`` therefore still only checks the two sourced-and-buildable
+paths (adjacency, leader presence); a genuinely non-adjacent, emissary-
+less pair still cannot exchange here, a documented gap, not a silent one.
 """
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 
+from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.discovery import Discovery, sorted_kingdom_discoveries
 from ak_engine.models.game_state import GameState
 from ak_engine.turn.movement import MapBounds, is_adjacent
+
+# AKGEN_reverse_engineering_report (2).md SS4.5/SS18.3: "probabilità
+# ridotta di 40 punti percentuali per ogni passo di distanza."
+ALIGNMENT_PENALTY_PER_STEP = 0.40
 
 
 @dataclass(slots=True, frozen=True)
@@ -155,14 +202,27 @@ def _highest_priority_unknown(source: set[Discovery], other: set[Discovery]) -> 
     return sorted_kingdom_discoveries(candidates)[0]
 
 
+def alignment_check_success_chance(kingdom_a_alignment: Alignment, kingdom_b_alignment: Alignment) -> float:
+    """AKGEN_reverse_engineering_report (2).md SS4.5/SS18.3 (Phase 474):
+    "stessa classe senza penalità, altrimenti probabilità ridotta di 40
+    punti percentuali per ogni passo di distanza" -- same alignment class,
+    no penalty (1.0); otherwise ``1 - ALIGNMENT_PENALTY_PER_STEP`` per
+    step of ``ALIGNMENT_ORDINAL`` distance, floored at 0.0 (never negative).
+    """
+
+    distance = abs(ALIGNMENT_ORDINAL[kingdom_a_alignment] - ALIGNMENT_ORDINAL[kingdom_b_alignment])
+    return max(0.0, 1.0 - ALIGNMENT_PENALTY_PER_STEP * distance)
+
+
 def execute_scientific_treaties(
-    state: GameState, *, board_width: int, board_height: int
+    state: GameState, *, board_width: int, board_height: int, rng: random.Random | None = None
 ) -> list[ScientificTreatyResult]:
     """Resolve every mutual Treat order between currently-Allied Kingdoms
     in contact this gameturn -- see module docstring for each
     precondition's own sourcing and this project's documented limits.
     """
 
+    rng = rng if rng is not None else random.Random()
     bounds = MapBounds(board_width, board_height)
     results: list[ScientificTreatyResult] = []
     for pair in _mutual_treat_pairs(state):
@@ -174,6 +234,9 @@ def execute_scientific_treaties(
         if kingdom_a is None or kingdom_b is None:
             continue
         if not _kingdoms_in_contact(state, kingdom_a_id, kingdom_b_id, bounds):
+            continue
+        success_chance = alignment_check_success_chance(kingdom_a.alignment, kingdom_b.alignment)
+        if success_chance < 1.0 and rng.random() >= success_chance:
             continue
 
         discovery_to_b = _highest_priority_unknown(kingdom_a.discoveries, kingdom_b.discoveries)
