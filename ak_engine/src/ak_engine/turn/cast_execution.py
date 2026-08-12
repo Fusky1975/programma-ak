@@ -687,7 +687,7 @@ from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, loot_defea
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, is_adjacent
-from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.office_holder import resolve_all_office_holders, resolve_office_holder
 
 ACTION_SPELL_BASE_CHANCE = 0.15
 ACTION_SPELL_CHANCE_PER_LEVEL = 0.15
@@ -873,6 +873,14 @@ class CastExecutionResult:
     # Empty unless `kill_enemy_berserk_winner` is set and the loser owned
     # something.
     looted_item_ids: list[int] = field(default_factory=list)
+    # Phase 492: High Chancellor's own Crystal Ball addendum -- "It will
+    # also list all offices and titles held by the kingdom of the
+    # spied-upon character." Set only by a Chancellor-cast Clairvoyance
+    # (``_execute_clairvoyance()``'s own Phase 492 addendum); ``None`` for
+    # every other spell, and for an ordinary (non-Chancellor) Clairvoyance
+    # cast -- this payload is the Crystal Ball's own extra benefit, not
+    # something base Clairvoyance grants on its own.
+    clairvoyance_target_offices: list[Office] | None = None
 
 
 def execute_cast(
@@ -2181,6 +2189,24 @@ def _execute_skeletal_army(
     return CastExecutionResult(request, applied=True)
 
 
+def _offices_held_by_kingdom(state: GameState, kingdom_id: int) -> list[Office]:
+    """Every Office (including Emperor) currently held by a leader
+    belonging to ``kingdom_id`` -- High Chancellor's own Crystal Ball
+    addendum needs exactly this list. Reuses ``resolve_all_office_
+    holders()`` (Phase 475) rather than re-deriving each office's own
+    resolution logic.
+    """
+
+    held: list[Office] = []
+    for office, holder in resolve_all_office_holders(state).items():
+        if holder is None:
+            continue
+        holder_leader = state.leaders.get(holder.leader_id)
+        if holder_leader is not None and holder_leader.kingdom_id == kingdom_id:
+            held.append(office)
+    return held
+
+
 def _execute_clairvoyance(
     state: GameState,
     kingdom_id: int,
@@ -2202,6 +2228,22 @@ def _execute_clairvoyance(
     threads through. No co-location/adjacency precondition -- the
     sourced text names none, unlike ``_execute_kill_enemy``'s own
     Kill_Enemy-specific "not co-located" check.
+
+    **Phase 492 addendum -- High Chancellor's own Crystal Ball**
+    (``OFFICE_PERK_DESCRIPTION[Office.CHANCELLOR]``, ``CARICHE E
+    ABLITÀ.txt``'s real text): "just cast a Clairvoyance spell (CA-CL),
+    which will automatically be successful even if you have no skill in
+    psychic magic. Using the Crystal Ball will not use up a Psychic
+    Magic spell." When ``leader_id`` currently holds the office
+    (``resolve_office_holder()``, the established Phase 488-491 lookup
+    convention), the whole ``_roll_cast_success()`` gate is skipped
+    outright -- not just its own outcome forced to success, since
+    "will not use up a Psychic Magic spell" means the per-turn action-
+    cast slot ``_roll_cast_success()`` would otherwise consume must
+    never be touched at all. The same Chancellor cast also gets the
+    Crystal Ball's own extra payload, ``CastExecutionResult.
+    clairvoyance_target_offices`` -- "it will also list all offices and
+    titles held by the kingdom of the spied-upon character."
     """
 
     caster = state.leaders[leader_id]
@@ -2209,12 +2251,23 @@ def _execute_clairvoyance(
     if target is None:
         return CastExecutionResult(request, applied=False, reason="target character not found")
 
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    chancellor_holder = resolve_office_holder(state, Office.CHANCELLOR)
+    is_chancellor = chancellor_holder is not None and chancellor_holder.leader_id == leader_id
+
+    if is_chancellor:
+        succeeded, reason = True, None
+    else:
+        succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
     target.clairvoyance_watchers.add(kingdom_id)
-    return CastExecutionResult(request, applied=True)
+
+    target_offices = None
+    if is_chancellor and target.kingdom_id is not None:
+        target_offices = _offices_held_by_kingdom(state, target.kingdom_id)
+
+    return CastExecutionResult(request, applied=True, clairvoyance_target_offices=target_offices)
 
 
 def _execute_hide_feature(

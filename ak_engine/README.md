@@ -20421,7 +20421,7 @@ follow-up request after the original 431-435 plan shipped.
     `tests/test_plan_dispatch.py` (LMOVE populates `sensed_magic_items`
     for the Arch-Mage, leaves it `None` without the office). Ran again:
     4296 passed (10 new).
-- **Phase 491 (current)**: wires World Emperor's and Imperial
+- **Phase 491**: wires World Emperor's and Imperial
   Treasurer's own passive intelligence perks (`OFFICE_PERK_DESCRIPTION`,
   Phase 103) -- "Only the tax bases/Treasuries of kings bordering your
   kingdom that you have known for at least one full turn will be
@@ -20458,6 +20458,38 @@ follow-up request after the original 431-435 plan shipped.
     `None` without the office, exclude a kingdom known less than a full
     turn, exclude a known-but-non-bordering kingdom, and include a
     genuinely qualifying one). Ran again: 4313 passed (17 new).
+- **Phase 492 (current)**: closes out the 8-major-Office-perk audit
+  begun at Phase 488, wiring High Chancellor's own "Crystal Ball
+  Clairvoyance" (`OFFICE_PERK_DESCRIPTION`, Phase 103): "just cast a
+  Clairvoyance spell (CA-CL), which will automatically be successful
+  even if you have no skill in psychic magic. Using the Crystal Ball
+  will not use up a Psychic Magic spell. It will also list all offices
+  and titles held by the kingdom of the spied-upon character." Unlike
+  the 7 other major perks, this one changes existing spell-execution
+  behavior rather than being purely additive -- `turn/cast_execution.py
+  _execute_clairvoyance()` now checks `resolve_office_holder(state,
+  Office.CHANCELLOR)` (the Phase 488-491 lookup convention) before its
+  own `_roll_cast_success()` call: a Chancellor-cast Clairvoyance skips
+  that check entirely (not merely forcing its result to success), since
+  "will not use up a Psychic Magic spell" means the per-turn action-
+  cast slot `_roll_cast_success()` would otherwise consume must never
+  be touched at all -- confirmed by a new test asserting `GameState.
+  action_casts_used` stays empty after a Chancellor cast. The Crystal
+  Ball's own extra payload -- every Office (Emperor included) the
+  spied-upon character's kingdom currently holds -- is new: `CastExecu
+  tionResult.clairvoyance_target_offices` (`None` for every other spell
+  and for an ordinary, non-Chancellor Clairvoyance cast), built by a
+  new `_offices_held_by_kingdom()` reusing `resolve_all_office_holders()`
+  (Phase 475) rather than re-deriving each office's own resolution.
+  - Ran the full suite before writing new tests: 4313 passed (non-
+    breaking). Wrote 4 new tests in `tests/test_cast_execution.py`: the
+    Chancellor bypass succeeds against a roll that would otherwise fail
+    (a real, insufficient skill level plus a scripted over-the-cap
+    draw, to rule out the pre-existing "no skills recorded" auto-
+    success fallback as the real cause), the bypass never touches
+    `action_casts_used`, a Chancellor cast lists the target kingdom's
+    real held office, and an ordinary cast leaves `clairvoyance_target_
+    offices` at `None`. Ran again: 4317 passed (4 new).
 
 ## Setup
 

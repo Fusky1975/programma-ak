@@ -12,6 +12,7 @@ from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, GraveyardEntry, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
@@ -1501,6 +1502,72 @@ def test_clairvoyance_does_not_touch_watchers_on_a_failed_roll():
 
     assert result.applied is False
     assert state.leaders[78].clairvoyance_watchers == set()
+
+
+# -- Phase 492: High Chancellor's own Crystal Ball addendum -------------
+
+
+def test_clairvoyance_chancellor_bypasses_a_roll_that_would_otherwise_fail():
+    # Phase 492: "will automatically be successful even if you have no
+    # skill in psychic magic" -- CASTER_ID has no skills recorded here
+    # (already an auto-success case per Phase 193's own fallback), so
+    # give them a real, insufficient skill and an over-the-cap roll to
+    # prove the Chancellor bypass is what's actually firing, not the
+    # pre-existing "no skills" shortcut.
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 1)
+    state.leaders[CASTER_ID].merit_tally.discoveries_found_first = 1  # meets OFFICE_MIN_POINTS[Office.CHANCELLOR]
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", ELSEWHERE))
+    request = CastRequest(spell=Spell.CLAIRVOYANCE, target=78)
+    # A real (non-bypassed) roll at skill 1 (30% chance) would almost
+    # certainly fail against these two high draws -- only consumed here
+    # by _award_cast_experience() (Phase 460's own +10 XP roll), not by
+    # any cast-success check, if the Chancellor bypass is working.
+    rng = ScriptedRandom([0.9, 0.9])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.leaders[78].clairvoyance_watchers == {1}
+
+
+def test_clairvoyance_chancellor_does_not_consume_an_action_cast_slot():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 1)
+    state.leaders[CASTER_ID].merit_tally.discoveries_found_first = 1
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", ELSEWHERE))
+    request = CastRequest(spell=Spell.CLAIRVOYANCE, target=78)
+
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.9, 0.9]))
+
+    assert state.action_casts_used == {}
+
+
+def test_clairvoyance_chancellor_lists_the_spied_kingdoms_offices():
+    state = build_state()
+    state.leaders[CASTER_ID].merit_tally.discoveries_found_first = 1
+    target = LeaderState(78, 2, "Enemy Hero", ELSEWHERE)
+    target.merit_tally.land_battles_won_points = 1  # meets OFFICE_MIN_POINTS[Office.MARSHAL]
+    state.add_leader(target)
+    request = CastRequest(spell=Spell.CLAIRVOYANCE, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.9, 0.9]))
+
+    assert result.applied is True
+    assert Office.MARSHAL in result.clairvoyance_target_offices
+
+
+def test_clairvoyance_non_chancellor_cast_leaves_target_offices_none():
+    state = build_state()
+    target = LeaderState(78, 2, "Enemy Hero", ELSEWHERE)
+    target.merit_tally.land_battles_won_points = 1
+    state.add_leader(target)
+    request = CastRequest(spell=Spell.CLAIRVOYANCE, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert result.clairvoyance_target_offices is None
 
 
 # ---------------------------------------------------------------------------
