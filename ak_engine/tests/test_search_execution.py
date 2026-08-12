@@ -8,10 +8,12 @@ import pytest
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
+from ak_engine.models.office import Office
+from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
@@ -24,6 +26,7 @@ from ak_engine.turn.encounter import (
     MeleeRoundOutcome,
     MeleeSwing,
     ReactiveMeleeSwingResult,
+    TalkReaction,
 )
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.search_execution import (
@@ -2498,6 +2501,65 @@ def test_execute_search_talk_deal_reaction_records_the_pending_deal():
         execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
 
     assert feature.pending_deal_leader_id == LEADER_ID
+
+
+# -- Phase 468: Silver Tongue wiring ---------------------------------------
+
+
+def test_execute_search_talk_wires_the_silver_tongue_titleholder_into_the_reaction_roll():
+    # LEADER_ID is the world's only Diplomat candidate here, and meets
+    # OFFICE_MIN_POINTS[Office.DIPLOMAT] (50) -- resolve_office_holder()
+    # picks them, so resolve_talk_reaction() must be called with
+    # caster_is_silver_tongue=True.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.leaders[LEADER_ID].merit_tally.diplomatic_merit_points = 50
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_talk_reaction", return_value=TalkReaction.IGNORE
+    ) as mock_reaction, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert mock_reaction.call_args.kwargs["caster_is_silver_tongue"] is True
+
+
+def test_execute_search_talk_non_titleholder_gets_no_silver_tongue_override():
+    state = _state_with_leader()  # diplomatic_merit_points defaults to 0.0 -- below min_points
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_talk_reaction", return_value=TalkReaction.IGNORE
+    ) as mock_reaction, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert mock_reaction.call_args.kwargs["caster_is_silver_tongue"] is False
+
+
+def test_execute_search_fulfill_wires_the_silver_tongue_titleholder_into_the_honor_roll():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.leaders[LEADER_ID].merit_tally.diplomatic_merit_points = 50
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.CAVE,
+        guardian_monster=Monster.GARGOYLE,
+        pending_deal_leader_id=LEADER_ID,
+    )
+    state.add_feature(feature)
+    request = _fulfill_request(1)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True) as mock_honor:
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert mock_honor.call_args.kwargs["caster_is_silver_tongue"] is True
 
 
 def test_execute_search_fulfill_no_pending_deal_falls_through():

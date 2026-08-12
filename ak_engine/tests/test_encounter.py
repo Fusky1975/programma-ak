@@ -2189,6 +2189,29 @@ def test_resolve_talk_reaction_druidic_shifts_attack_to_deal():
     )
 
 
+# -- Phase 468: Silver Tongue never lets a Talk reaction turn violent ---
+
+
+def test_resolve_talk_reaction_silver_tongue_downgrades_attack_to_ignore():
+    # A roll that would be ATTACK for anyone else reads IGNORE for the
+    # Silver Tongue titleholder -- report SS18.4's own "un mostro non
+    # reagisce violentemente a TALK".
+    assert resolve_talk_reaction(ScriptedRandom([0.0]), caster_is_silver_tongue=False) is TalkReaction.ATTACK
+    assert resolve_talk_reaction(ScriptedRandom([0.0]), caster_is_silver_tongue=True) is TalkReaction.IGNORE
+
+
+def test_resolve_talk_reaction_silver_tongue_does_not_touch_ignore_or_deal():
+    # The guarantee is only "never violent" -- Ignore and Deal keep their
+    # own ordinary boundaries exactly as they already were.
+    assert (
+        resolve_talk_reaction(ScriptedRandom([TALK_ATTACK_CHANCE]), caster_is_silver_tongue=True)
+        is TalkReaction.IGNORE
+    )
+    assert (
+        resolve_talk_reaction(ScriptedRandom([0.999]), caster_is_silver_tongue=True) is TalkReaction.DEAL
+    )
+
+
 # -- Phase 382: the real 24-reply Talk selector -----------------------------
 
 
@@ -2366,6 +2389,17 @@ def test_resolve_fulfill_honored_missing_character_alignment_still_applies_the_e
     expected_chance = FULFILL_BASE_HONOR_CHANCE - FULFILL_EVIL_PENALTY
     assert resolve_fulfill_honored(Alignment.EVIL, None, ScriptedRandom([expected_chance - 0.01])) is True
     assert resolve_fulfill_honored(Alignment.EVIL, None, ScriptedRandom([expected_chance])) is False
+
+
+def test_resolve_fulfill_honored_silver_tongue_always_honors_no_roll_consumed():
+    # Report SS18.4's own "onora sempre un accordo completato" -- an
+    # unconditional guarantee, even for a maximally-hostile-distance,
+    # maximally-unlucky roll that would otherwise fail. ScriptedRandom([])
+    # (no values queued) proves no rng roll happens at all.
+    assert (
+        resolve_fulfill_honored(Alignment.UNDEAD, Alignment.DIVINE, ScriptedRandom([]), caster_is_silver_tongue=True)
+        is True
+    )
 
 
 # -- Phase 284: the Temper Table's own melee mechanics --------------------

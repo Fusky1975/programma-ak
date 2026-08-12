@@ -190,6 +190,7 @@ from ak_engine.models.army_type import OVERFLIGHT_AIR, ARMY_TABLE, ArmyType
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.office import OFFICE_MIN_POINTS, Office
+from ak_engine.models.temper import raise_temper_one_level
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.tax_base import compute_tax_base
@@ -620,3 +621,34 @@ def resolve_all_army_office_holders(state: GameState) -> dict[Office, ArmyOffice
     """
 
     return {office: resolve_army_office_holder(state, office) for office in ARMY_RANKED_OFFICES}
+
+
+def apply_cravenest_temperament_escalation(state: GameState) -> None:
+    """Report SS18.6: "Se fosse presente un titolare valido, REPORTS.PAS
+    ne migliorerebbe il temperamento di un livello a ogni turno, fino a
+    Berserk. L'effetto è implementato; è la via normale di
+    qualificazione a essere guasta." -- the real compiled effect,
+    applied every turn to whoever currently holds King of Cowards
+    (`Office.CRAVENEST`), if anyone.
+
+    `turn/merit_points.py cravenest_merit_points()`'s own docstring
+    already documents the confirmed compiled bug that makes normal
+    qualification unreachable (`courage_encounter_merit` can only ever
+    be `<= 0`, but `OFFICE_MIN_POINTS[Office.CRAVENEST] = 5`, and
+    `resolve_office_holder()` above never returns a candidate below
+    `min_points`) -- so under real generated data this function is
+    expected to be a no-op every turn, exactly matching the report's own
+    framing ("è la via normale di qualificazione a essere guasta", not
+    "l'effetto non esiste"). Modeled anyway, not skipped, since the
+    effect itself is real and independently testable -- the same
+    "confirmed mechanic before its consuming pipeline" pattern this
+    project already uses elsewhere (e.g. Phase 463's Detect Illusions).
+    """
+
+    holder = resolve_office_holder(state, Office.CRAVENEST)
+    if holder is None:
+        return
+    leader = state.leaders.get(holder.leader_id)
+    if leader is None or leader.temper is None:
+        return
+    leader.temper = raise_temper_one_level(leader.temper)

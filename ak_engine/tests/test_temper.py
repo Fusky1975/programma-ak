@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ak_engine.models.temper import TEMPER_ABBREVIATION, TEMPER_NAME, Temper
+from ak_engine.models.temper import TEMPER_ABBREVIATION, TEMPER_NAME, Temper, raise_temper_one_level
 
 
 def test_temper_enum_has_4_declared_values():
@@ -38,3 +38,16 @@ def test_temper_abbreviation_verbatim_pascal_tempab_values():
 
 def test_temper_abbreviation_covers_every_enum_value():
     assert set(TEMPER_ABBREVIATION) == set(Temper)
+
+
+# -- Phase 468: raise_temper_one_level -----------------------------------
+
+
+def test_raise_temper_one_level_steps_through_every_level():
+    assert raise_temper_one_level(Temper.COWARDLY) == Temper.CAUTIOUS
+    assert raise_temper_one_level(Temper.CAUTIOUS) == Temper.BRAVE
+    assert raise_temper_one_level(Temper.BRAVE) == Temper.BERSERK
+
+
+def test_raise_temper_one_level_caps_at_berserk():
+    assert raise_temper_one_level(Temper.BERSERK) == Temper.BERSERK

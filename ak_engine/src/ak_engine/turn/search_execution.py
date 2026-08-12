@@ -497,6 +497,7 @@ from ak_engine.models.monster import (
     roll_monster_alignment,
 )
 from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
+from ak_engine.models.office import Office
 from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.discovery_effects import effective_skill_level
@@ -558,6 +559,7 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_WAND_SPELL, TreasureCategory
 from ak_engine.turn.experience import add_experience
+from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 
 # Desktop/MOSTRI con statistiche.txt footnote (*): "The Troll regenerates
@@ -1858,6 +1860,12 @@ def _resolve_search_encounter(
         (Phase 258), for a later turn's Fulfill to honor -- see
         ``_resolve_fulfill()`` and ``turn/encounter.py resolve_fulfill_
         honored()``'s own module comment.
+
+        **Phase 468**: if `leader_id` currently holds Silver Tongue
+        (``Office.DIPLOMAT``, ``AKGEN_reverse_engineering_report
+        (2).md`` SS18.4), the monster never reacts violently --
+        ``resolve_talk_reaction()``'s own new ``caster_is_silver_tongue``
+        flag handles the downgrade.
         """
 
         druid_level = effective_skill_level(state, leader, Ability.DRUID)
@@ -1873,7 +1881,11 @@ def _resolve_search_encounter(
         # reaction (Attack/Ignore/Deal) follows.
         add_experience(leader, Ability.DRUID, 10, rng)
         caster_is_druidic = leader.alignment is Alignment.DRUID
-        reaction = resolve_talk_reaction(rng, caster_is_druidic=caster_is_druidic)
+        silver_tongue_holder = resolve_office_holder(state, Office.DIPLOMAT)
+        caster_is_silver_tongue = silver_tongue_holder is not None and silver_tongue_holder.leader_id == leader_id
+        reaction = resolve_talk_reaction(
+            rng, caster_is_druidic=caster_is_druidic, caster_is_silver_tongue=caster_is_silver_tongue
+        )
         if reaction is TalkReaction.DEAL:
             feature.pending_deal_leader_id = leader_id
             return SearchExecutionResult(
@@ -1920,7 +1932,14 @@ def _resolve_search_encounter(
         if feature.pending_deal_leader_id != leader_id:
             return None
         feature.pending_deal_leader_id = None
-        if resolve_fulfill_honored(feature.guardian_alignment, leader.alignment, rng):
+        # Phase 468: Silver Tongue (Office.DIPLOMAT) always honors a
+        # completed deal -- report SS18.4's own "onora sempre un accordo
+        # completato".
+        silver_tongue_holder = resolve_office_holder(state, Office.DIPLOMAT)
+        caster_is_silver_tongue = silver_tongue_holder is not None and silver_tongue_holder.leader_id == leader_id
+        if resolve_fulfill_honored(
+            feature.guardian_alignment, leader.alignment, rng, caster_is_silver_tongue=caster_is_silver_tongue
+        ):
             leader.merit_tally.monster_hp_neutralized += monster_starting_hit_points
             return SearchExecutionResult(accepted=True, combat_resolved=False, winner="leader")
         return None  # not honored -- the plan continues to its next tactic

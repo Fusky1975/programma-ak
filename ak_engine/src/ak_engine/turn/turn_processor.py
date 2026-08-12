@@ -247,6 +247,7 @@ from ak_engine.turn.plague_spread import resolve_plague_spread
 from ak_engine.turn.missed_deadline import build_missed_deadline_plan
 from ak_engine.turn.move_execution import MoveExecutionResult, record_kingdom_exploration
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
+from ak_engine.turn.office_holder import apply_cravenest_temperament_escalation
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import execute_practice_group
@@ -544,6 +545,11 @@ def run_turn(
     decompose_graveyard(state)
     apply_turn_revenue(state)
     apply_turn_maintenance(state)
+    # Phase 468: King of Cowards' own real per-turn temperament rise
+    # (AKGEN_reverse_engineering_report (2).md SS18.6) -- see that
+    # function's own docstring for why this is a confirmed no-op under
+    # real generated data.
+    apply_cravenest_temperament_escalation(state)
 
     return results
 

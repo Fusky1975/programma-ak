@@ -11,12 +11,14 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.office_holder import (
     ALL_OFFICES,
     ARMY_RANKED_OFFICES,
     RANKED_OFFICES,
+    apply_cravenest_temperament_escalation,
     kingdom_best_candidate,
     kingdom_runner_up,
     leader_office_rank,
@@ -504,3 +506,58 @@ def test_leader_office_rank_and_kingdom_best_candidate_handle_emperor():
     assert best is not None
     assert best.leader_id == 2
     assert best.merit_points == 3
+
+
+# -- Phase 468: apply_cravenest_temperament_escalation() ------------------
+
+
+def test_apply_cravenest_temperament_escalation_raises_a_valid_titleholders_temper():
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True, temper=Temper.COWARDLY)
+    # King of Cowards is confirmed structurally unreachable via the real
+    # merit-accrual path (courage_encounter_merit can only ever be <= 0)
+    # -- inflated directly here, matching the report's own counterfactual
+    # framing ("se fosse presente un titolare valido"), to prove the
+    # *effect* itself works once a holder somehow exists.
+    leader.merit_tally.courage_encounter_merit = 10
+    state.add_leader(leader)
+
+    apply_cravenest_temperament_escalation(state)
+
+    assert state.leaders[1].temper == Temper.CAUTIOUS
+
+
+def test_apply_cravenest_temperament_escalation_caps_at_berserk():
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True, temper=Temper.BERSERK)
+    leader.merit_tally.courage_encounter_merit = 10
+    state.add_leader(leader)
+
+    apply_cravenest_temperament_escalation(state)
+
+    assert state.leaders[1].temper == Temper.BERSERK
+
+
+def test_apply_cravenest_temperament_escalation_is_a_noop_under_real_generated_data():
+    # No leader's own courage_encounter_merit was artificially inflated
+    # here -- resolve_office_holder(state, Office.CRAVENEST) finds nobody
+    # meeting OFFICE_MIN_POINTS, exactly as the confirmed compiled bug
+    # predicts, so the escalation has nothing to apply to.
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True, temper=Temper.COWARDLY)
+    state.add_leader(leader)
+
+    apply_cravenest_temperament_escalation(state)
+
+    assert state.leaders[1].temper == Temper.COWARDLY
+
+
+def test_apply_cravenest_temperament_escalation_skips_a_titleholder_with_no_recorded_temper():
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True, temper=None)
+    leader.merit_tally.courage_encounter_merit = 10
+    state.add_leader(leader)
+
+    apply_cravenest_temperament_escalation(state)  # must not raise
+
+    assert state.leaders[1].temper is None

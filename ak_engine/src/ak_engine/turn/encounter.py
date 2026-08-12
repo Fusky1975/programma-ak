@@ -3560,11 +3560,27 @@ TALK_IGNORE_CHANCE = 0.35
 TALK_DRUIDIC_ATTACK_CHANCE = 0.20
 
 
-def resolve_talk_reaction(rng: random.Random, *, caster_is_druidic: bool = False) -> TalkReaction:
+def resolve_talk_reaction(
+    rng: random.Random, *, caster_is_druidic: bool = False, caster_is_silver_tongue: bool = False
+) -> TalkReaction:
+    """**Phase 468 addendum**: `caster_is_silver_tongue` -- report SS18.4,
+    "un mostro non reagisce violentemente a TALK" (a monster never
+    reacts violently to Talk for the Silver Tongue titleholder). Applied
+    as a post-roll override, not a reweighted probability split: the
+    roll still runs against the same (project-original, unsourced)
+    Attack/Ignore/Deal split above, but a would-be `ATTACK` is
+    downgraded to `IGNORE` for this caster -- the sourced guarantee is
+    only "never violent," not "always offered a deal," so `DEAL` stays
+    exactly as likely as it already was. Layered this way so the
+    override composes cleanly with whichever generator is live here (see
+    the `MonsterTalkReply` addendum above) rather than being tied to
+    this specific placeholder formula's own internals.
+    """
+
     attack_chance = TALK_DRUIDIC_ATTACK_CHANCE if caster_is_druidic else TALK_ATTACK_CHANCE
     roll = rng.random()
     if roll < attack_chance:
-        return TalkReaction.ATTACK
+        return TalkReaction.IGNORE if caster_is_silver_tongue else TalkReaction.ATTACK
     if roll < attack_chance + TALK_IGNORE_CHANCE:
         return TalkReaction.IGNORE
     return TalkReaction.DEAL
@@ -3972,11 +3988,25 @@ FULFILL_EVIL_PENALTY = 0.20
 
 
 def resolve_fulfill_honored(
-    guardian_alignment: Alignment | None, character_alignment: Alignment | None, rng: random.Random
+    guardian_alignment: Alignment | None,
+    character_alignment: Alignment | None,
+    rng: random.Random,
+    *,
+    caster_is_silver_tongue: bool = False,
 ) -> bool:
     """Whether the guardian honors a deal a prior Talk secured -- see the
     module comment above for the formula's own sourcing and constants.
+
+    **Phase 468 addendum**: `caster_is_silver_tongue` -- report SS18.4,
+    "[il titolare] ... onora sempre un accordo completato" (the Silver
+    Tongue titleholder's own deals are *always* honored). Short-circuits
+    to `True` before the alignment-distance formula runs at all -- an
+    unconditional guarantee, not a boosted chance, and consumes no `rng`
+    roll (nothing to roll for a certainty).
     """
+
+    if caster_is_silver_tongue:
+        return True
 
     chance = FULFILL_BASE_HONOR_CHANCE
     if guardian_alignment is not None and character_alignment is not None:

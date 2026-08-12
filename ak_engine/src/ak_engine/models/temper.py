@@ -75,3 +75,18 @@ TEMPER_ABBREVIATION: dict[Temper, str] = {
     Temper.BRAVE: "Brave",
     Temper.BERSERK: "Bersk",
 }
+
+
+def raise_temper_one_level(temper: Temper) -> Temper:
+    """Raises `temper` by one ordinal step, capped at `Temper.BERSERK` --
+    the real top level (`Temper`'s own declaration order above is
+    positionally verbatim against the Pascal `temper` enum, so ordinal
+    `+1` is the real "next more aggressive disposition" step). Returns
+    `temper` unchanged once already at `BERSERK`. Shared by both real
+    "inspires a temperament rise" effects this project models (Phase
+    468): King of Cowards' own per-turn escalation and Bravest of the
+    Brave's own Talk-triggered rise (``AKGEN_reverse_engineering_report
+    (2).md`` SS18.6/18.8).
+    """
+
+    return Temper(min(temper.value + 1, Temper.BERSERK.value))

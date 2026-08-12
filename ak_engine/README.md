@@ -19692,7 +19692,7 @@ follow-up request after the original 431-435 plan shipped.
     abstention shapes) and 1 in `tests/test_orchestrator.py` proving
     `process_turn()` itself now surfaces an `ElectionCallOutcome` on
     `TurnOutcome.election_outcome`. Ran again: 4154 passed (5 new).
-- **Phase 467 (current)**: two report-audit closures. **(1) Real fix**:
+- **Phase 467**: two report-audit closures. **(1) Real fix**:
   `turn/encounter.py PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP` corrected
   from `0.95` to `1.00`. The Phase 192 cap came from a rulebook quote
   ("Le probabilità di successo... non possono mai superare il 95%"), but
@@ -19726,6 +19726,54 @@ follow-up request after the original 431-435 plan shipped.
     net-new coverage, since this phase corrects an existing formula's
     magnitude, not adds new behavior. Ran again: 4154 passed (net
     unchanged -- 2 tests replaced by 2 new ones).
+- **Phase 468 (current)**: wires the real gameplay *effects* of Silver
+  Tongue (Office.DIPLOMAT) and King of Cowards (Office.CRAVENEST) --
+  `AKGEN_reverse_engineering_report (2).md` SS18.4/18.6 -- into actual
+  Talk/Fulfill resolution and the per-turn effects pipeline; previously
+  only their merit-point accumulation half existed (`turn/merit_points.py`
+  already scored both offices, but nothing consumed the title). **Silver
+  Tongue**: `turn/encounter.py resolve_talk_reaction()` gains a keyword-
+  only `caster_is_silver_tongue` flag -- when set, a roll that would
+  produce `ATTACK` is downgraded to `IGNORE` (post-roll override: "never
+  provokes violence," not a reweighted probability); `resolve_fulfill_
+  honored()` gains the same flag and short-circuits to `True` with no rng
+  roll when set ("always judged honorable"). `turn/search_execution.py`'s
+  `_resolve_talk()`/`_resolve_fulfill()` now call `turn/office_holder.py
+  resolve_office_holder(state, Office.DIPLOMAT)` and pass `caster_is_
+  silver_tongue=True` only when the acting leader is the current title-
+  holder. **King of Cowards**: new `models/temper.py raise_temper_one_
+  level()` (steps a `Temper` up one ordinal, capped at `BERSERK`) and new
+  `turn/office_holder.py apply_cravenest_temperament_escalation()` --
+  every turn, raises the current Cravenest holder's own temper by one
+  level if any exists. Wired into `turn/turn_processor.py run_turn()`
+  right after `apply_turn_maintenance()`. Confirmed (and documented in
+  `merit_points.py`'s own docstring) that this function is a structural
+  no-op under real generated data: `resolve_office_holder()` filters by
+  `OFFICE_MIN_POINTS[Office.CRAVENEST] = 5`, but the real Cravenest merit
+  formula (`courage_encounter_merit`, always `<= 0` under real data) can
+  never reach it -- modeled anyway, not skipped, per this project's own
+  "confirmed mechanic before its dormant-under-real-data consuming
+  pipeline" precedent (Phase 463's Detect Illusions). **Deliberately
+  deferred**: Bravest of the Brave's (Office.BRAVEST) own SS18.8 effect --
+  a Talk-vs-Hero temperament rise triggered from `turn/challenge_
+  execution.py`, which currently has *no* Talk-maneuver dispatch at all
+  (only Melee/Shoot/Steal) -- documented as a real, sourced, but out-of-
+  scope-for-this-phase gap, not a silent one; needs its own new leader-vs-
+  leader Talk mechanic before it can be wired.
+  - Ran the full suite before writing new tests: 4154 passed (non-
+    breaking). Wrote 12 new tests: 2 in `tests/test_temper.py` (`raise_
+    temper_one_level()` stepping through every level, capping at Berserk),
+    3 in `tests/test_encounter.py` (Silver Tongue downgrading Attack to
+    Ignore, leaving Ignore/Deal untouched, Fulfill always-honors-no-roll-
+    consumed), 4 in `tests/test_office_holder.py` (temperament escalation
+    raising a valid titleholder, capping at Berserk, no-op under real
+    generated data, skipping a titleholder with no recorded temper), 3 in
+    `tests/test_search_execution.py` (mock-based wiring proof that Talk/
+    Fulfill's own `resolve_talk_reaction`/`resolve_fulfill_honored` calls
+    receive `caster_is_silver_tongue=True` only for the actual titleholder
+    -- Attack/Ignore are indistinguishable at the `SearchExecutionResult`
+    level, so black-box assertions alone couldn't prove the wiring). Ran
+    again: 4166 passed (12 new).
 
 ## Setup
 

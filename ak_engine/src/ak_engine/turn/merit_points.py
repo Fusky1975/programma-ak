@@ -407,6 +407,25 @@ composed from data that already exists:
   decisive win, equal to their own un-recovered hit points
   (`AKGEN_reverse_engineering_report (2).md` SS18).
 
+**Phase 468 -- the three titles' own real gameplay *effects* (report
+SS18.4/18.6/18.8), previously only the merit-accumulation half above**:
+Silver Tongue's Talk-vs-monster guarantee ("un mostro non reagisce
+violentemente... e onora sempre un accordo completato") is now live in
+`turn/encounter.py resolve_talk_reaction()`/`resolve_fulfill_honored()`
+(both gain a `caster_is_silver_tongue` flag), wired from `turn/search_
+execution.py`'s own Talk/Fulfill resolvers via `resolve_office_holder(
+state, Office.DIPLOMAT)`. King of Cowards' own real per-turn temperament
+rise ("ne migliorerebbe il temperamento di un livello a ogni turno, fino
+a Berserk") is now `turn/office_holder.py apply_cravenest_temperament_
+escalation()`, called once per turn from `turn_processor.run_turn()` --
+expected to be a permanent no-op given the structural-unreachability bug
+two paragraphs above, modeled anyway since the effect itself is real.
+**Bravest of the Brave's own effect ("quando parla a un Hero, il
+temperamento di quel Hero sale di un livello") is deliberately deferred**:
+it needs a leader-vs-leader Talk mechanic `turn/challenge_execution.py`
+doesn't have at all yet (that module only dispatches `MELEE`/`SHOOT`/
+`STEAL`) -- a larger, separate follow-up, not attempted here.
+
 **None of these 18 grant Victory Points** (`models/office.py
 OFFICE_VALUE` already reflects this, Phase 81, same as every royal
 title before them) and **none is exempted from the death penalty**:
