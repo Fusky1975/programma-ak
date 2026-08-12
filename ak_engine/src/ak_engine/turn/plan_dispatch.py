@@ -377,6 +377,7 @@ from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_rec
 from ak_engine.turn.rumor import RUMOR_CHANCE_BY_ACTION, resolve_rumor_generation
 from ak_engine.turn.search_decode import decode_search_phase
 from ak_engine.turn.search_execution import SearchExecutionResult, execute_search
+from ak_engine.turn.sense_magic_items import sense_magic_items_in_province
 from ak_engine.turn.trade_decode import decode_trade_phase, rewrite_trade_as_secret_spell_cast
 from ak_engine.turn.trade_execution import TradeExecutionResult, execute_give
 from ak_engine.turn.trail_decode import decode_trail_phase
@@ -532,9 +533,15 @@ def dispatch_phase(
 
     if action is ActionCode.LMOVE:
         target = decode_hex_number(phase.obj, board_width)
-        return execute_move(
+        result = execute_move(
             state, kingdom_id, army_ids, target, leader_id=leader_id, explorer_skill=explorer_skill, rng=rng
         )
+        # Phase 490 -- Arch-Mage's own "Sense Magic Items in Province"
+        # perk: only meaningful once the mover actually arrived somewhere
+        # (a repelled/contested battle can leave ``new_location`` unset).
+        if result.moved and result.new_location is not None:
+            result.sensed_magic_items = sense_magic_items_in_province(state, leader_id, result.new_location)
+        return result
 
     if action is ActionCode.EXPLORE:
         province = state.provinces[state.leaders[leader_id].location]

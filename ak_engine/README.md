@@ -20341,7 +20341,7 @@ follow-up request after the original 431-435 plan shipped.
     apply only to the titleholder (not a different leader), and the
     same leader can stack both bonuses at once for their own respective
     types. Ran again: 4273 passed (8 new).
-- **Phase 489 (current)**: continues Phase 488's own audit, wiring the
+- **Phase 489**: continues Phase 488's own audit, wiring the
   Lord High Defender's own perk (`OFFICE_PERK_DESCRIPTION[Office.
   DEFENDER]`, "Reduce Damage 1 Point" -- `CARICHE E ABLITÀ.txt`'s full
   real text: "The Armor will reduce any strike against you in personal
@@ -20384,6 +20384,43 @@ follow-up request after the original 431-435 plan shipped.
     (the titleholder gets `damage_reduction=1`; a non-titleholder, and
     the Duel's own leaderless garrison commander, get 0). Ran again:
     4286 passed (13 new).
+- **Phase 490 (current)**: closes out the Arch-Mage's own perk from the
+  same Phase 488 audit (`OFFICE_PERK_DESCRIPTION[Office.MAGE]`, "Sense
+  Magic Items in Province" -- `CARICHE E ABLITÀ.txt`'s full text: "The
+  Wand has the power to sense the presence of other magic items in the
+  same province: whenever you move into a province, it will tell you
+  which magic items are present, but not where they are"). New `turn/
+  sense_magic_items.py sense_magic_items_in_province(state, leader_id,
+  province)`: `None` unless `leader_id` currently holds `Office.MAGE`
+  (`resolve_office_holder()`, the same Phase 488/489 lookup convention),
+  else scans `state.items.values()` for *other* leaders' items
+  co-located in `province`, excluding the four non-magic `Treasure
+  Category` groups (`GOLD_HOARD`, `QUEST_ITEM`, `SENTINEL`, `UNUSED_
+  EXTENSION`). This project's own item-ownership registry (`models/
+  item.py`, Phase 140) has no "item lying unclaimed in a province"
+  concept -- only `ItemInstance.owner_leader_id`, so "magic items
+  present" can only mean items another leader is currently carrying
+  there, not the real Pascal engine's separate feature-guarded loot
+  encoding (documented as a real, sourced scope boundary, not a silent
+  gap). `turn/move_execution.py MoveExecutionResult` gains a new
+  `sensed_magic_items: list[Treasure] | None = None` field, left unset
+  by `execute_move()` itself (no Office context there); `turn/plan_
+  dispatch.py`'s own LMOVE branch fills it in after a successful move,
+  the same "assign into the result after the fact" convention the
+  EXPLORE branch already uses for `discovered_features`. Deliberately no
+  narrative rendering -- `report/turn_report.py` has no real `.X2`
+  template for this perk, so this returns a plain `list[Treasure]`,
+  matching Phase 489's own "pure mechanic, no narrative" scope for an
+  Office perk with no sourced prose.
+  - Ran the full suite before writing new tests: 4286 passed (non-
+    breaking). Wrote 10 new tests: 8 in `tests/test_sense_magic_items.py`
+    (no office -> `None`; office but nothing present -> `[]`; senses
+    another leader's item; excludes the sensing leader's own items,
+    items elsewhere, unowned items, the four non-magic categories; and
+    multiple genuine items at once) and 2 dispatch-wiring tests in
+    `tests/test_plan_dispatch.py` (LMOVE populates `sensed_magic_items`
+    for the Arch-Mage, leaves it `None` without the office). Ran again:
+    4296 passed (10 new).
 
 ## Setup
 

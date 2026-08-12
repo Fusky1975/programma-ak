@@ -112,6 +112,40 @@ def test_dispatch_lmove_leader_can_move_alone_without_triggering_battle():
     assert state.armies[army_id].location == origin  # left behind, wasn't brought along
 
 
+def test_dispatch_lmove_senses_magic_items_for_the_arch_mage():
+    # Phase 490: Office.MAGE's own "Sense Magic Items in Province" perk
+    # (CARICHE E ABLITA.txt) -- another leader's own Spell Wand, sitting
+    # in the province the Arch-Mage just moved into, is sensed.
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=LEADER_ID)  # meets OFFICE_MIN_POINTS[Office.MAGE]
+    other_leader = LeaderState(99, 2, "Other", target)
+    state.add_leader(other_leader)
+    sensed_item = state.add_item(Treasure.AMULET_ANTI_WHITE, owner_leader_id=99)
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert result.moved is True
+    assert result.sensed_magic_items == [sensed_item.treasure]
+
+
+def test_dispatch_lmove_sensed_magic_items_is_none_without_the_office():
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    other_leader = LeaderState(99, 2, "Other", target)
+    state.add_leader(other_leader)
+    state.add_item(Treasure.AMULET_ANTI_WHITE, owner_leader_id=99)
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert result.moved is True
+    assert result.sensed_magic_items is None
+
+
 def test_dispatch_explore_uses_leader_location():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})

@@ -146,6 +146,7 @@ from dataclasses import dataclass
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.contested_province import is_illegal_move_from_contested
@@ -175,6 +176,13 @@ class MoveExecutionResult:
     # (``battle_report is None``, no defenders were present at all) --
     # see ``execute_move()``'s own Phase 410 addendum.
     conquered: bool = False
+    # Phase 490 -- Arch-Mage's own "Sense Magic Items in Province" perk.
+    # Never set by ``execute_move()`` itself (this function has no Office
+    # context) -- ``None`` for every caller until ``turn/plan_dispatch.py``'s
+    # own LMOVE branch fills it in via ``turn/sense_magic_items.py`` after a
+    # successful move, the same "assign into the result after the fact"
+    # convention the EXPLORE branch already uses for ``discovered_features``.
+    sensed_magic_items: list[Treasure] | None = None
 
 
 def _classify_hex_ownership(state: GameState, kingdom_id: int, coord: HexCoord) -> HexOwnershipTier:
