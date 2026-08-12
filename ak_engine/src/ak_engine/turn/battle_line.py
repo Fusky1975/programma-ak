@@ -88,6 +88,25 @@ class BattleUnit:
     # later). Consumed by the Werebeast bite-transform check -- see
     # that module's own Phase 392 addendum.
     is_humanoid_race: bool = False
+    # Phase 471, AKGEN_reverse_engineering_report (2).md SS17.7 (Duellist
+    # / "Captain of the Musketeers"): ``None`` means this unit's own side
+    # isn't eligible this battle (its Supreme Commander doesn't currently
+    # hold Office.DUELLIST). A non-``None`` float -- set for every unit
+    # on an eligible side, via ``turn/battle_orchestrator.py
+    # _build_battle_units()``'s own ``duellist_side`` parameter -- is the
+    # exact strength delta *this specific unit* would gain if it turns
+    # out to be the one randomly chosen front-line unit ("one temporary
+    # quality level higher", computed by re-running ``turn/strength.py
+    # compute_effective_strength()`` with ``is_fanatical`` forced True and
+    # diffing against the unit's own already-computed strength -- exact,
+    # not an approximation, and naturally 0.0 whenever the unit was
+    # already fanatical for some other reason, matching SS17.7's own "non
+    # si accumulano più incrementi di qualità sulla stessa concessione").
+    # ``turn/battle_resolution.py resolve_battle()`` is the real consumer:
+    # only *after* ``assign_battle_lines`` does a genuine front line
+    # (column depth 0) exist to draw from -- see that function's own
+    # Phase 471 addendum.
+    duellist_bonus_if_selected: float | None = None
 
 
 Column = list[BattleUnit]

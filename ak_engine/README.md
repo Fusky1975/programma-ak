@@ -19812,7 +19812,7 @@ follow-up request after the original 431-435 plan shipped.
     plan still raise only one level, the effect fires alongside an
     accepted combat-intent plan too, a refused encounter never fires it).
     Ran again: 4175 passed (9 new).
-- **Phase 470 (current)**: corrects Mirror-Image Phantasm's own opponent-
+- **Phase 470**: corrects Mirror-Image Phantasm's own opponent-
   intelligence tier for a King/Hero target, per an audit of `AKGEN_
   reverse_engineering_report (2).md` SS21.4/21.7 against the codebase.
   `turn/encounter.py MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT` was
@@ -19848,6 +19848,61 @@ follow-up request after the original 431-435 plan shipped.
     target (Sphinx, via the real per-species `MIRROR_IMAGE_MONSTER_
     INTELLIGENCE_TIER` table), which this phase doesn't touch. Ran again:
     4175 passed (net unchanged -- 3 tests renamed/updated, 0 new).
+- **Phase 471 (current)**: wires Duellist's / "Captain of the Musketeers"'s
+  (`Office.DUELLIST`) own §17.7 battlefield effect -- previously only its
+  merit-accumulation half existed (Phase 443). `AKGEN_reverse_engineering_
+  report (2).md` SS17.7: "Quando il titolare è comandante supremo in
+  battaglia, una sua unità casuale della prima linea riceve l'assistenza
+  degli Imperial Musketeers e combatte come fanatica, cioè con un livello
+  di qualità temporaneo in più." `turn/battle_line.py BattleUnit` gains
+  `duellist_bonus_if_selected: float | None` -- `None` for an ineligible
+  side, otherwise the *exact* strength delta that specific unit would gain
+  from being fanatic (computed once at build time by calling `turn/
+  strength.py compute_effective_strength()` a second time with
+  `is_fanatical` forced `True` and diffing against the already-computed
+  value -- naturally `0.0`, not double-counted, for a unit already
+  fanatical via the alignment/title rolls, since forcing an already-`True`
+  flag changes nothing). `turn/battle_orchestrator.py fight_battle()`
+  resolves once, before either side's own `_build_battle_units()` call,
+  whether that side's already-selected Supreme Commander currently holds
+  `Office.DUELLIST` (`resolve_office_holder`), passing the result as
+  `_build_battle_units()`'s new `duellist_side` parameter -- this closes
+  Phase 390's own explicitly-flagged "needs to run after `assign_battle_
+  lines`" follow-up. `turn/battle_resolution.py resolve_battle()` gains
+  `_apply_duellist_bonus()`: after tactical switches/nemesis/outflank
+  settle the real front line (column depth 0), picks one random eligible
+  front-line unit (`rng.choice`, consumed only when at least one side
+  actually has an eligible front line) and adds its own precomputed delta
+  into that column's strength -- the same "readable additive-bonus
+  injection" pattern the Druidic monster-aid column bonus (Phase 453)
+  already established, run right alongside it. **Bug found and fixed
+  along the way**: `turn/duel.py apply_duel_demoralization()` rebuilds
+  fresh `BattleUnit` instances for the preliminary-duel loser's own units
+  without copying `duellist_bonus_if_selected` (or, pre-existing, `led_by_
+  insufficient_druid`/`is_humanoid_race`) -- would have silently dropped
+  a Duellist-side unit's own eligibility whenever that side lost the
+  duel. Fixed to also carry the field through, scaled by the same 25%
+  demoralization multiplier (the two pre-existing dropped fields are
+  untouched, a separate, already-standing gap this phase didn't create).
+  The "supreme alignment title" row Phase 390 also flagged stays
+  unmodeled: it's sourced from a different catalog (`battle_engine.
+  special_events`), not this report, and names a title this project
+  hasn't otherwise identified yet.
+  - Ran the full suite before writing new tests: 4175 passed (non-
+    breaking). Wrote 13 new tests: 6 in `tests/test_battle_resolution.py` (`_apply_duellist_bonus`
+    direct: no-op with no eligible unit, applies the selected unit's own
+    delta, only the front-line depth-0 unit's eligibility matters,
+    selects among eligible columns only, a zero delta is still a valid
+    real selection outcome; plus one `resolve_battle()`-level end-to-end
+    test), 5 in `tests/test_battle_orchestrator.py` (`duellist_side` off
+    by default leaves the field `None`, sets the exact fanatic delta when
+    on, delta is exactly `0.0` when the unit's already fanatical via the
+    alignment roll, and two `fight_battle()`-level wiring tests --
+    eligible only for the titleholder's own commanded side, and neither
+    side when nobody holds the title), 2 in `tests/test_duel.py`
+    (`apply_duel_demoralization` carries the field through scaled, leaves
+    an ineligible unit's own `None` untouched). Ran again: 4188 passed
+    (13 new).
 
 ## Setup
 

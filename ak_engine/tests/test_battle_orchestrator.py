@@ -831,6 +831,99 @@ def test_build_battle_units_title_fanaticism_off_by_default_never_touches_a_seco
     assert units[0].effective_strength == baseline
 
 
+# -- Duellist / "Captain of the Musketeers" (Phase 471) --------------------
+
+
+def test_build_battle_units_duellist_side_off_by_default_leaves_the_field_none():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+    rng = ScriptedRandom([])
+
+    units = _build_battle_units([army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng)
+
+    assert units[0].duellist_bonus_if_selected is None
+
+
+def test_build_battle_units_duellist_side_sets_the_exact_fanatic_delta():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+    rng = ScriptedRandom([])
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng, duellist_side=True,
+    )
+
+    baseline = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    fanatical = compute_effective_strength(
+        ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_fanatical=True
+    )
+    assert units[0].effective_strength == baseline
+    assert units[0].duellist_bonus_if_selected == fanatical - baseline
+    assert units[0].duellist_bonus_if_selected > 0
+
+
+def test_build_battle_units_duellist_side_delta_is_zero_when_already_fanatical():
+    # apply_fanaticism's own alignment roll already made this unit
+    # fanatical -- forcing is_fanatical=True a second time (for the
+    # Duellist delta) changes nothing, so the real, computed delta is
+    # exactly 0.0 -- SS17.7's own "non si accumulano più incrementi di
+    # qualità sulla stessa concessione", for free.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+    rng = ScriptedRandom([0.1])  # succeeds the 40% Alignment.GOOD roll
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng,
+        apply_fanaticism=True, duellist_side=True,
+    )
+
+    fanatical = compute_effective_strength(
+        ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_fanatical=True
+    )
+    assert units[0].effective_strength == fanatical
+    assert units[0].duellist_bonus_if_selected == 0.0
+
+
+def test_fight_battle_wires_duellist_side_into_the_titleholders_own_commanded_side():
+    state = build_state()
+    leader = LeaderState(501, kingdom_id=1, name="Duellist", location=FIELD, is_king=True)
+    leader.merit_tally.duel_merit_net = 5  # meets OFFICE_MIN_POINTS[Office.DUELLIST]
+    state.add_leader(leader)
+    state.armies[101].commanded_by = 501
+    battle_result = BattleResult(columns=[], winner="attacker", total_bres=1)
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result) as mock_resolve:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    attacker_units, defender_units = mock_resolve.call_args.args[0], mock_resolve.call_args.args[1]
+    assert all(u.duellist_bonus_if_selected is not None for u in attacker_units)
+    assert all(u.duellist_bonus_if_selected is None for u in defender_units)
+
+
+def test_fight_battle_grants_no_duellist_bonus_when_neither_side_is_commanded_by_the_titleholder():
+    state = build_state()
+    battle_result = BattleResult(columns=[], winner="attacker", total_bres=1)
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result) as mock_resolve:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    attacker_units, defender_units = mock_resolve.call_args.args[0], mock_resolve.call_args.args[1]
+    assert all(u.duellist_bonus_if_selected is None for u in attacker_units)
+    assert all(u.duellist_bonus_if_selected is None for u in defender_units)
+
+
 def _skills_with_druid(level: int) -> SkillTable:
     raw = [0] * 30
     raw[Ability.DRUID.value * 2] = level  # (skill, aptitude) pair -- only skill matters here

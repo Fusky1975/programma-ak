@@ -59,7 +59,16 @@ def select_supreme_commander(candidates: list[Commander]) -> Commander | None:
 
 
 def apply_duel_demoralization(units: list[BattleUnit]) -> list[BattleUnit]:
-    """Return a new list with the duel loser's armies reduced 25% in strength."""
+    """Return a new list with the duel loser's armies reduced 25% in strength.
+
+    Phase 471: carries ``duellist_bonus_if_selected`` through too (scaled
+    by the same multiplier, consistent with ``effective_strength`` itself
+    being scaled) -- without this, a Duellist-side unit's own eligibility
+    for the "1 Fanatical Unit" front-line bonus would silently vanish
+    whenever its side lost the preliminary duel, since this function
+    already rebuilds fresh ``BattleUnit`` instances rather than mutating
+    the originals in place.
+    """
 
     return [
         BattleUnit(
@@ -67,6 +76,11 @@ def apply_duel_demoralization(units: list[BattleUnit]) -> list[BattleUnit]:
             u.effective_strength * DUEL_DEMORALIZATION_MULTIPLIER,
             source_id=u.source_id,
             druidic_rear_targeting_blocked=u.druidic_rear_targeting_blocked,
+            duellist_bonus_if_selected=(
+                u.duellist_bonus_if_selected * DUEL_DEMORALIZATION_MULTIPLIER
+                if u.duellist_bonus_if_selected is not None
+                else None
+            ),
         )
         for u in units
     ]

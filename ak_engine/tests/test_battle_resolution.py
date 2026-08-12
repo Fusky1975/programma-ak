@@ -7,7 +7,7 @@ import pytest
 from ak_engine.models.army_type import ArmyType
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_luck import luck_strength_multiplier
-from ak_engine.turn.battle_resolution import resolve_battle
+from ak_engine.turn.battle_resolution import _apply_duellist_bonus, resolve_battle
 from ak_engine.turn.combat import column_bres
 
 from _helpers import ScriptedRandom
@@ -345,3 +345,94 @@ def test_resolve_battle_column_results_expose_the_actual_units_for_bookkeeping()
 
     assert [u.source_id for u in result.columns[0].attacker_units] == [101]
     assert [u.source_id for u in result.columns[0].defender_units] == [202]
+
+
+# -- Phase 471: Duellist / "Captain of the Musketeers" front-line bonus -----
+
+
+def test_apply_duellist_bonus_no_op_when_no_unit_is_eligible():
+    columns = [[BattleUnit(ArmyType.BOWMEN, 10)], [BattleUnit(ArmyType.AXEMEN, 10)]]
+    strengths = [10.0, 10.0]
+    rng = ScriptedRandom([])  # any .choice() call here would raise IndexError
+
+    _apply_duellist_bonus(columns, strengths, rng)
+
+    assert strengths == [10.0, 10.0]
+
+
+def test_apply_duellist_bonus_adds_the_selected_units_own_delta():
+    columns = [
+        [BattleUnit(ArmyType.BOWMEN, 10, duellist_bonus_if_selected=4.0)],
+        [BattleUnit(ArmyType.AXEMEN, 10, duellist_bonus_if_selected=7.0)],
+    ]
+    strengths = [10.0, 10.0]
+    rng = ScriptedRandom([], choice_indices=[1])  # picks the second eligible column (index 1)
+
+    _apply_duellist_bonus(columns, strengths, rng)
+
+    assert strengths == [10.0, 17.0]
+
+
+def test_apply_duellist_bonus_only_considers_the_front_line_depth_0_unit():
+    # Depth-1 (rear) unit's own field is irrelevant -- only the front-line
+    # (depth 0) unit's eligibility and delta matter for this column.
+    columns = [
+        [
+            BattleUnit(ArmyType.BOWMEN, 10, duellist_bonus_if_selected=None),
+            BattleUnit(ArmyType.AXEMEN, 5, duellist_bonus_if_selected=99.0),
+        ]
+    ]
+    strengths = [10.0]
+    rng = ScriptedRandom([])  # no eligible front-line unit -> no choice() call
+
+    _apply_duellist_bonus(columns, strengths, rng)
+
+    assert strengths == [10.0]
+
+
+def test_apply_duellist_bonus_selects_among_eligible_columns_only():
+    columns = [
+        [BattleUnit(ArmyType.BOWMEN, 10, duellist_bonus_if_selected=None)],
+        [BattleUnit(ArmyType.AXEMEN, 10, duellist_bonus_if_selected=3.0)],
+        [BattleUnit(ArmyType.PHALANX, 10, duellist_bonus_if_selected=5.0)],
+    ]
+    strengths = [10.0, 10.0, 10.0]
+    # eligible_indices == [1, 2] -- choice_indices picks position 0 of that
+    # filtered list, i.e. column 1, not column 0.
+    rng = ScriptedRandom([], choice_indices=[0])
+
+    _apply_duellist_bonus(columns, strengths, rng)
+
+    assert strengths == [10.0, 13.0, 10.0]
+
+
+def test_apply_duellist_bonus_zero_delta_is_a_valid_real_outcome():
+    # An already-fanatical or already-Elite front-line unit has a real,
+    # computed delta of exactly 0.0 -- still a valid selection outcome,
+    # per SS17.7's own "a random front-line unit", not "the most
+    # valuable eligible one."
+    columns = [[BattleUnit(ArmyType.BOWMEN, 10, duellist_bonus_if_selected=0.0)]]
+    strengths = [10.0]
+    rng = ScriptedRandom([], choice_indices=[0])
+
+    _apply_duellist_bonus(columns, strengths, rng)
+
+    assert strengths == [10.0]
+
+
+def test_resolve_battle_applies_the_duellist_bonus_to_the_chosen_front_line_column():
+    attacker = [
+        BattleUnit(ArmyType.BOWMEN, 10, duellist_bonus_if_selected=6.0),
+        BattleUnit(ArmyType.AXEMEN, 10, duellist_bonus_if_selected=2.0),
+    ]
+    defender = [BattleUnit(ArmyType.PHALANX, 5), BattleUnit(ArmyType.PHALANX, 5)]
+    # choice_indices: [attacker's own pick, defender's own pick] -- the
+    # defender call finds zero eligible columns (every defender unit's
+    # own field is None) and never consumes a choice_indices entry, so
+    # only one entry is needed for the attacker's own call.
+    rng = ScriptedRandom(_luck_draws(2), choice_indices=[1])
+
+    result = resolve_battle(attacker, defender, rng=rng)
+
+    assert result.columns[0].attacker_strength == 10
+    assert result.columns[1].attacker_strength == 10 + 2.0

@@ -137,6 +137,46 @@ class BattleResult:
     winner: str = "tie"  # "attacker", "defender", or "tie" -- see module docstring
 
 
+def _apply_duellist_bonus(columns: list[Column], strengths: list[float], rng: random.Random) -> None:
+    """Duellist / "Captain of the Musketeers" (Phase 471, AKGEN_reverse_
+    engineering_report (2).md SS17.7): "una sua unità casuale della
+    prima linea riceve l'assistenza degli Imperial Musketeers e combatte
+    come fanatica" -- picks one random front-line unit (column depth 0,
+    the only place a genuine front line exists -- see ``turn/battle_
+    orchestrator.py _build_battle_units()``'s own Phase 471 addendum for
+    why this can't run any earlier) among this side's own columns and
+    adds its own precomputed ``BattleUnit.duellist_bonus_if_selected``
+    straight into that column's strength.
+
+    Eligibility lives entirely on the unit (``duellist_bonus_if_
+    selected is not None``, set for every unit of a side whose Supreme
+    Commander currently holds ``Office.DUELLIST`` -- ``None`` for every
+    other side), so this function needs no office/state lookup of its
+    own. Consumes an ``rng.choice()`` call only when at least one
+    eligible front-line unit exists -- an ineligible side (the
+    overwhelming common case) never perturbs the caller's own scripted
+    RNG sequence, the same short-circuit convention Phase 35's own
+    ``apply_fanaticism`` opt-in established.
+
+    Runs *after* tactical switches and nemesis penalties have already
+    settled which unit occupies each column's own front line (same
+    ordering as the Druidic monster-aid injection just above), and
+    genuinely at random among every eligible column -- not weighted by
+    the size of the delta, so a unit already at Elite (whose own delta
+    is a real, computed ``0.0``) can still be the one selected, matching
+    SS17.7's own plain "a random front-line unit," not "the most
+    valuable eligible one."
+    """
+
+    eligible_indices = [
+        index for index, column in enumerate(columns) if column and column[0].duellist_bonus_if_selected is not None
+    ]
+    if not eligible_indices:
+        return
+    chosen = rng.choice(eligible_indices)
+    strengths[chosen] += columns[chosen][0].duellist_bonus_if_selected
+
+
 def resolve_battle(
     attacker_units: list[BattleUnit],
     defender_units: list[BattleUnit],
@@ -236,6 +276,12 @@ def resolve_battle(
         for column_index, bonus in defender_column_bonus.items():
             if 0 <= column_index < len(defender_strengths):
                 defender_strengths[column_index] += bonus
+
+    # Duellist / "Captain of the Musketeers" (Phase 471) -- see this
+    # function's own docstring for why the real front-line unit only
+    # exists here to draw from.
+    _apply_duellist_bonus(attacker_columns, attacker_strengths, rng)
+    _apply_duellist_bonus(defender_columns, defender_strengths, rng)
 
     # Real luck (Phase 370): one global draw per side, once per battle.
     g1, g2 = draw_global_luck(rng)

@@ -258,6 +258,7 @@ def _build_battle_units(
     enemy_explored_percent: int = 0,
     opponent_kingdom_ids: frozenset[int] = frozenset(),
     is_island: bool = False,
+    duellist_side: bool = False,
 ) -> list[BattleUnit]:
     """Build BattleUnits for one side of a battle at ``province_coord``.
 
@@ -329,7 +330,15 @@ def _build_battle_units(
     runs before battle-line assignment even exists, so there's no
     "front line" yet to select from; a real follow-up needs to run after
     ``assign_battle_lines`` instead, in ``turn/battle_resolution.py``,
-    not here.
+    not here. **Phase 471 closes the "Captain of the Imperial
+    Musketeers" (Duellist) half of this gap** -- see this function's own
+    Phase 471 addendum below and ``turn/battle_resolution.py``'s own for
+    the real front-line selection. The "supreme alignment title" row
+    stays unmodeled: it's sourced from a different catalog
+    (``battle_engine.special_events``, not ``AKGEN_reverse_engineering_
+    report (2).md``, the report this project is currently working
+    through) and names a title this project hasn't otherwise identified
+    yet -- a separate, still-open follow-up.
 
     **Druidic ability** (Phase 41, rulebook [4.32]): a *led* army
     (``commanded_by`` is not ``None``) whose commander leads a race
@@ -398,6 +407,33 @@ def _build_battle_units(
     for every unit on this side -- see that function's own docstring for
     the land/Sea blend it runs. Defaults to ``False``, unaffected, for
     every pre-Phase-282 caller.
+
+    **Duellist / "Captain of the Musketeers"** (Phase 471, AKGEN_reverse_
+    engineering_report (2).md SS17.7, ``duellist_side``): "Quando il
+    titolare è comandante supremo in battaglia, una sua unità casuale
+    della prima linea riceve l'assistenza degli Imperial Musketeers e
+    combatte come fanatica" -- ``fight_battle()`` resolves once, before
+    calling this function for either side, whether that side's own
+    ``Commander.leader_id`` (already selected, per this function's own
+    docstring intro) currently holds ``Office.DUELLIST`` (``turn/
+    office_holder.py resolve_office_holder``), and passes the result as
+    ``duellist_side``. When ``True``, every unit built for this side gets
+    its own ``BattleUnit.duellist_bonus_if_selected`` set to the exact
+    strength delta it would gain from being fanatic -- computed by
+    calling ``compute_effective_strength()`` a second time with
+    ``is_fanatical`` forced ``True`` and diffing against the value
+    already computed above (naturally ``0.0``, not double-counted, for a
+    unit that was already fanatical via the alignment/title rolls above
+    -- forcing ``True`` on an already-``True`` value changes nothing,
+    which is exactly SS17.7's own "non si accumulano più incrementi di
+    qualità sulla stessa concessione" rule, for free). ``False`` (the
+    default) leaves every unit's own field at ``None`` -- see that
+    field's own docstring in ``turn/battle_line.py`` for why the real
+    random *front-line* selection has to happen in ``turn/battle_
+    resolution.py`` instead, not here (this function runs before ``assign_
+    battle_lines``, so there's no front line yet to draw from -- the same
+    structural gap this function's own Phase 390 addendum already flagged
+    for exactly this follow-up).
 
     **Race-matching legendary leadership item** (Phase 279 originally
     report-only, wired into real combat Phase 285): a *led* army
@@ -495,6 +531,29 @@ def _build_battle_units(
             illusory_fog_affected=illusory_fog_affected,
             is_island=is_island,
         )
+        duellist_bonus_if_selected = None
+        if duellist_side:
+            fanatic_strength = compute_effective_strength(
+                army.army_type,
+                kingdom.race,
+                battle_quality,
+                terrain,
+                is_defender=is_defender,
+                is_home_province=is_home,
+                is_fanatical=True,
+                desert_without_camels=desert_without_camels,
+                druidic_shortfall=druidic_shortfall,
+                race_item_bonus=race_item_bonus,
+                base_strength_override=override,
+                combat_ability_level=combat_ability_level,
+                phantasmal_armies_level=phantasmal_armies_level,
+                phantasmal_armies_bonus_per_level=phantasmal_armies_bonus_per_level,
+                own_explored_percent=own_explored_percent,
+                enemy_explored_percent=enemy_explored_percent,
+                illusory_fog_affected=illusory_fog_affected,
+                is_island=is_island,
+            )
+            duellist_bonus_if_selected = fanatic_strength - strength
         rear_targeting_blocked = is_overflight_unit(army.army_type) and druidic_shortfall > 0
         units.append(
             BattleUnit(
@@ -504,6 +563,7 @@ def _build_battle_units(
                 druidic_rear_targeting_blocked=rear_targeting_blocked,
                 led_by_insufficient_druid=druidic_shortfall > 0,
                 is_humanoid_race=kingdom.race in HUMANOID_RACES,
+                duellist_bonus_if_selected=duellist_bonus_if_selected,
             )
         )
     return units
@@ -1511,6 +1571,24 @@ def fight_battle(
     attacker_ability_level = attacker_commander.tactical_ability if attacker_commander is not None else 0
     defender_ability_level = defender_commander.tactical_ability if defender_commander is not None else 0
 
+    # Duellist / "Captain of the Musketeers" (Phase 471, SS17.7): "Quando
+    # il titolare è comandante supremo in battaglia" -- resolved once,
+    # here, before _build_battle_units builds either side's own units
+    # (both Supreme Commanders are already known -- see that function's
+    # own Phase 471 addendum for why this can't be deferred to inside it).
+    duellist_holder_id = resolve_office_holder(state, Office.DUELLIST)
+    duellist_holder_id = duellist_holder_id.leader_id if duellist_holder_id is not None else None
+    attacker_is_duellist_side = (
+        duellist_holder_id is not None
+        and attacker_commander is not None
+        and attacker_commander.leader_id == duellist_holder_id
+    )
+    defender_is_duellist_side = (
+        duellist_holder_id is not None
+        and defender_commander is not None
+        and defender_commander.leader_id == duellist_holder_id
+    )
+
     # Exploration advantage (Phase 69, rulebook [6.3]): each side's own
     # exploration reads province.explored_percent_by_kingdom for its own
     # kingdom_id (the attacker's, and the defending *province's owner*'s
@@ -1531,12 +1609,14 @@ def fight_battle(
         combat_ability_level=attacker_ability_level, apply_fanaticism=apply_fanaticism,
         own_explored_percent=attacker_explored, enemy_explored_percent=defender_explored,
         opponent_kingdom_ids=defender_kingdom_ids, is_island=is_island,
+        duellist_side=attacker_is_duellist_side,
     )
     defender_units = _build_battle_units(
         defender_armies, state, is_defender=True, terrain=terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=defender_ability_level, apply_fanaticism=apply_fanaticism,
         own_explored_percent=defender_explored, enemy_explored_percent=attacker_explored,
         opponent_kingdom_ids=attacker_kingdom_ids, is_island=is_island,
+        duellist_side=defender_is_duellist_side,
     )
 
     # Phase 393: Dragon/Eagle/Whale summoning-item aid, checked for both

@@ -45,3 +45,20 @@ def test_apply_duel_demoralization_reduces_strength_25_percent():
     assert [u.effective_strength for u in demoralized] == pytest.approx([7.5, 15.0])
     # original list untouched
     assert units[0].effective_strength == 10
+
+
+def test_apply_duel_demoralization_carries_the_duellist_bonus_through_scaled():
+    # Phase 471: without this, a Duellist-side unit's own eligibility for
+    # the "1 Fanatical Unit" front-line bonus would silently vanish
+    # whenever its own side lost the preliminary duel, since this
+    # function rebuilds fresh BattleUnit instances rather than mutating
+    # the originals in place.
+    units = [BattleUnit(ArmyType.BOWMEN, 10, duellist_bonus_if_selected=4.0)]
+    demoralized = apply_duel_demoralization(units)
+    assert demoralized[0].duellist_bonus_if_selected == pytest.approx(3.0)
+
+
+def test_apply_duel_demoralization_leaves_an_ineligible_units_field_none():
+    units = [BattleUnit(ArmyType.BOWMEN, 10)]  # duellist_bonus_if_selected defaults to None
+    demoralized = apply_duel_demoralization(units)
+    assert demoralized[0].duellist_bonus_if_selected is None
