@@ -184,6 +184,51 @@ def test_no_tokens_lost_between_leader_blocks_and_sentinel() -> None:
             assert segment.phases, f"leader {leader.leader_id} has a segment with no phases at all"
 
 
+def test_ak3_t1_header_fields_decoded() -> None:
+    # Phase 464: real header line is "M 27 1 0 101 1 15 1" -- "M" is
+    # sex[kng] (a Char), not a literal marker; the 7 integers after it are
+    # interp_vers/allreq/brreq/kacct/kpmode/kprevgold/ksendmeth in that
+    # order (DEF2.PAS Write_Moves/Read_Moves).
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T1.K1")
+    header = kingdom.header
+
+    assert header.sex == "M"
+    assert header.interp_vers == 27
+    assert header.allreq == 1
+    assert header.brreq == 0
+    assert header.kacct == 101
+    assert header.kpmode == 1
+    assert header.kprevgold == 15
+    assert header.ksendmeth == 1
+    assert header.is_vote_turn() is False
+
+
+def test_ak3_t10_header_brreq_differs_from_other_turns() -> None:
+    # AK3__T10.K1's own header line is "M 27 1 1020 101 1 15 1" -- brreq
+    # (raw_fields[2]) is the one field that varies across this Kingdom's
+    # 10 sample turns; every other field (including kprevgold) stays
+    # constant, consistent with this Kingdom never issuing a real Vote
+    # command across any of its sample turns.
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T10.K1")
+    header = kingdom.header
+
+    assert header.brreq == 1020
+    assert header.kprevgold == 15
+    assert header.is_vote_turn() is False
+
+
+def test_malformed_header_multichar_sex_raises(tmp_path: Path) -> None:
+    original = (GAME_DATA_DIR / "AK3__T1.K1").read_text(encoding="utf-8")
+    lines = original.splitlines()
+    header_line_index = next(i for i, line in enumerate(lines) if line.strip().startswith("M 27"))
+    lines[header_line_index] = "MM 27 1 0 101 1 15 1"  # sex must be a single character
+    broken_file = tmp_path / "AK3__Broken.K1"
+    broken_file.write_text("\n".join(lines), encoding="utf-8")
+
+    with pytest.raises(K1ParseError):
+        parse_k1_moves_file(broken_file)
+
+
 def test_malformed_skill_line_raises(tmp_path: Path) -> None:
     original = (GAME_DATA_DIR / "AK3__T1.K1").read_text(encoding="utf-8")
     lines = original.splitlines()

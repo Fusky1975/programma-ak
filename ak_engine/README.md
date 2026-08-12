@@ -19503,7 +19503,7 @@ follow-up request after the original 431-435 plan shipped.
     encounter_merit`, and a loss against `Monster.TITAN` (ordinal 11,
     the source's own deliberate off-by-one exclusion) docking nothing.
     Ran again: 4127 passed (4 new).
-- **Phase 463 (current)**: wires the second confirmed gap the same
+- **Phase 463**: wires the second confirmed gap the same
   merit-title research pass found in Mirror-Image Phantasm (SS21) --
   `AKGEN_reverse_engineering_report (2).md` SS21.4's own compiled `D`
   term (`T = 20(I+1) + 25D + 25R - 15(Le+H)`): a flat +25 percentage
@@ -19545,6 +19545,61 @@ follow-up request after the original 431-435 plan shipped.
     consuming one fewer roll than the no-bonus case; Illusory Hero's own
     extra flat -15% keeps its version below 100%, so that test instead
     reuses the same comparative-roll shape as Stage 1).
+- **Phase 464 (current)**: correctly decodes the Kingdom-header (`M ...`)
+  line against the real Pascal source (`AKGEN_reverse_engineering_report
+  (2).md` SS12, and `HostAK/TP/DEF2.PAS`'s own `Write_Moves`/`Read_Moves`
+  read directly from the Desktop's `Programma Pascal.zip` extraction).
+  **The leading token was never a literal `"M"` format marker** -- every
+  previous phase assumed this (the parser required it literally) because
+  every available sample is a male King. It's `sex[kng]`, a per-King
+  `Char` field; `Write_Moves` line ~274 and `Read_Moves` line ~849 both
+  write/read the line in the identical order `sex interp_vers allreq
+  brreq kacct kpmode kprevgold ksendmeth` (8 fields, not 7), confirming
+  both the order and the count two ways. `models/kingdom.py
+  KingdomMoveHeader` gains a `sex: str` field and 7 new named properties
+  (`interp_vers`/`allreq`/`brreq`/`kacct`/`kpmode`/`kprevgold`/
+  `ksendmeth`) over the unchanged `raw_fields`; `parser/k1_moves.py
+  _parse_header_line()` now stores `sex` instead of silently discarding
+  it (and validating it's a single character instead of requiring the
+  literal `"M"` -- a real, previously-latent bug: a female King's file
+  would have raised `K1ParseError` before this fix).
+  **`kingdom_number` is corrected, not removed**: proven (via `Read_
+  Moves`'s own read line, where `intvers` is the *only* field of the 8
+  without a `[kng]` index) to be the exact same slot as the new
+  `interp_vers` property -- a single global interpreter-version constant,
+  not per-Kingdom data. It happened to read as a stable `27` across all
+  10 sample turns of this project's one available Kingdom, which is
+  exactly what made it look like a Kingdom id before this correction.
+  `orchestrator.py`/`turn/kingdom_bridge.py` still key `GameState.
+  kingdoms` off it, UNCHANGED (an unverified fix given the real
+  identifier's own source -- plausibly the `.K1` filename's own trailing
+  `.K<N>` suffix, built via `Get_FN('AK', gameturn, kng, fs)` -- can't be
+  confirmed: `Get_FN`'s own body isn't present anywhere in the extracted
+  Pascal source tree, only call sites) -- flagged as an explicit,
+  documented follow-up in `kingdom_number`'s own docstring, not fixed
+  here.
+  **`kprevgold`** (`raw_fields[5]`) turns out to be the Emperor-election
+  Vote-command field (report SS12.1-12.2): `AKE.EXE`'s own `V` command,
+  toggling an election request or (once a vote is actively being held,
+  compared against the new `VOTE_TURN_SENTINEL = 31000`, Pascal's
+  `Vote_Turn`) holding the chosen candidate King's index --
+  `KingdomMoveHeader.is_vote_turn()`. This is a *different* mechanic from
+  `turn/emperor_election.py`'s own already-documented "Call for Vote"
+  plan-action [1.3] gap; that module's docstring now cross-references
+  this finding, still not wired into its own `ballots` parameter (needs
+  a world-level "is a vote being held this turn" flag `GameState` doesn't
+  track yet, and per-Kingdom-file cross-referencing beyond what
+  `orchestrator.py process_turn()` currently does) -- an explicit,
+  documented follow-up, not guessed here.
+  - Ran the full suite before writing new tests: unaffected (4131 passed
+    unchanged -- both real sample files' own header lines still parse
+    identically under the corrected logic, since every sample King is
+    male). Added 6 new tests: `tests/test_models.py` (`Kingdom
+    MoveHeader` field-order/`kingdom_number`-equals-`interp_vers`/`is_
+    vote_turn()` sentinel unit tests) and `tests/test_k1_moves_parser.py`
+    (`AK3__T1.K1`'s full real header decode, `AK3__T10.K1`'s differing
+    `brreq`, and a malformed multi-character-sex file correctly raising
+    `K1ParseError`). Ran again: 4137 passed (6 new).
 
 ## Setup
 

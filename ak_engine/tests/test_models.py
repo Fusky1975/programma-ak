@@ -1,6 +1,6 @@
 from ak_engine.models.enums import ABILITY_ABBREVIATION, ABILITY_NAME, Ability, ActionCode, action_from_int
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.kingdom import SkillTable
+from ak_engine.models.kingdom import VOTE_TURN_SENTINEL, KingdomMoveHeader, SkillTable
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 
 
@@ -18,6 +18,35 @@ def test_skill_table_pair_for_ability():
     table = SkillTable(raw_values=raw)
     assert table.pair_for_ability(Ability.TACTICAL) == (0, 1)
     assert table.pair_for_ability(Ability.SAGE) == (28, 29)
+
+
+def test_kingdom_move_header_field_order_matches_def2_pas():
+    # Phase 464: raw_fields, in DEF2.PAS Write_Moves/Read_Moves order
+    # (sex is parsed separately -- see the parser test for that).
+    header = KingdomMoveHeader(raw_fields=[27, 1, 0, 101, 1, 15, 1], sex="M")
+    assert header.sex == "M"
+    assert header.interp_vers == 27
+    assert header.allreq == 1
+    assert header.brreq == 0
+    assert header.kacct == 101
+    assert header.kpmode == 1
+    assert header.kprevgold == 15
+    assert header.ksendmeth == 1
+
+
+def test_kingdom_number_is_the_same_slot_as_interp_vers():
+    # Phase 464: kingdom_number is confirmed NOT a per-Kingdom id -- it's
+    # literally the same raw_fields[0] slot as interp_vers.
+    header = KingdomMoveHeader(raw_fields=[27, 1, 0, 101, 1, 15, 1])
+    assert header.kingdom_number == header.interp_vers == 27
+
+
+def test_is_vote_turn_true_only_at_the_sentinel():
+    holding_vote = KingdomMoveHeader(raw_fields=[27, 1, 0, 101, 1, VOTE_TURN_SENTINEL, 1])
+    assert holding_vote.is_vote_turn() is True
+
+    not_holding_vote = KingdomMoveHeader(raw_fields=[27, 1, 0, 101, 1, 15, 1])
+    assert not_holding_vote.is_vote_turn() is False
 
 
 def test_province_code_matches_the_real_mongu_sample():

@@ -80,6 +80,10 @@ def process_turn(
 
     for path in order_file_paths:
         kingdom = parse_k1_moves_file(path)
+        # kingdom_number is confirmed (Phase 464) to actually be a global
+        # interpreter-version constant, not a per-Kingdom identifier -- see
+        # KingdomMoveHeader.kingdom_number's own docstring for the sourced
+        # proof and the still-open follow-up to find the real per-Kingdom id.
         kingdom_id = kingdom.header.kingdom_number
         bridge_report = sync_leaders_from_kingdom(kingdom, state)
         bridge_reports[kingdom_id] = bridge_report

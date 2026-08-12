@@ -78,15 +78,29 @@ def _find_moves_for_line(lines: list[str], path: Path) -> int:
 
 
 def _parse_header_line(lines: list[str], index: int, path: Path) -> KingdomMoveHeader:
+    """Parse the Kingdom-header line.
+
+    The leading token is not a literal ``"M"`` marker (a previous, now-
+    corrected assumption -- see ``KingdomMoveHeader``'s own docstring,
+    Phase 464): it's ``sex[kng]``, a single-character Pascal ``Char``
+    field. Every available sample happens to be a male King (``"M"``),
+    which is exactly what made the old literal check look correct.
+    """
+
     line = _line_at(lines, index, path)
     tokens = line.split()
-    if not tokens or tokens[0] != "M":
-        raise K1ParseError("expected kingdom header line starting with 'M'", line_number=index, line=line)
+    if not tokens:
+        raise K1ParseError("expected kingdom header line", line_number=index, line=line)
+    sex = tokens[0]
+    if len(sex) != 1:
+        raise K1ParseError(
+            f"expected a single-character sex field, got {sex!r}", line_number=index, line=line
+        )
     try:
         raw_fields = [int(tok) for tok in tokens[1:]]
     except ValueError as exc:
         raise K1ParseError("kingdom header line contains a non-integer field", line_number=index, line=line) from exc
-    return KingdomMoveHeader(raw_fields=raw_fields)
+    return KingdomMoveHeader(raw_fields=raw_fields, sex=sex)
 
 
 def _parse_skill_line(lines: list[str], index: int, path: Path) -> SkillTable:

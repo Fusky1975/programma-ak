@@ -30,6 +30,22 @@ Alignment-based Victory Point reduction -- for a future decoder to call,
 the same "mechanic before the plan-file wiring" order this project used
 for `turn/tax_base.py` (built before its own FINANCES report wiring).
 
+**Phase 464**: a genuinely *different* Vote mechanic -- `AKE.EXE`'s own
+`V` command (report SS12, not the plan-action [1.3] above) -- is now
+correctly decodable at the Kingdom-header level:
+`models/kingdom.py KingdomMoveHeader.kprevgold`/`is_vote_turn()`. Still
+not wired into this module's own `ballots` parameter: `kprevgold`'s
+meaning depends on a world-level `req_vote` state this project doesn't
+track anywhere (whether a vote is being held *this* turn at all, as
+opposed to a request being toggled for *next* turn), and assembling a
+real per-turn `ballots: dict[int, int]` needs an orchestration layer
+that reads every Kingdom's own K1 file for one turn and cross-references
+each one's `is_vote_turn()` -- `orchestrator.py process_turn()` already
+does the "every Kingdom's K1 file for one turn" part, but doesn't yet
+track a world-level "is an election actually being held this turn"
+flag on `GameState` to gate the interpretation. Flagged as a follow-up,
+not guessed here.
+
 ## Requesting a vote
 `can_request_election()` -- a single King or an "alleanza di Re" (read
 here as one connected component of `GameState.allied_kingdoms`, the same
