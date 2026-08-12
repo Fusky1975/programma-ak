@@ -20113,7 +20113,7 @@ follow-up request after the original 431-435 plan shipped.
     (`TurnOutcome.final_standings` stays `None` in the ordinary no-
     Emperor case, and gets populated once `state.emperor_kingdom_id` is
     pre-seeded). Ran again: 4220 passed (4 new).
-- **Phase 477 (current)**: implements Grandfather of Assassins'
+- **Phase 477**: implements Grandfather of Assassins'
   (`Office.ASSASSIN`) own free assassination attempt -- `AKGEN_reverse_
   engineering_report (2).md` SS20.9, real disassembly source: "L'effetto
   successivo del titolo... resta: P_base = 50% - 5%*A - 10%*M, dove A e'
@@ -20158,6 +20158,39 @@ follow-up request after the original 431-435 plan shipped.
     skill both feed the formula correctly, and a successful/failed
     attempt alike never touches either side's `MeritTally`. Ran again:
     4231 passed (11 new).
+- **Phase 478 (current)**: end-to-end verification, not a new mechanic.
+  With the dossier (`AKGEN_reverse_engineering_report (2).md`) audited
+  section-by-section and found fully mined (every sourced formula/
+  constant/rule already implemented or explicitly out-of-scope -- no
+  candidate phases remain from it), this phase instead extends the
+  project's real-historical-data validation net (Phase 222/340) to a
+  second real turn. `parser/gw_world_bridge.py bridge_new_game_state()`
+  was previously cross-checked only against `GW3__T1` and `GW3__T5`
+  (the latter, Phase 340, caught a real province-header parser bug).
+  New `tests/test_gw3_t6_end_to_end.py` adds `GW3__T5` -> `GW3__T6`
+  (the real `HostAK-old/TP/G3/GW3__T6` snapshot, added to `tests/
+  fixtures/world/G3/`), cross-checked field-by-field against the real
+  `SE3__T5.K1` letter's own narrated text (not merely reproduced from
+  parser output): Uga-Buga Makumb's three real conquests this turn
+  (Tabora and Ngara, both tax=10 exactly matching the letter's own "an
+  income of 10 gold"/"a tax base of 10 gold"; the Moonshine Sea, whose
+  bridged `Race.NO_RACE` matches the letter's "inhabited by no races");
+  Guerin's real two-province campaign (Mercia then Bronzeleaf, ending
+  the turn at Bronzeleaf -- `HexCoord(12, 2)`, matching his own letter's
+  final narrated move exactly); and Teleko's real campaign (Kabompo,
+  tax=3 exactly matching "a tax base of 3 gold", ending the turn at
+  Tebessa). Unlike Phase 340, `GW3__T6` already parses and bridges
+  cleanly (162 provinces, 10 kingdoms, 90 heroes, `Roderoch` the only
+  Valhalla-visitor synthetic id, zero unresolved army records) -- this
+  phase is pure coverage-widening confirmation, not a bugfix, and every
+  one of its assertions was verified against the real letter's own
+  explicit numbers before being written, the same discipline as Phase
+  340's own ground-truth cross-checks. `GW3__T2`-`T4`/`T7`-`T12` remain
+  available in the user's own archive (`HostAK-old/TP/G3/`) for further
+  turns should more coverage be wanted later.
+  - Ran the new test module in isolation first: 5 passed. Ran the full
+    suite: 4236 passed (5 new), confirming no regression from adding a
+    second real-data fixture file.
 
 ## Setup
 
