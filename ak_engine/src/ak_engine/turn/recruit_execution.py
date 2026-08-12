@@ -84,6 +84,28 @@ kingdom") needed no separate fix -- ``GameState.mercenaries_at()``
 already only returns ``kingdom_id is None`` armies, so a kingdom-owned
 army was never mistakenly hireable as a mercenary in the first place.
 
+**Wingman's own recruitment bonus (Phase 472, AKGEN_reverse_engineering_
+report (2).md SS19.7)**: "la sua fama attira reclute e gli permette di
+reclutare una unità aggiuntiva di un tipo d'armata volante in una
+provincia visitata che abbia una razza compatibile" -- if the *acting*
+leader (this function's own ``leader_id`` parameter -- the character
+physically present and recruiting, not ``request.leader_id``, who only
+commands the resulting army and may be a different character or None)
+currently holds ``Office.WINGMAN`` (``resolve_office_holder``,
+resolved once per call, not per army type), a flying army type
+(``models/army_type.py OVERFLIGHT_AIR`` -- Dragons/Eagles, the exact
+same narrower set SS19.5 already confirmed for the title's own merit
+formula, not the broader ``is_overflight_unit()`` that also includes
+Whales/Mermen) gets its own real per-turn limit raised by one, provided
+it's also race-compatible here (``is_native``, the same "razza
+compatibile" check this function already computes for ordinary
+recruiting legality -- no separate formula needed). "Belongs to the
+titleholder *character*, not the army that might separately hold Royal
+Air Force" -- confirmed by construction here, since the check is keyed
+off the acting leader, never off any ``ArmyState``. Doesn't change unit
+cost, starting quality, or the merit formula itself -- only the
+recruitment cap for that one type this call.
+
 **Real per-province native types, when known (Phase 407)**: through
 Phase 406, ``is_native_to_province`` was always computed from
 ``is_army_type_compatible_with_race()`` -- the exact same test
@@ -112,9 +134,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ak_engine.models.army_type import ArmyType
+from ak_engine.models.army_type import OVERFLIGHT_AIR, ArmyType
 from ak_engine.models.game_state import ArmyState, GameState
+from ak_engine.models.office import Office
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.recruit import IncompatibleRaceError, is_army_type_compatible_with_race, resolve_recruit
 from ak_engine.turn.recruit_decode import RecruitRequest
 
@@ -182,6 +206,9 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         result.treat_blocked.extend(request.army_types)
         return result
 
+    wingman_holder = resolve_office_holder(state, Office.WINGMAN)
+    leader_is_wingman = wingman_holder is not None and wingman_holder.leader_id == leader_id
+
     for army_type in request.army_types:
         if province.recruit_type_1 is not None:
             is_native = army_type in (province.recruit_type_1, province.recruit_type_2)
@@ -200,8 +227,9 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             result.incompatible.append(army_type)
             continue
 
+        wingman_bonus = 1 if leader_is_wingman and army_type in OVERFLIGHT_AIR and is_native else 0
         already_this_turn = province.recruited_this_turn.get(army_type, 0)
-        if already_this_turn >= resolution.max_units:
+        if already_this_turn >= resolution.max_units + wingman_bonus:
             result.limit_blocked.append(army_type)
             continue
 

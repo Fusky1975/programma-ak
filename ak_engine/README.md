@@ -19848,7 +19848,7 @@ follow-up request after the original 431-435 plan shipped.
     target (Sphinx, via the real per-species `MIRROR_IMAGE_MONSTER_
     INTELLIGENCE_TIER` table), which this phase doesn't touch. Ran again:
     4175 passed (net unchanged -- 3 tests renamed/updated, 0 new).
-- **Phase 471 (current)**: wires Duellist's / "Captain of the Musketeers"'s
+- **Phase 471**: wires Duellist's / "Captain of the Musketeers"'s
   (`Office.DUELLIST`) own §17.7 battlefield effect -- previously only its
   merit-accumulation half existed (Phase 443). `AKGEN_reverse_engineering_
   report (2).md` SS17.7: "Quando il titolare è comandante supremo in
@@ -19903,6 +19903,43 @@ follow-up request after the original 431-435 plan shipped.
     (`apply_duel_demoralization` carries the field through scaled, leaves
     an ineligible unit's own `None` untouched). Ran again: 4188 passed
     (13 new).
+- **Phase 472 (current)**: wires Wingman's (`Office.WINGMAN`) own §19.7
+  recruitment bonus -- previously only its merit-accumulation half existed
+  (`turn/merit_points.py wingman_merit_points()`, driven by `LeaderState.
+  merit_tally.air_combat_merit`). `AKGEN_reverse_engineering_report
+  (2).md` SS19.7: "la sua fama attira reclute e gli permette di reclutare
+  una unità aggiuntiva di un tipo d'armata volante in una provincia
+  visitata che abbia una razza compatibile." `turn/recruit_execution.py
+  execute_recruit()` resolves `Office.WINGMAN`'s current holder once per
+  call (`resolve_office_holder`) and checks it against the *acting*
+  leader (this function's own `leader_id` parameter -- the character
+  physically present and recruiting, not `request.leader_id`, who only
+  commands the resulting army and may be a different character or
+  nobody). When the acting leader holds the title, a flying army type
+  (`models/army_type.py OVERFLIGHT_AIR` -- Dragons/Eagles only, the same
+  narrower set SS19.5's own merit formula already uses, not the broader
+  `is_overflight_unit()` that also covers Whales/Mermen) that's also
+  race-compatible here (`is_native`, the same "razza compatibile" check
+  this function already computes for ordinary recruiting legality -- no
+  separate formula needed) gets its own real per-turn recruit limit
+  raised by exactly one for that call. Doesn't change unit cost, starting
+  quality, or the merit formula itself -- only that one type's cap.
+  Deliberately did **not** attempt SS20.9's Grandfather of Assassins free
+  assassination attempt this phase -- unlike Wingman's clean "+1 to an
+  existing limit-check" hook, it needs an entirely new `FI-re(character)`
+  targeting/order concept this project has never modeled, a larger,
+  riskier follow-up left for its own phase.
+  - Ran the full suite before writing new tests: 4188 passed (non-
+    breaking -- `leader_is_wingman` is `False` for every pre-existing
+    fixture, none of which set up a Wingman titleholder). Wrote 5 new
+    tests in `tests/test_recruit_execution.py`: no bonus by default, the
+    exact +1 limit when the acting leader holds Wingman and requests a
+    compatible flying type, no bonus for a non-flying type even with the
+    title held, the title never rescues a race-incompatible flying type
+    (still reported via `result.incompatible`, not silently dropped), and
+    the bonus only applies to the titleholder -- a different, non-acting
+    leader holding Wingman changes nothing. Ran again: 4193 passed (5
+    new).
 
 ## Setup
 

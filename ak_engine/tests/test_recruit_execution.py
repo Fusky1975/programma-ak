@@ -416,3 +416,69 @@ def test_recruit_ignores_mercenary_of_a_different_type_or_location():
     assert result.recruited[0].hired is False
     assert state.armies[998].kingdom_id is None
     assert state.armies[997].kingdom_id is None
+
+
+# -- Wingman's own recruitment bonus (Phase 472) ---------------------------
+
+
+def build_dragon_state(*, treasury: int = 1000) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0), treasury=treasury))
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.DRAGONS, owner_kingdom_id=1))
+    state.add_leader(LeaderState(LEADER_ID, 1, "Test Leader", LOCATION))
+    return state
+
+
+def test_no_wingman_bonus_by_default():
+    state = build_dragon_state()
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DRAGON_WING, ArmyType.DRAGON_WING])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.limit_blocked == [ArmyType.DRAGON_WING]
+
+
+def test_wingman_grants_one_extra_flying_unit():
+    state = build_dragon_state()
+    state.leaders[LEADER_ID].merit_tally.air_combat_merit = 5  # meets OFFICE_MIN_POINTS[Office.WINGMAN]
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DRAGON_WING, ArmyType.DRAGON_WING])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 2
+    assert result.limit_blocked == []
+
+
+def test_wingman_bonus_does_not_apply_to_a_non_flying_type():
+    state = build_state(is_home_province=False)  # ordinary Human province
+    state.leaders[LEADER_ID].merit_tally.air_combat_merit = 5
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN, ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.limit_blocked == [ArmyType.BOWMEN]
+
+
+def test_wingman_bonus_does_not_rescue_a_race_incompatible_flying_type():
+    state = build_state(is_home_province=False)  # Human province -- Dragons don't fit here
+    state.leaders[LEADER_ID].merit_tally.air_combat_merit = 5
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DRAGON_WING])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.incompatible == [ArmyType.DRAGON_WING]
+
+
+def test_wingman_bonus_only_applies_to_the_titleholder_not_a_different_leader():
+    state = build_dragon_state()
+    state.add_leader(LeaderState(2, 1, "Other Leader", LOCATION))
+    state.leaders[2].merit_tally.air_combat_merit = 5  # leader 2 is Wingman, not the acting leader
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DRAGON_WING, ArmyType.DRAGON_WING])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.limit_blocked == [ArmyType.DRAGON_WING]
