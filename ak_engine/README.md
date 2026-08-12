@@ -19726,7 +19726,7 @@ follow-up request after the original 431-435 plan shipped.
     net-new coverage, since this phase corrects an existing formula's
     magnitude, not adds new behavior. Ran again: 4154 passed (net
     unchanged -- 2 tests replaced by 2 new ones).
-- **Phase 468 (current)**: wires the real gameplay *effects* of Silver
+- **Phase 468**: wires the real gameplay *effects* of Silver
   Tongue (Office.DIPLOMAT) and King of Cowards (Office.CRAVENEST) --
   `AKGEN_reverse_engineering_report (2).md` SS18.4/18.6 -- into actual
   Talk/Fulfill resolution and the per-turn effects pipeline; previously
@@ -19774,6 +19774,44 @@ follow-up request after the original 431-435 plan shipped.
     -- Attack/Ignore are indistinguishable at the `SearchExecutionResult`
     level, so black-box assertions alone couldn't prove the wiring). Ran
     again: 4166 passed (12 new).
+- **Phase 469 (current)**: closes the gap Phase 468 explicitly deferred --
+  Bravest of the Brave's (`Office.BRAVEST`) own SS18.8 effect: "Il
+  titolare ispira gli altri personaggi: quando parla a un Hero, il
+  temperamento di quel Hero sale di un livello, salvo che sia gia' al
+  massimo." `models/office.py OFFICE_PERK_DESCRIPTION[Office.BRAVEST]`
+  already named this exact effect ("Improve Temper, by using Talk
+  tactic") since Phase 103, independently corroborating the report's own
+  reading. New `turn/challenge_execution.py _apply_bravest_talk_
+  inspiration(state, challenger, target)`: if `resolve_office_holder
+  (state, Office.BRAVEST)` names `challenger` as the current titleholder,
+  and `target` is a Hero (`not target.is_king`) with a recorded `Temper`,
+  raises it one level via `models/temper.py raise_temper_one_level()`
+  (Phase 468) -- no roll, matching SS18.8's own plain, unconditional
+  wording. `execute_challenge()` now checks `request.tactics` for a
+  `Maneuver.TALK` entry once (`has_talk_tactic`) and calls this helper at
+  both of its own existing return points that mean "the encounter
+  genuinely happened": the peaceful early-return (`not has_combat_
+  intent(request)`, e.g. a TALK-only plan) and right after the King/Hero
+  acceptance check passes for a combat-intent plan (e.g. `[TALK, MELEE]`)
+  -- never when the encounter itself is refused. Firing at most once per
+  call (keyed off tactic *presence*, not per-tactic) reproduces SS18.8's
+  own "la prosa del titolo... limita... a una sola tattica Talk utile
+  nello stesso incontro" for free, with no extra bookkeeping. **Scope:
+  leader-vs-leader CHALLENGE only**, matching `_apply_duel_encounter_
+  merit()`'s own established Phase 443 precedent -- `turn/pursue_
+  execution.py execute_pursue()`'s own armyless-case Encounter resolution
+  already never calls that function either, so this phase doesn't extend
+  Bravest's reach into Pursue, only follows the existing boundary.
+  - Ran the full suite before writing new tests: 4166 passed (non-
+    breaking). Wrote 9 new tests in `tests/test_challenge_execution.py`:
+    5 direct unit tests for `_apply_bravest_talk_inspiration()` (raises a
+    talking Hero's temper, caps at Berserk, does not inspire a King,
+    no-op for a non-titleholder, no-op when the target has no recorded
+    Temper) and 4 `execute_challenge()`-level integration tests (a
+    peaceful TALK-only plan inspires the target, two TALK tactics in one
+    plan still raise only one level, the effect fires alongside an
+    accepted combat-intent plan too, a refused encounter never fires it).
+    Ran again: 4175 passed (9 new).
 
 ## Setup
 

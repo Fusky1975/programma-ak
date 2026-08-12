@@ -17,6 +17,7 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.challenge_execution import (
     ChallengeExecutionResult,
+    _apply_bravest_talk_inspiration,
     _apply_duel_encounter_merit,
     _apply_successful_theft,
     _close_to,
@@ -1103,6 +1104,147 @@ def test_execute_challenge_draw_credits_no_duel_encounter_merit():
     assert state.leaders[2].merit_tally.duel_merit_net == 0
     assert state.leaders[1].merit_tally.courage_encounter_merit == 0
     assert state.leaders[2].merit_tally.courage_encounter_merit == 0
+
+
+# -- Phase 469: Bravest of the Brave's own Talk-triggered temper rise ---
+
+
+def test_apply_bravest_talk_inspiration_raises_a_talking_heros_temper():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Bard", location=FIELD)
+    challenger.merit_tally.bravery_merit = 15  # meets OFFICE_MIN_POINTS[Office.BRAVEST]
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, temper=Temper.CAUTIOUS)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_bravest_talk_inspiration(state, challenger, target)
+
+    assert target.temper is Temper.BRAVE
+
+
+def test_apply_bravest_talk_inspiration_caps_at_berserk():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Bard", location=FIELD)
+    challenger.merit_tally.bravery_merit = 15
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, temper=Temper.BERSERK)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_bravest_talk_inspiration(state, challenger, target)
+
+    assert target.temper is Temper.BERSERK
+
+
+def test_apply_bravest_talk_inspiration_does_not_inspire_a_king():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Bard", location=FIELD)
+    challenger.merit_tally.bravery_merit = 15
+    target = LeaderState(2, kingdom_id=2, name="King", location=FIELD, is_king=True, temper=Temper.CAUTIOUS)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_bravest_talk_inspiration(state, challenger, target)
+
+    assert target.temper is Temper.CAUTIOUS
+
+
+def test_apply_bravest_talk_inspiration_no_op_for_a_non_titleholder():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Bard", location=FIELD)  # bravery_merit defaults to 0
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, temper=Temper.CAUTIOUS)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_bravest_talk_inspiration(state, challenger, target)
+
+    assert target.temper is Temper.CAUTIOUS
+
+
+def test_apply_bravest_talk_inspiration_no_op_when_target_has_no_recorded_temper():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Bard", location=FIELD)
+    challenger.merit_tally.bravery_merit = 15
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD)  # temper=None
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_bravest_talk_inspiration(state, challenger, target)
+
+    assert target.temper is None
+
+
+def _talk_then_melee_request(target_id: int) -> ChallengeRequest:
+    return ChallengeRequest(
+        target_character_id=target_id,
+        unconfirmed_extra0=0,
+        tactics=[SearchTactic(Maneuver.TALK), SearchTactic(Maneuver.MELEE)],
+    )
+
+
+def test_execute_challenge_peaceful_talk_plan_inspires_the_titleholders_hero_target():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Bard", location=FIELD)
+    challenger.merit_tally.bravery_merit = 15
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, temper=Temper.CAUTIOUS)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    result = execute_challenge(state, 1, _peaceful_request(2), rng=ScriptedRandom([]))
+
+    assert result == ChallengeExecutionResult(accepted=True, combat_occurred=False)
+    assert state.leaders[2].temper is Temper.BRAVE
+
+
+def test_execute_challenge_repeated_talk_tactics_inspire_only_one_temper_level():
+    # SS18.8: "la prosa del titolo... limita... a una sola tattica Talk
+    # utile nello stesso incontro" -- two TALK entries in the same plan
+    # still only raise the target's temper by one level.
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Bard", location=FIELD)
+    challenger.merit_tally.bravery_merit = 15
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, temper=Temper.CAUTIOUS)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    request = ChallengeRequest(
+        target_character_id=2, unconfirmed_extra0=0, tactics=[SearchTactic(Maneuver.TALK), SearchTactic(Maneuver.TALK)]
+    )
+
+    execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert state.leaders[2].temper is Temper.BRAVE
+
+
+def test_execute_challenge_bravest_inspiration_also_fires_alongside_accepted_combat():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Bard", location=FIELD)
+    challenger.merit_tally.bravery_merit = 15
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, temper=Temper.CAUTIOUS)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    # Armyless Hero-vs-Hero always accepts without consuming a roll; the
+    # combat itself is scripted to a draw (same all-misses sequence as
+    # test_execute_challenge_draw_credits_no_duel_encounter_merit above).
+    rng = ScriptedRandom([0.99] * 3000)
+
+    result = execute_challenge(state, 1, _talk_then_melee_request(2), rng=rng)
+
+    assert result.accepted is True
+    assert result.winner_leader_id is None
+    assert state.leaders[2].temper is Temper.BRAVE
+
+
+def test_execute_challenge_bravest_inspiration_does_not_fire_when_encounter_is_refused():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Bard", location=FIELD)
+    challenger.merit_tally.bravery_merit = 15
+    target = LeaderState(2, kingdom_id=2, name="King", location=FIELD, is_king=True, temper=Temper.CAUTIOUS)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    result = execute_challenge(state, 1, _talk_then_melee_request(2), rng=ScriptedRandom([]))
+
+    assert result.accepted is False
+    assert state.leaders[2].temper is Temper.CAUTIOUS
 
 
 def test_resolve_steal_tactic_success_applies_theft():

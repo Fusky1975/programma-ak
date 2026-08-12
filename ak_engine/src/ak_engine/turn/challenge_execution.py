@@ -227,6 +227,8 @@ from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, MONSTER_NAMES, MonsterSpeed, roll_gate_demon_type
+from ak_engine.models.office import Office
+from ak_engine.models.temper import raise_temper_one_level
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
@@ -275,6 +277,7 @@ from ak_engine.turn.encounter import (
     words_of_healing_heal,
 )
 from ak_engine.turn.experience import add_experience
+from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchTactic
 
 _COMBAT_MANEUVERS = frozenset({Maneuver.MELEE, Maneuver.SHOOT})
@@ -1159,6 +1162,42 @@ class ChallengeExecutionResult:
     request: ChallengeRequest | None = None
 
 
+def _apply_bravest_talk_inspiration(state: GameState, challenger: LeaderState, target: LeaderState) -> None:
+    """Report SS18.8: "Il titolare ispira gli altri personaggi: quando parla a un Hero,
+    il temperamento di quel Hero sale di un livello, salvo che sia gia'
+    al massimo." -- ``models/office.py OFFICE_PERK_DESCRIPTION[Office.
+    BRAVEST]`` already names this exact effect ("Improve Temper, by
+    using Talk tactic"), independently corroborating the report's own
+    reading (that perk string predates this phase, Phase 103).
+
+    No roll: SS18.8's own text states the effect plainly, with no
+    associated success chance -- unlike Silver Tongue/King of Cowards
+    (Phase 468), which also fire unconditionally once their own trigger
+    condition is met.
+
+    Only a Hero (``not target.is_king``) is inspired -- the source's own
+    "Hero" wording. Fires at most once per ``execute_challenge()`` call
+    regardless of how many TALK tactics the plan queues -- "la prosa del
+    titolo... limita... a una sola tattica Talk utile nello stesso
+    incontro" -- since the caller below checks ``Maneuver.TALK``
+    *presence*, not per-tactic occurrence.
+
+    **Scope: leader-vs-leader CHALLENGE only**, matching ``_apply_duel_
+    encounter_merit()``'s own established precedent just below (Phase
+    443) -- ``turn/pursue_execution.py execute_pursue()``'s own armyless-
+    case Encounter resolution deliberately never calls that function
+    either, the same "Challenge-only" scope this phase follows, not a new
+    narrowing.
+    """
+
+    holder = resolve_office_holder(state, Office.BRAVEST)
+    if holder is None or holder.leader_id != challenger.leader_id:
+        return
+    if target.is_king or target.temper is None:
+        return
+    target.temper = raise_temper_one_level(target.temper)
+
+
 def _apply_duel_encounter_merit(
     challenger: LeaderState,
     target: LeaderState,
@@ -1245,7 +1284,11 @@ def execute_challenge(
     if challenger.location != target.location:
         return ChallengeExecutionResult(accepted=False, reason="not co-located")
 
+    has_talk_tactic = any(tactic.maneuver is Maneuver.TALK for tactic in request.tactics)
+
     if not has_combat_intent(request):
+        if has_talk_tactic:
+            _apply_bravest_talk_inspiration(state, challenger, target)
         return ChallengeExecutionResult(accepted=True, combat_occurred=False)
 
     target_leads_army = bool(state.armies_commanded_by(target.leader_id))
@@ -1261,6 +1304,9 @@ def execute_challenge(
             challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
         )
         return ChallengeExecutionResult(accepted=False, reason="encounter refused")
+
+    if has_talk_tactic:
+        _apply_bravest_talk_inspiration(state, challenger, target)
 
     challenger_combatant = _leader_combatant(challenger, state)
     target_combatant = _leader_combatant(target, state)
