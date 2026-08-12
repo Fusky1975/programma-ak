@@ -352,6 +352,9 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         kingdom = state.kingdoms.get(leader.kingdom_id)
         neutral_bonus = kingdom is not None and kingdom.alignment is Alignment.NEUTRAL
 
+    defender_office = resolve_office_holder(state, Office.DEFENDER)
+    damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
+
     return Combatant(
         name=leader.name,
         hit_points=CHARACTER_HIT_POINTS,
@@ -359,6 +362,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         archery_skill=archery_skill,
         neutral_duelist_bonus=neutral_bonus,
         temper=leader.temper,
+        damage_reduction=damage_reduction,
     )
 
 

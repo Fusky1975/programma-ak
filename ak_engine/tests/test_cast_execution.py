@@ -13,6 +13,7 @@ from ak_engine.models.game_state import ArmyState, GameState, GraveyardEntry, Ki
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import (
@@ -26,6 +27,7 @@ from ak_engine.turn.cast_execution import (
     SCAR_TERRAIN_LAND_COLLAPSE_RACES,
     SCAR_TERRAIN_TAX_REDUCTION,
     LocateObjectResult,
+    _kill_enemy_combatant,
     action_cast_slots,
     apply_plague_exposure,
     execute_cast,
@@ -200,6 +202,17 @@ def test_charm_non_undead_caster_still_uses_psychic():
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
     assert result.applied is True
+
+
+def test_kill_enemy_combatant_gives_the_imperial_defender_a_damage_reduction_of_one():
+    # Phase 489: CARICHE E ABLITA.txt's own Office.DEFENDER perk ("reduce
+    # any strike against you in personal combat ... by one damage point").
+    state = build_state()
+    state.leaders[CASTER_ID].merit_tally.monster_hp_defeated = 1  # meets OFFICE_MIN_POINTS[Office.DEFENDER]
+
+    combatant = _kill_enemy_combatant(state, state.leaders[CASTER_ID], temper=Temper.BERSERK)
+
+    assert combatant.damage_reduction == 1
 
 
 def test_kill_enemy_puts_a_colocated_target_into_a_coma():

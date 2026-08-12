@@ -103,11 +103,13 @@ from dataclasses import dataclass, field
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.office import Office
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, loot_defeated_leader, resolve_melee_duel
 from ak_engine.turn.movement import MapBounds, neighbors
+from ak_engine.turn.office_holder import resolve_office_holder
 
 _MAGIC_ABILITIES = (Ability.WHITE, Ability.NECROMANCY, Ability.ELEMENTAL, Ability.PSYCHIC, Ability.ILLUSION)
 
@@ -193,12 +195,16 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         kingdom = state.kingdoms.get(leader.kingdom_id)
         neutral_bonus = kingdom is not None and kingdom.alignment is Alignment.NEUTRAL
 
+    defender_office = resolve_office_holder(state, Office.DEFENDER)
+    damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
+
     return Combatant(
         name=leader.name,
         hit_points=CHARACTER_HIT_POINTS,
         melee_skill=melee_skill,
         neutral_duelist_bonus=neutral_bonus,
         temper=leader.temper,
+        damage_reduction=damage_reduction,
     )
 
 

@@ -2588,3 +2588,80 @@ def test_loot_defeated_leader_works_after_remove_leader_since_item_ownership_is_
 
     assert looted == [item]
     assert state.items[item.item_id].owner_leader_id == 10
+
+
+# -- Phase 489: Imperial Defender's own "reduce any strike against you in
+# personal combat (including magical damage) by one damage point" perk
+# (CARICHE E ABLITA.txt, ofcname index confirmed at Office.DEFENDER, Phase
+# 103's own OFFICE_PERK_DESCRIPTION). Combatant.damage_reduction is set by
+# each real consumer's own leader-combatant builder (see e.g.
+# battle_orchestrator.py _commander_combatant's own Phase 489 addendum),
+# never by encounter.py itself -- these tests only exercise the generic
+# defender-side subtraction encounter.py applies at every hit-point site.
+
+
+def test_combatant_damage_reduction_defaults_to_zero():
+    assert Combatant("A").damage_reduction == 0
+
+
+def test_resolve_one_melee_round_damage_reduction_floors_a_real_hit_to_zero():
+    # A's higher skill means no order-tiebreak roll is needed (_acts_first
+    # is deterministic here): A swings first and hits (floored to 0 damage
+    # by B's own damage_reduction) -- a hit consumes two .random() calls,
+    # the hit-chance check plus the damage-magnitude roll (`ScriptedRandom`
+    # overrides only `.random()`, so `rng.randint()` also draws from the
+    # scripted list -- the same convention every other Phase 209+ test in
+    # this file already relies on, e.g. the Hand of Death tests' own
+    # "then a damage roll" comments). B then swings back and misses,
+    # consuming one more .random() call for its own hit-chance check only.
+    attacker = Combatant("A", melee_skill=1)
+    defender = Combatant("B", melee_skill=0, damage_reduction=999)
+    rng = ScriptedRandom([0.1, 0.3, 0.9])  # A's hit-chance + damage rolls, then B's miss
+
+    outcome = resolve_one_melee_round(attacker, defender, rng, round_number=1)
+
+    assert outcome.result is None
+    assert defender.hit_points == CHARACTER_HIT_POINTS
+    assert any(swing.hit and swing.damage == 0 for swing in outcome.swings)
+
+
+def test_resolve_reactive_melee_swing_damage_reduction_floors_a_real_hit_to_zero():
+    attacker = Combatant("A", melee_skill=1)
+    defender = Combatant("B", damage_reduction=999)
+    rng = ScriptedRandom([0.1, 0.5])  # hit roll, then damage roll
+
+    result = resolve_reactive_melee_swing(attacker, defender, rng)
+
+    assert result.hit is True
+    assert result.damage == 0
+    assert defender.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_resolve_fire_arrow_duel_damage_reduction_floors_a_real_hit_to_zero_but_still_logs_the_hit():
+    a = Combatant("A", archery_skill=3)
+    b = Combatant("B", archery_skill=0, damage_reduction=999)
+
+    result = resolve_fire_arrow_duel(a, b, random.Random(1))
+
+    assert result.winner is None
+    assert b.hit_points == CHARACTER_HIT_POINTS
+    assert any(shot.shooter == "a" and shot.hit and shot.damage == 0 for shot in result.shots)
+
+
+def test_resolve_hand_of_death_channel_damage_reduction_applies_to_both_the_squeeze_and_the_counter_melee():
+    caster = Combatant("Caster", hit_points=10, damage_reduction=999)
+    victim = Combatant("Victim", hit_points=10, melee_skill=0, damage_reduction=999)
+    rng = ScriptedRandom([0.1, 0.5])  # victim's halved-chance counter-attack hits, then a damage roll
+
+    result = resolve_hand_of_death_channel(caster, victim, 2, rng)
+
+    # The caster's own squeeze this round is floored to 0 -- the victim
+    # never takes damage, so the channel keeps going instead of ending in
+    # an instant kill.
+    assert victim.hit_points == 10
+    assert result.squeeze_hits == (0,)
+    # The victim's own counter-hit lands (raw_damage > 0 still ends the
+    # channel per [5.1]'s "the caster loses concentration" rule) but is
+    # also floored to 0 by the caster's own damage_reduction.
+    assert result.winner is None
+    assert caster.hit_points == 10

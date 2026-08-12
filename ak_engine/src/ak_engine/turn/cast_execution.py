@@ -677,6 +677,7 @@ from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.cast_decode import CastRequest
@@ -686,6 +687,7 @@ from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, loot_defea
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, is_adjacent
+from ak_engine.turn.office_holder import resolve_office_holder
 
 ACTION_SPELL_BASE_CHANCE = 0.15
 ACTION_SPELL_CHANCE_PER_LEVEL = 0.15
@@ -1226,6 +1228,9 @@ def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temp
         kingdom = state.kingdoms.get(leader.kingdom_id)
         neutral_bonus = kingdom is not None and kingdom.alignment is Alignment.NEUTRAL
 
+    defender_office = resolve_office_holder(state, Office.DEFENDER)
+    damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
+
     return Combatant(
         name=leader.name,
         hit_points=CHARACTER_HIT_POINTS,
@@ -1233,6 +1238,7 @@ def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temp
         archery_skill=archery_skill,
         neutral_duelist_bonus=neutral_bonus,
         temper=temper,
+        damage_reduction=damage_reduction,
     )
 
 

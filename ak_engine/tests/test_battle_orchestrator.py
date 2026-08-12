@@ -1660,6 +1660,30 @@ def test_commander_combatant_garrison_commander_has_no_skill_or_bonus():
     assert combatant.hit_points == CHARACTER_HIT_POINTS
 
 
+def test_commander_combatant_gives_the_imperial_defender_a_damage_reduction_of_one():
+    # Phase 489: CARICHE E ABLITA.txt's own Office.DEFENDER perk ("reduce
+    # any strike against you in personal combat ... by one damage point").
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    leader = LeaderState(501, kingdom_id=1, name="Commander", location=FIELD)
+    leader.merit_tally.monster_hp_defeated = 1  # meets OFFICE_MIN_POINTS[Office.DEFENDER]
+    state.add_leader(leader)
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.damage_reduction == 1
+
+
+def test_commander_combatant_garrison_commander_has_no_damage_reduction():
+    state = GameState()
+    commander = provincial_garrison_commander(contingent_size=3)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.damage_reduction == 0
+
+
 def test_maybe_fight_duel_real_combat_decisive_winner_demoralizes_loser_not_kills_it():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))

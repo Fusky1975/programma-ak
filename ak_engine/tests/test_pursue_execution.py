@@ -64,6 +64,19 @@ def test_leader_combatant_reads_real_temper():
     assert combatant.temper is Temper.COWARDLY
 
 
+def test_leader_combatant_gives_the_imperial_defender_a_damage_reduction_of_one():
+    # Phase 489: CARICHE E ABLITA.txt's own Office.DEFENDER perk ("reduce
+    # any strike against you in personal combat ... by one damage point").
+    state = _base_state()
+    leader = LeaderState(1, kingdom_id=1, name="Chaser", location=FIELD)
+    leader.merit_tally.monster_hp_defeated = 1  # meets OFFICE_MIN_POINTS[Office.DEFENDER]
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.damage_reduction == 1
+
+
 # -- not found / army-leading mismatch -----------------------------------
 
 

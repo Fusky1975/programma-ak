@@ -2375,6 +2375,19 @@ class Combatant:
     # can't drive since it isn't a flee-roll input. Default `False`
     # leaves every pre-Phase-286 caller unaffected.
     is_invisible: bool = False
+    # Phase 489 -- Imperial Defender's own perk ("CARICHE E ABLITÀ.txt":
+    # "The Armor will reduce any strike against you in personal combat
+    # (including magical damage) by one damage point"). Subtracted from
+    # every incoming hit this combatant takes -- Melee, Fire Arrow, and
+    # Hand of Death's own psychic damage alike -- floored at 0 the same
+    # way `melee_damage_dealt_reduction` already is. Default 0 leaves
+    # every pre-Phase-489 caller unaffected; only a leader confirmed
+    # (via `turn/office_holder.py resolve_office_holder`) to hold
+    # `Office.DEFENDER` gets 1 here, set by each consumer's own
+    # `_leader_combatant`-style builder (this project's established
+    # per-consumer lookup precedent, not a shared helper -- see e.g.
+    # `challenge_execution.py _leader_combatant`'s own docstring).
+    damage_reduction: int = 0
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -2624,7 +2637,7 @@ def resolve_one_melee_round(
             damage_range=attacker.melee_damage_range,
             hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
         )
-        damage = max(0, raw_damage - attacker.melee_damage_dealt_reduction)
+        damage = max(0, raw_damage - attacker.melee_damage_dealt_reduction - defender.damage_reduction)
         defender.hit_points -= damage
         attacker_side = "a" if attacker is a else "b"
         swings.append(MeleeSwing(attacker=attacker_side, hit=raw_damage > 0, damage=damage))
@@ -2673,7 +2686,7 @@ def resolve_reactive_melee_swing(attacker: Combatant, defender: Combatant, rng: 
         damage_range=attacker.melee_damage_range,
         hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
     )
-    damage = max(0, raw_damage - attacker.melee_damage_dealt_reduction)
+    damage = max(0, raw_damage - attacker.melee_damage_dealt_reduction - defender.damage_reduction)
     defender.hit_points -= damage
     return ReactiveMeleeSwingResult(hit=raw_damage > 0, damage=damage)
 
@@ -2798,19 +2811,21 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
                 if used_a >= shots_a:
                     continue
                 used_a += 1
-                damage = roll_fire_arrow_attack(
+                raw_damage = roll_fire_arrow_attack(
                     skill_a, rng, damage_range=a.missile_damage_range, hit_chance_multiplier=b.defensive_hit_multiplier
                 )
-                shots.append(FireArrowShot(shooter="a", hit=damage > 0, damage=damage))
+                damage = max(0, raw_damage - b.damage_reduction)
+                shots.append(FireArrowShot(shooter="a", hit=raw_damage > 0, damage=damage))
                 b.hit_points -= damage
             else:
                 if used_b >= shots_b:
                     continue
                 used_b += 1
-                damage = roll_fire_arrow_attack(
+                raw_damage = roll_fire_arrow_attack(
                     skill_b, rng, damage_range=b.missile_damage_range, hit_chance_multiplier=a.defensive_hit_multiplier
                 )
-                shots.append(FireArrowShot(shooter="b", hit=damage > 0, damage=damage))
+                damage = max(0, raw_damage - a.damage_reduction)
+                shots.append(FireArrowShot(shooter="b", hit=raw_damage > 0, damage=damage))
                 a.hit_points -= damage
         if a.hit_points <= 0 or b.hit_points <= 0:
             break
@@ -2961,18 +2976,19 @@ def resolve_hand_of_death_channel(
             if caster.hit_points <= 0 or victim.hit_points <= 0:
                 continue
             if actor is caster:
-                damage = roll_hand_of_death_damage(skill_level, rng)
+                damage = max(0, roll_hand_of_death_damage(skill_level, rng) - victim.damage_reduction)
                 squeeze_hits.append(damage)
                 victim.hit_points -= damage
                 if victim.hit_points <= 0:
                     return EncounterCombatResult(winner="a", rounds=round_number, squeeze_hits=tuple(squeeze_hits))
             else:
-                damage = roll_melee_attack(
+                raw_damage = roll_melee_attack(
                     rng,
                     damage_range=victim.melee_damage_range,
                     hit_chance_multiplier=HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER,
                 )
-                if damage > 0:
+                if raw_damage > 0:
+                    damage = max(0, raw_damage - caster.damage_reduction)
                     caster.hit_points -= damage
                     return EncounterCombatResult(winner=None, rounds=round_number, squeeze_hits=tuple(squeeze_hits))
         _apply_end_of_round_regeneration(caster, victim)
@@ -3180,7 +3196,9 @@ def resolve_mirror_image_duel(
         for attacker, defender in ((first, second), (second, first)):
             if attacker.hit_points <= 0 or defender.hit_points <= 0:
                 continue
-            defender.hit_points -= roll_melee_attack(rng, damage_range=attacker.melee_damage_range)
+            defender.hit_points -= max(
+                0, roll_melee_attack(rng, damage_range=attacker.melee_damage_range) - defender.damage_reduction
+            )
         if illusion.hit_points <= 0:
             return EncounterCombatResult(winner=None, rounds=total_rounds)
         if opponent.hit_points <= 0:
@@ -3201,7 +3219,9 @@ def resolve_mirror_image_duel(
         for attacker, defender in ((first, second), (second, first)):
             if attacker.hit_points <= 0 or defender.hit_points <= 0:
                 continue
-            defender.hit_points -= roll_melee_attack(rng, damage_range=attacker.melee_damage_range)
+            defender.hit_points -= max(
+                0, roll_melee_attack(rng, damage_range=attacker.melee_damage_range) - defender.damage_reduction
+            )
         if illusion.hit_points <= 0:
             return EncounterCombatResult(winner="a", rounds=total_rounds)
         if caster.hit_points <= 0:
@@ -3317,7 +3337,9 @@ def resolve_illusory_hero_duel(
         for attacker, defender in ((first, second), (second, first)):
             if attacker.hit_points <= 0 or defender.hit_points <= 0:
                 continue
-            defender.hit_points -= roll_melee_attack(rng, damage_range=attacker.melee_damage_range)
+            defender.hit_points -= max(
+                0, roll_melee_attack(rng, damage_range=attacker.melee_damage_range) - defender.damage_reduction
+            )
         if illusion.hit_points <= 0:
             return EncounterCombatResult(winner=None, rounds=total_rounds)
         if opponent.hit_points <= 0:
@@ -3341,7 +3363,9 @@ def resolve_illusory_hero_duel(
         for attacker, defender in ((first, second), (second, first)):
             if attacker.hit_points <= 0 or defender.hit_points <= 0:
                 continue
-            defender.hit_points -= roll_melee_attack(rng, damage_range=attacker.melee_damage_range)
+            defender.hit_points -= max(
+                0, roll_melee_attack(rng, damage_range=attacker.melee_damage_range) - defender.damage_reduction
+            )
         if illusion.hit_points <= 0:
             return EncounterCombatResult(winner="a", rounds=total_rounds)
         if caster.hit_points <= 0:

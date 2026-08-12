@@ -20296,7 +20296,7 @@ follow-up request after the original 431-435 plan shipped.
   conquests. No further `GW3__Tn` snapshots remain in the archive for
   future extension of this specific series.
   - Ran in isolation: 3 passed. Ran the full suite: 4265 passed (3 new).
-- **Phase 488 (current)**: a fresh audit of untapped user-supplied
+- **Phase 488**: a fresh audit of untapped user-supplied
   reference files (`ABILITÀ SOPRA IL LIVELLO 4 OK.txt`, `CARICHE E
   ABLITÀ.txt`, `Piani speciali d'incontro dei mostri.txt`,
   `SUCCESSIONE.txt`, `TALK SAY FULFILL.txt`, `TABELLA ALLINEAMENTI.jpg`)
@@ -20341,6 +20341,49 @@ follow-up request after the original 431-435 plan shipped.
     apply only to the titleholder (not a different leader), and the
     same leader can stack both bonuses at once for their own respective
     types. Ran again: 4273 passed (8 new).
+- **Phase 489 (current)**: continues Phase 488's own audit, wiring the
+  Lord High Defender's own perk (`OFFICE_PERK_DESCRIPTION[Office.
+  DEFENDER]`, "Reduce Damage 1 Point" -- `CARICHE E ABLITÀ.txt`'s full
+  real text: "The Armor will reduce any strike against you in personal
+  combat (including magical damage) by one damage point"). Adds
+  `turn/encounter.py Combatant.damage_reduction` (default 0, a defender-
+  side counterpart to the existing `melee_damage_dealt_reduction`
+  attacker-side debuff) and subtracts it, floored at 0, at every one of
+  the module's 8 `hit_points -=` sites -- Melee (`resolve_one_melee_
+  round`/`resolve_reactive_melee_swing`/`resolve_melee_duel`), Fire
+  Arrow (`resolve_fire_arrow_duel`), Hand of Death's own squeeze and
+  victim counter-hit, and both Mirror-Image/Illusory-Hero duel stages --
+  a single uniform change rather than special-casing "real character"
+  vs. "illusion" defenders, since an illusion's own fresh `Combatant`
+  naturally defaults to 0 reduction anyway. Each of the 6 real callers
+  that build a leader's own `Combatant` (`battle_orchestrator.py
+  _commander_combatant`, `challenge_execution.py`/`search_execution.py`/
+  `patrol_execution.py`/`pursue_execution.py _leader_combatant`,
+  `cast_execution.py _kill_enemy_combatant`) now resolves `Office.
+  DEFENDER` via `turn/office_holder.py resolve_office_holder()` and
+  passes `damage_reduction=1` only when the leader being built currently
+  holds the title -- the same per-consumer "duplicated small lookup"
+  precedent this project already uses for `neutral_duelist_bonus`/
+  `temper`, not a shared helper. The other 5 major perks (World Emperor/
+  High Chancellor/Imperial Treasurer's own passive intelligence reports,
+  Arch-Mage's magic-item sensing) still need a new report-composition
+  touchpoint or (for World Emperor/Imperial Treasurer) a new "known
+  bordering kingdom for a full turn" tracking concept that doesn't exist
+  yet -- both left for future phases, along with the 89-entry Advanced
+  Ability catalog and the alignment-Office minor perks Phase 488 also
+  flagged.
+  - Ran the full suite before writing new tests: 4273 passed (non-
+    breaking). Wrote 13 new tests: 5 in `tests/test_encounter.py`
+    (`damage_reduction` defaults to 0; floors a real hit to 0 at each of
+    the Melee/Fire Arrow/Hand of Death sites, including the "still logs
+    as a hit" and "channel keeps going since the victim took no damage"
+    edge cases) and 8 wiring tests across `tests/test_battle_
+    orchestrator.py`, `tests/test_challenge_execution.py`, `tests/
+    test_search_execution.py`, `tests/test_cast_execution.py`, `tests/
+    test_patrol_execution.py`, and `tests/test_pursue_execution.py`
+    (the titleholder gets `damage_reduction=1`; a non-titleholder, and
+    the Duel's own leaderless garrison commander, get 0). Ran again:
+    4286 passed (13 new).
 
 ## Setup
 

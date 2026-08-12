@@ -109,6 +109,20 @@ def test_leader_combatant_reads_real_temper():
     assert combatant.temper is Temper.BRAVE
 
 
+def test_leader_combatant_gives_the_imperial_defender_a_damage_reduction_of_one():
+    # Phase 489: CARICHE E ABLITA.txt's own Office.DEFENDER perk ("reduce
+    # any strike against you in personal combat ... by one damage point").
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION)
+    leader.merit_tally.monster_hp_defeated = 1  # meets OFFICE_MIN_POINTS[Office.DEFENDER]
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(state, leader)
+
+    assert combatant.damage_reduction == 1
+
+
 def test_execute_search_leader_not_found():
     state = GameState()
     result = execute_search(state, LEADER_ID, _melee_request(1))

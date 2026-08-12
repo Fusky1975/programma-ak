@@ -650,12 +650,15 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
 
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)
     archery_skill = effective_skill_level(state, leader, Ability.ARCHERY)
+    defender_office = resolve_office_holder(state, Office.DEFENDER)
+    damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
     return Combatant(
         name=leader.name,
         hit_points=CHARACTER_HIT_POINTS,
         melee_skill=melee_skill,
         archery_skill=archery_skill,
         temper=leader.temper,
+        damage_reduction=damage_reduction,
     )
 
 

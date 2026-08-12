@@ -166,6 +166,31 @@ def test_leader_combatant_reads_real_temper():
     assert combatant.temper is Temper.CAUTIOUS
 
 
+def test_leader_combatant_gives_the_imperial_defender_a_damage_reduction_of_one():
+    # Phase 489: CARICHE E ABLITA.txt's own Office.DEFENDER perk ("reduce
+    # any strike against you in personal combat ... by one damage point").
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD)
+    leader.merit_tally.monster_hp_defeated = 1  # meets OFFICE_MIN_POINTS[Office.DEFENDER]
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.damage_reduction == 1
+
+
+def test_leader_combatant_gives_no_damage_reduction_without_the_office():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.damage_reduction == 0
+
+
 # -- execute_challenge: co-location, not-found, peaceful bypass ---------
 
 
