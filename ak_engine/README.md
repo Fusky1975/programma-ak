@@ -20250,7 +20250,7 @@ follow-up request after the original 431-435 plan shipped.
   including a King-vs-King's-champion battle against Kahn himself).
   - Ran in isolation: 7 passed (with Phase 482's own module). Ran the
     full suite: 4253 passed (3 new).
-- **Phase 484 (current)**: extends real-turn validation to `GW3__T9`
+- **Phase 484**: extends real-turn validation to `GW3__T9`
   (real turn 8), cross-checked against `SE3__T8.K1` -- a genuinely mixed
   turn: the Buccaneer Sea is successfully defended against a second
   Samantha invasion, but Bronzeleaf (won by Guerin at Phase 480) and
@@ -20261,6 +20261,41 @@ follow-up request after the original 431-435 plan shipped.
   Makumb's own Balmwood (tax=4 exact) then Silvermist (tax=6 exact)
   conquests, ending the turn at Silvermist.
   - Ran in isolation: 3 passed. Ran the full suite: 4256 passed (3 new).
+- **Phase 485**: extends real-turn validation to `GW3__T10` (real turn
+  9), cross-checked against `SE3__T9.K1`. New `tests/
+  test_gw3_t10_end_to_end.py` confirms Kingdom 6's own continuing
+  expansion at Kingdom 1's expense (Bir Nzaran tax=5 exact, and
+  Ravenwood, both taken by "II Kahn" -- the real letter's own "II"
+  regnal-number naming, confirming a King succession happened at
+  Kingdom 6 sometime after Phase 483's own plain "Kahn"), alongside
+  Uga-Buga Makumb's own St Helens (tax=4 exact) then Belladonna
+  conquests.
+  - Ran in isolation: 3 passed. Ran the full suite: 4259 passed (3 new).
+- **Phase 486**: extends real-turn validation to `GW3__T11` (real turn
+  10), cross-checked against `SE3__T10.K1`. New `tests/
+  test_gw3_t11_end_to_end.py` confirms Kingdom 1 successfully holding
+  Ngara across a real forced-rebattle (Samantha's second attack fails,
+  matching the same Phase 480 mechanic reused a third time by this
+  point in the game) while losing both Chirfa (to Kingdom 3) and
+  Sherwood (to Kingdom 6, a real *second* loss of the same province
+  this project's own fixtures have now tracked across Phase 483/484),
+  plus Uga-Buga Makumb's own Plumwood conquest (tax=6 exact). This is
+  also the first fixture in the series with fewer than 90 real Heroes
+  (89) -- a genuine game-progression fact, not a parser regression.
+  - Ran in isolation: 6 passed (with Phase 485's own module). Ran the
+    full suite: 4262 passed (3 new).
+- **Phase 487 (current)**: extends real-turn validation to `GW3__T12`
+  (real turn 11), cross-checked against `SE3__T11.K1` -- the last
+  remaining turn in the user's own `GW3__T1`-`T12` archive, completing
+  this project's real-historical-data validation net across the entire
+  available run of game SE3. New `tests/test_gw3_t12_end_to_end.py`
+  confirms Kingdom 1 defending both Ngara (a third successful
+  forced-rebattle) and the Jellyfish Sea against Kingdom 6, while losing
+  Maplehaven and Sageleaf to Kingdom 7 in the same turn, plus Uga-Buga
+  Makumb's own Mare Imbrium (tax=1 exact) and Aries Sea (tax=3 exact)
+  conquests. No further `GW3__Tn` snapshots remain in the archive for
+  future extension of this specific series.
+  - Ran in isolation: 3 passed. Ran the full suite: 4265 passed (3 new).
 
 ## Setup
 
