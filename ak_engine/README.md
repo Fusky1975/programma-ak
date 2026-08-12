@@ -20215,7 +20215,7 @@ follow-up request after the original 431-435 plan shipped.
   checks Guerin's own in-letter judgment of Tao-Li's alignment/temper
   ("Evil, Brave") against the bridged `LeaderState`.
   - Ran in isolation: 3 passed. Ran the full suite: 4242 passed (3 new).
-- **Phase 481 (current)**: extends real-turn validation to `GW3__T4`
+- **Phase 481**: extends real-turn validation to `GW3__T4`
   (real turn 3), cross-checked against `SE3__T3.K1`. New `tests/
   test_gw3_t4_end_to_end.py` catches three real Charm conversions in a
   single turn (Lallipugh and Odysseus to Undead, but Amalric to Evil --
@@ -20225,6 +20225,42 @@ follow-up request after the original 431-435 plan shipped.
   Beer-Sea campaign, both ending the turn at their own letter's final
   narrated location.
   - Ran in isolation: 4 passed. Ran the full suite: 4246 passed (4 new).
+- **Phase 482**: extends real-turn validation to `GW3__T7` (real turn
+  6), cross-checked against `SE3__T6.K1`. This letter documents the
+  first two real King deaths this project's own fixtures have seen:
+  Uga-Buga Makumb's own Gate Demon summon kills Hokuto (King #4) in a
+  champion's Duel at the conquest of Chaco, and Teleko separately kills
+  Kwoth (King #3) in a duel at Limerick -- but Teleko's own *battle*
+  there is lost regardless of the duel result, and "Teleko rallied his
+  men and decided to contest Limerick" rather than retreat: a real,
+  letter-documented case of the *attacker* staying to force a rebattle
+  after losing, still holding the province at turn's end without owning
+  it. New `tests/test_gw3_t7_end_to_end.py` cross-checks Pascal/
+  Constantine's Charm conversions, Chaco/Jerbilia's conquest (tax=3
+  exact), Guerin's Bir Nzaran conquest, and Teleko's Gafsa conquest
+  (tax=2 exact) alongside the still-Kingdom-3-owned Limerick.
+  - Ran in isolation: 4 passed. Ran the full suite: 4250 passed (4 new).
+- **Phase 483**: extends real-turn validation to `GW3__T8` (real turn
+  7), cross-checked against `SE3__T7.K1` -- the first letter in this
+  project's own fixture set where Kingdom 1 is the one *losing*
+  territory: Samantha (Kingdom 3) invades Kabompo and the Amazonian Sea,
+  both "practically uncontested" real losses, matching the bridged
+  ownership exactly. New `tests/test_gw3_t8_end_to_end.py` also confirms
+  Guerin's own continuing conquest streak (Peachwood then Sherwood,
+  including a King-vs-King's-champion battle against Kahn himself).
+  - Ran in isolation: 7 passed (with Phase 482's own module). Ran the
+    full suite: 4253 passed (3 new).
+- **Phase 484 (current)**: extends real-turn validation to `GW3__T9`
+  (real turn 8), cross-checked against `SE3__T8.K1` -- a genuinely mixed
+  turn: the Buccaneer Sea is successfully defended against a second
+  Samantha invasion, but Bronzeleaf (won by Guerin at Phase 480) and
+  Peachwood (won by Guerin at Phase 483) are both lost to Kahn's own
+  forces this same turn -- real, letter-confirmed reversals of two
+  provinces this project's own earlier fixtures had shown Kingdom 1
+  winning. New `tests/test_gw3_t9_end_to_end.py` also confirms Uga-Buga
+  Makumb's own Balmwood (tax=4 exact) then Silvermist (tax=6 exact)
+  conquests, ending the turn at Silvermist.
+  - Ran in isolation: 3 passed. Ran the full suite: 4256 passed (3 new).
 
 ## Setup
 
