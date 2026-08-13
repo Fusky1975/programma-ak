@@ -20573,7 +20573,7 @@ follow-up request after the original 431-435 plan shipped.
     `opponent_has_detect_illusions` instead), 4 in `tests/test_
     challenge_execution.py` (caster-side and target-side, for both
     spells, each independently). Ran again: 4337 passed (8 new).
-- **Phase 495 (current)**: `AdvancedAbility.KNOW_ALIGNMENT_TALENT`
+- **Phase 495**: `AdvancedAbility.KNOW_ALIGNMENT_TALENT`
   (ordinal 59, `Ability.WHITE`'s own magic-college pool -- one of the 5
   colleges Phase 493 can already grant), the second per-ability
   mechanical effect wired. `REPORTS.PAS Align_Est`'s own ``Has_SA(agent,
@@ -20602,6 +20602,46 @@ follow-up request after the original 431-435 plan shipped.
     nudged one full `Alignment` ordinal off the true value, with it the
     report shows the true alignment precisely. Ran again: 4339 passed
     (2 new).
+- **Phase 496 (current)**: `AdvancedAbility.WITCHSIGHT_TALENT` (ordinal
+  67, `Ability.NECROMANCY`'s own magic-college pool -- one of the 5
+  colleges Phase 493 can already grant), the third per-ability
+  mechanical effect wired, same shape as Phase 494's Detect Illusions:
+  "whenever an opponent turns Invisible in combat, the Necromancer can
+  still see his opponent and is unaffected by the spell." The
+  `INVISIBILITY_HIT_CHANCE_MULTIPLIER = 0.5` halving (`turn/
+  encounter.py`) already fired unconditionally at both real
+  `Spell.INVISIBILITY` call sites (`turn/search_execution.py`, `turn/
+  challenge_execution.py`) whenever a caster cast Invisibility on
+  themselves -- neither site ever checked whether the *opponent*
+  (whoever still has to fight the now-harder-to-hit caster) held
+  Witchsight. Both sites now skip the halving when the opponent's own
+  `leader.advanced_abilities` contains `AdvancedAbility.WITCHSIGHT_
+  TALENT` -- in `turn/search_execution.py`'s always-leader-vs-monster
+  Search encounter this only matters when a monster casts Invisibility
+  on itself (`caster_is_leader is False`, checked against the module's
+  own single real `leader`); in `turn/challenge_execution.py`'s
+  leader-vs-leader Challenge encounter, `target_leader`'s own
+  `advanced_abilities` is checked directly, mirroring Phase 494's own
+  Mirror-Image/Illusory-Hero wiring pattern exactly. A candidate found
+  during this phase's own scoping research -- tightening the pre-
+  existing skill->=5 approximation gating Illusory Hero/Words of
+  Healing to instead require the exact granted `AdvancedAbility` --
+  was deliberately rejected: that approximation is the *only* path
+  letting a leader imported from a real parsed game file (which has no
+  way to populate `advanced_abilities`, a pure in-engine-simulation
+  field with no real-file byte representation) ever cast those two
+  secret spells at all, so tightening it would be a regression for that
+  use case, not a fix.
+  - Ran the full suite before writing new tests: 4339 passed (non-
+    breaking). Wrote 5 new tests: 3 in `tests/test_search_execution.py`
+    (a monster-cast Invisibility against a Witchsight-holding leader
+    opponent stays unhalved, the same scenario without the Talent stays
+    halved, and a leader casting Invisibility on themselves stays halved
+    regardless of their own Witchsight -- since Witchsight protects
+    whoever's fighting the invisible caster, not the caster themselves),
+    2 in `tests/test_challenge_execution.py` (target-with-Talent
+    unaffected, target-without-Talent halved). Ran again: 4344 passed
+    (5 new).
 
 ## Setup
 

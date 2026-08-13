@@ -1240,7 +1240,18 @@ def _resolve_search_encounter(
             return None
 
         if spell is Spell.INVISIBILITY:
-            caster.defensive_hit_multiplier *= INVISIBILITY_HIT_CHANCE_MULTIPLIER
+            # Phase 496: same AdvancedAbility.WITCHSIGHT_TALENT wiring as
+            # turn/challenge_execution.py's own Invisibility branch --
+            # the Necromancer fighting the invisible caster needs
+            # Witchsight, not the caster themselves. `leader` is the
+            # only real LeaderState in a Search encounter, so it only
+            # matters when the leader is playing the opponent role
+            # (caster_is_leader is False -- a monster cast Invisibility).
+            opponent_has_witchsight = (
+                not caster_is_leader
+            ) and AdvancedAbility.WITCHSIGHT_TALENT in leader.advanced_abilities
+            if not opponent_has_witchsight:
+                caster.defensive_hit_multiplier *= INVISIBILITY_HIT_CHANCE_MULTIPLIER
             caster.is_invisible = True
             return None
 

@@ -592,6 +592,45 @@ def test_execute_challenge_cast_illusory_hero_target_passes_own_detect_illusions
     assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is False
 
 
+def test_execute_challenge_cast_invisibility_target_with_witchsight_is_unaffected():
+    # Phase 496: AdvancedAbility.WITCHSIGHT_TALENT -- "the Necromancer can
+    # still see his opponent and is unaffected by the spell" -- the
+    # caster becomes invisible, but the *target* (whoever has to keep
+    # fighting them) needs Witchsight to be unaffected.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD))
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    target.advanced_abilities.add(AdvancedAbility.WITCHSIGHT_TALENT)
+    state.add_leader(target)
+    request = _cast_request(2, Spell.INVISIBILITY, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    caster_combatant = mock_melee.call_args[0][0]
+    assert caster_combatant.defensive_hit_multiplier == 1.0
+    assert caster_combatant.is_invisible is True
+
+
+def test_execute_challenge_cast_invisibility_target_without_witchsight_is_halved():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.INVISIBILITY, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    caster_combatant = mock_melee.call_args[0][0]
+    assert caster_combatant.defensive_hit_multiplier == 0.5
+
+
 def test_execute_challenge_cast_gate_demon_summons_and_the_demon_wins():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))

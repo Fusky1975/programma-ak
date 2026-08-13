@@ -1213,6 +1213,76 @@ def test_execute_search_cast_invisibility_halves_casters_own_hit_chance_taken():
     assert leader_combatant.defensive_hit_multiplier == 0.5
 
 
+def test_execute_search_cast_invisibility_leader_opponent_with_witchsight_is_unaffected():
+    # Phase 496: AdvancedAbility.WITCHSIGHT_TALENT -- "the Necromancer can
+    # still see his opponent and is unaffected by the spell" -- here the
+    # monster casts Invisibility on itself and the leader is the one who
+    # needs to keep fighting it; Witchsight should suppress the halving.
+    leader = _skilled_leader(Ability.NECROMANCY, 0)
+    leader.advanced_abilities.add(AdvancedAbility.WITCHSIGHT_TALENT)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch.dict(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.ARCHER: {Ability.ILLUSION: 5}}
+    ), patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.INVISIBILITY.value),)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    # resolve_melee_duel() is always called (leader_combatant,
+    # monster_combatant, ...) regardless of who cast/who's the target.
+    monster_combatant = mock_melee.call_args[0][1]
+    assert monster_combatant.defensive_hit_multiplier == 1.0
+
+
+def test_execute_search_cast_invisibility_leader_opponent_without_witchsight_is_halved():
+    leader = _skilled_leader(Ability.NECROMANCY, 0)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch.dict(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.ARCHER: {Ability.ILLUSION: 5}}
+    ), patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.INVISIBILITY.value),)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    monster_combatant = mock_melee.call_args[0][1]
+    assert monster_combatant.defensive_hit_multiplier == 0.5
+
+
+def test_execute_search_cast_invisibility_leader_caster_still_halved_regardless_of_witchsight():
+    # The leader casting Invisibility on themselves is the one who
+    # becomes invisible -- their own Witchsight (if any) is irrelevant to
+    # their own defensive_hit_multiplier, matching the base (pre-Phase
+    # 496) test above; a monster opponent can never hold an Advanced
+    # Ability, so the halving always applies here regardless.
+    leader = _skilled_leader(Ability.ILLUSION, 5)
+    leader.advanced_abilities.add(AdvancedAbility.WITCHSIGHT_TALENT)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.INVISIBILITY, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    leader_combatant = mock_melee.call_args[0][0]
+    assert leader_combatant.defensive_hit_multiplier == 0.5
+
+
 def test_execute_search_cast_fireball_kills_the_target():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))

@@ -503,7 +503,16 @@ def _resolve_personal_combat_cast(
         return None
 
     if spell is Spell.INVISIBILITY:
-        caster.defensive_hit_multiplier *= INVISIBILITY_HIT_CHANCE_MULTIPLIER
+        # Phase 496: AdvancedAbility.WITCHSIGHT_TALENT -- "whenever an
+        # opponent turns Invisible in combat, the Necromancer can still
+        # see his opponent and is unaffected by the spell." The
+        # Necromancer here is whoever is fighting the invisible caster,
+        # i.e. this dispatcher's own target_leader, not the caster.
+        opponent_has_witchsight = (
+            target_leader is not None and AdvancedAbility.WITCHSIGHT_TALENT in target_leader.advanced_abilities
+        )
+        if not opponent_has_witchsight:
+            caster.defensive_hit_multiplier *= INVISIBILITY_HIT_CHANCE_MULTIPLIER
         caster.is_invisible = True
         return None
 
