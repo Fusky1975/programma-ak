@@ -1282,14 +1282,29 @@ def _resolve_search_encounter(
             return None
 
         if spell is Spell.FIREBALL:
-            target_is_immune = target_is_monster and monster_species in SUBMARINE_MONSTERS
+            # Phase 501: AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS --
+            # "Fireball can be cast against underwater monsters." Only
+            # reachable here (target_is_monster == caster_is_leader in
+            # this function, so a monster caster -- which can't hold an
+            # Advanced Ability -- never reaches this branch with the
+            # ability set).
+            if target_is_monster and AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS in leader.advanced_abilities:
+                target_is_immune = False
+            else:
+                target_is_immune = target_is_monster and monster_species in SUBMARINE_MONSTERS
             target.hit_points -= roll_fireball_damage(level, rng, target_is_immune=target_is_immune)
             if target.hit_points <= 0:
                 return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
             return None
 
         if spell is Spell.ICE_SUSPEND:
-            if target_is_monster and monster_species in ICE_SUSPENSION_IMMUNE_MONSTERS:
+            # Phase 501: AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS --
+            # "Ice Suspension will work against any monster." Same
+            # reachability note as Fireball above.
+            ice_suspend_immune = target_is_monster and monster_species in ICE_SUSPENSION_IMMUNE_MONSTERS
+            if ice_suspend_immune and AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS in leader.advanced_abilities:
+                ice_suspend_immune = False
+            if ice_suspend_immune:
                 return None
             if ice_suspension_is_frozen(target.hit_points, level):
                 # Confirmed by the user: the frozen branch simplifies to a win.

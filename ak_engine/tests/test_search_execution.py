@@ -1351,6 +1351,23 @@ def test_execute_search_cast_fireball_marks_submarine_targets_immune():
     assert mock_fireball.call_args.kwargs["target_is_immune"] is True
 
 
+def test_execute_search_cast_fireball_enhanced_ability_overrides_submarine_immunity():
+    # Phase 501: AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS -- "Fireball
+    # can be cast against underwater monsters."
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.MERMAID))
+    request = _cast_request(1, Spell.FIREBALL)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_fireball_damage", return_value=999
+    ) as mock_fireball:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_fireball.call_args.kwargs["target_is_immune"] is False
+    assert result.winner == "leader"
+
+
 def test_execute_search_cast_ice_suspend_immune_species_has_no_effect():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPECTRE))
@@ -1369,6 +1386,27 @@ def test_execute_search_cast_ice_suspend_immune_species_has_no_effect():
     assert mock_melee.called
     leader_combatant = mock_melee.call_args[0][0]
     assert leader_combatant.bonus_unanswered_attacks == 0
+
+
+def test_execute_search_cast_ice_suspend_enhanced_ability_overrides_species_immunity():
+    # Phase 501: AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS -- "Ice
+    # Suspension will work against any monster." SPECTRE would
+    # otherwise be immune (see the test above, where the guardian never
+    # takes any bonus-attack damage); with the ability, the spell's
+    # ordinary slowed-branch bonus rounds apply instead and can kill it.
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPECTRE))
+    request = _cast_request(1, Spell.ICE_SUSPEND)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()
+    ), patch("ak_engine.turn.search_execution.ice_suspension_is_frozen", return_value=False), patch(
+        "ak_engine.turn.search_execution.ice_suspension_slowed_bonus_rounds", return_value=1
+    ), patch("ak_engine.turn.search_execution.roll_melee_attack", return_value=999):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
 
 
 def test_execute_search_cast_ice_suspend_frozen_branch_wins_instantly():

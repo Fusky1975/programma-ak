@@ -20720,7 +20720,7 @@ follow-up request after the original 431-435 plan shipped.
     the other; a target with no items is a harmless no-op; the same
     two-item scenario without the ability leaves the target's items
     untouched. Ran again: 4353 passed (3 new).
-- **Phase 500 (current)**: `AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS`
+- **Phase 500**: `AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS`
   (ordinal 68, `Ability.NECROMANCY`'s own magic-college pool), Hand of
   Death half only: "'Hand of Death' now works against all creatures."
   (The other half, Control Undead against anti-holy creatures with a
@@ -20742,6 +20742,33 @@ follow-up request after the original 431-435 plan shipped.
     ability), one in `tests/test_challenge_execution.py` (an
     `Alignment.UNDEAD` leader target -- normally immune -- stops being
     immune with the ability). Ran again: 4355 passed (2 new).
+- **Phase 501 (current)**: `AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS`
+  (ordinal 73, `Ability.ELEMENTAL`'s own magic-college pool): "The
+  'Fireball' and 'Ice Suspension' spells are enhanced... Fireball can
+  be cast against underwater monsters and Ice Suspension will work
+  against any monster." Wired into `turn/search_execution.py`'s
+  `_resolve_cast_tactic()` -- the only file needing it, since `turn/
+  challenge_execution.py`'s own Fireball/Ice-Suspend branches already
+  hard-code `target_is_immune=False` unconditionally (no monster can
+  ever appear in a leader-vs-leader Challenge encounter). Both spell
+  branches use the same shape as Phase 500's Hand of Death precedent:
+  reachable only in the `target_is_monster` case (a monster caster
+  can't hold an Advanced Ability), overriding the species-immunity
+  check to `False`/not-immune when `leader.advanced_abilities` contains
+  the ability -- `SUBMARINE_MONSTERS` for Fireball, `ICE_SUSPENSION_
+  IMMUNE_MONSTERS` for Ice Suspend's own early "no effect" return.
+  - Ran the full suite before writing new tests: 4355 passed (non-
+    breaking). Wrote 2 new tests in `tests/test_search_execution.py`:
+    a `Monster.MERMAID` (submarine) Fireball target stops being immune
+    with the ability; a `Monster.SPECTRE` (Ice-Suspension-immune)
+    target's normal slowed-branch bonus-attack effect applies instead
+    of the immune no-op, following the file's own established pattern
+    of asserting the outcome through mocked `roll_melee_attack` damage
+    rather than inspecting a `Combatant`'s `bonus_unanswered_attacks`
+    directly -- `_consume_bonus_attacks()` immediately resolves and
+    zeroes that field before any later assertion could observe it, a
+    real quirk this phase re-discovered and worked around, not new
+    engine behavior. Ran again: 4357 passed (2 new).
 
 ## Setup
 
