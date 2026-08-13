@@ -151,7 +151,12 @@ TITLE_FANATICISM_CHANCE: dict[Office, float] = {
 # level: 1.2` (== 1 + 0.20/level here), and `phantasmal_per_caster_
 # level: 1.15` (== 1 + 0.15/level here). Zero correction needed -- all
 # three already matched exactly.
-MAX_EXPLORATION_ADVANTAGE = 0.25
+# Phase 507: the real per-point rate (RUMORS.PAS's own `kexp * 0.0025`),
+# superseding the pre-507 `MAX_EXPLORATION_ADVANTAGE = 0.25` gap-based
+# cap this constant's own name described -- see exploration_advantage_
+# multiplier()'s own Phase 507 addendum for why both figures agree at
+# the ordinary 100% cap.
+MAX_EXPLORATION_ADVANTAGE_PER_POINT = 0.0025
 TACTICAL_BONUS_PER_LEVEL = 0.20
 PHANTASMAL_ARMIES_BONUS_PER_LEVEL = 0.15
 
@@ -265,18 +270,27 @@ def modified_quality(
     return Quality(level)
 
 
-def exploration_advantage_multiplier(own_explored_percent: int, enemy_explored_percent: int) -> float:
+def exploration_advantage_multiplier(own_explored_percent: int) -> float:
     """Rulebook: "the side with the better exploration... will also have up to a 25% advantage.
 
-    Only the better-explored side gets a bonus (never a penalty for being
-    behind); the rulebook's only concrete data point is the 100%-vs-0%
-    case giving exactly +25%, so this scales linearly between 0% and that
-    maximum by the exploration gap -- a documented interpolation, not a
-    sourced formula (see ``ak_engine/README.md``).
+    **Phase 507**: superseded by the real formula (``RUMORS.PAS:389-403``,
+    the user's third reverse-engineering dossier Part IV SS50.2):
+    ``1 + own_explored_percent * 0.0025``, applied to *each side
+    independently* off its own accumulated province knowledge -- not a
+    relative "gap between the two sides" bonus the way the pre-507
+    project-original interpolation modeled it (the enemy's own
+    exploration never entered the real formula at all). At the ordinary
+    100% cap this gives exactly the rulebook's own +25% -- the number
+    Phase 351's own separate disassembly pass had already confirmed
+    (``exploration_max: 1.25``) without yet knowing *how* the formula
+    reached it; Military Maps (``turn/exploration.py``'s own Phase 507
+    addendum) raising the cap to 200 is what unlocks the further +50%
+    this same real formula allows, resolving what looked like two
+    conflicting sourced maxima as one formula viewed at two different
+    caps, not a contradiction.
     """
 
-    gap = max(0, own_explored_percent - enemy_explored_percent) / 100
-    return 1 + MAX_EXPLORATION_ADVANTAGE * min(1.0, gap)
+    return 1 + MAX_EXPLORATION_ADVANTAGE_PER_POINT * own_explored_percent
 
 
 def combat_ability_multiplier(ability_level: int) -> float:
@@ -377,7 +391,6 @@ def compute_effective_strength(
     druidic_shortfall: int = 0,
     race_item_bonus: int = 0,
     own_explored_percent: int = 0,
-    enemy_explored_percent: int = 0,
     combat_ability_level: int = 0,
     phantasmal_armies_level: int = 0,
     phantasmal_armies_bonus_per_level: float = PHANTASMAL_ARMIES_BONUS_PER_LEVEL,
@@ -449,7 +462,7 @@ def compute_effective_strength(
 
     if is_defender:
         strength *= DEFENDER_BONUS
-    strength *= exploration_advantage_multiplier(own_explored_percent, enemy_explored_percent)
+    strength *= exploration_advantage_multiplier(own_explored_percent)
     strength *= combat_ability_multiplier(combat_ability_level)
     strength *= phantasmal_armies_multiplier(phantasmal_armies_level, bonus_per_level=phantasmal_armies_bonus_per_level)
     strength = illusory_fog_strength(strength, affected=illusory_fog_affected)

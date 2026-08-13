@@ -255,7 +255,6 @@ def _build_battle_units(
     combat_ability_level: int = 0,
     apply_fanaticism: bool = False,
     own_explored_percent: int = 0,
-    enemy_explored_percent: int = 0,
     opponent_kingdom_ids: frozenset[int] = frozenset(),
     is_island: bool = False,
     duellist_side: bool = False,
@@ -273,14 +272,16 @@ def _build_battle_units(
     "+20%/level", applied to every unit on the side, not just the
     commander's own led units (see ``fight_battle``'s docstring for why).
 
-    **Exploration advantage** (Phase 69): ``own_explored_percent``/
-    ``enemy_explored_percent`` are single side-level values (not
+    **Exploration advantage** (Phase 69, real formula Phase 507):
+    ``own_explored_percent`` is a single side-level value (not
     per-army), computed once by ``fight_battle`` and applied uniformly
     to every unit on this side via ``turn/strength.py
     exploration_advantage_multiplier`` -- see ``fight_battle``'s own
     docstring for exactly which kingdom's ``ProvinceState.
-    explored_percent_by_kingdom`` entry each side reads. Both default to
-    0 (no advantage either way) for any caller that doesn't pass them.
+    explored_percent_by_kingdom`` entry each side reads. Defaults to 0
+    (no advantage) for any caller that doesn't pass it. No longer takes
+    the opposing side's own value (Phase 507 -- the real formula reads
+    each side's own accumulated knowledge only, never a relative gap).
 
     **Desert without camels** (Phase 35): "In a desert battle, one camel
     unit should be present (it sees double duty as a supply train.) If
@@ -527,7 +528,6 @@ def _build_battle_units(
             phantasmal_armies_level=phantasmal_armies_level,
             phantasmal_armies_bonus_per_level=phantasmal_armies_bonus_per_level,
             own_explored_percent=own_explored_percent,
-            enemy_explored_percent=enemy_explored_percent,
             illusory_fog_affected=illusory_fog_affected,
             is_island=is_island,
         )
@@ -549,7 +549,6 @@ def _build_battle_units(
                 phantasmal_armies_level=phantasmal_armies_level,
                 phantasmal_armies_bonus_per_level=phantasmal_armies_bonus_per_level,
                 own_explored_percent=own_explored_percent,
-                enemy_explored_percent=enemy_explored_percent,
                 illusory_fog_affected=illusory_fog_affected,
                 is_island=is_island,
             )
@@ -1412,7 +1411,6 @@ def _apply_monster_summoning_aid(
     combat_ability_level: int,
     apply_fanaticism: bool,
     own_explored_percent: int,
-    enemy_explored_percent: int,
     opponent_kingdom_ids: frozenset[int],
     is_island: bool,
     rng: random.Random,
@@ -1491,7 +1489,7 @@ def _apply_monster_summoning_aid(
                 strength = compute_effective_strength(
                     matching_army_type, matching_race, army.quality, terrain,
                     is_defender=is_defender, combat_ability_level=combat_ability_level,
-                    own_explored_percent=own_explored_percent, enemy_explored_percent=enemy_explored_percent,
+                    own_explored_percent=own_explored_percent,
                     is_island=is_island,
                 )
                 units.append(BattleUnit(matching_army_type, strength, source_id=army.army_id))
@@ -1500,7 +1498,7 @@ def _apply_monster_summoning_aid(
                     _build_battle_units(
                         [army], state, is_defender=is_defender, terrain=terrain, province_coord=province_coord,
                         rng=rng, combat_ability_level=combat_ability_level, apply_fanaticism=apply_fanaticism,
-                        own_explored_percent=own_explored_percent, enemy_explored_percent=enemy_explored_percent,
+                        own_explored_percent=own_explored_percent,
                         opponent_kingdom_ids=opponent_kingdom_ids, is_island=is_island,
                     )
                 )
@@ -1614,14 +1612,14 @@ def fight_battle(
     attacker_units = _build_battle_units(
         attacker_armies, state, is_defender=False, terrain=terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=attacker_ability_level, apply_fanaticism=apply_fanaticism,
-        own_explored_percent=attacker_explored, enemy_explored_percent=defender_explored,
+        own_explored_percent=attacker_explored,
         opponent_kingdom_ids=defender_kingdom_ids, is_island=is_island,
         duellist_side=attacker_is_duellist_side,
     )
     defender_units = _build_battle_units(
         defender_armies, state, is_defender=True, terrain=terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=defender_ability_level, apply_fanaticism=apply_fanaticism,
-        own_explored_percent=defender_explored, enemy_explored_percent=attacker_explored,
+        own_explored_percent=defender_explored,
         opponent_kingdom_ids=attacker_kingdom_ids, is_island=is_island,
         duellist_side=defender_is_duellist_side,
     )
@@ -1636,14 +1634,14 @@ def fight_battle(
         attacker_units, attacker_commander, state, province_coord, monster_summoning_bounds,
         is_defender=False, terrain=terrain, combat_ability_level=attacker_ability_level,
         apply_fanaticism=apply_fanaticism, own_explored_percent=attacker_explored,
-        enemy_explored_percent=defender_explored, opponent_kingdom_ids=defender_kingdom_ids,
+        opponent_kingdom_ids=defender_kingdom_ids,
         is_island=is_island, rng=rng,
     )
     _apply_monster_summoning_aid(
         defender_units, defender_commander, state, province_coord, monster_summoning_bounds,
         is_defender=True, terrain=terrain, combat_ability_level=defender_ability_level,
         apply_fanaticism=apply_fanaticism, own_explored_percent=defender_explored,
-        enemy_explored_percent=attacker_explored, opponent_kingdom_ids=attacker_kingdom_ids,
+        opponent_kingdom_ids=attacker_kingdom_ids,
         is_island=is_island, rng=rng,
     )
 

@@ -264,6 +264,8 @@ def resolve_move(
     target_explored_percent: int,
     explorer_skill: int,
     occupied_by_enemy: bool = False,
+    has_military_maps: bool = False,
+    has_difficult_terrain: bool = False,
 ) -> MoveResult:
     """Resolve a Move order (rulebook [3.1]) to an *adjacent* target hex.
 
@@ -272,7 +274,9 @@ def resolve_move(
 
     Every Move also counts as a partial exploration of the destination
     ("half the effect of an Explore order"), computed via
-    :func:`ak_engine.turn.exploration.resolve_explore`.
+    :func:`ak_engine.turn.exploration.resolve_explore`. ``has_military_
+    maps``/``has_difficult_terrain`` (Phase 507) pass straight through --
+    see that function's own docstring.
     """
 
     if not is_adjacent(current, target, bounds):
@@ -280,5 +284,12 @@ def resolve_move(
             f"{target} is not adjacent to {current}; chasing a non-adjacent "
             "target isn't implemented yet"
         )
-    exploration = resolve_explore(target_explored_percent, target_terrain, explorer_skill, partial=True)
+    exploration = resolve_explore(
+        target_explored_percent,
+        target_terrain,
+        explorer_skill,
+        partial=True,
+        has_military_maps=has_military_maps,
+        has_difficult_terrain=has_difficult_terrain,
+    )
     return MoveResult(new_coord=target, exploration=exploration, battle_expected=occupied_by_enemy)

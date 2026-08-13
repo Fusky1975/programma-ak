@@ -218,6 +218,8 @@ def record_kingdom_exploration(
     partial: bool,
     state: GameState | None = None,
     rng: random.Random | None = None,
+    has_military_maps: bool = False,
+    has_difficult_terrain: bool = False,
 ) -> KingdomExplorationResult:
     """Advances ``kingdom_id``'s own cumulative exploration of ``province`` (Phase 69) --
     see ``models/game_state.py``'s own module docstring for why this is a
@@ -237,10 +239,21 @@ def record_kingdom_exploration(
     value was computed and thrown away, leaving no way for a caller to
     know *which* features were just found in order to narrate them
     (``report/turn_report.py describe_feature_discovery()``, same phase).
+
+    ``has_military_maps``/``has_difficult_terrain`` (Phase 507) pass
+    straight through to ``resolve_explore()`` -- see that function's
+    own docstring.
     """
 
     prior = province.explored_percent_by_kingdom.get(kingdom_id, 0)
-    result = resolve_explore(prior, province.effective_terrain(), explorer_skill, partial=partial)
+    result = resolve_explore(
+        prior,
+        province.effective_terrain(),
+        explorer_skill,
+        partial=partial,
+        has_military_maps=has_military_maps,
+        has_difficult_terrain=has_difficult_terrain,
+    )
     province.explored_percent_by_kingdom[kingdom_id] = result.new_percent
     discovered: list[Feature] = []
     if state is not None:
@@ -259,6 +272,8 @@ def execute_move(
     explorer_skill: int = 0,
     loser_retreats: bool = True,
     rng: random.Random | None = None,
+    has_military_maps: bool = False,
+    has_difficult_terrain: bool = False,
 ) -> MoveExecutionResult:
     """Move ``army_ids`` (all from the same province) toward ``target``.
 
@@ -340,9 +355,20 @@ def execute_move(
         target_explored_percent=target_province.explored_percent,
         explorer_skill=explorer_skill,
         occupied_by_enemy=occupied_by_enemy,
+        has_military_maps=has_military_maps,
+        has_difficult_terrain=has_difficult_terrain,
     )
     target_province.explored_percent = move_result.exploration.new_percent
-    record_kingdom_exploration(target_province, kingdom_id, explorer_skill, partial=True, state=state, rng=rng)
+    record_kingdom_exploration(
+        target_province,
+        kingdom_id,
+        explorer_skill,
+        partial=True,
+        state=state,
+        rng=rng,
+        has_military_maps=has_military_maps,
+        has_difficult_terrain=has_difficult_terrain,
+    )
 
     battle_report = None
     conquered = False

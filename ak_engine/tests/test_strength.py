@@ -162,11 +162,15 @@ def test_desert_without_camels_reduces_quality_multiplier():
     assert strength == pytest.approx(3)
 
 
-def test_exploration_advantage_scales_linearly_up_to_max():
-    assert exploration_advantage_multiplier(0, 0) == 1.0
-    assert exploration_advantage_multiplier(100, 0) == pytest.approx(1.25)
-    assert exploration_advantage_multiplier(50, 0) == pytest.approx(1.125)
-    assert exploration_advantage_multiplier(0, 100) == 1.0  # never a penalty for being behind
+def test_exploration_advantage_real_formula_per_own_side_only():
+    # Phase 507: the real formula (1 + own_explored_percent * 0.0025)
+    # reads only this side's own accumulated knowledge -- the enemy's
+    # own exploration never enters it at all.
+    assert exploration_advantage_multiplier(0) == 1.0
+    assert exploration_advantage_multiplier(100) == pytest.approx(1.25)
+    assert exploration_advantage_multiplier(50) == pytest.approx(1.125)
+    # Military Maps raises the real cap to 200, reaching +50%.
+    assert exploration_advantage_multiplier(200) == pytest.approx(1.50)
 
 
 def test_combat_ability_multiplier_matches_20_percent_per_level():
@@ -311,12 +315,14 @@ def test_is_island_false_by_default_matches_pre_phase_282_behavior():
 
 # -- Phase 351: cross-validation against the confirmed AK.EXE/AK.OVR ------
 # battle_engine.column_resolution.confirmed_multipliers and
-# battle_engine.special_events tables -- zero code changes needed here,
-# these numbers were already correct (rulebook-sourced, not guessed).
+# battle_engine.special_events tables -- the exploration_max: 1.25 data
+# point here is the *ordinary* 100%-cap case of the real Phase 507
+# formula (own_explored_percent * 0.0025), not a separate confirmation
+# in tension with it -- see that function's own Phase 507 addendum.
 
 
 def test_exploration_advantage_maxes_out_at_the_confirmed_1_25():
-    assert exploration_advantage_multiplier(100, 0) == pytest.approx(1.25)
+    assert exploration_advantage_multiplier(100) == pytest.approx(1.25)
 
 
 def test_tactical_or_naval_bonus_matches_the_confirmed_1_2_per_level():

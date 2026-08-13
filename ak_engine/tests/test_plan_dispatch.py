@@ -147,6 +147,23 @@ def test_dispatch_lmove_sensed_magic_items_is_none_without_the_office():
     assert result.sensed_magic_items is None
 
 
+def test_dispatch_lmove_wires_difficult_terrain_from_the_leaders_own_advanced_ability():
+    # Phase 507: the same real per-leader signal reaches Move's own
+    # partial-exploration side effect too -- Plains(50)+10=60, halved
+    # (partial=True) to 30, times (skill 0 + 1) = 30%, not the base 25%.
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.EXPLORING_DIFFICULT_TERRAIN)
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH, explorer_skill=0
+    )
+
+    assert state.provinces[target].explored_percent == 30
+
+
 def test_dispatch_explore_uses_leader_location():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})
@@ -158,6 +175,38 @@ def test_dispatch_explore_uses_leader_location():
 
     assert result.new_percent == 100  # Plains(50) * (skill 1 + 1) = 100
     assert state.provinces[location].explored_percent == 100
+
+
+def test_dispatch_explore_wires_difficult_terrain_from_the_leaders_own_advanced_ability():
+    # Phase 507: dispatch_phase() derives has_difficult_terrain from the
+    # acting leader's own real AdvancedAbility possession -- Plains(50)
+    # + 10 = 60, times (skill 0 + 1) = 60%, not the base 50%.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.EXPLORING_DIFFICULT_TERRAIN)
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH, explorer_skill=0
+    )
+
+    assert result.new_percent == 60
+
+
+def test_dispatch_explore_wires_military_maps_from_the_leaders_own_advanced_ability():
+    # Phase 507: Military Maps raises the cap 100->200, letting a
+    # heavily-explored province keep gaining beyond the ordinary cap.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.EXPLORER_MILITARY_MAPS)
+    state.provinces[location].explored_percent = 150
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH, explorer_skill=4
+    )
+
+    assert result.new_percent == 200
 
 
 def test_dispatch_explore_also_records_the_kingdoms_own_exploration():

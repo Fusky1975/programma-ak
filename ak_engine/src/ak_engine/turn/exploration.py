@@ -1,6 +1,26 @@
 """Explore action resolution (rulebook [3.2]).
 
-Formula, verbatim from the rulebook: an Explore order raises a province's
+**Phase 507**: the rulebook-only formula this module used to implement
+(a flat, uncapped ``skill + 1`` multiplier) is superseded by the real
+one recovered from a disassembly of ``AK.EXE:0xA780-0xAF3F`` (the
+user's third reverse-engineering dossier, ``AKGEN_reverse_engineering_
+report (3).md``, Part IV SS49-50): ``E = min(4, S) + 1`` -- confirming
+``SAL.X2:26``'s own "from level 5 the ordinary multiplier stops
+increasing" text is a hard *executable* cap, not just manual-text
+color, and that the pre-507 code's own uncapped growth (``MAX_EXPLORER_
+SKILL=9`` giving x10, not the real x5 ceiling) was a genuine, sourced
+bug, not a documented approximation. Two Advanced Abilities the real
+engine folds directly into this same formula are now real optional
+parameters instead of unmodeled: ``has_difficult_terrain`` (``AK.EXE:
+0xA97B-0xA9BE``, +10 flat to the terrain's own Basic Exploration Number
+*before* multiplying by ``E`` -- not a 10% multiplier despite the
+Advanced Ability's own tagline) and ``has_military_maps`` (``AK.EXE:
+0xA799-0xA7B5``/``0xB559-0xB5CB``, raises the cap from 100 to 200 --
+Military Maps adds no points itself, it only raises how far accumulated
+knowledge can climb).
+
+Formula, verbatim from the rulebook (still the base before the two
+Phase 507 additions above): an Explore order raises a province's
 cumulative exploration percentage by (Basic Exploration Number for the
 terrain x (Explorer skill + 1))%, capped at 100% ("A character must
 Explore 100% of the province to make sure that everything in the province
@@ -65,36 +85,56 @@ class ExploreResult:
     discovered_features: list[Feature] = field(default_factory=list)
 
 
+EXPLORATION_CAP = 100
+EXPLORATION_CAP_WITH_MILITARY_MAPS = 200
+DIFFICULT_TERRAIN_BONUS = 10
+EXPLORER_SKILL_MULTIPLIER_CAP = 4  # real E = min(4, S) + 1 -- SAL.X2:26, AK.EXE:0xA909-0xA9D0
+
+
 def resolve_explore(
     current_percent: int,
     terrain: Terrain,
     explorer_skill: int,
     *,
     partial: bool = False,
+    has_military_maps: bool = False,
+    has_difficult_terrain: bool = False,
 ) -> ExploreResult:
     """Apply one Explore action, or a Move's partial-exploration side effect.
 
     ``partial=True`` reproduces the rulebook [3.1] Move side effect:
     "Moving into a province also counts as a partial exploration of the
     province, with half the effect of an Explore order".
+
+    ``has_military_maps``/``has_difficult_terrain`` (Phase 507): the
+    acting leader's own ``AdvancedAbility.EXPLORER_MILITARY_MAPS``/
+    ``EXPLORING_DIFFICULT_TERRAIN`` possession -- see module docstring
+    for the real formula each feeds. Both default to ``False`` (the
+    pre-507 behavior minus the multiplier-cap fix) for any caller that
+    doesn't pass them.
     """
 
-    if not 0 <= current_percent <= 100:
-        raise ValueError(f"current_percent must be 0-100, got {current_percent}")
+    max_reachable = EXPLORATION_CAP_WITH_MILITARY_MAPS if has_military_maps else EXPLORATION_CAP
+    if not 0 <= current_percent <= max_reachable:
+        raise ValueError(f"current_percent must be 0-{max_reachable}, got {current_percent}")
     if not MIN_EXPLORER_SKILL <= explorer_skill <= MAX_EXPLORER_SKILL:
         raise ValueError(
             f"explorer_skill must be {MIN_EXPLORER_SKILL}-{MAX_EXPLORER_SKILL}, got {explorer_skill}"
         )
 
-    exploration_number = TERRAIN_EXPLORATION_NUMBER[terrain] * (explorer_skill + 1)
+    basic_exploration_number = TERRAIN_EXPLORATION_NUMBER[terrain]
+    if has_difficult_terrain:
+        basic_exploration_number += DIFFICULT_TERRAIN_BONUS
+    multiplier = min(EXPLORER_SKILL_MULTIPLIER_CAP, explorer_skill) + 1
+    exploration_number = basic_exploration_number * multiplier
     if partial:
         exploration_number //= 2
 
-    new_percent = min(100, current_percent + exploration_number)
+    new_percent = min(max_reachable, current_percent + exploration_number)
     return ExploreResult(
         new_percent=new_percent,
         delta_applied=new_percent - current_percent,
-        fully_explored=new_percent >= 100,
+        fully_explored=new_percent >= EXPLORATION_CAP,
     )
 
 

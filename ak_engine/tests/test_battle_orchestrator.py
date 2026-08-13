@@ -599,7 +599,6 @@ def test_build_battle_units_applies_exploration_advantage_to_every_unit_on_the_s
         province_coord=FIELD,
         rng=random.Random(0),
         own_explored_percent=100,
-        enemy_explored_percent=0,
     )
 
     assert units_with_advantage[0].effective_strength == pytest.approx(units_no_advantage[0].effective_strength * 1.25)
@@ -3043,7 +3042,7 @@ def _bearer_state(matching_treasure: Treasure) -> tuple[GameState, Commander]:
 def _aid_kwargs(**overrides):
     kwargs = dict(
         is_defender=False, terrain=Terrain.PLAINS, combat_ability_level=0, apply_fanaticism=False,
-        own_explored_percent=0, enemy_explored_percent=0, opponent_kingdom_ids=frozenset(), is_island=False,
+        own_explored_percent=0, opponent_kingdom_ids=frozenset(), is_island=False,
     )
     kwargs.update(overrides)
     return kwargs

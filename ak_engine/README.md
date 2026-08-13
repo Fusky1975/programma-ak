@@ -20888,7 +20888,7 @@ follow-up request after the original 431-435 plan shipped.
     dispatch.py`, and `tests/test_turn_report.py`. Ran again: 4369
     passed (net +3: 17 new `hire_pay` tests replacing 10 old ones, no
     other files gained or lost tests).
-- **Phase 506 (current)**: the same second dossier's Part III --
+- **Phase 506**: the same second dossier's Part III --
   "reverse engineering completo del comando STEAL" -- replaces Steal
   `[ST]`'s Phase 239/305 project-original approximation with the real
   formula recovered from `AK.OVR`/`AK.EXE`. Two independently confirmed
@@ -20972,6 +20972,80 @@ follow-up request after the original 431-435 plan shipped.
     scan's own shuffle-then-roll-per-item, `Add_Experience`'s own two-
     draw spread), and the ransom fix's own two-sided assertion. Ran
     again: 4377 passed (net +8).
+- **Phase 507 (current)**: the same third dossier's Part IV --
+  "EXPLORER (EX) e abilità avanzate" -- closes the core Explore [3.2]
+  formula gap and its own real battle-strength multiplier, from a
+  disassembly of `AK.EXE:0xA780-0xAF3F`/`0xA909-0xA9D0` and `RUMORS.PAS:
+  389-403`.
+  - `turn/exploration.py resolve_explore()`: the real skill multiplier
+    is `E = min(4,S)+1`, not the pre-507 code's uncapped `S+1` (a
+    genuine bug -- `MAX_EXPLORER_SKILL=9` gave a x10 multiplier where
+    the real engine caps at x5 from level 4 on, confirming `SAL.X2:26`'s
+    manual text is an executable cap, not just color). Two Advanced
+    Abilities the real formula folds in directly are now real optional
+    parameters: `has_difficult_terrain` (+10 flat to the terrain's own
+    Basic Exploration Number *before* multiplying, not the +10%
+    the Advanced Ability's own tagline implies) and `has_military_maps`
+    (raises the cap from 100 to 200 -- Military Maps adds no points
+    itself, only raises how far accumulated knowledge can climb).
+  - `turn/strength.py exploration_advantage_multiplier()`: the real
+    formula (`1 + own_explored_percent*0.0025`) is applied to *each
+    side independently*, off its own accumulated province knowledge --
+    not the pre-507 project-original interpolation's "gap between the
+    two sides, capped at +25%" model, which the real formula's own
+    enemy-side term never existed at all. At the ordinary 100% cap this
+    still gives exactly +25% -- the same number Phase 351's own earlier,
+    independent disassembly pass had already confirmed
+    (`exploration_max: 1.25`) without knowing *how* the formula reached
+    it; Military Maps' 200 cap is what unlocks the further +50% this
+    same real formula allows, resolving what looked like two competing
+    sourced maxima as one formula read at two different caps. Now takes
+    one parameter instead of two -- `enemy_explored_percent` is removed
+    end-to-end (`compute_effective_strength()`, `_build_battle_units()`,
+    `_apply_monster_summoning_aid()`, and every `fight_battle()` call
+    site in `turn/battle_orchestrator.py`), since the real formula never
+    reads it.
+  - `turn/plan_dispatch.py dispatch_phase()`: both `EXPLORE` and
+    `LMOVE`'s own partial-exploration side effect now derive
+    `has_military_maps`/`has_difficult_terrain` from the acting leader's
+    own real `AdvancedAbility.EXPLORER_MILITARY_MAPS`/`EXPLORING_
+    DIFFICULT_TERRAIN` possession (`leader.advanced_abilities`, already
+    fetched in scope for rumor generation) -- threaded through
+    `turn/movement.py resolve_move()` and `turn/move_execution.py
+    execute_move()`/`record_kingdom_exploration()`.
+  - **Investigated and deliberately not done this phase**: the dossier's
+    own `spabord[Explorer]` per-game deterministic schedule (SS48,
+    `AKGEN.EXE:0x53192-0x53310`, template row `76,72,74,73,77,75`) --
+    this is the same shared build routine `worldgen/special_ability_
+    level_schedule.py`'s own Phase 384 addendum already reverse-
+    engineered for the 5 magic colleges and verified exactly against a
+    real `game_900` worked example. This phase's own dossier text
+    describes that *same* routine differently on two points --
+    `IRand` scaled by 32000 (not the already-verified 32768) and
+    `tries` reset once per *ability* rather than once per *source* --
+    and a direct computational check (a scratch script, not committed)
+    confirmed both claims, applied to the existing verified algorithm,
+    break the real `game_900` magic-college result that the *current*
+    32768-and-reset-per-source code reproduces exactly. Since a sourced
+    claim that contradicts already-cross-validated real output is a
+    reason to stop, not to guess, the Explorer schedule extension --
+    and the four remaining Explorer side effects that depend on
+    `AdvancedAbility.EXPLORER_MILITARY_MAPS`/etc. actually being granted
+    to real leaders (Find Water's battle-side thirst immunity, Society
+    Maps' province-reveal-on-Practice/Explore, Long-Range Trade Routes'
+    scientific-treaty bypass, Find Mines' per-province prospecting
+    counter and tax gain) -- are left for a future phase, once this
+    discrepancy is resolved rather than silently picked one way.
+  - Ran the full suite before writing new tests: 12 failures, all
+    either `enemy_explored_percent`-removal call-site breakage or the
+    two-argument `exploration_advantage_multiplier()` old-signature
+    tests -- both mechanical, no logic surprises. Wrote new tests for
+    the real `min(4,S)+1` cap, `has_difficult_terrain`/`has_military_
+    maps` (including the 200-cap input-validation change), the real
+    per-side `exploration_advantage_multiplier()` formula (including
+    the 200%->+50% Military Maps case), and `dispatch_phase()`'s own
+    real per-leader wiring for both `EXPLORE` and `LMOVE`. Ran again:
+    4386 passed (net +9).
 
 ## Setup
 

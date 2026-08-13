@@ -532,10 +532,27 @@ def dispatch_phase(
         if rumor is not None:
             state.add_rumor(rumor)
 
+    # Phase 507: the acting leader's own real Explorer Advanced Ability
+    # possession -- see turn/exploration.py's own Phase 507 addendum for
+    # the real formula each feeds. `leader` is already fetched above for
+    # rumor generation; both default False when there's no leader.
+    has_military_maps = leader is not None and AdvancedAbility.EXPLORER_MILITARY_MAPS in leader.advanced_abilities
+    has_difficult_terrain = (
+        leader is not None and AdvancedAbility.EXPLORING_DIFFICULT_TERRAIN in leader.advanced_abilities
+    )
+
     if action is ActionCode.LMOVE:
         target = decode_hex_number(phase.obj, board_width)
         result = execute_move(
-            state, kingdom_id, army_ids, target, leader_id=leader_id, explorer_skill=explorer_skill, rng=rng
+            state,
+            kingdom_id,
+            army_ids,
+            target,
+            leader_id=leader_id,
+            explorer_skill=explorer_skill,
+            rng=rng,
+            has_military_maps=has_military_maps,
+            has_difficult_terrain=has_difficult_terrain,
         )
         # Phase 490 -- Arch-Mage's own "Sense Magic Items in Province"
         # perk: only meaningful once the mover actually arrived somewhere
@@ -546,10 +563,23 @@ def dispatch_phase(
 
     if action is ActionCode.EXPLORE:
         province = state.provinces[state.leaders[leader_id].location]
-        result = resolve_explore(province.explored_percent, province.effective_terrain(), explorer_skill)
+        result = resolve_explore(
+            province.explored_percent,
+            province.effective_terrain(),
+            explorer_skill,
+            has_military_maps=has_military_maps,
+            has_difficult_terrain=has_difficult_terrain,
+        )
         province.explored_percent = result.new_percent
         exploration = record_kingdom_exploration(
-            province, kingdom_id, explorer_skill, partial=False, state=state, rng=rng
+            province,
+            kingdom_id,
+            explorer_skill,
+            partial=False,
+            state=state,
+            rng=rng,
+            has_military_maps=has_military_maps,
+            has_difficult_terrain=has_difficult_terrain,
         )
         result.discovered_features = exploration.discovered_features
         # Phase 256: Chancellor Merit Points ("+2 per Special Place
