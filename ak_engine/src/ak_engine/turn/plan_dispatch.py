@@ -885,7 +885,7 @@ def _dispatch_hire(
         (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
         None,
     )
-    pay = required_pay(hero, king)
+    pay = required_pay(state, hero, king)
     rare_exception = False
 
     if pay >= 5:

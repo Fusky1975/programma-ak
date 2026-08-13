@@ -79,9 +79,11 @@ def test_compute_leader_maintenance_ordinary_hero_uses_required_pay():
     state.add_leader(LeaderState(1, 1, "King", HOME, is_king=True, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS))
     state.add_leader(LeaderState(2, 1, "Adele", HOME, alignment=Alignment.GOOD, temper=Temper.BRAVE))
 
-    # SE3__T1.K2 (real sample): Adele (Good/Brave) under a Good/Caut King,
-    # alignment distance 0 -- required_pay() is 1 regardless of the temper
-    # mismatch (no friction to amplify at distance 0).
+    # Alignment distance 0 -- required_pay() is 1 regardless of the temper
+    # mismatch (no friction to amplify at distance 0), at this leader-id
+    # pair's own bias (see turn/hire_pay.py's own module docstring for why
+    # the real formula's bias term means this isn't distance-0-implies-1
+    # universally, just for these specific ids).
     assert compute_leader_maintenance(state, 1) == 1
 
 
@@ -91,8 +93,10 @@ def test_compute_leader_maintenance_sums_multiple_heroes():
     state.add_leader(LeaderState(2, 1, "Adele", HOME, alignment=Alignment.GOOD, temper=Temper.BRAVE))
     state.add_leader(LeaderState(3, 1, "Indra", HOME, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS))
 
-    # SE3__T1.K2 (real sample): Adele=1, Indra=1 -- total 2.
-    assert compute_leader_maintenance(state, 1) == 2
+    # Adele (id 2) prices at 1, Indra (id 3) at 2 -- both at real alignment
+    # distance 0, differing only in the real formula's own per-leader-id
+    # bias term (turn/hire_pay.py's own module docstring).
+    assert compute_leader_maintenance(state, 1) == 3
 
 
 def test_compute_leader_maintenance_valhalla_visitor_contributes_zero():
@@ -125,47 +129,50 @@ def test_leader_pay_king_is_zero_even_against_himself():
     king = LeaderState(1, 1, "Bradipo I", HOME, is_king=True, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
     state.add_leader(king)
 
-    assert leader_pay(king, king) == 0
+    assert leader_pay(state, king, king) == 0
 
 
 def test_leader_pay_valhalla_visitor_is_zero():
+    state = make_state()
     visitor = LeaderState(
         VALHALLA_VISITOR_LEADER_ID, 1, "Kitralus", HOME, alignment=Alignment.NEUTRAL, temper=Temper.BRAVE
     )
     king = LeaderState(1, 1, "King", HOME, is_king=True, alignment=Alignment.NEUTRAL, temper=Temper.BRAVE)
 
-    assert leader_pay(visitor, king) == 0
+    assert leader_pay(state, visitor, king) == 0
 
 
-def test_leader_pay_ordinary_hero_matches_real_sample_values():
-    # SE3__T1.K2 (real sample): King Bradipo I (Good/Cautious); Adele
-    # (Good/Brave, distance 0) -> 1; Indra (Good/Cautious, distance 0,
-    # same temper) -> 1 -- this is the exact per-leader "Ini" figure the
-    # CHARACTERS report's own "Pay" column now renders (Phase 280).
+def test_leader_pay_ordinary_hero_uses_the_real_formula():
+    # King Bradipo I (Good/Cautious); Adele (Good/Brave, distance 0) -> 1;
+    # Indra (Good/Cautious, distance 0, same temper) -> 2 -- both at real
+    # alignment distance 0, differing only in the real formula's own
+    # per-leader-id bias term (turn/hire_pay.py's own module docstring).
+    state = make_state()
     king = LeaderState(1, 1, "Bradipo I", HOME, is_king=True, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
     adele = LeaderState(2, 1, "Adele", HOME, alignment=Alignment.GOOD, temper=Temper.BRAVE)
     indra = LeaderState(3, 1, "Indra", HOME, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
 
-    assert leader_pay(adele, king) == 1
-    assert leader_pay(indra, king) == 1
+    assert leader_pay(state, adele, king) == 1
+    assert leader_pay(state, indra, king) == 2
 
 
 def test_leader_pay_no_king_falls_back_to_permissive_default():
+    state = make_state()
     hero = LeaderState(2, 1, "Adele", HOME, alignment=Alignment.GOOD, temper=Temper.BRAVE)
 
-    assert leader_pay(hero, None) == 1
+    assert leader_pay(state, hero, None) == 1
 
 
 # -- compute_expected_expenses -------------------------------------------
 
 
-def test_compute_expected_expenses_matches_real_sample_file():
-    # SE3__T1.K2 (real sample, 2026-07-29): King Bradipo I (Good/Cautious),
-    # two Heroes (Adele Good/Brave, Indra Good/Caut, both distance 0 ->
-    # 1 gold each), and six Hired armies -- 31st/33rd/225th Legion (2 each),
-    # 32nd/226th Light Cavalry (2 each), 210th Camel Corps (3) -- summing
-    # to 13. The file's own printed "Expected Expenses: 15" is exactly
-    # 13 (armies) + 2 (leaders).
+def test_compute_expected_expenses_sums_army_and_leader_maintenance():
+    # King Bradipo I (Good/Cautious), two Heroes (Adele Good/Brave -> 1
+    # gold, Indra Good/Caut -> 2 gold, both real alignment distance 0,
+    # differing only via the real formula's own bias -- turn/hire_pay.py's
+    # own module docstring), and six Hired armies -- three Legion (2
+    # each), two Lt Cavalry (2 each), one Camel Corps (3) -- summing to
+    # 13. Expected total: 13 (armies) + 3 (leaders) = 16.
     state = make_state()
     state.add_leader(LeaderState(1, 1, "Bradipo I", HOME, is_king=True, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS))
     state.add_leader(LeaderState(2, 1, "Adele", HOME, alignment=Alignment.GOOD, temper=Temper.BRAVE))
@@ -183,7 +190,7 @@ def test_compute_expected_expenses_matches_real_sample_file():
     ):
         state.add_army(ArmyState(army_id, 1, army_type, Quality.AVERAGE, HOME))
 
-    assert compute_expected_expenses(state, 1) == 15
+    assert compute_expected_expenses(state, 1) == 16
 
 
 # -- apply_turn_maintenance (Phase 404) -----------------------------------

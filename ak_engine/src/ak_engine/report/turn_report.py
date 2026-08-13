@@ -6820,7 +6820,7 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         temper_label = TEMPER_ABBREVIATION[leader.temper] if leader.temper is not None else _CHARACTERS_UNKNOWN_ABBREVIATION
         race = leader.race if leader.race is not None else kingdom.race
         race_label = RACE_NAME[race]
-        pay = leader_pay(leader, king)
+        pay = leader_pay(state, leader, king)
 
         skill_row = _skill_row_with_item_ticks(state, leader)
         lines.append(

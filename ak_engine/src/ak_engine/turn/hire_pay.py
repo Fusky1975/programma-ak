@@ -1,96 +1,90 @@
-"""Hire Hero's required-pay formula -- Phase 162.
+"""Hire Hero's required-pay formula (`LCost`) -- Phase 162/163/264,
+**superseded by Phase 505** with the real formula, recovered by a
+disassembly-based reverse-engineering pass the user supplied directly
+(``AKGEN_reverse_engineering_report (3).md``, Part II, "reclutamento e
+mantenimento degli Eroi liberi"), not this project's own invention.
 
-**Confirmed absent from the surviving Pascal source** (Phase 161,
-``turn/plan_dispatch.py``'s own note): `LCost`, the one identifier tied
-to a Hero's required/per-turn pay, is called but never *defined* in any
-of the 13 available ``.PAS`` files. No exact formula survives to
-transcribe. This module instead implements a formula the user
-explicitly asked this project to design (2026-07-15), built from two
-real, authoritative sources rather than guessed from nothing:
+**Why the old formula existed at all**: Phase 162's own note explained
+`LCost` was "confirmed absent from the surviving Pascal source" (only 13
+``.PAS`` files, the moderator-side tooling, were available at the time) --
+the identifier was called but never *defined*. The dossier above resolves
+that gap directly, from a real disassembly of ``AKGEN.EXE``
+(``0x54798-0x54BDA``) and ``AK.OVR`` (the ``HI`` resolver,
+``0x0166A-0x0197D``), cross-checked against ``REPORTS.PAS``/``RULES.AK``/
+``ADDEND.AK``. It also explains, precisely, the one real-sample mismatch
+``turn/expenses.py``'s own docstring already flagged (Garin, Pagan/Brave/
+Dwarf under a Neutral/Brave/presumably-Human King: the old formula
+predicted 2, the real sample showed 1) -- race *does* matter, but only for
+Heroes whose own hidden per-character bit (``borny[hero] and 1``) enables
+it, exactly the kind of "sometimes race matters, sometimes it doesn't"
+behavior a simple always-on/always-off race term could never reproduce.
 
-1. **The player's manual** (``Regolamento AK.txt``-class source, quoted
-   directly by the user, not this project's own invention): "Il soldo
-   richiesto varia in base al maggiore o minore gradimento che l'Eroe
-   nutre nei confronti di un determinato Reame... Può tornare utile che
-   l'Eroe abbia lo stesso Temperamento... e sia di analogo Allineamento
-   del Re. In rare occasioni un Re può assoldare Eroi con un
-   Allineamento distante più di due posizioni dal proprio (ad esempio
-   un Re Buono generalmente non può assoldare un Eroe Pagano)." The
-   user's own instruction narrowed the algorithm's real inputs to
-   exactly two -- alignment distance and temperament match -- leaving
-   race out of the formula even though the manual also mentions it
-   ("può tornare utile"); `LeaderState` has no `.race` field to source
-   race from anyway.
-2. **One hard, real data point**: "a Good King generally cannot hire a
-   Pagan Hero" is only true, using the real Pascal ``outlook`` ordinal
-   sequence (``models/alignment.py ALIGNMENT_ORDINAL``, not this
-   project's own ``Alignment`` declaration order), at distance
-   ``|1 - 4| = 3``. This anchors the formula's top bucket.
+**The real formula, in full**:
 
-**The formula** (``required_pay()``): an integer 1-5, matching the
-user's own explicit range (the Hire action can offer at most 4 gold;
-5 means the Hero is unhireable except via Charm or after being killed
-and Resurrected -- the user's own stated constraint, not modeled here
-since Charm/Resurrection already exist as separate mechanics
-elsewhere in this project, ``turn/cast_execution.py``).
+    NormAlign(c)     = clamp(1, 6, ALIGNMENT_ORDINAL[align(c)])
+    AlignDistance    = |NormAlign(hero) - NormAlign(king)|
+    align_penalty    = 8 >> max(0, 4 - AlignDistance)   # 0,1,2,4,8 by distance 0..4+
 
-    base_pay = {0: 1, 1: 2, 2: 3}.get(align_distance, 5)
-    pay = base_pay + (1 if align_distance >= 1 and not same_temper else 0)
-    pay = min(5, pay)
+    bias = (k & 1) - ((bornx[h] & 2) >> 1)
+    if ((k + h) & 2) == 0: bias = -bias
 
-Distance 0/1/2 sets a base of 1/2/3 gold; distance >=3 jumps straight
-to 5 regardless of temper, deliberately skipping 4, so the real anchor
-case (distance 3) reproduces exactly as "generally cannot hire" (5
-gold, above the 4-gold offer ceiling) rather than merely "expensive."
+    race_penalty   = (borny[h] & 1) * (race[h] != race[k])
+    temper_conflict = temper[h] != temper[k]
+    if not temper_conflict and hero is still Mercenary (unhired) and Total_USkill(king) < 7:
+        temper_conflict = True
+    temper_penalty = (bornx[h] & 1) * temper_conflict
 
-**Phase 163 revises temper's own weight** (user feedback, 2026-07-15:
-"il temperamento deve contare meno della differenza di allineamento...
-direi della metà" -- temperament must count for less than alignment
-distance, about half). Phase 162's original formula added a flat +1
-for a temper mismatch unconditionally, giving it the exact same
-per-step weight as one full alignment-distance step -- not "half" of
-anything. Since a Hero's temper is a boolean match/mismatch (not
-itself a distance with intermediate steps), there is no fractional
-gold to charge for "half a step"; instead, temper is demoted to a
-*secondary amplifier* that only matters when some alignment friction
-already exists (``align_distance >= 1``) -- a temper mismatch never
-raises the price on its own when alignment already matches exactly
-(``align_distance == 0``). This halves temper's practical influence
-in the cleanest available integer-gold sense: it now affects 2 of the
-3 non-unhireable distance brackets instead of all 3, and even then
-only by the same +1 as before, rather than trying to approximate a
-literal "0.5 gold" through rounding tricks. A King's own real
-alignment/temper (``KingdomState.alignment`` for alignment; there is
-no ``KingdomState.temper``, only per-leader ``LeaderState.temper``, so
-the King's own ``LeaderState`` is looked up separately -- see
-``turn/plan_dispatch.py``'s own King-lookup idiom,
-``battle_orchestrator.py``'s ``is_king`` search) are compared against
-the Hero's own ``LeaderState.alignment``/``.temper``.
+    like      = clamp(-2, 2, 2 - align_penalty - race_penalty - temper_penalty + bias)
+    base_cost = 3 - like   # 1..5
 
-**Missing data defaults to the most permissive outcome** (distance 0,
-matching temper -- pay 1), the same convention this project already
-uses for ``skills``/``birth_x``/etc.: a Hero or King with no recorded
-alignment/temper isn't penalized for data this project simply hasn't
-populated yet.
+    if king.alignment != Divine and hero.alignment != king.alignment
+       and hero's own birth province is owned by the king's own kingdom:
+        LCost = min(5, base_cost + 1)
+    else:
+        LCost = base_cost
 
-**Phase 264 -- the "rare exception" bypass.** Same manual passage,
-next sentence: "In rare occasioni un Re può assoldare Eroi con un
-Allineamento distante più di due posizioni dal proprio" ("On rare
-occasions a King CAN hire Heroes with an alignment more than two
-positions distant from his own") -- meaning distance >= 3 shouldn't be
-an absolute wall, only almost always one. No percentage survives
-anywhere in the available source for how rare "rare" is; asked the
-user directly (2026-07-28, the same "ask when genuinely ambiguous"
-policy this project has followed since Phase 260's own succession
-mechanic), who specified **15%**. ``roll_rare_alignment_exception()``
-rolls that flat chance once per Hire attempt that would otherwise be
-refused outright; on success, the required pay drops to
-``RARE_ALIGNMENT_EXCEPTION_PAY = 4`` -- the Hire action's own real
-offer ceiling ([3.5]: "a payment of 1-4 gold") -- rather than staying
-at the unreachable 5, so a King who actually offers the maximum can
-succeed. This is a user-specified design choice, not a value
-transcribed from any Pascal or manual source -- documented as such,
-not presented as a recovered rule.
+``h``/``k`` are the real engine's own internal leader indices (``LKing``
+resolves a King to *his own* leader index, not a separate "kingdom id"
+concept the Pascal source doesn't have) -- this project's own
+``LeaderState.leader_id`` is the direct, structurally equivalent
+substitute (see ``bias``'s own worked derivation below for why an
+arbitrary historical game's real indices can no longer be reproduced from
+this project's own, unrelated leader-id assignment order).
+
+**``bias`` is real, not noise, but it can no longer be checked against a
+specific historical game's own numbers.** It's a fully deterministic
+function of two real leader indices and one birth-coordinate bit -- not a
+per-turn dice roll -- but *which* two indices a real historical game
+assigned to (say) Adele and Bradipo I is lost information: this project's
+own leader ids are assigned by its own worldgen/parsing order, with no
+guaranteed relationship to a real Pascal game's internal numbering.
+``turn/expenses.py``'s own former "matches SE3__T1.K2 exactly" assertions
+for Adele/Indra (both real Heroes at real alignment distance 0) relied on
+the *old*, bias-free approximation always giving the cheapest price at
+distance 0 -- the real formula does not make that guarantee (a King/Hero
+index pair can push ``bias`` negative even at perfect alignment/race/
+temper match), so those specific real-sample numbers no longer transfer;
+what *does* transfer, and is re-verified here, is the formula's own shape
+match to the dossier's disassembly-sourced pseudocode.
+
+**Missing data defaults permissively**, same convention as the pre-Phase-
+505 formula: no ``king`` at all, or no recorded alignment/temper/race/
+birth coordinate on either side, drops the corresponding term to zero
+friction (``align_penalty=0``, ``race_penalty=0``, no conquest surcharge)
+rather than penalizing a leader for data this project hasn't populated.
+A missing ``birth_x``/``birth_y`` also zeroes ``bias``'s own personal-bit
+inputs (the same "even bit -> gate off" effect a real, unset coordinate
+would have).
+
+**``Total_USkill``** reuses this project's own already-established
+``effective_skill_level()`` sum across all 15 ``Ability`` members --
+named ``Total_Skill`` at its other real call site
+(``report/turn_report.py _total_skill()``), the identical real quantity.
+
+**The "rare exception" bypass (Phase 264) is unaffected** -- still a
+user-specified 15% chance to drop an otherwise-refused (``pay >= 5``)
+Hire down to the 4-gold offer ceiling; see ``roll_rare_alignment_
+exception()``'s own docstring.
 """
 
 from __future__ import annotations
@@ -98,10 +92,14 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
-from ak_engine.models.game_state import LeaderState
+from ak_engine.models.enums import Ability
+from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.map import HexCoord
+from ak_engine.models.race import Race
+from ak_engine.turn.discovery_effects import effective_skill_level
 
-_BASE_PAY_BY_DISTANCE: dict[int, int] = {0: 1, 1: 2, 2: 3}
 _UNHIREABLE_PAY = 5
+_ALIGN_FLOOR = 1  # NormAlign's "current rules" floor -- see module docstring.
 
 # Phase 264: user-specified (2026-07-28), not sourced -- see module
 # docstring's own "rare exception" note.
@@ -109,37 +107,89 @@ RARE_ALIGNMENT_EXCEPTION_CHANCE = 0.15
 RARE_ALIGNMENT_EXCEPTION_PAY = 4
 
 
-def _alignment_distance(hero_alignment: Alignment | None, king_alignment: Alignment | None) -> int:
+def _norm_align(alignment: Alignment) -> int:
+    return max(_ALIGN_FLOOR, min(6, ALIGNMENT_ORDINAL[alignment]))
+
+
+def _align_penalty(hero_alignment: Alignment | None, king_alignment: Alignment | None) -> int:
     if hero_alignment is None or king_alignment is None:
         return 0
-    return abs(ALIGNMENT_ORDINAL[hero_alignment] - ALIGNMENT_ORDINAL[king_alignment])
+    distance = abs(_norm_align(hero_alignment) - _norm_align(king_alignment))
+    return 8 >> max(0, 4 - distance)
 
 
-def required_pay(hero: LeaderState, king: LeaderState | None) -> int:
-    """The gold-per-annum a Hero requires to enter a King's service.
+def _total_uskill(state: GameState, leader: LeaderState) -> int:
+    """``Total_USkill(leader)`` -- see module docstring."""
 
-    ``king`` is the kingdom's own ``LeaderState`` with ``is_king=True``
-    (``None`` if no King is currently recorded for the kingdom, e.g. an
-    interregnum this project doesn't model separately -- treated as
-    "no data," the same permissive default as a missing alignment or
-    temper below).
-    """
+    return sum(effective_skill_level(state, leader, ability) for ability in Ability)
 
-    hero_alignment = hero.alignment
-    king_alignment = king.alignment if king is not None else None
-    distance = _alignment_distance(hero_alignment, king_alignment)
-    if distance >= 3:
-        return _UNHIREABLE_PAY
+
+def _leader_race(state: GameState, leader: LeaderState) -> Race | None:
+    if leader.race is not None:
+        return leader.race
+    if leader.kingdom_id is not None:
+        return state.kingdoms[leader.kingdom_id].race
+    return None
+
+
+def _like(state: GameState, hero: LeaderState, king: LeaderState) -> int:
+    align_penalty = _align_penalty(hero.alignment, king.alignment)
+
+    h, k = hero.leader_id, king.leader_id
+    bornx_h = hero.birth_x if hero.birth_x is not None else 0
+    borny_h = hero.birth_y if hero.birth_y is not None else 0
+
+    bias = (k & 1) - ((bornx_h & 2) >> 1)
+    if ((k + h) & 2) == 0:
+        bias = -bias
+
+    hero_race = _leader_race(state, hero)
+    king_race = _leader_race(state, king)
+    race_mismatch = hero_race is not None and king_race is not None and hero_race is not king_race
+    race_penalty = (borny_h & 1) * (1 if race_mismatch else 0)
 
     hero_temper = hero.temper
-    king_temper = king.temper if king is not None else None
-    same_temper = hero_temper is None or king_temper is None or hero_temper is king_temper
+    king_temper = king.temper
+    temper_conflict = hero_temper is not None and king_temper is not None and hero_temper is not king_temper
+    if not temper_conflict and hero.kingdom_id is None and _total_uskill(state, king) < 7:
+        temper_conflict = True
+    temper_penalty = (bornx_h & 1) * (1 if temper_conflict else 0)
 
-    base_pay = _BASE_PAY_BY_DISTANCE[distance]
-    # Temper only amplifies existing alignment friction (Phase 163) --
-    # a mismatch alone, with matching alignment, never raises the price.
-    penalty = 1 if distance >= 1 and not same_temper else 0
-    return min(_UNHIREABLE_PAY, base_pay + penalty)
+    raw_like = 2 - align_penalty - race_penalty - temper_penalty + bias
+    return max(-2, min(2, raw_like))
+
+
+def required_pay(state: GameState, hero: LeaderState, king: LeaderState | None) -> int:
+    """The gold-per-annum a Hero requires to enter a King's service
+    (``LCost``) -- see module docstring for the full, real formula.
+
+    ``king`` is the kingdom's own ``LeaderState`` with ``is_king=True``
+    (``None`` if no King is currently recorded for the kingdom -- treated
+    as "no data," the same permissive default as a missing alignment or
+    temper).
+    """
+
+    if king is None:
+        return 1
+
+    like = _like(state, hero, king)
+    base_cost = 3 - like
+
+    king_alignment = king.alignment
+    hero_alignment = hero.alignment
+    if (
+        king_alignment is not None
+        and king_alignment is not Alignment.DIVINE
+        and hero_alignment is not None
+        and hero_alignment != king_alignment
+        and hero.birth_x is not None
+        and hero.birth_y is not None
+    ):
+        home_province = state.provinces.get(HexCoord(hero.birth_x, hero.birth_y))
+        if home_province is not None and home_province.owner_kingdom_id == king.kingdom_id:
+            return min(_UNHIREABLE_PAY, base_cost + 1)
+
+    return base_cost
 
 
 def roll_rare_alignment_exception(rng: random.Random) -> bool:

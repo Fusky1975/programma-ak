@@ -649,6 +649,13 @@ class LeaderState:
     # generation source for it, same category of gap as `skills`
     # before Phase 30/31 gave it a real populating consumer.
     birth_x: int | None = None
+    # Phase 505: the leader's own birth y-coordinate (REPORTS.PAS
+    # `borny[agent]`), `birth_x`'s missing other half -- `turn/hire_pay.py
+    # required_pay()`'s own real `LCost` formula is the first consumer
+    # that needs both halves of the birth coordinate at once (as a real
+    # `HexCoord` for a province-ownership lookup, not just a lone noise
+    # bit). Same "None = not recorded" convention as `birth_x`.
+    birth_y: int | None = None
     # Phase 162: the leader's own true Alignment (models/alignment.py),
     # mirroring `temper`'s own Phase 139 precedent -- None = not
     # recorded, the same "no data" convention. Previously only

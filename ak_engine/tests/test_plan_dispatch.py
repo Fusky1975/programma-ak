@@ -908,11 +908,13 @@ def test_dispatch_hire_assigns_independent_hero_and_debits_treasury():
     assert isinstance(result, HireExecutionResult)
     assert result.hired is True
     assert state.leaders[32].kingdom_id == 1
-    # Neither the Hero nor Testia's King has a recorded alignment/temper
-    # (Phase 162's required_pay() default -- see turn/hire_pay.py), so
-    # required pay is the cheapest bucket (1), not the raw 3-gold offer.
-    assert state.kingdoms[1].treasury == 99
-    assert result.minimum_gold == 1
+    # Neither the Hero nor Testia's King has a recorded alignment/temper,
+    # so no penalty terms fire -- the real formula's own deterministic
+    # bias for this exact King/Hero leader-id pair (1/32) still prices at
+    # 2, not the raw 3-gold offer (turn/hire_pay.py's own module
+    # docstring covers why this bias term exists at all).
+    assert state.kingdoms[1].treasury == 98
+    assert result.minimum_gold == 2
 
 
 def test_dispatch_hire_fails_when_hero_not_colocated():
@@ -1031,15 +1033,16 @@ def test_dispatch_hire_counter_offers_when_offer_is_below_required_pay():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})
     state.leaders[LEADER_ID].alignment = Alignment.GOOD
-    # DRUID is real ordinal distance 1 from GOOD -> required pay 2.
+    # DRUID is real ordinal distance 1 from GOOD -- align_penalty=1, plus
+    # this King/Hero leader-id pair's own bias -- required pay 3.
     state.add_leader(LeaderState(32, None, "Wandering Hero", location, alignment=Alignment.DRUID))
-    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[1])  # below the required 2
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[1])  # below the required 3
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
     assert result.hired is False
     assert result.reason == "offer below required pay"
-    assert result.minimum_gold == 2
+    assert result.minimum_gold == 3
     assert state.leaders[32].kingdom_id is None
     assert state.kingdoms[1].treasury == 100  # untouched
 
@@ -1054,9 +1057,9 @@ def test_dispatch_hire_succeeds_and_charges_only_the_required_pay_not_the_offer(
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
     assert result.hired is True
-    assert result.minimum_gold == 1
+    assert result.minimum_gold == 2
     assert state.leaders[32].kingdom_id == 1
-    assert state.kingdoms[1].treasury == 99  # only the required 1, not the offered 4
+    assert state.kingdoms[1].treasury == 98  # only the required 2, not the offered 4
 
 
 def test_dispatch_fire_releases_hero_to_independent():

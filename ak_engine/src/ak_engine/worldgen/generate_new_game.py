@@ -492,6 +492,7 @@ def generate_new_game(
         leader = game_state.leaders[king.leader_id]
         leader.location = effects.leader_current_coord
         leader.birth_x = effects.leader_born_coord.x
+        leader.birth_y = effects.leader_born_coord.y
         game_state.kingdoms[leader.kingdom_id].treasury = STARTING_TREASURY
 
     # Phase 426: independent lords + King companions ("place Kings,
@@ -527,6 +528,7 @@ def generate_new_game(
                 location=lord_effects.leader_current_coord,
                 skills=skills,
                 birth_x=lord_effects.leader_born_coord.x,
+                birth_y=lord_effects.leader_born_coord.y,
                 alignment=alignment,
                 race=lord_effects.leader_race,
             )
@@ -549,6 +551,7 @@ def generate_new_game(
                     location=home_coord,
                     skills=skills,
                     birth_x=home_coord.x,
+                    birth_y=home_coord.y,
                     alignment=alignment,
                     race=companion_race,
                 )

@@ -20823,7 +20823,7 @@ follow-up request after the original 431-435 plan shipped.
     counting). Wrote 1 new test in `tests/test_merit_points.py`
     (a `NAMED_UNIQUE_CROWN_ROHAN` item no longer counts, alongside a
     `SPELL_WAND` item that still does). Ran again: 4364 passed (1 new).
-- **Phase 504 (current)**: a second gap closed from the same Pascal-source
+- **Phase 504**: a second gap closed from the same Pascal-source
   cross-check pass. `models/monster.py MonsterIntelligence.MECH` (the
   sole mechanical-species intelligence tier, carried only by `Golem`/
   `Giant Amoeba`) had its ordinal placed after `GODLIKE` (value 5) as an
@@ -20843,6 +20843,51 @@ follow-up request after the original 431-435 plan shipped.
     eligibility flips from eligible (under the old, wrong ordinal) to
     correctly ineligible (`tests/test_encounter.py`). Ran again: 4366
     passed (2 new).
+- **Phase 505 (current)**: the user supplied a second, independent
+  disassembly-based reverse-engineering dossier
+  (`AKGEN_reverse_engineering_report (3).md`, not a project file, never
+  committed), covering several mechanics this project had previously
+  approximated or left genuinely unsourced. This phase closes the first
+  and largest of those: `turn/hire_pay.py required_pay()` (`LCost`),
+  previously a project-original approximation built from the manual text
+  alone (Phase 162/163/264, explicitly documented as such since `LCost`
+  was "confirmed absent" from the 13-file Pascal archive available at the
+  time). The new dossier recovers the real formula in full from a
+  disassembly of `AKGEN.EXE`/`AK.OVR` -- alignment-distance penalty
+  (`8 >> max(0,4-d)`), a deterministic per-leader-index `bias` term, race/
+  temper penalties each gated by one of the Hero's own hidden birth-
+  coordinate bits (`bornx`/`borny`), a "still-Mercenary Hero under a low-
+  skill King" temper exception, and a home-province-conquest surcharge.
+  This also *explains*, rather than merely leaves unmatched, the one real-
+  sample discrepancy `turn/expenses.py`'s own docstring already flagged
+  (Garin, Pagan/Brave/Dwarf under a Neutral/Brave King: the old formula
+  predicted 2, the real sample showed 1) -- race only bites when the
+  Hero's own `borny & 1` bit enables it, not always/never.
+  - Added `LeaderState.birth_y` (`models/game_state.py`) alongside the
+    existing `birth_x`, populated at the same three worldgen call sites
+    (`worldgen/generate_new_game.py`) -- `required_pay()`'s own conquest-
+    surcharge check needs the Hero's full birth `HexCoord` to look up
+    province ownership, not just the one x-coordinate bit Phase 139's
+    `birth_x` already provided.
+  - `required_pay()`/`leader_pay()` now take `state: GameState` (for the
+    `Total_USkill` skill sum and the province-ownership lookup) --
+    threaded through their three call sites (`turn/plan_dispatch.py`
+    `_dispatch_hire`, `turn/expenses.py`, `report/turn_report.py
+    describe_characters_report()`).
+  - Ran the full suite before rewriting tests: 22 failures, all in the
+    four files above, all exact numeric-expectation mismatches (the real
+    formula's own `bias` term means a specific leader-id pair's price is
+    no longer determined by alignment/temper alone) -- confirming the
+    formula itself was sound and only the fixtures needed updating, not
+    a logic error. Rewrote `tests/test_hire_pay.py` from scratch (17
+    tests: the alignment-distance ladder, each personal-bit gate tested
+    on/off in isolation, the Mercenary/weak-King exception, the conquest
+    surcharge and its Divine-King exemption and missing-birth-coordinate
+    skip) and updated the numeric expectations (with the *why*, not just
+    the new number) in `tests/test_expenses.py`, `tests/test_plan_
+    dispatch.py`, and `tests/test_turn_report.py`. Ran again: 4369
+    passed (net +3: 17 new `hire_pay` tests replacing 10 old ones, no
+    other files gained or lost tests).
 
 ## Setup
 

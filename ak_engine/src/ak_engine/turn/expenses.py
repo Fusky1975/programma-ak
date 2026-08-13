@@ -28,31 +28,28 @@ four files -- Legion(2)+Legion(2)+Lt_Cavalry(2)=6, Legion(2)+Legion(2)+
 Hvy_Cavalry(3)=7, and a six-army 13-gold case, all reproduced exactly.
 
 **Leader maintenance (``LCost``), reuses ``turn/hire_pay.py
-required_pay()`` (Phase 162/163/264) rather than a new formula.**
-Rulebook [3.5]: "The Hero is paid when he signs up and at the end of
-each gameturn" -- the *same* gold figure a King agreed to at Hire time
-recurs every turn thereafter, so the Hire-time formula this project
-already built from the real manual text is the natural, already-sourced
-source for the recurring figure too, not a new guess. Verified against
-three of four real Heroes in the same sample files, using each Hero's
-own printed Alignment/Temperament against their King's: Adele (Good/
-Brave under a Good/Caut King, distance 0) -> 1 gold, matches; Indra
-(Good/Caut, same King, distance 0, same temper) -> 1 gold, matches;
-Samantha (Pagan/Brave under a Neutral/Brave King, distance 1, same
-temper) -> 2 gold, matches. **One real case does not match**: Garin
-(Pagan/Brave, Dwarf) under a Neutral/Brave, presumably-Human King --
-``required_pay()`` predicts 2 gold, the real sample shows 1. Rulebook
-[3.5] itself names a third factor this formula has always deliberately
-omitted: "It helps if the Hero has the same temper, same race and
-similar alignment" -- at the time ``required_pay()`` was designed,
-``LeaderState`` had no ``.race`` field to source race from at all (that
-module's own docstring says so); it does now (Phase 87-era), so a race
-term is very plausibly the missing piece, but nailing its exact shape
-needs more real data points than the one available mismatch -- **not
-attempted here, on the user's own explicit direction (2026-07-29): wire
-Expected Expenses now with ``required_pay()`` exactly as it stands,
-documented as not yet historically exact in every case, rather than
-block the whole line on a still-underdetermined refinement.**
+required_pay()`` rather than a new formula.** Rulebook [3.5]: "The Hero
+is paid when he signs up and at the end of each gameturn" -- the *same*
+gold figure a King agreed to at Hire time recurs every turn thereafter.
+
+**Phase 505 supersedes the earlier alignment+temper approximation with
+the real, disassembly-sourced formula** (``turn/hire_pay.py``'s own
+module docstring) -- which also *explains*, rather than merely observes,
+the one real-sample mismatch this section used to flag (Garin, Pagan/
+Brave/Dwarf under a Neutral/Brave/presumably-Human King: the old formula
+predicted 2, the real sample showed 1): race only matters when the
+Hero's own hidden ``borny & 1`` bit enables it, exactly the kind of
+"sometimes race matters, sometimes it doesn't" behavior the old
+always/never race-blind formula could never reproduce. The real formula
+also adds a genuine, deterministic per-leader-index ``bias`` term this
+project's own leader ids have no relationship to a specific historical
+game's own internal indices -- so the *exact* real-sample values
+(Adele/Indra's own real prices in a specific historical game) can no
+longer be asserted from this project's own synthetic fixtures the way
+the old, bias-free approximation happened to allow; what the tests below
+verify instead is the formula's own structural correctness (its
+distance ladder, its personal-bit gates, its conquest surcharge), with
+worked numeric examples matching ``turn/hire_pay.py``'s own tests.
 
 **A leader's own upkeep is 0, not ``required_pay()``'s own result, in
 two structural cases**, both confirmed directly from the sample data
@@ -76,9 +73,7 @@ Alignment/Temperament match that would otherwise price non-zero):
 function so `report/turn_report.py describe_characters_report()`'s own
 "Pay" column (the real table's own "Ini" header) can reuse the identical
 formula and King/Valhalla-visitor exclusions, rather than the CHARACTERS
-composer re-deriving them -- the same real-sample values (Bradipo I the
-King: 0; Adele: 1; Indra: 1, all from ``SE3__T1.K2``) confirm the shared
-formula renders correctly in both places.
+composer re-deriving them.
 
 **Phase 404 -- ``apply_turn_maintenance()``, the real treasury debit.**
 Through Phase 280, ``compute_expected_expenses()`` only ever fed a
@@ -120,7 +115,7 @@ def compute_army_maintenance(state: GameState, kingdom_id: int) -> int:
     )
 
 
-def leader_pay(leader: LeaderState, king: LeaderState | None) -> int:
+def leader_pay(state: GameState, leader: LeaderState, king: LeaderState | None) -> int:
     """One leader's own real recurring per-turn pay ("Ini" in the real
     CHARACTERS table) -- 0 for the King himself or a Valhalla visitor,
     otherwise ``required_pay()``. Extracted (Phase 280) so both this
@@ -131,13 +126,14 @@ def leader_pay(leader: LeaderState, king: LeaderState | None) -> int:
 
     if leader.is_king or leader.leader_id == VALHALLA_VISITOR_LEADER_ID:
         return 0
-    return required_pay(leader, king)
+    return required_pay(state, leader, king)
 
 
 def compute_leader_maintenance(state: GameState, kingdom_id: int) -> int:
     """``LCost(kingdom_id)``: the sum of ``leader_pay()`` across every
     leader this kingdom owns -- see module docstring for the real-sample
-    cross-check and the one known mismatch.
+    cross-check and the one known mismatch (now exactly explained, not
+    just observed, by ``turn/hire_pay.py``'s own Phase 505 real formula).
     """
 
     king = next(
@@ -145,7 +141,7 @@ def compute_leader_maintenance(state: GameState, kingdom_id: int) -> int:
         None,
     )
     return sum(
-        leader_pay(leader, king) for leader in state.leaders.values() if leader.kingdom_id == kingdom_id
+        leader_pay(state, leader, king) for leader in state.leaders.values() if leader.kingdom_id == kingdom_id
     )
 
 

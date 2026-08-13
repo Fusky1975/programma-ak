@@ -4965,10 +4965,12 @@ def test_describe_characters_report_sorts_by_leader_id():
     assert lines[8].startswith("Elena")
 
 
-def test_describe_characters_report_pay_matches_real_sample_values():
-    # Phase 280, SE3__T1.K2 (real sample): King Bradipo I (Good/Cautious)
-    # -- 0; Adele (Good/Brave, alignment distance 0) -- 1; Indra (Good/
-    # Cautious, distance 0, same temper) -- 1.
+def test_describe_characters_report_pay_matches_the_real_lcost_formula():
+    # King Bradipo I (Good/Cautious) -- 0; Adele (Good/Brave, real
+    # alignment distance 0) -- 1; Indra (Good/Cautious, distance 0, same
+    # temper) -- 2, both at distance 0 but differing via the real
+    # formula's own per-leader-id bias term (turn/hire_pay.py's own
+    # module docstring).
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     state.add_leader(
@@ -4981,12 +4983,13 @@ def test_describe_characters_report_pay_matches_real_sample_values():
 
     assert lines[6] == f"Bradipo I        0  Good  Caut     Human  0 {_NO_SKILLS_LINE}"
     assert lines[8] == f"Adele            0  Good Brave     Human  1 {_NO_SKILLS_LINE}"
-    assert lines[10] == f"Indra            0  Good  Caut     Human  1 {_NO_SKILLS_LINE}"
+    assert lines[10] == f"Indra            0  Good  Caut     Human  2 {_NO_SKILLS_LINE}"
 
 
 def test_describe_characters_report_hero_pay_reflects_alignment_distance():
-    # ALIGNMENT_ORDINAL: Divine=0, Good=1 -- distance 1, same temper ->
-    # required_pay() is 2 (base_pay[1]=2, no penalty since temper matches).
+    # NormAlign floors Divine to the same ordinal as Good (both clamp to
+    # 1) -- real alignment distance 0, same temper, no other friction --
+    # required_pay() is 1 for this King/Hero leader-id pair.
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     state.add_leader(
@@ -4996,7 +4999,7 @@ def test_describe_characters_report_hero_pay_reflects_alignment_distance():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[8] == f"Hero             0  Good  Caut     Human  2 {_NO_SKILLS_LINE}"
+    assert lines[8] == f"Hero             0  Good  Caut     Human  1 {_NO_SKILLS_LINE}"
 
 
 def test_describe_characters_report_lists_held_items():
@@ -5366,7 +5369,7 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "concerning the finances of our great nation:",
         "Gold in treasury:   0",
         "Expected Revenues:   0",
-        "Expected Expenses:   4",
+        "Expected Expenses:   6",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
         "None at present",
         "",
@@ -5391,9 +5394,9 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Character      Loc Align  Temp M/F  Race Ini TaMaNaArMe WhNeElPsIl DrThExSpSa",
         "Aldric           0  Unkn  Unkn     Human  0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
-        "Borin            0  Unkn  Unkn     Human  1   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        "Borin            0  Unkn  Unkn     Human  2   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
-        "Elena            0  Unkn  Unkn     Human  1   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        "Elena            0  Unkn  Unkn     Human  2   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         "",
         "",
