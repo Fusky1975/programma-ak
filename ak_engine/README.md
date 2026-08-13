@@ -20695,7 +20695,7 @@ follow-up request after the original 431-435 plan shipped.
     GOOD`; the same scenario without the ability leaves the revived
     Hero's original `Alignment.EVIL` untouched. Ran again: 4350 passed
     (2 new).
-- **Phase 499 (current)**: `AdvancedAbility.ENHANCED_CHARM` (ordinal
+- **Phase 499**: `AdvancedAbility.ENHANCED_CHARM` (ordinal
   82, `Ability.PSYCHIC`'s own magic-college pool): "In addition to its
   other effects, the victim of a Charm spell now will also hand over
   one magic item, if available. If it's used as an encounter spell and
@@ -20720,6 +20720,28 @@ follow-up request after the original 431-435 plan shipped.
     the other; a target with no items is a harmless no-op; the same
     two-item scenario without the ability leaves the target's items
     untouched. Ran again: 4353 passed (3 new).
+- **Phase 500 (current)**: `AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS`
+  (ordinal 68, `Ability.NECROMANCY`'s own magic-college pool), Hand of
+  Death half only: "'Hand of Death' now works against all creatures."
+  (The other half, Control Undead against anti-holy creatures with a
+  resist-roll, is deliberately deferred to a future phase -- a more
+  complex "new eligibility class + a resist roll" shape, not this
+  phase's narrow slice.) Wired at both real Hand of Death call sites:
+  `turn/challenge_execution.py`'s leader-vs-leader case overrides
+  `target_is_immune` to `False` when `caster_leader` holds the ability
+  (a leader target is never Mechanical, so overriding the Undead/Anti-
+  Holy check is the whole widening); `turn/search_execution.py`'s
+  leader-vs-monster case does the same only in the `target_is_monster`
+  branch -- the sole reachable one, since a monster caster can never
+  hold an Advanced Ability, so the sibling "monster casts on a leader"
+  branch has no caster to check.
+  - Ran the full suite before writing new tests: 4353 passed (non-
+    breaking). Wrote 2 new tests: one in `tests/test_search_execution.py`
+    (a `Monster.VAMPIRE` target -- normally immune via
+    `HAND_OF_DEATH_IMMUNE_MONSTERS` -- stops being immune with the
+    ability), one in `tests/test_challenge_execution.py` (an
+    `Alignment.UNDEAD` leader target -- normally immune -- stops being
+    immune with the ability). Ran again: 4355 passed (2 new).
 
 ## Setup
 

@@ -1305,7 +1305,16 @@ def _resolve_search_encounter(
 
         if spell is Spell.HAND_OF_DEATH:
             if target_is_monster:
-                target_is_immune = monster_species in HAND_OF_DEATH_IMMUNE_MONSTERS
+                # Phase 500: AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS --
+                # "'Hand of Death' now works against all creatures."
+                # Only reachable here (a monster caster can't hold an
+                # Advanced Ability, so the `else` branch below -- a
+                # monster casting on a leader target -- never has a
+                # caster to check).
+                if AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS in leader.advanced_abilities:
+                    target_is_immune = False
+                else:
+                    target_is_immune = monster_species in HAND_OF_DEATH_IMMUNE_MONSTERS
             else:
                 target_is_immune = leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY)
             channel_result = resolve_hand_of_death_channel(caster, target, level, rng, target_is_immune=target_is_immune)

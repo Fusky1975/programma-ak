@@ -536,6 +536,26 @@ def test_execute_challenge_cast_hand_of_death_channel_win_kills_target():
     assert result.loser_leader_id == 2
 
 
+def test_execute_challenge_cast_hand_of_death_enhanced_ability_overrides_the_immune_flag():
+    # Phase 500: AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS -- "'Hand of
+    # Death' now works against all creatures." Without the ability, an
+    # Undead target is immune; with it, the channel proceeds anyway.
+    state = _base_state()
+    caster = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9))
+    caster.advanced_abilities.add(AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS)
+    state.add_leader(caster)
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.UNDEAD))
+    request = _cast_request(2, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=3)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert mock_channel.call_args.kwargs["target_is_immune"] is False
+
+
 def test_execute_challenge_cast_mirror_image_caster_wins():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ILLUSION, 4, 9)))

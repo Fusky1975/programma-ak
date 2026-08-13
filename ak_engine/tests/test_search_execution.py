@@ -1519,6 +1519,25 @@ def test_execute_search_cast_hand_of_death_threads_the_immune_flag():
     assert mock_channel.call_args.kwargs["target_is_immune"] is True
 
 
+def test_execute_search_cast_hand_of_death_enhanced_ability_overrides_the_immune_flag():
+    # Phase 500: AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS -- "'Hand of
+    # Death' now works against all creatures." Vampire would otherwise
+    # be immune (see the test above); the ability overrides that.
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    request = _cast_request(1, Spell.HAND_OF_DEATH, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
+    ) as mock_channel, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_channel.return_value = EncounterCombatResult(winner=None, rounds=0)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_channel.call_args.kwargs["target_is_immune"] is False
+
+
 def test_execute_search_cast_hand_of_death_caster_wins_instantly():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))

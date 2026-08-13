@@ -538,10 +538,18 @@ def _resolve_personal_combat_cast(
         return None
 
     if spell is Spell.HAND_OF_DEATH:
-        target_is_immune = target_leader is not None and target_leader.alignment in (
-            Alignment.UNDEAD,
-            Alignment.ANTI_HOLY,
-        )
+        # Phase 500: AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS -- "'Hand
+        # of Death' now works against all creatures." A leader-vs-leader
+        # target is never Mechanical (no such alignment applies to a
+        # LeaderState), so overriding the Undead/Anti-Holy check to
+        # False is the whole widening here.
+        if AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS in caster_leader.advanced_abilities:
+            target_is_immune = False
+        else:
+            target_is_immune = target_leader is not None and target_leader.alignment in (
+                Alignment.UNDEAD,
+                Alignment.ANTI_HOLY,
+            )
         channel_result = resolve_hand_of_death_channel(caster, target, level, rng, target_is_immune=target_is_immune)
         if channel_result.winner is not None:
             # "a" in resolve_hand_of_death_channel's own convention always means the caster.
