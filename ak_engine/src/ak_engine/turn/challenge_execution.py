@@ -225,6 +225,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field, replace
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
@@ -534,8 +535,22 @@ def _resolve_personal_combat_cast(
         sage_level = effective_skill_level(state, caster_leader, Ability.SAGE)
         illusion_level = effective_skill_level(state, caster_leader, Ability.ILLUSION)
         opponent_disbelief_bonus = mirror_image_leader_disbelief_bonus(sage_level, illusion_level)
+        # Phase 494: same wiring as turn/search_execution.py's own Mirror-
+        # Image branch -- see that call site's comment. Here both sides
+        # can be a real leader (or None for a Duel-side garrison
+        # commander, which can never hold an Advanced Ability), so each
+        # is checked against its own LeaderState directly.
         duel_result = resolve_mirror_image_duel(
-            caster, target, opponent_tier, level, rng, opponent_disbelief_bonus=opponent_disbelief_bonus
+            caster,
+            target,
+            opponent_tier,
+            level,
+            rng,
+            opponent_disbelief_bonus=opponent_disbelief_bonus,
+            opponent_has_detect_illusions=(
+                target_leader is not None and AdvancedAbility.DETECT_ILLUSIONS_TALENT in target_leader.advanced_abilities
+            ),
+            caster_has_detect_illusions=AdvancedAbility.DETECT_ILLUSIONS_TALENT in caster_leader.advanced_abilities,
         )
         if duel_result.winner == "a":
             return "a"
@@ -557,6 +572,7 @@ def _resolve_personal_combat_cast(
             and caster_leader.alignment is not None
             and illusory_hero_alignments_are_implacably_hostile(hero.alignment, caster_leader.alignment)
         )
+        # Phase 494: same Detect Illusions wiring as the Mirror-Image branch above.
         duel_result = resolve_illusory_hero_duel(
             caster,
             target,
@@ -565,6 +581,10 @@ def _resolve_personal_combat_cast(
             level,
             rng,
             opponent_disbelief_bonus=opponent_disbelief_bonus,
+            opponent_has_detect_illusions=(
+                target_leader is not None and AdvancedAbility.DETECT_ILLUSIONS_TALENT in target_leader.advanced_abilities
+            ),
+            caster_has_detect_illusions=AdvancedAbility.DETECT_ILLUSIONS_TALENT in caster_leader.advanced_abilities,
             turns_on_master=turns_on_master,
         )
         if duel_result.winner == "a":

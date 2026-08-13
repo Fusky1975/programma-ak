@@ -474,7 +474,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, replace
 
-from ak_engine.models.advanced_ability import LAVA_POOL_IMMUNE_MONSTERS
+from ak_engine.models.advanced_ability import LAVA_POOL_IMMUNE_MONSTERS, AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
@@ -1312,8 +1312,23 @@ def _resolve_search_encounter(
                 sage_level = effective_skill_level(state, leader, Ability.SAGE)
                 illusion_level = effective_skill_level(state, leader, Ability.ILLUSION)
                 opponent_disbelief_bonus = mirror_image_leader_disbelief_bonus(sage_level, illusion_level)
+            # Phase 494: Detect Illusions (AdvancedAbility.DETECT_ILLUSIONS_
+            # TALENT) belongs to whichever combatant is currently rolling to
+            # disbelieve, not fixed to caster/opponent -- see resolve_mirror_
+            # image_duel()'s own Phase 463 docstring. `leader` is the only
+            # real LeaderState in a Search encounter (the other side is
+            # always a monster, which can never hold an Advanced Ability),
+            # so the bonus applies to whichever role `leader` is playing.
+            leader_has_detect_illusions = AdvancedAbility.DETECT_ILLUSIONS_TALENT in leader.advanced_abilities
             duel_result = resolve_mirror_image_duel(
-                caster, target, opponent_tier, level, rng, opponent_disbelief_bonus=opponent_disbelief_bonus
+                caster,
+                target,
+                opponent_tier,
+                level,
+                rng,
+                opponent_disbelief_bonus=opponent_disbelief_bonus,
+                opponent_has_detect_illusions=(not caster_is_leader) and leader_has_detect_illusions,
+                caster_has_detect_illusions=caster_is_leader and leader_has_detect_illusions,
             )
             if duel_result.winner == "a":
                 # The caster disbelieves/slays their own illusion and
@@ -1349,6 +1364,8 @@ def _resolve_search_encounter(
                 and leader.alignment is not None
                 and illusory_hero_alignments_are_implacably_hostile(hero.alignment, leader.alignment)
             )
+            # Phase 494: same Detect Illusions wiring as Mirror-Image above.
+            leader_has_detect_illusions = AdvancedAbility.DETECT_ILLUSIONS_TALENT in leader.advanced_abilities
             duel_result = resolve_illusory_hero_duel(
                 caster,
                 target,
@@ -1357,6 +1374,8 @@ def _resolve_search_encounter(
                 level,
                 rng,
                 opponent_disbelief_bonus=opponent_disbelief_bonus,
+                opponent_has_detect_illusions=(not caster_is_leader) and leader_has_detect_illusions,
+                caster_has_detect_illusions=caster_is_leader and leader_has_detect_illusions,
                 turns_on_master=turns_on_master,
             )
             if duel_result.winner == "a":

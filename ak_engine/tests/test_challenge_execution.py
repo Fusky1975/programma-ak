@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, Maneuver, Spell
@@ -15,6 +16,7 @@ from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
+from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.challenge_execution import (
     ChallengeExecutionResult,
     _apply_bravest_talk_inspiration,
@@ -510,6 +512,84 @@ def test_execute_challenge_cast_mirror_image_caster_wins():
         result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
 
     assert result.winner_leader_id == 1
+
+
+def test_execute_challenge_cast_mirror_image_caster_passes_own_detect_illusions_as_caster_bonus():
+    # Phase 494: unlike turn/search_execution.py's own Search encounter
+    # (always leader-vs-monster), a Challenge is leader-vs-leader -- both
+    # sides can independently hold Detect Illusions, checked against
+    # their own real LeaderState directly.
+    state = _base_state()
+    caster = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ILLUSION, 4, 9))
+    caster.advanced_abilities.add(AdvancedAbility.DETECT_ILLUSIONS_TALENT)
+    state.add_leader(caster)
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.MIRROR_IMAGE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_mirror_image_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is True
+    assert mock_duel.call_args.kwargs["opponent_has_detect_illusions"] is False
+
+
+def test_execute_challenge_cast_mirror_image_target_passes_own_detect_illusions_as_opponent_bonus():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ILLUSION, 4, 9)))
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    target.advanced_abilities.add(AdvancedAbility.DETECT_ILLUSIONS_TALENT)
+    state.add_leader(target)
+    request = _cast_request(2, Spell.MIRROR_IMAGE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_mirror_image_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert mock_duel.call_args.kwargs["opponent_has_detect_illusions"] is True
+    assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is False
+
+
+def test_execute_challenge_cast_illusory_hero_caster_passes_own_detect_illusions_as_caster_bonus():
+    state = _base_state()
+    caster = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ILLUSION, 5, 9))
+    caster.advanced_abilities.add(AdvancedAbility.DETECT_ILLUSIONS_TALENT)
+    state.add_leader(caster)
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", FIELD))
+    request = _cast_request(2, Spell.ILLUS_HERO)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_illusory_hero_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is True
+    assert mock_duel.call_args.kwargs["opponent_has_detect_illusions"] is False
+
+
+def test_execute_challenge_cast_illusory_hero_target_passes_own_detect_illusions_as_opponent_bonus():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ILLUSION, 5, 9)))
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    target.advanced_abilities.add(AdvancedAbility.DETECT_ILLUSIONS_TALENT)
+    state.add_leader(target)
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", FIELD))
+    request = _cast_request(2, Spell.ILLUS_HERO)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_illusory_hero_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert mock_duel.call_args.kwargs["opponent_has_detect_illusions"] is True
+    assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is False
 
 
 def test_execute_challenge_cast_gate_demon_summons_and_the_demon_wins():

@@ -20490,7 +20490,7 @@ follow-up request after the original 431-435 plan shipped.
     `action_casts_used`, a Chancellor cast lists the target kingdom's
     real held office, and an ordinary cast leaves `clairvoyance_target_
     offices` at `None`. Ran again: 4317 passed (4 new).
-- **Phase 493 (current)**: the 89-entry Advanced Ability catalog (Phase
+- **Phase 493**: the 89-entry Advanced Ability catalog (Phase
   128/131) gets its first leader-side storage and its first real
   acquisition wiring -- closing the gap flagged when that catalog was
   first built: a fully-verified selection algorithm existed
@@ -20539,6 +20539,40 @@ follow-up request after the original 431-435 plan shipped.
     6-slot bijection means the schedule always has an entry for level 10
     too, it's simply never reached in practice because `MAX_SKILL_LEVEL`
     stops skill rises at 9 first).
+- **Phase 494 (current)**: the first per-ability mechanical effect wired
+  for the 89-entry Advanced Ability catalog, closing one of the gaps
+  Phase 493 deliberately deferred (that phase only added leader-side
+  storage and the acquisition path -- none of the 89 abilities' own
+  effects were wired to do anything yet). Chose `AdvancedAbility.DETECT_
+  ILLUSIONS_TALENT` (ordinal 84, one of `Ability.ILLUSION`'s own 5
+  magic-college pool members Phase 493 can already grant) because its
+  own formula was already fully implemented and inert for lack of a
+  boolean flag: `turn/encounter.py`'s `resolve_mirror_image_duel()`/
+  `resolve_illusory_hero_duel()` (Phase 463's own `DETECT_ILLUSIONS_
+  DISBELIEF_BONUS = 0.25`, "+25 percentage points to whichever combatant
+  is currently the disbeliever") already accepted `opponent_has_detect_
+  illusions`/`caster_has_detect_illusions` keyword parameters, but every
+  one of their 4 real call sites (`turn/search_execution.py`'s Mirror-
+  Image/Illusory-Hero branches, `turn/challenge_execution.py`'s own
+  identical pair) left both permanently at their `False` default.
+  Wired all 4 call sites to check `AdvancedAbility.DETECT_ILLUSIONS_
+  TALENT in leader.advanced_abilities` for whichever side is currently
+  playing the caster/opponent role in that duel -- `turn/search_
+  execution.py`'s own Search encounter is always leader-vs-monster (a
+  monster can never hold an Advanced Ability, so only the one real
+  `leader` closure variable is ever checked, keyed by `caster_is_
+  leader`); `turn/challenge_execution.py`'s own Challenge encounter is
+  leader-vs-leader, so `caster_leader`/`target_leader` are each checked
+  independently against their own `advanced_abilities` set.
+  - Ran the full suite before writing new tests: 4329 passed (non-
+    breaking). Wrote 8 new tests: 4 in `tests/test_search_execution.py`
+    (leader-caster passes its own flag as `caster_has_detect_illusions`
+    for both Mirror-Image and Illusory Hero, a leader without the talent
+    passes `False`, and a leader-as-target -- a monster's own plan
+    casting Mirror-Image at the leader -- passes its own flag as
+    `opponent_has_detect_illusions` instead), 4 in `tests/test_
+    challenge_execution.py` (caster-side and target-side, for both
+    spells, each independently). Ran again: 4337 passed (8 new).
 
 ## Setup
 

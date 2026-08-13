@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
@@ -1502,6 +1503,66 @@ def test_execute_search_cast_mirror_image_leader_target_uses_medium_human_plus_t
     assert mock_duel.call_args.kwargs["opponent_disbelief_bonus"] == pytest.approx(0.06)
 
 
+def test_execute_search_cast_mirror_image_leader_caster_passes_own_detect_illusions_as_caster_bonus():
+    # Phase 494: leader is the caster (Stage 2 disbeliever) -- Detect
+    # Illusions belongs to caster_has_detect_illusions here, never
+    # opponent_has_detect_illusions (the monster can't hold an Advanced Ability).
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.DETECT_ILLUSIONS_TALENT)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.MIRROR_IMAGE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_mirror_image_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is True
+    assert mock_duel.call_args.kwargs["opponent_has_detect_illusions"] is False
+
+
+def test_execute_search_cast_mirror_image_leader_caster_without_the_talent_passes_false():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.MIRROR_IMAGE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_mirror_image_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is False
+    assert mock_duel.call_args.kwargs["opponent_has_detect_illusions"] is False
+
+
+def test_execute_search_cast_mirror_image_leader_target_passes_own_detect_illusions_as_opponent_bonus():
+    # Phase 494: leader is the opponent/target here (a monster's own plan
+    # casts Mirror-Image at the leader) -- Detect Illusions belongs to
+    # opponent_has_detect_illusions, never caster_has_detect_illusions
+    # (the monster caster can't hold an Advanced Ability).
+    leader = _skilled_leader(Ability.SAGE, 0)
+    leader.advanced_abilities.add(AdvancedAbility.DETECT_ILLUSIONS_TALENT)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_mirror_image_duel") as mock_duel, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.MIRROR_IMAGE.value),)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_duel.call_args.kwargs["opponent_has_detect_illusions"] is True
+    assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is False
+
+
 def test_execute_search_cast_mirror_image_caster_wins_instantly():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
@@ -1611,6 +1672,28 @@ def test_execute_search_cast_illusory_hero_leader_target_uses_medium_human_plus_
 
     assert mock_duel.call_args[0][3] is MirrorImageIntelligenceTier.MEDIUM_HUMAN
     assert mock_duel.call_args.kwargs["opponent_disbelief_bonus"] == pytest.approx(0.06)
+
+
+def test_execute_search_cast_illusory_hero_leader_caster_passes_own_detect_illusions_as_caster_bonus():
+    # Phase 494: same wiring as Mirror-Image's own equivalent test --
+    # Illusory Hero is exclusively leader-cast in practice, so the leader
+    # is always the caster/Stage-2 disbeliever here.
+    leader = _skilled_leader(Ability.ILLUSION, 5)
+    leader.advanced_abilities.add(AdvancedAbility.DETECT_ILLUSIONS_TALENT)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.ILLUS_HERO)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_illusory_hero_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is True
+    assert mock_duel.call_args.kwargs["opponent_has_detect_illusions"] is False
 
 
 def test_execute_search_cast_illusory_hero_caster_wins_instantly():
