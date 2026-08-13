@@ -353,6 +353,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Any
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.enums import ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
@@ -632,7 +633,14 @@ def _dispatch_aspy(
     phase: PlanPhase, state: GameState, leader_id: int, rng: random.Random | None = None
 ) -> SpyReport | None:
     request = decode_aspy_phase(phase)
-    return execute_aspy(state, leader_id, request, rng=rng)
+    # Phase 495: AdvancedAbility.KNOW_ALIGNMENT_TALENT ([REPORTS.PAS]
+    # Align_Est's own "Has_SA(agent,Detect_Align)" branch) grants perfect
+    # alignment detection here -- see execute_aspy()'s own docstring for
+    # why this is one of two separate flags (caster_holds_psychic_mage_
+    # office is a distinct, still-unwired Office perk, out of scope here).
+    leader = state.leaders.get(leader_id)
+    caster_has_detect_align = leader is not None and AdvancedAbility.KNOW_ALIGNMENT_TALENT in leader.advanced_abilities
+    return execute_aspy(state, leader_id, request, caster_has_detect_align=caster_has_detect_align, rng=rng)
 
 
 def _dispatch_practice(

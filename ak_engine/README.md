@@ -20539,7 +20539,7 @@ follow-up request after the original 431-435 plan shipped.
     6-slot bijection means the schedule always has an entry for level 10
     too, it's simply never reached in practice because `MAX_SKILL_LEVEL`
     stops skill rises at 9 first).
-- **Phase 494 (current)**: the first per-ability mechanical effect wired
+- **Phase 494**: the first per-ability mechanical effect wired
   for the 89-entry Advanced Ability catalog, closing one of the gaps
   Phase 493 deliberately deferred (that phase only added leader-side
   storage and the acquisition path -- none of the 89 abilities' own
@@ -20573,6 +20573,35 @@ follow-up request after the original 431-435 plan shipped.
     `opponent_has_detect_illusions` instead), 4 in `tests/test_
     challenge_execution.py` (caster-side and target-side, for both
     spells, each independently). Ran again: 4337 passed (8 new).
+- **Phase 495 (current)**: `AdvancedAbility.KNOW_ALIGNMENT_TALENT`
+  (ordinal 59, `Ability.WHITE`'s own magic-college pool -- one of the 5
+  colleges Phase 493 can already grant), the second per-ability
+  mechanical effect wired. `REPORTS.PAS Align_Est`'s own ``Has_SA(agent,
+  Detect_Align)`` branch grants perfect alignment detection --
+  `turn/intelligence_estimate.py estimate_alignment()` (Phase 136) and
+  `turn/aspy_execution.py execute_aspy()` (Phase 139) already implement
+  and expose this as a `caster_has_detect_align: bool = False` keyword
+  parameter, but the one real caller, `turn/plan_dispatch.py
+  _dispatch_aspy()`, never passed it -- same "formula ready, wiring
+  missing" shape as Phase 494's Detect Illusions. `_dispatch_aspy()` now
+  checks `AdvancedAbility.KNOW_ALIGNMENT_TALENT in leader.advanced_
+  abilities` and forwards it. Deliberately out of scope here:
+  `execute_aspy()`'s sibling `caster_holds_psychic_mage_office` parameter
+  (also always `False` today) is a distinct, Office-based perk --
+  `Office.PSYCHIC_MAGE`'s own `OFFICE_PERK_DESCRIPTION` ("knows
+  alignments, monster's deal intentions") confirms it grants the same
+  perfect-detection effect via a completely different mechanism (holding
+  an Office, not an Advanced Ability) -- left for its own future phase
+  rather than folded in here.
+  - Ran the full suite before writing new tests: 4337 passed (non-
+    breaking). Wrote 2 new tests in `tests/test_plan_dispatch.py`: since
+    `estimate_alignment()`'s own imperfect-estimate nudge is a
+    deterministic function of both leaders' ids (parity-based, no RNG),
+    a co-located spotted leader with a controlled id/kingdom-alignment
+    pair proves the wiring exactly -- without the Talent the estimate is
+    nudged one full `Alignment` ordinal off the true value, with it the
+    report shows the true alignment precisely. Ran again: 4339 passed
+    (2 new).
 
 ## Setup
 

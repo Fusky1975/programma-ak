@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, ActionCode, Spell
@@ -684,6 +685,43 @@ def test_dispatch_aspy_executes_and_reports_the_casters_own_province():
     assert result.province == HexCoord(3, 9)
     assert result.owner_kingdom_id == 1
     assert result.is_capital is True
+
+
+def test_dispatch_aspy_without_know_alignment_talent_estimates_imperfectly():
+    # Phase 495: without AdvancedAbility.KNOW_ALIGNMENT_TALENT, the
+    # caster's own estimate is nudged by the real REPORTS.PAS Align_Est
+    # parity formula, not the spotted leader's own true alignment --
+    # deterministic given both ids (no RNG involved), see intelligence_
+    # estimate.py's own module docstring. Agent (LEADER_ID=1, odd) vs. a
+    # spotted leader with an even id -> nudge = true_ordinal + 0 - 1,
+    # landing on Alignment.DRUID (ordinal 2) for a true Alignment.NEUTRAL
+    # (ordinal 3) target.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.add_kingdom(KingdomState(2, "Spied", Race.HUMAN, Alignment.NEUTRAL, HexCoord(3, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Spotted", location=HexCoord(3, 9)))
+    phase = PlanPhase(label="P0", action=ActionCode.ASPY, obj=304, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, SpyReport)
+    spotted = result.spotted_characters[0]
+    assert spotted.leader_id == 2
+    assert spotted.estimated_alignment is Alignment.DRUID
+
+
+def test_dispatch_aspy_with_know_alignment_talent_reports_the_true_alignment():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.KNOW_ALIGNMENT_TALENT)
+    state.add_kingdom(KingdomState(2, "Spied", Race.HUMAN, Alignment.NEUTRAL, HexCoord(3, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Spotted", location=HexCoord(3, 9)))
+    phase = PlanPhase(label="P0", action=ActionCode.ASPY, obj=304, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, SpyReport)
+    spotted = result.spotted_characters[0]
+    assert spotted.leader_id == 2
+    assert spotted.estimated_alignment is Alignment.NEUTRAL
 
 
 def test_dispatch_defend_is_decode_only():
