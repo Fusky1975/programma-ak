@@ -20843,7 +20843,7 @@ follow-up request after the original 431-435 plan shipped.
     eligibility flips from eligible (under the old, wrong ordinal) to
     correctly ineligible (`tests/test_encounter.py`). Ran again: 4366
     passed (2 new).
-- **Phase 505 (current)**: the user supplied a second, independent
+- **Phase 505**: the user supplied a second, independent
   disassembly-based reverse-engineering dossier
   (`AKGEN_reverse_engineering_report (3).md`, not a project file, never
   committed), covering several mechanics this project had previously
@@ -20888,6 +20888,90 @@ follow-up request after the original 431-435 plan shipped.
     dispatch.py`, and `tests/test_turn_report.py`. Ran again: 4369
     passed (net +3: 17 new `hire_pay` tests replacing 10 old ones, no
     other files gained or lost tests).
+- **Phase 506 (current)**: the same second dossier's Part III --
+  "reverse engineering completo del comando STEAL" -- replaces Steal
+  `[ST]`'s Phase 239/305 project-original approximation with the real
+  formula recovered from `AK.OVR`/`AK.EXE`. Two independently confirmed
+  facts drove the rewrite: the real success formula (`turn/encounter.py
+  steal_success_chance()`, `raw = 15*(1+min(4,S)+M+I*(1+E))`, halved
+  against a King or army-leading Hero, capped at 95% *after* the integer
+  division) is monster-intelligence-blind, and only a *second*,
+  intelligence-based roll (`steal_monster_item_transfer_chance()`) --
+  fired only after the first succeeds -- decides whether a guardian
+  monster's hoard was actually found. The pre-506 `search_execution.py`
+  had this backwards (checked monster-hide before the success roll), and
+  its `StealTargetCunning` three-bucket approximation is now retired in
+  favor of a direct reuse of `MONSTER_INTELLIGENCE_ORDINAL` (Phase 504's
+  own MECH-ordinal fix) -- the dossier's own worked hide-chance table
+  (Mech 99%, Semi 97%, Low 94%, Medium 88%, High 75%, Godlike 50%)
+  matches the real formula exactly only with Mech at ordinal 0,
+  independently re-confirming Phase 504's correction.
+  - `turn/encounter.py`: `steal_success_chance()`/`resolve_steal_attempt()`
+    (now taking `has_thief_mastery`/`is_invisible`/`has_enhanced_
+    invisibility`/`target_leads_army_or_is_king` instead of the old flat
+    `target_leads_army` halving multiplier), `steal_evasion_chance()`
+    (`0.10 + 0.075*level`, uncapped in level, replacing the old 30%+10%/
+    level+90%-cap approximation), `steal_character_item_transfer_chance()`
+    (75% halved via integer right-shift per item actually transferred,
+    for the character-vs-character case), `steal_ransom_amount()`
+    (`ceil(treasury/2)`), `steal_monster_item_transfer_chance()`/
+    `resolve_steal_monster_item_transfer()` (the intelligence-based
+    post-success item scan), and `MONSTER_STEAL_GOLD_IF_NO_ITEM` (per-
+    species magnitude for the Hero "1-gold-or-0" branch, sourced but not
+    yet wired -- no monster-gold-pool state exists to subtract from).
+    Removed the pre-506 `STEAL_BASE_SUCCESS_CHANCE`/`STEAL_MAX_SUCCESS_
+    CHANCE`/`STEAL_ARMY_COMMANDER_TARGET_MULTIPLIER`/`STEAL_EVASION_*`/
+    `StealTargetCunning`/`MONSTER_STEAL_CUNNING`/`STEAL_MONSTER_HIDE_
+    TREASURE_CHANCE`/`resolve_monster_hides_treasure`, and the dead,
+    never-wired `INVISIBILITY_STEAL_ATTEMPT_BONUS` placeholder its own
+    Phase 186 addendum had left for "whichever future phase" now
+    superseded it directly via the real formula's own `I`/`E` terms.
+  - `turn/search_execution.py _resolve_steal()`: reordered to roll
+    success first, then the monster item-transfer roll only on success
+    (previously gated by the now-removed pre-roll monster-hide check);
+    threads `has_thief_mastery` from `STEAL_THIEF_MASTERY_ABILITIES`
+    (Thief Mastery I-V, any tier) intersected with the leader's own
+    `advanced_abilities`, `is_invisible` from the leader's `Combatant`,
+    and `has_enhanced_invisibility` from `AdvancedAbility.ENHANCED_
+    INVISIBILITY`.
+  - `turn/challenge_execution.py`: `_resolve_steal_tactic()` gains a
+    `caster: Combatant` parameter (for `is_invisible`) and threads the
+    same three signals; `target_leads_army_or_is_king` now also gates
+    the King/army-commander capture branch, replacing the old bare
+    `target_leads_army`. `_apply_successful_theft()` now scans *every*
+    item the victim holds in a randomly-shuffled order (a manual Fisher-
+    Yates over `rng.random()`, not `rng.shuffle()` -- `shuffle()` draws
+    through `_randbelow()`/`getrandbits()` instead of `random()`, which
+    neither this project's own RNG convention nor the test suite's
+    `ScriptedRandom` helper scripts), each item independently rolled via
+    `steal_character_item_transfer_chance()`, with the halving threshold
+    only advancing on an actual transfer (a hidden item doesn't itself
+    halve the odds for the next one). Also fixes a genuine pre-existing
+    bug in the King-vs-King ransom branch: the old code computed
+    `floor(treasury/2)` and only ever debited the thief's own kingdom,
+    crediting nobody -- now `steal_ransom_amount()` (`ceil`) is debited
+    from the thief's kingdom *and* credited to the victim's own kingdom,
+    matching the real formula's own two-sided transfer.
+  - Deliberately **not** wired (documented, not silently dropped, in
+    `encounter.py`'s own module comments): Treasury Raiding's `R*G` term
+    (needs a new per-King "guard counter" this project has no state
+    for), the real King gold-theft magnitude (`clamp(treasury/10,10,250)`,
+    needs a turn-start treasury snapshot), the Hero "1-gold-or-0" branch
+    (no "Hero personal gold" state exists, only `KingdomState.treasury`),
+    and `MONSTER_STEAL_GOLD_IF_NO_ITEM` itself (monsters hold no
+    `ItemInstance` or gold-pool state in this project's model).
+  - Ran the full suite before writing new tests: 10 collection errors
+    (every consumer of the removed old Steal names), all expected.
+    Rewrote the Steal test clusters in `tests/test_encounter.py` (new
+    formula-level tests, including a `MONSTER_STEAL_GOLD_IF_NO_ITEM`
+    completeness check against all 60 real species) and `tests/
+    test_search_execution.py` (reordered success-then-hide mocking);
+    updated `tests/test_challenge_execution.py`'s direct `_resolve_
+    steal_tactic()`/`_apply_successful_theft()` unit tests for the new
+    `caster` parameter, the extended rng consumption (the item-transfer
+    scan's own shuffle-then-roll-per-item, `Add_Experience`'s own two-
+    draw spread), and the ransom fix's own two-sided assertion. Ran
+    again: 4377 passed (net +8).
 
 ## Setup
 

@@ -485,8 +485,10 @@ from ak_engine.models.monster import (
     ICE_SUSPENSION_FLYING_MONSTERS,
     ICE_SUSPENSION_IMMUNE_MONSTERS,
     MONSTER_COMBAT_STATS,
+    MONSTER_INTELLIGENCE_ORDINAL,
     MONSTER_MAGIC_ABILITIES,
     MONSTER_NAMES,
+    MONSTER_RUNTIME_PROFILE,
     SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS,
     SPIRITWRACK_MECHANICAL_MONSTERS,
     SPIRITWRACK_UNDEAD_MONSTERS,
@@ -508,7 +510,7 @@ from ak_engine.turn.encounter import (
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
     MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT,
     MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER,
-    MONSTER_STEAL_CUNNING,
+    STEAL_THIEF_MASTERY_ABILITIES,
     PERSONAL_COMBAT_SPELL_ABILITY,
     Combatant,
     CombatRange,
@@ -516,7 +518,6 @@ from ak_engine.turn.encounter import (
     FireArrowShot,
     MeleeSwing,
     MirrorImageIntelligenceTier,
-    StealTargetCunning,
     TalkReaction,
     apply_temper_melee_setup,
     blocks_cast_and_archery,
@@ -538,7 +539,6 @@ from ak_engine.turn.encounter import (
     resolve_lava_pool_escape,
     resolve_melee_duel,
     resolve_mirror_image_duel,
-    resolve_monster_hides_treasure,
     resolve_one_melee_round,
     resolve_personal_combat_spell_cast,
     resolve_reactive_melee_swing,
@@ -546,6 +546,7 @@ from ak_engine.turn.encounter import (
     resolve_spell_disruption_from_missed_attack,
     resolve_steal_attempt,
     resolve_steal_evasion,
+    resolve_steal_monster_item_transfer,
     resolve_talk_reaction,
     roll_fireball_damage,
     roll_holy_symbol_undead_damage,
@@ -1879,23 +1880,41 @@ def _resolve_search_encounter(
         return outcome
 
     def _resolve_steal() -> SearchExecutionResult | None:
-        """Steal [ST], rulebook [5.4] -- Phase 239 (``turn/encounter.py``'s
-        own Phase 239 addendum has the full quoted rulebook text and every
-        formula this calls). Search's target is always the guardian
-        monster, never a King/Hero, so only one of the rulebook's three
-        caught-thief consequences ever applies here: "si ha un
-        combattimento individuale, a una distanza scelta a caso" (personal
-        combat at a random range) -- and no ``target_leads_army`` halving
-        either, since a guardian monster never commands an army in this
-        project's model.
+        """Steal [ST], rulebook [5.4] -- Phase 239, superseded by Phase 506
+        with the real disassembly-sourced formula (``turn/encounter.py``'s
+        own Phase 506 addendum has the full formula and its source).
+        Search's target is always the guardian monster, never a King/
+        Hero, so only one of the rulebook's three caught-thief
+        consequences ever applies here: "si ha un combattimento
+        individuale, a una distanza scelta a caso" (personal combat at a
+        random range) -- and no ``target_leads_army_or_is_king`` halving
+        either, since a guardian monster never commands an army or is a
+        King in this project's model.
+
+        Two separate rolls, in the real formula's own order: the success
+        roll (``resolve_steal_attempt()``) is monster-intelligence-blind;
+        only *after* it succeeds does a second, intelligence-based roll
+        (``resolve_steal_monster_item_transfer()``) decide whether the
+        guardian's hoard was actually hidden from the thief -- a failure
+        there is a documented no-effect (the thief got past the guardian
+        but found nothing), not a caught-thief consequence.
         """
 
         nonlocal combat_attempted
-        cunning = MONSTER_STEAL_CUNNING.get(feature.guardian_monster, StealTargetCunning.AVERAGE)
-        if resolve_monster_hides_treasure(cunning, rng):
-            return None  # this attempt found nothing -- plan continues
         level = effective_skill_level(state, leader, Ability.THIEF)
-        if resolve_steal_attempt(level, rng):
+        has_thief_mastery = bool(leader.advanced_abilities & STEAL_THIEF_MASTERY_ABILITIES)
+        has_enhanced_invisibility = AdvancedAbility.ENHANCED_INVISIBILITY in leader.advanced_abilities
+        if resolve_steal_attempt(
+            level,
+            rng,
+            has_thief_mastery=has_thief_mastery,
+            is_invisible=leader_combatant.is_invisible,
+            has_enhanced_invisibility=has_enhanced_invisibility,
+            target_leads_army_or_is_king=False,
+        ):
+            intelligence_ordinal = MONSTER_INTELLIGENCE_ORDINAL[MONSTER_RUNTIME_PROFILE[feature.guardian_monster].intelligence]
+            if not resolve_steal_monster_item_transfer(intelligence_ordinal, 0, rng):
+                return None  # past the guardian, but the hoard was hidden -- plan continues
             # Phase 442: one of the real compiled formula's own "two
             # separate success paths that award the [Prince of Thieves]
             # point" (turn/merit_points.py thiefprince_merit_points()'s

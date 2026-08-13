@@ -36,7 +36,6 @@ from ak_engine.turn.encounter import (
     ICE_SUSPENSION_FROZEN_FLEE_ALWAYS_SUCCEEDS,
     ICE_SUSPENSION_SEIZES_UNCARRIED_MAGIC_ITEMS,
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
-    INVISIBILITY_STEAL_ATTEMPT_BONUS,
     MIRROR_IMAGE_DISBELIEF_BASE_CHANCE,
     MIRROR_IMAGE_DISBELIEF_REDUCTION_CAP,
     MIRROR_IMAGE_DISBELIEF_REDUCTION_PER_LEVEL,
@@ -132,20 +131,17 @@ from ak_engine.turn.encounter import (
     ILLUSORY_HERO_HOSTILE_ALIGNMENT_PAIRS,
     illusory_hero_alignments_are_implacably_hostile,
     resolve_illusory_hero_duel,
-    STEAL_ARMY_COMMANDER_TARGET_MULTIPLIER,
-    STEAL_BASE_SUCCESS_CHANCE,
-    STEAL_EVASION_BASE_CHANCE,
-    STEAL_EVASION_CHANCE_PER_LEVEL,
-    STEAL_EVASION_MAX_CHANCE,
-    STEAL_MAX_SUCCESS_CHANCE,
-    STEAL_MONSTER_HIDE_TREASURE_CHANCE,
-    STEAL_SUCCESS_CHANCE_PER_LEVEL,
-    MONSTER_STEAL_CUNNING,
-    StealTargetCunning,
-    resolve_monster_hides_treasure,
+    STEAL_SUCCESS_MAX_CHANCE,
+    STEAL_THIEF_MASTERY_ABILITIES,
+    MONSTER_STEAL_GOLD_IF_NO_ITEM,
     resolve_steal_attempt,
+    resolve_steal_character_item_transfer,
     resolve_steal_evasion,
+    resolve_steal_monster_item_transfer,
+    steal_character_item_transfer_chance,
     steal_evasion_chance,
+    steal_monster_item_transfer_chance,
+    steal_ransom_amount,
     steal_success_chance,
     TALK_ATTACK_CHANCE,
     TALK_DRUIDIC_ATTACK_CHANCE,
@@ -181,6 +177,7 @@ from ak_engine.turn.encounter import (
     loot_defeated_leader,
 )
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.map import HexCoord
@@ -1020,13 +1017,6 @@ def test_invisibility_reduced_hit_chance_halves_the_base_chance():
     assert invisibility_reduced_hit_chance(0.50) == pytest.approx(0.25)
     assert invisibility_reduced_hit_chance(fire_arrow_hit_chance(2)) == pytest.approx(fire_arrow_hit_chance(2) * 0.5)
     assert invisibility_reduced_hit_chance(MELEE_HIT_CHANCE) == pytest.approx(0.25)
-
-
-def test_invisibility_steal_attempt_bonus_constant():
-    # "vale come un modificatore di +15% al tentativo di furto" --
-    # confirmed but not yet backed by any real Steal-success formula
-    # anywhere in this project (module docstring's Phase 186 addendum).
-    assert INVISIBILITY_STEAL_ATTEMPT_BONUS == 0.15
 
 
 # -- Phase 187: Mirror-Image Phantasm (MI) --
@@ -2071,24 +2061,49 @@ def test_resolve_illusory_hero_duel_stage2_illusion_kills_the_caster():
     assert result.rounds == 2
 
 
-# -- Phase 239: Steal --
+# -- Phase 506: Steal, real disassembly-sourced formula --
 
 
 def test_steal_success_chance_base_and_per_level():
-    assert steal_success_chance(0) == pytest.approx(STEAL_BASE_SUCCESS_CHANCE) == pytest.approx(0.15)
+    # raw = 15*(1 + min(4,S)), divisor = 1, no M/I/E/H terms.
+    assert steal_success_chance(0) == pytest.approx(0.15)
     assert steal_success_chance(1) == pytest.approx(0.30)
     assert steal_success_chance(2) == pytest.approx(0.45)
+    assert steal_success_chance(4) == pytest.approx(0.75)
+
+
+def test_steal_success_chance_level_term_caps_at_4():
+    # min(4, S) -- level 9 gives the same raw chance as level 4.
+    assert steal_success_chance(9) == pytest.approx(steal_success_chance(4)) == pytest.approx(0.75)
+
+
+def test_steal_success_chance_thief_mastery_adds_one_to_raw():
+    # level 0, M=1: raw = 15*(1+0+1) = 30 -> 0.30.
+    assert steal_success_chance(0, has_thief_mastery=True) == pytest.approx(0.30)
+
+
+def test_steal_success_chance_invisibility_and_enhanced_invisibility():
+    # level 0, I=1, E=0: raw = 15*(1+0+0+1*1) = 30 -> 0.30.
+    assert steal_success_chance(0, is_invisible=True) == pytest.approx(0.30)
+    # level 0, I=1, E=1: raw = 15*(1+0+0+1*2) = 45 -> 0.45.
+    assert steal_success_chance(0, is_invisible=True, has_enhanced_invisibility=True) == pytest.approx(0.45)
+    # Enhanced Invisibility alone (I=0) contributes nothing.
+    assert steal_success_chance(0, has_enhanced_invisibility=True) == pytest.approx(0.15)
 
 
 def test_steal_success_chance_caps_at_95_percent():
-    # 15% + 15%*10 = 165%, capped to the sourced 95% ceiling.
-    assert steal_success_chance(10) == pytest.approx(STEAL_MAX_SUCCESS_CHANCE) == pytest.approx(0.95)
+    # level 4, M=1, I=1, E=1: raw = 15*(1+4+1+1*2) = 120 -> capped to 95%.
+    assert (
+        steal_success_chance(4, has_thief_mastery=True, is_invisible=True, has_enhanced_invisibility=True)
+        == pytest.approx(STEAL_SUCCESS_MAX_CHANCE)
+        == pytest.approx(0.95)
+    )
 
 
-def test_steal_success_chance_halved_against_an_army_commander():
-    assert steal_success_chance(1, target_leads_army=True) == pytest.approx(0.15)
-    # Halving is applied before the 95% cap, not after.
-    assert steal_success_chance(10, target_leads_army=True) == pytest.approx(0.825)
+def test_steal_success_chance_halved_against_a_king_or_army_commander():
+    # level 4, H=1: raw = 75, divisor = 2 -> 75 // 2 = 37 -> 0.37 (integer
+    # division happens before the percentage cap, not after).
+    assert steal_success_chance(4, target_leads_army_or_is_king=True) == pytest.approx(0.37)
 
 
 def test_resolve_steal_attempt_uses_the_success_chance():
@@ -2098,48 +2113,86 @@ def test_resolve_steal_attempt_uses_the_success_chance():
     assert resolve_steal_attempt(1, rng) is False
 
 
-def test_steal_evasion_chance_base_and_per_level_and_cap():
-    assert steal_evasion_chance(0) == pytest.approx(STEAL_EVASION_BASE_CHANCE) == pytest.approx(0.30)
-    assert steal_evasion_chance(1) == pytest.approx(0.40)
-    # 30% + 10%*10 = 130%, capped to 90%.
-    assert steal_evasion_chance(10) == pytest.approx(STEAL_EVASION_MAX_CHANCE) == pytest.approx(0.90)
+def test_steal_evasion_chance_base_and_per_level():
+    assert steal_evasion_chance(0) == pytest.approx(0.10)
+    assert steal_evasion_chance(1) == pytest.approx(0.175)
+    # The dossier's own worked example: level 9 -> 77.5%.
+    assert steal_evasion_chance(9) == pytest.approx(0.775)
+
+
+def test_steal_evasion_chance_caps_at_100_percent():
+    assert steal_evasion_chance(12) == pytest.approx(1.0)
+    assert steal_evasion_chance(20) == pytest.approx(1.0)
 
 
 def test_resolve_steal_evasion_uses_the_evasion_chance():
-    rng = ScriptedRandom([0.39, 0.41])
-    # level 1 -> 40% chance: 0.39 evades, 0.41 doesn't.
+    rng = ScriptedRandom([0.17, 0.18])
+    # level 1 -> 17.5% chance: 0.17 evades, 0.18 doesn't.
     assert resolve_steal_evasion(1, rng) is True
     assert resolve_steal_evasion(1, rng) is False
 
 
-def test_steal_monster_hide_treasure_chance_table():
-    assert STEAL_MONSTER_HIDE_TREASURE_CHANCE == {
-        StealTargetCunning.AVERAGE: 0.10,
-        StealTargetCunning.CLEVER: 0.25,
-        StealTargetCunning.MASTER: 0.50,
+def test_steal_thief_mastery_abilities_span_all_five_tiers():
+    assert STEAL_THIEF_MASTERY_ABILITIES == {
+        AdvancedAbility.THIEF_MASTERY_I,
+        AdvancedAbility.THIEF_MASTERY_II,
+        AdvancedAbility.THIEF_MASTERY_III,
+        AdvancedAbility.THIEF_MASTERY_IV,
+        AdvancedAbility.THIEF_MASTERY_V,
     }
 
 
-def test_resolve_monster_hides_treasure_uses_the_cunning_table():
-    rng = ScriptedRandom([0.09, 0.11])
-    assert resolve_monster_hides_treasure(StealTargetCunning.AVERAGE, rng) is True
-    assert resolve_monster_hides_treasure(StealTargetCunning.AVERAGE, rng) is False
+def test_steal_character_item_transfer_chance_halves_after_each_transfer():
+    # 75, 37, 18, 9, 4, 2, 1, 0 -- integer right-shift, not float halving.
+    assert [steal_character_item_transfer_chance(n) for n in range(8)] == pytest.approx(
+        [0.75, 0.37, 0.18, 0.09, 0.04, 0.02, 0.01, 0.0]
+    )
 
 
-def test_monster_steal_cunning_spans_all_three_tiers():
-    # Divine/Superhuman collapses to MASTER (50%).
-    assert MONSTER_STEAL_CUNNING[Monster.COUATL] is StealTargetCunning.MASTER
-    assert MONSTER_STEAL_CUNNING[Monster.LICH] is StealTargetCunning.MASTER
-    # High Human collapses to CLEVER (25%).
-    assert MONSTER_STEAL_CUNNING[Monster.SPHINX] is StealTargetCunning.CLEVER
-    assert MONSTER_STEAL_CUNNING[Monster.VAMPIRE] is StealTargetCunning.CLEVER
-    # Medium Human and everything below it collapses to AVERAGE (10%).
-    assert MONSTER_STEAL_CUNNING[Monster.ARCHER] is StealTargetCunning.AVERAGE
-    assert MONSTER_STEAL_CUNNING[Monster.GIANT] is StealTargetCunning.AVERAGE
-    assert MONSTER_STEAL_CUNNING[Monster.GRYPHON] is StealTargetCunning.AVERAGE
-    assert MONSTER_STEAL_CUNNING[Monster.GOLEM] is StealTargetCunning.AVERAGE
-    # Covers every real species MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER does.
-    assert MONSTER_STEAL_CUNNING.keys() == MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER.keys()
+def test_resolve_steal_character_item_transfer_uses_the_chance():
+    rng = ScriptedRandom([0.74, 0.76])
+    assert resolve_steal_character_item_transfer(0, rng) is True
+    assert resolve_steal_character_item_transfer(0, rng) is False
+
+
+def test_steal_ransom_amount_rounds_up_half():
+    assert steal_ransom_amount(10) == 5
+    assert steal_ransom_amount(11) == 6
+    assert steal_ransom_amount(0) == 0
+    assert steal_ransom_amount(1) == 1
+
+
+def test_steal_monster_item_transfer_chance_matches_the_dossiers_intelligence_table():
+    # Mech=0 99%, Semi=1 97%, Low=2 94%, Medium=3 88%, High=4 75%,
+    # Godlike=5 50% -- confirmed to match only with Mech at ordinal 0
+    # (independently cross-checking Phase 504's own MECH ordinal fix).
+    assert steal_monster_item_transfer_chance(0, 0) == pytest.approx(0.99)
+    assert steal_monster_item_transfer_chance(1, 0) == pytest.approx(0.97)
+    assert steal_monster_item_transfer_chance(2, 0) == pytest.approx(0.94)
+    assert steal_monster_item_transfer_chance(3, 0) == pytest.approx(0.88)
+    assert steal_monster_item_transfer_chance(4, 0) == pytest.approx(0.75)
+    assert steal_monster_item_transfer_chance(5, 0) == pytest.approx(0.50)
+
+
+def test_steal_monster_item_transfer_chance_halves_after_each_transfer():
+    # Mech (99%) after one prior transfer: 99 >> 1 = 49 -> 0.49.
+    assert steal_monster_item_transfer_chance(0, 1) == pytest.approx(0.49)
+
+
+def test_resolve_steal_monster_item_transfer_uses_the_chance():
+    rng = ScriptedRandom([0.98, 0.99])
+    assert resolve_steal_monster_item_transfer(0, 0, rng) is True
+    assert resolve_steal_monster_item_transfer(0, 0, rng) is False
+
+
+def test_monster_steal_gold_if_no_item_covers_every_real_species():
+    all_real_species = set(Monster) - {Monster.NOMONSTER}
+    assert MONSTER_STEAL_GOLD_IF_NO_ITEM.keys() == all_real_species
+    # Spot-check a few of the dossier's own named magnitudes.
+    assert MONSTER_STEAL_GOLD_IF_NO_ITEM[Monster.GO_DRAGON] == 6
+    assert MONSTER_STEAL_GOLD_IF_NO_ITEM[Monster.TITAN] == 6
+    assert MONSTER_STEAL_GOLD_IF_NO_ITEM[Monster.ROC] == 1
+    assert MONSTER_STEAL_GOLD_IF_NO_ITEM[Monster.MERMAID] == 1
 
 
 # -- Phase 240: Talk / Say / Fulfill --

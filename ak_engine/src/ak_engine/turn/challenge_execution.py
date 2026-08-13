@@ -240,6 +240,7 @@ from ak_engine.turn.encounter import (
     FIRE_ARROW_DAMAGE_RANGE,
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
     MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT,
+    STEAL_THIEF_MASTERY_ABILITIES,
     PERSONAL_COMBAT_SPELL_ABILITY,
     Combatant,
     CombatRange,
@@ -270,6 +271,7 @@ from ak_engine.turn.encounter import (
     resolve_spell_disruption,
     resolve_spell_disruption_from_missed_attack,
     resolve_steal_attempt,
+    resolve_steal_character_item_transfer,
     resolve_steal_evasion,
     roll_fireball_damage,
     roll_holy_symbol_undead_damage,
@@ -278,6 +280,7 @@ from ak_engine.turn.encounter import (
     roll_telekinetic_storm_caster_damage,
     roll_telekinetic_storm_victim_damage,
     spiritwrack_melee_damage_reduction,
+    steal_ransom_amount,
     words_of_healing_heal,
 )
 from ak_engine.turn.experience import add_experience
@@ -711,15 +714,15 @@ def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, rng: random
 
 
 def _apply_successful_theft(state: GameState, thief: LeaderState, victim: LeaderState, rng: random.Random) -> None:
-    """The theft's own tangible effect -- Phase 305: "oro o uno o piu'
-    oggetti magici (sempre che siano presenti)", with no quantity formula
-    for either resource. Gold theft stays unmodeled (see module
-    docstring's own Phase 305 addendum). Item theft is modeled directly:
-    the victim's first held item (if any) changes hands via ``GameState.
-    transfer_item()`` (Phase 140) -- "how many" is read as exactly one,
-    matching ``turn/trade_execution.py execute_give()``'s own established
-    "one item per order" convention, this project's only other real
-    item-transfer mechanic, rather than guessing at "all of them."
+    """The theft's own tangible effect -- Phase 305, superseded by
+    Phase 506's own full item-scan-with-decay (``turn/encounter.py``'s
+    own Phase 506 addendum, ``steal_character_item_transfer_chance()``):
+    the victim's own eligible items are scanned in a randomly-shuffled
+    order, each independently rolled against a threshold that starts at
+    75% and is halved (integer right-shift) after every item *actually
+    transferred* -- a hidden item does not itself halve the threshold,
+    only a successful transfer does. Gold theft stays unmodeled (see
+    module docstring's own Phase 305 addendum).
 
     **Phase 442**: also credits ``MeritTally.successful_thefts`` -- the
     other of the real compiled formula's own "two separate success paths
@@ -743,21 +746,35 @@ def _apply_successful_theft(state: GameState, thief: LeaderState, victim: Leader
     """
 
     thief.merit_tally.successful_thefts += 1
-    items = state.items_held_by(victim.leader_id)
-    if items:
-        state.transfer_item(items[0].item_id, thief.leader_id)
+    items = list(state.items_held_by(victim.leader_id))
+    # A manual Fisher-Yates over rng.random() rather than rng.shuffle():
+    # shuffle() draws through _randbelow()/getrandbits() instead of
+    # random(), which every other roll in this project (and the test
+    # suite's own ScriptedRandom) doesn't script -- see this project's
+    # standing RNG convention of only ever consuming .random()/.choice().
+    for i in range(len(items) - 1, 0, -1):
+        j = int(rng.random() * (i + 1))
+        items[i], items[j] = items[j], items[i]
+    items_already_stolen = 0
+    for item in items:
+        if resolve_steal_character_item_transfer(items_already_stolen, rng):
+            state.transfer_item(item.item_id, thief.leader_id)
+            items_already_stolen += 1
     add_experience(thief, Ability.THIEF, 15, rng)
 
 
 def _resolve_steal_tactic(
     caster_leader: LeaderState | None,
+    caster: Combatant,
     target_leader: LeaderState | None,
     state: GameState,
     rng: random.Random,
 ) -> str:
-    """Steal [ST], rulebook [5.5] -- Phase 305. See module docstring's own
-    Phase 305 addendum for the full quoted text and the reasoning behind
-    every branch below.
+    """Steal [ST], rulebook [5.5] -- Phase 305, superseded by Phase 506
+    with the real disassembly-sourced success/evasion formulas (see
+    ``turn/encounter.py``'s own Phase 506 addendum) and a ransom-formula
+    fix. See module docstring's own Phase 305 addendum for the full
+    quoted rulebook text and the reasoning behind every branch below.
 
     Returns ``"success"`` (theft applied, plan continues), ``"evaded"``
     (failed but not caught, plan continues), ``"executed"`` (thief
@@ -778,20 +795,33 @@ def _resolve_steal_tactic(
 
     level = effective_skill_level(state, caster_leader, Ability.THIEF)
     target_leads_army = bool(state.armies_commanded_by(target_leader.leader_id))
-    if resolve_steal_attempt(level, rng, target_leads_army=target_leads_army):
+    target_leads_army_or_is_king = target_leader.is_king or target_leads_army
+    has_thief_mastery = bool(caster_leader.advanced_abilities & STEAL_THIEF_MASTERY_ABILITIES)
+    has_enhanced_invisibility = AdvancedAbility.ENHANCED_INVISIBILITY in caster_leader.advanced_abilities
+    if resolve_steal_attempt(
+        level,
+        rng,
+        has_thief_mastery=has_thief_mastery,
+        is_invisible=caster.is_invisible,
+        has_enhanced_invisibility=has_enhanced_invisibility,
+        target_leads_army_or_is_king=target_leads_army_or_is_king,
+    ):
         _apply_successful_theft(state, caster_leader, target_leader, rng)
         return "success"
     if resolve_steal_evasion(level, rng):
         return "evaded"
 
-    target_is_protected = target_leader.is_king or target_leads_army
-    if not target_is_protected:
+    if not target_leads_army_or_is_king:
         return "combat"
     if caster_leader.is_king and target_leader.is_king:
-        kingdom = state.kingdoms.get(caster_leader.kingdom_id) if caster_leader.kingdom_id is not None else None
-        if kingdom is None or kingdom.treasury <= 0:
+        thief_kingdom = state.kingdoms.get(caster_leader.kingdom_id) if caster_leader.kingdom_id is not None else None
+        if thief_kingdom is None or thief_kingdom.treasury <= 0:
             return "executed"
-        kingdom.treasury -= kingdom.treasury // 2
+        ransom = steal_ransom_amount(thief_kingdom.treasury)
+        thief_kingdom.treasury -= ransom
+        victim_kingdom = state.kingdoms.get(target_leader.kingdom_id) if target_leader.kingdom_id is not None else None
+        if victim_kingdom is not None:
+            victim_kingdom.treasury += ransom
         return "ransom"
     if not caster_leader.is_king:
         return "executed"
@@ -1167,7 +1197,7 @@ def resolve_challenge_combat(
                 return _outcome(winner=bonus_winner)
             continue
         if tactic.maneuver is Maneuver.STEAL:
-            steal_outcome = _resolve_steal_tactic(caster_leader, target_leader, state, rng)
+            steal_outcome = _resolve_steal_tactic(caster_leader, caster, target_leader, state, rng)
             if steal_outcome == "executed":
                 return _outcome(winner="b")
             if steal_outcome == "combat":

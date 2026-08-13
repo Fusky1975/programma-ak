@@ -904,8 +904,8 @@ def test_execute_search_steal_caught_melee_range_surfaces_melee_swings():
     swings = (MeleeSwing(attacker="b", hit=True, damage=5),)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
-    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False
+    ), patch(
         "ak_engine.turn.search_execution.resolve_steal_evasion", return_value=False
     ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel",
@@ -2418,22 +2418,28 @@ def test_execute_search_cast_words_of_healing_monster_caster_heals_to_its_own_st
     assert max_hp_arg == expected_hp
 
 
-# -- Phase 239: Steal --
+# -- Phase 506: Steal, real disassembly-sourced formula --
 
 
-def test_execute_search_steal_monster_hides_treasure_falls_through():
+def test_execute_search_steal_success_but_monster_hides_the_hoard_falls_through():
+    # The real formula's own two-roll order: the success roll (monster-
+    # intelligence-blind) passes here, but the second, intelligence-based
+    # item-transfer roll fails -- the thief got past the guardian but
+    # found nothing, a documented no-effect, not a caught-thief outcome.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _steal_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=True
-    ) as mock_hides, patch(
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=False
+    ) as mock_transfer, patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ) as mock_melee:
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
-    assert mock_hides.called
+    assert mock_transfer.called
     assert mock_melee.called  # nothing found -- the plan's own Melee still runs
     assert result.winner == "leader"
 
@@ -2445,8 +2451,8 @@ def test_execute_search_steal_success_loots_the_feature():
     request = _steal_request(1)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
-    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True):
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=True):
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert result.winner == "leader"
@@ -2465,8 +2471,8 @@ def test_execute_search_steal_success_credits_the_thief_prince_merit_tally():
     request = _steal_request(1)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
-    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True):
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=True):
         execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert state.leaders[LEADER_ID].merit_tally.successful_thefts == 1
@@ -2483,8 +2489,8 @@ def test_execute_search_steal_success_awards_real_add_experience_credit():
     request = _steal_request(1)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
-    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True):
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=True):
         execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert state.leaders[LEADER_ID].experience_credit > 0
@@ -2496,8 +2502,8 @@ def test_execute_search_steal_failure_evades_falls_through():
     request = _steal_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
-    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False
+    ), patch(
         "ak_engine.turn.search_execution.resolve_steal_evasion", return_value=True
     ) as mock_evasion, patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
@@ -2518,8 +2524,8 @@ def test_execute_search_steal_caught_spell_range_no_effect_falls_through():
     request = _steal_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
-    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False
+    ), patch(
         "ak_engine.turn.search_execution.resolve_steal_evasion", return_value=False
     ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
@@ -2537,8 +2543,8 @@ def test_execute_search_steal_caught_melee_range_resolves_melee_duel():
     request = _steal_request(1)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
-    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False
+    ), patch(
         "ak_engine.turn.search_execution.resolve_steal_evasion", return_value=False
     ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="b", rounds=1)
@@ -2557,8 +2563,8 @@ def test_execute_search_steal_caught_bow_range_resolves_fire_arrow_duel():
     request = _steal_request(1)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=False
-    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False
+    ), patch(
         "ak_engine.turn.search_execution.resolve_steal_evasion", return_value=False
     ), patch(
         "ak_engine.turn.search_execution.resolve_fire_arrow_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
@@ -3230,7 +3236,9 @@ def test_execute_search_scout_steal_only_partial_discovery_on_the_documented_33_
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
     request = _scout_request(1, Maneuver.STEAL, Maneuver.SCOUT)
 
-    with patch("ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=True):
+    with patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=False
+    ):
         # First value: the monster's own hit_points roll at Combatant
         # construction. Second: Scout's own roll, >= 0.67 -- the 33% miss.
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.9]))
@@ -3244,7 +3252,9 @@ def test_execute_search_scout_steal_only_full_discovery_on_the_documented_67_per
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
     request = _scout_request(1, Maneuver.STEAL, Maneuver.SCOUT)
 
-    with patch("ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=True):
+    with patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=False
+    ):
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.1]))  # < 0.67 -- the 67% hit
 
     assert state.features[1].discovery_level(1) == 3
@@ -3281,7 +3291,9 @@ def test_execute_search_scout_never_downgrades_an_already_fully_known_feature():
     state.add_feature(feature)
     request = _scout_request(1, Maneuver.STEAL, Maneuver.SCOUT)
 
-    with patch("ak_engine.turn.search_execution.resolve_monster_hides_treasure", return_value=True):
+    with patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=False
+    ):
         execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.9]))  # the 33% miss
 
     assert feature.discovery_level(1) == 3  # a failed re-scout never downgrades a known feature

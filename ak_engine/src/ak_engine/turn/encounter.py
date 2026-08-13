@@ -468,16 +468,10 @@ Two independent effects, no skill-level scaling on either:
   than a single-round effect, though no per-round status-tracking
   exists in this project to actually carry that duration yet (same gap
   as everywhere else in this file).
-- `INVISIBILITY_STEAL_ATTEMPT_BONUS = 0.15`: a flat +15 percentage-
-  point bonus to a Steal attempt's own success chance, when Invisibility
-  precedes a Steal tactic in the same Encounter Plan. **The Steal-
-  success formula this modifies now exists** (`steal_success_chance()`,
-  module docstring's own Phase 239 addendum) -- this bonus itself isn't
-  consumed by that formula yet, since Phase 239 only wires Search's own
-  monster-target case, which never precedes Steal with Invisibility in
-  any real sample data; left as the same "confirmed, sourced fact
-  recorded now" placeholder for whichever future phase wires
-  Invisibility-then-Steal specifically.
+- Invisibility's own effect on a Steal attempt is now the real formula's
+  own `I`/`E` terms directly (`steal_success_chance()`, module
+  docstring's own Phase 506 addendum) -- superseding the earlier flat
+  +15-percentage-point placeholder this addendum used to describe.
 
 **Phase 187 addendum -- Mirror-Image Phantasm (MI), tied to Ability.
 ILLUSION (IL), project-original (user-supplied).** By far the most
@@ -1350,6 +1344,7 @@ import random
 from dataclasses import dataclass
 from enum import Enum
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState
@@ -1700,12 +1695,6 @@ def roll_telekinetic_storm_caster_damage(
 # project-original, user-supplied. No skill-level scaling on either of
 # its two independent effects.
 INVISIBILITY_HIT_CHANCE_MULTIPLIER = 0.5
-
-# A flat +15 percentage-point bonus to a Steal attempt's own success
-# chance -- confirmed but not yet backed by any real Steal-success
-# formula anywhere in this project (see module docstring's Phase 186
-# addendum for why).
-INVISIBILITY_STEAL_ATTEMPT_BONUS = 0.15
 
 
 def invisibility_reduced_hit_chance(base_hit_chance: float) -> float:
@@ -3388,115 +3377,224 @@ def resolve_illusory_hero_duel(
     return EncounterCombatResult(winner=None, rounds=total_rounds)
 
 
-# Steal [ST], rulebook [5.4] -- Phase 239. Quoted in full by the user
-# (project author): "Il personaggio tenta di rubare il suo avversario,
-# Re, Eroe o mostro che sia. Ci sono due possibilita': o ci riesce
-# oppure viene scoperto... La probabilita' base di riuscita e' del 15%
-# piu' 15% per livello di abilita', ma si applicano le seguenti
-# modifiche. 1) Se il ladro prende di mira un personaggio che e' alla
-# guida di un esercito le sue probabilita' di riuscita sono dimezzate.
-# 2) Se la vittima e' un Re, c'e' la possibilita' di sottrargli una
-# certa quantita' di oro (dipende da quanto ha nella tesoreria in quel
-# momento)." The King-gold-theft magnitude (2) has no numeric formula
-# anywhere in the quoted text -- confirmed absent, not modeled here (no
-# Search target is ever a King, so this doesn't block Search's own
-# wiring; a future Challenge/Pursue-side Steal would still need it).
-STEAL_BASE_SUCCESS_CHANCE = 0.15
-STEAL_SUCCESS_CHANCE_PER_LEVEL = 0.15
-# "The Thief adds 15% to his chance to Steal (however, the maximum
-# chance is always 95%)" -- Thief Mastery I-V's own tooltip text
-# (`models/advanced_ability.py`), read as the cap on the overall
-# base+modifiers chance, not just that ability's own bonus.
-STEAL_MAX_SUCCESS_CHANCE = 0.95
-STEAL_ARMY_COMMANDER_TARGET_MULTIPLIER = 0.5
+# Steal [ST], rulebook [5.4]/[5.5] -- Phase 239/305, superseded by
+# Phase 506 with the real formula, recovered by a disassembly-based
+# reverse-engineering pass the user supplied directly (AKGEN_reverse_
+# engineering_report (3).md, Part III, "reverse engineering completo
+# del comando STEAL"), not the earlier manual-text-only approximation.
+#
+# The real success formula, from AK.OVR:0x1AADA-0x1AB94:
+#
+#     raw      = 15 * (1 + min(4,S) + M + I*(1+E)) + P
+#     divisor  = 1 + H + R*G
+#     chance   = min(95, raw // divisor) / 100
+#
+# S = effective Thief skill level; M = 1 if the thief holds any Thief
+# Mastery tier; I = 1 if Invisibility is active; E = 1 if Enhanced
+# Invisibility is also held (only matters when I=1); H = 1 against a
+# King or an army-leading Hero; P (SA_Mod, a generic percentage hook)
+# is confirmed 0 in ordinary play -- kept at 0 here since nothing
+# catalogued feeds it. R*G (Treasury Raiding's own active-flag times
+# its own per-King guard counter) is not modeled -- Treasury Raiding
+# needs a new per-King "guard counter" this project has no state for
+# yet, deferred to a later phase.
+#
+# The integer-division-then-cap order matters: the 95% cap applies
+# after raw // divisor, not before.
+STEAL_SUCCESS_MAX_CHANCE = 0.95
+
+# Thief Mastery I-V (models/advanced_ability.py) all grant the
+# identical "+15% Stealing Bonus" -- any one held is M=1 above,
+# regardless of tier. Public (not module-private) since both
+# turn/search_execution.py and turn/challenge_execution.py need it to
+# derive their own `has_thief_mastery` signal for `resolve_steal_
+# attempt()`.
+STEAL_THIEF_MASTERY_ABILITIES = frozenset(
+    {
+        AdvancedAbility.THIEF_MASTERY_I,
+        AdvancedAbility.THIEF_MASTERY_II,
+        AdvancedAbility.THIEF_MASTERY_III,
+        AdvancedAbility.THIEF_MASTERY_IV,
+        AdvancedAbility.THIEF_MASTERY_V,
+    }
+)
 
 
-def steal_success_chance(level: int, *, target_leads_army: bool = False) -> float:
-    """The thief's own chance of a successful Steal attempt: 15% base +
-    15%/level, halved if the target is leading an army, capped at 95%.
+def steal_success_chance(
+    level: int,
+    *,
+    has_thief_mastery: bool = False,
+    is_invisible: bool = False,
+    has_enhanced_invisibility: bool = False,
+    target_leads_army_or_is_king: bool = False,
+) -> float:
+    """The thief's own real chance of a successful Steal attempt -- see
+    module docstring's own Phase 506 addendum for the full formula and
+    its source.
     """
 
-    chance = STEAL_BASE_SUCCESS_CHANCE + STEAL_SUCCESS_CHANCE_PER_LEVEL * level
-    if target_leads_army:
-        chance *= STEAL_ARMY_COMMANDER_TARGET_MULTIPLIER
-    return min(chance, STEAL_MAX_SUCCESS_CHANCE)
+    raw = 15 * (
+        1
+        + min(4, level)
+        + int(has_thief_mastery)
+        + int(is_invisible) * (1 + int(has_enhanced_invisibility))
+    )
+    divisor = 1 + int(target_leads_army_or_is_king)
+    return min(STEAL_SUCCESS_MAX_CHANCE, (raw // divisor) / 100)
 
 
-def resolve_steal_attempt(level: int, rng: random.Random, *, target_leads_army: bool = False) -> bool:
-    return rng.random() < steal_success_chance(level, target_leads_army=target_leads_army)
+def resolve_steal_attempt(
+    level: int,
+    rng: random.Random,
+    *,
+    has_thief_mastery: bool = False,
+    is_invisible: bool = False,
+    has_enhanced_invisibility: bool = False,
+    target_leads_army_or_is_king: bool = False,
+) -> bool:
+    return rng.random() < steal_success_chance(
+        level,
+        has_thief_mastery=has_thief_mastery,
+        is_invisible=is_invisible,
+        has_enhanced_invisibility=has_enhanced_invisibility,
+        target_leads_army_or_is_king=target_leads_army_or_is_king,
+    )
 
 
-# "Se il ladro fallisce nei suoi tentativi di furto non verra'
-# necessariamente arrestato: le probabilita' di evitare la cattura sono
-# in funzione del livello di abilita' del ladro" -- no numeric formula
-# given anywhere. Confirmed directly with the user (project author):
-# project-original values, not sourced -- structured the same way as
-# the sourced Steal-success formula above (a flat base plus a per-level
-# scaling, capped short of certainty) for internal consistency, but
-# distinct numbers: a higher base (evading detection after a failed
-# attempt reads as inherently easier than the theft itself) and a lower
-# cap (90%, not 95%, kept deliberately distinguishable from the sourced
-# Thief Mastery cap above).
-STEAL_EVASION_BASE_CHANCE = 0.30
-STEAL_EVASION_CHANCE_PER_LEVEL = 0.10
-STEAL_EVASION_MAX_CHANCE = 0.90
-
-
+# The real evasion-after-failure formula, from AK.OVR:0x1AC3C-0x1AC88:
+# 0.10 + 0.075 * S, where S is the thief's own effective Thief skill
+# level -- explicitly not capped to 4 the way the success formula's own
+# S term is (the dossier's own worked table runs the ladder up to
+# level 9, 77.5%, with no ceiling named). Supersedes Phase 239's own
+# project-original 30%+10%/level approximation.
 def steal_evasion_chance(level: int) -> float:
-    return min(STEAL_EVASION_BASE_CHANCE + STEAL_EVASION_CHANCE_PER_LEVEL * level, STEAL_EVASION_MAX_CHANCE)
+    return min(1.0, 0.10 + 0.075 * level)
 
 
 def resolve_steal_evasion(level: int, rng: random.Random) -> bool:
     return rng.random() < steal_evasion_chance(level)
 
 
-class StealTargetCunning(Enum):
-    """A monster's own hiding-treasure sophistication tier for each
-    Steal attempt's own countermeasure roll. Three buckets, not
-    ``MirrorImageIntelligenceTier``'s six -- the source text below only
-    ever names three ("media intelligenza", "piu' furbo... 25%",
-    "...50%").
-    """
+# The real per-item transfer-probability decay, from AK.EXE:0x1CAF8-
+# 0x1D154: a character target's own eligible treasures are scanned in
+# a randomly-rotated order; each one independently rolls against a
+# threshold that starts at 75% and is halved via an integer right-shift
+# after every item actually transferred (not merely attempted) --
+# 75,37,18,9,4,2,1,0%, not a naive float halving (which would give
+# 75,37.5,18.75,... instead). Supersedes the single-item-only transfer
+# this project used before Phase 506.
+def steal_character_item_transfer_chance(items_already_stolen: int) -> float:
+    return (75 >> items_already_stolen) / 100
 
-    AVERAGE = "Average"
-    CLEVER = "Clever"
-    MASTER = "Master"
+
+def resolve_steal_character_item_transfer(items_already_stolen: int, rng: random.Random) -> bool:
+    return rng.random() < steal_character_item_transfer_chance(items_already_stolen)
 
 
-# "Se si tenta di derubare un mostro, questi tentera' di nascondere il
-# suo tesoro dove non puo' essere trovato (ad esempio dormendoci
-# sopra). Se il mostro e' di media intelligenza, ogni suo tentativo di
-# sventare il furto avra' il 10% di probabilita' di riuscita, se e'
-# piu' furbo la probabilita' puo' salire fino al 25% o al 50%." --
-# quoted in full, the user's own rulebook text.
-STEAL_MONSTER_HIDE_TREASURE_CHANCE: dict[StealTargetCunning, float] = {
-    StealTargetCunning.AVERAGE: 0.10,
-    StealTargetCunning.CLEVER: 0.25,
-    StealTargetCunning.MASTER: 0.50,
+# The real ransom amount for a King-vs-King capture, from AK.OVR:
+# 0x1AC8D-0x1AF99: half the thief's own treasury, rounded up
+# ((treasury + 1) // 2) -- transferred to the victim King's own
+# kingdom, not merely subtracted from the thief's. Supersedes the
+# earlier "keep the floor half, credit nobody" behavior.
+def steal_ransom_amount(thief_treasury: int) -> int:
+    return (thief_treasury + 1) // 2
+
+
+# The real monster item-hiding formula, from the same scan routine:
+# trova = 100 - (100 >> (6 - intelligence_ordinal)), then halved via
+# the identical integer right-shift after each item transferred.
+# Reuses models/monster.py MONSTER_INTELLIGENCE_ORDINAL (Phase 504's
+# own fix) directly -- the dossier's own worked table (Mech 99%, Semi
+# 97%, Low 94%, Medium 88%, High 75%, Godlike 50%) matches this formula
+# exactly only with Mech at ordinal 0, independently confirming Phase
+# 504's own correction. Supersedes Phase 239's own three-bucket
+# StealTargetCunning approximation, which also checked the wrong thing
+# at the wrong point in the sequence -- monster intelligence never
+# affects the initial success roll above ("L'intelligenza dei mostri
+# interviene soltanto al punto 2" -- only the post-success item scan),
+# so this is no longer consulted as a pre-roll gate the way a "monster
+# hides its treasure" check used to be.
+def steal_monster_item_transfer_chance(intelligence_ordinal: int, items_already_stolen: int) -> float:
+    base = 100 - (100 >> (6 - intelligence_ordinal))
+    return (base >> items_already_stolen) / 100
+
+
+def resolve_steal_monster_item_transfer(intelligence_ordinal: int, items_already_stolen: int, rng: random.Random) -> bool:
+    return rng.random() < steal_monster_item_transfer_chance(intelligence_ordinal, items_already_stolen)
+
+
+# The real "gold if no item was stolen" magnitude per monster species,
+# from CTME.PAS's own basegold table via AK.EXE:0x1CAF8-0x1D154
+# (G_MSteal's own "inc; shr 1" -- ceil(basegold/2)): only consulted
+# when the character-item scan above found nothing to transfer
+# (monsters hold no ItemInstance in this project's model at all, so
+# this branch is always the one that would fire) -- confirmed, sourced
+# data, kept here for whichever future phase gives monsters an actual
+# gold pool to subtract from; not wired to any state change yet, the
+# same "sourced but no consumer" treatment this project already gives
+# other confirmed-but-not-yet-connected figures.
+MONSTER_STEAL_GOLD_IF_NO_ITEM: dict[Monster, int] = {
+    Monster.ROC: 1,
+    Monster.GRYPHON: 1,
+    Monster.COUATL: 2,
+    Monster.GI_EAGLE: 1,
+    Monster.SPHINX: 3,
+    Monster.R_DRAGON: 5,
+    Monster.B_DRAGON: 4,
+    Monster.GR_DRAGON: 3,
+    Monster.S_DRAGON: 5,
+    Monster.GO_DRAGON: 6,
+    Monster.GI_WORM: 3,
+    Monster.TITAN: 6,
+    Monster.GIANT: 2,
+    Monster.BIGFOOT: 1,
+    Monster.ARCHER: 2,
+    Monster.SWORDSMAN: 2,
+    Monster.WHITE_MAGE: 2,
+    Monster.NEC_MAGE: 3,
+    Monster.ELE_MAGE: 2,
+    Monster.PSY_MAGE: 3,
+    Monster.ILL_MAGE: 2,
+    Monster.WITCH: 3,
+    Monster.DRYAD: 1,
+    Monster.CENTAUR: 1,
+    Monster.GENIE: 3,
+    Monster.GOLEM: 3,
+    Monster.GARGOYLE: 1,
+    Monster.BASILISK: 1,
+    Monster.MEDUSA: 2,
+    Monster.BAL_DEMON: 4,
+    Monster.MAR_DEMON: 5,
+    Monster.SUCCUBUS: 3,
+    Monster.RAKSHASHA: 2,
+    Monster.ICE_DEVIL: 5,
+    Monster.BONE_DEVIL: 4,
+    Monster.IMP: 1,
+    Monster.WEREWOLF: 1,
+    Monster.CHIMERA: 3,
+    Monster.HYDRA: 4,
+    Monster.BEHOLDER: 3,
+    Monster.TROLL: 2,
+    Monster.MINOTAUR: 2,
+    Monster.GI_WOLVERINE: 1,
+    Monster.TREANT: 1,
+    Monster.GI_AMOEBA: 1,
+    Monster.GI_P_MANTIS: 1,
+    Monster.GI_SCORPION: 1,
+    Monster.GI_WASP: 1,
+    Monster.GI_SPIDER: 1,
+    Monster.GHOST: 2,
+    Monster.VAMPIRE: 3,
+    Monster.MUMMY: 4,
+    Monster.BANSHEE: 1,
+    Monster.LICH: 4,
+    Monster.SPECTRE: 3,
+    Monster.GI_OCTOPUS: 4,
+    Monster.GI_CLAM: 3,
+    Monster.ELASMOSAURUS: 2,
+    Monster.GW_WHALE: 1,
+    Monster.MERMAID: 1,
 }
-
-# Collapses the existing, real per-species ``MIRROR_IMAGE_MONSTER_
-# INTELLIGENCE_TIER`` (Phase 187, six tiers) down to Steal's own three
-# buckets -- an interpretive mapping (the Steal rulebook text above
-# gives no per-species breakdown of its own), not a guess at the
-# 10%/25%/50% figures themselves, which are quoted verbatim above.
-# Medium Human and everything below it (Low Human, Animal, Mechanical)
-# reads as "average intelligence" (10%); High Human as "more clever"
-# (25%); Divine/Superhuman as the ceiling case (50%).
-MONSTER_STEAL_CUNNING: dict[Monster, StealTargetCunning] = {
-    monster: (
-        StealTargetCunning.MASTER
-        if tier is MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN
-        else StealTargetCunning.CLEVER
-        if tier is MirrorImageIntelligenceTier.HIGH_HUMAN
-        else StealTargetCunning.AVERAGE
-    )
-    for monster, tier in MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER.items()
-}
-
-
-def resolve_monster_hides_treasure(cunning: StealTargetCunning, rng: random.Random) -> bool:
-    return rng.random() < STEAL_MONSTER_HIDE_TREASURE_CHANCE[cunning]
 
 
 # Talk [TA], rulebook [5.5] -- Phase 240. Quoted in full by the user

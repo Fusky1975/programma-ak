@@ -1123,7 +1123,13 @@ def test_resolve_challenge_combat_non_last_melee_trailing_fallback_does_not_doub
 # -- Phase 305: character-vs-character Steal [ST], rulebook [5.5] ------
 
 
-def test_apply_successful_theft_transfers_the_victims_first_held_item():
+def test_apply_successful_theft_transfers_items_independently_with_a_halving_threshold():
+    # Phase 506: the real formula scans every eligible item, not just the
+    # first -- each rolls independently against a 75%-then-halved
+    # threshold. Here: the Fisher-Yates shuffle over 2 items is a no-op
+    # (0.5 * 2 == 1, swaps item[1] with itself); the first-scanned item's
+    # own 75% roll (0.5) succeeds; the second-scanned item's own halved
+    # 37% roll (0.9) fails.
     state = _base_state()
     thief = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)
     victim = LeaderState(2, kingdom_id=2, name="Victim", location=FIELD)
@@ -1132,10 +1138,11 @@ def test_apply_successful_theft_transfers_the_victims_first_held_item():
     first = state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=2)
     second = state.add_item(Treasure.ABILITY_MARCH, owner_leader_id=2)
 
-    _apply_successful_theft(state, thief, victim, ScriptedRandom([0.5, 0.5]))
+    # Trailing pair feeds Add_Experience's own `1 + random() - random()` spread.
+    _apply_successful_theft(state, thief, victim, ScriptedRandom([0.5, 0.5, 0.9, 0.5, 0.5]))
 
     assert state.items[first.item_id].owner_leader_id == 1
-    assert state.items[second.item_id].owner_leader_id == 2  # only one item changes hands
+    assert state.items[second.item_id].owner_leader_id == 2  # halved threshold roll failed
 
 
 def test_apply_successful_theft_is_a_no_op_when_the_victim_holds_nothing():
@@ -1504,6 +1511,10 @@ def test_execute_challenge_bravest_inspiration_does_not_fire_when_encounter_is_r
     assert state.leaders[2].temper is Temper.CAUTIOUS
 
 
+def _thief_combatant() -> Combatant:
+    return Combatant(name="Thief", hit_points=CHARACTER_HIT_POINTS)
+
+
 def test_resolve_steal_tactic_success_applies_theft():
     state = _base_state()
     thief = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)
@@ -1512,7 +1523,10 @@ def test_resolve_steal_tactic_success_applies_theft():
     state.add_leader(victim)
     item = state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=2)
 
-    outcome = _resolve_steal_tactic(thief, victim, state, ScriptedRandom([0.1, 0.5, 0.5]))  # < 15% base chance
+    # 0.1 < 15% base success chance; then a single-item scan, whose own
+    # 75% transfer roll (0.5) succeeds; the trailing pair feeds Add_
+    # Experience's own `1 + random() - random()` spread.
+    outcome = _resolve_steal_tactic(thief, _thief_combatant(), victim, state, ScriptedRandom([0.1, 0.5, 0.5, 0.5]))
 
     assert outcome == "success"
     assert state.items[item.item_id].owner_leader_id == 1
@@ -1525,7 +1539,8 @@ def test_resolve_steal_tactic_failure_then_evaded_leaves_no_trace():
     state.add_leader(thief)
     state.add_leader(victim)
 
-    outcome = _resolve_steal_tactic(thief, victim, state, ScriptedRandom([0.2, 0.1]))  # fail attempt, evade capture
+    # 0.2 fails the 15% base success chance; 0.09 < 10% base evasion chance.
+    outcome = _resolve_steal_tactic(thief, _thief_combatant(), victim, state, ScriptedRandom([0.2, 0.09]))
 
     assert outcome == "evaded"
 
@@ -1537,7 +1552,7 @@ def test_resolve_steal_tactic_hero_thief_caught_robbing_a_king_is_executed():
     state.add_leader(thief)
     state.add_leader(king)
 
-    outcome = _resolve_steal_tactic(thief, king, state, ScriptedRandom([0.5, 0.5]))  # fail attempt, fail evasion
+    outcome = _resolve_steal_tactic(thief, _thief_combatant(), king, state, ScriptedRandom([0.5, 0.5]))  # fail attempt, fail evasion
 
     assert outcome == "executed"
 
@@ -1550,7 +1565,7 @@ def test_resolve_steal_tactic_hero_thief_caught_robbing_an_army_commanding_hero_
     state.add_leader(general)
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
 
-    outcome = _resolve_steal_tactic(thief, general, state, ScriptedRandom([0.5, 0.5]))
+    outcome = _resolve_steal_tactic(thief, _thief_combatant(), general, state, ScriptedRandom([0.5, 0.5]))
 
     assert outcome == "executed"
 
@@ -1563,10 +1578,14 @@ def test_resolve_steal_tactic_king_vs_king_caught_pays_half_treasury_as_ransom()
     state.add_leader(thief_king)
     state.add_leader(victim_king)
 
-    outcome = _resolve_steal_tactic(thief_king, victim_king, state, ScriptedRandom([0.5, 0.5]))
+    outcome = _resolve_steal_tactic(thief_king, _thief_combatant(), victim_king, state, ScriptedRandom([0.5, 0.5]))
 
     assert outcome == "ransom"
+    # Phase 506: ceil(treasury/2), transferred to the victim's own
+    # kingdom -- not merely subtracted from the thief's, per the real
+    # ransom formula's own bug fix (module docstring's own addendum).
     assert state.kingdoms[1].treasury == 50
+    assert state.kingdoms[2].treasury == 50
 
 
 def test_resolve_steal_tactic_king_vs_king_caught_with_no_gold_is_executed():
@@ -1577,7 +1596,7 @@ def test_resolve_steal_tactic_king_vs_king_caught_with_no_gold_is_executed():
     state.add_leader(thief_king)
     state.add_leader(victim_king)
 
-    outcome = _resolve_steal_tactic(thief_king, victim_king, state, ScriptedRandom([0.5, 0.5]))
+    outcome = _resolve_steal_tactic(thief_king, _thief_combatant(), victim_king, state, ScriptedRandom([0.5, 0.5]))
 
     assert outcome == "executed"
     assert state.kingdoms[1].treasury == 0
@@ -1590,7 +1609,7 @@ def test_resolve_steal_tactic_caught_targeting_a_non_army_hero_is_combat():
     state.add_leader(thief)
     state.add_leader(hero)
 
-    outcome = _resolve_steal_tactic(thief, hero, state, ScriptedRandom([0.5, 0.5]))
+    outcome = _resolve_steal_tactic(thief, _thief_combatant(), hero, state, ScriptedRandom([0.5, 0.5]))
 
     assert outcome == "combat"
 
@@ -1602,7 +1621,7 @@ def test_resolve_steal_tactic_king_caught_targeting_a_non_army_hero_is_also_comb
     state.add_leader(king)
     state.add_leader(hero)
 
-    outcome = _resolve_steal_tactic(king, hero, state, ScriptedRandom([0.5, 0.5]))
+    outcome = _resolve_steal_tactic(king, _thief_combatant(), hero, state, ScriptedRandom([0.5, 0.5]))
 
     assert outcome == "combat"
 
@@ -1617,7 +1636,7 @@ def test_resolve_steal_tactic_king_thief_caught_robbing_a_non_king_army_hero_is_
     state.add_leader(general)
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
 
-    outcome = _resolve_steal_tactic(king, general, state, ScriptedRandom([0.5, 0.5]))
+    outcome = _resolve_steal_tactic(king, _thief_combatant(), general, state, ScriptedRandom([0.5, 0.5]))
 
     assert outcome == "unresolved"
 
@@ -1628,7 +1647,8 @@ def test_resolve_steal_tactic_is_unresolved_with_no_rng_consumed_for_a_missing_l
     target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
     state.add_leader(target)
 
-    outcome = _resolve_steal_tactic(None, target, state, ScriptedRandom([]))  # any .random() call would raise
+    # any .random() call would raise
+    outcome = _resolve_steal_tactic(None, _thief_combatant(), target, state, ScriptedRandom([]))
 
     assert outcome == "unresolved"
 
