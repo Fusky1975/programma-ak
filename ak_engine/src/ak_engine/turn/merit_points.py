@@ -367,11 +367,13 @@ composed from data that already exists:
   fully live today (those fields already have real writers).
 - **`CURATOR`** (id 40, "Curator of Artifacts"): `NT_Owned(leader,hla,
   rali)` -- "current count of magic items in the main hla..rali range."
-  The exact Treasure-ordinal range bounds aren't named by the
-  disassembly; this project approximates it as every held item *except*
-  the four categories that clearly aren't "magic items" in the
-  rulebook sense (`GOLD_HOARD`, `SENTINEL`, `UNUSED_EXTENSION`,
-  `QUEST_ITEM`) -- a documented approximation, not the exact range.
+  **Exactly sourced as of Phase 503**: `hla`=0, `rali`=66 (`Gioco/HostAK/
+  TP/CTBOTH.PAS`'s own `treasure` enum declaration, cross-validated
+  against this project's own pre-existing, independently-ordinal-aligned
+  `models/treasure.py _CATEGORY_RANGES` -- `GOLD_HOARD_LARGE = 67`
+  matches the enum's own `LargeTr` at ordinal 67 exactly), i.e. every
+  category up through `SKILL_BOOK` and none past it -- `GOLD_HOARD`,
+  `QUEST_ITEM`, `SENTINEL`, `NAMED_UNIQUE`, `UNUSED_EXTENSION` excluded.
 - **`TEACHER`** (id 42, "Professor Whizdumb"): `Tit_Pts` -- **live as of
   Phase 446**, credited by `turn/practice_execution.py execute_practice_
   group()` via `_select_teacher()`: `+1` per real natural skill level a
@@ -763,14 +765,24 @@ def silvertongue_merit_points(state: GameState, leader: LeaderState) -> float:
     return leader.merit_tally.diplomatic_merit_points
 
 
-# Phase 379: the 4 magic-school title categories that clearly aren't
-# "magic items" in Curator's own rulebook sense -- see module docstring.
+# Phase 503: the real Pascal source (Desktop's Gioco/HostAK/TP/CTBOTH.PAS,
+# `type treasure = (hla,lkdf,ali,...,rali,LargeTr,HugeTr,FabTr,...)`) confirms
+# the exact `hla..rali` range Curator's own `NT_Owned(leader,hla,rali)` call
+# (REPORTS.PAS `Curator: pts:= NT_Owned(ldran,hla,rali,t);`) counts: ordinals
+# 0-66, i.e. every category up through `SKILL_BOOK` and nothing past it.
+# `models/treasure.py`'s own `_CATEGORY_RANGES` was already independently
+# ordinal-aligned with this same enum (`GOLD_HOARD_LARGE = 67` matches
+# `LargeTr` at ordinal 67 exactly), so the exact set is simply every
+# category *after* `SKILL_BOOK` -- this project's own Phase 379 approximation
+# excluded 4 of those 5 categories but missed `NAMED_UNIQUE` (93-98), which
+# Phase 379 didn't isolate as its own category yet at the time.
 _CURATOR_EXCLUDED_CATEGORIES: frozenset[TreasureCategory] = frozenset(
     {
         TreasureCategory.GOLD_HOARD,
-        TreasureCategory.SENTINEL,
-        TreasureCategory.UNUSED_EXTENSION,
         TreasureCategory.QUEST_ITEM,
+        TreasureCategory.SENTINEL,
+        TreasureCategory.NAMED_UNIQUE,
+        TreasureCategory.UNUSED_EXTENSION,
     }
 )
 

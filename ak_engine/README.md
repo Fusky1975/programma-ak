@@ -20769,7 +20769,7 @@ follow-up request after the original 431-435 plan shipped.
     zeroes that field before any later assertion could observe it, a
     real quirk this phase re-discovered and worked around, not new
     engine behavior. Ran again: 4357 passed (2 new).
-- **Phase 502 (current)**: `AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS`,
+- **Phase 502**: `AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS`,
   the "Control Undead" half deferred at Phase 500: "'Control Undead'
   will work against anti-holy creatures, in addition to affecting the
   Undead (but if you use 'Control Undead' against anti-holies, there
@@ -20801,6 +20801,28 @@ follow-up request after the original 431-435 plan shipped.
     when the resist chance is forced to certainty -- mirrored in `tests/
     test_challenge_execution.py` with an `Alignment.ANTI_HOLY` leader
     target. Ran again: 4363 passed (6 new).
+- **Phase 503 (current)**: a real Pascal source tree (`Gioco/HostAK/
+  TP/*.PAS` on the Desktop, outside this project) was located for the
+  first time this session, letting a genuine unsourced-magnitude gap
+  get exactly resolved rather than approximated. Curator of Artifacts
+  (`Office.CURATOR`, id 40)'s own `NT_Owned(leader,hla,rali)` merit
+  formula ("current count of magic items in the main hla..rali range")
+  previously approximated the range as "every held item except 4
+  clearly-non-magic-item categories" (Phase 379), explicitly documented
+  as not the exact range. `CTBOTH.PAS`'s own `treasure` enum declaration
+  confirms `hla`=ordinal 0, `rali`=ordinal 66 -- and this project's own
+  `models/treasure.py _CATEGORY_RANGES` was already independently
+  ordinal-aligned with that same enum (`GOLD_HOARD_LARGE = 67` matches
+  the enum's own `LargeTr` at ordinal 67 exactly), so the real range is
+  simply "every category through `SKILL_BOOK`, nothing past it."
+  `_CURATOR_EXCLUDED_CATEGORIES` gains `TreasureCategory.NAMED_UNIQUE`
+  (ordinals 93-98) -- the one category Phase 379's own approximation
+  missed, since 93-98 sits well past `rali` (66) and was never eligible.
+  - Ran the full suite before writing the new test: 4363 passed (non-
+    breaking, confirming no existing test relied on `NAMED_UNIQUE`
+    counting). Wrote 1 new test in `tests/test_merit_points.py`
+    (a `NAMED_UNIQUE_CROWN_ROHAN` item no longer counts, alongside a
+    `SPELL_WAND` item that still does). Ran again: 4364 passed (1 new).
 
 ## Setup
 

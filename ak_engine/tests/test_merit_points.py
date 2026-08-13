@@ -450,6 +450,19 @@ def test_curator_merit_points_zero_with_no_items():
     assert curator_merit_points(state, state.leaders[1]) == 0
 
 
+def test_curator_merit_points_excludes_named_unique_artifacts():
+    # Phase 503: the real Pascal `hla..rali` range (CTBOTH.PAS's own
+    # `treasure` enum) tops out at ordinal 66 (SKILL_BOOK's own last
+    # member), just before GOLD_HOARD (67-69) -- NAMED_UNIQUE (93-98)
+    # is well past `rali` and was never eligible, unlike the earlier
+    # 4-category approximation this phase corrected.
+    state = make_state()
+    state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=1)  # SPELL_WAND, counted
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)  # excluded
+
+    assert curator_merit_points(state, state.leaders[1]) == 1
+
+
 def test_teacher_merit_points_reads_the_tally():
     state = make_state()
     leader = state.leaders[1]
