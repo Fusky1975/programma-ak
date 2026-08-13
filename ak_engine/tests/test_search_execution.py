@@ -1133,6 +1133,47 @@ def test_execute_search_cast_holy_symbol_bonus_damage_kills_undead_target_instan
     assert not mock_melee.called
 
 
+def test_execute_search_cast_holy_symbol_enhanced_grants_bonus_damage_against_evil_monster():
+    # Phase 497: AdvancedAbility.ENHANCED_HOLY_SYMBOL -- "the Holy Symbol
+    # spell now has the same effect against opponents who have an Evil
+    # alignment as it does against Undead creatures." Monster.ARCHER
+    # rolls 100% Alignment.EVIL (single-option distribution, so
+    # roll_monster_alignment() itself consumes no RNG here).
+    leader = _skilled_leader(Ability.WHITE, 2)
+    leader.advanced_abilities.add(AdvancedAbility.ENHANCED_HOLY_SYMBOL)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HOLY_SYMBOL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_holy_symbol_undead_damage", return_value=999
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.combat_resolved is True
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+    assert not mock_melee.called
+
+
+def test_execute_search_cast_holy_symbol_without_enhancement_no_bonus_against_evil_monster():
+    leader = _skilled_leader(Ability.WHITE, 2)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HOLY_SYMBOL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_holy_symbol_undead_damage", return_value=999
+    ) as mock_damage, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_damage.called
+    assert mock_melee.called
+
+
 def test_execute_search_cast_spiritwrack_debuffs_the_target():
     leader = _skilled_leader(Ability.WHITE, 2)  # exact reduction of 1, no rng consumed
     state = GameState()

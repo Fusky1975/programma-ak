@@ -1199,6 +1199,20 @@ def _resolve_search_encounter(
         if spell is Spell.HOLY_SYMBOL:
             if target_is_monster:
                 target_is_undead_or_anti_holy = monster_species in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS)
+                # Phase 497: AdvancedAbility.ENHANCED_HOLY_SYMBOL -- "the
+                # same effect against opponents who have an Evil
+                # alignment as it does against Undead creatures." Only
+                # reachable here since target_is_monster == caster_is_
+                # leader in this function (a monster caster can't hold
+                # an Advanced Ability). A monster has no persisted
+                # alignment anywhere in this project -- rolled fresh via
+                # roll_monster_alignment(), the same real per-species
+                # distribution already reused for Gate Demon's own
+                # eligibility check a few branches below, only rolled
+                # when it can actually matter (not already Undead/Anti-
+                # Holy, and the caster actually holds the ability).
+                if not target_is_undead_or_anti_holy and AdvancedAbility.ENHANCED_HOLY_SYMBOL in leader.advanced_abilities:
+                    target_is_undead_or_anti_holy = roll_monster_alignment(monster_species, rng) is Alignment.EVIL
             else:
                 target_is_undead_or_anti_holy = leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY)
             caster.defensive_hit_multiplier *= holy_symbol_hit_chance(

@@ -435,6 +435,43 @@ def test_execute_challenge_cast_control_undead_ineligible_target_consumes_no_rol
     assert result.winner_leader_id == 1
 
 
+def test_execute_challenge_cast_holy_symbol_enhanced_grants_bonus_damage_against_evil_target():
+    # Phase 497: AdvancedAbility.ENHANCED_HOLY_SYMBOL -- "the Holy Symbol
+    # spell now has the same effect against opponents who have an Evil
+    # alignment as it does against Undead creatures."
+    state = _base_state()
+    caster = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.WHITE, 2, 9))
+    caster.advanced_abilities.add(AdvancedAbility.ENHANCED_HOLY_SYMBOL)
+    state.add_leader(caster)
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.EVIL))
+    request = _cast_request(2, Spell.HOLY_SYMBOL)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.roll_holy_symbol_undead_damage", return_value=999
+    ):
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert result.winner_leader_id == 1
+    assert result.loser_leader_id == 2
+    assert result.loser_killed is True
+
+
+def test_execute_challenge_cast_holy_symbol_without_enhancement_no_bonus_against_evil_target():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.WHITE, 2, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.EVIL))
+    request = _cast_request(2, Spell.HOLY_SYMBOL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.roll_holy_symbol_undead_damage", return_value=999
+    ) as mock_damage, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert not mock_damage.called
+    assert mock_melee.called
+
+
 def test_execute_challenge_cast_fireball_kills_via_damage():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ELEMENTAL, 4, 9)))

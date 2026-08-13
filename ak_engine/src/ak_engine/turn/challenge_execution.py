@@ -468,9 +468,18 @@ def _resolve_personal_combat_cast(
         return "fled"
 
     if spell is Spell.HOLY_SYMBOL:
-        target_is_undead_or_anti_holy = target_leader is not None and target_leader.alignment in (
-            Alignment.UNDEAD,
-            Alignment.ANTI_HOLY,
+        # Phase 497: AdvancedAbility.ENHANCED_HOLY_SYMBOL -- "the Holy
+        # Symbol spell now has the same effect against opponents who
+        # have an Evil alignment as it does against Undead creatures."
+        # Extending target_is_undead_or_anti_holy itself (rather than a
+        # separate flag) widens both downstream effects it drives --
+        # the higher hit-chance-reduction rate and the bonus damage roll.
+        target_is_undead_or_anti_holy = target_leader is not None and (
+            target_leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY)
+            or (
+                target_leader.alignment is Alignment.EVIL
+                and AdvancedAbility.ENHANCED_HOLY_SYMBOL in caster_leader.advanced_abilities
+            )
         )
         caster.defensive_hit_multiplier *= holy_symbol_hit_chance(
             1.0, level, target_is_undead_or_anti_holy=target_is_undead_or_anti_holy

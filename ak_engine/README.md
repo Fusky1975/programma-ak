@@ -20602,7 +20602,7 @@ follow-up request after the original 431-435 plan shipped.
     nudged one full `Alignment` ordinal off the true value, with it the
     report shows the true alignment precisely. Ran again: 4339 passed
     (2 new).
-- **Phase 496 (current)**: `AdvancedAbility.WITCHSIGHT_TALENT` (ordinal
+- **Phase 496**: `AdvancedAbility.WITCHSIGHT_TALENT` (ordinal
   67, `Ability.NECROMANCY`'s own magic-college pool -- one of the 5
   colleges Phase 493 can already grant), the third per-ability
   mechanical effect wired, same shape as Phase 494's Detect Illusions:
@@ -20642,6 +20642,36 @@ follow-up request after the original 431-435 plan shipped.
     2 in `tests/test_challenge_execution.py` (target-with-Talent
     unaffected, target-without-Talent halved). Ran again: 4344 passed
     (5 new).
+- **Phase 497 (current)**: `AdvancedAbility.ENHANCED_HOLY_SYMBOL`
+  (ordinal 59, `Ability.WHITE`'s own magic-college pool), the fourth
+  per-ability mechanical effect wired: "the Holy Symbol spell now has
+  the same effect against opponents who have an Evil alignment as it
+  does against Undead creatures." Unlike Phases 494-496, this one wasn't
+  an inert boolean parameter -- it required widening the caster's
+  existing `target_is_undead_or_anti_holy` bool itself (computed inline
+  at both real `Spell.HOLY_SYMBOL` call sites) to also cover
+  `Alignment.EVIL` when the caster holds the ability, so both downstream
+  effects it drives (`turn/encounter.py holy_symbol_hit_chance()`'s own
+  higher reduction rate, and `roll_holy_symbol_undead_damage()`'s bonus
+  damage roll) widen together automatically. `turn/challenge_
+  execution.py`'s leader-vs-leader case reads `target_leader.alignment`
+  directly, same shape as every earlier phase. `turn/search_execution.py`
+  needed a different approach for its monster-target case: a monster has
+  no persisted `Alignment` anywhere in this project, so the check reuses
+  `models/monster.py roll_monster_alignment()` -- the same real,
+  per-species-distribution roll `turn/search_execution.py` already
+  relies on for Gate Demon's own eligibility check a few branches below
+  -- rolled fresh only when it can actually matter (not already Undead/
+  Anti-Holy, and the caster genuinely holds the ability), so no new RNG
+  consumption reaches any pre-existing test.
+  - Ran the full suite before writing new tests: 4344 passed (non-
+    breaking). Wrote 4 new tests: 2 in `tests/test_search_execution.py`
+    (`Monster.ARCHER`'s own 100%-`Alignment.EVIL` single-option
+    distribution -- consuming no roll itself -- proves the bonus damage
+    fires with the ability and doesn't without it), 2 in `tests/test_
+    challenge_execution.py` (an `Alignment.EVIL` target dies instantly to
+    the bonus damage with the ability, survives to ordinary Melee without
+    it). Ran again: 4348 passed (4 new).
 
 ## Setup
 
