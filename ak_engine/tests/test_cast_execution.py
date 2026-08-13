@@ -4,6 +4,7 @@ import random
 
 import pytest
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
@@ -532,6 +533,36 @@ def test_resurrection_fails_when_dead_leader_died_elsewhere():
     assert state.leaders[CASTER_ID].merit_tally.resurrection_bless_casts == 0  # no cast on failure
     assert result.reason == "not co-located"
     assert 78 in state.dead_leaders  # untouched
+
+
+# ---------------------------------------------------------------------------
+# Resurrection: AdvancedAbility.ENHANCED_RESURRECTION (Phase 498)
+# ---------------------------------------------------------------------------
+
+
+def test_resurrection_with_enhanced_ability_matches_the_casters_kings_alignment():
+    # kingdom_id=1 ("Testia") is Alignment.GOOD in build_state(); the dead
+    # Hero starts Alignment.EVIL to make the change unmistakable.
+    state = build_state()
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_RESURRECTION)
+    state.dead_leaders[78] = LeaderState(78, 2, "Fallen Hero", LOCATION, alignment=Alignment.EVIL)
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[78].alignment is Alignment.GOOD
+
+
+def test_resurrection_without_enhanced_ability_leaves_alignment_untouched():
+    state = build_state()
+    state.dead_leaders[78] = LeaderState(78, 2, "Fallen Hero", LOCATION, alignment=Alignment.EVIL)
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[78].alignment is Alignment.EVIL
 
 
 # ---------------------------------------------------------------------------

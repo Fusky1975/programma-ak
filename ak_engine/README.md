@@ -20642,7 +20642,7 @@ follow-up request after the original 431-435 plan shipped.
     2 in `tests/test_challenge_execution.py` (target-with-Talent
     unaffected, target-without-Talent halved). Ran again: 4344 passed
     (5 new).
-- **Phase 497 (current)**: `AdvancedAbility.ENHANCED_HOLY_SYMBOL`
+- **Phase 497**: `AdvancedAbility.ENHANCED_HOLY_SYMBOL`
   (ordinal 59, `Ability.WHITE`'s own magic-college pool), the fourth
   per-ability mechanical effect wired: "the Holy Symbol spell now has
   the same effect against opponents who have an Evil alignment as it
@@ -20672,6 +20672,29 @@ follow-up request after the original 431-435 plan shipped.
     challenge_execution.py` (an `Alignment.EVIL` target dies instantly to
     the bonus damage with the ability, survives to ordinary Melee without
     it). Ran again: 4348 passed (4 new).
+- **Phase 498 (current)**: `AdvancedAbility.ENHANCED_RESURRECTION`
+  (ordinal 63, `Ability.WHITE`'s own magic-college pool): "A resurrected
+  character becomes the same alignment as the spellcaster's king." Wired
+  into `turn/cast_execution.py _execute_resurrection()`'s ordinary
+  dead-Hero branch only -- right after `target.kingdom_id = kingdom_id`
+  (the "joins the service of the Kingdom that resurrected him" step),
+  if the caster holds the ability the revived leader's `alignment` is
+  overwritten with `state.kingdoms[kingdom_id].alignment` (the
+  per-Kingdom field that already stands in for "the spellcaster's king"
+  everywhere else in this project, e.g. Phase 439's own alignment-decay
+  work). Deliberately **not** applied to the other two branches in the
+  same function: the Kill_Enemy-coma-cure branch never changes
+  `kingdom_id` at all (nothing to re-align), and the Royal-Heir branch
+  restores the archived King's own original alignment verbatim (a
+  different, already-documented rule, not a fresh "joins the service"
+  revival).
+  - Ran the full suite before writing new tests: 4348 passed (non-
+    breaking). Wrote 2 new tests in `tests/test_cast_execution.py`: a
+    dead Hero starting `Alignment.EVIL`, revived by a kingdom-1
+    (`Alignment.GOOD`) caster holding the ability, ends up `Alignment.
+    GOOD`; the same scenario without the ability leaves the revived
+    Hero's original `Alignment.EVIL` untouched. Ran again: 4350 passed
+    (2 new).
 
 ## Setup
 

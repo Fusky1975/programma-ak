@@ -671,6 +671,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.army_type import OVERFLIGHT_AIR, ArmyType
 from ak_engine.models.discovery import Discovery
@@ -1438,6 +1439,17 @@ def _execute_resurrection(
     that field's own docstring) -- clearing the flag alone un-hides the
     real, untouched values everywhere ``effective_skill_level()`` reads
     them.
+
+    **Phase 498 -- ``AdvancedAbility.ENHANCED_RESURRECTION``**: "A
+    resurrected character becomes the same alignment as the
+    spellcaster's king." Applies only to the ordinary dead-Hero branch
+    below (a fresh Kingdom-affiliation, matching the ability's own
+    "joins the service" case) -- deliberately excluded from the
+    comatose-cure branch above (no Kingdom change happens there at all,
+    so there's nothing to re-align) and the King-via-Heir branch above
+    (restores the archived King's own original alignment verbatim, a
+    different documented rule, not a "revival" in the sense this perk
+    describes).
     """
 
     caster = state.leaders[leader_id]
@@ -1480,6 +1492,10 @@ def _execute_resurrection(
 
     del state.dead_leaders[request.target]
     target.kingdom_id = kingdom_id
+    if AdvancedAbility.ENHANCED_RESURRECTION in caster.advanced_abilities:
+        kingdom = state.kingdoms.get(kingdom_id)
+        if kingdom is not None:
+            target.alignment = kingdom.alignment
     state.leaders[request.target] = target
     caster.merit_tally.resurrection_bless_casts += 1
     return CastExecutionResult(request, applied=True)
