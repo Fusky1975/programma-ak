@@ -20742,7 +20742,7 @@ follow-up request after the original 431-435 plan shipped.
     ability), one in `tests/test_challenge_execution.py` (an
     `Alignment.UNDEAD` leader target -- normally immune -- stops being
     immune with the ability). Ran again: 4355 passed (2 new).
-- **Phase 501 (current)**: `AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS`
+- **Phase 501**: `AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS`
   (ordinal 73, `Ability.ELEMENTAL`'s own magic-college pool): "The
   'Fireball' and 'Ice Suspension' spells are enhanced... Fireball can
   be cast against underwater monsters and Ice Suspension will work
@@ -20769,6 +20769,38 @@ follow-up request after the original 431-435 plan shipped.
     zeroes that field before any later assertion could observe it, a
     real quirk this phase re-discovered and worked around, not new
     engine behavior. Ran again: 4357 passed (2 new).
+- **Phase 502 (current)**: `AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS`,
+  the "Control Undead" half deferred at Phase 500: "'Control Undead'
+  will work against anti-holy creatures, in addition to affecting the
+  Undead (but if you use 'Control Undead' against anti-holies, there
+  is a percentage chance that they will resist the spell, equal to
+  half their current hit points)." New `turn/encounter.py
+  control_undead_anti_holy_resist_chance(hit_points)` (`hit_points /
+  200`, i.e. "half their current hit points" read as a literal
+  percentage) sits next to the existing `control_undead_failure_new_
+  hit_points()`. Wired at both real Control Undead call sites, mirroring
+  Phase 500's own two-block shape (an eligibility gate, then a separate
+  success/failure branch further down the same function call): `turn/
+  challenge_execution.py`'s leader-vs-leader case and `turn/search_
+  execution.py`'s leader-vs-monster case (`target_is_monster` branch
+  only -- a monster caster can't hold an Advanced Ability). A local
+  `control_undead_target_is_anti_holy_only` flag, set once at the
+  eligibility check and read again later in the same function call,
+  tracks whether the target passed eligibility via the *new* anti-holy
+  branch specifically (not the original Undead one) -- only that case
+  ever rolls for resistance, matching the source's own "in addition to
+  affecting the Undead" phrasing (an ordinary Undead target never
+  resists). `search_execution.py`'s monster case reuses `HAND_OF_DEATH_
+  ANTI_HOLY_MONSTERS` (already imported there) for anti-holy species
+  classification, same reuse precedent as Phase 497/500.
+  - Ran the full suite before writing new tests: 4357 passed (non-
+    breaking). Wrote 6 new tests (3 per file): `Monster.IMP` (anti-holy,
+    not Undead) stays ineligible without the ability; becomes eligible
+    and neutralizes normally with the ability when the resist chance is
+    forced to zero; gets resisted (falls through to ordinary Melee)
+    when the resist chance is forced to certainty -- mirrored in `tests/
+    test_challenge_execution.py` with an `Alignment.ANTI_HOLY` leader
+    target. Ran again: 4363 passed (6 new).
 
 ## Setup
 

@@ -2048,6 +2048,21 @@ def control_undead_failure_new_hit_points(hit_points: int, rng: random.Random) -
     return round(hit_points * (1 + increase))
 
 
+def control_undead_anti_holy_resist_chance(hit_points: int) -> float:
+    """``AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS`` (Phase 502): "if you use
+    'Control Undead' against anti-holies, there is a percentage chance
+    that they will resist the spell, equal to half their current hit
+    points." Read as a literal percentage -- ``hit_points / 2`` percent,
+    i.e. ``hit_points / 200`` as a probability -- consulted only for a
+    target that's Anti-Holy but not also Undead (an ordinary Undead
+    target never resists, matching the source's own "in addition to
+    affecting the Undead" phrasing, which names anti-holies as the new
+    class this resist chance applies to, not the original one).
+    """
+
+    return hit_points / 200
+
+
 # Personal-Combat spell cast success chance, module docstring's own
 # Phase 192 addendum -- Regolamento AK.txt [3.10], retroactively
 # confirmed for all ten Personal-Combat spells.

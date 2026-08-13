@@ -1494,6 +1494,63 @@ def test_execute_search_cast_control_undead_failure_applies_rage_buff():
     assert monster_combatant.hit_points == 999
 
 
+def test_execute_search_cast_control_undead_without_ability_anti_holy_target_stays_ineligible():
+    # Phase 502: AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS -- IMP is
+    # anti-holy (HAND_OF_DEATH_ANTI_HOLY_MONSTERS) but not Undead, so
+    # without the ability it's still an ineligible Control Undead target.
+    # IMP's own real rolled plan may include a real CAST tactic of its
+    # own (it knows Illusion 2); mocked empty here to isolate this
+    # test's own eligibility concern, same as the SPECTRE test above.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.IMP))
+    request = _cast_request(1, Spell.CONTROL_UNDEAD, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_roll, patch(
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_roll.called
+    assert mock_melee.called
+
+
+def test_execute_search_cast_control_undead_enhanced_ability_makes_anti_holy_target_eligible():
+    # Phase 502: with the ability, IMP becomes an eligible target and a
+    # successful cast (with the resist roll forced to never trigger)
+    # neutralizes it just like an ordinary Undead target.
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.IMP))
+    request = _cast_request(1, Spell.CONTROL_UNDEAD)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.control_undead_anti_holy_resist_chance", return_value=0.0
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+
+
+def test_execute_search_cast_control_undead_anti_holy_resist_roll_blocks_neutralization():
+    # Phase 502: "there is a percentage chance that they will resist the
+    # spell" -- forcing the resist chance to certainty makes an otherwise
+    # successful cast fall through to ordinary Melee instead of winning.
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.IMP))
+    request = _cast_request(1, Spell.CONTROL_UNDEAD, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.control_undead_anti_holy_resist_chance", return_value=1.0
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+
+
 def test_execute_search_guardians_own_cast_resolves_before_the_first_real_combat_phase():
     # The guardian's own CAST tactics are injected right before the first
     # real combat phase (same point already established for

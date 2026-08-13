@@ -248,6 +248,7 @@ from ak_engine.turn.encounter import (
     MeleeSwing,
     apply_temper_melee_setup,
     blocks_cast_and_archery,
+    control_undead_anti_holy_resist_chance,
     control_undead_failure_new_hit_points,
     holy_symbol_hit_chance,
     ice_suspension_is_frozen,
@@ -428,7 +429,22 @@ def _resolve_personal_combat_cast(
         return None  # not modeled (any spell outside the 16 Personal-Combat spells)
 
     if spell is Spell.CONTROL_UNDEAD:
-        if target_leader is None or target_leader.alignment is not Alignment.UNDEAD:
+        target_is_undead = target_leader is not None and target_leader.alignment is Alignment.UNDEAD
+        # Phase 502: AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS -- "'Control
+        # Undead' will work against anti-holy creatures, in addition to
+        # affecting the Undead (but... there is a percentage chance that
+        # they will resist the spell, equal to half their current hit
+        # points)." `control_undead_target_is_anti_holy_only` records
+        # which eligibility branch let the target through, so the
+        # resist roll below only applies to a genuinely anti-holy (not
+        # also Undead) target -- an ordinary Undead one never resists.
+        control_undead_target_is_anti_holy_only = (
+            not target_is_undead
+            and target_leader is not None
+            and target_leader.alignment is Alignment.ANTI_HOLY
+            and AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS in caster_leader.advanced_abilities
+        )
+        if not (target_is_undead or control_undead_target_is_anti_holy_only):
             return None
     if spell is Spell.ILLUS_HERO:
         level = effective_skill_level(state, caster_leader, ability)
@@ -457,6 +473,10 @@ def _resolve_personal_combat_cast(
 
     if spell is Spell.CONTROL_UNDEAD:
         if succeeded:
+            if control_undead_target_is_anti_holy_only and rng.random() < control_undead_anti_holy_resist_chance(
+                target.hit_points
+            ):
+                return None
             return "a"
         target.hit_points = control_undead_failure_new_hit_points(target.hit_points, rng)
         return None

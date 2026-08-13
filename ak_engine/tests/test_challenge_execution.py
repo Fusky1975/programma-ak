@@ -435,6 +435,62 @@ def test_execute_challenge_cast_control_undead_ineligible_target_consumes_no_rol
     assert result.winner_leader_id == 1
 
 
+def test_execute_challenge_cast_control_undead_without_ability_anti_holy_target_stays_ineligible():
+    # Phase 502: AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS -- without the
+    # ability, an Anti-Holy (not Undead) target is still ineligible.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.ANTI_HOLY))
+    request = _cast_request(2, Spell.CONTROL_UNDEAD, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert not mock_roll.called
+    assert mock_melee.called
+
+
+def test_execute_challenge_cast_control_undead_enhanced_ability_makes_anti_holy_target_eligible():
+    # Phase 502: with the ability, an Anti-Holy target becomes eligible;
+    # forcing the resist chance to zero lets a successful cast neutralize
+    # it exactly like an ordinary Undead target.
+    state = _base_state()
+    caster = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 5, 9))
+    caster.advanced_abilities.add(AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS)
+    state.add_leader(caster)
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.ANTI_HOLY))
+    request = _cast_request(2, Spell.CONTROL_UNDEAD)
+
+    with patch("ak_engine.turn.challenge_execution.control_undead_anti_holy_resist_chance", return_value=0.0):
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.1, 0.9]))
+
+    assert result.winner_leader_id == 1
+    assert result.loser_leader_id == 2
+    assert result.loser_killed is True
+
+
+def test_execute_challenge_cast_control_undead_anti_holy_resist_roll_blocks_neutralization():
+    # Phase 502: forcing the resist chance to certainty makes an
+    # otherwise successful cast fall through to ordinary Melee instead.
+    state = _base_state()
+    caster = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 5, 9))
+    caster.advanced_abilities.add(AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS)
+    state.add_leader(caster)
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.ANTI_HOLY))
+    request = _cast_request(2, Spell.CONTROL_UNDEAD, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.control_undead_anti_holy_resist_chance", return_value=1.0), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.1, 0.5]))
+
+    assert mock_melee.called
+
+
 def test_execute_challenge_cast_holy_symbol_enhanced_grants_bonus_damage_against_evil_target():
     # Phase 497: AdvancedAbility.ENHANCED_HOLY_SYMBOL -- "the Holy Symbol
     # spell now has the same effect against opponents who have an Evil

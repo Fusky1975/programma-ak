@@ -521,6 +521,7 @@ from ak_engine.turn.encounter import (
     apply_temper_melee_setup,
     blocks_cast_and_archery,
     can_talk_to_monster,
+    control_undead_anti_holy_resist_chance,
     control_undead_failure_new_hit_points,
     holy_symbol_hit_chance,
     ice_suspension_is_frozen,
@@ -1142,9 +1143,23 @@ def _resolve_search_encounter(
         # except here an ineligible target means no roll at all rather
         # than a roll that simply has no effect.
         if spell is Spell.CONTROL_UNDEAD:
-            eligible = (
-                (monster_species in SPIRITWRACK_UNDEAD_MONSTERS) if target_is_monster else (leader.alignment is Alignment.UNDEAD)
-            )
+            if target_is_monster:
+                target_is_undead = monster_species in SPIRITWRACK_UNDEAD_MONSTERS
+                # Phase 502: AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS --
+                # "'Control Undead' will work against anti-holy
+                # creatures, in addition to affecting the Undead." Only
+                # reachable here (a monster caster can't hold an
+                # Advanced Ability, so the `else` branch below never has
+                # a caster to check).
+                control_undead_target_is_anti_holy_only = (
+                    not target_is_undead
+                    and AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS in leader.advanced_abilities
+                    and monster_species in HAND_OF_DEATH_ANTI_HOLY_MONSTERS
+                )
+                eligible = target_is_undead or control_undead_target_is_anti_holy_only
+            else:
+                control_undead_target_is_anti_holy_only = False
+                eligible = leader.alignment is Alignment.UNDEAD
             if not eligible:
                 return None
 
@@ -1183,7 +1198,13 @@ def _resolve_search_encounter(
 
         if spell is Spell.CONTROL_UNDEAD:
             if succeeded:
-                # Confirmed by the user: "neutralizes" equals a win.
+                # Phase 502: an anti-holy-only target (not also Undead)
+                # gets the resist roll; an ordinary Undead target never
+                # does. Confirmed by the user: "neutralizes" equals a win.
+                if control_undead_target_is_anti_holy_only and rng.random() < control_undead_anti_holy_resist_chance(
+                    target.hit_points
+                ):
+                    return None
                 return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
             target.hit_points = control_undead_failure_new_hit_points(target.hit_points, rng)
             return None
