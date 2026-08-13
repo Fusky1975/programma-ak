@@ -1199,6 +1199,22 @@ def _execute_charm(
     the only combat-risking action this project's Charm precondition
     above (co-located, army-less target) leaves the caster able to
     order the newly-charmed character into.
+
+    **Phase 499 -- ``AdvancedAbility.ENHANCED_CHARM``**: "In addition to
+    its other effects, the victim of a Charm spell now will also hand
+    over one magic item, if available." Wired here only, not into the
+    Personal-Combat Charm-as-Flee usage (``turn/encounter.py
+    CHARM_FLEE_ALWAYS_SUCCEEDS``) -- that usage has no failure path
+    modeled in this project at all (it always succeeds, no roll), so
+    the source's own "if it's used as an encounter spell and it fails"
+    qualifier never applies there, and "one magic item" reads most
+    naturally as this Action-Cast hiring effect's own addendum, not the
+    Flee escape. On a successful cast, if the caster holds the ability
+    and the target owns at least one item (``GameState.items_held_by``),
+    the lowest-``item_id`` one -- an arbitrary but deterministic pick,
+    since the source names no selection rule -- transfers to the caster
+    via ``GameState.transfer_item``, the same primitive ``turn/
+    encounter.py loot_defeated_leader()`` already uses for looting.
     """
 
     caster = state.leaders[leader_id]
@@ -1217,6 +1233,10 @@ def _execute_charm(
     if target.kingdom_id is not None and Discovery.ANALYTICAL_PSYCHOLOGY in state.kingdoms[target.kingdom_id].discoveries:
         target.analytical_psychology_revert_kingdom_id = target.kingdom_id
     target.kingdom_id = kingdom_id
+    if AdvancedAbility.ENHANCED_CHARM in caster.advanced_abilities:
+        target_items = state.items_held_by(request.target)
+        if target_items:
+            state.transfer_item(target_items[0].item_id, leader_id)
     return CastExecutionResult(request, applied=True)
 
 

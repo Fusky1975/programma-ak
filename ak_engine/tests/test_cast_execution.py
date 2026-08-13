@@ -123,6 +123,50 @@ def test_charm_against_an_unprotected_target_never_sets_the_revert_field():
     assert state.leaders[78].analytical_psychology_revert_kingdom_id is None
 
 
+# ---------------------------------------------------------------------------
+# Charm: AdvancedAbility.ENHANCED_CHARM (Phase 499)
+# ---------------------------------------------------------------------------
+
+
+def test_charm_with_enhanced_ability_transfers_the_targets_lowest_id_item():
+    state = build_state()
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_CHARM)
+    state.add_leader(LeaderState(78, 2, "Laden Hero", LOCATION))
+    first_item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=78)
+    state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=78)
+    request = CastRequest(spell=Spell.CHARM, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.items[first_item.item_id].owner_leader_id == CASTER_ID
+    assert state.items_held_by(78) == [state.items[first_item.item_id + 1]]
+
+
+def test_charm_with_enhanced_ability_and_no_items_is_a_no_op():
+    state = build_state()
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_CHARM)
+    state.add_leader(LeaderState(78, 2, "Empty-Handed Hero", LOCATION))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[78].kingdom_id == 1
+
+
+def test_charm_without_enhanced_ability_leaves_the_targets_items_untouched():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Laden Hero", LOCATION))
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=78)
+    request = CastRequest(spell=Spell.CHARM, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.items[item.item_id].owner_leader_id == 78
+
+
 def test_charm_fails_when_target_not_colocated():
     state = build_state()
     state.add_leader(LeaderState(78, None, "Wandering Hero", ELSEWHERE))

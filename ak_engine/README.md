@@ -20672,7 +20672,7 @@ follow-up request after the original 431-435 plan shipped.
     challenge_execution.py` (an `Alignment.EVIL` target dies instantly to
     the bonus damage with the ability, survives to ordinary Melee without
     it). Ran again: 4348 passed (4 new).
-- **Phase 498 (current)**: `AdvancedAbility.ENHANCED_RESURRECTION`
+- **Phase 498**: `AdvancedAbility.ENHANCED_RESURRECTION`
   (ordinal 63, `Ability.WHITE`'s own magic-college pool): "A resurrected
   character becomes the same alignment as the spellcaster's king." Wired
   into `turn/cast_execution.py _execute_resurrection()`'s ordinary
@@ -20695,6 +20695,31 @@ follow-up request after the original 431-435 plan shipped.
     GOOD`; the same scenario without the ability leaves the revived
     Hero's original `Alignment.EVIL` untouched. Ran again: 4350 passed
     (2 new).
+- **Phase 499 (current)**: `AdvancedAbility.ENHANCED_CHARM` (ordinal
+  82, `Ability.PSYCHIC`'s own magic-college pool): "In addition to its
+  other effects, the victim of a Charm spell now will also hand over
+  one magic item, if available. If it's used as an encounter spell and
+  it fails, of course the victim will be unhappy." Wired into `turn/
+  cast_execution.py _execute_charm()` only -- right after `target.
+  kingdom_id = kingdom_id` -- not into the Personal-Combat Charm-as-
+  Flee usage (`turn/encounter.py CHARM_FLEE_ALWAYS_SUCCEEDS`): that
+  usage has no failure path modeled in this project at all (it always
+  succeeds, no roll consumed), so the source's own "if it's used as an
+  encounter spell and it fails" qualifier is structurally unreachable
+  there, and "one magic item" reads most naturally as this Action-Cast
+  hiring effect's own addendum rather than the Flee escape. On a
+  successful cast, if the caster holds the ability and `GameState.
+  items_held_by(target)` is non-empty, the lowest-`item_id` one (an
+  arbitrary but deterministic pick -- the source names no selection
+  rule among multiple items) transfers to the caster via `GameState.
+  transfer_item()`, the same primitive `turn/encounter.py loot_
+  defeated_leader()` already uses for looting a defeated combatant.
+  - Ran the full suite before writing new tests: 4350 passed (non-
+    breaking). Wrote 3 new tests in `tests/test_cast_execution.py`: a
+    two-item target hands over only the lowest-`item_id` one, keeping
+    the other; a target with no items is a harmless no-op; the same
+    two-item scenario without the ability leaves the target's items
+    untouched. Ran again: 4353 passed (3 new).
 
 ## Setup
 
