@@ -20801,7 +20801,7 @@ follow-up request after the original 431-435 plan shipped.
     when the resist chance is forced to certainty -- mirrored in `tests/
     test_challenge_execution.py` with an `Alignment.ANTI_HOLY` leader
     target. Ran again: 4363 passed (6 new).
-- **Phase 503 (current)**: a real Pascal source tree (`Gioco/HostAK/
+- **Phase 503**: a real Pascal source tree (`Gioco/HostAK/
   TP/*.PAS` on the Desktop, outside this project) was located for the
   first time this session, letting a genuine unsourced-magnitude gap
   get exactly resolved rather than approximated. Curator of Artifacts
@@ -20823,6 +20823,26 @@ follow-up request after the original 431-435 plan shipped.
     counting). Wrote 1 new test in `tests/test_merit_points.py`
     (a `NAMED_UNIQUE_CROWN_ROHAN` item no longer counts, alongside a
     `SPELL_WAND` item that still does). Ran again: 4364 passed (1 new).
+- **Phase 504 (current)**: a second gap closed from the same Pascal-source
+  cross-check pass. `models/monster.py MonsterIntelligence.MECH` (the
+  sole mechanical-species intelligence tier, carried only by `Golem`/
+  `Giant Amoeba`) had its ordinal placed after `GODLIKE` (value 5) as an
+  explicitly-documented, unsourced placeholder -- `MECH` never appears
+  in `MONSTER_TALK_REPLY_INTELLIGENCE`'s own real `repint` values, so
+  nothing pinned its position relative to the other 5 tiers.
+  `CTBOTH.PAS`'s own `type intlevel = (Mech,Semi,Low,Medium,High,
+  Godlike);` declaration confirms `Mech` is the *first* member, ordinal
+  0 -- `MONSTER_INTELLIGENCE_ORDINAL` now reflects that, shifting the
+  other 5 tiers by +1 (their own relative spacing, and therefore every
+  non-`Mech` species' Talk-reply eligibility, is unchanged).
+  - Ran the full suite before writing new tests: 4364 passed (non-
+    breaking, confirming no existing test depended on the old ordinal).
+    Wrote 2 new tests: one asserting the corrected ordinal table
+    directly (`tests/test_monster.py`), one exercising the one real
+    behavior change this causes -- Giant Amoeba's own `RTrade` Talk-reply
+    eligibility flips from eligible (under the old, wrong ordinal) to
+    correctly ineligible (`tests/test_encounter.py`). Ran again: 4366
+    passed (2 new).
 
 ## Setup
 

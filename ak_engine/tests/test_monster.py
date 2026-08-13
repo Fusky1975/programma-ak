@@ -7,6 +7,7 @@ from ak_engine.models.monster import (
     MONSTER_COMBAT_STATS,
     MONSTER_ENGAGEMENT_STATE_NAME,
     MONSTER_HP_BANDS,
+    MONSTER_INTELLIGENCE_ORDINAL,
     MONSTER_MAGIC_ABILITIES,
     MONSTER_NAMES,
     MONSTER_RUNTIME_PROFILE,
@@ -530,6 +531,20 @@ def test_monster_runtime_profile_golem_is_the_sole_mechanical_intelligence():
 
     mech_intelligence_monsters = {m for m, p in MONSTER_RUNTIME_PROFILE.items() if p.intelligence is MonsterIntelligence.MECH}
     assert mech_intelligence_monsters == {Monster.GOLEM, Monster.GI_AMOEBA}
+
+
+def test_monster_intelligence_ordinal_matches_ctboth_pas_declaration_order():
+    # Phase 504: the real Pascal `type intlevel = (Mech,Semi,Low,Medium,
+    # High,Godlike);` (CTBOTH.PAS) puts Mech first, ordinal 0 -- not
+    # after Godlike as this project's earlier, unsourced placeholder had
+    # it. The other 5 tiers keep their same relative ladder, just shifted
+    # by +1.
+    assert MONSTER_INTELLIGENCE_ORDINAL[MonsterIntelligence.MECH] == 0
+    assert MONSTER_INTELLIGENCE_ORDINAL[MonsterIntelligence.SEMI] == 1
+    assert MONSTER_INTELLIGENCE_ORDINAL[MonsterIntelligence.LOW] == 2
+    assert MONSTER_INTELLIGENCE_ORDINAL[MonsterIntelligence.MEDIUM] == 3
+    assert MONSTER_INTELLIGENCE_ORDINAL[MonsterIntelligence.HIGH] == 4
+    assert MONSTER_INTELLIGENCE_ORDINAL[MonsterIntelligence.GODLIKE] == 5
 
 
 def test_monster_runtime_profile_base_view_only_uses_the_nine_real_pascal_outlook_names():

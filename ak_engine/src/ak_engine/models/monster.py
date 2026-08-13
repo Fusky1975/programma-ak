@@ -628,18 +628,25 @@ class MonsterIntelligence(Enum):
 # ladder, confirmed by which species land where (animals/beasts at
 # `SEMI`/`LOW`, humans/centaurs at `MEDIUM`, most demons/dragons/undead
 # at `HIGH`, the handful of named-genius species -- Couatl, Titan,
-# Genie, Go Dragon, Lich, Balrog -- at `GODLIKE`). `MECH` never appears
-# in `repint` at all (only `Golem`/`Giant Amoeba` carry it as their own
-# `mintel`), so its own ordinal position relative to the other 5 is
-# unconfirmed by this source -- placed after `GODLIKE` here as a
-# reasonable default, not a sourced claim.
+# Genie, Go Dragon, Lich, Balrog -- at `GODLIKE`).
+#
+# Phase 504 -- the real Pascal source (Desktop's Gioco/HostAK/TP/
+# CTBOTH.PAS, `type intlevel = (Mech,Semi,Low,Medium,High,Godlike);`)
+# confirms `MECH` is the enum's own *first* member, ordinal 0, not a
+# placeholder tacked on after `GODLIKE`. `MECH` still never appears in
+# `repint` (only `Golem`/`Giant Amoeba` carry it as their own `mintel`,
+# confirmed against `CTME.PAS`'s own `mintel` array positions for those
+# two species), so this only changes Talk-reply eligibility distance
+# for those two species; the other 5 tiers keep the same relative
+# spacing (uniformly shifted by +1), so no other species' behavior
+# changes.
 MONSTER_INTELLIGENCE_ORDINAL: dict[MonsterIntelligence, int] = {
-    MonsterIntelligence.SEMI: 0,
-    MonsterIntelligence.LOW: 1,
-    MonsterIntelligence.MEDIUM: 2,
-    MonsterIntelligence.HIGH: 3,
-    MonsterIntelligence.GODLIKE: 4,
-    MonsterIntelligence.MECH: 5,
+    MonsterIntelligence.MECH: 0,
+    MonsterIntelligence.SEMI: 1,
+    MonsterIntelligence.LOW: 2,
+    MonsterIntelligence.MEDIUM: 3,
+    MonsterIntelligence.HIGH: 4,
+    MonsterIntelligence.GODLIKE: 5,
 }
 
 

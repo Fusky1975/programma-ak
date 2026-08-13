@@ -2272,6 +2272,17 @@ def test_monster_talk_reply_eligible_rsell_requires_the_caller_supplied_flag():
     assert monster_talk_reply_eligible(MonsterTalkReply.R_SELL, Monster.ARCHER, has_purchasable_treasure=True) is True
 
 
+def test_monster_talk_reply_eligible_rtrade_reflects_the_fixed_mech_ordinal_for_gi_amoeba():
+    # Phase 504: Giant Amoeba's own MonsterIntelligence is Mech (base_view
+    # Pagan, ordinal 4). RTrade (view=Neutral ordinal 3, rvvar=4; passes:
+    # |3-4|=1<=4) is keyed to intel=High with rivar=2. Under the earlier,
+    # unsourced MECH=5 placeholder, |5-3|=2<=2 made this reply eligible;
+    # the CTBOTH.PAS-confirmed MECH=0 gives |0-4|=4>2, correctly making it
+    # ineligible -- this is the one real behavior change from the ordinal
+    # fix (see MONSTER_INTELLIGENCE_ORDINAL's own Phase 504 docstring).
+    assert monster_talk_reply_eligible(MonsterTalkReply.R_TRADE, Monster.GI_AMOEBA) is False
+
+
 def test_select_monster_talk_reply_sphinx_forces_rriddle_below_50_percent():
     assert select_monster_talk_reply(Monster.SPHINX, ScriptedRandom([0.0])) is MonsterTalkReply.R_RIDDLE
     assert select_monster_talk_reply(Monster.SPHINX, ScriptedRandom([0.49])) is MonsterTalkReply.R_RIDDLE
