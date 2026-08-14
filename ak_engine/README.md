@@ -20972,7 +20972,7 @@ follow-up request after the original 431-435 plan shipped.
     scan's own shuffle-then-roll-per-item, `Add_Experience`'s own two-
     draw spread), and the ransom fix's own two-sided assertion. Ran
     again: 4377 passed (net +8).
-- **Phase 507 (current)**: the same third dossier's Part IV --
+- **Phase 507**: the same third dossier's Part IV --
   "EXPLORER (EX) e abilità avanzate" -- closes the core Explore [3.2]
   formula gap and its own real battle-strength multiplier, from a
   disassembly of `AK.EXE:0xA780-0xAF3F`/`0xA909-0xA9D0` and `RUMORS.PAS:
@@ -21046,6 +21046,44 @@ follow-up request after the original 431-435 plan shipped.
     the 200%->+50% Military Maps case), and `dispatch_phase()`'s own
     real per-leader wiring for both `EXPLORE` and `LMOVE`. Ran again:
     4386 passed (net +9).
+- **Phase 508 (current)**: resolves Phase 507's own deferred conflict --
+  the dossier's Explorer-specific `spabord[Explorer]` description (SS48,
+  `IRand` scaled by 32000, `tries` reset once per *ability*) really does
+  contradict the already-verified magic-college algorithm (32768, reset
+  per *source*) if forced through one shared routine, but the two aren't
+  actually the same call site. A brute-force sweep across {reset,
+  cumulative} `tries` conventions x {32768, 32000} `IRand` ranges x
+  discard offsets x pre-Explorer build counts, checked against both of
+  the dossier's own worked examples (GW3 -- `game_number=3`,
+  independently confirmed real via the local `GW3__T1` world file's own
+  parsed header -- and GW900), found exactly one combination matching
+  both simultaneously: the dossier's own literal claims (cumulative
+  tries, 32000), continuous through 11 preceding builds (`TACTICAL,
+  NAVAL, ARCHERY, MELEE, WHITE, NECROMANCY, ELEMENTAL, PSYCHIC,
+  ILLUSION, DRUID, THIEF` -- Explorer's own real ordinal position).
+  - New `worldgen/explorer_ability_level_schedule.py`:
+    `build_explorer_ability_level_schedule(game_number)`, using this
+    distinct algorithm (documented in full, including the unresolved
+    "why two call sites differ" question, in the module's own
+    docstring) -- verified exactly against both GW3 and GW900.
+  - `turn/practice_execution.py _maybe_grant_advanced_ability()`: now
+    also grants from this new schedule on an `Ability.EXPLORER` skill
+    rise, alongside the existing 5 magic colleges -- the other 9
+    `Ability` categories still return `None`, unchanged.
+  - The four Explorer side effects Phase 507 deferred behind this gap
+    (Find Water, Society Maps, Long-Range Trade Routes, Find Mines) are
+    still not implemented -- each is its own new mechanic (thirst
+    immunity, province reveal, treaty bypass, tax mutation) needing its
+    own scoping, not a mechanical unblock now that the grant itself
+    works. Left for future phases.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4386 passed, unchanged. Wrote new tests: a dedicated
+    `tests/test_explorer_ability_level_schedule.py` (both worked
+    examples, template coverage, determinism, cross-game-number
+    variation) and new `test_practice_execution.py` cases for the
+    Explorer grant path (renamed the old non-magic-college test to
+    cover both magic colleges and Explorer). Ran again: 4393 passed
+    (net +7).
 
 ## Setup
 

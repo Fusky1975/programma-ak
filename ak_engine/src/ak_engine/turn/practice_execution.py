@@ -308,6 +308,7 @@ from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.office import Office
 from ak_engine.turn.combat import Quality
+from ak_engine.worldgen.explorer_ability_level_schedule import build_explorer_ability_level_schedule
 from ak_engine.worldgen.special_ability_level_schedule import MAGIC_COLLEGES, build_magic_ability_level_schedule
 
 # CTME.PAS: apt_rise: array[0..10] OF byte = (0,10,25,50,100,80,60,40,20,0,0);
@@ -588,13 +589,14 @@ def _maybe_grant_advanced_ability(
     state: GameState, leader: LeaderState, ability: Ability, skill_rose: bool, new_skill: int | None
 ) -> AdvancedAbility | None:
     """Grants the real ``spabord`` Advanced Ability (Phase 128) for a natural skill
-    rise, using the one acquisition algorithm this project has actually verified
-    (``worldgen/special_ability_level_schedule.py``, Phase 384) -- the 5 magic
-    colleges (``MAGIC_COLLEGES``) only. The other 10 ``Ability`` categories'
-    own real ``spabord`` template content was never recovered from available
-    source material (see that module's own docstring), so this deliberately
-    returns ``None`` for them rather than guessing -- a documented, narrower
-    scope than the full 89-entry catalog, not a silent gap.
+    rise, using the two acquisition algorithms this project has actually verified:
+    the 5 magic colleges (``MAGIC_COLLEGES``, ``worldgen/special_ability_level_
+    schedule.py``, Phase 384) and Explorer (``worldgen/explorer_ability_level_
+    schedule.py``, Phase 508). The other 9 ``Ability`` categories' own real
+    ``spabord`` template content was never recovered from available source
+    material (see those modules' own docstrings), so this deliberately returns
+    ``None`` for them rather than guessing -- a documented, narrower scope than
+    the full 89-entry catalog, not a silent gap.
 
     Fires only on an actual skill rise (never for an aptitude-only rise --
     ``spabord`` is keyed by natural skill level, and an aptitude rise alone
@@ -605,11 +607,17 @@ def _maybe_grant_advanced_ability(
     matching every other ``LeaderState.advanced_abilities`` write path.
     """
 
-    if not skill_rose or ability not in MAGIC_COLLEGES or new_skill is None:
+    if not skill_rose or new_skill is None:
         return None
 
-    schedule = build_magic_ability_level_schedule(state.game_number)
-    granted = schedule[ability].get(new_skill)
+    if ability in MAGIC_COLLEGES:
+        schedule = build_magic_ability_level_schedule(state.game_number)
+        granted = schedule[ability].get(new_skill)
+    elif ability is Ability.EXPLORER:
+        granted = build_explorer_ability_level_schedule(state.game_number).get(new_skill)
+    else:
+        return None
+
     if granted is not None:
         leader.advanced_abilities.add(granted)
     return granted

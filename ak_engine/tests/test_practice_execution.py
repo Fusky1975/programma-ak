@@ -35,6 +35,7 @@ from ak_engine.turn.practice_execution import (
     resolve_practice_solo,
     roll_practice_aptitude_gate,
 )
+from ak_engine.worldgen.explorer_ability_level_schedule import build_explorer_ability_level_schedule
 from ak_engine.worldgen.special_ability_level_schedule import MAGIC_COLLEGES, build_magic_ability_level_schedule
 
 from _helpers import ScriptedRandom
@@ -1352,7 +1353,7 @@ def test_execute_practice_group_non_sage_ability_never_rolls_device_discovery():
     assert all(not r.device_discovered for r in results)
 
 
-# -- Phase 493: Advanced Ability grant (5 magic colleges only) -----------
+# -- Phase 493: Advanced Ability grant (5 magic colleges + Explorer) -----
 
 
 def test_maybe_grant_advanced_ability_returns_none_without_a_skill_rise():
@@ -1367,13 +1368,14 @@ def test_maybe_grant_advanced_ability_returns_none_without_a_skill_rise():
     assert leader.advanced_abilities == set()
 
 
-def test_maybe_grant_advanced_ability_returns_none_for_a_non_magic_college():
+def test_maybe_grant_advanced_ability_returns_none_for_an_unscheduled_ability():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
     leader = LeaderState(1, kingdom_id=1, name="L1", location=LOCATION)
     state.add_leader(leader)
 
     assert Ability.MELEE not in MAGIC_COLLEGES
+    assert Ability.MELEE is not Ability.EXPLORER
     granted = _maybe_grant_advanced_ability(state, leader, Ability.MELEE, skill_rose=True, new_skill=5)
 
     assert granted is None
@@ -1404,6 +1406,21 @@ def test_maybe_grant_advanced_ability_grants_the_real_scheduled_ability():
     assert granted is expected
     if expected is not None:
         assert expected in leader.advanced_abilities
+
+
+def test_maybe_grant_advanced_ability_grants_the_real_scheduled_explorer_ability():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = LeaderState(1, kingdom_id=1, name="L1", location=LOCATION)
+    state.add_leader(leader)
+
+    expected = build_explorer_ability_level_schedule(state.game_number).get(5)
+
+    granted = _maybe_grant_advanced_ability(state, leader, Ability.EXPLORER, skill_rose=True, new_skill=5)
+
+    assert granted is expected
+    assert expected is not None
+    assert expected in leader.advanced_abilities
 
 
 def test_execute_practice_grants_advanced_ability_on_a_magic_college_skill_rise():
