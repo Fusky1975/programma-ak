@@ -1358,6 +1358,47 @@ temper`'s own Phase 284 wiring -- full, real coverage in a single phase,
 unlike most other unwired Melee Advanced Abilities (Duellists Medal,
 Mastery, True Mastery) which would need a new "+damage dealt" `Combatant`
 field this module has never had before.
+
+**Phase 517 addendum -- `AdvancedAbility.MELEE_MASTERY`/`MELEE_TRUE_
+MASTERY`.** `models/advanced_ability.py`'s own sourced text: Mastery
+"gains a plus 10% chance to hit and plus 1 damage (the opponent in
+melee does not get a -10% chance or less damage)"; True Mastery "gains
+a plus 2 damage (the opponent in melee does not get a -10% chance or
+less damage)" -- the explicit "no opponent penalty" clause distinguishes
+both from the still-unwired Duellists Medal, which *does* apply a
+symmetric penalty but only against humanoid targets (needs an "is the
+opponent humanoid" check this module has no other reason to have yet,
+so it stays out of scope here).
+
+New `Combatant.melee_damage_dealt_bonus: int = 0` field (the attacker-
+side counterpart to `melee_damage_dealt_reduction` above), plus two pure
+functions -- `melee_mastery_offensive_hit_multiplier(advanced_abilities)`
+(the "+10%" read multiplicatively, same convention as Slancio) and
+`melee_mastery_damage_bonus(advanced_abilities)` (the flat "+1"/"+2") --
+called once, at `Combatant` construction time, by each of the six
+per-consumer builders (mirroring Phase 516's own wiring across the same
+six files), seeding `offensive_hit_multiplier`/`melee_damage_dealt_
+bonus` directly rather than adding a new boolean flag: unlike Melee Hit
+Points' one-time setup roll, these two abilities are static per-swing
+modifiers with no RNG of their own, so there is no "roll once, at
+setup" step to hook into -- the numbers are simply already correct the
+moment the `Combatant` is built. A leader only ever holds one Advanced
+Ability per category (this module's own module docstring, Phase 128),
+so Mastery and True Mastery are mutually exclusive in practice;
+`melee_mastery_damage_bonus()` still resolves deterministically if that
+assumption were ever violated (True Mastery's own higher bonus wins).
+
+The two real per-swing damage sites (`resolve_one_melee_round`,
+`resolve_reactive_melee_swing`) now share a new `_melee_landed_damage()`
+helper instead of duplicating the modifier arithmetic -- a pure
+refactor when `melee_damage_dealt_bonus` is 0 (every pre-Phase-517
+caller), and the one place the new bonus is applied, gated behind
+`raw_damage > 0` so a flat bonus can never turn a miss into a hit. The
+Mirror-Image/Illusory-Hero illusion duels (`resolve_mirror_image_duel`/
+`resolve_illusory_hero_duel`) are deliberately NOT threaded through this
+helper -- same Phase 516 scope boundary: those functions fight with
+freshly-built `Combatant`s that never carry a real leader's own Advanced
+Ability data in the first place.
 """
 
 from __future__ import annotations
@@ -1409,6 +1450,19 @@ CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION = 0.10  # "Schivare"
 # is applied alongside Furia in apply_temper_melee_setup() rather than
 # via a new call site.
 MELEE_HIT_POINTS_ABILITY_BONUS_RANGE = (1, 5)
+
+# Phase 517: AdvancedAbility.MELEE_MASTERY -- "A character gains a plus
+# 10% chance to hit and plus 1 damage (the opponent in melee does not
+# get a -10% chance or less damage)" -- and AdvancedAbility.MELEE_TRUE_
+# MASTERY -- "A character gains a plus 2 damage (the opponent in melee
+# does not get a -10% chance or less damage)" (models/advanced_ability.py
+# ADVANCED_ABILITY_DESCRIPTION). The stated "+10%" reads multiplicatively,
+# the same convention this module's own Phase 284 addendum already
+# established for Slancio ("base * (1 + 0.10)", not "base + 10
+# percentage points").
+MELEE_MASTERY_HIT_CHANCE_BONUS = 0.10
+MELEE_MASTERY_DAMAGE_BONUS = 1
+MELEE_TRUE_MASTERY_DAMAGE_BONUS = 2
 
 # [5.2] Fire Arrow: 30% + 10%/Archery level, 1-6 damage.
 FIRE_ARROW_BASE_HIT_CHANCE = 0.30
@@ -2429,6 +2483,16 @@ class Combatant:
     # above). `apply_temper_melee_setup()` rolls and applies the actual
     # bonus once, at setup -- see that function's own Phase 516 addendum.
     has_melee_hit_points_ability: bool = False
+    # Phase 517 -- AdvancedAbility.MELEE_MASTERY/MELEE_TRUE_MASTERY's own
+    # flat "+1"/"+2 damage" bonus. Set by each consumer's own `_leader_
+    # combatant`-style builder from `melee_mastery_damage_bonus()` below
+    # (same per-consumer lookup precedent as `damage_reduction` above).
+    # Added to this combatant's own landed Melee damage -- the attacker-
+    # side counterpart to `melee_damage_dealt_reduction` above -- but
+    # only under a landed-hit gate (see `_melee_landed_damage()` below),
+    # since a flat bonus must never turn a miss into a hit. Default 0
+    # leaves every pre-Phase-517 caller unaffected.
+    melee_damage_dealt_bonus: int = 0
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -2465,6 +2529,60 @@ def roll_melee_hit_points_ability_bonus(rng: random.Random) -> int:
     """
 
     return rng.randint(*MELEE_HIT_POINTS_ABILITY_BONUS_RANGE)
+
+
+def melee_mastery_offensive_hit_multiplier(advanced_abilities: "set[AdvancedAbility]") -> float:
+    """AdvancedAbility.MELEE_MASTERY's own "+10% chance to hit" -- same
+    stated-percentage-is-multiplicative convention as Slancio (Brave)
+    above. MELEE_TRUE_MASTERY grants no hit-chance change (the source's
+    own confirmed omission -- only the flat damage bonus is shared), so
+    this only ever returns something other than 1.0 for MELEE_MASTERY.
+    Meant to seed a builder's own ``Combatant(offensive_hit_multiplier=
+    ...)`` at construction time -- ``apply_temper_melee_setup()`` still
+    multiplies a Brave combatant's own Slancio bonus on top afterward, so
+    the two compose correctly regardless of call order.
+    """
+
+    if AdvancedAbility.MELEE_MASTERY in advanced_abilities:
+        return 1.0 + MELEE_MASTERY_HIT_CHANCE_BONUS
+    return 1.0
+
+
+def melee_mastery_damage_bonus(advanced_abilities: "set[AdvancedAbility]") -> int:
+    """The flat "+1"/"+2 damage" bonus of AdvancedAbility.MELEE_MASTERY/
+    MELEE_TRUE_MASTERY. A leader only ever holds one Advanced Ability per
+    category (models/advanced_ability.py's own module docstring), so
+    these two are mutually exclusive in practice -- True Mastery's own
+    higher bonus is checked first only as defensive ordering, not
+    because both could really be held by the same leader at once. Meant
+    to seed a builder's own ``Combatant(melee_damage_dealt_bonus=...)``.
+    """
+
+    if AdvancedAbility.MELEE_TRUE_MASTERY in advanced_abilities:
+        return MELEE_TRUE_MASTERY_DAMAGE_BONUS
+    if AdvancedAbility.MELEE_MASTERY in advanced_abilities:
+        return MELEE_MASTERY_DAMAGE_BONUS
+    return 0
+
+
+def _melee_landed_damage(raw_damage: int, attacker: "Combatant", defender: "Combatant") -> int:
+    """Applies every additive/subtractive Melee-damage modifier in a
+    single place, so both real per-swing call sites (``resolve_one_
+    melee_round``/``resolve_reactive_melee_swing``) stay in lockstep.
+    ``raw_damage`` is ``roll_melee_attack()``'s own return value -- 0 on
+    a miss, which this function preserves outright: Phase 209's
+    ``melee_damage_dealt_reduction``/the defender's own ``damage_
+    reduction`` already only ever reduce a landed hit (the pre-existing
+    ``max(0, ...)`` floor), and Phase 517's own ``melee_damage_dealt_
+    bonus`` is gated behind the identical ``raw_damage > 0`` check so a
+    flat damage bonus alone can never turn a miss into a hit.
+    """
+
+    if raw_damage <= 0:
+        return 0
+    return max(
+        0, raw_damage + attacker.melee_damage_dealt_bonus - attacker.melee_damage_dealt_reduction - defender.damage_reduction
+    )
 
 
 def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random) -> None:
@@ -2697,7 +2815,7 @@ def resolve_one_melee_round(
             damage_range=attacker.melee_damage_range,
             hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
         )
-        damage = max(0, raw_damage - attacker.melee_damage_dealt_reduction - defender.damage_reduction)
+        damage = _melee_landed_damage(raw_damage, attacker, defender)
         defender.hit_points -= damage
         attacker_side = "a" if attacker is a else "b"
         swings.append(MeleeSwing(attacker=attacker_side, hit=raw_damage > 0, damage=damage))
@@ -2746,7 +2864,7 @@ def resolve_reactive_melee_swing(attacker: Combatant, defender: Combatant, rng: 
         damage_range=attacker.melee_damage_range,
         hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
     )
-    damage = max(0, raw_damage - attacker.melee_damage_dealt_reduction - defender.damage_reduction)
+    damage = _melee_landed_damage(raw_damage, attacker, defender)
     defender.hit_points -= damage
     return ReactiveMeleeSwingResult(hit=raw_damage > 0, damage=damage)
 

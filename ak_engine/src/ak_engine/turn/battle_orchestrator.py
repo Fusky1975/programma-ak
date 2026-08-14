@@ -192,7 +192,12 @@ from ak_engine.turn.combat import Quality, direct_destruction_probability
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.druidic_monster_aid import find_druidic_monster_assistance
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant
+from ak_engine.turn.encounter import (
+    CHARACTER_HIT_POINTS,
+    Combatant,
+    melee_mastery_damage_bonus,
+    melee_mastery_offensive_hit_multiplier,
+)
 from ak_engine.turn.initiative import character_initiative
 from ak_engine.turn.merit_points import battle_quality_points
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
@@ -983,11 +988,15 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
 
     damage_reduction = 0
     has_melee_hit_points_ability = False
+    offensive_hit_multiplier = 1.0
+    melee_damage_dealt_bonus = 0
     if leader is not None:
         defender_office = resolve_office_holder(state, Office.DEFENDER)
         if defender_office is not None and defender_office.leader_id == leader.leader_id:
             damage_reduction = 1
         has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
+        offensive_hit_multiplier = melee_mastery_offensive_hit_multiplier(leader.advanced_abilities)
+        melee_damage_dealt_bonus = melee_mastery_damage_bonus(leader.advanced_abilities)
 
     return Combatant(
         name=f"leader {commander.leader_id}",
@@ -998,6 +1007,8 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         temper=temper,
         damage_reduction=damage_reduction,
         has_melee_hit_points_ability=has_melee_hit_points_ability,
+        offensive_hit_multiplier=offensive_hit_multiplier,
+        melee_damage_dealt_bonus=melee_damage_dealt_bonus,
     )
 
 

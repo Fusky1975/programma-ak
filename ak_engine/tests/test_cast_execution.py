@@ -271,6 +271,27 @@ def test_kill_enemy_combatant_reads_the_melee_hit_points_advanced_ability():
     assert combatant.has_melee_hit_points_ability is True
 
 
+def test_kill_enemy_combatant_reads_melee_mastery():
+    # Phase 517: AdvancedAbility.MELEE_MASTERY/MELEE_TRUE_MASTERY.
+    state = build_state()
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.MELEE_MASTERY)
+
+    combatant = _kill_enemy_combatant(state, state.leaders[CASTER_ID], temper=Temper.BERSERK)
+
+    assert combatant.offensive_hit_multiplier == pytest.approx(1.10)
+    assert combatant.melee_damage_dealt_bonus == 1
+
+
+def test_kill_enemy_combatant_reads_melee_true_mastery():
+    state = build_state()
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.MELEE_TRUE_MASTERY)
+
+    combatant = _kill_enemy_combatant(state, state.leaders[CASTER_ID], temper=Temper.BERSERK)
+
+    assert combatant.offensive_hit_multiplier == 1.0
+    assert combatant.melee_damage_dealt_bonus == 2
+
+
 def test_kill_enemy_puts_a_colocated_target_into_a_coma():
     # Phase 310: this project's Kill_Enemy is only ever cast as an Action
     # spell -- see _execute_kill_enemy()'s own docstring for why a success

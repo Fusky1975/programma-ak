@@ -250,6 +250,8 @@ from ak_engine.turn.encounter import (
     apply_temper_melee_setup,
     blocks_cast_and_archery,
     control_undead_anti_holy_resist_chance,
+    melee_mastery_damage_bonus,
+    melee_mastery_offensive_hit_multiplier,
     control_undead_failure_new_hit_points,
     holy_symbol_hit_chance,
     ice_suspension_is_frozen,
@@ -370,6 +372,8 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         temper=leader.temper,
         damage_reduction=damage_reduction,
         has_melee_hit_points_ability=has_melee_hit_points_ability,
+        offensive_hit_multiplier=melee_mastery_offensive_hit_multiplier(leader.advanced_abilities),
+        melee_damage_dealt_bonus=melee_mastery_damage_bonus(leader.advanced_abilities),
     )
 
 

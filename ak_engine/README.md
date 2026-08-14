@@ -21419,7 +21419,7 @@ follow-up request after the original 431-435 plan shipped.
     off) and an `execute_search()` integration test (a roll that fails
     the unmodified 20% Fast-monster flee chance but clears the +30%-
     widened 50%). Ran again: 4466 passed (net +4).
-- **Phase 516 (current)**: adds Melee Hit Points (Advanced Ability) --
+- **Phase 516**: adds Melee Hit Points (Advanced Ability) --
   quoted from `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION
   [MELEE_HIT_POINTS]`: "The Gods grant 1-5 additional hit points in any
   encounter (depending on how many of the Gods are betting on the
@@ -21457,6 +21457,55 @@ follow-up request after the original 431-435 plan shipped.
     bonus (holder-only, stacks with Furia, no-op when unset), and one
     builder-reads-the-ability test per consumer (6 total, one per
     module). Ran again: 4477 passed (net +11).
+- **Phase 517 (current)**: adds Melee Mastery and Melee True Mastery
+  (Advanced Abilities) -- quoted from `models/advanced_ability.py
+  ADVANCED_ABILITY_DESCRIPTION`: Mastery "gains a plus 10% chance to hit
+  and plus 1 damage (the opponent in melee does not get a -10% chance
+  or less damage)"; True Mastery "gains a plus 2 damage (the opponent
+  in melee does not get a -10% chance or less damage)." The "no
+  opponent penalty" clause is what makes these two tractable without
+  guessing -- unlike the still-unwired Duellists Medal, which needs an
+  "is the target humanoid" check this module has no other reason to
+  have yet.
+
+  New `turn/encounter.py Combatant.melee_damage_dealt_bonus: int = 0`
+  field (the attacker-side counterpart to `melee_damage_dealt_
+  reduction`), plus two pure functions -- `melee_mastery_offensive_
+  hit_multiplier(advanced_abilities)` (the "+10%" read multiplicatively,
+  same convention as Slancio/Phase 284) and `melee_mastery_damage_
+  bonus(advanced_abilities)` (the flat "+1"/"+2") -- called once, at
+  `Combatant` construction time, by each of the same six per-consumer
+  builders Phase 516 already wired (`battle_orchestrator.py`,
+  `cast_execution.py`, `challenge_execution.py`, `patrol_execution.py`,
+  `pursue_execution.py`, `search_execution.py`), seeding `offensive_
+  hit_multiplier`/`melee_damage_dealt_bonus` directly. Unlike Melee Hit
+  Points, these two abilities are static per-swing modifiers with no
+  RNG of their own, so there's no "roll once, at setup" step -- the
+  numbers are already correct the moment the `Combatant` is built. A
+  leader only ever holds one Advanced Ability per category (Phase 128),
+  so the two are mutually exclusive in practice.
+
+  The two real per-swing damage sites (`resolve_one_melee_round`,
+  `resolve_reactive_melee_swing`) now share a new `_melee_landed_
+  damage()` helper instead of duplicating the modifier arithmetic -- a
+  pure refactor when the new bonus is 0 (every pre-Phase-517 caller),
+  and the one place it's applied, gated behind `raw_damage > 0` so a
+  flat bonus can never turn a miss into a hit.
+  - Third and fourth abilities wired from the Melee category (4/6 now)
+    -- only Duellists Medal and the ambiguous, arguably-unmodelable
+    Control Temper ("the temper is usually adjusted to whatever temper
+    gains the most favorable benefits in combat" -- no concrete
+    trigger/magnitude given) remain.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4477 passed, unchanged. Wrote new tests: `melee_mastery_offensive_
+    hit_multiplier()`/`melee_mastery_damage_bonus()`'s own value tables
+    (including the defensive True-Mastery-wins-if-both-held ordering),
+    `_melee_landed_damage()`'s own miss/hit/floor/pre-Phase-517-parity
+    cases, a widened-hit-window integration test on `roll_melee_
+    attack()`, seeded-RNG bonus-adds-only-on-a-landed-hit tests for both
+    real per-swing sites, and one builder-reads-the-ability test per
+    consumer (6 total, Mastery + True Mastery each). Ran again: 4504
+    passed (net +27).
 
 ## Setup
 

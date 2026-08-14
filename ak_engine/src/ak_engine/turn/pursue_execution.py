@@ -185,6 +185,8 @@ from ak_engine.turn.encounter import (
     FireArrowShot,
     MeleeSwing,
     loot_defeated_leader,
+    melee_mastery_damage_bonus,
+    melee_mastery_offensive_hit_multiplier,
 )
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance, neighbors
@@ -223,6 +225,8 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         temper=leader.temper,
         damage_reduction=damage_reduction,
         has_melee_hit_points_ability=has_melee_hit_points_ability,
+        offensive_hit_multiplier=melee_mastery_offensive_hit_multiplier(leader.advanced_abilities),
+        melee_damage_dealt_bonus=melee_mastery_damage_bonus(leader.advanced_abilities),
     )
 
 

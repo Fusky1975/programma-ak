@@ -529,6 +529,8 @@ from ak_engine.turn.encounter import (
     TalkReaction,
     apply_temper_melee_setup,
     blocks_cast_and_archery,
+    melee_mastery_damage_bonus,
+    melee_mastery_offensive_hit_multiplier,
     can_talk_to_monster,
     control_undead_anti_holy_resist_chance,
     control_undead_failure_new_hit_points,
@@ -692,6 +694,8 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
         temper=leader.temper,
         damage_reduction=damage_reduction,
         has_melee_hit_points_ability=has_melee_hit_points_ability,
+        offensive_hit_multiplier=melee_mastery_offensive_hit_multiplier(leader.advanced_abilities),
+        melee_damage_dealt_bonus=melee_mastery_damage_bonus(leader.advanced_abilities),
     )
 
 

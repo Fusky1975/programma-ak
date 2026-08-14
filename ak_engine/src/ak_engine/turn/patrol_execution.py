@@ -108,7 +108,14 @@ from ak_engine.models.office import Office
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, loot_defeated_leader, resolve_melee_duel
+from ak_engine.turn.encounter import (
+    CHARACTER_HIT_POINTS,
+    Combatant,
+    loot_defeated_leader,
+    melee_mastery_damage_bonus,
+    melee_mastery_offensive_hit_multiplier,
+    resolve_melee_duel,
+)
 from ak_engine.turn.movement import MapBounds, neighbors
 from ak_engine.turn.office_holder import resolve_office_holder
 
@@ -208,6 +215,8 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         temper=leader.temper,
         damage_reduction=damage_reduction,
         has_melee_hit_points_ability=has_melee_hit_points_ability,
+        offensive_hit_multiplier=melee_mastery_offensive_hit_multiplier(leader.advanced_abilities),
+        melee_damage_dealt_bonus=melee_mastery_damage_bonus(leader.advanced_abilities),
     )
 
 

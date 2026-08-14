@@ -137,6 +137,31 @@ def test_leader_combatant_reads_the_melee_hit_points_advanced_ability():
     assert combatant.has_melee_hit_points_ability is True
 
 
+def test_leader_combatant_reads_melee_mastery():
+    # Phase 517: AdvancedAbility.MELEE_MASTERY/MELEE_TRUE_MASTERY.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION, advanced_abilities={AdvancedAbility.MELEE_MASTERY})
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(state, leader)
+
+    assert combatant.offensive_hit_multiplier == pytest.approx(1.10)
+    assert combatant.melee_damage_dealt_bonus == 1
+
+
+def test_leader_combatant_reads_melee_true_mastery():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION, advanced_abilities={AdvancedAbility.MELEE_TRUE_MASTERY})
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(state, leader)
+
+    assert combatant.offensive_hit_multiplier == 1.0
+    assert combatant.melee_damage_dealt_bonus == 2
+
+
 def test_execute_search_leader_not_found():
     state = GameState()
     result = execute_search(state, LEADER_ID, _melee_request(1))

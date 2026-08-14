@@ -207,6 +207,33 @@ def test_leader_combatant_reads_the_melee_hit_points_advanced_ability():
     assert combatant.has_melee_hit_points_ability is True
 
 
+def test_leader_combatant_reads_melee_mastery():
+    # Phase 517: AdvancedAbility.MELEE_MASTERY/MELEE_TRUE_MASTERY.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD, advanced_abilities={AdvancedAbility.MELEE_MASTERY})
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.offensive_hit_multiplier == pytest.approx(1.10)
+    assert combatant.melee_damage_dealt_bonus == 1
+
+
+def test_leader_combatant_reads_melee_true_mastery():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(
+        501, kingdom_id=1, name="Hero", location=FIELD, advanced_abilities={AdvancedAbility.MELEE_TRUE_MASTERY}
+    )
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.offensive_hit_multiplier == 1.0
+    assert combatant.melee_damage_dealt_bonus == 2
+
+
 # -- execute_challenge: co-location, not-found, peaceful bypass ---------
 
 

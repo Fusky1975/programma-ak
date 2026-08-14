@@ -684,7 +684,14 @@ from ak_engine.models.temper import Temper
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, Combatant, loot_defeated_leader, resolve_melee_duel
+from ak_engine.turn.encounter import (
+    CHARACTER_HIT_POINTS,
+    Combatant,
+    loot_defeated_leader,
+    melee_mastery_damage_bonus,
+    melee_mastery_offensive_hit_multiplier,
+    resolve_melee_duel,
+)
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, is_adjacent
@@ -1270,6 +1277,8 @@ def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temp
         temper=temper,
         damage_reduction=damage_reduction,
         has_melee_hit_points_ability=has_melee_hit_points_ability,
+        offensive_hit_multiplier=melee_mastery_offensive_hit_multiplier(leader.advanced_abilities),
+        melee_damage_dealt_bonus=melee_mastery_damage_bonus(leader.advanced_abilities),
     )
 
 

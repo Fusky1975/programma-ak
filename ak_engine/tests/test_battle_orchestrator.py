@@ -2011,6 +2011,37 @@ def test_commander_combatant_without_the_ability_has_no_bonus_flag():
     assert combatant.has_melee_hit_points_ability is False
 
 
+def test_commander_combatant_reads_melee_mastery():
+    # Phase 517: AdvancedAbility.MELEE_MASTERY.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="Commander", location=FIELD, advanced_abilities={AdvancedAbility.MELEE_MASTERY})
+    )
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.offensive_hit_multiplier == pytest.approx(1.10)
+    assert combatant.melee_damage_dealt_bonus == 1
+
+
+def test_commander_combatant_reads_melee_true_mastery():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(
+        LeaderState(
+            501, kingdom_id=1, name="Commander", location=FIELD, advanced_abilities={AdvancedAbility.MELEE_TRUE_MASTERY}
+        )
+    )
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.offensive_hit_multiplier == 1.0
+    assert combatant.melee_damage_dealt_bonus == 2
+
+
 def test_commander_combatant_garrison_commander_has_no_damage_reduction():
     state = GameState()
     commander = provincial_garrison_commander(contingent_size=3)

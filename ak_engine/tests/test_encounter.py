@@ -173,9 +173,15 @@ from ak_engine.turn.encounter import (
     BRAVE_MOMENTUM_HIT_CHANCE_BONUS,
     CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION,
     MELEE_HIT_POINTS_ABILITY_BONUS_RANGE,
+    MELEE_MASTERY_DAMAGE_BONUS,
+    MELEE_MASTERY_HIT_CHANCE_BONUS,
+    MELEE_TRUE_MASTERY_DAMAGE_BONUS,
     apply_temper_melee_setup,
     berserk_fury_bonus_hit_points,
     roll_melee_hit_points_ability_bonus,
+    melee_mastery_damage_bonus,
+    melee_mastery_offensive_hit_multiplier,
+    _melee_landed_damage,
     loot_defeated_leader,
 )
 from ak_engine.models.alignment import Alignment
@@ -2620,6 +2626,112 @@ def test_apply_temper_melee_setup_no_melee_hit_points_ability_is_a_no_op_for_hit
 
     assert a.hit_points == CHARACTER_HIT_POINTS
     assert b.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_melee_mastery_offensive_hit_multiplier_returns_110_for_mastery():
+    assert melee_mastery_offensive_hit_multiplier({AdvancedAbility.MELEE_MASTERY}) == pytest.approx(
+        1.0 + MELEE_MASTERY_HIT_CHANCE_BONUS
+    )
+
+
+def test_melee_mastery_offensive_hit_multiplier_returns_100_for_true_mastery_alone():
+    assert melee_mastery_offensive_hit_multiplier({AdvancedAbility.MELEE_TRUE_MASTERY}) == 1.0
+
+
+def test_melee_mastery_offensive_hit_multiplier_returns_100_without_either_ability():
+    assert melee_mastery_offensive_hit_multiplier(set()) == 1.0
+
+
+def test_melee_mastery_damage_bonus_returns_1_for_mastery():
+    assert melee_mastery_damage_bonus({AdvancedAbility.MELEE_MASTERY}) == MELEE_MASTERY_DAMAGE_BONUS
+
+
+def test_melee_mastery_damage_bonus_returns_2_for_true_mastery():
+    assert melee_mastery_damage_bonus({AdvancedAbility.MELEE_TRUE_MASTERY}) == MELEE_TRUE_MASTERY_DAMAGE_BONUS
+
+
+def test_melee_mastery_damage_bonus_prefers_true_mastery_when_both_are_somehow_held():
+    both = {AdvancedAbility.MELEE_MASTERY, AdvancedAbility.MELEE_TRUE_MASTERY}
+    assert melee_mastery_damage_bonus(both) == MELEE_TRUE_MASTERY_DAMAGE_BONUS
+
+
+def test_melee_mastery_damage_bonus_returns_0_without_either_ability():
+    assert melee_mastery_damage_bonus(set()) == 0
+
+
+def test_melee_mastery_offensive_hit_multiplier_widens_the_hit_window():
+    # Base 50% + Mastery's own +10% = 55% -- a roll of 0.52 misses without
+    # the ability but hits with it. A second scripted value feeds the
+    # subsequent damage roll (roll_melee_attack's own rng.randint call).
+    rng = ScriptedRandom([0.52, 0.1])
+    multiplier = melee_mastery_offensive_hit_multiplier({AdvancedAbility.MELEE_MASTERY})
+
+    damage = roll_melee_attack(rng, hit_chance_multiplier=multiplier)
+
+    assert damage > 0
+
+
+def test_melee_mastery_offensive_hit_multiplier_without_the_ability_still_misses_the_same_roll():
+    rng = ScriptedRandom([0.52])
+    multiplier = melee_mastery_offensive_hit_multiplier(set())
+
+    damage = roll_melee_attack(rng, hit_chance_multiplier=multiplier)
+
+    assert damage == 0
+
+
+def test_melee_landed_damage_returns_zero_on_a_miss_even_with_a_bonus():
+    attacker = Combatant("A", melee_damage_dealt_bonus=5)
+    defender = Combatant("B")
+
+    assert _melee_landed_damage(0, attacker, defender) == 0
+
+
+def test_melee_landed_damage_adds_the_bonus_on_a_landed_hit():
+    attacker = Combatant("A", melee_damage_dealt_bonus=2)
+    defender = Combatant("B")
+
+    assert _melee_landed_damage(3, attacker, defender) == 5
+
+
+def test_melee_landed_damage_floors_at_zero_when_reduction_exceeds_raw_plus_bonus():
+    attacker = Combatant("A", melee_damage_dealt_bonus=1, melee_damage_dealt_reduction=10)
+    defender = Combatant("B")
+
+    assert _melee_landed_damage(3, attacker, defender) == 0
+
+
+def test_melee_landed_damage_matches_the_pre_phase_517_formula_when_bonus_is_zero():
+    attacker = Combatant("A", melee_damage_dealt_reduction=1)
+    defender = Combatant("B", damage_reduction=1)
+
+    assert _melee_landed_damage(4, attacker, defender) == 2
+
+
+def test_resolve_one_melee_round_melee_damage_dealt_bonus_adds_only_to_a_landed_hit():
+    a_baseline = Combatant("A", melee_skill=1, hit_points=20)
+    b_baseline = Combatant("B", melee_skill=0, hit_points=20)
+    baseline = resolve_one_melee_round(a_baseline, b_baseline, random.Random(1), round_number=1)
+
+    a_bonused = Combatant("A", melee_skill=1, hit_points=20, melee_damage_dealt_bonus=2)
+    b_bonused = Combatant("B", melee_skill=0, hit_points=20)
+    bonused = resolve_one_melee_round(a_bonused, b_bonused, random.Random(1), round_number=1)
+
+    expected_bonus = 2 if baseline.damage_dealt_to_b > 0 else 0
+    assert bonused.damage_dealt_to_b == baseline.damage_dealt_to_b + expected_bonus
+
+
+def test_resolve_reactive_melee_swing_melee_damage_dealt_bonus_adds_only_to_a_landed_hit():
+    attacker_baseline = Combatant("A", melee_skill=1, hit_points=20)
+    defender_baseline = Combatant("B", melee_skill=0, hit_points=20)
+    baseline = resolve_reactive_melee_swing(attacker_baseline, defender_baseline, random.Random(1))
+
+    attacker_bonused = Combatant("A", melee_skill=1, hit_points=20, melee_damage_dealt_bonus=2)
+    defender_bonused = Combatant("B", melee_skill=0, hit_points=20)
+    bonused = resolve_reactive_melee_swing(attacker_bonused, defender_bonused, random.Random(1))
+
+    expected_bonus = 2 if baseline.damage > 0 else 0
+    assert bonused.damage == baseline.damage + expected_bonus
 
 
 def test_resolve_melee_duel_applies_temper_setup_before_any_combat():
