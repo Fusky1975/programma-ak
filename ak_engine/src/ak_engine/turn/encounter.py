@@ -1399,6 +1399,43 @@ Mirror-Image/Illusory-Hero illusion duels (`resolve_mirror_image_duel`/
 helper -- same Phase 516 scope boundary: those functions fight with
 freshly-built `Combatant`s that never carry a real leader's own Advanced
 Ability data in the first place.
+
+**Phase 518 addendum -- `AdvancedAbility.MELEE_DUELLISTS_MEDAL`.**
+`models/advanced_ability.py`'s own sourced text: "When fighting against
+humanoid creatures, the character has a plus 10% chance to hit and plus
+1 damage in melee, while the opponent has -10% chance to hit and -1
+damage." Unlike Mastery/True Mastery, this one *does* carry an opponent
+penalty, but conditionally: only when the opponent is humanoid
+(`models/race.py HUMANOID_RACES` -- "men, elves, orcs and dwarves"),
+which the previous phase's own addendum flagged as the reason this
+ability stayed out of scope until now.
+
+New `Combatant.is_humanoid: bool = False` and `Combatant.has_duellists_
+medal_ability: bool = False` fields, both set by each of the same six
+per-consumer builders from `leader.race if leader.race is not None else
+kingdom.race` (the exact resolution `report/turn_report.py`/`turn/
+hire_pay.py` already use for "this leader's own effective race" --
+Phase 196's own precedent) checked against `HUMANOID_RACES`. A monster
+combatant's own builder never sets `is_humanoid`, leaving the correct
+default (`False` -- no monster is ever humanoid).
+
+Wired into `apply_temper_melee_setup()`'s own per-combatant loop (see
+that function's own Phase 518 addendum) rather than the two Mastery
+functions' "seed at construction time" shape, because this ability's
+effect depends on the *opponent's* own property (humanoid or not) --
+the same reason Intimidazione (Phase 284) already lives in that loop
+instead of at construction time. Reads "the character has..., while the
+opponent has..." as two separate *offensive* swings (this combatant's
+own `offensive_hit_multiplier`/`melee_damage_dealt_bonus`, not a
+defensive multiplier on incoming hits) -- both sides described in the
+source are the medal-bearer's opponent's own hit chance/damage, not a
+change to how easy either side is to hit.
+
+Fifth of six Melee category Advanced Abilities wired (5/6) -- only
+Control Temper remains, and its own sourced text ("the temper is
+usually adjusted to whatever temper gains the most favorable benefits
+in combat") gives no concrete trigger or magnitude to model, a
+candidate for "documented, not modeled" rather than a guess.
 """
 
 from __future__ import annotations
@@ -1463,6 +1500,14 @@ MELEE_HIT_POINTS_ABILITY_BONUS_RANGE = (1, 5)
 MELEE_MASTERY_HIT_CHANCE_BONUS = 0.10
 MELEE_MASTERY_DAMAGE_BONUS = 1
 MELEE_TRUE_MASTERY_DAMAGE_BONUS = 2
+
+# Phase 518: AdvancedAbility.MELEE_DUELLISTS_MEDAL -- "When fighting
+# against humanoid creatures, the character has a plus 10% chance to hit
+# and plus 1 damage in melee, while the opponent has -10% chance to hit
+# and -1 damage" (models/advanced_ability.py ADVANCED_ABILITY_
+# DESCRIPTION). Same +-10%-is-multiplicative convention as Mastery above.
+MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS = 0.10
+MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS = 1
 
 # [5.2] Fire Arrow: 30% + 10%/Archery level, 1-6 damage.
 FIRE_ARROW_BASE_HIT_CHANCE = 0.30
@@ -2493,6 +2538,25 @@ class Combatant:
     # since a flat bonus must never turn a miss into a hit. Default 0
     # leaves every pre-Phase-517 caller unaffected.
     melee_damage_dealt_bonus: int = 0
+    # Phase 518 -- this combatant's own race is one of `models/race.py
+    # HUMANOID_RACES` ("men, elves, orcs and dwarves"). Set by each
+    # consumer's own `_leader_combatant`-style builder from `leader.race`/
+    # the leader's own Kingdom race (same resolution `report/turn_
+    # report.py`/`turn/hire_pay.py` already use); a monster combatant is
+    # never humanoid, so its own builder never sets this, leaving the
+    # default `False` -- the correct answer. Read from the *opponent's*
+    # own side by `apply_temper_melee_setup()`'s own AdvancedAbility.
+    # MELEE_DUELLISTS_MEDAL check (see that function's own Phase 518
+    # addendum) -- this combatant's own `has_duellists_medal_ability`
+    # below is irrelevant to how this field is read.
+    is_humanoid: bool = False
+    # Phase 518 -- AdvancedAbility.MELEE_DUELLISTS_MEDAL. Set by each
+    # consumer's own builder the same way `has_melee_hit_points_ability`
+    # is. Consulted by `apply_temper_melee_setup()` against the
+    # *opponent's* own `is_humanoid` -- see that function's own Phase 518
+    # addendum for the full symmetric hit-chance/damage swing this
+    # applies.
+    has_duellists_medal_ability: bool = False
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -2602,9 +2666,28 @@ def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random)
     call, plus ``challenge_execution.py``'s/``search_execution.py``'s own
     direct calls for their round-stepping engines) rather than adding a
     fourth. Default ``False`` leaves every pre-Phase-516 caller unaffected.
+
+    Phase 518: also applies ``AdvancedAbility.MELEE_DUELLISTS_MEDAL``'s own
+    symmetric swing -- for either combatant whose own ``has_duellists_
+    medal_ability`` is set *and* whose opponent's own ``is_humanoid`` is
+    True, the holder's own ``offensive_hit_multiplier``/``melee_damage_
+    dealt_bonus`` go up (+10%/+1) and the opponent's own go down
+    (-10%/-1) -- both are this combatant's own numbers being changed, not
+    a defensive multiplier on the opponent's incoming hits, matching the
+    source's own "the character has..., while the opponent has..."
+    wording (each side's own hit chance/damage, not who's harder to
+    hit). No RNG consumed, no ordering dependency with the Temper
+    branches below (multiplication/addition compose regardless of order),
+    so it's placed first in the loop purely for readability. Defaults
+    (``False``) leave every pre-Phase-518 caller unaffected.
     """
 
     for combatant, opponent in ((a, b), (b, a)):
+        if combatant.has_duellists_medal_ability and opponent.is_humanoid:
+            combatant.offensive_hit_multiplier *= 1.0 + MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS
+            combatant.melee_damage_dealt_bonus += MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS
+            opponent.offensive_hit_multiplier *= 1.0 - MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS
+            opponent.melee_damage_dealt_bonus -= MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS
         if combatant.has_melee_hit_points_ability:
             combatant.hit_points += roll_melee_hit_points_ability_bonus(rng)
         if combatant.temper is Temper.BERSERK:

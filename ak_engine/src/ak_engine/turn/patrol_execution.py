@@ -105,6 +105,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.office import Office
+from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
@@ -206,6 +207,11 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
     defender_office = resolve_office_holder(state, Office.DEFENDER)
     damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
     has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
+    effective_race = leader.race
+    if effective_race is None and leader.kingdom_id is not None:
+        leader_kingdom = state.kingdoms.get(leader.kingdom_id)
+        effective_race = leader_kingdom.race if leader_kingdom is not None else None
+    is_humanoid = effective_race in HUMANOID_RACES
 
     return Combatant(
         name=leader.name,
@@ -217,6 +223,8 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         has_melee_hit_points_ability=has_melee_hit_points_ability,
         offensive_hit_multiplier=melee_mastery_offensive_hit_multiplier(leader.advanced_abilities),
         melee_damage_dealt_bonus=melee_mastery_damage_bonus(leader.advanced_abilities),
+        is_humanoid=is_humanoid,
+        has_duellists_medal_ability=AdvancedAbility.MELEE_DUELLISTS_MEDAL in leader.advanced_abilities,
     )
 
 

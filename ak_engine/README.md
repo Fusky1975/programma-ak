@@ -21457,7 +21457,7 @@ follow-up request after the original 431-435 plan shipped.
     bonus (holder-only, stacks with Furia, no-op when unset), and one
     builder-reads-the-ability test per consumer (6 total, one per
     module). Ran again: 4477 passed (net +11).
-- **Phase 517 (current)**: adds Melee Mastery and Melee True Mastery
+- **Phase 517**: adds Melee Mastery and Melee True Mastery
   (Advanced Abilities) -- quoted from `models/advanced_ability.py
   ADVANCED_ABILITY_DESCRIPTION`: Mastery "gains a plus 10% chance to hit
   and plus 1 damage (the opponent in melee does not get a -10% chance
@@ -21506,6 +21506,45 @@ follow-up request after the original 431-435 plan shipped.
     real per-swing sites, and one builder-reads-the-ability test per
     consumer (6 total, Mastery + True Mastery each). Ran again: 4504
     passed (net +27).
+- **Phase 518 (current)**: adds Melee Duellists Medal (Advanced Ability)
+  -- quoted from `models/advanced_ability.py ADVANCED_ABILITY_
+  DESCRIPTION`: "When fighting against humanoid creatures, the character
+  has a plus 10% chance to hit and plus 1 damage in melee, while the
+  opponent has -10% chance to hit and -1 damage." Unlike Mastery/True
+  Mastery, this one *does* carry a symmetric opponent penalty, but
+  conditionally on the opponent being humanoid (`models/race.py
+  HUMANOID_RACES` -- "men, elves, orcs and dwarves") -- exactly the gap
+  Phase 517's own addendum flagged as the reason this ability stayed out
+  of scope until now.
+
+  New `Combatant.is_humanoid: bool = False` and `Combatant.has_
+  duellists_medal_ability: bool = False` fields, both set by the same
+  six per-consumer builders from `leader.race if leader.race is not
+  None else kingdom.race` (Phase 196's own "effective race" resolution,
+  already used by `report/turn_report.py`/`turn/hire_pay.py`) checked
+  against `HUMANOID_RACES`. Wired into `apply_temper_melee_setup()`'s
+  own per-combatant loop (not the two Mastery functions' "seed at
+  construction time" shape) because the effect depends on the
+  *opponent's* own property -- the same reason Intimidazione (Phase 284)
+  already lives in that loop. Reads "the character has..., while the
+  opponent has..." as two separate offensive swings (this combatant's
+  own `offensive_hit_multiplier`/`melee_damage_dealt_bonus`, not a
+  defensive multiplier on incoming hits).
+  - Fifth of six Melee category Advanced Abilities wired (5/6) -- only
+    Control Temper remains, and its own sourced text ("the temper is
+    usually adjusted to whatever temper gains the most favorable
+    benefits in combat") gives no concrete trigger or magnitude to
+    model, a candidate for "documented, not modeled" rather than a
+    guess.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4504 passed, unchanged. Wrote new tests: `apply_temper_melee_
+    setup()`'s own Duellists Medal swing (holder boosted/humanoid
+    opponent weakened, no effect against a non-humanoid opponent, no
+    effect without the ability, symmetric composition when both sides
+    hold it against each other), and one builder-reads-the-ability test
+    per consumer (6 total) plus a leader-race-overrides-kingdom-race
+    precedence test and a non-humanoid-kingdom test in `battle_
+    orchestrator.py`'s own suite. Ran again: 4519 passed (net +15).
 
 ## Setup
 

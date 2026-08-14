@@ -2042,6 +2042,58 @@ def test_commander_combatant_reads_melee_true_mastery():
     assert combatant.melee_damage_dealt_bonus == 2
 
 
+def test_commander_combatant_reads_duellists_medal_and_kingdom_race_humanoid():
+    # Phase 518: AdvancedAbility.MELEE_DUELLISTS_MEDAL + is_humanoid,
+    # resolved from the leader's own serving Kingdom's race.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(
+        LeaderState(
+            501, kingdom_id=1, name="Commander", location=FIELD, advanced_abilities={AdvancedAbility.MELEE_DUELLISTS_MEDAL}
+        )
+    )
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.has_duellists_medal_ability is True
+    assert combatant.is_humanoid is True
+
+
+def test_commander_combatant_own_race_override_takes_precedence_over_kingdom_race():
+    # Phase 196's own precedent: LeaderState.race, when set, overrides the
+    # serving Kingdom's own race (a Valhalla visitor's own case).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Commander", location=FIELD, race=Race.TROLLISH))
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.is_humanoid is False
+
+
+def test_commander_combatant_non_humanoid_kingdom_race_is_not_humanoid():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Trollholm", Race.TROLLISH, Alignment.EVIL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Commander", location=FIELD))
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.is_humanoid is False
+
+
+def test_commander_combatant_garrison_commander_is_not_humanoid_and_has_no_medal():
+    state = GameState()
+    commander = provincial_garrison_commander(contingent_size=3)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.is_humanoid is False
+    assert combatant.has_duellists_medal_ability is False
+
+
 def test_commander_combatant_garrison_commander_has_no_damage_reduction():
     state = GameState()
     commander = provincial_garrison_commander(contingent_size=3)

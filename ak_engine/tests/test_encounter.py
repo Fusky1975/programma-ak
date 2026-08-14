@@ -176,6 +176,8 @@ from ak_engine.turn.encounter import (
     MELEE_MASTERY_DAMAGE_BONUS,
     MELEE_MASTERY_HIT_CHANCE_BONUS,
     MELEE_TRUE_MASTERY_DAMAGE_BONUS,
+    MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS,
+    MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS,
     apply_temper_melee_setup,
     berserk_fury_bonus_hit_points,
     roll_melee_hit_points_ability_bonus,
@@ -2732,6 +2734,69 @@ def test_resolve_reactive_melee_swing_melee_damage_dealt_bonus_adds_only_to_a_la
 
     expected_bonus = 2 if baseline.damage > 0 else 0
     assert bonused.damage == baseline.damage + expected_bonus
+
+
+def test_apply_temper_melee_setup_duellists_medal_boosts_holder_against_a_humanoid_opponent():
+    a = Combatant("Duellist", hit_points=CHARACTER_HIT_POINTS, has_duellists_medal_ability=True)
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS, is_humanoid=True)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.offensive_hit_multiplier == pytest.approx(1.0 + MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS)
+    assert a.melee_damage_dealt_bonus == MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS
+
+
+def test_apply_temper_melee_setup_duellists_medal_weakens_the_humanoid_opponent():
+    a = Combatant("Duellist", hit_points=CHARACTER_HIT_POINTS, has_duellists_medal_ability=True)
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS, is_humanoid=True)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert b.offensive_hit_multiplier == pytest.approx(1.0 - MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS)
+    assert b.melee_damage_dealt_bonus == -MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS
+
+
+def test_apply_temper_melee_setup_duellists_medal_has_no_effect_against_a_non_humanoid_opponent():
+    a = Combatant("Duellist", hit_points=CHARACTER_HIT_POINTS, has_duellists_medal_ability=True)
+    b = Combatant("Monster", hit_points=CHARACTER_HIT_POINTS, is_humanoid=False)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.offensive_hit_multiplier == 1.0
+    assert a.melee_damage_dealt_bonus == 0
+    assert b.offensive_hit_multiplier == 1.0
+    assert b.melee_damage_dealt_bonus == 0
+
+
+def test_apply_temper_melee_setup_duellists_medal_does_nothing_without_the_ability():
+    a = Combatant("A", hit_points=CHARACTER_HIT_POINTS)
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS, is_humanoid=True)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.offensive_hit_multiplier == 1.0
+    assert a.melee_damage_dealt_bonus == 0
+    assert b.offensive_hit_multiplier == 1.0
+    assert b.melee_damage_dealt_bonus == 0
+
+
+def test_apply_temper_melee_setup_duellists_medal_applies_symmetrically_when_both_hold_it():
+    a = Combatant(
+        "A", hit_points=CHARACTER_HIT_POINTS, is_humanoid=True, has_duellists_medal_ability=True
+    )
+    b = Combatant(
+        "B", hit_points=CHARACTER_HIT_POINTS, is_humanoid=True, has_duellists_medal_ability=True
+    )
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    # Each side's own medal boosts itself and weakens the other -- net
+    # multiplier composes both effects on each combatant.
+    expected = (1.0 + MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS) * (1.0 - MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS)
+    assert a.offensive_hit_multiplier == pytest.approx(expected)
+    assert b.offensive_hit_multiplier == pytest.approx(expected)
+    assert a.melee_damage_dealt_bonus == 0
+    assert b.melee_damage_dealt_bonus == 0
 
 
 def test_resolve_melee_duel_applies_temper_setup_before_any_combat():

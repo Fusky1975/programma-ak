@@ -118,6 +118,20 @@ def test_leader_combatant_reads_melee_true_mastery():
     assert combatant.melee_damage_dealt_bonus == 2
 
 
+def test_leader_combatant_reads_duellists_medal_and_kingdom_race_humanoid():
+    # Phase 518: AdvancedAbility.MELEE_DUELLISTS_MEDAL + is_humanoid.
+    state = _base_state()
+    leader = LeaderState(
+        1, kingdom_id=1, name="Chaser", location=FIELD, advanced_abilities={AdvancedAbility.MELEE_DUELLISTS_MEDAL}
+    )
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.has_duellists_medal_ability is True
+    assert combatant.is_humanoid is True
+
+
 # -- not found / army-leading mismatch -----------------------------------
 
 

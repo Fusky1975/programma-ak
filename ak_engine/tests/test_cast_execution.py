@@ -292,6 +292,17 @@ def test_kill_enemy_combatant_reads_melee_true_mastery():
     assert combatant.melee_damage_dealt_bonus == 2
 
 
+def test_kill_enemy_combatant_reads_duellists_medal_and_kingdom_race_humanoid():
+    # Phase 518: AdvancedAbility.MELEE_DUELLISTS_MEDAL + is_humanoid.
+    state = build_state()
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.MELEE_DUELLISTS_MEDAL)
+
+    combatant = _kill_enemy_combatant(state, state.leaders[CASTER_ID], temper=Temper.BERSERK)
+
+    assert combatant.has_duellists_medal_ability is True
+    assert combatant.is_humanoid is True
+
+
 def test_kill_enemy_puts_a_colocated_target_into_a_coma():
     # Phase 310: this project's Kill_Enemy is only ever cast as an Action
     # spell -- see _execute_kill_enemy()'s own docstring for why a success
