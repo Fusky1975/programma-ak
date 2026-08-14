@@ -7,11 +7,17 @@ import pytest
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import GameState, KingdomState
+from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
-from ak_engine.turn.exploration import discover_features, resolve_explore, resolve_find_mines
+from ak_engine.turn.exploration import (
+    SOCIETY_MAPS_REVEAL_PERCENT,
+    discover_features,
+    receive_society_maps,
+    resolve_explore,
+    resolve_find_mines,
+)
 
 from _helpers import ScriptedRandom
 
@@ -162,6 +168,54 @@ def test_resolve_find_mines_caps_gold_at_the_remaining_headroom():
     rng = ScriptedRandom([0.0, 0.5])
     gold = resolve_find_mines(Terrain.MTNS, attempts_so_far=0, current_bonus=9, rng=rng)
     assert gold == 1
+
+
+# -- Phase 510: receive_society_maps --
+
+
+def _state_with_provinces(count: int) -> GameState:
+    state = GameState()
+    for i in range(count):
+        state.add_province(ProvinceState(HexCoord(i, 0), Terrain.PLAINS, Race.HUMAN))
+    return state
+
+
+def test_receive_society_maps_reveals_requested_count():
+    state = _state_with_provinces(5)
+    revealed = receive_society_maps(state, kingdom_id=1, count=3, rng=random.Random(0))
+    assert len(revealed) == 3
+    for coord in revealed:
+        assert state.provinces[coord].explored_percent_by_kingdom[1] == SOCIETY_MAPS_REVEAL_PERCENT
+
+
+def test_receive_society_maps_zero_count_reveals_nothing():
+    state = _state_with_provinces(5)
+    assert receive_society_maps(state, kingdom_id=1, count=0, rng=random.Random(0)) == []
+
+
+def test_receive_society_maps_never_picks_an_already_known_province():
+    state = _state_with_provinces(3)
+    coords = list(state.provinces)
+    state.provinces[coords[0]].explored_percent_by_kingdom[1] = 100  # already known
+    state.provinces[coords[1]].explored_percent_by_kingdom[1] = 5  # already known, low %
+
+    revealed = receive_society_maps(state, kingdom_id=1, count=5, rng=random.Random(0))
+
+    assert revealed == [coords[2]]
+
+
+def test_receive_society_maps_caps_at_available_unknown_provinces():
+    state = _state_with_provinces(2)
+    revealed = receive_society_maps(state, kingdom_id=1, count=10, rng=random.Random(0))
+    assert len(revealed) == 2
+
+
+def test_receive_society_maps_is_per_kingdom():
+    state = _state_with_provinces(3)
+    receive_society_maps(state, kingdom_id=1, count=3, rng=random.Random(0))
+    # A different kingdom's own knowledge is untouched -- still 0 known.
+    revealed_for_2 = receive_society_maps(state, kingdom_id=2, count=3, rng=random.Random(1))
+    assert len(revealed_for_2) == 3
 
 
 # -- Phase 242: discover_features --

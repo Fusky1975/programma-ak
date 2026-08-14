@@ -9,9 +9,9 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.practice_execution import (
@@ -24,6 +24,7 @@ from ak_engine.turn.practice_execution import (
     TACTICAL_TRAINING_CHANCE,
     PracticeExecutionResult,
     _maybe_grant_advanced_ability,
+    _maybe_receive_society_maps,
     _select_discovery_to_grant,
     _teacher_aptitude_bonus,
     execute_practice,
@@ -1421,6 +1422,96 @@ def test_maybe_grant_advanced_ability_grants_the_real_scheduled_explorer_ability
     assert granted is expected
     assert expected is not None
     assert expected in leader.advanced_abilities
+
+
+# -- Phase 510: Society Maps ------------------------------------------
+
+
+def _state_with_leader_and_provinces(*, has_society_maps: bool, kingdom_id: int | None = 1) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = LeaderState(1, kingdom_id=kingdom_id, name="L1", location=LOCATION)
+    if has_society_maps:
+        leader.advanced_abilities.add(AdvancedAbility.EXPLORERS_SOCIETY_MAPS)
+    state.add_leader(leader)
+    for i in range(5):
+        state.add_province(ProvinceState(HexCoord(i, 0), Terrain.PLAINS, Race.HUMAN))
+    return state
+
+
+def test_maybe_receive_society_maps_returns_nothing_for_a_non_explorer_ability():
+    state = _state_with_leader_and_provinces(has_society_maps=True)
+    revealed = _maybe_receive_society_maps(state, state.leaders[1], Ability.WHITE, random.Random(0))
+    assert revealed == ()
+
+
+def test_maybe_receive_society_maps_returns_nothing_without_the_advanced_ability():
+    state = _state_with_leader_and_provinces(has_society_maps=False)
+    revealed = _maybe_receive_society_maps(state, state.leaders[1], Ability.EXPLORER, random.Random(0))
+    assert revealed == ()
+
+
+def test_maybe_receive_society_maps_returns_nothing_for_a_kingdom_less_hero():
+    state = _state_with_leader_and_provinces(has_society_maps=True, kingdom_id=None)
+    revealed = _maybe_receive_society_maps(state, state.leaders[1], Ability.EXPLORER, random.Random(0))
+    assert revealed == ()
+
+
+def test_maybe_receive_society_maps_reveals_one_to_three_provinces():
+    state = _state_with_leader_and_provinces(has_society_maps=True)
+    revealed = _maybe_receive_society_maps(state, state.leaders[1], Ability.EXPLORER, random.Random(0))
+    assert 1 <= len(revealed) <= 3
+    for coord in revealed:
+        assert state.provinces[coord].explored_percent_by_kingdom[1] > 0
+
+
+def test_execute_practice_reveals_society_maps_provinces_when_the_skill_rises():
+    # skill=4, aptitude=9 -> deficit 0, gate guaranteed; credit=95 means
+    # the +5 solo gain crosses the 100 threshold, an immediate rise --
+    # same guaranteed-rise setup test_execute_practice_grants_advanced_
+    # ability_on_a_magic_college_skill_rise uses. Real (unscripted)
+    # seeded RNG since _maybe_receive_society_maps's own shuffle()/
+    # randint() draws extra randomness beyond the gate roll itself.
+    state = _state_with_leader_and_provinces(has_society_maps=True)
+    state.leaders[1].skills = _skills_with(Ability.EXPLORER, skill=4, aptitude=9)
+    state.leaders[1].experience_credit = 95
+
+    result = execute_practice(state, leader_id=1, ability=Ability.EXPLORER, rng=random.Random(0))
+
+    assert result.skill_rose is True
+    assert 1 <= len(result.society_maps_revealed) <= 3
+
+
+def test_execute_practice_reveals_society_maps_provinces_when_the_skill_does_not_rise():
+    # skill=0, aptitude=0, credit=0 -> even a successful gate roll only
+    # earns +5 solo credit, nowhere near the 100 threshold -- skill_rose
+    # is deterministically False in a single call from a fresh baseline,
+    # regardless of the gate roll's own outcome. Society Maps still
+    # fires, proving it's independent of skill_rose either way.
+    state = _state_with_leader_and_provinces(has_society_maps=True)
+    state.leaders[1].skills = None
+
+    result = execute_practice(state, leader_id=1, ability=Ability.EXPLORER, rng=random.Random(0))
+
+    assert result.skill_rose is False
+    assert 1 <= len(result.society_maps_revealed) <= 3
+
+
+def test_execute_practice_group_reveals_society_maps_for_each_qualifying_participant():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader1 = LeaderState(1, kingdom_id=1, name="L1", location=LOCATION)
+    leader1.advanced_abilities.add(AdvancedAbility.EXPLORERS_SOCIETY_MAPS)
+    leader2 = LeaderState(2, kingdom_id=1, name="L2", location=LOCATION)
+    state.add_leader(leader1)
+    state.add_leader(leader2)
+    for i in range(6):
+        state.add_province(ProvinceState(HexCoord(i, 0), Terrain.PLAINS, Race.HUMAN))
+
+    results = execute_practice_group(state, [1, 2], Ability.EXPLORER, rng=random.Random(0))
+
+    assert 1 <= len(results[0].society_maps_revealed) <= 3
+    assert results[1].society_maps_revealed == ()
 
 
 def test_execute_practice_grants_advanced_ability_on_a_magic_college_skill_rise():

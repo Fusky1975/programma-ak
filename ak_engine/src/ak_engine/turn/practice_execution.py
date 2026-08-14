@@ -307,7 +307,9 @@ from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.office import Office
+from ak_engine.models.map import HexCoord
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.exploration import SOCIETY_MAPS_PRACTICE_COUNT_RANGE, receive_society_maps
 from ak_engine.worldgen.explorer_ability_level_schedule import build_explorer_ability_level_schedule
 from ak_engine.worldgen.special_ability_level_schedule import MAGIC_COLLEGES, build_magic_ability_level_schedule
 
@@ -567,6 +569,11 @@ class PracticeExecutionResult:
     # any -- see _maybe_grant_advanced_ability()'s own docstring for the
     # narrow scope (5 of 15 categories currently wired).
     advanced_ability_granted: AdvancedAbility | None = None
+    # Phase 510: Society Maps's own "each time he Practices Exploration"
+    # trigger -- see _maybe_receive_society_maps()'s own docstring.
+    # Empty for every ability other than EXPLORER, and for an EXPLORER
+    # practicer who doesn't already own the Advanced Ability.
+    society_maps_revealed: tuple[HexCoord, ...] = ()
 
 
 def _get_or_create_skills(leader: LeaderState) -> SkillTable:
@@ -621,6 +628,33 @@ def _maybe_grant_advanced_ability(
     if granted is not None:
         leader.advanced_abilities.add(granted)
     return granted
+
+
+def _maybe_receive_society_maps(
+    state: GameState, leader: LeaderState, ability: Ability, rng: random.Random
+) -> tuple[HexCoord, ...]:
+    """Society Maps (Advanced Ability -- ``models/advanced_ability.py
+    ADVANCED_ABILITY_DESCRIPTION[EXPLORERS_SOCIETY_MAPS]``, Phase 510):
+    "Each time he Practices Exploration, he receives 1-3 maps telling
+    about new provinces not yet found by your kingdom."
+
+    Fires once per Practice attempt on the Explorer ability specifically
+    -- unconditional on whether the skill roll itself succeeds, unlike
+    ``_maybe_grant_advanced_ability()`` above, since the rulebook text
+    ties this to *practicing*, not to *improving*. Returns ``()``
+    immediately for any other ability, for a practicer who doesn't
+    already own the Advanced Ability, or for a kingdom-less Hero (no
+    "your kingdom" to reveal provinces to). See ``turn/exploration.py
+    receive_society_maps()`` for what a "map" actually does to state.
+    """
+
+    if ability is not Ability.EXPLORER or AdvancedAbility.EXPLORERS_SOCIETY_MAPS not in leader.advanced_abilities:
+        return ()
+    if leader.kingdom_id is None:
+        return ()
+
+    count = rng.randint(*SOCIETY_MAPS_PRACTICE_COUNT_RANGE)
+    return tuple(receive_society_maps(state, leader.kingdom_id, count, rng))
 
 
 DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE = 0.05
@@ -835,6 +869,7 @@ def execute_practice(
         leader.is_royal_heir = False
 
     advanced_ability_granted = _maybe_grant_advanced_ability(state, leader, ability, outcome.skill_rose, outcome.new_skill)
+    society_maps_revealed = _maybe_receive_society_maps(state, leader, ability, rng)
 
     device_discovered = False
     discovery_granted: Discovery | None = None
@@ -854,6 +889,7 @@ def execute_practice(
         device_discovered=device_discovered,
         discovery_granted=discovery_granted,
         advanced_ability_granted=advanced_ability_granted,
+        society_maps_revealed=society_maps_revealed,
     )
 
 
@@ -1019,6 +1055,7 @@ def execute_practice_group(
             leader.is_royal_heir = False
 
         advanced_ability_granted = _maybe_grant_advanced_ability(state, leader, ability, outcome.skill_rose, outcome.new_skill)
+        society_maps_revealed = _maybe_receive_society_maps(state, leader, ability, rng)
 
         if outcome.skill_rose:
             # Phase 446: Teacher merit -- +1 to the selected teacher per
@@ -1047,6 +1084,7 @@ def execute_practice_group(
                 device_discovered=device_discovered,
                 discovery_granted=discovery_granted,
                 advanced_ability_granted=advanced_ability_granted,
+                society_maps_revealed=society_maps_revealed,
             )
         )
     return results

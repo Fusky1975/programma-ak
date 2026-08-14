@@ -21084,7 +21084,7 @@ follow-up request after the original 431-435 plan shipped.
     Explorer grant path (renamed the old non-magic-college test to
     cover both magic colleges and Explorer). Ran again: 4393 passed
     (net +7).
-- **Phase 509 (current)**: implements Find Mines, the first of Phase 507's
+- **Phase 509**: implements Find Mines, the first of Phase 507's
   own four deferred Explorer side effects -- quoted directly from
   `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION[EXPLORER_
   FIND_MINES]`, a real user-supplied rulebook excerpt (already embedded
@@ -21134,6 +21134,51 @@ follow-up request after the original 431-435 plan shipped.
     (success, enemy-province skip, neutral-province allow, disabled by
     default), and `dispatch_phase()`'s own real per-leader wiring. Ran
     again: 4410 passed (net +17).
+- **Phase 510 (current)**: implements Society Maps, the second of Phase
+  507's four deferred Explorer side effects -- quoted directly from
+  `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION[EXPLORERS_
+  SOCIETY_MAPS]`: "The Explorer starts receiving maps from the
+  Explorer's Society. Each time he Practices Exploration, he receives
+  1-3 maps telling about new provinces not yet found by your kingdom.
+  If he Explores a province, 0-2 maps are received."
+  - **Design gap, resolved with the user**: this project's data model
+    has no "does this kingdom know this province exists" concept --
+    `GameState.provinces` is the full world grid from turn 1, and the
+    only known/unknown axis is `ProvinceState.explored_percent_by_
+    kingdom` (0-100%, how much of an *already-present* province a
+    kingdom has explored). Asked directly; the user chose to reuse that
+    existing field rather than invent new per-kingdom state: "receiving
+    a map" picks provinces this kingdom has *no* entry for at all
+    (`explored_percent_by_kingdom.get(kingdom_id, 0) == 0`) and sets a
+    minimal nonzero entry (1%) -- "you now know it exists," not "you've
+    explored it." A real Explore/Move action can still raise that
+    percentage normally afterward.
+  - New `turn/exploration.py receive_society_maps()`: the mechanic
+    itself, shared by both real triggers below.
+  - `turn/practice_execution.py _maybe_receive_society_maps()`: "Each
+    time he Practices Exploration" (1-3 maps) -- fires once per Practice
+    attempt on the Explorer ability specifically, unconditional on
+    whether the skill roll itself actually succeeds (unlike
+    `_maybe_grant_advanced_ability()`, since the rulebook ties this to
+    *practicing*, not *improving*). Wired into both `execute_practice()`
+    and `execute_practice_group()`.
+  - `turn/plan_dispatch.py dispatch_phase()`: "If he Explores a
+    province, 0-2 maps are received" -- deliberately EXPLORE-only, not
+    threaded into LMOVE's partial-exploration branch (unlike Find Mines'
+    broader "whenever a province is explored" wiring): the rulebook
+    names *two specific, separately-numbered* triggers here, not a
+    generic one.
+  - The other two Phase 507-deferred Explorer side effects (Find Water,
+    Long-Range Trade Routes) are still not implemented.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4410 passed, unchanged. Wrote new tests: `receive_society_maps()`
+    unit tests (count/cap/per-kingdom isolation), `_maybe_receive_
+    society_maps()` wiring in both `execute_practice()` and
+    `execute_practice_group()` (including a guaranteed-skill-rise vs.
+    guaranteed-no-rise pair proving the trigger is independent of the
+    outcome), and `dispatch_phase()`'s own EXPLORE-only wiring (plus a
+    negative test confirming LMOVE doesn't trigger it). Ran again: 4425
+    passed (net +15).
 
 ## Setup
 

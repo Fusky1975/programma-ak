@@ -66,6 +66,15 @@ this ability). Wired into ``turn/move_execution.py record_kingdom_
 exploration()`` -- the one call site both the EXPLORE action and Move's
 own partial-exploration side effect already share, matching the
 rulebook's own "whenever a province is explored" trigger exactly.
+
+**Society Maps** (Advanced Ability, Phase 510 -- ``receive_society_
+maps()`` below): quoted rulebook text names *two separate, specifically
+named* triggers -- "Each time he Practices Exploration" (1-3 maps) and
+"If he Explores a province" (0-2 maps) -- unlike Find Mines' generic
+"whenever a province is explored," so this one is deliberately *not*
+wired into Move's partial-exploration side effect, only the real
+EXPLORE action (``turn/plan_dispatch.py``) and Practice of the Explorer
+ability specifically (``turn/practice_execution.py``).
 """
 
 from __future__ import annotations
@@ -87,6 +96,12 @@ class ExploreResult:
     new_percent: int
     delta_applied: int
     fully_explored: bool
+    # Phase 510: populated by dispatch_phase()'s own EXPLORE branch from
+    # receive_society_maps() -- the provinces (if any) Society Maps
+    # revealed this call. Empty for every caller without that Advanced
+    # Ability, same "assign into the result after the fact" convention
+    # discovered_features below already uses.
+    society_maps_revealed: list[HexCoord] = field(default_factory=list)
     # Phase 245: populated by dispatch_phase()'s own EXPLORE branch from
     # record_kingdom_exploration()'s own KingdomExplorationResult, not by
     # resolve_explore() itself (a pure percent-only function that has no
@@ -185,6 +200,53 @@ def resolve_find_mines(terrain: Terrain, attempts_so_far: int, current_bonus: in
 
     gold = rng.randint(FIND_MINES_GOLD_MIN, FIND_MINES_GOLD_MAX)
     return min(gold, FIND_MINES_TAX_CAP - current_bonus)
+
+
+SOCIETY_MAPS_PRACTICE_COUNT_RANGE = (1, 3)
+SOCIETY_MAPS_EXPLORE_COUNT_RANGE = (0, 2)
+SOCIETY_MAPS_REVEAL_PERCENT = 1
+
+
+def receive_society_maps(state: GameState, kingdom_id: int, count: int, rng: random.Random) -> list[HexCoord]:
+    """Society Maps (Advanced Ability -- ``models/advanced_ability.py
+    ADVANCED_ABILITY_DESCRIPTION[EXPLORERS_SOCIETY_MAPS]``, quoted
+    rulebook text, the sole source, Phase 510): "he receives 1-3 maps
+    telling about new provinces not yet found by your kingdom."
+
+    **Project-original design, confirmed with the user**: this project's
+    data model has no separate "does this kingdom know this province
+    exists" concept -- ``GameState.provinces`` is the full world grid
+    from turn 1, and the only unknown/known axis is ``ProvinceState.
+    explored_percent_by_kingdom`` (0-100%, how much of an *already-
+    present* province this kingdom has explored). Rather than inventing
+    a new, unsourced field, "receiving a map" is modeled by picking
+    ``count`` provinces at random from those this kingdom has *no*
+    entry for at all (``explored_percent_by_kingdom.get(kingdom_id, 0)
+    == 0`` -- the same "absent means unknown" reading a King Home's own
+    ``100`` starting entry already implies by contrast, see ``worldgen/
+    generate_new_game.py``'s own Phase 428 addendum) and setting a
+    minimal nonzero entry (``SOCIETY_MAPS_REVEAL_PERCENT`` = 1) -- "you
+    now know it exists," not "you've explored it." A real Explore/Move
+    action can still raise that percentage normally afterward.
+
+    ``count`` is clamped to however many unknown provinces actually
+    remain (never an error) -- returns the ``HexCoord`` list actually
+    revealed, in no particular order (candidates are shuffled, then the
+    first ``count`` taken).
+    """
+
+    if count <= 0:
+        return []
+    candidates = [
+        coord
+        for coord, province in state.provinces.items()
+        if province.explored_percent_by_kingdom.get(kingdom_id, 0) == 0
+    ]
+    rng.shuffle(candidates)
+    revealed = candidates[:count]
+    for coord in revealed:
+        state.provinces[coord].explored_percent_by_kingdom[kingdom_id] = SOCIETY_MAPS_REVEAL_PERCENT
+    return revealed
 
 
 def discover_features(

@@ -365,7 +365,7 @@ from ak_engine.turn.cast_decode import decode_cast_phase
 from ak_engine.turn.cast_execution import CastExecutionResult, execute_cast
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult, execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
-from ak_engine.turn.exploration import resolve_explore
+from ak_engine.turn.exploration import SOCIETY_MAPS_EXPLORE_COUNT_RANGE, receive_society_maps, resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
 from ak_engine.turn.hire_pay import RARE_ALIGNMENT_EXCEPTION_PAY, required_pay, roll_rare_alignment_exception
@@ -599,6 +599,16 @@ def dispatch_phase(
         for feature in exploration.discovered_features:
             if len(feature.discovered_by_kingdom) == 1:
                 state.leaders[leader_id].merit_tally.features_discovered_first += 1
+
+        # Phase 510: Society Maps's own "If he Explores a province, 0-2
+        # maps are received" trigger -- deliberately EXPLORE-only, not
+        # threaded into LMOVE's partial-exploration branch above (see
+        # turn/exploration.py's own module docstring for why this one
+        # differs from Find Mines' broader "whenever explored" wiring).
+        if leader is not None and AdvancedAbility.EXPLORERS_SOCIETY_MAPS in leader.advanced_abilities:
+            maps_rng = rng if rng is not None else random.Random()
+            maps_count = maps_rng.randint(*SOCIETY_MAPS_EXPLORE_COUNT_RANGE)
+            result.society_maps_revealed = receive_society_maps(state, kingdom_id, maps_count, maps_rng)
         return result
 
     if action is ActionCode.SEARCH:

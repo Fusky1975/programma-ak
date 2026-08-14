@@ -255,6 +255,72 @@ def test_dispatch_explore_does_not_roll_find_mines_without_the_advanced_ability(
     assert state.provinces[location].mine_gold_bonus == 0
 
 
+def test_dispatch_explore_wires_society_maps_from_the_leaders_own_advanced_ability():
+    # Phase 510: dispatch_phase() derives has_find_mines/-society-maps
+    # the same way as Military Maps/Difficult Terrain -- 0-2 maps
+    # revealed to the acting kingdom on a real EXPLORE action.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    for i in range(5):
+        state.add_province(ProvinceState(HexCoord(i, 20), Terrain.PLAINS, Race.HUMAN))
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.EXPLORERS_SOCIETY_MAPS)
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    result = dispatch_phase(
+        phase,
+        state,
+        kingdom_id=1,
+        leader_id=LEADER_ID,
+        army_ids=[army_id],
+        board_width=BOARD_WIDTH,
+        explorer_skill=1,
+        rng=random.Random(0),
+    )
+
+    assert 0 <= len(result.society_maps_revealed) <= 2
+
+
+def test_dispatch_lmove_does_not_wire_society_maps():
+    # Phase 510: deliberately EXPLORE-only -- Society Maps' own two
+    # rulebook triggers are "Practices Exploration" and "Explores a
+    # province," not Move's partial-exploration side effect.
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    for i in range(5):
+        state.add_province(ProvinceState(HexCoord(i, 20), Terrain.PLAINS, Race.HUMAN))
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.EXPLORERS_SOCIETY_MAPS)
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
+
+    for coord in (HexCoord(i, 20) for i in range(5)):
+        assert 1 not in state.provinces[coord].explored_percent_by_kingdom
+
+
+def test_dispatch_explore_does_not_reveal_society_maps_without_the_advanced_ability():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    for i in range(5):
+        state.add_province(ProvinceState(HexCoord(i, 20), Terrain.PLAINS, Race.HUMAN))
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    result = dispatch_phase(
+        phase,
+        state,
+        kingdom_id=1,
+        leader_id=LEADER_ID,
+        army_ids=[army_id],
+        board_width=BOARD_WIDTH,
+        explorer_skill=1,
+        rng=random.Random(0),
+    )
+
+    assert result.society_maps_revealed == []
+
+
 def test_dispatch_explore_also_records_the_kingdoms_own_exploration():
     # Phase 69: alongside the pre-existing shared explored_percent scalar.
     location = HexCoord(3, 9)
