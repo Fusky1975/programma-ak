@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
@@ -34,6 +35,7 @@ from ak_engine.turn.battle_orchestrator import (
     _maybe_fight_duel,
     _record_battle_merit,
     _select_side_commander,
+    _side_has_present_leader_with_ability,
     fight_battle,
     fight_multi_attacker_battle,
 )
@@ -710,6 +712,126 @@ def test_build_battle_units_camel_check_ignored_outside_desert():
     )
 
     assert no_camel_plains[0].effective_strength == with_camel_plains[0].effective_strength
+
+
+# -- Phase 511: Find Water --------------------------------------------
+
+
+def test_build_battle_units_find_water_suppresses_desert_penalty():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    bowmen = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(bowmen)
+
+    without_find_water = _build_battle_units(
+        [bowmen], state, is_defender=False, terrain=Terrain.DESERT, province_coord=FIELD, rng=random.Random(0)
+    )
+    with_find_water = _build_battle_units(
+        [bowmen], state, is_defender=False, terrain=Terrain.DESERT, province_coord=FIELD, rng=random.Random(0),
+        explorer_find_water=True,
+    )
+
+    # Same "no penalty" result as a present Camel Corps -- no thirst
+    # penalty at all with Find Water, matching a doubled strength vs the
+    # penalized baseline.
+    assert with_find_water[0].effective_strength == pytest.approx(without_find_water[0].effective_strength * 2)
+
+
+def test_build_battle_units_find_water_no_effect_outside_desert():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    bowmen = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(bowmen)
+
+    without_find_water = _build_battle_units(
+        [bowmen], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+    with_find_water = _build_battle_units(
+        [bowmen], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        explorer_find_water=True,
+    )
+
+    assert with_find_water[0].effective_strength == without_find_water[0].effective_strength
+
+
+def test_side_has_present_leader_with_ability_true_when_present_and_qualified():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    leader = LeaderState(1, kingdom_id=1, name="Scout", location=FIELD)
+    leader.advanced_abilities.add(AdvancedAbility.EXPLORER_FIND_WATER)
+    state.add_leader(leader)
+
+    assert _side_has_present_leader_with_ability(
+        state, FIELD, frozenset({1}), AdvancedAbility.EXPLORER_FIND_WATER
+    )
+
+
+def test_side_has_present_leader_with_ability_false_when_elsewhere():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    leader = LeaderState(1, kingdom_id=1, name="Scout", location=HexCoord(5, 5))
+    leader.advanced_abilities.add(AdvancedAbility.EXPLORER_FIND_WATER)
+    state.add_leader(leader)
+
+    assert not _side_has_present_leader_with_ability(
+        state, FIELD, frozenset({1}), AdvancedAbility.EXPLORER_FIND_WATER
+    )
+
+
+def test_side_has_present_leader_with_ability_false_for_a_different_kingdom():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    leader = LeaderState(1, kingdom_id=2, name="Scout", location=FIELD)
+    leader.advanced_abilities.add(AdvancedAbility.EXPLORER_FIND_WATER)
+    state.add_leader(leader)
+
+    assert not _side_has_present_leader_with_ability(
+        state, FIELD, frozenset({1}), AdvancedAbility.EXPLORER_FIND_WATER
+    )
+
+
+def test_side_has_present_leader_with_ability_false_without_the_ability():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    leader = LeaderState(1, kingdom_id=1, name="Scout", location=FIELD)
+    state.add_leader(leader)
+
+    assert not _side_has_present_leader_with_ability(
+        state, FIELD, frozenset({1}), AdvancedAbility.EXPLORER_FIND_WATER
+    )
+
+
+def test_fight_battle_find_water_present_leader_removes_desert_penalty():
+    # Integration: attacker has no Camel Corps but a present Explorer
+    # with Find Water; defender is unaffected (no such leader). Compares
+    # against an identical battle minus the ability, holding the RNG
+    # seed fixed so the only difference is the ability's own effect.
+    def make_state():
+        state = GameState()
+        state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+        state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+        state.add_province(ProvinceState(FIELD, Terrain.DESERT, Race.HUMAN, owner_kingdom_id=2))
+        state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD))
+        state.add_army(ArmyState(201, 2, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD))
+        return state
+
+    without_ability = make_state()
+    report_without = fight_battle(without_ability, 1, FIELD, [101], rng=random.Random(0))
+
+    with_ability = make_state()
+    scout = LeaderState(1, kingdom_id=1, name="Scout", location=FIELD)
+    scout.advanced_abilities.add(AdvancedAbility.EXPLORER_FIND_WATER)
+    with_ability.add_leader(scout)
+    report_with = fight_battle(with_ability, 1, FIELD, [101], rng=random.Random(0))
+
+    # Both battles are otherwise identical (same seed, same armies) -- the
+    # attacker's own column strength doubles (2.0 -> 4.0) once the Desert
+    # penalty is removed, flipping that column's own BRES from a tie
+    # (attacker_won=False) to a clear attacker win.
+    assert report_without.battle_result.columns[0].attacker_strength == pytest.approx(2.0)
+    assert report_with.battle_result.columns[0].attacker_strength == pytest.approx(4.0)
+    assert report_without.battle_result.columns[0].attacker_won is False
+    assert report_with.battle_result.columns[0].attacker_won is True
 
 
 def test_build_battle_units_fanaticism_off_by_default_never_touches_rng():

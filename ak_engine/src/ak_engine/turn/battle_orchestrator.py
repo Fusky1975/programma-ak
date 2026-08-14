@@ -173,6 +173,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, MONSTROUS_ARMY_RACE, OVERFLIGHT_AIR, ArmyType, is_overflight_unit
 from ak_engine.models.discovery import Discovery
@@ -258,6 +259,7 @@ def _build_battle_units(
     opponent_kingdom_ids: frozenset[int] = frozenset(),
     is_island: bool = False,
     duellist_side: bool = False,
+    explorer_find_water: bool = False,
 ) -> list[BattleUnit]:
     """Build BattleUnits for one side of a battle at ``province_coord``.
 
@@ -292,6 +294,22 @@ def _build_battle_units(
     rulebook names "Camels" specifically here, not the broader "Beasts"
     grouping used for the nemesis table -- a confident reading, not a
     guess). Fully deterministic, no ``rng`` involved.
+
+    **Find Water** (Advanced Ability, Phase 511 -- ``explorer_find_
+    water``): quoted directly from ``models/advanced_ability.py
+    ADVANCED_ABILITY_DESCRIPTION[EXPLORER_FIND_WATER]``: "If the
+    Explorer is present at a battle, no units fighting with his side
+    will suffer from thirst and penalties in a Desert province." This
+    project has no separate "thirst" state -- the one Desert-province
+    penalty this engine models is exactly the Desert-without-camels
+    quality downgrade above, so Find Water is read as suppressing that
+    same, already-real mechanic for this side, not a second unmodeled
+    one. Resolved once by ``fight_battle()`` (any leader physically
+    present at the battle province who belongs to this side and holds
+    the Advanced Ability -- not necessarily the Supreme Commander, since
+    the rulebook says "present," not "commanding") and passed through
+    the same side-level-boolean convention as ``is_island``/
+    ``duellist_side`` above.
 
     **Fanaticism** (Phase 35, ``apply_fanaticism``): "An army fighting
     for a Divine/Good/Evil kingdom has a 50%/40%/25% chance of becoming
@@ -451,8 +469,10 @@ def _build_battle_units(
     fully deterministic, no ``rng`` involved.
     """
 
-    desert_without_camels = terrain is Terrain.DESERT and not any(
-        army.army_type is ArmyType.CAMEL_CORPS for army in armies
+    desert_without_camels = (
+        terrain is Terrain.DESERT
+        and not explorer_find_water
+        and not any(army.army_type is ArmyType.CAMEL_CORPS for army in armies)
     )
     province = state.provinces.get(province_coord)
     illusory_fog_active = province is not None and province.illusory_fog_active
@@ -1399,6 +1419,23 @@ MONSTER_SUMMONING_INVASION_DEFECTION_CHANCE = 0.33
 MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE = 0.165
 
 
+def _side_has_present_leader_with_ability(
+    state: GameState, province_coord: HexCoord, kingdom_ids: frozenset[int], ability: AdvancedAbility
+) -> bool:
+    """Find Water (Phase 511): "If the Explorer is present at a battle" --
+    read literally as *any* leader physically located (``LeaderState.
+    location``) in the battle province who belongs to one of this side's
+    kingdoms and already holds ``ability``, not specifically the side's
+    own Supreme Commander (the rulebook says "present," not
+    "commanding," unlike ``combat_ability_level``/``duellist_side`` above).
+    """
+
+    return any(
+        leader.kingdom_id in kingdom_ids and leader.location == province_coord and ability in leader.advanced_abilities
+        for leader in state.leaders.values()
+    )
+
+
 def _apply_monster_summoning_aid(
     units: list[BattleUnit],
     commander: Commander | None,
@@ -1414,6 +1451,7 @@ def _apply_monster_summoning_aid(
     opponent_kingdom_ids: frozenset[int],
     is_island: bool,
     rng: random.Random,
+    explorer_find_water: bool = False,
 ) -> None:
     """AKGEN's own confirmed `battle_engine.special_events` "Dragon/Eagle/
     Whale summoning item" row: "adjacent unled matching units aid the
@@ -1500,6 +1538,7 @@ def _apply_monster_summoning_aid(
                         rng=rng, combat_ability_level=combat_ability_level, apply_fanaticism=apply_fanaticism,
                         own_explored_percent=own_explored_percent,
                         opponent_kingdom_ids=opponent_kingdom_ids, is_island=is_island,
+                        explorer_find_water=explorer_find_water,
                     )
                 )
 
@@ -1609,12 +1648,24 @@ def fight_battle(
     attacker_kingdom_ids = frozenset(army.kingdom_id for army in attacker_armies if army.kingdom_id is not None)
     defender_kingdom_ids = frozenset(army.kingdom_id for army in defender_armies if army.kingdom_id is not None)
 
+    # Find Water (Phase 511, Advanced Ability) -- see _side_has_present_
+    # leader_with_ability's own docstring: any leader physically present
+    # at this province who belongs to the side and already holds the
+    # ability, not necessarily the side's own Supreme Commander.
+    attacker_find_water = _side_has_present_leader_with_ability(
+        state, province_coord, attacker_kingdom_ids, AdvancedAbility.EXPLORER_FIND_WATER
+    )
+    defender_find_water = _side_has_present_leader_with_ability(
+        state, province_coord, defender_kingdom_ids, AdvancedAbility.EXPLORER_FIND_WATER
+    )
+
     attacker_units = _build_battle_units(
         attacker_armies, state, is_defender=False, terrain=terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=attacker_ability_level, apply_fanaticism=apply_fanaticism,
         own_explored_percent=attacker_explored,
         opponent_kingdom_ids=defender_kingdom_ids, is_island=is_island,
         duellist_side=attacker_is_duellist_side,
+        explorer_find_water=attacker_find_water,
     )
     defender_units = _build_battle_units(
         defender_armies, state, is_defender=True, terrain=terrain, province_coord=province_coord, rng=rng,
@@ -1622,6 +1673,7 @@ def fight_battle(
         own_explored_percent=defender_explored,
         opponent_kingdom_ids=attacker_kingdom_ids, is_island=is_island,
         duellist_side=defender_is_duellist_side,
+        explorer_find_water=defender_find_water,
     )
 
     # Phase 393: Dragon/Eagle/Whale summoning-item aid, checked for both
@@ -1636,6 +1688,7 @@ def fight_battle(
         apply_fanaticism=apply_fanaticism, own_explored_percent=attacker_explored,
         opponent_kingdom_ids=defender_kingdom_ids,
         is_island=is_island, rng=rng,
+        explorer_find_water=attacker_find_water,
     )
     _apply_monster_summoning_aid(
         defender_units, defender_commander, state, province_coord, monster_summoning_bounds,
@@ -1643,6 +1696,7 @@ def fight_battle(
         apply_fanaticism=apply_fanaticism, own_explored_percent=defender_explored,
         opponent_kingdom_ids=attacker_kingdom_ids,
         is_island=is_island, rng=rng,
+        explorer_find_water=defender_find_water,
     )
 
     duel = _maybe_fight_duel(

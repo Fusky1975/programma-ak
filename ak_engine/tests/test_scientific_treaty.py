@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import pytest
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
-from ak_engine.turn.scientific_treaty import alignment_check_success_chance, execute_scientific_treaties
+from ak_engine.turn.scientific_treaty import (
+    _kingdom_has_long_range_trade_routes_explorer,
+    alignment_check_success_chance,
+    execute_scientific_treaties,
+)
 
 from _helpers import ScriptedRandom
 
@@ -206,5 +211,76 @@ def test_alignment_distance_beyond_two_steps_always_blocks():
     results = execute_scientific_treaties(
         state, board_width=BOUNDS["board_width"], board_height=BOUNDS["board_height"], rng=ScriptedRandom([0.0])
     )  # even the lowest possible roll still fails a P=0.0 gate
+
+    assert results == []
+
+
+# -- Phase 511: Long-Range Trade Routes bypasses adjacency/presence -------
+
+
+def test_kingdom_has_long_range_trade_routes_explorer_true_when_leader_qualifies():
+    state = build_state()
+    scout = LeaderState(1, kingdom_id=1, name="Scout", location=HOME_A)
+    scout.advanced_abilities.add(AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES)
+    state.add_leader(scout)
+
+    assert _kingdom_has_long_range_trade_routes_explorer(state, 1) is True
+
+
+def test_kingdom_has_long_range_trade_routes_explorer_false_without_the_ability():
+    state = build_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Scout", location=HOME_A))
+
+    assert _kingdom_has_long_range_trade_routes_explorer(state, 1) is False
+
+
+def test_kingdom_has_long_range_trade_routes_explorer_false_for_a_different_kingdom():
+    state = build_state()
+    scout = LeaderState(1, kingdom_id=2, name="Scout", location=HOME_B)
+    scout.advanced_abilities.add(AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES)
+    state.add_leader(scout)
+
+    assert _kingdom_has_long_range_trade_routes_explorer(state, 1) is False
+
+
+def test_long_range_trade_routes_explorer_bypasses_non_adjacent_no_presence_contact():
+    # Not adjacent (build_state(adjacent=False)) and no leader stands in
+    # the other Kingdom's territory -- would fail the pre-Phase-511
+    # contact check entirely, per test_no_exchange_when_kingdoms_are_not_
+    # in_contact above. A single qualifying Explorer unlocks it.
+    state = build_state(adjacent=False)
+    scout = LeaderState(1, kingdom_id=1, name="Scout", location=HOME_A)
+    scout.advanced_abilities.add(AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES)
+    state.add_leader(scout)
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+
+    results = execute_scientific_treaties(state, **BOUNDS)
+
+    assert len(results) == 1
+    assert Discovery.COMPASS in state.kingdoms[2].discoveries
+
+
+def test_long_range_trade_routes_explorer_on_either_side_is_sufficient():
+    # The qualifying Explorer belongs to Kingdom 2 this time -- either
+    # side employing one unlocks the pair, per the module docstring.
+    state = build_state(adjacent=False)
+    scout = LeaderState(1, kingdom_id=2, name="Scout", location=HOME_B)
+    scout.advanced_abilities.add(AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES)
+    state.add_leader(scout)
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+
+    results = execute_scientific_treaties(state, **BOUNDS)
+
+    assert len(results) == 1
+    assert Discovery.COMPASS in state.kingdoms[2].discoveries
+
+
+def test_no_long_range_trade_routes_explorer_still_fails_non_adjacent_no_presence():
+    # Negative case: without a qualifying Explorer on either side, the
+    # pre-Phase-511 behavior (no exchange) is unchanged.
+    state = build_state(adjacent=False)
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+
+    results = execute_scientific_treaties(state, **BOUNDS)
 
     assert results == []

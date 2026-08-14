@@ -121,24 +121,41 @@ Distance 0 needs no roll at all (``P=1.0`` -- the gate can never fail),
 so every pre-Phase-474 test fixture (all same-alignment Kingdoms)
 stays exactly as deterministic as before.
 
-**Deliberately still unmodeled**: Long-Range Trade Routes (``models/
-advanced_ability.py AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES``,
-already a real, named, described enum member since Phase 128) letting a
-pair exchange "without adjacency or an intermediary present" by
-consuming an availability from a Kingdom's own Explorer who possesses
-it. This needs a genuine per-leader "which Advanced Ability do you
-actually have" possession registry this project has never built --
-unlike the 5 magic colleges (``turn/office_holder.py``... no,
-``worldgen/special_ability_level_schedule.py``, Phase 384), Explorer's
-own real per-game ``spabord`` 6-slot template was never recovered from
-either the Pascal archive or the AKGEN material, so there is no sourced
-way to determine *which* Explorers in a given game actually hold this
-specific Advanced Ability rather than one of its 5 (or however many)
-siblings -- inventing an answer would be exactly the kind of guess this
-project's "no source, no guess" policy exists to prevent. ``_kingdoms_
-in_contact()`` therefore still only checks the two sourced-and-buildable
-paths (adjacency, leader presence); a genuinely non-adjacent, emissary-
-less pair still cannot exchange here, a documented gap, not a silent one.
+**Long-Range Trade Routes** (Advanced Ability, Phase 511 -- quoted
+directly from ``models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION
+[EXPLORERS_LONG_RANGE_TRADE_ROUTES]``): "for each explorer of this
+level employed by your kingdom, you can use the scientific-treaty rule
+to trade Sage Inventions with a faraway foreign kingdom, even if your
+kingdoms aren't adjacent and no character is there to make the trade."
+
+**Why this was previously marked blocked, and what unblocks it now**:
+this module used to say the missing piece was "a genuine per-leader
+'which Advanced Ability do you actually have' possession registry this
+project has never built" -- true when that was written, but Phase 508
+(``worldgen/explorer_ability_level_schedule.py``, the real, doubly-
+cross-validated ``spabord[Explorer]`` schedule) and Phase 510 (wiring
+that schedule into ``turn/practice_execution.py``'s own Advanced-
+Ability-grant path) together built exactly that registry: ``LeaderState.
+advanced_abilities`` is now a real, sourced, per-leader possession set
+for Explorer's own six Advanced Abilities, not a guess. ``_kingdoms_in_
+contact()`` below now checks a third path -- either Kingdom employing at
+least one leader who already holds ``EXPLORERS_LONG_RANGE_TRADE_ROUTES``
+-- alongside the two original sourced-and-buildable ones (adjacency,
+leader presence).
+
+**"For each explorer of this level" -- not modeled as a per-exchange
+consumable**: the rulebook's own wording could be read as capping how
+many *simultaneous* non-adjacent exchanges a Kingdom's Explorers can
+sustain at once (one "slot" per qualifying Explorer). This module has no
+existing concept of a per-turn exchange budget anywhere -- every mutual
+Treat pair already gets its own independent resolution, with no limit on
+how many pairs one Kingdom can simultaneously treaty with -- and
+inventing a consumable-slot mechanic to give that phrase teeth would be
+exactly the kind of unsourced magnitude this project's "no source, no
+guess" policy avoids. Read instead as the qualitative permission this
+project *can* build: owning at least one qualifying Explorer unlocks the
+adjacency/presence bypass for all of that Kingdom's pairs this turn, not
+a counted, exhaustible resource.
 """
 
 from __future__ import annotations
@@ -146,6 +163,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.discovery import Discovery, sorted_kingdom_discoveries
 from ak_engine.models.game_state import GameState
@@ -180,7 +198,25 @@ def _mutual_treat_pairs(state: GameState) -> set[frozenset[int]]:
     return pairs
 
 
+def _kingdom_has_long_range_trade_routes_explorer(state: GameState, kingdom_id: int) -> bool:
+    """Phase 511: does ``kingdom_id`` employ at least one leader who
+    already holds ``AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES``
+    -- see module docstring for why ``LeaderState.advanced_abilities``
+    is now a real, sourced registry for this check.
+    """
+
+    return any(
+        leader.kingdom_id == kingdom_id
+        and AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES in leader.advanced_abilities
+        for leader in state.leaders.values()
+    )
+
+
 def _kingdoms_in_contact(state: GameState, kingdom_a_id: int, kingdom_b_id: int, bounds: MapBounds) -> bool:
+    if _kingdom_has_long_range_trade_routes_explorer(
+        state, kingdom_a_id
+    ) or _kingdom_has_long_range_trade_routes_explorer(state, kingdom_b_id):
+        return True
     provinces_a = [p for p in state.provinces.values() if p.owner_kingdom_id == kingdom_a_id]
     provinces_b = [p for p in state.provinces.values() if p.owner_kingdom_id == kingdom_b_id]
     if any(is_adjacent(pa.coord, pb.coord, bounds) for pa in provinces_a for pb in provinces_b):

@@ -21134,7 +21134,7 @@ follow-up request after the original 431-435 plan shipped.
     (success, enemy-province skip, neutral-province allow, disabled by
     default), and `dispatch_phase()`'s own real per-leader wiring. Ran
     again: 4410 passed (net +17).
-- **Phase 510 (current)**: implements Society Maps, the second of Phase
+- **Phase 510**: implements Society Maps, the second of Phase
   507's four deferred Explorer side effects -- quoted directly from
   `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION[EXPLORERS_
   SOCIETY_MAPS]`: "The Explorer starts receiving maps from the
@@ -21179,6 +21179,74 @@ follow-up request after the original 431-435 plan shipped.
     outcome), and `dispatch_phase()`'s own EXPLORE-only wiring (plus a
     negative test confirming LMOVE doesn't trigger it). Ran again: 4425
     passed (net +15).
+- **Phase 511 (current)**: implements Find Water and Long-Range Trade
+  Routes, the last two of Phase 507's four originally-deferred Explorer
+  Advanced Ability side effects -- Find Mines (Phase 509) and Society
+  Maps (Phase 510) were already done. Both quoted directly from
+  `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION`.
+  - **Find Water** (`EXPLORER_FIND_WATER`): "The Explorer is now able to
+    find water even in the desert... If the Explorer is present at a
+    battle, no units fighting with his side will suffer from thirst and
+    penalties in a Desert province." This project's one modeled
+    "thirst"-adjacent Desert penalty is the pre-existing Phase 35
+    `desert_without_camels` quality downgrade in `turn/
+    battle_orchestrator.py _build_battle_units()` -- read as the
+    mechanic Find Water suppresses, not a separate unmodeled "thirst"
+    state.
+    - New `_side_has_present_leader_with_ability()` helper: "the
+      Explorer is present" read literally as *any* leader physically
+      located (`LeaderState.location`) in the battle province who
+      belongs to the side and already holds the ability -- the
+      rulebook says "present," not "commanding," unlike the existing
+      `combat_ability_level`/`duellist_side` Supreme-Commander-only
+      checks.
+    - `_build_battle_units()` gains an `explorer_find_water: bool`
+      parameter gating `desert_without_camels`; `fight_battle()`
+      computes it once per side via the new helper and threads it into
+      both `_build_battle_units()` and `_apply_monster_summoning_aid()`
+      calls (attacker and defender).
+  - **Long-Range Trade Routes** (`EXPLORERS_LONG_RANGE_TRADE_ROUTES`):
+    "for each explorer of this level employed by your kingdom, you can
+    use the scientific-treaty rule to trade Sage Inventions with a
+    faraway foreign kingdom, even if your kingdoms aren't adjacent and
+    no character is there to make the trade."
+    - `turn/scientific_treaty.py`'s own module docstring previously
+      flagged this as blocked on "a genuine per-leader Advanced Ability
+      possession registry this project has never built" -- that
+      registry is exactly what Phase 508/510 built
+      (`LeaderState.advanced_abilities`), so the gap is closed: new
+      `_kingdom_has_long_range_trade_routes_explorer()` checks it, and
+      `_kingdoms_in_contact()` now returns `True` immediately if either
+      Kingdom qualifies, bypassing the adjacency/leader-presence checks
+      entirely.
+    - **Deliberately not modeled as a per-exchange consumable**: "for
+      each explorer of this level" could imply a counted per-Explorer
+      exchange-slot budget; this project has no existing per-turn
+      exchange-budget concept anywhere, so inventing one would be an
+      unsourced magnitude. Implemented instead as the qualitative
+      permission the source directly supports: owning >=1 qualifying
+      Explorer unlocks the bypass for all of that Kingdom's pairs this
+      turn, not a counted resource -- documented in the module
+      docstring.
+  - This closes out all four of Phase 507's originally-deferred
+    Explorer Advanced Ability side effects (Find Mines, Society Maps,
+    Find Water, Long-Range Trade Routes).
+  - Ran the full suite before writing new tests (non-breaking check):
+    4425 passed, unchanged. Wrote new tests: Find Water unit tests for
+    `_build_battle_units()` (suppresses the Desert penalty, no effect
+    outside Desert), `_side_has_present_leader_with_ability()` (present
+    and qualified, elsewhere, wrong kingdom, missing the ability), and
+    a full `fight_battle()` integration test (seeded RNG, same battle
+    with/without the ability, comparing `attacker_strength`/
+    `attacker_won` directly rather than the whole-battle `winner` field
+    since the tie-break rule can mask the underlying strength
+    difference for a single-column battle). Long-Range Trade Routes
+    unit tests for `_kingdom_has_long_range_trade_routes_explorer()`
+    (qualifies, no ability, wrong kingdom) and `execute_scientific_
+    treaties()` integration tests (a non-adjacent, no-leader-present
+    pair now exchanges when either side has a qualifying Explorer; the
+    same pair still fails with no qualifying Explorer on either side).
+    Ran again: 4438 passed (net +13).
 
 ## Setup
 
