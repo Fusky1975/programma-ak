@@ -263,6 +263,20 @@ def test_leader_combatant_reads_control_temper_ability():
     assert combatant.has_control_temper_ability is True
 
 
+def test_leader_combatant_reads_archery_free_attack_bonus():
+    # Phase 520: AdvancedAbility.ARCHERY_FREE_ATTACK/_MASTERY/_TRUE_MASTERY.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(
+        501, kingdom_id=1, name="Hero", location=FIELD, advanced_abilities={AdvancedAbility.ARCHERY_FREE_ATTACK}
+    )
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.archery_free_attack_bonus == 1
+
+
 def test_leader_combatant_non_humanoid_kingdom_race_is_not_humanoid():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Trollholm", Race.TROLLISH, Alignment.EVIL, FIELD))

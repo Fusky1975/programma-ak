@@ -185,6 +185,7 @@ from ak_engine.turn.encounter import (
     CombatRange,
     FireArrowShot,
     MeleeSwing,
+    archery_free_attack_bonus,
     loot_defeated_leader,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
@@ -236,6 +237,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         is_humanoid=is_humanoid,
         has_duellists_medal_ability=AdvancedAbility.MELEE_DUELLISTS_MEDAL in leader.advanced_abilities,
         has_control_temper_ability=AdvancedAbility.MELEE_CONTROL_TEMPER in leader.advanced_abilities,
+        archery_free_attack_bonus=archery_free_attack_bonus(leader.advanced_abilities),
     )
 
 

@@ -5,6 +5,7 @@ import random
 import pytest
 
 from ak_engine.turn.encounter import (
+    ARCHERY_FREE_ATTACK_BONUS,
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_BASE_HIT_CHANCE,
     FIRE_ARROW_HIT_CHANCE_PER_LEVEL,
@@ -179,6 +180,7 @@ from ak_engine.turn.encounter import (
     MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS,
     MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS,
     apply_temper_melee_setup,
+    archery_free_attack_bonus,
     berserk_fury_bonus_hit_points,
     roll_melee_hit_points_ability_bonus,
     melee_mastery_damage_bonus,
@@ -412,6 +414,23 @@ def test_resolve_fire_arrow_duel_no_kill_when_free_attacks_run_out():
     assert result.rounds == 2  # max(free_attacks(2), free_attacks(1))
     assert a.hit_points == 10
     assert b.hit_points == 10
+
+
+def test_resolve_fire_arrow_duel_archery_free_attack_bonus_grants_an_extra_shot():
+    # B has 0 base Archery skill (0 free attacks) but holds the Advanced
+    # Ability, so gets exactly one shot instead of none.
+    a = Combatant("A", archery_skill=0, hit_points=10)
+    b = Combatant("B", archery_skill=0, hit_points=10, archery_free_attack_bonus=1)
+    # Tied 0 skill needs an _acts_first tie-break roll, then B's one shot's
+    # own hit-chance roll (both miss the 0.30 base hit chance).
+    rng = ScriptedRandom([0.99, 0.99])
+
+    result = resolve_fire_arrow_duel(a, b, rng)
+
+    assert result.winner is None
+    assert result.rounds == 1
+    assert len(result.shots) == 1
+    assert result.shots[0].shooter == "b"
 
 
 # -- Phase 175: per-shot Fire Arrow log --
@@ -2680,6 +2699,25 @@ def test_melee_mastery_offensive_hit_multiplier_without_the_ability_still_misses
     damage = roll_melee_attack(rng, hit_chance_multiplier=multiplier)
 
     assert damage == 0
+
+
+def test_archery_free_attack_bonus_returns_1_for_base_ability():
+    assert archery_free_attack_bonus({AdvancedAbility.ARCHERY_FREE_ATTACK}) == ARCHERY_FREE_ATTACK_BONUS
+
+
+def test_archery_free_attack_bonus_returns_1_for_mastery():
+    assert archery_free_attack_bonus({AdvancedAbility.ARCHERY_FREE_ATTACK_MASTERY}) == ARCHERY_FREE_ATTACK_BONUS
+
+
+def test_archery_free_attack_bonus_returns_1_for_true_mastery():
+    assert (
+        archery_free_attack_bonus({AdvancedAbility.ARCHERY_FREE_ATTACK_TRUE_MASTERY}) == ARCHERY_FREE_ATTACK_BONUS
+    )
+
+
+def test_archery_free_attack_bonus_returns_0_without_any_of_the_three_tiers():
+    assert archery_free_attack_bonus(set()) == 0
+    assert archery_free_attack_bonus({AdvancedAbility.MELEE_MASTERY}) == 0
 
 
 def test_melee_landed_damage_returns_zero_on_a_miss_even_with_a_bonus():

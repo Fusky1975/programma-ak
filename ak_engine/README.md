@@ -21545,7 +21545,7 @@ follow-up request after the original 431-435 plan shipped.
     per consumer (6 total) plus a leader-race-overrides-kingdom-race
     precedence test and a non-humanoid-kingdom test in `battle_
     orchestrator.py`'s own suite. Ran again: 4519 passed (net +15).
-- **Phase 519 (current)**: closes out the Melee category (6/6 addressed)
+- **Phase 519**: closes out the Melee category (6/6 addressed)
   with `AdvancedAbility.MELEE_CONTROL_TEMPER` -- quoted from `models/
   advanced_ability.py ADVANCED_ABILITY_DESCRIPTION`: "With this ability,
   the Berserk temper is used initially to gain the extra 1-4 hit points,
@@ -21581,6 +21581,46 @@ follow-up request after the original 431-435 plan shipped.
     of real temper, stacks with genuine Berserk, no-op without the
     ability), and one builder-reads-the-ability test per consumer (6
     total). Ran again: 4529 passed (net +10).
+- **Phase 520 (current)**: adds the Archery category's "Free Attack"
+  cluster (`AdvancedAbility.ARCHERY_FREE_ATTACK`/`_MASTERY`/`_TRUE_
+  MASTERY`) -- quoted from `models/advanced_ability.py ADVANCED_ABILITY_
+  DESCRIPTION`: all three tiers share the identical sourced text, "One
+  more free attack is gained when using the Fire tactic in personal
+  combat." Since a leader only ever holds one Advanced Ability per
+  category (Phase 128), the three tiers are mutually exclusive in
+  practice and all grant the same flat bonus -- unlike Melee's Mastery/
+  True Mastery pair, there's no per-tier magnitude to distinguish, so
+  they collapse into one `ARCHERY_FREE_ATTACK_BONUS = 1` constant and one
+  new pure function `archery_free_attack_bonus(advanced_abilities)`.
+
+  New `Combatant.archery_free_attack_bonus: int = 0` field, seeded once
+  at construction time by the same six per-consumer builders (static,
+  opponent-independent, RNG-free -- same "seed at construction" shape as
+  Melee Mastery, Phase 517). `resolve_fire_arrow_duel()`'s own per-side
+  shot counts now add this bonus on top of `fire_arrow_free_attacks
+  (archery_skill)`.
+
+  Deliberately **not** addressed this phase: the category's other two
+  members, `SHORT_RANGE_ARCHERY`/`LONG_RANGE_ARCHERY` ("the Archer may
+  now use the Fire tactic at Melee Range, with the normal chance to hit"
+  / "at Spell Range, with half the normal chance to hit"). This
+  project's own existing `CombatRange` state machine (`turn/challenge_
+  execution.py`/`turn/search_execution.py`) already lets a Fire order
+  transparently close from any starting range to Bow Range and fire from
+  there in the same tactic-step, only ever blocking Fire outright at
+  Melee Range -- whether these two abilities are meant to unlock firing
+  *without* closing in, or something else the existing model doesn't
+  already allow, is genuinely ambiguous without the real Pascal source
+  for that specific interaction. Left undone, documented in `encounter.
+  py`'s own module docstring rather than guessed, the same "no source,
+  no guess" boundary as Melee Control Temper's own residual (Phase 519).
+  - Ran the full suite before writing new tests (non-breaking check):
+    4529 passed, unchanged. Wrote new tests: `archery_free_attack_
+    bonus()`'s own value table (all three tiers return the bonus, no
+    ability returns 0), `resolve_fire_arrow_duel()`'s own extra-shot
+    test (a 0-Archery-skill combatant with the ability still fires
+    once), and one builder-reads-the-ability test per consumer (6
+    total). Ran again: 4540 passed (net +11).
 
 ## Setup
 

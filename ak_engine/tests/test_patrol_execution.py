@@ -139,6 +139,19 @@ def test_leader_combatant_reads_control_temper_ability():
     assert combatant.has_control_temper_ability is True
 
 
+def test_leader_combatant_reads_archery_free_attack_bonus():
+    # Phase 520: AdvancedAbility.ARCHERY_FREE_ATTACK/_MASTERY/_TRUE_MASTERY.
+    state = _base_state()
+    leader = LeaderState(
+        1, kingdom_id=1, name="Patroller", location=HOME, advanced_abilities={AdvancedAbility.ARCHERY_FREE_ATTACK}
+    )
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.archery_free_attack_bonus == 1
+
+
 # -- find_patrol_target: rules (a), (f) ---------------------------------
 
 

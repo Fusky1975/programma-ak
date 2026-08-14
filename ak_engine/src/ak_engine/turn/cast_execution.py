@@ -687,6 +687,7 @@ from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     Combatant,
+    archery_free_attack_bonus,
     loot_defeated_leader,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
@@ -1287,6 +1288,7 @@ def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temp
         is_humanoid=is_humanoid,
         has_duellists_medal_ability=AdvancedAbility.MELEE_DUELLISTS_MEDAL in leader.advanced_abilities,
         has_control_temper_ability=AdvancedAbility.MELEE_CONTROL_TEMPER in leader.advanced_abilities,
+        archery_free_attack_bonus=archery_free_attack_bonus(leader.advanced_abilities),
     )
 
 

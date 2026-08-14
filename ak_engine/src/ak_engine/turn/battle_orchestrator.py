@@ -195,6 +195,7 @@ from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     Combatant,
+    archery_free_attack_bonus,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
 )
@@ -1007,6 +1008,9 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         is_humanoid = effective_race in HUMANOID_RACES
         has_duellists_medal_ability = AdvancedAbility.MELEE_DUELLISTS_MEDAL in leader.advanced_abilities
         has_control_temper_ability = AdvancedAbility.MELEE_CONTROL_TEMPER in leader.advanced_abilities
+        archery_bonus = archery_free_attack_bonus(leader.advanced_abilities)
+    else:
+        archery_bonus = 0
 
     return Combatant(
         name=f"leader {commander.leader_id}",
@@ -1022,6 +1026,7 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         is_humanoid=is_humanoid,
         has_duellists_medal_ability=has_duellists_medal_ability,
         has_control_temper_ability=has_control_temper_ability,
+        archery_free_attack_bonus=archery_bonus,
     )
 
 

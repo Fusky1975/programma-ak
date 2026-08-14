@@ -2076,6 +2076,22 @@ def test_commander_combatant_reads_control_temper_ability():
     assert combatant.has_control_temper_ability is True
 
 
+def test_commander_combatant_reads_archery_free_attack_bonus():
+    # Phase 520: AdvancedAbility.ARCHERY_FREE_ATTACK/_MASTERY/_TRUE_MASTERY.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(
+        LeaderState(
+            501, kingdom_id=1, name="Commander", location=FIELD, advanced_abilities={AdvancedAbility.ARCHERY_FREE_ATTACK}
+        )
+    )
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.archery_free_attack_bonus == 1
+
+
 def test_commander_combatant_own_race_override_takes_precedence_over_kingdom_race():
     # Phase 196's own precedent: LeaderState.race, when set, overrides the
     # serving Kingdom's own race (a Valhalla visitor's own case).

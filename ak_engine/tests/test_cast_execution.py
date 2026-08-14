@@ -313,6 +313,16 @@ def test_kill_enemy_combatant_reads_control_temper_ability():
     assert combatant.has_control_temper_ability is True
 
 
+def test_kill_enemy_combatant_reads_archery_free_attack_bonus():
+    # Phase 520: AdvancedAbility.ARCHERY_FREE_ATTACK/_MASTERY/_TRUE_MASTERY.
+    state = build_state()
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ARCHERY_FREE_ATTACK)
+
+    combatant = _kill_enemy_combatant(state, state.leaders[CASTER_ID], temper=Temper.BERSERK)
+
+    assert combatant.archery_free_attack_bonus == 1
+
+
 def test_kill_enemy_puts_a_colocated_target_into_a_coma():
     # Phase 310: this project's Kill_Enemy is only ever cast as an Action
     # spell -- see _execute_kill_enemy()'s own docstring for why a success

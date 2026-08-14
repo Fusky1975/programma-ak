@@ -1472,6 +1472,39 @@ With this phase, all six Melee category Advanced Abilities have been
 addressed: Evasion, Hit Points, Mastery, True Mastery, and Duellists
 Medal fully wired; Control Temper partially wired with its ambiguous
 residual explicitly documented as out of scope.
+
+**Phase 520 addendum -- Archery category, "Free Attack" tiers.**
+`models/advanced_ability.py`'s own sourced text for `AdvancedAbility.
+ARCHERY_FREE_ATTACK`/`ARCHERY_FREE_ATTACK_MASTERY`/`ARCHERY_FREE_ATTACK_
+TRUE_MASTERY` is identical across all three: "One more free attack is
+gained when using the Fire tactic in personal combat." Unlike Melee's
+Mastery/True Mastery pair (Phase 517), which had two distinct
+magnitudes, these three tiers share one -- a leader only ever holds one
+Advanced Ability per category (Phase 128), so holding any one of the
+three is mutually exclusive with the other two and grants the same flat
+`ARCHERY_FREE_ATTACK_BONUS = 1`. New pure function `archery_free_attack_
+bonus(advanced_abilities)` and `Combatant.archery_free_attack_bonus: int
+= 0`, seeded once at `Combatant` construction time by the same six
+per-consumer builders (static, opponent-independent, RNG-free -- same
+"seed at construction" shape as Melee Mastery, not `apply_temper_melee_
+setup()`'s per-combatant loop). `resolve_fire_arrow_duel()`'s own shot
+counts (`shots_a`/`shots_b`) now add this bonus on top of `fire_arrow_
+free_attacks(archery_skill)`.
+
+Deliberately **not** addressed this phase: `AdvancedAbility.SHORT_RANGE_
+ARCHERY`/`LONG_RANGE_ARCHERY` (the category's other two members) --
+"the Archer may now use the Fire tactic at Melee Range, with the normal
+chance to hit" / "at Spell Range, with half the normal chance to hit."
+This project's own existing range-gating logic (`turn/challenge_
+execution.py`/`turn/search_execution.py`'s own `CombatRange` state
+machines) already lets a Fire order transparently close from any
+starting range to Bow Range and fire from there in the same tactic-step
+-- it only ever blocks Fire outright at Melee Range. Whether these two
+abilities are meant to unlock firing *without* closing in (staying at
+Melee/Spell Range) or something else the existing model doesn't already
+allow is genuinely ambiguous without the real Pascal source for that
+specific interaction -- left undone rather than guessed, same "no
+source, no guess" boundary as Melee Control Temper's own residual.
 """
 
 from __future__ import annotations
@@ -1544,6 +1577,16 @@ MELEE_TRUE_MASTERY_DAMAGE_BONUS = 2
 # DESCRIPTION). Same +-10%-is-multiplicative convention as Mastery above.
 MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS = 0.10
 MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS = 1
+
+# Phase 520: Archery category, all three "Free Attack" tiers
+# (AdvancedAbility.ARCHERY_FREE_ATTACK / _MASTERY / _TRUE_MASTERY) share
+# the identical sourced text -- "One more free attack is gained when
+# using the Fire tactic in personal combat" (models/advanced_ability.py
+# ADVANCED_ABILITY_DESCRIPTION). A leader only ever holds one Advanced
+# Ability per category (Phase 128), so the three tiers are mutually
+# exclusive in practice and all grant the same flat bonus -- unlike Melee
+# Mastery/True Mastery, there's no per-tier magnitude to distinguish.
+ARCHERY_FREE_ATTACK_BONUS = 1
 
 # [5.2] Fire Arrow: 30% + 10%/Archery level, 1-6 damage.
 FIRE_ARROW_BASE_HIT_CHANCE = 0.30
@@ -2609,6 +2652,20 @@ class Combatant:
     # given for "most favorable," so this project's own "no source, no
     # guess" policy leaves it undone; see that same addendum.
     has_control_temper_ability: bool = False
+    # Phase 520 -- Archery category, all three "Free Attack" tiers
+    # (`AdvancedAbility.ARCHERY_FREE_ATTACK`/`_MASTERY`/`_TRUE_MASTERY`)
+    # share the identical sourced text ("One more free attack is gained
+    # when using the Fire tactic in personal combat") -- since a leader
+    # only ever holds one Advanced Ability per category (Phase 128), the
+    # three tiers are mutually exclusive in practice and all grant the
+    # same flat +1, so they collapse into one int field rather than
+    # needing per-tier magnitudes the way Melee's Mastery/True Mastery
+    # did. Static, opponent-independent, RNG-free -- seeded once at
+    # `Combatant` construction time via `archery_free_attack_bonus()`
+    # below (same "seed at construction" precedent as `melee_damage_
+    # dealt_bonus`/`offensive_hit_multiplier`, Phase 517), not inside
+    # `apply_temper_melee_setup()`'s per-combatant loop.
+    archery_free_attack_bonus: int = 0
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -2629,6 +2686,21 @@ def fire_arrow_free_attacks(archery_skill: int) -> int:
     """Rulebook [5.2]: "a number of free attacks equal to the level of archery skill."."""
 
     return archery_skill
+
+
+def archery_free_attack_bonus(advanced_abilities: "set[AdvancedAbility]") -> int:
+    """``AdvancedAbility.ARCHERY_FREE_ATTACK``/``_MASTERY``/``_TRUE_MASTERY`` --
+    see module constant ``ARCHERY_FREE_ATTACK_BONUS``'s own Phase 520
+    addendum for why all three tiers collapse into one flat bonus.
+    """
+
+    if advanced_abilities & {
+        AdvancedAbility.ARCHERY_FREE_ATTACK,
+        AdvancedAbility.ARCHERY_FREE_ATTACK_MASTERY,
+        AdvancedAbility.ARCHERY_FREE_ATTACK_TRUE_MASTERY,
+    }:
+        return ARCHERY_FREE_ATTACK_BONUS
+    return 0
 
 
 def berserk_fury_bonus_hit_points(rng: random.Random) -> int:
@@ -3127,10 +3199,15 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
     Phase 209: each shot consults the *target's* own
     ``defensive_hit_multiplier`` (Holy Symbol/Invisibility) -- defaults to
     a no-op (1.0), so every pre-Phase-209 caller is unaffected.
+
+    Phase 520: each side's own shot count also adds ``archery_free_
+    attack_bonus`` (AdvancedAbility.ARCHERY_FREE_ATTACK/_MASTERY/_TRUE_
+    MASTERY, default 0) -- see module docstring's own Phase 520 addendum.
     """
 
     skill_a, skill_b = effective_archery_skill(a), effective_archery_skill(b)
-    shots_a, shots_b = fire_arrow_free_attacks(skill_a), fire_arrow_free_attacks(skill_b)
+    shots_a = fire_arrow_free_attacks(skill_a) + a.archery_free_attack_bonus
+    shots_b = fire_arrow_free_attacks(skill_b) + b.archery_free_attack_bonus
     used_a = used_b = 0
     total_rounds = max(shots_a, shots_b)
     shots: list[FireArrowShot] = []

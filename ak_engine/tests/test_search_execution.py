@@ -187,6 +187,18 @@ def test_leader_combatant_reads_control_temper_ability():
     assert combatant.has_control_temper_ability is True
 
 
+def test_leader_combatant_reads_archery_free_attack_bonus():
+    # Phase 520: AdvancedAbility.ARCHERY_FREE_ATTACK/_MASTERY/_TRUE_MASTERY.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION, advanced_abilities={AdvancedAbility.ARCHERY_FREE_ATTACK})
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(state, leader)
+
+    assert combatant.archery_free_attack_bonus == 1
+
+
 def test_execute_search_leader_not_found():
     state = GameState()
     result = execute_search(state, LEADER_ID, _melee_request(1))
