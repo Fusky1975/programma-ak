@@ -157,6 +157,7 @@ from ak_engine.turn.movement import (
     HexOwnershipTier,
     MapBounds,
     is_adjacent,
+    neighbors,
     resolve_move,
     step_toward_non_adjacent_target,
 )
@@ -219,6 +220,59 @@ def naval_movement_point_bonus(naval_skill_level: int) -> int:
     """
 
     return max(0, naval_skill_level)
+
+
+def _naval_hug_coastline_move_is_legal(
+    state: GameState, origin: HexCoord, target: HexCoord, bounds: MapBounds
+) -> bool:
+    """AKGEN_reverse_engineering_report (3).md SS106 (`AdvancedAbility.
+    NAVAL_HUG_COASTLINE`, `SA.X2:47-49`, `AKE.EXE:0x22153-0x222D0`):
+
+    ```pascal
+    if Has_SA(leader,Hug_Coast) and
+       origin_is_land and destination_is_land and
+       exists sea_hex adjacent_to(origin) and adjacent_to(destination)
+    then
+       allow_direct_coastal_move;
+    ```
+
+    True when ``origin`` and ``target`` are both land provinces (not
+    ``Terrain.SEA``, and real province data exists for both -- an
+    unexplored/unknown hex, ``Terrain.NO_TERRAIN``, never qualifies)
+    that share at least one common neighbor whose own terrain is
+    ``Terrain.SEA``. "The two land hexes must share a coastal adjacency
+    through a sea hex" -- not a teleport and not an arbitrary route, so
+    this is a direct neighbor-set intersection, not a pathfinding search.
+
+    **Deliberately not modeled here** (the dossier's own second
+    paragraph): when both Fleets and land units accompany the leader,
+    the real engine allocates the Fleets' own limited transport capacity
+    among the land units by a deterministic priority (speed 1-2 units
+    first, tiebroken by lowest army designation) and only the
+    land-walking survivors take the ordinary land route instead. This
+    project has no Fleet cargo-capacity model at all (no `ArmyState`
+    field for it), so that sub-mechanic can't be reproduced without
+    inventing one -- ``execute_move()``'s own caller instead requires
+    the moving stack to contain no sea-going unit at all
+    (``models/army_type.py SEA_ARMY_TYPES``) before granting this
+    shortcut, falling back to the ordinary chase-step Move otherwise (a
+    safe, conservative default: never wrongly grants the hop, only ever
+    withholds it in the one case this project can't fully model).
+    """
+
+    origin_province = state.provinces.get(origin)
+    target_province = state.provinces.get(target)
+    if origin_province is None or target_province is None:
+        return False
+    if origin_province.effective_terrain() in (Terrain.SEA, Terrain.NO_TERRAIN):
+        return False
+    if target_province.effective_terrain() in (Terrain.SEA, Terrain.NO_TERRAIN):
+        return False
+    shared_neighbors = set(neighbors(origin, bounds)) & set(neighbors(target, bounds))
+    return any(
+        (province := state.provinces.get(coord)) is not None and province.effective_terrain() is Terrain.SEA
+        for coord in shared_neighbors
+    )
 
 
 @dataclass(slots=True)
@@ -358,6 +412,7 @@ def execute_move(
     has_march_infantry: bool = False,
     has_march_infantry_mastery: bool = False,
     naval_skill_level: int = 0,
+    has_naval_hug_coastline: bool = False,
 ) -> MoveExecutionResult:
     """Move ``army_ids`` (all from the same province) toward ``target``.
 
@@ -401,17 +456,13 @@ def execute_move(
     THROUGH_FLOODS` (needs a persistent per-province "currently
     flooded" flag this project's own `_execute_flood()` never sets --
     it only ever applies a one-time movement deduction to armies
-    present at cast time, nothing a later Move order could consult) and
-    both remaining Naval members, `NAVAL_LONG_DEFEND` (needs the
-    Defend-order coverage-range subsystem extended, a different
-    mechanic than a movement-point bonus) and `NAVAL_HUG_COASTLINE`
-    (needs coastal land-to-land transport routing this project doesn't
-    model). Each is a genuinely distinct, larger mechanic -- left
-    undone and documented here rather than guessed, the same "no
+    present at cast time, nothing a later Move order could consult).
+    Left undone and documented here rather than guessed, the same "no
     source, no guess" boundary Melee Control Temper's and Archery's own
     residuals (Phases 519-520) already used. Naval's own movement-point
-    bonus (as opposed to these two Advanced-Ability members) is closed
-    in Phase 523, see below.
+    bonus is closed in Phase 523, and both remaining Naval members
+    (`NAVAL_LONG_DEFEND`, `NAVAL_HUG_COASTLINE`) are closed in Phase
+    524 -- see the addenda below.
 
     **Phase 523 -- Naval movement bonus + air-unit correction.**
     `AKGEN_reverse_engineering_report (3).md` SS97-99 (disassembly of
@@ -443,6 +494,27 @@ def execute_move(
     movement bonus is a plain function of raw skill, no Mastery tier or
     band-of-current-movement-points qualifier involved.
 
+    **Phase 524 -- `AdvancedAbility.NAVAL_HUG_COASTLINE`, the last
+    Naval member.** (`NAVAL_LONG_DEFEND`, the other one, is closed the
+    same phase but lives entirely in `turn/defend_execution.py` -- see
+    that module's own Phase 524 addendum, not this one.) SS106's own
+    compiled gate (`SA.X2:47-49`, `AKE.EXE:0x22153-0x222D0`): a leader
+    holding this ability can hop directly between two land provinces
+    that share a common sea-hex neighbor, "slipping in and out of
+    shallows along the coast," without a separate order into that sea
+    hex. `has_naval_hug_coastline=True` extends the adjacency check this
+    function already makes before falling back to a multi-phase chase:
+    if the target isn't geometrically adjacent but the hop is Hug-
+    Coastline-legal (`_naval_hug_coastline_move_is_legal()`), it's
+    resolved as an ordinary one-hex move to the real target instead of
+    a chase step -- same cost formula, same battle trigger, same
+    exploration update, no special-casing needed anywhere else in this
+    function. Deliberately excluded (see that helper's own docstring):
+    when a Fleet/Whale/Mermen unit travels in the same stack, the real
+    engine's own transport-capacity allocation sub-mechanic would apply
+    instead, which this project has no data model for -- the shortcut
+    is only granted when every accompanying army is land-based.
+
     If ``target`` isn't adjacent to the mover's own current location,
     this is a chase (Phase 85, rulebook [3.1]): one hex-step toward
     ``target`` is computed and resolved instead, and
@@ -461,6 +533,11 @@ def execute_move(
     movement_point_bonus()`` to a Whale League/Fleet/Mermen army, at
     most once per gameturn per army (``ArmyState.naval_bonus_applied_
     this_turn``) -- see module docstring's own Phase 523 addendum.
+
+    Phase 524: ``has_naval_hug_coastline`` (default False) lets a
+    non-adjacent land-to-land hop that shares a coastal sea-hex
+    neighbor resolve as an ordinary move instead of a chase step -- see
+    module docstring's own Phase 524 addendum.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -478,7 +555,14 @@ def execute_move(
         current = state.leaders[leader_id].location
 
     bounds = MapBounds(*NORMAL_MAP_BOUNDS)
-    if current != target and not is_adjacent(current, target, bounds):
+    is_hug_coastline_hop = (
+        has_naval_hug_coastline
+        and current != target
+        and not is_adjacent(current, target, bounds)
+        and not any(army.army_type in SEA_ARMY_TYPES for army in armies)
+        and _naval_hug_coastline_move_is_legal(state, current, target, bounds)
+    )
+    if current != target and not is_adjacent(current, target, bounds) and not is_hug_coastline_hop:
         next_hex = step_toward_non_adjacent_target(
             current, target, bounds, lambda c: _classify_hex_ownership(state, kingdom_id, c)
         )
@@ -527,6 +611,7 @@ def execute_move(
         occupied_by_enemy=occupied_by_enemy,
         has_military_maps=has_military_maps,
         has_difficult_terrain=has_difficult_terrain,
+        require_adjacent=not is_hug_coastline_hop,
     )
     target_province.explored_percent = move_result.exploration.new_percent
     record_kingdom_exploration(

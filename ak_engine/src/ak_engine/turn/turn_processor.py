@@ -235,7 +235,7 @@ from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.challenge_execution import execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
-from ak_engine.turn.defend_execution import DefendCoverage, DefendReinforcement, defend_coverage_area
+from ak_engine.turn.defend_execution import DefendCoverage, DefendReinforcement, defend_coverage_area, defend_radius_for_leader
 from ak_engine.turn.expenses import apply_turn_maintenance
 from ak_engine.turn.contested_province import (
     attacker_can_force_rebattle,
@@ -433,7 +433,11 @@ def run_turn(
                     # _apply_defend_reinforcements's for why.
                     active_defends[tl.leader.leader_id] = DefendCoverage(
                         origin=leader_state.location,
-                        area=defend_coverage_area(leader_state.location, bounds),
+                        area=defend_coverage_area(
+                            leader_state.location,
+                            bounds,
+                            radius=defend_radius_for_leader(state, tl.leader.leader_id),
+                        ),
                     )
 
         reinforced_by_target: dict[HexCoord, list[int]] = {}

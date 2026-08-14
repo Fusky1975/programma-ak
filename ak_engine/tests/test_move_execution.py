@@ -705,3 +705,63 @@ def test_execute_move_gives_no_naval_bonus_without_skill():
 
     assert state.armies[101].movement_points == 2
     assert state.armies[101].naval_bonus_applied_this_turn is False
+
+
+# -- Phase 524: Naval Hug Coastline --
+
+HUG_ORIGIN = HexCoord(1, 1)
+HUG_SEA = HexCoord(1, 0)  # shared coastal neighbor of HUG_ORIGIN and HUG_TARGET
+HUG_TARGET = HexCoord(2, 0)  # not adjacent to HUG_ORIGIN
+
+
+def _hug_state(*, sea_terrain: bool = True) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Coastia", Race.HUMAN, Alignment.GOOD, HUG_ORIGIN))
+    state.add_province(ProvinceState(HUG_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(HUG_SEA, Terrain.SEA if sea_terrain else Terrain.PLAINS, Race.HUMAN))
+    state.add_province(ProvinceState(HUG_TARGET, Terrain.PLAINS, Race.HUMAN))
+    # Every other neighbor of HUG_ORIGIN needs real province data too, since
+    # a withheld shortcut falls back to the ordinary chase step, which may
+    # pick any of them as its own intermediate hex.
+    for coord in (HexCoord(2, 1), HexCoord(1, 2), HexCoord(0, 2), HexCoord(0, 1), HexCoord(0, 0)):
+        state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN))
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+    return state
+
+
+def test_execute_move_naval_hug_coastline_moves_directly_between_coastal_land_hexes():
+    state = _hug_state()
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=HUG_TARGET, has_naval_hug_coastline=True)
+
+    assert result.moved is True
+    assert result.reached_target is True
+    assert state.armies[101].location == HUG_TARGET
+
+
+def test_execute_move_without_the_ability_does_not_grant_the_coastal_shortcut():
+    state = _hug_state()
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=HUG_TARGET)
+
+    assert state.armies[101].location != HUG_TARGET  # only a chase step, not a direct hop
+
+
+def test_execute_move_naval_hug_coastline_withheld_when_no_shared_hex_is_actually_sea():
+    state = _hug_state(sea_terrain=False)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=HUG_TARGET, has_naval_hug_coastline=True)
+
+    assert state.armies[101].location != HUG_TARGET
+
+
+def test_execute_move_naval_hug_coastline_withheld_when_a_sea_unit_travels_in_the_stack():
+    # This project has no Fleet cargo-capacity model, so the shortcut is
+    # conservatively withheld whenever a sea-going unit accompanies the
+    # stack -- see _naval_hug_coastline_move_is_legal()'s own docstring.
+    state = _hug_state()
+    state.add_army(ArmyState(102, 1, ArmyType.FLEET, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+
+    execute_move(state, kingdom_id=1, army_ids=[101, 102], target=HUG_TARGET, has_naval_hug_coastline=True)
+
+    assert state.armies[101].location != HUG_TARGET

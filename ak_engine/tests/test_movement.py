@@ -87,6 +87,22 @@ def test_resolve_move_to_non_adjacent_hex_raises():
         )
 
 
+def test_resolve_move_to_non_adjacent_hex_succeeds_with_require_adjacent_false():
+    # Phase 524: turn/move_execution.py's own Naval Hug Coastline branch
+    # is the one real caller -- it has already verified the hop's own
+    # legality itself, so this guard would otherwise wrongly reject it.
+    origin = HexCoord(5, 5)
+    far_away = HexCoord(20, 10)
+
+    result = resolve_move(
+        origin, far_away, BOUNDS,
+        target_terrain=Terrain.PLAINS, target_explored_percent=0, explorer_skill=0,
+        require_adjacent=False,
+    )
+
+    assert result.new_coord == far_away
+
+
 # -- hex_distance (Phase 51, used by turn/spy_table.py's Pursue formula) --
 
 

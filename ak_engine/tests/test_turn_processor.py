@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
@@ -832,6 +833,64 @@ def test_run_turn_defend_survives_an_unrelated_action():
 
     by_leader = {r.leader_id: r for r in results}
     assert by_leader[200].result.battle_report is not None
+
+
+# -- Naval Long Defend (Phase 524) -------------------------------------------
+
+TWO_HEXES_AWAY = HexCoord(6, 3)  # not adjacent to DEFEND_HOME, but within radius 2
+TWO_AWAY_ATTACKER_ORIGIN = HexCoord(6, 2)  # adjacent to TWO_HEXES_AWAY
+
+
+def test_run_turn_defend_reinforces_two_hexes_away_with_long_naval_defend():
+    # AdvancedAbility.NAVAL_LONG_DEFEND doubles the coverage radius (Phase
+    # 524) -- a Fleet-commanding leader holding it reacts to an invasion
+    # two hexes out, something the default radius-1 coverage (proven by
+    # test_run_turn_defend_does_not_reinforce_a_province_it_does_not_own
+    # and friends) would never reach.
+    state = _defend_state()
+    state.leaders[100].advanced_abilities.add(AdvancedAbility.NAVAL_LONG_DEFEND)
+    state.armies[901] = ArmyState(901, 2, ArmyType.FLEET, Quality.GREEN, DEFEND_HOME, commanded_by=100)
+    state.add_province(ProvinceState(TWO_HEXES_AWAY, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(TWO_AWAY_ATTACKER_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=TWO_AWAY_ATTACKER_ORIGIN))
+    state.add_army(
+        ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, TWO_AWAY_ATTACKER_ORIGIN, commanded_by=200, movement_points=3)
+    )
+    defender = _leader_with_phase(100, "Defender", "P0", _defend_phase("P0"))
+    attacker = _attacker(200, 902, TWO_AWAY_ATTACKER_ORIGIN, TWO_HEXES_AWAY, "P1")
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(7)
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    move_result = by_leader[200].result
+    assert isinstance(move_result, MoveExecutionResult)
+    assert move_result.battle_report is not None  # reinforced from 2 hexes away
+
+
+def test_run_turn_defend_does_not_reach_two_hexes_away_without_the_ability():
+    # Same geometry as above, but no NAVAL_LONG_DEFEND and no Fleet --
+    # ordinary radius-1 coverage never sees an invasion this far out.
+    state = _defend_state()
+    state.add_province(ProvinceState(TWO_HEXES_AWAY, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(TWO_AWAY_ATTACKER_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=TWO_AWAY_ATTACKER_ORIGIN))
+    state.add_army(
+        ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, TWO_AWAY_ATTACKER_ORIGIN, commanded_by=200, movement_points=3)
+    )
+    defender = _leader_with_phase(100, "Defender", "P0", _defend_phase("P0"))
+    attacker = _attacker(200, 902, TWO_AWAY_ATTACKER_ORIGIN, TWO_HEXES_AWAY, "P1")
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(7)
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    move_result = by_leader[200].result
+    assert isinstance(move_result, MoveExecutionResult)
+    assert move_result.battle_report is None  # no reinforcement reached this far
+    assert state.leaders[100].location == DEFEND_HOME  # defender never moved
 
 
 # -- Persistent Pursue/Trail chase (Phase 70) -------------------------------

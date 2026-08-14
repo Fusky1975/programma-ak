@@ -559,6 +559,8 @@ def dispatch_phase(
     # addendum for why Naval's movement bonus is a plain function of raw
     # skill rather than a gated Advanced Ability.
     naval_skill_level = effective_skill_level(state, leader, Ability.NAVAL) if leader is not None else 0
+    # Phase 524: same real-possession pattern, for Naval Hug Coastline.
+    has_naval_hug_coastline = leader is not None and AdvancedAbility.NAVAL_HUG_COASTLINE in leader.advanced_abilities
 
     if action is ActionCode.LMOVE:
         target = decode_hex_number(phase.obj, board_width)
@@ -578,6 +580,7 @@ def dispatch_phase(
             has_march_infantry=has_march_infantry,
             has_march_infantry_mastery=has_march_infantry_mastery,
             naval_skill_level=naval_skill_level,
+            has_naval_hug_coastline=has_naval_hug_coastline,
         )
         # Phase 490 -- Arch-Mage's own "Sense Magic Items in Province"
         # perk: only meaningful once the mover actually arrived somewhere

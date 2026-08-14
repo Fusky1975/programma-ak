@@ -266,6 +266,7 @@ def resolve_move(
     occupied_by_enemy: bool = False,
     has_military_maps: bool = False,
     has_difficult_terrain: bool = False,
+    require_adjacent: bool = True,
 ) -> MoveResult:
     """Resolve a Move order (rulebook [3.1]) to an *adjacent* target hex.
 
@@ -277,9 +278,18 @@ def resolve_move(
     :func:`ak_engine.turn.exploration.resolve_explore`. ``has_military_
     maps``/``has_difficult_terrain`` (Phase 507) pass straight through --
     see that function's own docstring.
+
+    ``require_adjacent`` (Phase 524, default True): set False only by
+    ``turn/move_execution.py execute_move()``'s own Naval Hug Coastline
+    branch, whose whole real-world premise (`AdvancedAbility.NAVAL_HUG_
+    COASTLINE`) is that the two land hexes *aren't* geometrically
+    adjacent but the move is legal anyway -- the caller has already
+    verified that itself (`_naval_hug_coastline_move_is_legal()`) before
+    reaching here, so this function's own guard would otherwise reject a
+    move it has no other reason to know is legal.
     """
 
-    if not is_adjacent(current, target, bounds):
+    if require_adjacent and not is_adjacent(current, target, bounds):
         raise NonAdjacentMoveError(
             f"{target} is not adjacent to {current}; chasing a non-adjacent "
             "target isn't implemented yet"

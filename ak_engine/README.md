@@ -21719,7 +21719,7 @@ follow-up request after the original 431-435 plan shipped.
     an Undead King's own already-loyal Hero still converts under
     Analytical Psychology, and the general AP-marker fix in isolation).
     Ran again: 4568 passed (net +13).
-- **Phase 523 (current)**: closes the Naval movement-point gap Phase 521
+- **Phase 523**: closes the Naval movement-point gap Phase 521
   explicitly deferred ("both remaining Naval members ... left undone"),
   after the user asked what else `AKGEN_reverse_engineering_report
   (3).md` could still be mined for and picked this one. The dossier's
@@ -21762,6 +21762,58 @@ follow-up request after the original 431-435 plan shipped.
     test, withheld without Naval skill), `is_land_army()`'s own
     air-wing-exclusion rewrite, and a dispatch-wiring test mirroring
     March's own pattern. Ran again: 4576 passed (net +8).
+- **Phase 524 (current)**: closes the last two Naval members the user
+  asked to finish -- `AdvancedAbility.NAVAL_LONG_DEFEND` and `NAVAL_
+  HUG_COASTLINE`, both explicitly deferred by Phase 521.
+
+  **Naval Long Defend** (`turn/defend_execution.py`): SS108 (disassembly
+  of `AK.EXE:0x12538-0x12942`) gives the real compiled gate --
+  `long_naval := (leader commands >=1 Whale/Fleet/Mermen) and Has_SA
+  (leader, Nav_Defend); radius := 1 + Ord(long_naval)`. This project's
+  own Defend coverage was already a documented, user-confirmed
+  conservative superset (`defend_coverage_area()`, Phase 57) because the
+  addendum's own "adjacent to both the named hex and the leader's own
+  province" formula needs a named-hex decode this project has never had
+  a confirmed scheme for. That blocker is unrelated to what's new here:
+  the *radius itself* doubling from 1 to 2 needs no named-hex data at
+  all, so it's fully computable. `defend_coverage_area()` gains an
+  optional `radius` parameter (default 1, unchanged behavior); new
+  `defend_radius_for_leader()` computes 1 or 2 for a given Defending
+  leader; `turn/turn_processor.py`'s own Phase 422 registration site
+  passes it straight through, one line changed.
+
+  **Naval Hug Coastline** (`turn/move_execution.py`): SS106's own
+  compiled gate (`SA.X2:47-49`, `AKE.EXE:0x22153-0x222D0`) lets a
+  leader hop directly between two land provinces that share a common
+  sea-hex neighbor, without a separate order into that sea hex. New
+  `_naval_hug_coastline_move_is_legal()` checks exactly that (both
+  land, real province data, a shared neighbor whose own terrain is
+  `Terrain.SEA`); `execute_move()`'s own existing "is this adjacent, or
+  do I need a chase step" branch now also accepts a Hug-Coastline-legal
+  non-adjacent hop, resolving it as an ordinary one-hex move to the real
+  target -- same cost formula, same battle trigger, no special-casing
+  needed anywhere else. `turn/movement.py resolve_move()` gained a
+  `require_adjacent` parameter (default True) since it has its own
+  independent adjacency guard that would otherwise reject this exact
+  hop; `execute_move()` passes `require_adjacent=False` only for this
+  one caller, having already verified legality itself. Deliberately not
+  modeled: the dossier's own transport-capacity allocation sub-mechanic
+  for when Fleets travel alongside land units in the same stack (this
+  project has no Fleet cargo-capacity data at all) -- the shortcut is
+  conservatively withheld whenever any `SEA_ARMY_TYPES` member
+  accompanies the mover, falling back to the ordinary chase step.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4576 passed, unchanged. Wrote new tests: `defend_radius_for_leader()`'s
+    own gate table (no ability, ability without a sea army, ability with
+    each of Whale/Fleet/Mermen), `defend_coverage_area()`'s own radius-2
+    superset check, a `turn_processor.py` integration test proving a
+    Long-Naval-Defend leader reinforces an invasion two hexes out that
+    plain radius-1 coverage never reaches (plus its own negative-control
+    twin), `_naval_hug_coastline_move_is_legal()`'s own coverage via
+    `execute_move()` (direct hop granted, withheld without the ability,
+    withheld when the shared hex isn't actually sea, withheld when a
+    Fleet travels in the stack), and a direct `resolve_move(require_
+    adjacent=False)` test. Ran again: 4589 passed (net +13).
 
 ## Setup
 
