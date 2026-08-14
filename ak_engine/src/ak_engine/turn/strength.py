@@ -160,6 +160,22 @@ MAX_EXPLORATION_ADVANTAGE_PER_POINT = 0.0025
 TACTICAL_BONUS_PER_LEVEL = 0.20
 PHANTASMAL_ARMIES_BONUS_PER_LEVEL = 0.15
 
+# Phase 512: ``models/advanced_ability.py``'s own module docstring --
+# "for each of the 15 Ability categories, reaching skill level 5...
+# discontinues that ability's usual automatic per-level bonus (e.g.
+# Tactical's 20%-per-level army-strength increase) and instead awards
+# ONE Advanced Ability" -- so the +20%/level scaling below stops
+# increasing past level 4; any further strength bonus comes only from
+# actually holding a Tactical/Naval Mastery Advanced Ability (Tactical
+# Mastery 10/15/20, Naval Mastery 10/Great 15/Exalted 20 -- see
+# ``turn/battle_orchestrator.py``'s own ``_mastery_bonus_for``), not
+# from the raw skill level continuing past 4. A leader at level 5+ who
+# was instead awarded a *different* Advanced Ability from the same
+# pool (e.g. Combined Arms) gets no further strength bonus at all here,
+# matching the source's own "discontinues... and instead awards ONE"
+# wording -- not every level-5+ character holds a Mastery tier.
+TACTICAL_BONUS_LEVEL_CAP = 4
+
 # Rulebook [4.32] DRUID TABLE, transcribed verbatim:
 #   Level 1: Humans, Elves, Dwarves, Orcs, Mermen, Werebeasts
 #   Level 2: Whales, Trolls
@@ -293,13 +309,22 @@ def exploration_advantage_multiplier(own_explored_percent: int) -> float:
     return 1 + MAX_EXPLORATION_ADVANTAGE_PER_POINT * own_explored_percent
 
 
-def combat_ability_multiplier(ability_level: int) -> float:
+def combat_ability_multiplier(ability_level: int, *, mastery_bonus: float = 0.0) -> float:
     """Rulebook: "Tactical Ability +20% per level (or Naval ability in Sea provinces)".
 
     Caller picks which ability's level to pass in based on terrain.
+
+    **Phase 512**: the per-level term is capped at ``TACTICAL_BONUS_
+    LEVEL_CAP`` (4) -- see that constant's own docstring for why the
+    automatic scaling stops there. ``mastery_bonus`` (default 0.0, so
+    every pre-Phase-512 caller is unaffected for a level <=4 leader) is
+    the flat bonus from actually holding a Tactical/Naval Mastery
+    Advanced Ability, added on top of the capped per-level term -- the
+    caller resolves which one, if any, applies (see ``turn/battle_
+    orchestrator.py _mastery_bonus_for``).
     """
 
-    return 1 + TACTICAL_BONUS_PER_LEVEL * ability_level
+    return 1 + TACTICAL_BONUS_PER_LEVEL * min(ability_level, TACTICAL_BONUS_LEVEL_CAP) + mastery_bonus
 
 
 def phantasmal_armies_multiplier(
@@ -392,6 +417,7 @@ def compute_effective_strength(
     race_item_bonus: int = 0,
     own_explored_percent: int = 0,
     combat_ability_level: int = 0,
+    combat_ability_mastery_bonus: float = 0.0,
     phantasmal_armies_level: int = 0,
     phantasmal_armies_bonus_per_level: float = PHANTASMAL_ARMIES_BONUS_PER_LEVEL,
     opponent_army_type: ArmyType | None = None,
@@ -463,7 +489,7 @@ def compute_effective_strength(
     if is_defender:
         strength *= DEFENDER_BONUS
     strength *= exploration_advantage_multiplier(own_explored_percent)
-    strength *= combat_ability_multiplier(combat_ability_level)
+    strength *= combat_ability_multiplier(combat_ability_level, mastery_bonus=combat_ability_mastery_bonus)
     strength *= phantasmal_armies_multiplier(phantasmal_armies_level, bonus_per_level=phantasmal_armies_bonus_per_level)
     strength = illusory_fog_strength(strength, affected=illusory_fog_affected)
     if opponent_army_type is not None and is_nemesis_of(army_type, opponent_army_type):

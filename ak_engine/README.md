@@ -21179,7 +21179,7 @@ follow-up request after the original 431-435 plan shipped.
     outcome), and `dispatch_phase()`'s own EXPLORE-only wiring (plus a
     negative test confirming LMOVE doesn't trigger it). Ran again: 4425
     passed (net +15).
-- **Phase 511 (current)**: implements Find Water and Long-Range Trade
+- **Phase 511**: implements Find Water and Long-Range Trade
   Routes, the last two of Phase 507's four originally-deferred Explorer
   Advanced Ability side effects -- Find Mines (Phase 509) and Society
   Maps (Phase 510) were already done. Both quoted directly from
@@ -21247,6 +21247,55 @@ follow-up request after the original 431-435 plan shipped.
     pair now exchanges when either side has a qualifying Explorer; the
     same pair still fails with no qualifying Explorer on either side).
     Ran again: 4438 passed (net +13).
+- **Phase 512 (current)**: starts the Tactical/Naval Advanced Ability
+  categories (the only two of Explorer's 14 sibling categories touched
+  so far, per a survey of `models/advanced_ability.py`'s remaining 89
+  Advanced Abilities) with Tactical Mastery (10%/15%/20% Tactical
+  Bonus) and Naval Mastery (10%/Great 15%/Exalted 20% Naval Bonus) --
+  6 of the 12 abilities across both categories.
+  - **The real correction this closes**: `models/advanced_ability.py`'s
+    own module docstring (Phase 128) already said "for each of the 15
+    Ability categories, reaching skill level 5... discontinues that
+    ability's usual automatic per-level bonus (e.g. Tactical's
+    20%-per-level army-strength increase) and instead awards ONE
+    Advanced Ability" -- but `turn/strength.py combat_ability_
+    multiplier()` never actually stopped scaling past level 4; a
+    level-9 Tactical/Naval leader kept getting +180% forever. New
+    `TACTICAL_BONUS_LEVEL_CAP = 4` caps the automatic per-level term at
+    level 4 (+80%); any further bonus now comes only from actually
+    holding a Mastery-tier Advanced Ability, added as a flat
+    `mastery_bonus` on top of the capped term -- a level-5+ leader
+    who was instead awarded a *different* Advanced Ability from the
+    same pool (e.g. Combined Arms) gets no further strength bonus at
+    all, matching the source's own "discontinues... and instead awards
+    ONE" wording.
+  - New `turn/battle_orchestrator.py _mastery_bonus_for(leader,
+    ability)`: the highest Mastery tier `leader` actually holds for
+    `ability` (0.0 if none -- the three tiers of one category never
+    stack, since "this bonus cancels [the lower tier(s)]" and a leader
+    can only ever be granted one Mastery ability from the same pool
+    anyway). Resolved once per side in `fight_battle()` from the same
+    Supreme Commander already selected for `combat_ability_level`, and
+    threaded through `_build_battle_units()`/`_apply_monster_
+    summoning_aid()` alongside it into `compute_effective_strength()`'s
+    new `combat_ability_mastery_bonus` parameter.
+  - The other 3 Tactical (Wargames Mastery, Combined Arms, Adapt
+    Tactics to Terrain) and 3 Naval (Long Defend, Hug Coastline,
+    Combined Arms) abilities, plus all 12 other non-Explorer
+    categories, are still unwired -- this phase closes the shared
+    level-cap bug and the Mastery-tier mechanic only, not every
+    Tactical/Naval Advanced Ability.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4438 passed, unchanged (no existing test exercises a combat_
+    ability_level above 4 in a strength-sensitive assertion, so the
+    cap correction alone didn't perturb anything). Wrote new tests:
+    `combat_ability_multiplier()`'s own cap-at-4 and mastery-bonus
+    stacking, `compute_effective_strength()`'s `combat_ability_
+    mastery_bonus` threading, `_mastery_bonus_for()` (no leader, no
+    matching ability, highest-tier-wins, Naval uses its own tiers), and
+    a full `fight_battle()` integration test (seeded RNG, a level-9
+    Tactical commander with/without Tactical Mastery: 20%, comparing
+    `attacker_strength` directly). Ran again: 4446 passed (net +8).
 
 ## Setup
 

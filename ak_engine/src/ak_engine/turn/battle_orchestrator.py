@@ -254,6 +254,7 @@ def _build_battle_units(
     province_coord: HexCoord,
     rng: random.Random,
     combat_ability_level: int = 0,
+    combat_ability_mastery_bonus: float = 0.0,
     apply_fanaticism: bool = False,
     own_explored_percent: int = 0,
     opponent_kingdom_ids: frozenset[int] = frozenset(),
@@ -273,6 +274,13 @@ def _build_battle_units(
     Tactical (or Naval, in Sea provinces) skill level -- rulebook [6.3]:
     "+20%/level", applied to every unit on the side, not just the
     commander's own led units (see ``fight_battle``'s docstring for why).
+
+    ``combat_ability_mastery_bonus`` (Phase 512): the same Supreme
+    Commander's flat Tactical/Naval Mastery Advanced Ability bonus (see
+    ``_mastery_bonus_for``), applied alongside ``combat_ability_level``
+    via ``turn/strength.py compute_effective_strength()``'s own
+    parameter of the same name. Defaults to 0.0 (no change) for every
+    pre-Phase-512 caller.
 
     **Exploration advantage** (Phase 69, real formula Phase 507):
     ``own_explored_percent`` is a single side-level value (not
@@ -545,6 +553,7 @@ def _build_battle_units(
             race_item_bonus=race_item_bonus,
             base_strength_override=override,
             combat_ability_level=combat_ability_level,
+            combat_ability_mastery_bonus=combat_ability_mastery_bonus,
             phantasmal_armies_level=phantasmal_armies_level,
             phantasmal_armies_bonus_per_level=phantasmal_armies_bonus_per_level,
             own_explored_percent=own_explored_percent,
@@ -566,6 +575,7 @@ def _build_battle_units(
                 race_item_bonus=race_item_bonus,
                 base_strength_override=override,
                 combat_ability_level=combat_ability_level,
+                combat_ability_mastery_bonus=combat_ability_mastery_bonus,
                 phantasmal_armies_level=phantasmal_armies_level,
                 phantasmal_armies_bonus_per_level=phantasmal_armies_bonus_per_level,
                 own_explored_percent=own_explored_percent,
@@ -761,6 +771,47 @@ def _combat_ability_for_terrain(terrain: Terrain) -> Ability:
     """Rulebook [6.3]: "Tactical Ability... (or Naval ability in Sea provinces)"."""
 
     return Ability.NAVAL if terrain is Terrain.SEA else Ability.TACTICAL
+
+
+# Phase 512: Tactical Mastery / Naval Mastery (Advanced Ability). Quoted
+# from `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION`:
+# "The armies commanded by a character at a battle are increased in
+# strength by 10%/15%/20%. Note: this bonus cancels [the lower tier(s)]."
+# -- the three tiers of one category never stack (a leader can only ever
+# be granted one Mastery ability from the same pool anyway, per that
+# module's own "can be gained only once" wording), so only the highest
+# tier held applies. See `turn/strength.py TACTICAL_BONUS_LEVEL_CAP`'s
+# own docstring for why this bonus exists at all (the automatic +20%/
+# level scaling this project already modeled stops at level 4).
+_MASTERY_BONUS_BY_ABILITY: dict[Ability, dict[AdvancedAbility, float]] = {
+    Ability.TACTICAL: {
+        AdvancedAbility.TACTICAL_MASTERY_20: 0.20,
+        AdvancedAbility.TACTICAL_MASTERY_15: 0.15,
+        AdvancedAbility.TACTICAL_MASTERY_10: 0.10,
+    },
+    Ability.NAVAL: {
+        AdvancedAbility.NAVAL_MASTERY_EXALTED_20: 0.20,
+        AdvancedAbility.NAVAL_MASTERY_GREAT_15: 0.15,
+        AdvancedAbility.NAVAL_MASTERY_10: 0.10,
+    },
+}
+
+
+def _mastery_bonus_for(leader: LeaderState | None, ability: Ability) -> float:
+    """The flat strength bonus from the highest Tactical/Naval Mastery
+    tier ``leader`` actually holds for ``ability`` (0.0 if none, or if
+    ``leader`` is ``None`` -- an unled side, or a Supreme Commander with
+    no ``LeaderState`` on record, same "no data, no bonus" convention as
+    every other per-leader lookup in this module).
+    """
+
+    if leader is None:
+        return 0.0
+    tiers = _MASTERY_BONUS_BY_ABILITY.get(ability)
+    if tiers is None:
+        return 0.0
+    held = [bonus for grant, bonus in tiers.items() if grant in leader.advanced_abilities]
+    return max(held, default=0.0)
 
 
 def _whale_forced_retreat_applies(army: ArmyState, battle_terrain: Terrain) -> bool:
@@ -1446,6 +1497,7 @@ def _apply_monster_summoning_aid(
     is_defender: bool,
     terrain: Terrain,
     combat_ability_level: int,
+    combat_ability_mastery_bonus: float = 0.0,
     apply_fanaticism: bool,
     own_explored_percent: int,
     opponent_kingdom_ids: frozenset[int],
@@ -1527,6 +1579,7 @@ def _apply_monster_summoning_aid(
                 strength = compute_effective_strength(
                     matching_army_type, matching_race, army.quality, terrain,
                     is_defender=is_defender, combat_ability_level=combat_ability_level,
+                    combat_ability_mastery_bonus=combat_ability_mastery_bonus,
                     own_explored_percent=own_explored_percent,
                     is_island=is_island,
                 )
@@ -1535,7 +1588,9 @@ def _apply_monster_summoning_aid(
                 units.extend(
                     _build_battle_units(
                         [army], state, is_defender=is_defender, terrain=terrain, province_coord=province_coord,
-                        rng=rng, combat_ability_level=combat_ability_level, apply_fanaticism=apply_fanaticism,
+                        rng=rng, combat_ability_level=combat_ability_level,
+                        combat_ability_mastery_bonus=combat_ability_mastery_bonus,
+                        apply_fanaticism=apply_fanaticism,
                         own_explored_percent=own_explored_percent,
                         opponent_kingdom_ids=opponent_kingdom_ids, is_island=is_island,
                         explorer_find_water=explorer_find_water,
@@ -1615,6 +1670,22 @@ def fight_battle(
     attacker_ability_level = attacker_commander.tactical_ability if attacker_commander is not None else 0
     defender_ability_level = defender_commander.tactical_ability if defender_commander is not None else 0
 
+    # Tactical/Naval Mastery (Phase 512): the same Supreme Commanders'
+    # own flat Mastery bonus, resolved once per side -- see
+    # _mastery_bonus_for's own docstring.
+    attacker_commander_leader = (
+        state.leaders.get(attacker_commander.leader_id)
+        if attacker_commander is not None and attacker_commander.leader_id is not None
+        else None
+    )
+    defender_commander_leader = (
+        state.leaders.get(defender_commander.leader_id)
+        if defender_commander is not None and defender_commander.leader_id is not None
+        else None
+    )
+    attacker_mastery_bonus = _mastery_bonus_for(attacker_commander_leader, ability)
+    defender_mastery_bonus = _mastery_bonus_for(defender_commander_leader, ability)
+
     # Duellist / "Captain of the Musketeers" (Phase 471, SS17.7): "Quando
     # il titolare è comandante supremo in battaglia" -- resolved once,
     # here, before _build_battle_units builds either side's own units
@@ -1661,7 +1732,8 @@ def fight_battle(
 
     attacker_units = _build_battle_units(
         attacker_armies, state, is_defender=False, terrain=terrain, province_coord=province_coord, rng=rng,
-        combat_ability_level=attacker_ability_level, apply_fanaticism=apply_fanaticism,
+        combat_ability_level=attacker_ability_level, combat_ability_mastery_bonus=attacker_mastery_bonus,
+        apply_fanaticism=apply_fanaticism,
         own_explored_percent=attacker_explored,
         opponent_kingdom_ids=defender_kingdom_ids, is_island=is_island,
         duellist_side=attacker_is_duellist_side,
@@ -1669,7 +1741,8 @@ def fight_battle(
     )
     defender_units = _build_battle_units(
         defender_armies, state, is_defender=True, terrain=terrain, province_coord=province_coord, rng=rng,
-        combat_ability_level=defender_ability_level, apply_fanaticism=apply_fanaticism,
+        combat_ability_level=defender_ability_level, combat_ability_mastery_bonus=defender_mastery_bonus,
+        apply_fanaticism=apply_fanaticism,
         own_explored_percent=defender_explored,
         opponent_kingdom_ids=attacker_kingdom_ids, is_island=is_island,
         duellist_side=defender_is_duellist_side,
@@ -1685,6 +1758,7 @@ def fight_battle(
     _apply_monster_summoning_aid(
         attacker_units, attacker_commander, state, province_coord, monster_summoning_bounds,
         is_defender=False, terrain=terrain, combat_ability_level=attacker_ability_level,
+        combat_ability_mastery_bonus=attacker_mastery_bonus,
         apply_fanaticism=apply_fanaticism, own_explored_percent=attacker_explored,
         opponent_kingdom_ids=defender_kingdom_ids,
         is_island=is_island, rng=rng,
@@ -1693,6 +1767,7 @@ def fight_battle(
     _apply_monster_summoning_aid(
         defender_units, defender_commander, state, province_coord, monster_summoning_bounds,
         is_defender=True, terrain=terrain, combat_ability_level=defender_ability_level,
+        combat_ability_mastery_bonus=defender_mastery_bonus,
         apply_fanaticism=apply_fanaticism, own_explored_percent=defender_explored,
         opponent_kingdom_ids=attacker_kingdom_ids,
         is_island=is_island, rng=rng,

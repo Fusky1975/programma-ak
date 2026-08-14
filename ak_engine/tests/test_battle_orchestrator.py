@@ -33,6 +33,7 @@ from ak_engine.turn.battle_orchestrator import (
     _direct_destruction_probabilities,
     _formation_divisors,
     _maybe_fight_duel,
+    _mastery_bonus_for,
     _record_battle_merit,
     _select_side_commander,
     _side_has_present_leader_with_ability,
@@ -832,6 +833,60 @@ def test_fight_battle_find_water_present_leader_removes_desert_penalty():
     assert report_with.battle_result.columns[0].attacker_strength == pytest.approx(4.0)
     assert report_without.battle_result.columns[0].attacker_won is False
     assert report_with.battle_result.columns[0].attacker_won is True
+
+
+def test_mastery_bonus_for_returns_zero_for_no_leader():
+    assert _mastery_bonus_for(None, Ability.TACTICAL) == 0.0
+
+
+def test_mastery_bonus_for_zero_without_a_matching_ability():
+    leader = LeaderState(1, kingdom_id=1, name="Commander", location=FIELD)
+    assert _mastery_bonus_for(leader, Ability.TACTICAL) == 0.0
+
+
+def test_mastery_bonus_for_picks_the_highest_tier_held():
+    leader = LeaderState(1, kingdom_id=1, name="Commander", location=FIELD)
+    leader.advanced_abilities.add(AdvancedAbility.TACTICAL_MASTERY_10)
+    leader.advanced_abilities.add(AdvancedAbility.TACTICAL_MASTERY_20)
+    assert _mastery_bonus_for(leader, Ability.TACTICAL) == pytest.approx(0.20)
+
+
+def test_mastery_bonus_for_naval_uses_its_own_tiers():
+    leader = LeaderState(1, kingdom_id=1, name="Admiral", location=FIELD)
+    leader.advanced_abilities.add(AdvancedAbility.NAVAL_MASTERY_GREAT_15)
+    assert _mastery_bonus_for(leader, Ability.NAVAL) == pytest.approx(0.15)
+    assert _mastery_bonus_for(leader, Ability.TACTICAL) == 0.0
+
+
+def test_fight_battle_tactical_mastery_boosts_attacker_strength_past_the_level_cap():
+    # Phase 512: a level-9 Tactical leader's automatic bonus caps at +80%
+    # (level 4, see strength.py TACTICAL_BONUS_LEVEL_CAP); holding
+    # Tactical Mastery: 20% Tactical Bonus adds a flat +20% on top of
+    # that cap instead, for a 2.0x total multiplier.
+    def make_state():
+        state = GameState()
+        state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+        state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+        state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+        commander = LeaderState(1, kingdom_id=1, name="General", location=FIELD)
+        raw = [0] * 30
+        raw[Ability.TACTICAL.value * 2] = 9
+        commander.skills = SkillTable(raw)
+        state.add_leader(commander)
+        state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD, commanded_by=1))
+        state.add_army(ArmyState(201, 2, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD))
+        return state
+
+    without_mastery = make_state()
+    report_without = fight_battle(without_mastery, 1, FIELD, [101], rng=random.Random(0))
+
+    with_mastery = make_state()
+    with_mastery.leaders[1].advanced_abilities.add(AdvancedAbility.TACTICAL_MASTERY_20)
+    report_with = fight_battle(with_mastery, 1, FIELD, [101], rng=random.Random(0))
+
+    assert report_with.battle_result.columns[0].attacker_strength == pytest.approx(
+        report_without.battle_result.columns[0].attacker_strength / 1.8 * 2.0
+    )
 
 
 def test_build_battle_units_fanaticism_off_by_default_never_touches_rng():

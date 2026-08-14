@@ -178,6 +178,31 @@ def test_combat_ability_multiplier_matches_20_percent_per_level():
     assert combat_ability_multiplier(3) == pytest.approx(1.6)
 
 
+def test_combat_ability_multiplier_caps_the_automatic_scaling_at_level_4():
+    # Phase 512: models/advanced_ability.py's own module docstring --
+    # the automatic per-level bonus "discontinues" past level 4; a
+    # level-5+ leader gets no further increase without a Mastery ability.
+    assert combat_ability_multiplier(4) == pytest.approx(1.8)
+    assert combat_ability_multiplier(5) == pytest.approx(1.8)
+    assert combat_ability_multiplier(9) == pytest.approx(1.8)
+
+
+def test_combat_ability_multiplier_adds_mastery_bonus_on_top_of_the_cap():
+    assert combat_ability_multiplier(9, mastery_bonus=0.20) == pytest.approx(2.0)
+    assert combat_ability_multiplier(0, mastery_bonus=0.10) == pytest.approx(1.10)
+
+
+def test_compute_effective_strength_threads_combat_ability_mastery_bonus():
+    boosted = compute_effective_strength(
+        ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS,
+        combat_ability_level=9, combat_ability_mastery_bonus=0.20,
+    )
+    capped_no_mastery = compute_effective_strength(
+        ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, combat_ability_level=9,
+    )
+    assert boosted == pytest.approx(capped_no_mastery / 1.8 * 2.0)
+
+
 def test_phantasmal_armies_multiplier_matches_15_percent_per_level():
     # Phase 59, Regolamento AK.txt [4.23.2].
     assert phantasmal_armies_multiplier(0) == 1.0
