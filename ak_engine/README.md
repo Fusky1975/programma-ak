@@ -21392,7 +21392,7 @@ follow-up request after the original 431-435 plan shipped.
     Arms (eligible at Sea, ineligible on land), mirroring Phase 513's
     own mocked-`resolve_battle()` pattern. Ran again: 4462 passed (net
     +5).
-- **Phase 515 (current)**: adds Melee Evasion (Advanced Ability) --
+- **Phase 515**: adds Melee Evasion (Advanced Ability) --
   quoted from `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION
   [MELEE_EVASION]`: "A character becomes expert at evading opponents
   when using the Flee tactic and gains +30% to the chances of fleeing
@@ -21419,6 +21419,44 @@ follow-up request after the original 431-435 plan shipped.
     off) and an `execute_search()` integration test (a roll that fails
     the unmodified 20% Fast-monster flee chance but clears the +30%-
     widened 50%). Ran again: 4466 passed (net +4).
+- **Phase 516 (current)**: adds Melee Hit Points (Advanced Ability) --
+  quoted from `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION
+  [MELEE_HIT_POINTS]`: "The Gods grant 1-5 additional hit points in any
+  encounter (depending on how many of the Gods are betting on the
+  character in their gambling sessions)." New `turn/encounter.py
+  MELEE_HIT_POINTS_ABILITY_BONUS_RANGE = (1, 5)`,
+  `roll_melee_hit_points_ability_bonus(rng)`, and a new
+  `Combatant.has_melee_hit_points_ability: bool = False` field -- the
+  same shape as the existing Furia (Berserk) bonus (Phase 284): a flat,
+  one-time roll added to a combatant's starting `hit_points`. Applied
+  inside `apply_temper_melee_setup()`'s own per-combatant loop (its own
+  docstring gained a Phase 516 addendum, not a rename) rather than via a
+  new call site, so it rides that function's existing three real callers
+  -- `resolve_melee_duel()`'s internal default call, plus `challenge_
+  execution.py`'s/`search_execution.py`'s own direct calls for their
+  round-stepping engines -- and stacks additively with Furia when both
+  apply to the same combatant.
+  - Unlike Melee Evasion's two call sites in one module, the new
+    `Combatant` field is populated by each of the **six** per-consumer
+    `_leader_combatant()`/`_commander_combatant()`/`_kill_enemy_
+    combatant()` builders project-wide (`battle_orchestrator.py`,
+    `cast_execution.py`, `challenge_execution.py`, `patrol_execution.py`,
+    `pursue_execution.py`, `search_execution.py`), each gaining one line
+    reading `AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_
+    abilities` -- mirroring `temper=leader.temper`'s own Phase 284
+    wiring across the same six builders. Full, real coverage in a
+    single phase.
+  - Second ability wired from the Melee category (2/6 now) -- the
+    remaining 4 (Duellists Medal, Mastery, Control Temper, True Mastery)
+    would need a new "+damage dealt" `Combatant` field this module has
+    never had before (only damage-*reduction* fields exist today), a
+    larger follow-up.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4466 passed, unchanged. Wrote new tests: `roll_melee_hit_points_
+    ability_bonus()`'s own range, `apply_temper_melee_setup()`'s new
+    bonus (holder-only, stacks with Furia, no-op when unset), and one
+    builder-reads-the-ability test per consumer (6 total, one per
+    module). Ran again: 4477 passed (net +11).
 
 ## Setup
 

@@ -261,6 +261,16 @@ def test_kill_enemy_combatant_gives_the_imperial_defender_a_damage_reduction_of_
     assert combatant.damage_reduction == 1
 
 
+def test_kill_enemy_combatant_reads_the_melee_hit_points_advanced_ability():
+    # Phase 516: AdvancedAbility.MELEE_HIT_POINTS.
+    state = build_state()
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.MELEE_HIT_POINTS)
+
+    combatant = _kill_enemy_combatant(state, state.leaders[CASTER_ID], temper=Temper.BERSERK)
+
+    assert combatant.has_melee_hit_points_ability is True
+
+
 def test_kill_enemy_puts_a_colocated_target_into_a_coma():
     # Phase 310: this project's Kill_Enemy is only ever cast as an Action
     # spell -- see _execute_kill_enemy()'s own docstring for why a success

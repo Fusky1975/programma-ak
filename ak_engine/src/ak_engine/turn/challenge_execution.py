@@ -359,6 +359,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
 
     defender_office = resolve_office_holder(state, Office.DEFENDER)
     damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
+    has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
 
     return Combatant(
         name=leader.name,
@@ -368,6 +369,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         neutral_duelist_bonus=neutral_bonus,
         temper=leader.temper,
         damage_reduction=damage_reduction,
+        has_melee_hit_points_ability=has_melee_hit_points_ability,
     )
 
 

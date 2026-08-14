@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 from unittest.mock import patch
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, Maneuver, Spell
@@ -75,6 +76,19 @@ def test_leader_combatant_gives_the_imperial_defender_a_damage_reduction_of_one(
     combatant = _leader_combatant(leader, state)
 
     assert combatant.damage_reduction == 1
+
+
+def test_leader_combatant_reads_the_melee_hit_points_advanced_ability():
+    # Phase 516: AdvancedAbility.MELEE_HIT_POINTS.
+    state = _base_state()
+    leader = LeaderState(
+        1, kingdom_id=1, name="Chaser", location=FIELD, advanced_abilities={AdvancedAbility.MELEE_HIT_POINTS}
+    )
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.has_melee_hit_points_ability is True
 
 
 # -- not found / army-leading mismatch -----------------------------------

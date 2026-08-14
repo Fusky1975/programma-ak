@@ -125,6 +125,18 @@ def test_leader_combatant_gives_the_imperial_defender_a_damage_reduction_of_one(
     assert combatant.damage_reduction == 1
 
 
+def test_leader_combatant_reads_the_melee_hit_points_advanced_ability():
+    # Phase 516: AdvancedAbility.MELEE_HIT_POINTS.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION, advanced_abilities={AdvancedAbility.MELEE_HIT_POINTS})
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(state, leader)
+
+    assert combatant.has_melee_hit_points_ability is True
+
+
 def test_execute_search_leader_not_found():
     state = GameState()
     result = execute_search(state, LEADER_ID, _melee_request(1))

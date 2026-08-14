@@ -1979,6 +1979,38 @@ def test_commander_combatant_gives_the_imperial_defender_a_damage_reduction_of_o
     assert combatant.damage_reduction == 1
 
 
+def test_commander_combatant_reads_the_melee_hit_points_advanced_ability():
+    # Phase 516: AdvancedAbility.MELEE_HIT_POINTS -- real coverage means
+    # every per-consumer Combatant builder sets the new flag.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(
+        LeaderState(
+            501,
+            kingdom_id=1,
+            name="Commander",
+            location=FIELD,
+            advanced_abilities={AdvancedAbility.MELEE_HIT_POINTS},
+        )
+    )
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.has_melee_hit_points_ability is True
+
+
+def test_commander_combatant_without_the_ability_has_no_bonus_flag():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Commander", location=FIELD))
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.has_melee_hit_points_ability is False
+
+
 def test_commander_combatant_garrison_commander_has_no_damage_reduction():
     state = GameState()
     commander = provincial_garrison_commander(contingent_size=3)

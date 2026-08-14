@@ -193,6 +193,20 @@ def test_leader_combatant_gives_no_damage_reduction_without_the_office():
     assert combatant.damage_reduction == 0
 
 
+def test_leader_combatant_reads_the_melee_hit_points_advanced_ability():
+    # Phase 516: AdvancedAbility.MELEE_HIT_POINTS.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(
+        501, kingdom_id=1, name="Hero", location=FIELD, advanced_abilities={AdvancedAbility.MELEE_HIT_POINTS}
+    )
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.has_melee_hit_points_ability is True
+
+
 # -- execute_challenge: co-location, not-found, peaceful bypass ---------
 
 

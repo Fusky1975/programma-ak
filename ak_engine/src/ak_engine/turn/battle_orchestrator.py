@@ -982,10 +982,12 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         neutral_bonus = kingdom is not None and kingdom.alignment is Alignment.NEUTRAL
 
     damage_reduction = 0
+    has_melee_hit_points_ability = False
     if leader is not None:
         defender_office = resolve_office_holder(state, Office.DEFENDER)
         if defender_office is not None and defender_office.leader_id == leader.leader_id:
             damage_reduction = 1
+        has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
 
     return Combatant(
         name=f"leader {commander.leader_id}",
@@ -995,6 +997,7 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         neutral_duelist_bonus=neutral_bonus,
         temper=temper,
         damage_reduction=damage_reduction,
+        has_melee_hit_points_ability=has_melee_hit_points_ability,
     )
 
 

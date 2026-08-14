@@ -1336,6 +1336,28 @@ half of this ("(NOVITA') I personaggi Cauti hanno il 30% in più di
 possibilità di fuggire") was already flagged and deliberately deferred
 separately (this module's own "mixed-tactic range transitions" bullet
 above cross-references it). A natural, distinct follow-up phase.
+
+**Phase 516 addendum -- `AdvancedAbility.MELEE_HIT_POINTS`.**
+`models/advanced_ability.py`'s own sourced text: "The Gods grant 1-5
+additional hit points in any encounter." `MELEE_HIT_POINTS_ABILITY_
+BONUS_RANGE = (1, 5)`, `roll_melee_hit_points_ability_bonus(rng)`, and a
+new `Combatant.has_melee_hit_points_ability: bool = False` field --
+exactly the same shape as Furia's own bonus above (a flat, one-time roll
+added to a combatant's starting `hit_points`), so it is applied inside
+`apply_temper_melee_setup()`'s own per-combatant loop rather than via a
+new call site: real coverage through that function's existing three real
+callers (`resolve_melee_duel()`'s internal default call, plus
+`challenge_execution.py`'s/`search_execution.py`'s own direct calls for
+their round-stepping engines). The new `Combatant` field is set by each
+of the six per-consumer `_leader_combatant()`/`_commander_combatant()`/
+`_kill_enemy_combatant()` builders (`battle_orchestrator.py`,
+`cast_execution.py`, `challenge_execution.py`, `patrol_execution.py`,
+`pursue_execution.py`, `search_execution.py`) via `AdvancedAbility.
+MELEE_HIT_POINTS in leader.advanced_abilities`, mirroring `temper=leader.
+temper`'s own Phase 284 wiring -- full, real coverage in a single phase,
+unlike most other unwired Melee Advanced Abilities (Duellists Medal,
+Mastery, True Mastery) which would need a new "+damage dealt" `Combatant`
+field this module has never had before.
 """
 
 from __future__ import annotations
@@ -1379,6 +1401,14 @@ BERSERK_INTIMIDATION_HIT_CHANCE_REDUCTION: dict[Temper, float] = {  # "Intimidaz
 }
 BRAVE_MOMENTUM_HIT_CHANCE_BONUS = 0.10  # "Slancio"
 CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION = 0.10  # "Schivare"
+
+# Phase 516: AdvancedAbility.MELEE_HIT_POINTS -- "The Gods grant 1-5
+# additional hit points in any encounter" (models/advanced_ability.py
+# ADVANCED_ABILITY_DESCRIPTION). Same shape as Furia's own bonus above --
+# a flat, one-time roll added to the holder's starting hit points -- so it
+# is applied alongside Furia in apply_temper_melee_setup() rather than
+# via a new call site.
+MELEE_HIT_POINTS_ABILITY_BONUS_RANGE = (1, 5)
 
 # [5.2] Fire Arrow: 30% + 10%/Archery level, 1-6 damage.
 FIRE_ARROW_BASE_HIT_CHANCE = 0.30
@@ -2392,6 +2422,13 @@ class Combatant:
     # per-consumer lookup precedent, not a shared helper -- see e.g.
     # `challenge_execution.py _leader_combatant`'s own docstring).
     damage_reduction: int = 0
+    # Phase 516 -- AdvancedAbility.MELEE_HIT_POINTS ("The Gods grant 1-5
+    # additional hit points in any encounter"). Set by each consumer's
+    # own `_leader_combatant`-style builder when the leader holds the
+    # ability (same per-consumer lookup precedent as `damage_reduction`
+    # above). `apply_temper_melee_setup()` rolls and applies the actual
+    # bonus once, at setup -- see that function's own Phase 516 addendum.
+    has_melee_hit_points_ability: bool = False
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -2422,6 +2459,14 @@ def berserk_fury_bonus_hit_points(rng: random.Random) -> int:
     return rng.randint(*BERSERK_FURY_BONUS_HIT_POINTS_RANGE)
 
 
+def roll_melee_hit_points_ability_bonus(rng: random.Random) -> int:
+    """AdvancedAbility.MELEE_HIT_POINTS's own 1-5 bonus starting Hit
+    Points -- see module docstring's own Phase 516 addendum.
+    """
+
+    return rng.randint(*MELEE_HIT_POINTS_ABILITY_BONUS_RANGE)
+
+
 def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random) -> None:
     """Mutates ``a``/``b`` in place per the Temper Table's own melee-specific
     mechanics (Furia, Intimidazione, Slancio, Schivare) -- see module
@@ -2430,9 +2475,20 @@ def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random)
     a documented no-effect); called once, internally, at the very start
     of ``resolve_melee_duel()`` -- not meant to be called directly by
     other callers.
+
+    Phase 516: also applies ``AdvancedAbility.MELEE_HIT_POINTS``'s own
+    flat 1-5 bonus starting Hit Points, for either combatant whose own
+    ``has_melee_hit_points_ability`` is set -- the same "once, at setup"
+    shape as Furia's own bonus above, so it rides this function's own
+    three real call sites (``resolve_melee_duel()``'s internal default
+    call, plus ``challenge_execution.py``'s/``search_execution.py``'s own
+    direct calls for their round-stepping engines) rather than adding a
+    fourth. Default ``False`` leaves every pre-Phase-516 caller unaffected.
     """
 
     for combatant, opponent in ((a, b), (b, a)):
+        if combatant.has_melee_hit_points_ability:
+            combatant.hit_points += roll_melee_hit_points_ability_bonus(rng)
         if combatant.temper is Temper.BERSERK:
             combatant.hit_points += berserk_fury_bonus_hit_points(rng)
             reduction = (

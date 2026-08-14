@@ -172,8 +172,10 @@ from ak_engine.turn.encounter import (
     BERSERK_INTIMIDATION_HIT_CHANCE_REDUCTION,
     BRAVE_MOMENTUM_HIT_CHANCE_BONUS,
     CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION,
+    MELEE_HIT_POINTS_ABILITY_BONUS_RANGE,
     apply_temper_melee_setup,
     berserk_fury_bonus_hit_points,
+    roll_melee_hit_points_ability_bonus,
     loot_defeated_leader,
 )
 from ak_engine.models.alignment import Alignment
@@ -2490,6 +2492,13 @@ def test_berserk_fury_bonus_hit_points_stays_within_range():
         assert 1 <= bonus <= 4
 
 
+def test_roll_melee_hit_points_ability_bonus_stays_within_range():
+    rng = random.Random(0)
+    for _ in range(200):
+        bonus = roll_melee_hit_points_ability_bonus(rng)
+        assert MELEE_HIT_POINTS_ABILITY_BONUS_RANGE[0] <= bonus <= MELEE_HIT_POINTS_ABILITY_BONUS_RANGE[1]
+
+
 def test_apply_temper_melee_setup_furia_adds_bonus_hit_points_only_to_the_berserk_side():
     a = Combatant("Berserker", hit_points=CHARACTER_HIT_POINTS, temper=Temper.BERSERK)
     b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS)
@@ -2575,6 +2584,42 @@ def test_apply_temper_melee_setup_multipliers_compose_independently_for_both_sid
     assert a.defensive_hit_multiplier == 1.0
     assert b.offensive_hit_multiplier == 1.0
     assert b.defensive_hit_multiplier == pytest.approx(0.90)
+
+
+def test_apply_temper_melee_setup_melee_hit_points_ability_adds_bonus_only_to_the_holder():
+    a = Combatant("Lucky Hero", hit_points=CHARACTER_HIT_POINTS, has_melee_hit_points_ability=True)
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS)
+
+    apply_temper_melee_setup(a, b, random.Random(0))
+
+    assert CHARACTER_HIT_POINTS < a.hit_points <= CHARACTER_HIT_POINTS + 5
+    assert b.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_apply_temper_melee_setup_melee_hit_points_ability_stacks_with_furia():
+    a = Combatant(
+        "Blessed Berserker",
+        hit_points=CHARACTER_HIT_POINTS,
+        temper=Temper.BERSERK,
+        has_melee_hit_points_ability=True,
+    )
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS)
+
+    apply_temper_melee_setup(a, b, random.Random(0))
+
+    # Furia alone tops out at +4; both bonuses together can reach +9.
+    assert CHARACTER_HIT_POINTS + 4 < a.hit_points <= CHARACTER_HIT_POINTS + 9
+    assert b.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_apply_temper_melee_setup_no_melee_hit_points_ability_is_a_no_op_for_hit_points():
+    a = Combatant("A", hit_points=CHARACTER_HIT_POINTS)
+    b = Combatant("B", hit_points=CHARACTER_HIT_POINTS)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.hit_points == CHARACTER_HIT_POINTS
+    assert b.hit_points == CHARACTER_HIT_POINTS
 
 
 def test_resolve_melee_duel_applies_temper_setup_before_any_combat():
