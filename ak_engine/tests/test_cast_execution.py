@@ -28,8 +28,11 @@ from ak_engine.turn.cast_execution import (
     MYSTIC_WINDS_USES_MOVEMENT_POINTS_NORMALLY,
     SCAR_TERRAIN_LAND_COLLAPSE_RACES,
     SCAR_TERRAIN_TAX_REDUCTION,
+    UNDEAD_CONVERSION_STEP_BUDGET_NUMERATOR,
     LocateObjectResult,
+    _apply_undead_king_alignment_conversion,
     _kill_enemy_combatant,
+    _total_usable_skill,
     action_cast_slots,
     apply_plague_exposure,
     execute_cast,
@@ -54,6 +57,17 @@ BOARD_WIDTH = NORMAL_MAP_BOUNDS[0]
 def _skills_with(ability: Ability, level: int) -> SkillTable:
     raw_values = [0] * 30
     raw_values[ability.value * 2] = level
+    return SkillTable(raw_values=raw_values)
+
+
+def _skills_totaling(total: int) -> SkillTable:
+    # Spread across two abilities since a single (skill, aptitude) pair is
+    # capped at 9 (CTBOTH.PAS skillrange 0..9) -- irrelevant to which
+    # ability holds it, since Total_USkill only cares about the sum.
+    raw_values = [0] * 30
+    first = min(9, total)
+    raw_values[Ability.TACTICAL.value * 2] = first
+    raw_values[Ability.MARCH.value * 2] = total - first
     return SkillTable(raw_values=raw_values)
 
 
@@ -248,6 +262,173 @@ def test_charm_non_undead_caster_still_uses_psychic():
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
     assert result.applied is True
+
+
+# ---------------------------------------------------------------------------
+# Charm: Undead King alignment conversion (Phase 522)
+# ---------------------------------------------------------------------------
+
+
+def _undead_king() -> LeaderState:
+    return LeaderState(1, 1, "Undead King", LOCATION, is_king=True, alignment=Alignment.UNDEAD)
+
+
+def test_total_usable_skill_sums_all_fifteen_abilities_raw_skill_not_aptitude():
+    leader = LeaderState(2, None, "Target", LOCATION, skills=SkillTable(raw_values=list(range(30))))
+    # Skill sits at even indices (0, 2, .. 28): 0+2+4+...+28 == 210.
+    assert _total_usable_skill(leader) == 210
+
+
+def test_total_usable_skill_returns_zero_when_skills_unrecorded():
+    leader = LeaderState(2, None, "Target", LOCATION)
+    assert _total_usable_skill(leader) == 0
+
+
+def test_undead_king_conversion_step_budget_numerator_is_twelve():
+    assert UNDEAD_CONVERSION_STEP_BUDGET_NUMERATOR == 12
+
+
+def test_undead_king_conversion_table_matches_the_dossiers_own_worked_examples():
+    # AKGEN_reverse_engineering_report (3).md SS94/SS94.1's own worked
+    # table, every row starting from Alignment.DIVINE ("Heavenly").
+    cases = [
+        (1, Alignment.UNDEAD),  # T=0-1: budget 12, immediate conversion
+        (2, Alignment.UNDEAD),  # T=2: budget 6, forced 6->7 jump still lands on Undead
+        (3, Alignment.PAGAN),  # T=3: budget 4 -> Heavenly to "Animal" (Pagan)
+        (4, Alignment.NEUTRAL),  # T=4: budget 3 -> Heavenly to "Worldly" (Neutral)
+        (5, Alignment.DRUID),  # T=5-6: budget 2 -> Heavenly to Druidic
+        (6, Alignment.DRUID),
+        (7, Alignment.GOOD),  # T>=7: budget 1 -> Heavenly to Good
+        (13, Alignment.GOOD),  # quotient hits 0, but the repeat still forces >= 1 step
+    ]
+    for total_skill, expected in cases:
+        caster = _undead_king()
+        target = LeaderState(2, 2, "Target", LOCATION, alignment=Alignment.DIVINE, skills=_skills_totaling(total_skill))
+
+        _apply_undead_king_alignment_conversion(caster, target)
+
+        assert target.alignment is expected, f"Total_USkill={total_skill}"
+
+
+def test_undead_king_conversion_evil_target_jumps_through_anti_holy_to_undead():
+    # SS94.1's own highlighted case: budget 1 lands on Anti-Holy (6), which
+    # is never a valid resting alignment -- the loop is forced to take one
+    # more step to Undead (7), two ordinal positions for one nominal step.
+    caster = _undead_king()
+    target = LeaderState(2, 2, "Target", LOCATION, alignment=Alignment.EVIL, skills=_skills_totaling(7))
+
+    _apply_undead_king_alignment_conversion(caster, target)
+
+    assert target.alignment is Alignment.UNDEAD
+
+
+def test_undead_king_conversion_gated_on_caster_being_a_king_not_a_hero():
+    # RQ.TXT:3248-3249: Undead Heroes never convert alignment via Charm.
+    caster = LeaderState(1, 1, "Undead Hero", LOCATION, is_king=False, alignment=Alignment.UNDEAD)
+    target = LeaderState(2, 2, "Target", LOCATION, alignment=Alignment.GOOD, skills=_skills_totaling(1))
+
+    _apply_undead_king_alignment_conversion(caster, target)
+
+    assert target.alignment is Alignment.GOOD
+
+
+def test_undead_king_conversion_is_a_no_op_on_an_already_undead_target():
+    caster = _undead_king()
+    target = LeaderState(2, 2, "Target", LOCATION, alignment=Alignment.UNDEAD, skills=_skills_totaling(1))
+
+    _apply_undead_king_alignment_conversion(caster, target)
+
+    assert target.alignment is Alignment.UNDEAD
+
+
+def test_undead_king_conversion_gated_on_no_pending_analytical_psychology_return():
+    caster = _undead_king()
+    target = LeaderState(2, 2, "Target", LOCATION, alignment=Alignment.GOOD, skills=_skills_totaling(1))
+    target.analytical_psychology_revert_kingdom_id = 2
+
+    _apply_undead_king_alignment_conversion(caster, target)
+
+    assert target.alignment is Alignment.GOOD
+
+
+def test_undead_king_conversion_skips_a_target_with_unrecorded_alignment():
+    caster = _undead_king()
+    target = LeaderState(2, 2, "Target", LOCATION, skills=_skills_totaling(1))
+    assert target.alignment is None
+
+    _apply_undead_king_alignment_conversion(caster, target)
+
+    assert target.alignment is None
+
+
+def test_charm_by_an_undead_king_converts_a_colocated_heros_alignment():
+    state = build_state()
+    state.leaders[CASTER_ID].alignment = Alignment.UNDEAD
+    state.leaders[CASTER_ID].is_king = True
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)
+    state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION, alignment=Alignment.GOOD))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+    rng = ScriptedRandom([0.44, 0.5, 0.5])  # 15% + 15%*2 = 45% chance
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.leaders[78].kingdom_id == 1
+    # target.skills is unrecorded -- Total_USkill reads 0, so max(1, 0) = 1
+    # and the step budget (12) converts straight to Undead.
+    assert state.leaders[78].alignment is Alignment.UNDEAD
+
+
+def test_charm_by_an_undead_hero_does_not_convert_alignment():
+    state = build_state()
+    state.leaders[CASTER_ID].alignment = Alignment.UNDEAD
+    state.leaders[CASTER_ID].is_king = False
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)
+    state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION, alignment=Alignment.GOOD))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+    rng = ScriptedRandom([0.44, 0.5, 0.5])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.leaders[78].kingdom_id == 1
+    assert state.leaders[78].alignment is Alignment.GOOD  # untouched -- Heroes never convert
+
+
+def test_charm_own_hero_by_undead_king_with_analytical_psychology_still_converts():
+    # Phase 522 fix: the AP-revert marker must NOT be set on a same-Kingdom
+    # Charm (LKing doesn't change), so it can no longer spuriously block
+    # the Undead King's own alignment-conversion gate on their own Hero --
+    # the dossier's own confirmed case 6.
+    state = build_state()
+    state.kingdoms[1].discoveries.add(Discovery.ANALYTICAL_PSYCHOLOGY)
+    state.leaders[CASTER_ID].alignment = Alignment.UNDEAD
+    state.leaders[CASTER_ID].is_king = True
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)
+    state.add_leader(LeaderState(78, 1, "Loyal Hero", LOCATION, alignment=Alignment.GOOD))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+    rng = ScriptedRandom([0.44, 0.5, 0.5])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.leaders[78].analytical_psychology_revert_kingdom_id is None
+    assert state.leaders[78].alignment is Alignment.UNDEAD
+
+
+def test_charm_on_own_already_loyal_hero_never_sets_the_revert_field_even_with_analytical_psychology():
+    # General AP-marker fix, independent of Undead conversion: a Charm that
+    # doesn't actually change kingdom_id must never record a revert target.
+    state = build_state()
+    state.kingdoms[1].discoveries.add(Discovery.ANALYTICAL_PSYCHOLOGY)
+    state.add_leader(LeaderState(78, 1, "Already Loyal Hero", LOCATION))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[78].kingdom_id == 1
+    assert state.leaders[78].analytical_psychology_revert_kingdom_id is None
 
 
 def test_kill_enemy_combatant_gives_the_imperial_defender_a_damage_reduction_of_one():

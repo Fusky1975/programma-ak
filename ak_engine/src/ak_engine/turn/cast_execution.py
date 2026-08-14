@@ -1191,6 +1191,42 @@ def _execute_charm(
     model without guessing, the same category of gap as this file's own
     Resurrection King-Heir case above.
 
+    **Phase 522 addendum -- the paragraph above is now stale**:
+    ``AKGEN_reverse_engineering_report (3).md`` SS88-96 (disassembly of
+    ``AK.EXE:0x11224-0x11320``, the one physical branch that performs
+    this conversion) supplies the exact, deterministic step-budget
+    formula the previous paragraph said wasn't sourced precisely enough
+    to model: not a random roll and not a flat "1-3 ordinal positions"
+    -- New Rules gives ``12 div max(1, Total_USkill(target))`` (this
+    project has no Old/New Rules toggle, so -- the same "New Rules,
+    unconditionally" convention as Phase 439's alignment-decay formula
+    and Phase 450's election-vote-weight formula -- this is simply *the*
+    formula here), where ``Total_USkill`` sums the target's own raw
+    skill level (not aptitude) across all 15 ``Ability`` members
+    (``REPORTS.PAS``'s own ``Total_USkill(ldr) < 7`` King-points check
+    reuses the identical helper, confirming what it measures). See
+    ``_total_usable_skill()``/``_apply_undead_king_alignment_
+    conversion()`` below for the implementation: gated on the caster
+    being a King (``LeaderState.is_king`` -- an Undead Hero caster never
+    converts, confirmed by ``RQ.TXT:3248-3249``), the target not already
+    Undead, and no pending Analytical Psychology return recorded for the
+    target. The step loop always takes at least one alignment-ordinal
+    increment and is forced to take one more if it lands on
+    ``Alignment.ANTI_HOLY`` -- Hellish can never be the final resting
+    alignment of a successful conversion.
+
+    Fixing this also required a small correction just below: this
+    function used to set ``target.analytical_psychology_revert_
+    kingdom_id`` whenever the target's *pre-charm* Kingdom owned the
+    Discovery, even on a same-Kingdom Charm that doesn't actually change
+    ``target.kingdom_id`` at all. The dossier's own SS90 (gate 4) is
+    explicit that "on one's own Hero, ``LKing`` doesn't change and no
+    return-King is recorded" -- and an Undead King charming their own
+    already-loyal Hero purely to trigger conversion (the dossier's own
+    case 6) is exactly the scenario the old, over-eager marker would
+    have wrongly blocked. The marker is now only set on a genuine
+    cross-Kingdom reassignment.
+
     **Phase 302 (Discovery.ANALYTICAL_PSYCHOLOGY, a real bug found in a
     dedicated bug-hunt audit)**: the source text is explicit that this
     Discovery does *not* block Charm outright -- "the spell will work,
@@ -1238,14 +1274,79 @@ def _execute_charm(
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
-    if target.kingdom_id is not None and Discovery.ANALYTICAL_PSYCHOLOGY in state.kingdoms[target.kingdom_id].discoveries:
+    if (
+        target.kingdom_id is not None
+        and target.kingdom_id != kingdom_id
+        and Discovery.ANALYTICAL_PSYCHOLOGY in state.kingdoms[target.kingdom_id].discoveries
+    ):
         target.analytical_psychology_revert_kingdom_id = target.kingdom_id
     target.kingdom_id = kingdom_id
+    if caster.alignment is Alignment.UNDEAD:
+        _apply_undead_king_alignment_conversion(caster, target)
     if AdvancedAbility.ENHANCED_CHARM in caster.advanced_abilities:
         target_items = state.items_held_by(request.target)
         if target_items:
             state.transfer_item(target_items[0].item_id, leader_id)
     return CastExecutionResult(request, applied=True)
+
+
+# Phase 522: AKGEN_reverse_engineering_report (3).md SS90/SS94's own gate-1
+# numerator -- "12 div max(1, Total_USkill(target))". Named after the
+# source's own identifier (35EB:1EA9), not renamed to this project's usual
+# snake_case style, since it's quoted directly in several docstrings above
+# and below and a mismatch would make cross-referencing the dossier harder.
+UNDEAD_CONVERSION_STEP_BUDGET_NUMERATOR = 12
+
+
+def _total_usable_skill(leader: LeaderState) -> int:
+    """AKGEN_reverse_engineering_report (3).md SS93: ``Total_USkill`` sums a
+    character's own raw skill level (not aptitude) across all 15 ``Ability``
+    members, ``Tactical`` through ``Sage`` -- confirmed via ``REPORTS.PAS``'s
+    own ``Total_USkill(ldr) < 7`` initial-King-points check reusing the
+    identical helper (same dossier section, independent call site).
+
+    ``leader.skills is None`` (unrecorded) reads as 0 for every ability,
+    the same "unrecorded means weakest case" fallback this module's own
+    ``_award_cast_experience()`` already uses for its ``natural_skill``
+    read.
+    """
+
+    if leader.skills is None:
+        return 0
+    return sum(leader.skills.pair_for_ability(ability)[0] for ability in Ability)
+
+
+def _apply_undead_king_alignment_conversion(caster: LeaderState, target: LeaderState) -> None:
+    """AKGEN_reverse_engineering_report (3).md SS88-96 (``Undead_Action_
+    Charm``, ``AK.EXE:0x11224-0x11320``) -- see ``_execute_charm``'s own
+    Phase 522 addendum for the full citation and design rationale. Call
+    site already confirmed ``caster.alignment is Alignment.UNDEAD`` and a
+    successful cast; this function applies the remaining three gates and,
+    if all pass, the deterministic step loop.
+    """
+
+    if not caster.is_king:
+        return
+    if target.alignment is None or target.alignment is Alignment.UNDEAD:
+        return
+    if target.analytical_psychology_revert_kingdom_id is not None:
+        return
+
+    step_budget = UNDEAD_CONVERSION_STEP_BUDGET_NUMERATOR // max(1, _total_usable_skill(target))
+    undead_ordinal = ALIGNMENT_ORDINAL[Alignment.UNDEAD]
+    anti_holy_ordinal = ALIGNMENT_ORDINAL[Alignment.ANTI_HOLY]
+
+    ordinal = ALIGNMENT_ORDINAL[target.alignment]
+    while True:
+        ordinal += 1
+        step_budget -= 1
+        if ordinal == undead_ordinal:
+            break
+        if ordinal == anti_holy_ordinal:
+            continue
+        if step_budget <= 0:
+            break
+    target.alignment = ALIGNMENT_BY_ORDINAL[ordinal]
 
 
 def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temper | None) -> Combatant:

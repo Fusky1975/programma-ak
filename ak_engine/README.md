@@ -21621,7 +21621,7 @@ follow-up request after the original 431-435 plan shipped.
     test (a 0-Archery-skill combatant with the ability still fires
     once), and one builder-reads-the-ability test per consumer (6
     total). Ran again: 4540 passed (net +11).
-- **Phase 521 (current)**: adds the March category's Cavalry/Infantry
+- **Phase 521**: adds the March category's Cavalry/Infantry
   movement-rate bonuses (`AdvancedAbility.MARCH_CAVALRY`/`_INFANTRY`
   + Mastery tiers) -- quoted from `models/advanced_ability.py
   ADVANCED_ABILITY_DESCRIPTION`: Cavalry "adds one to the movement rate
@@ -21668,6 +21668,57 @@ follow-up request after the original 431-435 plan shipped.
     a sea army type, withheld without the ability), and one dispatch-
     wiring test mirroring the Explorer abilities' own pattern. Ran
     again: 4555 passed (net +15).
+- **Phase 522 (current)**: closes the "necromantic Charm" gap the user
+  flagged after supplying `AKGEN_reverse_engineering_report (3).md`, a
+  disassembly dossier on `Charm`/`Enhanced Charm`/`Analytical Psychology`.
+  `turn/cast_execution.py _execute_charm()` already had the Undead-caster
+  Necromancy-instead-of-Psychic override (Phase 183) and Analytical
+  Psychology's Action-context "still works, reverts later" rule (Phase
+  302), but its own docstring flagged the Undead-King alignment-conversion
+  side effect as "confirmed but not modeled" -- the resistance formula
+  wasn't sourced precisely enough to implement without guessing. The
+  dossier's own SS88-96 (disassembly of `AK.EXE:0x11224-0x11320`, the one
+  physical branch that performs the conversion) supplies the exact,
+  deterministic formula: not a random roll -- New Rules gives `12 div
+  max(1, Total_USkill(target))` (this project has no Old/New Rules
+  toggle, so -- the same "New Rules, unconditionally" convention as
+  Phase 439/450 -- this is simply *the* formula), where `Total_USkill`
+  sums the target's own raw skill level across all 15 `Ability` members
+  (`REPORTS.PAS`'s own `Total_USkill(ldr) < 7` King-points check reuses
+  the identical helper). New `_total_usable_skill()` +
+  `_apply_undead_king_alignment_conversion()`: gated on the caster being
+  a King (`LeaderState.is_king` -- an Undead Hero caster never converts,
+  `RQ.TXT:3248-3249`), the target not already Undead, and no pending
+  Analytical Psychology return recorded for the target. The step loop
+  (a `repeat`, not a `for`) always takes at least one alignment-ordinal
+  increment and is forced to take one more if it lands on
+  `Alignment.ANTI_HOLY` -- Hellish can never be a conversion's final
+  resting alignment.
+
+  A real, related bug surfaced while wiring the fourth gate: this
+  function used to set `target.analytical_psychology_revert_kingdom_id`
+  whenever the target's *pre-charm* Kingdom owned the Discovery, even on
+  a same-Kingdom Charm that doesn't actually change `target.kingdom_id`
+  at all. SS90's own gate-4 description is explicit that "on one's own
+  Hero, `LKing` doesn't change and no return-King is recorded" -- and an
+  Undead King charming their own already-loyal Hero purely to trigger
+  conversion (the dossier's own case 6) is exactly the scenario the old,
+  over-eager marker would have wrongly blocked. Fixed by only setting the
+  marker on a genuine cross-Kingdom reassignment (`target.kingdom_id !=
+  kingdom_id`).
+  - Ran the full suite before writing new tests (non-breaking check):
+    4555 passed, unchanged. Wrote new tests: `_total_usable_skill()`'s
+    own sum-not-aptitude check and unrecorded-skills fallback,
+    `_apply_undead_king_alignment_conversion()`'s own worked table
+    against the dossier's SS94.1 (every `Total_USkill` band from a
+    `Divine`-starting target, plus the Evil-jumps-through-Anti-Holy-to-
+    Undead highlighted case) and its three gates (Hero caster, already-
+    Undead target, pending Analytical Psychology return, unrecorded
+    target alignment), and `execute_cast()`-level integration tests
+    (an Undead King converts a co-located Hero, an Undead Hero does not,
+    an Undead King's own already-loyal Hero still converts under
+    Analytical Psychology, and the general AP-marker fix in isolation).
+    Ran again: 4568 passed (net +13).
 
 ## Setup
 
