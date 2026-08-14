@@ -10,7 +10,13 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.move_execution import execute_move, record_kingdom_exploration
+from ak_engine.turn.move_execution import (
+    MARCH_ABILITY_BONUS,
+    MARCH_MASTERY_ABILITY_BONUS,
+    execute_move,
+    march_movement_point_bonus,
+    record_kingdom_exploration,
+)
 
 from _helpers import ScriptedRandom
 
@@ -540,3 +546,87 @@ def test_chase_step_triggers_battle_on_an_enemy_occupied_intermediate_hex():
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=FAR_TARGET, rng=ScriptedRandom([0.9] * 20))
 
     assert result.battle_report is not None
+
+
+# -- Phase 521: March category (Cavalry/Infantry + Mastery tiers) --------
+
+
+def test_march_movement_point_bonus_cavalry_at_the_minimum_band():
+    assert march_movement_point_bonus(3, has_march_cavalry=True) == MARCH_ABILITY_BONUS
+
+
+def test_march_movement_point_bonus_cavalry_below_the_band_is_zero():
+    assert march_movement_point_bonus(2, has_march_cavalry=True) == 0
+
+
+def test_march_movement_point_bonus_cavalry_mastery_is_the_total_not_additive():
+    assert march_movement_point_bonus(3, has_march_cavalry_mastery=True) == MARCH_MASTERY_ABILITY_BONUS
+
+
+def test_march_movement_point_bonus_infantry_band():
+    assert march_movement_point_bonus(1, has_march_infantry=True) == MARCH_ABILITY_BONUS
+    assert march_movement_point_bonus(2, has_march_infantry=True) == MARCH_ABILITY_BONUS
+
+
+def test_march_movement_point_bonus_infantry_outside_the_band_is_zero():
+    assert march_movement_point_bonus(0, has_march_infantry=True) == 0
+    assert march_movement_point_bonus(3, has_march_infantry=True) == 0
+
+
+def test_march_movement_point_bonus_infantry_mastery_is_the_total_not_additive():
+    assert march_movement_point_bonus(2, has_march_infantry_mastery=True) == MARCH_MASTERY_ABILITY_BONUS
+
+
+def test_march_movement_point_bonus_returns_0_without_any_ability():
+    assert march_movement_point_bonus(3) == 0
+    assert march_movement_point_bonus(1) == 0
+
+
+def test_execute_move_grants_march_cavalry_bonus_before_deducting_cost():
+    # Target already owned by the same kingdom -- no battle, no conquest,
+    # so cost is the flat base (1). Army starts at 3 movement points
+    # (Cavalry's own qualifying band), gets +1, then pays the move's own
+    # cost of 1 -- net 3, not 2.
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_cavalry=True)
+
+    assert state.armies[101].movement_points == 3
+    assert state.armies[101].march_bonus_applied_this_turn is True
+
+
+def test_execute_move_does_not_regrant_march_bonus_within_the_same_turn():
+    # Two Move orders in the same gameturn (there back to ORIGIN) --
+    # the bonus is only ever granted once, on the first one.
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.armies[101].movement_points = 5
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_cavalry=True)
+    after_first_move = state.armies[101].movement_points
+    execute_move(state, kingdom_id=1, army_ids=[101], target=ORIGIN, has_march_cavalry=True)
+
+    # Second move only pays its own cost (1) -- no second +1 bonus.
+    assert state.armies[101].movement_points == after_first_move - 1
+
+
+def test_execute_move_gives_no_march_bonus_to_a_sea_army_type():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.armies[101] = ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_cavalry=True)
+
+    assert state.armies[101].movement_points == 2
+    assert state.armies[101].march_bonus_applied_this_turn is False
+
+
+def test_execute_move_gives_no_march_bonus_without_the_ability():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert state.armies[101].movement_points == 2
+    assert state.armies[101].march_bonus_applied_this_turn is False

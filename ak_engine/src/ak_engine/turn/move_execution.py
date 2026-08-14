@@ -143,6 +143,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+from ak_engine.models.army_type import is_land_army
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
@@ -159,6 +160,47 @@ from ak_engine.turn.movement import (
     resolve_move,
     step_toward_non_adjacent_target,
 )
+
+
+# Phase 521: AdvancedAbility.MARCH_CAVALRY/_INFANTRY (+ Mastery tiers) --
+# see module docstring's own Phase 521 addendum for the full sourced
+# quotes and the split between what's modeled here and what isn't.
+MARCH_CAVALRY_MIN_MOVEMENT_POINTS = 3
+MARCH_INFANTRY_MOVEMENT_POINTS_RANGE = (1, 2)
+MARCH_ABILITY_BONUS = 1
+MARCH_MASTERY_ABILITY_BONUS = 2
+
+
+def march_movement_point_bonus(
+    current_movement_points: int,
+    *,
+    has_march_cavalry: bool = False,
+    has_march_cavalry_mastery: bool = False,
+    has_march_infantry: bool = False,
+    has_march_infantry_mastery: bool = False,
+) -> int:
+    """The flat movement-point bonus a land army qualifies for right now.
+
+    ``current_movement_points`` is the army's own pool *before* this
+    bonus -- Cavalry/Cavalry Mastery only ever apply at 3+, Infantry/
+    Infantry Mastery only at 1-2 (rulebook's own two disjoint bands). A
+    leader only ever holds one Advanced Ability per category (Phase
+    128), so the Mastery tier's own kwarg is read as the ability's
+    total, self-contained effect (+2), not "+1 on top of the base tier
+    you don't hold" -- the same convention Melee Mastery/True Mastery
+    (Phase 517) already established.
+    """
+
+    if has_march_cavalry_mastery and current_movement_points >= MARCH_CAVALRY_MIN_MOVEMENT_POINTS:
+        return MARCH_MASTERY_ABILITY_BONUS
+    if has_march_cavalry and current_movement_points >= MARCH_CAVALRY_MIN_MOVEMENT_POINTS:
+        return MARCH_ABILITY_BONUS
+    low, high = MARCH_INFANTRY_MOVEMENT_POINTS_RANGE
+    if has_march_infantry_mastery and low <= current_movement_points <= high:
+        return MARCH_MASTERY_ABILITY_BONUS
+    if has_march_infantry and low <= current_movement_points <= high:
+        return MARCH_ABILITY_BONUS
+    return 0
 
 
 @dataclass(slots=True)
@@ -293,6 +335,10 @@ def execute_move(
     has_military_maps: bool = False,
     has_difficult_terrain: bool = False,
     has_find_mines: bool = False,
+    has_march_cavalry: bool = False,
+    has_march_cavalry_mastery: bool = False,
+    has_march_infantry: bool = False,
+    has_march_infantry_mastery: bool = False,
 ) -> MoveExecutionResult:
     """Move ``army_ids`` (all from the same province) toward ``target``.
 
@@ -304,12 +350,59 @@ def execute_move(
     ``army_ids`` nor ``leader_id`` is given, or if the hex actually
     entered this phase has no province data.
 
+    **Phase 521 -- March category, `AdvancedAbility.MARCH_CAVALRY`/
+    `_INFANTRY` (+ Mastery tiers).** `models/advanced_ability.py`'s own
+    sourced text: Cavalry "adds one to the movement rate of land armies
+    which start with 3 or more movement points"; Infantry, the same for
+    "1-2 movement points"; each Mastery tier "adds one more" to its own
+    band. Rulebook [6.2] itself frames this as dynamic, not a pre-turn
+    recompute: "The increased army-movement allowed by the March and
+    Naval abilities is always calculated at the moment an army moves."
+    This project has never derived `ArmyState.movement_points` from a
+    base-rate formula (`ArmyState`'s own field comment: "Not auto-reset
+    at turn start and not derived from ARMY_TABLE speed + March/Naval
+    ability -- the caller sets it") -- rather than invent that missing
+    per-turn pipeline, this phase reads the sourced quote literally:
+    `execute_move()` grants the bonus as a one-time addition to the
+    army's own *current* pool, right before this move's own cost is
+    deducted, gated on `ArmyState.march_bonus_applied_this_turn` so a
+    multi-phase turn (several Move orders) can't re-grant it. A leader
+    only ever holds one Advanced Ability per category (Phase 128), so a
+    Mastery tier's own "adds one more" is read as its own total,
+    self-contained effect (+2), not "+1 on top of the base tier you
+    don't hold" -- the same convention Melee Mastery/True Mastery
+    (Phase 517) already established. "Land armies" excludes the three
+    purely sea-going types (`models/army_type.py SEA_ARMY_TYPES` --
+    Fleet, Whales, Mermen); air units (Dragon Wing/Eagle Wing) are left
+    land-eligible since no source narrows the wording to exclude them.
+
+    Deliberately **not** addressed this phase: `AdvancedAbility.MARCH_
+    THROUGH_FLOODS` (needs a persistent per-province "currently
+    flooded" flag this project's own `_execute_flood()` never sets --
+    it only ever applies a one-time movement deduction to armies
+    present at cast time, nothing a later Move order could consult) and
+    both remaining Naval members, `NAVAL_LONG_DEFEND` (needs the
+    Defend-order coverage-range subsystem extended, a different
+    mechanic than a movement-point bonus) and `NAVAL_HUG_COASTLINE`
+    (needs coastal land-to-land transport routing this project doesn't
+    model). Each is a genuinely distinct, larger mechanic -- left
+    undone and documented here rather than guessed, the same "no
+    source, no guess" boundary Melee Control Temper's and Archery's own
+    residuals (Phases 519-520) already used.
+
     If ``target`` isn't adjacent to the mover's own current location,
     this is a chase (Phase 85, rulebook [3.1]): one hex-step toward
     ``target`` is computed and resolved instead, and
     ``MoveExecutionResult.reached_target``/``stopped_chasing`` report
     how it went -- see this module's own docstring for the full
     behavior and what's still not wired in (multi-phase persistence).
+
+    Phase 521: ``has_march_cavalry``/``has_march_cavalry_mastery``/
+    ``has_march_infantry``/``has_march_infantry_mastery`` (default
+    False) grant ``march_movement_point_bonus()`` to a qualifying land
+    army, at most once per gameturn per army (``ArmyState.march_bonus_
+    applied_this_turn``) -- see module docstring's own Phase 521
+    addendum.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -430,6 +523,17 @@ def execute_move(
         army = state.armies.get(army_id)
         if army is None:
             continue  # destroyed in the battle
+        if not army.march_bonus_applied_this_turn and is_land_army(army.army_type):
+            bonus = march_movement_point_bonus(
+                army.movement_points,
+                has_march_cavalry=has_march_cavalry,
+                has_march_cavalry_mastery=has_march_cavalry_mastery,
+                has_march_infantry=has_march_infantry,
+                has_march_infantry_mastery=has_march_infantry_mastery,
+            )
+            if bonus:
+                army.movement_points += bonus
+                army.march_bonus_applied_this_turn = True
         army.movement_points -= cost
         if moved and army.location == current:
             army.location = actual_target

@@ -255,6 +255,22 @@ def test_dispatch_explore_does_not_roll_find_mines_without_the_advanced_ability(
     assert state.provinces[location].mine_gold_bonus == 0
 
 
+def test_dispatch_lmove_wires_march_cavalry_from_the_leaders_own_advanced_ability():
+    # Phase 521: dispatch_phase() derives has_march_cavalry the same way
+    # as Military Maps/Difficult Terrain/Find Mines -- a 3+ movement-point
+    # land army gets AdvancedAbility.MARCH_CAVALRY's own bonus applied
+    # before this move's own cost is deducted.
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.MARCH_CAVALRY)
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert state.armies[army_id].march_bonus_applied_this_turn is True
+
+
 def test_dispatch_explore_wires_society_maps_from_the_leaders_own_advanced_ability():
     # Phase 510: dispatch_phase() derives has_find_mines/-society-maps
     # the same way as Military Maps/Difficult Terrain -- 0-2 maps

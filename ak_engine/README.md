@@ -21581,7 +21581,7 @@ follow-up request after the original 431-435 plan shipped.
     of real temper, stacks with genuine Berserk, no-op without the
     ability), and one builder-reads-the-ability test per consumer (6
     total). Ran again: 4529 passed (net +10).
-- **Phase 520 (current)**: adds the Archery category's "Free Attack"
+- **Phase 520**: adds the Archery category's "Free Attack"
   cluster (`AdvancedAbility.ARCHERY_FREE_ATTACK`/`_MASTERY`/`_TRUE_
   MASTERY`) -- quoted from `models/advanced_ability.py ADVANCED_ABILITY_
   DESCRIPTION`: all three tiers share the identical sourced text, "One
@@ -21621,6 +21621,53 @@ follow-up request after the original 431-435 plan shipped.
     test (a 0-Archery-skill combatant with the ability still fires
     once), and one builder-reads-the-ability test per consumer (6
     total). Ran again: 4540 passed (net +11).
+- **Phase 521 (current)**: adds the March category's Cavalry/Infantry
+  movement-rate bonuses (`AdvancedAbility.MARCH_CAVALRY`/`_INFANTRY`
+  + Mastery tiers) -- quoted from `models/advanced_ability.py
+  ADVANCED_ABILITY_DESCRIPTION`: Cavalry "adds one to the movement rate
+  of land armies which start with 3 or more movement points"; Infantry,
+  the same for "1-2 movement points"; each Mastery tier "adds one more"
+  to its own band. Real rulebook [6.2] (`HostAK/MS/RULES.AK`) frames
+  this as dynamic, not a pre-turn recompute: "The increased army-
+  movement allowed by the March and Naval abilities is always
+  calculated at the moment an army moves" -- and this project has never
+  derived `ArmyState.movement_points` from a base-rate formula in the
+  first place (that field's own long-standing comment: "Not derived
+  from ARMY_TABLE speed + March/Naval ability -- the caller sets it").
+  Rather than invent the missing per-turn pipeline, this phase reads
+  the sourced quote literally: `turn/move_execution.py execute_move()`
+  grants the bonus as a one-time addition to the army's own *current*
+  pool, right before that move's own cost is deducted, gated on a new
+  `ArmyState.march_bonus_applied_this_turn` flag so a multi-phase turn
+  can't re-grant it. A leader only ever holds one Advanced Ability per
+  category (Phase 128), so a Mastery tier's own "adds one more" is read
+  as its own total, self-contained effect (+2), the same convention
+  Melee Mastery/True Mastery (Phase 517) already established. "Land
+  armies" excludes the three purely sea-going types (new
+  `models/army_type.py SEA_ARMY_TYPES`/`is_land_army()` -- Fleet,
+  Whales, Mermen); air units are left land-eligible since no source
+  narrows the wording to exclude them.
+
+  Deliberately **not** addressed this phase: `AdvancedAbility.MARCH_
+  THROUGH_FLOODS` (needs a persistent per-province "currently flooded"
+  flag this project's own `_execute_flood()` never sets) and both
+  remaining Naval members, `NAVAL_LONG_DEFEND` (the Defend-order
+  coverage-range subsystem, a different mechanic) and `NAVAL_HUG_
+  COASTLINE` (coastal land-to-land transport routing, not modeled).
+  Each is a genuinely distinct, larger mechanic -- documented as an
+  explicit scope boundary in `move_execution.py`'s own module
+  docstring rather than guessed.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4540 passed, unchanged (still true after wiring the new kwargs
+    through `plan_dispatch.py`, since no test yet exercised the new
+    fields). Wrote new tests: `march_movement_point_bonus()`'s own
+    value table (both bands, both Mastery totals, 0 without an
+    ability), `is_land_army()`'s own sea/land/air classification,
+    `execute_move()`'s own bonus-before-cost integration tests
+    (granted once, not re-granted within the same turn, withheld from
+    a sea army type, withheld without the ability), and one dispatch-
+    wiring test mirroring the Explorer abilities' own pattern. Ran
+    again: 4555 passed (net +15).
 
 ## Setup
 

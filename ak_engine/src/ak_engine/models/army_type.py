@@ -230,6 +230,22 @@ def overflight_group(army_type: ArmyType) -> str | None:
     return None
 
 
+# Phase 521: the three purely sea-going army types -- `OVERFLIGHT_SEA`'s
+# own Whales/Mermen plus Fleet (not an overflight unit itself, since it
+# has no strength-halving stacking rule, but equally not a "land army").
+# Used to classify AdvancedAbility.MARCH_CAVALRY/_INFANTRY's own "land
+# armies" -- everything except these three. Dragon Wing/Eagle Wing are
+# deliberately left counted as land-eligible: rulebook [6.2] says air
+# wings "can move by land or sea," never that they're excluded from
+# "land army" rules, and no source narrows March's own "land armies"
+# wording to exclude them.
+SEA_ARMY_TYPES = OVERFLIGHT_SEA | frozenset({ArmyType.FLEET})
+
+
+def is_land_army(army_type: ArmyType) -> bool:
+    return army_type not in SEA_ARMY_TYPES
+
+
 # Rulebook [6.3] "ARMY STRENGTH NOTES": race bonuses to basic strength.
 # "Elves: +1 when fighting as Bowmen, +1 in Forest. Dwarves: +1 as Axemen,
 # +1 in Mountains. Orcs: +1 as Phalanx, +1 in Mountains. Humans: +1 as

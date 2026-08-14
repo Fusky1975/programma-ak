@@ -348,6 +348,15 @@ class ArmyState:
     # army raised via the Skeletal_Army spell, so `turn/cast_execution.py
     # _execute_skeletal_army()` sets this field on every army it raises.
     is_skeletal: bool = False
+    # Phase 521: AdvancedAbility.MARCH_CAVALRY/_INFANTRY (+ Mastery tiers)
+    # -- rulebook [6.2]: "The increased army-movement allowed by the March
+    # and Naval abilities is always calculated at the moment an army
+    # moves." Granted at most once per gameturn (same "caller resets it,
+    # not auto-reset at turn start" convention as `unhireable_this_turn`
+    # above) by `turn/move_execution.py execute_move()`'s own Phase 521
+    # addendum, the first time this army moves this turn under a March-
+    # ability-holding leader.
+    march_bonus_applied_this_turn: bool = False
 
 
 @dataclass(slots=True)

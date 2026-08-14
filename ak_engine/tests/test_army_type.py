@@ -5,7 +5,9 @@ from ak_engine.models.army_type import (
     ARMY_TYPE_DESIGNATION,
     ARMY_TYPE_NAME,
     MONSTROUS_ARMY_RACE,
+    SEA_ARMY_TYPES,
     ArmyType,
+    is_land_army,
 )
 from ak_engine.models.race import Race
 
@@ -25,6 +27,27 @@ def test_army_type_name_excludes_artillery_and_d_turtle():
 
 def test_army_type_designation_covers_every_army_type():
     assert set(ARMY_TYPE_DESIGNATION.keys()) == set(ArmyType)
+
+
+# -- Phase 521: land/sea classification (AdvancedAbility.MARCH_CAVALRY/_INFANTRY) --
+
+
+def test_is_land_army_excludes_the_three_sea_going_types():
+    for army_type in (ArmyType.FLEET, ArmyType.WHALES, ArmyType.MERMEN):
+        assert army_type in SEA_ARMY_TYPES
+        assert is_land_army(army_type) is False
+
+
+def test_is_land_army_includes_ordinary_infantry_and_cavalry():
+    assert is_land_army(ArmyType.BOWMEN) is True
+    assert is_land_army(ArmyType.HVY_CAVALRY) is True
+
+
+def test_is_land_army_includes_air_wings():
+    # No source narrows March's own "land armies" wording to exclude
+    # fliers -- see models/army_type.py's own Phase 521 comment.
+    assert is_land_army(ArmyType.DRAGON_WING) is True
+    assert is_land_army(ArmyType.EAGLE_WING) is True
 
 
 def test_army_type_name_matches_prose_txt_marker_verbatim():

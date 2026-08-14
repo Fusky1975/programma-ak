@@ -543,6 +543,16 @@ def dispatch_phase(
     # Phase 509: same real-possession pattern, for Find Mines.
     has_find_mines = leader is not None and AdvancedAbility.EXPLORER_FIND_MINES in leader.advanced_abilities
 
+    # Phase 521: same real-possession pattern, for March.
+    has_march_cavalry = leader is not None and AdvancedAbility.MARCH_CAVALRY in leader.advanced_abilities
+    has_march_cavalry_mastery = (
+        leader is not None and AdvancedAbility.MARCH_CAVALRY_MASTERY in leader.advanced_abilities
+    )
+    has_march_infantry = leader is not None and AdvancedAbility.MARCH_INFANTRY in leader.advanced_abilities
+    has_march_infantry_mastery = (
+        leader is not None and AdvancedAbility.MARCH_INFANTRY_MASTERY in leader.advanced_abilities
+    )
+
     if action is ActionCode.LMOVE:
         target = decode_hex_number(phase.obj, board_width)
         result = execute_move(
@@ -556,6 +566,10 @@ def dispatch_phase(
             has_military_maps=has_military_maps,
             has_difficult_terrain=has_difficult_terrain,
             has_find_mines=has_find_mines,
+            has_march_cavalry=has_march_cavalry,
+            has_march_cavalry_mastery=has_march_cavalry_mastery,
+            has_march_infantry=has_march_infantry,
+            has_march_infantry_mastery=has_march_infantry_mastery,
         )
         # Phase 490 -- Arch-Mage's own "Sense Magic Items in Province"
         # perk: only meaningful once the mover actually arrived somewhere
