@@ -15,6 +15,7 @@ from ak_engine.turn.move_execution import (
     MARCH_MASTERY_ABILITY_BONUS,
     execute_move,
     march_movement_point_bonus,
+    naval_movement_point_bonus,
     record_kingdom_exploration,
 )
 
@@ -630,3 +631,77 @@ def test_execute_move_gives_no_march_bonus_without_the_ability():
 
     assert state.armies[101].movement_points == 2
     assert state.armies[101].march_bonus_applied_this_turn is False
+
+
+# -- Phase 523: Naval movement bonus (Whale League/Fleet/Mermen) --
+
+
+def test_naval_movement_point_bonus_equals_the_skill_level():
+    assert naval_movement_point_bonus(0) == 0
+    assert naval_movement_point_bonus(1) == 1
+    assert naval_movement_point_bonus(4) == 4
+    assert naval_movement_point_bonus(9) == 9  # uncapped, unlike the battle-strength bonus
+
+
+def test_naval_movement_point_bonus_clamps_negative_input_to_zero():
+    assert naval_movement_point_bonus(-3) == 0
+
+
+def test_execute_move_grants_naval_bonus_before_deducting_cost():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.armies[101] = ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=2)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, naval_skill_level=3)
+
+    # 2 (start) + 3 (bonus) - 1 (cost) == 4
+    assert state.armies[101].movement_points == 4
+    assert state.armies[101].naval_bonus_applied_this_turn is True
+
+
+def test_execute_move_does_not_regrant_naval_bonus_within_the_same_turn():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.armies[101] = ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=5)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, naval_skill_level=3)
+    after_first_move = state.armies[101].movement_points
+    execute_move(state, kingdom_id=1, army_ids=[101], target=ORIGIN, naval_skill_level=3)
+
+    assert state.armies[101].movement_points == after_first_move - 1
+
+
+def test_execute_move_gives_no_naval_bonus_to_a_land_army_type():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, naval_skill_level=3)
+
+    assert state.armies[101].movement_points == 2
+    assert state.armies[101].naval_bonus_applied_this_turn is False
+
+
+def test_execute_move_gives_no_naval_or_march_bonus_to_an_air_unit():
+    # Phase 523 correction: Dragon Wing/Eagle Wing get a flat 0 from
+    # either ability -- confirmed by the dossier's own compiled
+    # MovementBonus dispatcher.
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.armies[101] = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, ORIGIN, movement_points=3)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_cavalry=True, naval_skill_level=3)
+
+    assert state.armies[101].movement_points == 2
+    assert state.armies[101].march_bonus_applied_this_turn is False
+    assert state.armies[101].naval_bonus_applied_this_turn is False
+
+
+def test_execute_move_gives_no_naval_bonus_without_skill():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.armies[101] = ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert state.armies[101].movement_points == 2
+    assert state.armies[101].naval_bonus_applied_this_turn is False

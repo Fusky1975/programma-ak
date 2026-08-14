@@ -143,7 +143,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from ak_engine.models.army_type import is_land_army
+from ak_engine.models.army_type import SEA_ARMY_TYPES, is_land_army
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
@@ -201,6 +201,24 @@ def march_movement_point_bonus(
     if has_march_infantry and low <= current_movement_points <= high:
         return MARCH_ABILITY_BONUS
     return 0
+
+
+def naval_movement_point_bonus(naval_skill_level: int) -> int:
+    """AKGEN_reverse_engineering_report (3).md SS99 (`AKE.EXE:0x21F6A-
+    0x22080 MovementBonus`): for Whale League/Fleet/Mermen (`models/
+    army_type.py SEA_ARMY_TYPES`), the Naval movement bonus is simply the
+    leader's own effective Naval skill level, added straight to whatever
+    movement points the army already has -- "Non compare min(4,NA) nel
+    ramo navale" (no cap here, unlike the battle-strength bonus's own
+    ``min(4, NA)`` cap in ``turn/battle_orchestrator.py``). Unlike March's
+    own ``march_movement_point_bonus()``, there's no movement-point band
+    to qualify for and no separate Mastery tier -- the raw skill level
+    *is* the bonus. Clamped at 0 defensively (``effective_skill_level()``
+    should never return negative, but this keeps a stray direct caller
+    from ever subtracting movement points here).
+    """
+
+    return max(0, naval_skill_level)
 
 
 @dataclass(slots=True)
@@ -339,6 +357,7 @@ def execute_move(
     has_march_cavalry_mastery: bool = False,
     has_march_infantry: bool = False,
     has_march_infantry_mastery: bool = False,
+    naval_skill_level: int = 0,
 ) -> MoveExecutionResult:
     """Move ``army_ids`` (all from the same province) toward ``target``.
 
@@ -373,8 +392,10 @@ def execute_move(
     don't hold" -- the same convention Melee Mastery/True Mastery
     (Phase 517) already established. "Land armies" excludes the three
     purely sea-going types (`models/army_type.py SEA_ARMY_TYPES` --
-    Fleet, Whales, Mermen); air units (Dragon Wing/Eagle Wing) are left
-    land-eligible since no source narrows the wording to exclude them.
+    Fleet, Whales, Mermen); air units (Dragon Wing/Eagle Wing) were
+    originally left land-eligible here too, since no source at the time
+    narrowed the wording to exclude them -- **corrected in Phase 523**,
+    see that addendum below.
 
     Deliberately **not** addressed this phase: `AdvancedAbility.MARCH_
     THROUGH_FLOODS` (needs a persistent per-province "currently
@@ -388,7 +409,39 @@ def execute_move(
     model). Each is a genuinely distinct, larger mechanic -- left
     undone and documented here rather than guessed, the same "no
     source, no guess" boundary Melee Control Temper's and Archery's own
-    residuals (Phases 519-520) already used.
+    residuals (Phases 519-520) already used. Naval's own movement-point
+    bonus (as opposed to these two Advanced-Ability members) is closed
+    in Phase 523, see below.
+
+    **Phase 523 -- Naval movement bonus + air-unit correction.**
+    `AKGEN_reverse_engineering_report (3).md` SS97-99 (disassembly of
+    `AKE.EXE:0x21F6A-0x22080 MovementBonus`) gives the real per-army-
+    type dispatcher this project never had a source for before:
+
+    ```pascal
+    case at of
+      Dragonwing, Eaglewing: MovementBonus := 0;
+      WhaleLeague, Fleet, Mermen: MovementBonus := M_Skill(leader, Naval);
+      else: MovementBonus := MarchBonus(army_id, leader);
+    end;
+    ```
+
+    Two consequences: (1) Whale League/Fleet/Mermen (`SEA_ARMY_TYPES`)
+    get a movement bonus equal to the leader's own effective Naval skill
+    level, uncapped ("Non compare min(4,NA) nel ramo navale") -- wired
+    exactly like March's own bonus, a one-time addition right before
+    this move's cost is deducted, gated on the new `ArmyState.naval_
+    bonus_applied_this_turn` flag; (2) Dragon Wing/Eagle Wing get a flat
+    zero from *either* ability -- a real, sourced correction to the
+    Phase 521 paragraph above, which had assumed air units stayed
+    March-eligible for lack of a narrowing source. `models/army_type.py
+    is_land_army()` now excludes `OVERFLIGHT_AIR` too, so this also
+    quietly fixes March for air units at the same time. `naval_skill_
+    level` (default 0, the acting leader's `effective_skill_level(state,
+    leader, Ability.NAVAL)`, threaded in by `turn/plan_dispatch.py`)
+    isn't itself Advanced-Ability-gated -- unlike March, Naval's
+    movement bonus is a plain function of raw skill, no Mastery tier or
+    band-of-current-movement-points qualifier involved.
 
     If ``target`` isn't adjacent to the mover's own current location,
     this is a chase (Phase 85, rulebook [3.1]): one hex-step toward
@@ -403,6 +456,11 @@ def execute_move(
     army, at most once per gameturn per army (``ArmyState.march_bonus_
     applied_this_turn``) -- see module docstring's own Phase 521
     addendum.
+
+    Phase 523: ``naval_skill_level`` (default 0) grants ``naval_
+    movement_point_bonus()`` to a Whale League/Fleet/Mermen army, at
+    most once per gameturn per army (``ArmyState.naval_bonus_applied_
+    this_turn``) -- see module docstring's own Phase 523 addendum.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -534,6 +592,11 @@ def execute_move(
             if bonus:
                 army.movement_points += bonus
                 army.march_bonus_applied_this_turn = True
+        if not army.naval_bonus_applied_this_turn and army.army_type in SEA_ARMY_TYPES:
+            naval_bonus = naval_movement_point_bonus(naval_skill_level)
+            if naval_bonus:
+                army.movement_points += naval_bonus
+                army.naval_bonus_applied_this_turn = True
         army.movement_points -= cost
         if moved and army.location == current:
             army.location = actual_target

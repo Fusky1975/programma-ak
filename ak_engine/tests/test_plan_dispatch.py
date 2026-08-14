@@ -9,6 +9,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
@@ -269,6 +270,26 @@ def test_dispatch_lmove_wires_march_cavalry_from_the_leaders_own_advanced_abilit
     dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
 
     assert state.armies[army_id].march_bonus_applied_this_turn is True
+
+
+def test_dispatch_lmove_wires_naval_skill_level_from_the_leaders_own_naval_ability():
+    # Phase 523: dispatch_phase() derives naval_skill_level from the
+    # leader's own real effective_skill_level(Ability.NAVAL) -- a Fleet
+    # gets the bonus applied before this move's own cost is deducted.
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    state.armies[army_id] = ArmyState(
+        army_id, 1, ArmyType.FLEET, Quality.AVERAGE, origin, movement_points=5, commanded_by=LEADER_ID
+    )
+    raw_values = [0] * 30
+    raw_values[Ability.NAVAL.value * 2] = 3  # skill level 3
+    state.leaders[LEADER_ID].skills = SkillTable(raw_values=raw_values)
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert state.armies[army_id].naval_bonus_applied_this_turn is True
 
 
 def test_dispatch_explore_wires_society_maps_from_the_leaders_own_advanced_ability():

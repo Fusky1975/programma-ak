@@ -354,7 +354,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ak_engine.models.advanced_ability import AdvancedAbility
-from ak_engine.models.enums import ActionCode
+from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
 from ak_engine.models.plan import ActionPlan, PlanPhase
@@ -365,6 +365,7 @@ from ak_engine.turn.cast_decode import decode_cast_phase
 from ak_engine.turn.cast_execution import CastExecutionResult, execute_cast
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult, execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.exploration import SOCIETY_MAPS_EXPLORE_COUNT_RANGE, receive_society_maps, resolve_explore
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
@@ -553,6 +554,12 @@ def dispatch_phase(
         leader is not None and AdvancedAbility.MARCH_INFANTRY_MASTERY in leader.advanced_abilities
     )
 
+    # Phase 523: the leader's own real effective Naval skill level, not an
+    # AdvancedAbility flag -- see move_execution.py's own Phase 523
+    # addendum for why Naval's movement bonus is a plain function of raw
+    # skill rather than a gated Advanced Ability.
+    naval_skill_level = effective_skill_level(state, leader, Ability.NAVAL) if leader is not None else 0
+
     if action is ActionCode.LMOVE:
         target = decode_hex_number(phase.obj, board_width)
         result = execute_move(
@@ -570,6 +577,7 @@ def dispatch_phase(
             has_march_cavalry_mastery=has_march_cavalry_mastery,
             has_march_infantry=has_march_infantry,
             has_march_infantry_mastery=has_march_infantry_mastery,
+            naval_skill_level=naval_skill_level,
         )
         # Phase 490 -- Arch-Mage's own "Sense Magic Items in Province"
         # perk: only meaningful once the mover actually arrived somewhere

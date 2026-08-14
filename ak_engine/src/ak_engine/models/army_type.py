@@ -234,16 +234,25 @@ def overflight_group(army_type: ArmyType) -> str | None:
 # own Whales/Mermen plus Fleet (not an overflight unit itself, since it
 # has no strength-halving stacking rule, but equally not a "land army").
 # Used to classify AdvancedAbility.MARCH_CAVALRY/_INFANTRY's own "land
-# armies" -- everything except these three. Dragon Wing/Eagle Wing are
-# deliberately left counted as land-eligible: rulebook [6.2] says air
-# wings "can move by land or sea," never that they're excluded from
-# "land army" rules, and no source narrows March's own "land armies"
-# wording to exclude them.
+# armies".
+#
+# **Phase 523 correction**: Phase 521 originally left Dragon Wing/Eagle
+# Wing counted as land-eligible ("no source narrows March's own 'land
+# armies' wording to exclude them"). `AKGEN_reverse_engineering_report
+# (3).md` SS97/SS99 now supplies that source: the compiled `MovementBonus`
+# dispatcher (`AKE.EXE:0x21F6A-0x22080`) has an explicit `Dragonwing,
+# Eaglewing: MovementBonus := 0` branch *before* the March/Naval branches
+# -- "Dragons ed Eagles ... non ricevono punti movimento da March o
+# Naval." Air wings do use their commander's Naval strength multiplier in
+# a sea battle (SS97/SS101), just never a March/Naval *movement-point*
+# bonus -- a real speed-5 unit with a fixed rate, not a "land army" for
+# this specific purpose. `is_land_army()` now excludes `OVERFLIGHT_AIR`
+# too, superseding the stale Phase 521 reasoning above.
 SEA_ARMY_TYPES = OVERFLIGHT_SEA | frozenset({ArmyType.FLEET})
 
 
 def is_land_army(army_type: ArmyType) -> bool:
-    return army_type not in SEA_ARMY_TYPES
+    return army_type not in SEA_ARMY_TYPES and army_type not in OVERFLIGHT_AIR
 
 
 # Rulebook [6.3] "ARMY STRENGTH NOTES": race bonuses to basic strength.

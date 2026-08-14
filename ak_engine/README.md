@@ -21668,7 +21668,7 @@ follow-up request after the original 431-435 plan shipped.
     a sea army type, withheld without the ability), and one dispatch-
     wiring test mirroring the Explorer abilities' own pattern. Ran
     again: 4555 passed (net +15).
-- **Phase 522 (current)**: closes the "necromantic Charm" gap the user
+- **Phase 522**: closes the "necromantic Charm" gap the user
   flagged after supplying `AKGEN_reverse_engineering_report (3).md`, a
   disassembly dossier on `Charm`/`Enhanced Charm`/`Analytical Psychology`.
   `turn/cast_execution.py _execute_charm()` already had the Undead-caster
@@ -21719,6 +21719,49 @@ follow-up request after the original 431-435 plan shipped.
     an Undead King's own already-loyal Hero still converts under
     Analytical Psychology, and the general AP-marker fix in isolation).
     Ran again: 4568 passed (net +13).
+- **Phase 523 (current)**: closes the Naval movement-point gap Phase 521
+  explicitly deferred ("both remaining Naval members ... left undone"),
+  after the user asked what else `AKGEN_reverse_engineering_report
+  (3).md` could still be mined for and picked this one. The dossier's
+  own SS97-99 (disassembly of `AKE.EXE:0x21F6A-0x22080 MovementBonus`)
+  gives the real per-army-type dispatcher:
+  ```pascal
+  case at of
+    Dragonwing, Eaglewing: MovementBonus := 0;
+    WhaleLeague, Fleet, Mermen: MovementBonus := M_Skill(leader, Naval);
+    else: MovementBonus := MarchBonus(army_id, leader);
+  end;
+  ```
+  Two consequences. First, Whale League/Fleet/Mermen now get a movement
+  bonus equal to the leader's own effective Naval skill level, uncapped
+  ("Non compare min(4,NA) nel ramo navale") -- new `turn/move_execution.py
+  naval_movement_point_bonus()`, wired exactly like March's own bonus
+  (Phase 521): a one-time addition right before the move's own cost is
+  deducted, gated on a new `ArmyState.naval_bonus_applied_this_turn`
+  flag, `naval_skill_level` threaded in by `turn/plan_dispatch.py` from
+  the acting leader's own `effective_skill_level(Ability.NAVAL)` -- not
+  Advanced-Ability-gated like March, since Naval's bonus is a plain
+  function of raw skill. Second, and unplanned: the same dispatcher
+  proves Dragon Wing/Eagle Wing get a flat zero from *either* ability --
+  a real, sourced correction to Phase 521's own "no source narrows
+  March's land-armies wording to exclude fliers" assumption.
+  `models/army_type.py is_land_army()` now excludes `OVERFLIGHT_AIR`
+  too, fixing March for air units at the same time.
+
+  Still deliberately not addressed: `NAVAL_HUG_COASTLINE` (coastal
+  land-to-land transport routing) and `NAVAL_LONG_DEFEND` (Defend-order
+  coverage-range extension) -- each its own distinct, larger mechanic,
+  same boundary Phase 521 already drew.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4568 passed, unchanged. Wrote new tests: `naval_movement_point_
+    bonus()`'s own value table (equals the skill level, uncapped;
+    clamps negative input to 0), `execute_move()`'s own bonus-before-
+    cost integration tests (granted once, not re-granted within the
+    same turn, withheld from a land army type, withheld from an air
+    unit alongside March -- the Phase 523 correction's own regression
+    test, withheld without Naval skill), `is_land_army()`'s own
+    air-wing-exclusion rewrite, and a dispatch-wiring test mirroring
+    March's own pattern. Ran again: 4576 passed (net +8).
 
 ## Setup
 

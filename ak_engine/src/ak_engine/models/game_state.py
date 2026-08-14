@@ -357,6 +357,13 @@ class ArmyState:
     # addendum, the first time this army moves this turn under a March-
     # ability-holding leader.
     march_bonus_applied_this_turn: bool = False
+    # Phase 523: the Naval sibling of `march_bonus_applied_this_turn` above --
+    # AKGEN_reverse_engineering_report (3).md SS99's own `M_Skill(leader,
+    # Naval)` movement bonus for Whale League/Fleet/Mermen, granted at most
+    # once per gameturn by `turn/move_execution.py execute_move()`'s own
+    # Phase 523 addendum. Same "caller resets it, not auto-reset at turn
+    # start" convention.
+    naval_bonus_applied_this_turn: bool = False
 
 
 @dataclass(slots=True)
