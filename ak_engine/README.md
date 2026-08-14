@@ -21296,7 +21296,7 @@ follow-up request after the original 431-435 plan shipped.
     a full `fight_battle()` integration test (seeded RNG, a level-9
     Tactical commander with/without Tactical Mastery: 20%, comparing
     `attacker_strength` directly). Ran again: 4446 passed (net +8).
-- **Phase 513 (current)**: closes out the Tactical category -- the last
+- **Phase 513**: closes out the Tactical category -- the last
   3 of its 6 Advanced Abilities (Wargames Mastery, Combined Arms, Adapt
   Tactics to Terrain), on top of Phase 512's own Mastery-tier work.
   Quoted directly from `models/advanced_ability.py ADVANCED_ABILITY_
@@ -21360,6 +21360,38 @@ follow-up request after the original 431-435 plan shipped.
     Combined Arms' own side/terrain eligibility via a mocked
     `resolve_battle()` call, avoiding duel/luck confounders). Ran again:
     4457 passed (net +11).
+- **Phase 514 (current)**: adds Naval Combined Arms -- the exact
+  sea-terrain twin of Phase 513's Tactical Combined Arms ("A character
+  can use Naval Combined Arms when in supreme command at a sea
+  battle... This allows the first two units in a column, if they are
+  different army types, to complement each other's fighting abilities.
+  They both fight at 100% strength.").
+  - Refactored `fight_battle()`'s own Combined-Arms resolution: new
+    `_COMBINED_ARMS_ABILITY_BY_CATEGORY` dict (`Ability.TACTICAL` ->
+    `TACTICAL_COMBINED_ARMS`, `Ability.NAVAL` -> `NAVAL_COMBINED_ARMS`)
+    and `_combined_arms_for(leader, ability)` replace Phase 513's own
+    hardcoded `terrain is not Terrain.SEA` check -- gating on `ability`
+    (already `Ability.NAVAL` iff the battle's real terrain is Sea, via
+    the existing `_combat_ability_for_terrain()`) naturally encodes
+    "land battle" vs. "sea battle" for whichever category applies,
+    without a separate terrain check. `resolve_battle()`'s own
+    `attacker_combined_arms`/`defender_combined_arms` parameters (added
+    Phase 513) are unchanged -- this phase only changes which Advanced
+    Ability `fight_battle()` checks before passing them in.
+  - This brings Naval to 4 of its 6 abilities wired (the 3 Mastery
+    tiers from Phase 512, plus this one). The remaining 2 (Long Defend,
+    Hug Coastline) are Defend-range/movement mechanics, not battle-
+    strength ones -- out of scope for this Advanced-Ability-in-combat
+    line of phases; still unwired. All 12 other non-Explorer categories
+    stay unwired too.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4457 passed, unchanged (the refactor preserves every existing
+    Tactical Combined Arms test's behavior exactly). Wrote new tests:
+    `_combined_arms_for()` (no leader, matching category, mismatched
+    category) and `fight_battle()` integration tests for Naval Combined
+    Arms (eligible at Sea, ineligible on land), mirroring Phase 513's
+    own mocked-`resolve_battle()` pattern. Ran again: 4462 passed (net
+    +5).
 
 ## Setup
 

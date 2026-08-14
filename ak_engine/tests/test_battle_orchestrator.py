@@ -31,6 +31,7 @@ from ak_engine.turn.battle_orchestrator import (
     _column_bres_by_army_id,
     _commander_combatant,
     _direct_destruction_probabilities,
+    _combined_arms_for,
     _formation_divisors,
     _maybe_fight_duel,
     _mastery_bonus_for,
@@ -945,6 +946,66 @@ def test_fight_battle_combined_arms_ineligible_at_sea():
     state.add_leader(LeaderState(1, kingdom_id=1, name="General", location=FIELD))
     state.armies[101].commanded_by = 1
     state.leaders[1].advanced_abilities.add(AdvancedAbility.TACTICAL_COMBINED_ARMS)
+    battle_result = BattleResult(columns=[], winner="attacker", total_bres=1)
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result) as mock_resolve:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    assert mock_resolve.call_args.kwargs["attacker_combined_arms"] is False
+
+
+def test_combined_arms_for_returns_false_for_no_leader():
+    assert _combined_arms_for(None, Ability.TACTICAL) is False
+
+
+def test_combined_arms_for_true_when_the_matching_ability_is_held():
+    tactical_leader = LeaderState(1, kingdom_id=1, name="General", location=FIELD)
+    tactical_leader.advanced_abilities.add(AdvancedAbility.TACTICAL_COMBINED_ARMS)
+    naval_leader = LeaderState(2, kingdom_id=1, name="Admiral", location=FIELD)
+    naval_leader.advanced_abilities.add(AdvancedAbility.NAVAL_COMBINED_ARMS)
+
+    assert _combined_arms_for(tactical_leader, Ability.TACTICAL) is True
+    assert _combined_arms_for(naval_leader, Ability.NAVAL) is True
+
+
+def test_combined_arms_for_false_when_the_category_doesnt_match():
+    tactical_leader = LeaderState(1, kingdom_id=1, name="General", location=FIELD)
+    tactical_leader.advanced_abilities.add(AdvancedAbility.TACTICAL_COMBINED_ARMS)
+
+    assert _combined_arms_for(tactical_leader, Ability.NAVAL) is False
+
+
+def test_fight_battle_naval_combined_arms_boosts_second_line_at_sea():
+    # Phase 514: Naval Combined Arms is the sea-terrain twin of Phase
+    # 513's Tactical Combined Arms -- proven the same way, via a mocked
+    # resolve_battle() so duel/luck can't confound it.
+    state = build_state()
+    state.provinces[FIELD].terrain = Terrain.SEA
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Admiral", location=FIELD))
+    state.armies[101].commanded_by = 1
+    state.leaders[1].advanced_abilities.add(AdvancedAbility.NAVAL_COMBINED_ARMS)
+    battle_result = BattleResult(columns=[], winner="attacker", total_bres=1)
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result) as mock_resolve:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    assert mock_resolve.call_args.kwargs["attacker_combined_arms"] is True
+    assert mock_resolve.call_args.kwargs["defender_combined_arms"] is False
+
+
+def test_fight_battle_naval_combined_arms_ineligible_on_land():
+    # "when in supreme command at a sea battle" -- land terrain
+    # disqualifies even a Supreme Commander who holds the Naval ability.
+    state = build_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Admiral", location=FIELD))
+    state.armies[101].commanded_by = 1
+    state.leaders[1].advanced_abilities.add(AdvancedAbility.NAVAL_COMBINED_ARMS)
     battle_result = BattleResult(columns=[], winner="attacker", total_bres=1)
 
     with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result) as mock_resolve:

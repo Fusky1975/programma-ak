@@ -835,6 +835,31 @@ def _mastery_bonus_for(leader: LeaderState | None, ability: Ability) -> float:
     return max(held, default=0.0)
 
 
+# Phase 514: Naval Combined Arms is the exact sea-terrain twin of Phase
+# 513's Tactical Combined Arms ("A character can use Naval Combined Arms
+# when in supreme command at a sea battle..." vs "...at a land battle").
+# `_combat_ability_for_terrain()` already answers "Tactical or Naval" from
+# the terrain alone, so gating on this dict's own key naturally encodes
+# "land battle" (Ability.TACTICAL) / "sea battle" (Ability.NAVAL) without
+# a separate terrain check.
+_COMBINED_ARMS_ABILITY_BY_CATEGORY: dict[Ability, AdvancedAbility] = {
+    Ability.TACTICAL: AdvancedAbility.TACTICAL_COMBINED_ARMS,
+    Ability.NAVAL: AdvancedAbility.NAVAL_COMBINED_ARMS,
+}
+
+
+def _combined_arms_for(leader: LeaderState | None, ability: Ability) -> bool:
+    """Does ``leader`` hold the Combined Arms Advanced Ability matching
+    ``ability`` (Tactical on land, Naval at sea)? Same "no data, no
+    bonus" convention as ``_mastery_bonus_for``.
+    """
+
+    if leader is None:
+        return False
+    combined_arms_ability = _COMBINED_ARMS_ABILITY_BY_CATEGORY.get(ability)
+    return combined_arms_ability is not None and combined_arms_ability in leader.advanced_abilities
+
+
 def _whale_forced_retreat_applies(army: ArmyState, battle_terrain: Terrain) -> bool:
     """Rulebook: "Whales... if they lose a battle in [a terrain other than Sea], they
     can retreat into a Sea hex automatically without fear of being destroyed."
@@ -1707,17 +1732,12 @@ def fight_battle(
     attacker_mastery_bonus = _mastery_bonus_for(attacker_commander_leader, ability)
     defender_mastery_bonus = _mastery_bonus_for(defender_commander_leader, ability)
 
-    # Tactical Combined Arms (Phase 513): "when in supreme command at a
-    # land battle" -- terrain isn't Sea, and the side's own Supreme
-    # Commander (same leader already resolved above) holds the ability.
-    attacker_combined_arms = terrain is not Terrain.SEA and (
-        attacker_commander_leader is not None
-        and AdvancedAbility.TACTICAL_COMBINED_ARMS in attacker_commander_leader.advanced_abilities
-    )
-    defender_combined_arms = terrain is not Terrain.SEA and (
-        defender_commander_leader is not None
-        and AdvancedAbility.TACTICAL_COMBINED_ARMS in defender_commander_leader.advanced_abilities
-    )
+    # Tactical/Naval Combined Arms (Phase 513/514): "when in supreme
+    # command at a land/sea battle" -- see _combined_arms_for's own Phase
+    # 514 docstring for why gating on `ability` alone already encodes the
+    # terrain condition, no separate check needed.
+    attacker_combined_arms = _combined_arms_for(attacker_commander_leader, ability)
+    defender_combined_arms = _combined_arms_for(defender_commander_leader, ability)
 
     # Duellist / "Captain of the Musketeers" (Phase 471, SS17.7): "Quando
     # il titolare è comandante supremo in battaglia" -- resolved once,
