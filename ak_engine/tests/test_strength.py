@@ -43,6 +43,21 @@ def test_adverse_terrain_halves_the_terrain_modified_strength():
     assert strength == pytest.approx((3 / 2) * int(Quality.GREEN))
 
 
+def test_adapt_tactics_to_terrain_reduces_the_adverse_terrain_penalty_to_75_percent():
+    strength = compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.GREEN, Terrain.SEA, adapt_tactics_to_terrain=True
+    )
+    assert strength == pytest.approx((3 * 0.75) * int(Quality.GREEN))
+
+
+def test_adapt_tactics_to_terrain_has_no_effect_outside_adverse_terrain():
+    normal = compute_effective_strength(ArmyType.PHALANX, Race.HUMAN, Quality.GREEN, Terrain.PLAINS)
+    with_ability = compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.GREEN, Terrain.PLAINS, adapt_tactics_to_terrain=True
+    )
+    assert with_ability == pytest.approx(normal)
+
+
 def test_garrison_uses_asymmetric_attack_and_defense_strength():
     attack = compute_effective_strength(ArmyType.GARRISON, Race.HUMAN, Quality.GREEN, Terrain.PLAINS, is_defender=False)
     defense = compute_effective_strength(ArmyType.GARRISON, Race.HUMAN, Quality.GREEN, Terrain.PLAINS, is_defender=True)

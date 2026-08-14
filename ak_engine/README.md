@@ -21247,7 +21247,7 @@ follow-up request after the original 431-435 plan shipped.
     pair now exchanges when either side has a qualifying Explorer; the
     same pair still fails with no qualifying Explorer on either side).
     Ran again: 4438 passed (net +13).
-- **Phase 512 (current)**: starts the Tactical/Naval Advanced Ability
+- **Phase 512**: starts the Tactical/Naval Advanced Ability
   categories (the only two of Explorer's 14 sibling categories touched
   so far, per a survey of `models/advanced_ability.py`'s remaining 89
   Advanced Abilities) with Tactical Mastery (10%/15%/20% Tactical
@@ -21296,6 +21296,70 @@ follow-up request after the original 431-435 plan shipped.
     a full `fight_battle()` integration test (seeded RNG, a level-9
     Tactical commander with/without Tactical Mastery: 20%, comparing
     `attacker_strength` directly). Ran again: 4446 passed (net +8).
+- **Phase 513 (current)**: closes out the Tactical category -- the last
+  3 of its 6 Advanced Abilities (Wargames Mastery, Combined Arms, Adapt
+  Tactics to Terrain), on top of Phase 512's own Mastery-tier work.
+  Quoted directly from `models/advanced_ability.py ADVANCED_ABILITY_
+  DESCRIPTION`.
+  - **Adapt Tactics to Terrain**: "When a character directly leads a
+    unit at a battle, the effect of adverse terrain is reduced. The
+    unit is reduced to 75% of normal strength, instead of 50%." A
+    *per-unit* check (unlike Phase 512's side-wide Supreme-Commander-
+    only resolution): each army's own `commanded_by` leader, if any, is
+    checked directly, since the rulebook says "a character directly
+    leads a unit," not "the side's Supreme Commander." New
+    `turn/strength.py _terrain_strength()`/`compute_effective_
+    strength()` parameter `adapt_tactics_to_terrain` swaps the existing
+    adverse-terrain halving (`* 0.5`) for `* 0.75`; resolved per-army in
+    `turn/battle_orchestrator.py _build_battle_units()`.
+  - **Tactical Combined Arms**: "A character can use Combined Arms when
+    in supreme command at a land battle. This allows the first two
+    units in a column, if they are different army types, to complement
+    each other's fighting abilities. They both fight at 100% strength."
+    A third, independent trigger for the exact numeric effect
+    `turn/battle_line.py column_strength()`'s own `outflank_second_
+    line` already implements for numeric-superiority outflanking (Phase
+    64) and non-humanoid rear-targeting (Phase 39): the ordinary unit
+    at column depth 1 counts at 100% instead of 50%. `turn/battle_
+    resolution.py resolve_battle()` gains `attacker_combined_arms`/
+    `defender_combined_arms` parameters, OR'd into the existing
+    `outflank_second_line` argument per column, gated on that column's
+    own first two units actually differing in `ArmyType`.
+    `battle_orchestrator.py fight_battle()` resolves each side's own
+    eligibility once (terrain isn't Sea, and the side's already-selected
+    Supreme Commander holds the ability) and threads it through.
+  - **Tactical Wargames Mastery**: "The chance for a unit to increase in
+    quality when Practicing Tactics (or Naval) is increased by 100%
+    (example: an Average unit now has a 10% chance to improve per
+    phase)." Read as this project's own post-battle quality-improve
+    roll (`turn/aftermath.py roll_quality_change()`'s own `improve_
+    chance`, rulebook [7.5]) -- the only "chance for a unit to increase
+    in quality" mechanic this engine models -- doubled and capped at
+    1.0, the same "leadership ability modifies improve-chance"
+    precedent `led_by_insufficient_druid`/`DRUID_LED_IMPROVE_MULTIPLIER`
+    already established. Applied in both the winner branch and the
+    "didn't retreat" mixed branch (unlike the Druidic penalty, since the
+    ability's own description names no winner/loser distinction).
+    Resolved once per army in `fight_battle()` (`wargames_mastery_by_
+    army_id`, the same per-army-dict shape as the existing Druidic
+    lookup) from that army's own `commanded_by` leader, not necessarily
+    the side's Supreme Commander.
+  - This closes all 6 Tactical Advanced Abilities. The 3 remaining Naval
+    ones (Long Defend, Hug Coastline, Naval Combined Arms) and all 12
+    other non-Explorer categories are still unwired.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4446 passed, unchanged, after each of the three wirings in turn.
+    Wrote new tests: `compute_effective_strength()`'s own 75%-vs-50%
+    adverse-terrain swap (in and outside adverse terrain);
+    `roll_quality_change()`'s doubled improve chance (winner branch, the
+    1.0 cap, and the mixed branch); `resolve_battle()`'s own Combined
+    Arms boost (differing types, matching types, flag off); and
+    `fight_battle()` integration tests for all three (Adapt Tactics to
+    Terrain's exact 0.75x delta, Wargames Mastery's existing mock-based
+    `roll_quality_change` assertion extended with the new parameter, and
+    Combined Arms' own side/terrain eligibility via a mocked
+    `resolve_battle()` call, avoiding duel/luck confounders). Ran again:
+    4457 passed (net +11).
 
 ## Setup
 

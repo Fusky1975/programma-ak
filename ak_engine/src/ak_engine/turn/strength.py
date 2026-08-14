@@ -375,6 +375,7 @@ def _terrain_strength(
     *,
     is_defender: bool,
     base_strength_override: float | None,
+    adapt_tactics_to_terrain: bool = False,
 ) -> float:
     """The terrain-dependent portion of the strength pipeline only -- base
     strength, race/army-type terrain bonuses, adverse-terrain halving, and
@@ -383,6 +384,15 @@ def _terrain_strength(
     terrain) and average the results for an Island-province battle --
     see that function's own ``is_island`` parameter and the module
     docstring's Phase 282 section.
+
+    ``adapt_tactics_to_terrain`` (Advanced Ability, Phase 513): "When a
+    character directly leads a unit at a battle, the effect of adverse
+    terrain is reduced. The unit is reduced to 75% of normal strength,
+    instead of 50%." -- a per-unit override of the ordinary adverse-
+    terrain halving below (0.75 instead of 0.5), resolved by the caller
+    from whether *this specific army's own commander* (not necessarily
+    the side's Supreme Commander) holds the ability. Defaults to
+    ``False`` (unchanged 50% halving) for every pre-Phase-513 caller.
     """
 
     if army_type is ArmyType.WHALES and terrain is not Terrain.SEA:
@@ -398,7 +408,7 @@ def _terrain_strength(
     if stats is not None and terrain in stats.home_terrain:
         strength += 1
     if stats is not None and terrain in stats.adverse_terrain:
-        strength /= 2
+        strength *= 0.75 if adapt_tactics_to_terrain else 0.5
 
     return strength
 
@@ -424,6 +434,7 @@ def compute_effective_strength(
     base_strength_override: float | None = None,
     illusory_fog_affected: bool = False,
     is_island: bool = False,
+    adapt_tactics_to_terrain: bool = False,
 ) -> float:
     """Full effective-strength pipeline, in the rulebook's documented order.
 
@@ -461,19 +472,28 @@ def compute_effective_strength(
     ``race_item_bonus``): passed straight through to ``modified_
     quality()``'s own parameter of the same name -- see that function's
     docstring. Defaults to 0 for every pre-Phase-285 caller, unaffected.
+
+    **Adapt Tactics to Terrain** (Advanced Ability, Phase 513,
+    ``adapt_tactics_to_terrain``): passed straight through to
+    ``_terrain_strength()``'s own parameter of the same name -- see that
+    function's docstring. Defaults to ``False`` for every pre-Phase-513
+    caller, unaffected.
     """
 
     if is_island and army_type not in OVERFLIGHT_AIR:
         land_strength = _terrain_strength(
-            army_type, race, terrain, is_defender=is_defender, base_strength_override=base_strength_override
+            army_type, race, terrain, is_defender=is_defender, base_strength_override=base_strength_override,
+            adapt_tactics_to_terrain=adapt_tactics_to_terrain,
         )
         sea_strength = _terrain_strength(
-            army_type, race, Terrain.SEA, is_defender=is_defender, base_strength_override=base_strength_override
+            army_type, race, Terrain.SEA, is_defender=is_defender, base_strength_override=base_strength_override,
+            adapt_tactics_to_terrain=adapt_tactics_to_terrain,
         )
         strength = (land_strength + sea_strength) / 2
     else:
         strength = _terrain_strength(
-            army_type, race, terrain, is_defender=is_defender, base_strength_override=base_strength_override
+            army_type, race, terrain, is_defender=is_defender, base_strength_override=base_strength_override,
+            adapt_tactics_to_terrain=adapt_tactics_to_terrain,
         )
 
     quality = modified_quality(

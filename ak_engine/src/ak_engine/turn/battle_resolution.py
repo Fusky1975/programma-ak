@@ -187,6 +187,8 @@ def resolve_battle(
     is_first_turn: bool = True,
     attacker_column_bonus: dict[int, int] | None = None,
     defender_column_bonus: dict[int, int] | None = None,
+    attacker_combined_arms: bool = False,
+    defender_combined_arms: bool = False,
     rng: random.Random | None = None,
 ) -> BattleResult:
     """Line up both sides, apply the real luck formula, and decide a
@@ -218,6 +220,24 @@ def resolve_battle(
     exists for a caller to inject a per-column bonus. ``None``/an absent
     key both mean "no bonus for that column", the default for every
     caller that isn't fighting a Druidic side.
+
+    ``attacker_combined_arms``/``defender_combined_arms`` (Advanced
+    Ability, Phase 513): quoted from ``models/advanced_ability.py
+    ADVANCED_ABILITY_DESCRIPTION[TACTICAL_COMBINED_ARMS]``: "This allows
+    the first two units in a column, if they are different army types,
+    to complement each other's fighting abilities. They both fight at
+    100% strength." -- a third, independent trigger for exactly the
+    same numeric effect ``column_strength()``'s own ``outflank_second_
+    line`` already implements for numeric-superiority outflanking and
+    non-humanoid rear-targeting: the ordinary (non-overflight) unit at
+    column depth 1 counts at 100% instead of the usual 50%. Folded into
+    the same ``outflank_second_line`` argument below via OR, gated
+    per-column on that column's own first two units actually being
+    different ``ArmyType``s -- the caller (``turn/battle_orchestrator.py
+    fight_battle()``) resolves the side-level eligibility ("in supreme
+    command at a **land** battle") once; this function only needs to
+    know whether the *ability* is available for this side, not the
+    terrain itself. Default ``False`` for every pre-Phase-513 caller.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -258,11 +278,25 @@ def resolve_battle(
     # to 100% strength -- see column_strength's docstring. OR'd with the
     # numeric-superiority eligibility computed above. Unchanged by Phase 370.
     attacker_strengths = [
-        column_strength(a_col, outflank_second_line=attacker_outflank_eligible or column_has_overflight_unit(d_col))
+        column_strength(
+            a_col,
+            outflank_second_line=(
+                attacker_outflank_eligible
+                or column_has_overflight_unit(d_col)
+                or (attacker_combined_arms and len(a_col) >= 2 and a_col[0].army_type != a_col[1].army_type)
+            ),
+        )
         for a_col, d_col in zip(attacker_columns, defender_columns)
     ]
     defender_strengths = [
-        column_strength(d_col, outflank_second_line=defender_outflank_eligible or column_has_overflight_unit(a_col))
+        column_strength(
+            d_col,
+            outflank_second_line=(
+                defender_outflank_eligible
+                or column_has_overflight_unit(a_col)
+                or (defender_combined_arms and len(d_col) >= 2 and d_col[0].army_type != d_col[1].army_type)
+            ),
+        )
         for a_col, d_col in zip(attacker_columns, defender_columns)
     ]
 

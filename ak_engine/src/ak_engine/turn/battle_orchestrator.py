@@ -475,6 +475,18 @@ def _build_battle_units(
     (the user's own rulebook text names only the army's own commanding
     Hero or King). Checked once per unit via ``state.items_held_by()``,
     fully deterministic, no ``rng`` involved.
+
+    **Adapt Tactics to Terrain** (Advanced Ability, Phase 513): quoted
+    directly from ``models/advanced_ability.py ADVANCED_ABILITY_
+    DESCRIPTION[ADAPT_TACTICS_TO_TERRAIN]``: "When a character directly
+    leads a unit at a battle, the effect of adverse terrain is reduced.
+    The unit is reduced to 75% of normal strength, instead of 50%." --
+    a *per-unit* check (unlike ``combat_ability_mastery_bonus``'s own
+    side-wide Supreme-Commander-only resolution above): each army's own
+    ``commanded_by`` leader, if any, is checked directly, since the
+    rulebook says "a character directly leads a unit," not "the side's
+    Supreme Commander." Passed straight through to ``turn/strength.py
+    compute_effective_strength()``'s own parameter of the same name.
     """
 
     desert_without_camels = (
@@ -540,6 +552,13 @@ def _build_battle_units(
             if phantasmal_armies_level > 0 and opponent_owns_balloons
             else PHANTASMAL_ARMIES_BONUS_PER_LEVEL
         )
+        adapt_tactics_to_terrain = False
+        if army.commanded_by is not None:
+            commanding_leader = state.leaders.get(army.commanded_by)
+            adapt_tactics_to_terrain = (
+                commanding_leader is not None
+                and AdvancedAbility.ADAPT_TACTICS_TO_TERRAIN in commanding_leader.advanced_abilities
+            )
         strength = compute_effective_strength(
             army.army_type,
             kingdom.race,
@@ -559,6 +578,7 @@ def _build_battle_units(
             own_explored_percent=own_explored_percent,
             illusory_fog_affected=illusory_fog_affected,
             is_island=is_island,
+            adapt_tactics_to_terrain=adapt_tactics_to_terrain,
         )
         duellist_bonus_if_selected = None
         if duellist_side:
@@ -581,6 +601,7 @@ def _build_battle_units(
                 own_explored_percent=own_explored_percent,
                 illusory_fog_affected=illusory_fog_affected,
                 is_island=is_island,
+                adapt_tactics_to_terrain=adapt_tactics_to_terrain,
             )
             duellist_bonus_if_selected = fanatic_strength - strength
         rear_targeting_blocked = is_overflight_unit(army.army_type) and druidic_shortfall > 0
@@ -1686,6 +1707,18 @@ def fight_battle(
     attacker_mastery_bonus = _mastery_bonus_for(attacker_commander_leader, ability)
     defender_mastery_bonus = _mastery_bonus_for(defender_commander_leader, ability)
 
+    # Tactical Combined Arms (Phase 513): "when in supreme command at a
+    # land battle" -- terrain isn't Sea, and the side's own Supreme
+    # Commander (same leader already resolved above) holds the ability.
+    attacker_combined_arms = terrain is not Terrain.SEA and (
+        attacker_commander_leader is not None
+        and AdvancedAbility.TACTICAL_COMBINED_ARMS in attacker_commander_leader.advanced_abilities
+    )
+    defender_combined_arms = terrain is not Terrain.SEA and (
+        defender_commander_leader is not None
+        and AdvancedAbility.TACTICAL_COMBINED_ARMS in defender_commander_leader.advanced_abilities
+    )
+
     # Duellist / "Captain of the Musketeers" (Phase 471, SS17.7): "Quando
     # il titolare è comandante supremo in battaglia" -- resolved once,
     # here, before _build_battle_units builds either side's own units
@@ -1827,6 +1860,8 @@ def fight_battle(
         is_first_turn=state.turn_number <= 1,
         attacker_column_bonus=attacker_column_bonus,
         defender_column_bonus=defender_column_bonus,
+        attacker_combined_arms=attacker_combined_arms,
+        defender_combined_arms=defender_combined_arms,
         rng=rng,
     )
 
@@ -1864,6 +1899,23 @@ def fight_battle(
     # site below regardless of which side/branch an army falls into.
     led_by_insufficient_druid_by_army_id = {
         unit.source_id: unit.led_by_insufficient_druid for unit in (*attacker_units, *defender_units)
+    }
+
+    # Tactical Wargames Mastery (Advanced Ability, Phase 513): see
+    # turn/aftermath.py roll_quality_change()'s own Phase 513 addendum --
+    # this side's own army's commanding leader (not necessarily the
+    # side's Supreme Commander, since the ability's own description
+    # names no such restriction) holds the ability. Resolved once here,
+    # the same per-army dict shape as led_by_insufficient_druid_by_
+    # army_id above, so every quality-change call site below can read it
+    # without a second state.leaders lookup.
+    wargames_mastery_by_army_id = {
+        army.army_id: (
+            army.commanded_by is not None
+            and (leader := state.leaders.get(army.commanded_by)) is not None
+            and AdvancedAbility.TACTICAL_WARGAMES_MASTERY in leader.advanced_abilities
+        )
+        for army in (*attacker_armies, *defender_armies)
     }
 
     # Phase 371: real, confirmed per-column direct destruction (turn/
@@ -1908,10 +1960,11 @@ def fight_battle(
         led_by_insufficient_druid = led_by_insufficient_druid_by_army_id.get(army.army_id, False)
         formation_divisor = formation_divisor_by_army_id.get(army.army_id, FORMATION_DIVISOR["front"])
         score = score_by_army_id.get(army.army_id, 0)
+        wargames_mastery = wargames_mastery_by_army_id.get(army.army_id, False)
         if battle_result.winner == "attacker":
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid,
-                formation_divisor=formation_divisor, score=score,
+                formation_divisor=formation_divisor, score=score, wargames_mastery=wargames_mastery,
             )
             report.quality_changes[army.army_id] = army.quality
         elif attacker_clean_swept and _whale_forced_retreat_applies(army, terrain):
@@ -1948,7 +2001,7 @@ def fight_battle(
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=False, retreated=False,
                 led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
-                score=score,
+                score=score, wargames_mastery=wargames_mastery,
             )
             report.quality_changes[army.army_id] = army.quality
 
@@ -1958,10 +2011,11 @@ def fight_battle(
         led_by_insufficient_druid = led_by_insufficient_druid_by_army_id.get(army.army_id, False)
         formation_divisor = formation_divisor_by_army_id.get(army.army_id, FORMATION_DIVISOR["front"])
         score = score_by_army_id.get(army.army_id, 0)
+        wargames_mastery = wargames_mastery_by_army_id.get(army.army_id, False)
         if battle_result.winner == "defender":
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid,
-                formation_divisor=formation_divisor, score=score,
+                formation_divisor=formation_divisor, score=score, wargames_mastery=wargames_mastery,
             )
             report.quality_changes[army.army_id] = army.quality
         elif defender_clean_swept and _whale_forced_retreat_applies(army, terrain):
@@ -1995,7 +2049,7 @@ def fight_battle(
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=False, retreated=False,
                 led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
-                score=score,
+                score=score, wargames_mastery=wargames_mastery,
             )
             report.quality_changes[army.army_id] = army.quality
 

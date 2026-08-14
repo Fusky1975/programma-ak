@@ -337,6 +337,42 @@ def test_resolve_battle_numeric_superiority_not_eligible_with_no_terrain_cap():
         assert column.attacker_strength == pytest.approx(10 * 1.0 + 10 * 0.5)
 
 
+def test_resolve_battle_combined_arms_boosts_second_line_when_first_two_units_differ():
+    # Phase 513: Tactical Combined Arms lets a column's first two units,
+    # if different army types, both fight at 100% -- the same numeric
+    # effect as numeric-superiority outflanking, gated on the ability
+    # plus differing types instead of numeric superiority.
+    attacker_units = [unit(10, ArmyType.BOWMEN), unit(10, ArmyType.LEGION)]
+    defender_units = [unit(10)]
+    rng = ScriptedRandom(_luck_draws(1))
+
+    result = resolve_battle(attacker_units, defender_units, attacker_combined_arms=True, rng=rng)
+
+    # Depth 0 (100%) + depth 1 boosted from 50% to 100%, instead of the
+    # ordinary 10*1.0 + 10*0.5 = 15.
+    assert result.columns[0].attacker_strength == pytest.approx(20)
+
+
+def test_resolve_battle_combined_arms_has_no_effect_when_first_two_units_share_a_type():
+    attacker_units = [unit(10, ArmyType.BOWMEN), unit(10, ArmyType.BOWMEN)]
+    defender_units = [unit(10)]
+    rng = ScriptedRandom(_luck_draws(1))
+
+    result = resolve_battle(attacker_units, defender_units, attacker_combined_arms=True, rng=rng)
+
+    assert result.columns[0].attacker_strength == pytest.approx(15)
+
+
+def test_resolve_battle_combined_arms_requires_the_side_own_flag():
+    attacker_units = [unit(10, ArmyType.BOWMEN), unit(10, ArmyType.LEGION)]
+    defender_units = [unit(10)]
+    rng = ScriptedRandom(_luck_draws(1))
+
+    result = resolve_battle(attacker_units, defender_units, rng=rng)  # attacker_combined_arms defaults False
+
+    assert result.columns[0].attacker_strength == pytest.approx(15)
+
+
 def test_resolve_battle_column_results_expose_the_actual_units_for_bookkeeping():
     attacker = [BattleUnit(ArmyType.BOWMEN, 10, source_id=101)]
     defender = [BattleUnit(ArmyType.AXEMEN, 5, source_id=202)]

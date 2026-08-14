@@ -889,6 +889,73 @@ def test_fight_battle_tactical_mastery_boosts_attacker_strength_past_the_level_c
     )
 
 
+def test_fight_battle_adapt_tactics_to_terrain_softens_the_adverse_terrain_penalty():
+    # Phase 513: Phalanx (base 3, adverse Sea) normally halves to 1.5;
+    # a commander holding Adapt Tactics to Terrain reduces that to 75%
+    # (2.25) instead of 50% for the army they directly command.
+    def make_state():
+        state = GameState()
+        state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+        state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+        state.add_province(ProvinceState(FIELD, Terrain.SEA, Race.HUMAN, owner_kingdom_id=2))
+        state.add_leader(LeaderState(1, kingdom_id=1, name="General", location=FIELD))
+        state.add_army(ArmyState(101, 1, ArmyType.PHALANX, Quality.AVERAGE, location=FIELD, commanded_by=1))
+        state.add_army(ArmyState(201, 2, ArmyType.PHALANX, Quality.AVERAGE, location=FIELD, commanded_by=None))
+        return state
+
+    without_ability = make_state()
+    report_without = fight_battle(without_ability, 1, FIELD, [101], rng=random.Random(0))
+
+    with_ability = make_state()
+    with_ability.leaders[1].advanced_abilities.add(AdvancedAbility.ADAPT_TACTICS_TO_TERRAIN)
+    report_with = fight_battle(with_ability, 1, FIELD, [101], rng=random.Random(0))
+
+    assert report_with.battle_result.columns[0].attacker_strength == pytest.approx(
+        report_without.battle_result.columns[0].attacker_strength / 0.5 * 0.75
+    )
+
+
+def test_fight_battle_passes_combined_arms_only_for_the_side_whose_commander_holds_it():
+    # Phase 513: the actual strength-boost mechanics are covered directly
+    # in test_battle_resolution.py; here it's enough to prove fight_battle
+    # resolves the right side-level bool (land terrain + this side's own
+    # Supreme Commander holds Tactical Combined Arms) and passes it into
+    # resolve_battle(), mocked out so duel/luck/etc can't confound it.
+    state = build_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="General", location=FIELD))
+    state.armies[101].commanded_by = 1
+    state.leaders[1].advanced_abilities.add(AdvancedAbility.TACTICAL_COMBINED_ARMS)
+    battle_result = BattleResult(columns=[], winner="attacker", total_bres=1)
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result) as mock_resolve:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    assert mock_resolve.call_args.kwargs["attacker_combined_arms"] is True
+    assert mock_resolve.call_args.kwargs["defender_combined_arms"] is False
+
+
+def test_fight_battle_combined_arms_ineligible_at_sea():
+    # "when in supreme command at a land battle" -- Sea terrain disqualifies
+    # even a Supreme Commander who holds the ability.
+    state = build_state()
+    state.provinces[FIELD].terrain = Terrain.SEA
+    state.add_leader(LeaderState(1, kingdom_id=1, name="General", location=FIELD))
+    state.armies[101].commanded_by = 1
+    state.leaders[1].advanced_abilities.add(AdvancedAbility.TACTICAL_COMBINED_ARMS)
+    battle_result = BattleResult(columns=[], winner="attacker", total_bres=1)
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result) as mock_resolve:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    assert mock_resolve.call_args.kwargs["attacker_combined_arms"] is False
+
+
 def test_build_battle_units_fanaticism_off_by_default_never_touches_rng():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
@@ -2669,7 +2736,8 @@ def test_fight_battle_winning_army_led_by_insufficient_druid_passes_the_penalty_
     # documented, unconfirmed interpretation -- see aftermath.py's own
     # docstring), threaded alongside formation_divisor now.
     mock_roll.assert_called_once_with(
-        Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True, formation_divisor=1, score=1
+        Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True, formation_divisor=1, score=1,
+        wargames_mastery=False,
     )
 
 
