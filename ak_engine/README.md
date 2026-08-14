@@ -21360,7 +21360,7 @@ follow-up request after the original 431-435 plan shipped.
     Combined Arms' own side/terrain eligibility via a mocked
     `resolve_battle()` call, avoiding duel/luck confounders). Ran again:
     4457 passed (net +11).
-- **Phase 514 (current)**: adds Naval Combined Arms -- the exact
+- **Phase 514**: adds Naval Combined Arms -- the exact
   sea-terrain twin of Phase 513's Tactical Combined Arms ("A character
   can use Naval Combined Arms when in supreme command at a sea
   battle... This allows the first two units in a column, if they are
@@ -21392,6 +21392,33 @@ follow-up request after the original 431-435 plan shipped.
     Arms (eligible at Sea, ineligible on land), mirroring Phase 513's
     own mocked-`resolve_battle()` pattern. Ran again: 4462 passed (net
     +5).
+- **Phase 515 (current)**: adds Melee Evasion (Advanced Ability) --
+  quoted from `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION
+  [MELEE_EVASION]`: "A character becomes expert at evading opponents
+  when using the Flee tactic and gains +30% to the chances of fleeing
+  a combat." A third additive bonus on `turn/search_execution.py
+  effective_flee_chance()` -- exactly the same shape as the existing
+  Weak-Temperament (`WEAK_TEMPER_FLEE_CHANCE_BONUS`) and Invisibility
+  (`INVISIBILITY_FLEE_CHANCE_BONUS`) bonuses that function already
+  applies (Phase 286), stacking with both. New `has_melee_evasion`
+  parameter, threaded into both of that function's own real call sites
+  (the `Maneuver.FLEE` tactic-walk branch and the AUGUR_COMBAT-acts-as-
+  Flee-when-cast-later branch) from `AdvancedAbility.MELEE_EVASION in
+  leader.advanced_abilities` -- full coverage, since `effective_flee_
+  chance()` has exactly these two callers project-wide, both in this
+  same module.
+  - This is the first ability wired from the Melee category (0/6
+    previously) -- the remaining 5 (Duellists Medal, Mastery, Control
+    Temper, Hit Points, True Mastery) all live in `turn/encounter.py`'s
+    much larger personal-combat `Combatant` model instead and are
+    still unwired, along with all 5 Archery abilities and every other
+    non-Explorer/Tactical/Naval category.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4462 passed, unchanged. Wrote new tests: `effective_flee_chance()`'s
+    own new bonus (independent, stacked with the other two, defaults to
+    off) and an `execute_search()` integration test (a roll that fails
+    the unmodified 20% Fast-monster flee chance but clears the +30%-
+    widened 50%). Ran again: 4466 passed (net +4).
 
 ## Setup
 

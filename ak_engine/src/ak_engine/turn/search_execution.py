@@ -138,6 +138,14 @@ resolves"**:
   clamped to 100% -- a probability can't exceed certainty. Both bonuses
   can stack together (e.g. a Cautious, currently-invisible leader gets
   both), since nothing in either source excludes the other.
+  **Phase 515 addendum -- Melee Evasion (Advanced Ability):** quoted
+  directly from ``models/advanced_ability.py ADVANCED_ABILITY_
+  DESCRIPTION[MELEE_EVASION]``: "A character becomes expert at evading
+  opponents when using the Flee tactic and gains +30% to the chances of
+  fleeing a combat." A third additive bonus, same reading and same
+  stacking rule as the two above -- ``effective_flee_chance()``'s new
+  ``has_melee_evasion`` parameter (both call sites below pass
+  ``AdvancedAbility.MELEE_EVASION in leader.advanced_abilities``).
 - ~~**Victory's own aftermath is minimal, by design**: rulebook [5.9]
   ("looting a vanquished foe's treasure, magic items changing hands")
   needs a treasure-*instance* and magic-item-ownership model this
@@ -608,19 +616,40 @@ WEAK_FLEE_TEMPERS = frozenset({Temper.CAUTIOUS, Temper.COWARDLY})
 # gives +30% chance to flee".
 INVISIBILITY_FLEE_CHANCE_BONUS = 0.30
 
+# Melee Evasion (Advanced Ability, Phase 515) -- quoted from
+# models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION[MELEE_EVASION]:
+# "A character becomes expert at evading opponents when using the Flee
+# tactic and gains +30% to the chances of fleeing a combat." Same
+# "additive percentage point on the base [5.6] chance" reading as the
+# Weak-Temperament/Invisibility bonuses above -- the ability's own
+# wording ("+30% to the chances") mirrors theirs exactly, not a distinct
+# formula.
+MELEE_EVASION_FLEE_CHANCE_BONUS = 0.30
 
-def effective_flee_chance(base_chance: float, *, temper: Temper | None, is_invisible: bool) -> float:
+
+def effective_flee_chance(
+    base_chance: float, *, temper: Temper | None, is_invisible: bool, has_melee_evasion: bool = False
+) -> float:
     """Phase 286: applies the Weak-Temperament and Invisibility flee bonuses to a base [5.6] chance.
 
     Both bonuses are additive percentage points, not a multiplicative
     scaling of ``base_chance`` -- see module docstring's own Phase 286
     addendum for the full sourcing and reasoning. Clamped to 1.0 (a
     probability can't exceed certainty).
+
+    ``has_melee_evasion`` (Advanced Ability, Phase 515): a third,
+    independent additive bonus -- see this module's own Phase 515
+    addendum above. Stacks with the other two (nothing in any of the
+    three sources excludes another), same as Invisibility already
+    stacks with Weak Temperament. Defaults to ``False`` for every
+    pre-Phase-515 caller.
     """
 
     bonus = WEAK_TEMPER_FLEE_CHANCE_BONUS if temper in WEAK_FLEE_TEMPERS else 0.0
     if is_invisible:
         bonus += INVISIBILITY_FLEE_CHANCE_BONUS
+    if has_melee_evasion:
+        bonus += MELEE_EVASION_FLEE_CHANCE_BONUS
     return min(1.0, base_chance + bonus)
 
 # TREASAB.X2: every one of the 20 wands' own label reads "Cast '<Spell>' at
@@ -1537,7 +1566,8 @@ def _resolve_search_encounter(
                 # `Maneuver.FLEE` itself already uses (Phase 286: now
                 # including that same mechanic's own flee-chance bonuses).
                 flee_chance = effective_flee_chance(
-                    FLEE_CHANCE[stats.speed], temper=leader.temper, is_invisible=caster.is_invisible
+                    FLEE_CHANCE[stats.speed], temper=leader.temper, is_invisible=caster.is_invisible,
+                    has_melee_evasion=AdvancedAbility.MELEE_EVASION in leader.advanced_abilities,
                 )
                 if rng.random() < flee_chance:
                     return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
@@ -2085,7 +2115,8 @@ def _resolve_search_encounter(
     for tactic_index, tactic in enumerate(request.tactics):
         if tactic.maneuver is Maneuver.FLEE:
             flee_chance = effective_flee_chance(
-                FLEE_CHANCE[stats.speed], temper=leader.temper, is_invisible=leader_combatant.is_invisible
+                FLEE_CHANCE[stats.speed], temper=leader.temper, is_invisible=leader_combatant.is_invisible,
+                has_melee_evasion=AdvancedAbility.MELEE_EVASION in leader.advanced_abilities,
             )
             if rng.random() < flee_chance:
                 return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)

@@ -33,6 +33,7 @@ from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.search_execution import (
     FLEE_CHANCE,
     INVISIBILITY_FLEE_CHANCE_BONUS,
+    MELEE_EVASION_FLEE_CHANCE_BONUS,
     TROLL_REGENERATION_PER_COMBAT_ROUND,
     WEAK_TEMPER_FLEE_CHANCE_BONUS,
     SearchExecutionResult,
@@ -496,6 +497,28 @@ def test_effective_flee_chance_bonuses_stack_and_clamp_at_certainty():
     assert effective_flee_chance(0.80, temper=Temper.CAUTIOUS, is_invisible=True) == 1.0
 
 
+def test_effective_flee_chance_melee_evasion_adds_its_own_bonus_independently():
+    # Phase 515: Melee Evasion Advanced Ability -- a third additive
+    # bonus, same shape as Invisibility.
+    assert effective_flee_chance(0.20, temper=None, is_invisible=False, has_melee_evasion=True) == pytest.approx(
+        0.20 + MELEE_EVASION_FLEE_CHANCE_BONUS
+    )
+
+
+def test_effective_flee_chance_melee_evasion_stacks_with_temper_and_invisibility():
+    assert effective_flee_chance(
+        0.05, temper=Temper.CAUTIOUS, is_invisible=True, has_melee_evasion=True
+    ) == pytest.approx(
+        0.05 + WEAK_TEMPER_FLEE_CHANCE_BONUS + INVISIBILITY_FLEE_CHANCE_BONUS + MELEE_EVASION_FLEE_CHANCE_BONUS
+    )
+
+
+def test_effective_flee_chance_melee_evasion_defaults_to_false():
+    assert effective_flee_chance(0.20, temper=None, is_invisible=False) == effective_flee_chance(
+        0.20, temper=None, is_invisible=False, has_melee_evasion=False
+    )
+
+
 def test_execute_search_flee_tactic_success_ends_search_without_combat():
     # Gryphon is Fast (20% flee chance) -- 0.1 < 0.20 succeeds.
     state = _state_with_leader()
@@ -538,6 +561,23 @@ def test_execute_search_flee_tactic_failure_falls_through_to_melee():
     assert result.accepted is True
     assert result.combat_resolved is True
     assert result.fled is False
+
+
+def test_execute_search_flee_tactic_melee_evasion_widens_the_success_window():
+    # Phase 515: Gryphon is Fast (20% base flee chance); a roll of 0.25
+    # fails the unmodified chance but clears Melee Evasion's own +30%
+    # (0.20 + 0.30 = 0.50).
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.MELEE_EVASION)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GRYPHON))
+    request = SearchRequest(
+        feature_id=1, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.FLEE), SearchTactic(maneuver=Maneuver.MELEE)]
+    )
+
+    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.25] * 20))
+
+    assert result.fled is True
+    assert result.combat_resolved is False
 
 
 def test_execute_search_no_flee_tactic_never_rolls_for_it():
