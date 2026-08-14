@@ -4523,30 +4523,128 @@ def select_monster_talk_reply(
 # `models/feature.py`; set by `turn/search_execution.py`'s own Talk
 # `DEAL` branch, consumed and cleared by its new Fulfill branch).
 #
-# **`resolve_fulfill_honored()` below is project-original, confirmed
-# directly with the user (project author)**: the rulebook quote above
-# is entirely qualitative (no numeric formula, no definition of what
-# the deal's own "conditions" concretely are) -- so, rather than invent
-# deal *content* (an item, a gold amount, ...) with nothing to source it
-# from, this project models only the abstract "was the deal honored"
+# **`resolve_fulfill_honored()` below WAS project-original** (the
+# original paragraph, kept for history): the rulebook quote above is
+# entirely qualitative (no numeric formula, no definition of what the
+# deal's own "conditions" concretely are) -- so, rather than invent deal
+# *content* (an item, a gold amount, ...) with nothing to source it
+# from, this project modeled only the abstract "was the deal honored"
 # roll the quote actually describes, the same narrow-but-honest slice
 # `turn/plan_dispatch.py`'s own Recruit/Hire co-location checks already
-# take for similarly under-specified mechanics. The formula reuses
-# `models/alignment.py ALIGNMENT_ORDINAL` (already load-bearing for
-# Hire's ">2 ordinal positions apart" rule and `Align_Est`) for "how far
-# apart" the two alignments genuinely are, plus a flat penalty when the
-# guardian is Evil (`Feature.guardian_alignment`, Phase 246) -- both
-# constants (`FULFILL_BASE_HONOR_CHANCE`, `FULFILL_ALIGNMENT_DISTANCE
-# _PENALTY_PER_STEP`, `FULFILL_EVIL_PENALTY`) are unsourced, confirmed
-# design choices, the same "no numeric split given anywhere" category
+# take for similarly under-specified mechanics. The old formula reused
+# `models/alignment.py ALIGNMENT_ORDINAL` for "how far apart" the two
+# alignments were, plus a flat penalty when the guardian was Evil -- all
+# three of its constants were unsourced, confirmed design choices, the
+# same "no numeric split given anywhere" category
 # `TALK_ATTACK_CHANCE`/`TALK_IGNORE_CHANCE`/`TALK_DRUIDIC_ATTACK_CHANCE`
-# above already document for Talk's own reaction roll. A `None`
-# alignment on either side (a guardian with no `guardian_alignment` set,
-# or a leader with no `LeaderState.alignment` recorded) skips the
-# distance term entirely rather than guessing a substitute value.
-FULFILL_BASE_HONOR_CHANCE = 0.75
-FULFILL_ALIGNMENT_DISTANCE_PENALTY_PER_STEP = 0.05
-FULFILL_EVIL_PENALTY = 0.20
+# above document for Talk's own reaction roll.
+#
+# **Phase 525 addendum: the dossier supersedes the above with the exact
+# formula.** `AKGEN_reverse_engineering_report (3).md`'s "Dossier
+# FULFILL (FU)" section disassembles the real `WillHonor` routine
+# (`AK.OVR:0x194E4-0x1963B`):
+#
+#     roll = random_0_99()
+#     divisor = 1 + Ord(bonus > 0)                     ; 1 or 2
+#     natural   = 20 * abs(6 - monster_align)           ; 6 = Hellish ordinal
+#     mismatch  = 15 * abs(monster_align - hero_align)
+#     threshold = (natural + bonus - mismatch) div divisor   ; Pascal `div`,
+#                                                              ; truncated
+#                                                              ; toward zero
+#     honors = roll < threshold
+#
+# `bonus` varies by which of the dossier's 24 Quest/reply branches fired
+# (SS79): `100` for the large majority (RRegain, RRiddle, RFRevenge,
+# RPain, RTrade, RSell, RSacH, RWFree, RPRevenge, the 4 Explorer
+# Quests -- the dossier's own "formula comune"), `0` for RDrain (also
+# gates the intelligence veto below), `125` for RVisit, `1000` for
+# RWish (effectively always honored). This project deliberately does
+# not model those 24 distinct branches (Phase 258's own scope note --
+# Fulfill here is only the abstract "was the prior Talk's deal
+# honored" roll) so every call uses the dossier's own common-formula
+# default, `FULFILL_COMMON_BONUS = 100`.
+#
+# RDrain's intelligence veto (SS82, `0x195C0-0x19622`): "if the
+# defender is a Feature's guardian monster, bonus <= 0, and the
+# monster's intelligence is above Semi (`Mech=0, Semi=1, Low=2,
+# Medium=3, High=4, Godlike=5`), honor is vetoed outright, no roll."
+# Implemented on the general-purpose `fulfill_monster_honors()` below
+# for fidelity to "the exact formula," even though this project's own
+# one real call site always uses `bonus=100` (never <= 0) and so never
+# triggers it -- kept reachable/testable in isolation as the sourced
+# foundation for any future phase that adds real RDrain-specific
+# Fulfill support.
+#
+# Silver Tongue (`HonorOrBetray`, SS83-84, `0x19816`/`0x19828-0x1983E`):
+# "if actor is the Diplomat titleholder, always honors" -- short-
+# circuits before `WillHonor` is even called, bypassing the roll *and*
+# the intelligence veto (already `resolve_fulfill_honored()`'s own
+# `caster_is_silver_tongue` short-circuit below, unchanged by this
+# addendum).
+#
+# Worked examples straight from the dossier (SS80, bonus=100):
+# Worldly(3) monster vs Worldly(3) hero: threshold=(60+100-0)/2=80 ->
+# betrayal 20%. Hellish(6) monster vs Heavenly(0) hero:
+# threshold=(0+100-90)/2=5 -> betrayal 95%. Evil(5) monster vs Evil(5)
+# hero: threshold=(20+100-0)/2=60 -> betrayal 40%.
+#
+# `FULFILL_UNRECORDED_ALIGNMENT_FALLBACK = Alignment.NEUTRAL` remains a
+# project-original (NOT dossier-sourced) substitute for a missing
+# `guardian_alignment`/`character_alignment` -- Neutral sits at the
+# ordinal midpoint (3 of 0-9), introducing no systematic directional
+# bias, mirroring this project's broader "unrecorded data reads as the
+# least-consequential default" convention. The dossier's own formula
+# has no `None`-handling of its own (the real engine always has both
+# alignments recorded), so this fallback is this project's own
+# graceful-degradation choice, exactly like the old code's admittedly
+# unsourced "skip the term" convenience it replaces.
+FULFILL_HELLISH_REFERENCE_ORDINAL = ALIGNMENT_ORDINAL[Alignment.ANTI_HOLY]  # 6, dossier's "Hellish" reference point
+FULFILL_COMMON_BONUS = 100  # dossier SS79's own "formula comune" bonus
+FULFILL_UNRECORDED_ALIGNMENT_FALLBACK = Alignment.NEUTRAL  # project-original, NOT dossier-sourced
+
+
+def _trunc_div(numerator: int, divisor: int) -> int:
+    """Pascal `div` truncates toward zero; Python's `//` floors -- this
+    matters for the FULFILL threshold formula's `natural + bonus -
+    mismatch` numerator, which can go negative."""
+
+    quotient = abs(numerator) // divisor
+    return quotient if numerator >= 0 else -quotient
+
+
+def fulfill_honor_threshold(monster_alignment: Alignment, hero_alignment: Alignment, bonus: int) -> int:
+    """The dossier's `WillHonor` threshold (SS78) compared against a 0-99
+    roll -- see the module comment above `FULFILL_HELLISH_REFERENCE_ORDINAL`
+    for the full sourcing and worked examples."""
+
+    monster_ordinal = ALIGNMENT_ORDINAL[monster_alignment]
+    hero_ordinal = ALIGNMENT_ORDINAL[hero_alignment]
+    natural = 20 * abs(FULFILL_HELLISH_REFERENCE_ORDINAL - monster_ordinal)
+    mismatch = 15 * abs(monster_ordinal - hero_ordinal)
+    divisor = 2 if bonus > 0 else 1
+    return _trunc_div(natural + bonus - mismatch, divisor)
+
+
+def fulfill_monster_honors(
+    monster_alignment: Alignment,
+    hero_alignment: Alignment,
+    bonus: int,
+    rng: random.Random,
+    *,
+    monster_intelligence: MonsterIntelligence | None = None,
+) -> bool:
+    """The dossier's `WillHonor` (SS78, SS82) -- threshold-vs-roll plus the
+    RDrain intelligence veto. See the module comment above
+    `FULFILL_HELLISH_REFERENCE_ORDINAL` for full sourcing."""
+
+    threshold = fulfill_honor_threshold(monster_alignment, hero_alignment, bonus)
+    if (
+        bonus <= 0
+        and monster_intelligence is not None
+        and MONSTER_INTELLIGENCE_ORDINAL[monster_intelligence] > MONSTER_INTELLIGENCE_ORDINAL[MonsterIntelligence.SEMI]
+    ):
+        return False
+    return rng.random() < threshold / 100
 
 
 def resolve_fulfill_honored(
@@ -4555,6 +4653,8 @@ def resolve_fulfill_honored(
     rng: random.Random,
     *,
     caster_is_silver_tongue: bool = False,
+    bonus: int = FULFILL_COMMON_BONUS,
+    guardian_intelligence: MonsterIntelligence | None = None,
 ) -> bool:
     """Whether the guardian honors a deal a prior Talk secured -- see the
     module comment above for the formula's own sourcing and constants.
@@ -4562,21 +4662,23 @@ def resolve_fulfill_honored(
     **Phase 468 addendum**: `caster_is_silver_tongue` -- report SS18.4,
     "[il titolare] ... onora sempre un accordo completato" (the Silver
     Tongue titleholder's own deals are *always* honored). Short-circuits
-    to `True` before the alignment-distance formula runs at all -- an
+    to `True` before the threshold formula runs at all -- an
     unconditional guarantee, not a boosted chance, and consumes no `rng`
     roll (nothing to roll for a certainty).
+
+    **Phase 525 addendum**: `bonus`/`guardian_intelligence` expose the
+    dossier's own `WillHonor` parameters; see the module comment above
+    for full sourcing. `guardian_alignment`/`character_alignment` of
+    `None` fall back to `FULFILL_UNRECORDED_ALIGNMENT_FALLBACK`
+    (project-original, not dossier-sourced).
     """
 
     if caster_is_silver_tongue:
         return True
 
-    chance = FULFILL_BASE_HONOR_CHANCE
-    if guardian_alignment is not None and character_alignment is not None:
-        distance = abs(ALIGNMENT_ORDINAL[guardian_alignment] - ALIGNMENT_ORDINAL[character_alignment])
-        chance -= distance * FULFILL_ALIGNMENT_DISTANCE_PENALTY_PER_STEP
-    if guardian_alignment is Alignment.EVIL:
-        chance -= FULFILL_EVIL_PENALTY
-    return rng.random() < max(0.0, min(1.0, chance))
+    monster_alignment = guardian_alignment if guardian_alignment is not None else FULFILL_UNRECORDED_ALIGNMENT_FALLBACK
+    hero_alignment = character_alignment if character_alignment is not None else FULFILL_UNRECORDED_ALIGNMENT_FALLBACK
+    return fulfill_monster_honors(monster_alignment, hero_alignment, bonus, rng, monster_intelligence=guardian_intelligence)
 
 
 # Beg [BE], rulebook [5.8] -- Phase 241. No Pascal source and no

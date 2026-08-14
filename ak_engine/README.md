@@ -21762,7 +21762,7 @@ follow-up request after the original 431-435 plan shipped.
     test, withheld without Naval skill), `is_land_army()`'s own
     air-wing-exclusion rewrite, and a dispatch-wiring test mirroring
     March's own pattern. Ran again: 4576 passed (net +8).
-- **Phase 524 (current)**: closes the last two Naval members the user
+- **Phase 524**: closes the last two Naval members the user
   asked to finish -- `AdvancedAbility.NAVAL_LONG_DEFEND` and `NAVAL_
   HUG_COASTLINE`, both explicitly deferred by Phase 521.
 
@@ -21814,6 +21814,55 @@ follow-up request after the original 431-435 plan shipped.
     withheld when the shared hex isn't actually sea, withheld when a
     Fleet travels in the stack), and a direct `resolve_move(require_
     adjacent=False)` test. Ran again: 4589 passed (net +13).
+- **Phase 525 (current)**: replaces `turn/encounter.py resolve_fulfill_
+  honored()`'s own project-original honor formula (Phase 258, an
+  unsourced base-chance/alignment-distance/Evil-penalty model) with the
+  exact, now-sourced formula. `AKGEN_reverse_engineering_report (3).md`'s
+  dedicated "Dossier FULFILL (FU)" section disassembles the real
+  `WillHonor` routine (`AK.OVR:0x194E4-0x1963B`):
+
+  ```
+  roll = random_0_99()
+  divisor = 1 + Ord(bonus > 0)
+  natural   = 20 * abs(6 - monster_align)   ; 6 = Hellish/Anti-Holy ordinal
+  mismatch  = 15 * abs(monster_align - hero_align)
+  threshold = (natural + bonus - mismatch) div divisor   ; Pascal `div`,
+                                                            ; truncated toward zero
+  honors = roll < threshold
+  ```
+
+  `bonus` varies across the dossier's 24 Quest/reply branches this
+  project doesn't model (Phase 258's own scope note -- Fulfill here
+  stays the abstract "was the prior Talk's deal honored" roll); every
+  call now uses the dossier's own "formula comune" default, `bonus=100`
+  (`FULFILL_COMMON_BONUS`). New `fulfill_honor_threshold()` and
+  `fulfill_monster_honors()` expose the formula directly (plus the
+  RDrain intelligence veto, SS82: `bonus<=0` and a monster smarter than
+  Semi auto-betrays, unreachable from this project's own bonus=100 call
+  site but kept faithful/testable for a future RDrain-specific phase).
+  `resolve_fulfill_honored()` keeps its existing signature/behavior for
+  Silver Tongue (Phase 468, still an unconditional always-honors
+  short-circuit that also bypasses the veto) and gains optional
+  `bonus`/`guardian_intelligence` passthrough parameters. Worked
+  examples straight from the dossier (SS80, bonus=100): Worldly(3) vs
+  Worldly(3) -> threshold 80 (20% betrayal); Hellish(6) vs Heavenly(0)
+  -> threshold 5 (95% betrayal); Evil(5) vs Evil(5) -> threshold 60
+  (40% betrayal). A missing `guardian_alignment`/`character_alignment`
+  still falls back to `FULFILL_UNRECORDED_ALIGNMENT_FALLBACK =
+  Alignment.NEUTRAL` (project-original, not dossier-sourced -- the
+  dossier's own formula always has both alignments recorded).
+  `turn/search_execution.py _resolve_fulfill()`'s call site needed no
+  changes -- the new parameters default to the common-bonus case it
+  already wants.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4589 passed, unchanged. Replaced the 7 old approximate-formula tests
+    with 13 new ones covering `fulfill_honor_threshold()`'s three worked
+    examples plus a truncate-toward-zero negative-numerator case,
+    `fulfill_monster_honors()`'s threshold boundary and the RDrain veto
+    (vetoed above Semi, not vetoed at Semi, never vetoed at a positive
+    bonus), `resolve_fulfill_honored()`'s own boundary/fallback/Silver-
+    Tongue behavior (including bypassing the veto). Ran again: 4595
+    passed (net +6).
 
 ## Setup
 

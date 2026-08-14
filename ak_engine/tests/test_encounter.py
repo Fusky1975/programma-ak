@@ -165,9 +165,10 @@ from ak_engine.turn.encounter import (
     select_monster_talk_reply,
     BEG_MERCY_CHANCE,
     resolve_beg_for_mercy,
-    FULFILL_ALIGNMENT_DISTANCE_PENALTY_PER_STEP,
-    FULFILL_BASE_HONOR_CHANCE,
-    FULFILL_EVIL_PENALTY,
+    FULFILL_COMMON_BONUS,
+    FULFILL_UNRECORDED_ALIGNMENT_FALLBACK,
+    fulfill_honor_threshold,
+    fulfill_monster_honors,
     resolve_fulfill_honored,
     BERSERK_FURY_BONUS_HIT_POINTS_RANGE,
     BERSERK_INTIMIDATION_HIT_CHANCE_REDUCTION,
@@ -193,7 +194,7 @@ from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.map import HexCoord
-from ak_engine.models.monster import Monster, SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
+from ak_engine.models.monster import Monster, MonsterIntelligence, SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 
@@ -2429,62 +2430,126 @@ def test_resolve_beg_for_mercy_animal_never_succeeds():
     assert resolve_beg_for_mercy(MirrorImageIntelligenceTier.ANIMAL, ScriptedRandom([0.0])) is False
 
 
-# -- Phase 258: Fulfill --
+# -- Phase 258/525: Fulfill --
+#
+# Phase 525 replaced the old unsourced base-chance/distance-penalty/
+# evil-penalty formula with the dossier's exact `WillHonor` formula --
+# see `turn/encounter.py`'s own module comment above
+# `FULFILL_HELLISH_REFERENCE_ORDINAL` for full sourcing. Worked examples
+# below are the dossier's own (SS80, bonus=100).
 
 
-def test_resolve_fulfill_honored_boundary_at_the_base_chance_when_same_alignment_and_not_evil():
-    # Same alignment (distance 0), guardian not Evil -- chance is exactly
-    # FULFILL_BASE_HONOR_CHANCE, no penalty applied.
+def test_fulfill_honor_threshold_worldly_vs_worldly():
+    # threshold = (60 + 100 - 0) div 2 = 80 -> 20% betrayal.
+    assert fulfill_honor_threshold(Alignment.NEUTRAL, Alignment.NEUTRAL, FULFILL_COMMON_BONUS) == 80
+
+
+def test_fulfill_honor_threshold_hellish_vs_heavenly():
+    # threshold = (0 + 100 - 90) div 2 = 5 -> 95% betrayal.
+    assert fulfill_honor_threshold(Alignment.ANTI_HOLY, Alignment.DIVINE, FULFILL_COMMON_BONUS) == 5
+
+
+def test_fulfill_honor_threshold_evil_vs_evil():
+    # threshold = (20 + 100 - 0) div 2 = 60 -> 40% betrayal.
+    assert fulfill_honor_threshold(Alignment.EVIL, Alignment.EVIL, FULFILL_COMMON_BONUS) == 60
+
+
+def test_fulfill_honor_threshold_trunc_div_toward_zero_for_a_negative_numerator():
+    # Divine(0) monster vs Anti-Holy(6) hero: natural=20*6=120,
+    # mismatch=15*6=90 -> numerator negative only for a hypothetical
+    # bonus<90-120; use bonus=0 (RDrain's own bonus) with divisor=1 so the
+    # negative numerator survives undivided: (120 + 0 - 90) div 1 = 30,
+    # still non-negative -- flip monster/hero to get a genuinely negative
+    # numerator: Anti-Holy(6) monster vs Divine(0) hero, bonus=0:
+    # natural=20*0=0, mismatch=15*6=90 -> (0+0-90) div 1 = -90, truncated
+    # toward zero (not floored to a more-negative value by Python's `//`).
+    assert fulfill_honor_threshold(Alignment.ANTI_HOLY, Alignment.DIVINE, 0) == -90
+
+
+def test_fulfill_monster_honors_uses_the_threshold_as_a_0_99_boundary():
+    threshold = fulfill_honor_threshold(Alignment.NEUTRAL, Alignment.NEUTRAL, FULFILL_COMMON_BONUS)
     assert (
-        resolve_fulfill_honored(Alignment.GOOD, Alignment.GOOD, ScriptedRandom([FULFILL_BASE_HONOR_CHANCE - 0.01]))
+        fulfill_monster_honors(
+            Alignment.NEUTRAL, Alignment.NEUTRAL, FULFILL_COMMON_BONUS, ScriptedRandom([(threshold - 1) / 100])
+        )
         is True
     )
-    assert resolve_fulfill_honored(Alignment.GOOD, Alignment.GOOD, ScriptedRandom([FULFILL_BASE_HONOR_CHANCE])) is False
-
-
-def test_resolve_fulfill_honored_alignment_distance_reduces_the_chance():
-    # Divine (ordinal 0) vs Undead (ordinal 7): distance 7, Undead isn't
-    # Evil, so only the distance penalty applies.
-    expected_chance = FULFILL_BASE_HONOR_CHANCE - 7 * FULFILL_ALIGNMENT_DISTANCE_PENALTY_PER_STEP
-    assert resolve_fulfill_honored(Alignment.UNDEAD, Alignment.DIVINE, ScriptedRandom([expected_chance - 0.01])) is True
-    assert resolve_fulfill_honored(Alignment.UNDEAD, Alignment.DIVINE, ScriptedRandom([expected_chance])) is False
-
-
-def test_resolve_fulfill_honored_evil_guardian_gets_an_extra_flat_penalty():
-    # Same alignment as the character (distance 0) but the guardian is
-    # Evil -- only the flat Evil penalty applies.
-    expected_chance = FULFILL_BASE_HONOR_CHANCE - FULFILL_EVIL_PENALTY
-    assert resolve_fulfill_honored(Alignment.EVIL, Alignment.EVIL, ScriptedRandom([expected_chance - 0.01])) is True
-    assert resolve_fulfill_honored(Alignment.EVIL, Alignment.EVIL, ScriptedRandom([expected_chance])) is False
-
-
-def test_resolve_fulfill_honored_distance_and_evil_penalties_stack():
-    # Evil (ordinal 5) vs Good (ordinal 1): distance 4, plus the flat Evil
-    # penalty -- both terms apply together.
-    expected_chance = (
-        FULFILL_BASE_HONOR_CHANCE - 4 * FULFILL_ALIGNMENT_DISTANCE_PENALTY_PER_STEP - FULFILL_EVIL_PENALTY
+    assert (
+        fulfill_monster_honors(
+            Alignment.NEUTRAL, Alignment.NEUTRAL, FULFILL_COMMON_BONUS, ScriptedRandom([threshold / 100])
+        )
+        is False
     )
-    assert resolve_fulfill_honored(Alignment.EVIL, Alignment.GOOD, ScriptedRandom([expected_chance - 0.01])) is True
-    assert resolve_fulfill_honored(Alignment.EVIL, Alignment.GOOD, ScriptedRandom([expected_chance])) is False
 
 
-def test_resolve_fulfill_honored_missing_alignment_skips_the_distance_term():
-    # No guardian alignment recorded -- the distance term is skipped
-    # entirely (not guessed at zero or any other substitute), so an Evil
-    # character alongside an unknown guardian still gets the full base
-    # chance (no Evil penalty either, since guardian_alignment isn't
-    # confirmed Alignment.EVIL).
-    assert resolve_fulfill_honored(None, Alignment.EVIL, ScriptedRandom([FULFILL_BASE_HONOR_CHANCE - 0.01])) is True
-    assert resolve_fulfill_honored(None, Alignment.EVIL, ScriptedRandom([FULFILL_BASE_HONOR_CHANCE])) is False
+def test_fulfill_monster_honors_rdrain_intelligence_veto_auto_betrays():
+    # Dossier SS82: bonus<=0 and monster intelligence above Semi vetoes
+    # honor outright, no roll consumed regardless of how favorable the
+    # threshold would otherwise be (Divine vs Divine, bonus=0 -> a very
+    # high threshold that would normally almost always honor).
+    assert (
+        fulfill_monster_honors(
+            Alignment.DIVINE,
+            Alignment.DIVINE,
+            0,
+            ScriptedRandom([]),
+            monster_intelligence=MonsterIntelligence.HIGH,
+        )
+        is False
+    )
 
 
-def test_resolve_fulfill_honored_missing_character_alignment_still_applies_the_evil_penalty():
-    # No character alignment recorded, but the guardian is confirmed Evil
-    # -- the flat Evil penalty still applies; only the distance term
-    # (which needs both sides) is skipped.
-    expected_chance = FULFILL_BASE_HONOR_CHANCE - FULFILL_EVIL_PENALTY
-    assert resolve_fulfill_honored(Alignment.EVIL, None, ScriptedRandom([expected_chance - 0.01])) is True
-    assert resolve_fulfill_honored(Alignment.EVIL, None, ScriptedRandom([expected_chance])) is False
+def test_fulfill_monster_honors_rdrain_semi_intelligence_is_not_vetoed():
+    threshold = fulfill_honor_threshold(Alignment.DIVINE, Alignment.DIVINE, 0)
+    assert (
+        fulfill_monster_honors(
+            Alignment.DIVINE,
+            Alignment.DIVINE,
+            0,
+            ScriptedRandom([(threshold - 1) / 100]),
+            monster_intelligence=MonsterIntelligence.SEMI,
+        )
+        is True
+    )
+
+
+def test_fulfill_monster_honors_positive_bonus_is_never_vetoed_regardless_of_intelligence():
+    threshold = fulfill_honor_threshold(Alignment.NEUTRAL, Alignment.NEUTRAL, FULFILL_COMMON_BONUS)
+    assert (
+        fulfill_monster_honors(
+            Alignment.NEUTRAL,
+            Alignment.NEUTRAL,
+            FULFILL_COMMON_BONUS,
+            ScriptedRandom([(threshold - 1) / 100]),
+            monster_intelligence=MonsterIntelligence.GODLIKE,
+        )
+        is True
+    )
+
+
+def test_resolve_fulfill_honored_matches_fulfill_monster_honors_at_the_common_bonus():
+    threshold = fulfill_honor_threshold(Alignment.EVIL, Alignment.GOOD, FULFILL_COMMON_BONUS)
+    assert (
+        resolve_fulfill_honored(Alignment.EVIL, Alignment.GOOD, ScriptedRandom([(threshold - 1) / 100])) is True
+    )
+    assert resolve_fulfill_honored(Alignment.EVIL, Alignment.GOOD, ScriptedRandom([threshold / 100])) is False
+
+
+def test_resolve_fulfill_honored_missing_alignment_falls_back_to_neutral():
+    # Neither side recorded -- both fall back to
+    # FULFILL_UNRECORDED_ALIGNMENT_FALLBACK (Neutral), so this is exactly
+    # the Neutral-vs-Neutral threshold.
+    threshold = fulfill_honor_threshold(
+        FULFILL_UNRECORDED_ALIGNMENT_FALLBACK, FULFILL_UNRECORDED_ALIGNMENT_FALLBACK, FULFILL_COMMON_BONUS
+    )
+    assert resolve_fulfill_honored(None, None, ScriptedRandom([(threshold - 1) / 100])) is True
+    assert resolve_fulfill_honored(None, None, ScriptedRandom([threshold / 100])) is False
+
+
+def test_resolve_fulfill_honored_missing_character_alignment_falls_back_to_neutral():
+    threshold = fulfill_honor_threshold(Alignment.EVIL, FULFILL_UNRECORDED_ALIGNMENT_FALLBACK, FULFILL_COMMON_BONUS)
+    assert resolve_fulfill_honored(Alignment.EVIL, None, ScriptedRandom([(threshold - 1) / 100])) is True
+    assert resolve_fulfill_honored(Alignment.EVIL, None, ScriptedRandom([threshold / 100])) is False
 
 
 def test_resolve_fulfill_honored_silver_tongue_always_honors_no_roll_consumed():
@@ -2494,6 +2559,23 @@ def test_resolve_fulfill_honored_silver_tongue_always_honors_no_roll_consumed():
     # (no values queued) proves no rng roll happens at all.
     assert (
         resolve_fulfill_honored(Alignment.UNDEAD, Alignment.DIVINE, ScriptedRandom([]), caster_is_silver_tongue=True)
+        is True
+    )
+
+
+def test_resolve_fulfill_honored_silver_tongue_bypasses_the_rdrain_veto():
+    # Silver Tongue short-circuits before WillHonor is even called (SS83-
+    # 84), so it bypasses the intelligence veto too -- even at bonus=0
+    # with a high-intelligence guardian, still always honors.
+    assert (
+        resolve_fulfill_honored(
+            Alignment.DIVINE,
+            Alignment.DIVINE,
+            ScriptedRandom([]),
+            caster_is_silver_tongue=True,
+            bonus=0,
+            guardian_intelligence=MonsterIntelligence.GODLIKE,
+        )
         is True
     )
 
