@@ -57,6 +57,15 @@ find features regardless of whether a Hide Feature spell has been cast
 on the feature." A kingdom owning it bypasses the ``magically_hidden``
 skip entirely -- the feature rolls for discovery exactly as if it were
 never hidden.
+
+**Find Mines** (Advanced Ability, Phase 509 -- ``resolve_find_mines()``
+below): quoted directly from ``models/advanced_ability.py
+ADVANCED_ABILITY_DESCRIPTION[EXPLORER_FIND_MINES]``, a real user-supplied
+rulebook excerpt, the sole source (no disassembly reference exists for
+this ability). Wired into ``turn/move_execution.py record_kingdom_
+exploration()`` -- the one call site both the EXPLORE action and Move's
+own partial-exploration side effect already share, matching the
+rulebook's own "whenever a province is explored" trigger exactly.
 """
 
 from __future__ import annotations
@@ -136,6 +145,46 @@ def resolve_explore(
         delta_applied=new_percent - current_percent,
         fully_explored=new_percent >= EXPLORATION_CAP,
     )
+
+
+FIND_MINES_CHANCE_MOUNTAINS = 0.35
+FIND_MINES_CHANCE_OTHER_LAND = 0.15
+FIND_MINES_LAND_TERRAINS = (Terrain.PLAINS, Terrain.DESERT, Terrain.JUNGLE, Terrain.FOREST)
+FIND_MINES_GOLD_MIN = 1
+FIND_MINES_GOLD_MAX = 3
+FIND_MINES_TAX_CAP = 10
+
+
+def resolve_find_mines(terrain: Terrain, attempts_so_far: int, current_bonus: int, rng: random.Random) -> int:
+    """One Find Mines roll (Advanced Ability -- ``models/advanced_ability.py
+    ADVANCED_ABILITY_DESCRIPTION[EXPLORER_FIND_MINES]``, quoted rulebook
+    text, the sole source, Phase 509): mountains have a 35% base chance,
+    other land terrain 15%; halved for every prior attempt already made in
+    this same province (``attempts_so_far`` -- tracked by the caller as
+    ``ProvinceState.mine_find_attempts``, see ``turn/move_execution.py
+    record_kingdom_exploration()``). A successful roll adds 1-3 gold,
+    never past the cumulative 10-gold cap (``current_bonus`` is the
+    province's own running total so far, ``ProvinceState.mine_gold_
+    bonus``). Sea/no-terrain provinces never yield a mine -- the
+    rulebook text only ever describes land. Returns the gold to add this
+    attempt (0 if no mine found, or the cap is already reached).
+    """
+
+    if current_bonus >= FIND_MINES_TAX_CAP:
+        return 0
+    if terrain is Terrain.MTNS:
+        base_chance = FIND_MINES_CHANCE_MOUNTAINS
+    elif terrain in FIND_MINES_LAND_TERRAINS:
+        base_chance = FIND_MINES_CHANCE_OTHER_LAND
+    else:
+        return 0
+
+    chance = base_chance / (2**attempts_so_far)
+    if rng.random() >= chance:
+        return 0
+
+    gold = rng.randint(FIND_MINES_GOLD_MIN, FIND_MINES_GOLD_MAX)
+    return min(gold, FIND_MINES_TAX_CAP - current_bonus)
 
 
 def discover_features(

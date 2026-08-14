@@ -540,6 +540,8 @@ def dispatch_phase(
     has_difficult_terrain = (
         leader is not None and AdvancedAbility.EXPLORING_DIFFICULT_TERRAIN in leader.advanced_abilities
     )
+    # Phase 509: same real-possession pattern, for Find Mines.
+    has_find_mines = leader is not None and AdvancedAbility.EXPLORER_FIND_MINES in leader.advanced_abilities
 
     if action is ActionCode.LMOVE:
         target = decode_hex_number(phase.obj, board_width)
@@ -553,6 +555,7 @@ def dispatch_phase(
             rng=rng,
             has_military_maps=has_military_maps,
             has_difficult_terrain=has_difficult_terrain,
+            has_find_mines=has_find_mines,
         )
         # Phase 490 -- Arch-Mage's own "Sense Magic Items in Province"
         # perk: only meaningful once the mover actually arrived somewhere
@@ -580,6 +583,7 @@ def dispatch_phase(
             rng=rng,
             has_military_maps=has_military_maps,
             has_difficult_terrain=has_difficult_terrain,
+            has_find_mines=has_find_mines,
         )
         result.discovered_features = exploration.discovered_features
         # Phase 256: Chancellor Merit Points ("+2 per Special Place

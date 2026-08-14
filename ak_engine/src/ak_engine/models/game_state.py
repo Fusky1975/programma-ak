@@ -924,6 +924,24 @@ class ProvinceState:
     # exact-count world-creation-time setup helper. `False` (the
     # ordinary case) for every world never opting into this variant.
     is_island: bool = False
+    # Find Mines (Phase 509, Advanced Ability -- see models/advanced_
+    # ability.py ADVANCED_ABILITY_DESCRIPTION[EXPLORER_FIND_MINES] for
+    # the quoted rulebook text this mechanic implements). Both are
+    # province-global (not per-kingdom, unlike `explored_percent_by_
+    # kingdom`) -- the rulebook describes mines as a property of the
+    # province itself, and the halving applies regardless of which
+    # kingdom's Explorer found the previous one.
+    # Cumulative, permanent gold added to this province's own tax base
+    # by successful Find Mines rolls so far, capped at 10 (rulebook's
+    # own "maximum of 10 gold") -- combined into `turn/tax_base.py
+    # province_tax_yield()` the same way `scar_terrain_gold_reduction`
+    # already is, just additive instead of subtractive.
+    mine_gold_bonus: int = 0
+    # How many Find Mines rolls (successful or not) have already been
+    # made in this province -- each one halves the next roll's own
+    # chance (rulebook: "each time he explores a province, the chance
+    # of finding another mine in that province is halved").
+    mine_find_attempts: int = 0
 
     def effective_terrain(self) -> Terrain:
         """The province's real current terrain for gameplay mechanics --

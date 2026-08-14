@@ -77,6 +77,37 @@ def test_province_tax_yield_combines_scar_then_bless():
     assert province_tax_yield(province) == 12
 
 
+# -- Phase 509: Find Mines' own mine_gold_bonus -----------------------------
+
+
+def test_province_tax_yield_applies_find_mines_bonus():
+    province = ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, tax=4, mine_gold_bonus=3)
+    assert province_tax_yield(province) == 7
+
+
+def test_province_tax_yield_combines_mines_with_scar_then_bless():
+    # base 10 -> scar -2, mines +5 -> 13 -> Bless +60% -> 20 (20.8 floored)
+    province = ProvinceState(
+        HOME,
+        Terrain.PLAINS,
+        Race.HUMAN,
+        tax=10,
+        scar_terrain_gold_reduction=2,
+        mine_gold_bonus=5,
+        tax_modifier_percent=60,
+    )
+    assert province_tax_yield(province) == 20
+
+
+def test_province_tax_yield_mines_cannot_push_below_zero_floor():
+    # scar reduction still dominates -- mines only ever add, never rescue
+    # a heavily scarred province past its own floor-at-zero rule doesn't
+    # apply here since mines are additive, but the combined value must
+    # never go negative even in a degenerate scar > tax + mines case.
+    province = ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, tax=2, scar_terrain_gold_reduction=10, mine_gold_bonus=3)
+    assert province_tax_yield(province) == 0
+
+
 def test_compute_tax_base_sums_only_owned_provinces_with_known_tax():
     state = make_state()
     state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=4))

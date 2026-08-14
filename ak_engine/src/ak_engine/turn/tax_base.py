@@ -107,13 +107,20 @@ def province_tax_yield(province: ProvinceState) -> int | None:
     if its base ``tax`` was never recorded -- see module docstring for the
     exact scar-reduction-then-percent-modifier formula and why an unknown
     base isn't treated as a zero yield.
+
+    Phase 509 -- Find Mines' own ``mine_gold_bonus`` (cumulative, permanent,
+    capped at 10 gold -- see ``models/game_state.py ProvinceState``'s own
+    docstring) is combined at the same step as ``scar_terrain_gold_
+    reduction``, both being permanent changes to the base rather than the
+    turn's own temporary ``tax_modifier_percent``/``earthquake_flat_
+    reduction`` adjustments.
     """
 
     if province.tax is None:
         return None
 
-    after_scar = max(0, province.tax - province.scar_terrain_gold_reduction)
-    after_modifier = after_scar * (100 + province.tax_modifier_percent) // 100
+    after_scar_and_mines = max(0, province.tax - province.scar_terrain_gold_reduction + province.mine_gold_bonus)
+    after_modifier = after_scar_and_mines * (100 + province.tax_modifier_percent) // 100
     after_earthquake_flat = after_modifier - province.earthquake_flat_reduction
     return max(0, after_earthquake_flat)
 

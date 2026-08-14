@@ -165,6 +165,84 @@ def test_record_kingdom_exploration_with_state_rolls_discovery():
     assert exploration.discovered_features == [feature]
 
 
+# -- Phase 509: Find Mines wiring in record_kingdom_exploration --
+
+
+def test_record_kingdom_exploration_find_mines_success_adds_gold_and_increments_attempts():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    province = ProvinceState(TARGET, Terrain.MTNS, Race.HUMAN, owner_kingdom_id=1)
+    state.provinces[TARGET] = province
+
+    record_kingdom_exploration(
+        province,
+        kingdom_id=1,
+        explorer_skill=1,
+        partial=False,
+        state=state,
+        rng=ScriptedRandom([0.0, 0.5]),
+        has_find_mines=True,
+    )
+
+    assert province.mine_find_attempts == 1
+    assert 1 <= province.mine_gold_bonus <= 3
+
+
+def test_record_kingdom_exploration_find_mines_skipped_on_enemy_province():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 0)))
+    province = ProvinceState(TARGET, Terrain.MTNS, Race.HUMAN, owner_kingdom_id=2)
+    state.provinces[TARGET] = province
+
+    record_kingdom_exploration(
+        province,
+        kingdom_id=1,
+        explorer_skill=1,
+        partial=False,
+        state=state,
+        rng=ScriptedRandom([0.0]),
+        has_find_mines=True,
+    )
+
+    assert province.mine_find_attempts == 0
+    assert province.mine_gold_bonus == 0
+
+
+def test_record_kingdom_exploration_find_mines_allowed_on_neutral_province():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    province = ProvinceState(TARGET, Terrain.MTNS, Race.HUMAN, owner_kingdom_id=None)
+    state.provinces[TARGET] = province
+
+    record_kingdom_exploration(
+        province,
+        kingdom_id=1,
+        explorer_skill=1,
+        partial=False,
+        state=state,
+        rng=ScriptedRandom([0.0, 0.5]),
+        has_find_mines=True,
+    )
+
+    assert province.mine_find_attempts == 1
+    assert province.mine_gold_bonus >= 1
+
+
+def test_record_kingdom_exploration_find_mines_disabled_by_default():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    province = ProvinceState(TARGET, Terrain.MTNS, Race.HUMAN, owner_kingdom_id=1)
+    state.provinces[TARGET] = province
+
+    record_kingdom_exploration(
+        province, kingdom_id=1, explorer_skill=1, partial=False, state=state, rng=ScriptedRandom([0.0])
+    )
+
+    assert province.mine_find_attempts == 0
+    assert province.mine_gold_bonus == 0
+
+
 def test_move_into_allied_territory_is_uncontested():
     state = base_state()
     state.add_army(ArmyState(201, 2, ArmyType.AXEMEN, Quality.AVERAGE, TARGET))

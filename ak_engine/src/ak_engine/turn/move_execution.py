@@ -150,7 +150,7 @@ from ak_engine.models.treasure import Treasure
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.contested_province import is_illegal_move_from_contested
-from ak_engine.turn.exploration import ExploreResult, discover_features, resolve_explore
+from ak_engine.turn.exploration import ExploreResult, discover_features, resolve_explore, resolve_find_mines
 from ak_engine.turn.movement import (
     NORMAL_MAP_BOUNDS,
     HexOwnershipTier,
@@ -220,6 +220,7 @@ def record_kingdom_exploration(
     rng: random.Random | None = None,
     has_military_maps: bool = False,
     has_difficult_terrain: bool = False,
+    has_find_mines: bool = False,
 ) -> KingdomExplorationResult:
     """Advances ``kingdom_id``'s own cumulative exploration of ``province`` (Phase 69) --
     see ``models/game_state.py``'s own module docstring for why this is a
@@ -243,6 +244,17 @@ def record_kingdom_exploration(
     ``has_military_maps``/``has_difficult_terrain`` (Phase 507) pass
     straight through to ``resolve_explore()`` -- see that function's
     own docstring.
+
+    ``has_find_mines`` (Phase 509): rolls ``turn/exploration.py
+    resolve_find_mines()`` once, same ``state``-gated opt-in as feature
+    discovery above (the "when exploring an enemy province, this ability
+    is not used" check needs real ``GameState`` ownership data). Skipped
+    entirely when ``province``'s owner is an enemy of ``kingdom_id`` --
+    neutral/unowned and owned-or-allied provinces are both eligible, only
+    ``HexOwnershipTier.ENEMY`` is excluded, matching the rulebook text
+    exactly. A successful roll mutates ``province.mine_gold_bonus``/
+    ``mine_find_attempts`` directly (both province-global, not per-
+    kingdom -- see that field's own docstring).
     """
 
     prior = province.explored_percent_by_kingdom.get(kingdom_id, 0)
@@ -258,6 +270,12 @@ def record_kingdom_exploration(
     discovered: list[Feature] = []
     if state is not None:
         rng = rng if rng is not None else random.Random()
+        if has_find_mines and _classify_hex_ownership(state, kingdom_id, province.coord) is not HexOwnershipTier.ENEMY:
+            gold = resolve_find_mines(
+                province.effective_terrain(), province.mine_find_attempts, province.mine_gold_bonus, rng
+            )
+            province.mine_find_attempts += 1
+            province.mine_gold_bonus += gold
         discovered = discover_features(state, province.coord, kingdom_id, result.new_percent, rng)
     return KingdomExplorationResult(result.new_percent, discovered)
 
@@ -274,6 +292,7 @@ def execute_move(
     rng: random.Random | None = None,
     has_military_maps: bool = False,
     has_difficult_terrain: bool = False,
+    has_find_mines: bool = False,
 ) -> MoveExecutionResult:
     """Move ``army_ids`` (all from the same province) toward ``target``.
 
@@ -368,6 +387,7 @@ def execute_move(
         rng=rng,
         has_military_maps=has_military_maps,
         has_difficult_terrain=has_difficult_terrain,
+        has_find_mines=has_find_mines,
     )
 
     battle_report = None

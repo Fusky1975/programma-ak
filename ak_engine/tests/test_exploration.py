@@ -11,7 +11,7 @@ from ak_engine.models.game_state import GameState, KingdomState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
-from ak_engine.turn.exploration import discover_features, resolve_explore
+from ak_engine.turn.exploration import discover_features, resolve_explore, resolve_find_mines
 
 from _helpers import ScriptedRandom
 
@@ -107,6 +107,61 @@ def test_current_percent_above_100_is_invalid_without_military_maps():
 def test_current_percent_up_to_200_is_valid_with_military_maps():
     result = resolve_explore(150, Terrain.PLAINS, explorer_skill=0, has_military_maps=True)
     assert result.new_percent == 200
+
+
+# -- Phase 509: resolve_find_mines --
+
+
+def test_resolve_find_mines_success_returns_gold_in_range():
+    # A successful roll consumes a second .random() call internally, via
+    # rng.randint()'s own _randbelow() -- padded with a second value.
+    rng = ScriptedRandom([0.0, 0.5])  # always < any positive chance
+    gold = resolve_find_mines(Terrain.MTNS, attempts_so_far=0, current_bonus=0, rng=rng)
+    assert 1 <= gold <= 3
+
+
+def test_resolve_find_mines_failure_returns_zero():
+    rng = ScriptedRandom([0.99])
+    assert resolve_find_mines(Terrain.MTNS, attempts_so_far=0, current_bonus=0, rng=rng) == 0
+
+
+def test_resolve_find_mines_mountains_base_chance_is_35_percent():
+    just_under = ScriptedRandom([0.34, 0.5])
+    assert resolve_find_mines(Terrain.MTNS, attempts_so_far=0, current_bonus=0, rng=just_under) >= 1
+    at_threshold = ScriptedRandom([0.35])
+    assert resolve_find_mines(Terrain.MTNS, attempts_so_far=0, current_bonus=0, rng=at_threshold) == 0
+
+
+def test_resolve_find_mines_other_land_base_chance_is_15_percent():
+    for terrain in (Terrain.PLAINS, Terrain.DESERT, Terrain.JUNGLE, Terrain.FOREST):
+        just_under = ScriptedRandom([0.14, 0.5])
+        assert resolve_find_mines(terrain, attempts_so_far=0, current_bonus=0, rng=just_under) >= 1
+        at_threshold = ScriptedRandom([0.15])
+        assert resolve_find_mines(terrain, attempts_so_far=0, current_bonus=0, rng=at_threshold) == 0
+
+
+def test_resolve_find_mines_chance_halves_per_prior_attempt():
+    # Mountains base 0.35 -> after 1 prior attempt, effective chance 0.175.
+    just_under = ScriptedRandom([0.17, 0.5])
+    assert resolve_find_mines(Terrain.MTNS, attempts_so_far=1, current_bonus=0, rng=just_under) >= 1
+    at_threshold = ScriptedRandom([0.175])
+    assert resolve_find_mines(Terrain.MTNS, attempts_so_far=1, current_bonus=0, rng=at_threshold) == 0
+
+
+def test_resolve_find_mines_sea_and_no_terrain_never_yield_a_mine():
+    assert resolve_find_mines(Terrain.SEA, attempts_so_far=0, current_bonus=0, rng=ScriptedRandom([0.0])) == 0
+    assert resolve_find_mines(Terrain.NO_TERRAIN, attempts_so_far=0, current_bonus=0, rng=ScriptedRandom([0.0])) == 0
+
+
+def test_resolve_find_mines_returns_zero_once_cap_reached():
+    rng = ScriptedRandom([0.0])
+    assert resolve_find_mines(Terrain.MTNS, attempts_so_far=0, current_bonus=10, rng=rng) == 0
+
+
+def test_resolve_find_mines_caps_gold_at_the_remaining_headroom():
+    rng = ScriptedRandom([0.0, 0.5])
+    gold = resolve_find_mines(Terrain.MTNS, attempts_so_far=0, current_bonus=9, rng=rng)
+    assert gold == 1
 
 
 # -- Phase 242: discover_features --

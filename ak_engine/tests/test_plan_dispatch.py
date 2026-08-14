@@ -209,6 +209,52 @@ def test_dispatch_explore_wires_military_maps_from_the_leaders_own_advanced_abil
     assert result.new_percent == 200
 
 
+def test_dispatch_explore_wires_find_mines_from_the_leaders_own_advanced_ability():
+    # Phase 509: dispatch_phase() derives has_find_mines the same way as
+    # Military Maps/Difficult Terrain -- Mountains gives a real chance to
+    # roll a mine on the leader's own (kingdom_id-owned) province.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.provinces[location].terrain = Terrain.MTNS
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.EXPLORER_FIND_MINES)
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    dispatch_phase(
+        phase,
+        state,
+        kingdom_id=1,
+        leader_id=LEADER_ID,
+        army_ids=[army_id],
+        board_width=BOARD_WIDTH,
+        explorer_skill=1,
+        rng=ScriptedRandom([0.0, 0.5]),
+    )
+
+    assert state.provinces[location].mine_find_attempts == 1
+    assert 1 <= state.provinces[location].mine_gold_bonus <= 3
+
+
+def test_dispatch_explore_does_not_roll_find_mines_without_the_advanced_ability():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.provinces[location].terrain = Terrain.MTNS
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    dispatch_phase(
+        phase,
+        state,
+        kingdom_id=1,
+        leader_id=LEADER_ID,
+        army_ids=[army_id],
+        board_width=BOARD_WIDTH,
+        explorer_skill=1,
+        rng=ScriptedRandom([0.0]),
+    )
+
+    assert state.provinces[location].mine_find_attempts == 0
+    assert state.provinces[location].mine_gold_bonus == 0
+
+
 def test_dispatch_explore_also_records_the_kingdoms_own_exploration():
     # Phase 69: alongside the pre-existing shared explored_percent scalar.
     location = HexCoord(3, 9)

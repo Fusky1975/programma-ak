@@ -21046,7 +21046,7 @@ follow-up request after the original 431-435 plan shipped.
     the 200%->+50% Military Maps case), and `dispatch_phase()`'s own
     real per-leader wiring for both `EXPLORE` and `LMOVE`. Ran again:
     4386 passed (net +9).
-- **Phase 508 (current)**: resolves Phase 507's own deferred conflict --
+- **Phase 508**: resolves Phase 507's own deferred conflict --
   the dossier's Explorer-specific `spabord[Explorer]` description (SS48,
   `IRand` scaled by 32000, `tries` reset once per *ability*) really does
   contradict the already-verified magic-college algorithm (32768, reset
@@ -21084,6 +21084,56 @@ follow-up request after the original 431-435 plan shipped.
     Explorer grant path (renamed the old non-magic-college test to
     cover both magic colleges and Explorer). Ran again: 4393 passed
     (net +7).
+- **Phase 509 (current)**: implements Find Mines, the first of Phase 507's
+  own four deferred Explorer side effects -- quoted directly from
+  `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION[EXPLORER_
+  FIND_MINES]`, a real user-supplied rulebook excerpt (already embedded
+  in the project, the sole source, no disassembly reference exists for
+  this ability): "whenever a province is explored, there is a chance to
+  find a Mine which will increase the provincial tax base by 1-3 gold
+  per turn (maximum of 10 gold). In mountains the base chance is 35%, in
+  other land terrain 15%. Each time he explores a province, the chance
+  of finding another mine in that province is halved. When exploring an
+  enemy province, this ability is not used."
+  - New `turn/exploration.py resolve_find_mines()`: the roll itself --
+    terrain-gated base chance (Mountains 35%/other land 15%, Sea/No
+    Terrain never), halved per prior attempt already made in that same
+    province, a successful roll adds 1-3 gold clamped to the remaining
+    headroom under the real 10-gold cap.
+  - Two new `ProvinceState` fields (`models/game_state.py`):
+    `mine_gold_bonus` (cumulative, permanent, capped at 10 -- the same
+    "permanent tax-base change" category as `scar_terrain_gold_
+    reduction`, just additive) and `mine_find_attempts` (drives the
+    halving). Both province-global, not per-kingdom -- the rulebook
+    describes mines as a property of the province itself.
+  - `turn/tax_base.py province_tax_yield()`: folds `mine_gold_bonus` in
+    at the same step as `scar_terrain_gold_reduction`, both being
+    permanent base changes combined before the turn's own temporary
+    `tax_modifier_percent`/`earthquake_flat_reduction` adjustments.
+  - `turn/move_execution.py record_kingdom_exploration()`: new
+    `has_find_mines` parameter, rolled once per call (the one place both
+    the EXPLORE action and Move's own partial-exploration side effect
+    already share, matching "whenever a province is explored" exactly)
+    -- gated on the same `state`-present opt-in as feature discovery,
+    since the "not used on an enemy province" rule needs real
+    `GameState` ownership data (`_classify_hex_ownership`, reused
+    directly rather than duplicated).
+  - `turn/plan_dispatch.py dispatch_phase()`: derives `has_find_mines`
+    from the acting leader's own real `AdvancedAbility.EXPLORER_FIND_
+    MINES` possession, the same pattern as Military Maps/Difficult
+    Terrain, threaded into both the EXPLORE and LMOVE branches.
+  - The other three Phase 507-deferred Explorer side effects (Find
+    Water, Society Maps, Long-Range Trade Routes) are still not
+    implemented -- each is its own separate new mechanic, not affected
+    by this phase.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4393 passed, unchanged. Wrote new tests: `resolve_find_mines()`
+    unit tests (terrain gating, chance thresholds, halving, cap
+    enforcement), `province_tax_yield()`'s new `mine_gold_bonus`
+    folding, `record_kingdom_exploration()`'s `has_find_mines` wiring
+    (success, enemy-province skip, neutral-province allow, disabled by
+    default), and `dispatch_phase()`'s own real per-leader wiring. Ran
+    again: 4410 passed (net +17).
 
 ## Setup
 
