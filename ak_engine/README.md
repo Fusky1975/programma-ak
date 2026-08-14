@@ -21506,7 +21506,7 @@ follow-up request after the original 431-435 plan shipped.
     real per-swing sites, and one builder-reads-the-ability test per
     consumer (6 total, Mastery + True Mastery each). Ran again: 4504
     passed (net +27).
-- **Phase 518 (current)**: adds Melee Duellists Medal (Advanced Ability)
+- **Phase 518**: adds Melee Duellists Medal (Advanced Ability)
   -- quoted from `models/advanced_ability.py ADVANCED_ABILITY_
   DESCRIPTION`: "When fighting against humanoid creatures, the character
   has a plus 10% chance to hit and plus 1 damage in melee, while the
@@ -21545,6 +21545,42 @@ follow-up request after the original 431-435 plan shipped.
     per consumer (6 total) plus a leader-race-overrides-kingdom-race
     precedence test and a non-humanoid-kingdom test in `battle_
     orchestrator.py`'s own suite. Ran again: 4519 passed (net +15).
+- **Phase 519 (current)**: closes out the Melee category (6/6 addressed)
+  with `AdvancedAbility.MELEE_CONTROL_TEMPER` -- quoted from `models/
+  advanced_ability.py ADVANCED_ABILITY_DESCRIPTION`: "With this ability,
+  the Berserk temper is used initially to gain the extra 1-4 hit points,
+  then the temper is usually adjusted to whatever temper gains the most
+  favorable benefits in combat." Split in two per the project's own "no
+  source, no guess" policy:
+  1. **Modeled.** "Used initially to gain the extra 1-4 hit points" is
+     concrete -- the same range and mechanic Furia (Phase 284) already
+     uses (`berserk_fury_bonus_hit_points()`). New `Combatant.has_
+     control_temper_ability: bool = False` field, set by the same six
+     per-consumer builders, consulted by `apply_temper_melee_setup()`'s
+     own per-combatant loop: one extra roll added to `hit_points`,
+     independent of the combatant's own real `.temper` ("used initially"
+     reads as "at the start of combat, as if Berserk," not "only if
+     genuinely Berserk"). Holding the ability *and* being genuinely
+     Berserk stacks both rolls -- a documented, deliberate quirk, since no
+     source disambiguates that overlap.
+  2. **Not modeled.** "Then the temper is usually adjusted to whatever
+     temper gains the most favorable benefits in combat" names no trigger
+     (every round? once, at setup?) and no algorithm for "most favorable"
+     -- guessing either would be exactly the kind of unsourced magnitude
+     this project's own module docstring (Phase 128) declines to invent.
+     Documented as an explicit scope boundary in `encounter.py`'s own
+     module docstring, not silently dropped.
+
+  With this phase, all six Melee Advanced Abilities have been addressed:
+  Evasion, Hit Points, Mastery, True Mastery, and Duellists Medal fully
+  wired; Control Temper partially wired with its ambiguous residual
+  explicitly documented as out of scope.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4519 passed, unchanged. Wrote new tests: `apply_temper_melee_
+    setup()`'s own Control Temper bonus (holder-only, ability-independent
+    of real temper, stacks with genuine Berserk, no-op without the
+    ability), and one builder-reads-the-ability test per consumer (6
+    total). Ran again: 4529 passed (net +10).
 
 ## Setup
 

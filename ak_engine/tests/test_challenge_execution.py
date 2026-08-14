@@ -249,6 +249,20 @@ def test_leader_combatant_reads_duellists_medal_and_kingdom_race_humanoid():
     assert combatant.is_humanoid is True
 
 
+def test_leader_combatant_reads_control_temper_ability():
+    # Phase 519: AdvancedAbility.MELEE_CONTROL_TEMPER.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(
+        501, kingdom_id=1, name="Hero", location=FIELD, advanced_abilities={AdvancedAbility.MELEE_CONTROL_TEMPER}
+    )
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.has_control_temper_ability is True
+
+
 def test_leader_combatant_non_humanoid_kingdom_race_is_not_humanoid():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Trollholm", Race.TROLLISH, Alignment.EVIL, FIELD))

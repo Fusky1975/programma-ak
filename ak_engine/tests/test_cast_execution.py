@@ -303,6 +303,16 @@ def test_kill_enemy_combatant_reads_duellists_medal_and_kingdom_race_humanoid():
     assert combatant.is_humanoid is True
 
 
+def test_kill_enemy_combatant_reads_control_temper_ability():
+    # Phase 519: AdvancedAbility.MELEE_CONTROL_TEMPER.
+    state = build_state()
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.MELEE_CONTROL_TEMPER)
+
+    combatant = _kill_enemy_combatant(state, state.leaders[CASTER_ID], temper=Temper.BERSERK)
+
+    assert combatant.has_control_temper_ability is True
+
+
 def test_kill_enemy_puts_a_colocated_target_into_a_coma():
     # Phase 310: this project's Kill_Enemy is only ever cast as an Action
     # spell -- see _execute_kill_enemy()'s own docstring for why a success

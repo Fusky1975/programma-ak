@@ -175,6 +175,18 @@ def test_leader_combatant_reads_duellists_medal_and_kingdom_race_humanoid():
     assert combatant.is_humanoid is True
 
 
+def test_leader_combatant_reads_control_temper_ability():
+    # Phase 519: AdvancedAbility.MELEE_CONTROL_TEMPER.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION, advanced_abilities={AdvancedAbility.MELEE_CONTROL_TEMPER})
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(state, leader)
+
+    assert combatant.has_control_temper_ability is True
+
+
 def test_execute_search_leader_not_found():
     state = GameState()
     result = execute_search(state, LEADER_ID, _melee_request(1))

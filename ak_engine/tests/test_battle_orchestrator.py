@@ -2060,6 +2060,22 @@ def test_commander_combatant_reads_duellists_medal_and_kingdom_race_humanoid():
     assert combatant.is_humanoid is True
 
 
+def test_commander_combatant_reads_control_temper_ability():
+    # Phase 519: AdvancedAbility.MELEE_CONTROL_TEMPER.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(
+        LeaderState(
+            501, kingdom_id=1, name="Commander", location=FIELD, advanced_abilities={AdvancedAbility.MELEE_CONTROL_TEMPER}
+        )
+    )
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.has_control_temper_ability is True
+
+
 def test_commander_combatant_own_race_override_takes_precedence_over_kingdom_race():
     # Phase 196's own precedent: LeaderState.race, when set, overrides the
     # serving Kingdom's own race (a Valhalla visitor's own case).
@@ -2092,6 +2108,7 @@ def test_commander_combatant_garrison_commander_is_not_humanoid_and_has_no_medal
 
     assert combatant.is_humanoid is False
     assert combatant.has_duellists_medal_ability is False
+    assert combatant.has_control_temper_ability is False
 
 
 def test_commander_combatant_garrison_commander_has_no_damage_reduction():

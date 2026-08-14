@@ -1436,6 +1436,42 @@ Control Temper remains, and its own sourced text ("the temper is
 usually adjusted to whatever temper gains the most favorable benefits
 in combat") gives no concrete trigger or magnitude to model, a
 candidate for "documented, not modeled" rather than a guess.
+
+**Phase 519 addendum -- `AdvancedAbility.MELEE_CONTROL_TEMPER`, closing
+out the Melee category.** `models/advanced_ability.py`'s own sourced
+text: "With this ability, the Berserk temper is used initially to gain
+the extra 1-4 hit points, then the temper is usually adjusted to
+whatever temper gains the most favorable benefits in combat." Split in
+two by this phase, per the project's own "no source, no guess" policy:
+
+1. **Modeled.** "The Berserk temper is used initially to gain the extra
+   1-4 hit points" is concrete and unambiguous -- the same numeric range
+   and mechanic Furia (Phase 284) already uses. New `Combatant.has_
+   control_temper_ability: bool = False` field, set by the same six
+   per-consumer builders, consulted by `apply_temper_melee_setup()`'s
+   own per-combatant loop: one `berserk_fury_bonus_hit_points(rng)` roll
+   added to `hit_points`, independent of this combatant's own real
+   `.temper` (the ability grants this regardless of what temper, if any,
+   is actually recorded -- "used initially" reads as "at the start of
+   combat, as if Berserk," not "only if genuinely Berserk"). If a
+   combatant happens to hold this ability *and* have a genuinely-Berserk
+   `.temper`, both rolls apply and stack; no source disambiguates that
+   overlap, so it stays a deliberate, documented quirk.
+2. **Not modeled.** "Then the temper is usually adjusted to whatever
+   temper gains the most favorable benefits in combat" names no trigger
+   (when does the adjustment happen -- every round? once, at setup?)
+   and no algorithm for "most favorable" (favorable against what --
+   the opponent's current temper? their own hit points? a lookahead
+   simulation, the way Augur Combat's own silent-simulation mechanic
+   works?). Guessing any of these would be exactly the kind of
+   unsourced magnitude/trigger this project's own module docstring
+   (Phase 128) declines to invent. Left undone, documented here rather
+   than silently dropped.
+
+With this phase, all six Melee category Advanced Abilities have been
+addressed: Evasion, Hit Points, Mastery, True Mastery, and Duellists
+Medal fully wired; Control Temper partially wired with its ambiguous
+residual explicitly documented as out of scope.
 """
 
 from __future__ import annotations
@@ -2557,6 +2593,22 @@ class Combatant:
     # addendum for the full symmetric hit-chance/damage swing this
     # applies.
     has_duellists_medal_ability: bool = False
+    # Phase 519 -- AdvancedAbility.MELEE_CONTROL_TEMPER's own confirmed,
+    # unambiguous half ("the Berserk temper is used initially to gain
+    # the extra 1-4 hit points") -- set by each consumer's own builder
+    # the same way `has_melee_hit_points_ability` is. Independent of
+    # this combatant's own real `.temper` field: the ability grants the
+    # bonus regardless of what temper (if any) is actually recorded, and
+    # composes additively with a genuinely-Berserk combatant's own Furia
+    # roll if both happen to apply (no source disambiguates that overlap
+    # -- see `apply_temper_melee_setup()`'s own Phase 519 addendum for
+    # why this stays a deliberate, documented quirk rather than a
+    # guessed de-duplication rule). The ability's own second half ("then
+    # the temper is usually adjusted to whatever temper gains the most
+    # favorable benefits") is NOT modeled -- no trigger or algorithm is
+    # given for "most favorable," so this project's own "no source, no
+    # guess" policy leaves it undone; see that same addendum.
+    has_control_temper_ability: bool = False
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -2680,6 +2732,25 @@ def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random)
     branches below (multiplication/addition compose regardless of order),
     so it's placed first in the loop purely for readability. Defaults
     (``False``) leave every pre-Phase-518 caller unaffected.
+
+    Phase 519: also applies AdvancedAbility.MELEE_CONTROL_TEMPER's own
+    confirmed, unambiguous half ("the Berserk temper is used initially
+    to gain the extra 1-4 hit points") -- for either combatant whose own
+    ``has_control_temper_ability`` is set, one ``berserk_fury_bonus_hit_
+    points(rng)`` roll is added to ``hit_points``, the exact same
+    mechanic Furia already uses, and independent of that combatant's own
+    real ``.temper`` (this ability grants the bonus regardless of what
+    temper, if any, is actually recorded). If a combatant happens to
+    hold this ability *and* have a genuinely-Berserk ``.temper``, both
+    rolls apply and stack -- no source disambiguates that overlap, so it
+    stays a deliberate, documented quirk rather than a guessed
+    de-duplication rule. The ability's own second half ("then the temper
+    is usually adjusted to whatever temper gains the most favorable
+    benefits in combat") is deliberately NOT modeled here: no trigger or
+    algorithm is given for "most favorable," so per this project's own
+    "no source, no guess" policy it stays undone -- this closes out the
+    Melee category's own six Advanced Abilities with five fully wired
+    and this one partially wired plus its ambiguous residual documented.
     """
 
     for combatant, opponent in ((a, b), (b, a)):
@@ -2688,6 +2759,8 @@ def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random)
             combatant.melee_damage_dealt_bonus += MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS
             opponent.offensive_hit_multiplier *= 1.0 - MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS
             opponent.melee_damage_dealt_bonus -= MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS
+        if combatant.has_control_temper_ability:
+            combatant.hit_points += berserk_fury_bonus_hit_points(rng)
         if combatant.has_melee_hit_points_ability:
             combatant.hit_points += roll_melee_hit_points_ability_bonus(rng)
         if combatant.temper is Temper.BERSERK:

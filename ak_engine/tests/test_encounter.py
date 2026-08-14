@@ -2799,6 +2799,60 @@ def test_apply_temper_melee_setup_duellists_medal_applies_symmetrically_when_bot
     assert b.melee_damage_dealt_bonus == 0
 
 
+def test_apply_temper_melee_setup_control_temper_adds_bonus_only_to_the_holder():
+    a = Combatant("Tempered Duellist", hit_points=CHARACTER_HIT_POINTS, has_control_temper_ability=True)
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS)
+
+    apply_temper_melee_setup(a, b, random.Random(0))
+
+    assert CHARACTER_HIT_POINTS < a.hit_points <= CHARACTER_HIT_POINTS + 4
+    assert b.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_apply_temper_melee_setup_control_temper_does_nothing_without_the_ability():
+    a = Combatant("A", hit_points=CHARACTER_HIT_POINTS)
+    b = Combatant("B", hit_points=CHARACTER_HIT_POINTS)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.hit_points == CHARACTER_HIT_POINTS
+    assert b.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_apply_temper_melee_setup_control_temper_applies_regardless_of_real_temper():
+    # The ability grants its own bonus "as if Berserk" even when the
+    # combatant's own recorded .temper is something else entirely (or
+    # None) -- "used initially" is not gated on genuinely being Berserk.
+    a = Combatant(
+        "Composed Duellist",
+        hit_points=CHARACTER_HIT_POINTS,
+        temper=Temper.CAUTIOUS,
+        has_control_temper_ability=True,
+    )
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS)
+
+    apply_temper_melee_setup(a, b, random.Random(0))
+
+    assert CHARACTER_HIT_POINTS < a.hit_points <= CHARACTER_HIT_POINTS + 4
+
+
+def test_apply_temper_melee_setup_control_temper_stacks_with_genuine_berserk():
+    # A documented, deliberate quirk: holding the ability *and* being
+    # genuinely Berserk rolls Furia's own bonus twice.
+    a = Combatant(
+        "Doubly Tempered",
+        hit_points=CHARACTER_HIT_POINTS,
+        temper=Temper.BERSERK,
+        has_control_temper_ability=True,
+    )
+    b = Combatant("Foe", hit_points=CHARACTER_HIT_POINTS)
+
+    apply_temper_melee_setup(a, b, random.Random(0))
+
+    assert CHARACTER_HIT_POINTS + 1 < a.hit_points <= CHARACTER_HIT_POINTS + 8
+    assert b.hit_points == CHARACTER_HIT_POINTS
+
+
 def test_resolve_melee_duel_applies_temper_setup_before_any_combat():
     # max_rounds=0 skips the round loop entirely, isolating
     # apply_temper_melee_setup()'s own effect (called first, inside

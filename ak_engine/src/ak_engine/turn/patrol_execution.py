@@ -225,6 +225,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         melee_damage_dealt_bonus=melee_mastery_damage_bonus(leader.advanced_abilities),
         is_humanoid=is_humanoid,
         has_duellists_medal_ability=AdvancedAbility.MELEE_DUELLISTS_MEDAL in leader.advanced_abilities,
+        has_control_temper_ability=AdvancedAbility.MELEE_CONTROL_TEMPER in leader.advanced_abilities,
     )
 
 

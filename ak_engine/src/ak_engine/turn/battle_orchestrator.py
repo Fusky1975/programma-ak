@@ -992,6 +992,7 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
     melee_damage_dealt_bonus = 0
     is_humanoid = False
     has_duellists_medal_ability = False
+    has_control_temper_ability = False
     if leader is not None:
         defender_office = resolve_office_holder(state, Office.DEFENDER)
         if defender_office is not None and defender_office.leader_id == leader.leader_id:
@@ -1005,6 +1006,7 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
             effective_race = leader_kingdom.race if leader_kingdom is not None else None
         is_humanoid = effective_race in HUMANOID_RACES
         has_duellists_medal_ability = AdvancedAbility.MELEE_DUELLISTS_MEDAL in leader.advanced_abilities
+        has_control_temper_ability = AdvancedAbility.MELEE_CONTROL_TEMPER in leader.advanced_abilities
 
     return Combatant(
         name=f"leader {commander.leader_id}",
@@ -1019,6 +1021,7 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         melee_damage_dealt_bonus=melee_damage_dealt_bonus,
         is_humanoid=is_humanoid,
         has_duellists_medal_ability=has_duellists_medal_ability,
+        has_control_temper_ability=has_control_temper_ability,
     )
 
 

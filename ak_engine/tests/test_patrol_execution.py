@@ -126,6 +126,19 @@ def test_leader_combatant_reads_duellists_medal_and_kingdom_race_humanoid():
     assert combatant.is_humanoid is True
 
 
+def test_leader_combatant_reads_control_temper_ability():
+    # Phase 519: AdvancedAbility.MELEE_CONTROL_TEMPER.
+    state = _base_state()
+    leader = LeaderState(
+        1, kingdom_id=1, name="Patroller", location=HOME, advanced_abilities={AdvancedAbility.MELEE_CONTROL_TEMPER}
+    )
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.has_control_temper_ability is True
+
+
 # -- find_patrol_target: rules (a), (f) ---------------------------------
 
 
