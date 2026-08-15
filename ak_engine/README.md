@@ -21863,7 +21863,7 @@ follow-up request after the original 431-435 plan shipped.
     bonus), `resolve_fulfill_honored()`'s own boundary/fallback/Silver-
     Tongue behavior (including bypassing the veto). Ran again: 4595
     passed (net +6).
-- **Phase 526 (current)**: closes the two STEAL micro-gaps flagged
+- **Phase 526**: closes the two STEAL micro-gaps flagged
   against `turn/challenge_execution.py` -- both turned out to be
   documentation staleness plus one genuinely fixable formula gap, not
   new mechanics to design.
@@ -21908,6 +21908,60 @@ follow-up request after the original 431-435 plan shipped.
     Replaced it with two new tests (`..._pays_ransom` and `..._with_no_
     gold_is_executed`) mirroring the existing King-vs-King ransom/
     executed pair exactly. Ran again: 4596 passed (net +1).
+- **Phase 527 (current)**: `turn/expenses.py apply_turn_maintenance()`'s
+  own docstring used to say plainly that no bankruptcy/desertion
+  consequence was modeled for unpaid leader maintenance, "nothing in the
+  available source describes one." Continued reading the same dossier's
+  Part II ("reclutamento e mantenimento degli Eroi liberi") turned up
+  SS28.1 ("Mancato pagamento e diserzione"), the real compiled
+  consequence, disassembled from `AK.EXE:0x1450D-0x14612`: when the
+  per-turn payment helper can't fund a specific Hero's own `LCost`, the
+  engine rolls `r = (IRand and 3) - 2` (four equally-likely values, -2
+  to +1) against that Hero's own `like(hero, king)` -- the identical
+  liking value `turn/hire_pay.py required_pay()` already computes for
+  pricing, now exposed publicly as `hero_liking()` (was `_like()`).
+  `r >= like` deserts the Hero (`kingdom_id` cleared, free to be Hired
+  elsewhere); otherwise he stays unpaid this turn ("standby"), no other
+  consequence. Desertion probability by `like`: +2 -> 0%, +1 -> 25%, 0
+  -> 50%, -1 -> 75%, -2 -> 100%.
+
+  Rewrote `apply_turn_maintenance()`: army maintenance (`ACost`) still
+  pays as one unconditional, unclamped lump sum first (no source
+  describes an army-side consequence); each non-King, non-Valhalla-
+  visitor leader is then paid individually, in ascending `leader_id`
+  order (the dossier names no real ordering rule -- ascending id is this
+  project's own established "no rule given" tie-break, matching Phase
+  451's own vote-order convention), against whatever treasury remains --
+  the first Hero the running treasury can't cover, and every Hero after
+  them in that kingdom, rolls for desertion/standby instead of being
+  paid. Return type changed from a bare `dict[int, int]` to
+  `dict[int, MaintenanceResult]` (`debited`, `deserted_leader_ids`,
+  `standby_leader_ids` per kingdom) -- the one caller, `turn_processor.py
+  run_turn()`, already discarded the return value, so only tests needed
+  updating. A kingdom with no recorded King pays unconditionally (no
+  `like()` to roll against, same permissive-default convention
+  `required_pay()` itself already uses for this exact edge case).
+  - Ran the full suite before writing new tests (non-breaking check):
+    4596 passed, with 6 failures -- 4 in `test_expenses.py` (all
+    exercising the old `dict[int, int]` return shape directly, expected)
+    and 2 unexpected ripples: `test_orchestrator.py`'s own 6
+    `process_turn()` tests all use a `_base_state()` fixture where
+    `kingdom_bridge`'s own real King-identification sync demotes a
+    second `is_king=True` fixture leader to a real, kingdom_id-bearing
+    Hero -- with this fixture's own zero-default treasury, that Hero now
+    rolls for desertion/standby every time, consuming an `rng.choice()`
+    call these tests' own `ScriptedRandom([])` never anticipated
+    (`IndexError`), the same class of "new RNG consumption in a shared
+    hot path breaks unrelated downstream tests" ripple Phase 167 already
+    established the fix pattern for. Updated all 6 to
+    `ScriptedRandom([], choice_indices=[0])` (documented once, at
+    `_base_state()`'s own definition, rather than repeated per test) and
+    rewrote the 4 `test_expenses.py` tests for the new
+    `MaintenanceResult` shape. Wrote 5 new tests: a normally-paid Hero,
+    a desertion (scripted roll >= a computed `like`), a standby
+    (scripted roll < `like`), ascending-`leader_id` payment order under
+    a tight treasury, and the missing-King permissive fallback consuming
+    no roll at all. Ran again: 4601 passed (net +5).
 
 ## Setup
 

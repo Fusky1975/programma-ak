@@ -330,7 +330,9 @@ def run_turn(
     decompose_graveyard()`` (Phase 309, the world-wide 350-unit-cap
     graveyard decay), and, as of Phase 404, ``turn/expenses.py
     apply_turn_maintenance()`` -- the real per-turn treasury debit for
-    every kingdom's own Expected Expenses (army + leader upkeep). One
+    every kingdom's own Expected Expenses (army + leader upkeep), now
+    passed this function's own ``rng`` (Phase 527: unpaid Heroes roll for
+    desertion/standby, see that module's own Phase 527 addendum). One
     call to ``run_turn()`` is the one unambiguous "once per game turn"
     boundary this phase-by-phase loop offers; see each function's own
     module docstring for why it lives here rather than per-phase.
@@ -548,7 +550,7 @@ def run_turn(
     _apply_werebeast_transformations(state)
     decompose_graveyard(state)
     apply_turn_revenue(state)
-    apply_turn_maintenance(state)
+    apply_turn_maintenance(state, rng)
     # Phase 468: King of Cowards' own real per-turn temperament rise
     # (AKGEN_reverse_engineering_report (2).md SS18.6) -- see that
     # function's own docstring for why this is a confirmed no-op under

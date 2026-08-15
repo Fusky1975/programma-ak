@@ -132,7 +132,16 @@ def _leader_race(state: GameState, leader: LeaderState) -> Race | None:
     return None
 
 
-def _like(state: GameState, hero: LeaderState, king: LeaderState) -> int:
+def hero_liking(state: GameState, hero: LeaderState, king: LeaderState) -> int:
+    """``like(hero, king)`` -- see module docstring for the full formula.
+
+    **Phase 527**: made public (was ``_like``) so ``turn/expenses.py``'s
+    own new desertion-roll mechanic can reuse the identical computation
+    -- the dossier's own SS28.1 desertion formula compares a fresh
+    ``IRand``-derived roll against this exact same ``like`` value, not a
+    separate quantity.
+    """
+
     align_penalty = _align_penalty(hero.alignment, king.alignment)
 
     h, k = hero.leader_id, king.leader_id
@@ -172,7 +181,7 @@ def required_pay(state: GameState, hero: LeaderState, king: LeaderState | None) 
     if king is None:
         return 1
 
-    like = _like(state, hero, king)
+    like = hero_liking(state, hero, king)
     base_cost = 3 - like
 
     king_alignment = king.alignment

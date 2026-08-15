@@ -36,6 +36,17 @@ def _kingdom(kingdom_number: int, king_name: str, leaders: list[Leader]) -> King
 
 
 def _base_state() -> GameState:
+    # Cedric starts is_king=True here but kingdom_bridge's own real King-
+    # identification sync (see test_process_turn_syncs_bridges_dispatches_
+    # and_narrates's own comment) corrects him to False once process_turn()
+    # runs -- from that point on he's a real, kingdom_id=1 Hero. With this
+    # kingdom's own zero-default treasury, turn/expenses.py's Phase 527
+    # desertion/standby mechanic now rolls once for him at every run_turn()
+    # call below, hence every `ScriptedRandom([], choice_indices=[0])` in
+    # this file's own process_turn() calls (index 0 is an arbitrary,
+    # deterministic pick -- no test here asserts Cedric's own post-turn
+    # desertion outcome, only the orchestration wiring these tests exist
+    # to cover).
     state = GameState()
     state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
     state.add_leader(LeaderState(10, kingdom_id=1, name="Arthur", location=HexCoord(0, 0), is_king=True))
@@ -48,7 +59,7 @@ def test_process_turn_syncs_bridges_dispatches_and_narrates():
     kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
 
     with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
-        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([], choice_indices=[0]))
 
     # kingdom_bridge's own real, authoritative King-identification sync ran:
     # Arthur (name-matched to kingdom.king_name) stays is_king=True, Cedric
@@ -70,7 +81,7 @@ def test_process_turn_skips_a_leader_with_no_matching_leaderstate():
     )
 
     with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
-        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([], choice_indices=[0]))
 
     assert outcome.bridge_reports[1].not_found_leader_ids == [99]
     assert 99 not in {r.leader_id for r in outcome.results}
@@ -86,7 +97,7 @@ def test_process_turn_combines_multiple_kingdoms_orders_into_one_run_turn_call()
 
     with patch("ak_engine.orchestrator.parse_k1_moves_file", side_effect=[kingdom_a, kingdom_b]):
         outcome = process_turn(
-            state, [Path("a.K1"), Path("b.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([])
+            state, [Path("a.K1"), Path("b.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([], choice_indices=[0])
         )
 
     assert {r.leader_id for r in outcome.results} == {10, 20, 30}
@@ -106,7 +117,7 @@ def test_process_turn_wires_the_emperor_election_evaluation():
     kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
 
     with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
-        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([], choice_indices=[0]))
 
     assert isinstance(outcome.election_outcome, ElectionCallOutcome)
     assert outcome.election_outcome.world_total == 0
@@ -122,7 +133,7 @@ def test_process_turn_final_standings_is_none_before_any_emperor_exists():
     kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
 
     with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
-        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([], choice_indices=[0]))
 
     assert outcome.final_standings is None
 
@@ -138,7 +149,7 @@ def test_process_turn_wires_final_standings_once_an_emperor_exists():
     kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
 
     with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
-        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([], choice_indices=[0]))
 
     assert outcome.final_standings is not None
     assert outcome.final_standings.standings == (1,)

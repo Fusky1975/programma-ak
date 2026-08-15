@@ -86,20 +86,61 @@ run_turn()`` call -- both halves together (``ACost`` armies, ``LCost``
 leaders), not leader pay alone, so a kingdom's treasury never "forgets"
 to pay for its armies while genuinely paying its Heroes.
 
-**Deliberately unclamped**: ``KingdomState.treasury`` can go negative.
-No bankruptcy/default consequence (forced disbanding, blocked Hires,
-...) is modeled -- nothing in the available source describes one, and
-this project's standing policy is to leave a genuinely unsourced
+**Army maintenance stays deliberately unclamped**: ``KingdomState.
+treasury`` can still go negative from ``ACost`` alone. Nothing in the
+available source describes an army-side bankruptcy/default consequence,
+and this project's standing policy is to leave a genuinely unsourced
 consequence undocumented rather than invent one, the same restraint
 Phase 162 already applied to the required-pay formula itself.
+
+**Phase 527 addendum -- Hero maintenance is no longer unclamped.**
+The paragraph above used to say the same "no consequence modeled" for
+*every* shortfall, leader pay included -- that was true only because no
+source had been found yet. ``AKGEN_reverse_engineering_report (3).md``
+SS28.1 ("Mancato pagamento e diserzione") gives the real compiled
+consequence, disassembled from ``AK.EXE:0x1450D-0x14612``: when the
+per-turn payment helper can't fund a specific Hero's own ``LCost``, the
+engine rolls
+
+    r = (IRand and 3) - 2       ; -2, -1, 0, +1, each 25%
+    if r >= like(hero, king):
+        hero deserts -- lliege := noleader, lstate := Mercenary
+    else:
+        hero stays unpaid this turn ("in standby"), no consequence
+
+reusing the identical ``like`` value ``turn/hire_pay.py required_pay()``
+already computes (now exposed as ``hero_liking()``), not a separate
+roll. Desertion probability by ``like``: `+2` -> 0%, `+1` -> 25%, `0` ->
+50%, `-1` -> 75%, `-2` -> 100% -- a Hero the King barely tolerates
+almost always walks the moment a payment is missed; one he likes a lot
+essentially never does.
+
+``apply_turn_maintenance()`` below now pays each non-King, non-Valhalla
+leader *individually*, in ascending ``leader_id`` order (the dossier
+names no real ordering rule; ascending id is this project's own
+established "no rule given" tie-break, e.g. Phase 451's own vote-order
+convention) -- as soon as a kingdom's own running treasury can't cover
+one Hero's own pay, that Hero rolls for desertion/standby instead of
+being paid, and every later Hero in the same kingdom is evaluated
+against whatever treasury remains (typically already empty, so they
+roll too). Army maintenance (``ACost``) is still paid as one unconditional
+lump sum first, unaffected by this per-Hero mechanic -- no source
+describes armies deserting for unpaid ``ACost``.
 """
 
 from __future__ import annotations
 
+import random
+from dataclasses import dataclass, field
+
 from ak_engine.models.army_type import ARMY_TABLE
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
-from ak_engine.turn.hire_pay import required_pay
+from ak_engine.turn.hire_pay import hero_liking, required_pay
+
+# Phase 527: AKGEN_reverse_engineering_report (3).md SS28.1's own
+# "(IRand and 3) - 2" -- 4 equally-likely values, -2..+1.
+_DESERTION_ROLL_VALUES = (-2, -1, 0, 1)
 
 
 def compute_army_maintenance(state: GameState, kingdom_id: int) -> int:
@@ -153,20 +194,81 @@ def compute_expected_expenses(state: GameState, kingdom_id: int) -> int:
     return compute_army_maintenance(state, kingdom_id) + compute_leader_maintenance(state, kingdom_id)
 
 
-def apply_turn_maintenance(state: GameState) -> dict[int, int]:
-    """Debits every kingdom's own ``compute_expected_expenses()`` from its
-    treasury, once per turn -- see module docstring's Phase 404 section
-    for why this was a display-only figure through Phase 280 and what's
-    deliberately not modeled (bankruptcy consequences, clamping).
-
-    Returns the amount debited per kingdom, keyed by ``kingdom_id`` --
-    callers/tests that want to verify a specific debit don't need to
-    re-derive ``compute_expected_expenses()`` themselves.
+@dataclass(slots=True)
+class MaintenanceResult:
+    """One kingdom's own outcome of an ``apply_turn_maintenance()`` call --
+    Phase 527 replaces the old bare debited-amount ``int`` with this so a
+    caller can also see which Heroes deserted or stayed unpaid-but-loyal
+    ("standby") this turn, per the module docstring's own Phase 527
+    addendum. ``debited`` is army maintenance plus whichever Heroes were
+    actually paid -- lower than ``compute_expected_expenses()`` whenever a
+    desertion or standby occurred, since those Heroes' own pay was never
+    subtracted.
     """
 
-    debited: dict[int, int] = {}
+    debited: int
+    deserted_leader_ids: list[int] = field(default_factory=list)
+    standby_leader_ids: list[int] = field(default_factory=list)
+
+
+def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -> dict[int, MaintenanceResult]:
+    """Debits every kingdom's own per-turn upkeep from its treasury, once per
+    turn -- see module docstring's Phase 404 section for the original
+    lump-sum design and its own Phase 527 addendum for the real per-Hero
+    payment/desertion mechanic this now implements.
+
+    Army maintenance (``ACost``) is still paid as one unconditional lump
+    sum, unclamped. Each non-King, non-Valhalla-visitor leader's own pay
+    is then attempted individually, in ascending ``leader_id`` order,
+    against whatever treasury remains; a leader whose own pay the treasury
+    can no longer cover rolls for desertion/standby (``hero_liking()``
+    plus a fresh ``(IRand and 3) - 2`` roll) instead of being paid.
+
+    Returns one ``MaintenanceResult`` per kingdom, keyed by ``kingdom_id``.
+    """
+
+    rng = rng if rng is not None else random.Random()
+    results: dict[int, MaintenanceResult] = {}
     for kingdom_id, kingdom in state.kingdoms.items():
-        amount = compute_expected_expenses(state, kingdom_id)
-        kingdom.treasury -= amount
-        debited[kingdom_id] = amount
-    return debited
+        debited = compute_army_maintenance(state, kingdom_id)
+        kingdom.treasury -= debited
+
+        king = next(
+            (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
+            None,
+        )
+        heroes = sorted(
+            (
+                leader
+                for leader in state.leaders.values()
+                if leader.kingdom_id == kingdom_id
+                and not leader.is_king
+                and leader.leader_id != VALHALLA_VISITOR_LEADER_ID
+            ),
+            key=lambda leader: leader.leader_id,
+        )
+
+        deserted: list[int] = []
+        standby: list[int] = []
+        for hero in heroes:
+            cost = required_pay(state, hero, king)
+            # Missing King data defaults permissively (same convention as
+            # turn/hire_pay.py's own required_pay()) -- no King recorded
+            # means no `like()` to roll against, so pay unconditionally
+            # rather than guessing a desertion outcome.
+            if king is None or kingdom.treasury >= cost:
+                kingdom.treasury -= cost
+                debited += cost
+                continue
+            like = hero_liking(state, hero, king)
+            roll = rng.choice(_DESERTION_ROLL_VALUES)
+            if roll >= like:
+                hero.kingdom_id = None
+                deserted.append(hero.leader_id)
+            else:
+                standby.append(hero.leader_id)
+
+        results[kingdom_id] = MaintenanceResult(
+            debited=debited, deserted_leader_ids=deserted, standby_leader_ids=standby
+        )
+    return results
