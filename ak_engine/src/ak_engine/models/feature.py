@@ -260,6 +260,25 @@ class Feature:
     # encounter.py resolve_fulfill_honored()`'s own module comment for
     # the honor-roll formula. `None` means no deal is currently pending.
     pending_deal_leader_id: int | None = None
+    # Phase 528: which of the 24 real `MonsterTalkReply` ids (`turn/
+    # encounter.py`) this feature's own guardian has been assigned to
+    # give on Talk -- stored as a raw ordinal, not the enum itself, to
+    # avoid a `models/` -> `turn/` import (this module only ever imports
+    # other `models/` modules; `MonsterTalkReply` lives in `turn/
+    # encounter.py`, which already imports `Feature`). `AKGEN_reverse_
+    # engineering_report (3).md` SS64 confirms the real engine also
+    # assigns this once, seeded from a deterministic combination of the
+    # feature's own id and its guardian's monster id, then reuses it for
+    # every subsequent Talk against the same guardian ("per una tana
+    # concreta l'esito e pertanto fissato") -- the exact seed combination
+    # itself is never given, so persisting the first roll here (this
+    # project's own `rng`, not a reproduction of the real seed formula)
+    # is the project-original substitute for that specific missing
+    # magnitude, while the selection algorithm/weights it persists are
+    # 100% sourced (`turn/encounter.py select_monster_talk_reply()`).
+    # `None` means "not yet resolved" (or the feature has no guardian at
+    # all) -- set by `turn/search_execution.py`'s own Talk branch.
+    guardian_talk_reply_id: int | None = None
     # Phase 365: this feature's own internal magical location/power --
     # ``worldgen.internal_magical_locations.resolve_visible_location()``/
     # ``resolve_power()`` (Phase 361), first wired to a real feature

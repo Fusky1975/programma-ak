@@ -26,8 +26,8 @@ from ak_engine.turn.encounter import (
     FireArrowShot,
     MeleeRoundOutcome,
     MeleeSwing,
+    MonsterTalkReply,
     ReactiveMeleeSwingResult,
-    TalkReaction,
 )
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.search_execution import (
@@ -2728,12 +2728,14 @@ def test_execute_search_talk_dr_gate_not_met_awards_no_add_experience_credit():
 def test_execute_search_talk_dr_gate_met_awards_real_add_experience_credit():
     # Phase 459: AKGEN_reverse_engineering_report (2).md SS3.3's own
     # Druid row (base 10) -- the DR gate passing (regardless of which
-    # reaction follows) is the real "interazione druidica" this credits.
+    # reply follows) is the real "interazione druidica" this credits.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_PUZZLED
+    ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ):
         execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
@@ -2741,15 +2743,17 @@ def test_execute_search_talk_dr_gate_met_awards_real_add_experience_credit():
     assert state.leaders[LEADER_ID].experience_credit > 0
 
 
-def test_execute_search_talk_attack_reaction_falls_through():
-    # Archer needs Druid level 0 -- any leader can talk to it. A low roll
-    # (below the 40% Attack threshold) reads Attack -- no special effect,
-    # the plan's own Melee still runs.
+def test_execute_search_talk_attack_reply_falls_through():
+    # Phase 528: RCharge is an Attack-category reply -- no special effect
+    # of its own, the plan's own Melee still runs (Archer needs Druid
+    # level 0, so any leader can talk to it at all).
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_CHARGE
+    ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ) as mock_melee:
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
@@ -2758,14 +2762,15 @@ def test_execute_search_talk_attack_reaction_falls_through():
     assert result.winner == "leader"
 
 
-def test_execute_search_talk_ignore_reaction_falls_through():
-    # A mid-range roll (between the 40% Attack and 75% Ignore boundaries)
-    # reads Ignore -- also no special effect.
+def test_execute_search_talk_ignore_reply_falls_through():
+    # RWarn is an Ignore-category reply -- also no special effect.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_WARN
+    ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ) as mock_melee:
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5] * 20))
@@ -2774,15 +2779,18 @@ def test_execute_search_talk_ignore_reaction_falls_through():
     assert result.winner == "leader"
 
 
-def test_execute_search_talk_deal_reaction_ends_search_unresolved():
-    # A high roll (above the 75% Ignore boundary) reads Deal -- the
-    # guardian proposes a deal, ending the Search honestly unresolved
-    # (Fulfill isn't wired) rather than as a combat win/loss.
+def test_execute_search_talk_quest_reply_ends_search_unresolved():
+    # RRegain is a Quest/Agreement-category reply -- the guardian
+    # proposes a deal, ending the Search honestly unresolved (each
+    # Quest's own distinct completion condition isn't modeled, Phase
+    # 258's own scope note) rather than as a combat win/loss.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_REGAIN
+    ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel"
     ) as mock_melee:
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
@@ -2793,33 +2801,30 @@ def test_execute_search_talk_deal_reaction_ends_search_unresolved():
     assert result.winner is None
 
 
-def test_execute_search_talk_druidic_alignment_shifts_toward_ignore_and_deal():
-    # A 0.30 roll reads Attack for a non-Druidic caster (below the 40%
-    # threshold) but Ignore for a Druidic one (above the Druidic 20%
-    # threshold) -- confirms the alignment bonus is actually wired, not
-    # just present in encounter.py's own formula.
+def test_execute_search_talk_reply_is_resolved_once_and_reused():
+    # Phase 528: AKGEN_reverse_engineering_report (3).md SS62's own "per
+    # la stessa feature e lo stesso guardiano la risposta e normalmente
+    # ripetibile" -- select_monster_talk_reply() is consulted at most
+    # once per guardian; a later Search's own Talk against the same
+    # feature reuses Feature.guardian_talk_reply_id instead of rolling
+    # again (simulated here as two separate execute_search() calls
+    # sharing the same Feature, standing in for two different turns).
     state = _state_with_leader()
-    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
     request = _talk_request(1, Maneuver.MELEE)
 
-    non_druidic_leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION)
-    state.add_leader(non_druidic_leader)
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_WARN
+    ) as mock_select, patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
-    ) as mock_melee:
-        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.30] * 20))
-    assert mock_melee.called  # Attack -- no special effect
+    ):
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5] * 20))
+        assert mock_select.call_count == 1
+        assert feature.guardian_talk_reply_id == MonsterTalkReply.R_WARN.value
 
-    state2 = GameState()
-    druidic_leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION, alignment=Alignment.DRUID)
-    state2.add_leader(druidic_leader)
-    state2.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
-    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
-    ) as mock_melee2:
-        result2 = execute_search(state2, LEADER_ID, request, ScriptedRandom([0.30] * 20))
-    assert mock_melee2.called  # Ignore -- also no special effect, but reached via a different branch
-    assert result2.winner == "leader"
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5] * 20))
+        assert mock_select.call_count == 1  # not called again -- the persisted reply was reused
 
 
 def test_execute_search_say_is_a_documented_noop_falls_through():
@@ -2938,6 +2943,8 @@ def test_execute_search_talk_deal_reaction_records_the_pending_deal():
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_REGAIN
+    ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel"
     ):
         execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
@@ -2948,40 +2955,44 @@ def test_execute_search_talk_deal_reaction_records_the_pending_deal():
 # -- Phase 468: Silver Tongue wiring ---------------------------------------
 
 
-def test_execute_search_talk_wires_the_silver_tongue_titleholder_into_the_reaction_roll():
-    # LEADER_ID is the world's only Diplomat candidate here, and meets
-    # OFFICE_MIN_POINTS[Office.DIPLOMAT] (50) -- resolve_office_holder()
-    # picks them, so resolve_talk_reaction() must be called with
-    # caster_is_silver_tongue=True.
+def test_execute_search_talk_silver_tongue_titleholder_suppresses_combat():
+    # Phase 528: Silver Tongue suppresses even an Attack-category reply
+    # (RCharge) -- proven with a Talk-only plan (no following combat
+    # tactic), so whether real combat happens at all depends entirely on
+    # whether Silver Tongue set combat_attempted. LEADER_ID is the
+    # world's only Diplomat candidate here, and meets OFFICE_MIN_POINTS
+    # [Office.DIPLOMAT] (50) -- resolve_office_holder() picks them.
     state = _state_with_leader()
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
     state.leaders[LEADER_ID].merit_tally.diplomatic_merit_points = 50
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
-    request = _talk_request(1, Maneuver.MELEE)
+    request = _talk_request(1)
 
     with patch(
-        "ak_engine.turn.search_execution.resolve_talk_reaction", return_value=TalkReaction.IGNORE
-    ) as mock_reaction, patch(
+        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_CHARGE
+    ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
-    ):
-        execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
 
-    assert mock_reaction.call_args.kwargs["caster_is_silver_tongue"] is True
+    assert not mock_melee.called
+    assert result.combat_resolved is False
 
 
-def test_execute_search_talk_non_titleholder_gets_no_silver_tongue_override():
+def test_execute_search_talk_non_titleholder_still_forces_combat_on_attack_reply():
     state = _state_with_leader()  # diplomatic_merit_points defaults to 0.0 -- below min_points
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
-    request = _talk_request(1, Maneuver.MELEE)
+    request = _talk_request(1)
 
     with patch(
-        "ak_engine.turn.search_execution.resolve_talk_reaction", return_value=TalkReaction.IGNORE
-    ) as mock_reaction, patch(
+        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_CHARGE
+    ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
-    ):
-        execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
 
-    assert mock_reaction.call_args.kwargs["caster_is_silver_tongue"] is False
+    assert mock_melee.called
+    assert result.winner == "leader"
 
 
 def test_execute_search_fulfill_wires_the_silver_tongue_titleholder_into_the_honor_roll():

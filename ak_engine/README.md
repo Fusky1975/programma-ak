@@ -21908,7 +21908,7 @@ follow-up request after the original 431-435 plan shipped.
     Replaced it with two new tests (`..._pays_ransom` and `..._with_no_
     gold_is_executed`) mirroring the existing King-vs-King ransom/
     executed pair exactly. Ran again: 4596 passed (net +1).
-- **Phase 527 (current)**: `turn/expenses.py apply_turn_maintenance()`'s
+- **Phase 527**: `turn/expenses.py apply_turn_maintenance()`'s
   own docstring used to say plainly that no bankruptcy/desertion
   consequence was modeled for unpaid leader maintenance, "nothing in the
   available source describes one." Continued reading the same dossier's
@@ -21962,6 +21962,68 @@ follow-up request after the original 431-435 plan shipped.
     (scripted roll < `like`), ascending-`leader_id` payment order under
     a tight treasury, and the missing-King permissive fallback consuming
     no roll at all. Ran again: 4601 passed (net +5).
+- **Phase 528 (current)**: wires the real 24-reply Talk selector into
+  live Talk resolution, replacing the old placeholder Attack/Ignore/Deal
+  roll (`turn/encounter.py resolve_talk_reaction()`, Phase 240) that had
+  stood in for it since before the real mechanism was found. The real
+  selector itself -- `MonsterTalkReply`, `select_monster_talk_reply()`,
+  `MONSTER_TALK_REPLY_OUTCOME` -- was already fully transcribed and
+  tested as of Phase 382, but never actually consulted by
+  `turn/search_execution.py`'s own Talk branch; this phase closes that
+  gap, not the selector itself.
+
+  `AKGEN_reverse_engineering_report (3).md` SS60-72 (the TALK dossier)
+  confirms two things the old placeholder got wrong by construction,
+  not just by using unsourced numbers: (1) a Druidic caster's own "more
+  inclined to help" bonus -- the rulebook text the old formula's own
+  Druidic split was built around -- is itself "a designed but absent/
+  disabled rule" in the real compiled build (SS70: "non e' collegata...
+  a uno stato letto dalla routine di assistenza"), not a hidden
+  percentage to keep approximating; and (2) the real reply is generated
+  **once per guardian, not once per Talk attempt** (SS62: "per la
+  stessa feature e lo stesso guardiano la risposta e normalmente
+  ripetibile") -- persisted here on new `Feature.guardian_talk_reply_id`
+  (a raw ordinal, avoiding a `models/` -> `turn/` import cycle), a
+  project-original substitute for the real per-tana seed formula (never
+  fully specified -- "una combinazione deterministica dell'ID feature e
+  dell'ID mostro" with no further detail given) while the selection
+  algorithm/weights it persists are 100% sourced.
+
+  `_resolve_talk()` now: resolves (or reuses) the guardian's own
+  persisted reply, looks up its `TalkReplyOutcome` category, and
+  branches exactly like the old three-way split did -- `ATTACK`
+  (`RCharge`/`RMAdvance`) forces combat (`combat_attempted = True`)
+  unless Silver Tongue suppresses it (Phase 468 behavior unchanged, just
+  re-anchored to a real reply instead of a raw roll); `IGNORE`
+  (`RPuzzled`/`RWarn`) is a no-op; the other 20 (`QUEST_OR_AGREEMENT`)
+  set `pending_deal_leader_id` exactly like the old `DEAL` branch did --
+  this project still doesn't model each Quest's own distinct completion
+  condition (Phase 258's own scope note), only which of the three real
+  categories fires. `has_purchasable_treasure` is passed `False`
+  unconditionally: nothing in this project's `Feature`/`Treasure` model
+  distinguishes a purchasable magic item from any other treasure kind,
+  so `RSell` is simply never eligible here -- a documented scope
+  limitation, not a guessed default. `resolve_talk_reaction()`/
+  `TalkReaction` stay defined in `turn/encounter.py` (no other
+  production call site existed, and their own tests are untouched) but
+  are no longer called from `search_execution.py`.
+  - Ran the full suite before writing new tests (non-breaking check):
+    8 failures, all in `test_search_execution.py`'s own Talk tests,
+    all mocking the now-uncalled `resolve_talk_reaction()`. Rewrote them
+    to mock `select_monster_talk_reply()` instead (matching how STEAL's
+    own tests already mock `resolve_steal_attempt()`): attack/ignore/
+    quest-category branch tests, the DR-gate Add_Experience credit test,
+    and the two Silver Tongue tests -- rewritten to prove combat
+    *suppression* directly (a Talk-only plan, no following combat
+    tactic, so whether `resolve_melee_duel()` ever runs at all now
+    depends entirely on Silver Tongue) rather than inspecting a mocked
+    call's own kwargs, since there's no longer a single `resolve_talk_
+    reaction()` call to inspect. Removed one test whose own premise (a
+    Druidic caster's roll literally shifting) no longer exists per this
+    phase's own SS70 finding. Added one new test proving
+    `select_monster_talk_reply()` is consulted at most once across two
+    separate `execute_search()` calls sharing the same `Feature`. Net:
+    8 tests before, 8 after. Ran again: 4601 passed (unchanged count).
 
 ## Setup
 

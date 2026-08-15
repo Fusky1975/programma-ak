@@ -527,7 +527,9 @@ from ak_engine.turn.encounter import (
     FireArrowShot,
     MeleeSwing,
     MirrorImageIntelligenceTier,
-    TalkReaction,
+    MonsterTalkReply,
+    MONSTER_TALK_REPLY_OUTCOME,
+    TalkReplyOutcome,
     apply_temper_melee_setup,
     archery_free_attack_bonus,
     blocks_cast_and_archery,
@@ -559,7 +561,7 @@ from ak_engine.turn.encounter import (
     resolve_steal_attempt,
     resolve_steal_evasion,
     resolve_steal_monster_item_transfer,
-    resolve_talk_reaction,
+    select_monster_talk_reply,
     roll_fireball_damage,
     roll_holy_symbol_undead_damage,
     roll_ice_suspension_flying_bonus_rounds,
@@ -2006,26 +2008,57 @@ def _resolve_search_encounter(
         return outcome
 
     def _resolve_talk() -> SearchExecutionResult | None:
-        """Talk [TA], rulebook [5.5] -- Phase 240 (``turn/encounter.py``'s
-        own Phase 240 addendum has the full quoted rulebook text, the DR
-        gate table, and the Attack/Ignore/Deal reaction roll). If the
-        leader's own Druid skill doesn't meet the guardian's own
+        """Talk [TA], rulebook [5.5] -- Phase 240, **superseded by Phase 528**
+        with the real 24-reply selector (``turn/encounter.py``'s own
+        Phase 382 addendum has the full sourcing: ``MonsterTalkReply``,
+        ``select_monster_talk_reply()``, ``MONSTER_TALK_REPLY_OUTCOME``).
+        If the leader's own Druid skill doesn't meet the guardian's own
         ``talkdiff`` requirement, no effect -- the character simply can't
-        communicate with this species. Attack/Ignore both leave the
-        encounter unresolved (the plan's own next tactic decides what
-        happens next, same as any other no-effect tactic); Deal records
-        this leader as the feature's own ``pending_deal_leader_id``
-        (Phase 258), for a later turn's Fulfill to honor -- see
-        ``_resolve_fulfill()`` and ``turn/encounter.py resolve_fulfill_
-        honored()``'s own module comment.
+        communicate with this species (unchanged from Phase 240).
 
-        **Phase 468**: if `leader_id` currently holds Silver Tongue
-        (``Office.DIPLOMAT``, ``AKGEN_reverse_engineering_report
-        (2).md`` SS18.4), the monster never reacts violently --
-        ``resolve_talk_reaction()``'s own new ``caster_is_silver_tongue``
-        flag handles the downgrade.
+        **Phase 528 addendum -- the real reply selector, wired in.**
+        ``AKGEN_reverse_engineering_report (3).md`` SS60-72 (the TALK
+        dossier) confirms the old placeholder's own project-original
+        Attack/Ignore/Deal split (``resolve_talk_reaction()``, Phase 240)
+        was never the real mechanism, and that a Druidic caster's own
+        "more inclined to help" bonus -- the rulebook quote the old
+        formula built its Druidic split around -- is itself "a designed
+        but absent/disabled rule" in the real compiled build (SS70: "non
+        e' collegata... a uno stato letto dalla routine di assistenza"),
+        not a hidden percentage this project should keep approximating.
+        ``resolve_talk_reaction()``/``TalkReaction`` stay defined in
+        ``turn/encounter.py`` (their own tests are untouched, and no
+        other production call site exists) but are no longer called from
+        here.
+
+        The real selector generates one of 24 replies **once per
+        guardian, not once per Talk attempt** (SS62: "per la stessa
+        feature e lo stesso guardiano la risposta e normalmente
+        ripetibile") -- persisted on ``Feature.guardian_talk_reply_id``
+        (see that field's own docstring for why persistence substitutes
+        for the real, never-fully-specified per-tana seed formula). Each
+        reply's own ``TalkReplyOutcome`` category (``MONSTER_TALK_REPLY_
+        OUTCOME``) then drives exactly the old three-way branch's own
+        shape: ``ATTACK`` (``RCharge``/``RMAdvance``) forces combat
+        unless Silver Tongue suppresses it (unchanged Phase 468
+        behavior, just re-anchored to the real reply instead of a raw
+        roll); ``IGNORE`` (``RPuzzled``/``RWarn``) is a no-op, same as
+        before; ``QUEST_OR_AGREEMENT`` (the other 20) sets ``pending_
+        deal_leader_id`` exactly like the old ``DEAL`` branch did -- this
+        project still doesn't model each Quest's own distinct completion
+        condition (Phase 258's own scope note), only which of the three
+        real outcome categories fires.
+
+        ``has_purchasable_treasure`` is passed as ``False`` unconditionally:
+        nothing in this project's own ``Feature``/``Treasure`` model
+        distinguishes "a purchasable magic item" from any other treasure
+        kind, and ``select_monster_talk_reply()``'s own docstring already
+        flags this as a caller-supplied gate rather than something to
+        guess -- ``RSell`` is simply never eligible here, a documented
+        scope limitation, not a silent wrong default.
         """
 
+        nonlocal combat_attempted
         druid_level = effective_skill_level(state, leader, Ability.DRUID)
         if not can_talk_to_monster(feature.guardian_monster, druid_level):
             return None
@@ -2036,22 +2069,32 @@ def _resolve_search_encounter(
         # monsters). The DR gate just passed *is* that interaction --
         # the leader's own Druid skill was what let them communicate
         # with this guardian at all -- so this fires regardless of which
-        # reaction (Attack/Ignore/Deal) follows.
+        # reply follows.
         add_experience(leader, Ability.DRUID, 10, rng)
-        caster_is_druidic = leader.alignment is Alignment.DRUID
-        silver_tongue_holder = resolve_office_holder(state, Office.DIPLOMAT)
-        caster_is_silver_tongue = silver_tongue_holder is not None and silver_tongue_holder.leader_id == leader_id
-        reaction = resolve_talk_reaction(
-            rng, caster_is_druidic=caster_is_druidic, caster_is_silver_tongue=caster_is_silver_tongue
+
+        if feature.guardian_talk_reply_id is None:
+            reply = select_monster_talk_reply(feature.guardian_monster, rng, has_purchasable_treasure=False)
+            if reply is None:
+                return None  # no eligible reply at all -- never observed for a real Monster, but not assumed impossible
+            feature.guardian_talk_reply_id = reply.value
+        reply = MonsterTalkReply(feature.guardian_talk_reply_id)
+
+        outcome_category = MONSTER_TALK_REPLY_OUTCOME[reply]
+        if outcome_category is TalkReplyOutcome.ATTACK:
+            silver_tongue_holder = resolve_office_holder(state, Office.DIPLOMAT)
+            caster_is_silver_tongue = silver_tongue_holder is not None and silver_tongue_holder.leader_id == leader_id
+            if caster_is_silver_tongue:
+                return None  # suppressed -- no special effect, not converted to a deal
+            combat_attempted = True
+            return None  # combat continues via the next tactic, or the tail's default-to-Melee
+        if outcome_category is TalkReplyOutcome.IGNORE:
+            return None
+        feature.pending_deal_leader_id = leader_id
+        return SearchExecutionResult(
+            accepted=True,
+            combat_resolved=False,
+            reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
         )
-        if reaction is TalkReaction.DEAL:
-            feature.pending_deal_leader_id = leader_id
-            return SearchExecutionResult(
-                accepted=True,
-                combat_resolved=False,
-                reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
-            )
-        return None  # Attack/Ignore -- no special effect, the plan continues
 
     def _resolve_fulfill() -> SearchExecutionResult | None:
         """Fulfill [FU], rulebook [5.7] -- Phase 258. Honors a deal a prior
