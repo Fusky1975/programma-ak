@@ -243,7 +243,7 @@ from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.models.temper import raise_temper_one_level
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
-from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.discovery_effects import effective_skill_level, holds_anti_magic_amulet
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_DAMAGE_RANGE,
@@ -251,6 +251,7 @@ from ak_engine.turn.encounter import (
     MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT,
     STEAL_THIEF_MASTERY_ABILITIES,
     PERSONAL_COMBAT_SPELL_ABILITY,
+    PERSONAL_COMBAT_SPELL_SELF_ONLY,
     Combatant,
     CombatRange,
     EncounterCombatResult,
@@ -512,6 +513,20 @@ def _resolve_personal_combat_cast(
         return None
 
     succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan)
+
+    # Phase 530: models/treasure.py ANTI_MAGIC_AMULET_BY_ABILITY -- a
+    # target holding the Anti-Magic Amulet matching the ability actually
+    # used negates the spell outright, checked once here (before every
+    # per-spell branch, including Control Undead's own early-return
+    # shape) rather than duplicated per branch. Excludes the 3 Personal-
+    # Combat spells whose entire effect is self-only and never reads or
+    # mutates `target` at all (Augur_Combat's silent flee-simulation,
+    # Invisibility's own defensive buff, Words of Healing) -- an amulet
+    # that protects its wearer "from spells" has nothing to negate for a
+    # spell that was never cast *at* them in the first place.
+    if succeeded and spell not in PERSONAL_COMBAT_SPELL_SELF_ONLY and target_leader is not None:
+        if holds_anti_magic_amulet(state, target_leader.leader_id, ability):
+            return None
 
     if spell is Spell.CONTROL_UNDEAD:
         if succeeded:

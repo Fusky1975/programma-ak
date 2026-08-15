@@ -683,7 +683,7 @@ from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.discovery_effects import effective_skill_level, holds_anti_magic_amulet
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     Combatant,
@@ -1290,6 +1290,16 @@ def _execute_charm(
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
+    # Phase 530: models/treasure.py ANTI_MAGIC_AMULET_BY_ABILITY -- a
+    # target holding the Anti-Magic Amulet matching the ability this
+    # cast actually used (Necromancy for an Undead caster, Psychic
+    # otherwise -- same school-selection logic as the roll above) is
+    # simply immune, independent of and checked before Analytical
+    # Psychology's own separate revert-later mechanic.
+    charm_ability = Ability.NECROMANCY if caster.alignment is Alignment.UNDEAD else Ability.PSYCHIC
+    if holds_anti_magic_amulet(state, request.target, charm_ability):
+        return CastExecutionResult(request, applied=False, reason="target is immune (anti-magic amulet)")
+
     if (
         target.kingdom_id is not None
         and target.kingdom_id != kingdom_id
@@ -1529,6 +1539,12 @@ def _execute_kill_enemy(
                 looted_item_ids=[item.item_id for item in looted_items],
             )
         return CastExecutionResult(request, applied=False, reason=reason)
+
+    # Phase 530: Kill_Enemy is Necromancy -- a target holding the Anti-
+    # Necromancy Amulet is immune, checked before (and independent of)
+    # the Hidden Tattoos Discovery ward just below.
+    if holds_anti_magic_amulet(state, request.target, Ability.NECROMANCY):
+        return CastExecutionResult(request, applied=False, reason="target is immune (anti-magic amulet)")
 
     if target.kingdom_id is not None and Discovery.HIDDEN_TATTOOS in state.kingdoms[target.kingdom_id].discoveries:
         return CastExecutionResult(request, applied=True, discovery_defended=Discovery.HIDDEN_TATTOOS)

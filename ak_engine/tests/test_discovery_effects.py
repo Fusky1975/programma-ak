@@ -11,7 +11,8 @@ from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
-from ak_engine.turn.discovery_effects import ability_bonus_from_discoveries, effective_skill_level
+from ak_engine.models.treasure import Treasure
+from ak_engine.turn.discovery_effects import ability_bonus_from_discoveries, effective_skill_level, holds_anti_magic_amulet
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL
 
 HOME = HexCoord(0, 0)
@@ -113,3 +114,49 @@ def test_effective_skill_level_reads_zero_for_a_comatose_leader():
     assert effective_skill_level(state, leader, Ability.TACTICAL) == 0
     # The real, stored value is never mutated -- only hidden.
     assert leader.skills.pair_for_ability(Ability.TACTICAL)[0] == MAX_SKILL_LEVEL
+
+
+# -- Phase 530: holds_anti_magic_amulet ---------------------------------
+
+
+def test_holds_anti_magic_amulet_true_when_matching_amulet_held():
+    state = make_state()
+    state.add_item(Treasure.AMULET_ANTI_PSYCHIC, owner_leader_id=1)
+
+    assert holds_anti_magic_amulet(state, 1, Ability.PSYCHIC) is True
+
+
+def test_holds_anti_magic_amulet_false_when_a_different_amulet_is_held():
+    state = make_state()
+    state.add_item(Treasure.AMULET_ANTI_WHITE, owner_leader_id=1)
+
+    assert holds_anti_magic_amulet(state, 1, Ability.PSYCHIC) is False
+
+
+def test_holds_anti_magic_amulet_false_when_holder_owns_no_items():
+    state = make_state()
+
+    assert holds_anti_magic_amulet(state, 1, Ability.NECROMANCY) is False
+
+
+def test_holds_anti_magic_amulet_false_for_a_non_magical_ability():
+    # No amulet exists for e.g. Melee -- ANTI_MAGIC_AMULET_BY_ABILITY.get()
+    # returns None, which must read as "not immune", not raise.
+    state = make_state()
+    state.add_item(Treasure.AMULET_ANTI_WHITE, owner_leader_id=1)
+
+    assert holds_anti_magic_amulet(state, 1, Ability.MELEE) is False
+
+
+def test_holds_anti_magic_amulet_covers_all_five_magic_colleges():
+    state = make_state()
+    for ability, amulet in (
+        (Ability.WHITE, Treasure.AMULET_ANTI_WHITE),
+        (Ability.NECROMANCY, Treasure.AMULET_ANTI_NECROMANCY),
+        (Ability.ELEMENTAL, Treasure.AMULET_ANTI_ELEMENTAL),
+        (Ability.PSYCHIC, Treasure.AMULET_ANTI_PSYCHIC),
+        (Ability.ILLUSION, Treasure.AMULET_ANTI_ILLUSION),
+    ):
+        solo_state = make_state()
+        solo_state.add_item(amulet, owner_leader_id=1)
+        assert holds_anti_magic_amulet(solo_state, 1, ability) is True

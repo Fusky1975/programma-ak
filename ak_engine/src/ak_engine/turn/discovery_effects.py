@@ -53,6 +53,7 @@ from __future__ import annotations
 from ak_engine.models.discovery import DISCOVERY_ABILITY_BONUS
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.treasure import ANTI_MAGIC_AMULET_BY_ABILITY
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL
 
 
@@ -92,3 +93,38 @@ def effective_skill_level(state: GameState, leader: LeaderState, ability: Abilit
     stored = leader.skills.pair_for_ability(ability)[0] if leader.skills is not None else 0
     bonus = ability_bonus_from_discoveries(state, leader, ability)
     return min(MAX_SKILL_LEVEL, stored + bonus)
+
+
+def holds_anti_magic_amulet(state: GameState, target_leader_id: int, ability: Ability) -> bool:
+    """Phase 530: does ``target_leader_id`` currently hold the Anti-Magic
+    Amulet matching ``ability`` (``models/treasure.py TREASAB.X2``'s own
+    "immunity to one Magical Ability's spells" family -- ``AMULET_ANTI_
+    WHITE``..``AMULET_ANTI_ILLUSION``, catalog ordinals 44-48)?
+
+    **Scope, honestly labeled**: the family's *only* item-by-item detail
+    beyond the generic catalog description comes from ``AKGEN_reverse_
+    engineering_report (3).md`` SS3.4, which names the Psychic amulet
+    (Helm of Psychic Dampening) specifically: "annulla Charm e Psychic
+    Blast sul possessore; dimezza gli altri effetti Psychic pertinenti"
+    (negates Charm and Psychic Blast on the holder; *halves* the other
+    relevant Psychic effects). This function -- and every call site that
+    uses it -- treats all 5 amulets uniformly as a full negation of any
+    target-affecting spell of the matching college, which is at least as
+    protective as the source's own weaker "halves" wording for the
+    non-Charm/Psychic-Blast Psychic case: no fractional-magnitude formula
+    is invented for a nuance this project has no other confirmed
+    parameter for, and full negation can never under-protect relative to
+    what the source actually describes. The other 4 amulets (White,
+    Necromancy, Elemental, Illusion) have no per-item source at all beyond
+    "immunity to one Magical Ability's spells" -- full negation is simply
+    the plain reading of that phrase.
+
+    Call sites decide for themselves which spells count as "affecting the
+    target" (see each one's own comment) -- this function only answers
+    the item-possession question.
+    """
+
+    amulet = ANTI_MAGIC_AMULET_BY_ABILITY.get(ability)
+    if amulet is None:
+        return False
+    return any(item.treasure is amulet for item in state.items_held_by(target_leader_id))

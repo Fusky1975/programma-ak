@@ -22024,7 +22024,7 @@ follow-up request after the original 431-435 plan shipped.
     `select_monster_talk_reply()` is consulted at most once across two
     separate `execute_search()` calls sharing the same `Feature`. Net:
     8 tests before, 8 after. Ran again: 4601 passed (unchanged count).
-- **Phase 529 (current)**: closes two gaps in Part I of `AKGEN_
+- **Phase 529**: closes two gaps in Part I of `AKGEN_
   reverse_engineering_report (3).md` (SS1-19, the main CHARM/Enhanced
   Charm/Analytical Psychology dossier) -- the one section of this file
   never previously cross-checked against `cast_execution.py`/
@@ -22068,6 +22068,66 @@ follow-up request after the original 431-435 plan shipped.
     lowest-`item_id` item on a successful flee, and a protected target
     never transferring an item even with Enhanced Charm held. Ran
     again: 4606 passed (net +5).
+- **Phase 530 (current)**: implements the full 5-item Anti-Magic Amulet
+  family (`models/treasure.py` ordinals 44-48, `TREASAB.X2`'s own
+  "immunity to one Magical Ability's spells" -- White/Necromancy/
+  Elemental/Psychic/Illusion, 1:1 positional) -- previously present only
+  as catalog names/descriptions with zero mechanical wiring anywhere.
+  `AKGEN_reverse_engineering_report (3).md` SS3.4 supplies the only
+  per-item detail beyond that generic description, for the Psychic
+  amulet specifically: "annulla Charm e Psychic Blast sul possessore;
+  dimezza gli altri effetti Psychic pertinenti" (negates Charm and
+  Psychic Blast on the holder; *halves* other relevant Psychic
+  effects). This phase treats all 5 amulets uniformly as full negation
+  -- at least as protective as the source's own weaker "halves" wording
+  for the non-Charm/Psychic-Blast Psychic case, and the only reading
+  available at all for the other 4 colleges -- documented as a
+  deliberate, honestly-labeled simplification in `holds_anti_magic_
+  amulet()`'s own docstring, not a silent gap.
+
+  New: `models/treasure.py ANTI_MAGIC_AMULET_BY_ABILITY` (derived from
+  each amulet's own ordinal offset, same pattern as `TREASURE_WAND_
+  SPELL`/`TREASURE_BOOK_ABILITY`); `turn/discovery_effects.py holds_
+  anti_magic_amulet(state, target_leader_id, ability)`, the single
+  shared possession check; `turn/encounter.py PERSONAL_COMBAT_SPELL_
+  SELF_ONLY` (`Augur_Combat`, `Invisibility`, `Heal` -- the 3 Personal-
+  Combat spells whose effect never reads/writes the opposing
+  combatant's own state at all, so an amulet "protecting from spells"
+  has nothing to negate for them).
+
+  Wired into all 3 real spell-vs-leader call sites: `cast_execution.py
+  _execute_charm` (checked using the ability the cast actually drew on
+  -- Necromancy for an Undead caster, Psychic otherwise -- independent
+  of and before the separate Analytical Psychology mechanic) and `_
+  execute_kill_enemy` (fixed Necromancy, before the Hidden Tattoos
+  Discovery ward); `challenge_execution.py _resolve_personal_combat_
+  cast` (one checkpoint right after the cast-success roll, before every
+  per-spell branch including Control Undead's own early-return shape);
+  `search_execution.py _resolve_cast_tactic` (same checkpoint, gated to
+  the monster-casts-at-the-leader direction only -- a monster target
+  never holds items in this project's model, so the leader-casts-at-
+  monster direction has nothing to check).
+  - Ran the full suite before writing new tests (non-breaking check):
+    4606 passed (unchanged).
+  - Wrote 15 new tests: `ANTI_MAGIC_AMULET_BY_ABILITY`'s own dict
+    coverage across all 5 colleges (`test_discovery_effects.py`, plus 4
+    more for `holds_anti_magic_amulet()` itself -- matching amulet,
+    wrong amulet, no items, and a non-magical `Ability`); Charm blocked
+    by a matching amulet, unblocked by a non-matching one, and an
+    Undead caster's Charm keyed to the amulet matching Necromancy (not
+    a fixed Psychic guess) (`test_cast_execution.py`, 3 tests); Kill_
+    Enemy blocked by the Anti-Necromancy Amulet (1 test); in
+    `test_challenge_execution.py`, calling `_resolve_personal_combat_
+    cast` directly -- Fireball blocked (Elemental), Psychic Blast
+    blocked (reproducing the dossier's own named example despite its
+    caster-side-coded implementation), Control Undead blocked (proving
+    the single checkpoint also covers its own early-return branch),
+    Invisibility *not* blocked (self-only exclusion) -- plus one
+    `execute_challenge()`-level test proving Augur Combat is likewise
+    not blocked; and in `test_search_execution.py`, a monster's own
+    Fireball cast at the searching leader blocked by the leader's
+    Anti-Elemental Amulet (mocking `roll_monster_encounter_plan` to
+    force the guardian's plan). Ran again: 4621 passed (net +15).
 
 ## Setup
 

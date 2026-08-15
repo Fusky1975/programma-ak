@@ -1482,6 +1482,31 @@ def test_execute_search_cast_fireball_enhanced_ability_overrides_submarine_immun
     assert result.winner == "leader"
 
 
+def test_execute_search_monster_cast_fireball_blocked_by_leaders_anti_elemental_amulet():
+    # Phase 530: models/treasure.py ANTI_MAGIC_AMULET_BY_ABILITY -- when
+    # the *monster* is the caster, the searching leader is the target;
+    # this proves the immunity check also applies on that side of the
+    # dispatcher, not just leader-casts-at-monster.
+    state = _state_with_leader()
+    state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=LEADER_ID)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.roll_fireball_damage") as mock_damage, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        )
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert not mock_damage.called  # negated -- damage roll never even attempted
+    assert mock_melee.called  # falls through to Melee since the cast had no effect
+
+
 def test_execute_search_cast_ice_suspend_immune_species_has_no_effect():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPECTRE))

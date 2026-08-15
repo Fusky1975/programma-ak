@@ -511,7 +511,7 @@ from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
-from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.discovery_effects import effective_skill_level, holds_anti_magic_amulet
 from ak_engine.turn.encounter import (
     BEG_MERCY_CHANCE,
     CHARACTER_HIT_POINTS,
@@ -521,6 +521,7 @@ from ak_engine.turn.encounter import (
     MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER,
     STEAL_THIEF_MASTERY_ABILITIES,
     PERSONAL_COMBAT_SPELL_ABILITY,
+    PERSONAL_COMBAT_SPELL_SELF_ONLY,
     Combatant,
     CombatRange,
     EncounterCombatResult,
@@ -1244,6 +1245,21 @@ def _resolve_search_encounter(
             succeeded = True  # [3.11]/[5.1]: "a spell cast from a magic item is automatically successful"
         else:
             succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan)
+
+        # Phase 530: models/treasure.py ANTI_MAGIC_AMULET_BY_ABILITY --
+        # only reachable here when the *leader* is the one being cast at
+        # (a hostile monster's own spell attempt, `target_is_monster is
+        # False`); a monster target never holds an item in this
+        # project's model, so there is nothing to check on that side.
+        # Same self-only exclusion and single-checkpoint placement as
+        # ``challenge_execution.py``'s own Phase 530 addendum.
+        if (
+            succeeded
+            and not target_is_monster
+            and spell not in PERSONAL_COMBAT_SPELL_SELF_ONLY
+            and holds_anti_magic_amulet(state, leader_id, ability)
+        ):
+            return None
 
         if spell is Spell.CONTROL_UNDEAD:
             if succeeded:

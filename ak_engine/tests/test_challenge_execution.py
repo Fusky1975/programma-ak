@@ -588,6 +588,119 @@ def test_resolve_personal_combat_cast_charm_blocked_target_never_transfers_item_
     assert state.items[item.item_id].owner_leader_id == 2  # untouched
 
 
+def test_resolve_personal_combat_cast_fireball_blocked_by_anti_elemental_amulet():
+    # Phase 530: models/treasure.py ANTI_MAGIC_AMULET_BY_ABILITY.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ELEMENTAL, 5, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=2)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    starting_hit_points = target.hit_points
+    tactic = SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)
+    rng = ScriptedRandom([0.1])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+    )
+
+    assert outcome is None
+    assert target.hit_points == starting_hit_points  # negated -- no damage at all
+
+
+def test_resolve_personal_combat_cast_psychic_blast_blocked_by_anti_psychic_amulet():
+    # AKGEN_reverse_engineering_report (3).md SS3.4 names Psychic Blast
+    # specifically as negated by the Helm of Psychic Dampening -- this
+    # confirms the general Phase 530 mechanism reproduces that exact case.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    state.add_item(Treasure.AMULET_ANTI_PSYCHIC, owner_leader_id=2)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    starting_bonus = caster.bonus_unanswered_attacks
+    tactic = SearchTactic(Maneuver.CAST, Spell.PSYCHIC_BLAST.value)
+    rng = ScriptedRandom([0.1])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+    )
+
+    assert outcome is None
+    assert caster.bonus_unanswered_attacks == starting_bonus
+
+
+def test_resolve_personal_combat_cast_control_undead_blocked_by_anti_necromancy_amulet():
+    # Proves the single Phase 530 checkpoint also covers Control Undead's
+    # own early-return branch shape, not just the common `if not
+    # succeeded: return None` gate every other spell shares.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 5, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.UNDEAD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    state.add_item(Treasure.AMULET_ANTI_NECROMANCY, owner_leader_id=2)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    starting_hit_points = target.hit_points
+    tactic = SearchTactic(Maneuver.CAST, Spell.CONTROL_UNDEAD.value)
+    rng = ScriptedRandom([0.1])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+    )
+
+    assert outcome is None  # neither the "a" win nor the failure-damage branch
+    assert target.hit_points == starting_hit_points
+
+
+def test_resolve_personal_combat_cast_invisibility_not_blocked_by_target_anti_magic_amulet():
+    # Phase 530: Invisibility is self-only (never reads/writes target) --
+    # excluded from the immunity check even when the target holds the
+    # matching Anti-Illusion Amulet.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ILLUSION, 5, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=2)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.INVISIBILITY.value)
+    rng = ScriptedRandom([0.1])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+    )
+
+    assert outcome is None
+    assert caster.is_invisible is True  # self-buff still applies
+
+
+def test_execute_challenge_cast_augur_combat_not_blocked_by_target_anti_magic_amulet():
+    # Phase 530: Augur_Combat is self-only -- excluded from the immunity
+    # check even when the target holds the matching Anti-Psychic Amulet.
+    state = _base_state()
+    caster = LeaderState(
+        1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 2, 9), temper=Temper.CAUTIOUS
+    )
+    state.add_leader(caster)
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    state.add_item(Treasure.AMULET_ANTI_PSYCHIC, owner_leader_id=2)
+    request = _cast_request(2, Spell.AUGUR_COMBAT)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="b", rounds=1)
+    ), patch("ak_engine.turn.challenge_execution.resolve_augur_combat", return_value=True):
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert result.fled is True
+
+
 def test_execute_challenge_cast_control_undead_success_kills_undead_target():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 5, 9)))
