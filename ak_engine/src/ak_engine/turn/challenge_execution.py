@@ -55,12 +55,16 @@ decoded, ``turn/challenge_pursue_decode.py``) is checked for
 combat tactics or personal combat spells (including Charm), these
 restrictions do not apply" -- a peaceful plan (no combat tactics
 present) always succeeds, skipping the King/Hero acceptance checks
-entirely. Steal and Cast's own personal-combat-spell nuance aren't
-checked here (Steal is a separate, unmodeled tactic per ``turn/
-encounter.py``'s own docstring; classifying *which* spells count as
-"personal combat spells" needs a spell-effect system this project
-doesn't have) -- a documented narrowing, not a claim that Steal/Cast
-encounters are always peaceful.
+entirely. Cast's own personal-combat-spell nuance *is* checked (Phase
+290 addendum below, once Search's own spell-effect system existed to
+classify it). Steal is deliberately never checked here -- not because
+it's unmodeled (Phase 305 built it), but because [3.12]'s own text
+names "combat tactics or personal combat spells" and Steal is neither;
+see this function's own ``has_combat_intent()`` docstring and the
+Phase 305 addendum's own "one combination the [5.5] text doesn't
+cover" paragraph below for the full sourcing (**Phase 526 addendum**:
+corrects this paragraph's own earlier "Steal is a separate, unmodeled
+tactic" claim, stale since Phase 305).
 
 **Unlike Duel's own special case ([7.1], Phase 49), a Challenge loser
 *is* killed**: personal combat's generic rule ([5.0]: "until one
@@ -310,7 +314,21 @@ def has_combat_intent(request: ChallengeRequest) -> bool:
     (Action-Cast spells never appear here, only as a top-level
     ``ActionCode.CAST`` phase, confirmed against all real sample data
     elsewhere in this project) -- no further classification is needed.
-    Steal isn't checked here (a separate, still-unmodeled tactic).
+
+    **Steal isn't checked here, deliberately -- not because it's
+    unmodeled** (``Maneuver.STEAL`` has been a real, wired tactic since
+    Phase 305), **but because [3.12]'s own English text scopes this
+    check to "combat tactics or personal combat spells," and Steal is
+    neither.** ``turn/challenge_execution.py``'s own module docstring
+    (Phase 305 addendum, "one combination the [5.5] text doesn't cover")
+    already establishes this reading in detail: Steal's ability to fire
+    at all is never gated on ``has_combat_intent``, only its own success
+    *chance* is (per [3.12]'s separate halving clause, itself still
+    unaddressed -- see that same addendum). **Phase 526 addendum**:
+    this paragraph itself used to read "a separate, still-unmodeled
+    tactic," which stopped being true at Phase 305 -- corrected here
+    rather than silently rewritten, matching this project's own
+    "correct via addendum" convention.
     """
 
     for tactic in request.tactics:
@@ -795,11 +813,13 @@ def _resolve_steal_tactic(
 
     Returns ``"success"`` (theft applied, plan continues), ``"evaded"``
     (failed but not caught, plan continues), ``"executed"`` (thief
-    killed outright, no combat), ``"ransom"`` (King-vs-King capture,
-    nobody dies), ``"combat"`` (caller must resolve a forced personal-
-    combat encounter at a freshly-rolled range), or ``"unresolved"`` (a
-    King caught robbing a non-King army-commanding Hero -- the one
-    combination none of the three sourced capture branches covers).
+    killed outright, no combat), ``"ransom"`` (King-thief captured by a
+    King or an army-commanding Hero, nobody dies -- Phase 526 extended
+    this beyond King-vs-King specifically, see module docstring's own
+    Phase 526 addendum), ``"combat"`` (caller must resolve a forced
+    personal-combat encounter at a freshly-rolled range), or
+    ``"unresolved"`` (a garrison commander with no ``LeaderState``,
+    below -- the one remaining case no sourced branch covers).
 
     A garrison commander (``caster_leader``/``target_leader`` is
     ``None``, Phase 291's own Duel reuse) can neither attempt nor be a
@@ -830,19 +850,22 @@ def _resolve_steal_tactic(
 
     if not target_leads_army_or_is_king:
         return "combat"
-    if caster_leader.is_king and target_leader.is_king:
-        thief_kingdom = state.kingdoms.get(caster_leader.kingdom_id) if caster_leader.kingdom_id is not None else None
-        if thief_kingdom is None or thief_kingdom.treasury <= 0:
-            return "executed"
-        ransom = steal_ransom_amount(thief_kingdom.treasury)
-        thief_kingdom.treasury -= ransom
-        victim_kingdom = state.kingdoms.get(target_leader.kingdom_id) if target_leader.kingdom_id is not None else None
-        if victim_kingdom is not None:
-            victim_kingdom.treasury += ransom
-        return "ransom"
     if not caster_leader.is_king:
         return "executed"
-    return "unresolved"  # a King caught robbing a non-King army-commanding Hero
+    # Phase 526: AKGEN_reverse_engineering_report (3).md SS42's own capture
+    # table/pseudocode pays ransom to "LKing(victim)" whenever the victim
+    # is king_or_army_leader -- no separate branch for a King thief caught
+    # by a King versus by a non-King army-commanding Hero. See module
+    # docstring's own Phase 526 addendum for the full sourcing.
+    thief_kingdom = state.kingdoms.get(caster_leader.kingdom_id) if caster_leader.kingdom_id is not None else None
+    if thief_kingdom is None or thief_kingdom.treasury <= 0:
+        return "executed"
+    ransom = steal_ransom_amount(thief_kingdom.treasury)
+    thief_kingdom.treasury -= ransom
+    victim_kingdom = state.kingdoms.get(target_leader.kingdom_id) if target_leader.kingdom_id is not None else None
+    if victim_kingdom is not None:
+        victim_kingdom.treasury += ransom
+    return "ransom"
 
 
 @dataclass(slots=True)
@@ -1052,7 +1075,7 @@ def resolve_challenge_combat(
     magnitude ambiguity once "how many" is read as one (see that
     function's own docstring for why).
 
-    **The three capture consequences, and one combination the text
+    **The three capture consequences, and one combination the [5.5] text
     doesn't cover.** ``_resolve_steal_tactic()`` below implements all
     three sourced branches directly off ``LeaderState.is_king`` and
     ``target_leads_army``: Hero-thief-vs-(King-or-army-Hero) is executed;
@@ -1061,11 +1084,39 @@ def resolve_challenge_combat(
     (Hero or King) caught targeting a monster or a non-army-commanding
     Hero is moved to a freshly-rolled random combat range ("a una
     distanza scelta a caso") for the encounter to continue from. **A King
-    caught robbing an army-commanding Hero who isn't also a King matches
-    none of the three literal branches** (the execution rule is scoped to
-    a Hero thief, the ransom rule to a King *victim*) -- left genuinely
-    unresolved (the thief is caught, nothing further happens) rather than
-    borrowing an outcome from either neighboring branch on a guess.
+    caught robbing an army-commanding Hero who isn't also a King matched
+    none of the three literal [5.5] branches** (the execution rule is
+    scoped to a Hero thief, the ransom rule to a King *victim*) -- left
+    genuinely unresolved (the thief is caught, nothing further happens)
+    rather than borrowing an outcome from either neighboring branch on a
+    guess.
+
+    **Phase 526 addendum -- the dossier resolves this exact combination.**
+    ``AKGEN_reverse_engineering_report (3).md`` SS42 ("Se STEAL fallisce")
+    gives the real compiled capture table and pseudocode, disassembled
+    from `AK.OVR:0x1AC8D-0x1AF99`. Its own capture table has a row this
+    [5.5] text alone doesn't: "Re con tesoreria >0 | Eroe che conduce un
+    esercito | stesso riscatto al Regno dell'Eroe" (a King thief with
+    treasury > 0, caught by an army-commanding Hero, pays the very same
+    ransom to the Hero's own Kingdom) and "Re con tesoreria =0 | Re/Eroe
+    con esercito | esecuzione e confisca" (empty treasury -- executed,
+    same as the King-vs-King case). The pseudocode makes this explicit --
+    the real branch condition is only `IsKing(thief)` and `victim_is_
+    king_or_army_leader(victim)`, paying ransom to `LKing(victim)` (the
+    King of the victim's own Kingdom) unconditionally, with **no separate
+    check for whether the victim personally is that King** -- a King
+    thief and an army-commanding-Hero victim were never a genuinely
+    unaddressed combination in the real engine, only in the [5.5] rulebook
+    prose alone. ``_resolve_steal_tactic()`` below now merges the two
+    branches: any King-thief capture (`target_leads_army_or_is_king`)
+    pays ransom to the victim's own Kingdom treasury (already how this
+    project models "the Hero's own Kingdom", since only ``KingdomState.
+    treasury`` is a real gold pool here) or is executed if the thief's own
+    treasury is already empty, regardless of whether the victim is
+    personally the King or an army-commanding Hero. ``"unresolved"`` is
+    now reserved solely for the pre-existing garrison-commander case (no
+    ``LeaderState`` to read from at all), a structurally different,
+    still-genuinely-unaddressed situation.
 
     **Not addressed here**: [3.12]'s own English-only clause ("If the
     Steal tactic is used in such a restricted encounter, the chance of

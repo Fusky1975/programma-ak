@@ -1721,10 +1721,14 @@ def test_resolve_steal_tactic_king_caught_targeting_a_non_army_hero_is_also_comb
     assert outcome == "combat"
 
 
-def test_resolve_steal_tactic_king_thief_caught_robbing_a_non_king_army_hero_is_unresolved():
-    # None of the three sourced capture branches literally covers this
-    # combination -- module docstring's own Phase 305 addendum.
+def test_resolve_steal_tactic_king_thief_caught_robbing_a_non_king_army_hero_pays_ransom():
+    # Phase 526: AKGEN_reverse_engineering_report (3).md SS42's own
+    # capture table pays the same ransom whether the victim is
+    # personally the King or merely an army-commanding Hero -- see
+    # module docstring's own Phase 526 addendum. This combination used
+    # to be "unresolved" (Phase 305) before that source was found.
     state = _base_state()
+    state.kingdoms[1].treasury = 100
     king = LeaderState(1, kingdom_id=1, name="King", location=FIELD, is_king=True)
     general = LeaderState(2, kingdom_id=2, name="General", location=FIELD)
     state.add_leader(king)
@@ -1733,7 +1737,27 @@ def test_resolve_steal_tactic_king_thief_caught_robbing_a_non_king_army_hero_is_
 
     outcome = _resolve_steal_tactic(king, _thief_combatant(), general, state, ScriptedRandom([0.5, 0.5]))
 
-    assert outcome == "unresolved"
+    assert outcome == "ransom"
+    assert state.kingdoms[1].treasury == 50
+    assert state.kingdoms[2].treasury == 50
+
+
+def test_resolve_steal_tactic_king_thief_caught_robbing_a_non_king_army_hero_with_no_gold_is_executed():
+    # Same Phase 526 sourcing -- an empty thief treasury executes
+    # regardless of whether the victim is a King or an army-commanding
+    # Hero, matching the King-vs-King no-gold branch exactly.
+    state = _base_state()
+    state.kingdoms[1].treasury = 0
+    king = LeaderState(1, kingdom_id=1, name="King", location=FIELD, is_king=True)
+    general = LeaderState(2, kingdom_id=2, name="General", location=FIELD)
+    state.add_leader(king)
+    state.add_leader(general)
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
+
+    outcome = _resolve_steal_tactic(king, _thief_combatant(), general, state, ScriptedRandom([0.5, 0.5]))
+
+    assert outcome == "executed"
+    assert state.kingdoms[1].treasury == 0
 
 
 def test_resolve_steal_tactic_is_unresolved_with_no_rng_consumed_for_a_missing_leaderstate():

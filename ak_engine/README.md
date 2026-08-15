@@ -21814,7 +21814,7 @@ follow-up request after the original 431-435 plan shipped.
     withheld when the shared hex isn't actually sea, withheld when a
     Fleet travels in the stack), and a direct `resolve_move(require_
     adjacent=False)` test. Ran again: 4589 passed (net +13).
-- **Phase 525 (current)**: replaces `turn/encounter.py resolve_fulfill_
+- **Phase 525**: replaces `turn/encounter.py resolve_fulfill_
   honored()`'s own project-original honor formula (Phase 258, an
   unsourced base-chance/alignment-distance/Evil-penalty model) with the
   exact, now-sourced formula. `AKGEN_reverse_engineering_report (3).md`'s
@@ -21863,6 +21863,51 @@ follow-up request after the original 431-435 plan shipped.
     bonus), `resolve_fulfill_honored()`'s own boundary/fallback/Silver-
     Tongue behavior (including bypassing the veto). Ran again: 4595
     passed (net +6).
+- **Phase 526 (current)**: closes the two STEAL micro-gaps flagged
+  against `turn/challenge_execution.py` -- both turned out to be
+  documentation staleness plus one genuinely fixable formula gap, not
+  new mechanics to design.
+
+  **Gap 1 -- Steal not checked as a combat-intent classifier.**
+  `has_combat_intent()` (Phase 50) never checks `Maneuver.STEAL`, and
+  its own docstring blamed this on Steal being "a separate, still-
+  unmodeled tactic." That was true at Phase 50 but stopped being true
+  at Phase 305 -- `_resolve_steal_tactic()` has been a real, wired
+  branch for many phases now. Re-reading [3.12]'s own English text
+  confirms the *behavior* was always correct regardless: "If the
+  encounter plan has no **combat tactics or personal combat spells**...
+  these restrictions do not apply" scopes the check to combat tactics
+  and spells specifically, and Steal is neither -- the module's own
+  Phase 305 addendum already established this reading ("Steal's ability
+  to fire at all isn't gated on [combat intent]"). No behavior changed;
+  three docstrings (module-level, `has_combat_intent()`'s own, and the
+  Phase 305 addendum's cross-reference) were corrected via addendum,
+  not silently rewritten, to stop claiming Steal is unmodeled.
+
+  **Gap 2 -- the "unresolved" King-vs-army-Hero Steal capture branch.**
+  `_resolve_steal_tactic()` returned `"unresolved"` for a King thief
+  caught robbing a non-King army-commanding Hero, since neither of
+  [5.5]'s two literal capture rules (Hero-thief executed; King-vs-King
+  ransom) named that combination. `AKGEN_reverse_engineering_report
+  (3).md` SS42 ("Se STEAL fallisce") gives the real compiled capture
+  table and pseudocode (`AK.OVR:0x1AC8D-0x1AF99`): a King thief with
+  treasury > 0, caught by *either* a King or an army-commanding Hero,
+  pays the identical ransom to the victim's own Kingdom; treasury = 0
+  executes either way. The real branch condition is only `IsKing
+  (thief)` and `victim_is_king_or_army_leader(victim)` -- no separate
+  check for whether the victim is personally the King. Merged the two
+  branches accordingly: any King-thief capture now pays ransom (or
+  executes on an empty treasury) regardless of whether the victim is
+  the King or an army-commanding Hero. `"unresolved"` is now reserved
+  solely for the pre-existing, structurally different garrison-
+  commander case (no `LeaderState` to read from at all).
+  - Ran the full suite before writing new tests (non-breaking check):
+    4595 passed, with exactly one pre-existing test failing as expected
+    (`test_resolve_steal_tactic_king_thief_caught_robbing_a_non_king_
+    army_hero_is_unresolved`, asserting the now-superseded behavior).
+    Replaced it with two new tests (`..._pays_ransom` and `..._with_no_
+    gold_is_executed`) mirroring the existing King-vs-King ransom/
+    executed pair exactly. Ran again: 4596 passed (net +1).
 
 ## Setup
 
