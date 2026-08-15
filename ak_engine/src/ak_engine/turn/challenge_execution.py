@@ -167,9 +167,12 @@ project's own earlier "20% cumulative per hit" paraphrase, which did
 not match the primary source once located and read directly).
 
 **Charm and Words of Healing** both need no monster-related
-simplification at all -- Charm's "guaranteed Flee" and Words of
-Healing's "heal to ``CHARACTER_HIT_POINTS``" already only ever
-reference the caster.
+simplification at all -- Charm's "guaranteed Flee" (Phase 529 addendum:
+unless the target's own Kingdom holds Discovery.ANALYTICAL_PSYCHOLOGY,
+in which case the spell is simply ineffective -- see ``_resolve_
+personal_combat_cast``'s own Phase 529 comment) and Words of Healing's
+"heal to ``CHARACTER_HIT_POINTS``" already only ever reference the
+caster.
 
 **A successful Charm/Augur-Combat-first flee needs a new outcome this
 module's own result types never had**: ``ChallengeExecutionResult``/
@@ -231,6 +234,7 @@ from dataclasses import dataclass, field, replace
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, MONSTER_NAMES, MonsterSpeed, roll_gate_demon_type
@@ -523,6 +527,38 @@ def _resolve_personal_combat_cast(
         return None
 
     if spell is Spell.CHARM:
+        # Phase 529: AKGEN_reverse_engineering_report (3).md SS8.3/SS10.1
+        # (AK.OVR:0x18237-0x18251) -- Counter_Science(target, Charm) is
+        # checked *before* Enhanced Charm's item transfer and the flee
+        # itself. When the target's own Kingdom holds Discovery.
+        # ANALYTICAL_PSYCHOLOGY, the spell is simply ineffective in
+        # Personal Combat -- no flee, no item transfer, combat continues.
+        # This genuinely diverges from the Action-Cast form (which still
+        # succeeds and only reverts at end of turn) -- SS8.3 is explicit
+        # the two branches differ: "Analytical Psychology contro un
+        # Combat Charm equivale a nessun effetto operativo". A target
+        # with no recorded Kingdom reads as not immune, the same
+        # permissive-missing-data convention this function already uses
+        # elsewhere (e.g. an unset alignment above).
+        target_is_immune = (
+            target_leader is not None
+            and target_leader.kingdom_id is not None
+            and Discovery.ANALYTICAL_PSYCHOLOGY in state.kingdoms[target_leader.kingdom_id].discoveries
+        )
+        if target_is_immune:
+            return None
+        # SS9.2 (AK.OVR:0x18254-0x182EE) -- Enhanced Charm's item
+        # transfer applies to Personal-Combat Charm too, not only the
+        # Action-Cast form (``cast_execution.py._execute_charm``'s own
+        # Phase 499 addendum) -- same lowest-``item_id`` deterministic
+        # pick, since the source names no selection rule here either.
+        if (
+            target_leader is not None
+            and AdvancedAbility.ENHANCED_CHARM in caster_leader.advanced_abilities
+        ):
+            target_items = state.items_held_by(target_leader.leader_id)
+            if target_items:
+                state.transfer_item(target_items[0].item_id, caster_leader.leader_id)
         return "fled"
 
     if spell is Spell.HOLY_SYMBOL:

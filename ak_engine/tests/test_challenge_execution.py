@@ -8,6 +8,7 @@ import pytest
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
@@ -496,6 +497,95 @@ def test_execute_challenge_cast_charm_success_makes_the_caster_flee():
     assert result.fled is True
     assert result.winner_leader_id is None
     assert 1 in state.leaders and 2 in state.leaders
+
+
+def test_resolve_personal_combat_cast_charm_blocked_by_analytical_psychology():
+    # Phase 529: AKGEN_reverse_engineering_report (3).md SS8.3 -- Counter_
+    # Science(target, Charm) is checked before the flee itself; when the
+    # target's own Kingdom holds Discovery.ANALYTICAL_PSYCHOLOGY, the
+    # spell is simply ineffective (combat continues), unlike the
+    # Action-Cast form which still succeeds and only reverts later.
+    state = _base_state()
+    state.kingdoms[2].discoveries.add(Discovery.ANALYTICAL_PSYCHOLOGY)
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.CHARM.value)
+    rng = ScriptedRandom([0.1])  # cast roll succeeds
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+    )
+
+    assert outcome is None  # ineffective -- no flee, combat continues
+
+
+def test_resolve_personal_combat_cast_charm_unprotected_target_still_flees():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.CHARM.value)
+    rng = ScriptedRandom([0.1])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+    )
+
+    assert outcome == "fled"
+
+
+def test_resolve_personal_combat_cast_charm_with_enhanced_ability_transfers_item():
+    # Phase 529: AKGEN_reverse_engineering_report (3).md SS9.2 -- Enhanced
+    # Charm's item transfer applies to Personal-Combat Charm too.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9))
+    caster_leader.advanced_abilities.add(AdvancedAbility.ENHANCED_CHARM)
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    first_item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=2)
+    state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=2)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.CHARM.value)
+    rng = ScriptedRandom([0.1])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+    )
+
+    assert outcome == "fled"
+    assert state.items[first_item.item_id].owner_leader_id == 1
+    assert state.items_held_by(2) == [state.items[first_item.item_id + 1]]
+
+
+def test_resolve_personal_combat_cast_charm_blocked_target_never_transfers_item_even_with_enhanced_ability():
+    state = _base_state()
+    state.kingdoms[2].discoveries.add(Discovery.ANALYTICAL_PSYCHOLOGY)
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9))
+    caster_leader.advanced_abilities.add(AdvancedAbility.ENHANCED_CHARM)
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=2)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.CHARM.value)
+    rng = ScriptedRandom([0.1])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+    )
+
+    assert outcome is None
+    assert state.items[item.item_id].owner_leader_id == 2  # untouched
 
 
 def test_execute_challenge_cast_control_undead_success_kills_undead_target():

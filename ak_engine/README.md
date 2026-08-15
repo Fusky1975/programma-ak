@@ -21962,7 +21962,7 @@ follow-up request after the original 431-435 plan shipped.
     (scripted roll < `like`), ascending-`leader_id` payment order under
     a tight treasury, and the missing-King permissive fallback consuming
     no roll at all. Ran again: 4601 passed (net +5).
-- **Phase 528 (current)**: wires the real 24-reply Talk selector into
+- **Phase 528**: wires the real 24-reply Talk selector into
   live Talk resolution, replacing the old placeholder Attack/Ignore/Deal
   roll (`turn/encounter.py resolve_talk_reaction()`, Phase 240) that had
   stood in for it since before the real mechanism was found. The real
@@ -22024,6 +22024,50 @@ follow-up request after the original 431-435 plan shipped.
     `select_monster_talk_reply()` is consulted at most once across two
     separate `execute_search()` calls sharing the same `Feature`. Net:
     8 tests before, 8 after. Ran again: 4601 passed (unchanged count).
+- **Phase 529 (current)**: closes two gaps in Part I of `AKGEN_
+  reverse_engineering_report (3).md` (SS1-19, the main CHARM/Enhanced
+  Charm/Analytical Psychology dossier) -- the one section of this file
+  never previously cross-checked against `cast_execution.py`/
+  `challenge_execution.py`'s own Charm handling, since both only ever
+  cited a different dossier file or this one's own Undead-conversion-
+  specific SS88-96.
+
+  **Action Charm now excludes King targets** (`cast_execution.py
+  _execute_charm`). SS6.1/SS15.1 (`AK.EXE:0x11064`'s own eligibility
+  gate) is explicit that a King -- unlike an ordinary Hero -- can never
+  be acquired by Action Charm's free-hire effect, while remaining fully
+  charmable in Personal Combat. The precondition was simply missing:
+  `target.is_king` (Phase 40's own flag, already reused by `turn/
+  hire_fire_decode.py`'s "cannot-hire-a-King" check) is now checked
+  alongside the existing co-location/army-count gates, before the cast
+  roll.
+
+  **Personal-Combat Charm now applies Analytical Psychology and
+  Enhanced Charm** (`challenge_execution.py _resolve_personal_combat_
+  cast`). SS8.3/SS9.2 (`AK.OVR:0x18185-0x182EE`) show the real Combat
+  Charm branch checks `Counter_Science(target, Charm)` -- i.e. whether
+  the target's own Kingdom holds `Discovery.ANALYTICAL_PSYCHOLOGY` --
+  *before* Enhanced Charm's item transfer and the flee itself; if the
+  target is protected, the spell is simply ineffective (no flee, no
+  item, combat continues) -- a genuine divergence from the Action-Cast
+  form, which still succeeds and only reverts at end of turn (SS8.3:
+  "Analytical Psychology contro un Combat Charm equivale a nessun
+  effetto operativo"). Previously this branch was an unconditional
+  `return "fled"`, with no immunity check and no Enhanced Charm wiring
+  at all. Now: an immune target blocks the flee outright; otherwise, if
+  the caster holds `AdvancedAbility.ENHANCED_CHARM`, the target's
+  lowest-`item_id` item transfers first (same deterministic pick as the
+  Action-Cast form's own Phase 499 addendum), then the caster flees.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4601 passed (unchanged).
+  - Wrote 5 new tests: a King target rejected before any cast roll
+    (`test_cast_execution.py`), and in `test_challenge_execution.py`,
+    calling `_resolve_personal_combat_cast` directly -- an Analytical-
+    Psychology-protected target blocking the flee, an unprotected
+    target still fleeing, Enhanced Charm transferring the target's
+    lowest-`item_id` item on a successful flee, and a protected target
+    never transferring an item even with Enhanced Charm held. Ran
+    again: 4606 passed (net +5).
 
 ## Setup
 

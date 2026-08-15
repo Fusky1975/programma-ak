@@ -1259,6 +1259,20 @@ def _execute_charm(
     since the source names no selection rule -- transfers to the caster
     via ``GameState.transfer_item``, the same primitive ``turn/
     encounter.py loot_defeated_leader()`` already uses for looting.
+
+    **Phase 529 -- King targets are not Action-Charm-acquirable**:
+    ``AKGEN_reverse_engineering_report (3).md`` SS6.1/SS15.1 (``AK.EXE:
+    0x11064``'s own eligibility gate, "target non e' un King da
+    acquisire") is explicit that a King target -- unlike an ordinary
+    Hero -- is excluded from Action Charm's free-hire effect outright,
+    while remaining fully charmable in Personal Combat (SS15.1's own
+    "non immune al Charm usato negli incontri"). This project's
+    ``LeaderState.is_king`` flag (Phase 40) is the exact same signal
+    already used by ``turn/hire_fire_decode.py``'s "cannot-hire-a-King"
+    check, reused here rather than invented -- checked alongside the
+    existing co-location/army-count preconditions above, before the
+    cast roll (a King target never even attempts the roll, matching the
+    source's own "eleggibilita'" gate ordering).
     """
 
     caster = state.leaders[leader_id]
@@ -1269,6 +1283,8 @@ def _execute_charm(
         return CastExecutionResult(request, applied=False, reason="not co-located")
     if state.armies_commanded_by(request.target):
         return CastExecutionResult(request, applied=False, reason="target commands military units")
+    if target.is_king:
+        return CastExecutionResult(request, applied=False, reason="a King cannot be acquired by Action Charm")
 
     succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:

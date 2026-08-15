@@ -219,6 +219,22 @@ def test_charm_fails_when_target_commands_military_units():
     assert state.leaders[78].kingdom_id is None  # untouched
 
 
+def test_charm_fails_when_target_is_a_king():
+    # Phase 529: AKGEN_reverse_engineering_report (3).md SS6.1/SS15.1 --
+    # a King target is excluded from Action Charm's free-hire effect
+    # outright, unlike an ordinary Hero.
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Rival King", LOCATION, is_king=True))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+    rng = ScriptedRandom([])  # precondition fails before any roll
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "a King cannot be acquired by Action Charm"
+    assert state.leaders[78].kingdom_id == 2  # untouched
+
+
 def test_charm_undead_caster_uses_necromancy_instead_of_psychic():
     # Phase 183: "Per i personaggi Non-Morti questo incantesimo
     # appartiene alla magia Negromantica (e non alla magia Psichica)."
