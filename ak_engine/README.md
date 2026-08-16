@@ -22128,7 +22128,7 @@ follow-up request after the original 431-435 plan shipped.
     Fireball cast at the searching leader blocked by the leader's
     Anti-Elemental Amulet (mocking `roll_monster_encounter_plan` to
     force the guardian's plan). Ran again: 4621 passed (net +15).
-- **Phase 531 (current)**: corrects Phase 530's Anti-Magic Amulet shape.
+- **Phase 531**: corrects Phase 530's Anti-Magic Amulet shape.
   The user supplied a new, dedicated magic-item dossier (`AKGEN_
   reverse_engineering_report (4).md`, "Reverse engineering completo
   degli oggetti magici" -- 73 real magic items, cataloged in 7
@@ -22198,6 +22198,53 @@ follow-up request after the original 431-435 plan shipped.
     Control-Undead-*not*-blocked test making the correction concrete.
     `test_search_execution.py`'s monster-casts-Fireball test kept (still
     true). Ran again: 4624 passed (net +3).
+- **Phase 532 (current)**: Crystal of True Seeing (Treasure ordinal 48,
+  `AMULET_ANTI_ILLUSION`) -- the 5th protection amulet Phase 531
+  deliberately deferred, since SS8 point 3 (`AKGEN_reverse_engineering_
+  report (4).md`) makes it structurally different from the other 4: a
+  "sees through the illusion" personal-immunity effect for three spells
+  (Invisibility, Illusory Terrain, Hide Feature) *plus* a separate,
+  battle-wide halving of Phantasmal Armies' own strength bonus -- not a
+  single spell-block mechanic.
+
+  The personal-immunity half turned out to be a direct reuse of Phase
+  531's own `holder_is_immune_to_spell()`: `models/treasure.py
+  AMULET_BLOCKED_SPELLS` gains `AMULET_ANTI_ILLUSION: frozenset({Spell.
+  INVISIBILITY, Spell.ILLUS_TERRAIN, Spell.HIDE_FEATURE})`, no new
+  mechanism needed. Only Invisibility has a real consumer today --
+  `challenge_execution.py`'s and `search_execution.py`'s own Invisibility
+  branches now check `holder_is_immune_to_spell(state, target_leader_id,
+  spell)` alongside their existing `AdvancedAbility.WITCHSIGHT_TALENT`
+  carve-out (either one suppresses the defensive-hit-chance halving).
+  Illusory Terrain and Hide Feature are in the amulet's blocked set too,
+  ready the moment a consumer exists, but neither has one yet -- both are
+  pure `cast_execution.py` province-state writes ("no consuming Explore/
+  Search discovery-roll reads it yet," already documented on those
+  functions before this phase) -- explicitly left as a documented gap
+  rather than inventing a consumer that doesn't exist.
+
+  The Phantasmal Armies half is a new, separate mechanic in `turn/
+  battle_orchestrator.py _build_battle_units()`: any leader on the
+  opposing side holding the Crystal halves whichever `phantasmal_armies_
+  bonus_per_level` rate the existing Observation Balloons check already
+  selected (15% -> 7.5% alone, or 5% -> 2.5% stacked with Balloons -- no
+  sourced combined formula for both wards at once, so this halves
+  whichever rate already applies, the same "no sourced stacking order,
+  pick the plain reading" convention this project already uses
+  elsewhere). Phantasmal Armies is deliberately *not* added to the
+  amulet's own `AMULET_BLOCKED_SPELLS` set -- SS8 point 3 treats it as
+  this separate battle-wide halving, not a personal spell immunity.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4624 passed, confirming no regressions from the wiring alone.
+  - Added tests: `test_discovery_effects.py` -- `holder_is_immune_to_
+    spell()` now covers all three Crystal-blocked spells, plus a test
+    proving Phantasmal Armies stays unblocked even when the Crystal is
+    held (confirming the deliberate exclusion). `test_challenge_
+    execution.py`/`test_search_execution.py` -- one test each mirroring
+    the existing Witchsight-carve-out shape, but via item possession.
+    `test_battle_orchestrator.py` -- two new tests: Crystal alone halves
+    15%/level to 7.5%/level; Crystal stacked with Observation Balloons
+    reduces 5%/level to 2.5%/level. Ran again: 4630 passed (net +6).
 
 ## Setup
 

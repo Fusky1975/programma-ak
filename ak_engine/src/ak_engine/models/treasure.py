@@ -391,16 +391,23 @@ ANTI_MAGIC_AMULET_BY_ABILITY: dict[Ability, Treasure] = {
 # genuinely whole-college mechanic (halving the cast-success *chance* of a
 # matching-college spell targeted at a province the amulet's holder owns)
 # still needs the ability-keyed lookup; see ``turn/discovery_effects.py
-# province_halves_spell_chance()``. ``AMULET_ANTI_ILLUSION`` (Crystal of
-# True Seeing) is deliberately absent here -- SS8 point 3 makes it a
-# structurally different mechanic (illusion detection + a Phantasmal
-# Armies halving), not a spell block; see that module's own Phase 532
-# addendum.
+# province_halves_spell_chance()``.
+#
+# Phase 532: ``AMULET_ANTI_ILLUSION`` (Crystal of True Seeing) joins this
+# table too -- SS8 point 3's "the possessor is unaffected by/sees through"
+# wording for Invisibility/Illusory Terrain/Hide Feature is the same
+# personal-immunity shape ``holder_is_immune_to_spell()`` already models
+# for the other 4 amulets, so it's a direct reuse rather than a new
+# mechanism. Phantasmal Armies is deliberately *not* in this amulet's own
+# blocked set -- SS8 point 3 treats it separately, as a battle-wide
+# strength-bonus halving rather than a personal immunity (see
+# ``turn/battle_orchestrator.py``'s own Phase 532 addendum).
 AMULET_BLOCKED_SPELLS: dict[Treasure, frozenset[Spell]] = {
     Treasure.AMULET_ANTI_WHITE: frozenset({Spell.HOLY_SYMBOL}),
     Treasure.AMULET_ANTI_NECROMANCY: frozenset({Spell.KILL_ENEMY, Spell.HAND_OF_DEATH}),
     Treasure.AMULET_ANTI_ELEMENTAL: frozenset({Spell.FIREBALL}),
     Treasure.AMULET_ANTI_PSYCHIC: frozenset({Spell.CHARM, Spell.PSYCHIC_BLAST}),
+    Treasure.AMULET_ANTI_ILLUSION: frozenset({Spell.INVISIBILITY, Spell.ILLUS_TERRAIN, Spell.HIDE_FEATURE}),
 }
 
 # The user's own rules 3-6 (Phase 279): one race-matching legendary

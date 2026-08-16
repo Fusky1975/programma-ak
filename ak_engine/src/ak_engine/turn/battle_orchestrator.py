@@ -182,7 +182,7 @@ from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES, Race
-from ak_engine.models.treasure import MONSTER_SUMMONING_TREASURE, RACE_LEADERSHIP_TREASURE
+from ak_engine.models.treasure import MONSTER_SUMMONING_TREASURE, RACE_LEADERSHIP_TREASURE, Treasure
 from ak_engine.turn.aftermath import FORMATION_DIVISOR, roll_quality_change
 from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability, line_length_for_battle, roll_terrain_line_length_cap
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
@@ -434,6 +434,16 @@ def _build_battle_units(
     same opposing-Kingdom check. Both default to inert (empty
     ``opponent_kingdom_ids``) for every pre-Phase-270 caller.
 
+    **Crystal of True Seeing** (``AKGEN_reverse_engineering_report
+    (4).md`` SS8 point 3, Phase 532): a third, item-driven (not
+    Discovery-driven) halving of Phantasmal Armies' own strength bonus,
+    checked per-leader rather than per-Kingdom -- any leader on the
+    opposing side holding ``Treasure.AMULET_ANTI_ILLUSION`` halves
+    whichever ``phantasmal_armies_bonus_per_level`` rate the Balloons
+    check above already selected. Stacks with Balloons multiplicatively
+    (15% -> 5% -> 2.5%) since no source gives a combined formula for both
+    wards applying at once.
+
     **Island provinces** (Phase 282, ``is_island``): resolved once by
     ``fight_battle()`` from ``ProvinceState.is_island`` and passed
     straight through to ``turn/strength.py compute_effective_strength()``
@@ -509,6 +519,18 @@ def _build_battle_units(
     opponent_owns_balloons = any(
         Discovery.OBSERVATION_BALLOONS in state.kingdoms[kid].discoveries for kid in opponent_kingdom_ids
     )
+    # Phase 532: AKGEN_reverse_engineering_report (4).md SS8 point 3 -- a
+    # Crystal of True Seeing holder on the opposing side halves the
+    # caster's own Phantasmal Armies strength bonus, independent of and
+    # stacking with Observation Balloons' own reduction above (no sourced
+    # combined formula, so this halves whichever rate already applies --
+    # same "no sourced stacking order, pick the plain reading" convention
+    # this project already uses elsewhere).
+    opponent_owns_crystal_of_true_seeing = any(
+        leader.kingdom_id in opponent_kingdom_ids
+        and any(item.treasure is Treasure.AMULET_ANTI_ILLUSION for item in state.items_held_by(leader.leader_id))
+        for leader in state.leaders.values()
+    )
 
     # Phase 390: memoized per office actually queried this call, since
     # resolve_office_holder() re-derives merit points across every
@@ -558,6 +580,8 @@ def _build_battle_units(
             if phantasmal_armies_level > 0 and opponent_owns_balloons
             else PHANTASMAL_ARMIES_BONUS_PER_LEVEL
         )
+        if phantasmal_armies_level > 0 and opponent_owns_crystal_of_true_seeing:
+            phantasmal_armies_bonus_per_level /= 2
         adapt_tactics_to_terrain = False
         if army.commanded_by is not None:
             commanding_leader = state.leaders.get(army.commanded_by)

@@ -1351,7 +1351,13 @@ def _resolve_search_encounter(
             opponent_has_witchsight = (
                 not caster_is_leader
             ) and AdvancedAbility.WITCHSIGHT_TALENT in leader.advanced_abilities
-            if not opponent_has_witchsight:
+            # Phase 532: same Crystal of True Seeing carve-out as
+            # challenge_execution.py's own Invisibility branch -- only
+            # relevant when the leader is the opponent (not the caster).
+            opponent_sees_through_illusion = (not caster_is_leader) and holder_is_immune_to_spell(
+                state, leader.leader_id, spell
+            )
+            if not opponent_has_witchsight and not opponent_sees_through_illusion:
                 caster.defensive_hit_multiplier *= INVISIBILITY_HIT_CHANCE_MULTIPLIER
             caster.is_invisible = True
             return None

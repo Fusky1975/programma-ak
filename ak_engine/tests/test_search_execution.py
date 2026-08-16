@@ -1438,6 +1438,32 @@ def test_execute_search_cast_invisibility_leader_caster_still_halved_regardless_
     assert leader_combatant.defensive_hit_multiplier == 0.5
 
 
+def test_execute_search_cast_invisibility_leader_opponent_holding_crystal_of_true_seeing_is_unaffected():
+    # Phase 532: AKGEN_reverse_engineering_report (4).md SS8 point 3 --
+    # same shape as the Witchsight carve-out above, but via item
+    # possession (AMULET_ANTI_ILLUSION) rather than an Advanced Ability.
+    # A monster casts Invisibility on itself; the leader is the opponent
+    # who needs to keep fighting it.
+    leader = _skilled_leader(Ability.NECROMANCY, 0)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=LEADER_ID)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch.dict(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.ARCHER: {Ability.ILLUSION: 5}}
+    ), patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.INVISIBILITY.value),)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    monster_combatant = mock_melee.call_args[0][1]
+    assert monster_combatant.defensive_hit_multiplier == 1.0
+
+
 def test_execute_search_cast_fireball_kills_the_target():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))

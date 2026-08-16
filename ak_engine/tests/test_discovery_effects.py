@@ -177,3 +177,29 @@ def test_holder_is_immune_to_spell_true_when_either_of_necromancys_two_amulet_sp
     assert holder_is_immune_to_spell(state, 1, Spell.KILL_ENEMY) is True
     assert holder_is_immune_to_spell(state, 1, Spell.HAND_OF_DEATH) is True
     assert holder_is_immune_to_spell(state, 1, Spell.CONTROL_UNDEAD) is False
+
+
+# -- Phase 532: Crystal of True Seeing (AMULET_ANTI_ILLUSION) joins the
+# same holder_is_immune_to_spell() table -- see turn/discovery_effects.py
+# module docstring's own Phase 532 addendum for why Phantasmal Armies is
+# deliberately excluded (a separate battle-wide mechanic, not a personal
+# spell immunity).
+
+
+def test_holder_is_immune_to_spell_true_for_all_three_of_crystal_of_true_seeings_illusion_spells():
+    state = make_state()
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=1)
+
+    assert holder_is_immune_to_spell(state, 1, Spell.INVISIBILITY) is True
+    assert holder_is_immune_to_spell(state, 1, Spell.ILLUS_TERRAIN) is True
+    assert holder_is_immune_to_spell(state, 1, Spell.HIDE_FEATURE) is True
+
+
+def test_holder_is_immune_to_spell_false_for_phantasmal_armies_even_with_crystal_of_true_seeing():
+    # Phantasmal Armies is a separate battle-wide strength-bonus halving
+    # (turn/battle_orchestrator.py), not a personal spell immunity -- it's
+    # deliberately absent from AMULET_ANTI_ILLUSION's own blocked set.
+    state = make_state()
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=1)
+
+    assert holder_is_immune_to_spell(state, 1, Spell.ILLUS_ARMIES) is False

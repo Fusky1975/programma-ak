@@ -1355,6 +1355,60 @@ def test_build_battle_units_observation_balloons_reduces_the_phantasmal_bonus():
     assert units[0].effective_strength == pytest.approx(expected)
 
 
+def test_build_battle_units_crystal_of_true_seeing_halves_the_phantasmal_bonus():
+    # Phase 532: AKGEN_reverse_engineering_report (4).md SS8 point 3 -- an
+    # opposing leader holding the Crystal of True Seeing halves whichever
+    # Phantasmal Armies bonus rate already applies (15% -> 7.5% here,
+    # since no Observation Balloons is involved).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Illusia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Seersland", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Illusionist", location=FIELD, phantasmal_armies_level=2))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Seer", location=FIELD))
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=2)
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        opponent_kingdom_ids=frozenset({2}),
+    )
+
+    expected = compute_effective_strength(
+        ArmyType.LEGION, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS,
+        phantasmal_armies_level=2, phantasmal_armies_bonus_per_level=0.075,
+    )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_crystal_of_true_seeing_stacks_with_observation_balloons():
+    # Both wards active at once: Balloons' own 5%/level selection gets
+    # halved again by the Crystal to 2.5%/level -- no sourced combined
+    # formula, so this is the documented "halve whichever rate already
+    # applies" stacking convention (see battle_orchestrator.py's own
+    # Phase 532 addendum).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Illusia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Warded", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.kingdoms[2].discoveries.add(Discovery.OBSERVATION_BALLOONS)
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Illusionist", location=FIELD, phantasmal_armies_level=2))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Seer", location=FIELD))
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=2)
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        opponent_kingdom_ids=frozenset({2}),
+    )
+
+    expected = compute_effective_strength(
+        ArmyType.LEGION, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS,
+        phantasmal_armies_level=2, phantasmal_armies_bonus_per_level=0.025,
+    )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
 def test_build_battle_units_osteopathic_germ_warfare_downgrades_skeletal_quality():
     # Phase 270: Osteopathic Germ Warfare (Discovery.txt) -- an opposing
     # Kingdom that owns it reduces a Skeletal Army unit by one quality

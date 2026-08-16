@@ -631,7 +631,14 @@ def _resolve_personal_combat_cast(
         opponent_has_witchsight = (
             target_leader is not None and AdvancedAbility.WITCHSIGHT_TALENT in target_leader.advanced_abilities
         )
-        if not opponent_has_witchsight:
+        # Phase 532: same carve-out for a target_leader holding the
+        # Crystal of True Seeing (models/treasure.py AMULET_BLOCKED_
+        # SPELLS) -- "sees through" Invisibility the same way Witchsight
+        # does, via the shared holder_is_immune_to_spell() primitive.
+        opponent_sees_through_illusion = target_leader is not None and holder_is_immune_to_spell(
+            state, target_leader.leader_id, spell
+        )
+        if not opponent_has_witchsight and not opponent_sees_through_illusion:
             caster.defensive_hit_multiplier *= INVISIBILITY_HIT_CHANCE_MULTIPLIER
         caster.is_invisible = True
         return None

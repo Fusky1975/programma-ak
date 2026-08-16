@@ -115,11 +115,24 @@ def holder_is_immune_to_spell(state: GameState, target_leader_id: int, spell: Sp
     Blast) was already exactly right; the other 4 amulets were the
     over-guessed part.
 
-    ``AMULET_ANTI_ILLUSION`` (Crystal of True Seeing) is absent from
-    ``AMULET_BLOCKED_SPELLS`` on purpose -- SS8 point 3 makes it a
-    structurally different mechanic (illusion detection + a Phantasmal
-    Armies halving, not a spell block); see this module's own Phase 532
-    addendum once that lands.
+    **Phase 532**: ``AMULET_ANTI_ILLUSION`` (Crystal of True Seeing) now
+    joins ``AMULET_BLOCKED_SPELLS`` too, for Invisibility -- wired into
+    ``challenge_execution.py``/``search_execution.py``'s own Invisibility
+    branches, right alongside their existing ``AdvancedAbility.
+    WITCHSIGHT_TALENT`` carve-out. Illusory Terrain and Hide Feature are
+    also in the amulet's blocked set (the dossier's "sees through"
+    wording covers all three), but neither has a real consumer yet to
+    wire the check into -- both are pure ``cast_execution.py`` province-
+    state writes with "no consuming Explore/Search discovery-roll reads it
+    yet" already documented on ``_execute_illus_terrain``/``_execute_
+    hide_feature`` themselves (this predates Phase 532; see those
+    functions' own docstrings). ``holder_is_immune_to_spell()`` already
+    returns the right answer for both spells the moment such a consumer
+    exists -- no further change needed here when it does. Phantasmal
+    Armies is deliberately absent from the amulet's blocked set -- SS8
+    point 3 treats it as a separate, battle-wide strength-bonus halving,
+    not a personal spell immunity; see ``turn/battle_orchestrator.py``'s
+    own Phase 532 addendum for that half.
     """
 
     for amulet, blocked in AMULET_BLOCKED_SPELLS.items():
