@@ -516,6 +516,7 @@ from ak_engine.turn.discovery_effects import (
     equipped_combat_weapon,
     holder_is_immune_to_spell,
     holds_bow_of_elven_kings,
+    holds_monster_command_item_for,
 )
 from ak_engine.turn.encounter import (
     BEG_MERCY_CHANCE,
@@ -2104,6 +2105,23 @@ def _resolve_search_encounter(
         """
 
         nonlocal combat_attempted
+
+        # Phase 537: AKGEN_reverse_engineering_report (4).md SS9 -- holding
+        # the racial-command item matching this guardian's own Dragon/
+        # Eagle/Whale family skips the normal social roll entirely ("non
+        # effettua il tiro sociale normale: il mostro consegna il tesoro
+        # e non si apre il combattimento"). A wholly separate mechanism
+        # from Druidic Talk (the event is `_LMCharm`, "used the item to
+        # command the monster," not the real Charm spell) -- no Druid
+        # skill/`talkdiff` gate, no roll consumed, and (undocumented by
+        # any source) no merit-tally credit either, since this isn't a
+        # combat win or a negotiated Fulfill.
+        if holds_monster_command_item_for(state, leader_id, feature.guardian_monster):
+            feature.looted = True
+            if feature.treasure is not None:
+                state.add_item(feature.treasure, leader_id)
+            return SearchExecutionResult(accepted=True, combat_resolved=False, winner="leader", feature_looted=True)
+
         druid_level = effective_skill_level(state, leader, Ability.DRUID)
         if not can_talk_to_monster(feature.guardian_monster, druid_level):
             return None

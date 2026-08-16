@@ -10,6 +10,7 @@ from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.discovery_effects import (
@@ -19,6 +20,7 @@ from ak_engine.turn.discovery_effects import (
     equipped_combat_weapon,
     holder_is_immune_to_spell,
     holds_bow_of_elven_kings,
+    holds_monster_command_item_for,
     province_halves_spell_chance,
 )
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL
@@ -391,3 +393,52 @@ def test_holds_bow_of_elven_kings_true_regardless_of_copy_count():
     state.add_item(Treasure.LEADERSHIP_ELVEN, owner_leader_id=1)
 
     assert holds_bow_of_elven_kings(state, 1) is True
+
+
+# -- Phase 537: holds_monster_command_item_for ----------------------------
+# AKGEN_reverse_engineering_report (4).md SS9's own "TA-lk skips the
+# normal social roll" mechanic for the 3 racial-command items (49-51).
+
+
+def test_holds_monster_command_item_for_false_when_not_held():
+    state = make_state()
+
+    assert holds_monster_command_item_for(state, 1, Monster.R_DRAGON) is False
+
+
+def test_holds_monster_command_item_for_true_for_any_dragon_species():
+    state = make_state()
+    state.add_item(Treasure.MONSTER_AID_DRAGON, owner_leader_id=1)
+
+    for species in (Monster.R_DRAGON, Monster.B_DRAGON, Monster.GR_DRAGON, Monster.S_DRAGON, Monster.GO_DRAGON):
+        assert holds_monster_command_item_for(state, 1, species) is True
+
+
+def test_holds_monster_command_item_for_eagle():
+    state = make_state()
+    state.add_item(Treasure.MONSTER_AID_EAGLE, owner_leader_id=1)
+
+    assert holds_monster_command_item_for(state, 1, Monster.GI_EAGLE) is True
+
+
+def test_holds_monster_command_item_for_whale():
+    state = make_state()
+    state.add_item(Treasure.MONSTER_AID_WHALE, owner_leader_id=1)
+
+    assert holds_monster_command_item_for(state, 1, Monster.GW_WHALE) is True
+
+
+def test_holds_monster_command_item_for_false_for_a_non_matching_species():
+    # A Dragon-command item held, but the guardian is neither Dragon,
+    # Eagle, nor Whale -- no item exists for this species at all.
+    state = make_state()
+    state.add_item(Treasure.MONSTER_AID_DRAGON, owner_leader_id=1)
+
+    assert holds_monster_command_item_for(state, 1, Monster.TROLL) is False
+
+
+def test_holds_monster_command_item_for_false_when_holding_the_wrong_species_item():
+    state = make_state()
+    state.add_item(Treasure.MONSTER_AID_EAGLE, owner_leader_id=1)
+
+    assert holds_monster_command_item_for(state, 1, Monster.R_DRAGON) is False

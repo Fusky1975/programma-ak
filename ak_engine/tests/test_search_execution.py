@@ -2801,6 +2801,70 @@ def test_execute_search_steal_caught_bow_range_resolves_fire_arrow_duel():
     assert result.feature_looted is True
 
 
+# -- Phase 537: racial-command item skips the normal Talk roll ----------
+# AKGEN_reverse_engineering_report (4).md SS9.
+
+
+def test_execute_search_talk_command_item_skips_the_roll_and_loots_the_feature():
+    state = _state_with_leader()
+    state.add_item(Treasure.MONSTER_AID_DRAGON, owner_leader_id=LEADER_ID)
+    state.add_feature(
+        Feature(
+            feature_id=1,
+            coord=LOCATION,
+            kind=FeatureType.CAVE,
+            guardian_monster=Monster.R_DRAGON,
+            treasure=Treasure.GOLD_HOARD_LARGE,
+        )
+    )
+    request = _talk_request(1)
+
+    with patch("ak_engine.turn.search_execution.select_monster_talk_reply") as mock_reply:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_reply.called  # no social roll at all
+    assert result.accepted is True
+    assert result.combat_resolved is False
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+    assert state.features[1].looted is True
+    assert any(item.treasure is Treasure.GOLD_HOARD_LARGE for item in state.items_held_by(LEADER_ID))
+
+
+def test_execute_search_talk_command_item_does_not_apply_to_a_non_matching_species():
+    # Holding the Dragon-command item against a non-Dragon/Eagle/Whale
+    # guardian doesn't skip anything -- the normal 24-reply table still
+    # runs (Archer needs Druid level 0, so any leader can talk to it).
+    state = _state_with_leader()
+    state.add_item(Treasure.MONSTER_AID_DRAGON, owner_leader_id=LEADER_ID)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_PUZZLED
+    ) as mock_reply, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert mock_reply.called
+
+
+def test_execute_search_talk_without_the_item_still_uses_the_normal_roll_against_a_dragon():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.R_DRAGON))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_PUZZLED
+    ) as mock_reply, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert mock_reply.called
+
+
 # -- Phase 240: Talk / Say --
 
 

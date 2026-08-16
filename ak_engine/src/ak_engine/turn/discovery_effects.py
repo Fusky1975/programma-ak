@@ -54,10 +54,13 @@ from ak_engine.models.discovery import DISCOVERY_ABILITY_BONUS
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord
+from ak_engine.models.monster import Monster
 from ak_engine.models.treasure import (
     AMULET_BLOCKED_SPELLS,
     ANTI_MAGIC_AMULET_BY_ABILITY,
     COMBAT_WEAPON_SLOT_TREASURES,
+    MONSTER_COMMAND_RACE,
+    MONSTER_SUMMONING_TREASURE,
     TREASURE_ABILITY_ITEM,
     Treasure,
 )
@@ -238,3 +241,21 @@ def holds_bow_of_elven_kings(state: GameState, leader_id: int) -> bool:
     """
 
     return any(item.treasure is Treasure.LEADERSHIP_ELVEN for item in state.items_held_by(leader_id))
+
+
+def holds_monster_command_item_for(state: GameState, leader_id: int, guardian_species: Monster) -> bool:
+    """Phase 537: AKGEN_reverse_engineering_report (4).md SS9 -- does
+    ``leader_id`` hold the one racial-command item (``models/treasure.py
+    MONSTER_COMMAND_RACE``/``MONSTER_SUMMONING_TREASURE``) matching
+    ``guardian_species``'s own Dragon/Eagle/Whale family? ``False`` for
+    every other species (no matching item exists) and for a species with
+    no matching item held.
+    """
+
+    race = MONSTER_COMMAND_RACE.get(guardian_species)
+    if race is None:
+        return False
+    treasure = MONSTER_SUMMONING_TREASURE.get(race)
+    if treasure is None:
+        return False
+    return any(item.treasure is treasure for item in state.items_held_by(leader_id))

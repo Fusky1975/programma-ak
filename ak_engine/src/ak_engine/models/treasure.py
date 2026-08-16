@@ -188,6 +188,7 @@ from __future__ import annotations
 from enum import Enum
 
 from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 
 
@@ -511,6 +512,27 @@ MONSTER_SUMMONING_TREASURE: dict[Race, Treasure] = {
     Race.DRAGONS: Treasure.MONSTER_AID_DRAGON,
     Race.EAGLES: Treasure.MONSTER_AID_EAGLE,
     Race.WHALES: Treasure.MONSTER_AID_WHALE,
+}
+
+
+# Phase 537 -- AKGEN_reverse_engineering_report (4).md SS9's own "TA-lk
+# skips the normal social roll" mechanic needs to know which individual
+# guardian *species* (``models/monster.py Monster``) count as the
+# "Dragon"/"Eagle"/"Whale" family ``MONSTER_SUMMONING_TREASURE`` above
+# already keys by ``Race`` -- a different axis than that dict's own army-
+# unit-race concern, so it's a separate table, not folded in. Self-
+# evident from each species' own real (non-obfuscated) English name, the
+# same "no guess needed" confidence ``HAND_OF_DEATH_ANTI_HOLY_MONSTERS``'s
+# own real-species enumeration already relies on: all 5 real Dragon
+# species, the one real Eagle species, and the one real Whale species.
+MONSTER_COMMAND_RACE: dict[Monster, Race] = {
+    Monster.R_DRAGON: Race.DRAGONS,
+    Monster.B_DRAGON: Race.DRAGONS,
+    Monster.GR_DRAGON: Race.DRAGONS,
+    Monster.S_DRAGON: Race.DRAGONS,
+    Monster.GO_DRAGON: Race.DRAGONS,
+    Monster.GI_EAGLE: Race.EAGLES,
+    Monster.GW_WHALE: Race.WHALES,
 }
 
 

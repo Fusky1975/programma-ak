@@ -22356,7 +22356,7 @@ follow-up request after the original 431-435 plan shipped.
   `Combatant` construction site) confirming weapon hit/damage bonuses reach
   the constructed `Combatant`; the Bow's own no-stacking-with-copies case.
   Ran again: 4667 passed (net +14).
-- **Phase 536 (current)**: magic weapons on-hit procs + auto-equip status
+- **Phase 536**: magic weapons on-hit procs + auto-equip status
   effects — the remaining half of `AKGEN_reverse_engineering_report
   (4).md` §7. `turn/encounter.py` gains `Combatant.equipped_weapon`
   (set by all 3 builders from the same `equipped_combat_weapon()` lookup
@@ -22393,6 +22393,33 @@ follow-up request after the original 431-435 plan shipped.
   `resolve_reactive_melee_swing()` applying the Shadow Sword drain); 3
   builder tests per consumer (×3) for the two auto-equip effects and the
   `equipped_weapon` field itself. Ran again: 4690 passed (net +23).
+- **Phase 537 (current)**: racial-command items (49-51) — the "TA-lk
+  skips the normal social roll" half of `AKGEN_reverse_engineering_
+  report (4).md` §9 (the battle-aid + defection half was already wired
+  in `battle_orchestrator.py _apply_monster_summoning_aid()`, Phase
+  393). `models/treasure.py` adds `MONSTER_COMMAND_RACE: dict[Monster,
+  Race]` (the 5 real Dragon species, the one Eagle species, the one
+  Whale species — self-evident from each species' own real, non-
+  obfuscated name), a different axis from `MONSTER_SUMMONING_TREASURE`'s
+  own army-unit-race keying, so kept as a separate table.
+  `turn/discovery_effects.py` adds `holds_monster_command_item_for(state,
+  leader_id, guardian_species)`, composing the two tables to check
+  possession of the one matching item. `turn/search_execution.py
+  _resolve_talk()` checks this first, before the Druid `talkdiff` gate:
+  a match skips the normal 24-reply roll entirely, loots the feature's
+  treasure via the same `state.add_item()`/`feature.looted = True`
+  primitive a combat win already uses, and returns
+  `combat_resolved=False, winner="leader"` (Fulfill's own peaceful-win
+  shape) — no roll consumed, no Druid-experience credit (the event is
+  `_LMCharm`, "used the item to command the monster," a wholly separate
+  mechanism from Druidic Talk, not sourced as earning Add_Experience).
+  Ran before writing tests: 4690 passed (non-breaking, matches Phase
+  536's own closing count). Added tests: `holds_monster_command_
+  item_for()` unit tests (all 3 species families, wrong-species/wrong-
+  item negatives); 3 `execute_search` integration tests (item skips the
+  roll and loots the feature; item held but guardian doesn't match still
+  uses the normal table; no item against a Dragon still uses the normal
+  table). Ran again: 4699 passed (net +9).
 
 ## Setup
 
