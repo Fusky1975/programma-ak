@@ -14,6 +14,7 @@ from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.discovery_effects import (
     ability_bonus_from_discoveries,
+    ability_bonus_from_items,
     effective_skill_level,
     holder_is_immune_to_spell,
     province_halves_spell_chance,
@@ -103,6 +104,56 @@ def test_effective_skill_level_caps_at_max_skill_level():
     leader.skills = skills_with(TACTICAL=MAX_SKILL_LEVEL)
     state.kingdoms[1].discoveries.update({Discovery.LAND_SHIP, Discovery.SCYTHED_CHARIOTS})
 
+    assert effective_skill_level(state, leader, Ability.TACTICAL) == MAX_SKILL_LEVEL
+
+
+def test_ability_bonus_from_items_zero_when_none_held():
+    state = make_state()
+    leader = state.leaders[1]
+
+    assert ability_bonus_from_items(state, leader, Ability.NAVAL) == 0
+
+
+def test_ability_bonus_from_items_one_copy():
+    state = make_state()
+    leader = state.leaders[1]
+    state.add_item(Treasure.ABILITY_NAVAL, owner_leader_id=1)
+
+    assert ability_bonus_from_items(state, leader, Ability.NAVAL) == 1
+    assert ability_bonus_from_items(state, leader, Ability.MELEE) == 0
+
+
+def test_ability_bonus_from_items_stacks_per_copy_held():
+    # Phase 534: AKGEN_reverse_engineering_report (4).md SS5 -- unlike
+    # Discoveries (capped at 2 matching entries by the Pascal enum
+    # itself), every held copy of an ability item counts.
+    state = make_state()
+    leader = state.leaders[1]
+    state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=1)
+    state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=1)
+    state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=1)
+
+    assert ability_bonus_from_items(state, leader, Ability.MELEE) == 3
+
+
+def test_effective_skill_level_adds_item_bonus_to_stored_skill():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.skills = skills_with(NAVAL=3)
+    state.add_item(Treasure.ABILITY_NAVAL, owner_leader_id=1)
+
+    assert effective_skill_level(state, leader, Ability.NAVAL) == 4
+
+
+def test_effective_skill_level_combines_discovery_and_item_bonuses_under_one_shared_cap():
+    state = make_state()
+    leader = state.leaders[1]
+    leader.skills = skills_with(TACTICAL=MAX_SKILL_LEVEL - 1)
+    state.kingdoms[1].discoveries.add(Discovery.LAND_SHIP)  # +1 Tactical
+    state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=1)  # +1 Tactical
+
+    # MAX_SKILL_LEVEL - 1 + 1 (Discovery) + 1 (item) would be MAX_SKILL_LEVEL + 1
+    # -- capped once, combined, not per-source.
     assert effective_skill_level(state, leader, Ability.TACTICAL) == MAX_SKILL_LEVEL
 
 

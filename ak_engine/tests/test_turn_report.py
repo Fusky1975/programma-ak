@@ -5023,6 +5023,13 @@ def test_describe_characters_report_skill_row_shows_magic_item_ownership_tick_ma
     # (index 4), so the tick marks land after Naval's and Melee's values,
     # and Archery's (index 3) and White magic's (index 5) fields each
     # shrink by one character.
+    #
+    # Phase 534: the displayed numbers themselves now include each item's
+    # own effective_skill_level() bonus (Naval 1, Melee 2, both stacking
+    # on top of a stored skill of 0) -- this row already reads through
+    # effective_skill_level(), so folding item bonuses into that function
+    # correctly updates the number alongside the pre-existing tick marks,
+    # not just the count itself.
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0)))
@@ -5032,7 +5039,7 @@ def test_describe_characters_report_skill_row_shows_magic_item_ownership_tick_ma
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[6] == "Aldric           0  Unkn  Unkn     Human  1   0 0 0'0 0\" 0 0 0 0 0  0 0 0 0 0"
+    assert lines[6] == "Aldric           0  Unkn  Unkn     Human  1   0 0 1'0 2\" 0 0 0 0 0  0 0 0 0 0"
 
 
 def test_describe_characters_report_omits_items_line_when_leader_holds_nothing():

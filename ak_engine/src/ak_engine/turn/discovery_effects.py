@@ -54,7 +54,7 @@ from ak_engine.models.discovery import DISCOVERY_ABILITY_BONUS
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord
-from ak_engine.models.treasure import AMULET_BLOCKED_SPELLS, ANTI_MAGIC_AMULET_BY_ABILITY
+from ak_engine.models.treasure import AMULET_BLOCKED_SPELLS, ANTI_MAGIC_AMULET_BY_ABILITY, TREASURE_ABILITY_ITEM
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL
 
 
@@ -73,11 +73,27 @@ def ability_bonus_from_discoveries(state: GameState, leader: LeaderState, abilit
     return sum(1 for discovery in kingdom.discoveries if DISCOVERY_ABILITY_BONUS.get(discovery) is ability)
 
 
+def ability_bonus_from_items(state: GameState, leader: LeaderState, ability: Ability) -> int:
+    """Phase 534: AKGEN_reverse_engineering_report (4).md SS5 -- ``M_Skill``
+    sums the stored skill with ``NT_Owned(leader, item_type, item_type)``,
+    i.e. each of the 15 ability items (``Treasure`` ordinals 0-14,
+    ``models/treasure.py TREASURE_ABILITY_ITEM``) grants ``+1`` to its own
+    matching ``Ability`` *per copy held* -- unlike Discoveries (capped at
+    2 matching entries by the Pascal enum itself), there's no such cap
+    here, so every held copy counts. Sibling to ``ability_bonus_from_
+    discoveries()`` above; 0 for a leader holding no items in ``ability``'s
+    own item.
+    """
+
+    return sum(1 for item in state.items_held_by(leader.leader_id) if TREASURE_ABILITY_ITEM.get(item.treasure) is ability)
+
+
 def effective_skill_level(state: GameState, leader: LeaderState, ability: Ability) -> int:
     """``leader``'s own real skill in ``ability`` (0 if ``leader.skills`` was
     never recorded, the same placeholder convention every consumer already
-    used) plus any ability-bonus Discoveries their kingdom owns, capped at
-    ``MAX_SKILL_LEVEL`` -- see module docstring.
+    used) plus any ability-bonus Discoveries their kingdom owns and any
+    ability items they personally hold, capped at ``MAX_SKILL_LEVEL`` --
+    see module docstring.
 
     Phase 310: a comatose leader (``LeaderState.is_comatose``, Kill_Enemy's
     own [4.25.2] coma variant) reads 0 here unconditionally, before
@@ -87,12 +103,18 @@ def effective_skill_level(state: GameState, leader: LeaderState, ability: Abilit
     otherwise apply." The real stored values are never touched, so nothing
     needs restoring once the coma is cured -- see that field's own
     docstring.
+
+    Phase 534: item bonuses stack with Discovery bonuses *before* the
+    combined total is capped at ``MAX_SKILL_LEVEL`` -- SS5's own "le copie
+    si sommano prima dei limiti" (copies sum before the limits), and
+    nothing in either source suggests item and Discovery bonuses cap
+    independently of one another.
     """
 
     if leader.is_comatose:
         return 0
     stored = leader.skills.pair_for_ability(ability)[0] if leader.skills is not None else 0
-    bonus = ability_bonus_from_discoveries(state, leader, ability)
+    bonus = ability_bonus_from_discoveries(state, leader, ability) + ability_bonus_from_items(state, leader, ability)
     return min(MAX_SKILL_LEVEL, stored + bonus)
 
 

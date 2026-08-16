@@ -22245,7 +22245,7 @@ follow-up request after the original 431-435 plan shipped.
     `test_battle_orchestrator.py` -- two new tests: Crystal alone halves
     15%/level to 7.5%/level; Crystal stacked with Observation Balloons
     reduces 5%/level to 2.5%/level. Ran again: 4630 passed (net +6).
-- **Phase 533 (current)**: the last piece of the 5 protection amulets'
+- **Phase 533**: the last piece of the 5 protection amulets'
   own mechanic (`AKGEN_reverse_engineering_report (4).md` SS8): a
   genuinely whole-college effect, separate from `holder_is_immune_to_
   spell()`'s per-spell personal immunity -- any spell of the matching
@@ -22281,6 +22281,44 @@ follow-up request after the original 431-435 plan shipped.
     have succeeded at the un-halved 75% chance, into a failure at the
     halved 37.5% chance), plus one contrast test (an unowned province
     leaves the same roll succeeding). Ran again: 4648 passed (net +18).
+- **Phase 534 (current)**: passive ability items (Treasure ordinals 0-14,
+  `models/treasure.py TREASURE_ABILITY_ITEM`) -- 15 magic items, one per
+  `Ability`, each granting a permanent +1 to its own matching skill.
+  Confirmed genuine gap (magic-item-system audit ahead of Phases 531-538):
+  `TREASURE_ABILITY_ITEM` was only ever consumed by `report/turn_
+  report.py`'s own decorative tick-mark display -- the actual skill
+  number every real consumer reads (`turn/discovery_effects.py
+  effective_skill_level()`) never included it.
+
+  New `ability_bonus_from_items(state, leader, ability) -> int`, sibling
+  to the existing `ability_bonus_from_discoveries()`: unlike Discoveries
+  (capped at 2 matching entries by the Pascal enum itself), SS5's own
+  "le copie si sommano prima dei limiti" means every held copy counts,
+  no per-source cap. Folded into `effective_skill_level()` alongside the
+  Discovery bonus, under one shared `MAX_SKILL_LEVEL` cap (not capped
+  independently per source -- no source suggests otherwise). Because
+  `effective_skill_level()` is already the single call-through point
+  every real consumer in this project uses (combat strength, Cast's own
+  success roll, Duel/Encounter combatants, Steal/Talk gates, Patrol AI,
+  Merit Point formulas, and `report/turn_report.py`'s own skill-row
+  display, which already called it too), this one change alone makes
+  item-driven bonuses reach every one of them with zero further wiring --
+  including the Advanced-Ability-unlock checks this project's `Has_SA`-
+  style consumers already read through the same function.
+  - Ran the full suite before writing new tests (non-breaking check): 2
+    failures, both expected consequences of the fix reaching real
+    consumers for the first time, not regressions -- a Kill_Enemy Berserk
+    test whose retaliator happened to hold an `ABILITY_MELEE` item purely
+    to exercise the unrelated looting mechanic (now also bumping that
+    leader's own Melee skill and flipping the seeded melee outcome; fixed
+    by swapping it for an inert item) and the CHARACTERS-report tick-mark
+    test (whose expected skill numbers were 0 because no bonus source
+    existed yet when Phase 437 wrote it; updated to the now-correct 1/2
+    matching the item counts already in the test).
+  - Added tests: `ability_bonus_from_items()` unit tests (0/1 copy, 3
+    copies stacking uncapped); `effective_skill_level()` tests for an
+    item bonus alone and for Discovery + item bonuses combined under one
+    shared cap. Ran again: 4653 passed (net +5).
 
 ## Setup
 

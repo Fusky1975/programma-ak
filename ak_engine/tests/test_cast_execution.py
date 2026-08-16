@@ -767,7 +767,11 @@ def test_kill_enemy_berserk_counterattack_caster_survives_and_kills_the_retaliat
     state = build_state()
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # 30% chance
-    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=78)
+    # Phase 534: a non-ability item -- ABILITY_MELEE would now also bump
+    # the retaliator's own effective Melee skill (ability_bonus_from_
+    # items()), perturbing this seed's own melee outcome; any inert item
+    # still exercises the same looting mechanic.
+    item = state.add_item(Treasure.AMULET_ANTI_WHITE, owner_leader_id=78)
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
     rng = random.Random(10)
 
