@@ -22319,7 +22319,7 @@ follow-up request after the original 431-435 plan shipped.
     copies stacking uncapped); `effective_skill_level()` tests for an
     item bonus alone and for Discovery + item bonuses combined under one
     shared cap. Ran again: 4653 passed (net +5).
-- **Phase 535 (current)**: magic weapons core (35-43) — the equipped-weapon
+- **Phase 535**: magic weapons core (35-43) — the equipped-weapon
   hit/damage mechanic from `AKGEN_reverse_engineering_report (4).md` §7.
   **Correction to the original plan**: the plan assumed WEAPON_1-5 (35-39)
   shared one equip slot separately from LEADERSHIP_WEAPON (40-43). Reading
@@ -22356,6 +22356,43 @@ follow-up request after the original 431-435 plan shipped.
   `Combatant` construction site) confirming weapon hit/damage bonuses reach
   the constructed `Combatant`; the Bow's own no-stacking-with-copies case.
   Ran again: 4667 passed (net +14).
+- **Phase 536 (current)**: magic weapons on-hit procs + auto-equip status
+  effects — the remaining half of `AKGEN_reverse_engineering_report
+  (4).md` §7. `turn/encounter.py` gains `Combatant.equipped_weapon`
+  (set by all 3 builders from the same `equipped_combat_weapon()` lookup
+  Phase 535 already performs — lets a swing resolver know *which*
+  weapon fired without needing `state`/`leader_id`); `weapon_defensive_
+  hit_multiplier(weapon)` composes both auto-equip defensive effects in
+  one call (Holy Sword's automatic level-4 Holy Symbol protection —
+  "senza danno", so only the hit-chance-reduction half applies, not the
+  Undead bonus-damage roll, since a builder never knows the opponent at
+  construction time — and Invisible Sword's flat `INVISIBILITY_HIT_
+  CHANCE_MULTIPLIER` halving, identical to the real spell since this
+  project's Invisibility mechanic has no skill-level scaling to begin
+  with); `weapon_grants_auto_invisibility(weapon)` seeds `Combatant.
+  is_invisible` alongside it. `apply_weapon_on_hit_effects()` rolls the
+  three per-landed-hit procs from §7.4 — Shadow Sword heals the attacker
+  half the net damage dealt (capped at `CHARACTER_HIT_POINTS`, since
+  these weapons only ever reach a real leader's `Combatant`), Flaming
+  Scimitar has a 5% chance to zero the victim's hit points outright,
+  Psychic Flail has a 50% chance to add 1 to `bonus_unanswered_attacks`
+  (the same counter Psychic Blast's own stun already feeds — "si somma
+  a Psychic Blast invece di sostituirlo") — wired into both real landed-
+  Melee-swing call sites (`resolve_one_melee_round()`, `resolve_
+  reactive_melee_swing()`); the simplified Mirror-Image/Illusory-Hero
+  phantasm duels and Hand of Death's own victim counter-swing stay out
+  of scope, the same boundary those resolvers already draw for every
+  other per-attacker bonus field. Holy Sword's vs-Undead hit/damage
+  variant remains the one documented, deliberately-unwired gap carried
+  over from Phase 535 (still no target-alignment field reaches any
+  builder). Ran before writing tests: 4667 passed (non-breaking). Added
+  tests: `weapon_defensive_hit_multiplier()`/`weapon_grants_auto_
+  invisibility()`/`apply_weapon_on_hit_effects()` unit tests (each proc,
+  the miss/no-weapon no-ops, the drain cap) plus two wiring tests
+  (`resolve_one_melee_round()` winning via the Flaming Scimitar proc,
+  `resolve_reactive_melee_swing()` applying the Shadow Sword drain); 3
+  builder tests per consumer (×3) for the two auto-equip effects and the
+  `equipped_weapon` field itself. Ran again: 4690 passed (net +23).
 
 ## Setup
 

@@ -281,6 +281,50 @@ def test_leader_combatant_reads_bow_of_the_elven_kings_archery_bonus():
     assert combatant.melee_damage_dealt_bonus == 0
 
 
+def test_leader_combatant_reads_holy_sword_auto_protection():
+    # Phase 536: AKGEN_reverse_engineering_report (4).md SS7.3 -- Holy
+    # Sword grants an automatic, damage-free level-4 Holy Symbol
+    # protection while equipped.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD)
+    state.add_leader(leader)
+    state.add_item(Treasure.WEAPON_1, owner_leader_id=501)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.defensive_hit_multiplier == pytest.approx(0.6)
+    assert combatant.is_invisible is False
+    assert combatant.equipped_weapon is Treasure.WEAPON_1
+
+
+def test_leader_combatant_reads_invisible_sword_auto_invisibility():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD)
+    state.add_leader(leader)
+    state.add_item(Treasure.WEAPON_5, owner_leader_id=501)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.is_invisible is True
+    assert combatant.defensive_hit_multiplier == pytest.approx(0.5)
+    assert combatant.equipped_weapon is Treasure.WEAPON_5
+
+
+def test_leader_combatant_equipped_weapon_field_is_none_with_no_weapon():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.equipped_weapon is None
+    assert combatant.defensive_hit_multiplier == 1.0
+    assert combatant.is_invisible is False
+
+
 def test_leader_combatant_reads_duellists_medal_and_kingdom_race_humanoid():
     # Phase 518: AdvancedAbility.MELEE_DUELLISTS_MEDAL + is_humanoid.
     state = GameState()

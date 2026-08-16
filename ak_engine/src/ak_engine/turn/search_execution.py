@@ -548,6 +548,7 @@ from ak_engine.turn.encounter import (
     can_talk_to_monster,
     control_undead_anti_holy_resist_chance,
     control_undead_failure_new_hit_points,
+    weapon_defensive_hit_multiplier,
     holy_symbol_hit_chance,
     ice_suspension_is_frozen,
     ice_suspension_slowed_bonus_rounds,
@@ -558,6 +559,7 @@ from ak_engine.turn.encounter import (
     resolve_fire_arrow_duel,
     resolve_fulfill_honored,
     resolve_gate_demon_refusal,
+    weapon_grants_auto_invisibility,
     resolve_hand_of_death_channel,
     resolve_illusory_hero_duel,
     resolve_lava_pool_escape,
@@ -727,6 +729,9 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
         has_duellists_medal_ability=AdvancedAbility.MELEE_DUELLISTS_MEDAL in leader.advanced_abilities,
         has_control_temper_ability=AdvancedAbility.MELEE_CONTROL_TEMPER in leader.advanced_abilities,
         archery_free_attack_bonus=archery_free_attack_bonus(leader.advanced_abilities),
+        defensive_hit_multiplier=weapon_defensive_hit_multiplier(weapon),
+        is_invisible=weapon_grants_auto_invisibility(weapon),
+        equipped_weapon=weapon,
     )
 
 

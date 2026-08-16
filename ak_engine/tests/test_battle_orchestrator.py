@@ -2073,6 +2073,46 @@ def test_commander_combatant_garrison_commander_has_no_weapon_bonus():
     assert combatant.archery_hit_multiplier == 1.0
 
 
+def test_commander_combatant_reads_holy_sword_auto_protection():
+    # Phase 536: AKGEN_reverse_engineering_report (4).md SS7.3.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Commander", location=FIELD))
+    state.add_item(Treasure.WEAPON_1, owner_leader_id=501)
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.defensive_hit_multiplier == pytest.approx(0.6)
+    assert combatant.is_invisible is False
+    assert combatant.equipped_weapon is Treasure.WEAPON_1
+
+
+def test_commander_combatant_reads_invisible_sword_auto_invisibility():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Commander", location=FIELD))
+    state.add_item(Treasure.WEAPON_5, owner_leader_id=501)
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.is_invisible is True
+    assert combatant.defensive_hit_multiplier == pytest.approx(0.5)
+    assert combatant.equipped_weapon is Treasure.WEAPON_5
+
+
+def test_commander_combatant_garrison_commander_has_no_equipped_weapon():
+    state = GameState()
+    commander = provincial_garrison_commander(contingent_size=3)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.equipped_weapon is None
+    assert combatant.defensive_hit_multiplier == 1.0
+    assert combatant.is_invisible is False
+
+
 def test_commander_combatant_reads_the_melee_hit_points_advanced_ability():
     # Phase 516: AdvancedAbility.MELEE_HIT_POINTS -- real coverage means
     # every per-consumer Combatant builder sets the new flag.

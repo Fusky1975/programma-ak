@@ -198,8 +198,10 @@ from ak_engine.turn.encounter import (
     archery_free_attack_bonus,
     bow_of_elven_kings_archery_damage_bonus,
     bow_of_elven_kings_archery_hit_multiplier,
+    weapon_defensive_hit_multiplier,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
+    weapon_grants_auto_invisibility,
     weapon_melee_damage_bonus,
     weapon_offensive_hit_multiplier,
 )
@@ -1024,6 +1026,9 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
     is_humanoid = False
     has_duellists_medal_ability = False
     has_control_temper_ability = False
+    defensive_hit_multiplier = 1.0
+    is_invisible = False
+    equipped_weapon = None
     if leader is not None:
         defender_office = resolve_office_holder(state, Office.DEFENDER)
         if defender_office is not None and defender_office.leader_id == leader.leader_id:
@@ -1031,6 +1036,9 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
         weapon = equipped_combat_weapon(state, leader.leader_id)
         holds_bow = holds_bow_of_elven_kings(state, leader.leader_id)
+        defensive_hit_multiplier = weapon_defensive_hit_multiplier(weapon)
+        is_invisible = weapon_grants_auto_invisibility(weapon)
+        equipped_weapon = weapon
         offensive_hit_multiplier = melee_mastery_offensive_hit_multiplier(
             leader.advanced_abilities
         ) * weapon_offensive_hit_multiplier(weapon)
@@ -1067,6 +1075,9 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         has_duellists_medal_ability=has_duellists_medal_ability,
         has_control_temper_ability=has_control_temper_ability,
         archery_free_attack_bonus=archery_bonus,
+        defensive_hit_multiplier=defensive_hit_multiplier,
+        is_invisible=is_invisible,
+        equipped_weapon=equipped_weapon,
     )
 
 

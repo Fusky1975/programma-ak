@@ -2708,6 +2708,16 @@ class Combatant:
     # ``melee_damage_dealt_bonus`` already established. Default 0 leaves
     # every pre-Phase-535 caller unaffected.
     missile_damage_dealt_bonus: int = 0
+    # Phase 536 -- which of the ``COMBAT_WEAPON_SLOT_TREASURES`` weapons
+    # (if any) this combatant has equipped, needed by ``apply_weapon_on_
+    # hit_effects()`` to know which per-swing proc (if any) to roll: the
+    # hit/damage bonus Phase 535 already baked into ``offensive_hit_
+    # multiplier``/``melee_damage_dealt_bonus`` alone can't distinguish
+    # Shadow Sword from Holy Sword. Set by each consumer's own builder
+    # from the same ``equipped_combat_weapon(...)`` lookup Phase 535
+    # already performs. ``None`` (every monster combatant, and any
+    # leader with nothing equipped) is a no-op.
+    equipped_weapon: Treasure | None = None
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -2841,6 +2851,97 @@ def bow_of_elven_kings_archery_damage_bonus(holds_bow: bool) -> int:
     """
 
     return BOW_OF_ELVEN_KINGS_ARCHERY_DAMAGE_BONUS if holds_bow else 0
+
+
+# Phase 536 -- AKGEN_reverse_engineering_report (4).md SS7.3's own
+# automatic, no-Use_MI-required equip effects. Holy Sword grants a
+# level-4 Holy Symbol protection "automatica e senza danno" ("automatic
+# and without [bonus] damage") -- so only the hit-chance-reduction half
+# of Holy Symbol applies, not the Undead/Anti-Holy bonus-damage roll,
+# which also matches this project's own constraint that a builder never
+# knows the opponent at Combatant-construction time (unlike the real
+# Holy Symbol *spell*'s own CAST-time target lookup, which does). Invisible
+# Sword grants a level-2 Invisibility -- this project's own Invisibility
+# mechanic has no skill-level scaling at all (module docstring's own Phase
+# 186 addendum), so "level 2" applies identically to the spell's own flat
+# ``INVISIBILITY_HIT_CHANCE_MULTIPLIER``.
+HOLY_SWORD_AUTO_PROTECTION_LEVEL = PERSONAL_COMBAT_SPELL_LEVEL_CAP  # 4
+
+
+def weapon_defensive_hit_multiplier(weapon: "Treasure | None") -> float:
+    """Meant to seed a builder's own ``Combatant(defensive_hit_
+    multiplier=...)`` outright -- covers *both* auto-equip defensive
+    effects (Holy Sword's level-4 Holy Symbol protection, Invisible
+    Sword's flat Invisibility halving) in one call, since the two
+    weapons share the same equip slot and can therefore never both apply
+    at once. A no-op (``1.0``) for every other weapon or ``None``.
+    """
+
+    if weapon is Treasure.WEAPON_1:
+        return holy_symbol_hit_chance(1.0, HOLY_SWORD_AUTO_PROTECTION_LEVEL)
+    if weapon is Treasure.WEAPON_5:
+        return INVISIBILITY_HIT_CHANCE_MULTIPLIER
+    return 1.0
+
+
+def weapon_grants_auto_invisibility(weapon: "Treasure | None") -> bool:
+    """Meant to seed a builder's own ``Combatant(is_invisible=...)`` --
+    paired with ``weapon_defensive_hit_multiplier()`` above (which already
+    applies ``INVISIBILITY_HIT_CHANCE_MULTIPLIER`` for this same weapon),
+    the same two fields the real Invisibility spell sets together
+    (Phase 286).
+    """
+
+    return weapon is Treasure.WEAPON_5
+
+
+# Phase 536 -- AKGEN_reverse_engineering_report (4).md SS7.4's own
+# per-landed-hit weapon procs. Only Shadow Sword/Flaming Scimitar/Psychic
+# Flail have one; the other six weapons in COMBAT_WEAPON_SLOT_TREASURES
+# (including the Bow, which never occupies this equip slot at all) do
+# not. Since all three share the single equip slot Phase 535 established,
+# at most one of these three can ever be a given attacker's own
+# ``equipped_weapon`` at once -- no RNG-ordering ambiguity between them.
+SHADOW_SWORD_LIFE_DRAIN_FRACTION = 0.5
+FLAMING_SCIMITAR_INSTAKILL_CHANCE = 0.05
+PSYCHIC_FLAIL_STUN_CHANCE = 0.50
+
+
+def apply_weapon_on_hit_effects(attacker: "Combatant", defender: "Combatant", damage_dealt: int, rng: random.Random) -> None:
+    """Applies Shadow Sword's life drain, Flaming Scimitar's instant-kill
+    chance, and Psychic Flail's stun -- see module docstring's own Phase
+    536 addendum for the quoted dossier pseudocode. Called immediately
+    after a landed Melee swing's own net damage is known, from both
+    ``resolve_one_melee_round()`` and ``resolve_reactive_melee_swing()``
+    (every real Melee-swing call site this module has outside the
+    simplified Mirror-Image/Illusory-Hero phantasm duels and Hand of
+    Death's own victim counter-swing, none of which apply any of the
+    other per-attacker ``Combatant`` bonus fields either -- the same
+    established scope boundary, not a new one). A no-op when ``attacker.
+    equipped_weapon`` is not one of the three weapons with an on-hit
+    effect, or when ``damage_dealt`` is 0 (a miss, or a hit reduced to
+    net 0 by Spiritwrack/``damage_reduction``, procs nothing).
+
+    ``CHARACTER_HIT_POINTS`` is Shadow Sword's own healing cap (dossier's
+    ``attacker.maxhp``), used unconditionally: these weapons only ever
+    reach a real leader's ``Combatant`` (``state.items_held_by()`` is
+    never consulted for a monster), so ``attacker`` always has the
+    standard 10-hit-point character maximum here, never a monster's own
+    stat-block total.
+    """
+
+    if damage_dealt <= 0:
+        return
+    weapon = attacker.equipped_weapon
+    if weapon is Treasure.WEAPON_2:  # Shadow Sword
+        drain = int(damage_dealt * SHADOW_SWORD_LIFE_DRAIN_FRACTION)
+        attacker.hit_points = min(CHARACTER_HIT_POINTS, attacker.hit_points + drain)
+    elif weapon is Treasure.WEAPON_3:  # Flaming Scimitar
+        if rng.random() < FLAMING_SCIMITAR_INSTAKILL_CHANCE:
+            defender.hit_points = 0
+    elif weapon is Treasure.WEAPON_4:  # Psychic Flail
+        if rng.random() < PSYCHIC_FLAIL_STUN_CHANCE:
+            attacker.bonus_unanswered_attacks += 1
 
 
 def _melee_landed_damage(raw_damage: int, attacker: "Combatant", defender: "Combatant") -> int:
@@ -3148,6 +3249,7 @@ def resolve_one_melee_round(
         )
         damage = _melee_landed_damage(raw_damage, attacker, defender)
         defender.hit_points -= damage
+        apply_weapon_on_hit_effects(attacker, defender, damage, rng)
         attacker_side = "a" if attacker is a else "b"
         swings.append(MeleeSwing(attacker=attacker_side, hit=raw_damage > 0, damage=damage))
         if attacker is a:
@@ -3197,6 +3299,7 @@ def resolve_reactive_melee_swing(attacker: Combatant, defender: Combatant, rng: 
     )
     damage = _melee_landed_damage(raw_damage, attacker, defender)
     defender.hit_points -= damage
+    apply_weapon_on_hit_effects(attacker, defender, damage, rng)
     return ReactiveMeleeSwingResult(hit=raw_damage > 0, damage=damage)
 
 

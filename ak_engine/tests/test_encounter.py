@@ -107,6 +107,13 @@ from ak_engine.turn.encounter import (
     GATE_DEMON_LOSS_CASTER_RESUMES_FIGHT_AT_CURRENT_RANGE,
     GATE_DEMON_NULLIFIED_BY_SIMULTANEOUS_MIRROR_IMAGE_OR_GATE_DEMON,
     resolve_gate_demon_refusal,
+    FLAMING_SCIMITAR_INSTAKILL_CHANCE,
+    HOLY_SWORD_AUTO_PROTECTION_LEVEL,
+    PSYCHIC_FLAIL_STUN_CHANCE,
+    SHADOW_SWORD_LIFE_DRAIN_FRACTION,
+    apply_weapon_on_hit_effects,
+    weapon_defensive_hit_multiplier,
+    weapon_grants_auto_invisibility,
     LAVA_POOL_ESCAPE_CHANCE,
     LAVA_POOL_KILLS_INSTANTLY,
     lava_pool_escape_chance,
@@ -3125,3 +3132,145 @@ def test_resolve_hand_of_death_channel_damage_reduction_applies_to_both_the_sque
     # also floored to 0 by the caster's own damage_reduction.
     assert result.winner is None
     assert caster.hit_points == 10
+
+
+# -- Phase 536: magic weapon auto-equip effects + on-hit procs -----------
+# AKGEN_reverse_engineering_report (4).md SS7.3 (Holy Sword protection /
+# Invisible Sword auto-invisibility) and SS7.4 (Shadow Sword drain /
+# Flaming Scimitar instakill / Psychic Flail stun).
+
+
+def test_weapon_defensive_hit_multiplier_is_a_no_op_with_no_weapon():
+    assert weapon_defensive_hit_multiplier(None) == 1.0
+
+
+def test_weapon_defensive_hit_multiplier_is_a_no_op_for_other_weapons():
+    assert weapon_defensive_hit_multiplier(Treasure.WEAPON_2) == 1.0
+
+
+def test_weapon_defensive_hit_multiplier_applies_level_4_holy_symbol_protection():
+    # 10%/level * 4 (HOLY_SWORD_AUTO_PROTECTION_LEVEL) = 40% reduction,
+    # "senza danno" -- the non-Undead rate only (see the function's own
+    # docstring for why the Undead/Anti-Holy variant can't apply here).
+    assert HOLY_SWORD_AUTO_PROTECTION_LEVEL == PERSONAL_COMBAT_SPELL_LEVEL_CAP
+    assert weapon_defensive_hit_multiplier(Treasure.WEAPON_1) == pytest.approx(0.6)
+
+
+def test_weapon_defensive_hit_multiplier_applies_invisible_sword_halving():
+    assert weapon_defensive_hit_multiplier(Treasure.WEAPON_5) == pytest.approx(INVISIBILITY_HIT_CHANCE_MULTIPLIER)
+
+
+def test_weapon_grants_auto_invisibility_only_for_the_invisible_sword():
+    assert weapon_grants_auto_invisibility(Treasure.WEAPON_5) is True
+    assert weapon_grants_auto_invisibility(Treasure.WEAPON_1) is False
+    assert weapon_grants_auto_invisibility(None) is False
+
+
+def test_apply_weapon_on_hit_effects_no_op_on_a_miss_regardless_of_weapon():
+    attacker = Combatant("A", equipped_weapon=Treasure.WEAPON_3)
+    defender = Combatant("B")
+    rng = ScriptedRandom([])  # any .random() call here raises IndexError
+
+    apply_weapon_on_hit_effects(attacker, defender, 0, rng)
+
+    assert defender.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_apply_weapon_on_hit_effects_no_op_with_no_weapon_equipped():
+    attacker = Combatant("A")
+    defender = Combatant("B")
+    rng = ScriptedRandom([])
+
+    apply_weapon_on_hit_effects(attacker, defender, 5, rng)
+
+    assert defender.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_apply_weapon_on_hit_effects_shadow_sword_drains_half_the_landed_damage():
+    attacker = Combatant("A", hit_points=5, equipped_weapon=Treasure.WEAPON_2)
+    defender = Combatant("B")
+    rng = ScriptedRandom([])
+
+    apply_weapon_on_hit_effects(attacker, defender, 4, rng)
+
+    assert SHADOW_SWORD_LIFE_DRAIN_FRACTION == 0.5
+    assert attacker.hit_points == 7  # 5 + (4 // 2)
+
+
+def test_apply_weapon_on_hit_effects_shadow_sword_drain_is_capped_at_character_hit_points():
+    attacker = Combatant("A", hit_points=9, equipped_weapon=Treasure.WEAPON_2)
+    defender = Combatant("B")
+    rng = ScriptedRandom([])
+
+    apply_weapon_on_hit_effects(attacker, defender, 6, rng)
+
+    assert attacker.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_apply_weapon_on_hit_effects_flaming_scimitar_instakills_below_the_chance_threshold():
+    attacker = Combatant("A", equipped_weapon=Treasure.WEAPON_3)
+    defender = Combatant("B")
+    rng = ScriptedRandom([0.01])
+
+    assert FLAMING_SCIMITAR_INSTAKILL_CHANCE == 0.05
+    apply_weapon_on_hit_effects(attacker, defender, 3, rng)
+
+    assert defender.hit_points == 0
+
+
+def test_apply_weapon_on_hit_effects_flaming_scimitar_does_not_instakill_above_the_chance_threshold():
+    attacker = Combatant("A", equipped_weapon=Treasure.WEAPON_3)
+    defender = Combatant("B")
+    rng = ScriptedRandom([0.5])
+
+    apply_weapon_on_hit_effects(attacker, defender, 3, rng)
+
+    assert defender.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_apply_weapon_on_hit_effects_psychic_flail_stuns_below_the_chance_threshold():
+    attacker = Combatant("A", equipped_weapon=Treasure.WEAPON_4)
+    defender = Combatant("B")
+    rng = ScriptedRandom([0.49])
+
+    assert PSYCHIC_FLAIL_STUN_CHANCE == 0.50
+    apply_weapon_on_hit_effects(attacker, defender, 3, rng)
+
+    # "si somma a Psychic Blast invece di sostituirlo" -- same
+    # bonus_unanswered_attacks counter Psychic Blast's own stun feeds.
+    assert attacker.bonus_unanswered_attacks == 1
+
+
+def test_apply_weapon_on_hit_effects_psychic_flail_does_not_stun_above_the_chance_threshold():
+    attacker = Combatant("A", equipped_weapon=Treasure.WEAPON_4)
+    defender = Combatant("B")
+    rng = ScriptedRandom([0.5])
+
+    apply_weapon_on_hit_effects(attacker, defender, 3, rng)
+
+    assert attacker.bonus_unanswered_attacks == 0
+
+
+def test_resolve_one_melee_round_flaming_scimitar_proc_wins_the_round_via_instakill():
+    attacker = Combatant("A", melee_skill=1, equipped_weapon=Treasure.WEAPON_3)
+    defender = Combatant("B", melee_skill=0)
+    # A's hit-chance roll, A's damage roll, then the Flaming Scimitar
+    # instakill roll (below the 5% threshold).
+    rng = ScriptedRandom([0.1, 0.5, 0.01])
+
+    outcome = resolve_one_melee_round(attacker, defender, rng, round_number=1)
+
+    assert outcome.result is not None
+    assert outcome.result.winner == "a"
+    assert defender.hit_points == 0
+
+
+def test_resolve_reactive_melee_swing_shadow_sword_proc_heals_the_attacker():
+    attacker = Combatant("A", hit_points=5, melee_skill=1, equipped_weapon=Treasure.WEAPON_2)
+    defender = Combatant("B")
+    rng = ScriptedRandom([0.1, 0.5])  # hit roll, then damage roll
+
+    result = resolve_reactive_melee_swing(attacker, defender, rng)
+
+    assert result.hit is True
+    assert attacker.hit_points == 5 + (result.damage // 2)
