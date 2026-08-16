@@ -8,6 +8,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
@@ -16,6 +17,8 @@ from ak_engine.models.treasure import Treasure
 from ak_engine.turn.discovery_effects import (
     ability_bonus_from_discoveries,
     ability_bonus_from_items,
+    arcane_valor_artifact_bonus,
+    arcane_valor_hit_points_bonus,
     effective_skill_level,
     equipped_combat_weapon,
     holder_is_immune_to_spell,
@@ -442,3 +445,170 @@ def test_holds_monster_command_item_for_false_when_holding_the_wrong_species_ite
     state.add_item(Treasure.MONSTER_AID_EAGLE, owner_leader_id=1)
 
     assert holds_monster_command_item_for(state, 1, Monster.R_DRAGON) is False
+
+
+# -- Phase 538: Arcane's Valor artifacts (93-98), gated behind GameType.ARCANES --
+# AKGEN_reverse_engineering_report (4).md SS11.
+
+
+def make_arcanes_state() -> GameState:
+    """A King (leader 1) and a Hero (leader 2) of the same Kingdom, with
+    ``game_type=GameType.ARCANES`` -- the King-combo tests need two
+    distinct leaders to prove the combo checks the *King's own*
+    possession, not "anyone in the Kingdom."
+    """
+
+    state = GameState(game_type=GameType.ARCANES)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HOME))
+    state.add_leader(LeaderState(1, 1, "The King", HOME, is_king=True))
+    state.add_leader(LeaderState(2, 1, "A Hero", HOME))
+    return state
+
+
+def test_arcane_valor_artifact_bonus_zero_when_game_type_is_not_arcanes():
+    # The gating itself -- most important test in this phase, per the
+    # user's own explicit instruction that this variant isn't played.
+    state = make_state()
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[1], Ability.TACTICAL) == 0
+
+
+def test_arcane_valor_artifact_bonus_crown_grants_tactical_and_march_per_copy():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=2)
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=2)
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.TACTICAL) == 2
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.MARCH) == 2
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.NAVAL) == 0
+
+
+def test_arcane_valor_artifact_bonus_amulet_grants_white_elemental_psychic():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=2)
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.WHITE) == 1
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.ELEMENTAL) == 1
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.PSYCHIC) == 1
+
+
+def test_arcane_valor_artifact_bonus_scepter_grants_sage():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=2)
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.SAGE) == 1
+
+
+def test_arcane_valor_artifact_bonus_map_grants_naval():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_MAP_MARAUDERS, owner_leader_id=2)
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.NAVAL) == 1
+
+
+def test_arcane_valor_artifact_bonus_fang_and_hammer_both_grant_melee():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_FANG_VAMPIRE, owner_leader_id=2)
+    state.add_item(Treasure.NAMED_UNIQUE_HAMMER_POWER, owner_leader_id=2)
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.MELEE) == 2
+
+
+def test_arcane_valor_artifact_bonus_fang_grants_necromancy_only_if_undead():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_FANG_VAMPIRE, owner_leader_id=2)
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.NECROMANCY) == 0
+
+    state.leaders[2].alignment = Alignment.UNDEAD
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.NECROMANCY) == 1
+
+
+def test_arcane_valor_artifact_bonus_hammer_grants_druid_only_if_dwarf():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_HAMMER_POWER, owner_leader_id=2)
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.DRUID) == 0
+
+    state.leaders[2].race = Race.DWARVEN
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.DRUID) == 1
+
+
+def test_arcane_valor_artifact_bonus_king_combo_crown_plus_amulet_grants_tactical_to_kingdom():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=1)
+
+    # The Hero (leader 2) holds neither artifact personally, but the
+    # King's own combo still grants the Kingdom-wide point.
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.TACTICAL) == 1
+
+
+def test_arcane_valor_artifact_bonus_king_combo_crown_plus_scepter_grants_illusion():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.ILLUSION) == 1
+
+
+def test_arcane_valor_artifact_bonus_king_combo_amulet_plus_scepter_grants_melee():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.MELEE) == 1
+
+
+def test_arcane_valor_artifact_bonus_king_combo_requires_the_kings_own_possession():
+    # Two different Heroes each holding one half doesn't trigger the
+    # combo -- only the King's own personal possession of both counts.
+    # Leader 2 still gets +1 Tactical for personally holding the Crown,
+    # but not the extra +1 Kingdom-wide combo point.
+    state = make_arcanes_state()
+    state.add_leader(LeaderState(3, 1, "Another Hero", HOME))
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=2)
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=3)
+
+    assert arcane_valor_artifact_bonus(state, state.leaders[2], Ability.TACTICAL) == 1
+
+
+def test_arcane_valor_hit_points_bonus_zero_when_game_type_is_not_arcanes():
+    state = make_state()
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    assert arcane_valor_hit_points_bonus(state, state.leaders[1]) == 0
+
+
+def test_arcane_valor_hit_points_bonus_personal_scepter_grants_five():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=2)
+
+    assert arcane_valor_hit_points_bonus(state, state.leaders[2]) == 5
+
+
+def test_arcane_valor_hit_points_bonus_kings_scepter_grants_two_to_the_kingdom():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    assert arcane_valor_hit_points_bonus(state, state.leaders[2]) == 2
+
+
+def test_arcane_valor_hit_points_bonus_scepter_holding_king_gets_both_bonuses():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    assert arcane_valor_hit_points_bonus(state, state.leaders[1]) == 7
+
+
+def test_arcane_valor_hit_points_bonus_amulet_alone_grants_nothing():
+    # Bug-compatible with the compiled runtime (SS11.2): the Kingdom-wide
+    # check never consults the Amulet, unlike TREASURE.X2's own flavor
+    # text.
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=1)
+
+    assert arcane_valor_hit_points_bonus(state, state.leaders[2]) == 0

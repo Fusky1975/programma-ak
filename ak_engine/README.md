@@ -22393,7 +22393,7 @@ follow-up request after the original 431-435 plan shipped.
   `resolve_reactive_melee_swing()` applying the Shadow Sword drain); 3
   builder tests per consumer (×3) for the two auto-equip effects and the
   `equipped_weapon` field itself. Ran again: 4690 passed (net +23).
-- **Phase 537 (current)**: racial-command items (49-51) — the "TA-lk
+- **Phase 537**: racial-command items (49-51) — the "TA-lk
   skips the normal social roll" half of `AKGEN_reverse_engineering_
   report (4).md` §9 (the battle-aid + defection half was already wired
   in `battle_orchestrator.py _apply_monster_summoning_aid()`, Phase
@@ -22420,6 +22420,52 @@ follow-up request after the original 431-435 plan shipped.
   roll and loots the feature; item held but guardian doesn't match still
   uses the normal table; no item against a Dragon still uses the normal
   table). Ran again: 4699 passed (net +9).
+- **Phase 538 (current, closes the 8-phase magic-item rework)**: Arcane's
+  Valor artifacts (93-98), `AKGEN_reverse_engineering_report (4).md`
+  §11 — gated behind `GameType.ARCANES` per the user's own explicit
+  instruction that this variant isn't currently played, so nothing
+  changes for any existing game/test. `GameType` (previously defined
+  inline in `parser/gw_world.py`) moves to a new `models/game_type.py`
+  so `models/game_state.py` can read it without `models/` importing
+  from `parser/` — this project's own established layering, parser
+  depends on models and never the reverse; `parser/gw_world.py` re-
+  imports it from the new location, so every existing `from ak_engine.
+  parser.gw_world import GameType` call site keeps working unchanged.
+  `GameState.game_type: GameType | None = None` is a real field now,
+  settable only via direct construction for now (no header-to-GameState
+  bridge point exists for it yet — a real, narrower scope than a full
+  bridge, not a guessed pipeline). `turn/discovery_effects.py` adds
+  `arcane_valor_artifact_bonus(state, leader, ability)` implementing
+  §11.1's own exact pseudocode (per-copy Tactical/Forced March from the
+  Crown, White/Elemental/Psychic from the Amulet, Sage from the Scepter,
+  Naval from the Map, Melee from both Fang and Hammer combined,
+  Necromancy from Fang only if the holder is Undead, Druid from Hammer
+  only if the holder is Dwarf, plus the 3 King-only combo bonuses —
+  Crown+Amulet→+1 Tactical, Crown+Scepter→+1 Illusionist, Amulet+
+  Scepter→+1 Melee — gated on the *King's own personal* possession of
+  both, granted to every leader of that King's Kingdom), folded into
+  `effective_skill_level()` alongside the existing Discovery/item
+  bonuses. `arcane_valor_hit_points_bonus(state, leader)` implements
+  §11.2's own HP bonus (+5 personal for holding the Scepter, +2 Kingdom-
+  wide if the King holds it) — **bug-compatible with the compiled
+  runtime, not `TREASURE.X2`'s own flavor text**: the dossier confirms
+  the Kingdom-wide check never consults the Amulet despite the manual's
+  own "Amulet+Scepter" combo description, replicated here as Scepter-
+  only, the same "runtime over flavor text" convention this project
+  already applies elsewhere. Wired into all 3 `Combatant` builders'
+  `hit_points=` construction. §11.3's own separate "Arcane's Valor
+  unification" report-narrative mechanic (`REPORTS.PAS`, an Emperor-
+  report concern unrelated to personal skill/HP bonuses) stays out of
+  scope, not sourced as needed here. Ran before writing tests: 4699
+  passed (non-breaking). Added tests: `arcane_valor_artifact_bonus()`
+  unit tests (every per-item bonus, both race/alignment gates, all 3
+  King combos, the "two Heroes each holding one half doesn't combo"
+  isolation case); `arcane_valor_hit_points_bonus()` unit tests
+  (personal/Kingdom-wide/both-stacking-for-the-King cases, the Amulet-
+  alone-grants-nothing bug-compatibility case); the gating itself tested
+  first for both functions, per this phase's own most-important-test
+  note. 3 builder tests per consumer (×3) confirming the HP bonus
+  reaches the constructed `Combatant`. Ran again: 4720 passed (net +21).
 
 ## Setup
 

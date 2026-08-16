@@ -10,6 +10,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
@@ -219,6 +220,19 @@ def test_leader_combatant_reads_invisible_sword_auto_invisibility():
     assert combatant.is_invisible is True
     assert combatant.defensive_hit_multiplier == pytest.approx(0.5)
     assert combatant.equipped_weapon is Treasure.WEAPON_5
+
+
+def test_leader_combatant_reads_arcane_valor_scepter_hit_points_bonus():
+    # Phase 538: AKGEN_reverse_engineering_report (4).md SS11.2.
+    state = GameState(game_type=GameType.ARCANES)
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION)
+    state.add_leader(leader)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=LEADER_ID)
+
+    combatant = _leader_combatant(state, leader)
+
+    assert combatant.hit_points == CHARACTER_HIT_POINTS + 5
 
 
 def test_leader_combatant_reads_duellists_medal_and_kingdom_race_humanoid():

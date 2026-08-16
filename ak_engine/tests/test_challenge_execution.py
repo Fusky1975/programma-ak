@@ -11,6 +11,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
+from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster
@@ -323,6 +324,33 @@ def test_leader_combatant_equipped_weapon_field_is_none_with_no_weapon():
     assert combatant.equipped_weapon is None
     assert combatant.defensive_hit_multiplier == 1.0
     assert combatant.is_invisible is False
+
+
+def test_leader_combatant_reads_arcane_valor_scepter_hit_points_bonus():
+    # Phase 538: AKGEN_reverse_engineering_report (4).md SS11.2 -- +5
+    # combat hit points for personally holding the Scepter of Life,
+    # active only under GameType.ARCANES.
+    state = GameState(game_type=GameType.ARCANES)
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD)
+    state.add_leader(leader)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=501)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.hit_points == CHARACTER_HIT_POINTS + 5
+
+
+def test_leader_combatant_arcane_valor_bonus_is_zero_outside_arcanes():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD)
+    state.add_leader(leader)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=501)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.hit_points == CHARACTER_HIT_POINTS
 
 
 def test_leader_combatant_reads_duellists_medal_and_kingdom_race_humanoid():

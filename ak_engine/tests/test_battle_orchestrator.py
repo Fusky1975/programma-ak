@@ -12,6 +12,7 @@ from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState, RaceTitleTally
+from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
@@ -2100,6 +2101,19 @@ def test_commander_combatant_reads_invisible_sword_auto_invisibility():
     assert combatant.is_invisible is True
     assert combatant.defensive_hit_multiplier == pytest.approx(0.5)
     assert combatant.equipped_weapon is Treasure.WEAPON_5
+
+
+def test_commander_combatant_reads_arcane_valor_scepter_hit_points_bonus():
+    # Phase 538: AKGEN_reverse_engineering_report (4).md SS11.2.
+    state = GameState(game_type=GameType.ARCANES)
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Commander", location=FIELD))
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=501)
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.hit_points == CHARACTER_HIT_POINTS + 5
 
 
 def test_commander_combatant_garrison_commander_has_no_equipped_weapon():

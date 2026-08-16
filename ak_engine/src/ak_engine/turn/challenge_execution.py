@@ -244,6 +244,7 @@ from ak_engine.models.temper import raise_temper_one_level
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
 from ak_engine.turn.discovery_effects import (
+    arcane_valor_hit_points_bonus,
     effective_skill_level,
     equipped_combat_weapon,
     holder_is_immune_to_spell,
@@ -409,7 +410,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
 
     return Combatant(
         name=leader.name,
-        hit_points=CHARACTER_HIT_POINTS,
+        hit_points=CHARACTER_HIT_POINTS + arcane_valor_hit_points_bonus(state, leader),
         melee_skill=melee_skill,
         archery_skill=archery_skill,
         neutral_duelist_bonus=neutral_bonus,

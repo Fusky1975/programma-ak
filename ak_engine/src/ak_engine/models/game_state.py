@@ -280,6 +280,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.feature import Feature
+from ak_engine.models.game_type import GameType
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
@@ -1026,6 +1027,19 @@ class GameState:
     # bridge for yet), matching this field's own "nothing derives a
     # real value from parsed data" status, not a sourced default.
     game_number: int = 1
+    # Phase 538 -- the world header's own `gametyp` (`models/game_type.py
+    # GameType`), needed to gate the Arcane's Valor artifacts (93-98,
+    # AKGEN_reverse_engineering_report (4).md SS11) behind `GameType.
+    # ARCANES`, per the user's own explicit instruction that this variant
+    # isn't currently played. `None` for every existing game/test --
+    # `turn/kingdom_bridge.py` (or any other header-consuming bridge
+    # point) is the natural place to set this from a real `GWHeader.
+    # game_type` once one exists for this specific field; none does yet
+    # (this project's own header-to-GameState bridge only ever carried
+    # leader/kingdom data, never header-level fields), so this stays
+    # settable only via direct construction for now -- a real, narrower
+    # scope than a full bridge, not a guessed pipeline.
+    game_type: GameType | None = None
     kingdoms: dict[int, KingdomState] = field(default_factory=dict)
     provinces: dict[HexCoord, ProvinceState] = field(default_factory=dict)
     armies: dict[int, ArmyState] = field(default_factory=dict)

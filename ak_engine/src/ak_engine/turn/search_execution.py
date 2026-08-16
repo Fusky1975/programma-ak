@@ -512,6 +512,7 @@ from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.discovery_effects import (
+    arcane_valor_hit_points_bonus,
     effective_skill_level,
     equipped_combat_weapon,
     holder_is_immune_to_spell,
@@ -712,7 +713,7 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
     holds_bow = holds_bow_of_elven_kings(state, leader.leader_id)
     return Combatant(
         name=leader.name,
-        hit_points=CHARACTER_HIT_POINTS,
+        hit_points=CHARACTER_HIT_POINTS + arcane_valor_hit_points_bonus(state, leader),
         melee_skill=melee_skill,
         archery_skill=archery_skill,
         temper=leader.temper,

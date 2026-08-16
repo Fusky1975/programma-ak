@@ -50,11 +50,14 @@ bonuses -- left as the raw stored value rather than guessed).
 
 from __future__ import annotations
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import DISCOVERY_ABILITY_BONUS
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.game_type import GameType
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster
+from ak_engine.models.race import Race
 from ak_engine.models.treasure import (
     AMULET_BLOCKED_SPELLS,
     ANTI_MAGIC_AMULET_BY_ABILITY,
@@ -118,12 +121,20 @@ def effective_skill_level(state: GameState, leader: LeaderState, ability: Abilit
     si sommano prima dei limiti" (copies sum before the limits), and
     nothing in either source suggests item and Discovery bonuses cap
     independently of one another.
+
+    Phase 538: ``arcane_valor_artifact_bonus()`` folds in the same way --
+    0 for every game outside ``GameType.ARCANES``, so this is a no-op for
+    every existing game/test.
     """
 
     if leader.is_comatose:
         return 0
     stored = leader.skills.pair_for_ability(ability)[0] if leader.skills is not None else 0
-    bonus = ability_bonus_from_discoveries(state, leader, ability) + ability_bonus_from_items(state, leader, ability)
+    bonus = (
+        ability_bonus_from_discoveries(state, leader, ability)
+        + ability_bonus_from_items(state, leader, ability)
+        + arcane_valor_artifact_bonus(state, leader, ability)
+    )
     return min(MAX_SKILL_LEVEL, stored + bonus)
 
 
@@ -259,3 +270,107 @@ def holds_monster_command_item_for(state: GameState, leader_id: int, guardian_sp
     if treasure is None:
         return False
     return any(item.treasure is treasure for item in state.items_held_by(leader_id))
+
+
+def _king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | None:
+    for candidate in state.leaders.values():
+        if candidate.kingdom_id == kingdom_id and candidate.is_king:
+            return candidate
+    return None
+
+
+def _item_count(state: GameState, leader_id: int, treasure: Treasure) -> int:
+    return sum(1 for item in state.items_held_by(leader_id) if item.treasure is treasure)
+
+
+def arcane_valor_artifact_bonus(state: GameState, leader: LeaderState, ability: Ability) -> int:
+    """Phase 538: AKGEN_reverse_engineering_report (4).md SS11.1's own
+    exact pseudocode for the 6 Arcane's Valor artifacts (93-98) -- active
+    only when ``state.game_type is GameType.ARCANES``. Every other game
+    (``state.game_type`` is ``None`` for every existing game/test) returns
+    0 unconditionally, per the user's own explicit instruction that this
+    variant isn't currently played.
+
+    Each artifact grants its own per-copy bonus to specific abilities
+    (``NT_Owned`` -- copies stack, same convention ``ability_bonus_from_
+    items()`` already established); Fang of the Vampire Lord (97) and
+    Hammer of Power (98) both feed ``Ability.MELEE`` unconditionally, plus
+    their own race/alignment-gated second ability (Necromancy for an
+    Undead holder, Druid for a Dwarf holder). Three King-only combo
+    bonuses require the *King's own personal* possession of both named
+    artifacts (not merely two Heroes of that King each holding one) --
+    every leader whose own King matches gets the point, per the source's
+    own "tutti i personaggi il cui LKing e' quel Re ricevono il bonus."
+    """
+
+    if state.game_type is not GameType.ARCANES:
+        return 0
+
+    n = 0
+    if ability in (Ability.TACTICAL, Ability.MARCH):
+        n += _item_count(state, leader.leader_id, Treasure.NAMED_UNIQUE_CROWN_ROHAN)
+    elif ability in (Ability.WHITE, Ability.ELEMENTAL, Ability.PSYCHIC):
+        n += _item_count(state, leader.leader_id, Treasure.NAMED_UNIQUE_AMULET_POWER)
+    elif ability is Ability.SAGE:
+        n += _item_count(state, leader.leader_id, Treasure.NAMED_UNIQUE_SCEPTER_LIFE)
+    elif ability is Ability.NAVAL:
+        n += _item_count(state, leader.leader_id, Treasure.NAMED_UNIQUE_MAP_MARAUDERS)
+    elif ability is Ability.MELEE:
+        n += _item_count(state, leader.leader_id, Treasure.NAMED_UNIQUE_FANG_VAMPIRE)
+        n += _item_count(state, leader.leader_id, Treasure.NAMED_UNIQUE_HAMMER_POWER)
+    elif ability is Ability.DRUID:
+        effective_race = leader.race
+        if effective_race is None and leader.kingdom_id is not None:
+            kingdom = state.kingdoms.get(leader.kingdom_id)
+            effective_race = kingdom.race if kingdom is not None else None
+        if effective_race is Race.DWARVEN:
+            n += _item_count(state, leader.leader_id, Treasure.NAMED_UNIQUE_HAMMER_POWER)
+    elif ability is Ability.NECROMANCY:
+        if leader.alignment is Alignment.UNDEAD:
+            n += _item_count(state, leader.leader_id, Treasure.NAMED_UNIQUE_FANG_VAMPIRE)
+
+    king = _king_of_kingdom(state, leader.kingdom_id) if leader.kingdom_id is not None else None
+    if king is not None:
+        king_holds_crown = _item_count(state, king.leader_id, Treasure.NAMED_UNIQUE_CROWN_ROHAN) > 0
+        king_holds_amulet = _item_count(state, king.leader_id, Treasure.NAMED_UNIQUE_AMULET_POWER) > 0
+        king_holds_scepter = _item_count(state, king.leader_id, Treasure.NAMED_UNIQUE_SCEPTER_LIFE) > 0
+        if ability is Ability.TACTICAL and king_holds_crown and king_holds_amulet:
+            n += 1
+        elif ability is Ability.ILLUSION and king_holds_crown and king_holds_scepter:
+            n += 1
+        elif ability is Ability.MELEE and king_holds_amulet and king_holds_scepter:
+            n += 1
+
+    return n
+
+
+ARCANE_VALOR_SCEPTER_PERSONAL_HIT_POINTS_BONUS = 5
+ARCANE_VALOR_SCEPTER_KINGDOM_HIT_POINTS_BONUS = 2
+
+
+def arcane_valor_hit_points_bonus(state: GameState, leader: LeaderState) -> int:
+    """Phase 538: AKGEN_reverse_engineering_report (4).md SS11.2 -- +5
+    combat hit points for personally holding the Scepter of Life (95),
+    +2 more for the Kingdom whose King personally holds it (both stack
+    if the King himself holds it: +5 for himself personally, +2 for
+    every Kingdom member including himself). Active only under
+    ``GameType.ARCANES`` -- 0 for every existing game/test.
+
+    **Bug-compatible with the compiled runtime, not ``TREASURE.X2``'s own
+    flavor text**: the dossier confirms the compiled Kingdom-wide check
+    never consults the Amulet of Power (94) despite the manual's own
+    "Amulet+Scepter" combo description -- replicated here as the King's
+    own Scepter possession alone, the same "runtime over flavor text"
+    convention this project already applies elsewhere.
+    """
+
+    if state.game_type is not GameType.ARCANES:
+        return 0
+    n = 0
+    if _item_count(state, leader.leader_id, Treasure.NAMED_UNIQUE_SCEPTER_LIFE) > 0:
+        n += ARCANE_VALOR_SCEPTER_PERSONAL_HIT_POINTS_BONUS
+    if leader.kingdom_id is not None:
+        king = _king_of_kingdom(state, leader.kingdom_id)
+        if king is not None and _item_count(state, king.leader_id, Treasure.NAMED_UNIQUE_SCEPTER_LIFE) > 0:
+            n += ARCANE_VALOR_SCEPTER_KINGDOM_HIT_POINTS_BONUS
+    return n

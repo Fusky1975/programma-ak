@@ -1217,6 +1217,7 @@ from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import FeatureType
+from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
@@ -2369,22 +2370,6 @@ def parse_gw_treasures_only(path: Path) -> list[GWTreasureOnlyRecord]:
         records.append(GWTreasureOnlyRecord(treasure=Treasure(treasure_ordinal), owner_raw=owner_raw, charges=charges))
 
     return records
-
-
-class GameType(Enum):
-    """The world header's own `gametyp` enum (header field 22) --
-    confirmed directly from a static reverse engineering of AKGEN.EXE
-    (see the module docstring's Phase 342 addendum), not inferred from
-    letters. Every one of the real `GW3__T1`-`GW3__T12` files reads
-    `NORMAL`.
-    """
-
-    TRIAL = 0
-    NORMAL = 1
-    EUROPE = 2
-    EARTH = 3
-    VALHALLA = 4
-    ARCANES = 10
 
 
 @dataclass(slots=True)

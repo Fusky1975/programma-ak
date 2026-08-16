@@ -189,7 +189,12 @@ from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit, quality_one_level_down
 from ak_engine.turn.challenge_execution import resolve_challenge_combat
 from ak_engine.turn.combat import Quality, direct_destruction_probability
-from ak_engine.turn.discovery_effects import effective_skill_level, equipped_combat_weapon, holds_bow_of_elven_kings
+from ak_engine.turn.discovery_effects import (
+    arcane_valor_hit_points_bonus,
+    effective_skill_level,
+    equipped_combat_weapon,
+    holds_bow_of_elven_kings,
+)
 from ak_engine.turn.druidic_monster_aid import find_druidic_monster_assistance
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
 from ak_engine.turn.encounter import (
@@ -1029,7 +1034,9 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
     defensive_hit_multiplier = 1.0
     is_invisible = False
     equipped_weapon = None
+    hit_points_bonus = 0
     if leader is not None:
+        hit_points_bonus = arcane_valor_hit_points_bonus(state, leader)
         defender_office = resolve_office_holder(state, Office.DEFENDER)
         if defender_office is not None and defender_office.leader_id == leader.leader_id:
             damage_reduction = 1
@@ -1060,7 +1067,7 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
 
     return Combatant(
         name=f"leader {commander.leader_id}",
-        hit_points=CHARACTER_HIT_POINTS,
+        hit_points=CHARACTER_HIT_POINTS + hit_points_bonus,
         melee_skill=melee_skill,
         archery_skill=archery_skill,
         neutral_duelist_bonus=neutral_bonus,
