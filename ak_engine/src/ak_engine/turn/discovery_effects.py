@@ -54,7 +54,13 @@ from ak_engine.models.discovery import DISCOVERY_ABILITY_BONUS
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord
-from ak_engine.models.treasure import AMULET_BLOCKED_SPELLS, ANTI_MAGIC_AMULET_BY_ABILITY, TREASURE_ABILITY_ITEM
+from ak_engine.models.treasure import (
+    AMULET_BLOCKED_SPELLS,
+    ANTI_MAGIC_AMULET_BY_ABILITY,
+    COMBAT_WEAPON_SLOT_TREASURES,
+    TREASURE_ABILITY_ITEM,
+    Treasure,
+)
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL
 
 
@@ -195,3 +201,40 @@ def province_halves_spell_chance(state: GameState, province_coord: HexCoord, abi
         and any(item.treasure is amulet for item in state.items_held_by(leader.leader_id))
         for leader in state.leaders.values()
     )
+
+
+def equipped_combat_weapon(state: GameState, leader_id: int) -> Treasure | None:
+    """Phase 535: which of the 8 mutually-exclusive "equipped weapon" slot
+    items (``models/treasure.py COMBAT_WEAPON_SLOT_TREASURES``)
+    ``leader_id`` is currently wielding, or ``None`` if they hold none.
+
+    This project has no ``Use_MI``/order-level "equip this weapon"
+    concept (AKGEN_reverse_engineering_report (4).md SS7.3 confirms the
+    real engine applies/removes the equipped state automatically on
+    possession change, event ``_LWield``, not a separate command) and no
+    persistent "currently equipped item" field anywhere -- so a leader
+    holding more than one of these 8 weapons at once is an unmodeled edge
+    case the dossier gives no tie-break for. The lowest-``item_id`` held
+    instance wins, the same tie-break convention this project's own
+    Enhanced Charm item selection already uses -- a documented
+    simplification, not a guess at a real priority rule.
+    """
+
+    candidates = [
+        item for item in state.items_held_by(leader_id) if item.treasure in COMBAT_WEAPON_SLOT_TREASURES
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda item: item.item_id).treasure
+
+
+def holds_bow_of_elven_kings(state: GameState, leader_id: int) -> bool:
+    """Phase 535: does ``leader_id`` hold at least one Bow of the Elven
+    Kings (``Treasure.LEADERSHIP_ELVEN``)? SS7.1 point 5/SS7.2's own
+    ``if attack_is_archery and NT_Owned(...)>0`` branch -- checked by mere
+    possession (``>0``), independent of ``equipped_combat_weapon()``'s
+    own slot (the Bow never occupies it), and multiple copies don't
+    stack the bonus (a plain boolean, not a count).
+    """
+
+    return any(item.treasure is Treasure.LEADERSHIP_ELVEN for item in state.items_held_by(leader_id))

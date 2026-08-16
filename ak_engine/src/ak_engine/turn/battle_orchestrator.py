@@ -189,15 +189,19 @@ from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit, quality_one_level_down
 from ak_engine.turn.challenge_execution import resolve_challenge_combat
 from ak_engine.turn.combat import Quality, direct_destruction_probability
-from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.discovery_effects import effective_skill_level, equipped_combat_weapon, holds_bow_of_elven_kings
 from ak_engine.turn.druidic_monster_aid import find_druidic_monster_assistance
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     Combatant,
     archery_free_attack_bonus,
+    bow_of_elven_kings_archery_damage_bonus,
+    bow_of_elven_kings_archery_hit_multiplier,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
+    weapon_melee_damage_bonus,
+    weapon_offensive_hit_multiplier,
 )
 from ak_engine.turn.initiative import character_initiative
 from ak_engine.turn.merit_points import battle_quality_points
@@ -1015,6 +1019,8 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
     has_melee_hit_points_ability = False
     offensive_hit_multiplier = 1.0
     melee_damage_dealt_bonus = 0
+    archery_hit_multiplier = 1.0
+    missile_damage_dealt_bonus = 0
     is_humanoid = False
     has_duellists_medal_ability = False
     has_control_temper_ability = False
@@ -1023,8 +1029,16 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         if defender_office is not None and defender_office.leader_id == leader.leader_id:
             damage_reduction = 1
         has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
-        offensive_hit_multiplier = melee_mastery_offensive_hit_multiplier(leader.advanced_abilities)
-        melee_damage_dealt_bonus = melee_mastery_damage_bonus(leader.advanced_abilities)
+        weapon = equipped_combat_weapon(state, leader.leader_id)
+        holds_bow = holds_bow_of_elven_kings(state, leader.leader_id)
+        offensive_hit_multiplier = melee_mastery_offensive_hit_multiplier(
+            leader.advanced_abilities
+        ) * weapon_offensive_hit_multiplier(weapon)
+        melee_damage_dealt_bonus = melee_mastery_damage_bonus(leader.advanced_abilities) + weapon_melee_damage_bonus(
+            weapon
+        )
+        archery_hit_multiplier = bow_of_elven_kings_archery_hit_multiplier(holds_bow)
+        missile_damage_dealt_bonus = bow_of_elven_kings_archery_damage_bonus(holds_bow)
         effective_race = leader.race
         if effective_race is None and leader.kingdom_id is not None:
             leader_kingdom = state.kingdoms.get(leader.kingdom_id)
@@ -1047,6 +1061,8 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         has_melee_hit_points_ability=has_melee_hit_points_ability,
         offensive_hit_multiplier=offensive_hit_multiplier,
         melee_damage_dealt_bonus=melee_damage_dealt_bonus,
+        archery_hit_multiplier=archery_hit_multiplier,
+        missile_damage_dealt_bonus=missile_damage_dealt_bonus,
         is_humanoid=is_humanoid,
         has_duellists_medal_ability=has_duellists_medal_ability,
         has_control_temper_ability=has_control_temper_ability,

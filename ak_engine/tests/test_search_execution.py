@@ -162,6 +162,36 @@ def test_leader_combatant_reads_melee_true_mastery():
     assert combatant.melee_damage_dealt_bonus == 2
 
 
+def test_leader_combatant_reads_equipped_weapon_hit_and_damage_bonus():
+    # Phase 535: AKGEN_reverse_engineering_report (4).md SS7.2.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION)
+    state.add_leader(leader)
+    state.add_item(Treasure.WEAPON_3, owner_leader_id=LEADER_ID)  # Flaming Scimitar: +20%/+3
+
+    combatant = _leader_combatant(state, leader)
+
+    assert combatant.offensive_hit_multiplier == pytest.approx(1.20)
+    assert combatant.melee_damage_dealt_bonus == 3
+
+
+def test_leader_combatant_reads_bow_of_the_elven_kings_archery_bonus():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION)
+    state.add_leader(leader)
+    state.add_item(Treasure.LEADERSHIP_ELVEN, owner_leader_id=LEADER_ID)
+    state.add_item(Treasure.LEADERSHIP_ELVEN, owner_leader_id=LEADER_ID)  # doesn't stack
+
+    combatant = _leader_combatant(state, leader)
+
+    assert combatant.archery_hit_multiplier == pytest.approx(1.25)
+    assert combatant.missile_damage_dealt_bonus == 2
+    assert combatant.offensive_hit_multiplier == 1.0
+    assert combatant.melee_damage_dealt_bonus == 0
+
+
 def test_leader_combatant_reads_duellists_medal_and_kingdom_race_humanoid():
     # Phase 518: AdvancedAbility.MELEE_DUELLISTS_MEDAL + is_humanoid.
     state = GameState()

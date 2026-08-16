@@ -57,7 +57,13 @@ right after the six named uniques):
 - ``COMBAT_WEAPON`` (35-39, 5 items) and ``LEADERSHIP_WEAPON`` (40-43,
   4 items): named weapons with a to-hit/damage bonus, the former with a
   special combat effect (e.g. life drain, stun), the latter with a
-  race-leadership bonus (Human/Elven/Dwarven/Orcish) instead.
+  race-leadership bonus (Human/Elven/Dwarven/Orcish) instead. **Phase
+  535 correction**: this category split describes the *army*-facing
+  bonus shape only. On the *personal* to-hit/damage side, AKGEN_reverse_
+  engineering_report (4).md SS7.2 confirms all 8 of these weapons except
+  ``LEADERSHIP_ELVEN`` (Bow of the Elven Kings) share one mutually-
+  exclusive "equipped weapon" slot -- see ``WEAPON_HIT_BONUS``'s own
+  addendum below, not two separate mechanisms.
 - ``ANTI_MAGIC_AMULET`` (44-48, 5 items): immunity to one Magical
   ``Ability``'s spells, 1:1 positional with the 5 Magical abilities
   (White, Necromancy, Elemental, Psychic, Illusion).
@@ -423,6 +429,64 @@ RACE_LEADERSHIP_TREASURE: dict[Race, Treasure] = {
     Race.DWARVEN: Treasure.LEADERSHIP_DWARVEN,
     Race.ORCISH: Treasure.LEADERSHIP_ORCISH,
 }
+
+# Phase 535: AKGEN_reverse_engineering_report (4).md SS7.1/SS7.2 -- the 9
+# magic weapons' personal to-hit/damage bonuses, from the disassembled
+# resolver's own two ``case`` blocks (SS7.2). All 8 non-Bow weapons share
+# a single mutually-exclusive "equipped weapon" slot -- confirmed by the
+# dossier's own single combined ``case equipped of`` covering WEAPON_1..5
+# *and* LEADERSHIP_HUMAN/DWARVEN/ORCISH together, not two separate
+# mechanisms the way this project's own ``COMBAT_WEAPON``/``LEADERSHIP_
+# WEAPON`` category split (Phase 77) might suggest. ``LEADERSHIP_ELVEN``
+# (Bow of the Elven Kings) is the sole exception -- SS7.2's own ``if
+# attack_is_archery and NT_Owned(...)>0`` branch is a separate, Archery-
+# only, possession-gated bonus that never occupies the equip slot (SS7.1
+# point 5, verbatim: "Il Bow of the Elven Kings...è un'eccezione: per il
+# tiro con l'arco basta possederne almeno uno e il bonus non si
+# moltiplica con le copie"). Kept here, not folded into WEAPON_HIT_BONUS/
+# WEAPON_DAMAGE_BONUS below, since it's read through a different helper
+# (``turn/discovery_effects.py holds_bow_of_elven_kings()``).
+WEAPON_HIT_BONUS: dict[Treasure, int] = {
+    Treasure.WEAPON_1: 20,  # Holy Sword -- +40 vs Undead, see HOLY_SWORD_HIT_BONUS_VS_UNDEAD
+    Treasure.WEAPON_2: 15,  # Shadow Sword
+    Treasure.WEAPON_3: 20,  # Flaming Scimitar
+    Treasure.WEAPON_4: 20,  # Psychic Flail
+    Treasure.WEAPON_5: 10,  # Invisible Sword
+    Treasure.LEADERSHIP_HUMAN: 25,  # Excalibur
+    Treasure.LEADERSHIP_DWARVEN: 20,  # Axe of the Dwarven Lords
+    Treasure.LEADERSHIP_ORCISH: 20,  # Scimitar of Orc Mastery
+}
+WEAPON_DAMAGE_BONUS: dict[Treasure, int] = {
+    Treasure.WEAPON_1: 3,  # Holy Sword -- +5 vs Undead, see HOLY_SWORD_DAMAGE_BONUS_VS_UNDEAD
+    Treasure.WEAPON_2: 1,  # Shadow Sword
+    Treasure.WEAPON_3: 3,  # Flaming Scimitar
+    Treasure.WEAPON_4: 3,  # Psychic Flail
+    Treasure.WEAPON_5: 2,  # Invisible Sword
+    Treasure.LEADERSHIP_HUMAN: 4,  # Excalibur
+    Treasure.LEADERSHIP_DWARVEN: 3,  # Axe of the Dwarven Lords
+    Treasure.LEADERSHIP_ORCISH: 2,  # Scimitar of Orc Mastery
+}
+# Holy Sword's own vs-Undead variant (SS7.1 row 35: "+20%; +40% vs Undead"
+# / "+3; +5 vs Undead") -- deliberately not auto-applied by ``WEAPON_HIT_
+# BONUS``/``WEAPON_DAMAGE_BONUS`` above: ``Combatant`` has no target-
+# alignment field for a builder to gate this on (the 3 builders this
+# phase touches only ever see the *opposing* Combatant, never its source
+# LeaderState/ArmyState), so there's no consumer to wire it into yet --
+# same "document the real, sourced gap rather than force a guess" pattern
+# already used for Phase 532's Illusory Terrain/Hide Feature carve-outs.
+HOLY_SWORD_HIT_BONUS_VS_UNDEAD = 40
+HOLY_SWORD_DAMAGE_BONUS_VS_UNDEAD = 5
+
+# Bow of the Elven Kings' own Archery-only bonus (SS7.2's separate ``if
+# attack_is_archery`` branch) -- see ``WEAPON_HIT_BONUS``'s own addendum
+# above for why it's not folded into that dict.
+BOW_OF_ELVEN_KINGS_ARCHERY_HIT_BONUS = 25
+BOW_OF_ELVEN_KINGS_ARCHERY_DAMAGE_BONUS = 2
+
+# The 8 weapons that share one mutually-exclusive "equipped" slot (every
+# ``WEAPON_HIT_BONUS``/``WEAPON_DAMAGE_BONUS`` key) -- ``LEADERSHIP_ELVEN``
+# is excluded, per the same addendum.
+COMBAT_WEAPON_SLOT_TREASURES: frozenset[Treasure] = frozenset(WEAPON_HIT_BONUS)
 
 # Phase 430: the real ADVENTURE-report display name for a gold-hoard
 # feature ("Large Hoard of Gold (#N): 10-25 gold" etc.), confirmed

@@ -511,7 +511,12 @@ from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
-from ak_engine.turn.discovery_effects import effective_skill_level, holder_is_immune_to_spell
+from ak_engine.turn.discovery_effects import (
+    effective_skill_level,
+    equipped_combat_weapon,
+    holder_is_immune_to_spell,
+    holds_bow_of_elven_kings,
+)
 from ak_engine.turn.encounter import (
     BEG_MERCY_CHANCE,
     CHARACTER_HIT_POINTS,
@@ -534,8 +539,12 @@ from ak_engine.turn.encounter import (
     apply_temper_melee_setup,
     archery_free_attack_bonus,
     blocks_cast_and_archery,
+    bow_of_elven_kings_archery_damage_bonus,
+    bow_of_elven_kings_archery_hit_multiplier,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
+    weapon_melee_damage_bonus,
+    weapon_offensive_hit_multiplier,
     can_talk_to_monster,
     control_undead_anti_holy_resist_chance,
     control_undead_failure_new_hit_points,
@@ -696,6 +705,8 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
         leader_kingdom = state.kingdoms.get(leader.kingdom_id)
         effective_race = leader_kingdom.race if leader_kingdom is not None else None
     is_humanoid = effective_race in HUMANOID_RACES
+    weapon = equipped_combat_weapon(state, leader.leader_id)
+    holds_bow = holds_bow_of_elven_kings(state, leader.leader_id)
     return Combatant(
         name=leader.name,
         hit_points=CHARACTER_HIT_POINTS,
@@ -704,8 +715,14 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
         temper=leader.temper,
         damage_reduction=damage_reduction,
         has_melee_hit_points_ability=has_melee_hit_points_ability,
-        offensive_hit_multiplier=melee_mastery_offensive_hit_multiplier(leader.advanced_abilities),
-        melee_damage_dealt_bonus=melee_mastery_damage_bonus(leader.advanced_abilities),
+        offensive_hit_multiplier=(
+            melee_mastery_offensive_hit_multiplier(leader.advanced_abilities) * weapon_offensive_hit_multiplier(weapon)
+        ),
+        melee_damage_dealt_bonus=(
+            melee_mastery_damage_bonus(leader.advanced_abilities) + weapon_melee_damage_bonus(weapon)
+        ),
+        archery_hit_multiplier=bow_of_elven_kings_archery_hit_multiplier(holds_bow),
+        missile_damage_dealt_bonus=bow_of_elven_kings_archery_damage_bonus(holds_bow),
         is_humanoid=is_humanoid,
         has_duellists_medal_ability=AdvancedAbility.MELEE_DUELLISTS_MEDAL in leader.advanced_abilities,
         has_control_temper_ability=AdvancedAbility.MELEE_CONTROL_TEMPER in leader.advanced_abilities,

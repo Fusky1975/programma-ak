@@ -16,7 +16,9 @@ from ak_engine.turn.discovery_effects import (
     ability_bonus_from_discoveries,
     ability_bonus_from_items,
     effective_skill_level,
+    equipped_combat_weapon,
     holder_is_immune_to_spell,
+    holds_bow_of_elven_kings,
     province_halves_spell_chance,
 )
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL
@@ -336,3 +338,56 @@ def test_holder_is_immune_to_spell_false_for_phantasmal_armies_even_with_crystal
     state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=1)
 
     assert holder_is_immune_to_spell(state, 1, Spell.ILLUS_ARMIES) is False
+
+
+# -- Phase 535: equipped_combat_weapon / holds_bow_of_elven_kings --------
+# AKGEN_reverse_engineering_report (4).md SS7.1/SS7.2 -- 8 of the 9 magic
+# weapons share one mutually-exclusive "equipped" slot; the Bow of the
+# Elven Kings is a separate, possession-gated, Archery-only bonus.
+
+
+def test_equipped_combat_weapon_none_when_holder_owns_no_weapon():
+    state = make_state()
+
+    assert equipped_combat_weapon(state, 1) is None
+
+
+def test_equipped_combat_weapon_returns_the_single_held_weapon():
+    state = make_state()
+    state.add_item(Treasure.WEAPON_3, owner_leader_id=1)
+
+    assert equipped_combat_weapon(state, 1) is Treasure.WEAPON_3
+
+
+def test_equipped_combat_weapon_ignores_the_bow_of_the_elven_kings():
+    # The Bow (LEADERSHIP_ELVEN) never occupies the equip slot.
+    state = make_state()
+    state.add_item(Treasure.LEADERSHIP_ELVEN, owner_leader_id=1)
+
+    assert equipped_combat_weapon(state, 1) is None
+
+
+def test_equipped_combat_weapon_picks_the_lowest_item_id_when_multiple_are_held():
+    # Documented tie-break, not a sourced priority rule -- see the
+    # function's own docstring.
+    state = make_state()
+    state.add_item(Treasure.LEADERSHIP_HUMAN, owner_leader_id=1)  # item_id 0
+    state.add_item(Treasure.WEAPON_1, owner_leader_id=1)  # item_id 1, held second
+
+    assert equipped_combat_weapon(state, 1) is Treasure.LEADERSHIP_HUMAN
+
+
+def test_holds_bow_of_elven_kings_false_when_not_held():
+    state = make_state()
+
+    assert holds_bow_of_elven_kings(state, 1) is False
+
+
+def test_holds_bow_of_elven_kings_true_regardless_of_copy_count():
+    # A plain boolean, not a count -- SS7.1 point 5: "il bonus non si
+    # moltiplica con le copie."
+    state = make_state()
+    state.add_item(Treasure.LEADERSHIP_ELVEN, owner_leader_id=1)
+    state.add_item(Treasure.LEADERSHIP_ELVEN, owner_leader_id=1)
+
+    assert holds_bow_of_elven_kings(state, 1) is True

@@ -1526,6 +1526,13 @@ from ak_engine.models.monster import (
     MonsterSpeed,
 )
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import (
+    BOW_OF_ELVEN_KINGS_ARCHERY_DAMAGE_BONUS,
+    BOW_OF_ELVEN_KINGS_ARCHERY_HIT_BONUS,
+    WEAPON_DAMAGE_BONUS,
+    WEAPON_HIT_BONUS,
+    Treasure,
+)
 
 # [5.0]: "In combat, all characters have 10 hit points. Monsters may
 # have anywhere from 7 to 50 hit points." -- this module's own
@@ -2682,6 +2689,25 @@ class Combatant:
     # dealt_bonus`/`offensive_hit_multiplier`, Phase 517), not inside
     # `apply_temper_melee_setup()`'s per-combatant loop.
     archery_free_attack_bonus: int = 0
+    # Phase 535 -- the Bow of the Elven Kings' own Archery-only to-hit
+    # bonus (AKGEN_reverse_engineering_report (4).md SS7.2's own
+    # ``attack_is_archery`` branch) -- the attacker-side counterpart to
+    # ``offensive_hit_multiplier`` above, but scoped to Fire Arrow only
+    # since Melee's own ``offensive_hit_multiplier`` already has real
+    # non-weapon sources (Slancio, Melee Mastery) that must stay Melee-
+    # only. Set by each consumer's own builder via ``turn/discovery_
+    # effects.py holds_bow_of_elven_kings()``. Default 1.0 leaves every
+    # pre-Phase-535 caller unaffected.
+    archery_hit_multiplier: float = 1.0
+    # Phase 535 -- the flat damage counterpart to ``archery_hit_
+    # multiplier`` above (SS7.2's own ``damage += 2`` in the same
+    # branch) -- the attacker-side equivalent of ``melee_damage_dealt_
+    # bonus`` but for Fire Arrow, which had no such field before this
+    # phase (no weapon bonus existed for it yet). Added to a landed
+    # shot's damage only, same "never turns a miss into a hit" gating
+    # ``melee_damage_dealt_bonus`` already established. Default 0 leaves
+    # every pre-Phase-535 caller unaffected.
+    missile_damage_dealt_bonus: int = 0
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -2769,6 +2795,54 @@ def melee_mastery_damage_bonus(advanced_abilities: "set[AdvancedAbility]") -> in
     return 0
 
 
+def weapon_offensive_hit_multiplier(weapon: "Treasure | None") -> float:
+    """Phase 535: the equipped sword-slot weapon's own to-hit bonus
+    (``models/treasure.py WEAPON_HIT_BONUS``, AKGEN_reverse_engineering_
+    report (4).md SS7.2), as a multiplier -- same stated-percentage-is-
+    multiplicative convention ``melee_mastery_offensive_hit_multiplier()``
+    above already uses. ``weapon`` is the caller's own ``turn/discovery_
+    effects.py equipped_combat_weapon()`` result; ``None`` (no weapon
+    equipped, every pre-Phase-535 caller) leaves the multiplier at 1.0.
+    Meant to seed a builder's own ``Combatant(offensive_hit_multiplier=
+    ...)`` the same way the Melee Mastery helper above is.
+    """
+
+    if weapon is None:
+        return 1.0
+    return 1.0 + WEAPON_HIT_BONUS.get(weapon, 0) / 100
+
+
+def weapon_melee_damage_bonus(weapon: "Treasure | None") -> int:
+    """The flat damage counterpart to ``weapon_offensive_hit_multiplier()``
+    above (``models/treasure.py WEAPON_DAMAGE_BONUS``). Meant to seed a
+    builder's own ``Combatant(melee_damage_dealt_bonus=...)``.
+    """
+
+    if weapon is None:
+        return 0
+    return WEAPON_DAMAGE_BONUS.get(weapon, 0)
+
+
+def bow_of_elven_kings_archery_hit_multiplier(holds_bow: bool) -> float:
+    """Phase 535: Bow of the Elven Kings' own Archery-only to-hit bonus
+    (SS7.2's separate ``if attack_is_archery`` branch), as a multiplier.
+    ``holds_bow`` is the caller's own ``turn/discovery_effects.py holds_
+    bow_of_elven_kings()`` result. Meant to seed a builder's own
+    ``Combatant(archery_hit_multiplier=...)``.
+    """
+
+    return 1.0 + BOW_OF_ELVEN_KINGS_ARCHERY_HIT_BONUS / 100 if holds_bow else 1.0
+
+
+def bow_of_elven_kings_archery_damage_bonus(holds_bow: bool) -> int:
+    """The flat damage counterpart to ``bow_of_elven_kings_archery_hit_
+    multiplier()`` above. Meant to seed a builder's own ``Combatant
+    (missile_damage_dealt_bonus=...)``.
+    """
+
+    return BOW_OF_ELVEN_KINGS_ARCHERY_DAMAGE_BONUS if holds_bow else 0
+
+
 def _melee_landed_damage(raw_damage: int, attacker: "Combatant", defender: "Combatant") -> int:
     """Applies every additive/subtractive Melee-damage modifier in a
     single place, so both real per-swing call sites (``resolve_one_
@@ -2787,6 +2861,19 @@ def _melee_landed_damage(raw_damage: int, attacker: "Combatant", defender: "Comb
     return max(
         0, raw_damage + attacker.melee_damage_dealt_bonus - attacker.melee_damage_dealt_reduction - defender.damage_reduction
     )
+
+
+def _fire_arrow_landed_damage(raw_damage: int, attacker: "Combatant", defender: "Combatant") -> int:
+    """Phase 535 -- the Fire Arrow counterpart to ``_melee_landed_damage()``
+    above, for ``attacker.missile_damage_dealt_bonus`` (the Bow of the
+    Elven Kings' own flat damage bonus; 0 for every pre-Phase-535
+    caller). Same landed-hit gate: a flat bonus alone can never turn a
+    miss into a hit.
+    """
+
+    if raw_damage <= 0:
+        return 0
+    return max(0, raw_damage + attacker.missile_damage_dealt_bonus - defender.damage_reduction)
 
 
 def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random) -> None:
@@ -3239,9 +3326,12 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
                     continue
                 used_a += 1
                 raw_damage = roll_fire_arrow_attack(
-                    skill_a, rng, damage_range=a.missile_damage_range, hit_chance_multiplier=b.defensive_hit_multiplier
+                    skill_a,
+                    rng,
+                    damage_range=a.missile_damage_range,
+                    hit_chance_multiplier=a.archery_hit_multiplier * b.defensive_hit_multiplier,
                 )
-                damage = max(0, raw_damage - b.damage_reduction)
+                damage = _fire_arrow_landed_damage(raw_damage, a, b)
                 shots.append(FireArrowShot(shooter="a", hit=raw_damage > 0, damage=damage))
                 b.hit_points -= damage
             else:
@@ -3249,9 +3339,12 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
                     continue
                 used_b += 1
                 raw_damage = roll_fire_arrow_attack(
-                    skill_b, rng, damage_range=b.missile_damage_range, hit_chance_multiplier=a.defensive_hit_multiplier
+                    skill_b,
+                    rng,
+                    damage_range=b.missile_damage_range,
+                    hit_chance_multiplier=b.archery_hit_multiplier * a.defensive_hit_multiplier,
                 )
-                damage = max(0, raw_damage - a.damage_reduction)
+                damage = _fire_arrow_landed_damage(raw_damage, b, a)
                 shots.append(FireArrowShot(shooter="b", hit=raw_damage > 0, damage=damage))
                 a.hit_points -= damage
         if a.hit_points <= 0 or b.hit_points <= 0:

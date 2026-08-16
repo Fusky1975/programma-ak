@@ -22281,7 +22281,7 @@ follow-up request after the original 431-435 plan shipped.
     have succeeded at the un-halved 75% chance, into a failure at the
     halved 37.5% chance), plus one contrast test (an unowned province
     leaves the same roll succeeding). Ran again: 4648 passed (net +18).
-- **Phase 534 (current)**: passive ability items (Treasure ordinals 0-14,
+- **Phase 534**: passive ability items (Treasure ordinals 0-14,
   `models/treasure.py TREASURE_ABILITY_ITEM`) -- 15 magic items, one per
   `Ability`, each granting a permanent +1 to its own matching skill.
   Confirmed genuine gap (magic-item-system audit ahead of Phases 531-538):
@@ -22319,6 +22319,43 @@ follow-up request after the original 431-435 plan shipped.
     copies stacking uncapped); `effective_skill_level()` tests for an
     item bonus alone and for Discovery + item bonuses combined under one
     shared cap. Ran again: 4653 passed (net +5).
+- **Phase 535 (current)**: magic weapons core (35-43) — the equipped-weapon
+  hit/damage mechanic from `AKGEN_reverse_engineering_report (4).md` §7.
+  **Correction to the original plan**: the plan assumed WEAPON_1-5 (35-39)
+  shared one equip slot separately from LEADERSHIP_WEAPON (40-43). Reading
+  the dossier's actual §7.2 pseudocode (`case equipped of InvisibleSword:
+  ...; HolySword, FlamingScimitar, PsychicFlail, DwarfAxe, OrcScimitar: hit
+  += 20; ...; Excalibur: hit += 25; end;`) shows 8 of the 9 weapons — every
+  one except the Bow of the Elven Kings — share a single combined equip
+  slot/case statement. Implemented accordingly, documented in
+  `models/treasure.py`'s own docstring as a "Phase 535 correction".
+  `models/treasure.py` adds `WEAPON_HIT_BONUS`/`WEAPON_DAMAGE_BONUS` (per
+  dossier §7.1 table), `HOLY_SWORD_HIT_BONUS_VS_UNDEAD`/`_DAMAGE_BONUS_VS_
+  UNDEAD` (dossier-sourced but currently unwireable — no target-alignment
+  field reaches any of the 3 `Combatant` builders, documented as a gap, not
+  guessed away), `BOW_OF_ELVEN_KINGS_ARCHERY_HIT_BONUS`/`_DAMAGE_BONUS`,
+  and `COMBAT_WEAPON_SLOT_TREASURES`. `turn/discovery_effects.py` adds
+  `equipped_combat_weapon(state, leader_id)` (lowest-`item_id` tie-break,
+  matching this project's existing Enhanced Charm convention) and `holds_
+  bow_of_elven_kings(state, leader_id)` (possession-only, no equip slot,
+  doesn't stack with copies). `turn/encounter.py` gains two new `Combatant`
+  fields — `archery_hit_multiplier`, `missile_damage_dealt_bonus` — since
+  Fire Arrow previously had no attacker-side bonus mechanism at all, plus
+  `weapon_offensive_hit_multiplier()`, `weapon_melee_damage_bonus()`,
+  `bow_of_elven_kings_archery_hit_multiplier()`, `bow_of_elven_kings_
+  archery_damage_bonus()` helpers and a new `_fire_arrow_landed_damage()`
+  (mirrors `_melee_landed_damage()`), wired into `resolve_fire_arrow_
+  duel()`'s hit-chance and damage math for both shot directions. All 3
+  near-identical `Combatant` builders (`challenge_execution.py`/`search_
+  execution.py _leader_combatant`, `battle_orchestrator.py _commander_
+  combatant`) now compose the weapon's hit/damage bonuses with the existing
+  Melee Mastery bonuses and set the two new Archery fields from the Bow
+  helpers. Ran before writing tests: 4653 passed (non-breaking, matches
+  Phase 534's own closing count). Added tests: `equipped_combat_weapon()`/
+  `holds_bow_of_elven_kings()` unit tests; 3 builder tests (one per
+  `Combatant` construction site) confirming weapon hit/damage bonuses reach
+  the constructed `Combatant`; the Bow's own no-stacking-with-copies case.
+  Ran again: 4667 passed (net +14).
 
 ## Setup
 
