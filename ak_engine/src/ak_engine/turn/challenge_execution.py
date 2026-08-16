@@ -243,7 +243,7 @@ from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.models.temper import raise_temper_one_level
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
-from ak_engine.turn.discovery_effects import effective_skill_level, holds_anti_magic_amulet
+from ak_engine.turn.discovery_effects import effective_skill_level, holder_is_immune_to_spell
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_DAMAGE_RANGE,
@@ -514,18 +514,20 @@ def _resolve_personal_combat_cast(
 
     succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan)
 
-    # Phase 530: models/treasure.py ANTI_MAGIC_AMULET_BY_ABILITY -- a
-    # target holding the Anti-Magic Amulet matching the ability actually
-    # used negates the spell outright, checked once here (before every
-    # per-spell branch, including Control Undead's own early-return
-    # shape) rather than duplicated per branch. Excludes the 3 Personal-
-    # Combat spells whose entire effect is self-only and never reads or
-    # mutates `target` at all (Augur_Combat's silent flee-simulation,
-    # Invisibility's own defensive buff, Words of Healing) -- an amulet
-    # that protects its wearer "from spells" has nothing to negate for a
-    # spell that was never cast *at* them in the first place.
+    # Phase 531: AKGEN_reverse_engineering_report (4).md SS8 -- a target
+    # holding the Anti-Magic Amulet that personally blocks this exact
+    # spell (models/treasure.py AMULET_BLOCKED_SPELLS -- e.g. Fireball is
+    # blocked, but Ice Suspend, also Elemental, is not) negates it
+    # outright, checked once here (before every per-spell branch,
+    # including Control Undead's own early-return shape) rather than
+    # duplicated per branch. Excludes the 3 Personal-Combat spells whose
+    # entire effect is self-only and never reads or mutates `target` at
+    # all (Augur_Combat's silent flee-simulation, Invisibility's own
+    # defensive buff, Words of Healing) -- an amulet that protects its
+    # wearer "from spells" has nothing to negate for a spell that was
+    # never cast *at* them in the first place.
     if succeeded and spell not in PERSONAL_COMBAT_SPELL_SELF_ONLY and target_leader is not None:
-        if holds_anti_magic_amulet(state, target_leader.leader_id, ability):
+        if holder_is_immune_to_spell(state, target_leader.leader_id, spell):
             return None
 
     if spell is Spell.CONTROL_UNDEAD:

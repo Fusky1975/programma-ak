@@ -51,9 +51,9 @@ bonuses -- left as the raw stored value rather than guessed).
 from __future__ import annotations
 
 from ak_engine.models.discovery import DISCOVERY_ABILITY_BONUS
-from ak_engine.models.enums import Ability
+from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, LeaderState
-from ak_engine.models.treasure import ANTI_MAGIC_AMULET_BY_ABILITY
+from ak_engine.models.treasure import AMULET_BLOCKED_SPELLS
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL
 
 
@@ -95,36 +95,36 @@ def effective_skill_level(state: GameState, leader: LeaderState, ability: Abilit
     return min(MAX_SKILL_LEVEL, stored + bonus)
 
 
-def holds_anti_magic_amulet(state: GameState, target_leader_id: int, ability: Ability) -> bool:
-    """Phase 530: does ``target_leader_id`` currently hold the Anti-Magic
-    Amulet matching ``ability`` (``models/treasure.py TREASAB.X2``'s own
-    "immunity to one Magical Ability's spells" family -- ``AMULET_ANTI_
-    WHITE``..``AMULET_ANTI_ILLUSION``, catalog ordinals 44-48)?
+def holder_is_immune_to_spell(state: GameState, target_leader_id: int, spell: Spell) -> bool:
+    """Phase 531: does ``target_leader_id`` currently hold an Anti-Magic
+    Amulet that personally blocks ``spell`` (``models/treasure.py
+    AMULET_BLOCKED_SPELLS``)?
 
-    **Scope, honestly labeled**: the family's *only* item-by-item detail
-    beyond the generic catalog description comes from ``AKGEN_reverse_
-    engineering_report (3).md`` SS3.4, which names the Psychic amulet
-    (Helm of Psychic Dampening) specifically: "annulla Charm e Psychic
-    Blast sul possessore; dimezza gli altri effetti Psychic pertinenti"
-    (negates Charm and Psychic Blast on the holder; *halves* the other
-    relevant Psychic effects). This function -- and every call site that
-    uses it -- treats all 5 amulets uniformly as a full negation of any
-    target-affecting spell of the matching college, which is at least as
-    protective as the source's own weaker "halves" wording for the
-    non-Charm/Psychic-Blast Psychic case: no fractional-magnitude formula
-    is invented for a nuance this project has no other confirmed
-    parameter for, and full negation can never under-protect relative to
-    what the source actually describes. The other 4 amulets (White,
-    Necromancy, Elemental, Illusion) have no per-item source at all beyond
-    "immunity to one Magical Ability's spells" -- full negation is simply
-    the plain reading of that phrase.
+    **Replaces Phase 530's ``holds_anti_magic_amulet()``**, which treated
+    each of the 5 amulets as blocking *any* spell of the matching magic
+    college -- a guess made because the only source available at the time
+    (``AKGEN_reverse_engineering_report (3).md`` SS3.4) gave detail for
+    just one item (Helm of Psychic Dampening: "annulla Charm e Psychic
+    Blast"). ``AKGEN_reverse_engineering_report (4).md`` SS8 is a
+    dedicated magic-item dossier that gives the real, narrower per-item
+    table: each amulet blocks only 1-2 *named* spells (``AMULET_BLOCKED_
+    SPELLS``'s own docstring in ``models/treasure.py`` has the full
+    table and citations) -- e.g. the White amulet (Shrunken-Head Amulet)
+    blocks Holy Symbol but *not* Spiritwrack, even though both are White
+    college. Confirms Phase 530's one hard-sourced case (Charm + Psychic
+    Blast) was already exactly right; the other 4 amulets were the
+    over-guessed part.
 
-    Call sites decide for themselves which spells count as "affecting the
-    target" (see each one's own comment) -- this function only answers
-    the item-possession question.
+    ``AMULET_ANTI_ILLUSION`` (Crystal of True Seeing) is absent from
+    ``AMULET_BLOCKED_SPELLS`` on purpose -- SS8 point 3 makes it a
+    structurally different mechanic (illusion detection + a Phantasmal
+    Armies halving, not a spell block); see this module's own Phase 532
+    addendum once that lands.
     """
 
-    amulet = ANTI_MAGIC_AMULET_BY_ABILITY.get(ability)
-    if amulet is None:
-        return False
-    return any(item.treasure is amulet for item in state.items_held_by(target_leader_id))
+    for amulet, blocked in AMULET_BLOCKED_SPELLS.items():
+        if spell not in blocked:
+            continue
+        if any(item.treasure is amulet for item in state.items_held_by(target_leader_id)):
+            return True
+    return False

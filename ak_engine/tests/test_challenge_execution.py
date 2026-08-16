@@ -589,7 +589,8 @@ def test_resolve_personal_combat_cast_charm_blocked_target_never_transfers_item_
 
 
 def test_resolve_personal_combat_cast_fireball_blocked_by_anti_elemental_amulet():
-    # Phase 530: models/treasure.py ANTI_MAGIC_AMULET_BY_ABILITY.
+    # Phase 531: AKGEN_reverse_engineering_report (4).md SS8 -- the Orb
+    # of Elemental Stability personally blocks Fireball.
     state = _base_state()
     caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ELEMENTAL, 5, 9))
     target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
@@ -611,9 +612,10 @@ def test_resolve_personal_combat_cast_fireball_blocked_by_anti_elemental_amulet(
 
 
 def test_resolve_personal_combat_cast_psychic_blast_blocked_by_anti_psychic_amulet():
-    # AKGEN_reverse_engineering_report (3).md SS3.4 names Psychic Blast
-    # specifically as negated by the Helm of Psychic Dampening -- this
-    # confirms the general Phase 530 mechanism reproduces that exact case.
+    # Both AKGEN_reverse_engineering_report (3).md SS3.4 and (4).md SS8
+    # name Psychic Blast specifically as negated by the Helm of Psychic
+    # Dampening -- the one amulet case that survived the Phase 531
+    # rework unchanged.
     state = _base_state()
     caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9))
     target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
@@ -634,10 +636,37 @@ def test_resolve_personal_combat_cast_psychic_blast_blocked_by_anti_psychic_amul
     assert caster.bonus_unanswered_attacks == starting_bonus
 
 
-def test_resolve_personal_combat_cast_control_undead_blocked_by_anti_necromancy_amulet():
-    # Proves the single Phase 530 checkpoint also covers Control Undead's
-    # own early-return branch shape, not just the common `if not
-    # succeeded: return None` gate every other spell shares.
+def test_resolve_personal_combat_cast_hand_of_death_blocked_by_anti_necromancy_amulet():
+    # Proves the single Phase 531 checkpoint also covers Hand of Death,
+    # the True Cross's own second blocked spell (alongside Kill_Enemy).
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 5, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    state.add_item(Treasure.AMULET_ANTI_NECROMANCY, owner_leader_id=2)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    starting_hit_points = target.hit_points
+    tactic = SearchTactic(Maneuver.CAST, Spell.HAND_OF_DEATH.value)
+    rng = ScriptedRandom([0.1])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+    )
+
+    assert outcome is None
+    assert target.hit_points == starting_hit_points
+
+
+def test_resolve_personal_combat_cast_control_undead_not_blocked_by_anti_necromancy_amulet():
+    # Phase 531's own correction, made concrete: the True Cross blocks
+    # only Kill_Enemy/Hand_of_Death, not every Necromancy spell -- Control
+    # Undead (also Necromancy) still succeeds against the same amulet that
+    # would have blocked it under Phase 530's blanket-school approach.
+    # Proves the checkpoint's placement (right after the succeeded roll,
+    # before Control Undead's own early-return branch) doesn't accidentally
+    # over-block spells the real amulet leaves alone.
     state = _base_state()
     caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 5, 9))
     target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.UNDEAD)
@@ -646,7 +675,6 @@ def test_resolve_personal_combat_cast_control_undead_blocked_by_anti_necromancy_
     state.add_item(Treasure.AMULET_ANTI_NECROMANCY, owner_leader_id=2)
     caster = _leader_combatant(caster_leader, state)
     target = _leader_combatant(target_leader, state)
-    starting_hit_points = target.hit_points
     tactic = SearchTactic(Maneuver.CAST, Spell.CONTROL_UNDEAD.value)
     rng = ScriptedRandom([0.1])
 
@@ -654,14 +682,15 @@ def test_resolve_personal_combat_cast_control_undead_blocked_by_anti_necromancy_
         caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
     )
 
-    assert outcome is None  # neither the "a" win nor the failure-damage branch
-    assert target.hit_points == starting_hit_points
+    assert outcome == "a"  # succeeds -- not in the True Cross's blocked set
 
 
 def test_resolve_personal_combat_cast_invisibility_not_blocked_by_target_anti_magic_amulet():
-    # Phase 530: Invisibility is self-only (never reads/writes target) --
-    # excluded from the immunity check even when the target holds the
-    # matching Anti-Illusion Amulet.
+    # Phase 531: Invisibility is self-only (never reads/writes target) --
+    # excluded from the immunity check regardless. (The Anti-Illusion
+    # Amulet -- Crystal of True Seeing -- isn't even in AMULET_BLOCKED_
+    # SPELLS yet; its own, structurally different mechanic is deferred to
+    # Phase 532.)
     state = _base_state()
     caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ILLUSION, 5, 9))
     target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
@@ -682,7 +711,7 @@ def test_resolve_personal_combat_cast_invisibility_not_blocked_by_target_anti_ma
 
 
 def test_execute_challenge_cast_augur_combat_not_blocked_by_target_anti_magic_amulet():
-    # Phase 530: Augur_Combat is self-only -- excluded from the immunity
+    # Phase 531: Augur_Combat is self-only -- excluded from the immunity
     # check even when the target holds the matching Anti-Psychic Amulet.
     state = _base_state()
     caster = LeaderState(

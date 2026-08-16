@@ -2358,8 +2358,8 @@ PERSONAL_COMBAT_SPELL_ABILITY: dict[Spell, Ability] = {
 # every other Personal-Combat spell (even Psychic Blast, structurally
 # caster-side-coded as a bonus-attack buff, is still cast *at* the
 # opponent by rulebook description and dossier confirmation -- see
-# ``turn/discovery_effects.py holds_anti_magic_amulet()``'s own Phase
-# 530 addendum). Used to exclude these three from the Anti-Magic Amulet
+# ``turn/discovery_effects.py holder_is_immune_to_spell()``'s own Phase
+# 531 addendum). Used to exclude these three from the Anti-Magic Amulet
 # immunity check -- an amulet protecting its wearer "from spells" has
 # nothing to negate for a spell that was never cast at them.
 PERSONAL_COMBAT_SPELL_SELF_ONLY: frozenset[Spell] = frozenset({Spell.AUGUR_COMBAT, Spell.INVISIBILITY, Spell.HEAL})

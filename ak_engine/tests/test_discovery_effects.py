@@ -6,13 +6,13 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
-from ak_engine.models.enums import Ability
+from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
-from ak_engine.turn.discovery_effects import ability_bonus_from_discoveries, effective_skill_level, holds_anti_magic_amulet
+from ak_engine.turn.discovery_effects import ability_bonus_from_discoveries, effective_skill_level, holder_is_immune_to_spell
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL
 
 HOME = HexCoord(0, 0)
@@ -116,47 +116,64 @@ def test_effective_skill_level_reads_zero_for_a_comatose_leader():
     assert leader.skills.pair_for_ability(Ability.TACTICAL)[0] == MAX_SKILL_LEVEL
 
 
-# -- Phase 530: holds_anti_magic_amulet ---------------------------------
+# -- Phase 531: holder_is_immune_to_spell --------------------------------
+# AKGEN_reverse_engineering_report (4).md SS8 -- each amulet blocks only
+# specific named spells, not every spell of the matching magic college
+# (replaces Phase 530's blanket-school approximation).
 
 
-def test_holds_anti_magic_amulet_true_when_matching_amulet_held():
+def test_holder_is_immune_to_spell_true_for_a_blocked_spell():
     state = make_state()
     state.add_item(Treasure.AMULET_ANTI_PSYCHIC, owner_leader_id=1)
 
-    assert holds_anti_magic_amulet(state, 1, Ability.PSYCHIC) is True
+    assert holder_is_immune_to_spell(state, 1, Spell.CHARM) is True
+    assert holder_is_immune_to_spell(state, 1, Spell.PSYCHIC_BLAST) is True
 
 
-def test_holds_anti_magic_amulet_false_when_a_different_amulet_is_held():
+def test_holder_is_immune_to_spell_false_for_a_same_college_but_unlisted_spell():
+    # Anti-Psychic blocks Charm/Psychic Blast, but not every Psychic
+    # spell -- Telekinetic Storm and Augur Combat are unaffected.
+    state = make_state()
+    state.add_item(Treasure.AMULET_ANTI_PSYCHIC, owner_leader_id=1)
+
+    assert holder_is_immune_to_spell(state, 1, Spell.TELEK_STORM) is False
+    assert holder_is_immune_to_spell(state, 1, Spell.AUGUR_COMBAT) is False
+
+
+def test_holder_is_immune_to_spell_false_when_a_different_amulet_is_held():
     state = make_state()
     state.add_item(Treasure.AMULET_ANTI_WHITE, owner_leader_id=1)
 
-    assert holds_anti_magic_amulet(state, 1, Ability.PSYCHIC) is False
+    assert holder_is_immune_to_spell(state, 1, Spell.CHARM) is False
 
 
-def test_holds_anti_magic_amulet_false_when_holder_owns_no_items():
+def test_holder_is_immune_to_spell_false_when_holder_owns_no_items():
     state = make_state()
 
-    assert holds_anti_magic_amulet(state, 1, Ability.NECROMANCY) is False
+    assert holder_is_immune_to_spell(state, 1, Spell.KILL_ENEMY) is False
 
 
-def test_holds_anti_magic_amulet_false_for_a_non_magical_ability():
-    # No amulet exists for e.g. Melee -- ANTI_MAGIC_AMULET_BY_ABILITY.get()
-    # returns None, which must read as "not immune", not raise.
-    state = make_state()
-    state.add_item(Treasure.AMULET_ANTI_WHITE, owner_leader_id=1)
-
-    assert holds_anti_magic_amulet(state, 1, Ability.MELEE) is False
-
-
-def test_holds_anti_magic_amulet_covers_all_five_magic_colleges():
-    state = make_state()
-    for ability, amulet in (
-        (Ability.WHITE, Treasure.AMULET_ANTI_WHITE),
-        (Ability.NECROMANCY, Treasure.AMULET_ANTI_NECROMANCY),
-        (Ability.ELEMENTAL, Treasure.AMULET_ANTI_ELEMENTAL),
-        (Ability.PSYCHIC, Treasure.AMULET_ANTI_PSYCHIC),
-        (Ability.ILLUSION, Treasure.AMULET_ANTI_ILLUSION),
-    ):
+def test_holder_is_immune_to_spell_covers_every_amulets_own_blocked_set():
+    cases = (
+        (Treasure.AMULET_ANTI_WHITE, Spell.HOLY_SYMBOL),
+        (Treasure.AMULET_ANTI_NECROMANCY, Spell.KILL_ENEMY),
+        (Treasure.AMULET_ANTI_NECROMANCY, Spell.HAND_OF_DEATH),
+        (Treasure.AMULET_ANTI_ELEMENTAL, Spell.FIREBALL),
+        (Treasure.AMULET_ANTI_PSYCHIC, Spell.CHARM),
+        (Treasure.AMULET_ANTI_PSYCHIC, Spell.PSYCHIC_BLAST),
+    )
+    for amulet, spell in cases:
         solo_state = make_state()
         solo_state.add_item(amulet, owner_leader_id=1)
-        assert holds_anti_magic_amulet(solo_state, 1, ability) is True
+        assert holder_is_immune_to_spell(solo_state, 1, spell) is True
+
+
+def test_holder_is_immune_to_spell_true_when_either_of_necromancys_two_amulet_spells_is_held():
+    # The True Cross uniquely blocks *two* spells -- confirm both
+    # independently reach the same amulet instance.
+    state = make_state()
+    state.add_item(Treasure.AMULET_ANTI_NECROMANCY, owner_leader_id=1)
+
+    assert holder_is_immune_to_spell(state, 1, Spell.KILL_ENEMY) is True
+    assert holder_is_immune_to_spell(state, 1, Spell.HAND_OF_DEATH) is True
+    assert holder_is_immune_to_spell(state, 1, Spell.CONTROL_UNDEAD) is False

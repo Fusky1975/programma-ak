@@ -383,6 +383,26 @@ ANTI_MAGIC_AMULET_BY_ABILITY: dict[Ability, Treasure] = {
     for ability in (Ability.WHITE, Ability.NECROMANCY, Ability.ELEMENTAL, Ability.PSYCHIC, Ability.ILLUSION)
 }
 
+# Phase 531: AKGEN_reverse_engineering_report (4).md SS8 -- each amulet's
+# real *personal* immunity is to specific named spells only, not every
+# spell of the matching magic college the way Phase 530 guessed (the only
+# source available at that time gave detail for just the Psychic amulet).
+# ``ANTI_MAGIC_AMULET_BY_ABILITY`` above is kept -- SS8's own separate,
+# genuinely whole-college mechanic (halving the cast-success *chance* of a
+# matching-college spell targeted at a province the amulet's holder owns)
+# still needs the ability-keyed lookup; see ``turn/discovery_effects.py
+# province_halves_spell_chance()``. ``AMULET_ANTI_ILLUSION`` (Crystal of
+# True Seeing) is deliberately absent here -- SS8 point 3 makes it a
+# structurally different mechanic (illusion detection + a Phantasmal
+# Armies halving), not a spell block; see that module's own Phase 532
+# addendum.
+AMULET_BLOCKED_SPELLS: dict[Treasure, frozenset[Spell]] = {
+    Treasure.AMULET_ANTI_WHITE: frozenset({Spell.HOLY_SYMBOL}),
+    Treasure.AMULET_ANTI_NECROMANCY: frozenset({Spell.KILL_ENEMY, Spell.HAND_OF_DEATH}),
+    Treasure.AMULET_ANTI_ELEMENTAL: frozenset({Spell.FIREBALL}),
+    Treasure.AMULET_ANTI_PSYCHIC: frozenset({Spell.CHARM, Spell.PSYCHIC_BLAST}),
+}
+
 # The user's own rules 3-6 (Phase 279): one race-matching legendary
 # leadership item per humanoid race -- moved here (Phase 285) from
 # ``turn/army_quality.py``, its original single owner, so ``turn/

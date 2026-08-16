@@ -236,9 +236,8 @@ def test_charm_fails_when_target_is_a_king():
 
 
 def test_charm_fails_when_target_holds_the_matching_anti_magic_amulet():
-    # Phase 530: models/treasure.py ANTI_MAGIC_AMULET_BY_ABILITY -- a
-    # non-Undead caster's Charm draws on Psychic, so an Anti-Psychic
-    # Amulet on the target blocks it outright.
+    # Phase 531: AKGEN_reverse_engineering_report (4).md SS8 -- the Helm
+    # of Psychic Dampening (Anti-Psychic Amulet) personally blocks Charm.
     state = build_state()
     state.add_leader(LeaderState(78, 2, "Protected Hero", LOCATION))
     state.add_item(Treasure.AMULET_ANTI_PSYCHIC, owner_leader_id=78)
@@ -265,33 +264,40 @@ def test_charm_succeeds_when_target_holds_a_non_matching_anti_magic_amulet():
     assert state.leaders[78].kingdom_id == 1
 
 
-def test_charm_undead_caster_blocked_by_anti_necromancy_amulet_not_anti_psychic():
-    # The amulet check uses the ability the cast actually drew on --
-    # Necromancy for an Undead caster -- not a fixed Charm=Psychic guess.
+def test_charm_undead_caster_still_blocked_by_anti_psychic_amulet():
+    # Phase 531: immunity is keyed to the spell (Charm), not to whichever
+    # school the caster happened to draw on -- the Helm of Psychic
+    # Dampening blocks Charm even when an Undead caster cast it via
+    # Necromancy.
     state = build_state()
     state.leaders[CASTER_ID].alignment = Alignment.UNDEAD
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)
     state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
-    state.add_item(Treasure.AMULET_ANTI_PSYCHIC, owner_leader_id=78)  # wrong college
+    state.add_item(Treasure.AMULET_ANTI_PSYCHIC, owner_leader_id=78)
     request = CastRequest(spell=Spell.CHARM, target=78)
     rng = ScriptedRandom([0.44, 0.5, 0.5])  # 15% + 15%*2 = 45% chance
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
-    assert result.applied is True  # not blocked -- wrong amulet for Necromancy
+    assert result.applied is False
+    assert result.reason == "target is immune (anti-magic amulet)"
 
-    state2 = build_state()
-    state2.leaders[CASTER_ID].alignment = Alignment.UNDEAD
-    state2.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)
-    state2.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
-    state2.add_item(Treasure.AMULET_ANTI_NECROMANCY, owner_leader_id=78)  # right college
-    request2 = CastRequest(spell=Spell.CHARM, target=78)
-    rng2 = ScriptedRandom([0.44, 0.5, 0.5])
 
-    result2 = execute_cast(state2, kingdom_id=1, leader_id=CASTER_ID, request=request2, rng=rng2)
+def test_charm_undead_caster_not_blocked_by_anti_necromancy_amulet():
+    # The True Cross (Anti-Necromancy) blocks Kill_Enemy/Hand_of_Death
+    # only -- Charm isn't in its blocked set, even for an Undead caster
+    # whose Charm draws on Necromancy skill.
+    state = build_state()
+    state.leaders[CASTER_ID].alignment = Alignment.UNDEAD
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)
+    state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
+    state.add_item(Treasure.AMULET_ANTI_NECROMANCY, owner_leader_id=78)
+    request = CastRequest(spell=Spell.CHARM, target=78)
+    rng = ScriptedRandom([0.44, 0.5, 0.5])
 
-    assert result2.applied is False
-    assert result2.reason == "target is immune (anti-magic amulet)"
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
 
 
 def test_charm_undead_caster_uses_necromancy_instead_of_psychic():
@@ -598,8 +604,9 @@ def test_kill_enemy_puts_a_colocated_target_into_a_coma():
 
 
 def test_kill_enemy_fails_when_target_holds_the_anti_necromancy_amulet():
-    # Phase 530: Kill_Enemy is Necromancy -- checked before (and
-    # independent of) the Hidden Tattoos Discovery ward.
+    # Phase 531: The True Cross (Anti-Necromancy Amulet) personally
+    # blocks Kill_Enemy -- checked before (and independent of) the
+    # Hidden Tattoos Discovery ward.
     state = build_state()
     state.add_leader(LeaderState(78, 2, "Protected Enemy", LOCATION))
     state.add_item(Treasure.AMULET_ANTI_NECROMANCY, owner_leader_id=78)

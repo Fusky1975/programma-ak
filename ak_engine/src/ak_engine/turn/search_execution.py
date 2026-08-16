@@ -511,7 +511,7 @@ from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
-from ak_engine.turn.discovery_effects import effective_skill_level, holds_anti_magic_amulet
+from ak_engine.turn.discovery_effects import effective_skill_level, holder_is_immune_to_spell
 from ak_engine.turn.encounter import (
     BEG_MERCY_CHANCE,
     CHARACTER_HIT_POINTS,
@@ -1246,18 +1246,19 @@ def _resolve_search_encounter(
         else:
             succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan)
 
-        # Phase 530: models/treasure.py ANTI_MAGIC_AMULET_BY_ABILITY --
-        # only reachable here when the *leader* is the one being cast at
-        # (a hostile monster's own spell attempt, `target_is_monster is
+        # Phase 531: AKGEN_reverse_engineering_report (4).md SS8 -- only
+        # reachable here when the *leader* is the one being cast at (a
+        # hostile monster's own spell attempt, `target_is_monster is
         # False`); a monster target never holds an item in this
         # project's model, so there is nothing to check on that side.
-        # Same self-only exclusion and single-checkpoint placement as
-        # ``challenge_execution.py``'s own Phase 530 addendum.
+        # Same per-spell (not per-college) immunity, self-only exclusion,
+        # and single-checkpoint placement as ``challenge_execution.py``'s
+        # own Phase 531 addendum.
         if (
             succeeded
             and not target_is_monster
             and spell not in PERSONAL_COMBAT_SPELL_SELF_ONLY
-            and holds_anti_magic_amulet(state, leader_id, ability)
+            and holder_is_immune_to_spell(state, leader_id, spell)
         ):
             return None
 

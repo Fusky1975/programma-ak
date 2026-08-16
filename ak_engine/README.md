@@ -22068,7 +22068,7 @@ follow-up request after the original 431-435 plan shipped.
     lowest-`item_id` item on a successful flee, and a protected target
     never transferring an item even with Enhanced Charm held. Ran
     again: 4606 passed (net +5).
-- **Phase 530 (current)**: implements the full 5-item Anti-Magic Amulet
+- **Phase 530**: implements the full 5-item Anti-Magic Amulet
   family (`models/treasure.py` ordinals 44-48, `TREASAB.X2`'s own
   "immunity to one Magical Ability's spells" -- White/Necromancy/
   Elemental/Psychic/Illusion, 1:1 positional) -- previously present only
@@ -22128,6 +22128,76 @@ follow-up request after the original 431-435 plan shipped.
     Fireball cast at the searching leader blocked by the leader's
     Anti-Elemental Amulet (mocking `roll_monster_encounter_plan` to
     force the guardian's plan). Ran again: 4621 passed (net +15).
+- **Phase 531 (current)**: corrects Phase 530's Anti-Magic Amulet shape.
+  The user supplied a new, dedicated magic-item dossier (`AKGEN_
+  reverse_engineering_report (4).md`, "Reverse engineering completo
+  degli oggetti magici" -- 73 real magic items, cataloged in 7
+  operational families with disassembly offsets for nearly every
+  mechanic) after being unhappy with Phase 530's own guessed shape.
+  SS8 reveals each of the 5 protection amulets blocks only 1-2 *named*
+  spells personally, not every spell of the matching magic college:
+  Shrunken-Head Amulet (White) blocks only Holy Symbol (not
+  Spiritwrack); The True Cross (Necromancy) blocks Kill_Enemy and
+  Hand_of_Death (not Control_Undead/Gate_Demon); Orb of Elemental
+  Stability (Elemental) blocks only Fireball (not Ice_Suspend/
+  Telek_Storm); Helm of Psychic Dampening (Psychic) blocks Charm and
+  Psychic Blast -- the one case Phase 530 already had exactly right,
+  since it was this session's only sourced example at the time. The
+  5th amulet, Crystal of True Seeing (Illusion), is a structurally
+  different mechanic (illusion detection + a Phantasmal Armies
+  halving, not a spell block) -- deliberately deferred to a later
+  phase, not silently dropped or force-fit into the spell-block shape.
+  SS8 also names a second, entirely separate mechanic this phase does
+  *not* yet implement: each protection additionally halves the
+  cast-success *chance* of a matching-college spell targeted at a
+  province the amulet's holder owns -- deferred alongside Crystal of
+  True Seeing, tracked for a follow-up phase.
+
+  `models/treasure.py` gains `AMULET_BLOCKED_SPELLS: dict[Treasure,
+  frozenset[Spell]]` (the 4 amulets' own exact blocked-spell sets);
+  `ANTI_MAGIC_AMULET_BY_ABILITY` (Phase 530) is kept, since the
+  deferred provincial-halving mechanic is genuinely whole-college and
+  will need it. `turn/discovery_effects.py holds_anti_magic_amulet()`
+  is replaced by `holder_is_immune_to_spell(state, leader_id, spell)`
+  -- keyed to the spell actually being cast, not to whichever magic
+  college happened to produce it. This also simplifies `_execute_charm`
+  (`cast_execution.py`): the school-selection dance (Necromancy for an
+  Undead caster, Psychic otherwise) that Phase 530 needed to pick the
+  right amulet no longer matters for the immunity check at all -- the
+  Helm of Psychic Dampening blocks Charm regardless of which school
+  actually cast it, confirmed directly by a new test. All 4 Phase 530
+  call sites (`cast_execution.py _execute_charm`/`_execute_kill_enemy`,
+  `challenge_execution.py _resolve_personal_combat_cast`, `search_
+  execution.py _resolve_cast_tactic`) now check the spell instead of
+  the ability; the existing `PERSONAL_COMBAT_SPELL_SELF_ONLY` exclusion
+  and single-checkpoint placement (before every per-spell branch,
+  including Control Undead's own early-return shape) are unchanged --
+  still correct under the new per-spell keying.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4 failures, all Phase 530's own amulet-shape tests (an import error
+    plus assertions built around the old blanket-school behavior) --
+    expected, not a regression.
+  - Rewrote/added tests across the 4 touched files: `test_discovery_
+    effects.py`'s own `holder_is_immune_to_spell()` tests now assert
+    per-spell precision directly (Anti-Psychic blocks Charm/Psychic
+    Blast but not Telekinetic Storm/Augur Combat; each amulet's own
+    blocked set individually; The True Cross's two-spell set reached
+    from either spell). `test_cast_execution.py`: Charm's amulet-block
+    test kept (still true), and the old "Undead caster's Necromancy
+    picks the Necromancy amulet" test replaced with two -- Charm still
+    blocked by the Helm of Psychic Dampening even when an Undead caster
+    casts it via Necromancy skill, and *not* blocked by The True Cross
+    even though that caster's Charm draws on Necromancy (proving
+    immunity is keyed to the spell, not the casting school).
+    `test_challenge_execution.py`: Fireball/Psychic-Blast tests kept:
+    the old Control-Undead-blocked-by-Anti-Necromancy test (no longer
+    true -- Control Undead isn't in The True Cross's blocked set)
+    replaced by a Hand-of-Death-blocked test (the True Cross's own
+    *second* blocked spell, still proving the checkpoint covers Control
+    Undead's own early-return branch shape structurally) plus a new
+    Control-Undead-*not*-blocked test making the correction concrete.
+    `test_search_execution.py`'s monster-casts-Fireball test kept (still
+    true). Ran again: 4624 passed (net +3).
 
 ## Setup
 

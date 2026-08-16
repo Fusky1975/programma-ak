@@ -1483,9 +1483,9 @@ def test_execute_search_cast_fireball_enhanced_ability_overrides_submarine_immun
 
 
 def test_execute_search_monster_cast_fireball_blocked_by_leaders_anti_elemental_amulet():
-    # Phase 530: models/treasure.py ANTI_MAGIC_AMULET_BY_ABILITY -- when
-    # the *monster* is the caster, the searching leader is the target;
-    # this proves the immunity check also applies on that side of the
+    # Phase 531: AKGEN_reverse_engineering_report (4).md SS8 -- when the
+    # *monster* is the caster, the searching leader is the target; this
+    # proves the immunity check also applies on that side of the
     # dispatcher, not just leader-casts-at-monster.
     state = _state_with_leader()
     state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=LEADER_ID)
