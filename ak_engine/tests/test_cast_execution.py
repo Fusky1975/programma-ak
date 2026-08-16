@@ -2565,3 +2565,157 @@ def test_execute_cast_wand_triggered_cast_at_natural_skill_0_grants_no_add_exper
 
     assert result.applied is True
     assert state.leaders[CASTER_ID].experience_credit == 0
+
+
+# ---------------------------------------------------------------------------
+# Province spell-chance halving (Phase 533) -- AKGEN_reverse_engineering_
+# report (4).md SS8: each of the 5 protection amulets also halves the
+# cast-success chance of any matching-college spell targeted at a province
+# the amulet holder's own Kingdom owns. All 10 province-targeted, ability-
+# mapped spells get one test each: caster skill level 4 (75% base chance),
+# a rival Kingdom owning the target province and holding the matching
+# amulet halves it to 37.5%; a single scripted 0.5 roll is > 37.5% (so the
+# halved chance always fails here) and < 75% (so an unhalved cast at the
+# same roll would have succeeded, per each spell's own pre-existing test
+# above) -- the failure alone proves the multiplier reached the roll.
+# ---------------------------------------------------------------------------
+
+
+def _state_with_amulet_owned_province(amulet: Treasure, terrain: Terrain) -> GameState:
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, terrain, Race.HUMAN, owner_kingdom_id=2))
+    state.add_leader(LeaderState(99, 2, "Amulet Holder", ELSEWHERE))
+    state.add_item(amulet, owner_leader_id=99)
+    return state
+
+
+def test_part_sea_success_chance_halved_by_provinces_owning_kingdoms_anti_white_amulet():
+    state = _state_with_amulet_owned_province(Treasure.AMULET_ANTI_WHITE, Terrain.SEA)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 4)
+    request = CastRequest(spell=Spell.PART_SEA, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_flood_success_chance_halved_by_provinces_owning_kingdoms_anti_elemental_amulet():
+    state = _state_with_amulet_owned_province(Treasure.AMULET_ANTI_ELEMENTAL, Terrain.PLAINS)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
+    request = CastRequest(spell=Spell.FLOOD, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_tornado_success_chance_halved_by_provinces_owning_kingdoms_anti_elemental_amulet():
+    state = _state_with_amulet_owned_province(Treasure.AMULET_ANTI_ELEMENTAL, Terrain.PLAINS)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
+    request = CastRequest(spell=Spell.TORNADO, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_earthquake_success_chance_halved_by_provinces_owning_kingdoms_anti_elemental_amulet():
+    state = _state_with_amulet_owned_province(Treasure.AMULET_ANTI_ELEMENTAL, Terrain.PLAINS)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_bless_success_chance_halved_by_provinces_owning_kingdoms_anti_white_amulet():
+    state = _state_with_amulet_owned_province(Treasure.AMULET_ANTI_WHITE, Terrain.PLAINS)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 4)
+    request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_illus_terrain_success_chance_halved_by_provinces_owning_kingdoms_anti_illusion_amulet():
+    state = _state_with_amulet_owned_province(Treasure.AMULET_ANTI_ILLUSION, Terrain.PLAINS)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ILLUSION, 4)
+    request = CastRequest(spell=Spell.ILLUS_TERRAIN, target=_target(LOCATION), terrain=Terrain.MTNS)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_illus_fog_success_chance_halved_by_provinces_owning_kingdoms_anti_illusion_amulet():
+    state = _state_with_amulet_owned_province(Treasure.AMULET_ANTI_ILLUSION, Terrain.PLAINS)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ILLUSION, 4)
+    request = CastRequest(spell=Spell.ILLUS_FOG, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_plague_success_chance_halved_by_provinces_owning_kingdoms_anti_necromancy_amulet():
+    state = _state_with_amulet_owned_province(Treasure.AMULET_ANTI_NECROMANCY, Terrain.PLAINS)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 4)
+    request = CastRequest(spell=Spell.PLAGUE, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_scar_terrain_success_chance_halved_by_provinces_owning_kingdoms_anti_necromancy_amulet():
+    state = _state_with_amulet_owned_province(Treasure.AMULET_ANTI_NECROMANCY, Terrain.PLAINS)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 4)
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_hide_feature_success_chance_halved_by_provinces_owning_kingdoms_anti_illusion_amulet():
+    state = _state_with_amulet_owned_province(Treasure.AMULET_ANTI_ILLUSION, Terrain.PLAINS)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ILLUSION, 4)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON))
+    request = CastRequest(spell=Spell.HIDE_FEATURE, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+def test_earthquake_not_halved_when_target_province_has_no_owner():
+    # Contrast case: same skill/roll setup as the halved test above, but
+    # the province has no owner at all -- province_halves_spell_chance()
+    # returns False, so the un-halved 75% chance beats the 0.5 roll.
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))  # owner_kingdom_id=None
+    state.add_leader(LeaderState(99, 2, "Amulet Holder", ELSEWHERE))
+    state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=99)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(LOCATION))
+
+    # A successful cast also rolls Add_Experience's own two-roll gain
+    # formula (turn/experience.py) -- two extra scripted values beyond
+    # the cast-success roll itself.
+    result = execute_cast(
+        state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5, 0.5, 0.5])
+    )
+
+    assert result.applied is True

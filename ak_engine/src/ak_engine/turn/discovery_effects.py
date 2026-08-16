@@ -53,7 +53,8 @@ from __future__ import annotations
 from ak_engine.models.discovery import DISCOVERY_ABILITY_BONUS
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, LeaderState
-from ak_engine.models.treasure import AMULET_BLOCKED_SPELLS
+from ak_engine.models.map import HexCoord
+from ak_engine.models.treasure import AMULET_BLOCKED_SPELLS, ANTI_MAGIC_AMULET_BY_ABILITY
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL
 
 
@@ -141,3 +142,34 @@ def holder_is_immune_to_spell(state: GameState, target_leader_id: int, spell: Sp
         if any(item.treasure is amulet for item in state.items_held_by(target_leader_id)):
             return True
     return False
+
+
+def province_halves_spell_chance(state: GameState, province_coord: HexCoord, ability: Ability) -> bool:
+    """Phase 533: ``AKGEN_reverse_engineering_report (4).md`` SS8 -- the
+    second, separate effect each of the 5 protection amulets grants: any
+    spell of the matching magic college targeted *at a province the
+    amulet holder owns* has its cast-success chance halved, regardless of
+    whether that particular spell is in the amulet's own personal
+    ``AMULET_BLOCKED_SPELLS`` set (this is genuinely whole-college, unlike
+    the personal immunity above -- reuses ``ANTI_MAGIC_AMULET_BY_ABILITY``,
+    Phase 530's own ability-keyed table, kept in ``models/treasure.py``
+    for exactly this purpose).
+
+    "The amulet holder owns the province" is read as: the province's own
+    ``ProvinceState.owner_kingdom_id`` matches any leader of that Kingdom
+    currently holding the matching amulet -- the holder need not be
+    physically present, matching the personal-immunity check's own
+    "state.items_held_by" possession-only shape.
+    """
+
+    province = state.provinces.get(province_coord)
+    if province is None or province.owner_kingdom_id is None:
+        return False
+    amulet = ANTI_MAGIC_AMULET_BY_ABILITY.get(ability)
+    if amulet is None:
+        return False
+    return any(
+        leader.kingdom_id == province.owner_kingdom_id
+        and any(item.treasure is amulet for item in state.items_held_by(leader.leader_id))
+        for leader in state.leaders.values()
+    )

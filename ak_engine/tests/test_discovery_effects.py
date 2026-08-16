@@ -7,12 +7,17 @@ from __future__ import annotations
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
-from ak_engine.turn.discovery_effects import ability_bonus_from_discoveries, effective_skill_level, holder_is_immune_to_spell
+from ak_engine.turn.discovery_effects import (
+    ability_bonus_from_discoveries,
+    effective_skill_level,
+    holder_is_immune_to_spell,
+    province_halves_spell_chance,
+)
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL
 
 HOME = HexCoord(0, 0)
@@ -177,6 +182,83 @@ def test_holder_is_immune_to_spell_true_when_either_of_necromancys_two_amulet_sp
     assert holder_is_immune_to_spell(state, 1, Spell.KILL_ENEMY) is True
     assert holder_is_immune_to_spell(state, 1, Spell.HAND_OF_DEATH) is True
     assert holder_is_immune_to_spell(state, 1, Spell.CONTROL_UNDEAD) is False
+
+
+# -- Phase 533: province_halves_spell_chance -----------------------------
+# AKGEN_reverse_engineering_report (4).md SS8 -- a genuinely whole-college
+# effect, separate from holder_is_immune_to_spell()'s per-spell personal
+# immunity: any spell of the matching college targeted at a province the
+# amulet holder's own Kingdom owns has its cast-success chance halved.
+
+
+def _province_owned_by(kingdom_id: int) -> ProvinceState:
+    return ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=kingdom_id)
+
+
+def test_province_halves_spell_chance_true_when_owning_kingdoms_leader_holds_matching_amulet():
+    state = make_state()
+    state.add_province(_province_owned_by(1))
+    state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=1)
+
+    assert province_halves_spell_chance(state, HOME, Ability.ELEMENTAL) is True
+
+
+def test_province_halves_spell_chance_false_for_unowned_province():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN))  # owner_kingdom_id=None
+    state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=1)
+
+    assert province_halves_spell_chance(state, HOME, Ability.ELEMENTAL) is False
+
+
+def test_province_halves_spell_chance_false_for_unknown_province():
+    state = make_state()
+    state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=1)
+
+    assert province_halves_spell_chance(state, HOME, Ability.ELEMENTAL) is False
+
+
+def test_province_halves_spell_chance_false_when_owning_kingdom_holds_a_different_amulet():
+    state = make_state()
+    state.add_province(_province_owned_by(1))
+    state.add_item(Treasure.AMULET_ANTI_WHITE, owner_leader_id=1)
+
+    assert province_halves_spell_chance(state, HOME, Ability.ELEMENTAL) is False
+
+
+def test_province_halves_spell_chance_false_when_owning_kingdom_holds_no_items():
+    state = make_state()
+    state.add_province(_province_owned_by(1))
+
+    assert province_halves_spell_chance(state, HOME, Ability.ELEMENTAL) is False
+
+
+def test_province_halves_spell_chance_false_when_a_different_kingdom_holds_the_matching_amulet():
+    # The amulet must belong to the *owning* Kingdom's own leader -- a
+    # rival Kingdom holding the same amulet type has no effect on a
+    # province it doesn't own.
+    state = make_state()
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.NEUTRAL, HOME))
+    state.add_leader(LeaderState(2, 2, "Rival", HOME))
+    state.add_province(_province_owned_by(1))
+    state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=2)
+
+    assert province_halves_spell_chance(state, HOME, Ability.ELEMENTAL) is False
+
+
+def test_province_halves_spell_chance_covers_every_amulet_ability():
+    cases = (
+        (Ability.WHITE, Treasure.AMULET_ANTI_WHITE),
+        (Ability.NECROMANCY, Treasure.AMULET_ANTI_NECROMANCY),
+        (Ability.ELEMENTAL, Treasure.AMULET_ANTI_ELEMENTAL),
+        (Ability.PSYCHIC, Treasure.AMULET_ANTI_PSYCHIC),
+        (Ability.ILLUSION, Treasure.AMULET_ANTI_ILLUSION),
+    )
+    for ability, amulet in cases:
+        solo_state = make_state()
+        solo_state.add_province(_province_owned_by(1))
+        solo_state.add_item(amulet, owner_leader_id=1)
+        assert province_halves_spell_chance(solo_state, HOME, ability) is True
 
 
 # -- Phase 532: Crystal of True Seeing (AMULET_ANTI_ILLUSION) joins the

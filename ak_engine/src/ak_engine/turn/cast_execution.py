@@ -683,7 +683,7 @@ from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.discovery_effects import effective_skill_level, holder_is_immune_to_spell
+from ak_engine.turn.discovery_effects import effective_skill_level, holder_is_immune_to_spell, province_halves_spell_chance
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     Combatant,
@@ -1696,7 +1696,10 @@ def _execute_part_sea(
     if province.effective_terrain() is not Terrain.SEA:
         return CastExecutionResult(request, applied=False, reason="target province is not Sea")
 
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    part_sea_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.WHITE) else 1.0
+    succeeded, reason = _roll_cast_success(
+        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=part_sea_multiplier
+    )
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -1728,7 +1731,10 @@ def _execute_flood(
     if province.effective_terrain() not in _FLOOD_ELIGIBLE_TERRAIN:
         return CastExecutionResult(request, applied=False, reason="target province is not a non-mountain land province")
 
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    flood_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.ELEMENTAL) else 1.0
+    succeeded, reason = _roll_cast_success(
+        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=flood_multiplier
+    )
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -1763,7 +1769,10 @@ def _execute_tornado(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
 
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    tornado_multiplier = 0.5 if province_halves_spell_chance(state, coord, Ability.ELEMENTAL) else 1.0
+    succeeded, reason = _roll_cast_success(
+        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=tornado_multiplier
+    )
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -1810,7 +1819,10 @@ def _execute_earthquake(
     if province.effective_terrain() is Terrain.SEA:
         return CastExecutionResult(request, applied=False, reason="target province is not land")
 
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    earthquake_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.ELEMENTAL) else 1.0
+    succeeded, reason = _roll_cast_success(
+        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=earthquake_multiplier
+    )
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -1860,7 +1872,10 @@ def _execute_bless(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found")
 
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    bless_multiplier = 0.5 if province_halves_spell_chance(state, coord, Ability.WHITE) else 1.0
+    succeeded, reason = _roll_cast_success(
+        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=bless_multiplier
+    )
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -1899,7 +1914,10 @@ def _execute_illus_terrain(
     if not isinstance(request.terrain, Terrain):
         return CastExecutionResult(request, applied=False, reason="fake terrain not specified")
 
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    illus_terrain_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.ILLUSION) else 1.0
+    succeeded, reason = _roll_cast_success(
+        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=illus_terrain_multiplier
+    )
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -2083,7 +2101,10 @@ def _execute_illus_fog(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
 
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    illus_fog_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.ILLUSION) else 1.0
+    succeeded, reason = _roll_cast_success(
+        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=illus_fog_multiplier
+    )
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -2226,7 +2247,10 @@ def _execute_plague(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
 
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    plague_multiplier = 0.5 if province_halves_spell_chance(state, coord, Ability.NECROMANCY) else 1.0
+    succeeded, reason = _roll_cast_success(
+        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=plague_multiplier
+    )
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -2262,7 +2286,10 @@ def _execute_scar_terrain(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
 
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    scar_terrain_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.NECROMANCY) else 1.0
+    succeeded, reason = _roll_cast_success(
+        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=scar_terrain_multiplier
+    )
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -2494,7 +2521,10 @@ def _execute_hide_feature(
     if not features:
         return CastExecutionResult(request, applied=False, reason="no feature to hide")
 
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    hide_feature_multiplier = 0.5 if province_halves_spell_chance(state, coord, Ability.ILLUSION) else 1.0
+    succeeded, reason = _roll_cast_success(
+        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=hide_feature_multiplier
+    )
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 

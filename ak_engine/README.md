@@ -22198,7 +22198,7 @@ follow-up request after the original 431-435 plan shipped.
     Control-Undead-*not*-blocked test making the correction concrete.
     `test_search_execution.py`'s monster-casts-Fireball test kept (still
     true). Ran again: 4624 passed (net +3).
-- **Phase 532 (current)**: Crystal of True Seeing (Treasure ordinal 48,
+- **Phase 532**: Crystal of True Seeing (Treasure ordinal 48,
   `AMULET_ANTI_ILLUSION`) -- the 5th protection amulet Phase 531
   deliberately deferred, since SS8 point 3 (`AKGEN_reverse_engineering_
   report (4).md`) makes it structurally different from the other 4: a
@@ -22245,6 +22245,42 @@ follow-up request after the original 431-435 plan shipped.
     `test_battle_orchestrator.py` -- two new tests: Crystal alone halves
     15%/level to 7.5%/level; Crystal stacked with Observation Balloons
     reduces 5%/level to 2.5%/level. Ran again: 4630 passed (net +6).
+- **Phase 533 (current)**: the last piece of the 5 protection amulets'
+  own mechanic (`AKGEN_reverse_engineering_report (4).md` SS8): a
+  genuinely whole-college effect, separate from `holder_is_immune_to_
+  spell()`'s per-spell personal immunity -- any spell of the matching
+  magic college targeted at a province the amulet holder's own Kingdom
+  owns has its cast-success chance halved, regardless of whether that
+  particular spell is in the amulet's own narrower blocked-spell set.
+
+  `turn/discovery_effects.py` gains `province_halves_spell_chance(state,
+  province_coord, ability) -> bool`, reusing Phase 530's own `ANTI_MAGIC_
+  AMULET_BY_ABILITY` (kept around specifically for this) since the
+  halving is ability-college-keyed, not spell-keyed: resolves the
+  province's `owner_kingdom_id`, then checks whether any leader of that
+  Kingdom holds the matching amulet. Wired into all 10 province-targeted,
+  ability-mapped spells in `cast_execution.py` (`_SPELL_ABILITY`'s own
+  White/Elemental/Necromancy/Illusion entries) -- Part_Sea, Flood,
+  Tornado, Earthquake, Bless (White/Elemental), Illus_Terrain, Illus_Fog,
+  Hide_Feature (Illusion), Plague, Scar_Terrain (Necromancy) -- each now
+  passes `success_chance_multiplier=0.5 if province_halves_spell_chance(...)
+  else 1.0` into the same `_roll_cast_success()` checkpoint Kill_Enemy's
+  own [4.25.2] halving already established the parameter for. No Psychic
+  province-target spell exists in this project's catalog, so that amulet's
+  own halving has no consumer yet -- `ANTI_MAGIC_AMULET_BY_ABILITY`
+  already covers it the moment one does.
+  - Ran the full suite before writing new tests (non-breaking check):
+    4630 passed, confirming no regressions from the wiring alone.
+  - Added tests: `test_discovery_effects.py` -- `province_halves_spell_
+    chance()` unit tests (owning-Kingdom's amulet halves it; no owner/
+    unknown province/wrong amulet/no items/a *different* Kingdom holding
+    the same amulet type all leave it unhalved; all 5 amulet abilities
+    covered). `test_cast_execution.py` -- one integration test per
+    affected spell (a rival Kingdom owning the target province and
+    holding the matching amulet turns a scripted 0.5 roll, which would
+    have succeeded at the un-halved 75% chance, into a failure at the
+    halved 37.5% chance), plus one contrast test (an unowned province
+    leaves the same roll succeeding). Ran again: 4648 passed (net +18).
 
 ## Setup
 
