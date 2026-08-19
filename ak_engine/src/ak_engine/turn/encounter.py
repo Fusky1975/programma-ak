@@ -4234,12 +4234,17 @@ MONSTER_STEAL_GOLD_IF_NO_ITEM: dict[Monster, int] = {
 # sourced from `HostAK/TP/CTME.PAS`'s own `talkdiff` table ("DR" is
 # that table's own column header, confirmed as the Druid ability's
 # abbreviation at `CTBOTH.PAS` line 151: `'DR','TH','EX','SP','SA'`).
-# Cross-checked against the user's own supplied rulebook table: 43 of
-# 60 species agreed exactly; where the two disagreed (17 species:
-# Beholder, Black Dragon, Chimera, Elemental Sorceror, Gargoyle, Ghost,
-# Giant, Giant Clam, Giant Worm, Green Dragon, Hydra, Imp, Mermaid,
-# Mummy, Spectre, Troll, Werewolf), the user (project author) confirmed
-# directly that the Pascal table wins.
+# Cross-checked against `Desktop/TALK SAY FULFILL.txt`'s own "Ecco una
+# tabella di quando livello di DR ci vuole per parlare con i mostri"
+# table (identified as the specific source file, Phase 549, during a
+# fresh Talk-mechanic audit): 43 of 60 species agreed exactly; where
+# the two disagreed (17 species: Beholder, Black Dragon, Chimera,
+# Elemental Sorceror, Gargoyle, Ghost, Giant, Giant Clam, Giant Worm,
+# Green Dragon, Hydra, Imp, Mermaid, Mummy, Spectre, Troll, Werewolf),
+# the user (project author) confirmed directly that the Pascal table
+# wins -- see `tests/test_encounter.py test_talk_monster_druid_level_
+# required_documented_disagreements_with_user_compiled_list()` for the
+# pinned per-species comparison against that file's own values.
 TALK_MONSTER_DRUID_LEVEL_REQUIRED: dict[Monster, int] = {
     Monster.ROC: 1,
     Monster.GRYPHON: 1,

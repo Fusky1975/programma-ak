@@ -2251,6 +2251,39 @@ def test_talk_monster_druid_level_required_spot_values():
     assert TALK_MONSTER_DRUID_LEVEL_REQUIRED[Monster.ARCHER] == 0
 
 
+def test_talk_monster_druid_level_required_documented_disagreements_with_user_compiled_list():
+    # Phase 549: Desktop/TALK SAY FULFILL.txt's own "DR che serve per
+    # parlarci" table disagrees with this Pascal-sourced (CTME.PAS
+    # talkdiff) table for exactly these 17 of 60 species -- pinned here
+    # as the deliberate resolution (the Pascal table wins, per the
+    # user's own direct confirmation, same precedent as Phase 545's own
+    # monster-intelligence resolution), not an oversight. If any of
+    # these ever changes, TALK_MONSTER_DRUID_LEVEL_REQUIRED's own module
+    # comment needs updating too.
+    disagreements = {
+        Monster.BEHOLDER: 2,  # TALK SAY FULFILL.txt: 1
+        Monster.B_DRAGON: 0,  # TALK SAY FULFILL.txt: 2
+        Monster.CHIMERA: 4,  # TALK SAY FULFILL.txt: 2
+        Monster.ELE_MAGE: 0,  # TALK SAY FULFILL.txt: 1
+        Monster.GARGOYLE: 2,  # TALK SAY FULFILL.txt: 1
+        Monster.GHOST: 0,  # TALK SAY FULFILL.txt: 1
+        Monster.GIANT: 0,  # TALK SAY FULFILL.txt: 1
+        Monster.GI_CLAM: 2,  # TALK SAY FULFILL.txt: 4
+        Monster.GI_WORM: 3,  # TALK SAY FULFILL.txt: 4
+        Monster.GR_DRAGON: 0,  # TALK SAY FULFILL.txt: 1
+        Monster.HYDRA: 4,  # TALK SAY FULFILL.txt: 2
+        Monster.IMP: 0,  # TALK SAY FULFILL.txt: 1
+        Monster.MERMAID: 0,  # TALK SAY FULFILL.txt: 2
+        Monster.MUMMY: 0,  # TALK SAY FULFILL.txt: 1
+        Monster.SPECTRE: 0,  # TALK SAY FULFILL.txt: 1
+        Monster.TROLL: 0,  # TALK SAY FULFILL.txt: 1
+        Monster.WEREWOLF: 0,  # TALK SAY FULFILL.txt: 1
+    }
+    assert len(disagreements) == 17
+    for monster, expected in disagreements.items():
+        assert TALK_MONSTER_DRUID_LEVEL_REQUIRED[monster] == expected
+
+
 def test_can_talk_to_monster_gate():
     assert can_talk_to_monster(Monster.GARGOYLE, 1) is False
     assert can_talk_to_monster(Monster.GARGOYLE, 2) is True

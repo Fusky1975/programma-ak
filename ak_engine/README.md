@@ -22755,7 +22755,7 @@ follow-up request after the original 431-435 plan shipped.
   visitor's own fixed item but allows a different held item through.
   Ran again: 4763 passed (net +10).
 
-- **Phase 548 (current, 3 of 3: Valhalla visitor lifecycle)**: closes
+- **Phase 548 (3 of 3: Valhalla visitor lifecycle)**: closes
   the trilogy with departure and loot routing.
   - **Army hand-off**: new `turn/valhalla_execution.py _reassign_
     visitor_armies()` -- King first (mirroring the item hand-off's own
@@ -22813,6 +22813,26 @@ follow-up request after the original 431-435 plan shipped.
   monster-intelligence audit -- turn-deadline voiding stays the one
   confirmed-out-of-scope rule (no in-engine deadline detector exists
   anywhere in this codebase to hook it to).
+
+- **Phase 549 (current)**: resolved the 17 remaining discrepancies
+  between `turn/encounter.py TALK_MONSTER_DRUID_LEVEL_REQUIRED` (the
+  CTME.PAS-sourced `talkdiff` table) and `Desktop/TALK SAY FULFILL.txt`
+  -- identified as the specific "user's own supplied rulebook table"
+  that dict's own long-standing module comment already referenced by
+  description but never by filename. Beholder, Black Dragon, Chimera,
+  Elemental Sorceror, Gargoyle, Ghost, Giant, Giant Clam, Giant Worm,
+  Green Dragon, Hydra, Imp, Mermaid, Mummy, Spectre, Troll, Werewolf.
+  No behavioral code change -- the Pascal table already won in the live
+  dict (the user's own prior direct confirmation, same precedent Phase
+  545 already established for the monster-intelligence audit); this
+  phase only names the source file precisely in the module comment and
+  adds a pinning test recording the exact per-species comparison, so a
+  future accidental edit to any of the 17 values is caught. Ran before
+  writing the test: 4773 passed (non-breaking). Added test:
+  `test_talk_monster_druid_level_required_documented_disagreements_
+  with_user_compiled_list()`, pinning all 17 species' `TALK_MONSTER_
+  DRUID_LEVEL_REQUIRED` values against their `TALK SAY FULFILL.txt`
+  counterparts. Ran again: 4774 passed (net +1).
 
 ## Setup
 
