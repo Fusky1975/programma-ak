@@ -705,20 +705,27 @@ class LeaderState:
     # race_titles.py.
     race_title_tally: dict[Race, RaceTitleTally] = field(default_factory=dict)
     # Phase 259: True for a Royal Heir automatically installed on the
-    # throne by remove_leader() when a King dies, until either a new
-    # King is created on top of it (a future phase) or a Resurrection
-    # cast restores the exact dead King instead -- see remove_leader()'s
-    # own Phase 259 addendum and turn/cast_execution.py
-    # _execute_resurrection()'s own Royal-Heir branch. Rulebook
-    # (RULES.AK [4.21.1]): "as soon as you assign your Heir his new
-    # skill levels, or improve any of his abilities by practice or
-    # experience, you lose the resurrection option" -- turn/
-    # practice_execution.py clears this flag the moment Practice
-    # actually raises a skill or aptitude level, the one real
-    # ability-improving mechanic this project has; "experience" has no
-    # separate skill-rise consumer anywhere in this project to also
-    # clear it from (same "no source, no consumer" gap already flagged
-    # for other under-modeled mechanics).
+    # throne by remove_leader() when a King dies, until turn/
+    # succession.py create_king() finalizes it into a real King (clears
+    # this flag) -- see remove_leader()'s own Phase 259 addendum.
+    # **Phase 553 correction**: this flag alone does NOT mean the Heir
+    # is still Resurrection-eligible/still displays as "Royal Heir" in
+    # reports. RULES.AK [4.21.1]'s own quote ("as soon as you assign
+    # your Heir his new skill levels, or improve any of his abilities by
+    # practice or experience, you lose the resurrection option") reads
+    # as an edge-triggered rule, but AKGEN_reverse_engineering_report
+    # (5).md SS6.2/SS11.1 (REPORTS.PAS Get_HName, machine-verified) shows
+    # the real engine checks a *numeric* threshold instead, every time:
+    # Total_USkill(leader) < 7 (turn/cast_execution.py
+    # is_unfinalized_royal_heir()). turn/practice_execution.py no longer
+    # clears this flag on a skill/aptitude rise -- a Heir who trains one
+    # ability while still under the threshold stays eligible, matching
+    # the real engine; crossing the threshold closes eligibility via the
+    # numeric check alone, with no flag mutation needed. This flag itself
+    # is cleared only by turn/succession.py create_king() (finalized into
+    # a real King) or by turn/cast_execution.py
+    # _execute_resurrection()'s own Royal-Heir branch (Resurrection
+    # consumed).
     is_royal_heir: bool = False
     # Phase 260: models/sex.py's own Sex -- "confirmed absent" since
     # Phases 195/217/230, now given its first real writer

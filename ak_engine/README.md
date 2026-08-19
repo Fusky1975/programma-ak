@@ -22903,7 +22903,7 @@ follow-up request after the original 431-435 plan shipped.
   is legitimate and untouched); `VALHALLA_ROSTER` itself stays exactly
   137. Ran again: 4783 passed (net +7).
 
-- **Phase 552 (current)**: corrected `GameState.remove_leader()`'s Royal
+- **Phase 552**: corrected `GameState.remove_leader()`'s Royal
   Heir skill reset. The user supplied a new disassembly-sourced report
   (`AKGEN_reverse_engineering_report (5).md`) covering King death/
   succession/`(K)g Ab` end to end (SS1-18, machine-verified against
@@ -22924,6 +22924,36 @@ follow-up request after the original 431-435 plan shipped.
   Archery/Sage pairs instead of an all-zero table; added a test that
   `turn/cast_execution.py _total_usable_skill()` reads exactly 3 on a
   freshly-installed Heir. Ran again: 4784 passed (net +1).
+
+- **Phase 553 (current)**: corrected Royal Heir Resurrection/report
+  eligibility from an edge-triggered flag to the real numeric threshold.
+  `turn/practice_execution.py`'s two `is_royal_heir`-clearing call sites
+  used to drop the flag the instant Practice raised any skill or
+  aptitude, reading RULES.AK [4.21.1]'s "as soon as you... improve any
+  of his abilities by practice or experience, you lose the resurrection
+  option" as edge-triggered. `AKGEN_reverse_engineering_report (5).md`
+  SS6.2/SS11.1 (`REPORTS.PAS Get_HName`, machine-verified) shows the
+  real engine instead checks `Total_USkill(ldr) < 7` every time it
+  matters, not a one-shot flag: a Heir who trains one ability while
+  still under the threshold stays eligible. Removed both clearing sites;
+  added `turn/cast_execution.py is_unfinalized_royal_heir()` (`leader.
+  is_royal_heir and _total_usable_skill(leader) < 7`) as the real,
+  dynamically-checked eligibility test, and updated `_execute_
+  resurrection()`'s King-via-Heir branch to use it instead of the flag
+  alone -- a Heir who has already crossed the threshold (but hasn't yet
+  been finalized into a real King by `turn/succession.py create_king()`)
+  now correctly refuses Resurrection instead of falling through to the
+  ordinary dead-leader branch and incorrectly reviving the archived King
+  on top of the still-living Heir. `LeaderState.is_royal_heir` itself
+  now means only "occupies the Royal-Heir slot, not yet finalized" --
+  cleared solely by `create_king()` or a successful Resurrection. Ran
+  before writing tests: 4784 passed (non-breaking). Updated the two
+  existing Practice tests that asserted the flag got cleared; added
+  tests for a below-threshold rise staying eligible and an at-threshold
+  rise losing eligibility via the numeric check alone (flag untouched),
+  three direct `is_unfinalized_royal_heir()` cases, and a Resurrection
+  test confirming a past-threshold Heir is refused without touching
+  `dead_leaders` or the flag. Ran again: 4790 passed (net +6).
 
 ## Setup
 

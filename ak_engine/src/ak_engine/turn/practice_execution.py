@@ -860,13 +860,16 @@ def execute_practice(
     skills.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
     if outcome.new_credit is not None:
         leader.experience_credit = outcome.new_credit
-    if outcome.skill_rose or outcome.aptitude_rose:
-        # Phase 259: RULES.AK [4.21.1] -- a Royal Heir loses the
-        # Resurrection-restores-the-old-King option the instant Practice
-        # actually raises any of his abilities. See LeaderState.
-        # is_royal_heir's own docstring for the full quote and the other
-        # (Resurrection-based) way this flag gets consumed.
-        leader.is_royal_heir = False
+    # Phase 553 correction: this call site used to clear is_royal_heir
+    # the instant any skill/aptitude rise happened here (a project-
+    # original reading of RULES.AK [4.21.1]'s "as soon as you... improve
+    # any of his abilities by practice"). AKGEN_reverse_engineering_
+    # report (5).md SS6.2/SS11.1 shows the real engine instead checks a
+    # numeric Total_USkill(leader) < 7 threshold every time it matters
+    # (turn/cast_execution.py is_unfinalized_royal_heir()) -- a Heir who
+    # trains one ability while still under the threshold stays eligible.
+    # No flag mutation belongs here any more; see LeaderState.
+    # is_royal_heir's own docstring for the corrected semantics.
 
     advanced_ability_granted = _maybe_grant_advanced_ability(state, leader, ability, outcome.skill_rose, outcome.new_skill)
     society_maps_revealed = _maybe_receive_society_maps(state, leader, ability, rng)
@@ -1050,9 +1053,8 @@ def execute_practice_group(
         table.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
         if outcome.new_credit is not None:
             leader.experience_credit = outcome.new_credit
-        if outcome.skill_rose or outcome.aptitude_rose:
-            # Phase 259: same is_royal_heir-clearing rule as execute_practice()'s own.
-            leader.is_royal_heir = False
+        # Phase 553: same removal as execute_practice()'s own -- see that
+        # call site's comment for the sourced correction.
 
         advanced_ability_granted = _maybe_grant_advanced_ability(state, leader, ability, outcome.skill_rose, outcome.new_skill)
         society_maps_revealed = _maybe_receive_society_maps(state, leader, ability, rng)

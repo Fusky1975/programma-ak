@@ -13,6 +13,7 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.turn.cast_execution import is_unfinalized_royal_heir
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.practice_execution import (
     APT_RISE_CHANCE,
@@ -1190,10 +1191,17 @@ def test_execute_practice_sage_discovery_credits_a_later_independent_discoverer(
     assert state.discoveries_first_found_by[Discovery.LAND_SHIP] == 2  # unchanged -- kingdom 2 stays first
 
 
-# -- Phase 259: Practice clears a Royal Heir's resurrection eligibility --
+# -- Phase 259/553: Royal Heir resurrection eligibility --
+#
+# Phase 553 correction: execute_practice()/execute_practice_group() no
+# longer clear is_royal_heir on a skill/aptitude rise -- the real engine
+# (AKGEN_reverse_engineering_report (5).md SS6.2/SS11.1) gates
+# eligibility on a numeric Total_USkill(leader) < 7 threshold instead,
+# checked dynamically via turn/cast_execution.py
+# is_unfinalized_royal_heir(), not by mutating this flag here.
 
 
-def test_execute_practice_clears_is_royal_heir_when_skill_rises():
+def test_execute_practice_does_not_clear_is_royal_heir_when_skill_rises():
     state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
     state.leaders[1].experience_credit = 96  # +5 this call crosses the threshold
     state.leaders[1].is_royal_heir = True
@@ -1201,7 +1209,7 @@ def test_execute_practice_clears_is_royal_heir_when_skill_rises():
     result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
 
     assert result.skill_rose is True
-    assert state.leaders[1].is_royal_heir is False
+    assert state.leaders[1].is_royal_heir is True  # Phase 553: no longer cleared here
 
 
 def test_execute_practice_leaves_is_royal_heir_when_nothing_rises():
@@ -1227,7 +1235,7 @@ def test_execute_practice_non_heir_is_royal_heir_stays_false():
     assert state.leaders[1].is_royal_heir is False  # was already False -- stays False
 
 
-def test_execute_practice_group_clears_is_royal_heir_only_for_the_leader_who_actually_rose():
+def test_execute_practice_group_does_not_clear_is_royal_heir_for_either_leader():
     state = _state_with_leaders(
         1,
         2,
@@ -1243,8 +1251,38 @@ def test_execute_practice_group_clears_is_royal_heir_only_for_the_leader_who_act
 
     assert results[0].skill_rose is True
     assert results[1].skill_rose is False
-    assert state.leaders[1].is_royal_heir is False  # rose -- cleared
-    assert state.leaders[2].is_royal_heir is True  # didn't rise -- untouched
+    assert state.leaders[1].is_royal_heir is True  # Phase 553: no longer cleared here
+    assert state.leaders[2].is_royal_heir is True  # didn't rise -- untouched anyway
+
+
+def test_execute_practice_one_skill_rise_below_threshold_stays_resurrection_eligible():
+    # Phase 553: the real gate is numeric (Total_USkill < 7), not
+    # edge-triggered on any Practice rise -- a Heir with a low starting
+    # total who trains one ability stays eligible.
+    state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
+    state.leaders[1].skills.set_pair_for_ability(Ability.MELEE, skill=1, aptitude=3)
+    state.leaders[1].experience_credit = 96
+    state.leaders[1].is_royal_heir = True
+
+    result = execute_practice(state, leader_id=1, ability=Ability.ARCHERY, rng=ScriptedRandom([0.01]))
+
+    assert result.skill_rose is True
+    assert is_unfinalized_royal_heir(state.leaders[1]) is True
+
+
+def test_execute_practice_skill_rise_crossing_threshold_ends_resurrection_eligibility():
+    # Total_USkill reaches 7 with this rise -- the numeric check alone
+    # (not a flag mutation) now correctly reports ineligible.
+    state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
+    state.leaders[1].skills.set_pair_for_ability(Ability.MELEE, skill=6, aptitude=9)
+    state.leaders[1].experience_credit = 96
+    state.leaders[1].is_royal_heir = True
+
+    result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
+
+    assert result.skill_rose is True
+    assert state.leaders[1].is_royal_heir is True  # flag itself untouched
+    assert is_unfinalized_royal_heir(state.leaders[1]) is False  # but no longer eligible
 
 
 # -- Phase 396: Sage's device-discovery roll extended to group practice ---

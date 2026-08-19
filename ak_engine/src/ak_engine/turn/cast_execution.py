@@ -1372,6 +1372,22 @@ def _total_usable_skill(leader: LeaderState) -> int:
     return sum(leader.skills.pair_for_ability(ability)[0] for ability in Ability)
 
 
+def is_unfinalized_royal_heir(leader: LeaderState) -> bool:
+    """Whether ``leader`` is still eligible for Royal-Heir-specific treatment
+    (Resurrection-restores-the-dead-King, the "Royal Heir" report-name
+    substitution) -- **Phase 553**, ``AKGEN_reverse_engineering_report
+    (5).md`` SS6.2/SS11.1 (``REPORTS.PAS Get_HName``, machine-verified):
+    the real engine gates both on ``Total_USkill(ldr) < 7`` every time,
+    not on an edge-triggered "has Practice ever raised a skill" flag.
+    ``leader.is_royal_heir`` still marks "occupies the Royal-Heir slot,
+    not yet finalized into a real King by ``turn/succession.py
+    create_king()``" -- this function adds the numeric half of the real
+    eligibility check on top of it.
+    """
+
+    return leader.is_royal_heir and _total_usable_skill(leader) < 7
+
+
 def _apply_undead_king_alignment_conversion(caster: LeaderState, target: LeaderState) -> None:
     """AKGEN_reverse_engineering_report (3).md SS88-96 (``Undead_Action_
     Charm``, ``AK.EXE:0x11224-0x11320``) -- see ``_execute_charm``'s own
@@ -1672,6 +1688,16 @@ def _execute_resurrection(
 
     heir = state.leaders.get(request.target)
     if heir is not None and heir.is_royal_heir:
+        if not is_unfinalized_royal_heir(heir):
+            # Phase 553: the flag alone (heir.is_royal_heir) no longer
+            # means the Resurrection option is still open -- see
+            # is_unfinalized_royal_heir()'s own docstring. Once
+            # Total_USkill(heir) reaches 7, the option is gone even
+            # though the Heir is still alive and occupying this slot
+            # (falling through to the ordinary dead_leaders branch below
+            # would incorrectly resurrect the stale archived King on top
+            # of a living occupant).
+            return CastExecutionResult(request, applied=False, reason="Royal Heir has trained past the Resurrection threshold")
         old_king = state.dead_leaders.get(request.target)
         if old_king is None:
             return CastExecutionResult(request, applied=False, reason="target character not found")

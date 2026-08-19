@@ -38,6 +38,7 @@ from ak_engine.turn.cast_execution import (
     execute_cast,
     illusory_fog_strength,
     is_illusory_fog_affected_air_unit,
+    is_unfinalized_royal_heir,
     locate_object,
     scar_terrain_collapse,
     scar_terrain_is_exhausted,
@@ -465,6 +466,21 @@ def test_total_usable_skill_returns_zero_when_skills_unrecorded():
 
 def test_undead_king_conversion_step_budget_numerator_is_twelve():
     assert UNDEAD_CONVERSION_STEP_BUDGET_NUMERATOR == 12
+
+
+def test_is_unfinalized_royal_heir_true_below_the_threshold():
+    leader = LeaderState(2, None, "Heir", LOCATION, is_royal_heir=True, skills=_skills_totaling(6))
+    assert is_unfinalized_royal_heir(leader) is True
+
+
+def test_is_unfinalized_royal_heir_false_at_the_threshold():
+    leader = LeaderState(2, None, "Heir", LOCATION, is_royal_heir=True, skills=_skills_totaling(7))
+    assert is_unfinalized_royal_heir(leader) is False
+
+
+def test_is_unfinalized_royal_heir_false_when_flag_is_not_set():
+    leader = LeaderState(2, None, "Not a Heir", LOCATION, is_royal_heir=False, skills=_skills_totaling(0))
+    assert is_unfinalized_royal_heir(leader) is False
 
 
 def test_undead_king_conversion_table_matches_the_dossiers_own_worked_examples():
@@ -1173,6 +1189,29 @@ def test_resurrection_on_a_royal_heir_fails_without_an_archived_king():
 
     assert result.applied is False
     assert result.reason == "target character not found"
+
+
+def test_resurrection_on_a_royal_heir_past_the_threshold_is_refused():
+    # Phase 553: heir.is_royal_heir alone is no longer enough -- once
+    # Total_USkill(heir) reaches 7, the option is gone even though the
+    # flag itself is untouched (see is_unfinalized_royal_heir()'s own
+    # docstring; the flag is cleared only by create_king() or a
+    # successful Resurrection).
+    state = build_state()
+    state.dead_leaders[78] = LeaderState(78, 2, "Old King", LOCATION, is_king=True)
+    trained_skills = SkillTable(raw_values=[0] * 31)
+    trained_skills.set_pair_for_ability(Ability.MELEE, skill=7, aptitude=9)
+    state.add_leader(
+        LeaderState(78, 2, "Old King", LOCATION, is_king=True, is_royal_heir=True, skills=trained_skills)
+    )
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "Royal Heir has trained past the Resurrection threshold"
+    assert 78 in state.dead_leaders  # archived King left untouched, not consumed
+    assert state.leaders[78].is_royal_heir is True  # flag itself still not cleared by this refusal
 
 
 def test_resurrection_on_a_royal_heir_increments_the_casters_merit_tally():
