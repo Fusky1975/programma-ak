@@ -22420,7 +22420,7 @@ follow-up request after the original 431-435 plan shipped.
   roll and loots the feature; item held but guardian doesn't match still
   uses the normal table; no item against a Dragon still uses the normal
   table). Ran again: 4699 passed (net +9).
-- **Phase 538 (current, closes the 8-phase magic-item rework)**: Arcane's
+- **Phase 538 (closes the 8-phase magic-item rework)**: Arcane's
   Valor artifacts (93-98), `AKGEN_reverse_engineering_report (4).md`
   §11 — gated behind `GameType.ARCANES` per the user's own explicit
   instruction that this variant isn't currently played, so nothing
@@ -22466,6 +22466,38 @@ follow-up request after the original 431-435 plan shipped.
   first for both functions, per this phase's own most-important-test
   note. 3 builder tests per consumer (×3) confirming the HP bonus
   reaches the constructed `Combatant`. Ran again: 4720 passed (net +21).
+
+- **Phase 539 (current)**: Enhanced Charm item-selection fix, `AKGEN_
+  reverse_engineering_report (4).md` §12.1 — first of a 5-phase residue
+  from that same dossier, found by re-auditing it after Phase 538 closed
+  the 8-phase magic-item rework. `turn/cast_execution.py`
+  `_execute_charm()`'s own Enhanced Charm item-theft side effect
+  (Phase 499) picked `state.items_held_by(target)[0]` unconditionally —
+  no category filter at all, and the *first* item in that list, not the
+  dossier's own `NT_Owned` selection rule (which overwrites its `index`
+  result on every match while scanning ascending, so it always resolves
+  to the *last* matching instance by global slot index). This was a real
+  bug, not a documented simplification: a target holding a Gold Hoard,
+  Quest item, or a 93-98 Named Unique alongside an eligible item could
+  have the wrong one stolen — including artifacts the dossier explicitly
+  says are outside Enhanced Charm's own range ("non sono eleggibili
+  hoard, quest, contratto o artefatti 93..98"). New `models/treasure.py
+  ENHANCED_CHARM_ELIGIBLE_CATEGORIES` (everything ordinal 0-66: passive
+  items, spell wands, combat/leadership weapons, anti-magic amulets,
+  monster-command items, skill books). `_execute_charm()` now filters to
+  that set, then picks `max(eligible, key=lambda item: item.item_id)` —
+  confirmed `ItemInstance.item_id` (Phase 140) already *is* the real
+  global slot index (Pascal `trav`), so no new bookkeeping was needed,
+  only the selection logic. Ran before writing tests: 4720 passed
+  (non-breaking). Rewrote the one pre-existing test that had locked in
+  the old buggy "lowest item_id" behavior
+  (`test_charm_with_enhanced_ability_transfers_the_targets_highest_id_
+  eligible_item`, now asserting the *highest*-`item_id` eligible item is
+  the one stolen) and added 2 new tests: ineligible categories (Gold
+  Hoard, Named Unique) staying with the victim even when they'd
+  out-rank the eligible item by `item_id`; a target holding only
+  ineligible items being a complete no-op. Ran again: 4722 passed
+  (net +2).
 
 ## Setup
 

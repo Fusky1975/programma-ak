@@ -142,19 +142,61 @@ def test_charm_against_an_unprotected_target_never_sets_the_revert_field():
 # ---------------------------------------------------------------------------
 
 
-def test_charm_with_enhanced_ability_transfers_the_targets_lowest_id_item():
+def test_charm_with_enhanced_ability_transfers_the_targets_highest_id_eligible_item():
+    # Phase 539: AKGEN_reverse_engineering_report (4).md SS12.1 -- NT_Owned
+    # overwrites its own `index` result on every match while scanning
+    # ascending, so Enhanced Charm steals the LAST (highest-item_id)
+    # eligible instance, not the first-created one.
     state = build_state()
     state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_CHARM)
     state.add_leader(LeaderState(78, 2, "Laden Hero", LOCATION))
     first_item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=78)
-    state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=78)
+    second_item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=78)
     request = CastRequest(spell=Spell.CHARM, target=78)
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
 
     assert result.applied is True
-    assert state.items[first_item.item_id].owner_leader_id == CASTER_ID
-    assert state.items_held_by(78) == [state.items[first_item.item_id + 1]]
+    assert state.items[second_item.item_id].owner_leader_id == CASTER_ID
+    assert state.items_held_by(78) == [state.items[first_item.item_id]]
+
+
+def test_charm_with_enhanced_ability_ignores_ineligible_categories():
+    # Gold Hoards, Quest items, and Named Uniques (93-98) are explicitly
+    # excluded from Enhanced Charm's eligible range (dossier SS12.1: "non
+    # sono eleggibili hoard, quest, contratto o artefatti 93..98") --
+    # even though the Named Unique here has a higher item_id than the
+    # eligible item, it must stay with the victim.
+    state = build_state()
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_CHARM)
+    state.add_leader(LeaderState(78, 2, "Hoarding Hero", LOCATION))
+    eligible_item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=78)
+    state.add_item(Treasure.GOLD_HOARD_LARGE, owner_leader_id=78)
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=78)
+    request = CastRequest(spell=Spell.CHARM, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.items[eligible_item.item_id].owner_leader_id == CASTER_ID
+    assert {item.treasure for item in state.items_held_by(78)} == {
+        Treasure.GOLD_HOARD_LARGE,
+        Treasure.NAMED_UNIQUE_CROWN_ROHAN,
+    }
+
+
+def test_charm_with_enhanced_ability_and_only_ineligible_items_is_a_no_op():
+    state = build_state()
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_CHARM)
+    state.add_leader(LeaderState(78, 2, "Hoard-Only Hero", LOCATION))
+    state.add_item(Treasure.GOLD_HOARD_LARGE, owner_leader_id=78)
+    request = CastRequest(spell=Spell.CHARM, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert len(state.items_held_by(78)) == 1
+    assert state.items_held_by(CASTER_ID) == []
 
 
 def test_charm_with_enhanced_ability_and_no_items_is_a_no_op():

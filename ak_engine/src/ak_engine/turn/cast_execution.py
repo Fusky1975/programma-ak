@@ -681,6 +681,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import ENHANCED_CHARM_ELIGIBLE_CATEGORIES, TREASURE_CATEGORY
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level, holder_is_immune_to_spell, province_halves_spell_chance
@@ -1254,11 +1255,20 @@ def _execute_charm(
     qualifier never applies there, and "one magic item" reads most
     naturally as this Action-Cast hiring effect's own addendum, not the
     Flee escape. On a successful cast, if the caster holds the ability
-    and the target owns at least one item (``GameState.items_held_by``),
-    the lowest-``item_id`` one -- an arbitrary but deterministic pick,
-    since the source names no selection rule -- transfers to the caster
-    via ``GameState.transfer_item``, the same primitive ``turn/
-    encounter.py loot_defeated_leader()`` already uses for looting.
+    and the target owns at least one eligible item (``GameState.
+    items_held_by``, filtered to ``models/treasure.py ENHANCED_CHARM_
+    ELIGIBLE_CATEGORIES`` -- Phase 539, ``AKGEN_reverse_engineering_
+    report (4).md`` SS12.1: only ordinals 0-66 are eligible, never Gold
+    Hoards/Quest items/the sentinel/the 93-98 Named Uniques), the
+    highest-``item_id`` eligible one transfers to the caster via
+    ``GameState.transfer_item`` -- SS12.1's own ``NT_Owned`` pseudocode
+    always overwrites its ``index`` result on every match while scanning
+    ascending, so the *last* (highest-index) eligible instance is the one
+    actually picked, not an arbitrary one. (Before Phase 539 this used an
+    unfiltered, first-item pick -- a real bug, not a deliberate
+    simplification; see that phase's own commit for the fix.) Same
+    transfer primitive ``turn/encounter.py loot_defeated_leader()``
+    already uses for looting.
 
     **Phase 529 -- King targets are not Action-Charm-acquirable**:
     ``AKGEN_reverse_engineering_report (3).md`` SS6.1/SS15.1 (``AK.EXE:
@@ -1310,9 +1320,14 @@ def _execute_charm(
     if caster.alignment is Alignment.UNDEAD:
         _apply_undead_king_alignment_conversion(caster, target)
     if AdvancedAbility.ENHANCED_CHARM in caster.advanced_abilities:
-        target_items = state.items_held_by(request.target)
-        if target_items:
-            state.transfer_item(target_items[0].item_id, leader_id)
+        eligible_items = [
+            item
+            for item in state.items_held_by(request.target)
+            if TREASURE_CATEGORY.get(item.treasure) in ENHANCED_CHARM_ELIGIBLE_CATEGORIES
+        ]
+        if eligible_items:
+            stolen = max(eligible_items, key=lambda item: item.item_id)
+            state.transfer_item(stolen.item_id, leader_id)
     return CastExecutionResult(request, applied=True)
 
 

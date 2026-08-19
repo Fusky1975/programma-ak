@@ -212,6 +212,23 @@ class TreasureCategory(Enum):
 # own docstring for the same 20-wand/15-book count.
 USE_MI_TARGET_CATEGORIES = frozenset({TreasureCategory.SPELL_WAND, TreasureCategory.SKILL_BOOK})
 
+# Phase 539: AKGEN_reverse_engineering_report (4).md SS12.1 -- Enhanced
+# Charm's own item-theft side effect ("NT_Owned(victim,treasure(0),
+# treasure(66),picked_slot)") is only eligible for ordinals 0-66:
+# passives, spell wands, combat/leadership weapons, anti-magic amulets,
+# monster-command items, and skill books. Gold Hoards, Quest items, the
+# sentinel, and the 93-98 Named Uniques ("non sono eleggibili hoard,
+# quest, contratto o artefatti 93..98") are explicitly excluded.
+ENHANCED_CHARM_ELIGIBLE_CATEGORIES = frozenset({
+    TreasureCategory.ABILITY_ITEM,
+    TreasureCategory.SPELL_WAND,
+    TreasureCategory.COMBAT_WEAPON,
+    TreasureCategory.LEADERSHIP_WEAPON,
+    TreasureCategory.ANTI_MAGIC_AMULET,
+    TreasureCategory.MONSTER_COMMAND_ITEM,
+    TreasureCategory.SKILL_BOOK,
+})
+
 
 class Treasure(Enum):
     # -- Ability items (0-14): permanent +1 Ability while held. Pascal: hla, lkdf, ali, gil, abjil, alih, vile, abjle, bmweu, bnhum, aehnm, bjiue, aliue, blie, lhl (obfuscated by design)
