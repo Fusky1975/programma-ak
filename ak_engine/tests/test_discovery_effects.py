@@ -20,6 +20,7 @@ from ak_engine.turn.discovery_effects import (
     arcane_valor_artifact_bonus,
     arcane_valor_hit_points_bonus,
     effective_skill_level,
+    emperor_holds_arcanes_valor_unification,
     equipped_combat_weapon,
     holder_is_immune_to_spell,
     holds_bow_of_elven_kings,
@@ -612,3 +613,71 @@ def test_arcane_valor_hit_points_bonus_amulet_alone_grants_nothing():
     state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=1)
 
     assert arcane_valor_hit_points_bonus(state, state.leaders[2]) == 0
+
+
+# -- Phase 543: Arcane's Valor "unification" report line -- SS11.3 --
+
+
+def test_emperor_holds_arcanes_valor_unification_zero_when_game_type_is_not_arcanes():
+    # The gating itself, same "most important test" convention as
+    # Phase 538's own gating test.
+    state = make_state()
+    state.emperor_kingdom_id = 1
+    state.leaders[1].is_king = True
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    assert emperor_holds_arcanes_valor_unification(state) is False
+
+
+def test_emperor_holds_arcanes_valor_unification_true_at_three_instances():
+    state = make_arcanes_state()
+    state.emperor_kingdom_id = 1  # leader 1 (the King) is the Emperor
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    assert emperor_holds_arcanes_valor_unification(state) is True
+
+
+def test_emperor_holds_arcanes_valor_unification_counts_raw_instances_not_distinct_types():
+    # SS11.3's own caveat: NT_Owned counts instances across 93-95, not
+    # "one of each distinct type" -- 3 Crowns alone is enough.
+    state = make_arcanes_state()
+    state.emperor_kingdom_id = 1
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+
+    assert emperor_holds_arcanes_valor_unification(state) is True
+
+
+def test_emperor_holds_arcanes_valor_unification_false_below_threshold():
+    state = make_arcanes_state()
+    state.emperor_kingdom_id = 1
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=1)
+
+    assert emperor_holds_arcanes_valor_unification(state) is False
+
+
+def test_emperor_holds_arcanes_valor_unification_requires_the_emperors_own_possession():
+    # The Hero (leader 2) holding all three doesn't count -- only the
+    # Emperor's (the King's) own inventory is checked.
+    state = make_arcanes_state()
+    state.emperor_kingdom_id = 1
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=2)
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=2)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=2)
+
+    assert emperor_holds_arcanes_valor_unification(state) is False
+
+
+def test_emperor_holds_arcanes_valor_unification_false_when_no_emperor_elected():
+    state = make_arcanes_state()
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    assert emperor_holds_arcanes_valor_unification(state) is False

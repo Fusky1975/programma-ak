@@ -10,6 +10,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery, describe_discovery_line
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_type import GameType
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MagicFeature
@@ -5855,6 +5856,55 @@ def test_describe_imperial_office_report_riv_percent_and_runner_up_are_kingdom_s
     # by Aldric), scored against Rivalland's own real rival (Aldric, 10
     # points -> 40%).
     assert "                          Cassian (4 points, rank 2, 40%)" in rivalland_lines
+
+
+# -- Phase 543: Arcane's Valor "unification" report line -- SS11.3 --
+
+_UNIFICATION_LINE = (
+    "The Emperor's hoard of Rohan, Power, and Life artifacts is spoken of as the true Unification of Arcane's Valor."
+)
+
+
+def test_describe_imperial_office_report_shows_unification_line_in_the_emperors_own_kingdom():
+    state = _armies_state()
+    state.game_type = GameType.ARCANES
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.emperor_kingdom_id = 1
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert _UNIFICATION_LINE in lines
+
+
+def test_describe_imperial_office_report_omits_unification_line_for_a_non_emperor_kingdom():
+    state = _armies_state()
+    state.game_type = GameType.ARCANES
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.emperor_kingdom_id = 1
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    otherland_lines = describe_imperial_office_report(state, 2)
+
+    assert _UNIFICATION_LINE not in otherland_lines
+
+
+def test_describe_imperial_office_report_omits_unification_line_outside_arcanes():
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.emperor_kingdom_id = 1
+    state.add_item(Treasure.NAMED_UNIQUE_CROWN_ROHAN, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_AMULET_POWER, owner_leader_id=1)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert _UNIFICATION_LINE not in lines
 
 
 def test_describe_imperial_office_report_extended_title_suppressed_below_minimum_points():

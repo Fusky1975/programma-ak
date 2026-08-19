@@ -1179,7 +1179,7 @@ from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
-from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.discovery_effects import effective_skill_level, emperor_holds_arcanes_valor_unification
 from ak_engine.turn.expenses import compute_expected_expenses, leader_pay
 from ak_engine.turn.office_holder import (
     ALL_OFFICES,
@@ -7213,6 +7213,18 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
         runner_up = kingdom_runner_up(state, office, kingdom_id, exclude_leader_id=top.leader_id)
         if runner_up is not None:
             lines.append(_office_candidate_line(state, office, runner_up, prefix=f"{'':26}"))
+
+    # Phase 543: AKGEN_reverse_engineering_report (4).md SS11.3 --
+    # REPORTS.PAS:1510-1517's Arcane's Valor "unification" narrative,
+    # gated to the Emperor's own Kingdom report (the only one that would
+    # ever see this line in the real source's own Pray_Report, since the
+    # underlying NT_Owned check reads the Emperor's own inventory).
+    # project-original text: no TREASURE.X2/REPORTS.PAS string survives
+    # for this event anywhere in the available archive.
+    if state.emperor_kingdom_id == kingdom_id and emperor_holds_arcanes_valor_unification(state):
+        lines.append(
+            "The Emperor's hoard of Rohan, Power, and Life artifacts is spoken of as the true Unification of Arcane's Valor."
+        )
     return lines
 
 

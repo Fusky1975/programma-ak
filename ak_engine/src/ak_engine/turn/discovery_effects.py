@@ -374,3 +374,44 @@ def arcane_valor_hit_points_bonus(state: GameState, leader: LeaderState) -> int:
         if king is not None and _item_count(state, king.leader_id, Treasure.NAMED_UNIQUE_SCEPTER_LIFE) > 0:
             n += ARCANE_VALOR_SCEPTER_KINGDOM_HIT_POINTS_BONUS
     return n
+
+
+ARCANE_VALOR_UNIFICATION_ITEM_COUNT_THRESHOLD = 3
+
+
+def emperor_holds_arcanes_valor_unification(state: GameState) -> bool:
+    """Phase 543: AKGEN_reverse_engineering_report (4).md SS11.3 --
+    ``REPORTS.PAS:1510-1517``'s own ``NT_Owned(emperor,Crown_Rohan,
+    Scepter_Life,trdex) >= 3`` check. ``NT_Owned`` counts *instances*
+    across the ordinal range 93-95 (Crown of Rohan/Amulet of Power/
+    Scepter of Life), not "one of each distinct type" -- the dossier's
+    own explicit caveat, replicated literally here rather than the more
+    intuitive "all three types" reading a name like "unification" might
+    suggest.
+
+    Resolves the Emperor the same way ``turn/office_holder.py resolve_
+    office_holder(state, Office.EMPEROR)`` does for its own special-cased
+    Emperor branch (``state.emperor_kingdom_id``'s own King) -- reusing
+    ``_king_of_kingdom`` directly instead of importing that module, which
+    would otherwise cycle back here through ``turn/merit_points.py``'s
+    own ``effective_skill_level`` import.
+
+    Gated on ``state.game_type is GameType.ARCANES`` like every other
+    Arcane's Valor mechanic in this project -- ``False`` for every
+    existing game/test.
+    """
+
+    if state.game_type is not GameType.ARCANES:
+        return False
+    if state.emperor_kingdom_id is None:
+        return False
+    emperor = _king_of_kingdom(state, state.emperor_kingdom_id)
+    if emperor is None:
+        return False
+
+    count = (
+        _item_count(state, emperor.leader_id, Treasure.NAMED_UNIQUE_CROWN_ROHAN)
+        + _item_count(state, emperor.leader_id, Treasure.NAMED_UNIQUE_AMULET_POWER)
+        + _item_count(state, emperor.leader_id, Treasure.NAMED_UNIQUE_SCEPTER_LIFE)
+    )
+    return count >= ARCANE_VALOR_UNIFICATION_ITEM_COUNT_THRESHOLD

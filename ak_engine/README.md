@@ -22547,7 +22547,7 @@ follow-up request after the original 431-435 plan shipped.
   leaves it untouched; the bonus does nothing on a land move even when
   the Map is held. Ran again: 4728 passed (net +3).
 
-- **Phase 542 (current)**: Use_MI tactical-intent classification, `AKGEN_
+- **Phase 542**: Use_MI tactical-intent classification, `AKGEN_
   reverse_engineering_report (4).md` §6.2 (`RUMORS.PAS:839-857`). The
   classification rule itself is directly sourced — every charged item
   (15-34) marks the caster's intent `Melee` except Cologne of Charming
@@ -22571,6 +22571,42 @@ follow-up request after the original 431-435 plan shipped.
   also confirms "nothing was cast" correctly yields `False`); a Skill
   Book read doesn't set it; a rejected (zero-charge) cast doesn't set
   it. Ran again: 4733 passed (net +5).
+
+- **Phase 543 (current, closes the 5-phase magic-item dossier residue)**:
+  Arcane's Valor "unification" report line — mechanic sourced, text is
+  not — `AKGEN_reverse_engineering_report (4).md` §11.3
+  (`REPORTS.PAS:1510-1517`). The check itself is a real, direct source:
+  `NT_Owned(emperor,Crown_Rohan,Scepter_Life,trdex) >= 3` counts raw
+  *instances* across ordinals 93-95, not "one of each distinct type" —
+  the dossier's own explicit caveat, replicated literally (3 Crowns
+  alone is enough). New `turn/discovery_effects.py
+  emperor_holds_arcanes_valor_unification(state)` resolves the Emperor
+  via `state.emperor_kingdom_id` + the existing `_king_of_kingdom()`
+  helper (not `turn/office_holder.py resolve_office_holder()` directly,
+  which would cycle back here through `turn/merit_points.py`'s own
+  `effective_skill_level` import), gated on `state.game_type is
+  GameType.ARCANES` like every other Arcane's Valor mechanic. Wired into
+  `report/turn_report.py describe_imperial_office_report()`, appending
+  one line only when composing the Emperor's own Kingdom's report. **No
+  English string for this event survives anywhere in the available
+  archive** (2 of the 3 items involved have no `TREASURE.X2` entry at
+  all) — per the user's own explicit choice, the mechanic is real but
+  the displayed text is a clearly-commented project-original
+  placeholder, not presented as sourced. Ran before writing tests: 4733
+  passed (non-breaking). Added tests: the gating itself (game_type,
+  raw-instance-count vs distinct-type, below-threshold, the Emperor's
+  own possession specifically — not a Hero's, not an unelected Kingdom's);
+  the report line appears only in the Emperor's own Kingdom's section,
+  never a different Kingdom's, never outside `GameType.ARCANES`. Ran
+  again: 4742 passed (net +9).
+
+  **This closes the 5-phase magic-item dossier residue** (539-543) found
+  by re-auditing `AKGEN_reverse_engineering_report (4).md` after Phase
+  538 closed the original 8-phase rework — one real bug fix (539), one
+  partial-gap closure (540, Illusory Terrain's own half stays
+  legitimately blocked), and three phases the user explicitly chose to
+  implement despite no underlying mechanic/consumer existing anywhere in
+  this codebase (541, 542 sourced-half-only; 543's text half).
 
 ## Setup
 
