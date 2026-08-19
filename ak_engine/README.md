@@ -22834,7 +22834,7 @@ follow-up request after the original 431-435 plan shipped.
   DRUID_LEVEL_REQUIRED` values against their `TALK SAY FULFILL.txt`
   counterparts. Ran again: 4774 passed (net +1).
 
-- **Phase 550 (current)**: an audit of `CARICHE E ABILITÀ.txt`/
+- **Phase 550**: an audit of `CARICHE E ABILITÀ.txt`/
   `ABILITÀ SOPRA IL LIVELLO 4 OK.txt` against the 4 `AKGEN_reverse_
   engineering_report*.md` files found both source files already fully
   and correctly consumed -- the 89 Advanced Abilities match `models/
@@ -22859,6 +22859,49 @@ follow-up request after the original 431-435 plan shipped.
   Eagle" example, reproduced exactly); resolution returns `None` when
   only the visitor would otherwise qualify. Ran again: 4776 passed
   (net +2).
+
+- **Phase 551 (current)**: a fresh Valhalla audit against `AKGEN_name_
+  catalogs.json.txt valhalla_hero_rosters.rosters` (the real `GOOD2.X2`/
+  `DRUIDIC2.X2`/`NEUTRAL2.X2`/`PAGAN2.X2`/`EVIL2.X2` roster files AKGEN
+  reads) found 27 further real heroes the original `VALHALLA GOOD.txt`
+  etc. text files never captured -- the roster grows over real
+  gameplay (`Induct_Val` appends admitted characters), so those files
+  were a snapshot, not a closed set. Cross-checked first: every one of
+  the 137 already-modeled heroes is present in the AKGEN catalog too
+  (zero mismatches) -- these 27 are a clean addition, not a correction.
+  Decoded `stats_raw[2]` (Race) and `stats_raw[10]` (Temper) by
+  triangulating against all 137 already-known heroes (~20 independent
+  checks, zero exceptions) and confirmed by two literal footer comments
+  recovered from the same source file (`"Race: 0=Human, 1=Elven,
+  2=Dwarven, 3=Orcish"`, `"Tempers: 0=Cowardly, 3=Berserk"`); `skills_
+  raw`'s own first 30 values match `SkillTable.raw_values` exactly
+  (verified byte-for-byte). **True alignment (Divine/Undead) and the
+  fixed magic item are not recoverable from this data** -- for the
+  existing 137, both always came from the original narrative text
+  files' own prose, never from any numeric AKGEN field, and no
+  plausible candidate field exists for either here (the closest
+  fixed-item candidates include negative numbers, ruling out a plain
+  Treasure-ordinal reading). Per the user's own explicit choice: new
+  `models/valhalla.py VALHALLA_ROSTER_UNCONFIRMED` holds all 27
+  (Name/Race/Temper/Skills sourced, `true_alignment` defaulted to the
+  bucket's own alignment, `fixed_item=None`) but is **never read by
+  `_select_visitor_template()`/`finalize_gate_angel_visit()`/anything
+  that actually runs a game** (confirmed: this name appears nowhere
+  else in the codebase) -- documented and ready for a future phase with
+  the missing narrative source, but excluded from real Gate Angel
+  selection entirely. Two anomalous entries (Pagan's `Royal Heir`,
+  Evil's `Royal Heir 0`) are flagged in the module comment as almost
+  certainly the game's own generic zero-skill throne-successor
+  placeholder rather than real legendary heroes, kept rather than
+  silently dropped per the user's own explicit "27" count. Ran before
+  writing tests: 4776 passed (non-breaking). Added tests: the new
+  dict's own 27-hero/5-alignment coverage and per-alignment counts (7
+  Good, 1 Druid, 7 Neutral, 7 Pagan, 5 Evil); every entry has a 30-value
+  skill table and an unresolved `fixed_item`; spot-checked Race/Temper
+  decodes; no name collides with the real roster *within* the same
+  alignment (cross-alignment reuse, e.g. "SWK" in both Good and Pagan,
+  is legitimate and untouched); `VALHALLA_ROSTER` itself stays exactly
+  137. Ran again: 4783 passed (net +7).
 
 ## Setup
 

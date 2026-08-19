@@ -55,6 +55,13 @@ unresolved anymore.
 actual hero-synthesis consumer, which the caller (a future
 ``turn/turn_processor.py`` integration, not yet wired -- see that
 module's own docstring) is responsible for invoking once per turn.
+
+**Phase 551**: a fresh audit found 27 further real heroes in the same
+AKGEN catalog, genuinely present in the game data but missing from
+this module's own 137 -- see ``VALHALLA_ROSTER_UNCONFIRMED``'s own
+docstring below for the full account of what's sourced (name/race/
+temper/skills) versus not (true alignment, fixed item) and why they
+stay deliberately excluded from real Gate Angel selection.
 """
 
 from __future__ import annotations
@@ -1361,3 +1368,155 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             fixed_item_name="Sword Excalibur",
         ),
     ),}
+
+
+def _u(name: str, alignment: Alignment, temper: Temper, race: Race, skills: list[int]) -> ValhallaHero:
+    """Phase 551 -- constructs one ``VALHALLA_ROSTER_UNCONFIRMED`` entry.
+    See that dict's own docstring for exactly why ``true_alignment``/
+    ``fixed_item``/``fixed_item_name`` are placeholders rather than
+    sourced values.
+    """
+
+    return ValhallaHero(
+        name=name,
+        true_alignment=alignment,
+        temper=temper,
+        race=race,
+        skills=SkillTable(raw_values=skills),
+        fixed_item=None,
+        fixed_item_name="(unresolved -- no VALHALLA GOOD.txt-equivalent narrative source exists for this hero)",
+    )
+
+
+# Phase 551 -- 27 further heroes found during a fresh Valhalla audit,
+# real and present in the actual game data (`AKGEN_name_catalogs.json.txt
+# valhalla_hero_rosters.rosters`, sourced from the real `GOOD2.X2`/
+# `DRUIDIC2.X2`/`NEUTRAL2.X2`/`PAGAN2.X2`/`EVIL2.X2` files AKGEN reads),
+# but **deliberately excluded from `VALHALLA_ROSTER`/real Gate Angel
+# selection** -- see this dict's own module-level note below for why.
+#
+# **Why these exist at all.** `AKGEN_reverse_engineering_report.md`
+# confirms the real roster is *not* closed: "Induct_Val incrementa il
+# conteggio e appende ai due file dell'allineamento il personaggio
+# ammesso in Valhalla" -- new legendary heroes get appended as real
+# players earn them (`Roderoch` in the `GW3` corpus, `Clarissa` in
+# `GW900`), so the distributed roster (178 raw records, 163 unique
+# names) grew past whatever snapshot the user's own `VALHALLA GOOD.txt`/
+# `VALHALLA DRUID.txt`/`VALHALLA NEUTRAL.txt`/`VALHALLA PAGAN.txt`/
+# `VALHALLA EVIL.txt` files captured (137 heroes) before this audit.
+# Cross-checked exhaustively: every one of the 137 heroes already in
+# `VALHALLA_ROSTER` is present in the AKGEN catalog too (zero
+# mismatches) -- these 27 are a clean, additive difference, not a
+# correction to anything already there.
+#
+# **What's sourced here, and how**: `name`, `race`, `temper`, and
+# `skills` -- decoded from each entry's own `stats_raw`/`skills_raw`
+# fields, cross-checked against all 137 already-confirmed heroes before
+# trusting the decode on new ones (every single one of ~20 independent
+# checks matched exactly, zero exceptions): `stats_raw[2]` is Race
+# (0=Human, 1=Elven, 2=Dwarven, 3=Orcish -- confirmed by a literal
+# footer comment recovered from the same file, `"Race: 0=Human,
+# 1=Elven, 2=Dwarven, 3=Orcish"`), `stats_raw[10]` is Temper (0-3,
+# matching this project's own `Temper` enum ordinals exactly --
+# confirmed by another literal footer comment, `"Tempers: 0=Cowardly,
+# 3=Berserk"`), and `skills_raw`'s own first 30 values match `SkillTable.
+# raw_values`'s format exactly (verified byte-for-byte against every
+# one of the 137 already-transcribed heroes, e.g. Basil).
+#
+# **What's NOT sourced, and why these stay excluded from real
+# selection**: `true_alignment` (Divine/Undead vs. the bucket's own
+# Good/Evil -- for the existing 137, this always came from the
+# original narrative text files' own prose, never from any numeric
+# AKGEN field checked here) and `fixed_item` (searched `stats_raw` for
+# a plausible Treasure-ordinal-range field; the closest candidates
+# include negative numbers, ruling them out as a plain item index --
+# the existing 137's own items likewise came only from the narrative
+# files' own "Oggetto:" lines). Both fields are placeholders below
+# (`true_alignment` defaults to the bucket's own alignment -- the
+# majority case among the 137 anyway; `fixed_item=None`, matching this
+# project's own pre-existing convention for the 2 of the original 137
+# whose item was similarly unresolved). Per the user's own explicit
+# choice: these 27 stay documented, sourced as far as the data allows,
+# and reachable for a future phase that gets the missing narrative
+# source -- but **`VALHALLA_ROSTER_UNCONFIRMED` is never read by
+# `_select_visitor_template()`/`finalize_gate_angel_visit()`/anything
+# else that actually runs a game** (confirmed: grep the whole codebase
+# for this name outside this file and its own tests -- no hits), so
+# none of these 27 can ever actually appear as a Gate Angel visitor.
+#
+# **Two anomalous entries, kept but flagged**: Pagan's `Royal Heir`
+# and Evil's `Royal Heir 0` read as the game's own generic zero-skill
+# throne-successor placeholder (`GameState.remove_leader()`'s own
+# Phase 259 "Royal Heir" concept), not a genuine named legendary hero --
+# transcribed here for completeness (the user's own explicit "27"
+# count included them) rather than silently dropped, but almost
+# certainly not real Valhalla characters.
+VALHALLA_ROSTER_UNCONFIRMED: dict[Alignment, tuple[ValhallaHero, ...]] = {
+    Alignment.GOOD: (
+        _u("Paradigm", Alignment.GOOD, Temper.BRAVE, Race.HUMAN,
+           [4, 3, 3, 4, 2, 2, 1, 2, 2, 3, 5, 3, 1, 4, 2, 2, 5, 2, 1, 5, 1, 2, 0, 3, 1, 2, 0, 2, 2, 2]),
+        _u("Shadowrun", Alignment.GOOD, Temper.BRAVE, Race.HUMAN,
+           [6, 4, 5, 3, 3, 2, 2, 3, 2, 3, 6, 5, 0, 2, 2, 2, 1, 3, 2, 2, 1, 3, 0, 2, 0, 2, 0, 2, 1, 5]),
+        _u("James", Alignment.GOOD, Temper.BRAVE, Race.HUMAN,
+           [4, 3, 5, 3, 0, 2, 2, 3, 2, 3, 4, 4, 2, 2, 2, 2, 5, 4, 3, 3, 1, 2, 0, 2, 0, 2, 0, 2, 1, 4]),
+        _u("Pinotto", Alignment.GOOD, Temper.BRAVE, Race.HUMAN,
+           [7, 5, 3, 4, 0, 2, 1, 3, 3, 3, 7, 5, 4, 3, 3, 3, 4, 4, 2, 2, 5, 2, 0, 2, 0, 2, 2, 2, 1, 5]),
+        _u("Haile' Sel", Alignment.GOOD, Temper.BRAVE, Race.ORCISH,
+           [6, 6, 5, 4, 0, 2, 1, 3, 1, 3, 0, 4, 1, 2, 0, 2, 2, 2, 0, 2, 4, 3, 0, 2, 1, 2, 1, 2, 3, 5]),
+        _u("David", Alignment.GOOD, Temper.BRAVE, Race.HUMAN,
+           [1, 2, 3, 2, 0, 2, 2, 3, 3, 3, 5, 5, 0, 0, 3, 2, 5, 5, 2, 2, 2, 2, 0, 2, 0, 2, 0, 2, 1, 3]),
+        _u("Evelyn", Alignment.GOOD, Temper.CAUTIOUS, Race.ELVEN,
+           [6, 4, 4, 2, 1, 2, 2, 3, 5, 3, 4, 4, 0, 2, 0, 2, 4, 3, 1, 2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 4]),
+    ),
+    Alignment.DRUID: (
+        _u("Kratos", Alignment.DRUID, Temper.BRAVE, Race.HUMAN,
+           [9, 5, 6, 4, 2, 2, 1, 3, 3, 3, 2, 3, 2, 2, 2, 3, 0, 4, 0, 2, 6, 4, 2, 2, 2, 2, 1, 2, 2, 3]),
+    ),
+    Alignment.NEUTRAL: (
+        _u("Artur", Alignment.NEUTRAL, Temper.BRAVE, Race.ELVEN,
+           [6, 5, 5, 6, 4, 3, 1, 3, 1, 3, 2, 3, 0, 2, 0, 2, 0, 2, 0, 4, 4, 3, 0, 2, 0, 2, 1, 4, 1, 3]),
+        _u("Boland", Alignment.NEUTRAL, Temper.BRAVE, Race.ELVEN,
+           [8, 6, 4, 4, 0, 2, 1, 3, 1, 3, 0, 2, 2, 2, 3, 2, 3, 2, 1, 4, 4, 3, 1, 2, 0, 2, 1, 4, 1, 3]),
+        _u("BOuHCTBEHHAR", Alignment.NEUTRAL, Temper.BRAVE, Race.HUMAN,
+           [3, 2, 3, 4, 0, 2, 3, 3, 2, 3, 4, 3, 0, 2, 3, 3, 0, 2, 0, 4, 2, 2, 2, 2, 0, 2, 0, 4, 1, 3]),
+        _u("GaD", Alignment.NEUTRAL, Temper.CAUTIOUS, Race.ELVEN,
+           [6, 4, 2, 3, 0, 2, 2, 4, 4, 4, 2, 2, 4, 2, 1, 2, 2, 2, 1, 4, 2, 2, 0, 2, 0, 2, 0, 4, 1, 3]),
+        _u("Two-Headed_Eagl", Alignment.NEUTRAL, Temper.CAUTIOUS, Race.HUMAN,
+           [4, 3, 2, 2, 0, 2, 3, 3, 3, 3, 4, 4, 2, 2, 3, 3, 3, 3, 3, 4, 4, 3, 4, 3, 0, 2, 7, 5, 3, 3]),
+        _u("Tyresian", Alignment.NEUTRAL, Temper.BRAVE, Race.HUMAN,
+           [3, 3, 4, 4, 2, 2, 4, 3, 2, 3, 2, 2, 2, 2, 2, 2, 4, 3, 2, 4, 2, 2, 1, 2, 2, 2, 2, 4, 3, 3]),
+        _u("Anova", Alignment.NEUTRAL, Temper.BERSERK, Race.HUMAN,
+           [4, 3, 3, 3, 1, 2, 1, 3, 3, 3, 4, 4, 4, 4, 5, 5, 1, 2, 2, 3, 1, 2, 0, 2, 1, 2, 0, 4, 1, 3]),
+    ),
+    Alignment.PAGAN: (
+        _u("AMA3OHKA", Alignment.PAGAN, Temper.BRAVE, Race.ORCISH,
+           [3, 4, 4, 4, 0, 2, 3, 3, 3, 3, 3, 3, 2, 2, 4, 4, 2, 2, 0, 2, 2, 3, 0, 2, 0, 4, 0, 2, 1, 3]),
+        _u("Rulehard", Alignment.PAGAN, Temper.CAUTIOUS, Race.HUMAN,
+           [3, 3, 5, 2, 0, 5, 3, 1, 3, 3, 2, 3, 1, 2, 4, 2, 2, 5, 3, 3, 2, 2, 0, 2, 0, 2, 0, 4, 1, 2]),
+        _u("Sparafuci", Alignment.PAGAN, Temper.BRAVE, Race.ORCISH,
+           [3, 3, 4, 3, 1, 2, 1, 3, 1, 3, 4, 3, 2, 2, 4, 4, 2, 4, 3, 2, 2, 3, 0, 2, 0, 4, 0, 2, 1, 3]),
+        _u("Starfire", Alignment.PAGAN, Temper.BRAVE, Race.ELVEN,
+           [2, 2, 2, 2, 5, 3, 1, 3, 2, 3, 4, 3, 2, 2, 0, 4, 3, 2, 0, 2, 4, 4, 0, 2, 0, 4, 0, 2, 1, 3]),
+        _u("Bee-Bop", Alignment.PAGAN, Temper.CAUTIOUS, Race.DWARVEN,
+           [2, 2, 3, 4, 0, 2, 2, 3, 1, 3, 5, 5, 3, 3, 5, 4, 5, 5, 2, 2, 3, 2, 0, 2, 0, 4, 0, 2, 1, 3]),
+        _u("SWK", Alignment.PAGAN, Temper.BERSERK, Race.ORCISH,
+           [6, 3, 4, 2, 4, 2, 2, 3, 5, 3, 3, 3, 5, 5, 6, 6, 4, 2, 1, 3, 6, 3, 1, 2, 0, 4, 1, 2, 1, 3]),
+        # Anomalous -- see module comment above: almost certainly a
+        # generic Royal Heir placeholder, not a real legendary hero.
+        _u("Royal Heir", Alignment.PAGAN, Temper.BRAVE, Race.ELVEN,
+           [2, 2, 0, 2, 5, 3, 3, 3, 1, 3, 2, 2, 1, 2, 6, 6, 4, 4, 0, 2, 1, 3, 0, 2, 1, 4, 1, 2, 1, 3]),
+    ),
+    Alignment.EVIL: (
+        _u("RasAlGul", Alignment.EVIL, Temper.COWARDLY, Race.HUMAN,
+           [5, 5, 5, 4, 1, 2, 1, 3, 1, 3, 0, 0, 6, 5, 0, 2, 0, 2, 0, 2, 3, 3, 0, 2, 0, 2, 0, 2, 2, 3]),
+        _u("John", Alignment.EVIL, Temper.BERSERK, Race.DWARVEN,
+           [6, 6, 2, 4, 0, 2, 1, 3, 1, 3, 2, 2, 5, 5, 0, 2, 3, 3, 0, 1, 1, 3, 5, 4, 0, 2, 0, 2, 1, 3]),
+        _u("Aragorn", Alignment.EVIL, Temper.BERSERK, Race.ORCISH,
+           [5, 4, 5, 4, 1, 2, 1, 3, 1, 3, 0, 2, 4, 4, 0, 2, 2, 2, 0, 2, 1, 2, 0, 4, 0, 2, 0, 2, 3, 3]),
+        _u("TNSTFL", Alignment.EVIL, Temper.BRAVE, Race.ELVEN,
+           [4, 2, 3, 4, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 5, 5, 3, 2, 2, 2, 3, 3, 0, 4, 2, 2, 0, 2, 1, 3]),
+        # Anomalous -- see module comment above.
+        _u("Royal Heir 0", Alignment.EVIL, Temper.COWARDLY, Race.ORCISH,
+           [4, 3, 2, 2, 0, 2, 1, 3, 1, 3, 4, 3, 0, 4, 2, 3, 1, 2, 3, 2, 3, 3, 0, 4, 2, 2, 0, 2, 1, 3]),
+    ),
+}

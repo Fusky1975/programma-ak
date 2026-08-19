@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
-from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID, _valhalla_stay_phase_count
+from ak_engine.models.valhalla import (
+    VALHALLA_ROSTER,
+    VALHALLA_ROSTER_UNCONFIRMED,
+    VALHALLA_VISITOR_LEADER_ID,
+    _valhalla_stay_phase_count,
+)
 
 
 def test_visitor_leader_id_is_the_fixed_reserved_slot():
@@ -103,3 +110,71 @@ def test_valhalla_stay_phase_count_matches_the_rulebooks_own_table():
     assert _valhalla_stay_phase_count(8) == 4
     assert _valhalla_stay_phase_count(9) == 5
     assert _valhalla_stay_phase_count(20) == 5
+
+
+# -- Phase 551: 27 further real heroes, deliberately excluded from selection --
+
+
+def test_unconfirmed_roster_covers_all_5_alignments_with_27_heroes_total():
+    assert set(VALHALLA_ROSTER_UNCONFIRMED.keys()) == {
+        Alignment.GOOD,
+        Alignment.DRUID,
+        Alignment.NEUTRAL,
+        Alignment.PAGAN,
+        Alignment.EVIL,
+    }
+    assert sum(len(heroes) for heroes in VALHALLA_ROSTER_UNCONFIRMED.values()) == 27
+
+
+def test_unconfirmed_roster_per_alignment_hero_counts():
+    assert len(VALHALLA_ROSTER_UNCONFIRMED[Alignment.GOOD]) == 7
+    assert len(VALHALLA_ROSTER_UNCONFIRMED[Alignment.DRUID]) == 1
+    assert len(VALHALLA_ROSTER_UNCONFIRMED[Alignment.NEUTRAL]) == 7
+    assert len(VALHALLA_ROSTER_UNCONFIRMED[Alignment.PAGAN]) == 7
+    assert len(VALHALLA_ROSTER_UNCONFIRMED[Alignment.EVIL]) == 5
+
+
+def test_unconfirmed_roster_every_hero_has_a_30_value_skill_table():
+    for heroes in VALHALLA_ROSTER_UNCONFIRMED.values():
+        for hero in heroes:
+            assert len(hero.skills.raw_values) == 30
+
+
+def test_unconfirmed_roster_every_hero_has_no_resolved_fixed_item():
+    # Unlike VALHALLA_ROSTER (Phase 198 closed every real gap), none of
+    # these 27 has a sourced fixed_item -- see module docstring for why.
+    for heroes in VALHALLA_ROSTER_UNCONFIRMED.values():
+        for hero in heroes:
+            assert hero.fixed_item is None
+
+
+def test_unconfirmed_roster_spot_check_race_and_temper():
+    # AKGEN_name_catalogs.json.txt stats_raw[2]/[10], cross-checked
+    # against all 137 already-confirmed heroes before trusting the
+    # decode on these new ones.
+    evelyn = next(h for h in VALHALLA_ROSTER_UNCONFIRMED[Alignment.GOOD] if h.name == "Evelyn")
+    assert evelyn.race is Race.ELVEN
+    assert evelyn.temper is Temper.CAUTIOUS
+
+    kratos = VALHALLA_ROSTER_UNCONFIRMED[Alignment.DRUID][0]
+    assert kratos.name == "Kratos"
+    assert kratos.race is Race.HUMAN
+    assert kratos.temper is Temper.BRAVE
+
+
+def test_unconfirmed_roster_names_never_duplicate_the_real_roster_within_an_alignment():
+    # Per-alignment, not global: the same name can legitimately appear
+    # in two different alignment buckets as two distinct roster slots
+    # (e.g. "SWK" is already real in Good and newly found in Pagan) --
+    # what must never happen is the same alignment's own two rosters
+    # silently colliding.
+    for alignment in VALHALLA_ROSTER_UNCONFIRMED:
+        real_names = {hero.name for hero in VALHALLA_ROSTER[alignment]}
+        unconfirmed_names = {hero.name for hero in VALHALLA_ROSTER_UNCONFIRMED[alignment]}
+        assert real_names.isdisjoint(unconfirmed_names), alignment
+
+
+def test_unconfirmed_roster_is_not_merged_into_the_real_roster_counts():
+    # VALHALLA_ROSTER itself must stay exactly 137 -- this phase is
+    # purely additive, in a separate dict.
+    assert sum(len(heroes) for heroes in VALHALLA_ROSTER.values()) == 137
