@@ -3,7 +3,7 @@ from __future__ import annotations
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.enums import ActionCode
+from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
@@ -459,7 +459,30 @@ def test_remove_leader_installs_a_royal_heir_when_a_king_dies():
     assert heir.temper is Temper.BRAVE
     assert heir.alignment is Alignment.GOOD
     assert heir.race is Race.HUMAN
-    assert heir.skills.raw_values == [0] * 31  # "must have zero Talents assigned"
+    # Phase 552: the real reset keeps the automatic training bonus
+    # (AKGEN_reverse_engineering_report (5).md SS6.2) -- Melee/Archery/
+    # Sage at (1, 3), everything else at 0 -- not fully zeroed.
+    expected_skills = SkillTable(raw_values=[0] * 31)
+    for bonus_ability in (Ability.MELEE, Ability.ARCHERY, Ability.SAGE):
+        expected_skills.set_pair_for_ability(bonus_ability, skill=1, aptitude=3)
+    assert heir.skills.raw_values == expected_skills.raw_values
+
+
+def test_remove_leader_royal_heir_total_usable_skill_is_the_real_baseline_of_3():
+    # Phase 552: 3 (this reset) + 4 ((K)g Ab's later points) = the real
+    # Total_USkill < 7 threshold -- not 0 + 7.
+    from ak_engine.turn.cast_execution import _total_usable_skill
+
+    state = make_state()
+    king = LeaderState(
+        1, 1, "Aldric", FIELD, skills=SkillTable(raw_values=list(range(31))),
+        is_king=True, temper=Temper.BRAVE, alignment=Alignment.GOOD, race=Race.HUMAN,
+    )
+    state.add_leader(king)
+
+    state.remove_leader(1)
+
+    assert _total_usable_skill(state.leaders[1]) == 3
 
 
 def test_remove_leader_hero_death_leaves_no_heir():

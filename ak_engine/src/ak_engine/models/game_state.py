@@ -1270,22 +1270,28 @@ class GameState:
         None``), a Royal Heir is installed on the throne immediately,
         under the same ``leader_id`` (the "next-in-line" the quote
         describes) -- the Kingdom is never left permanently Kingless the
-        way it silently was before this phase. The Heir starts with
-        ``skills`` fully zeroed (RULES.AK: "the Heir must have zero
-        Talents assigned"), keeps the dead King's own ``name`` (per the
-        quote above), ``location``, ``temper``, ``alignment``, and
-        ``race`` (race/alignment can't change across a succession -- the
-        Heir carries the same lineage), and is flagged
-        ``is_royal_heir=True`` -- see that field's own docstring for what
-        reads/clears it. **Deliberately deferred to a future phase, not
-        attempted here**: the player-facing order to actually assign the
-        new King's own name/temper/skill distribution (RULES.AK [2.1]'s
-        4-point allocation with its overlap-with-the-dead-King and
-        alignment-doubled-aptitude constraints) -- confirmed with the
-        user (project author) as a separate, later phase; until then, an
-        un-customized Heir simply holds the throne with zero Talents,
-        same as the real engine's own window between a King's death and
-        the player's next order sheet.
+        way it silently was before this phase. The Heir starts with the
+        same automatic training bonus a fresh King gets at creation
+        (**Phase 552 correction**, sourced from
+        ``AKGEN_reverse_engineering_report (5).md`` SS6.2, machine-verified
+        against ``AK.EXE:0x1D8E8`` and ``AKE.EXE:0xC143-0xC191``):
+        Melee/Archery/Sage each at skill 1, aptitude 3 (``min(1+2, 5)``,
+        matching ``turn/succession.py``'s own ``KING_TRAINING_BONUS_
+        ABILITIES``/``_ordinary_aptitude()`` for a freshly-created King),
+        every other ability at 0 -- not the fully-zeroed table this phase
+        used to install. This is also why the real "``Total_USkill < 7``"
+        Resurrection/report-display threshold (``turn/cast_execution.py
+        is_unfinalized_royal_heir()``) works out to 3 (this baseline) + 4
+        (the player's later ``(K)g Ab`` points), not 0 + 7. The Heir also
+        keeps the dead King's own ``name`` (per the quote above),
+        ``location``, ``temper``, ``alignment``, and ``race`` (race/
+        alignment can't change across a succession -- the Heir carries
+        the same lineage), and is flagged ``is_royal_heir=True`` -- see
+        that field's own docstring for what reads/clears it. The
+        player-facing order to actually assign the new King's own name/
+        temper/skill distribution (RULES.AK [2.1]'s 4-point allocation)
+        is handled separately by ``turn/succession.py create_king()``
+        (Phase 260).
 
         A King with no ``kingdom_id`` isn't a reachable state in this
         project (``turn/kingdom_bridge.py`` only ever sets ``is_king``
@@ -1306,12 +1312,15 @@ class GameState:
         leader.merit_tally.apply_death_penalty()
         self.dead_leaders[leader_id] = leader
         if leader.is_king and leader.kingdom_id is not None:
+            heir_skills = SkillTable(raw_values=[0] * 31)
+            for bonus_ability in (Ability.MELEE, Ability.ARCHERY, Ability.SAGE):
+                heir_skills.set_pair_for_ability(bonus_ability, skill=1, aptitude=3)
             self.leaders[leader_id] = LeaderState(
                 leader_id=leader_id,
                 kingdom_id=leader.kingdom_id,
                 name=leader.name,
                 location=leader.location,
-                skills=SkillTable(raw_values=[0] * 31),
+                skills=heir_skills,
                 is_king=True,
                 temper=leader.temper,
                 alignment=leader.alignment,

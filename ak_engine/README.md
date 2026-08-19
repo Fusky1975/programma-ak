@@ -22860,7 +22860,7 @@ follow-up request after the original 431-435 plan shipped.
   only the visitor would otherwise qualify. Ran again: 4776 passed
   (net +2).
 
-- **Phase 551 (current)**: a fresh Valhalla audit against `AKGEN_name_
+- **Phase 551**: a fresh Valhalla audit against `AKGEN_name_
   catalogs.json.txt valhalla_hero_rosters.rosters` (the real `GOOD2.X2`/
   `DRUIDIC2.X2`/`NEUTRAL2.X2`/`PAGAN2.X2`/`EVIL2.X2` roster files AKGEN
   reads) found 27 further real heroes the original `VALHALLA GOOD.txt`
@@ -22902,6 +22902,28 @@ follow-up request after the original 431-435 plan shipped.
   alignment (cross-alignment reuse, e.g. "SWK" in both Good and Pagan,
   is legitimate and untouched); `VALHALLA_ROSTER` itself stays exactly
   137. Ran again: 4783 passed (net +7).
+
+- **Phase 552 (current)**: corrected `GameState.remove_leader()`'s Royal
+  Heir skill reset. The user supplied a new disassembly-sourced report
+  (`AKGEN_reverse_engineering_report (5).md`) covering King death/
+  succession/`(K)g Ab` end to end (SS1-18, machine-verified against
+  `AK.EXE`'s death handler at `0x1D7DD..0x1DA6B` and `AKE.EXE`'s
+  `(K)g Ab` command at `0xB3FA..0xC714`). Comparing it against this
+  project's own prior work (Phase 259/260) found the succession
+  mechanism itself already correct, but the Heir's starting skill table
+  was wrong: fully zeroed, citing "the Heir must have zero Talents
+  assigned" -- SS6.2 (`AK.EXE:0x1D8E8`, `AKE.EXE:0xC143-0xC191`) shows
+  the real reset keeps the same automatic training bonus a fresh King
+  gets at creation (`turn/succession.py KING_TRAINING_BONUS_ABILITIES`):
+  Melee/Archery/Sage each at skill 1, aptitude 3, not 0. This also
+  explains the real "`Total_USkill < 7`" Resurrection/report-display
+  threshold as `3 (this baseline) + 4 ((K)g Ab's later points)`, not
+  `0 + 7` -- resolving an inconsistency the project couldn't previously
+  see. Ran before writing tests: 4783 passed (non-breaking). Updated the
+  existing Royal-Heir-installation test for the new (1, 3) Melee/
+  Archery/Sage pairs instead of an all-zero table; added a test that
+  `turn/cast_execution.py _total_usable_skill()` reads exactly 3 on a
+  freshly-installed Heir. Ran again: 4784 passed (net +1).
 
 ## Setup
 
