@@ -2931,6 +2931,77 @@ def test_execute_search_talk_dr_gate_met_awards_real_add_experience_credit():
     assert state.leaders[LEADER_ID].experience_credit > 0
 
 
+# -- Phase 544: Talk language-failure narrative branch --
+
+
+def test_execute_search_talk_language_failure_puzzled_for_low_intelligence_monster():
+    # AKGEN_reverse_engineering_report (3).md SS60-62.1: the DR-gate-
+    # failure branch's own mintel < Medium half ("RPuzzled"). Gargoyle
+    # needs Druid level 2 (unreachable for a level-0 leader) and is
+    # MonsterIntelligence.LOW (< Medium) in MONSTER_RUNTIME_PROFILE.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.talk_language_failure is True
+
+
+def test_execute_search_talk_language_failure_silent_for_medium_intelligence_monster():
+    # Same DR-gate failure shape, but Giant Eagle is MonsterIntelligence.
+    # MEDIUM (>= Medium) -- the dossier's own "_LIgnore" half, no
+    # observable trace, matching this project's own pre-existing
+    # TalkReplyOutcome.IGNORE convention.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GI_EAGLE))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.talk_language_failure is False
+
+
+def test_execute_search_talk_language_failure_not_set_when_dr_gate_passes():
+    # Archer needs Druid level 0 -- the DR gate always passes, so the
+    # language-failure branch never applies at all, regardless of the
+    # guardian's own intelligence tier.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_PUZZLED
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert result.talk_language_failure is False
+
+
+def test_execute_search_talk_language_failure_not_set_without_a_talk_tactic():
+    # No Talk tactic in the plan at all -- the language-failure branch
+    # can never apply, even against a low-intelligence guardian the
+    # leader couldn't have talked to anyway.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+    request = _melee_request(1)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.talk_language_failure is False
+
+
 def test_execute_search_talk_attack_reply_falls_through():
     # Phase 528: RCharge is an Attack-category reply -- no special effect
     # of its own, the plan's own Melee still runs (Archer needs Druid

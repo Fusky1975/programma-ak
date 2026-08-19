@@ -29,6 +29,7 @@ from ak_engine.models.monster import (
     MonsterRuntimeProfile,
     MonsterSpeed,
     MonsterStats,
+    monster_intelligence_at_least_medium,
     roll_gate_demon_type,
     roll_monster_alignment,
 )
@@ -584,3 +585,15 @@ def test_monster_runtime_profile_weapons_already_match_existing_weapon_tables():
     assert MONSTER_RANGED_WEAPON[Monster.ROC] is Weapon.NO_WEAP
     assert MONSTER_MELEE_WEAPON[Monster.R_DRAGON] is Weapon.JAWS
     assert MONSTER_RANGED_WEAPON[Monster.R_DRAGON] is Weapon.FLAME_BREATH
+
+
+def test_monster_intelligence_at_least_medium():
+    # Phase 544: AKGEN_reverse_engineering_report (3).md SS60-62's own
+    # "mintel[monster.type] >= Medium" ordinal comparison, used by
+    # turn/search_execution.py's own Talk-language-failure branch.
+    assert MONSTER_RUNTIME_PROFILE[Monster.GARGOYLE].intelligence is MonsterIntelligence.LOW
+    assert monster_intelligence_at_least_medium(Monster.GARGOYLE) is False
+    assert MONSTER_RUNTIME_PROFILE[Monster.GI_EAGLE].intelligence is MonsterIntelligence.MEDIUM
+    assert monster_intelligence_at_least_medium(Monster.GI_EAGLE) is True
+    assert MONSTER_RUNTIME_PROFILE[Monster.R_DRAGON].intelligence is MonsterIntelligence.HIGH
+    assert monster_intelligence_at_least_medium(Monster.R_DRAGON) is True

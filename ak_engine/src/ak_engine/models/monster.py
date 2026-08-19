@@ -1145,3 +1145,23 @@ MONSTER_ENGAGEMENT_STATE_NAME: dict[MonsterEngagementState, str] = {
     MonsterEngagementState.LOSER: "Loser",
     MonsterEngagementState.CALM: "Calmed",
 }
+
+
+def monster_intelligence_at_least_medium(monster: Monster) -> bool:
+    """Phase 544 -- ``AKGEN_reverse_engineering_report (3).md`` SS60-62's
+    own ``resolve_TA_to_monster()`` pseudocode: ``mintel[monster.type] >=
+    Medium`` is the exact species classification that decides which
+    narrative event fires when a Talk tactic's own Druid DR gate
+    (``turn/encounter.py can_talk_to_monster()``) fails -- see ``turn/
+    search_execution.py _apply_talk_language_failure()``'s own Phase 544
+    addendum for the full branch. Reuses ``MONSTER_RUNTIME_PROFILE``'s
+    own ``intelligence`` field (Phase 381, CTME.PAS-sourced) and
+    ``MONSTER_INTELLIGENCE_ORDINAL``'s own confirmed enum order (Phase
+    504) -- no new data, just the ordinal comparison the dossier's own
+    pseudocode performs directly.
+    """
+
+    profile = MONSTER_RUNTIME_PROFILE.get(monster)
+    if profile is None:
+        return True  # unknown -- default to the silent _LIgnore branch, never fabricate RPuzzled text
+    return MONSTER_INTELLIGENCE_ORDINAL[profile.intelligence] >= MONSTER_INTELLIGENCE_ORDINAL[MonsterIntelligence.MEDIUM]

@@ -503,6 +503,7 @@ from ak_engine.models.monster import (
     SUBMARINE_MONSTERS,
     Monster,
     MonsterSpeed,
+    monster_intelligence_at_least_medium,
     roll_gate_demon_type,
     roll_monster_alignment,
 )
@@ -786,6 +787,14 @@ class SearchExecutionResult:
     # condition this project has nothing yet to apply it to -- see
     # `_apply_scout()`'s own docstring.
     scout_orders_given: int = 0
+    # Phase 544: a Talk tactic's own Druid DR gate failed against a
+    # guardian too unintelligent to be silently ignored (``mintel <
+    # Medium`` -- see ``_apply_talk_language_failure()``'s own Phase 544
+    # docstring for the full citation). ``False`` covers both "no Talk
+    # attempted" and the silent ``_LIgnore`` branch (``mintel >=
+    # Medium``) alike -- neither has any observable trace, matching this
+    # project's own pre-existing ``TalkReplyOutcome.IGNORE`` convention.
+    talk_language_failure: bool = False
 
 
 def execute_search(
@@ -816,7 +825,77 @@ def execute_search(
     result = _resolve_search_encounter(state, leader_id, request, rng)
     if result.accepted:
         _apply_scout(state, leader_id, request, result, rng)
+        _apply_talk_language_failure(state, leader_id, request, result)
     return result
+
+
+def _apply_talk_language_failure(
+    state: GameState,
+    leader_id: int,
+    request: SearchRequest,
+    result: SearchExecutionResult,
+) -> None:
+    """Phase 544 -- ``AKGEN_reverse_engineering_report (3).md`` SS60-62
+    (``resolve_TA_to_monster()``'s own DR-gate-failure branch, SS62.1
+    "Fallimento linguistico", quoted in full):
+
+    "Il requisito talkdiff non e' una probabilita'. E' una soglia
+    deterministica sul livello effettivo M_Skill(hero,Druid). Se la
+    soglia non e' raggiunta, il ramo... usa l'intelligenza del mostro
+    per scegliere la narrazione «ignora» oppure RPuzzled; non assegna
+    una Quest. Un eventuale attacco successivo nasce dalla tattica di
+    riserva o dalla prosecuzione dell'incontro, non da un tiro Quest
+    nascosto."
+
+    ``_resolve_talk()`` (this module's own real Talk resolver, Phase
+    240/528) already applies the DR gate and returns ``None`` either
+    way when it fails -- the walk always continues to the next tactic,
+    exactly like the dossier's own ``continue_with_next_tactic()``. What
+    was missing (the gap this phase closes) is the *narrative*
+    distinction the dossier's own pseudocode draws between the two
+    ways that failure can go: ``_LIgnore`` (silent, ``mintel >=
+    Medium``) or ``_MReply``/``RPuzzled`` (``mintel < Medium``).
+
+    Both the DR gate and the mintel check are pure/deterministic (no
+    RNG involved), so this can be re-evaluated once, after the whole
+    tactic walk finishes, without risk of diverging from what
+    ``_resolve_talk()`` itself computed inline -- the same "evaluate
+    once, after the walk, off the plan's own tactic list" shape
+    ``_apply_scout()``'s own Phase 274 docstring already established
+    for this module (Scout "makes no difference where you put it...
+    the computer will simply do your Scout tactic after all other
+    encounter tactics are completed").
+
+    ``_LIgnore`` (``mintel >= Medium``) sets nothing observable --
+    matching this project's own pre-existing convention that the
+    successful-Talk reply system's semantically identical
+    ``TalkReplyOutcome.IGNORE`` (``RPuzzled``/``RWarn``, Phase 528) is
+    already a silent no-op with no trace. Only the ``mintel < Medium``
+    "puzzled" branch sets ``result.talk_language_failure`` --
+    ``MTALK.X2``'s own literal reply text is unsourced everywhere in
+    this project (see ``report/turn_report.py``'s own docstring), so
+    this stays a bare boolean rather than fabricated prose; any report-
+    layer text for it is a project-original placeholder, the same
+    "mechanic sourced, text is not" split Phase 543's own Arcane's
+    Valor unification line already established.
+    """
+
+    feature = state.features.get(request.feature_id)
+    if feature is None or feature.guardian_monster is None:
+        return
+    if not any(tactic.maneuver is Maneuver.TALK for tactic in request.tactics):
+        return
+    if holds_monster_command_item_for(state, leader_id, feature.guardian_monster):
+        return  # Phase 537 carve-out -- Talk's own social roll never runs at all
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return
+    druid_level = effective_skill_level(state, leader, Ability.DRUID)
+    if can_talk_to_monster(feature.guardian_monster, druid_level):
+        return  # the DR gate passed -- no language-failure branch at all
+    if monster_intelligence_at_least_medium(feature.guardian_monster):
+        return  # _LIgnore -- silent, matches this project's own IGNORE convention
+    result.talk_language_failure = True
 
 
 def _apply_scout(

@@ -22572,7 +22572,7 @@ follow-up request after the original 431-435 plan shipped.
   Book read doesn't set it; a rejected (zero-charge) cast doesn't set
   it. Ran again: 4733 passed (net +5).
 
-- **Phase 543 (current, closes the 5-phase magic-item dossier residue)**:
+- **Phase 543 (closes the 5-phase magic-item dossier residue)**:
   Arcane's Valor "unification" report line — mechanic sourced, text is
   not — `AKGEN_reverse_engineering_report (4).md` §11.3
   (`REPORTS.PAS:1510-1517`). The check itself is a real, direct source:
@@ -22607,6 +22607,50 @@ follow-up request after the original 431-435 plan shipped.
   legitimately blocked), and three phases the user explicitly chose to
   implement despite no underlying mechanic/consumer existing anywhere in
   this codebase (541, 542 sourced-half-only; 543's text half).
+
+- **Phase 544 (current)**: Talk's own Druid-DR-gate-failure narrative gap
+  — found during a monster audit starting from `MOSTRI con statistiche.
+  txt` and cross-checked against `AKGEN_reverse_engineering_report
+  (3).md` §60-62's own `resolve_TA_to_monster()` pseudocode (§62.1
+  "Fallimento linguistico", quoted in full in the new code). When a Talk
+  tactic's own Druid DR gate (`can_talk_to_monster()`) fails, the real
+  engine doesn't just stop — it branches on the guardian's own
+  intelligence: `_LIgnore` (silent, `mintel >= Medium`) or `_MReply`/
+  `RPuzzled` (`mintel < Medium`), before continuing to the next tactic
+  either way (mechanically inert — no Quest, no combat difference).
+  `turn/search_execution.py`'s own `_resolve_talk()` already did the
+  "continue either way" part correctly (Phase 240/528) but collapsed
+  both narrative branches into one bare `return None`, with zero
+  distinction. New `models/monster.py monster_intelligence_at_least_
+  medium(monster)` (the `mintel[monster.type] >= Medium` ordinal check,
+  reusing `MONSTER_RUNTIME_PROFILE`/`MONSTER_INTELLIGENCE_ORDINAL`,
+  unknown species default to the silent branch). New `turn/
+  search_execution.py _apply_talk_language_failure()`, wired into
+  `execute_search()` right after `_apply_scout()` — evaluated once,
+  after the whole tactic walk finishes, off `request.tactics` and
+  current state, the same "evaluate once, after the walk" shape
+  `_apply_scout()`'s own Phase 274 docstring already established (both
+  the DR gate and the mintel check are pure/deterministic, so this can't
+  diverge from what `_resolve_talk()` itself computed inline). Sets the
+  new `SearchExecutionResult.talk_language_failure: bool = False` field
+  only for the `mintel < Medium` "puzzled" branch — the silent `_LIgnore`
+  branch (`mintel >= Medium`) sets nothing observable, matching this
+  project's own pre-existing convention that the successful-Talk reply
+  system's semantically identical `TalkReplyOutcome.IGNORE` (Phase 528)
+  is already a silent no-op. `MTALK.X2`'s own literal reply text stays
+  unsourced everywhere in this project (confirmed via `report/
+  turn_report.py`), so this is a bare boolean, not fabricated prose —
+  any report-layer text is left as a future project-original placeholder,
+  the same "mechanic sourced, text is not" split Phase 543's own
+  Arcane's Valor unification line already established. Ran before
+  writing tests: 4742 passed (non-breaking). Added tests: `models/
+  monster.py`'s own ordinal check (Gargoyle LOW, Giant Eagle MEDIUM, Red
+  Dragon HIGH); the puzzled branch fires against a low-intelligence
+  guardian (Gargoyle) whose DR gate fails; stays silent against a
+  medium-intelligence guardian (Giant Eagle) whose DR gate also fails;
+  stays unset when the DR gate passes (Archer, talkdiff 0) regardless of
+  intelligence; stays unset with no Talk tactic in the plan at all. Ran
+  again: 4747 passed (net +5).
 
 ## Setup
 
