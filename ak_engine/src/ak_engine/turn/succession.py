@@ -2,10 +2,12 @@
 
 Phase 259 wired the automatic side of King succession: when a King
 dies, ``GameState.remove_leader()`` installs a Royal Heir under the
-same ``leader_id``, with all Talents at zero, until either a
-Resurrection restores the exact dead King or the player assigns the
-Heir his own new skills. This module is the second half -- the
-player-facing act of actually creating that new King.
+same ``leader_id`` (Phase 552: with the automatic Melee/Archery/Sage
+training-bonus baseline, not fully zeroed -- see that function's own
+docstring), until either a Resurrection restores the exact dead King
+or the player assigns the Heir his own new skills. This module is the
+second half -- the player-facing act of actually creating that new
+King.
 
 **Not a K1-decodable order.** Confirmed directly against the real
 Pascal ``action`` enum (``CTBOTH.PAS``, ``models/enums.py
@@ -66,6 +68,19 @@ time figure -- the real engine's own ``AKE.EXE`` disassembly reads the
 identical currently-stored value at the moment of comparison, so this
 was never actually an approximation to begin with, just previously
 undocumented as exact.
+
+**Phase 557 audit note**: the user's own ``SUCCESSIONE.txt``
+(project-original rules notes, Desktop root) describes a different,
+inclusion-based constraint instead -- "si devono per forza assegnare
+almeno due punti in talenti che possedeva il defunto RE quando è stato
+creato" ("you must assign at least two points to Talents the dead King
+possessed when he was created"), with a worked example matching the
+old, now-removed ``KING_CREATION_MIN_OVERLAP_POINTS`` rule exactly.
+Flagged to the user as a direct conflict with SS1/SS8.5 above;
+**confirmed by the user (project author): the disassembly-sourced
+report governs**, this Phase 554 constraint stays as implemented.
+Documented here so a future audit of ``SUCCESSIONE.txt`` doesn't
+re-flag the same already-resolved conflict.
 
 **Sex** (``models/sex.py``, new this phase): RULES.AK [2.1] doesn't
 list it in its own King-creation sentence, but it's confirmed directly

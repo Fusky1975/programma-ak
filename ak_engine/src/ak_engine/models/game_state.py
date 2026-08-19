@@ -1289,8 +1289,22 @@ class GameState:
         used to install. This is also why the real "``Total_USkill < 7``"
         Resurrection/report-display threshold (``turn/cast_execution.py
         is_unfinalized_royal_heir()``) works out to 3 (this baseline) + 4
-        (the player's later ``(K)g Ab`` points), not 0 + 7. The Heir also
-        keeps the dead King's own ``name`` (per the quote above),
+        (the player's later ``(K)g Ab`` points), not 0 + 7.
+
+        **Phase 557 audit note**: the user's own ``SUCCESSIONE.txt``
+        (project-original rules notes, Desktop root) describes this
+        reset differently -- "un Royal Heir... con tutti talenti e
+        potenzialità a zero" ("...with all Talents and Potentials at
+        zero"), with the +1 training bonus described only as part of
+        the *later* ``create_king()`` step, not the Heir's initial
+        state. Flagged to the user as a direct conflict with SS6.2
+        above; **confirmed by the user (project author): the
+        disassembly-sourced report governs**, this Phase 552 baseline
+        stays as implemented. Documented here so a future audit of
+        ``SUCCESSIONE.txt`` doesn't re-flag the same already-resolved
+        conflict.
+
+        The Heir also keeps the dead King's own ``name`` (per the quote above),
         ``location``, ``temper``, ``alignment``, and ``race`` (race/
         alignment can't change across a succession -- the Heir carries
         the same lineage), and is flagged ``is_royal_heir=True`` -- see

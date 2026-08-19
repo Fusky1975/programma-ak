@@ -23014,7 +23014,7 @@ follow-up request after the original 431-435 plan shipped.
   unfinalized) also shows its real name; an ordinary non-King leader is
   unaffected. Ran again: 4796 passed (net +4).
 
-- **Phase 556 (current)**: decoded `termod`/`effects_bitmask`'s own
+- **Phase 556**: decoded `termod`/`effects_bitmask`'s own
   bit-level meaning -- the second, smaller correction from the user's
   fifth reverse-engineering report, deliberately kept separate from the
   Succession series above since it's an unrelated parser field.
@@ -23046,6 +23046,33 @@ follow-up request after the original 431-435 plan shipped.
   their own distinct bit offsets without cross-contaminating each other;
   the Illus_Exp bit decodes correctly from inside the Illus_Eff nibble.
   Ran again: 4800 passed (net +4).
+
+- **Phase 557 (current, docs-only)**: audited `SUCCESSIONE.txt` (the
+  user's own Desktop-root rules notes on King succession) against the
+  just-closed Phase 552-556 series and found it directly contradicts
+  two of the report-sourced corrections: (1) it describes the Royal
+  Heir's initial reset as *fully* zeroed (Talents *and* Potentials),
+  with the +1 Melee/Archery/Sage training bonus applied only later, at
+  `create_king()` time -- conflicting with Phase 552's "reset already
+  carries the bonus" baseline; (2) it describes the old, inclusion-
+  based "at least 2 of 4 points must land on Talents the dead King had
+  at creation" constraint, with a worked numeric example -- conflicting
+  with Phase 554's exclusion-based "at most 1 ability may exceed the
+  dead King's own skill by more than 1 level" replacement. Every other
+  claim in the file (free name/sex/temper choice, 4-point/max-2-per-
+  ability allocation, race/alignment never re-chosen, Divine/Undead
+  bonuses, the +2/max-5 aptitude formula) was already correct and
+  unchanged. Flagged both conflicts to the user rather than resolving
+  either silently; **the user confirmed the disassembly-sourced report
+  (`AKGEN_reverse_engineering_report (5).md`) governs over
+  `SUCCESSIONE.txt`** -- Phases 552 and 554 stand as implemented, no
+  code behavior changed. Documented the resolution directly in
+  `GameState.remove_leader()`'s and `turn/succession.py`'s own
+  docstrings so a future audit of `SUCCESSIONE.txt` doesn't re-flag the
+  same already-settled conflicts; also fixed a second, unrelated stale
+  line in `turn/succession.py`'s own module docstring still describing
+  the pre-Phase-552 "all Talents at zero" reset. No test changes (no
+  behavior changed) -- suite re-run to confirm: 4800 passed (unchanged).
 
 ## Setup
 
