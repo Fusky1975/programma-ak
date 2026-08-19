@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.treasure import Treasure
-from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID
+from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID, _valhalla_stay_phase_count
 
 
 def test_visitor_leader_id_is_the_fixed_reserved_slot():
@@ -84,3 +84,22 @@ def test_arthur_carries_excalibur_matching_the_rulebooks_own_example():
     arthur = next(h for h in VALHALLA_ROSTER[Alignment.GOOD] if h.name == "Arthur")
     assert arthur.fixed_item is Treasure.LEADERSHIP_HUMAN
     assert arthur.fixed_item_name == "Sword Excalibur"
+
+
+# -- Phase 546: visitor lifecycle -- stay-phase-count table --
+
+
+def test_valhalla_stay_phase_count_matches_the_rulebooks_own_table():
+    # "Nei turni 1 e 2... una sola azione... due azioni [...] turni
+    # 3-4. Tre azioni nei turni 5-6, quattro azioni nei turni 7-8,
+    # cinque nei turni dal 9 in poi."
+    assert _valhalla_stay_phase_count(1) == 1
+    assert _valhalla_stay_phase_count(2) == 1
+    assert _valhalla_stay_phase_count(3) == 2
+    assert _valhalla_stay_phase_count(4) == 2
+    assert _valhalla_stay_phase_count(5) == 3
+    assert _valhalla_stay_phase_count(6) == 3
+    assert _valhalla_stay_phase_count(7) == 4
+    assert _valhalla_stay_phase_count(8) == 4
+    assert _valhalla_stay_phase_count(9) == 5
+    assert _valhalla_stay_phase_count(20) == 5

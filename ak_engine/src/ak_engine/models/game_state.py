@@ -814,6 +814,27 @@ class LeaderState:
     # (currently only the 5 magic colleges -- see that module's Phase
     # 493 addendum for why the other 10 categories aren't wired yet).
     advanced_abilities: set[AdvancedAbility] = field(default_factory=set)
+    # Phase 546 -- Valhalla visitor lifecycle (Desktop/VALHALLA.txt).
+    # None for every leader except the current Valhalla visitor
+    # (VALHALLA_VISITOR_LEADER_ID). ``valhalla_active_turn`` is the one
+    # game turn on which the visitor is allowed to act at all (set at
+    # spawn to the turn after the one Gate Angel succeeded on --
+    # ``turn/valhalla_execution.py finalize_gate_angel_visit()`` runs in
+    # ``run_turn()``'s own end-of-turn tail, after that turn's own
+    # phase-dispatch loop already ran). ``valhalla_allowed_phase_count``
+    # is how many of that turn's up-to-5 phases (P0-P4) may carry a real
+    # order -- VALHALLA.txt's own escalating table, see ``models/
+    # valhalla.py _valhalla_stay_phase_count()``. ``valhalla_fixed_item_id``
+    # is the ``ItemInstance.item_id`` of the visitor's own fixed magic
+    # item (``ValhallaHero.fixed_item``), so it can be blocked from Give
+    # (``turn/trade_execution.py execute_give()``) and specifically
+    # identified for hand-off/drop on departure (``turn/valhalla_
+    # execution.py process_valhalla_departure()``) -- None for the 2
+    # heroes whose own item is unresolved (see ``models/valhalla.py``'s
+    # docstring) or once the visitor has departed.
+    valhalla_active_turn: int | None = None
+    valhalla_allowed_phase_count: int | None = None
+    valhalla_fixed_item_id: int | None = None
 
 
 @dataclass(slots=True)

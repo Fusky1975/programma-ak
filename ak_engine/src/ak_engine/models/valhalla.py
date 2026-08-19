@@ -85,6 +85,35 @@ class ValhallaHero:
     fixed_item_name: str  # raw "Oggetto:" source text, always populated
 
 
+def _valhalla_stay_phase_count(active_turn: int) -> int:
+    """Phase 546 -- ``VALHALLA.txt``'s own escalating action table,
+    quoted in full: "Nei turni 1 e 2, i visitatori dal Vahlalla hanno
+    diritto ad una sola azione e questa facolta' aumenta al ritmo di una
+    azione ogni due turni. Quindi, due azioni [...] se il Vahlalla
+    arriva nei turni 3-4. Tre azioni nei turni 5-6, quattro azioni nei
+    turni 7-8, cinque nei turni dal 9 in poi."
+
+    A real ``ActionPlan`` already has exactly 5 phases (P0-P4) within
+    *one* game turn (``models/plan.py``/``turn/plan_dispatch.py run_
+    leader_plan()``), and the table's own cap tops out at exactly 5 --
+    confirmed (via the user's own explicit choice) to describe how many
+    of the visitor's 5 phases in their *one* active turn may carry a
+    real order, not a multi-turn stay. See ``turn/valhalla_execution.py
+    finalize_gate_angel_visit()``'s own Phase 546 addendum for how
+    ``active_turn`` itself is derived.
+    """
+
+    if active_turn <= 2:
+        return 1
+    if active_turn <= 4:
+        return 2
+    if active_turn <= 6:
+        return 3
+    if active_turn <= 8:
+        return 4
+    return 5
+
+
 # Keyed by the VALHALLA bucket (turn/cast_execution.py's own
 # GATE_ANGEL_ELIGIBLE_ALIGNMENTS) a hero appears under -- not necessarily
 # the hero's own `true_alignment` (see module docstring).

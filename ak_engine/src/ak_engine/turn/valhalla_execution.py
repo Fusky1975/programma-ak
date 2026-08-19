@@ -50,16 +50,24 @@ Skipped entirely for the two heroes whose own ``fixed_item`` is
 ``None`` (see ``models/valhalla.py``'s own docstring for the two
 unresolved item names) -- no item is fabricated in their place.
 
-**Not modeled here, confirmed but out of scope** (see ``turn/
-cast_execution.py``'s own "Phase 195 addendum" for the full list and
-citations): the escalating per-visit action allowance, the one-
-Practice-phase-only limit, spell-immunity except Resurrection, the
-non-transferable/disappears-on-death item lifecycle beyond its initial
-grant, army hand-off on departure, and turn-deadline voiding. Every one
-of these presupposes a real, already-spawned visitor with a real stay
-duration -- which this function now provides -- but wiring any of them
-in is deliberately left for whichever future phase actually builds
-turn-scoped visitor lifecycle tracking.
+**Phase 546**: a monster/Valhalla audit re-found this module's own
+prior "not modeled" list -- the escalating per-visit phase allowance
+and the fixed item's own tracked ``item_id`` are now recorded at spawn
+time (``LeaderState.valhalla_active_turn``/``valhalla_allowed_phase_
+count``/``valhalla_fixed_item_id`` -- see ``models/valhalla.py
+_valhalla_stay_phase_count()`` for the escalating table itself). **Not
+yet enforced** (Phase 547/548's own scope): ``turn/plan_dispatch.py``
+doesn't cap phases at dispatch yet, ``turn/cast_execution.py`` doesn't
+grant spell-immunity except Resurrection yet, ``turn/trade_execution.py``
+doesn't block Give on the fixed item yet, and no departure/army-hand-
+off/loot-routing processing runs at all yet -- this leader is still
+dispatched exactly like any other for now. **Turn-deadline voiding
+stays confirmed out of scope entirely**: this codebase has no in-engine
+"did this Kingdom miss the deadline" detector at all (``turn/missed_
+deadline.py``'s own module docstring -- it's an external, caller-level
+fact nothing in ``GameState`` tracks), so there's no hook to attach
+this rule to without inventing an external contract this project
+doesn't otherwise have.
 """
 
 from __future__ import annotations
@@ -69,7 +77,12 @@ import random
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import GameState, LeaderState
-from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID, ValhallaHero
+from ak_engine.models.valhalla import (
+    VALHALLA_ROSTER,
+    VALHALLA_VISITOR_LEADER_ID,
+    ValhallaHero,
+    _valhalla_stay_phase_count,
+)
 
 
 def _select_visitor_template(
@@ -145,6 +158,13 @@ def finalize_gate_angel_visit(state: GameState, rng: random.Random) -> LeaderSta
     )
     location = king.location if king is not None else kingdom.home_province
 
+    # Phase 546 -- the visitor's own one active turn is the turn *after*
+    # this one: this function runs in run_turn()'s own end-of-turn tail,
+    # after this turn's own phase-dispatch loop already ran, so the
+    # visitor genuinely can't act until state.turn_number + 1. See
+    # models/valhalla.py _valhalla_stay_phase_count()'s own docstring
+    # for the escalating phase-count table this turn number drives.
+    active_turn = state.turn_number + 1
     visitor = LeaderState(
         leader_id=VALHALLA_VISITOR_LEADER_ID,
         kingdom_id=kingdom_id,
@@ -154,10 +174,13 @@ def finalize_gate_angel_visit(state: GameState, rng: random.Random) -> LeaderSta
         temper=template.temper,
         alignment=template.true_alignment,
         race=template.race,
+        valhalla_active_turn=active_turn,
+        valhalla_allowed_phase_count=_valhalla_stay_phase_count(active_turn),
     )
     state.leaders[visitor.leader_id] = visitor
 
     if template.fixed_item is not None:
-        state.add_item(template.fixed_item, owner_leader_id=visitor.leader_id)
+        item = state.add_item(template.fixed_item, owner_leader_id=visitor.leader_id)
+        visitor.valhalla_fixed_item_id = item.item_id
 
     return visitor

@@ -22652,7 +22652,7 @@ follow-up request after the original 431-435 plan shipped.
   intelligence; stays unset with no Talk tactic in the plan at all. Ran
   again: 4747 passed (net +5).
 
-- **Phase 545 (current)**: resolved the 14 discrepancies between `Desktop/
+- **Phase 545**: resolved the 14 discrepancies between `Desktop/
   Intelligenza mostri.txt` (a separate, user-compiled 6-tier Italian
   intelligence classification, cross-checked during the same monster
   audit that led to Phase 544) and `MONSTER_RUNTIME_PROFILE`'s own
@@ -22673,6 +22673,51 @@ follow-up request after the original 431-435 plan shipped.
   disagreements_with_user_compiled_list()`, pinning all 14 species'
   `MONSTER_RUNTIME_PROFILE` values against their `Intelligenza mostri.
   txt` counterparts. Ran again: 4748 passed (net +1).
+
+- **Phase 546 (current, 1 of 3: Valhalla visitor lifecycle)**: a Valhalla
+  audit (`Desktop/VALHALLA.txt` + the 5 per-alignment roster files)
+  found the 137-hero roster and the Gate Angel spawn mechanic (`turn/
+  valhalla_execution.py`, wired since Phase 199) fully correct, but its
+  own "not modeled" list confirmed the entire post-spawn visitor
+  *lifecycle* is missing: action limits, the one-Practice restriction,
+  spell immunity except Resurrection, the non-transferable/disappears-
+  on-death item, departure + army hand-off, and loot routing. Also
+  surfaced a live correctness bug: since nothing ever clears leader id
+  199 (`VALHALLA_VISITOR_LEADER_ID`), a second successful Gate Angel
+  cast silently overwrites the previous visitor's identity while any
+  items/armies still referencing leader 199 keep pointing at it. The
+  user chose to implement the full lifecycle (3 phases) and confirmed
+  the key design ambiguity in `VALHALLA.txt`'s own escalating action
+  table ("turni 1-2 -> 1 azione ... turni 9+ -> 5 azioni"): a normal
+  `ActionPlan` already has exactly 5 phases (P0-P4) within *one* game
+  turn, so the table caps how many of the visitor's 5 phases in their
+  *one* active turn may carry a real order, not a multi-turn stay --
+  matching rule 4's "leaves at the end of the last phase scheduled...
+  after all battles have been fought" and explaining why the cap tops
+  out at exactly 5. Turn-deadline voiding stays confirmed out of scope
+  entirely: `turn/missed_deadline.py` has no in-engine deadline detector
+  at all (its own module docstring says so directly) -- there's no hook
+  to attach this rule to without inventing an external contract this
+  project doesn't otherwise have.
+
+  This phase (1 of 3) lays the groundwork: new `models/valhalla.py
+  _valhalla_stay_phase_count(active_turn)` (the escalating table itself)
+  and three new `LeaderState` fields (`valhalla_active_turn`,
+  `valhalla_allowed_phase_count`, `valhalla_fixed_item_id`), populated
+  at spawn time in `turn/valhalla_execution.py finalize_gate_angel_
+  visit()` -- the visitor's one active turn is `state.turn_number + 1`
+  (this function runs in `run_turn()`'s own end-of-turn tail, *after*
+  that turn's own phase-dispatch loop already ran, so the visitor
+  genuinely can't act until the next turn). **Not yet enforced**: phase-
+  count/Practice capping, spell immunity, Give-blocking, and departure
+  processing (including the leader-199 overwrite bug fix, which needs
+  Phase 548's own departure function to call) are Phase 547/548's own
+  scope. Ran before writing tests: 4748 passed (non-breaking). Added
+  tests: the stay-phase-count table (all 5 turn bands); `finalize_gate_
+  angel_visit()` sets `valhalla_active_turn` to `turn_number + 1` and
+  `valhalla_allowed_phase_count` from the table; `valhalla_fixed_item_id`
+  matches the granted item's own `item_id`, and stays `None` for the
+  unresolved-item branch. Ran again: 4753 passed (net +5).
 
 ## Setup
 

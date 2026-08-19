@@ -121,6 +121,68 @@ def test_finalize_grants_no_item_when_the_heros_own_item_is_unresolved(monkeypat
     assert state.items_held_by(visitor.leader_id) == []
 
 
+# -- Phase 546: visitor lifecycle -- spawn-time field population --
+
+
+def test_finalize_sets_the_active_turn_to_the_turn_after_this_one():
+    # finalize_gate_angel_visit() runs in run_turn()'s own end-of-turn
+    # tail, after this turn's own phase-dispatch loop already ran -- the
+    # visitor genuinely can't act until turn_number + 1.
+    state = _state_with_winner()
+    state.turn_number = 7
+    state.last_gate_angel_turn = 7
+    rng = random.Random(0)  # turn > 5 -- real visitor_selection consumes rng
+
+    visitor = finalize_gate_angel_visit(state, rng)
+
+    assert visitor.valhalla_active_turn == 8
+
+
+def test_finalize_sets_the_allowed_phase_count_from_the_active_turn():
+    # Active turn 8 falls in the "turni 7-8" band -- 4 phases allowed.
+    state = _state_with_winner()
+    state.turn_number = 7
+    state.last_gate_angel_turn = 7
+    rng = random.Random(0)  # turn > 5 -- real visitor_selection consumes rng
+
+    visitor = finalize_gate_angel_visit(state, rng)
+
+    assert visitor.valhalla_allowed_phase_count == 4
+
+
+def test_finalize_tracks_the_fixed_items_own_item_id():
+    state = _state_with_winner()
+    rng = ScriptedRandom([])
+
+    visitor = finalize_gate_angel_visit(state, rng)
+
+    items = state.items_held_by(visitor.leader_id)
+    assert len(items) == 1
+    assert visitor.valhalla_fixed_item_id == items[0].item_id
+
+
+def test_finalize_leaves_the_fixed_item_id_unset_when_the_heros_item_is_unresolved(monkeypatch):
+    synthetic_hero = ValhallaHero(
+        name="Nobody",
+        true_alignment=Alignment.PAGAN,
+        temper=Temper.CAUTIOUS,
+        race=Race.HUMAN,
+        skills=SkillTable(raw_values=[0] * 30),
+        fixed_item=None,
+        fixed_item_name="Unresolved Trinket",
+    )
+    monkeypatch.setattr(
+        "ak_engine.turn.valhalla_execution.VALHALLA_ROSTER",
+        {Alignment.PAGAN: (synthetic_hero,)},
+    )
+    state = _state_with_winner(due_alignment=Alignment.PAGAN)
+    rng = ScriptedRandom([], choice_indices=[0])
+
+    visitor = finalize_gate_angel_visit(state, rng)
+
+    assert visitor.valhalla_fixed_item_id is None
+
+
 def test_finalize_copies_the_heros_skills_temper_alignment_and_race():
     state = _state_with_winner()
     rng = ScriptedRandom([])
