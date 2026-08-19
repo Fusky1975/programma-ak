@@ -23047,7 +23047,7 @@ follow-up request after the original 431-435 plan shipped.
   the Illus_Exp bit decodes correctly from inside the Illus_Eff nibble.
   Ran again: 4800 passed (net +4).
 
-- **Phase 557 (current, docs-only)**: audited `SUCCESSIONE.txt` (the
+- **Phase 557 (docs-only)**: audited `SUCCESSIONE.txt` (the
   user's own Desktop-root rules notes on King succession) against the
   just-closed Phase 552-556 series and found it directly contradicts
   two of the report-sourced corrections: (1) it describes the Royal
@@ -23073,6 +23073,57 @@ follow-up request after the original 431-435 plan shipped.
   line in `turn/succession.py`'s own module docstring still describing
   the pre-Phase-552 "all Talents at zero" reset. No test changes (no
   behavior changed) -- suite re-run to confirm: 4800 passed (unchanged).
+
+- **Phase 558 (current)**: audited `VITTORIA E FINE PARTITA.txt`
+  (victory conditions/end-of-game scoring) and found most of it already
+  matched extensively-sourced code (Emperor election, the Alignment
+  reduction table's worked examples, all 8 Imperial Offices' Merit
+  Point formulas and their 3 footnotes, the Valhalla induction
+  threshold `>= 20`) -- but also found a genuine internal inconsistency
+  between two modules computing what the text itself says is the same
+  mechanism. `turn/emperor_election.py alignment_victory_point_
+  reduction_percent()` (used by `report/turn_report.py`'s "ALIGNMENT
+  REDUCTION" section) used a plain, uncapped ordinal distance and only
+  covered 7 of the 10 `Alignment` members (`ALIGNMENT_VP_REDUCTION_PER_
+  STEP`, sourced from the user's own shorter "TABELLA ALLINEAMENTI").
+  `turn/victory_points.py office_victory_points()` (the real per-office
+  Victory Point discount, Phase 439) used a different, more precise
+  formula sourced directly from a disassembly of `REPORTS.PAS` (`outred
+  [kalign] * diff_steps`, `diff_steps` capped at Hellish/Anti-Holy's own
+  ordinal before differencing, covering all 10 Alignments via `CTBOTH.
+  PAS`'s real `outred` array). The text explicitly says the office-level
+  reduction uses the SAME formula described for a King's overall total
+  ("come viene spiegato nel paragrafo successivo"), and `turn_report.py`'s
+  own existing comment already cited the identical `REPORTS.PAS` lines
+  for the "ALIGNMENT REDUCTION" section -- confirming the two call sites
+  had simply drifted apart, not that they described two genuinely
+  different mechanics. Flagged to the user; **confirmed: unify on the
+  real, disassembly-sourced formula.** Removed `ALIGNMENT_VP_REDUCTION_
+  PER_STEP`; `alignment_victory_point_reduction_percent()` now reuses
+  `victory_points.py`'s own `OUTLOOK_REDUCTION`/`_alignment_distance_
+  capped_at_hellish()` directly and always returns a real value (no more
+  `None` case) -- all 3 of the text's own worked examples still
+  reproduce exactly (none of them happen to exercise a pair the capping
+  actually changes, which is how the drift went unnoticed). Also fixed
+  two stale "explicitly out of scope"/"still-unbuilt Final Standings"
+  docstring claims in `emperor_election.py` and `turn_report.py` --
+  `victory_points.py`/`final_standings.py` (Phase 439-476) already
+  closed that gap, just not by updating these two cross-references.
+  Ran before writing tests: 4800 passed (non-breaking). Updated the one
+  existing test that asserted `None` for Anti-Holy/Mechanical/Special
+  and the one that asserted Anti-Holy stayed excluded from the report;
+  added tests confirming those three now resolve to real percentages, a
+  worked case where the capped distance genuinely diverges from the old
+  uncapped one (Undead vs. Evil: 20% now, not the old 40%), and that the
+  rulebook's own Divine/Undead 100%-saturation example still holds. Ran
+  again: 4802 passed (net +2).
+  **Confirmed out of scope for this phase, correctly already flagged
+  in the code, not a defect**: the final-turn report never renders
+  `turn/final_standings.py compose_final_standings_report()`'s own
+  computed ranking into actual prose, even though `VITTORIA E FINE
+  PARTITA.txt` describes exactly that as the last report's own content
+  -- `final_standings.py`'s own docstring already names this as
+  "deliberately not attempted."
 
 ## Setup
 

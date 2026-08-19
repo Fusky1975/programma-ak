@@ -131,56 +131,78 @@ King's own final Victory Point total is reduced by a percentage
 proportional to their Alignment's own distance from the newly-elected
 Emperor's Alignment -- "un Re Pagano perde il 45% dei suoi Punti
 Vittoria se viene eletto Imperatore un Re Buono (15% x 3)".
-`ALIGNMENT_VP_REDUCTION_PER_STEP` below is the user-supplied "TABELLA
-ALLINEAMENTI" reduction-per-step column (7 of the 10 `Alignment`
-members; Anti-Holy/Mechanical/Special are a confirmed gap, not a guess
--- the table simply doesn't cover them, presumably because they aren't
-selectable Alignments for a King). `alignment_victory_point_reduction_
-percent()` reuses `models/alignment.py ALIGNMENT_ORDINAL` for
-"distance" -- the same real Pascal ordinal sequence (not this project's
-own declaration order) `turn/hire_pay.py _alignment_distance()` already
-established as load-bearing for an identical "N ordinal positions
-apart" formula. The worked example above reproduces exactly: Good=1,
-Pagan=4, distance 3, Pagan's own 15%-per-step row -> 15 x 3 = 45%.
+
+**Phase 558**: `alignment_victory_point_reduction_percent()` now reuses
+`turn/victory_points.py OUTLOOK_REDUCTION`/`_alignment_distance_capped_
+at_hellish()` directly, instead of maintaining its own separate,
+partial table and a plain uncapped ordinal distance. The user's own
+`VITTORIA E FINE PARTITA.txt` explicitly says the office-level
+reduction "viene poi modificato dalla differenza di Allineamento...
+come viene spiegato nel paragrafo successivo" -- i.e. the SAME formula
+this section describes for a King's overall total -- and `report/
+turn_report.py describe_alignment_victory_point_reduction()`'s own
+comment independently cites the identical real source
+(`HostAK/TP/REPORTS.PAS` ~lines 1665-1690/1784, `outred[kalign] *
+diff_steps`) that `victory_points.py`'s own Phase 439 docstring already
+traced in full. The two modules had drifted apart before this phase:
+this one's own `ALIGNMENT_VP_REDUCTION_PER_STEP` (now removed) only
+covered 7 of the 10 `Alignment` members (the user-supplied "TABELLA
+ALLINEAMENTI" reduction-per-step column, which doesn't mention
+Anti-Holy at all) with a plain, uncapped ordinal distance, while
+`victory_points.py`'s formula -- sourced from the actual disassembly,
+`CTBOTH.PAS ~line 1673`'s real 10-entry `outred` array plus `diff_
+steps:= abs(Min(ord(kalign),ord(Hellish)) - Min(ord(Hellish),
+ord(empalign)))` -- covers all 10 and caps each Alignment's own ordinal
+at Hellish's (`Alignment.ANTI_HOLY`'s) own position before
+differencing. Both formulas reproduce every worked example in
+`VITTORIA E FINE PARTITA.txt` identically (Good=1, Pagan=4, distance 3,
+15 x 3 = 45%; Neutral=3, Good=1, distance 2, 12 x 2 = 24%; Divine=0,
+Undead capped-to-Hellish=6, distance 6, 20 x 6 = 120% -> capped at
+100%) -- none of those examples happen to exercise a pair where the
+capping actually changes the result, which is exactly how this drift
+went unnoticed until this audit. `alignment_victory_point_reduction_
+percent()` no longer returns `None` for any `Alignment` -- the real
+`outred` table has a genuine value for all 10, including Mechanical/
+Special (confirmed real, not modeled as "never reachable" the way
+`_ORDINARY_ALIGNMENTS` below still treats them for the separate
+alignment-bloc-vote mechanic; a King simply never has one of those two
+Alignments in this project's own data, so the value is inert in
+practice, not wrong to have).
 
 ## Explicitly out of scope
 Determining the game's total available Victory Points and attributing
 the other 7 Imperial Offices' own shares (needs the full Merit Point
 Rank contest -- who actually *wins* each office, resolved across every
 leader in the game via `turn/merit_points.py`'s own formulas and
-`merit_point_tiebreak_key()`) is a separate, considerably larger
-follow-up, not attempted here. This module only settles *who becomes
-Emperor* and *how much each King's own Alignment costs them* -- two
-self-contained rulebook mechanics that don't need that larger ranking
-system.
+`merit_point_tiebreak_key()`) was the still-open gap this module left
+when this docstring was first written (Phase 228). **Since closed,
+just not by this module**: `turn/victory_points.py office_victory_
+points()` (Phase 439) and `turn/final_standings.py kingdom_points()`/
+`final_standings()` (Phase 454-476) now fully cover exactly this --
+per-office Rank resolution via `turn/office_holder.py
+resolve_all_office_holders()`, real Victory Point attribution, and a
+composite Kingdom ranking. This module still only settles *who becomes
+Emperor* and *how much each King's own Alignment costs them* directly,
+but the larger ranking system this paragraph once called "a separate,
+considerably larger follow-up" is no longer missing from the project
+overall -- see those two modules' own docstrings for the full account.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
+from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.game_state import GameState
 from ak_engine.models.kingdom import KingdomMoveHeader
 from ak_engine.models.office import OFFICE_VALUE
 from ak_engine.turn.merit_points import LEGENDARY_ITEM_BONUS_TREASURES
 from ak_engine.turn.office_holder import resolve_all_office_holders
 from ak_engine.turn.tax_base import compute_tax_base
+from ak_engine.turn.victory_points import OUTLOOK_REDUCTION, _alignment_distance_capped_at_hellish
 
 ELECTION_REQUEST_THRESHOLD_PERCENT = 55
 ELECTION_WIN_THRESHOLD_PERCENT = 50
-
-# User-supplied "TABELLA ALLINEAMENTI" reduction-per-step column -- see
-# module docstring. Anti-Holy/Mechanical/Special are a confirmed gap.
-ALIGNMENT_VP_REDUCTION_PER_STEP: dict[Alignment, int] = {
-    Alignment.DIVINE: 20,
-    Alignment.GOOD: 12,
-    Alignment.DRUID: 15,
-    Alignment.NEUTRAL: 20,
-    Alignment.PAGAN: 15,
-    Alignment.EVIL: 12,
-    Alignment.UNDEAD: 20,
-}
 
 
 def _world_tax_base(state: GameState) -> int:
@@ -391,22 +413,24 @@ def resolve_emperor_election(state: GameState, ballots: dict[int, int], vote_tur
     return result
 
 
-def alignment_victory_point_reduction_percent(king_alignment: Alignment, emperor_alignment: Alignment) -> int | None:
+def alignment_victory_point_reduction_percent(king_alignment: Alignment, emperor_alignment: Alignment) -> int:
     """The percentage of ``king_alignment``'s own Victory Points lost
     because ``emperor_alignment`` now holds the Imperial throne --
-    per-step percent (``king_alignment``'s own row) times ordinal
-    distance from ``emperor_alignment``. Returns ``None``, not a guessed
-    0, if ``king_alignment`` isn't one of the 7 the rulebook's own table
-    covers (Anti-Holy/Mechanical/Special) -- a genuinely unknown
-    reduction, distinct from a real "no reduction" (distance-0, same
-    Alignment as the Emperor).
+    **Phase 558**: reuses `turn/victory_points.py OUTLOOK_REDUCTION`/
+    `_alignment_distance_capped_at_hellish()` directly (the same real,
+    disassembly-sourced formula `office_victory_points()` already
+    applies to office-level Victory Points) instead of this module's own
+    former partial table and uncapped distance -- see module docstring's
+    own Phase 558 note for the full derivation and why the drift went
+    unnoticed. Capped at 100 (a King can't lose more than the entirety
+    of their own Victory Points). Always returns a real value now -- the
+    real `outred` table covers all 10 `Alignment` members, not just the
+    7 `VITTORIA E FINE PARTITA.txt`'s own shorter table names.
     """
 
-    per_step = ALIGNMENT_VP_REDUCTION_PER_STEP.get(king_alignment)
-    if per_step is None:
-        return None
-    distance = abs(ALIGNMENT_ORDINAL[king_alignment] - ALIGNMENT_ORDINAL[emperor_alignment])
-    return per_step * distance
+    per_step = OUTLOOK_REDUCTION[king_alignment]
+    distance = _alignment_distance_capped_at_hellish(king_alignment, emperor_alignment)
+    return round(min(1.0, per_step * distance) * 100)
 
 
 def _world_vote_weight(state: GameState) -> int:

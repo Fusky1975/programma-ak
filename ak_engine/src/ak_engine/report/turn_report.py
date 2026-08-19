@@ -1134,7 +1134,7 @@ from ak_engine.models.enums import (
     SPELL_NAME,
     Spell,
 )
-from ak_engine.models.alignment import ALIGNMENT_ABBREVIATION, ALIGNMENT_BY_ORDINAL, Alignment
+from ak_engine.models.alignment import ALIGNMENT_ABBREVIATION, Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import (
     ARMY_TYPE_DESIGNATION,
@@ -1173,7 +1173,7 @@ from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult, is_unfinalized_royal_heir
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
-from ak_engine.turn.emperor_election import alignment_victory_point_reduction_percent
+from ak_engine.turn.emperor_election import _ORDINARY_ALIGNMENTS, alignment_victory_point_reduction_percent
 from ak_engine.turn.encounter import CombatRange, FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.move_execution import MoveExecutionResult
@@ -7543,12 +7543,12 @@ def describe_letter_reports(
 # transcription** -- flagged per this project's own standing rule for
 # unsourced presentation choices. The *formula and its numeric values*
 # are real and fully sourced (rulebook [10.2], `turn/emperor_election.py
-# alignment_victory_point_reduction_percent()`, Phase 228); only the
+# alignment_victory_point_reduction_percent()`, Phase 228; unified with
+# this exact same real REPORTS.PAS formula in Phase 558) -- only the
 # choice to surface it as its own standalone report section, rather than
-# leaving it buried inside the still-unbuilt Final Standings table (which
-# needs the full Merit Point Rank contest across every leader in the
-# game -- explicitly out of scope, see that module's own docstring), is
-# this project's own design.
+# folded into `turn/final_standings.py`'s own composite standings (whose
+# results this module still doesn't render into prose at all -- see that
+# module's own docstring), is this project's own design.
 _ALIGNMENT_REDUCTION_HEADER = "ALIGNMENT REDUCTION"
 _ALIGNMENT_REDUCTION_INTRO = (
     "Since the Imperial election, every Kingdom's Victory Points are reduced by a "
@@ -7560,17 +7560,21 @@ def describe_alignment_victory_point_reduction(state: GameState) -> list[str]:
     """Renders the rulebook [10.2] Alignment-distance Victory Point
     reduction table (see the module-level comment above this function for
     why the section itself is project-original even though the formula
-    and values are real) -- one line per `Alignment` the rulebook's own
-    "TABELLA ALLINEAMENTI" reduction-per-step column covers, ordered by
+    and values are real) -- one line per `Alignment`, ordered by
     `models/alignment.py ALIGNMENT_ORDINAL` (the real Pascal ordinal
     sequence).
 
     Returns an empty list before any Emperor has been elected
     (`GameState.emperor_kingdom_id is None`) -- there is no Alignment to
     measure distance from yet, and the rulebook's own reduction only ever
-    applies "since the Imperial election."  Anti-Holy/Mechanical/Special
-    are silently skipped (the rulebook's own table doesn't cover them,
-    a confirmed gap, not a guessed 0%).
+    applies "since the Imperial election." **Phase 558**: `alignment_
+    victory_point_reduction_percent()` now covers all 10 `Alignment`
+    members (a real, disassembly-sourced value exists for each), so the
+    only ones still excluded here are `Mechanical`/`Special` -- reusing
+    `turn/emperor_election.py _ORDINARY_ALIGNMENTS`, since those two are
+    confirmed to never be a selectable Kingdom Alignment in this
+    project's own data (see that tuple's own docstring), not a genuine
+    formula gap the way they used to be.
     """
 
     if state.emperor_kingdom_id is None:
@@ -7578,10 +7582,8 @@ def describe_alignment_victory_point_reduction(state: GameState) -> list[str]:
 
     emperor_alignment = state.kingdoms[state.emperor_kingdom_id].alignment
     lines = [_ALIGNMENT_REDUCTION_HEADER, _ALIGNMENT_REDUCTION_INTRO]
-    for alignment in ALIGNMENT_BY_ORDINAL:
+    for alignment in _ORDINARY_ALIGNMENTS:
         reduction = alignment_victory_point_reduction_percent(alignment, emperor_alignment)
-        if reduction is None:
-            continue
         lines.append(f"{alignment.value}: -{reduction}%")
     return lines
 

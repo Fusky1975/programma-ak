@@ -5788,7 +5788,12 @@ def test_describe_alignment_reduction_lists_every_covered_alignment():
     assert "Good: -0%" in lines  # the Emperor's own alignment -- distance 0
     assert "Druidic: -15%" in lines  # Druid=2, distance 1 x 15%
     assert "Pagan: -45%" in lines  # Pagan=4, distance 3 x 15%
-    assert "Anti-Holy" not in "".join(lines)
+    # Phase 558: Anti-Holy is now covered too (a real, previously-missing
+    # OUTLOOK_REDUCTION entry) -- capped-at-Hellish distance from Good(1)
+    # is 5, Anti-Holy's own 20%-per-step row -> 20 x 5 = 100%.
+    assert "Anti-Holy: -100%" in lines
+    # Mechanical/Special stay excluded -- confirmed never a selectable
+    # Kingdom Alignment (_ORDINARY_ALIGNMENTS), not a formula gap.
     assert "Mechanical" not in "".join(lines)
     assert "Special" not in "".join(lines)
 

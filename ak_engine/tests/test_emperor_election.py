@@ -405,10 +405,34 @@ def test_alignment_reduction_zero_at_distance_zero():
     assert alignment_victory_point_reduction_percent(Alignment.GOOD, Alignment.GOOD) == 0
 
 
-def test_alignment_reduction_none_for_alignments_the_table_doesnt_cover():
-    assert alignment_victory_point_reduction_percent(Alignment.ANTI_HOLY, Alignment.GOOD) is None
-    assert alignment_victory_point_reduction_percent(Alignment.MECHANICAL, Alignment.GOOD) is None
-    assert alignment_victory_point_reduction_percent(Alignment.SPECIAL, Alignment.GOOD) is None
+def test_alignment_reduction_covers_alignments_outside_the_original_seven():
+    # Phase 558: unified with turn/victory_points.py's own real,
+    # disassembly-sourced OUTLOOK_REDUCTION/capped-distance formula --
+    # these three no longer return None (the previous, now-removed
+    # ALIGNMENT_VP_REDUCTION_PER_STEP's own confirmed gap). Anti-Holy(6)/
+    # Mechanical(8)/Special(9) all cap to ordinal 6 before differencing
+    # against Good(1): distance 5, Anti-Holy's/Mechanical's/Special's own
+    # 20%-per-step row -> 20 x 5 = 100%.
+    assert alignment_victory_point_reduction_percent(Alignment.ANTI_HOLY, Alignment.GOOD) == 100
+    assert alignment_victory_point_reduction_percent(Alignment.MECHANICAL, Alignment.GOOD) == 100
+    assert alignment_victory_point_reduction_percent(Alignment.SPECIAL, Alignment.GOOD) == 100
+
+
+def test_alignment_reduction_undead_distance_is_capped_at_hellish():
+    # Phase 558: the real formula caps BOTH alignments' own ordinals at
+    # Hellish's (Anti-Holy's) own position before differencing -- Undead
+    # (real ordinal 7) reads as if it were at 6 for this purpose. Evil
+    # (ordinal 5, uncapped) as Emperor: distance |min(7,6)-min(5,6)| =
+    # |6-5| = 1, not the uncapped |7-5| = 2 the old formula gave --
+    # Undead's own 20%-per-step row -> 20 x 1 = 20%, not 40%.
+    assert alignment_victory_point_reduction_percent(Alignment.UNDEAD, Alignment.EVIL) == 20
+
+
+def test_alignment_reduction_divine_undead_still_saturates_at_100_percent():
+    # The rulebook's own worked example -- reproduces identically whether
+    # or not the distance is capped, since it already overshoots 100%
+    # either way (real capped distance 6 x 20% = 120%, capped at 100%).
+    assert alignment_victory_point_reduction_percent(Alignment.UNDEAD, Alignment.DIVINE) == 100
 
 
 # -- Phase 465: evaluate_election_call() and its helpers -----------------

@@ -17,8 +17,8 @@ species' own `Monster.value`). `direction` is fixed by `q`'s own bit 3
 (`MonsterRuntimeProfile.view_variation`), stopping early the first time
 `q` goes even, and clamped to ordinals 0-8 (`Alignment.DIVINE` through
 `Alignment.MECHANICAL`) -- `Alignment.SPECIAL` (ordinal 9, confirmed
-absent from every other Alignment-ordinal table in this project, e.g.
-`turn/emperor_election.py ALIGNMENT_VP_REDUCTION_PER_STEP`'s own gap) is
+never a selectable Kingdom Alignment anywhere in this project, e.g.
+`turn/emperor_election.py _ORDINARY_ALIGNMENTS`'s own exclusion) is
 never a reachable walk endpoint here either.
 
 **Join probability**: `d_D` is the effective alignment's own ordinal
