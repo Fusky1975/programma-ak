@@ -54,6 +54,7 @@ from ak_engine.report.turn_report import (
     compose_letter_report,
     describe_adventure_report,
     describe_alignment_victory_point_reduction,
+    describe_final_standings_report,
     describe_general_intelligence_report,
     describe_imperial_office_report,
     describe_armies_report,
@@ -5823,6 +5824,110 @@ def test_compose_letter_report_omits_alignment_reduction_before_any_emperor_elec
     lines = compose_letter_report([], state, 1, ScriptedRandom([]))
 
     assert "ALIGNMENT REDUCTION" not in lines
+
+
+# -- Phase 559: describe_final_standings_report() -- FINAL STANDINGS --
+
+
+def test_describe_final_standings_report_empty_before_any_emperor_elected():
+    state = _armies_state()
+
+    assert describe_final_standings_report(state) == []
+
+
+def test_describe_final_standings_report_lists_rank_king_kingdom_and_points():
+    # Same fixture shape as test_final_standings.py's own
+    # test_compose_final_standings_report_matches_the_individual_functions:
+    # Kingdom 1's King holds Emperor (20, self, no discount) and
+    # Treasurer (10, treasury 7 > 0) -- 30.0 total. Kingdom 2 has
+    # nothing, no King at all -- 0.0.
+    state = _armies_state()
+    state.provinces[HexCoord(0, 0)].tax = 10
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.kingdoms[1].treasury = 7
+    state.emperor_kingdom_id = 1
+    state.add_kingdom(KingdomState(2, "Farland", Race.HUMAN, Alignment.EVIL, HexCoord(1, 1)))
+
+    lines = describe_final_standings_report(state)
+
+    assert lines[0] == "FINAL STANDINGS"
+    assert "1. Aldric of Testland: 30 Victory Points" in lines
+    assert "2. no King of Farland: 0 Victory Points" in lines
+
+
+def test_describe_final_standings_report_formats_fractional_points():
+    # Kingdom 1 (Evil), King Vraxis, wins Treasurer (highest treasury,
+    # 7 > Kingdom 2's 0) while Kingdom 2 (Good) is the actual elected
+    # Emperor -- Office.EMPEROR is special-cased to always resolve to
+    # the elected Emperor's own King (turn/office_holder.py
+    # resolve_office_holder()), so Kingdom 1 never holds it here and its
+    # own Alignment distance from the Emperor genuinely discounts its
+    # Treasurer points: Evil's own 12%-per-step row x capped distance 4
+    # from Good = 48% discount, 10 * (1 - 0.48) = 5.2 -- a real
+    # non-integer case _format_victory_points() must render as "5.2",
+    # not "5.2000000000000006" or "5.0".
+    state = _armies_state()
+    state.kingdoms[1].alignment = Alignment.EVIL
+    state.add_leader(LeaderState(1, 1, "Vraxis", HexCoord(0, 0), is_king=True))
+    state.kingdoms[1].treasury = 7
+    state.add_kingdom(KingdomState(2, "Farland", Race.HUMAN, Alignment.GOOD, HexCoord(1, 1)))
+    state.add_leader(LeaderState(2, 2, "Aldric", HexCoord(1, 1), is_king=True))
+    state.emperor_kingdom_id = 2
+
+    lines = describe_final_standings_report(state)
+
+    assert any(line.startswith("2. Vraxis of Testland: 5.2 Victory Points") for line in lines)
+
+
+def test_describe_final_standings_report_announces_valhalla_qualifiers():
+    state = _armies_state()
+    state.provinces[HexCoord(0, 0)].tax = 10
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.kingdoms[1].treasury = 7
+    state.emperor_kingdom_id = 1  # kingdom_points/individual_king_points both 30.0, clears >= 20
+
+    lines = describe_final_standings_report(state)
+
+    assert any(
+        line == (
+            "Aldric of Testland has earned enough Victory Points to enter Valhalla -- "
+            "write to the GM if you wish to induct them, specifying which item Aldric held on the last turn."
+        )
+        for line in lines
+    )
+
+
+def test_describe_final_standings_report_no_valhalla_line_below_threshold():
+    # Kingdom 1 is the elected Emperor (an automatic, undiscounted 20
+    # office points -- enough to qualify on its own) so the Valhalla
+    # gate itself is exercised; Kingdom 2's own King holds no office at
+    # all (0 points, not first place either) and must not get a line.
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.emperor_kingdom_id = 1
+    state.add_kingdom(KingdomState(2, "Farland", Race.HUMAN, Alignment.EVIL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(2, 2, "Vraxis", HexCoord(1, 1), is_king=True))
+
+    lines = describe_final_standings_report(state)
+
+    assert not any("Vraxis" in line and "Valhalla" in line for line in lines)
+
+
+def test_compose_letter_report_includes_final_standings_once_emperor_elected():
+    state = _armies_state()
+    state.emperor_kingdom_id = 1
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    assert "FINAL STANDINGS" in lines
+
+
+def test_compose_letter_report_omits_final_standings_before_any_emperor_elected():
+    state = _armies_state()
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    assert "FINAL STANDINGS" not in lines
 
 
 # -- Phase 230: describe_imperial_office_report() -- IMPERIAL OFFICE REPORT --

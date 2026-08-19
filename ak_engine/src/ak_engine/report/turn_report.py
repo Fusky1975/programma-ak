@@ -1174,6 +1174,7 @@ from ak_engine.turn.cast_execution import CastExecutionResult, is_unfinalized_ro
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
 from ak_engine.turn.emperor_election import _ORDINARY_ALIGNMENTS, alignment_victory_point_reduction_percent
+from ak_engine.turn.final_standings import compose_final_standings_report
 from ak_engine.turn.encounter import CombatRange, FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.move_execution import MoveExecutionResult
@@ -7588,6 +7589,102 @@ def describe_alignment_victory_point_reduction(state: GameState) -> list[str]:
     return lines
 
 
+# `VITTORIA E FINE PARTITA.txt` (user-supplied, audited Phase 558):
+# "Alla fine della partita, report nell'ultimo verrà elencata la
+# classifica con i punti vittoria (nome RE, nome giocatore, classifica
+# dei punti vittoria...)" -- the real source (SS14.1, quoted in full in
+# `turn/final_standings.py`'s own docstring) folds this into `Pray_
+# Report`'s own post-coronation "unified world" mode rather than a
+# separate labeled section, the same "project-original section, real
+# underlying data" precedent `describe_alignment_victory_point_
+# reduction()` above already established. "nome giocatore" (player
+# name) is real-world moderator bookkeeping this project has never
+# modeled anywhere (the same boundary already drawn for prize money,
+# `turn/final_standings.py`'s own module docstring) -- omitted here,
+# not guessed.
+_FINAL_STANDINGS_HEADER = "FINAL STANDINGS"
+_FINAL_STANDINGS_INTRO = "Now that an Emperor has been crowned, here stands the world's own final ranking:"
+
+
+def _format_victory_points(points: float) -> str:
+    """`points` as a plain integer when it's a whole number, else with the
+    fewest decimal digits that round-trip -- `office_victory_points()`'s
+    own alignment-discount multiplication can leave float noise (e.g.
+    `7.6000000000000005`) that a bare `str()`/`:.2f` would either print
+    verbatim or pad with a misleading trailing zero.
+    """
+
+    rounded = round(points, 2)
+    if rounded == int(rounded):
+        return str(int(rounded))
+    return f"{rounded:g}"
+
+
+def describe_final_standings_report(state: GameState) -> list[str]:
+    """Renders `turn/final_standings.py compose_final_standings_report()`'s
+    own computed end-of-game ranking into report prose -- see the
+    module-level comment above this function for why the section itself
+    is project-original even though every figure in it is real,
+    previously-computed-but-never-printed data (that module's own
+    docstring explicitly flagged this exact gap: "rendering these
+    results into actual report prose... deliberately not attempted").
+
+    Returns an empty list before any Emperor has been elected (the same
+    gate `compose_final_standings_report()` itself uses) -- there is no
+    ranking to show yet.
+
+    One line per Kingdom, in `standings` order (rank 1 first): that
+    Kingdom's own King (`_king_leader_id()`; a Kingdom currently without
+    a registered King, an edge case `kingdom_points()` itself already
+    scores same as any other Kingdom, shows as "no King" rather than a
+    blank or guessed name) and its real `kingdom_points()` total
+    (`_format_victory_points()`, since alignment-discounted office
+    points can be fractional).
+
+    Then, one instructional line per `valhalla_qualifiers` entry (real
+    `qualifies_for_valhalla_induction()`: `individual_king_points >= 20`
+    **or** first place -- the fuller, disassembly-sourced condition,
+    not just the text's own literal ">= 20", the same precedent Phase
+    558 already established for trusting the more complete sourced
+    formula) -- the rulebook's own "al giocatore che ne ha ottenuti
+    almeno 20 va comunicato di scrivere al GM se si vuole far entrare il
+    RE nel VALHALLA e con quale oggetto posseduto all'ultimo turno" is a
+    real player-facing instruction, not something this engine resolves
+    on its own (which item to induct with is the player's own later
+    choice, communicated out-of-band to the GM) -- only Kingdoms with a
+    registered King can qualify (`qualifies_for_valhalla_induction()`'s
+    own `individual_king_points()` scores a Kingless Kingdom `0.0`, and
+    first-place alone doesn't bypass needing a King to name in this
+    line), so a Kingless Kingdom is silently skipped here even if it
+    somehow topped `standings`.
+    """
+
+    report = compose_final_standings_report(state)
+    if report is None:
+        return []
+
+    lines = [_FINAL_STANDINGS_HEADER, _FINAL_STANDINGS_INTRO]
+    for rank, kingdom_id in enumerate(report.standings, start=1):
+        kingdom = state.kingdoms[kingdom_id]
+        king_leader_id = _king_leader_id(state, kingdom_id)
+        king_name = state.leaders[king_leader_id].name if king_leader_id is not None else "no King"
+        points = _format_victory_points(report.kingdom_points[kingdom_id])
+        lines.append(f"{rank}. {king_name} of {kingdom.name}: {points} Victory Points")
+
+    for kingdom_id in report.valhalla_qualifiers:
+        king_leader_id = _king_leader_id(state, kingdom_id)
+        if king_leader_id is None:
+            continue
+        king_name = state.leaders[king_leader_id].name
+        kingdom_name = state.kingdoms[kingdom_id].name
+        lines.append(
+            f"{king_name} of {kingdom_name} has earned enough Victory Points to enter Valhalla -- "
+            f"write to the GM if you wish to induct them, specifying which item {king_name} held on the last turn."
+        )
+
+    return lines
+
+
 # CTBOTH.PAS `seastype`/`seasname` (Phase 257) -- the `{$IFNDEF Noble}`
 # branch specifically: `(Spring,ESummer,LSummer,Fall,EWinter)` /
 # `('spring','early summer','late summer','fall','early winter')`.
@@ -8417,13 +8514,23 @@ def compose_letter_report(
     *not* one of the ten real sections above -- it's a project-original
     presentation of a real, sourced sub-computation (rulebook [10.2]'s
     Alignment-distance Victory Point reduction, `turn/emperor_election.py
-    alignment_victory_point_reduction_percent()`) the real engine only
-    ever bakes into each King's own row of the still-unbuilt Final
-    Standings table (needs the full Merit Point Rank contest across
-    every leader in the game). See `describe_alignment_victory_point_
-    reduction()`'s own docstring. Empty (and therefore omitted, the same
-    convention every other section here uses) until `GameState.
-    emperor_kingdom_id` is set.
+    alignment_victory_point_reduction_percent()`, unified with `turn/
+    victory_points.py`'s own identical real formula in Phase 558) the
+    real engine only ever bakes into each King's own row of the Final
+    Standings table below, never as its own separate section. See
+    `describe_alignment_victory_point_reduction()`'s own docstring.
+    Empty (and therefore omitted, the same convention every other
+    section here uses) until `GameState.emperor_kingdom_id` is set.
+
+    **FINAL STANDINGS (Phase 559, appended after ALIGNMENT REDUCTION)**
+    is also *not* one of the ten real sections -- same category as
+    ALIGNMENT REDUCTION above: a project-original presentation of real,
+    previously-computed-but-never-printed data (`turn/final_standings.py
+    compose_final_standings_report()`, Phase 454-476, whose own docstring
+    explicitly flagged rendering this into report prose as "deliberately
+    not attempted" until now). See `describe_final_standings_report()`'s
+    own docstring. Empty until an Emperor is elected, same as ALIGNMENT
+    REDUCTION.
 
     **ACTION REPORT** wraps `describe_turn_results()`, filtered here to
     only the King's own `PhaseDispatchResult` entries -- **narrowed as
@@ -8564,5 +8671,9 @@ def compose_letter_report(
     alignment_reduction_lines = describe_alignment_victory_point_reduction(state)
     if alignment_reduction_lines:
         _emit_section(alignment_reduction_lines[0], alignment_reduction_lines[1:])
+
+    final_standings_lines = describe_final_standings_report(state)
+    if final_standings_lines:
+        _emit_section(final_standings_lines[0], final_standings_lines[1:])
 
     return lines

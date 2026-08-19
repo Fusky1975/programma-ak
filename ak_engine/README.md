@@ -23074,7 +23074,7 @@ follow-up request after the original 431-435 plan shipped.
   the pre-Phase-552 "all Talents at zero" reset. No test changes (no
   behavior changed) -- suite re-run to confirm: 4800 passed (unchanged).
 
-- **Phase 558 (current)**: audited `VITTORIA E FINE PARTITA.txt`
+- **Phase 558**: audited `VITTORIA E FINE PARTITA.txt`
   (victory conditions/end-of-game scoring) and found most of it already
   matched extensively-sourced code (Emperor election, the Alignment
   reduction table's worked examples, all 8 Imperial Offices' Merit
@@ -23124,6 +23124,43 @@ follow-up request after the original 431-435 plan shipped.
   PARTITA.txt` describes exactly that as the last report's own content
   -- `final_standings.py`'s own docstring already names this as
   "deliberately not attempted."
+
+- **Phase 559 (current)**: closed the gap Phase 558 flagged as
+  confirmed-but-out-of-scope -- the final-turn report never rendered
+  `turn/final_standings.py compose_final_standings_report()`'s own
+  computed Victory Point ranking into actual prose. New `report/
+  turn_report.py describe_final_standings_report()` (a project-original
+  section, same category as `describe_alignment_victory_point_
+  reduction()` -- the real `Pray_Report` bakes this into its own
+  "unified world" mode rather than a separate labeled section, per
+  `final_standings.py`'s own SS14.1 citation) renders "FINAL STANDINGS":
+  one ranked line per Kingdom (that Kingdom's own King, its name, and
+  its real `kingdom_points()` total via a new `_format_victory_points()`
+  helper that handles the alignment-discount math's own float noise),
+  then one instructional line per real `valhalla_qualifiers` entry
+  (`qualifies_for_valhalla_induction()`'s full `>= 20 OR first place`
+  condition, not just the text's own literal ">= 20" -- same "trust the
+  fuller sourced formula" precedent Phase 558 established), matching
+  `VITTORIA E FINE PARTITA.txt`'s own closing paragraph. "nome
+  giocatore" (player name) is omitted -- real-world moderator
+  bookkeeping this project has never modeled anywhere, the same
+  boundary already drawn for prize money. Which item to induct a King
+  into Valhalla with stays the player's own later choice, communicated
+  to the GM out-of-band -- the engine only prints the instruction, per
+  the rulebook's own wording, not a resolved value. Wired into
+  `compose_letter_report()` right after ALIGNMENT REDUCTION (also
+  empty/omitted before any Emperor is elected); fixed two more stale
+  docstring references in `compose_letter_report()`'s own composer
+  docstring along the way ("still-unbuilt Final Standings table"). Ran
+  before writing tests: 4802 passed (non-breaking). Added tests: empty
+  before an Emperor exists; rank/King/Kingdom/points rendering
+  (including a Kingdom with no registered King); a genuinely fractional
+  points case (`_format_victory_points()` rendering `5.2` correctly,
+  not `5.2000000000000006` or `5.0`); the Valhalla instructional line
+  appearing for a qualifying King and not for a non-qualifying one; and
+  `compose_letter_report()` including/omitting "FINAL STANDINGS"
+  correctly around the Emperor-election gate. Ran again: 4809 passed
+  (net +7).
 
 ## Setup
 
