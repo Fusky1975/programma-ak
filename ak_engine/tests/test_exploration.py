@@ -7,13 +7,15 @@ import pytest
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.exploration import (
     SOCIETY_MAPS_REVEAL_PERCENT,
     discover_features,
+    has_true_seeing,
     receive_society_maps,
     resolve_explore,
     resolve_find_mines,
@@ -269,6 +271,40 @@ def test_discover_features_hand_held_radar_bypasses_magically_hidden():
 
     assert discovered == [feature]
     assert feature.discovery_level(1) == 3
+
+
+def test_discover_features_crystal_of_true_seeing_bypasses_magically_hidden():
+    # Phase 540: AKGEN_reverse_engineering_report (4).md SS8 -- Crystal of
+    # True Seeing "ignora... Hide Feature," mirroring Hand-Held Radar's
+    # own kingdom-wide bypass shape since no acting leader is in scope
+    # here.
+    state, feature = _state_with_feature(magically_hidden=True)
+    state.add_leader(LeaderState(1, 1, "Seer Hero", LOCATION))
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=1)
+
+    discovered = discover_features(state, LOCATION, kingdom_id=1, exploration_percent=100, rng=random.Random(0))
+
+    assert discovered == [feature]
+    assert feature.discovery_level(1) == 3
+
+
+def test_discover_features_crystal_of_true_seeing_is_per_kingdom():
+    # A different kingdom's own leader holding the Crystal doesn't bypass
+    # kingdom 1's own magically_hidden skip.
+    state, feature = _state_with_feature(magically_hidden=True)
+    state.add_leader(LeaderState(1, 2, "Other Kingdom's Seer", LOCATION))
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=1)
+
+    discovered = discover_features(state, LOCATION, kingdom_id=1, exploration_percent=100, rng=random.Random(0))
+
+    assert discovered == []
+    assert feature.discovery_level(1) == 0
+
+
+def test_has_true_seeing_without_the_item_is_false():
+    state = GameState()
+    state.add_leader(LeaderState(1, 1, "Ordinary Hero", LOCATION))
+    assert has_true_seeing(state, kingdom_id=1) is False
 
 
 def test_discover_features_is_per_kingdom():

@@ -22467,7 +22467,7 @@ follow-up request after the original 431-435 plan shipped.
   note. 3 builder tests per consumer (×3) confirming the HP bonus
   reaches the constructed `Combatant`. Ran again: 4720 passed (net +21).
 
-- **Phase 539 (current)**: Enhanced Charm item-selection fix, `AKGEN_
+- **Phase 539**: Enhanced Charm item-selection fix, `AKGEN_
   reverse_engineering_report (4).md` §12.1 — first of a 5-phase residue
   from that same dossier, found by re-auditing it after Phase 538 closed
   the 8-phase magic-item rework. `turn/cast_execution.py`
@@ -22498,6 +22498,29 @@ follow-up request after the original 431-435 plan shipped.
   out-rank the eligible item by `item_id`; a target holding only
   ineligible items being a complete no-op. Ran again: 4722 passed
   (net +2).
+
+- **Phase 540 (current)**: Crystal of True Seeing residual — the Hide
+  Feature half of its "sees through" effect, `AKGEN_reverse_engineering_
+  report (4).md` §8. Phase 532 already wired 2 of the item's 3 effects
+  (Invisibility immunity, Phantasmal Armies halving); Hide Feature was
+  left unwired for lack of a consumer at the time. `turn/exploration.py
+  discover_features()` already had exactly this shape for Hand-Held
+  Radar (a kingdom Discovery bypassing the `magically_hidden` skip
+  entirely) — new `has_true_seeing(state, kingdom_id)` mirrors it,
+  sourced via item possession across the kingdom's leaders instead of a
+  Discovery flag, since the Crystal is leader-held and this function
+  never receives a specific acting leader (both its call sites are
+  `kingdom_id`-only). The skip condition is now `if feature.
+  magically_hidden and not has_radar and not has_seeing`. Illusory
+  Terrain's own "sees through" half of the same item stays unwired —
+  `turn/strength.py`'s own docstring already documents why: no "does
+  this observer know the real terrain" mechanic exists for *anyone*
+  yet, Crystal-holder or not, so there's still nothing to hook into.
+  Ran before writing tests: 4722 passed (non-breaking). Added tests:
+  a Crystal-holding kingdom discovers a `magically_hidden` feature
+  normally; a different kingdom's leader holding it doesn't bypass the
+  first kingdom's own skip; `has_true_seeing()` is `False` with no
+  Crystal held. Ran again: 4725 passed (net +3).
 
 ## Setup
 

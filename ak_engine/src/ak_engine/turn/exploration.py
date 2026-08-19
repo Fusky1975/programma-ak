@@ -58,6 +58,13 @@ on the feature." A kingdom owning it bypasses the ``magically_hidden``
 skip entirely -- the feature rolls for discovery exactly as if it were
 never hidden.
 
+**Crystal of True Seeing** (``Treasure.AMULET_ANTI_ILLUSION``, Phase
+540 -- ``has_true_seeing()`` below): the same bypass, sourced from
+``AKGEN_reverse_engineering_report (4).md`` SS8 instead of a Discovery
+-- any leader of the kingdom holding the item is enough, mirroring
+Hand-Held Radar's own kingdom-wide shape since this function has no
+single acting leader in scope to check instead.
+
 **Find Mines** (Advanced Ability, Phase 509 -- ``resolve_find_mines()``
 below): quoted directly from ``models/advanced_ability.py
 ADVANCED_ABILITY_DESCRIPTION[EXPLORER_FIND_MINES]``, a real user-supplied
@@ -86,6 +93,7 @@ from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import GameState
 from ak_engine.models.map import TERRAIN_EXPLORATION_NUMBER, HexCoord, Terrain
+from ak_engine.models.treasure import Treasure
 
 MIN_EXPLORER_SKILL = 0
 MAX_EXPLORER_SKILL = 9  # CTBOTH.PAS `skillrange = 0..9`
@@ -249,6 +257,24 @@ def receive_society_maps(state: GameState, kingdom_id: int, count: int, rng: ran
     return revealed
 
 
+def has_true_seeing(state: GameState, kingdom_id: int) -> bool:
+    """Whether any leader of ``kingdom_id`` holds the Crystal of True Seeing
+    (``Treasure.AMULET_ANTI_ILLUSION``, 48) -- Phase 540, ``AKGEN_
+    reverse_engineering_report (4).md`` SS8: the item "ignora... Hide
+    Feature." The item is leader-held, not a kingdom Discovery, but
+    ``discover_features()`` below only ever receives a ``kingdom_id``
+    (no acting leader in scope at either of its call sites), so this
+    mirrors Hand-Held Radar's own kingdom-wide bypass shape -- the
+    closest sourced fit given no single leader is in scope here, not a
+    guessed pipeline.
+    """
+
+    return any(
+        leader.kingdom_id == kingdom_id and any(item.treasure is Treasure.AMULET_ANTI_ILLUSION for item in state.items_held_by(leader.leader_id))
+        for leader in state.leaders.values()
+    )
+
+
 def discover_features(
     state: GameState, coord: HexCoord, kingdom_id: int, exploration_percent: int, rng: random.Random
 ) -> list[Feature]:
@@ -261,13 +287,22 @@ def discover_features(
     matching Explore's own direct-find text rather than the partial
     levels 1/2 (see ``models/feature.py``'s own docstring for what
     those mean).
+
+    **Phase 540 -- Crystal of True Seeing** (``has_true_seeing`` above):
+    a second, independently-sourced bypass of the ``magically_hidden``
+    skip, alongside Hand-Held Radar. Illusory Terrain's own "sees
+    through" half of the same item stays unwired -- see ``turn/
+    strength.py``'s own docstring for why (no "does this observer know
+    the real terrain" mechanic exists for anyone yet, Crystal-holder or
+    not).
     """
 
     discovered: list[Feature] = []
     kingdom = state.kingdoms.get(kingdom_id)
     has_radar = kingdom is not None and Discovery.HAND_HELD_RADAR in kingdom.discoveries
+    has_seeing = has_true_seeing(state, kingdom_id)
     for feature in state.features_at(coord):
-        if feature.magically_hidden and not has_radar:
+        if feature.magically_hidden and not has_radar and not has_seeing:
             continue
         if feature.discovery_level(kingdom_id) != 0:
             continue
