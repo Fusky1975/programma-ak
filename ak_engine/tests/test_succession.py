@@ -11,7 +11,8 @@ from ak_engine.models.temper import Temper
 from ak_engine.turn.succession import (
     ALIGNMENT_SPECIAL_ABILITIES,
     KING_CREATION_MAX_APTITUDE,
-    KING_CREATION_MIN_OVERLAP_POINTS,
+    KING_CREATION_MAX_EXCEEDING_ABILITIES,
+    KING_CREATION_MAX_EXCEEDING_LEVELS,
     KING_CREATION_SKILL_POINTS,
     KING_TRAINING_BONUS_ABILITIES,
     _ordinary_aptitude,
@@ -23,10 +24,21 @@ LOCATION = HexCoord(3, 9)
 HEIR_ID = 1
 
 
-def _skills_with(ability: Ability, skill: int) -> SkillTable:
-    raw = [0] * 31
-    raw[ability.value * 2] = skill
-    return SkillTable(raw_values=raw)
+def _dead_king_skills(overrides: dict[Ability, int]) -> SkillTable:
+    """A realistic dead-King skill snapshot: every King this project can
+    ever install (via ``create_king()`` itself or Phase 552's own
+    ``remove_leader()`` reset) always carries the automatic Melee/
+    Archery/Sage training bonus baseline -- ``overrides`` layers
+    whatever else this particular King had invested by the time he
+    died.
+    """
+
+    table = SkillTable(raw_values=[0] * 31)
+    for bonus_ability in KING_TRAINING_BONUS_ABILITIES:
+        table.set_pair_for_ability(bonus_ability, skill=1, aptitude=3)
+    for ability, skill in overrides.items():
+        table.set_pair_for_ability(ability, skill=skill, aptitude=_ordinary_aptitude(skill))
+    return table
 
 
 def _state_with_heir(*, alignment: Alignment | None = Alignment.NEUTRAL, dead_king_skills: SkillTable | None = None) -> GameState:
@@ -73,7 +85,7 @@ def test_create_king_fails_when_leader_is_not_a_royal_heir():
 
 
 def test_create_king_requires_exactly_the_full_point_total():
-    state = _state_with_heir(dead_king_skills=_skills_with(Ability.TACTICAL, 3))
+    state = _state_with_heir(dead_king_skills=_dead_king_skills({Ability.TACTICAL: 3}))
 
     result = create_king(
         state, HEIR_ID, name="New King", temper=Temper.BRAVE, sex=Sex.MALE,
@@ -85,7 +97,7 @@ def test_create_king_requires_exactly_the_full_point_total():
 
 
 def test_create_king_rejects_more_than_two_points_on_a_single_ability():
-    state = _state_with_heir(dead_king_skills=_skills_with(Ability.TACTICAL, 3))
+    state = _state_with_heir(dead_king_skills=_dead_king_skills({Ability.TACTICAL: 3}))
 
     result = create_king(
         state, HEIR_ID, name="New King", temper=Temper.BRAVE, sex=Sex.MALE,
@@ -96,34 +108,69 @@ def test_create_king_rejects_more_than_two_points_on_a_single_ability():
     assert "no more than" in result.reason
 
 
-def test_create_king_requires_overlap_with_the_dead_kings_own_skills():
-    state = _state_with_heir(dead_king_skills=_skills_with(Ability.TACTICAL, 3))
+def test_create_king_rejects_when_two_abilities_exceed_the_dead_kings_own_skill():
+    # Phase 554: the real constraint (AKGEN_reverse_engineering_report
+    # (5).md SS1/SS8.5) -- at most 1 ability may end up above the dead
+    # King's own preserved-at-death skill level.
+    state = _state_with_heir(dead_king_skills=_dead_king_skills({Ability.TACTICAL: 3}))
 
     result = create_king(
         state, HEIR_ID, name="New King", temper=Temper.BRAVE, sex=Sex.MALE,
-        skill_points={Ability.MARCH: 2, Ability.NAVAL: 2},  # dead King never had these
+        skill_points={Ability.MARCH: 2, Ability.NAVAL: 2},  # dead King had 0 in both
     )
 
     assert result.applied is False
     assert result.reason == (
-        f"must assign at least {KING_CREATION_MIN_OVERLAP_POINTS} points to Talents the dead King started with"
+        f"no more than {KING_CREATION_MAX_EXCEEDING_ABILITIES} Talent may exceed the dead King's own preserved skill"
     )
 
 
-def test_create_king_overlap_uses_the_dead_kings_skill_at_death_as_the_proxy():
-    # Documented simplification: "at creation" isn't tracked, so the
-    # death-time snapshot in dead_leaders is used instead.
-    state = _state_with_heir(dead_king_skills=_skills_with(Ability.TACTICAL, 3))
+def test_create_king_rejects_a_single_ability_exceeding_by_more_than_one_level():
+    state = _state_with_heir(dead_king_skills=_dead_king_skills({Ability.TACTICAL: 3, Ability.NAVAL: 1}))
 
     result = create_king(
         state, HEIR_ID, name="New King", temper=Temper.BRAVE, sex=Sex.MALE,
+        # TACTICAL:2 stays within the dead King's own 3; MARCH:2 alone
+        # exceeds his 0 by 2 -- one ability, but by too much.
         skill_points={Ability.TACTICAL: 2, Ability.MARCH: 2},
+    )
+
+    assert result.applied is False
+    assert result.reason == (
+        f"the one exceeding Talent may rise at most {KING_CREATION_MAX_EXCEEDING_LEVELS} level "
+        "above the dead King's own preserved skill"
+    )
+
+
+def test_create_king_accepts_a_single_ability_exceeding_by_exactly_one_level():
+    state = _state_with_heir(dead_king_skills=_dead_king_skills({Ability.TACTICAL: 3, Ability.NAVAL: 1}))
+
+    result = create_king(
+        state, HEIR_ID, name="New King", temper=Temper.BRAVE, sex=Sex.MALE,
+        # TACTICAL:2 (<=3) and NAVAL:1 (<=1) stay within the dead King's
+        # own levels; MARCH:1 alone exceeds his 0, by exactly 1.
+        skill_points={Ability.TACTICAL: 2, Ability.NAVAL: 1, Ability.MARCH: 1},
     )
 
     assert result.applied is True
 
 
-def test_create_king_skips_the_overlap_check_when_no_dead_king_snapshot_exists():
+def test_create_king_accepts_a_redistribution_entirely_at_or_below_the_dead_kings_own_levels():
+    # Uses the dead King's own snapshot as the comparison baseline
+    # (GameState.dead_leaders, the same snapshot Phase 259's own
+    # Resurrection-on-Heir branch already reads) -- zero abilities
+    # exceed it here, regardless of which two the player chose.
+    state = _state_with_heir(dead_king_skills=_dead_king_skills({Ability.TACTICAL: 3, Ability.NAVAL: 2}))
+
+    result = create_king(
+        state, HEIR_ID, name="New King", temper=Temper.BRAVE, sex=Sex.MALE,
+        skill_points={Ability.TACTICAL: 2, Ability.NAVAL: 2},
+    )
+
+    assert result.applied is True
+
+
+def test_create_king_skips_the_exceeding_check_when_no_dead_king_snapshot_exists():
     state = _state_with_heir(dead_king_skills=None)  # no dead_leaders entry at all
 
     result = create_king(
@@ -135,7 +182,10 @@ def test_create_king_skips_the_overlap_check_when_no_dead_king_snapshot_exists()
 
 
 def test_create_king_applies_royal_training_bonus_and_sets_identity_fields():
-    state = _state_with_heir(alignment=Alignment.NEUTRAL, dead_king_skills=_skills_with(Ability.TACTICAL, 3))
+    state = _state_with_heir(
+        alignment=Alignment.NEUTRAL,
+        dead_king_skills=_dead_king_skills({Ability.TACTICAL: 3, Ability.MARCH: 2}),
+    )
 
     result = create_king(
         state, HEIR_ID, name="Aldric II", temper=Temper.BERSERK, sex=Sex.FEMALE,
@@ -161,7 +211,10 @@ def test_create_king_applies_royal_training_bonus_and_sets_identity_fields():
 
 
 def test_create_king_race_and_alignment_are_never_touched():
-    state = _state_with_heir(alignment=Alignment.EVIL, dead_king_skills=_skills_with(Ability.NECROMANCY, 3))
+    state = _state_with_heir(
+        alignment=Alignment.EVIL,
+        dead_king_skills=_dead_king_skills({Ability.NECROMANCY: 3, Ability.THIEF: 2}),
+    )
 
     create_king(
         state, HEIR_ID, name="New King", temper=Temper.CAUTIOUS, sex=Sex.MALE,
@@ -173,7 +226,10 @@ def test_create_king_race_and_alignment_are_never_touched():
 
 
 def test_create_king_divine_gets_white_magic_bonus_and_zero_necromancy_aptitude():
-    state = _state_with_heir(alignment=Alignment.DIVINE, dead_king_skills=_skills_with(Ability.TACTICAL, 3))
+    state = _state_with_heir(
+        alignment=Alignment.DIVINE,
+        dead_king_skills=_dead_king_skills({Ability.TACTICAL: 3, Ability.MARCH: 2}),
+    )
 
     result = create_king(
         state, HEIR_ID, name="Divine King", temper=Temper.BRAVE, sex=Sex.MALE,
@@ -189,7 +245,10 @@ def test_create_king_divine_gets_white_magic_bonus_and_zero_necromancy_aptitude(
 
 
 def test_create_king_undead_gets_necromancy_bonus_and_zero_white_aptitude():
-    state = _state_with_heir(alignment=Alignment.UNDEAD, dead_king_skills=_skills_with(Ability.TACTICAL, 3))
+    state = _state_with_heir(
+        alignment=Alignment.UNDEAD,
+        dead_king_skills=_dead_king_skills({Ability.TACTICAL: 3, Ability.MARCH: 2}),
+    )
 
     result = create_king(
         state, HEIR_ID, name="Undead King", temper=Temper.BRAVE, sex=Sex.MALE,
@@ -203,7 +262,7 @@ def test_create_king_undead_gets_necromancy_bonus_and_zero_white_aptitude():
 
 
 def test_create_king_divine_cannot_invest_in_necromancy():
-    state = _state_with_heir(alignment=Alignment.DIVINE, dead_king_skills=_skills_with(Ability.NECROMANCY, 3))
+    state = _state_with_heir(alignment=Alignment.DIVINE, dead_king_skills=_dead_king_skills({Ability.NECROMANCY: 3}))
 
     result = create_king(
         state, HEIR_ID, name="Divine King", temper=Temper.BRAVE, sex=Sex.MALE,
@@ -215,7 +274,7 @@ def test_create_king_divine_cannot_invest_in_necromancy():
 
 
 def test_create_king_undead_cannot_invest_in_white():
-    state = _state_with_heir(alignment=Alignment.UNDEAD, dead_king_skills=_skills_with(Ability.WHITE, 3))
+    state = _state_with_heir(alignment=Alignment.UNDEAD, dead_king_skills=_dead_king_skills({Ability.WHITE: 3}))
 
     result = create_king(
         state, HEIR_ID, name="Undead King", temper=Temper.BRAVE, sex=Sex.MALE,
@@ -235,7 +294,10 @@ def test_alignment_special_abilities_covers_the_five_doubling_alignments():
 
 
 def test_create_king_special_ability_aptitude_matches_the_doubling_formula():
-    state = _state_with_heir(alignment=Alignment.EVIL, dead_king_skills=_skills_with(Ability.NECROMANCY, 3))
+    state = _state_with_heir(
+        alignment=Alignment.EVIL,
+        dead_king_skills=_dead_king_skills({Ability.NECROMANCY: 3, Ability.THIEF: 2}),
+    )
 
     result = create_king(
         state, HEIR_ID, name="Evil King", temper=Temper.BRAVE, sex=Sex.MALE,

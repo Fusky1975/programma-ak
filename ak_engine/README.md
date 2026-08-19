@@ -22925,7 +22925,7 @@ follow-up request after the original 431-435 plan shipped.
   `turn/cast_execution.py _total_usable_skill()` reads exactly 3 on a
   freshly-installed Heir. Ran again: 4784 passed (net +1).
 
-- **Phase 553 (current)**: corrected Royal Heir Resurrection/report
+- **Phase 553**: corrected Royal Heir Resurrection/report
   eligibility from an edge-triggered flag to the real numeric threshold.
   `turn/practice_execution.py`'s two `is_royal_heir`-clearing call sites
   used to drop the flag the instant Practice raised any skill or
@@ -22954,6 +22954,38 @@ follow-up request after the original 431-435 plan shipped.
   three direct `is_unfinalized_royal_heir()` cases, and a Resurrection
   test confirming a past-threshold Heir is refused without touching
   `dead_leaders` or the flag. Ran again: 4790 passed (net +6).
+
+- **Phase 554 (current)**: replaced `turn/succession.py create_king()`'s
+  King-creation validation constraint with the real, exact rule.
+  Previously it enforced a project-original "at least 2 of the 4 points
+  must land on Talents the dead King started with"
+  (`KING_CREATION_MIN_OVERLAP_POINTS`), documented at the time as "a
+  deliberate simplification, not a silent guess" made because this
+  project had no sourced figure to check against. `AKGEN_reverse_
+  engineering_report (5).md` SS1/SS8.5 (`AKE.EXE:0xC193-0xC2B7`,
+  machine-verified) gives the real constraint: at most 1 of the 15
+  abilities may end up above the dead King's own preserved-at-death
+  skill level, and for that one excepted ability, by at most 1 level --
+  compared against the exact same `GameState.dead_leaders` snapshot the
+  old heuristic already read, so no new data source was needed, just the
+  right comparison. Replaced `KING_CREATION_MIN_OVERLAP_POINTS` with
+  `KING_CREATION_MAX_EXCEEDING_ABILITIES`/`KING_CREATION_MAX_EXCEEDING_
+  LEVELS`. Ran before this phase's own changes: 4790 passed (Phase 553's
+  own closing count, non-breaking baseline). Rewrote the succession test
+  suite's
+  `dead_king_skills` fixture to build a realistic dead-King snapshot
+  (the automatic Melee/Archery/Sage training-bonus baseline every real
+  King -- created via `create_king()` itself or Phase 552's own
+  `remove_leader()` reset -- always carries, plus whatever else that
+  King had invested) instead of a single bare ability at a nonzero
+  level, since the old artificial fixture's blank Melee/Archery/Sage
+  baseline would otherwise trip the new check on the automatic bonus
+  alone; added tests for two abilities exceeding (rejected), one
+  ability exceeding by 2 (rejected), one ability exceeding by exactly 1
+  (accepted), and a redistribution entirely at or below the dead King's
+  own levels (accepted regardless of which abilities) -- four new tests
+  replacing the two old overlap-specific ones. Ran again: 4792 passed
+  (net +2).
 
 ## Setup
 

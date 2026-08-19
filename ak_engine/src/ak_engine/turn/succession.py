@@ -46,18 +46,26 @@ implicit in the serving Kingdom's own ``KingdomState.race``, per
 ``models/game_state.py``'s own module docstring). This module never
 touches either field.
 
-**The "at least 2 points must overlap with Talents the dead King had
-when he was created" constraint (confirmed by the user, project
-author) can't be checked against the dead King's own true creation-
-time skills** -- this project has never tracked "initial skill
-assignment" as a fact separate from "current skill level" (which can
-have risen via Practice since creation; see ``models/kingdom.py
-SkillTable``'s own docstring). **Confirmed with the user**: the dead
-King's own skill *at the moment of his death* (``GameState.
-dead_leaders``, the same snapshot Phase 259's own Resurrection-on-Heir
-branch already reads) is used as the best available proxy, not the
-unrecoverable true creation-time figure -- a documented, deliberate
-simplification, not a silent guess.
+**The real validation constraint (Phase 554), sourced from
+``AKGEN_reverse_engineering_report (5).md`` SS1/SS8.5 (machine-verified
+against ``AKE.EXE:0xC193-0xC2B7``)**: at most 1 of the 15 abilities may
+end up above the dead King's own preserved skill level for that
+ability, and for that one excepted ability, by at most 1 level --
+``final_skill[ability] > F(ability)`` for no more than one ability, and
+``final_skill[ability] <= F(ability) + 1`` for that one. This replaces
+an earlier, project-original "at least 2 of the 4 points must land on
+Talents the dead King started with" heuristic (documented at the time
+as "confirmed with the user... a deliberate simplification, not a
+silent guess," made before this report existed) -- the real constraint
+needed no such workaround, since it compares against the dead King's
+own preserved skill at death, which this project already reads from
+``GameState.dead_leaders`` for a related purpose (the same snapshot
+Phase 259's own Resurrection-on-Heir branch uses). ``F(ability)`` here
+is still that death-time snapshot, not the unrecoverable true creation-
+time figure -- the real engine's own ``AKE.EXE`` disassembly reads the
+identical currently-stored value at the moment of comparison, so this
+was never actually an approximation to begin with, just previously
+undocumented as exact.
 
 **Sex** (``models/sex.py``, new this phase): RULES.AK [2.1] doesn't
 list it in its own King-creation sentence, but it's confirmed directly
@@ -82,9 +90,13 @@ from ak_engine.models.temper import Temper
 KING_CREATION_SKILL_POINTS = 4
 KING_CREATION_MAX_POINTS_PER_ABILITY = 2
 
-# Confirmed with the user (project author) -- see module docstring's
-# own "at least 2 points must overlap" addendum.
-KING_CREATION_MIN_OVERLAP_POINTS = 2
+# Phase 554, AKGEN_reverse_engineering_report (5).md SS1/SS8.5
+# (AKE.EXE:0xC193-0xC2B7, machine-verified): at most 1 of the 15
+# abilities may end up above the dead King's own preserved-at-death
+# skill level, and for that one excepted ability, by at most 1 level.
+# See module docstring's own "the real constraint" section.
+KING_CREATION_MAX_EXCEEDING_ABILITIES = 1
+KING_CREATION_MAX_EXCEEDING_LEVELS = 1
 
 # RULES.AK [2.1]: "Kings also automatically get a +1 modifier to their
 # skill in Melee, Archery and Sage."
@@ -187,21 +199,28 @@ def create_king(
             applied=False, reason=f"a King of this alignment cannot invest in {forbidden_ability.name}"
         )
 
-    dead_king = state.dead_leaders.get(heir_leader_id)
-    if dead_king is not None and dead_king.skills is not None:
-        dead_king_had = {ability for ability in Ability if dead_king.skills.pair_for_ability(ability)[0] > 0}
-        overlap_points = sum(
-            points for ability, points in skill_points.items() if points > 0 and ability in dead_king_had
-        )
-        if overlap_points < KING_CREATION_MIN_OVERLAP_POINTS:
-            return KingCreationResult(
-                applied=False,
-                reason=f"must assign at least {KING_CREATION_MIN_OVERLAP_POINTS} points to Talents the dead King started with",
-            )
-
     final_skill: dict[Ability, int] = {ability: skill_points.get(ability, 0) for ability in Ability}
     for ability in KING_TRAINING_BONUS_ABILITIES:
         final_skill[ability] += 1
+
+    dead_king = state.dead_leaders.get(heir_leader_id)
+    if dead_king is not None and dead_king.skills is not None:
+        exceeding = [
+            (ability, final_skill[ability] - dead_king.skills.pair_for_ability(ability)[0])
+            for ability in Ability
+            if final_skill[ability] > dead_king.skills.pair_for_ability(ability)[0]
+        ]
+        if len(exceeding) > KING_CREATION_MAX_EXCEEDING_ABILITIES:
+            return KingCreationResult(
+                applied=False,
+                reason=f"no more than {KING_CREATION_MAX_EXCEEDING_ABILITIES} Talent may exceed the dead King's own preserved skill",
+            )
+        if exceeding and exceeding[0][1] > KING_CREATION_MAX_EXCEEDING_LEVELS:
+            return KingCreationResult(
+                applied=False,
+                reason=f"the one exceeding Talent may rise at most {KING_CREATION_MAX_EXCEEDING_LEVELS} level above the dead King's own preserved skill",
+            )
+
     if alignment is Alignment.DIVINE:
         final_skill[Ability.WHITE] += 1
     elif alignment is Alignment.UNDEAD:
