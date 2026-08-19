@@ -6175,6 +6175,36 @@ def render_quote_of_the_week(index: int) -> list[str]:
     return ["Quote of the Week:", quote_line, attribution_line]
 
 
+# HostAK/TP/REPORTS.PAS Desc_Lands's own real "STATE OF THE NATION:"
+# header + one fixed flavor paragraph (Phase 561) -- AKGEN_reverse_
+# engineering_report (5).md SS29.1/SS86.2: `Desc_Lands` prints this
+# unconditionally, immediately before DIPLOMACY, regardless of whether
+# an Emperor exists (only IMPERIAL OFFICE REPORT's own position moves
+# around it -- see describe_imperial_office_report()'s own docstring
+# and compose_letter_report()'s own assembly for that half). Verified
+# byte-for-byte identical across 6 real sample files this phase
+# (Desktop's own SE3__T1.K2/T2.K1/T2.K2/T2.K3/T3.K2/T5.K2, none with
+# an Emperor yet) -- this project's own composer never emitted this
+# section at all before now.
+_STATE_OF_THE_NATION_HEADER = "STATE OF THE NATION:"
+_STATE_OF_THE_NATION_INTRO = (
+    "My lord and sovereign, greatest of Kings, I humbly beg thy leave to make "
+    "report of matters of this Kingdom that may concern thy divine majesty."
+)
+
+
+def describe_state_of_the_nation_report() -> list[str]:
+    """The real "STATE OF THE NATION:" section -- see the module-level
+    comment above this function for the full sourcing. Entirely fixed
+    text, no `state`/`kingdom_id` needed -- the same "Kingdom-agnostic
+    composer" shape `describe_alignment_victory_point_reduction(state)`
+    already uses (that one still needs `state`, for the Emperor's own
+    Alignment; this one needs nothing at all).
+    """
+
+    return [_STATE_OF_THE_NATION_HEADER, _STATE_OF_THE_NATION_INTRO]
+
+
 # HostAK/TP/REPORTS.PAS Desc_Lands's own Rep_Allies/Begin_List (~line
 # 104-119) -- the real "DIPLOMACY" section's own sourced, verbatim
 # intro sentences (each rejoined across its own 2 raw WRITELN lines,
@@ -8384,20 +8414,40 @@ def compose_letter_report(
     stitching together this project's already-built section composers, in
     the real section order -- confirmed directly against actual generated
     turn-report output, not guessed: the Desktop's real `SE3__T*.K*` files
-    (e.g. `SE3__T2.K2`, section headers at lines 31/174/319/352/367/416/
-    450/471/491/506) show ACTION REPORT, LETTER REPORTS, DIPLOMACY,
-    FINANCES, PROVINCES, CHARACTERS, ARMIES, IMPERIAL OFFICE REPORT,
-    ADVENTURE, GENERAL INTELLIGENCE REPORT, in that order.
-    `REPORTS.PAS`'s own driver that calls these ten sections in sequence
+    (e.g. `SE3__T2.K2`, section headers at lines 31/174/313/319/352/367/
+    416/450/471/491/506) show ACTION REPORT, LETTER REPORTS, STATE OF THE
+    NATION, DIPLOMACY, FINANCES, PROVINCES, CHARACTERS, ARMIES, IMPERIAL
+    OFFICE REPORT, ADVENTURE, GENERAL INTELLIGENCE REPORT, in that order
+    (`SE3__T2.K2` itself has no Emperor yet -- see the Phase 561 paragraph
+    below for the Emperor-elected reordering, sourced from the report's
+    own pseudocode rather than a real sample, since no available sample
+    has an Emperor).
+    `REPORTS.PAS`'s own driver that calls these eleven sections in sequence
     lived in the missing main program -- the same "the caller is lost, not
     the callees" situation as `turn/movement.py`'s hex adjacency scheme --
     so this real generated-output cross-reference is the sourced evidence
     used here, in place of the lost driver.
 
-    **All 10 real sections are wired here as of Phase 231** -- ACTION
-    REPORT, LETTER REPORTS, DIPLOMACY, FINANCES, PROVINCES, CHARACTERS,
-    ARMIES, IMPERIAL OFFICE REPORT, ADVENTURE, and GENERAL INTELLIGENCE
-    REPORT. "Wired" doesn't mean "complete" -- several sections still
+    **STATE OF THE NATION (Phase 561)**: a real section this composer never
+    emitted at all before now -- fixed header + one fixed flavor paragraph,
+    always present (unlike ALIGNMENT REDUCTION/FINAL STANDINGS below, this
+    one needs no Emperor-election gate of its own), immediately before
+    DIPLOMACY. See `describe_state_of_the_nation_report()`'s own docstring.
+    **Also Phase 561**: IMPERIAL OFFICE REPORT's own position now depends
+    on `state.emperor_kingdom_id` -- before STATE OF THE NATION once an
+    Emperor exists (`AKGEN_reverse_engineering_report (5).md` SS29.1/
+    SS86.2's own `IF emp < No_King THEN Pray_Report(kng,true)`, called
+    inside the real `Desc_Lands` before its own "STATE OF THE NATION:"
+    header), still after ARMIES otherwise -- its own *content* already
+    correctly differed pre/post-election (`describe_imperial_office_
+    report()`'s own docstring); only its position was wrong before this
+    phase.
+
+    **All 10 real sections were wired here as of Phase 231** (STATE OF THE
+    NATION makes 11, Phase 561) -- ACTION REPORT, LETTER REPORTS, STATE OF
+    THE NATION, DIPLOMACY, FINANCES, PROVINCES, CHARACTERS, ARMIES,
+    IMPERIAL OFFICE REPORT, ADVENTURE, and GENERAL INTELLIGENCE REPORT.
+    "Wired" doesn't mean "complete" -- several sections still
     only render a real subset of their own real content, confirmed
     absent rather than merely unwired:
     - FINANCES itself is only partially wired -- see
@@ -8636,6 +8686,20 @@ def compose_letter_report(
     if letter_lines:
         _emit_section(letter_lines[0], letter_lines[1:])
 
+    # Phase 561: IMPERIAL OFFICE REPORT moves to print here, before
+    # STATE OF THE NATION, once an Emperor is elected -- the real
+    # `IF emp < No_King THEN Pray_Report(kng,true)` call inside
+    # `Desc_Lands`, before its own "STATE OF THE NATION:" header (see
+    # describe_state_of_the_nation_report()'s own module-level comment).
+    # Without an Emperor it stays in its usual place after ARMIES,
+    # unchanged from before this phase.
+    imperial_office_lines = describe_imperial_office_report(state, kingdom_id)
+    if state.emperor_kingdom_id is not None and imperial_office_lines:
+        _emit_section(imperial_office_lines[0], imperial_office_lines[1:])
+
+    state_of_the_nation_lines = describe_state_of_the_nation_report()
+    _emit_section(state_of_the_nation_lines[0], state_of_the_nation_lines[1:])
+
     diplomacy_lines = describe_diplomacy_report(state, kingdom_id)
     if diplomacy_lines:
         _emit_section(diplomacy_lines[0], diplomacy_lines[1:])
@@ -8656,8 +8720,10 @@ def compose_letter_report(
     if armies_lines:
         _emit_section(armies_lines[0], armies_lines[1:])
 
-    imperial_office_lines = describe_imperial_office_report(state, kingdom_id)
-    if imperial_office_lines:
+    # Phase 561: only reached here (its old, still-correct position)
+    # when there's no Emperor yet -- see the earlier, pre-STATE-OF-THE-
+    # NATION call site above for the post-election case.
+    if state.emperor_kingdom_id is None and imperial_office_lines:
         _emit_section(imperial_office_lines[0], imperial_office_lines[1:])
 
     adventure_lines = describe_adventure_report(state, kingdom_id, rng)

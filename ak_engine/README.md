@@ -23162,7 +23162,7 @@ follow-up request after the original 431-435 plan shipped.
   correctly around the Emperor-election gate. Ran again: 4809 passed
   (net +7).
 
-- **Phase 560 (current)**: audited `AKGEN_complete_name_lists.md` (the
+- **Phase 560**: audited `AKGEN_complete_name_lists.md` (the
   user's own Desktop-root catalog of every AKGEN name pool). Three of
   its four sections re-confirmed already-solid code with zero
   discrepancies (`models/hero_roster.py`'s 255-name `LNAMES.PAS` pool,
@@ -23212,6 +23212,41 @@ follow-up request after the original 431-435 plan shipped.
   alignment's own final roster entry is unchanged (the turns-1-5
   default stays intact); Artur's own unconfirmed duplicate count. Ran
   again: 4812 passed (net +3).
+
+- **Phase 561 (current)**: closed the narrowest, best-sourced item from
+  `AKGEN_reverse_engineering_report (5).md`'s report-generation-pipeline
+  material (SS19-49), deliberately deferred earlier this session as
+  "reference material for future, larger phases" -- the user asked to
+  start here specifically. SS29.1/SS86.2 describe a real "STATE OF THE
+  NATION:" section (fixed header + one fixed flavor paragraph) that
+  `Desc_Lands` prints immediately before DIPLOMACY, unconditionally --
+  `compose_letter_report()` never emitted it at all. Verified byte-for-
+  byte identical across 6 real sample files this phase (Desktop's own
+  `SE3__T1.K2`/`T2.K1`/`T2.K2`/`T2.K3`/`T3.K2`/`T5.K2`, none with an
+  Emperor yet), not just quoted from the report's own reconstructed
+  pseudocode. The same source also describes an Emperor-conditional
+  reordering (`IF emp < No_King THEN Pray_Report(kng,true)`, called
+  inside `Desc_Lands` before its own "STATE OF THE NATION:" header):
+  IMPERIAL OFFICE REPORT moves to print *before* STATE OF THE NATION
+  once an Emperor is elected, instead of its usual place after ARMIES --
+  not directly observable in any available sample (none has an Emperor
+  yet) but unambiguous in the report's own pseudocode, and consistent
+  with `describe_imperial_office_report()`'s own pre-existing pre/post-
+  election content difference (only its *position* was wrong before this
+  phase). Added `describe_state_of_the_nation_report()` (a real, always-
+  present section, unlike the project-original ALIGNMENT REDUCTION/FINAL
+  STANDINGS additions -- needs no `state`/`kingdom_id` at all, the
+  content is entirely fixed); `compose_letter_report()` now computes
+  `imperial_office_lines` once and branches only on *where* to emit it,
+  keyed on `state.emperor_kingdom_id`. Ran before writing tests: 4812
+  passed; 2 existing tests broke (both asserted a full, ordered expected-
+  output list for `compose_letter_report()` and needed the new section
+  inserted at the right spot) -- fixed in place, not treated as new
+  failures. Added tests: the new section's own exact text; it always
+  appears exactly once, before DIPLOMACY; IMPERIAL OFFICE REPORT stays
+  after ARMIES with no Emperor (regression guard on the pre-existing,
+  already-correct ordering); it moves before STATE OF THE NATION once an
+  Emperor exists, with no duplication. Ran again: 4816 passed (net +4).
 
 ## Setup
 

@@ -55,6 +55,7 @@ from ak_engine.report.turn_report import (
     describe_adventure_report,
     describe_alignment_victory_point_reduction,
     describe_final_standings_report,
+    describe_state_of_the_nation_report,
     describe_general_intelligence_report,
     describe_imperial_office_report,
     describe_armies_report,
@@ -5418,6 +5419,12 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Thy humble servant,   Borin",
         "",
         "",
+        "STATE OF THE NATION:",
+        "",
+        "My lord and sovereign, greatest of Kings, I humbly beg thy leave to make "
+        "report of matters of this Kingdom that may concern thy divine majesty.",
+        "",
+        "",
         "DIPLOMACY",
         "",
         "My lord, the following Kings have wisely allied with thy ever-victorious majesty:",
@@ -5602,6 +5609,12 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "LETTER REPORTS",
         "",
         "There are no letters from anyone at this time.",
+        "",
+        "",
+        "STATE OF THE NATION:",
+        "",
+        "My lord and sovereign, greatest of Kings, I humbly beg thy leave to make "
+        "report of matters of this Kingdom that may concern thy divine majesty.",
         "",
         "",
         "DIPLOMACY",
@@ -6117,6 +6130,53 @@ def test_compose_letter_report_includes_imperial_office_report_between_armies_an
     office_index = lines.index("IMPERIAL OFFICE REPORT")
     adventure_index = lines.index("ADVENTURE")
     assert armies_index < office_index < adventure_index
+
+
+# -- Phase 561: describe_state_of_the_nation_report() -- STATE OF THE NATION --
+# and the Emperor-conditional IMPERIAL OFFICE REPORT reordering it brought
+
+
+def test_describe_state_of_the_nation_report_matches_the_real_sample_text():
+    assert describe_state_of_the_nation_report() == [
+        "STATE OF THE NATION:",
+        "My lord and sovereign, greatest of Kings, I humbly beg thy leave to make "
+        "report of matters of this Kingdom that may concern thy divine majesty.",
+    ]
+
+
+def test_compose_letter_report_state_of_the_nation_always_appears_once_before_diplomacy():
+    state = _armies_state()
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    assert lines.count("STATE OF THE NATION:") == 1
+    assert lines.index("STATE OF THE NATION:") < lines.index("DIPLOMACY")
+
+
+def test_compose_letter_report_imperial_office_report_stays_after_armies_without_an_emperor():
+    state = _armies_state()
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    state_of_the_nation_index = lines.index("STATE OF THE NATION:")
+    armies_index = lines.index("ARMIES")
+    office_index = lines.index("IMPERIAL OFFICE REPORT")
+    assert state_of_the_nation_index < armies_index < office_index
+    assert lines.count("IMPERIAL OFFICE REPORT") == 1
+
+
+def test_compose_letter_report_imperial_office_report_moves_before_state_of_the_nation_once_an_emperor_exists():
+    state = _armies_state()
+    state.emperor_kingdom_id = 1
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    office_index = lines.index("IMPERIAL OFFICE REPORT")
+    state_of_the_nation_index = lines.index("STATE OF THE NATION:")
+    armies_index = lines.index("ARMIES")
+    assert office_index < state_of_the_nation_index < armies_index
+    # No duplication -- it must not also still appear after ARMIES.
+    assert lines.count("IMPERIAL OFFICE REPORT") == 1
 
 
 # -- Phase 212: describe_aspy() -- real assembly of Phase 115/118's own SAY.PAS templates --
