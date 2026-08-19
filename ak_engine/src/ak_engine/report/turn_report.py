@@ -1156,6 +1156,7 @@ from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, describe_disco
 from ak_engine.models.temper import TEMPER_ABBREVIATION, TEMPER_NAME
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_CATEGORY, TREASURE_LABEL, TREASURE_NAME, Treasure, TreasureCategory
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
+from ak_engine.report.ascii_map import render_ascii_map
 from ak_engine.report.prose import render
 from ak_engine.turn.army_quality import compute_army_modified_quality
 from ak_engine.turn.aspy_defend_decode import DefendRequest
@@ -6590,6 +6591,53 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
     return lines
 
 
+# The real "royal scribe" intro (Phase 562), verbatim, confirmed
+# byte-for-byte identical across every real sample checked this phase
+# (`SE3__T1.K2`/`T4.K6`/`T5.K2` and others). Unlike every other section
+# here, the real map has no standalone header of its own -- it's a
+# direct continuation of PROVINCES, introduced by this one sentence
+# after a blank-line gap, the same "no header" shape `ALIGNMENT
+# REDUCTION`'s own real-vs-project-original distinction doesn't apply
+# to here since this section genuinely has none in the source.
+_MAP_REPORT_INTRO = "Sire, our royal scribe has drawn up a map of all neighboring lands:"
+
+# REPORTS.PAS's own map key + caption, verbatim, byte-for-byte identical
+# across every real sample checked this phase.
+_MAP_KEY_LINE = "Key:   _ Plains   + Forest   & Jungle   ^ Mountain   . Desert     Sea"
+_MAP_CAPTION_LINE_1 = "    In each province, the name and I.D. number of the province"
+_MAP_CAPTION_LINE_2 = "  are listed above the ruler I.D and name."
+
+
+def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
+    """The real ASCII map (Phase 562) -- see `report/ascii_map.py`'s own
+    module docstring for the full, sourced field-by-field derivation and
+    exactly which real cases this phase does and doesn't reproduce.
+
+    Returns an empty list when there are no provinces to render at all
+    (`render_ascii_map()` itself already handles the "nothing known yet"
+    case) -- matching every other section composer's own "nothing to
+    say, omit the section" convention, even though the real map has no
+    header of its own for `compose_letter_report()` to conditionally
+    skip the way it does for headered sections.
+    """
+
+    grid_lines = render_ascii_map(state, kingdom_id)
+    if not grid_lines:
+        return []
+
+    return [
+        "",
+        "",
+        f"  {_MAP_REPORT_INTRO} ",
+        "",
+        *grid_lines,
+        "",
+        _MAP_KEY_LINE,
+        _MAP_CAPTION_LINE_1,
+        _MAP_CAPTION_LINE_2,
+    ]
+
+
 # HostAK/TP/REPORTS.PAS Rep_Leaders (~lines 658-855) -- the real
 # "CHARACTERS" section's own sourced, verbatim opening, rejoined across
 # its 3 raw WRITELN lines (same convention as _ARMIES_REPORT_OPENING).
@@ -8463,6 +8511,13 @@ def compose_letter_report(
       "(Sea)" parenthetical, project-original rather than sourced -- see that
       docstring's own Phase 282 section) and which is still confirmed
       absent (only the tax-tier grouping presentation now).
+    - The real ASCII map (Phase 562) is now wired too -- `describe_
+      map_report()` below, appended directly after PROVINCES (the real
+      map has no section header of its own; see that function's own
+      docstring and `report/ascii_map.py`'s module docstring for the
+      full, sourced derivation and exactly which real cases this phase
+      does and doesn't reproduce -- notably not name-wrapping, multiple
+      maps, or region labels).
     - CHARACTERS itself is only partially wired -- see
       `describe_characters_report()`'s own docstring for exactly which
       fields render (name, location, Alignment, Temperament, Race, Pay
@@ -8711,6 +8766,13 @@ def compose_letter_report(
     provinces_lines = describe_provinces_report(state, kingdom_id)
     if provinces_lines:
         _emit_section(provinces_lines[0], provinces_lines[1:])
+
+    # Phase 562: the real map has no header of its own -- a direct
+    # continuation of PROVINCES (see describe_map_report()'s own
+    # docstring), so it's appended directly rather than through
+    # _emit_section().
+    if lines:
+        lines.extend(describe_map_report(state, kingdom_id))
 
     characters_lines = describe_characters_report(state, kingdom_id)
     if characters_lines:

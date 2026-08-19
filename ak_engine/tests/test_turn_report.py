@@ -55,6 +55,7 @@ from ak_engine.report.turn_report import (
     describe_adventure_report,
     describe_alignment_victory_point_reduction,
     describe_final_standings_report,
+    describe_map_report,
     describe_state_of_the_nation_report,
     describe_general_intelligence_report,
     describe_imperial_office_report,
@@ -4850,6 +4851,40 @@ def test_describe_provinces_report_home_province_tier_bonus_caps_at_eleven():
     assert names_in_order == ["Capital", "Frontier"]
 
 
+# -- Phase 562: describe_map_report() -- the real ASCII map --
+
+
+def test_describe_map_report_empty_when_no_provinces_known():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+
+    assert describe_map_report(state, 1) == []
+
+
+def test_describe_map_report_starts_with_the_real_scribe_intro():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital"))
+
+    lines = describe_map_report(state, 1)
+
+    assert lines[2] == "  Sire, our royal scribe has drawn up a map of all neighboring lands: "
+    assert lines[-3] == "Key:   _ Plains   + Forest   & Jungle   ^ Mountain   . Desert     Sea"
+
+
+def test_compose_letter_report_places_the_map_between_provinces_and_characters():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital"))
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    provinces_index = lines.index("PROVINCES")
+    characters_index = lines.index("CHARACTERS")
+    scribe_index = lines.index("  Sire, our royal scribe has drawn up a map of all neighboring lands: ")
+    assert provinces_index < scribe_index < characters_index
+
+
 # -- Phase 221: describe_characters_report() -- the "CHARACTERS" section --
 
 
@@ -5455,6 +5490,20 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Capital City              Human    Plain     0%                      ",
         "",
         "",
+        "  Sire, our royal scribe has drawn up a map of all neighboring lands: ",
+        "",
+        "        Capital_City(000",
+        "        _ _ Aldric(1) __",
+        "        _   _Humans _  _",
+        "        _ _   _   _   __",
+        "        _   _Tax: 0 _  _",
+        "        ____0%_Expl.____",
+        "",
+        "Key:   _ Plains   + Forest   & Jungle   ^ Mountain   . Desert     Sea",
+        "    In each province, the name and I.D. number of the province",
+        "  are listed above the ruler I.D and name.",
+        "",
+        "",
         "CHARACTERS",
         "",
         "My Lord, Great indeed are the leaders of our proud kingdom.  Though thee "
@@ -5645,6 +5694,20 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "                                                    Recruiting Types:",
         "Province            Tax   Race   Terrain  Expl%     Type 1     Type 2",
         "Capital City              Human    Plain     0%                      ",
+        "",
+        "",
+        "  Sire, our royal scribe has drawn up a map of all neighboring lands: ",
+        "",
+        "        Capital_City(000",
+        "        _ _  Unowned  __",
+        "        _   _Humans _  _",
+        "        _ _   _   _   __",
+        "        _   _Tax: 0 _  _",
+        "        ____0%_Expl.____",
+        "",
+        "Key:   _ Plains   + Forest   & Jungle   ^ Mountain   . Desert     Sea",
+        "    In each province, the name and I.D. number of the province",
+        "  are listed above the ruler I.D and name.",
         "",
         "",
         "CHARACTERS",

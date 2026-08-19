@@ -23213,7 +23213,7 @@ follow-up request after the original 431-435 plan shipped.
   default stays intact); Artur's own unconfirmed duplicate count. Ran
   again: 4812 passed (net +3).
 
-- **Phase 561 (current)**: closed the narrowest, best-sourced item from
+- **Phase 561**: closed the narrowest, best-sourced item from
   `AKGEN_reverse_engineering_report (5).md`'s report-generation-pipeline
   material (SS19-49), deliberately deferred earlier this session as
   "reference material for future, larger phases" -- the user asked to
@@ -23247,6 +23247,45 @@ follow-up request after the original 431-435 plan shipped.
   after ARMIES with no Emperor (regression guard on the pre-existing,
   already-correct ordering); it moves before STATE OF THE NATION once an
   Emperor exists, with no duplication. Ran again: 4816 passed (net +4).
+
+- **Phase 562 (current)**: implemented the real ASCII map (`AKGEN_
+  reverse_engineering_report (5).md` SS38.2/SS44 -- "CERTAIN" for
+  content/placement, right after PROVINCES/before CHARACTERS, but
+  "HYPOTHESIS" for the exact field-selection formula). This project's
+  own direct, character-by-character reverse engineering this phase
+  corrected and completed that formula, verified byte-for-byte against
+  two full real bands (`Desktop/SE3__T1.K2` lines 308-319): every
+  province renders as a 16-char, 6-line cell -- name/id and status/
+  Expl% rows fully filled with the province's own `Terrain` symbol
+  (internal name spaces replaced too, e.g. "Bam Yanga" -> "Bam.Yanga");
+  ruler/race/recruit/tax rows keep real internal spaces and use a
+  small, fixed, content-independent set of terrain-symbol "ticks" per
+  row, with overflowing content growing at most 1 slot left before
+  dumping the rest right. New `report/ascii_map.py` (parallel to
+  `report/prose.py`, not stuffed into the 8700-line `turn_report.py`)
+  implements this; new `describe_map_report()` wires it in, appended
+  directly after PROVINCES (the real map has no section header of its
+  own -- a genuine exception to every other section here). One
+  real-data correction found along the way: recruit types are the
+  province's own real `Type1[,Type2]` regardless of who owns it, not
+  gated by ownership as an earlier working theory assumed (`Moongard`,
+  owned by a different Kingdom in the same verified band, shows both
+  types just as freely as this Kingdom's own `Mongu`). One rule
+  confirmed directly by the user (project author, first-hand game
+  knowledge, unavailable from the report samples alone): a province
+  owned by someone else shows `Poor` (tax 0-2) or `Prosperous` (tax
+  3-6) instead of its own real tax figure. Several real, confirmed
+  patterns are deliberately deferred rather than guessed at
+  (documented in the module's own docstring): a sometimes-skipped
+  ruler row, a sometimes-skipped recruit-type row, a third `Rich`
+  status word with an unknown threshold, name-too-long wrapping (which
+  also displaces the Expl% row), multiple maps ("far side of the
+  world"), and region labels ("Ice cap"). Ran before writing tests:
+  4816 passed (non-breaking). Added `tests/test_ascii_map.py` (20
+  tests: the pixel-column stagger formula, both padding/tie rules, the
+  overflow-growth rule, recruit/race lookups, and the two full-band
+  byte-for-byte checks) plus 3 wiring tests in `test_turn_report.py`.
+  Ran again: 4839 passed (net +23).
 
 ## Setup
 
