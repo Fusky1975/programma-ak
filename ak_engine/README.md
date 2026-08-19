@@ -22499,7 +22499,7 @@ follow-up request after the original 431-435 plan shipped.
   ineligible items being a complete no-op. Ran again: 4722 passed
   (net +2).
 
-- **Phase 540 (current)**: Crystal of True Seeing residual — the Hide
+- **Phase 540**: Crystal of True Seeing residual — the Hide
   Feature half of its "sees through" effect, `AKGEN_reverse_engineering_
   report (4).md` §8. Phase 532 already wired 2 of the item's 3 effects
   (Invisibility immunity, Phantasmal Armies halving); Hide Feature was
@@ -22521,6 +22521,31 @@ follow-up request after the original 431-435 plan shipped.
   normally; a different kingdom's leader holding it doesn't bypass the
   first kingdom's own skip; `has_true_seeing()` is `False` with no
   Crystal held. Ran again: 4725 passed (net +3).
+
+- **Phase 541 (current) — declared original, not reverse-engineered**:
+  Map of the Marauders' "+1 hex to sea vision during movement" (`AKGEN_
+  reverse_engineering_report (4).md` §11). This project has no hex-
+  radius vision/scouting concept anywhere — exploration is purely a
+  per-province cumulative percentage
+  (`ProvinceState.explored_percent_by_kingdom`), never a radius-based
+  reveal — and the dossier gives no mechanical detail beyond the one
+  clause, so there's no reverse-engineered behavior to replicate here.
+  Implemented anyway per the user's explicit choice, clearly labeled as
+  project-original: `turn/move_execution.py execute_move()`, right
+  after the entered province's own `record_kingdom_exploration()` call,
+  now also extends that same partial-exploration credit one hex further
+  when (a) the entered province is sea terrain and (b) the moving
+  leader holds `Treasure.NAMED_UNIQUE_MAP_MARAUDERS` — to whichever sea
+  neighbor of the entered hex isn't the one just left, an approximation
+  of "continuing the same direction of travel" since this call site has
+  only the two endpoints, no clean direction vector. Reuses existing
+  infrastructure (`record_kingdom_exploration()`, `turn/movement.py
+  neighbors()`) rather than inventing a new "visible hex" registry. Ran
+  before writing tests: 4725 passed (non-breaking). Added tests: a Map-
+  holding leader's sea move nudges a further sea neighbor's own
+  `explored_percent_by_kingdom` up from 0; a non-holder's identical move
+  leaves it untouched; the bonus does nothing on a land move even when
+  the Map is held. Ran again: 4728 passed (net +3).
 
 ## Setup
 

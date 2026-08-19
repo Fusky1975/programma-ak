@@ -9,6 +9,7 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.move_execution import (
     MARCH_ABILITY_BONUS,
@@ -128,6 +129,49 @@ def test_uncontested_move_exploration_honors_terrain_override():
     # Sea basic exploration number 25, skill 1 -> full=50, halved (Move) = 25.
     assert result.exploration.new_percent == 25
     assert state.provinces[TARGET].explored_percent == 25
+
+
+def test_execute_move_map_of_the_marauders_extends_partial_exploration_to_a_further_sea_hex():
+    # Phase 541: AKGEN_reverse_engineering_report (4).md SS11 -- Map of the
+    # Marauders' "+1 hex to sea vision" (a declared-original interpretation,
+    # not reverse-engineered: this project has no hex-radius vision
+    # concept for anything to hook a literal "+1 hex" into).
+    state = base_state()
+    further = HexCoord(3, 1)  # a further neighbor of TARGET, not ORIGIN
+    state.provinces[TARGET].terrain_override = Terrain.SEA
+    state.add_province(ProvinceState(further, Terrain.SEA, Race.HUMAN))
+    state.add_leader(LeaderState(1, 1, "Marauder Captain", ORIGIN))
+    state.add_item(Treasure.NAMED_UNIQUE_MAP_MARAUDERS, owner_leader_id=1)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, explorer_skill=1)
+
+    assert state.provinces[TARGET].explored_percent_by_kingdom.get(1, 0) > 0
+    assert state.provinces[further].explored_percent_by_kingdom.get(1, 0) > 0
+
+
+def test_execute_move_without_the_map_does_not_extend_vision():
+    state = base_state()
+    further = HexCoord(3, 1)
+    state.provinces[TARGET].terrain_override = Terrain.SEA
+    state.add_province(ProvinceState(further, Terrain.SEA, Race.HUMAN))
+    state.add_leader(LeaderState(1, 1, "Ordinary Captain", ORIGIN))
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, explorer_skill=1)
+
+    assert 1 not in state.provinces[further].explored_percent_by_kingdom
+
+
+def test_execute_move_map_of_the_marauders_does_nothing_on_land():
+    # The bonus is sea-specific -- TARGET here stays its default Plains.
+    state = base_state()
+    further = HexCoord(3, 1)
+    state.add_province(ProvinceState(further, Terrain.SEA, Race.HUMAN))
+    state.add_leader(LeaderState(1, 1, "Marauder Captain", ORIGIN))
+    state.add_item(Treasure.NAMED_UNIQUE_MAP_MARAUDERS, owner_leader_id=1)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, explorer_skill=1)
+
+    assert 1 not in state.provinces[further].explored_percent_by_kingdom
 
 
 def test_record_kingdom_exploration_seeds_from_that_kingdoms_own_prior_entry():

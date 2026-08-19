@@ -626,6 +626,42 @@ def execute_move(
         has_find_mines=has_find_mines,
     )
 
+    # Phase 541 -- Map of the Marauders "+1 hex to sea vision during
+    # movement" (AKGEN_reverse_engineering_report (4).md SS11), a
+    # **declared-original** mechanic, not reverse-engineered: this
+    # project has no hex-radius vision/scouting concept anywhere to hook
+    # a literal "+1 hex vision" into (exploration is purely a per-
+    # province cumulative percentage). The closest honest mechanical
+    # translation, reusing existing infrastructure rather than inventing
+    # a new "visible hex" registry: a leader holding the item who just
+    # entered a sea province also extends their own kingdom's partial-
+    # exploration credit one hex further, to whichever sea neighbor of
+    # the entered hex isn't the one just left (an approximation of
+    # "continuing the same direction of travel" -- this call site has no
+    # clean direction vector available, only the two endpoints).
+    if leader_id is not None and target_province.effective_terrain() is Terrain.SEA:
+        leader = state.leaders.get(leader_id)
+        if leader is not None and any(
+            item.treasure is Treasure.NAMED_UNIQUE_MAP_MARAUDERS for item in state.items_held_by(leader_id)
+        ):
+            for further_hex in neighbors(actual_target, bounds):
+                if further_hex == current:
+                    continue
+                further_province = state.provinces.get(further_hex)
+                if further_province is not None and further_province.effective_terrain() is Terrain.SEA:
+                    record_kingdom_exploration(
+                        further_province,
+                        kingdom_id,
+                        explorer_skill,
+                        partial=True,
+                        state=state,
+                        rng=rng,
+                        has_military_maps=has_military_maps,
+                        has_difficult_terrain=has_difficult_terrain,
+                        has_find_mines=has_find_mines,
+                    )
+                    break
+
     battle_report = None
     conquered = False
     if occupied_by_enemy:
