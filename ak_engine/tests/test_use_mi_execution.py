@@ -178,6 +178,71 @@ def test_execute_use_mi_book_clamps_skill_at_the_real_ceiling_of_9():
 # --- Wand charge consumption (Phase 172, TREASURE.X2's own wand descriptions) ---
 
 
+# --- Tactical-intent classification (Phase 542, dossier SS6.2) ---
+
+
+def test_execute_use_mi_wand_marks_aggressive_intent_on_a_successful_cast():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    item = state.add_item(Treasure.WAND_KILL_ENEMY, owner_leader_id=CASTER_ID, charges=1)
+    request = UseMIRequest(item_instance_id=item.item_id, target=78)
+
+    result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
+
+    assert result.applied is True
+    assert result.marks_aggressive_intent is True
+
+
+def test_execute_use_mi_charm_wand_is_exempt_from_aggressive_intent():
+    # RUMORS.PAS:839-857 -- Cologne of Charming is one of the two named
+    # exceptions, even though the cast itself succeeds.
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Charm Target", LOCATION))
+    item = state.add_item(Treasure.WAND_CHARM, owner_leader_id=CASTER_ID, charges=1)
+    request = UseMIRequest(item_instance_id=item.item_id, target=78)
+
+    result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
+
+    assert result.applied is True
+    assert result.marks_aggressive_intent is False
+
+
+def test_execute_use_mi_invisibility_wand_never_marks_aggressive_intent():
+    # Ring of Invisibility is the other named exception. Invisibility has
+    # no strategic-level Cast execution in this project (Personal-Combat
+    # only), so this also confirms the flag stays False when nothing was
+    # actually cast, not just the exemption itself.
+    state = build_state()
+    item = state.add_item(Treasure.WAND_INVISIBILITY, owner_leader_id=CASTER_ID, charges=1)
+    request = UseMIRequest(item_instance_id=item.item_id, target=CASTER_ID)
+
+    result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
+
+    assert result.marks_aggressive_intent is False
+
+
+def test_execute_use_mi_book_read_does_not_mark_aggressive_intent():
+    state = build_state()
+    item = state.add_item(Treasure.BOOK_TACTICAL, owner_leader_id=CASTER_ID)
+    request = UseMIRequest(item_instance_id=item.item_id, target=0)
+
+    result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
+
+    assert result.applied is True
+    assert result.marks_aggressive_intent is False
+
+
+def test_execute_use_mi_rejected_cast_does_not_mark_aggressive_intent():
+    state = build_state()
+    item = state.add_item(Treasure.WAND_KILL_ENEMY, owner_leader_id=CASTER_ID, charges=0)
+    request = UseMIRequest(item_instance_id=item.item_id, target=78)
+
+    result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
+
+    assert result.applied is False
+    assert result.marks_aggressive_intent is False
+
+
 def test_execute_use_mi_wand_decrements_charges_on_a_successful_cast():
     state = build_state()
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))

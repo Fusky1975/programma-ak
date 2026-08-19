@@ -84,7 +84,13 @@ from dataclasses import dataclass
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState
 from ak_engine.models.kingdom import SkillTable
-from ak_engine.models.treasure import TREASURE_BOOK_ABILITY, TREASURE_CATEGORY, TREASURE_WAND_SPELL, TreasureCategory
+from ak_engine.models.treasure import (
+    TREASURE_BOOK_ABILITY,
+    TREASURE_CATEGORY,
+    TREASURE_WAND_SPELL,
+    Treasure,
+    TreasureCategory,
+)
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult, execute_cast
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS
@@ -96,6 +102,10 @@ USE_MI_WAND_SKILL_LEVEL = 2
 # CTBOTH.PAS: skillrange = 0..9.
 MAX_SKILL_LEVEL = 9
 
+# Phase 542: AKGEN_reverse_engineering_report (4).md SS6.2, RUMORS.PAS:839-857
+# -- every charged item marks the caster's intent Melee EXCEPT these two.
+USE_MI_NON_AGGRESSIVE_WANDS = frozenset({Treasure.WAND_CHARM, Treasure.WAND_INVISIBILITY})
+
 
 @dataclass(slots=True)
 class UseMIExecutionResult:
@@ -103,6 +113,15 @@ class UseMIExecutionResult:
     reason: str | None = None
     cast_result: CastExecutionResult | None = None  # set when a wand triggered a spell cast
     ability_boosted: Ability | None = None  # set when a book was read
+    # Phase 542: sourced from the dossier's own intent-classification rule
+    # (see USE_MI_NON_AGGRESSIVE_WANDS above), but this project has no
+    # simulated monster/AI reaction system for ANY action type to consume
+    # it with yet -- wandering encounters are pure report narrative
+    # (models/local_encounter.py LocalEncounterEvent), never a decision
+    # branch. Exposed anyway, the same "structure/primitive is sourced
+    # even though automatic consumption isn't" split this project already
+    # accepted for ItemInstance/GameState.add_item() (Phase 140).
+    marks_aggressive_intent: bool = False
 
 
 def execute_use_mi(
@@ -145,7 +164,13 @@ def execute_use_mi(
         )
         if cast_result.applied:
             item.charges -= 1
-        return UseMIExecutionResult(applied=cast_result.applied, reason=cast_result.reason, cast_result=cast_result)
+        marks_aggressive_intent = cast_result.applied and item.treasure not in USE_MI_NON_AGGRESSIVE_WANDS
+        return UseMIExecutionResult(
+            applied=cast_result.applied,
+            reason=cast_result.reason,
+            cast_result=cast_result,
+            marks_aggressive_intent=marks_aggressive_intent,
+        )
 
     if category is TreasureCategory.SKILL_BOOK:
         ability = TREASURE_BOOK_ABILITY[item.treasure]

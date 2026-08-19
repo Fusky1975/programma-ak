@@ -22522,7 +22522,7 @@ follow-up request after the original 431-435 plan shipped.
   first kingdom's own skip; `has_true_seeing()` is `False` with no
   Crystal held. Ran again: 4725 passed (net +3).
 
-- **Phase 541 (current) — declared original, not reverse-engineered**:
+- **Phase 541 — declared original, not reverse-engineered**:
   Map of the Marauders' "+1 hex to sea vision during movement" (`AKGEN_
   reverse_engineering_report (4).md` §11). This project has no hex-
   radius vision/scouting concept anywhere — exploration is purely a
@@ -22546,6 +22546,31 @@ follow-up request after the original 431-435 plan shipped.
   `explored_percent_by_kingdom` up from 0; a non-holder's identical move
   leaves it untouched; the bonus does nothing on a land move even when
   the Map is held. Ran again: 4728 passed (net +3).
+
+- **Phase 542 (current)**: Use_MI tactical-intent classification, `AKGEN_
+  reverse_engineering_report (4).md` §6.2 (`RUMORS.PAS:839-857`). The
+  classification rule itself is directly sourced — every charged item
+  (15-34) marks the caster's intent `Melee` except Cologne of Charming
+  and Ring of Invisibility — but this project has no simulated
+  monster/AI reaction system for **any** action type to consume it with:
+  wandering encounters are pure report narrative
+  (`models/local_encounter.py LocalEncounterEvent`), never a decision
+  branch. Rather than inventing a speculative reaction system to pair
+  with it, `turn/use_mi_execution.py` computes and exposes only the
+  sourced half: new `UseMIExecutionResult.marks_aggressive_intent: bool
+  = False`, set `True` only when a `SPELL_WAND` cast actually applied
+  and the item isn't in the new `USE_MI_NON_AGGRESSIVE_WANDS` set
+  (`{Treasure.WAND_CHARM, Treasure.WAND_INVISIBILITY}`) — the same
+  "structure/primitive sourced even though automatic consumption isn't"
+  split this project already accepted for `ItemInstance`/`GameState.
+  add_item()` (Phase 140). Ran before writing tests: 4728 passed
+  (non-breaking). Added tests: a successful Wand of Kill Enemy cast sets
+  the flag; a successful Cologne of Charming cast doesn't (exempt
+  despite succeeding); Ring of Invisibility never sets it (Invisibility
+  has no strategic-level Cast execution in this project at all, so this
+  also confirms "nothing was cast" correctly yields `False`); a Skill
+  Book read doesn't set it; a rejected (zero-charge) cast doesn't set
+  it. Ran again: 4733 passed (net +5).
 
 ## Setup
 
