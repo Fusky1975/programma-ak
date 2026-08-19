@@ -207,6 +207,22 @@ Phase 435 as "a substantially larger feature." These are pure additions;
 `resolve_office_holder()`/`resolve_all_office_holders()` keep their
 existing signature and behavior unchanged for their other callers
 (`turn/battle_orchestrator.py`, `turn/tax_base.py`).
+
+**Phase 550 -- the Valhalla visitor is excluded from every Rank
+contest.** A fresh audit of `CARICHE E ABILITÀ.txt`/`ABILITÀ SOPRA IL
+LIVELLO 4 OK.txt` (finding both otherwise fully and correctly consumed
+already, Phase 367-379) cross-checked `AKGEN_reverse_engineering_
+report.md` too, which gives a real, save-file-verified example (line
+1440): "Il visitatore di Valhalla 'Two-Headed Eagle' ha 127 punti da
+Maresciallo ma viene esplicitamente escluso dal selettore delle
+cariche; per questo il titolare corretto resta Giovanna con 72. Questa
+esclusione è indispensabile per riprodurre il salvataggio." Nothing
+previously excluded `VALHALLA_VISITOR_LEADER_ID` from this loop --
+`resolve_office_holder()` now skips them outright, regardless of how
+high their own Merit Points happen to be during their one active turn
+(`turn/valhalla_execution.py`, Phase 546-548). Emperor is unaffected
+(never resolved through this loop at all); the 3 army-scoped offices
+are unaffected too (the visitor is a leader, never an army).
 """
 
 from __future__ import annotations
@@ -219,6 +235,7 @@ from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.office import OFFICE_MIN_POINTS, Office
 from ak_engine.models.temper import raise_temper_one_level
 from ak_engine.models.race import Race
+from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.tax_base import compute_tax_base
 from ak_engine.turn.merit_points import (
@@ -437,6 +454,16 @@ def resolve_office_holder(state: GameState, office: Office) -> OfficeHolder | No
     best_tiebreak: tuple[int, int, int, int] | None = None
 
     for leader_id, leader in state.leaders.items():
+        if leader_id == VALHALLA_VISITOR_LEADER_ID:
+            # Phase 550 -- AKGEN_reverse_engineering_report.md line 1440's
+            # own real save-file example: "Il visitatore di Valhalla
+            # 'Two-Headed Eagle' ha 127 punti da Maresciallo ma viene
+            # esplicitamente escluso dal selettore delle cariche; per
+            # questo il titolare corretto resta Giovanna con 72." The
+            # visitor is never a genuine office candidate, however high
+            # their own Merit Points happen to be during their one active
+            # turn -- confirmed indispensable to reproduce that save.
+            continue
         points = _leader_merit_points(office, state, leader)
         if points < min_points:
             continue

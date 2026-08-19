@@ -22814,7 +22814,7 @@ follow-up request after the original 431-435 plan shipped.
   confirmed-out-of-scope rule (no in-engine deadline detector exists
   anywhere in this codebase to hook it to).
 
-- **Phase 549 (current)**: resolved the 17 remaining discrepancies
+- **Phase 549**: resolved the 17 remaining discrepancies
   between `turn/encounter.py TALK_MONSTER_DRUID_LEVEL_REQUIRED` (the
   CTME.PAS-sourced `talkdiff` table) and `Desktop/TALK SAY FULFILL.txt`
   -- identified as the specific "user's own supplied rulebook table"
@@ -22833,6 +22833,32 @@ follow-up request after the original 431-435 plan shipped.
   with_user_compiled_list()`, pinning all 17 species' `TALK_MONSTER_
   DRUID_LEVEL_REQUIRED` values against their `TALK SAY FULFILL.txt`
   counterparts. Ran again: 4774 passed (net +1).
+
+- **Phase 550 (current)**: an audit of `CARICHE E ABILITÀ.txt`/
+  `ABILITÀ SOPRA IL LIVELLO 4 OK.txt` against the 4 `AKGEN_reverse_
+  engineering_report*.md` files found both source files already fully
+  and correctly consumed -- the 89 Advanced Abilities match `models/
+  advanced_ability.py` name-for-name across all 15 categories (spot-
+  checked the `GATE_DEMON_TABLE`/`LAVA_POOL_IMMUNE_MONSTERS` data too,
+  both exact), and every Imperial Office/Royal Title the source names
+  is already resolved in `turn/office_holder.py`/`turn/merit_points.py`/
+  `turn/race_titles.py`, several already corrected against a real
+  `AKGEN.EXE`/`AK.EXE`/`AK.OVR` disassembly where the two disagreed
+  (Phase 369). One real gap surfaced from the AKGEN cross-check: `AKGEN_
+  reverse_engineering_report.md` line 1440 gives a save-file-verified
+  example -- "Two-Headed Eagle" (a Valhalla visitor) has 127 Marshal
+  points but is explicitly excluded from the office selector, so the
+  correct titleholder stays the King with only 72 -- and nothing in
+  `resolve_office_holder()` previously excluded `VALHALLA_VISITOR_
+  LEADER_ID` from its Rank-contest loop. Fixed: the loop now skips the
+  visitor outright, regardless of their own Merit Points during their
+  one active turn (Phase 546-548). Emperor and the 3 army-scoped
+  offices are unaffected (neither ever runs through this loop). Ran
+  before writing tests: 4774 passed (non-breaking). Added tests: the
+  visitor is skipped even with the highest score (the real "Two-Headed
+  Eagle" example, reproduced exactly); resolution returns `None` when
+  only the visitor would otherwise qualify. Ran again: 4776 passed
+  (net +2).
 
 ## Setup
 

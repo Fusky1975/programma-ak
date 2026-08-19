@@ -13,6 +13,7 @@ from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
+from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.office_holder import (
     ALL_OFFICES,
@@ -97,6 +98,38 @@ def test_resolve_office_holder_hero_can_win_an_office():
 def test_resolve_office_holder_none_when_nobody_meets_the_minimum():
     state = make_state()
     state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))  # 0 Merit Points everywhere
+
+    assert resolve_office_holder(state, Office.MARSHAL) is None
+
+
+# -- Phase 550: the Valhalla visitor is never a genuine office candidate --
+
+
+def test_resolve_office_holder_excludes_the_valhalla_visitor_even_with_the_highest_score():
+    # AKGEN_reverse_engineering_report.md line 1440's own real save-file
+    # example: "Two-Headed Eagle" has 127 Marshal points but is
+    # explicitly excluded, so the correct titleholder is the King with
+    # only 72.
+    state = make_state()
+    king = LeaderState(1, 1, "Giovanna", HOME, is_king=True)
+    king.merit_tally.land_battles_won_points = 72
+    state.add_leader(king)
+    visitor = LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Two-Headed Eagle", HOME, valhalla_active_turn=state.turn_number)
+    visitor.merit_tally.land_battles_won_points = 127
+    state.add_leader(visitor)
+
+    holder = resolve_office_holder(state, Office.MARSHAL)
+
+    assert holder is not None
+    assert holder.leader_id == 1
+    assert holder.merit_points == 72
+
+
+def test_resolve_office_holder_none_when_only_the_valhalla_visitor_qualifies():
+    state = make_state()
+    visitor = LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Visitor", HOME, valhalla_active_turn=state.turn_number)
+    visitor.merit_tally.land_battles_won_points = 127
+    state.add_leader(visitor)
 
     assert resolve_office_holder(state, Office.MARSHAL) is None
 
