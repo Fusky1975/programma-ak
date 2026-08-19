@@ -62,6 +62,52 @@ this module's own 137 -- see ``VALHALLA_ROSTER_UNCONFIRMED``'s own
 docstring below for the full account of what's sourced (name/race/
 temper/skills) versus not (true alignment, fixed item) and why they
 stay deliberately excluded from real Gate Angel selection.
+
+**Phase 560 -- the real roster is a 178-slot array, not 164 unique
+heroes.** A second, independently-generated catalog of the same
+underlying data (the user's own ``AKGEN_complete_name_lists.md``,
+audited this phase) lists every one of the real ``GOOD2.X2``/
+``DRUIDIC2.X2``/``NEUTRAL2.X2``/``PAGAN2.X2``/``EVIL2.X2`` roster
+files' own raw entries by source index: 43/25/46/30/34 (178 total),
+not the 32/23/34/21/27 (137) this module's own narrative-sourced
+``VALHALLA_ROSTER`` had, nor the 164 unique names Phase 551 landed on
+after its own by-name extraction. Cross-checked programmatically
+against ``AKGEN_name_catalogs.json.txt valhalla_hero_rosters.rosters``
+(the same JSON Phase 551 already used, which turns out to already
+carry every one of the 178 raw records -- Phase 551 just deduplicated
+by display name when it built ``VALHALLA_ROSTER_UNCONFIRMED``, losing
+the real slot count): every single one of the 178 raw entries' own
+*name* (case-normalized) already matched a name already present in
+``VALHALLA_ROSTER`` or ``VALHALLA_ROSTER_UNCONFIRMED`` -- there are no
+further hitherto-unseen hero identities to add. What was missing is
+that **13 already-confirmed names occupy more than one real slot**
+(``Winner`` x3 and ``Kalko``/``Swk`` x2 each in Good; ``Fire`` x2 in
+Druidic; ``La-La`` x3 and ``Rogvold``/``Skilza`` x2 each in Neutral;
+``Mary``/``Lancelot`` x2 each in Pagan; ``Skilza`` x3 in Evil), plus
+one already-unconfirmed name (``Artur``, Neutral) occupying 2 slots --
+confirmed by direct byte comparison of a sample duplicate's own
+``skills_raw`` (two of ``Winner``'s three raw Good entries are
+byte-identical; the third differs slightly, and ``Arthur``'s own
+single raw entry differs from this module's narrative-sourced version
+by exactly one point of Sage aptitude -- both patterns consistent with
+real players independently reusing a common nickname, or the same
+character's stats drifting slightly between whatever moment each
+source document captured them, not a data error either way). This
+matters because ``turn/valhalla_execution.py
+_select_visitor_template()``'s own turn-6-onward selection picks a
+**slot index** uniformly (``n = len(roster)``) -- a name occupying 3
+real slots is 3x as likely to actually visit as one occupying 1,
+information the deduplicated 137-hero list couldn't represent. Fixed
+by repeating each affected hero's own already-fully-sourced
+``ValhallaHero`` entry the correct additional number of times (never
+touching each alignment's own final list entry -- SS386's own confirmed
+"turns 1-5 always pick the last record" default must stay put), rather
+than inventing new stat blocks: ``VALHALLA_ROSTER`` grows from 137 to
+150 (32->36 Good, 23->24 Druidic, 34->38 Neutral, 21->23 Pagan, 27->29
+Evil), and ``VALHALLA_ROSTER_UNCONFIRMED`` from 27 to 28 (Neutral
+7->8, for ``Artur`` -- inert today since this dict is still never read
+by real selection, kept only for the same future-completeness reason
+Phase 551 itself already gives).
 """
 
 from __future__ import annotations
@@ -135,6 +181,13 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             fixed_item=Treasure.WEAPON_2,
             fixed_item_name="Shadow Sword",
         ),
+        # Phase 560: "Winner" occupies 3 real raw slots (source indices
+        # 1/3/5 in GOOD2.X2), not 1 -- repeated verbatim below rather
+        # than deduplicated, so turn/valhalla_execution.py
+        # _select_visitor_template()'s own by-index selection weighs it
+        # correctly. See this module's own Phase 560 docstring note for
+        # the full account (applies to every other repeated block in
+        # this file too).
         ValhallaHero(
             name="Winner",
             true_alignment=Alignment.DIVINE,
@@ -143,6 +196,33 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             skills=SkillTable(raw_values=[1, 2, 2, 4, 0, 2, 1, 3, 3, 3, 7, 6, 0, 0, 2, 2, 1, 2, 0, 2, 2, 2, 0, 2, 0, 2, 0, 2, 3, 3]),
             fixed_item=Treasure.AMULET_ANTI_NECROMANCY,
             fixed_item_name="The True Cross",
+        ),
+        ValhallaHero(
+            name="Winner",
+            true_alignment=Alignment.DIVINE,
+            temper=Temper.BRAVE,
+            race=Race.HUMAN,
+            skills=SkillTable(raw_values=[1, 2, 2, 4, 0, 2, 1, 3, 3, 3, 7, 6, 0, 0, 2, 2, 1, 2, 0, 2, 2, 2, 0, 2, 0, 2, 0, 2, 3, 3]),
+            fixed_item=Treasure.AMULET_ANTI_NECROMANCY,
+            fixed_item_name="The True Cross",
+        ),
+        ValhallaHero(
+            name="Winner",
+            true_alignment=Alignment.DIVINE,
+            temper=Temper.BRAVE,
+            race=Race.HUMAN,
+            skills=SkillTable(raw_values=[1, 2, 2, 4, 0, 2, 1, 3, 3, 3, 7, 6, 0, 0, 2, 2, 1, 2, 0, 2, 2, 2, 0, 2, 0, 2, 0, 2, 3, 3]),
+            fixed_item=Treasure.AMULET_ANTI_NECROMANCY,
+            fixed_item_name="The True Cross",
+        ),
+        ValhallaHero(
+            name="Kalko",
+            true_alignment=Alignment.GOOD,
+            temper=Temper.BRAVE,
+            race=Race.HUMAN,
+            skills=SkillTable(raw_values=[4, 4, 3, 4, 0, 2, 1, 3, 3, 3, 2, 4, 0, 2, 0, 2, 2, 2, 0, 2, 1, 2, 0, 2, 0, 2, 1, 2, 2, 5]),
+            fixed_item=Treasure.WAND_ORATORY,
+            fixed_item_name="Silver Horn of Oratory",
         ),
         ValhallaHero(
             name="Kalko",
@@ -307,6 +387,15 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             fixed_item_name="Manual of Spying",
         ),
         ValhallaHero(
+            name="Swk",
+            true_alignment=Alignment.DIVINE,
+            temper=Temper.BRAVE,
+            race=Race.HUMAN,
+            skills=SkillTable(raw_values=[1, 2, 1, 2, 0, 2, 1, 3, 6, 5, 9, 8, 0, 0, 1, 2, 0, 2, 2, 2, 2, 2, 1, 3, 1, 2, 1, 2, 1, 3]),
+            fixed_item=Treasure.BOOK_SPY,
+            fixed_item_name="Manual of Spying",
+        ),
+        ValhallaHero(
             name="Mike",
             true_alignment=Alignment.GOOD,
             temper=Temper.BERSERK,
@@ -451,6 +540,15 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             skills=SkillTable(raw_values=[5, 3, 4, 5, 0, 2, 1, 3, 2, 3, 1, 2, 4, 3, 0, 2, 2, 5, 0, 2, 2, 4, 0, 2, 1, 3, 0, 2, 3, 3]),
             fixed_item=Treasure.WAND_ORATORY,
             fixed_item_name="Silver Horn of Oratory",
+        ),
+        ValhallaHero(
+            name="Fire",
+            true_alignment=Alignment.DRUID,
+            temper=Temper.BRAVE,
+            race=Race.HUMAN,
+            skills=SkillTable(raw_values=[2, 2, 2, 3, 1, 3, 3, 3, 3, 3, 5, 4, 3, 2, 3, 2, 4, 4, 0, 2, 3, 4, 2, 2, 0, 2, 0, 2, 1, 3]),
+            fixed_item=Treasure.LEADERSHIP_HUMAN,
+            fixed_item_name="Sword Excalibur",
         ),
         ValhallaHero(
             name="Fire",
@@ -635,6 +733,24 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             fixed_item_name="Sword Excalibur",
         ),
         ValhallaHero(
+            name="La-La",
+            true_alignment=Alignment.NEUTRAL,
+            temper=Temper.BRAVE,
+            race=Race.HUMAN,
+            skills=SkillTable(raw_values=[5, 5, 3, 3, 3, 3, 3, 4, 3, 3, 4, 4, 1, 2, 4, 3, 3, 2, 3, 4, 2, 3, 0, 2, 1, 2, 0, 4, 1, 3]),
+            fixed_item=Treasure.LEADERSHIP_HUMAN,
+            fixed_item_name="Sword Excalibur",
+        ),
+        ValhallaHero(
+            name="La-La",
+            true_alignment=Alignment.NEUTRAL,
+            temper=Temper.BRAVE,
+            race=Race.HUMAN,
+            skills=SkillTable(raw_values=[5, 5, 3, 3, 3, 3, 3, 4, 3, 3, 4, 4, 1, 2, 4, 3, 3, 2, 3, 4, 2, 3, 0, 2, 1, 2, 0, 4, 1, 3]),
+            fixed_item=Treasure.LEADERSHIP_HUMAN,
+            fixed_item_name="Sword Excalibur",
+        ),
+        ValhallaHero(
             name="Hercules",
             true_alignment=Alignment.NEUTRAL,
             temper=Temper.BERSERK,
@@ -680,6 +796,15 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             fixed_item_name="Scimitar of Orc Mastery",
         ),
         ValhallaHero(
+            name="Rogvold",
+            true_alignment=Alignment.NEUTRAL,
+            temper=Temper.CAUTIOUS,
+            race=Race.ORCISH,
+            skills=SkillTable(raw_values=[7, 5, 2, 2, 0, 2, 3, 5, 3, 3, 3, 3, 0, 2, 0, 2, 9, 7, 0, 4, 3, 2, 0, 2, 1, 3, 0, 4, 1, 3]),
+            fixed_item=Treasure.LEADERSHIP_ORCISH,
+            fixed_item_name="Scimitar of Orc Mastery",
+        ),
+        ValhallaHero(
             name="Ioan",
             true_alignment=Alignment.NEUTRAL,
             temper=Temper.COWARDLY,
@@ -687,6 +812,15 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             skills=SkillTable(raw_values=[6, 5, 5, 5, 1, 2, 1, 3, 1, 3, 2, 2, 2, 2, 1, 2, 0, 2, 0, 4, 3, 2, 0, 2, 0, 2, 0, 4, 1, 3]),
             fixed_item=Treasure.ABILITY_MARCH,
             fixed_item_name="Magical Register of March Orders",
+        ),
+        ValhallaHero(
+            name="Skilza",
+            true_alignment=Alignment.NEUTRAL,
+            temper=Temper.BRAVE,
+            race=Race.HUMAN,
+            skills=SkillTable(raw_values=[0, 2, 1, 2, 0, 2, 3, 3, 2, 3, 3, 2, 0, 2, 3, 3, 6, 5, 4, 5, 2, 2, 0, 2, 0, 2, 0, 4, 1, 3]),
+            fixed_item=Treasure.BOOK_WHITE,
+            fixed_item_name="Scriptures of Holy Thoughts",
         ),
         ValhallaHero(
             name="Skilza",
@@ -943,6 +1077,15 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             fixed_item_name="Libram of Illusions",
         ),
         ValhallaHero(
+            name="Mary",
+            true_alignment=Alignment.PAGAN,
+            temper=Temper.BRAVE,
+            race=Race.HUMAN,
+            skills=SkillTable(raw_values=[3, 2, 3, 4, 0, 2, 3, 3, 3, 4, 4, 3, 1, 2, 6, 6, 7, 7, 1, 2, 2, 2, 0, 2, 0, 4, 0, 2, 1, 3]),
+            fixed_item=Treasure.BOOK_ILLUSION,
+            fixed_item_name="Libram of Illusions",
+        ),
+        ValhallaHero(
             name="Athar",
             true_alignment=Alignment.PAGAN,
             temper=Temper.BRAVE,
@@ -986,6 +1129,15 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             skills=SkillTable(raw_values=[2, 2, 3, 2, 0, 2, 1, 3, 3, 3, 4, 3, 3, 2, 6, 7, 4, 3, 3, 3, 2, 3, 0, 2, 1, 4, 0, 2, 1, 3]),
             fixed_item=Treasure.ABILITY_PSYCHIC,
             fixed_item_name="Helm of Psychic Projection",
+        ),
+        ValhallaHero(
+            name="Lancelot",
+            true_alignment=Alignment.PAGAN,
+            temper=Temper.BRAVE,
+            race=Race.HUMAN,
+            skills=SkillTable(raw_values=[3, 3, 2, 3, 0, 2, 2, 3, 2, 3, 6, 7, 2, 2, 0, 4, 6, 5, 0, 2, 3, 2, 0, 2, 1, 4, 0, 2, 1, 3]),
+            fixed_item=Treasure.BOOK_SAGE,
+            fixed_item_name="Library of Science",
         ),
         ValhallaHero(
             name="Lancelot",
@@ -1213,6 +1365,24 @@ VALHALLA_ROSTER: dict[Alignment, tuple[ValhallaHero, ...]] = {
             skills=SkillTable(raw_values=[6, 5, 3, 4, 0, 2, 1, 3, 3, 3, 2, 2, 2, 4, 2, 2, 0, 2, 0, 3, 2, 2, 0, 4, 1, 2, 0, 2, 6, 4]),
             fixed_item=Treasure.WAND_FIREBALL,
             fixed_item_name="Wand of Fire",
+        ),
+        ValhallaHero(
+            name="Skilza",
+            true_alignment=Alignment.EVIL,
+            temper=Temper.BRAVE,
+            race=Race.HUMAN,
+            skills=SkillTable(raw_values=[2, 2, 2, 2, 0, 2, 2, 3, 1, 3, 6, 5, 6, 4, 4, 4, 6, 5, 4, 4, 2, 2, 3, 4, 0, 2, 1, 2, 1, 4]),
+            fixed_item=Treasure.WAND_ORATORY,
+            fixed_item_name="Silver Horn of Oratory",
+        ),
+        ValhallaHero(
+            name="Skilza",
+            true_alignment=Alignment.EVIL,
+            temper=Temper.BRAVE,
+            race=Race.HUMAN,
+            skills=SkillTable(raw_values=[2, 2, 2, 2, 0, 2, 2, 3, 1, 3, 6, 5, 6, 4, 4, 4, 6, 5, 4, 4, 2, 2, 3, 4, 0, 2, 1, 2, 1, 4]),
+            fixed_item=Treasure.WAND_ORATORY,
+            fixed_item_name="Silver Horn of Oratory",
         ),
         ValhallaHero(
             name="Skilza",
@@ -1473,6 +1643,16 @@ VALHALLA_ROSTER_UNCONFIRMED: dict[Alignment, tuple[ValhallaHero, ...]] = {
            [9, 5, 6, 4, 2, 2, 1, 3, 3, 3, 2, 3, 2, 2, 2, 3, 0, 4, 0, 2, 6, 4, 2, 2, 2, 2, 1, 2, 2, 3]),
     ),
     Alignment.NEUTRAL: (
+        _u("Artur", Alignment.NEUTRAL, Temper.BRAVE, Race.ELVEN,
+           [6, 5, 5, 6, 4, 3, 1, 3, 1, 3, 2, 3, 0, 2, 0, 2, 0, 2, 0, 4, 4, 3, 0, 2, 0, 2, 1, 4, 1, 3]),
+        # Phase 560: a second real "Artur" slot -- AKGEN_complete_
+        # name_lists.md's own raw NEUTRAL2.X2 catalog has this name at
+        # two distinct source indices (6 and 8); repeated verbatim here
+        # (not independently re-decoded -- the source gives no second,
+        # differing stats block for this one) purely so this bucket's
+        # own true 2-slot multiplicity is preserved for whenever a
+        # future phase promotes VALHALLA_ROSTER_UNCONFIRMED into real
+        # selection.
         _u("Artur", Alignment.NEUTRAL, Temper.BRAVE, Race.ELVEN,
            [6, 5, 5, 6, 4, 3, 1, 3, 1, 3, 2, 3, 0, 2, 0, 2, 0, 2, 0, 4, 4, 3, 0, 2, 0, 2, 1, 4, 1, 3]),
         _u("Boland", Alignment.NEUTRAL, Temper.BRAVE, Race.ELVEN,

@@ -16,7 +16,11 @@ def test_visitor_leader_id_is_the_fixed_reserved_slot():
     assert VALHALLA_VISITOR_LEADER_ID == 199
 
 
-def test_roster_covers_all_5_eligible_alignments_with_137_heroes_total():
+def test_roster_covers_all_5_eligible_alignments_with_150_heroes_total():
+    # Phase 560: 137 (Phase 195-198) + 13 real duplicate-name slots
+    # (AKGEN_complete_name_lists.md's own raw NEUTRAL2.X2/etc. catalogs
+    # give each alignment's true slot count, not a deduplicated-by-name
+    # one) -- see this module's own Phase 560 docstring note.
     assert set(VALHALLA_ROSTER.keys()) == {
         Alignment.GOOD,
         Alignment.DRUID,
@@ -24,15 +28,15 @@ def test_roster_covers_all_5_eligible_alignments_with_137_heroes_total():
         Alignment.PAGAN,
         Alignment.EVIL,
     }
-    assert sum(len(heroes) for heroes in VALHALLA_ROSTER.values()) == 137
+    assert sum(len(heroes) for heroes in VALHALLA_ROSTER.values()) == 150
 
 
 def test_per_alignment_hero_counts():
-    assert len(VALHALLA_ROSTER[Alignment.GOOD]) == 32
-    assert len(VALHALLA_ROSTER[Alignment.DRUID]) == 23
-    assert len(VALHALLA_ROSTER[Alignment.NEUTRAL]) == 34
-    assert len(VALHALLA_ROSTER[Alignment.PAGAN]) == 21
-    assert len(VALHALLA_ROSTER[Alignment.EVIL]) == 27
+    assert len(VALHALLA_ROSTER[Alignment.GOOD]) == 36
+    assert len(VALHALLA_ROSTER[Alignment.DRUID]) == 24
+    assert len(VALHALLA_ROSTER[Alignment.NEUTRAL]) == 38
+    assert len(VALHALLA_ROSTER[Alignment.PAGAN]) == 23
+    assert len(VALHALLA_ROSTER[Alignment.EVIL]) == 29
 
 
 def test_every_hero_has_a_30_value_skill_table():
@@ -42,22 +46,22 @@ def test_every_hero_has_a_30_value_skill_table():
 
 
 def test_monster_aid_eagle_gap_was_filled_from_this_roster():
-    otto = VALHALLA_ROSTER[Alignment.NEUTRAL][3]
-    assert otto.name == "Otto"
+    # Phase 560: switched from a fixed index to a name lookup -- this
+    # bucket's own indices shifted once real duplicate-name slots (e.g.
+    # a second/third "La-La") were inserted earlier in the list.
+    otto = next(h for h in VALHALLA_ROSTER[Alignment.NEUTRAL] if h.name == "Otto")
     assert otto.fixed_item is Treasure.MONSTER_AID_EAGLE
     assert otto.fixed_item_name == "Feather of the Great Eagle"
 
 
 def test_monster_aid_whale_gap_was_filled_from_this_roster():
-    gelenor = VALHALLA_ROSTER[Alignment.PAGAN][9]
-    assert gelenor.name == "Gelenor"
+    gelenor = next(h for h in VALHALLA_ROSTER[Alignment.PAGAN] if h.name == "Gelenor")
     assert gelenor.fixed_item is Treasure.MONSTER_AID_WHALE
     assert gelenor.fixed_item_name == "Horn of Neptune"
 
 
 def test_book_tactical_gap_was_filled_from_this_roster():
-    xerxes = VALHALLA_ROSTER[Alignment.PAGAN][17]
-    assert xerxes.name == "Xerxes"
+    xerxes = next(h for h in VALHALLA_ROSTER[Alignment.PAGAN] if h.name == "Xerxes")
     assert xerxes.fixed_item is Treasure.BOOK_TACTICAL
     assert xerxes.fixed_item_name == "Hannibal's Grimoire"
 
@@ -115,7 +119,9 @@ def test_valhalla_stay_phase_count_matches_the_rulebooks_own_table():
 # -- Phase 551: 27 further real heroes, deliberately excluded from selection --
 
 
-def test_unconfirmed_roster_covers_all_5_alignments_with_27_heroes_total():
+def test_unconfirmed_roster_covers_all_5_alignments_with_28_heroes_total():
+    # Phase 560: +1 (a second real "Artur" slot, Neutral) -- see this
+    # module's own Phase 560 docstring note.
     assert set(VALHALLA_ROSTER_UNCONFIRMED.keys()) == {
         Alignment.GOOD,
         Alignment.DRUID,
@@ -123,13 +129,13 @@ def test_unconfirmed_roster_covers_all_5_alignments_with_27_heroes_total():
         Alignment.PAGAN,
         Alignment.EVIL,
     }
-    assert sum(len(heroes) for heroes in VALHALLA_ROSTER_UNCONFIRMED.values()) == 27
+    assert sum(len(heroes) for heroes in VALHALLA_ROSTER_UNCONFIRMED.values()) == 28
 
 
 def test_unconfirmed_roster_per_alignment_hero_counts():
     assert len(VALHALLA_ROSTER_UNCONFIRMED[Alignment.GOOD]) == 7
     assert len(VALHALLA_ROSTER_UNCONFIRMED[Alignment.DRUID]) == 1
-    assert len(VALHALLA_ROSTER_UNCONFIRMED[Alignment.NEUTRAL]) == 7
+    assert len(VALHALLA_ROSTER_UNCONFIRMED[Alignment.NEUTRAL]) == 8
     assert len(VALHALLA_ROSTER_UNCONFIRMED[Alignment.PAGAN]) == 7
     assert len(VALHALLA_ROSTER_UNCONFIRMED[Alignment.EVIL]) == 5
 
@@ -175,6 +181,53 @@ def test_unconfirmed_roster_names_never_duplicate_the_real_roster_within_an_alig
 
 
 def test_unconfirmed_roster_is_not_merged_into_the_real_roster_counts():
-    # VALHALLA_ROSTER itself must stay exactly 137 -- this phase is
-    # purely additive, in a separate dict.
-    assert sum(len(heroes) for heroes in VALHALLA_ROSTER.values()) == 137
+    # VALHALLA_ROSTER itself must stay at its own Phase 560 baseline
+    # (150) -- this phase (551) is purely additive, in a separate dict.
+    assert sum(len(heroes) for heroes in VALHALLA_ROSTER.values()) == 150
+
+
+# -- Phase 560: 178 real raw slots, not 164 unique heroes --
+
+
+def _name_count(heroes, name: str) -> int:
+    return sum(1 for h in heroes if h.name == name)
+
+
+def test_confirmed_roster_duplicate_slot_counts_match_the_real_raw_catalog():
+    # AKGEN_complete_name_lists.md's own raw GOOD2.X2/DRUIDIC2.X2/
+    # NEUTRAL2.X2/PAGAN2.X2/EVIL2.X2 source-index counts, cross-checked
+    # against AKGEN_name_catalogs.json.txt -- see this module's own
+    # Phase 560 docstring note.
+    good = VALHALLA_ROSTER[Alignment.GOOD]
+    assert _name_count(good, "Winner") == 3
+    assert _name_count(good, "Kalko") == 2
+    assert _name_count(good, "Endriel") == 2  # already correct before this phase
+    assert _name_count(good, "Swk") == 2
+
+    assert _name_count(VALHALLA_ROSTER[Alignment.DRUID], "Fire") == 2
+
+    neutral = VALHALLA_ROSTER[Alignment.NEUTRAL]
+    assert _name_count(neutral, "La-La") == 3
+    assert _name_count(neutral, "Rogvold") == 2
+    assert _name_count(neutral, "Skilza") == 2
+
+    pagan = VALHALLA_ROSTER[Alignment.PAGAN]
+    assert _name_count(pagan, "Mary") == 2
+    assert _name_count(pagan, "Lancelot") == 2
+
+    assert _name_count(VALHALLA_ROSTER[Alignment.EVIL], "Skilza") == 3
+
+
+def test_confirmed_roster_final_entry_per_alignment_is_unchanged_by_the_duplicate_fix():
+    # turn/valhalla_execution.py _select_visitor_template()'s own
+    # turns-1-5 default always reads roster[-1] -- the new duplicate
+    # entries must never have been appended after it.
+    assert VALHALLA_ROSTER[Alignment.GOOD][-1].name == "Quintilian"
+    assert VALHALLA_ROSTER[Alignment.DRUID][-1].name == "Bo"
+    assert VALHALLA_ROSTER[Alignment.NEUTRAL][-1].name == "Kitralus"
+    assert VALHALLA_ROSTER[Alignment.PAGAN][-1].name == "Kelderek"
+    assert VALHALLA_ROSTER[Alignment.EVIL][-1].name == "Dietrich"
+
+
+def test_unconfirmed_roster_artur_duplicate_slot_count():
+    assert _name_count(VALHALLA_ROSTER_UNCONFIRMED[Alignment.NEUTRAL], "Artur") == 2

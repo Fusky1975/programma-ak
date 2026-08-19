@@ -23125,7 +23125,7 @@ follow-up request after the original 431-435 plan shipped.
   -- `final_standings.py`'s own docstring already names this as
   "deliberately not attempted."
 
-- **Phase 559 (current)**: closed the gap Phase 558 flagged as
+- **Phase 559**: closed the gap Phase 558 flagged as
   confirmed-but-out-of-scope -- the final-turn report never rendered
   `turn/final_standings.py compose_final_standings_report()`'s own
   computed Victory Point ranking into actual prose. New `report/
@@ -23161,6 +23161,57 @@ follow-up request after the original 431-435 plan shipped.
   `compose_letter_report()` including/omitting "FINAL STANDINGS"
   correctly around the Emperor-election gate. Ran again: 4809 passed
   (net +7).
+
+- **Phase 560 (current)**: audited `AKGEN_complete_name_lists.md` (the
+  user's own Desktop-root catalog of every AKGEN name pool). Three of
+  its four sections re-confirmed already-solid code with zero
+  discrepancies (`models/hero_roster.py`'s 255-name `LNAMES.PAS` pool,
+  `models/province_names.py`'s 512-name `PRNAMES.PAS` pool including
+  its own duplicate-spelling pairs at the same ids, and the fixed-map
+  `Europe_V`/`Earth_V` name source's already-documented out-of-scope
+  status) -- no action needed there. The Valhalla visitor section found
+  a real, previously-undetected gap: the true roster is a **178-slot
+  array** (43/25/46/30/34 per alignment), not the 137 (Phase 195-198)
+  + 27 (Phase 551) = 164 unique heroes this project had modeled.
+  Cross-checked programmatically against `AKGEN_name_catalogs.json.txt`
+  (the same source Phase 551 already used, which turns out to already
+  hold all 178 raw records): every one of the 178 raw entries' own name
+  already matched an already-known hero -- there were no further
+  unseen identities to decode. The real gap was **duplicate real slots
+  for 13 already-confirmed names** (`Winner` x3, `Kalko`/`Swk` x2 each
+  in Good; `Fire` x2 in Druidic; `La-La` x3, `Rogvold`/`Skilza` x2 each
+  in Neutral; `Mary`/`Lancelot` x2 each in Pagan; `Skilza` x3 in Evil)
+  plus one already-unconfirmed name (`Artur`, Neutral, x2) -- confirmed
+  by direct comparison of raw `skills_raw` values, which also showed
+  the pattern is a mix of byte-identical re-appearances and small
+  natural stat drift between whichever moment each source document
+  captured a hero (e.g. `Arthur`'s own raw entry differs from this
+  project's narrative-sourced version by exactly one point of Sage
+  aptitude), not a data error either way. This matters because `turn/
+  valhalla_execution.py _select_visitor_template()`'s own turn-6-onward
+  selection picks a slot index uniformly (`n = len(roster)`) -- a name
+  occupying 3 real slots was 3x underweighted relative to the real
+  game. Fixed by repeating each affected hero's own already-fully-
+  sourced `ValhallaHero` entry the correct additional number of times
+  (verified never appended after each alignment's own final entry,
+  since Phase 386's confirmed "turns 1-5 always pick the last record"
+  default depends on it) -- no new stat blocks invented.
+  `VALHALLA_ROSTER` grows from 137 to 150 (32->36 Good, 23->24 Druidic,
+  34->38 Neutral, 21->23 Pagan, 27->29 Evil); `VALHALLA_ROSTER_
+  UNCONFIRMED` from 27 to 28 (Neutral 7->8) -- inert today since that
+  dict still isn't read by real selection, kept for the same future-
+  completeness reason Phase 551 itself already gives. Ran before
+  writing tests: 4809 passed (non-breaking). Three existing tests that
+  indexed `VALHALLA_ROSTER` by a fixed position (Otto/Gelenor/Xerxes)
+  broke since those positions shifted -- switched to name-based lookups
+  instead, matching this file's own pre-existing `Arthur` test
+  convention (more robust against future insertions too); updated every
+  hardcoded count (137->150, 32/23/34/21/27->36/24/38/23/29, 27->28,
+  Neutral unconfirmed 7->8). Added tests: every affected name's own
+  duplicate-slot count matches the real raw catalog exactly; each
+  alignment's own final roster entry is unchanged (the turns-1-5
+  default stays intact); Artur's own unconfirmed duplicate count. Ran
+  again: 4812 passed (net +3).
 
 ## Setup
 
