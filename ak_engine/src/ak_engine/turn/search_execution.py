@@ -588,7 +588,7 @@ from ak_engine.turn.encounter import (
     spiritwrack_melee_damage_reduction,
     words_of_healing_heal,
 )
-from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_WAND_SPELL, TreasureCategory
+from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_WAND_SPELL, Treasure, TreasureCategory
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
@@ -1048,6 +1048,39 @@ def _apply_monster_duel_merit(
         leader.merit_tally.courage_encounter_merit -= 1
 
 
+def _grant_search_treasure(state: GameState, leader_id: int, treasure: Treasure) -> None:
+    """Phase 548 -- ``VALHALLA.txt`` rule 1: "If Vahlalla visitor
+    searches a feature, any monetary treasure Vahlalla visitor captures
+    will be given to you" -- an immediate hand-off to the Kingdom's own
+    King, distinct from rule 2's magic treasure (stays with the visitor
+    until departure, see ``turn/valhalla_execution.py process_valhalla_
+    departure()``). This project has no "convert a held Gold Hoard item
+    into ``KingdomState.treasury``" mechanic anywhere -- Gold Hoards are
+    ``TreasureCategory.GOLD_HOARD`` items like any other (confirmed via
+    ``turn/cast_execution.py ENHANCED_CHARM_ELIGIBLE_CATEGORIES``/``turn/
+    use_mi_execution.py USE_MI_TARGET_CATEGORIES``, both of which
+    exclude it). The honest, sourced reading: route the item itself to
+    the King immediately, the same item hand-off idiom departure already
+    uses for everything else. Every other leader (and the visitor on any
+    other turn, or for any other treasure category) is unaffected --
+    falls straight through to the ordinary grant.
+    """
+
+    visitor = state.leaders.get(leader_id)
+    is_active_visitor = (
+        leader_id == VALHALLA_VISITOR_LEADER_ID and visitor is not None and visitor.valhalla_active_turn == state.turn_number
+    )
+    if is_active_visitor and TREASURE_CATEGORY.get(treasure) is TreasureCategory.GOLD_HOARD:
+        king = next(
+            (king for king in state.leaders.values() if king.kingdom_id == visitor.kingdom_id and king.is_king),
+            None,
+        )
+        if king is not None:
+            state.add_item(treasure, king.leader_id)
+            return
+    state.add_item(treasure, leader_id)
+
+
 def _resolve_search_encounter(
     state: GameState,
     leader_id: int,
@@ -1162,7 +1195,7 @@ def _resolve_search_encounter(
             # that pipeline, e.g. most existing tests) to the winning
             # leader via the existing item registry (Phase 140).
             if feature.treasure is not None:
-                state.add_item(feature.treasure, leader_id)
+                _grant_search_treasure(state, leader_id, feature.treasure)
             # Phase 255: every "a" win here is a real combat defeat of the
             # guardian (melee, fire arrow, or a spell's own instant-kill
             # branch) -- never the rulebook's separate "neutralized via
@@ -2199,7 +2232,7 @@ def _resolve_search_encounter(
         if holds_monster_command_item_for(state, leader_id, feature.guardian_monster):
             feature.looted = True
             if feature.treasure is not None:
-                state.add_item(feature.treasure, leader_id)
+                _grant_search_treasure(state, leader_id, feature.treasure)
             return SearchExecutionResult(accepted=True, combat_resolved=False, winner="leader", feature_looted=True)
 
         druid_level = effective_skill_level(state, leader, Ability.DRUID)

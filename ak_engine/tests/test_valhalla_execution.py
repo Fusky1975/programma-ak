@@ -3,13 +3,16 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.army_type import ArmyType
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID, ValhallaHero
-from ak_engine.turn.valhalla_execution import _select_visitor_template, finalize_gate_angel_visit
+from ak_engine.turn.combat import Quality
+from ak_engine.turn.valhalla_execution import _select_visitor_template, finalize_gate_angel_visit, process_valhalla_departure
 
 from _helpers import ScriptedRandom
 
@@ -251,3 +254,115 @@ def test_select_visitor_template_persists_its_sequence_state_on_gamestate():
     _select_visitor_template(state, Alignment.GOOD, _SMALL_ROSTER, rng)
 
     assert Alignment.GOOD in state.valhalla_visitor_sequence
+
+
+# -- Phase 548: visitor departure --
+
+
+def test_process_valhalla_departure_hands_off_armies_to_the_king():
+    state = GameState()
+    state.add_leader(LeaderState(1, 1, "King Foo", HOME, is_king=True))
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Visitor", HOME, valhalla_active_turn=1))
+    state.add_army(ArmyState(9, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=VALHALLA_VISITOR_LEADER_ID))
+
+    process_valhalla_departure(state)
+
+    assert state.armies[9].commanded_by == 1
+    assert VALHALLA_VISITOR_LEADER_ID not in state.leaders
+
+
+def test_process_valhalla_departure_hands_off_to_lowest_id_colocated_leader_without_a_king():
+    state = GameState()
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Visitor", HOME, valhalla_active_turn=1))
+    state.add_leader(LeaderState(7, 1, "Later Hero", HOME))
+    state.add_leader(LeaderState(4, 1, "Earlier Hero", HOME))
+    state.add_army(ArmyState(9, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=VALHALLA_VISITOR_LEADER_ID))
+
+    process_valhalla_departure(state)
+
+    assert state.armies[9].commanded_by == 4
+
+
+def test_process_valhalla_departure_hands_off_to_an_adjacent_owned_province_leader_as_last_resort():
+    adjacent = HexCoord(4, 9)  # adjacent to HOME (3, 9) on the odd-r grid
+    state = GameState()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(adjacent, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Visitor", HOME, valhalla_active_turn=1))
+    state.add_leader(LeaderState(5, 1, "Neighbor", adjacent))
+    state.add_army(ArmyState(9, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=VALHALLA_VISITOR_LEADER_ID))
+
+    process_valhalla_departure(state)
+
+    assert state.armies[9].commanded_by == 5
+
+
+def test_process_valhalla_departure_disbands_the_army_when_nobody_is_available():
+    state = GameState()
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Visitor", HOME, valhalla_active_turn=1))
+    state.add_army(ArmyState(9, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=VALHALLA_VISITOR_LEADER_ID))
+
+    process_valhalla_departure(state)
+
+    assert state.armies[9].commanded_by is None
+    assert state.armies[9].kingdom_id is None
+
+
+def test_process_valhalla_departure_transfers_held_items_to_the_king():
+    state = GameState()
+    state.add_leader(LeaderState(1, 1, "King Foo", HOME, is_king=True))
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Visitor", HOME, valhalla_active_turn=1))
+    fixed = state.add_item(Treasure.LEADERSHIP_HUMAN, VALHALLA_VISITOR_LEADER_ID)
+    looted = state.add_item(Treasure.WAND_FIREBALL, VALHALLA_VISITOR_LEADER_ID)
+
+    process_valhalla_departure(state)
+
+    assert state.items[fixed.item_id].owner_leader_id == 1
+    assert state.items[looted.item_id].owner_leader_id == 1
+    assert VALHALLA_VISITOR_LEADER_ID not in state.leaders
+
+
+def test_process_valhalla_departure_drops_the_fixed_item_on_death():
+    state = GameState()
+    state.add_leader(
+        LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Visitor", HOME, valhalla_active_turn=1, valhalla_fixed_item_id=None)
+    )
+    fixed = state.add_item(Treasure.LEADERSHIP_HUMAN, VALHALLA_VISITOR_LEADER_ID)
+    state.leaders[VALHALLA_VISITOR_LEADER_ID].valhalla_fixed_item_id = fixed.item_id
+    state.remove_leader(VALHALLA_VISITOR_LEADER_ID)  # "killed" -- archived into dead_leaders
+
+    process_valhalla_departure(state)
+
+    assert fixed.item_id not in state.items
+
+
+def test_process_valhalla_departure_is_a_noop_outside_the_active_turn():
+    state = GameState()
+    state.turn_number = 5
+    state.add_leader(LeaderState(1, 1, "King Foo", HOME, is_king=True))
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Visitor", HOME, valhalla_active_turn=6))
+    item = state.add_item(Treasure.LEADERSHIP_HUMAN, VALHALLA_VISITOR_LEADER_ID)
+
+    process_valhalla_departure(state)
+
+    assert VALHALLA_VISITOR_LEADER_ID in state.leaders
+    assert state.items[item.item_id].owner_leader_id == VALHALLA_VISITOR_LEADER_ID
+
+
+def test_finalize_processes_a_stale_occupants_departure_before_overwriting():
+    # Phase 548 bug fix: a second successful Gate Angel cast, while a
+    # prior visitor is still present and exactly at their own scheduled
+    # active turn, must not silently clobber leader 199.
+    state = _state_with_winner()
+    state.add_leader(LeaderState(1, 1, "King Foo", KING_LOCATION, is_king=True))
+    state.add_leader(
+        LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Stale Visitor", KING_LOCATION, valhalla_active_turn=state.turn_number)
+    )
+    stale_item = state.add_item(Treasure.WAND_FIREBALL, VALHALLA_VISITOR_LEADER_ID)
+    rng = ScriptedRandom([])
+
+    new_visitor = finalize_gate_angel_visit(state, rng)
+
+    assert new_visitor is not None
+    assert new_visitor.name != "Stale Visitor"
+    assert state.items[stale_item.item_id].owner_leader_id == 1  # handed off to the King, not lost

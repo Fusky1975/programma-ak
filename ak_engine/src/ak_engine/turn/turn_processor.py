@@ -257,7 +257,7 @@ from ak_engine.turn.skeletal_decay import decompose_graveyard
 from ak_engine.turn.tax_base import apply_turn_revenue
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail
-from ak_engine.turn.valhalla_execution import finalize_gate_angel_visit
+from ak_engine.turn.valhalla_execution import finalize_gate_angel_visit, process_valhalla_departure
 
 PHASE_LABELS = ("P0", "P1", "P2", "P3", "P4")
 
@@ -528,7 +528,7 @@ def run_turn(
                 if target is not None:
                     _apply_defend_battle_loss(defeated_while_defending, reinforced_by_target, target, dispatch_results)
 
-    visitor = finalize_gate_angel_visit(state, rng)
+    visitor = finalize_gate_angel_visit(state, rng, board_width=board_width)
     if visitor is not None:
         # Sentinel result, same convention as _dispatch_contested_rebattles:
         # not tied to any real plan segment. See module docstring's "GATE
@@ -545,6 +545,12 @@ def run_turn(
                 error=None,
             )
         )
+
+    # Phase 548: the departing visitor's own army hand-off/item transfer
+    # -- see turn/valhalla_execution.py process_valhalla_departure()'s
+    # own docstring for why this runs immediately after the spawn call
+    # above rather than being folded into it.
+    process_valhalla_departure(state, board_width=board_width)
 
     _revert_analytical_psychology_charms(state)
     _apply_werebeast_transformations(state)

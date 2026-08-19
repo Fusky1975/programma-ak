@@ -404,6 +404,70 @@ def test_execute_search_leader_wins_grants_the_features_own_treasure():
     assert granted[0].treasure is Treasure.ABILITY_TACTICAL
 
 
+# -- Phase 548: Valhalla visitor Gold Hoard routing --
+
+
+def test_execute_search_routes_a_gold_hoard_to_the_king_when_the_visitor_wins():
+    # VALHALLA.txt rule 1: "any monetary treasure Vahlalla visitor
+    # captures will be given to you" -- immediate hand-off to the King,
+    # not held by the visitor like magic treasure (rule 2).
+    raw = [0] * 30
+    raw[Ability.MELEE.value * 2] = 9
+    raw[Ability.MELEE.value * 2 + 1] = 9
+    state = GameState()
+    state.add_leader(LeaderState(1, 1, "King Foo", LOCATION, is_king=True))
+    state.add_leader(
+        LeaderState(199, 1, "Visitor", LOCATION, skills=SkillTable(raw_values=raw), valhalla_active_turn=1)
+    )
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.DUNGEON,
+        guardian_monster=Monster.GARGOYLE,
+        treasure=Treasure.GOLD_HOARD_LARGE,
+    )
+    state.add_feature(feature)
+    rng = ScriptedRandom([0.1, 0.5, 0.9] * 20)
+
+    result = execute_search(state, 199, _melee_request(1), rng)
+
+    assert result.winner == "leader"
+    assert state.items_held_by(199) == []
+    king_items = state.items_held_by(1)
+    assert len(king_items) == 1
+    assert king_items[0].treasure is Treasure.GOLD_HOARD_LARGE
+
+
+def test_execute_search_grants_a_non_gold_treasure_to_the_visitor_directly():
+    # Magic treasure (rule 2) stays with the visitor until departure --
+    # only Gold Hoard (rule 1) routes immediately.
+    raw = [0] * 30
+    raw[Ability.MELEE.value * 2] = 9
+    raw[Ability.MELEE.value * 2 + 1] = 9
+    state = GameState()
+    state.add_leader(LeaderState(1, 1, "King Foo", LOCATION, is_king=True))
+    state.add_leader(
+        LeaderState(199, 1, "Visitor", LOCATION, skills=SkillTable(raw_values=raw), valhalla_active_turn=1)
+    )
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.DUNGEON,
+        guardian_monster=Monster.GARGOYLE,
+        treasure=Treasure.ABILITY_TACTICAL,
+    )
+    state.add_feature(feature)
+    rng = ScriptedRandom([0.1, 0.5, 0.9] * 20)
+
+    result = execute_search(state, 199, _melee_request(1), rng)
+
+    assert result.winner == "leader"
+    assert state.items_held_by(1) == []
+    visitor_items = state.items_held_by(199)
+    assert len(visitor_items) == 1
+    assert visitor_items[0].treasure is Treasure.ABILITY_TACTICAL
+
+
 def test_execute_search_leader_wins_without_treasure_grants_nothing():
     # A feature created without going through world generation (treasure=None,
     # the default) grants no item -- confirmed no silent fabrication.

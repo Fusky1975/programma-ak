@@ -83,6 +83,7 @@ from ak_engine.models.valhalla import (
     ValhallaHero,
     _valhalla_stay_phase_count,
 )
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 
 
 def _select_visitor_template(
@@ -130,7 +131,7 @@ def _select_visitor_template(
     return roster[index]
 
 
-def finalize_gate_angel_visit(state: GameState, rng: random.Random) -> LeaderState | None:
+def finalize_gate_angel_visit(state: GameState, rng: random.Random, *, board_width: int = NORMAL_MAP_BOUNDS[0]) -> LeaderState | None:
     """Spawns this turn's Valhalla visitor, if Gate Angel produced one.
 
     Returns ``None`` (no state mutation at all) when no Gate Angel cast
@@ -138,6 +139,19 @@ def finalize_gate_angel_visit(state: GameState, rng: random.Random) -> LeaderSta
     ``turn/cast_execution.py GATE_ANGEL_ELIGIBLE_ALIGNMENTS`` have a
     real roster, as they now do) the winning turn's due alignment has
     no roster entries.
+
+    **Phase 548 bug fix**: this function used to overwrite ``state.
+    leaders[VALHALLA_VISITOR_LEADER_ID]`` unconditionally -- if a prior
+    visitor was still present (their own ``valhalla_active_turn`` hasn't
+    been reached/processed yet this same turn), their identity was
+    silently clobbered while any items/armies still referencing leader
+    199 kept pointing at it, now misattributed to the new hero. A stale
+    occupant is now sent through ``process_valhalla_departure()`` first
+    -- the same army hand-off/item transfer a normal on-schedule
+    departure gets -- before the new hero is ever assigned.
+    ``board_width`` defaults to the normal board's own width (every
+    existing caller/test) since departure processing only needs it for
+    the adjacent-province leg of that hand-off chain.
     """
 
     if state.last_gate_angel_turn != state.turn_number:
@@ -149,6 +163,10 @@ def finalize_gate_angel_visit(state: GameState, rng: random.Random) -> LeaderSta
     roster = VALHALLA_ROSTER.get(state.gate_angel_due_alignment, ())
     if not roster:
         return None
+
+    if VALHALLA_VISITOR_LEADER_ID in state.leaders:
+        process_valhalla_departure(state, board_width=board_width)
+
     template = _select_visitor_template(state, state.gate_angel_due_alignment, roster, rng)
 
     kingdom = state.kingdoms[kingdom_id]
@@ -184,3 +202,123 @@ def finalize_gate_angel_visit(state: GameState, rng: random.Random) -> LeaderSta
         visitor.valhalla_fixed_item_id = item.item_id
 
     return visitor
+
+
+def _reassign_visitor_armies(state: GameState, kingdom_id: int, location, board_width: int) -> None:
+    """Phase 548 -- ``VALHALLA.txt`` rule 5: "Vahlalla visitor can lead
+    armies, but when Vahlalla visitor returns to Valhalla, the armies
+    will normally be left leaderless... transferred to your lowest-
+    numbered leader in the same province, or at last resort, the
+    garrison commander in an adjacent province owned by you. If no
+    leader is available, the armies will be disbanded." No existing
+    helper implements this chain (confirmed by research) -- this
+    project has no modeled "garrison commander" attribute at all
+    (``models/game_state.py ArmyState.commanded_by``'s own comment:
+    "an army may also be unled, under the rulebook's 'garrison
+    commander'" -- a concept, not a field), so "an adjacent province's
+    own garrison commander" is read the same honest way as ``LeaderState.
+    is_king``-first ordering below: the lowest-``leader_id`` same-
+    Kingdom leader physically present there. Rule 5's own King-first
+    wording isn't explicit, but every other departure rule already
+    routes to the King first (rule 2's item hand-off) -- reused here for
+    consistency rather than treating "lowest-numbered leader" as if it
+    always meant a non-King.
+    """
+
+    armies = state.armies_commanded_by(VALHALLA_VISITOR_LEADER_ID)
+    if not armies:
+        return
+
+    king = next((leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king), None)
+    new_commander_id = king.leader_id if king is not None else None
+
+    if new_commander_id is None:
+        co_located = sorted(
+            (leader for leader in state.leaders_at(location) if leader.leader_id != VALHALLA_VISITOR_LEADER_ID),
+            key=lambda leader: leader.leader_id,
+        )
+        if co_located:
+            new_commander_id = co_located[0].leader_id
+
+    if new_commander_id is None:
+        bounds = MapBounds(board_width, NORMAL_MAP_BOUNDS[1])
+        for neighbor_coord in neighbors(location, bounds):
+            province = state.provinces.get(neighbor_coord)
+            if province is None or province.owner_kingdom_id != kingdom_id:
+                continue
+            candidates = sorted(
+                (leader for leader in state.leaders_at(neighbor_coord) if leader.kingdom_id == kingdom_id),
+                key=lambda leader: leader.leader_id,
+            )
+            if candidates:
+                new_commander_id = candidates[0].leader_id
+                break
+
+    for army in armies:
+        if new_commander_id is not None:
+            army.commanded_by = new_commander_id
+        else:
+            # "the armies will be disbanded" -- same mutation turn/
+            # plan_dispatch.py _dispatch_disband() itself performs.
+            army.kingdom_id = None
+            army.commanded_by = None
+
+
+def process_valhalla_departure(state: GameState, *, board_width: int = NORMAL_MAP_BOUNDS[0]) -> None:
+    """Phase 548 -- resolves the Valhalla visitor's own departure, once
+    their one active turn (``LeaderState.valhalla_active_turn``, Phase
+    546) has passed. Called from ``run_turn()``'s own end-of-turn tail,
+    immediately after ``finalize_gate_angel_visit()`` -- see that
+    function's own Phase 548 addendum for why a stale occupant is also
+    routed through here before a new visitor is ever spawned.
+
+    **Peaceful departure** (the visitor is still alive in ``state.
+    leaders``): rule 5's army hand-off (``_reassign_visitor_armies()``)
+    plus rule 2's own item hand-off -- every item still held by the
+    visitor (their own fixed item, and any Search-loot magic item not
+    already Given away -- rule 2 covers both the same way) transfers to
+    the Kingdom's own King. No King on record: the items simply stay
+    with the now-removed leader id, an honest edge case (this project
+    has no alternative recipient named by any source for this specific
+    case, unlike the army hand-off's own documented fallback chain).
+    Leader 199 is then removed from ``state.leaders`` entirely -- a
+    fresh hero only replaces them on the next successful Gate Angel
+    cast.
+
+    **Death departure** (the visitor died this turn -- ``GameState.
+    remove_leader()`` already popped them into ``state.dead_leaders``,
+    which preserves the full archived ``LeaderState``, Valhalla fields
+    included, before this tail even runs): rule 7's own "l'oggetto
+    sparisce" -- only the fixed item specifically is dropped (removed
+    from ``state.items`` outright, given to nobody). Any other item the
+    visitor happened to hold is left alone -- a real Search/Challenge/
+    Pursue combat death already runs ``turn/encounter.py loot_defeated_
+    leader()``, which transfers everything to the winner before this
+    tail ever sees it, and Kill_Enemy (this project's other real leader-
+    death spell) is itself blocked by Phase 547's own spell immunity --
+    so no other death path exists to invent handling for. Armies still
+    ``commanded_by`` the now-dead visitor are reassigned exactly like
+    the peaceful case (death doesn't release army command on its own --
+    confirmed via ``GameState.remove_leader()``'s own docstring, which
+    never touches ``ArmyState``).
+    """
+
+    visitor = state.leaders.get(VALHALLA_VISITOR_LEADER_ID)
+    if visitor is not None and visitor.valhalla_active_turn == state.turn_number:
+        _reassign_visitor_armies(state, visitor.kingdom_id, visitor.location, board_width)
+        king = next(
+            (leader for leader in state.leaders.values() if leader.kingdom_id == visitor.kingdom_id and leader.is_king),
+            None,
+        )
+        if king is not None:
+            for item in state.items_held_by(VALHALLA_VISITOR_LEADER_ID):
+                state.transfer_item(item.item_id, king.leader_id)
+        del state.leaders[VALHALLA_VISITOR_LEADER_ID]
+        return
+
+    dead = state.dead_leaders.get(VALHALLA_VISITOR_LEADER_ID)
+    if dead is not None and dead.valhalla_active_turn == state.turn_number:
+        if dead.kingdom_id is not None:
+            _reassign_visitor_armies(state, dead.kingdom_id, dead.location, board_width)
+        if dead.valhalla_fixed_item_id is not None:
+            state.items.pop(dead.valhalla_fixed_item_id, None)

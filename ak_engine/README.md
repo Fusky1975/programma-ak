@@ -22719,7 +22719,7 @@ follow-up request after the original 431-435 plan shipped.
   matches the granted item's own `item_id`, and stays `None` for the
   unresolved-item branch. Ran again: 4753 passed (net +5).
 
-- **Phase 547 (current, 2 of 3: Valhalla visitor lifecycle)**: the
+- **Phase 547 (2 of 3: Valhalla visitor lifecycle)**: the
   in-turn restrictions, all reusing Phase 546's own state:
   - **Phase-count/Practice cap**: `turn/plan_dispatch.py run_leader_
     plan()` -- the one real call site that walks a leader's own phases
@@ -22754,6 +22754,65 @@ follow-up request after the original 431-435 plan shipped.
   leader id 199 with no recorded visit is unaffected; Give rejects the
   visitor's own fixed item but allows a different held item through.
   Ran again: 4763 passed (net +10).
+
+- **Phase 548 (current, 3 of 3: Valhalla visitor lifecycle)**: closes
+  the trilogy with departure and loot routing.
+  - **Army hand-off**: new `turn/valhalla_execution.py _reassign_
+    visitor_armies()` -- King first (mirroring the item hand-off's own
+    King-first order, since rule 5's own text doesn't say either way),
+    then the lowest-`leader_id` other leader co-located with the
+    visitor, then the lowest-id same-Kingdom leader at an adjacent
+    Kingdom-owned province (this project has no modeled "garrison
+    commander" attribute at all, confirmed by research -- read the same
+    honest way `_reassign_visitor_armies()`'s own docstring explains),
+    then disband (mirroring `turn/plan_dispatch.py _dispatch_disband()`'s
+    own mutation) if nobody qualifies. No existing helper implemented
+    this chain -- written fresh here.
+  - **`process_valhalla_departure()`**: the new function itself, wired
+    into `turn/turn_processor.py run_turn()`'s own tail immediately
+    after `finalize_gate_angel_visit()`. Peaceful departure (the visitor
+    still alive, `valhalla_active_turn == turn_number`): army hand-off
+    plus every item still held (fixed item and any Search-loot magic
+    item alike -- rule 2 covers both) transfers to the King; leader 199
+    is then removed from `state.leaders` entirely. Death departure (the
+    visitor died this turn -- `GameState.remove_leader()` already
+    archived them into `state.dead_leaders`, which preserves the full
+    `LeaderState`, Valhalla fields included): only the fixed item is
+    dropped (removed from `state.items` outright, per rule 7's own
+    "l'oggetto sparisce") -- every other death path either already
+    routes loot to the winner (`turn/encounter.py loot_defeated_
+    leader()`) or is blocked outright (Kill_Enemy, Phase 547's own
+    spell immunity), so no other case needed inventing.
+  - **The leader-199 overwrite bug fix**: `finalize_gate_angel_visit()`
+    now runs a stale occupant through `process_valhalla_departure()`
+    first, before ever assigning a new hero to leader 199 -- closes the
+    audit's own live-correctness finding (a second successful Gate
+    Angel cast used to silently clobber a still-present visitor's
+    identity).
+  - **Gold Hoard routing**: new `turn/search_execution.py _grant_
+    search_treasure()` (replacing both of that module's own `state.
+    add_item(feature.treasure, leader_id)` call sites) -- rule 1's
+    "any monetary treasure... will be given to you" routes a `Treasure
+    Category.GOLD_HOARD` capture straight to the King at the moment of
+    capture, distinct from every other category which stays with the
+    visitor until departure per the design above. This project has no
+    "convert a held Gold Hoard item into `KingdomState.treasury`"
+    mechanic anywhere, so the honest reading routes the item itself.
+
+  Ran before writing tests: 4763 passed (non-breaking). Added tests:
+  the full army hand-off chain (King -> co-located -> adjacent-province
+  -> disband); item transfer to the King on peaceful departure; the
+  fixed item dropped (not transferred) on death; a no-op outside the
+  visitor's own active turn; the overwrite-bug fix (a stale occupant's
+  item is handed off, not lost, before a new visitor spawns); Gold
+  Hoard routes to the King while every other category stays with the
+  visitor. Ran again: 4773 passed (net +10).
+
+  **This closes the 3-phase Valhalla visitor lifecycle** (546-548)
+  found by a fresh audit of `VALHALLA.txt` after Phase 545 closed the
+  monster-intelligence audit -- turn-deadline voiding stays the one
+  confirmed-out-of-scope rule (no in-engine deadline detector exists
+  anywhere in this codebase to hook it to).
 
 ## Setup
 
