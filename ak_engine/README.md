@@ -22987,7 +22987,7 @@ follow-up request after the original 431-435 plan shipped.
   replacing the two old overlap-specific ones. Ran again: 4792 passed
   (net +2).
 
-- **Phase 555 (current, closing this Succession/Royal Heir series)**:
+- **Phase 555 (closing the Succession/Royal Heir series)**:
   wired the real "Royal Heir" name substitution into the CHARACTERS
   report. `report/turn_report.py describe_characters_report()` printed
   `leader.name` directly with no substitution at all -- `AKGEN_reverse_
@@ -23013,6 +23013,39 @@ follow-up request after the original 431-435 plan shipped.
   shows its real name; a Heir past the `Total_USkill` threshold (still
   unfinalized) also shows its real name; an ordinary non-King leader is
   unaffected. Ran again: 4796 passed (net +4).
+
+- **Phase 556 (current)**: decoded `termod`/`effects_bitmask`'s own
+  bit-level meaning -- the second, smaller correction from the user's
+  fifth reverse-engineering report, deliberately kept separate from the
+  Succession series above since it's an unrelated parser field.
+  `parser/gw_world.py GWProvinceRecord.effects_bitmask` (Phase 373) has
+  carried this real per-province bitmask since it was first correctly
+  named and stored, but its own bit layout was explicitly flagged
+  "still undeciphered". `AKGEN_reverse_engineering_report (5).md` SS73.2
+  (machine-verified) gives the real layout: single-bit flags
+  `Part_Eff=0x0001`/`Bless_Eff=0x0002`/`Flood_Eff=0x0004`/
+  `Quake_Eff=0x0008`/`Fog_Eff=0x1000`/`Raid_Eff=0x2000`, plus two 4-bit
+  nibbles `Plague_Eff=0x00F0` and `Illus_Eff=0x0F00` (an effect-
+  strength/turns-remaining level, not further decoded by the source
+  itself), with `Illus_Exp=0x0800` as a named bit inside that same
+  Illus_Eff nibble. Added `TERMOD_*` module constants and eight decode
+  properties on `GWProvinceRecord` (`part_sea_effect_active`,
+  `bless_effect_active`, `flood_effect_active`, `quake_effect_active`,
+  `plague_effect_level`, `illusion_effect_level`,
+  `illusion_effect_expanded`, `fog_effect_active`). These read the
+  parsed save-file bit pattern only -- they're independent of, and not
+  wired into, this project's own live turn-processing effect fields
+  (`ProvinceState.terrain_override`/`tax_modifier_percent`/
+  `illusory_terrain`/`illusory_fog_active`/plague fields), which
+  `turn/cast_execution.py` sets directly during a running game and never
+  reads a parsed `GWProvinceRecord` for. Ran before writing tests: 4796
+  passed (non-breaking). Added tests: the real nonzero `effects_bitmask`
+  value from this project's own `GW3__T5` fixture (256, decoding to
+  Illus_Eff level 1) matches the new properties; every single-bit flag
+  decodes independently; the Plague_Eff/Illus_Eff nibbles decode at
+  their own distinct bit offsets without cross-contaminating each other;
+  the Illus_Exp bit decodes correctly from inside the Illus_Eff nibble.
+  Ran again: 4800 passed (net +4).
 
 ## Setup
 

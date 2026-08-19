@@ -85,6 +85,72 @@ def test_province_header_tolerates_nonzero_exploitation_and_alternate_terrain(tm
     assert records[0].alternate_terrain is Terrain.JUNGLE
 
 
+# -- Phase 556: effects_bitmask (termod) decode properties --
+
+
+def test_effects_bitmask_decodes_the_real_gw3_t5_illusion_nibble_value():
+    # 256 == 0x0100 -- the real nonzero effects_bitmask value from
+    # GW3__T5 quoted in test_province_header_tolerates_a_nonzero_
+    # mystery_field() above, now understood as Illus_Eff level 1 with
+    # no other bit set.
+    record = GWProvinceRecord(
+        name="Somewhere", tax=6, terrain=Terrain.FOREST, effects_bitmask=256, race=Race.ELVEN,
+        exploitation_percent=0, alternate_terrain=Terrain.NO_TERRAIN, governor_leader_id=None,
+        recruit_type_1=None, recruit_type_2=None,
+    )
+    assert record.illusion_effect_level == 1
+    assert record.illusion_effect_expanded is False
+    assert record.part_sea_effect_active is False
+    assert record.bless_effect_active is False
+    assert record.flood_effect_active is False
+    assert record.quake_effect_active is False
+    assert record.plague_effect_level == 0
+    assert record.fog_effect_active is False
+    assert record.raid_effect_active is False
+
+
+def test_effects_bitmask_decodes_every_single_bit_flag_independently():
+    for bit, flag_name in (
+        (0x0001, "part_sea_effect_active"),
+        (0x0002, "bless_effect_active"),
+        (0x0004, "flood_effect_active"),
+        (0x0008, "quake_effect_active"),
+        (0x1000, "fog_effect_active"),
+        (0x2000, "raid_effect_active"),
+    ):
+        record = GWProvinceRecord(
+            name="Somewhere", tax=0, terrain=Terrain.PLAINS, effects_bitmask=bit, race=Race.HUMAN,
+            exploitation_percent=0, alternate_terrain=Terrain.NO_TERRAIN, governor_leader_id=None,
+            recruit_type_1=None, recruit_type_2=None,
+        )
+        assert getattr(record, flag_name) is True, flag_name
+
+
+def test_effects_bitmask_decodes_the_plague_and_illusion_nibbles():
+    # Plague_Eff (bits 4-7) and Illus_Eff (bits 8-11) are 4-bit nibbles,
+    # not single flags -- confirms each is read independently at its
+    # own bit offset, not confused with the other or with Illus_Exp
+    # (bit 11, inside the Illus_Eff nibble).
+    record = GWProvinceRecord(
+        name="Somewhere", tax=0, terrain=Terrain.PLAINS, effects_bitmask=0x0350, race=Race.HUMAN,
+        exploitation_percent=0, alternate_terrain=Terrain.NO_TERRAIN, governor_leader_id=None,
+        recruit_type_1=None, recruit_type_2=None,
+    )
+    assert record.plague_effect_level == 5  # 0x50 >> 4
+    assert record.illusion_effect_level == 3  # 0x0300 >> 8
+    assert record.illusion_effect_expanded is False  # bit 11 (0x0800) not set
+
+
+def test_effects_bitmask_decodes_illusion_expanded_bit():
+    record = GWProvinceRecord(
+        name="Somewhere", tax=0, terrain=Terrain.PLAINS, effects_bitmask=0x0800, race=Race.HUMAN,
+        exploitation_percent=0, alternate_terrain=Terrain.NO_TERRAIN, governor_leader_id=None,
+        recruit_type_1=None, recruit_type_2=None,
+    )
+    assert record.illusion_effect_expanded is True
+    assert record.illusion_effect_level == 8  # Illus_Exp is itself inside the Illus_Eff nibble
+
+
 def test_records_match_real_tax_race_terrain_from_the_letter_reports():
     # Ground truth quoted verbatim from SE3__T1.K2's own "PROVINCES" section
     # and its ASCII map legend (see parser/gw_world.py's own docstring).

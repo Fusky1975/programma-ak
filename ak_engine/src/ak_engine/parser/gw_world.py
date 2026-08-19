@@ -1258,6 +1258,24 @@ MOD_PAT_ORDINAL_TO_ARMY_TYPE: dict[int, ArmyType | None] = {
 }
 
 
+# Phase 556: `termod`/`effects_bitmask`'s own bit-level meaning --
+# `AKGEN_reverse_engineering_report (5).md` SS73.2 (machine-verified),
+# closing the gap Phase 373's own `GWProvinceRecord.effects_bitmask`
+# docstring left as "still undeciphered". Single-bit flags plus two
+# 4-bit nibbles (`Plague_Eff`/`Illus_Eff`, presumably an effect-strength
+# or turns-remaining level, not further decoded by the source) -- see
+# `GWProvinceRecord`'s own decode properties below for the bit layout.
+TERMOD_PART_EFF = 0x0001
+TERMOD_BLESS_EFF = 0x0002
+TERMOD_FLOOD_EFF = 0x0004
+TERMOD_QUAKE_EFF = 0x0008
+TERMOD_PLAGUE_EFF_MASK = 0x00F0
+TERMOD_ILLUS_EFF_MASK = 0x0F00
+TERMOD_ILLUS_EXP = 0x0800
+TERMOD_FOG_EFF = 0x1000
+TERMOD_RAID_EFF = 0x2000
+
+
 class GWParseError(K1ParseError):
     """Raised when a world file doesn't match the expected shape."""
 
@@ -1273,8 +1291,11 @@ class GWProvinceRecord:
     (`tax, terrain, effects_bitmask, race, exploitation_percent,
     alternate_terrain`) -- not 4 real fields flanked by two structural
     anchors. `effects_bitmask` is exactly Phase 340's own "undeciphered
-    per-province bitmask" (`termod`, still not further decoded here,
-    but now correctly named and stored rather than discarded);
+    per-province bitmask" (`termod`) -- **Phase 556**: its own bit-level
+    meaning is now decoded too (`AKGEN_reverse_engineering_report
+    (5).md` SS73.2, machine-verified) via the `TERMOD_*` module
+    constants and this class's own decode properties below, closing the
+    gap this docstring previously left open.
     `exploitation_percent` (`pex`) and `alternate_terrain` (`pt2`) were
     never even suspected to exist before this phase, since both read a
     constant value (`0`, `Terrain.NO_TERRAIN`) across every real
@@ -1291,8 +1312,9 @@ class GWProvinceRecord:
     terrain: Terrain
     # Phase 373: `termod` -- a real, confirmed Pascal field (Phase 340's
     # own "undeciphered per-province bitmask", now correctly named and
-    # stored instead of discarded). Its own bit-level meaning is still
-    # undeciphered.
+    # stored instead of discarded). Phase 556: its own bit-level meaning
+    # is now decoded too -- see the `TERMOD_*` module constants and this
+    # class's own decode properties below.
     effects_bitmask: int
     race: Race
     # Phase 373: `pex` -- reads `0` for every province in this project's
@@ -1315,6 +1337,51 @@ class GWProvinceRecord:
     # recruit_type_1.
     recruit_type_1: ArmyType | None
     recruit_type_2: ArmyType | None
+
+    # Phase 556: `effects_bitmask` (`termod`) decode properties -- named
+    # after the report's own `TERMOD_*` bit identifiers (SS73.2). These
+    # read the parsed save-file bit pattern only; they are independent
+    # of, and not wired into, this project's own live turn-processing
+    # effect fields (`GameState.ProvinceState.terrain_override`/
+    # `tax_modifier_percent`/`illusory_terrain`/`illusory_fog_active`/
+    # plague fields), which are set directly by `turn/cast_execution.py`
+    # during a running game and never read a parsed `GWProvinceRecord`.
+
+    @property
+    def part_sea_effect_active(self) -> bool:
+        return bool(self.effects_bitmask & TERMOD_PART_EFF)
+
+    @property
+    def bless_effect_active(self) -> bool:
+        return bool(self.effects_bitmask & TERMOD_BLESS_EFF)
+
+    @property
+    def flood_effect_active(self) -> bool:
+        return bool(self.effects_bitmask & TERMOD_FLOOD_EFF)
+
+    @property
+    def quake_effect_active(self) -> bool:
+        return bool(self.effects_bitmask & TERMOD_QUAKE_EFF)
+
+    @property
+    def plague_effect_level(self) -> int:
+        return (self.effects_bitmask & TERMOD_PLAGUE_EFF_MASK) >> 4
+
+    @property
+    def illusion_effect_level(self) -> int:
+        return (self.effects_bitmask & TERMOD_ILLUS_EFF_MASK) >> 8
+
+    @property
+    def illusion_effect_expanded(self) -> bool:
+        return bool(self.effects_bitmask & TERMOD_ILLUS_EXP)
+
+    @property
+    def fog_effect_active(self) -> bool:
+        return bool(self.effects_bitmask & TERMOD_FOG_EFF)
+
+    @property
+    def raid_effect_active(self) -> bool:
+        return bool(self.effects_bitmask & TERMOD_RAID_EFF)
 
 
 def parse_gw_world(path: Path) -> list[GWProvinceRecord]:
