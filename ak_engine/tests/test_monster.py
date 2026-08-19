@@ -597,3 +597,33 @@ def test_monster_intelligence_at_least_medium():
     assert monster_intelligence_at_least_medium(Monster.GI_EAGLE) is True
     assert MONSTER_RUNTIME_PROFILE[Monster.R_DRAGON].intelligence is MonsterIntelligence.HIGH
     assert monster_intelligence_at_least_medium(Monster.R_DRAGON) is True
+
+
+def test_monster_runtime_profile_intelligence_documented_disagreements_with_user_compiled_list():
+    # Phase 545: Desktop/Intelligenza mostri.txt (a separate user-
+    # compiled 6-tier Italian classification) disagrees with this
+    # disassembly-sourced table's own `intelligence` field for exactly
+    # these 14 of 60 species -- pinned here as the deliberate resolution
+    # (the disassembly wins, same precedent as TALK_MONSTER_DRUID_LEVEL_
+    # REQUIRED's own 17-species disagreement), not an oversight. If any
+    # of these ever changes, MONSTER_RUNTIME_PROFILE's own Phase 545
+    # module comment needs updating too.
+    disagreements = {
+        Monster.B_DRAGON: MonsterIntelligence.MEDIUM,  # Intelligenza mostri.txt: Umana alta (HIGH)
+        Monster.BEHOLDER: MonsterIntelligence.SEMI,  # Intelligenza mostri.txt: Umana alta (HIGH)
+        Monster.SPECTRE: MonsterIntelligence.HIGH,  # Intelligenza mostri.txt: Umana media (MEDIUM)
+        Monster.DRYAD: MonsterIntelligence.HIGH,  # Intelligenza mostri.txt: Umana media (MEDIUM)
+        Monster.TREANT: MonsterIntelligence.HIGH,  # Intelligenza mostri.txt: Umana media (MEDIUM)
+        Monster.GHOST: MonsterIntelligence.HIGH,  # Intelligenza mostri.txt: Umana media (MEDIUM)
+        Monster.MUMMY: MonsterIntelligence.HIGH,  # Intelligenza mostri.txt: Umana media (MEDIUM)
+        Monster.BANSHEE: MonsterIntelligence.HIGH,  # Intelligenza mostri.txt: Umana media (MEDIUM)
+        Monster.WEREWOLF: MonsterIntelligence.MEDIUM,  # Intelligenza mostri.txt: Umana scarsa (LOW)
+        Monster.GRYPHON: MonsterIntelligence.LOW,  # Intelligenza mostri.txt: Animale (SEMI)
+        Monster.HYDRA: MonsterIntelligence.HIGH,  # Intelligenza mostri.txt: Animale (SEMI)
+        Monster.GW_WHALE: MonsterIntelligence.LOW,  # Intelligenza mostri.txt: Animale (SEMI)
+        Monster.GI_WORM: MonsterIntelligence.SEMI,  # Intelligenza mostri.txt: Meccanica (MECH)
+        Monster.GI_CLAM: MonsterIntelligence.SEMI,  # Intelligenza mostri.txt: Meccanica (MECH)
+    }
+    assert len(disagreements) == 14
+    for monster, expected in disagreements.items():
+        assert MONSTER_RUNTIME_PROFILE[monster].intelligence is expected

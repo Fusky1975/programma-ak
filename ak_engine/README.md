@@ -22608,7 +22608,7 @@ follow-up request after the original 431-435 plan shipped.
   implement despite no underlying mechanic/consumer existing anywhere in
   this codebase (541, 542 sourced-half-only; 543's text half).
 
-- **Phase 544 (current)**: Talk's own Druid-DR-gate-failure narrative gap
+- **Phase 544**: Talk's own Druid-DR-gate-failure narrative gap
   — found during a monster audit starting from `MOSTRI con statistiche.
   txt` and cross-checked against `AKGEN_reverse_engineering_report
   (3).md` §60-62's own `resolve_TA_to_monster()` pseudocode (§62.1
@@ -22651,6 +22651,28 @@ follow-up request after the original 431-435 plan shipped.
   stays unset when the DR gate passes (Archer, talkdiff 0) regardless of
   intelligence; stays unset with no Talk tactic in the plan at all. Ran
   again: 4747 passed (net +5).
+
+- **Phase 545 (current)**: resolved the 14 discrepancies between `Desktop/
+  Intelligenza mostri.txt` (a separate, user-compiled 6-tier Italian
+  intelligence classification, cross-checked during the same monster
+  audit that led to Phase 544) and `MONSTER_RUNTIME_PROFILE`'s own
+  `intelligence` field (Phase 381, sourced from a real disassembly of
+  AKGEN.EXE/AK.EXE) — Black Dragon, Beholder, Spectre, Dryad, Treant,
+  Ghost, Mummy, Banshee, Werewolf, Gryphon, Hydra, Great White Whale,
+  Giant Worm, Giant Clam. Per the user's own explicit choice, the
+  disassembly-sourced table wins for all 14 — the same precedent this
+  project already established for `TALK_MONSTER_DRUID_LEVEL_REQUIRED`'s
+  own 17-species disagreement against a different user-supplied table.
+  No behavioral code change: `models/monster.py`'s own `MONSTER_RUNTIME_
+  PROFILE` module comment now documents the cross-check and its
+  resolution, and a new pinning test records the exact per-species
+  comparison so a future accidental edit to any of the 14 values is
+  caught. `Intelligenza mostri.txt` itself stays un-consumed, same as
+  before. Ran before writing the test: 4747 passed (non-breaking). Added
+  test: `test_monster_runtime_profile_intelligence_documented_
+  disagreements_with_user_compiled_list()`, pinning all 14 species'
+  `MONSTER_RUNTIME_PROFILE` values against their `Intelligenza mostri.
+  txt` counterparts. Ran again: 4748 passed (net +1).
 
 ## Setup
 

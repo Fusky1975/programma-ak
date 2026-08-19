@@ -710,6 +710,23 @@ class MonsterRuntimeProfile:
 # documented layers of the same compiled engine, not a typo in either
 # -- this table stores only the `runtime`/CTME.PAS side; it makes no
 # attempt to reconcile or silently prefer one over the other.
+#
+# **Phase 545** -- cross-checked against `Desktop/Intelligenza mostri.txt`
+# (a separate, user-compiled 6-tier Italian classification, not the same
+# lineage as the `source_conflicts`-flagged `documented_profile`/`Mostri.
+# md` layer above), during the monster audit that led to Phase 544's own
+# Talk-language-failure branch. 46 of 60 species agree exactly; 14
+# disagree: Black Dragon, Beholder, Spectre, Dryad, Treant, Ghost, Mummy,
+# Banshee, Werewolf, Gryphon, Hydra, Great White Whale, Giant Worm, Giant
+# Clam. Per the user's own explicit choice, this `intelligence` field
+# stays as-is for all 14 -- the same "the disassembly-sourced table wins"
+# precedent this project already established for `TALK_MONSTER_DRUID_
+# LEVEL_REQUIRED`'s own 17-species disagreement against a different
+# user-supplied table (see that dict's own module comment in `turn/
+# encounter.py`). `Intelligenza mostri.txt` itself is left un-consumed --
+# see `tests/test_monster.py test_monster_runtime_profile_intelligence_
+# documented_disagreements_with_user_compiled_list()` for the pinned
+# per-species comparison.
 MONSTER_RUNTIME_PROFILE: dict[Monster, MonsterRuntimeProfile] = {
     Monster.ROC: MonsterRuntimeProfile(30, 1, 12, 0, 0, MonsterSpeed.FAST, Temper.BRAVE, MonsterIntelligence.SEMI, Alignment.PAGAN, 0, 2, True),
     Monster.GRYPHON: MonsterRuntimeProfile(25, 1, 8, 0, 0, MonsterSpeed.FAST, Temper.BERSERK, MonsterIntelligence.LOW, Alignment.PAGAN, 0, 1, True),
