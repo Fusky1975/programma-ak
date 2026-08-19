@@ -16,6 +16,7 @@ from ak_engine.models.monster import Monster
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
+from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.turn.army_list_decode import ArmyListRequest
 from ak_engine.turn.combat import Quality
@@ -1439,6 +1440,110 @@ def test_run_leader_plan_records_errors_and_continues():
     assert results[3].error is None
     assert results[4].error is None
     assert state.armies[army_id].location == end
+
+
+# -- Phase 547: Valhalla visitor phase/Practice cap --
+
+
+def _valhalla_leader_plan(*actions: ActionCode) -> Leader:
+    phases = {
+        label: PlanPhase(label, action, 0, [])
+        for label, action in zip(("P0", "P1", "P2", "P3", "P4"), actions)
+    }
+    return Leader(
+        leader_id=VALHALLA_VISITOR_LEADER_ID,
+        name="Visitor",
+        plan=ActionPlan(leader_id=VALHALLA_VISITOR_LEADER_ID, segments=[PlanSegment(0, 4, (), phases=phases)]),
+    )
+
+
+def test_run_leader_plan_caps_valhalla_visitor_phases_beyond_the_allowed_count():
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(
+        LeaderState(
+            VALHALLA_VISITOR_LEADER_ID,
+            1,
+            "Visitor",
+            location,
+            valhalla_active_turn=state.turn_number,
+            valhalla_allowed_phase_count=2,
+        )
+    )
+    leader = _valhalla_leader_plan(
+        ActionCode.DEFEND, ActionCode.DEFEND, ActionCode.DEFEND, ActionCode.DEFEND
+    )
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    assert isinstance(results[0].result, DefendRequest)
+    assert isinstance(results[1].result, DefendRequest)
+    assert results[2].result == NoOpResult(action=ActionCode.DEFEND)
+    assert results[3].result == NoOpResult(action=ActionCode.DEFEND)
+
+
+def test_run_leader_plan_does_not_count_wait_toward_the_valhalla_visitor_cap():
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(
+        LeaderState(
+            VALHALLA_VISITOR_LEADER_ID,
+            1,
+            "Visitor",
+            location,
+            valhalla_active_turn=state.turn_number,
+            valhalla_allowed_phase_count=1,
+        )
+    )
+    leader = _valhalla_leader_plan(ActionCode.WAIT, ActionCode.DEFEND, ActionCode.DEFEND)
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    assert isinstance(results[0].result, NoOpResult)  # a genuine Wait, not the cap
+    assert isinstance(results[1].result, DefendRequest)  # first real phase -- within budget
+    assert results[2].result == NoOpResult(action=ActionCode.DEFEND)  # second -- over budget
+
+
+def test_run_leader_plan_caps_a_second_practice_even_within_the_phase_budget():
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(
+        LeaderState(
+            VALHALLA_VISITOR_LEADER_ID,
+            1,
+            "Visitor",
+            location,
+            skills=SkillTable(raw_values=[0] * 30),
+            valhalla_active_turn=state.turn_number,
+            valhalla_allowed_phase_count=3,  # plenty of budget -- only the Practice cap should bite
+        )
+    )
+    leader = _valhalla_leader_plan(ActionCode.PRACTICE, ActionCode.PRACTICE)
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    assert results[0].result != NoOpResult(action=ActionCode.PRACTICE)  # first Practice actually dispatched
+    assert results[1].result == NoOpResult(action=ActionCode.PRACTICE)  # second -- Practice cap, not phase budget
+
+
+def test_run_leader_plan_leaves_the_visitor_uncapped_outside_their_active_turn():
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(
+        LeaderState(
+            VALHALLA_VISITOR_LEADER_ID,
+            1,
+            "Visitor",
+            location,
+            valhalla_active_turn=state.turn_number + 1,  # not yet their turn
+            valhalla_allowed_phase_count=1,
+        )
+    )
+    leader = _valhalla_leader_plan(ActionCode.DEFEND, ActionCode.DEFEND, ActionCode.DEFEND)
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    assert all(isinstance(r.result, DefendRequest) for r in results)
 
 
 def test_real_move_file_leader_plan_dispatches_its_lmoves():

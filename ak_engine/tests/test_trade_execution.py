@@ -5,6 +5,7 @@ from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
+from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.trade_decode import TradeRequest
 from ak_engine.turn.trade_execution import GOLD_GIVE_MAX_PERCENT, TradeExecutionResult, execute_give, execute_gold_give
 
@@ -140,6 +141,40 @@ def test_execute_give_item_path_ignores_an_item_the_giver_doesnt_own():
 
     assert result == TradeExecutionResult(applied=True, gold_transferred=item.item_id)
     assert state.items[item.item_id].owner_leader_id == RECIPIENT_LEADER  # untouched
+
+
+# -- Phase 547: Valhalla visitor's own fixed item can't be Given away --
+
+
+def test_execute_give_rejects_the_valhalla_visitors_own_fixed_item():
+    state = _state_with_recipient()
+    item = state.add_item(Treasure.WAND_FIREBALL, VALHALLA_VISITOR_LEADER_ID, charges=5)
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, GIVER_KINGDOM, "Visitor", HOME, valhalla_fixed_item_id=item.item_id))
+    request = TradeRequest(obj=item.item_id, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, VALHALLA_VISITOR_LEADER_ID, request)
+
+    assert result.applied is False
+    assert result.reason == "the Valhalla visitor's own fixed item cannot be given away"
+    assert state.items[item.item_id].owner_leader_id == VALHALLA_VISITOR_LEADER_ID  # untouched
+
+
+def test_execute_give_allows_the_valhalla_visitor_to_give_away_a_different_item():
+    # The block is scoped to the one tracked fixed-item id -- anything
+    # else the visitor happens to hold (e.g. Search loot) is an ordinary Give.
+    state = _state_with_recipient()
+    fixed_item = state.add_item(Treasure.WAND_FIREBALL, VALHALLA_VISITOR_LEADER_ID, charges=5)
+    other_item = state.add_item(Treasure.ABILITY_MELEE, VALHALLA_VISITOR_LEADER_ID)
+    state.add_leader(
+        LeaderState(VALHALLA_VISITOR_LEADER_ID, GIVER_KINGDOM, "Visitor", HOME, valhalla_fixed_item_id=fixed_item.item_id)
+    )
+    request = TradeRequest(obj=other_item.item_id, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, VALHALLA_VISITOR_LEADER_ID, request)
+
+    assert result.applied is True
+    assert result.item_transferred is True
+    assert state.items[other_item.item_id].owner_leader_id == RECIPIENT_LEADER
 
 
 def test_execute_give_item_path_crosses_kingdoms_with_no_king_requirement():

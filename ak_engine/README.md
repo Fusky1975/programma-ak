@@ -22674,7 +22674,7 @@ follow-up request after the original 431-435 plan shipped.
   `MONSTER_RUNTIME_PROFILE` values against their `Intelligenza mostri.
   txt` counterparts. Ran again: 4748 passed (net +1).
 
-- **Phase 546 (current, 1 of 3: Valhalla visitor lifecycle)**: a Valhalla
+- **Phase 546 (1 of 3: Valhalla visitor lifecycle)**: a Valhalla
   audit (`Desktop/VALHALLA.txt` + the 5 per-alignment roster files)
   found the 137-hero roster and the Gate Angel spawn mechanic (`turn/
   valhalla_execution.py`, wired since Phase 199) fully correct, but its
@@ -22718,6 +22718,42 @@ follow-up request after the original 431-435 plan shipped.
   `valhalla_allowed_phase_count` from the table; `valhalla_fixed_item_id`
   matches the granted item's own `item_id`, and stays `None` for the
   unresolved-item branch. Ran again: 4753 passed (net +5).
+
+- **Phase 547 (current, 2 of 3: Valhalla visitor lifecycle)**: the
+  in-turn restrictions, all reusing Phase 546's own state:
+  - **Phase-count/Practice cap**: `turn/plan_dispatch.py run_leader_
+    plan()` -- the one real call site that walks a leader's own phases
+    in order across a turn -- now caps the active Valhalla visitor to
+    their own `valhalla_allowed_phase_count`, forcing any excess real
+    (non-Wait/No_Action/Move_Abort) phase to the same `NoOpResult` an
+    ordinary Wait produces; at most one of the allowed phases may be
+    Practice (rule 6/English rule 3), a second Practice attempt is
+    capped even with budget still free. Every other leader, and the
+    visitor outside their own active turn, is unaffected.
+  - **Spell immunity except Resurrection**: one early gate in `turn/
+    cast_execution.py execute_cast()`, reusing the already-existing
+    `turn/cast_decode.py CHARACTER_TARGET_SPELLS` set (minus
+    `Spell.RESURRECTION`) rather than inventing a new one -- covers
+    Charm/Kill_Enemy/Oratory/Clairvoyance/Illus_Armies; every province/
+    item-targeted spell is untouched since their own `request.target`
+    never resolves to a leader id at all.
+  - **Item Give-block**: `turn/trade_execution.py execute_give()`
+    rejects a Give whose `obj` matches the giver's own `valhalla_
+    fixed_item_id` specifically -- any other item the visitor happens
+    to also hold (e.g. Search loot) Gives normally.
+
+  Departure processing (army hand-off, item transfer/drop-on-death,
+  Gold-Hoard routing, and the leader-199 overwrite bug fix) stays Phase
+  548's own scope -- it needs a real departure function to call, which
+  doesn't exist until then. Ran before writing tests: 4753 passed
+  (non-breaking). Added tests: the phase-count cap (excess phases
+  forced to no-op); Wait doesn't count against the cap; a second
+  Practice is capped even within budget; the visitor is uncapped
+  outside their own active turn; Charm/Kill_Enemy blocked against the
+  active visitor; Resurrection's own gate never triggers; a stray
+  leader id 199 with no recorded visit is unaffected; Give rejects the
+  visitor's own fixed item but allows a different held item through.
+  Ran again: 4763 passed (net +10).
 
 ## Setup
 

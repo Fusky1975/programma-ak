@@ -682,7 +682,8 @@ from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import ENHANCED_CHARM_ELIGIBLE_CATEGORIES, TREASURE_CATEGORY
-from ak_engine.turn.cast_decode import CastRequest
+from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
+from ak_engine.turn.cast_decode import CHARACTER_TARGET_SPELLS, CastRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level, holder_is_immune_to_spell, province_halves_spell_chance
 from ak_engine.turn.encounter import (
@@ -914,10 +915,24 @@ def execute_cast(
     Use_MI wand-cast override -- see the module docstring's own
     "wand_skill_level" section; ``None`` (every existing caller) leaves
     this function's prior behavior unchanged.
+
+    **Phase 547** -- ``VALHALLA.txt``'s own "can be affected by any
+    spell except Resurrection" gates every real character-targeted
+    spell here (``turn/cast_decode.py CHARACTER_TARGET_SPELLS``, minus
+    ``Spell.RESURRECTION`` itself) when the target is the current
+    Valhalla visitor (``LeaderState.valhalla_active_turn`` set --
+    guards against a stale/departed leader still sitting at id 199).
+    Every province/item-targeted spell is untouched -- their own
+    ``request.target`` never resolves to a leader id at all.
     """
 
     rng = rng if rng is not None else random.Random()
     spell = request.spell
+
+    if spell in CHARACTER_TARGET_SPELLS and spell is not Spell.RESURRECTION and request.target == VALHALLA_VISITOR_LEADER_ID:
+        visitor = state.leaders.get(VALHALLA_VISITOR_LEADER_ID)
+        if visitor is not None and visitor.valhalla_active_turn is not None:
+            return CastExecutionResult(request, applied=False, reason="the Valhalla visitor is immune to this spell")
 
     if spell is Spell.CHARM:
         result = _execute_charm(state, kingdom_id, leader_id, request, rng, wand_skill_level)

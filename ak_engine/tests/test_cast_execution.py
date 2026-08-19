@@ -83,6 +83,62 @@ def build_state() -> GameState:
     return state
 
 
+# -- Phase 547: Valhalla visitor spell immunity except Resurrection --
+
+
+def test_charm_is_blocked_against_the_active_valhalla_visitor():
+    state = build_state()
+    state.add_leader(LeaderState(199, 2, "Visitor", LOCATION, valhalla_active_turn=state.turn_number))
+    request = CastRequest(spell=Spell.CHARM, target=199)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "the Valhalla visitor is immune to this spell"
+    assert state.leaders[199].kingdom_id == 2  # untouched
+
+
+def test_kill_enemy_is_blocked_against_the_active_valhalla_visitor():
+    state = build_state()
+    state.add_leader(LeaderState(199, 2, "Visitor", LOCATION, valhalla_active_turn=state.turn_number))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=199)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "the Valhalla visitor is immune to this spell"
+    assert 199 in state.leaders  # untouched -- not killed
+
+
+def test_resurrection_is_not_blocked_against_the_valhalla_visitor():
+    # "except Resurrection" -- the one spell VALHALLA.txt explicitly
+    # carves out. The visitor isn't even dead here, so this only proves
+    # the immunity gate itself doesn't trigger (Resurrection then fails
+    # for the ordinary "target isn't dead" reason, not the Valhalla one).
+    state = build_state()
+    state.add_leader(LeaderState(199, 2, "Visitor", LOCATION, valhalla_active_turn=state.turn_number))
+    request = CastRequest(spell=Spell.RESURRECTION, target=199)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.reason != "the Valhalla visitor is immune to this spell"
+
+
+def test_charm_is_not_blocked_against_leader_199_when_not_the_active_valhalla_visitor():
+    # leader_id 199 with no valhalla_active_turn recorded (e.g. a stray
+    # id collision, or a departed visitor whose fields were cleared) is
+    # just an ordinary leader -- the immunity is scoped to a genuine
+    # current visit, not the bare id.
+    state = build_state()
+    state.add_leader(LeaderState(199, 2, "Not A Visitor", LOCATION))
+    request = CastRequest(spell=Spell.CHARM, target=199)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[199].kingdom_id == 1
+
+
 def test_charm_assigns_a_colocated_independent_hero_to_the_casters_kingdom():
     state = build_state()
     state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))

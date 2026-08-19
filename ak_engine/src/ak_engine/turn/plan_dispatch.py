@@ -358,6 +358,7 @@ from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
 from ak_engine.models.plan import ActionPlan, PlanPhase
+from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
 from ak_engine.turn.aspy_defend_decode import decode_aspy_phase, decode_defend_phase
 from ak_engine.turn.aspy_execution import SpyReport, execute_aspy
@@ -1032,14 +1033,45 @@ def run_leader_plan(
     through the rest of the plan instead of stopping at the first gap --
     the whole point of this function is to produce a full report against
     a real parsed turn, where most actions are still unsupported.
+
+    **Phase 547** -- the Valhalla visitor's own per-visit phase cap
+    (``VALHALLA.txt``'s own escalating action table, ``LeaderState.
+    valhalla_allowed_phase_count``, set at spawn by ``turn/valhalla_
+    execution.py finalize_gate_angel_visit()``) is enforced here, since
+    this is the one real call site that walks a leader's own phases in
+    order across a whole turn. Only active on the visitor's own
+    ``valhalla_active_turn`` -- every other leader, and the visitor on
+    any other turn, is completely unaffected. Real (non-Wait/No_Action/
+    Move_Abort) phases beyond the allowed count are forced to a no-op
+    instead of dispatched, same as an ordinary Wait would produce; at
+    most one of the allowed phases may be Practice (rule 6/English rule
+    3's own "only enough patience... for one of the phases"), any later
+    Practice attempt is forced to a no-op too even if the phase budget
+    itself has room left.
     """
 
     results: list[PhaseDispatchResult] = []
+    visitor = state.leaders.get(leader.leader_id) if leader.leader_id == VALHALLA_VISITOR_LEADER_ID else None
+    valhalla_cap_active = visitor is not None and visitor.valhalla_active_turn == state.turn_number
+    valhalla_phases_used = 0
+    valhalla_practice_used = False
     for segment_index, segment in enumerate(leader.plan.segments):
         for label in ("P0", "P1", "P2", "P3", "P4"):
             phase = segment.phases.get(label)
             if phase is None:
                 continue
+            if valhalla_cap_active and phase.action not in (ActionCode.WAIT, ActionCode.NO_ACTION, ActionCode.MOVE_ABORT):
+                allowed = visitor.valhalla_allowed_phase_count or 0
+                is_over_budget = valhalla_phases_used >= allowed
+                is_extra_practice = phase.action is ActionCode.PRACTICE and valhalla_practice_used
+                if is_over_budget or is_extra_practice:
+                    results.append(
+                        PhaseDispatchResult(leader.leader_id, segment_index, label, phase.action, NoOpResult(action=phase.action), None)
+                    )
+                    continue
+                valhalla_phases_used += 1
+                if phase.action is ActionCode.PRACTICE:
+                    valhalla_practice_used = True
             try:
                 result = dispatch_phase(
                     phase,

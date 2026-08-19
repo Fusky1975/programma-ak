@@ -169,6 +169,15 @@ def execute_give(
         # provincia" -- the recipient must be co-located with the giver.
         return TradeExecutionResult(applied=False, reason="not co-located with recipient")
 
+    # Phase 547 -- VALHALLA.txt: "You can do anything you want with the
+    # magic item Vahlalla visitor came with, but the item will leave at
+    # the end of Vahlalla visitor stay" -- the visitor's own fixed item
+    # specifically (tracked at spawn, LeaderState.valhalla_fixed_item_id)
+    # can never be Given away; every other item they might separately
+    # acquire (e.g. via Search) is unaffected.
+    if giver.valhalla_fixed_item_id is not None and request.obj == giver.valhalla_fixed_item_id:
+        return TradeExecutionResult(applied=False, reason="the Valhalla visitor's own fixed item cannot be given away")
+
     item = state.items.get(request.obj)
     if item is not None and item.owner_leader_id == giver_leader_id:
         # "si passa l'oggetto e non l'oro" -- item takes priority when
