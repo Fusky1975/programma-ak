@@ -5072,6 +5072,62 @@ def test_describe_characters_report_only_lists_items_owned_by_that_leader():
     assert f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}" in lines
 
 
+# -- Phase 555: "Royal Heir" name substitution (REPORTS.PAS Get_HName) --
+
+
+def test_describe_characters_report_shows_royal_heir_for_an_unfinalized_heir():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    heir_skills = SkillTable(raw_values=[0] * 31)  # Total_USkill 0, well under 7
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True, is_royal_heir=True, skills=heir_skills))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[6].startswith("Royal Heir    ")
+    assert "Aldric" not in lines[6]
+
+
+def test_describe_characters_report_shows_the_real_name_once_finalized():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Aldric II", HexCoord(0, 0), is_king=True, is_royal_heir=False))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[6].startswith("Aldric II     ")
+
+
+def test_describe_characters_report_shows_the_real_name_once_past_the_skill_threshold():
+    # Phase 553's own numeric gate, read here through is_unfinalized_
+    # royal_heir(): is_royal_heir can still be True (not yet finalized
+    # by create_king()) while Total_USkill has already reached 7.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    trained_skills = SkillTable(raw_values=[0] * 31)
+    trained_skills.set_pair_for_ability(Ability.MELEE, skill=7, aptitude=9)
+    state.add_leader(
+        LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True, is_royal_heir=True, skills=trained_skills)
+    )
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[6].startswith("Aldric        ")
+
+
+def test_describe_characters_report_non_king_leader_never_shows_royal_heir():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    # is_royal_heir=True on a non-King leader isn't a reachable game
+    # state, but the substitution should still key off the flag/
+    # threshold alone, not silently assume is_king -- confirms the
+    # substitution doesn't accidentally fire for the wrong reason.
+    state.add_leader(LeaderState(1, 1, "Kwoth", HexCoord(0, 0), is_king=False, is_royal_heir=False))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[6].startswith("Kwoth         ")
+
+
 # -- Phase 216: describe_adventure_report() -- the "ADVENTURE" section --
 
 

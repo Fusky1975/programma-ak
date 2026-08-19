@@ -1170,7 +1170,7 @@ from ak_engine.turn.battle_luck import (
     roll_cluck_reversal,
 )
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
-from ak_engine.turn.cast_execution import CastExecutionResult
+from ak_engine.turn.cast_execution import CastExecutionResult, is_unfinalized_royal_heir
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
 from ak_engine.turn.emperor_election import alignment_victory_point_reduction_percent
@@ -6823,8 +6823,16 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         pay = leader_pay(state, leader, king)
 
         skill_row = _skill_row_with_item_ticks(state, leader)
+        # Phase 555: REPORTS.PAS Get_HName (AKGEN_reverse_engineering_
+        # report (5).md SS6.1, machine-verified) substitutes "Royal
+        # Heir" for the stored name whenever this leader is still an
+        # unfinalized Royal Heir (turn/cast_execution.py
+        # is_unfinalized_royal_heir()) past the game's very first turn
+        # -- ldr < nkings is implicit here, since is_royal_heir is only
+        # ever set on a King's own slot (GameState.remove_leader()).
+        display_name = "Royal Heir" if state.turn_number > 0 and is_unfinalized_royal_heir(leader) else leader.name
         lines.append(
-            f"{leader.name:<14}{loc:>4}{alignment_label:>6}{temper_label:>6}   {race_label:>7}{pay:>3} {skill_row}"
+            f"{display_name:<14}{loc:>4}{alignment_label:>6}{temper_label:>6}   {race_label:>7}{pay:>3} {skill_row}"
         )
 
         skills = leader.skills

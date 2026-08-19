@@ -22955,7 +22955,7 @@ follow-up request after the original 431-435 plan shipped.
   test confirming a past-threshold Heir is refused without touching
   `dead_leaders` or the flag. Ran again: 4790 passed (net +6).
 
-- **Phase 554 (current)**: replaced `turn/succession.py create_king()`'s
+- **Phase 554**: replaced `turn/succession.py create_king()`'s
   King-creation validation constraint with the real, exact rule.
   Previously it enforced a project-original "at least 2 of the 4 points
   must land on Talents the dead King started with"
@@ -22986,6 +22986,33 @@ follow-up request after the original 431-435 plan shipped.
   own levels (accepted regardless of which abilities) -- four new tests
   replacing the two old overlap-specific ones. Ran again: 4792 passed
   (net +2).
+
+- **Phase 555 (current, closing this Succession/Royal Heir series)**:
+  wired the real "Royal Heir" name substitution into the CHARACTERS
+  report. `report/turn_report.py describe_characters_report()` printed
+  `leader.name` directly with no substitution at all -- `AKGEN_reverse_
+  engineering_report (5).md` SS6.1 (`REPORTS.PAS Get_HName`, machine-
+  verified) shows the real report substitutes "Royal Heir" for the
+  stored name whenever `ldr < nkings AND gameturn > 0 AND Total_USkill
+  (ldr) < 7`. This project already had every ingredient from the four
+  prior phases in this series -- `is_royal_heir` only ever set on a
+  King's own slot (so `ldr < nkings` is implicit), `turn/cast_
+  execution.py is_unfinalized_royal_heir()` (Phase 553) for the numeric
+  half, `state.turn_number` for the turn check -- just never wired
+  together. Checked for a second real call site first (`_leader_name()`
+  used by Cast-spell narrative announcements, rumor text, and world-
+  event lines): none of them carry any existing sourced tie to
+  `Get_HName` the way `describe_characters_report()`'s own Phase 432
+  docstring already does (`Get_HName(ldr,14,s)`, quoted verbatim), so
+  extending to them now would be an unsourced guess -- left untouched,
+  same "no source, no guess" boundary the rest of this series held to.
+  This closes the Succession/Royal Heir correction series opened by the
+  user's fifth reverse-engineering report (Phases 552-555). Ran before
+  writing tests: 4792 passed (non-breaking). Added tests: an unfinalized
+  Heir shows "Royal Heir"; a finalized King (`is_royal_heir=False`)
+  shows its real name; a Heir past the `Total_USkill` threshold (still
+  unfinalized) also shows its real name; an ordinary non-King leader is
+  unaffected. Ran again: 4796 passed (net +4).
 
 ## Setup
 
