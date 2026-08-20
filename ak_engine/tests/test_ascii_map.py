@@ -22,10 +22,13 @@ from ak_engine.report.ascii_map import (
     dense_cell_pixel_column,
     render_ascii_map,
     render_ascii_map_dense,
+    render_ascii_map_stride10,
     render_ascii_map_stride12,
     render_cell,
     render_cell_dense,
+    render_cell_stride10,
     render_cell_stride12,
+    stride10_cell_pixel_column,
     stride12_cell_pixel_column,
 )
 
@@ -530,4 +533,80 @@ def test_render_ascii_map_stride12_matches_thirds_own_real_band():
         "+ +  Ax   +",
         "+Prosperous",
         "++1%+Expl.+",
+    ]
+
+
+# -- Phase 570: the stride-10 layout (SE3__T4.K3) -- name and id are
+# always split onto their own rows here (confirmed universal at this
+# width, not an occasional long-name case), so `render_cell_stride10()`
+# has its own dedicated structure; see module docstring's own section.
+
+
+def test_stride10_cell_pixel_column_matches_the_real_t4k3_report():
+    # SE3__T4.K3's own real map: x_min=4 across the whole report,
+    # confirmed against all 6 of its own real bands with zero residual.
+    assert stride10_cell_pixel_column(HexCoord(4, 4), x_min=4) == 5
+    assert stride10_cell_pixel_column(HexCoord(7, 1), x_min=4) == 30
+    assert stride10_cell_pixel_column(HexCoord(5, 3), x_min=4) == 10
+
+
+def test_render_cell_stride10_matches_starhavens_own_real_cell():
+    # SE3__T4.K3 lines 366-371: Starhaven, a real cell with all 4
+    # middle fields present (no recruit-skip) -- the real corpus's own
+    # id always wraps to its own row 2 here, and with 4 fields shown,
+    # the real report's own status ("Rich") merges into row 6 with
+    # Expl% dropped entirely, byte-for-byte confirmed.
+    state = _state()
+    state.add_leader(LeaderState(4, 97, "Hokuto", HOME, is_king=True))
+    state.add_kingdom(KingdomState(97, "K97", Race.HUMAN, None, HOME))
+    province = _province(7, 1, "Starhaven", Terrain.FOREST, Race.HUMAN, owner=97, tax=8, t1=ArmyType.LEGION, t2=ArmyType.CHARIOTS, expl=1)
+    cell = render_cell_stride10(state, province, viewing_kingdom_id=2)
+    assert cell == [
+        "Starhaven",
+        "+ (0701)+",
+        "Hokuto(4)",
+        "+ Humans+",
+        "+ Le,Ch +",
+        "+++Rich++",
+    ]
+
+
+def test_render_cell_stride10_matches_sixth_seas_own_real_cell():
+    # SE3__T4.K3 lines 384-389: Sixth Sea, race Whales (non-humanoid,
+    # recruit skipped -- Phase 565's own mechanic generalizes here too)
+    # -- with only 3 middle fields, row 6 stays free for Expl% to merge
+    # in as usual, matching the real corpus exactly (tax=1 here, not
+    # the real sample's own unknown value, to keep the status word
+    # short enough to avoid this tier's own known status-overflow gap
+    # -- see module docstring).
+    state = _state()
+    province = _province(9, 4, "Sixth Sea", Terrain.SEA, Race.WHALES, owner=None, tax=1, t1=None, t2=None, expl=1)
+    cell = render_cell_stride10(state, province, viewing_kingdom_id=2)
+    assert cell == [
+        "Sixth~Sea",
+        "~ (0904)~",
+        "~Unowned~",
+        "~ Whales~",
+        "~  Poor ~",
+        "~1%~Expl.",
+    ]
+
+
+def test_render_ascii_map_stride10_matches_starhavens_own_real_band():
+    # Same real cell, through the map-level renderer -- confirms the
+    # placement formula and the content renderer agree end to end.
+    state = _state()
+    state.add_leader(LeaderState(4, 97, "Hokuto", HOME, is_king=True))
+    state.add_kingdom(KingdomState(97, "K97", Race.HUMAN, None, HOME))
+    state.add_province(_province(7, 1, "Starhaven", Terrain.FOREST, Race.HUMAN, owner=97, tax=8, t1=ArmyType.LEGION, t2=ArmyType.CHARIOTS, expl=1))
+
+    lines = render_ascii_map_stride10(state, 2)
+
+    assert lines == [
+        "Starhaven",
+        "+ (0701)+",
+        "Hokuto(4)",
+        "+ Humans+",
+        "+ Le,Ch +",
+        "+++Rich++",
     ]

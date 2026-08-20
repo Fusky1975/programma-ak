@@ -250,6 +250,60 @@ independently corroborate rows 4 and 5's own tick columns.
   merges into the border row 6 with Expl% dropped entirely, matching
   the wide layout's own `Transylvania`-style cascade exactly.
 
+**Phase 570: a fourth, still-denser layout** (content width 9, stride
+10), reverse-engineered against `SE3__T4.K3`'s own map (6 real bands,
+`x_min = 4` confirmed across the whole report with zero residual, the
+same formula shape as wide and stride-12). This tier's own real corpus
+is different in kind from the 3 wider ones: **every single cell wraps
+its own name onto row 1 with the id pushed to its own row 2** -- not
+an occasional long-name case (as it is for every wider tier), but
+universal, since even a 3-character name already leaves no room for a
+6-character id in a 9-column cell. This phase reproduces that real
+split directly (`render_cell_stride10()`'s own dedicated row-1/row-2
+structure) instead of extending the truncate-to-fit policy to a case
+this pervasive -- see `STRIDE10_MAX_PROVINCE_NAME_LENGTH`'s own comment
+for why.
+- **Row 2 (id) and the ruler/recruit rows share one border-only set**,
+  `{0, 8}` -- confirmed via `Kilkenny`'s own real recruit "Le" (2
+  characters, independently uncovering columns 1, 2, 3, 6, and 7, all
+  plain space, no embedded tick anywhere). **The race row alone has an
+  embedded tick**, `{0, 2, 8}` -- confirmed via `Daedalus`'s own real
+  race "Orcs", column 2 uncovered and showing the tick.
+- **The row budget is genuinely different from the 3 wider layouts**:
+  because the id-wrap is mandatory here (not optional), the real
+  corpus only ever frames 3 of the up to 4 middle fields (ruler, race,
+  recruit-or-shifted-status); the 4th, when present (recruit shown),
+  always merges into row 6 full-fill instead, with Expl% dropped
+  entirely -- confirmed via `Starhaven`'s own real cell (`Rich` merges
+  into row 6, no separate Expl% line at all), contrasted with `Sixth
+  Sea`'s own real recruit-skip cell (only 3 fields, so row 6 stays
+  free for Expl% to merge in as usual). `render_cell_stride10()`
+  reproduces this real 3-framed-slot-plus-merge shape directly (unlike
+  the other 3 layouts' own generalized 4-framed-slot-plus-merge
+  architecture) -- the 4th slot's own canvas, when actually needed,
+  reuses the border-only set by pattern consistency, not independent
+  confirmation, since the real corpus never frames it (see
+  `_STRIDE10_BORDER_TICKS`'s own comment).
+- **A newly confirmed, real, but explicitly unmodeled anomaly**: two
+  cells in this same report (`M Actium` and `Kabompo Sea`) skip BOTH
+  race and recruit entirely, going straight from ruler to status --
+  unlike `Sixth Sea`/`Valiant Sea` (also Whales-race, in the very same
+  report), which only skip recruit and still show race normally. All
+  four share the same terrain (Sea) and the same apparent ownership
+  state (`Unowned`), so neither terrain nor ownership distinguishes
+  them from this report's own text -- the same category of hidden,
+  unprinted state already established for the ruler-skip case (`Cantia`
+  vs. `Tesawa`, Phase 562/566) and the layout-selection trigger (Phase
+  567). This module keeps showing race normally in every case (never
+  skips it), the same "don't invent unsourced data" choice already
+  made for the ruler-skip gap.
+- **A region label was found for the first time this phase**: `SE3__
+  T4.K3`'s own map opens with `"Ice cap"` followed by a full-width
+  dashed rule, before the first band -- confirmed real, matching the
+  already-deferred "region labels" gap from Phase 562's own docstring
+  (see below); still not implemented, now with a first concrete real
+  example to work from whenever that gap is picked up.
+
 **Explicitly NOT modeled this phase, confirmed real but not yet
 reconciled with enough samples to state a rule with the same
 confidence as the above** (see this module's own Phase 562 audit notes
@@ -327,9 +381,9 @@ in `README.md` for the full account):
   `describe_map_report()` always calls the wide renderer; nothing
   currently picks any of the narrower ones automatically. Of the 4
   narrower tiers this phase newly discovered (strides 12, 10, 9, 8),
-  stride 12 is now implemented (Phase 569, see below); strides 10, 9,
-  and 8 remain entirely unimplemented -- their own row templates have
-  not been derived at all.
+  strides 12 and 10 are now implemented (Phases 569/570, see below);
+  strides 9 and 8 remain entirely unimplemented -- their own row
+  templates have not been derived at all.
 - `cell_pixel_column()` clamps a coordinate below `x_min` to `x_min`
   itself rather than letting it go negative -- defensive only (`x_min`
   is computed as the true minimum of whatever's being rendered, so no
@@ -416,6 +470,26 @@ MAX_PROVINCE_NAME_LENGTH = 8
 # real boundary already confirmed for name+id rows in every layout.
 STRIDE12_MAX_PROVINCE_NAME_LENGTH = STRIDE12_CELL_STRIDE - 6
 STRIDE12_PROVINCE_NAME_TRUNCATION_TRIGGER = STRIDE12_MAX_PROVINCE_NAME_LENGTH + 1
+
+# Phase 570: the fourth, still-denser layout (see module docstring's own
+# Phase 570 section) -- narrow enough that its own name+id combination
+# is confirmed to ALWAYS wrap onto a second row in the real corpus (not
+# an occasional long-name edge case the way it is for every wider tier),
+# so this phase reproduces that real split (`render_cell_stride10()`'s
+# own dedicated name-only row 1 / id-only row 2) instead of extending
+# the truncate-to-fit policy to a case this universal. Truncation still
+# applies to the name ALONE (no id budget needed, since the id always
+# gets its own row here) -- `STRIDE10_MAX_PROVINCE_NAME_LENGTH` is set
+# to the full cell width, `STRIDE10_PROVINCE_NAME_TRUNCATION_TRIGGER`
+# one past it, matching `Waterford Sea`-style overlong single-cell names
+# that would otherwise need a THIRD row for the name alone -- not
+# independently confirmed against a real "must stay whole" boundary at
+# this width (no such sample exists), same honesty gap already accepted
+# for the wide layout's own analogous case before the user resolved it.
+STRIDE10_CELL_WIDTH = 9
+STRIDE10_CELL_STRIDE = STRIDE10_CELL_WIDTH + 1
+STRIDE10_MAX_PROVINCE_NAME_LENGTH = STRIDE10_CELL_WIDTH
+STRIDE10_PROVINCE_NAME_TRUNCATION_TRIGGER = STRIDE10_MAX_PROVINCE_NAME_LENGTH + 1
 
 # `_` Plains, `+` Forest, `&` Jungle, `^` Mountain, `.` Desert, `~` Sea --
 # see this module's own docstring for the full sourcing. `NO_TERRAIN`
@@ -526,6 +600,18 @@ def stride12_cell_pixel_column(coord: HexCoord, x_min: int) -> int:
 
     stagger = STRIDE12_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
     return max(0, coord.x - x_min) * STRIDE12_CELL_STRIDE + stagger
+
+
+def stride10_cell_pixel_column(coord: HexCoord, x_min: int) -> int:
+    """The stride-10 layout's own horizontal pixel column -- see module
+    docstring's own Phase 570 note. Confirmed against every one of
+    `SE3__T4.K3`'s own 6 real bands (`x_min = 4`, the true minimum
+    across the whole report): the same clean, `x_min`-relative shape as
+    the wide and stride-12 layouts, zero residual.
+    """
+
+    stagger = STRIDE10_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
+    return max(0, coord.x - x_min) * STRIDE10_CELL_STRIDE + stagger
 
 
 def _pad_center(content: str, width: int, pad: str) -> str:
@@ -641,6 +727,31 @@ _DENSE_ROW35_TICKS = frozenset({0, 4, 8, 12})
 _STRIDE12_ROW2_TICKS = frozenset({0, 10})
 _STRIDE12_ROW35_TICKS = frozenset({0, 8, 10})
 _STRIDE12_ROW4_TICKS = frozenset({0, 2, 10})
+
+# Confirmed stride-10-layout tick columns (see module docstring's own
+# Phase 570 section), derived from the REAL report's own physical rows
+# 2 (id, always present at this width -- see the truncation-constants
+# comment above), 3 (ruler), 4 (race), 5 (recruit) -- `render_cell_
+# stride10()` re-maps these onto its own simplified row numbering
+# (ruler/race/recruit/status each get a genuine framed slot instead of
+# reproducing the real cascade's own row-6 merge-or-drop compression,
+# since this phase already diverges from the real id-wrap-adjacent
+# compression by choice, not by omission). Row 2's own tick columns
+# (`{0, 8}`, the id's own framing) and the ruler/recruit rows' own
+# (also `{0, 8}`, confirmed via `Kilkenny`'s real "Le" -- 2 characters,
+# independently uncovering columns 1, 2, 3, 6, 7 as plain space, no
+# embedded tick anywhere) all match; only the race row has an embedded
+# tick, `{0, 2, 8}` (confirmed via `Daedalus`'s real "Orcs", column 2
+# uncovered and showing the tick, plus columns 1 and 7 confirmed plain
+# space). The 4th framed slot (status, only used when recruit is NOT
+# skipped) reuses the border-only set by pattern consistency with the
+# other 2 border-only slots -- not independently confirmed by a real
+# framed (non-merged) example, since the real corpus never frames a
+# 4-field cell's own status word (it always merges it into row 6
+# instead, the specific real behavior this phase's own row budget no
+# longer reproduces).
+_STRIDE10_BORDER_TICKS = frozenset({0, 8})
+_STRIDE10_ROW4_TICKS = frozenset({0, 2, 8})
 
 
 def _king_name_and_id(state: GameState, kingdom_id: int) -> str | None:
@@ -916,6 +1027,102 @@ def render_ascii_map_stride12(state: GameState, kingdom_id: int) -> list[str]:
         row_provinces = sorted(rows_by_y[y], key=lambda p: p.coord.x)
         cells = [render_cell_stride12(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
         columns = [stride12_cell_pixel_column(p.coord, x_min) for p in row_provinces]
+
+        for band_row in range(6):
+            line = ""
+            for cell, column in zip(cells, columns):
+                if column > len(line):
+                    line += " " * (column - len(line))
+                elif column < len(line):
+                    continue
+                line += cell[band_row]
+            lines.append(line.rstrip())
+
+    return lines
+
+
+# The stride-10 layout's own 3 framed "middle" slots (ruler/race/
+# recruit -- or ruler/race/status when recruit is skipped), in physical
+# row order (see module docstring's own Phase 570 section). Unlike the
+# wider layouts, only 3 slots are framed here, not 4 -- the 4th
+# middle field (status, only present when recruit is shown) instead
+# reuses the border-only set, same as the module docstring's own
+# comment on `_STRIDE10_BORDER_TICKS` explains.
+_STRIDE10_MIDDLE_TEMPLATES: list[frozenset[int]] = [
+    _STRIDE10_BORDER_TICKS,
+    _STRIDE10_ROW4_TICKS,
+    _STRIDE10_BORDER_TICKS,
+]
+
+
+def render_cell_stride10(state: GameState, province: ProvinceState, *, viewing_kingdom_id: int) -> list[str]:
+    """The stride-10 layout's own 6 raw content lines (9 chars each, no
+    separator) for one province's own map cell -- see module docstring's
+    own Phase 570 section for the full, sourced derivation.
+
+    Unlike the 3 wider layouts, name and id are never combined onto one
+    row here: the real corpus confirms id is ALWAYS on its own row 2 at
+    this width (row 1 holds the name alone), not just for occasional
+    long names. `_middle_fields()`'s own up-to-4 fields (ruler, race,
+    recruit, status) then fill rows 3-5 (3 framed slots) plus row 6 --
+    a 4th field there uses row 6 as a full-fill merge (matching the
+    real corpus's own `Starhaven`, whose real `Rich` status merges into
+    row 6 with Expl% dropped entirely); with only 3 fields (recruit
+    skipped), row 6 is free for Expl% to merge in as usual (matching
+    the real corpus's own `Sixth Sea`).
+    """
+
+    symbol = TERRAIN_SYMBOL[province.effective_terrain()]
+
+    raw_name = province.name or ""
+    if len(raw_name) > STRIDE10_PROVINCE_NAME_TRUNCATION_TRIGGER:
+        raw_name = raw_name[:STRIDE10_MAX_PROVINCE_NAME_LENGTH]
+    name = raw_name.replace(" ", symbol)
+    line1 = _pad_center(name, STRIDE10_CELL_WIDTH, symbol)
+
+    id_text = f"({province_code(province.coord):04d})"
+    line2 = _pad_overlay(id_text, tick_columns=_STRIDE10_BORDER_TICKS, symbol=symbol, width=STRIDE10_CELL_WIDTH)
+
+    middle_fields = _middle_fields(state, province, viewing_kingdom_id=viewing_kingdom_id)
+    lines = [line1, line2]
+    for text, ticks in zip(middle_fields, _STRIDE10_MIDDLE_TEMPLATES):
+        lines.append(_pad_overlay(text, tick_columns=ticks, symbol=symbol, width=STRIDE10_CELL_WIDTH))
+
+    if len(middle_fields) > len(_STRIDE10_MIDDLE_TEMPLATES):
+        # 4th field present (recruit shown) -- it merges into row 6,
+        # full-fill, and Expl% is dropped entirely (matches Starhaven).
+        lines.append(_pad_center(middle_fields[-1], STRIDE10_CELL_WIDTH, symbol))
+    else:
+        # Only 3 fields -- row 6 is free for Expl% to merge in as usual.
+        expl_text = f"{province.explored_percent}%{symbol}Expl."
+        lines.append(_pad_center(expl_text, STRIDE10_CELL_WIDTH, symbol))
+
+    return lines
+
+
+def render_ascii_map_stride10(state: GameState, kingdom_id: int) -> list[str]:
+    """The stride-10 layout's own analogue of `render_ascii_map()` -- see
+    module docstring's own Phase 570 section. Nothing currently calls
+    this: which layout a given report actually uses is still an open
+    question (see module docstring's own deferred-gaps list), so
+    `describe_map_report()` keeps calling the wide renderer above.
+    """
+
+    provinces = list(state.provinces.values())
+    if not provinces:
+        return []
+
+    x_min = min(p.coord.x for p in provinces)
+
+    rows_by_y: dict[int, list[ProvinceState]] = {}
+    for province in provinces:
+        rows_by_y.setdefault(province.coord.y, []).append(province)
+
+    lines: list[str] = []
+    for y in sorted(rows_by_y):
+        row_provinces = sorted(rows_by_y[y], key=lambda p: p.coord.x)
+        cells = [render_cell_stride10(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
+        columns = [stride10_cell_pixel_column(p.coord, x_min) for p in row_provinces]
 
         for band_row in range(6):
             line = ""

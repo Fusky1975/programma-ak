@@ -23516,7 +23516,7 @@ follow-up request after the original 431-435 plan shipped.
   relative-to-`x_min` behavior, using `SE3__T1.K1`'s own real `x=9-11`
   band. Ran again: 4857 passed (net +1).
 
-- **Phase 569 (current)**: implemented the third real map layout (content
+- **Phase 569**: implemented the third real map layout (content
   width 11, stride 12), one of the 4 additional strides Phase 567's own
   survey found but left unimplemented, resuming the work Phase 568's
   placement-formula fix had paused. Reverse-engineered against `SE3__
@@ -23551,6 +23551,45 @@ follow-up request after the original 431-435 plan shipped.
   real cell byte-for-byte, both directly (`render_cell_stride12()`) and
   through the map-level renderer (`render_ascii_map_stride12()`). Ran
   again: 4860 passed (net +3).
+
+- **Phase 570 (current)**: implemented the fourth real map layout
+  (content width 9, stride 10), sourced from `SE3__T4.K3`. This tier
+  is qualitatively different from the 3 wider ones: **every single real
+  cell wraps its own name onto row 1 with the id pushed to row 2** --
+  not an occasional long-name case, but universal at this width (even
+  a 3-character name leaves no room for a 6-character id in 9 columns).
+  Reproduced that real split directly (`render_cell_stride10()`'s own
+  dedicated structure) instead of extending the truncate-to-fit policy
+  used by the 3 wider layouts to a case this pervasive. Confirmed the
+  same `x_min`-relative placement formula (zero residual across all 6
+  of `SE3__T4.K3`'s own real bands). Found the row budget is genuinely
+  different too: because the id-wrap is mandatory, the real corpus only
+  frames 3 of up to 4 middle fields; a 4th (recruit shown) always
+  merges into row 6 full-fill instead, dropping Expl% entirely
+  (confirmed via `Starhaven`'s own real cell), while a recruit-skip
+  case (`Sixth Sea`, race Whales) leaves room for Expl% to merge in as
+  usual. Row 2 (id)/ruler/recruit share one border-only tick set
+  (`{0, 8}`, confirmed via `Kilkenny`'s own real 2-character recruit
+  "Le"); only the race row has an embedded tick (`{0, 2, 8}`, confirmed
+  via `Daedalus`'s own real "Orcs"). **Found and explicitly declined to
+  model a new anomaly**: 2 cells in this same report (`M Actium`,
+  `Kabompo Sea`) skip both race AND recruit (going straight from ruler
+  to status), unlike 2 other same-race, same-terrain, same-ownership
+  cells in the very same report which only skip recruit -- the same
+  category of hidden, unprinted state already established for the
+  ruler-skip gap and the layout-selection trigger; module always shows
+  race normally rather than guessing at a trigger. Also found this
+  report's own map opens with a real `"Ice cap"` region label -- the
+  first concrete real example of the already-deferred "region labels"
+  gap, still not implemented. New `STRIDE10_CELL_WIDTH`/`STRIDE10_
+  CELL_STRIDE` constants, `stride10_cell_pixel_column()`, `render_
+  cell_stride10()`, and `render_ascii_map_stride10()`. Strides 9 and 8
+  remain unimplemented. Ran before writing tests: 4860 passed
+  (non-breaking). Added tests: the placement formula against `SE3__
+  T4.K3`'s own real `x=4-7` band; `Starhaven`'s own real cell
+  byte-for-byte (4-field, no skip); `Sixth Sea`'s own real cell
+  byte-for-byte (3-field, recruit-skip); the map-level renderer for
+  `Starhaven`. Ran again: 4864 passed (net +4).
 
 ## Setup
 
