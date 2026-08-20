@@ -918,8 +918,10 @@ tie directly to two already-built validation mechanics:
     already taken for `_LDevast`'s discrepancy, Phase 112).
     `render_illegal_move_mermen_air_transport()`.
   - The `ELSE` branch (`FD('c:\\tp\\prose\\illmove.x2', ...)`) is
-    file-dispatched and deliberately left for a future phase that
-    extracts `ILLMOVE.X2`.
+    file-dispatched -- `ILLMOVE_TEMPLATE` (Phase 583, below) now
+    transcribes it, keyed by raw file position (`_next+1`) rather than
+    by scenario, since the exact `_next` value that reaches each of the
+    21 real entries has no traceable source.
 
 This project has no source for how `render_illegal_move_attempted()`
 and a specific sub-case sentence combine (e.g. whether both are always
@@ -5484,6 +5486,45 @@ def render_illegal_move_mermen_air_transport(
         "@": destination_province_name,
     }
     return render(ILLEGAL_MOVE_MERMEN_AIR_TRANSPORT_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/PROSE/ILLMOVE.X2, verbatim, keyed by `_next+1` (`_next=0`
+# aliases to choice 1, the same forced-index convention FD itself
+# applies everywhere else -- see module docstring's Phase 127 addendum
+# for the ELSE branch this completes). Choices 22-99 have no physical
+# content in the source (header declares 99, only 22 rows exist) --
+# choice 22 itself is not real game text either, a literal leftover
+# author note ("Note: don't forget to increase #lines!! (this is line
+# 22)"), so only 1-21 are transcribed. Choice 7's own real content is
+# the literal string "xxxxxxxx" -- kept verbatim, an unfilled
+# placeholder slot in the source itself, not a transcription gap.
+# Same "raw file position, no semantic mapping asserted" posture
+# NEMESIS_TEMPLATE already established: this project has no source
+# tying any specific _next value in this range to a specific
+# validation scenario, so none is guessed at.
+ILLMOVE_TEMPLATE: dict[int, str] = {
+    1: '< was ordered to move from ⟦CTRL-S:province-2⟧ to @, but it is illegal to move naval forces from one non-sea province to another.',
+    2: '< was ordered to move with whales into @, a land province.This is illegal.',
+    3: '< was ordered to move from ⟦CTRL-S:province-2⟧ to @, further than > army/Snavy could move.',
+    4: '< was ordered to use water-borne movement to move from ⟦CTRL-S:province-2⟧ to @, but had no transport.',
+    5: '< cancelled > move to @ in order to fight for the province of ⟦CTRL-S:province-2⟧.',
+    6: "< was ordered to move into @ but couldn't because it is owned by [, a Neutral player-King.",
+    7: 'xxxxxxxx',
+    8: "< could not move to @ because you can't move to another King's province in a late move.",
+    9: "< could not move to @ because you can't invade a province adjacent to another Kingdom in a late move.",
+    10: '< was already in @ and could make no sense of the order to move to @.',
+    11: "< could not move to @ because armies can't move overland and use transport in the same turn.",
+    12: "< could not move to @ because armies can't use transport and move overland in the same turn.",
+    13: "< could not move to @ because > fleets couldn't enter the parted sea.",
+    14: "< could not move from ⟦CTRL-S:province-2⟧ to @ because > fleets couldn't leave the parted sea.",
+    15: '< could not move from ⟦CTRL-S:province-2⟧ to @ because > mermen had insufficient air transport.',
+    16: '< could not move from ⟦CTRL-S:province-2⟧ to @ because > ents refused to cross the shoreline.',
+    17: "< could not move from ⟦CTRL-S:province-2⟧ to @'s terrain.",
+    18: '< could not find a legal 2-province path to @.',
+    19: '< could not move from ⟦CTRL-S:province-2⟧ to @ because > dinosaurs refused to cross the shoreline.',
+    20: '< tried to move from ⟦CTRL-S:province-2⟧ to @, a non-adjacent province.Instead,_',
+    21: "< couldn't move to @ because > non-flying armies couldn't move into a Lava province.",
+}
 
 
 # HostAK/TP/SAY.PAS _LHaHa -- a single, real, hardcoded template (no

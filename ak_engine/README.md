@@ -23955,7 +23955,7 @@ follow-up request after the original 431-435 plan shipped.
   the preserved literal pronoun/CTRL-byte markers. Ran again: 4915
   passed (net +7).
 
-- **Phase 582 (current)**: transcribes the last four small catalogs of
+- **Phase 582**: transcribes the last four small catalogs of
   the same quest-dialogue cluster (`report/turn_report.py`'s own Phase
   129/581 work) -- `RIDDLE.X2`/`RANS.X` (7 entries each, keyed by
   `Treasure`'s own `QUEST_RA_*` members) and `VISIT.X2`/`FUVIS.X2` (5
@@ -23982,6 +23982,25 @@ follow-up request after the original 431-435 plan shipped.
   ordinal-coverage for all four dicts, the Riddle-of-the-Sphinx sample,
   the withdrawn-hypothesis regression check, a verbatim sample, and the
   preserved control-byte markers. Ran again: 4921 passed (net +6).
+
+- **Phase 583 (current)**: transcribes `report/turn_report.py ILLMOVE_
+  TEMPLATE` from `ILLMOVE.X2`, closing the one remaining file-dispatch
+  gap the Phase 127 illegal-move-narrative addendum had explicitly left
+  open ("deliberately left for a future phase that extracts
+  `ILLMOVE.X2`"). 21 real entries (choices 1-21; the file's own header
+  declares 99 but only 22 physical rows exist, and row 22 turned out to
+  be a leftover author note -- "Note: don't forget to increase
+  #lines!! (this is line 22)" -- not real game text, so excluded).
+  Keyed by raw file position (`dict[int, str]`, `_next+1`), the same
+  "no semantic mapping asserted" posture `NEMESIS_TEMPLATE` (Phase 109)
+  already established, since no surviving source ties a specific
+  `_next` value in this range to a specific illegal-move scenario.
+  Choice 7's own real content is the literal placeholder `"xxxxxxxx"`,
+  kept verbatim as the genuine (if unfilled) source content it is.
+  Ran before writing tests: 4921 passed (non-breaking). Added tests:
+  21-entry coverage, a verbatim sample, the placeholder/excluded-note
+  distinction, and a `render()` round-trip. Ran again: 4926 passed
+  (net +5).
 
 ## Setup
 

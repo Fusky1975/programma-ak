@@ -31,6 +31,7 @@ from ak_engine.report.turn_report import (
     EXPLORE_NOT_PRESENT_PREFIX,
     FUNERAL_PYRE_TEMPLATE,
     HIRE_COUNTER_OFFER_TEMPLATE,
+    ILLMOVE_TEMPLATE,
     INHERIT_TEMPLATE,
     NEMESIS_TEMPLATE,
     PRACTICE_ALREADY_MAXED_TEMPLATE,
@@ -2863,6 +2864,41 @@ def test_render_illegal_move_mermen_air_transport():
         "Aldric was ordered to move with Mermen from Greenfield to "
         "Redhaven, but had insufficient air-transport."
     )
+
+
+# -- ILLMOVE_TEMPLATE (Phase 583) --------------------------------------------
+
+
+def test_illmove_template_has_21_real_entries():
+    assert len(ILLMOVE_TEMPLATE) == 21
+    assert set(ILLMOVE_TEMPLATE.keys()) == set(range(1, 22))
+
+
+def test_illmove_template_verbatim_sample():
+    assert ILLMOVE_TEMPLATE[1] == (
+        "< was ordered to move from ⟦CTRL-S:province-2⟧ to @, but it is "
+        "illegal to move naval forces from one non-sea province to another."
+    )
+
+
+def test_illmove_template_choice_7_is_the_sources_own_placeholder():
+    # "xxxxxxxx" is the real, unfilled content at this position in the
+    # source file itself -- not a transcription gap.
+    assert ILLMOVE_TEMPLATE[7] == "xxxxxxxx"
+
+
+def test_illmove_template_excludes_the_authors_own_leftover_note():
+    # Choice 22 ("Note: don't forget to increase #lines!! (this is line
+    # 22)") is a development reminder, not real game text -- excluded.
+    assert 22 not in ILLMOVE_TEMPLATE
+
+
+def test_illmove_template_renders_via_prose_render():
+    from ak_engine.report.prose import render
+
+    rng = ScriptedRandom([0.1] * 10)
+    result = render(ILLMOVE_TEMPLATE[2], {"<": "Aldric", "@": "Redhaven"}, rng=rng)
+    assert result == "Aldric was ordered to move with whales into Redhaven, a land province.This is illegal."
 
 
 # -- Monster Quest Fulfillment dialogue (Phase 129) --
