@@ -37,11 +37,10 @@ and grows into the tick immediately left of the zone;
 1. Name/ID: `<Name>(<ID>)` (`ID` is `models/map.py province_code()`'s
    own `x*100+y`, zero-padded to 4 digits) -- full-fill, tie-left.
 2. Ruler: the owning Kingdom's own King's `<Name>(<leader_id>)`, or the
-   literal `Unowned` if `owner_kingdom_id is None` -- framed, tie-right
-   (inferred by consistency with rows 3-5 below; not independently
-   confirmed on its own, since this project's own available samples
-   never show an odd amount of row-2 padding to distinguish the tie
-   direction).
+   literal `Unowned` if `owner_kingdom_id is None` -- framed, tie-left
+   (confirmed directly: `Shasta`'s own real "Unowned", 7 chars in a
+   10-wide zone, 3 extra padding chars split 2-left/1-right in
+   `SE3__T1.K2` -- the opposite tie direction from rows 3-5).
 3. Race: `models/race.py RACE_NAME[province.race]` -- framed, tie-right.
    (`Race.EAGLES`/`WHALES`/etc. are real, ordinary `Race` members, not a
    special "unowned province shows its guardian monster" substitution --
@@ -57,7 +56,18 @@ and grows into the tick immediately left of the zone;
    Kingdom's own `Mongu` shows "Le,LC" -- the single-type cells in the
    same corpus, e.g. `Bam Yanga`'s "CC", simply have a real `Type2 is
    None`, the same reason `describe_provinces_report()`'s own PROVINCES
-   table omits it).
+   table omits it). **This row is entirely omitted (Phase 565) when the
+   province's own race is not one of `models/race.py HUMANOID_RACES`**
+   -- a monster-guarded province has no recruitable army units to list,
+   confirmed directly: `Shasta`'s own real race is `Eagles`
+   (`SE3__T1.K2`), and its own cell has no recruit row at all -- the
+   status word shifts up to fill physical row 4 (using row 4's own
+   framed template, not row 3/5's -- confirmed by `Shasta`'s own real
+   "Poor" padding, which matches row 4's tick pattern exactly, not row
+   3/5's), and Expl% un-merges into its own physical row 5 (framed, not
+   full-fill, since it no longer shares the row with the border) leaving
+   row 6 a pure, content-less border line. See `_ROW_TEMPLATES`/
+   `_middle_fields()` below for the general mechanism.
 5. Status: `Tax: <N>` for a province owned by *this report's own*
    Kingdom (matches the PROVINCES table's own Tax column exactly, in
    every case checked); for anyone else's or an unowned province, a
@@ -90,14 +100,18 @@ confidence as the above** (see this module's own Phase 562 audit notes
 in `README.md` for the full account):
 - A province whose ruler is genuinely unknown (not just "no ruler")
   sometimes *skips* the ruler row entirely rather than printing
-  "Unowned" (`Tesawa`/`Marzuq` in `SE3__T5.K2`, contrasted with
-  `Shasta` in the very same report explicitly printing "Unowned") --
-  this module always prints "Unowned" (never skips), the simpler,
-  fully-confirmed-as-real of the two observed behaviors.
-- A genuinely unowned province's own recruit-type row (row 4) is
-  sometimes entirely absent too, with the status row (row 5) shifting
-  up to fill it (`Shasta` again, `SE3__T1.K2`) -- this module always
-  shows a recruit-type row regardless of ownership.
+  "Unowned" -- confirmed real: `Cantia`'s own cell in `SE3__T5.K2`
+  shows its race directly at physical row 2, skipping the ruler row,
+  even though `Cantia`'s own race (Human) is a `HUMANOID_RACES` member
+  and its cell is otherwise structurally unremarkable. Contrasted with
+  `Tesawa`, an apparently-also-unowned province in the very same
+  report's own band, which explicitly prints "Unowned". No data-model
+  distinction currently exists in this project (`ProvinceState.owner_
+  kingdom_id: int | None` only encodes a binary owned/unowned) to
+  explain why one skips and the other doesn't -- this module always
+  prints "Unowned" (never skips), the simpler, fully-confirmed-as-real
+  of the two observed behaviors, rather than inventing an unsourced
+  finer-grained knowledge tier to explain the real difference.
 - The real game wraps a too-long province name onto its own second row,
   which then forces something else out of the fixed 6-row budget
   (observed: the Expl%/status row gets dropped entirely in favor of
@@ -113,6 +127,16 @@ in `README.md` for the full account):
   wrap-and-drop behavior.
 - Multiple maps ("far side of the world") and region labels ("Ice
   cap") -- only a single, continuous map is rendered.
+- A second, denser cell layout (content width 13, stride 14, vs. this
+  module's own wide 16/17) -- confirmed real: every band in `SE3__T5.
+  K2`'s own map (a later-turn report, more provinces known) uses this
+  dense layout instead of the wide one this module implements, matching
+  the original AKGEN report's own claim of "a second, denser layout
+  from the mid-game corpus onward" (previously unverified in this
+  project). The dense layout's own row templates (tick positions, tie
+  directions, overflow rule) have not yet been re-derived, nor has the
+  real trigger for which layout a given report uses -- this module
+  always renders the wide layout.
 - The horizontal stagger/positioning formula below only covers `x >= 1`
   (every real sample cross-checked this phase happens to have its
   leftmost known province at `x >= 1`); `cell_pixel_column()` clamps
@@ -127,7 +151,7 @@ from __future__ import annotations
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain, province_code
-from ak_engine.models.race import RACE_NAME, Race
+from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
 
 CELL_WIDTH = 16
 CELL_STRIDE = CELL_WIDTH + 1  # one real-space column separates every cell
@@ -305,6 +329,55 @@ def _status_word(tax: int) -> str:
     return "Rich"
 
 
+# The 4 "inner" row templates, in physical row order (row 2 through 5) --
+# see module docstring's own Phase 565 note. A cell's own "middle"
+# fields (ruler, race, recruit, status) always fill these consecutively
+# starting at row 2, in this fixed template order -- confirmed directly:
+# when the recruit-type field is skipped (see `_middle_fields()`), the
+# status word that shifts up into physical row 4 renders using row 4's
+# own template (not row 3/5's), not the field's usual one.
+_ROW_TEMPLATES: list[tuple[str, int, str, bool]] = [
+    (_ROW2_LEFT, _ROW2_ZONE, _ROW2_RIGHT, True),
+    (_ROW35_LEFT, _ROW35_ZONE, _ROW35_RIGHT, False),
+    (_ROW4_LEFT, _ROW4_ZONE, _ROW4_RIGHT, False),
+    (_ROW35_LEFT, _ROW35_ZONE, _ROW35_RIGHT, False),
+]
+
+
+def _middle_fields(state: GameState, province: ProvinceState, *, viewing_kingdom_id: int) -> list[str]:
+    """The cell's own "middle" field values, in order, skipping any that
+    this phase confirms get omitted -- see module docstring's own Phase
+    565 note. Ruler is always included here (this project has no sourced
+    trigger yet for the real game's own occasional ruler-row omission,
+    e.g. `Cantia` in `SE3__T5.K2` -- a genuinely confirmed real case,
+    deliberately left unmodeled rather than guessed at, see module
+    docstring). Recruit is omitted for a non-`HUMANOID_RACES` province
+    (`Shasta`'s own real `Eagles` race, `SE3__T1.K2`) -- a monster-
+    guarded province has no recruitable army units to list.
+    """
+
+    if province.owner_kingdom_id is not None:
+        ruler_text = _king_name_and_id(state, province.owner_kingdom_id) or "Unowned"
+    else:
+        ruler_text = "Unowned"
+
+    race_text = _race_name_plural(province.race)
+
+    if province.owner_kingdom_id == viewing_kingdom_id:
+        status_text = f"Tax: {province.tax if province.tax is not None else 0}"
+    else:
+        status_text = _status_word(province.tax if province.tax is not None else 0)
+
+    fields = [ruler_text, race_text]
+    if province.race in HUMANOID_RACES:
+        recruit_text = _recruit_abbreviation(province.recruit_type_1) if province.recruit_type_1 is not None else ""
+        if province.recruit_type_2 is not None:
+            recruit_text += f",{_recruit_abbreviation(province.recruit_type_2)}"
+        fields.append(recruit_text)
+    fields.append(status_text)
+    return fields
+
+
 def render_cell(state: GameState, province: ProvinceState, *, viewing_kingdom_id: int) -> list[str]:
     """The 6 raw content lines (16 chars each, no separator) for one
     province's own map cell -- see module docstring for the full,
@@ -320,38 +393,34 @@ def render_cell(state: GameState, province: ProvinceState, *, viewing_kingdom_id
     name = raw_name.replace(" ", symbol)
     line1 = _pad_center(f"{name}({id_text})", CELL_WIDTH, symbol)
 
-    if province.owner_kingdom_id is not None:
-        ruler_text = _king_name_and_id(state, province.owner_kingdom_id) or "Unowned"
+    middle_fields = _middle_fields(state, province, viewing_kingdom_id=viewing_kingdom_id)
+    middle_lines = [
+        _pad_framed(text, left_template=left, zone_width=zone, right_template=right, symbol=symbol, tie_left=tie_left)
+        for text, (left, zone, right, tie_left) in zip(middle_fields, _ROW_TEMPLATES)
+    ]
+
+    if len(middle_lines) == len(_ROW_TEMPLATES):
+        # Nothing skipped -- Expl% merges into the border row, matching
+        # every field-complete cell already confirmed (Phase 562). Space
+        # is replaced by the terrain symbol, like every other full-fill
+        # row.
+        expl_text = f"{province.explored_percent}%{symbol}Expl."
+        last_line = _pad_center(expl_text, CELL_WIDTH, symbol)
     else:
-        ruler_text = "Unowned"
-    line2 = _pad_framed(
-        ruler_text, left_template=_ROW2_LEFT, zone_width=_ROW2_ZONE, right_template=_ROW2_RIGHT, symbol=symbol, tie_left=True
-    )
+        # A field was skipped -- Expl% gets its own row (the next
+        # unused template slot), and the border row stays pure,
+        # matching `Shasta`'s own real cell (`SE3__T1.K2`) exactly. As
+        # an ordinary framed inner row now (not merged into the
+        # border), it keeps its own real space, like every other inner
+        # row's internal word gaps.
+        expl_text = f"{province.explored_percent}% Expl."
+        left, zone, right, tie_left = _ROW_TEMPLATES[len(middle_lines)]
+        middle_lines.append(
+            _pad_framed(expl_text, left_template=left, zone_width=zone, right_template=right, symbol=symbol, tie_left=tie_left)
+        )
+        last_line = symbol * CELL_WIDTH
 
-    race_text = _race_name_plural(province.race)
-    line3 = _pad_framed(
-        race_text, left_template=_ROW35_LEFT, zone_width=_ROW35_ZONE, right_template=_ROW35_RIGHT, symbol=symbol, tie_left=False
-    )
-
-    recruit_text = _recruit_abbreviation(province.recruit_type_1) if province.recruit_type_1 is not None else ""
-    if province.recruit_type_2 is not None:
-        recruit_text += f",{_recruit_abbreviation(province.recruit_type_2)}"
-    line4 = _pad_framed(
-        recruit_text, left_template=_ROW4_LEFT, zone_width=_ROW4_ZONE, right_template=_ROW4_RIGHT, symbol=symbol, tie_left=False
-    )
-
-    if province.owner_kingdom_id == viewing_kingdom_id:
-        status_text = f"Tax: {province.tax if province.tax is not None else 0}"
-    else:
-        status_text = _status_word(province.tax if province.tax is not None else 0)
-    line5 = _pad_framed(
-        status_text, left_template=_ROW35_LEFT, zone_width=_ROW35_ZONE, right_template=_ROW35_RIGHT, symbol=symbol, tie_left=False
-    )
-
-    expl_text = f"{province.explored_percent}%{symbol}Expl."
-    line6 = _pad_center(expl_text, CELL_WIDTH, symbol)
-
-    return [line1, line2, line3, line4, line5, line6]
+    return [line1, *middle_lines, last_line]
 
 
 def render_ascii_map(state: GameState, kingdom_id: int) -> list[str]:

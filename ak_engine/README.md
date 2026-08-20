@@ -23306,7 +23306,7 @@ follow-up request after the original 431-435 plan shipped.
   `render_ascii_map()`-level `Rich` case. Ran again: 4841 passed
   (net +2).
 
-- **Phase 564 (current)**: closed Phase 562's own last deliberately-
+- **Phase 564**: closed Phase 562's own last deliberately-
   deferred gap -- the real name-too-long-wraps-onto-its-own-row
   behavior -- but by the user's own explicit choice, *not* by
   reproducing that real behavior: a province name longer than 9
@@ -23334,6 +23334,54 @@ follow-up request after the original 431-435 plan shipped.
   Yanga`'s own 9-character boundary staying whole; a 12-character
   name (`Transylvania`) also truncating. Ran again: 4844 passed
   (net +3).
+
+- **Phase 565 (current)**: closed one of Phase 562's other two
+  deliberately-deferred gaps -- a province's own recruit-type row (row
+  4) is entirely absent when its own race is not one of `models/race.py
+  HUMANOID_RACES` (`Human`/`Elven`/`Dwarven`/`Orcish`), confirmed
+  directly via `Shasta`'s own real cell in `SE3__T1.K2` (race `Eagles`,
+  a monster/native race, not a recruitable civilization): the status
+  word shifts up to physical row 4 (using row 4's own framed template,
+  not row 3/5's -- confirmed since `Shasta`'s real "Poor" padding
+  matches row 4's own tick pattern exactly), Expl% un-merges from the
+  border into its own physical row 5 (framed, real space instead of the
+  terrain-symbol space it uses when merged), and row 6 becomes a pure,
+  content-less border line. Restructured `render_cell()` around a new
+  `_ROW_TEMPLATES`/`_middle_fields()` pair: the cell's own "middle"
+  fields (ruler, race, recruit, status) fill physical rows 2-5
+  consecutively using a fixed per-physical-row template list, so a
+  skipped field simply shortens the list rather than needing a special
+  case per row. **Also corrected a stale docstring citation found while
+  re-verifying real data for this phase**: an earlier pass had
+  mis-transcribed `SE3__T5.K2`'s own `Tesawa`/`Marzuq`/`Cantia` band
+  without precise column alignment, wrongly citing both `Tesawa` and
+  `Marzuq` as ruler-row-skip examples; careful re-extraction (exact
+  string-index anchors from each province's own ID code) showed the
+  real cell width for that band is actually 13 (not 16, a second,
+  denser layout -- see below), and that only `Cantia` genuinely skips
+  its ruler row -- `Tesawa` shows "Unowned" explicitly, `Marzuq` shows
+  a real ruler name. The ruler-row-skip case itself stays unimplemented
+  (no data-model distinction exists yet to explain why `Cantia`, a
+  `HUMANOID_RACES` province, skips while `Tesawa` doesn't -- flagged to
+  the user rather than guessed, who agreed to scope this phase to only
+  the well-sourced recruit-row case). **New, larger gap discovered and
+  documented (not yet implemented), user opted in via AskUserQuestion
+  to have it investigated in a future phase rather than deferred
+  silently**: `SE3__T5.K2`'s entire map uses a second, denser cell
+  layout (content width 13, stride 14) instead of the wide 16/17
+  layout this module implements -- confirmed via ID-code position
+  deltas across all 4 of that report's own bands, matching the
+  original AKGEN report's own previously-unverified claim of "a second,
+  denser layout from the mid-game corpus onward." Ran before writing
+  tests: 4844 passed (non-breaking). Fixed the existing `Orielle`/
+  `Shasta` band test's own expected `Shasta` lines (its old expected
+  recruit row was never real data -- a test-authoring placeholder
+  predating this phase's own correction) to match `Shasta`'s real,
+  now-implemented shape. Added tests: `Shasta`'s own real cell,
+  byte-for-byte; the same shifted-row-4 shape showing `Tax: N` instead
+  of the qualitative word when owned by the viewing Kingdom; a
+  `HUMANOID_RACES` province (`Mongu`) proving it's unaffected. Ran
+  again: 4847 passed (net +3).
 
 ## Setup
 

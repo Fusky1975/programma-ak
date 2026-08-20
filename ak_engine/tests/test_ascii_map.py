@@ -164,7 +164,10 @@ def test_render_ascii_map_matches_real_sample_other_kingdom_and_unowned_band():
     # Shasta (unowned, race Eagles) -- byte-for-byte for every row this
     # phase models (Waterford Sea's own overlong-name wrap is
     # deliberately not exercised here -- see module docstring's own
-    # deferred-gaps list).
+    # deferred-gaps list). Shasta's own real cell has no recruit row at
+    # all (Phase 565: Eagles is not a `HUMANOID_RACES` member) -- its
+    # own real `t1` is set here anyway to prove it's genuinely ignored,
+    # not merely `None`.
     state = _state()
     state.add_leader(LeaderState(23, 97, "Snorri", HOME, is_king=True))
     state.add_kingdom(KingdomState(97, "K97", Race.HUMAN, None, HOME))
@@ -182,9 +185,9 @@ def test_render_ascii_map_matches_real_sample_other_kingdom_and_unowned_band():
         pad + "__Orielle(0204)_ ^^Shasta(0304)^^",
         pad + "_ _Snorri(23) __ ^ ^  Unowned  ^^",
         pad + "_   _Humans _  _ ^   ^Eagles ^  ^",
-        pad + "_ _   Le,Ch   __ ^ ^   ^EA ^   ^^",
-        pad + "_   _ Rich  _  _ ^   ^ Poor  ^  ^",
-        pad + "____26%_Expl.___ ^^^^1%^Expl.^^^^",
+        pad + "_ _   Le,Ch   __ ^ ^   Poor^   ^^",
+        pad + "_   _ Rich  _  _ ^   1% Expl.^  ^",
+        pad + "____26%_Expl.___ ^^^^^^^^^^^^^^^^",
     ]
 
 
@@ -285,3 +288,46 @@ def test_render_cell_truncates_a_twelve_character_name_too():
     cell = render_cell(state, province, viewing_kingdom_id=2)
     assert "Transylv" in cell[0]
     assert "Transylvania" not in cell[0]
+
+
+# -- Phase 565: recruit row omitted for a non-HUMANOID_RACES province --
+
+
+def test_render_cell_matches_shastas_own_real_cell_with_no_recruit_row():
+    # SE3__T1.K2's own Shasta: race Eagles (not a HUMANOID_RACES member).
+    # `t1` is set anyway to prove it's genuinely ignored, not merely None.
+    state = _state()
+    province = _province(3, 4, "Shasta", Terrain.MTNS, Race.EAGLES, owner=None, tax=1, t1=ArmyType.EAGLE_WING, t2=None, expl=1)
+    cell = render_cell(state, province, viewing_kingdom_id=2)
+    assert cell == [
+        "^^Shasta(0304)^^",
+        "^ ^  Unowned  ^^",
+        "^   ^Eagles ^  ^",
+        "^ ^   Poor^   ^^",
+        "^   1% Expl.^  ^",
+        "^^^^^^^^^^^^^^^^",
+    ]
+
+
+def test_render_cell_shows_the_real_tax_number_when_recruit_row_is_skipped():
+    # Same as above, but owned by the viewing Kingdom -- the shifted
+    # status row shows "Tax: N" instead of the qualitative word, using
+    # the same row-4 template.
+    state = _state()
+    province = _province(3, 4, "Shasta", Terrain.MTNS, Race.EAGLES, owner=2, tax=7, t1=None, t2=None, expl=1)
+    cell = render_cell(state, province, viewing_kingdom_id=2)
+    assert len(cell) == 6
+    assert "Tax: 7" in cell[3]
+    assert cell[5] == TERRAIN_SYMBOL[Terrain.MTNS] * 16
+
+
+def test_render_cell_humanoid_race_keeps_its_recruit_row():
+    # A HUMANOID_RACES province is unaffected -- all 6 rows keep their
+    # Phase 562 shape, recruit row included, Expl% still merged into
+    # the border row.
+    state = _state()
+    province = _province(1, 1, "Mongu", Terrain.JUNGLE, Race.HUMAN, owner=None, tax=0, t1=ArmyType.LEGION, t2=None, expl=1)
+    cell = render_cell(state, province, viewing_kingdom_id=2)
+    assert len(cell) == 6
+    assert "Le" in cell[3]
+    assert "Expl." in cell[5]
