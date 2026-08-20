@@ -197,6 +197,59 @@ layout's own `Transylvania` exclusion.
   boundary (14 total, vs. wide's own higher real boundary) would
   strictly require.
 
+**Phase 569: a third, still-denser layout** (content width 11, stride
+12), one of the 4 additional real strides Phase 567's own survey found
+but left unimplemented. Reverse-engineered against `SE3__T3.K1`'s own
+map (5 real bands, `x_min = 8` confirmed across the whole report with
+zero residual using the same `x_min`-relative formula `cell_pixel_
+column()` now uses -- see `stride12_cell_pixel_column()`). This tier's
+own real names are short enough to fit inline (name + id, no wrap) far
+less often than the wider tiers -- most cells in the sample corpus
+have either the province's own name, or the ruler's own name, or both,
+wrap onto a second row (the same real mechanic Phase 564 already chose
+not to reproduce, applied here too). Only one cell in the whole report,
+`Third` (`SE3__T3.K1` lines 476-481), is fully clean (no wrap at all),
+providing the primary byte-for-byte source; a second cell, `Shark`,
+wraps its own ruler name but its later rows (race/recruit/status,
+shifted by the wrap the same way `_middle_fields()` already models)
+independently corroborate rows 4 and 5's own tick columns.
+
+- **Row 1/row 6**: same full-fill, tie-left, symbol-pad rule as the
+  other two layouts (not independently re-confirmed against a short
+  example here either, same honesty caveat as the dense layout's own).
+- **Rows 2, 3/5, and 4 each have their own distinct template** -- a
+  third distinct pairing, different from both the wide layout (every
+  row unique) and the dense layout (2+4 paired, 3+5 paired). Row 2's
+  own tick columns are `{0, 10}` -- confirmed via `Kumasi`'s own real
+  "Unowned", whose own uncovered column 1 is a plain space, not a tick;
+  column 2 was never independently uncovered by any real sample in this
+  report (every clean row-2 content found was long enough to cover it),
+  so a tick there is neither confirmed nor assumed. Row 4's own tick
+  columns are `{0, 2, 10}` -- confirmed via both `Third`'s own real
+  "Ax" and `Shark`'s own real "Orcs" (shifted into row 4 by `Shark`'s
+  own ruler-name wrap), independently showing the same embedded tick
+  at column 2 and no tick at column 8. Rows 3 and 5 share `{0, 8, 10}`
+  -- confirmed via `Third`'s own real "Elves" (row 3) and `Shark`'s own
+  real "Ph,WR" (row 5, shifted), both independently showing the same
+  embedded tick at column 8.
+- **Name truncation uses its own tier-specific constants**
+  (`STRIDE12_PROVINCE_NAME_TRUNCATION_TRIGGER`/`STRIDE12_MAX_PROVINCE_
+  NAME_LENGTH`), not the wide layout's reused 9/8 pair the way the
+  dense layout uses -- reusing 9/8 here would still let a truncated
+  name overflow this tier's own much narrower cell (8 + 6 = 14, past
+  even this tier's own real flush ceiling of 12). No real sample gives
+  a sourced "must stay whole" boundary at this width either, so this
+  phase computed the narrowest defensible value instead of guessing
+  one: truncate down to whatever leaves name + id exactly at this
+  tier's own real flush ceiling (`STRIDE12_CELL_STRIDE - 6`).
+- **The physical-row-indexed field-shift architecture generalizes
+  unchanged** (`_middle_fields()` reused verbatim) -- `Shark`'s own
+  real cell (ruler name too long, wraps to its own second row) shows
+  the same cascade shape already established: rulername/rulerid split
+  across rows 2-3, race/recruit pushed down to rows 4-5, and status
+  merges into the border row 6 with Expl% dropped entirely, matching
+  the wide layout's own `Transylvania`-style cascade exactly.
+
 **Explicitly NOT modeled this phase, confirmed real but not yet
 reconciled with enough samples to state a rule with the same
 confidence as the above** (see this module's own Phase 562 audit notes
@@ -272,11 +325,11 @@ in `README.md` for the full account):
   disassembly would be the only way to get a definitive answer, well
   outside this project's own reverse-engineering approach.
   `describe_map_report()` always calls the wide renderer; nothing
-  currently picks any of the narrower ones automatically, and the 4
-  narrower tiers this phase newly discovered (strides 12, 10, 9, 8)
-  remain entirely unimplemented -- their own row templates have not
-  been derived at all (only the wide and dense layouts' own templates
-  are confirmed).
+  currently picks any of the narrower ones automatically. Of the 4
+  narrower tiers this phase newly discovered (strides 12, 10, 9, 8),
+  stride 12 is now implemented (Phase 569, see below); strides 10, 9,
+  and 8 remain entirely unimplemented -- their own row templates have
+  not been derived at all.
 - `cell_pixel_column()` clamps a coordinate below `x_min` to `x_min`
   itself rather than letting it go negative -- defensive only (`x_min`
   is computed as the true minimum of whatever's being rendered, so no
@@ -331,6 +384,11 @@ CELL_STRIDE = CELL_WIDTH + 1  # one real-space column separates every cell
 DENSE_CELL_WIDTH = 13
 DENSE_CELL_STRIDE = DENSE_CELL_WIDTH + 1
 
+# Phase 569: the third, still-denser layout (see module docstring's own
+# Phase 567 survey -- this is the "stride 12" tier).
+STRIDE12_CELL_WIDTH = 11
+STRIDE12_CELL_STRIDE = STRIDE12_CELL_WIDTH + 1
+
 # Phase 564: confirmed directly by the user (project author) -- a
 # province name longer than `PROVINCE_NAME_TRUNCATION_TRIGGER` is cut to
 # its own first `MAX_PROVINCE_NAME_LENGTH` raw characters (before the
@@ -345,6 +403,19 @@ DENSE_CELL_STRIDE = DENSE_CELL_WIDTH + 1
 # already-verified data was flagged.
 PROVINCE_NAME_TRUNCATION_TRIGGER = 9
 MAX_PROVINCE_NAME_LENGTH = 8
+
+# Phase 569: reusing the wide layout's own 9/8 pair (as Phase 566 already
+# did for the dense layout) would still let a truncated name overflow
+# this tier's own much narrower cell -- 8 raw characters + the 6-char
+# `(dddd)` id is 14, past even this tier's own real "flush, no gap"
+# ceiling of `STRIDE12_CELL_STRIDE` (12). No real sample gives a sourced
+# "must stay whole" boundary at this width (same gap Phase 566 already
+# had for the dense layout), so this phase picks the narrowest defensible
+# option instead of an arbitrary one: truncate down to whatever leaves
+# the name+id pair exactly at this tier's own flush ceiling, the same
+# real boundary already confirmed for name+id rows in every layout.
+STRIDE12_MAX_PROVINCE_NAME_LENGTH = STRIDE12_CELL_STRIDE - 6
+STRIDE12_PROVINCE_NAME_TRUNCATION_TRIGGER = STRIDE12_MAX_PROVINCE_NAME_LENGTH + 1
 
 # `_` Plains, `+` Forest, `&` Jungle, `^` Mountain, `.` Desert, `~` Sea --
 # see this module's own docstring for the full sourcing. `NO_TERRAIN`
@@ -440,6 +511,21 @@ def dense_cell_pixel_column(coord: HexCoord) -> int:
 
     stagger = DENSE_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
     return coord.x * DENSE_CELL_STRIDE + stagger
+
+
+def stride12_cell_pixel_column(coord: HexCoord, x_min: int) -> int:
+    """The stride-12 layout's own horizontal pixel column -- see module
+    docstring's own Phase 569 note. Confirmed against every one of
+    `SE3__T3.K1`'s own 5 real bands (`x_min = 8`, the true minimum
+    across the whole report, not just the row being placed): a plain
+    `(x - x_min) * STRIDE12_CELL_STRIDE + stagger`, zero residual --
+    the same clean, `x_min`-relative shape `cell_pixel_column()` uses
+    for the wide layout, not `dense_cell_pixel_column()`'s own
+    unresolved one.
+    """
+
+    stagger = STRIDE12_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
+    return max(0, coord.x - x_min) * STRIDE12_CELL_STRIDE + stagger
 
 
 def _pad_center(content: str, width: int, pad: str) -> str:
@@ -538,6 +624,23 @@ def _pad_overlay(content: str, *, tick_columns: frozenset[int], symbol: str, wid
 # 3/5 share another (see module docstring's own Phase 566 section).
 _DENSE_ROW24_TICKS = frozenset({0, 2, 10, 12})
 _DENSE_ROW35_TICKS = frozenset({0, 4, 8, 12})
+
+# Confirmed stride-12-layout tick columns (see module docstring's own
+# Phase 569 section) -- unlike the dense layout, rows 2 and 4 do NOT
+# share a template here: row 2's own tick columns are `{0, 10}` (no
+# embedded tick -- confirmed via `Kumasi`'s own real "Unowned", whose
+# own uncovered column 1 shows a plain space, not a tick; column 2 was
+# never independently uncovered by any real sample, so a tick there is
+# neither confirmed nor ruled out, and none is assumed); row 4's own
+# are `{0, 2, 10}` (confirmed via both `Third`'s own real "Ax" and
+# `Shark`'s own real "Orcs", independently showing the same embedded
+# tick at column 2, and no tick at column 8). Rows 3 and 5 DO share one
+# set, `{0, 8, 10}` (confirmed via `Third`'s own real "Elves" at row 3
+# and `Shark`'s own real "Ph,WR" at row 5, both independently showing
+# the same embedded tick at column 8).
+_STRIDE12_ROW2_TICKS = frozenset({0, 10})
+_STRIDE12_ROW35_TICKS = frozenset({0, 8, 10})
+_STRIDE12_ROW4_TICKS = frozenset({0, 2, 10})
 
 
 def _king_name_and_id(state: GameState, kingdom_id: int) -> str | None:
@@ -737,6 +840,89 @@ def render_ascii_map(state: GameState, kingdom_id: int) -> list[str]:
                     # columns (shouldn't happen for real, non-adjacent
                     # x values) -- keep whichever was placed first rather
                     # than corrupting the line.
+                    continue
+                line += cell[band_row]
+            lines.append(line.rstrip())
+
+    return lines
+
+
+# Stride-12-layout analogue of `_ROW_TEMPLATES` -- row 2 has its own
+# template, rows 3/5 share `_STRIDE12_ROW35_TICKS`, row 4 has its own
+# (see module docstring's own Phase 569 section) -- a different pairing
+# from both the wide and dense layouts. The physical-row-indexed shift
+# architecture is otherwise identical.
+_STRIDE12_ROW_TEMPLATES: list[frozenset[int]] = [
+    _STRIDE12_ROW2_TICKS,
+    _STRIDE12_ROW35_TICKS,
+    _STRIDE12_ROW4_TICKS,
+    _STRIDE12_ROW35_TICKS,
+]
+
+
+def render_cell_stride12(state: GameState, province: ProvinceState, *, viewing_kingdom_id: int) -> list[str]:
+    """The stride-12 layout's own 6 raw content lines (11 chars each, no
+    separator) for one province's own map cell -- see module docstring's
+    own Phase 569 section for the full, sourced derivation.
+    """
+
+    symbol = TERRAIN_SYMBOL[province.effective_terrain()]
+
+    id_text = f"{province_code(province.coord):04d}"
+    raw_name = province.name or ""
+    if len(raw_name) > STRIDE12_PROVINCE_NAME_TRUNCATION_TRIGGER:
+        raw_name = raw_name[:STRIDE12_MAX_PROVINCE_NAME_LENGTH]
+    name = raw_name.replace(" ", symbol)
+    line1 = _pad_center(f"{name}({id_text})", STRIDE12_CELL_WIDTH, symbol)
+
+    middle_fields = _middle_fields(state, province, viewing_kingdom_id=viewing_kingdom_id)
+    middle_lines = [
+        _pad_overlay(text, tick_columns=ticks, symbol=symbol, width=STRIDE12_CELL_WIDTH)
+        for text, ticks in zip(middle_fields, _STRIDE12_ROW_TEMPLATES)
+    ]
+
+    if len(middle_lines) == len(_STRIDE12_ROW_TEMPLATES):
+        expl_text = f"{province.explored_percent}%{symbol}Expl."
+        last_line = _pad_center(expl_text, STRIDE12_CELL_WIDTH, symbol)
+    else:
+        expl_text = f"{province.explored_percent}% Expl."
+        ticks = _STRIDE12_ROW_TEMPLATES[len(middle_lines)]
+        middle_lines.append(_pad_overlay(expl_text, tick_columns=ticks, symbol=symbol, width=STRIDE12_CELL_WIDTH))
+        last_line = symbol * STRIDE12_CELL_WIDTH
+
+    return [line1, *middle_lines, last_line]
+
+
+def render_ascii_map_stride12(state: GameState, kingdom_id: int) -> list[str]:
+    """The stride-12 layout's own analogue of `render_ascii_map()` -- see
+    module docstring's own Phase 569 section. Nothing currently calls
+    this: which layout a given report actually uses is still an open
+    question (see module docstring's own deferred-gaps list), so
+    `describe_map_report()` keeps calling the wide renderer above.
+    """
+
+    provinces = list(state.provinces.values())
+    if not provinces:
+        return []
+
+    x_min = min(p.coord.x for p in provinces)
+
+    rows_by_y: dict[int, list[ProvinceState]] = {}
+    for province in provinces:
+        rows_by_y.setdefault(province.coord.y, []).append(province)
+
+    lines: list[str] = []
+    for y in sorted(rows_by_y):
+        row_provinces = sorted(rows_by_y[y], key=lambda p: p.coord.x)
+        cells = [render_cell_stride12(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
+        columns = [stride12_cell_pixel_column(p.coord, x_min) for p in row_provinces]
+
+        for band_row in range(6):
+            line = ""
+            for cell, column in zip(cells, columns):
+                if column > len(line):
+                    line += " " * (column - len(line))
+                elif column < len(line):
                     continue
                 line += cell[band_row]
             lines.append(line.rstrip())

@@ -22,8 +22,11 @@ from ak_engine.report.ascii_map import (
     dense_cell_pixel_column,
     render_ascii_map,
     render_ascii_map_dense,
+    render_ascii_map_stride12,
     render_cell,
     render_cell_dense,
+    render_cell_stride12,
+    stride12_cell_pixel_column,
 )
 
 HOME = HexCoord(0, 0)
@@ -470,4 +473,61 @@ def test_render_ascii_map_dense_matches_orielle_and_shasta_real_band():
         pad + "_ _ Le,Ch _ _ ^ ^  Poor ^ ^",
         pad + "_  Tax: 10  _ ^  8% Expl. ^",
         pad + "__51%_Expl.__ ^^^^^^^^^^^^^",
+    ]
+
+
+# -- Phase 569: the stride-12 layout (SE3__T3.K1) -- its own placement
+# formula and its own 3 distinct row templates (row 2, row 4, and a
+# shared row 3/5); see module docstring's own section.
+
+
+def test_stride12_cell_pixel_column_matches_the_real_t3k1_report():
+    # SE3__T3.K1's own real map: x_min=8 across the whole report (not
+    # just one row), confirmed against all 5 of its own real bands with
+    # zero residual -- odd row y=7's own leftmost cell (Third, x=8)
+    # sits at column 0; the next cell over (x=9) at column 12.
+    assert stride12_cell_pixel_column(HexCoord(8, 7), x_min=8) == 0
+    assert stride12_cell_pixel_column(HexCoord(9, 7), x_min=8) == 12
+    # y=4 (even) staggers by half a cell relative to y=7 (odd).
+    assert stride12_cell_pixel_column(HexCoord(9, 4), x_min=8) == 18
+
+
+def test_render_cell_stride12_matches_thirds_own_real_cell():
+    # SE3__T3.K1 lines 476-481: Third, a fully clean (no name-wrap, no
+    # ruler-wrap) cell -- the only one in this report's own map that
+    # exercises every row's own real template without a cascade shift.
+    state = _state()
+    state.add_leader(LeaderState(73, 97, "Presto", HOME, is_king=True))
+    state.add_kingdom(KingdomState(97, "K97", Race.ELVEN, None, HOME))
+    province = _province(8, 7, "Third", Terrain.FOREST, Race.ELVEN, owner=97, tax=5, t1=ArmyType.AXEMEN, t2=None, expl=1)
+    cell = render_cell_stride12(state, province, viewing_kingdom_id=2)
+    assert cell == [
+        "Third(0807)",
+        "+Presto(73)",
+        "+  Elves+ +",
+        "+ +  Ax   +",
+        "+Prosperous",
+        "++1%+Expl.+",
+    ]
+
+
+def test_render_ascii_map_stride12_matches_thirds_own_real_band():
+    # Same real cell, this time through the map-level renderer -- the
+    # real report shows Third at column 0 (it's the row's own leftmost
+    # and the whole report's own x_min), confirming the placement
+    # formula and the content renderer agree end to end.
+    state = _state()
+    state.add_leader(LeaderState(73, 97, "Presto", HOME, is_king=True))
+    state.add_kingdom(KingdomState(97, "K97", Race.ELVEN, None, HOME))
+    state.add_province(_province(8, 7, "Third", Terrain.FOREST, Race.ELVEN, owner=97, tax=5, t1=ArmyType.AXEMEN, t2=None, expl=1))
+
+    lines = render_ascii_map_stride12(state, 2)
+
+    assert lines == [
+        "Third(0807)",
+        "+Presto(73)",
+        "+  Elves+ +",
+        "+ +  Ax   +",
+        "+Prosperous",
+        "++1%+Expl.+",
     ]

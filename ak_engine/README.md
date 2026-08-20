@@ -23475,7 +23475,7 @@ follow-up request after the original 431-435 plan shipped.
   purely to confirm the docstring-only edit didn't touch anything:
   4856 passed both times.
 
-- **Phase 568 (current)**: while investigating the 4 narrower map
+- **Phase 568**: while investigating the 4 narrower map
   layouts the user asked to implement next, found and fixed a real
   correctness bug in the wide layout's own already-shipped horizontal-
   placement formula. `cell_pixel_column()` hardcoded `(x - 1) *
@@ -23515,6 +23515,42 @@ follow-up request after the original 431-435 plan shipped.
   constructed state produces). Added tests: `cell_pixel_column()`
   relative-to-`x_min` behavior, using `SE3__T1.K1`'s own real `x=9-11`
   band. Ran again: 4857 passed (net +1).
+
+- **Phase 569 (current)**: implemented the third real map layout (content
+  width 11, stride 12), one of the 4 additional strides Phase 567's own
+  survey found but left unimplemented, resuming the work Phase 568's
+  placement-formula fix had paused. Reverse-engineered against `SE3__
+  T3.K1`'s own map -- confirmed the *same* `x_min`-relative placement
+  formula `cell_pixel_column()` already uses (zero residual across all
+  5 of this report's own real bands, `x_min = 8`), not the dense
+  layout's own unresolved one. This tier's own real cells wrap their
+  names (or their own ruler's name) far more often than the wider
+  tiers -- only one cell in the whole report, `Third`, is fully clean;
+  a second, `Shark`, wraps its own ruler but its later, shifted rows
+  still independently corroborate 2 of the tier's own 3 distinct row
+  templates (row 2 alone; rows 3 and 5 share one; row 4 has its own --
+  a different pairing from both the wide and dense layouts). Row 2's
+  own tick at column 2 was never independently testable from any real
+  sample in this report (every clean example was long enough to cover
+  it) -- left unconfirmed rather than assumed, matching this project's
+  own established honesty standard. New tier-specific name-truncation
+  constants (`STRIDE12_PROVINCE_NAME_TRUNCATION_TRIGGER`/`STRIDE12_MAX_
+  PROVINCE_NAME_LENGTH`) rather than reusing the wide layout's own 9/8
+  pair the way the dense layout does, since 8+6=14 would still overflow
+  this tier's own narrower 12-column flush ceiling -- computed, not
+  guessed, as the narrowest value that keeps name+id exactly at that
+  ceiling. New `STRIDE12_CELL_WIDTH`/`STRIDE12_CELL_STRIDE` constants,
+  `stride12_cell_pixel_column()`, `render_cell_stride12()`, and
+  `render_ascii_map_stride12()` in `report/ascii_map.py`, reusing
+  `_pad_overlay()`/`_middle_fields()` verbatim (both already width-
+  parametric or layout-agnostic). Not wired into `describe_map_report
+  ()` -- same open trigger question as the dense layout. Strides 10, 9,
+  and 8 remain unimplemented; that work continues next. Ran before
+  writing tests: 4857 passed (non-breaking). Added tests: the placement
+  formula against `SE3__T3.K1`'s own real `x=8-9` band; `Third`'s own
+  real cell byte-for-byte, both directly (`render_cell_stride12()`) and
+  through the map-level renderer (`render_ascii_map_stride12()`). Ran
+  again: 4860 passed (net +3).
 
 ## Setup
 
