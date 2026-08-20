@@ -20,6 +20,7 @@ from ak_engine.report.ascii_map import (
     _race_name_plural,
     cell_pixel_column,
     dense_cell_pixel_column,
+    map_region_label,
     render_ascii_map,
     render_ascii_map_dense,
     render_ascii_map_stride8,
@@ -763,3 +764,32 @@ def test_render_ascii_map_stride8_matches_peachwoods_own_real_band():
         pad + "Unowned",
         pad + "++Ents+",
     ]
+
+
+# -- Phase 577: map_region_label() -- "Ice cap", confirmed to trigger
+# exactly when the map's own topmost row is y == 1 (~10 real samples
+# cross-checked, both with and without the label, zero exceptions).
+
+
+def test_map_region_label_is_ice_cap_when_topmost_row_is_y_1():
+    # Real shape: SE3__T1.K5's own map opens at y=1 (Alderwood(0101)).
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(1, 2, "Belladonna", Terrain.FOREST, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    assert map_region_label(state) == "Ice cap"
+
+
+def test_map_region_label_is_none_when_topmost_row_is_below_y_1():
+    # Real shape: SE3__T1.K1's own map opens at y=4 (Sixth Sea(0904)) --
+    # no label, direct continuation of the intro sentence.
+    state = _state()
+    state.add_province(_province(9, 4, "Sixth Sea", Terrain.SEA, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    assert map_region_label(state) is None
+
+
+def test_map_region_label_is_none_with_no_provinces():
+    state = _state()
+
+    assert map_region_label(state) is None

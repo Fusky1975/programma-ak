@@ -4872,6 +4872,29 @@ def test_describe_map_report_starts_with_the_real_scribe_intro():
     assert lines[-3] == "Key:   _ Plains   + Forest   & Jungle   ^ Mountain   . Desert     Sea"
 
 
+def test_describe_map_report_inserts_ice_cap_label_when_topmost_row_is_y_1():
+    # Phase 577: real sourced trigger -- the map's own topmost row is
+    # y == 1, the world's own northern edge.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital"))
+
+    lines = describe_map_report(state, 1)
+
+    assert lines[4] == "Ice cap"
+    assert lines[5] == "-" * 78
+
+
+def test_describe_map_report_omits_ice_cap_label_when_topmost_row_is_below_y_1():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(1, 4), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital"))
+
+    lines = describe_map_report(state, 1)
+
+    assert "Ice cap" not in lines
+
+
 def test_compose_letter_report_places_the_map_between_provinces_and_characters():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))

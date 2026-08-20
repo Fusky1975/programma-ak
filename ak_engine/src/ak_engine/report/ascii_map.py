@@ -394,6 +394,24 @@ row for it to occupy in the first place).
   the dense and stride-9 layouts (Phase 568/571) -- neither is guessed
   at here either.
 
+**Phase 577: the "Ice cap" region label, previously deferred.** Cross-
+checked against ~10 real samples spanning multiple turns/Kingdoms/
+layout tiers (`SE3__T1.K4`/`K5`/`K6` present it; `SE3__T1.K1`/`K2`/`K3`/
+`K7`/`K8`/`K9` and `SE3__T10.K2` don't; `SE3__T10.K1`/`K3`-`K7` present
+it again), the real trigger turned out to be simple and exact, not
+another unresolved contradiction like the layout-selection trigger
+above: **the label (plus its own fixed 78-dash rule) appears exactly
+when the map's own topmost rendered row sits at `y == 1`** -- the
+world's own real northern edge, matching the label's own name. Every
+labeled sample's first row shows province codes ending in `01`
+(`Alderwood(0101)`, `Cretacia(0601)`, ...); every unlabeled sample's
+first row starts at `y >= 2`. No other label text was ever found
+preceding a 78-dash rule anywhere in this project's own ~90-sample
+corpus -- "Ice cap" is the only real region label, not one member of an
+unimplemented family. `map_region_label()` reuses the exact same
+province set `render_ascii_map()` already iterates, so it always agrees
+with what actually became this report's own topmost row.
+
 **Explicitly NOT modeled this phase, confirmed real but not yet
 reconciled with enough samples to state a rule with the same
 confidence as the above** (see this module's own Phase 562 audit notes
@@ -425,8 +443,9 @@ in `README.md` for the full account):
   every cell at a uniform 6 lines with no row-budget juggling. This is
   a deliberate simplification, not an attempt to reproduce the real
   wrap-and-drop behavior.
-- Multiple maps ("far side of the world") and region labels ("Ice
-  cap") -- only a single, continuous map is rendered.
+- Multiple maps ("far side of the world") -- only a single, continuous
+  map is rendered. (The region label, "Ice cap", is implemented as of
+  Phase 577 -- see that section above.)
 - **The real trigger for which of the (at least) 6 distinct cell-width
   layouts a given report uses.** Phase 567 surveyed every one of this
   project's own 107 real `Desktop/SE3__T*.K*` samples (turns 1-11,
@@ -1139,6 +1158,38 @@ def render_ascii_map(state: GameState, kingdom_id: int) -> list[str]:
             lines.append(line.rstrip())
 
     return lines
+
+
+# Phase 577: the real "Ice cap" region label -- a plain text line plus a
+# 78-dash rule, printed between the map's own intro sentence and the
+# grid itself, confirmed byte-identical (both the text and the rule's
+# own fixed 78-char width) across every real sample that shows it
+# (`SE3__T1.K4`/`K5`/`K6`, `SE3__T4.K6`, `SE3__T10.K1`/`K3`-`K7`, and
+# others). **The trigger, cross-checked against 10+ real samples with
+# zero exceptions**: it appears exactly when the map's own topmost
+# rendered row is y == 1 -- the world's own real northern edge (`y`
+# never goes below 1 anywhere in this project's coordinate system).
+# Every sample whose topmost known province has y >= 2 shows no label
+# at all, direct continuation of the map (`SE3__T1.K1`/`K2`/`K3`/`K7`/
+# `K8`/`K9`, `SE3__T10.K2`). No other label text was ever found
+# preceding the 78-dash rule anywhere across the full ~90-sample corpus
+# -- "Ice cap" is the only real region label, not one case of several.
+MAP_REGION_LABEL_RULE = "-" * 78
+
+
+def map_region_label(state: GameState) -> str | None:
+    """Returns ``"Ice cap"`` when this report's own map (see
+    ``render_ascii_map()``, whose province set this reuses exactly) has
+    a topmost row at ``y == 1``, else ``None`` -- see the module-level
+    comment above ``MAP_REGION_LABEL_RULE`` for the sourced derivation.
+    """
+
+    provinces = list(state.provinces.values())
+    if not provinces:
+        return None
+    if min(p.coord.y for p in provinces) == 1:
+        return "Ice cap"
+    return None
 
 
 # Stride-12-layout analogue of `_ROW_TEMPLATES` -- row 2 has its own

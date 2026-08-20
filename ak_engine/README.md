@@ -23775,7 +23775,7 @@ follow-up request after the original 431-435 plan shipped.
   it directly; `run_turn()` clearing it end-to-end. Ran again: 4884
   passed (net +2).
 
-- **Phase 576 (current)**: continuing the audit into every field still
+- **Phase 576**: continuing the audit into every field still
   carrying a "not auto-cleared -- caller's job" comment after Phase
   573/575, found a fifth real instance -- `ProvinceState.illusory_fog_
   active`. Illusory Fog's own quoted rule text (`turn/cast_execution.py`'s
@@ -23806,6 +23806,30 @@ follow-up request after the original 431-435 plan shipped.
   tests: 4884 passed (non-breaking). Added tests: `_replenish_turn_
   scoped_state()` clearing `illusory_fog_active` directly; `run_turn()`
   clearing it end-to-end. Ran again: 4886 passed (net +2).
+
+- **Phase 577 (current)**: shifts focus from the engine/turn-processing
+  audit back to report prose, picking up one of the ASCII map's own
+  explicitly-deferred items (`report/ascii_map.py`'s own Phase 562-572
+  notes) -- the "Ice cap" region label. Re-checked ~10 real `Desktop/
+  SE3__T*.K*` samples spanning multiple turns/Kingdoms/layout tiers that
+  do and don't show the label, and unlike the still-unresolved layout-
+  selection trigger, this one resolved cleanly: **the label (plus its
+  own fixed 78-dash rule) appears exactly when the map's own topmost
+  rendered row is `y == 1`** -- the world's own real northern edge --
+  confirmed with zero exceptions across every sample checked. New
+  `report/ascii_map.py map_region_label(state) -> str | None` and
+  `MAP_REGION_LABEL_RULE` (the 78-dash string); wired into
+  `report/turn_report.py describe_map_report()`, inserted between the
+  intro sentence and the grid, omitted entirely when absent (matching
+  every real sample that doesn't reach `y == 1`). Ran before writing
+  tests: 4886 passed (non-breaking). Added tests: `map_region_label()`
+  unit tests (present/absent/no-provinces) in `test_ascii_map.py`;
+  `describe_map_report()` wiring tests (label present, label absent) in
+  `test_turn_report.py`. Ran again: 4891 passed (net +5). The "far side
+  of the world" second map -- the other item this same deferred note
+  flagged -- is still under investigation (real samples suggest a
+  connected-components split on the known-province hex-adjacency graph,
+  not yet confirmed to the same standard as this label).
 
 ## Setup
 

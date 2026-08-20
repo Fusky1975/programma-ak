@@ -1156,7 +1156,7 @@ from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, describe_disco
 from ak_engine.models.temper import TEMPER_ABBREVIATION, TEMPER_NAME
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_CATEGORY, TREASURE_LABEL, TREASURE_NAME, Treasure, TreasureCategory
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
-from ak_engine.report.ascii_map import render_ascii_map
+from ak_engine.report.ascii_map import MAP_REGION_LABEL_RULE, map_region_label, render_ascii_map
 from ak_engine.report.prose import render
 from ak_engine.turn.army_quality import compute_army_modified_quality
 from ak_engine.turn.aspy_defend_decode import DefendRequest
@@ -6619,17 +6619,28 @@ def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
     say, omit the section" convention, even though the real map has no
     header of its own for `compose_letter_report()` to conditionally
     skip the way it does for headered sections.
+
+    Phase 577: `map_region_label()` -- "Ice cap" plus its own 78-dash
+    rule, both real, sourced lines -- is inserted right after the intro
+    sentence's blank-line gap, before the grid itself, exactly matching
+    every real sample that shows it; omitted entirely (no gap left
+    behind) for the majority of reports whose map doesn't reach the
+    world's own northern edge.
     """
 
     grid_lines = render_ascii_map(state, kingdom_id)
     if not grid_lines:
         return []
 
+    region_label = map_region_label(state)
+    region_lines = [region_label, MAP_REGION_LABEL_RULE] if region_label else []
+
     return [
         "",
         "",
         f"  {_MAP_REPORT_INTRO} ",
         "",
+        *region_lines,
         *grid_lines,
         "",
         _MAP_KEY_LINE,
