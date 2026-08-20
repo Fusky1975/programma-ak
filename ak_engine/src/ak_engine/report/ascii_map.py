@@ -357,6 +357,43 @@ instead, still no Expl%).
   already-confirmed types (not its own raw `.value`, `"EL"`) -- added
   to `_CONFIRMED_RECRUIT_ABBREVIATION`.
 
+**Phase 572: the sixth and narrowest layout** (content width 7, stride
+8) -- the real floor Phase 567's own survey already identified (no
+Kingdom's own map ever narrows past this, even at 100+ known
+provinces). Reverse-engineered against `SE3__T5.K1`'s own map. This is
+the simplest of all 6 layouts: **every real cell this phase confirmed
+is exactly 4 lines** -- name, id, ruler, race, full stop. Recruit,
+status, and Expl% are never shown at all, regardless of race or
+ownership -- confirmed via `Sherwood` (race Human, a `HUMANOID_RACES`
+member, still shows no recruit row; nothing to skip, since there's no
+row for it to occupy in the first place).
+- **The placement formula needed no correction this time**: `SE3__
+  T5.K1`'s own true `x_min` matches its own visible minimum exactly,
+  confirmed across ~50 independent `(x, y)` measurements spanning all 7
+  of its own real bands, zero residual -- the clean shape, not the
+  dense/stride-9 layouts' own unexplained-margin one.
+- **Row 4 (race) has one embedded tick**, `{0, 1, 6}` -- confirmed via
+  both `Peachwood`'s own real race "Ents" and `Limerick`'s own real
+  "Orcs", independently showing the same tick at column 1. Row 3
+  (ruler) stays border-only, `{0, 6}` -- not independently confirmed
+  beyond the universal border edges, since every real ruler name
+  sampled in this report was either exactly 7 characters (filling the
+  cell) or long enough to flush past it.
+- **The "both race and recruit skipped" anomaly recurs a fifth time**
+  (`Mammoth`, `SE3__T5.K1`'s own report) -- at this tier it shows as
+  status appearing directly at physical row 4 in place of race, the
+  same unmodeled real behavior first found in Phase 570 and repeated
+  in Phase 571 (this report's own "far side of the world" second map,
+  see below, does NOT show it -- both of its own real cells, `Chaco`
+  and `Kilkenny`, display race normally).
+- **This phase closes the "how many real layouts exist" question**
+  Phase 567 opened: all 6 real strides that survey found (17, 14, 12,
+  10, 9, 8) are now implemented and byte-verified. What remains open
+  is which of the 6 a given report actually uses (Phase 567's own
+  unresolved trigger) and the placement-formula anomalies specific to
+  the dense and stride-9 layouts (Phase 568/571) -- neither is guessed
+  at here either.
+
 **Explicitly NOT modeled this phase, confirmed real but not yet
 reconciled with enough samples to state a rule with the same
 confidence as the above** (see this module's own Phase 562 audit notes
@@ -432,11 +469,11 @@ in `README.md` for the full account):
   disassembly would be the only way to get a definitive answer, well
   outside this project's own reverse-engineering approach.
   `describe_map_report()` always calls the wide renderer; nothing
-  currently picks any of the narrower ones automatically. Of the 4
-  narrower tiers this phase newly discovered (strides 12, 10, 9, 8),
-  strides 12, 10, and 9 are now implemented (Phases 569/570/571, see
-  below); stride 8 remains entirely unimplemented -- its own row
-  templates have not been derived at all.
+  currently picks any of the 6 automatically -- all 4 narrower tiers
+  this phase discovered (strides 12, 10, 9, 8) are now implemented
+  (Phases 569/570/571/572, see below), closing the "how many layouts
+  exist" question this phase opened, though not the selection-trigger
+  one.
 - `cell_pixel_column()` clamps a coordinate below `x_min` to `x_min`
   itself rather than letting it go negative -- defensive only (`x_min`
   is computed as the true minimum of whatever's being rendered, so no
@@ -552,6 +589,16 @@ STRIDE9_CELL_WIDTH = 8
 STRIDE9_CELL_STRIDE = STRIDE9_CELL_WIDTH + 1
 STRIDE9_MAX_PROVINCE_NAME_LENGTH = STRIDE9_CELL_WIDTH
 STRIDE9_PROVINCE_NAME_TRUNCATION_TRIGGER = STRIDE9_MAX_PROVINCE_NAME_LENGTH + 1
+
+# Phase 572: the sixth and narrowest layout Phase 567's own survey
+# found (a genuine floor -- no Kingdom's own map ever narrows past this
+# even at 100+ known provinces, see module docstring's own Phase 567
+# section) -- same name/id split as strides 10/9, same truncation
+# approach.
+STRIDE8_CELL_WIDTH = 7
+STRIDE8_CELL_STRIDE = STRIDE8_CELL_WIDTH + 1
+STRIDE8_MAX_PROVINCE_NAME_LENGTH = STRIDE8_CELL_WIDTH
+STRIDE8_PROVINCE_NAME_TRUNCATION_TRIGGER = STRIDE8_MAX_PROVINCE_NAME_LENGTH + 1
 
 # `_` Plains, `+` Forest, `&` Jungle, `^` Mountain, `.` Desert, `~` Sea --
 # see this module's own docstring for the full sourcing. `NO_TERRAIN`
@@ -698,6 +745,20 @@ def stride9_cell_pixel_column(coord: HexCoord, x_min: int) -> int:
 
     stagger = STRIDE9_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
     return max(0, coord.x - x_min) * STRIDE9_CELL_STRIDE + stagger
+
+
+def stride8_cell_pixel_column(coord: HexCoord, x_min: int) -> int:
+    """The stride-8 layout's own horizontal pixel column -- see module
+    docstring's own Phase 572 note. Confirmed against every one of
+    `SE3__T5.K1`'s own 7 real bands (~50 independent `(x, y)` data
+    points, zero variance): the clean, `x_min`-relative shape, with
+    `x_min` genuinely equal to the report's own visible minimum `x`
+    here -- unlike the dense and stride-9 layouts, this one needed no
+    unexplained margin correction.
+    """
+
+    stagger = STRIDE8_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
+    return max(0, coord.x - x_min) * STRIDE8_CELL_STRIDE + stagger
 
 
 def _pad_center(content: str, width: int, pad: str) -> str:
@@ -860,6 +921,20 @@ _STRIDE10_ROW4_TICKS = frozenset({0, 2, 8})
 _STRIDE9_BORDER_TICKS = frozenset({0, 7})
 _STRIDE9_ROW4_TICKS = frozenset({0, 6, 7})
 _STRIDE9_ROW5_TICKS = frozenset({0, 1, 2, 5, 6, 7})
+
+# Confirmed stride-8-layout tick columns (see module docstring's own
+# Phase 572 section), derived from `SE3__T5.K1`'s own real physical
+# rows 3 (ruler) and 4 (race) -- this floor tier's own real cells never
+# show recruit, status, or Expl% at all (see `render_cell_stride8()`'s
+# own docstring), so there is no row 5 or 6 to derive a template for.
+# Row 3's own tick columns were never independently confirmed beyond
+# the universal border (every real ruler name sampled was either
+# exactly 7 characters, filling the cell, or long enough to flush past
+# it) -- left at border-only. Row 4's own are `{0, 1, 6}` (confirmed
+# via both `Peachwood`'s real race "Ents" and `Limerick`'s real "Orcs",
+# independently showing the same embedded tick at column 1).
+_STRIDE8_BORDER_TICKS = frozenset({0, 6})
+_STRIDE8_ROW4_TICKS = frozenset({0, 1, 6})
 
 
 def _king_name_and_id(state: GameState, kingdom_id: int) -> str | None:
@@ -1319,6 +1394,75 @@ def render_ascii_map_stride9(state: GameState, kingdom_id: int) -> list[str]:
         columns = [stride9_cell_pixel_column(p.coord, x_min) for p in row_provinces]
 
         for band_row in range(5):
+            line = ""
+            for cell, column in zip(cells, columns):
+                if column > len(line):
+                    line += " " * (column - len(line))
+                elif column < len(line):
+                    continue
+                line += cell[band_row]
+            lines.append(line.rstrip())
+
+    return lines
+
+
+def render_cell_stride8(state: GameState, province: ProvinceState, *, viewing_kingdom_id: int) -> list[str]:
+    """The stride-8 layout's own 4 raw content lines (7 chars each, no
+    separator) for one province's own map cell -- see module docstring's
+    own Phase 572 section for the full, sourced derivation.
+
+    The floor tier: name and id are always split (same real behavior as
+    strides 10 and 9), and only the ruler and race -- the first 2 of
+    `_middle_fields()`'s own up-to-4 fields -- ever get a row at all.
+    Recruit, status, and Expl% are never shown in any of this report's
+    own well-understood real cells, regardless of race or ownership --
+    confirmed via `Sherwood` (race Humans, a `HUMANOID_RACES` member,
+    still shows no recruit row).
+    """
+
+    symbol = TERRAIN_SYMBOL[province.effective_terrain()]
+
+    raw_name = province.name or ""
+    if len(raw_name) > STRIDE8_PROVINCE_NAME_TRUNCATION_TRIGGER:
+        raw_name = raw_name[:STRIDE8_MAX_PROVINCE_NAME_LENGTH]
+    name = raw_name.replace(" ", symbol)
+    line1 = _pad_center(name, STRIDE8_CELL_WIDTH, symbol)
+
+    id_text = f"({province_code(province.coord):04d})"
+    line2 = _pad_overlay(id_text, tick_columns=_STRIDE8_BORDER_TICKS, symbol=symbol, width=STRIDE8_CELL_WIDTH)
+
+    ruler_text, race_text = _middle_fields(state, province, viewing_kingdom_id=viewing_kingdom_id)[:2]
+    line3 = _pad_overlay(ruler_text, tick_columns=_STRIDE8_BORDER_TICKS, symbol=symbol, width=STRIDE8_CELL_WIDTH)
+    line4 = _pad_overlay(race_text, tick_columns=_STRIDE8_ROW4_TICKS, symbol=symbol, width=STRIDE8_CELL_WIDTH)
+
+    return [line1, line2, line3, line4]
+
+
+def render_ascii_map_stride8(state: GameState, kingdom_id: int) -> list[str]:
+    """The stride-8 layout's own analogue of `render_ascii_map()` -- see
+    module docstring's own Phase 572 section. Nothing currently calls
+    this: which layout a given report actually uses is still an open
+    question (see module docstring's own deferred-gaps list), so
+    `describe_map_report()` keeps calling the wide renderer above.
+    """
+
+    provinces = list(state.provinces.values())
+    if not provinces:
+        return []
+
+    x_min = min(p.coord.x for p in provinces)
+
+    rows_by_y: dict[int, list[ProvinceState]] = {}
+    for province in provinces:
+        rows_by_y.setdefault(province.coord.y, []).append(province)
+
+    lines: list[str] = []
+    for y in sorted(rows_by_y):
+        row_provinces = sorted(rows_by_y[y], key=lambda p: p.coord.x)
+        cells = [render_cell_stride8(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
+        columns = [stride8_cell_pixel_column(p.coord, x_min) for p in row_provinces]
+
+        for band_row in range(4):
             line = ""
             for cell, column in zip(cells, columns):
                 if column > len(line):

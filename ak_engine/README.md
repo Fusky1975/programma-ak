@@ -23591,7 +23591,7 @@ follow-up request after the original 431-435 plan shipped.
   byte-for-byte (3-field, recruit-skip); the map-level renderer for
   `Starhaven`. Ran again: 4864 passed (net +4).
 
-- **Phase 571 (current)**: implemented the fifth real map layout
+- **Phase 571**: implemented the fifth real map layout
   (content width 8, stride 9), sourced from `SE3__T4.K8`. Structurally
   identical in kind to stride 10 (name/id always split), but with an
   even tighter budget: only the first 3 of up to 4 middle fields ever
@@ -23631,6 +23631,39 @@ follow-up request after the original 431-435 plan shipped.
   `Shasta`'s own real cell byte-for-byte (3-field, recruit-skip); the
   placement formula's own relative shape. Ran again: 4868 passed
   (net +4).
+
+- **Phase 572 (current)**: implemented the sixth and narrowest real map
+  layout (content width 7, stride 8) -- the real floor Phase 567's own
+  survey already identified (no Kingdom's own map ever narrows past
+  this). Sourced from `SE3__T5.K1`. The simplest of all 6 layouts:
+  every real cell confirmed this phase is exactly 4 lines -- name, id,
+  ruler, race, nothing else. Recruit, status, and Expl% are never shown
+  regardless of race or ownership (confirmed via `Sherwood`, race
+  Human, a `HUMANOID_RACES` member, still with no recruit row -- there
+  simply isn't one to show it in). The placement formula needed no
+  correction this time (unlike the dense and stride-9 layouts): `SE3__
+  T5.K1`'s own true `x_min` matches its own visible minimum exactly,
+  confirmed across ~50 independent measurements, zero residual. Row 4
+  (race) has one embedded tick, `{0, 1, 6}` (confirmed via `Peachwood`'s
+  own real "Ents" and `Limerick`'s own real "Orcs"); row 3 (ruler)
+  stays border-only, `{0, 6}` (never independently tested -- every real
+  ruler name sampled was either exactly 7 characters or long enough to
+  flush past the cell). Found the "both race and recruit skipped"
+  anomaly a fifth time (`Mammoth`, same report) -- still not modeled.
+  **This phase closes the "how many real layouts exist" question Phase
+  567 opened**: all 6 real strides that survey found are now
+  implemented and byte-verified. What remains open is which of the 6 a
+  given report actually uses (Phase 567's own unresolved trigger) and
+  the placement-formula anomalies specific to the dense and stride-9
+  layouts (Phases 568/571) -- neither is guessed at. New `STRIDE8_
+  CELL_WIDTH`/`STRIDE8_CELL_STRIDE` constants, `stride8_cell_pixel_
+  column()`, `render_cell_stride8()`, `render_ascii_map_stride8()`. Ran
+  before writing tests: 4868 passed (non-breaking). Added tests:
+  `Peachwood`'s and `Sherwood`'s own real cells byte-for-byte (the
+  latter confirming no recruit row even for a humanoid race);
+  `Peachwood`'s own real band through the map-level renderer; the
+  placement formula against `SE3__T5.K1`'s own real `x=6-12` band. Ran
+  again: 4872 passed (net +4).
 
 ## Setup
 

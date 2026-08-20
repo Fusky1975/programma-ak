@@ -22,14 +22,17 @@ from ak_engine.report.ascii_map import (
     dense_cell_pixel_column,
     render_ascii_map,
     render_ascii_map_dense,
+    render_ascii_map_stride8,
     render_ascii_map_stride9,
     render_ascii_map_stride10,
     render_ascii_map_stride12,
     render_cell,
     render_cell_dense,
+    render_cell_stride8,
     render_cell_stride9,
     render_cell_stride10,
     render_cell_stride12,
+    stride8_cell_pixel_column,
     stride9_cell_pixel_column,
     stride10_cell_pixel_column,
     stride12_cell_pixel_column,
@@ -687,4 +690,76 @@ def test_render_ascii_map_stride9_matches_katangas_own_real_band():
         pad + "Circe(8)",
         pad + "&Dwarves",
         pad + "&&Le,El&",
+    ]
+
+
+# -- Phase 572: the stride-8 layout (SE3__T5.K1) -- the floor tier:
+# name and id are always split (like strides 10/9), and only ruler and
+# race ever get a row at all -- recruit, status, and Expl% are never
+# shown in any well-understood real cell at this width; see module
+# docstring's own section.
+
+
+def test_render_cell_stride8_matches_peachwoods_own_real_cell():
+    # SE3__T5.K1 lines 758-761: Peachwood, race Ents (Race.ENTISH), an
+    # unowned real cell. The real province name itself ("Peachwood", 9
+    # chars) flushes in the real sample rather than truncating -- this
+    # module's own truncation policy deliberately doesn't reproduce
+    # that (same Phase 564 simplification the other layouts already
+    # make), so a shorter synthetic name is used here to isolate the
+    # id/ruler/race rows, which ARE confirmed byte-for-byte against the
+    # real cell.
+    state = _state()
+    province = _province(12, 2, "Peach", Terrain.FOREST, Race.ENTISH, owner=None, tax=1, t1=None, t2=None, expl=1)
+    cell = render_cell_stride8(state, province, viewing_kingdom_id=2)
+    assert cell == [
+        "+Peach+",
+        "+(1202)",
+        "Unowned",
+        "++Ents+",
+    ]
+
+
+def test_render_cell_stride8_matches_sherwoods_own_real_cell():
+    # SE3__T5.K1 lines 758-761: Sherwood, race Human -- confirms that
+    # even a HUMANOID_RACES member still shows no recruit row at all at
+    # this width (there simply isn't one).
+    state = _state()
+    state.add_leader(LeaderState(6, 97, "Kahn", HOME, is_king=True))
+    state.add_kingdom(KingdomState(97, "K97", Race.HUMAN, None, HOME))
+    province = _province(13, 2, "Sher", Terrain.FOREST, Race.HUMAN, owner=97, tax=1, t1=ArmyType.LEGION, t2=None, expl=1)
+    cell = render_cell_stride8(state, province, viewing_kingdom_id=2)
+    assert cell == [
+        "++Sher+",
+        "+(1302)",
+        "Kahn(6)",
+        "+Humans",
+    ]
+
+
+def test_stride8_cell_pixel_column_matches_the_real_t5k1_report():
+    # SE3__T5.K1's own real map: x_min=6 across the whole report,
+    # confirmed against all 7 of its own real bands with zero residual
+    # -- unlike the dense and stride-9 layouts, no unexplained margin.
+    assert stride8_cell_pixel_column(HexCoord(6, 3), x_min=6) == 0
+    assert stride8_cell_pixel_column(HexCoord(7, 3), x_min=6) == 8
+    assert stride8_cell_pixel_column(HexCoord(12, 2), x_min=6) == 52
+
+
+def test_render_ascii_map_stride8_matches_peachwoods_own_real_band():
+    # Same real cell, through the map-level renderer -- confirms the
+    # placement formula and the content renderer agree end to end.
+    state = _state()
+    state.add_province(_province(12, 2, "Peach", Terrain.FOREST, Race.ENTISH, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    lines = render_ascii_map_stride8(state, 2)
+
+    # 4 leading spaces: y=2 is even, so cell_pixel_column()'s own
+    # confirmed half-cell stagger applies even to a single province.
+    pad = "    "
+    assert lines == [
+        pad + "+Peach+",
+        pad + "+(1202)",
+        pad + "Unowned",
+        pad + "++Ents+",
     ]
