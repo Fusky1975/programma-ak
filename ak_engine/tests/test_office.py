@@ -6,6 +6,8 @@ from ak_engine.models.office import (
     OFFICE_MIN_POINTS,
     OFFICE_NAME,
     OFFICE_PERK_DESCRIPTION,
+    OFFICE_TITLE_DESCRIPTION,
+    OFFICE_TITLE_KNOWLEDGE,
     OFFICE_VALUE,
     Office,
 )
@@ -134,3 +136,59 @@ def test_office_perk_description_titles_cross_confirm_gang_template():
     # MUSKETEERS", independently confirming the same Office mapping.
     assert "Imperial Musketeers" in GANG_TEMPLATE[Office.DUELLIST]
     assert OFFICE_PERK_DESCRIPTION[Office.DUELLIST] == "1 Fanatical Unit"
+
+
+# -- Phase 578: TITLE.X2 / TITKNOW.X2 --
+
+
+def test_office_title_description_covers_every_office_gaplessly():
+    assert set(OFFICE_TITLE_DESCRIPTION.keys()) == set(Office)
+
+
+def test_office_title_knowledge_covers_every_office_gaplessly():
+    assert set(OFFICE_TITLE_KNOWLEDGE.keys()) == set(Office)
+
+
+def test_office_title_description_no_office_and_no_title():
+    assert OFFICE_TITLE_DESCRIPTION[Office.NO_OFFICE] == "(No Office)"
+    assert OFFICE_TITLE_DESCRIPTION[Office.NO_TITLE] == ""
+
+
+def test_office_title_knowledge_no_office_and_no_title():
+    assert OFFICE_TITLE_KNOWLEDGE[Office.NO_OFFICE] == "(No Office)"
+    assert OFFICE_TITLE_KNOWLEDGE[Office.NO_TITLE] == ""
+
+
+def test_office_title_description_verbatim_sample():
+    assert OFFICE_TITLE_DESCRIPTION[Office.EMPEROR] == (
+        'An ethereal Emerald Crown appeared on <\'s head, and a booming voice heard only by <2 ordained '
+        '"This is the Crown of the Emperors of the Ancient Dynasty which ruled this world thousands of '
+        "years ago.It is yours for as long as you are the best hope to become the next World Emperor, "
+        "and can be given to no other.The Crown will give you the ability to know the strength of all "
+        'your rivals in your quest for Empire".(This information will be shown in your Diplomacy report '
+        "in future gameturns).Only the tax bases of kings bordering your kingdom that you have known for "
+        "at least one full turn will be shown."
+    )
+
+
+def test_office_title_knowledge_verbatim_sample():
+    assert OFFICE_TITLE_KNOWLEDGE[Office.HUMAN_KING] == (
+        'The title of "Savior of Humankind" is reserved for the character who has best protected the '
+        "Human race and led them to martial glory."
+    )
+
+
+def test_office_title_description_preserves_the_sources_own_missing_spaces():
+    # Confirmed real in the byte-faithful source, not a transcription
+    # accident -- see this dict's own module docstring addendum.
+    assert "ago.It" in OFFICE_TITLE_DESCRIPTION[Office.EMPEROR]
+    assert "gameturns).Only" in OFFICE_TITLE_DESCRIPTION[Office.EMPEROR]
+
+
+def test_office_title_description_and_knowledge_titles_cross_confirm_gang_template():
+    # Same DUELLIST cross-check as OFFICE_PERK_DESCRIPTION's own test
+    # above, now against the two new catalogs.
+    assert "Imperial Musketeers" in OFFICE_TITLE_DESCRIPTION[Office.DUELLIST]
+    assert OFFICE_TITLE_KNOWLEDGE[Office.DUELLIST] == (
+        'The title of "Captain of the Imperial Musketeers" is awarded to the best duellist in the world.'
+    )

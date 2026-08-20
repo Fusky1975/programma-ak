@@ -23807,7 +23807,7 @@ follow-up request after the original 431-435 plan shipped.
   scoped_state()` clearing `illusory_fog_active` directly; `run_turn()`
   clearing it end-to-end. Ran again: 4886 passed (net +2).
 
-- **Phase 577 (current)**: shifts focus from the engine/turn-processing
+- **Phase 577**: shifts focus from the engine/turn-processing
   audit back to report prose, picking up one of the ASCII map's own
   explicitly-deferred items (`report/ascii_map.py`'s own Phase 562-572
   notes) -- the "Ice cap" region label. Re-checked ~10 real `Desktop/
@@ -23827,9 +23827,42 @@ follow-up request after the original 431-435 plan shipped.
   `describe_map_report()` wiring tests (label present, label absent) in
   `test_turn_report.py`. Ran again: 4891 passed (net +5). The "far side
   of the world" second map -- the other item this same deferred note
-  flagged -- is still under investigation (real samples suggest a
-  connected-components split on the known-province hex-adjacency graph,
-  not yet confirmed to the same standard as this label).
+  flagged -- was investigated but not implemented: the natural
+  connected-components hypothesis (largest known-province cluster under
+  real hex adjacency becomes the main map, everything else the second
+  one) was falsified by the very next real sample checked (`SE3__T4.K6`
+  shows two known, hex-adjacent provinces landing in different maps
+  anyway) -- deliberately left deferred rather than guessed at further,
+  same standard as the still-open layout-selection trigger.
+
+- **Phase 578 (current)**: completes the office-report prose trio `models/
+  office.py` started at Phases 102-103 (`GANG_TEMPLATE`/`OFFICE_PERK_
+  DESCRIPTION`) with the two remaining real catalogs, `TITLE.X2` (the
+  full narrative shown once a King first attains an office) and
+  `TITKNOW.X2` (the shorter "how this office is earned" blurb) --
+  `SAY.PAS _ODesc`/`_OAlert`, same `ord(office)+1` formula `IONAME.X2`
+  already established. Sourced from a new, independent byte-faithful
+  reverse-engineering pass over the full 162-file prose corpus
+  (`AKPROSE_reverse_engineering_report.md`, supplied directly by the
+  user this session) rather than the original raw `.X2` file, and
+  cross-checked against this module's own already-confirmed `Office`
+  ordinal sequence: both catalogs' own `NO_OFFICE` entry ("(No
+  Office)") lands at the identical ordinal `OFFICE_PERK_DESCRIPTION`
+  already uses. New `OFFICE_TITLE_DESCRIPTION`/`OFFICE_TITLE_KNOWLEDGE`
+  dicts, both raw sourced template text (the `<`/`<2`/`>`/`=` pronoun
+  markers are stored literally, not resolved -- this project's pronoun-
+  substitution system remains explicitly out of scope, same as
+  `report/prose.py`'s own precedent), preserving the source's own real
+  quirks (several sentences run together across a full stop with no
+  space, e.g. `"ago.It"`) rather than silently fixing them. Both
+  catalogs are physically short of their own declared 60-choice header;
+  only the 52 real `Office` ordinals are included, matching `OFFICE_
+  PERK_DESCRIPTION`'s own precedent. Ran before writing tests: 4891
+  passed (non-breaking). Added tests: gapless coverage, `NO_OFFICE`/
+  `NO_TITLE` sentinels, verbatim samples, the source's own missing-space
+  quirk, and a `DUELLIST`/"Imperial Musketeers" cross-check against
+  `GANG_TEMPLATE`, mirroring `OFFICE_PERK_DESCRIPTION`'s own test suite.
+  Ran again: 4899 passed (net +8).
 
 ## Setup
 
