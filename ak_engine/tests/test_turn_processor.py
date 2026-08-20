@@ -4,7 +4,7 @@ import random
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ArmyType
+from ak_engine.models.army_type import ARMY_TABLE, ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
@@ -24,6 +24,7 @@ from ak_engine.turn.turn_processor import (
     MultiAttackerMoveResult,
     TurnLeader,
     _apply_werebeast_transformations,
+    _replenish_turn_scoped_state,
     build_missed_deadline_turn_leaders,
     run_turn,
 )
@@ -439,15 +440,21 @@ def test_run_turn_forces_a_rebattle_before_the_next_phase_when_contested():
 
 
 def test_run_turn_deducts_movement_points_for_the_forced_rebattle():
+    # Phase 573: run_turn() now replenishes every army's own movement
+    # points at the very end (real per-turn housekeeping this project
+    # never had before), so a post-run_turn() movement_points reading no
+    # longer reflects mid-turn deductions -- checking for the
+    # "forced-rebattle" PhaseDispatchResult itself (the same signal
+    # test_run_turn_does_not_force_a_rebattle_once_movement_points_run_out
+    # already uses, just for presence instead of absence) is the direct,
+    # still-valid way to confirm the rebattle/deduction logic engaged.
     state = _base_state()
     state.provinces[TARGET].contested_by_kingdom_id = 1
     state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET, movement_points=3))
 
-    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(42))
+    results = run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(42))
 
-    army = state.armies.get(101)
-    if army is not None:  # survives an ELITE-vs-GREEN battle either way, but guard for safety
-        assert army.movement_points < 3
+    assert [r for r in results if r.phase_label == "forced-rebattle"] != []
 
 
 def test_run_turn_does_not_force_a_rebattle_once_movement_points_run_out():
@@ -1647,3 +1654,86 @@ def test_apply_werebeast_transformations_no_op_when_nothing_was_bitten():
     _apply_werebeast_transformations(state)
 
     assert state.armies[101].army_type is ArmyType.LEGION
+
+
+# -- Phase 573: the turn-boundary reset (movement_points/march-naval
+# bonus flags/recruited_this_turn/turn_number) this project never had.
+
+
+def test_replenish_turn_scoped_state_refills_movement_points_to_the_real_rate():
+    state = _base_state()
+    depleted = ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=0)
+    state.add_army(depleted)
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.armies[101].movement_points == ARMY_TABLE[ArmyType.HVY_CAVALRY].speed
+
+
+def test_replenish_turn_scoped_state_clears_march_and_naval_bonus_flags():
+    state = _base_state()
+    army = ArmyState(
+        101,
+        1,
+        ArmyType.HVY_CAVALRY,
+        Quality.ELITE,
+        ORIGIN,
+        march_bonus_applied_this_turn=True,
+        naval_bonus_applied_this_turn=True,
+    )
+    state.add_army(army)
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.armies[101].march_bonus_applied_this_turn is False
+    assert state.armies[101].naval_bonus_applied_this_turn is False
+
+
+def test_replenish_turn_scoped_state_clears_recruited_this_turn():
+    state = _base_state()
+    state.provinces[ORIGIN].recruited_this_turn = {ArmyType.LEGION: 1}
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.provinces[ORIGIN].recruited_this_turn == {}
+
+
+def test_replenish_turn_scoped_state_clears_unhireable_this_turn():
+    state = _base_state()
+    army = ArmyState(101, None, ArmyType.LEGION, Quality.AVERAGE, ORIGIN, unhireable_this_turn=True)
+    state.add_army(army)
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.armies[101].unhireable_this_turn is False
+
+
+def test_replenish_turn_scoped_state_clears_oratory_boosted_this_turn():
+    state = _base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, oratory_boosted_this_turn=True))
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.leaders[10].oratory_boosted_this_turn is False
+
+
+def test_run_turn_replenishes_movement_points_at_the_end():
+    # A real moderator running turn after turn via orchestrator.
+    # process_turn() needs every army's movement pool back for the next
+    # turn -- run_turn() itself, not just the private helper, must do
+    # this (it's the one real per-turn boundary a caller ever sees).
+    state = _base_state()
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=0))
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert state.armies[101].movement_points == ARMY_TABLE[ArmyType.HVY_CAVALRY].speed
+
+
+def test_run_turn_increments_the_turn_number():
+    state = _base_state()
+    state.turn_number = 5
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert state.turn_number == 6

@@ -23632,7 +23632,7 @@ follow-up request after the original 431-435 plan shipped.
   placement formula's own relative shape. Ran again: 4868 passed
   (net +4).
 
-- **Phase 572 (current)**: implemented the sixth and narrowest real map
+- **Phase 572**: implemented the sixth and narrowest real map
   layout (content width 7, stride 8) -- the real floor Phase 567's own
   survey already identified (no Kingdom's own map ever narrows past
   this). Sourced from `SE3__T5.K1`. The simplest of all 6 layouts:
@@ -23664,6 +23664,53 @@ follow-up request after the original 431-435 plan shipped.
   `Peachwood`'s own real band through the map-level renderer; the
   placement formula against `SE3__T5.K1`'s own real `x=6-12` band. Ran
   again: 4872 passed (net +4).
+
+- **Phase 573 (current)**: fixed the two real, playability-blocking gaps
+  a background audit found while answering "what's missing to make the
+  program playable" -- both genuine, not the cosmetic ASCII-map gaps
+  the last several phases were about. (1) **`ArmyState.movement_points`
+  was never initialized or replenished anywhere.** `worldgen.generate_
+  new_game()` built every starting army without it, defaulting to `0`
+  (the field's own long-standing comment: "the caller sets it" -- no
+  caller ever did), and nothing anywhere reset it between turns either
+  -- a real moderator's very first Move order, turn 1 of a freshly
+  generated game, would have failed outright. (2) **`state.turn_number`
+  was never incremented anywhere in `src/`** -- it stays at its default
+  `1` forever across repeated `run-turn` invocations, silently freezing
+  every turn-gated mechanic that reads it (Valhalla visitor scheduling,
+  Gate Angel due-alignment caching, office-holder turn gates, diplomacy
+  first-contact) at turn-1 behavior. Fixed by building the turn-boundary
+  reset this project never had: `worldgen/generate_new_game.py` now
+  sets each freshly created army's own initial `movement_points` to
+  `ARMY_TABLE[army_type].speed`; `turn/turn_processor.py run_turn()` --
+  this project's own confirmed "one unambiguous once-per-turn boundary"
+  -- now ends every call with a new `_replenish_turn_scoped_state()`
+  (refills every army's movement pool the same way, resets `march_
+  bonus_applied_this_turn`/`naval_bonus_applied_this_turn`/`unhireable_
+  this_turn` to `False`, and `ProvinceState.recruited_this_turn` to
+  `{}`) and increments `state.turn_number`. Auditing for the *other*
+  "not auto-reset -- the caller's job" fields this project's own model
+  comments already flagged turned up 3 more of the same real,
+  permanently-blocking bug (an army marked unhireable, or a leader who
+  ever benefited from Oratory, or a province that ever hit a recruit
+  cap, would otherwise have stayed that way for the rest of the game) --
+  fixed alongside the two originally-flagged ones, since they're the
+  identical root cause and the fix mechanism was already being built.
+  `GameState.gate_angel_candidates_this_turn` was checked and left
+  alone -- confirmed already self-resetting via its own direct
+  `state.turn_number` comparison, which only needed the `turn_number`
+  fix itself to start working correctly. Ran before writing tests: 4872
+  passed (non-breaking); one existing test (`test_run_turn_deducts_
+  movement_points_for_the_forced_rebattle`) broke because it read
+  `movement_points` *after* `run_turn()` returned, no longer a valid
+  signal now that the pool is replenished before the call returns --
+  fixed to check for the `"forced-rebattle"` `PhaseDispatchResult`
+  directly instead, the same signal its own sibling test already uses
+  for the opposite case. Added tests: a freshly generated army's own
+  full movement pool; each of the 5 reset fields individually via
+  `_replenish_turn_scoped_state()`; `run_turn()` itself replenishing
+  movement and incrementing `turn_number` end-to-end. Ran again: 4880
+  passed (net +8).
 
 ## Setup
 

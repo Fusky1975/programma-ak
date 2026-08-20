@@ -219,7 +219,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from ak_engine.models.army_type import ArmyType
+from ak_engine.models.army_type import ARMY_TABLE, ArmyType
 from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
@@ -562,6 +562,27 @@ def run_turn(
     # function's own docstring for why this is a confirmed no-op under
     # real generated data.
     apply_cravenest_temperament_escalation(state)
+    # Phase 573: the turn-boundary reset this project never had. Several
+    # fields were long documented as "not auto-reset -- the caller's
+    # job" (see `_replenish_turn_scoped_state()`'s own docstring for the
+    # full list), but no caller anywhere ever actually did it, and
+    # `state.turn_number` itself was never incremented anywhere in this
+    # project either -- a real game moderated turn after turn via
+    # `orchestrator.process_turn()` would exhaust every army's movement
+    # pool on turn 1 and never recover it, permanently lose access to
+    # Oratory/hiring/recruiting the first time each one's own per-turn
+    # cap was hit, and every turn-gated mechanic (Valhalla scheduling,
+    # Gate Angel, office-holder turn gates, diplomacy first-contact)
+    # would stay frozen at turn-1 behavior forever. `run_turn()` is this
+    # project's own confirmed "one unambiguous once-per-turn boundary"
+    # (see this function's own docstring), so it's the right place to
+    # prepare state for the turn that comes *after* this one -- run at
+    # the end, not the start, so a fresh `GameState` from `worldgen.
+    # generate_new_game()` (which now sets each army's own initial
+    # `movement_points` itself) still needs no priming call before its
+    # own first `run_turn()`.
+    _replenish_turn_scoped_state(state)
+    state.turn_number += 1
 
     return results
 
@@ -584,6 +605,54 @@ def _revert_analytical_psychology_charms(state: GameState) -> None:
         if leader.analytical_psychology_revert_kingdom_id is not None:
             leader.kingdom_id = leader.analytical_psychology_revert_kingdom_id
             leader.analytical_psychology_revert_kingdom_id = None
+
+
+def _replenish_turn_scoped_state(state: GameState) -> None:
+    """Phase 573: resets every "not auto-reset -- the caller's job" field
+    this project's own models ever documented that way, preparing
+    ``state`` for the turn that comes after the one ``run_turn()`` just
+    finished dispatching. See this function's own call site for why it
+    belongs at the end of ``run_turn()``, not the start.
+
+    - ``ArmyState.movement_points`` -> each army's own real per-turn rate
+      (``ARMY_TABLE[army_type].speed``, RULES.AK [6.3]) -- an army that
+      spent its whole pool this turn (or was created with none, before
+      this phase) gets a full one back for the next.
+    - ``ArmyState.march_bonus_applied_this_turn``/``naval_bonus_applied_
+      this_turn`` -> ``False`` -- otherwise an army that ever drew its
+      one-time March/Naval movement bonus once (``turn/move_execution.py
+      execute_move()``) could never draw it again for the rest of the
+      game.
+    - ``ArmyState.unhireable_this_turn`` -> ``False`` -- otherwise an
+      army `turn/battle_orchestrator.py` ever marked unhireable (e.g.
+      after a battle) could never be hired/recruited again, ever
+      (`turn/recruit_execution.py`'s own ``not unhireable_this_turn``
+      gate).
+    - ``LeaderState.oratory_boosted_this_turn`` -> ``False`` -- otherwise
+      a leader who ever benefited from Oratory once could never benefit
+      from it again for the rest of the game (`turn/cast_execution.py`'s
+      own idempotency gate).
+    - ``ProvinceState.recruited_this_turn`` -> ``{}`` -- otherwise a
+      province that ever hit its per-type recruit limit once (rulebook
+      [3.4]) could never recruit that type again, ever.
+
+    ``GameState.gate_angel_candidates_this_turn`` is deliberately NOT
+    touched here despite its own name -- it's already self-resetting,
+    gated on a direct ``state.turn_number`` comparison against its own
+    ``gate_angel_due_alignment_turn`` cache (`turn/cast_execution.py`),
+    which only works correctly now that ``turn_number`` itself actually
+    advances (see this function's own call site).
+    """
+
+    for army in state.armies.values():
+        army.movement_points = ARMY_TABLE[army.army_type].speed
+        army.march_bonus_applied_this_turn = False
+        army.naval_bonus_applied_this_turn = False
+        army.unhireable_this_turn = False
+    for province in state.provinces.values():
+        province.recruited_this_turn = {}
+    for leader in state.leaders.values():
+        leader.oratory_boosted_this_turn = False
 
 
 def _apply_werebeast_transformations(state: GameState) -> None:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ArmyType
+from ak_engine.models.army_type import ARMY_TABLE, ArmyType
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.hero_roster import STANDARD_HERO_ROSTER
@@ -86,6 +86,21 @@ def test_king_home_gets_a_real_initial_army_using_best_atype():
         for army in armies:
             assert army.commanded_by is None  # COMMANDER_NONE (255) translates to None
             assert army.kingdom_id == king.leader_id
+
+
+def test_every_generated_army_starts_with_a_full_movement_pool():
+    # Phase 573: a freshly generated army used to start with
+    # movement_points=0 (the dataclass default, never overridden here),
+    # so its own very first real Move order would fail before a single
+    # turn had even been processed. Every army generate_new_game()
+    # creates should start with its own real per-turn rate instead.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=3)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    assert result.armies
+    for army in result.armies.values():
+        assert army.movement_points == ARMY_TABLE[army.army_type].speed
 
 
 def test_special_race_provinces_get_their_own_native_recruit_slot():

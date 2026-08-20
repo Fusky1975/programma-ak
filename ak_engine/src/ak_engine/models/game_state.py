@@ -71,11 +71,14 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   but a future one should call ``remove_leader`` to stay resurrectable).
 - ``ProvinceState.terrain_override`` (Part Sea, Flood): "for the rest of
   the turn" province-terrain replacement. Not auto-cleared at a turn
-  boundary -- same "caller's job" convention as ``recruited_this_turn``/
-  ``ArmyState.movement_points`` -- and, as of Phase 59, **not yet read
-  by any consumer** (``turn/movement.py``, ``turn/strength.py``, etc.
-  still use ``ProvinceState.terrain`` directly): the spells write real
-  state, a later phase still needs to make movement/battle honor it.
+  boundary -- unlike ``recruited_this_turn``/``ArmyState.movement_
+  points`` (which Phase 573's own ``turn/turn_processor.py
+  _replenish_turn_scoped_state()`` now resets every ``run_turn()`` call),
+  this field still has no reset call anywhere -- and, as of Phase 59,
+  **not yet read by any consumer** (``turn/movement.py``, ``turn/
+  strength.py``, etc. still use ``ProvinceState.terrain`` directly): the
+  spells write real state, a later phase still needs to make
+  movement/battle honor it, including deciding when it clears.
 - ``ProvinceState.tax_modifier_percent`` (Bless, Earthquake): a signed
   percent (+60 / -100, matching each spell's exact rulebook number, and
   each spell *sets* rather than adds since both are documented "not
@@ -317,9 +320,20 @@ class ArmyState:
     army_type: ArmyType
     quality: Quality
     location: HexCoord
+    # Reset to False at the end of every `run_turn()` call, alongside
+    # `movement_points`'s own replenishment (Phase 573).
     unhireable_this_turn: bool = False
-    # Remaining this gameturn. Not auto-reset at turn start and not derived
-    # from ARMY_TABLE speed + March/Naval ability -- the caller sets it.
+    # Remaining this gameturn. The dataclass default (0) is only ever seen
+    # before this army's own first `run_turn()` call -- `worldgen.
+    # generate_new_game()` sets a real freshly-created army's own initial
+    # value to `ARMY_TABLE[army_type].speed`, and `turn/turn_processor.py
+    # run_turn()`'s own end-of-turn `_replenish_turn_scoped_state()`
+    # (Phase 573) refills every army back to that same real rate after
+    # each turn's dispatch finishes. The one-time March/Naval movement
+    # bonus (`turn/move_execution.py execute_move()`) still applies
+    # dynamically on top of whatever this field holds when an army
+    # actually moves, per rulebook [6.2]'s own "always calculated at the
+    # moment an army moves" -- not folded into the replenished base rate.
     movement_points: int = 0
     # Which leader currently leads this army, if any (rulebook: an army may
     # also be unled, under the "garrison commander"). Set/cleared by
@@ -352,18 +366,18 @@ class ArmyState:
     # Phase 521: AdvancedAbility.MARCH_CAVALRY/_INFANTRY (+ Mastery tiers)
     # -- rulebook [6.2]: "The increased army-movement allowed by the March
     # and Naval abilities is always calculated at the moment an army
-    # moves." Granted at most once per gameturn (same "caller resets it,
-    # not auto-reset at turn start" convention as `unhireable_this_turn`
-    # above) by `turn/move_execution.py execute_move()`'s own Phase 521
-    # addendum, the first time this army moves this turn under a March-
-    # ability-holding leader.
+    # moves." Granted at most once per gameturn by `turn/move_execution.py
+    # execute_move()`'s own Phase 521 addendum, the first time this army
+    # moves this turn under a March-ability-holding leader. Reset to
+    # False at the end of every `run_turn()` call, alongside `unhireable_
+    # this_turn`/`movement_points` (Phase 573).
     march_bonus_applied_this_turn: bool = False
     # Phase 523: the Naval sibling of `march_bonus_applied_this_turn` above --
     # AKGEN_reverse_engineering_report (3).md SS99's own `M_Skill(leader,
     # Naval)` movement bonus for Whale League/Fleet/Mermen, granted at most
     # once per gameturn by `turn/move_execution.py execute_move()`'s own
-    # Phase 523 addendum. Same "caller resets it, not auto-reset at turn
-    # start" convention.
+    # Phase 523 addendum. Reset the same way and at the same point as
+    # `march_bonus_applied_this_turn` above.
     naval_bonus_applied_this_turn: bool = False
 
 
@@ -655,7 +669,8 @@ class LeaderState:
     is_king: bool = False
     # Phantasmal Armies' strength bonus level (Phase 59) -- see module docstring.
     phantasmal_armies_level: int = 0
-    # Oratory idempotency flag (Phase 59) -- see module docstring.
+    # Oratory idempotency flag (Phase 59) -- see module docstring. Reset
+    # to False at the end of every `run_turn()` call (Phase 573).
     oratory_boosted_this_turn: bool = False
     # Phase 139: the leader's own Temper (models/temper.py, Phase 82).
     # None = not recorded, the same "no data" convention as `skills`.
@@ -865,8 +880,10 @@ class ProvinceState:
     contested_from_coord: HexCoord | None = None
     # How many of each ArmyType have been recruited from this province so
     # far this gameturn (rulebook [3.4]: normally 1 per type per province
-    # per turn, 2 in a King's home province). Not auto-reset at turn start
-    # -- the caller clears it, same convention as ArmyState.movement_points.
+    # per turn, 2 in a King's home province). Cleared at the end of every
+    # `run_turn()` call, alongside `ArmyState.movement_points`'s own
+    # replenishment (`turn/turn_processor.py _replenish_turn_scoped_
+    # state()`, Phase 573).
     recruited_this_turn: dict[ArmyType, int] = field(default_factory=dict)
     # Part Sea / Flood Province (Phase 59) -- see module docstring.
     terrain_override: Terrain | None = None
@@ -1091,9 +1108,10 @@ class GameState:
     # (same "no real order-file shape ever seen" category as Break Treaty
     # and Call-For-Vote -- see turn/emperor_election.py's own docstring),
     # so this is populated directly by the caller, not decoded from a
-    # move file -- same "caller's job to clear at a turn boundary"
-    # convention already established for recruited_this_turn/
-    # ArmyState.movement_points, not auto-cleared by anything here.
+    # move file -- still "caller's job to clear at a turn boundary," not
+    # auto-cleared by anything here, unlike recruited_this_turn/
+    # ArmyState.movement_points, which Phase 573's own `turn/turn_
+    # processor.py _replenish_turn_scoped_state()` now resets instead.
     treat_permissions: set[tuple[int, int]] = field(default_factory=set)
     # Feature instances (Phase 75) -- see models/feature.py's own docstring
     # for why this is a flat dict-by-id, mirroring `armies`/`provinces`,

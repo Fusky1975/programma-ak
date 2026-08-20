@@ -276,7 +276,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import BASE_STRENGTH, ArmyType
+from ak_engine.models.army_type import ARMY_TABLE, BASE_STRENGTH, ArmyType
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.hero_roster import LEADER_COUNT_BY_GAME_VERSION, STANDARD_HERO_ROSTER
@@ -620,6 +620,11 @@ def generate_new_game(
                     quality=INITIAL_ARMY_QUALITY,
                     location=coord,
                     commanded_by=commanded_by,
+                    # Real per-turn movement rate (RULES.AK [6.3]) -- a
+                    # freshly created army starts with a full pool, same as
+                    # every later turn's own replenishment (`turn_processor.py
+                    # run_turn()`'s own start-of-turn housekeeping).
+                    movement_points=ARMY_TABLE[army_type].speed,
                 )
             )
 
