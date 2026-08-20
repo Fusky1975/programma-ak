@@ -951,10 +951,19 @@ fleeing and `[` being approached/fled-from).
 - `_LHaHa: Say('snarleth/Rchortled [1, "Ha!You fool/Rbumpkin,
   I''ve tricked/Rdeceived you!',S_PCom)` -- opens a quote with no
   visible closing `"` anywhere in this CASE block; transcribed
-  honestly as the fragment it is (likely closed by `_LRidAns`'s own
-  file-dispatched `RANS.X`, immediately below it and keyed by the
-  same `_qsubplot`, but this project has no access to that file's
-  content to confirm). `render_quest_mockery()`.
+  honestly as the fragment it is. **Phase 582 correction**: this
+  docstring previously guessed the quote was "likely closed by
+  `_LRidAns`'s own file-dispatched `RANS.X`... but this project has no
+  access to that file's content to confirm" -- a byte-faithful
+  reconstruction of the full prose corpus (`AKPROSE_reverse_
+  engineering_report.md`, supplied directly by the user) now gives real
+  access to `RANS.X`'s own content, and it does *not* close this quote:
+  every one of `RANS.X`'s 7 entries is a "yes, that's the correct
+  answer" congratulation ("Sayeth [, 'Yes, ...is the correct answer!
+  You're very good at this game.'"), semantically unrelated to the
+  mocking "I've tricked you" fragment above. The hypothesis is
+  withdrawn; the quote remains a genuine, unexplained fragment.
+  `render_quest_mockery()`.
 - `_LBThen: Say('But then ',S_PCom)` -- a bare precursor clause (no
   trailing period), exposed as `QUEST_BUT_THEN_TEMPLATE` with no
   wrapper function, the same shape `EXPLORE_NOT_PRESENT_PREFIX`
@@ -986,6 +995,46 @@ fleeing and `[` being approached/fled-from).
   away from [.',S_PCom)` -- plain narration (no quotes), the
   character's own courage fails during the quest encounter.
   `render_quest_fled_in_fear()`.
+
+**Phase 582 addendum -- the file-dispatched half of the same cluster.**
+Four small catalogs this project previously had no access to
+(`RIDDLE.X2`/`VISIT.X2`/`FUVIS.X2`/`RANS.X`, all `_qsubplot`-keyed, per
+the intro paragraph above) are now transcribed from the same byte-
+faithful reconstruction that corrected the `RANS.X` hypothesis just
+above. Each catalog's own choice order matches an existing `Treasure`
+enum group exactly, confirmed positionally (e.g. `RIDDLE.X2` choice 7,
+"What goes on four legs in the morning, two at midday and three legs
+in the evening?", is the classic Riddle of the Sphinx -- the answer is
+"Man", matching `Treasure.QUEST_RA_MAN`'s own name exactly):
+
+- `QUEST_RIDDLE_TEXT`/`QUEST_RIDDLE_ANSWER_TEXT` (`RIDDLE.X2`/`RANS.X`,
+  7 entries each) key by the 7 `Treasure.QUEST_RA_*` members
+  (`QUEST_RA_RIDDLE`..`QUEST_RA_MAN`) -- the riddle itself (`RIDDLE.X2`,
+  routed via `RUMORS.PAS`'s own `⟦CTRL-G⟧` byte, embedded in `MTALK.X2`'s
+  own `R_RIDDLE` entry as `⟦CTRL-G:riddle⟧`) and the monster's own
+  "correct!" congratulation (`RANS.X`) once the right answer is given.
+- `QUEST_VISIT_TEXT`/`QUEST_VISIT_FULFILLED_TEXT` (`VISIT.X2`/
+  `FUVIS.X2`, 5 entries each) key by the 5 non-riddle "go somewhere and
+  do something" `Treasure` quest-item ordinals (`QUEST_SNOW_QUEST`,
+  `QUEST_SAPPH_RING`, `QUEST_LUCKY_PENNY`, `QUEST_GODS_QUEST`,
+  `QUEST_MERMAID_AMULET`) -- the monster's own travel directions
+  (`VISIT.X2`, routed via `RUMORS.PAS`'s own `⟦CTRL-U⟧` byte, embedded
+  in `MTALK.X2`'s own `R_VISIT` entry as `⟦CTRL-U:visit⟧`) and the
+  narration of what happens once the character actually visits
+  (`FUVIS.X2`, `SAY.PAS:785 _LFuVis`).
+
+**Stored as raw template text, unlike every other Phase 129 constant
+above.** Every `QUEST_*_TEMPLATE` earlier in this addendum went through
+`render()` because each is fully within that function's own documented
+scope (`/R`/`{...}` alternation, plain `[`/`[1` substitution). These
+four catalogs additionally contain real `⟦CTRL-A⟧`/`⟦CTRL-X⟧`/`⟦CTRL-G⟧`
+control-byte codes and `$+` list markers `render()` has no defined
+behavior for (`report/prose.py`'s own module docstring covers only the
+symbols it implements) -- rendering them through `render()` as-is would
+either raise or silently mishandle the placeholder, so they are left
+as sourced, unrendered strings instead, the same "no consumer wired
+yet" posture `turn/encounter.py MONSTER_TALK_OFFER_TEXT` (Phase 581)
+already took for the identical reason.
 
 **Phase 130 addendum -- monster raid-truce offer.** `RUMORS.PAS`'s
 `Check_Raid` procedure (~lines 2279-2286), dispatched inline within
@@ -5668,6 +5717,55 @@ def render_quest_reward_already_given(monster_name: str, item_name: str, rng: ra
 
     values = {"[1": monster_name, "\\": item_name}
     return render(QUEST_REWARD_ALREADY_GIVEN_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/PROSE/RIDDLE.X2 (header "7 2", RUMORS.PAS:2099 CTRL-G) and
+# RANS.X (header "7 1", SAY.PAS:767 _LRidAns), both keyed by Treasure's
+# own 7 QUEST_RA_* members -- module docstring's Phase 582 addendum.
+# Stored as raw template text -- see that addendum for why (real
+# CTRL-byte codes render() has no defined behavior for).
+QUEST_RIDDLE_TEXT: dict[Treasure, str] = {
+    Treasure.QUEST_RA_RIDDLE: '"\'I am ⟦CTRL-A:a/an⟧ monster, strange and alien.A band of hunters follows behind me looking for the tracks made by my feet.They desire greatly to put me to ⟦CTRL-A:a/an⟧ end, yet they seek no meat, only knowledge.i inhabit the darkest places, and if I pass from the shadows into the bright light my soul quickly slips away.What am I?\'',
+    Treasure.QUEST_RA_COFFIN: '"Solve this riddle: $+$+There was ⟦CTRL-A:a/an⟧ man bespake a thing, $+Which when the bearer home did bring, $+He that brought it would not use it:$+and he that made it did refuse it, $+And he that hath it doth not know $+Whether he hath it, yea or no. $+$+',
+    Treasure.QUEST_RA_BRIDGE: '"\'What thing is it, the weaker it is the more it is dread?\'',
+    Treasure.QUEST_RA_CANDLE: '"\'What weeps tears without ⟦CTRL-A:a/an⟧ eye, and makes everything visible yet does not see?At the time when it approaches death, that which cuts off its head revives it.\'',
+    Treasure.QUEST_RA_SMOKE: '"\'I am ⟦CTRL-A:a/an⟧ wingless bird, flying even to the clouds of heaven.I give birth to tears of mourning in pupils that meet me, and at once on my birth I am dissolved.What am I?\'',
+    Treasure.QUEST_RA_OWNER: '"\'What am I, the more that I make ⟦CTRL-A:a/an⟧ woman cry the better she deems me to be?\'',
+    Treasure.QUEST_RA_MAN: '"\'What goes on four legs in the morning, two at midday and three legs in the evening?\'',
+}
+
+
+QUEST_RIDDLE_ANSWER_TEXT: dict[Treasure, str] = {
+    Treasure.QUEST_RA_RIDDLE: 'Sayeth [, "Yes, \'Riddle\' is the correct answer!You\'re very good at this game."',
+    Treasure.QUEST_RA_COFFIN: 'Sayeth [, "\'Coffin\' is right.What a lucky guess!"',
+    Treasure.QUEST_RA_BRIDGE: 'Sayeth [, "\'Bridge\' is the true answer.Hmm, you must have heard this riddle elsewhere."',
+    Treasure.QUEST_RA_CANDLE: 'Sayeth [, "\'Candle\' is indeed what I had in mind.You\'re not as dumb as you look!"',
+    Treasure.QUEST_RA_SMOKE: 'Sayeth [, "Yes, \'Smoke\' is the right answer.How did you ever guess this one?"',
+    Treasure.QUEST_RA_OWNER: 'Sayeth [, "You got it, \'Onion\' is right.But it took you LONG ENOUGH to solve it!Hah!"',
+    Treasure.QUEST_RA_MAN: 'Sayeth [, "Yes!\'Man\' is the right answer, as recorded by Greek mythology (which you must be well-acquainted with.)"',
+}
+
+
+# HostAK/TP/PROSE/VISIT.X2 (header "5 2", RUMORS.PAS:2098 CTRL-U) and
+# FUVIS.X2 (header "5 1", SAY.PAS:785 _LFuVis), both keyed by Treasure's
+# own 5 non-riddle "go somewhere and do something" quest-item members --
+# module docstring's Phase 582 addendum.
+QUEST_VISIT_TEXT: dict[Treasure, str] = {
+    Treasure.QUEST_SNOW_QUEST: 'there towers ⟦CTRL-A:a/an⟧ raging volcano which is about to erupt and incinerate the world with its fiery lava.And the northern and southern icecaps are expanding, threatening to blanket the world in ice!go to ⟦CTRL-A:a/an⟧ province next to ⟦CTRL-A:a/an⟧ icecap and make a snowball.Then, travel to ⟦CTRL-X:province-3⟧ and throw it in!Only thusly can the Cosmic Balance be set aright and the world be saved!',
+    Treasure.QUEST_SAPPH_RING: 'there stands ⟦CTRL-A:a/an⟧ ancient, long-dead volcano whose crater has been filled with water so blue and sparkling, it is like ⟦CTRL-A:a/an⟧ great sapphire.According to lore, it is the deepest lake in the world."[1 slipped ] ring off a finger."this ring reminds me of ⟦CTRL-A:a/an⟧ deep, long-lost love whom I must forget, and the lake is its only fitting place of rest in the whole world.Take then this ring and cast it into the lake, that my sorrow may also be set at rest!',
+    Treasure.QUEST_LUCKY_PENNY: 'the province of my birth, there is ⟦CTRL-A:a/an⟧ wishing-well which I remember from my younger days.For me, it is the luckiest well in the world.You see, for years I have been having bad luck.take my lucky penny and journey to the well.When you get there, wish me luck and toss it into the well.Then, maybe my luck will change!',
+    Treasure.QUEST_GODS_QUEST: 'the inhabitants are said to worship strange gods.Go there and find out all you can about these gods, so that I may decide whether I may righteously devote myself to them and entreat them with my prayers.',
+    Treasure.QUEST_MERMAID_AMULET: 'there are waters where mermaids have been known to frolic.I must confess to ⟦CTRL-A:a/an⟧ special weakness for these fair-finned creatures.Fortunately, I have a magic amulet which, I am told, will charm one more mermaid before it loses its magic.go to ⟦CTRL-X:province-3⟧, charm ⟦CTRL-A:a/an⟧ mermaid for me and bring her back!',
+}
+
+
+QUEST_VISIT_FULFILLED_TEXT: dict[Treasure, str] = {
+    Treasure.QUEST_SNOW_QUEST: 'While < was in @, < found the raging volcano and threw in the Cosmic Snowball.< thought < sensed a quietening of the volcano; or, perhaps it just something < imagined.',
+    Treasure.QUEST_SAPPH_RING: 'While < was in @, < found an ancient, long-dead volcano whose crater had been filled with incredibly blue and sparkling water.< took the Sapphire Ring and, with a twinge of sorrow, cast it into the lake.',
+    Treasure.QUEST_LUCKY_PENNY: 'While < was in @, < found ⟦CTRL-A:a/an⟧ wishing-well which matched the description < had been given.< took the Lucky Penny, wished for luck and tossed it into the well.',
+    Treasure.QUEST_GODS_QUEST: 'While < was in @, < investigated the strange gods worshipped there.Some were strange hybrids between men and animals, and one even looked like a giant rat!Shaking > head in disbelief, < wrote down descriptions of all these bizarre gods.',
+    Treasure.QUEST_MERMAID_AMULET: 'While < was in @, < found waters where frolicked many beautiful mermaids.Invoking the magic amulet, < charmed a comely mermaid and resolved to bear her flirtations until they could return to fulfill the quest.',
+}
 
 
 # HostAK/TP/RUMORS.PAS Check_Raid -- a single, real, hardcoded

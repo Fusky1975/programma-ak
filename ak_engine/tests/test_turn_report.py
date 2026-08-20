@@ -41,6 +41,10 @@ from ak_engine.report.turn_report import (
     LEAVE_TEMPLATES,
     PICKUP_TEMPLATES,
     QUEST_BUT_THEN_TEMPLATE,
+    QUEST_RIDDLE_ANSWER_TEXT,
+    QUEST_RIDDLE_TEXT,
+    QUEST_VISIT_FULFILLED_TEXT,
+    QUEST_VISIT_TEXT,
     RECRUIT_TEMPLATES,
     SEASON_NAME,
     SEARCH_FEATURE_ALREADY_SACKED_TEMPLATE,
@@ -2989,6 +2993,57 @@ def test_render_quest_reward_already_given():
         'Sayeth the Ogre, "I have already given away the Ring of Power '
         'to a worthier adventurer.Go away!"'
     )
+
+
+# -- RIDDLE.X2/RANS.X/VISIT.X2/FUVIS.X2 (Phase 582) --
+
+
+def test_quest_riddle_text_and_answer_text_cover_all_seven_ra_ordinals():
+    ra_members = {t for t in Treasure if t.name.startswith("QUEST_RA_")}
+    assert len(ra_members) == 7
+    assert set(QUEST_RIDDLE_TEXT.keys()) == ra_members
+    assert set(QUEST_RIDDLE_ANSWER_TEXT.keys()) == ra_members
+
+
+def test_quest_riddle_text_man_is_the_riddle_of_the_sphinx():
+    assert QUEST_RIDDLE_TEXT[Treasure.QUEST_RA_MAN] == (
+        '"\'What goes on four legs in the morning, two at midday and '
+        'three legs in the evening?\''
+    )
+
+
+def test_quest_riddle_answer_text_congratulates_on_every_ordinal():
+    # RANS.X does NOT close QUEST_MOCKERY_TEMPLATE's own unclosed quote
+    # (a previous, now-withdrawn hypothesis) -- every one of its 7
+    # entries is instead the monster confirming the answer was right.
+    for text in QUEST_RIDDLE_ANSWER_TEXT.values():
+        assert text.startswith("Sayeth [, ")
+
+
+def test_quest_visit_text_and_fulfilled_text_cover_the_five_location_quests():
+    location_quests = {
+        Treasure.QUEST_SNOW_QUEST,
+        Treasure.QUEST_SAPPH_RING,
+        Treasure.QUEST_LUCKY_PENNY,
+        Treasure.QUEST_GODS_QUEST,
+        Treasure.QUEST_MERMAID_AMULET,
+    }
+    assert set(QUEST_VISIT_TEXT.keys()) == location_quests
+    assert set(QUEST_VISIT_FULFILLED_TEXT.keys()) == location_quests
+
+
+def test_quest_visit_fulfilled_text_verbatim_sample():
+    assert QUEST_VISIT_FULFILLED_TEXT[Treasure.QUEST_LUCKY_PENNY] == (
+        "While < was in @, < found ⟦CTRL-A:a/an⟧ wishing-well which matched the "
+        "description < had been given.< took the Lucky Penny, wished for luck "
+        "and tossed it into the well."
+    )
+
+
+def test_quest_visit_text_control_byte_codes_preserved_literally():
+    # Not resolved -- render() has no defined behavior for these, see
+    # module docstring's own Phase 582 addendum.
+    assert "⟦CTRL-X:province-3⟧" in QUEST_VISIT_TEXT[Treasure.QUEST_SNOW_QUEST]
 
 
 # -- monster raid-truce offer (Phase 130) --

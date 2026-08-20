@@ -23919,7 +23919,7 @@ follow-up request after the original 431-435 plan shipped.
   coverage test. Ran again: 4908 passed (net +5, since one existing test
   was rewritten rather than added).
 
-- **Phase 581 (current)**: transcribes `turn/encounter.py MONSTER_TALK_
+- **Phase 581**: transcribes `turn/encounter.py MONSTER_TALK_
   OFFER_TEXT`/`_FULFILL_TEXT`/`_ACCEPT_TEXT` from `MTALK.X2`/`FULFILL.X2`/
   `MACCEPT.X2` -- all three keyed by the already-existing 24-member
   `MonsterTalkReply` enum (Phase 382), closing the exact gap `MONSTER_
@@ -23954,6 +23954,34 @@ follow-up request after the original 431-435 plan shipped.
   `R_WISH`'s own blank-not-`"na"` distinction, verbatim samples, and
   the preserved literal pronoun/CTRL-byte markers. Ran again: 4915
   passed (net +7).
+
+- **Phase 582 (current)**: transcribes the last four small catalogs of
+  the same quest-dialogue cluster (`report/turn_report.py`'s own Phase
+  129/581 work) -- `RIDDLE.X2`/`RANS.X` (7 entries each, keyed by
+  `Treasure`'s own `QUEST_RA_*` members) and `VISIT.X2`/`FUVIS.X2` (5
+  entries each, keyed by the 5 non-riddle "go somewhere and do
+  something" quest-item ordinals). New `QUEST_RIDDLE_TEXT`/`_ANSWER_
+  TEXT`/`QUEST_VISIT_TEXT`/`_FULFILLED_TEXT`. **Corrected a real, self-
+  flagged, decade-old hypothesis while doing it**: `render_quest_
+  mockery()`'s own docstring previously guessed the monster's unclosed
+  "I've tricked you!" quote was "likely closed by `_LRidAns`'s own
+  file-dispatched `RANS.X`... but this project has no access to that
+  file's content to confirm" -- now that AKPROSE gives real access,
+  every one of `RANS.X`'s 7 entries turns out to be an unrelated "yes,
+  correct answer!" congratulation, not a continuation of the mockery
+  quote at all. The hypothesis is withdrawn; the fragment stays
+  unexplained, honestly. Riddle choice 7 is confirmed to be the classic
+  Riddle of the Sphinx ("What goes on four legs in the morning, two at
+  midday and three legs in the evening?"), matching `Treasure.QUEST_RA_
+  MAN`'s own name exactly. Stored as raw template text, not run through
+  `render()` like every other Phase 129 constant -- these four contain
+  real `⟦CTRL-A⟧`/`⟦CTRL-X⟧`/`⟦CTRL-G⟧` control-byte codes and `$+` list
+  markers `render()` has no defined behavior for, matching `turn/
+  encounter.py`'s own Phase 581 precedent for the identical reason.
+  Ran before writing tests: 4915 passed (non-breaking). Added tests:
+  ordinal-coverage for all four dicts, the Riddle-of-the-Sphinx sample,
+  the withdrawn-hypothesis regression check, a verbatim sample, and the
+  preserved control-byte markers. Ran again: 4921 passed (net +6).
 
 ## Setup
 
