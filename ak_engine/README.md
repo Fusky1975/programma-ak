@@ -23835,7 +23835,7 @@ follow-up request after the original 431-435 plan shipped.
   anyway) -- deliberately left deferred rather than guessed at further,
   same standard as the still-open layout-selection trigger.
 
-- **Phase 578 (current)**: completes the office-report prose trio `models/
+- **Phase 578**: completes the office-report prose trio `models/
   office.py` started at Phases 102-103 (`GANG_TEMPLATE`/`OFFICE_PERK_
   DESCRIPTION`) with the two remaining real catalogs, `TITLE.X2` (the
   full narrative shown once a King first attains an office) and
@@ -23863,6 +23863,27 @@ follow-up request after the original 431-435 plan shipped.
   quirk, and a `DUELLIST`/"Imperial Musketeers" cross-check against
   `GANG_TEMPLATE`, mirroring `OFFICE_PERK_DESCRIPTION`'s own test suite.
   Ran again: 4899 passed (net +8).
+
+- **Phase 579 (current)**: transcribes a fresh catalog, `models/
+  monster.py MONSTER_DESCRIPTION`, from `HostAK/TP/PROSE/MONSTERS.X2`
+  (header `"60 1"`) -- the real prose behind this module's own already-
+  quoted rulebook line, "Monsters are described when they are first
+  discovered" (`SAY.PAS:790 _LMDesc`, the same `ord(monster)+1` formula
+  every other prose catalog uses). Sourced from the same byte-faithful
+  162-file reverse-engineering pass as Phase 578. **Near-miss caught
+  before committing**: the first candidate catalog tried, `DESCDISC.X2`
+  (Discovery flavor text), turned out to already be fully transcribed
+  as `models/discovery.py DISCOVERY_DESCRIPTION` since Phase 93 (sourced
+  from the user's own `Discovery.txt`, not this catalog) -- an existing
+  test caught the wording mismatch (`"Land Ship"` vs. this pass's own
+  `"LandShip"`) before the duplicate was staged; reverted cleanly, no
+  trace left in this repo. `MONSTER_DESCRIPTION` was confirmed genuinely
+  new (no prior consumer, no prior test) before transcribing it.
+  `Monster.NOMONSTER` (the real "no monster" sentinel) maps to the empty
+  string, matching `models/office.py`'s own sentinel-blank convention.
+  Ran before writing tests: 4899 passed (non-breaking). Added tests:
+  gapless coverage, `NOMONSTER` blank, verbatim samples, the source's
+  own missing-space quirk. Ran again: 4903 passed (net +4).
 
 ## Setup
 

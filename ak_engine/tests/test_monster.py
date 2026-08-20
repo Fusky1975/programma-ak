@@ -5,6 +5,7 @@ from ak_engine.models.enums import Ability
 from ak_engine.models.monster import (
     MONSTER_ALIGNMENT_DISTRIBUTION,
     MONSTER_COMBAT_STATS,
+    MONSTER_DESCRIPTION,
     MONSTER_ENGAGEMENT_STATE_NAME,
     MONSTER_HP_BANDS,
     MONSTER_INTELLIGENCE_ORDINAL,
@@ -52,6 +53,33 @@ def test_monster_names_cover_every_enum_value():
     assert MONSTER_NAMES[Monster.NOMONSTER] == "no monster"
     assert MONSTER_NAMES[Monster.BAL_DEMON] == "Balrog Demon"
     assert MONSTER_NAMES[Monster.MAR_DEMON] == "Marilith Demon"
+
+
+# -- Phase 579: MONSTERS.X2 --
+
+
+def test_monster_description_covers_every_enum_value():
+    assert set(MONSTER_DESCRIPTION.keys()) == set(Monster)
+
+
+def test_monster_description_nomonster_is_blank():
+    assert MONSTER_DESCRIPTION[Monster.NOMONSTER] == ""
+
+
+def test_monster_description_verbatim_samples():
+    assert MONSTER_DESCRIPTION[Monster.ROC] == (
+        "The Roc is reputed to be a huge, powerful bird, many times the size "
+        "of an elephant, which the Roc often feeds upon."
+    )
+    assert MONSTER_DESCRIPTION[Monster.MERMAID] == (
+        "The Mermaid is a female creature with the tail of a large fish and a magical charming ability."
+    )
+
+
+def test_monster_description_preserves_the_sources_own_missing_spaces():
+    # Confirmed real in the byte-faithful source, not a transcription
+    # accident -- see this dict's own module docstring addendum.
+    assert "prey.Its front end" in MONSTER_DESCRIPTION[Monster.GRYPHON]
 
 
 def test_monster_stats_covers_only_the_six_unambiguous_table_rows():

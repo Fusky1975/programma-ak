@@ -353,6 +353,27 @@ the source's own "resta fuori per un solo posto dall'intervallo" note.
 `DUEL_MERIT_MONSTERS` names this group by species rather than by a bare
 ordinal comparison, the same self-documenting convention every other
 monster-group set in this module already follows.
+
+**`MONSTER_DESCRIPTION` (Phase 579)**: `HostAK/TP/PROSE/MONSTERS.X2`
+(header `"60 1"`), one flavor-text sentence or two per species -- the
+real prose behind this module's own already-quoted rulebook line
+above, "Monsters are described when they are first discovered"
+(`SAY.PAS:790 _LMDesc`, `FD('...monsters.x2', S_Red, 1001+ord(_mtype))`,
+the identical `ord(monster)+1` formula this project's other prose
+catalogs already use). Sourced from a byte-faithful third-party
+reverse-engineering pass over the full 162-file prose corpus
+(`AKPROSE_reverse_engineering_report.md`, supplied directly by the
+user), cross-checked positionally against `Monster`'s own ordinals:
+choice 1 ("The Roc is reputed to be a huge, powerful bird...") matches
+`Monster.ROC` (ordinal 0) exactly, and the catalog's own 60 real
+choices cover species ordinals 0-59 gaplessly, matching `MONSTER_NAMES`
+one-to-one. `Monster.NOMONSTER` (ordinal 60, the real "no monster"
+sentinel this module's own docstring already discusses above) has no
+real entry in the file -- mapped to the empty string, the same
+"sentinel gets a blank, not omitted" convention `models/office.py
+OFFICE_PERK_DESCRIPTION` already established. No report/encounter
+composer calls this yet -- sourced data with no consumer wired, not a
+functional claim about exactly when the real game shows it.
 """
 
 from __future__ import annotations
@@ -493,6 +514,74 @@ MONSTER_NAMES: dict[Monster, str] = {
     Monster.GW_WHALE: "Great White Whale",
     Monster.MERMAID: "Mermaid",
     Monster.NOMONSTER: "no monster",
+}
+
+
+# HostAK/TP/PROSE/MONSTERS.X2, verbatim, positional with Monster's own
+# ordinals (module docstring's Phase 579 addendum). NOMONSTER is the
+# empty string -- the file's own real sentinel gap, not missing data.
+MONSTER_DESCRIPTION: dict[Monster, str] = {
+    Monster.ROC: 'The Roc is reputed to be a huge, powerful bird, many times the size of an elephant, which the Roc often feeds upon.',
+    Monster.GRYPHON: 'The Gryphon of legend is a large, aggressive, carnivorous bird of prey.Its front end resembles a giant hawk and it has the body of a lion.',
+    Monster.COUATL: 'Natives believe that the Couatl is a powerful feathered serpent about 10 feet long.The Couatl is reputed to be a divine being with high intelligence, but does not usually associate with humanoid life forms.',
+    Monster.GI_EAGLE: 'The Giant Eagle is a strong avian with a 10-foot wingspan.It usually avoids contact with humans.',
+    Monster.SPHINX: 'Legend says that the Sphinx is a powerful winged monster with the body of a lion and the head of a man.The Sphinx is very intelligent and loves to riddle.',
+    Monster.R_DRAGON: 'The Red Dragon is a very Evil and tremendously powerful fire-breathing dragon.',
+    Monster.B_DRAGON: 'The Black Dragon is an Evil and very powerful acid-spitting dragon.',
+    Monster.GR_DRAGON: 'The Green Dragon is a powerful dragon capable of breathing a poisonous cloud of gas.',
+    Monster.S_DRAGON: 'The Silver Dragon is a relatively good and very powerful dragon.',
+    Monster.GO_DRAGON: 'The Gold Dragon is a good and tremendously powerful dragon.',
+    Monster.GI_WORM: 'Retired miners describe the Giant Worm as a huge, powerful segmented worm over 50 feet long.Its giant maw is fearsome in combat, but it is not intelligent.',
+    Monster.TITAN: 'Priests revere the Titan as a godlike being which occasionally visits the material plane of existence.They are tremendously powerful, and it is fortunate that they are usually of good alignment.',
+    Monster.GIANT: 'The lore of hillsmen suggests that the Giant is a huge, powerful man who can land strong blows in melee and can throw stones long distances with great effect.',
+    Monster.BIGFOOT: 'Natives speak in fear of the Bigfoot, describing him as a smelly man-ape who normally shys away from humankind.',
+    Monster.ARCHER: 'Rangers describe the Renegade Archer as an accomplished archer who has taken to the wilderness in protest against the injustices of the world.',
+    Monster.SWORDSMAN: 'Mercenaries describe the Renegade Swordsman as a famous swordsman who has chosen to distance himself from his fellow man and build his power on the strength of his swordsmanship.',
+    Monster.WHITE_MAGE: 'Monks tell tales which describe the Renegade Priest as an estranged White Magician who is using his magic to increase his own power.',
+    Monster.NEC_MAGE: 'Frightened peasants speak of the Renegade Necromancer in fear, describing him as an outlaw Necromancer who builds his fortunes on his dark power over life and death.',
+    Monster.ELE_MAGE: 'Travellers say the Elemental Sorcerer is a renegade Elemental Mage who has chosen to run from the law rather than face trial for his alleged misdeeds.',
+    Monster.PSY_MAGE: 'The Renegade Psychic is reputed to be a desperado who lives by his wits and escapes danger by the use of his psychic powers.',
+    Monster.ILL_MAGE: 'The mysterious Renegade Illusionist is said to be a shadowy figure who uses his powers of deception to preserve his solitary existence.',
+    Monster.WITCH: 'The Witch is a horribly ugly hag capable of strong and evil magic.',
+    Monster.DRYAD: 'The Dryad is a weak female tree spite who makes her home in the forested wilderness.She usually prefers to be left alone.',
+    Monster.CENTAUR: 'Wood-Elves say that the Centaur is a cross-breed, with the body of a man and the trunk and legs of a horse.He is a good archer and is usually friendly.',
+    Monster.GENIE: 'Legend-keepers revere the Genie as a good, powerful spirit capable of such magical feats as flying, using some of the five magical abilities amd they may sometimes even grant a wish.',
+    Monster.GOLEM: 'Magic-users all know that the Golem is a powerful mechanical monster animated by the magic of a sorceror who may or may not be still alive.',
+    Monster.GARGOYLE: 'The Gargoyle is an ugly and evil winged humanoid monster.It is extremely vicious and cruel.',
+    Monster.BASILISK: 'The Basilisk is a strong, 8-legged reptilian monster with the power to turn a man to stone with its baleful glare.',
+    Monster.MEDUSA: 'Hardened adventurers fear the Medusa because she is a hateful creature resembling an ugly woman who has slimy, writhing snakes in the place of hair.Her gaze has been known to turn even a hero to stone.',
+    Monster.BAL_DEMON: 'Conjurers cringe in fear at the very mention of the Balrog Demon, an awful winged whirlwind of scorching fire and slashing steel.It is a highly evil and very powerful monster indeed.',
+    Monster.MAR_DEMON: 'The Marilith Demon is a very powerful 6-armed female demon with the tail of a giant snake.Each arm is capable of skillfully wielding a weapon.',
+    Monster.SUCCUBUS: 'The Succubus is a strong, evil and seductive demon capable of luring an adventurer to his death with her seductive charms.',
+    Monster.RAKSHASHA: 'The Rakshasha is a strong, evil spirit encased in flesh.Of Hindu origin, it has great powers of illusion.',
+    Monster.ICE_DEVIL: 'Legend has it that the Ice Devil is an extraordinarily cruel, cold and very powerful devil with magical powers.',
+    Monster.BONE_DEVIL: 'The Bone Devil is a cruel and powerful demon which resembles a human skeleton.',
+    Monster.IMP: 'Evil magic-users say that the Imp is a weak minor devil who often will act as a "familiar", or magical companion, for evil characters.',
+    Monster.WEREWOLF: 'Those who stalk the night fear the Werewolf, a man with the ability to turn into a wolfman or even a full wolf.According to legend, he who is severely bitten by the werewolf is cursed to become one himself.',
+    Monster.CHIMERA: 'The Chimera is a powerful but unintelligent winged monster with the body of a lion and three heads, of lion, dragon and goat.',
+    Monster.HYDRA: 'The Hydra is a powerful reptilian monster with many snake-heads which inhabits swamplands.',
+    Monster.BEHOLDER: 'The Beholder is a floating gaseous globule with many eyes, each eye capable of casting a potent spell.',
+    Monster.TROLL: 'The Royal Bestiary describes the Troll as a horrible, strong humanoid creature with a mottled green skin and strong recuperative powers.',
+    Monster.MINOTAUR: 'The Royal Bestiary describes the Minotaur as an strong, evil and fearless monster with the body of a man and the head of a bull.',
+    Monster.GI_WOLVERINE: 'The Royal Bestiary describes the Giant Wolverine as a powerful, ferocious monster resembling something like a cross between a giant badger and a mangy wolf.',
+    Monster.TREANT: 'The Treant is a large tree capable of moving its limbs and arms much as a man does.',
+    Monster.GI_AMOEBA: 'The Giant Amoeba is a mass of protoplasm which attaches its sticky pseudopods to any living creature it can find and dissolves the victim in its digestive juices.',
+    Monster.GI_P_MANTIS: 'The Giant Praying Mantis is a large insectoid monster which can stand up on two legs, grasp its prey in its appendages and crush it in its horrible mandibles.',
+    Monster.GI_SCORPION: 'The Giant Scorpion is an oversized scorpion of extreme viciousness which can poison its victim with the powerful stinger on its tail.',
+    Monster.GI_WASP: 'The Giant Wasp is an oversized wasp which preys on human beings, stuffing the remains into its nest so that its larvae can feed upon the gruesome fodder.',
+    Monster.GI_SPIDER: 'The Giant Spider is an oversized spider which leaps onto its prey and wraps it in its sticky strands for later digestion.',
+    Monster.GHOST: "The Ranger's Almanac describes the Ghost as the fearsome spirit of a humanoid who displayed exemplary awfulness during his lifetime, and now roams about in the night, hating life and lamenting in his unlife.",
+    Monster.VAMPIRE: 'From ancient tomes, it is known that the Vampire is an undead monster with great strength.It loves to charm a human victim with its hypnotic eyes, then sink its fangs into the jugular vein and suck the victim dry.',
+    Monster.MUMMY: 'The Mummy is a horribly strong undead Pharoah of ancient times which has been wrapped in linen bandages and laid to rest, but cannot pass to the next world because of some terrible misdeed committed by the Pharoah in his lifetime.',
+    Monster.BANSHEE: 'The Banshee is the undead spirit of an evil female elf.Its horrible scream can strike a man dead.',
+    Monster.LICH: 'From wise soothsayers it can be learned that the Lich is a very powerful undead monster: an Arch-Mage of great sorcerous power who has passed into an unliving state of existence through force of will and powerful magic.',
+    Monster.SPECTRE: 'Experienced dungeoneers describe the Spectre as a ghostly but strong being which haunts desolate places and viciously attacks living creatures because of its hatred of life and bitterness at its own unlife.',
+    Monster.GI_OCTOPUS: 'The Giant Octopus is a strong terror of the deep, which can grip entire ships in its arms and wrestle it to its watery grave.',
+    Monster.GI_CLAM: 'Retired pearl-divers say that the Giant Clam is an oversized shellfish of surprising quickness and strength which can use its giant corrugated shells to clamp down on its prey.',
+    Monster.ELASMOSAURUS: 'The Elasmosaurus is a strong marine dinosaur, a relic of the prehistoric past, which terrorizes the lakes and seas of the world.',
+    Monster.GW_WHALE: 'Mariners who have been shipwrecked and rescued say that the Great White Whale is a pure-white, 200-foot long behemoth.It is a very powerful creature capable of swallowing a human being with one gulp, and is mysteriously intelligent in its ways.',
+    Monster.MERMAID: 'The Mermaid is a female creature with the tail of a large fish and a magical charming ability.',
+    Monster.NOMONSTER: '',
 }
 
 
