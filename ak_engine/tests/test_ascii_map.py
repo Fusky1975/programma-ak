@@ -159,10 +159,12 @@ def test_render_ascii_map_matches_real_sample_own_kingdom_and_other_kingdom_band
 
 def test_render_ascii_map_matches_real_sample_other_kingdom_and_unowned_band():
     # SE3__T1.K2 lines 308-313, columns 8 onward: Orielle (another
-    # Kingdom's own, ruled by Snorri(23)) and Shasta (unowned, race
-    # Eagles) -- byte-for-byte for every row this phase models
-    # (Waterford Sea's own overlong-name wrap is deliberately not
-    # exercised here -- see module docstring's own deferred-gaps list).
+    # Kingdom's own, ruled by Snorri(23), real tax somewhere in 7-10 per
+    # the user's own Phase 563 confirmation of the "Rich" threshold) and
+    # Shasta (unowned, race Eagles) -- byte-for-byte for every row this
+    # phase models (Waterford Sea's own overlong-name wrap is
+    # deliberately not exercised here -- see module docstring's own
+    # deferred-gaps list).
     state = _state()
     state.add_leader(LeaderState(23, 97, "Snorri", HOME, is_king=True))
     state.add_kingdom(KingdomState(97, "K97", Race.HUMAN, None, HOME))
@@ -181,7 +183,7 @@ def test_render_ascii_map_matches_real_sample_other_kingdom_and_unowned_band():
         pad + "_ _Snorri(23) __ ^ ^  Unowned  ^^",
         pad + "_   _Humans _  _ ^   ^Eagles ^  ^",
         pad + "_ _   Le,Ch   __ ^ ^   ^EA ^   ^^",
-        pad + "_   Prosperous _ ^   ^ Poor  ^  ^",
+        pad + "_   _ Rich  _  _ ^   ^ Poor  ^  ^",
         pad + "____26%_Expl.___ ^^^^1%^Expl.^^^^",
     ]
 
@@ -217,6 +219,30 @@ def test_render_ascii_map_other_kingdoms_high_tax_shows_prosperous():
     lines = render_ascii_map(state, 2)
 
     assert any("Prosperous" in line for line in lines)
+
+
+def test_render_ascii_map_other_kingdoms_very_high_tax_shows_rich():
+    state = _state()
+    state.add_leader(LeaderState(3, 3, "Someone", HOME, is_king=True))
+    state.add_kingdom(KingdomState(3, "K3", Race.HUMAN, None, HOME))
+    state.add_province(_province(1, 1, "X", Terrain.PLAINS, Race.HUMAN, owner=3, tax=7, t1=ArmyType.LEGION, t2=None, expl=1))
+
+    lines = render_ascii_map(state, 2)
+
+    assert any("Rich" in line for line in lines)
+
+
+def test_status_word_thresholds_confirmed_by_the_user():
+    # Poor 0-2, Prosperous 3-6, Rich 7-10 -- both boundaries confirmed
+    # directly by the user (project author), see module docstring.
+    from ak_engine.report.ascii_map import _status_word
+
+    assert _status_word(0) == "Poor"
+    assert _status_word(2) == "Poor"
+    assert _status_word(3) == "Prosperous"
+    assert _status_word(6) == "Prosperous"
+    assert _status_word(7) == "Rich"
+    assert _status_word(10) == "Rich"
 
 
 def test_render_ascii_map_empty_when_no_provinces_known():

@@ -62,23 +62,27 @@ and grows into the tick immediately left of the zone;
    Kingdom (matches the PROVINCES table's own Tax column exactly, in
    every case checked); for anyone else's or an unowned province, a
    qualitative descriptor instead of the real number -- **`Poor`
-   (`tax` 0-2) or `Prosperous` (`tax` 3-6), confirmed directly by the
-   user (project author, drawing on first-hand game knowledge, the same
-   "explicitly flagged domain-knowledge" sourcing category already used
-   elsewhere in this project, e.g. `worldgen/king_home_placement.py`'s
-   distance/terrain rules) -- not derivable from the report samples
-   alone, since a province's own real tax figure is never independently
-   visible for someone else's territory in this project's own available
-   corpus.**
+   (`tax` 0-2), `Prosperous` (`tax` 3-6), or `Rich` (`tax` 7-10, Phase
+   563), confirmed directly by the user (project author, drawing on
+   first-hand game knowledge, the same "explicitly flagged domain-
+   knowledge" sourcing category already used elsewhere in this project,
+   e.g. `worldgen/king_home_placement.py`'s distance/terrain rules) --
+   not derivable from the report samples alone, since a province's own
+   real tax figure is never independently visible for someone else's
+   territory in this project's own available corpus. (`SE3__T1.K2`'s
+   own `Orielle` cell shows `Rich`; its own real tax, unknown from this
+   project's own available data at Phase 562, is now understood to sit
+   somewhere in 7-10.)**
 6. Expl%/border: `<N>% Expl.` -- full-fill, tie-left (same rule as row
    1), with `N` from `ProvinceState.explored_percent`.
 
-**Byte-for-byte verified this phase** against two full real bands from
-`SE3__T1.K2` (`Bam Yanga`/`Macondo`/`Mongu`/`Moongard`, lines 314-319 --
-this Kingdom's own provinces and another Kingdom's, side by side, exact
+**Byte-for-byte verified** against two full real bands from `SE3__T1.K2`
+(`Bam Yanga`/`Macondo`/`Mongu`/`Moongard`, lines 314-319 -- this
+Kingdom's own provinces and another Kingdom's, side by side, exact
 match; `Orielle`/`Shasta`, lines 308-313 -- another Kingdom's own
-province with a known ruler, and an unowned one, exact match for every
-row this phase actually models).
+`Rich` province and an unowned one, exact match including the `Rich`
+status word once Phase 563 closed its own threshold, for every row
+this phase actually models).
 
 **Explicitly NOT modeled this phase, confirmed real but not yet
 reconciled with enough samples to state a rule with the same
@@ -94,11 +98,6 @@ in `README.md` for the full account):
   sometimes entirely absent too, with the status row (row 5) shifting
   up to fill it (`Shasta` again, `SE3__T1.K2`) -- this module always
   shows a recruit-type row regardless of ownership.
-- A third status word, `Rich`, appears in the same corpus
-  (`SE3__T1.K2`'s own `Orielle`) alongside the two the user confirmed
-  (`Poor`/`Prosperous`) -- its own real tax threshold is unknown (the
-  user's own confirmed rule only covers 0-2/3-6); this module never
-  produces `Rich`.
 - A province name too long to fit in 16 chars alongside its own ID
   wraps onto its own second row, which then forces something else out
   of the fixed 6-row budget (observed: the Expl%/status row gets
@@ -273,6 +272,19 @@ def _king_name_and_id(state: GameState, kingdom_id: int) -> str | None:
     return None
 
 
+def _status_word(tax: int) -> str:
+    """The qualitative status word row 5 shows for a province owned by
+    anyone other than the viewing Kingdom -- see module docstring for
+    the full sourcing (both thresholds confirmed directly by the user,
+    project author, first-hand game knowledge)."""
+
+    if tax <= 2:
+        return "Poor"
+    if tax <= 6:
+        return "Prosperous"
+    return "Rich"
+
+
 def render_cell(state: GameState, province: ProvinceState, *, viewing_kingdom_id: int) -> list[str]:
     """The 6 raw content lines (16 chars each, no separator) for one
     province's own map cell -- see module docstring for the full,
@@ -308,8 +320,7 @@ def render_cell(state: GameState, province: ProvinceState, *, viewing_kingdom_id
     if province.owner_kingdom_id == viewing_kingdom_id:
         status_text = f"Tax: {province.tax if province.tax is not None else 0}"
     else:
-        tax = province.tax if province.tax is not None else 0
-        status_text = "Prosperous" if tax >= 3 else "Poor"
+        status_text = _status_word(province.tax if province.tax is not None else 0)
     line5 = _pad_framed(
         status_text, left_template=_ROW35_LEFT, zone_width=_ROW35_ZONE, right_template=_ROW35_RIGHT, symbol=symbol, tie_left=False
     )

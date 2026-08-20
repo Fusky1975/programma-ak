@@ -23248,7 +23248,7 @@ follow-up request after the original 431-435 plan shipped.
   already-correct ordering); it moves before STATE OF THE NATION once an
   Emperor exists, with no duplication. Ran again: 4816 passed (net +4).
 
-- **Phase 562 (current)**: implemented the real ASCII map (`AKGEN_
+- **Phase 562**: implemented the real ASCII map (`AKGEN_
   reverse_engineering_report (5).md` SS38.2/SS44 -- "CERTAIN" for
   content/placement, right after PROVINCES/before CHARACTERS, but
   "HYPOTHESIS" for the exact field-selection formula). This project's
@@ -23286,6 +23286,25 @@ follow-up request after the original 431-435 plan shipped.
   overflow-growth rule, recruit/race lookups, and the two full-band
   byte-for-byte checks) plus 3 wiring tests in `test_turn_report.py`.
   Ran again: 4839 passed (net +23).
+
+- **Phase 563 (current)**: closed one of Phase 562's own flagged gaps --
+  the third map status word, `Rich`, whose real tax threshold was
+  unknown at the time. The user (project author) confirmed it directly:
+  `Rich` covers tax 7-10, extending the already-confirmed `Poor` (0-2)/
+  `Prosperous` (3-6) two-tier rule into a real three-tier one. New
+  `_status_word()` helper in `report/ascii_map.py` replaces the old
+  inline two-way check. This also **upgraded** one of Phase 562's own
+  "verified" claims into a fuller one: `SE3__T1.K2`'s own `Orielle` cell
+  (tax 10, this session's own test fixture value, previously rendered
+  as the wrong `Prosperous`) now reproduces the real sample's own `Rich`
+  byte-for-byte too -- the second full-band verification test is now a
+  complete match with no remaining caveat. Ran before writing tests:
+  4839 passed (non-breaking). Updated the existing `Orielle`/`Shasta`
+  band test's own expected `Rich` line (recomputing its own padding,
+  since `Rich`/`Prosperous` are different lengths); added a direct
+  `_status_word()` boundary test (all three tiers, both edges) and a
+  `render_ascii_map()`-level `Rich` case. Ran again: 4841 passed
+  (net +2).
 
 ## Setup
 
