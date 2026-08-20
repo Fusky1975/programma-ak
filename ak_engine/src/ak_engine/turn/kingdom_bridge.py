@@ -24,7 +24,9 @@ two pieces of real data the file provides:
   this turn is, by construction, currently in Kingdom N's service this
   turn (only a King's own leaders' orders are submitted together in his
   file) -- so every matched leader's ``LeaderState.kingdom_id`` is set to
-  ``kingdom.header.kingdom_number``.
+  ``kingdom.kingdom_id`` (Phase 574 -- the file-name-derived real
+  identifier; see that property's own docstring for why the header's own
+  ``kingdom_number`` field was confirmed broken and replaced).
 - **``skills``**: only the King's own real ``SkillTable`` is present in the
   file (``Kingdom.skills`` -- see that class's docstring); no other
   leader's ability data is ever in a move file. The King's own entry
@@ -104,7 +106,7 @@ def sync_leaders_from_kingdom(kingdom: Kingdom, state: GameState) -> KingdomBrid
     """
 
     report = KingdomBridgeReport()
-    kingdom_id = kingdom.header.kingdom_number
+    kingdom_id = kingdom.kingdom_id
     king_matches = [leader for leader in kingdom.leaders if leader.name == kingdom.king_name]
     king_leader_id = king_matches[0].leader_id if king_matches else None
     report.king_not_identified = king_leader_id is None

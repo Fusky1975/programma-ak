@@ -23665,7 +23665,7 @@ follow-up request after the original 431-435 plan shipped.
   placement formula against `SE3__T5.K1`'s own real `x=6-12` band. Ran
   again: 4872 passed (net +4).
 
-- **Phase 573 (current)**: fixed the two real, playability-blocking gaps
+- **Phase 573**: fixed the two real, playability-blocking gaps
   a background audit found while answering "what's missing to make the
   program playable" -- both genuine, not the cosmetic ASCII-map gaps
   the last several phases were about. (1) **`ArmyState.movement_points`
@@ -23711,6 +23711,48 @@ follow-up request after the original 431-435 plan shipped.
   `_replenish_turn_scoped_state()`; `run_turn()` itself replenishing
   movement and incrementing `turn_number` end-to-end. Ran again: 4880
   passed (net +8).
+
+- **Phase 574 (current)**: continuing the same playability audit, fixed
+  the third (moderate) gap it found -- `turn/turn_processor.py build_
+  missed_deadline_turn_leaders()` (the real `REPORTS.PAS Set_Defend`
+  missed-deadline auto-fill) existed and was tested but was never called
+  from `orchestrator.py process_turn()`, so a Kingdom that submitted no
+  order file this turn was simply absent from the turn's dispatch instead
+  of getting its rulebook-mandated Defend/Wait plan. Wiring this in
+  required first resolving a bigger, pre-existing complication it
+  re-surfaced: `KingdomMoveHeader.kingdom_number` (what `process_turn()`/
+  `turn/kingdom_bridge.py` used as `kingdom_id` everywhere) was already
+  confirmed broken back in Phase 464 -- it's literally `interp_vers`, a
+  *global* interpreter-version constant, not per-Kingdom data, so every
+  real Kingdom's own move file would report the same value and collide
+  onto the same `kingdom_id` in a real multi-Kingdom game. Investigated
+  the real fix rather than building the missed-deadline wiring on top of
+  a known-broken identifier: `HostAK/TP/DEF2.PAS` `Write_Moves`/`Read_
+  Moves` both build the move file's own name via `Get_FN('AK', gameturn,
+  kng, fs)`, threading the real per-Kingdom `kng` loop variable through
+  -- and this project's one real move-file sample, `AK3__T1.K1`, and its
+  own turn's report, `SE3__T1.K1` (the identical trailing `.K1` suffix),
+  name the same King ("Uga-Buga Makumb(u)") on their very first line, a
+  direct real cross-file confirmation, not just an analogy. New `Kingdom.
+  kingdom_id` property (`models/kingdom.py`) parses this suffix instead;
+  `orchestrator.py`/`turn/kingdom_bridge.py` now key off it everywhere
+  `kingdom.header.kingdom_number` used to. `Get_FN`'s own body still
+  isn't present anywhere in the extracted Pascal source (checked again
+  this phase), so the exact byte-level filename-construction algorithm
+  remains unconfirmed -- only which value it embeds is no longer a
+  guess. `process_turn()` now also builds the missed-deadline auto-fill
+  for every Kingdom in `state.kingdoms` missing from this turn's parsed
+  order files, merging it into the same `run_turn()` dispatch. Ran
+  before writing tests: 4880 passed (non-breaking); one existing sample-
+  data test (`test_kingdom_bridge.py`, real `AK3__T1.K1` fixture) had its
+  `kingdom_id` assertions corrected from `27` (the old, confirmed-wrong
+  `interp_vers` reading) to `1` (the real, filename-derived id); one
+  orchestrator test's two-kingdom fixture had its `source_filename`
+  fixed to actually vary per kingdom (it had been hardcoded to `"fake.
+  K1"` for every kingdom, silently papering over the still-live header-
+  based lookup). Added tests: `Kingdom.kingdom_id`'s own filename
+  parsing; `process_turn()` auto-filling a Kingdom with no submitted
+  order file. Ran again: 4882 passed (net +2).
 
 ## Setup
 

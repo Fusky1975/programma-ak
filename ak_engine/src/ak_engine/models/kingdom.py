@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import PurePath
 
 from ak_engine.models.enums import Ability
 from ak_engine.models.leader import Leader
@@ -58,22 +59,16 @@ class KingdomMoveHeader:
         without a second Kingdom's sample to compare against, which this
         project doesn't have).
 
-        `orchestrator.py` (``process_turn``) and `turn/kingdom_bridge.py`
-        still key `GameState.kingdoms`/`TurnLeader` off this property,
-        UNCHANGED, to avoid an unverified breaking change this phase: in a
-        real multi-Kingdom game every Kingdom's own move file would report
-        the *same* `interp_vers` value (it's a build-wide constant, not
-        per-Kingdom data), so every Kingdom would collide onto the same
-        `kingdom_id` -- a confirmed, sourced bug, not yet fixed. The real
-        per-Kingdom identifier is presumably encoded in the ``.K1`` move
-        file's own *name* instead: `Write_Moves`/`Read_Moves` both build
-        their filename via ``Get_FN('AK', gameturn, kng, fs)``, passing
-        `kng` as a parameter, and every sample filename (``AK3__T1.K1`` ..
-        ``AK3__T10.K1``) does carry a constant trailing ``.K1`` suffix
-        across this one Kingdom's own 10 turns -- a plausible candidate,
-        but `Get_FN`'s own body isn't present anywhere in the extracted
-        Pascal source tree (only call sites), so this is flagged as an
-        explicit follow-up, not asserted as fact or wired here.
+        **Fixed (Phase 574): `orchestrator.py`/`turn/kingdom_bridge.py` no
+        longer key off this property.** In a real multi-Kingdom game every
+        Kingdom's own move file would report the *same* `interp_vers`
+        value (it's a build-wide constant, not per-Kingdom data), so every
+        Kingdom would collide onto the same `kingdom_id` if this were
+        still used that way. See `Kingdom.kingdom_id` for the real
+        per-Kingdom identifier, and its own docstring for the sourced
+        replacement and the direct cross-file confirmation found this
+        phase. This property itself is kept, unchanged, purely as the
+        decoded `interp_vers`/`raw_fields[0]` accessor -- not repurposed.
         """
         return self.raw_fields[0]
 
@@ -224,3 +219,34 @@ class Kingdom:
     skills: SkillTable
     leaders: list[Leader] = field(default_factory=list)
     trailer_comments: str = ""
+
+    @property
+    def kingdom_id(self) -> int:
+        """The real per-Kingdom identifier (Phase 574), replacing the
+        confirmed-broken `KingdomMoveHeader.kingdom_number`.
+
+        Parsed from this file's own name's trailing ``.K<N>`` suffix
+        (``source_filename``, e.g. ``AK3__T1.K1`` -> ``1``) rather than
+        its header content. `HostAK/TP/DEF2.PAS` `Write_Moves`/`Read_
+        Moves` both build this exact filename via ``Get_FN('AK',
+        gameturn, kng, fs)``, threading the real per-Kingdom `kng` loop
+        variable through -- so the name *must* vary with `kng`, or two
+        Kingdoms writing their own move files to the same host disk
+        would overwrite each other, which the engine plainly never does.
+
+        **Directly confirmed this phase**, not just inferred by analogy:
+        this project's one real move-file sample, ``AK3__T1.K1``, and its
+        own turn's report, ``SE3__T1.K1`` -- the *same* trailing ``.K1``
+        suffix -- name the identical King ("Uga-Buga Makumb(u)") on their
+        very first line, tying the suffix to one real, cross-checked
+        Kingdom across both file series. This matches the already
+        extensively-confirmed `SE3__T*.K<N>` report convention this
+        project's ASCII-map/report work relies on throughout. `Get_FN`'s
+        own body still isn't present anywhere in the extracted Pascal
+        source (checked again this phase, in both `HostAK` and
+        `HostAK-old`), so the exact byte-level construction algorithm
+        remains unconfirmed -- but which *value* it embeds is no longer
+        a guess.
+        """
+        suffix = PurePath(self.source_filename).suffix  # e.g. ".K1"
+        return int(suffix[2:])

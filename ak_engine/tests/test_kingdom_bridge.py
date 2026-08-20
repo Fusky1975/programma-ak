@@ -17,9 +17,13 @@ GW_FIXTURE = Path(__file__).parent / "fixtures" / "world" / "G3" / "GW3__T1"
 
 
 def test_syncs_kingdom_id_and_attaches_kings_skills_when_leaders_already_exist():
+    # Phase 574: kingdom_id is now derived from the move file's own name
+    # (AK3__T1.K1 -> 1), not the confirmed-broken header.kingdom_number
+    # (which read a stable 27 -- see Kingdom.kingdom_id's own docstring
+    # for the direct SE3__T1.K1 cross-check confirming 1 is the real id).
     kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T1.K1")  # King id 1, Heroes 18 and 72
     state = GameState()
-    state.add_kingdom(KingdomState(27, "Uga-Buga Makumb", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.add_kingdom(KingdomState(1, "Uga-Buga Makumb", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
     state.add_leader(LeaderState(1, kingdom_id=None, name="Uga-Buga Makumb", location=LOCATION))
     state.add_leader(LeaderState(18, kingdom_id=None, name="Guerin", location=LOCATION))
     state.add_leader(LeaderState(72, kingdom_id=None, name="Teleko", location=LOCATION))
@@ -31,9 +35,9 @@ def test_syncs_kingdom_id_and_attaches_kings_skills_when_leaders_already_exist()
     assert report.king_not_identified is False
     assert report.skills_attached_to_leader_id == 1
 
-    assert state.leaders[1].kingdom_id == 27
-    assert state.leaders[18].kingdom_id == 27
-    assert state.leaders[72].kingdom_id == 27
+    assert state.leaders[1].kingdom_id == 1
+    assert state.leaders[18].kingdom_id == 1
+    assert state.leaders[72].kingdom_id == 1
     assert state.leaders[1].skills is kingdom.skills
     # Only the King's real skill line exists in the file -- Heroes' own
     # ability data is never present, so they stay untouched.
@@ -67,8 +71,8 @@ def test_only_matched_leaders_are_synced_others_still_reported_missing():
     assert report.synced_leader_ids == [18]
     assert sorted(report.not_found_leader_ids) == [1, 72]
     # Guerin is back in this kingdom's own move-file submission this turn
-    # -> re-synced to kingdom_id 27, regardless of last turn's employer.
-    assert state.leaders[18].kingdom_id == 27
+    # -> re-synced to kingdom_id 1, regardless of last turn's employer.
+    assert state.leaders[18].kingdom_id == 1
     # He's not the King, so no skills attached even though he was found.
     assert report.skills_attached_to_leader_id is None
     assert state.leaders[18].skills is None
@@ -89,7 +93,7 @@ def test_king_not_identified_when_no_leader_name_matches_king_name():
     assert report.skills_attached_to_leader_id is None
     assert state.leaders[1].skills is None
     # kingdom_id syncing is unaffected -- it doesn't depend on King identification.
-    assert state.leaders[1].kingdom_id == 27
+    assert state.leaders[1].kingdom_id == 1
     # Nobody in the file was matched as King, so nobody gets is_king=True.
     assert state.leaders[1].is_king is False
 

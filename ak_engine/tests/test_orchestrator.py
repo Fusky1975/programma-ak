@@ -25,8 +25,16 @@ def _wait_leader(leader_id: int, name: str) -> Leader:
 
 
 def _kingdom(kingdom_number: int, king_name: str, leaders: list[Leader]) -> Kingdom:
+    # Phase 574: kingdom.kingdom_id (what orchestrator.py/kingdom_bridge.py
+    # actually key off now) is derived from source_filename's own trailing
+    # .K<N> suffix, not header.kingdom_number -- so this fixture's filename
+    # must carry the intended kingdom_number to keep them in sync. (The
+    # `parse_k1_moves_file` mock returns this fixed Kingdom object
+    # regardless of which Path each test passes to process_turn(), so
+    # this filename -- not that Path -- is what actually determines
+    # kingdom_id in every test in this file.)
     return Kingdom(
-        source_filename="fake.K1",
+        source_filename=f"fake.K{kingdom_number}",
         king_name=king_name,
         king_title=None,
         header=KingdomMoveHeader(raw_fields=[kingdom_number, 1, 0, 101, 1, 15, 1]),
@@ -95,13 +103,40 @@ def test_process_turn_combines_multiple_kingdoms_orders_into_one_run_turn_call()
     kingdom_a = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
     kingdom_b = _kingdom(2, "Baldric", [_wait_leader(30, "Baldric")])
 
+    # Phase 574: kingdom_id now comes from the file's own name (a.K1 -> 1,
+    # b.K2 -> 2), not header.kingdom_number -- the path's own suffix must
+    # match each fixture's intended kingdom_id.
     with patch("ak_engine.orchestrator.parse_k1_moves_file", side_effect=[kingdom_a, kingdom_b]):
         outcome = process_turn(
-            state, [Path("a.K1"), Path("b.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([], choice_indices=[0])
+            state, [Path("a.K1"), Path("b.K2")], board_width=BOARD_WIDTH, rng=ScriptedRandom([], choice_indices=[0])
         )
 
     assert {r.leader_id for r in outcome.results} == {10, 20, 30}
     assert set(outcome.bridge_reports) == {1, 2}
+
+
+def test_process_turn_auto_fills_a_missed_deadline_kingdom_with_the_real_defend_wait_plan():
+    # Phase 574: Defendia (kingdom 2) submits no order file this turn --
+    # process_turn() now merges turn/turn_processor.py
+    # build_missed_deadline_turn_leaders()'s own real REPORTS.PAS
+    # Set_Defend auto-fill for it into the same run_turn() dispatch,
+    # instead of silently leaving it out of the turn entirely.
+    state = _base_state()
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 0)))
+    state.add_leader(LeaderState(30, kingdom_id=2, name="Baldric", location=HexCoord(1, 0), is_king=True))
+
+    kingdom_a = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom_a):
+        outcome = process_turn(state, [Path("a.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([], choice_indices=[0]))
+
+    # Baldric (kingdom 2's own King, no armies) got dispatched even though
+    # his own kingdom submitted no order file this turn.
+    assert 30 in {r.leader_id for r in outcome.results}
+    # No order file ever arrived for kingdom 2, so it never got a real
+    # bridge sync -- unchanged, pre-existing behavior this phase doesn't
+    # touch.
+    assert 2 not in outcome.bridge_reports
 
 
 def test_process_turn_wires_the_emperor_election_evaluation():

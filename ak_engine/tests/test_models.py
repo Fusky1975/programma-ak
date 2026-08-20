@@ -1,6 +1,6 @@
 from ak_engine.models.enums import ABILITY_ABBREVIATION, ABILITY_NAME, Ability, ActionCode, action_from_int
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.kingdom import VOTE_TURN_SENTINEL, KingdomMoveHeader, SkillTable
+from ak_engine.models.kingdom import VOTE_TURN_SENTINEL, Kingdom, KingdomMoveHeader, SkillTable
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 
 
@@ -39,6 +39,24 @@ def test_kingdom_number_is_the_same_slot_as_interp_vers():
     # literally the same raw_fields[0] slot as interp_vers.
     header = KingdomMoveHeader(raw_fields=[27, 1, 0, 101, 1, 15, 1])
     assert header.kingdom_number == header.interp_vers == 27
+
+
+def test_kingdom_id_is_derived_from_the_source_filenames_own_k_suffix():
+    # Phase 574: kingdom_id replaces the confirmed-broken header.kingdom_
+    # number (test_kingdom_number_is_the_same_slot_as_interp_vers above)
+    # with the real per-Kingdom identifier, parsed from the move file's
+    # own name instead -- note header.kingdom_number here still reads 27
+    # (unchanged, still the same interp_vers slot) while kingdom_id
+    # correctly reads 4 from the filename's own trailing suffix.
+    kingdom = Kingdom(
+        source_filename="AK3__T7.K4",
+        king_name="Someone",
+        king_title=None,
+        header=KingdomMoveHeader(raw_fields=[27, 1, 0, 101, 1, 15, 1]),
+        skills=SkillTable(raw_values=[0] * 31),
+    )
+    assert kingdom.kingdom_id == 4
+    assert kingdom.header.kingdom_number == 27
 
 
 def test_is_vote_turn_true_only_at_the_sentinel():

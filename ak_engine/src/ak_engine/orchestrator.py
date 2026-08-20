@@ -37,7 +37,12 @@ from ak_engine.report.turn_report import describe_turn_results
 from ak_engine.turn.emperor_election import ElectionCallOutcome, ElectionResult, process_election_turn
 from ak_engine.turn.final_standings import FinalStandingsReport, compose_final_standings_report
 from ak_engine.turn.kingdom_bridge import KingdomBridgeReport, sync_leaders_from_kingdom
-from ak_engine.turn.turn_processor import PhaseDispatchResult, TurnLeader, run_turn
+from ak_engine.turn.turn_processor import (
+    PhaseDispatchResult,
+    TurnLeader,
+    build_missed_deadline_turn_leaders,
+    run_turn,
+)
 
 
 @dataclass(slots=True)
@@ -107,6 +112,13 @@ def process_turn(
     before any Emperor exists; from the coronation turn onward, every
     later turn recomputes it fresh (the real engine's own behavior, not a
     one-time "game over" snapshot).
+
+    **Phase 574**: any Kingdom in ``state.kingdoms`` with no order file in
+    ``order_file_paths`` this turn gets the real ``REPORTS.PAS Set_Defend``
+    missed-deadline auto-fill (``turn/missed_deadline.py`` via
+    ``turn/turn_processor.py build_missed_deadline_turn_leaders()``)
+    merged into the same ``run_turn()`` dispatch, instead of being
+    silently absent from the turn.
     """
 
     if rng is None:
@@ -118,11 +130,12 @@ def process_turn(
 
     for path in order_file_paths:
         kingdom = parse_k1_moves_file(path)
-        # kingdom_number is confirmed (Phase 464) to actually be a global
-        # interpreter-version constant, not a per-Kingdom identifier -- see
-        # KingdomMoveHeader.kingdom_number's own docstring for the sourced
-        # proof and the still-open follow-up to find the real per-Kingdom id.
-        kingdom_id = kingdom.header.kingdom_number
+        # Phase 574: kingdom.kingdom_id (derived from the file's own name)
+        # replaced kingdom.header.kingdom_number here -- see that
+        # property's own docstring for why the header field was
+        # confirmed broken (Phase 464) and how the filename-derived
+        # replacement was confirmed instead.
+        kingdom_id = kingdom.kingdom_id
         bridge_report = sync_leaders_from_kingdom(kingdom, state)
         bridge_reports[kingdom_id] = bridge_report
         kingdom_headers[kingdom_id] = kingdom.header
@@ -131,6 +144,17 @@ def process_turn(
             if leader.leader_id in bridge_report.not_found_leader_ids:
                 continue
             turn_leaders.append(TurnLeader(leader, kingdom_id))
+
+    # Phase 574: a Kingdom tracked in state.kingdoms with no order file
+    # among order_file_paths this turn (i.e. missing from kingdom_headers)
+    # missed the move-submission deadline entirely -- REPORTS.PAS's own
+    # Set_Defend auto-fill applies to it (turn/missed_deadline.py), same
+    # as a real missed submission. Without this, such a Kingdom was simply
+    # absent from run_turn()'s dispatch instead of getting its rulebook-
+    # mandated Defend/Wait plan.
+    for kingdom_id in state.kingdoms:
+        if kingdom_id not in kingdom_headers:
+            turn_leaders.extend(build_missed_deadline_turn_leaders(state, kingdom_id))
 
     results = run_turn(turn_leaders, state, board_width=board_width, rng=rng)
     election_outcome = process_election_turn(state, kingdom_headers, state.turn_number)
