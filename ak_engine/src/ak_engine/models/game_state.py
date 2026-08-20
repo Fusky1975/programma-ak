@@ -1170,9 +1170,10 @@ class GameState:
     # Phase 387: how many of this (leader, Ability) pair's own per-turn
     # action-cast slots (``turn/cast_execution.py action_cast_slots()``,
     # AKGEN's confirmed ``action_slots_per_school``) have already been
-    # consumed this turn. Not auto-cleared at a turn boundary -- same
-    # "caller's job" convention as ``recruited_this_turn``/``ArmyState.
-    # movement_points`` above.
+    # consumed this turn. Cleared to ``{}`` at the end of every
+    # ``run_turn()`` call, alongside ``recruited_this_turn``/``ArmyState.
+    # movement_points``'s own replenishment (Phase 575 -- audited and
+    # fixed after Phase 573 missed it).
     action_casts_used: dict[tuple[int, Ability], int] = field(default_factory=dict)
     # Phase 392: army ids a Werebeast column-win's own confirmed 40%
     # "bite" roll (AKGEN's `battle_engine.special_events` "Werebeasts

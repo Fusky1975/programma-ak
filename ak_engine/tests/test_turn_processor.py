@@ -1737,3 +1737,25 @@ def test_run_turn_increments_the_turn_number():
     run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
 
     assert state.turn_number == 6
+
+
+# -- Phase 575: action_casts_used, the fourth "never reset -- caller's
+# job" field, missed by Phase 573's own audit and fixed here.
+
+
+def test_replenish_turn_scoped_state_clears_action_casts_used():
+    state = _base_state()
+    state.action_casts_used[(10, Ability.WHITE)] = 3
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.action_casts_used == {}
+
+
+def test_run_turn_clears_action_casts_used_at_the_end():
+    state = _base_state()
+    state.action_casts_used[(10, Ability.WHITE)] = 3
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert state.action_casts_used == {}

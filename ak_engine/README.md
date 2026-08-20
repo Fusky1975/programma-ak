@@ -23712,7 +23712,7 @@ follow-up request after the original 431-435 plan shipped.
   movement and incrementing `turn_number` end-to-end. Ran again: 4880
   passed (net +8).
 
-- **Phase 574 (current)**: continuing the same playability audit, fixed
+- **Phase 574**: continuing the same playability audit, fixed
   the third (moderate) gap it found -- `turn/turn_processor.py build_
   missed_deadline_turn_leaders()` (the real `REPORTS.PAS Set_Defend`
   missed-deadline auto-fill) existed and was tested but was never called
@@ -23753,6 +23753,27 @@ follow-up request after the original 431-435 plan shipped.
   based lookup). Added tests: `Kingdom.kingdom_id`'s own filename
   parsing; `process_turn()` auto-filling a Kingdom with no submitted
   order file. Ran again: 4882 passed (net +2).
+
+- **Phase 575 (current)**: fixes `GameState.action_casts_used`, a fourth
+  real instance of the exact "never reset at a turn boundary -- caller's
+  job" bug Phase 573 fixed for `ArmyState.movement_points`/`march_bonus_
+  applied_this_turn`/`naval_bonus_applied_this_turn`/`unhireable_this_
+  turn` and `ProvinceState.recruited_this_turn` -- flagged but not
+  investigated at the time (`turn/turn_processor.py _replenish_turn_
+  scoped_state()`'s own Phase 573 docstring only covered the fields its
+  own audit actually found). `turn/cast_execution.py _consume_action_
+  cast_slot()` increments this per-(leader, Ability) counter every time
+  a real Action-Cast success roll happens (win or lose), but nothing
+  anywhere ever cleared it -- so once a leader exhausted their own
+  per-turn Action-Cast slots for an Ability (`action_cast_slots()`: 1-3
+  slots depending on skill level), that Ability would have stayed
+  permanently uncastable via Action-Cast for the rest of the game.
+  Fixed the same way as Phase 573's own fields: `_replenish_turn_scoped_
+  state()` now also clears `action_casts_used` to `{}` at the end of
+  every `run_turn()` call. Ran before writing tests: 4882 passed
+  (non-breaking). Added tests: `_replenish_turn_scoped_state()` clearing
+  it directly; `run_turn()` clearing it end-to-end. Ran again: 4884
+  passed (net +2).
 
 ## Setup
 

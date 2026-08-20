@@ -635,6 +635,13 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
     - ``ProvinceState.recruited_this_turn`` -> ``{}`` -- otherwise a
       province that ever hit its per-type recruit limit once (rulebook
       [3.4]) could never recruit that type again, ever.
+    - ``GameState.action_casts_used`` -> ``{}`` (Phase 575) -- otherwise a
+      (leader, Ability) pair that ever exhausted its own per-turn
+      Action-Cast slots (``turn/cast_execution.py action_cast_slots()``)
+      could never cast that Ability again for the rest of the game --
+      the identical "never reset, permanently blocks its own mechanic"
+      bug already fixed for the fields above in Phase 573, just not
+      audited yet at the time.
 
     ``GameState.gate_angel_candidates_this_turn`` is deliberately NOT
     touched here despite its own name -- it's already self-resetting,
@@ -653,6 +660,7 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         province.recruited_this_turn = {}
     for leader in state.leaders.values():
         leader.oratory_boosted_this_turn = False
+    state.action_casts_used = {}
 
 
 def _apply_werebeast_transformations(state: GameState) -> None:
