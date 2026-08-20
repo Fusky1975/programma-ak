@@ -47,17 +47,29 @@ def _province(x: int, y: int, name: str, terrain: Terrain, race: Race, *, owner:
 
 
 def test_cell_pixel_column_odd_row_no_stagger():
-    assert cell_pixel_column(HexCoord(1, 5)) == 0
-    assert cell_pixel_column(HexCoord(2, 3)) == 17
+    assert cell_pixel_column(HexCoord(1, 5), x_min=1) == 0
+    assert cell_pixel_column(HexCoord(2, 3), x_min=1) == 17
 
 
 def test_cell_pixel_column_even_row_staggers_by_half_a_cell():
-    assert cell_pixel_column(HexCoord(1, 4)) == 8
-    assert cell_pixel_column(HexCoord(1, 6)) == 8
+    assert cell_pixel_column(HexCoord(1, 4), x_min=1) == 8
+    assert cell_pixel_column(HexCoord(1, 6), x_min=1) == 8
 
 
-def test_cell_pixel_column_clamps_x_zero_instead_of_going_negative():
-    assert cell_pixel_column(HexCoord(0, 5)) == cell_pixel_column(HexCoord(1, 5))
+def test_cell_pixel_column_clamps_below_x_min_instead_of_going_negative():
+    assert cell_pixel_column(HexCoord(0, 5), x_min=1) == cell_pixel_column(HexCoord(1, 5), x_min=1)
+
+
+def test_cell_pixel_column_is_relative_to_x_min_not_hardcoded_to_one():
+    # Phase 568: SE3__T1.K1's own real Sixth Sea/Kildare/M Ionium band
+    # (x=9,10,11 at y=4) -- the same real provinces byte-verified in
+    # SE3__T1.K2 at x=1-4, this time confirmed against a report whose
+    # own map starts much further right. Column 8 for x=9 with x_min=9
+    # matches cell_pixel_column(HexCoord(1, 4), x_min=1)'s own 8 exactly
+    # -- the formula genuinely only cares about x relative to x_min.
+    assert cell_pixel_column(HexCoord(9, 4), x_min=9) == 8
+    assert cell_pixel_column(HexCoord(10, 4), x_min=9) == 25
+    assert cell_pixel_column(HexCoord(11, 4), x_min=9) == 42
 
 
 # -- _pad_center() -- rows 1 and 6's own full-fill, tie-left rule --
@@ -181,10 +193,13 @@ def test_render_ascii_map_matches_real_sample_other_kingdom_and_unowned_band():
 
     lines = render_ascii_map(state, 2)
 
-    # 25 leading spaces: Orielle sits at x=2 -- cell_pixel_column()'s own
-    # confirmed formula places it at column 25 when nothing occupies x=1
-    # in this same row (Waterford Sea, deliberately not added here).
-    pad = " " * 25
+    # 8 leading spaces (Phase 568): render_ascii_map() computes x_min as
+    # the true minimum x among the provinces it's actually rendering --
+    # here that's Orielle's own x=2 (Waterford Sea, the real sample's
+    # own x=1 cell, is deliberately not added), so Orielle itself sits
+    # at cell_pixel_column()'s own x_min-relative column 0, plus row 4's
+    # own 8-column even-row stagger.
+    pad = " " * 8
     assert lines == [
         pad + "__Orielle(0204)_ ^^Shasta(0304)^^",
         pad + "_ _Snorri(23) __ ^ ^  Unowned  ^^",

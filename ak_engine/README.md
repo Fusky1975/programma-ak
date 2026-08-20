@@ -23436,7 +23436,7 @@ follow-up request after the original 431-435 plan shipped.
   `render_ascii_map_dense()`'s own `Orielle`/`Shasta` band byte-for-
   byte. Ran again: 4856 passed (net +9).
 
-- **Phase 567 (current, research-only, no code/test changes)**: closed
+- **Phase 567 (research-only, no code/test changes)**: closed
   out the map-layout-trigger question Phase 566 left open, as far as it
   can be closed from this project's own available evidence. Measured
   the real cell stride directly (column delta between consecutive
@@ -23474,6 +23474,47 @@ follow-up request after the original 431-435 plan shipped.
   limit. No code or test changes; ran the full suite before and after
   purely to confirm the docstring-only edit didn't touch anything:
   4856 passed both times.
+
+- **Phase 568 (current)**: while investigating the 4 narrower map
+  layouts the user asked to implement next, found and fixed a real
+  correctness bug in the wide layout's own already-shipped horizontal-
+  placement formula. `cell_pixel_column()` hardcoded `(x - 1) *
+  CELL_STRIDE`, silently assuming every map's own leftmost known
+  province sits at `x == 1` -- true only for `SE3__T1.K2`, the one
+  sample this formula was originally verified against. Cross-checking
+  the *same real provinces* (`Sixth Sea`/`Kildare`/`M Ionium`, same
+  Kingdom) in `SE3__T1.K1` (a different turn, `x_min == 9` there)
+  showed the real report starts them near column 8, not ~136 as the
+  hardcoded formula predicts -- confirmed correct across 4 independent
+  rows once expressed relative to the map's own real `x_min`
+  (`min(p.coord.x for p in provinces)`) instead of a hardcoded `1`.
+  This isn't just a historical-sample curiosity: `worldgen/place_map.py
+  DEFAULT_WIDTH = 18` means a freshly generated Kingdom's own home can
+  legitimately sit anywhere in that range. `cell_pixel_column()` now
+  takes `x_min` explicitly; `render_ascii_map()` computes and passes
+  it. **Investigated whether the dense layout has the same bug and
+  found a genuine, unresolved contradiction instead of a clean fix**:
+  `SE3__T2.K1` (dense, `x_min == 8`) needs a plain `(x - x_min) *
+  DENSE_CELL_STRIDE`, while `SE3__T4.K2`/`SE3__T5.K2` (dense, `x_min ==
+  1`, this layout's own byte-verification samples) need a whole extra
+  stride on top of that -- these two real reports directly contradict
+  each other under any single formula tried, the same category of
+  hidden-state finding as Phase 567's own stride-selection trigger.
+  Left `dense_cell_pixel_column()` unchanged rather than "fixing" it
+  with an unverified guess in either direction; documented the
+  contradiction in its own docstring instead. Updated `[[project-
+  ascii-map-layout-tiers-deferred]]` memory with this finding. The 4
+  narrower layouts themselves (strides 12/10/9/8) remain unimplemented
+  -- this phase was entirely about the placement-formula bug the
+  narrower-layout investigation surfaced; that work resumes next. Ran
+  before writing tests: 4856 passed (non-breaking). Fixed the 3
+  existing `cell_pixel_column()` unit tests (now
+  pass `x_min` explicitly) and the `Orielle`/`Shasta` byte-band test
+  (its own leading-padding comment and value corrected from the old,
+  buggy hardcoded-`x_min=1` assumption to the real `x_min=2` its own
+  constructed state produces). Added tests: `cell_pixel_column()`
+  relative-to-`x_min` behavior, using `SE3__T1.K1`'s own real `x=9-11`
+  band. Ran again: 4857 passed (net +1).
 
 ## Setup
 

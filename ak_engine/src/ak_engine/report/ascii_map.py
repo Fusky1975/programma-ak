@@ -277,13 +277,43 @@ in `README.md` for the full account):
   remain entirely unimplemented -- their own row templates have not
   been derived at all (only the wide and dense layouts' own templates
   are confirmed).
-- The horizontal stagger/positioning formula below only covers `x >= 1`
-  (every real sample cross-checked this phase happens to have its
-  leftmost known province at `x >= 1`); `cell_pixel_column()` clamps
-  `x == 0` to the same column `x == 1` would use rather than letting it
-  go negative, a defensive fallback for this project's own test
-  fixtures (which commonly place a lone province at `HexCoord(0, 0)`),
-  not an independently confirmed real pixel position.
+- `cell_pixel_column()` clamps a coordinate below `x_min` to `x_min`
+  itself rather than letting it go negative -- defensive only (`x_min`
+  is computed as the true minimum of whatever's being rendered, so no
+  real province should ever trigger this in practice), covering this
+  project's own test fixtures more than any real, independently
+  confirmed pixel position.
+- **Phase 568: the wide layout's own horizontal-placement formula had a
+  real bug, now fixed** -- `cell_pixel_column()` originally hardcoded
+  `(x - 1) * CELL_STRIDE`, silently assuming every map's own leftmost
+  known province sits at `x == 1`. That assumption only held because
+  the one real sample this formula was originally verified against
+  (`SE3__T1.K2`) happened to have `x_min == 1`. Cross-checking the
+  *same real provinces* (`Sixth Sea`/`Kildare`/`M Ionium`, the same
+  Kingdom) in `SE3__T1.K1` -- a different turn, `x_min == 9` there --
+  showed the real report renders them starting near column 8, not
+  column ~136 as the hardcoded formula would predict. Confirmed
+  correct across 4 independent rows in `SE3__T1.K1` once expressed
+  relative to the map's own real `x_min` instead of a hardcoded `1`:
+  `cell_pixel_column()` now takes `x_min` explicitly, and `render_
+  ascii_map()` computes it as `min(p.coord.x for p in provinces)`
+  before rendering. This matters in practice, not just for historical
+  samples: `worldgen/place_map.py DEFAULT_WIDTH = 18` means a freshly
+  generated Kingdom's own home province can legitimately sit anywhere
+  in that range, not just near `x == 1`. **The dense layout's own
+  `dense_cell_pixel_column()` almost certainly has the same class of
+  bug, but this phase could NOT determine its correct general form**:
+  `SE3__T2.K1` (dense, `x_min == 8`) needs a plain `(x - x_min) *
+  DENSE_CELL_STRIDE`, while `SE3__T4.K2`/`SE3__T5.K2` (dense, `x_min ==
+  1`, the samples this layout was originally byte-verified against)
+  need `(x - x_min + 1) * DENSE_CELL_STRIDE` -- a whole extra stride --
+  to match their own real data. These two real reports directly
+  contradict each other under any single formula tried; some Kingdom-
+  or report-specific state not printed in the text itself must be
+  involved, the same category of unresolved finding as Phase 567's own
+  stride-selection trigger. `dense_cell_pixel_column()` is left
+  unchanged (still only verified correct for `x_min == 1` maps) rather
+  than "fixed" with an unverified guess in either direction.
 """
 
 from __future__ import annotations
@@ -370,27 +400,42 @@ def _race_name_plural(race: Race) -> str:
     return _RACE_NAME_PLURAL_OVERRIDE.get(race, f"{RACE_NAME[race]}s")
 
 
-def cell_pixel_column(coord: HexCoord) -> int:
-    """The real horizontal pixel column a province's own cell starts at --
-    confirmed this phase against 4 independent bands (`SE3__T1.K2`'s own
-    `Tesawa`/`Marzuq` band starting at `x=2,y=3`; `Waterford Sea`/
-    `Orielle`/`Shasta` at `x=1,y=4`; `Bam Yanga`/.../`Moongard` at
-    `x=1,y=5`; `Abu Matariq`/.../`Big Sky` at `x=1,y=6`), zero
-    contradictions: even-`y` rows are staggered right by half a cell
-    width relative to odd-`y` rows -- the same real hex offset
+def cell_pixel_column(coord: HexCoord, x_min: int) -> int:
+    """The real horizontal pixel column a province's own cell starts at,
+    relative to `x_min` -- the leftmost `x` among every province the
+    map actually renders (see module docstring's own Phase 568 note on
+    why this is relative, not the fixed `x - 1` this phase-562 formula
+    originally hardcoded). Even-`y` rows are staggered right by half a
+    cell width relative to odd-`y` rows -- the same real hex offset
     `turn/movement.py neighbors()` already uses (`coord.y % 2`), just
     expressed here in pixel columns instead of neighbor deltas.
+
+    Confirmed against 4 independent bands within a single report
+    (`SE3__T1.K2`, `x_min=1`) at Phase 562, and re-confirmed this phase
+    against `SE3__T1.K1` -- the *same real provinces*, same Kingdom,
+    different turn, `x_min=9` there instead of 1 -- with zero
+    contradictions once the formula is expressed relative to `x_min`
+    rather than a hardcoded `1`.
     """
 
     stagger = CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
-    return max(0, coord.x - 1) * CELL_STRIDE + stagger
+    return max(0, coord.x - x_min) * CELL_STRIDE + stagger
 
 
 def dense_cell_pixel_column(coord: HexCoord) -> int:
     """The dense layout's own horizontal pixel column -- see module
-    docstring's own Phase 566 section. Confirmed against every cell in
-    5 independent `SE3__T5.K2` bands: unlike `cell_pixel_column()`
-    above, `x` multiplies the stride directly, with no `-1` offset.
+    docstring's own Phase 568 note. Matches every real `SE3__T4.K2`/
+    `SE3__T5.K2` band this module was byte-verified against (both
+    reports' own maps have `x_min == 1`, where this reduces to
+    `x * DENSE_CELL_STRIDE`) -- **but Phase 568 found this does NOT
+    generalize the way `cell_pixel_column()`'s own wide-layout formula
+    does**: `SE3__T2.K1` (a *different* dense-layout report, `x_min ==
+    8`) needs a plain `(x - x_min) * DENSE_CELL_STRIDE`, with no extra
+    offset, to match its own real leading whitespace -- directly
+    contradicting the `+1 stride` that `SE3__T4.K2`/`SE3__T5.K2` need.
+    Left unchanged (not "fixed" with an unverified guess in either
+    direction) pending more samples or the user's own knowledge of the
+    real rule -- see the module docstring for the full account.
     """
 
     stagger = DENSE_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
@@ -670,6 +715,8 @@ def render_ascii_map(state: GameState, kingdom_id: int) -> list[str]:
     if not provinces:
         return []
 
+    x_min = min(p.coord.x for p in provinces)
+
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
         rows_by_y.setdefault(province.coord.y, []).append(province)
@@ -678,7 +725,7 @@ def render_ascii_map(state: GameState, kingdom_id: int) -> list[str]:
     for y in sorted(rows_by_y):
         row_provinces = sorted(rows_by_y[y], key=lambda p: p.coord.x)
         cells = [render_cell(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
-        columns = [cell_pixel_column(p.coord) for p in row_provinces]
+        columns = [cell_pixel_column(p.coord, x_min) for p in row_provinces]
 
         for band_row in range(6):
             line = ""
