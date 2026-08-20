@@ -5,6 +5,7 @@ from ak_engine.models.treasure import (
     TREASURE_ABILITY_ITEM,
     TREASURE_BOOK_ABILITY,
     TREASURE_CATEGORY,
+    TREASURE_DESCRIPTION,
     TREASURE_LABEL,
     TREASURE_NAME,
     TREASURE_WAND_SPELL,
@@ -82,19 +83,17 @@ def test_treasure_label_verbatim_samples():
     assert TREASURE_LABEL[Treasure.NO_TREASURE] == "no treasure"
 
 
-def test_treasure_name_has_confirmed_gaps():
-    # Confirmed real gaps in TREASURE.X2 itself, not extraction bugs -- see
-    # models/treasure.py's own module docstring. MONSTER_AID_EAGLE (Phase
-    # 196), MONSTER_AID_WHALE (Phase 197), and BOOK_TACTICAL (Phase 198)
-    # were all filled from independent sources outside TREASURE.X2
-    # (models/valhalla.py's own roster data, plus user-supplied
-    # descriptions for the two Whale/Book items), so none of the three
-    # is among the confirmed-missing ordinals anymore. Only the three
-    # named uniques (94-96) remain genuinely unfilled.
-    assert Treasure.NAMED_UNIQUE_AMULET_POWER not in TREASURE_NAME
-    assert Treasure.NAMED_UNIQUE_SCEPTER_LIFE not in TREASURE_NAME
-    assert Treasure.NAMED_UNIQUE_MAP_MARAUDERS not in TREASURE_NAME
-    assert len(TREASURE_NAME) == 96
+def test_treasure_name_covers_all_99_real_ordinals():
+    # Phase 580 correction: the six ordinals (50-52, 94-96) Phase 77
+    # originally believed TREASURE.X2 genuinely skipped turned out to be
+    # a Phase-77-era incomplete copy of the file, not a real gap -- a
+    # byte-faithful independent reconstruction has all six. See models/
+    # treasure.py's own module docstring for the full account. Only the
+    # 14 unused extension slots (99-112) and NAMED_UNIQUE_CROWN_ROHAN's
+    # own siblings beyond ordinal 98 are excluded, same as before.
+    covered = {t for t in Treasure if t.value <= 98}
+    assert set(TREASURE_NAME.keys()) == covered
+    assert len(TREASURE_NAME) == 99
 
 
 def test_treasure_name_verbatim_samples():
@@ -104,6 +103,9 @@ def test_treasure_name_verbatim_samples():
     assert TREASURE_NAME[Treasure.MONSTER_AID_EAGLE] == "Feather of the Great Eagle"
     assert TREASURE_NAME[Treasure.MONSTER_AID_WHALE] == "Horn of Neptune"
     assert TREASURE_NAME[Treasure.BOOK_TACTICAL] == "Hannibal's Grimoire"
+    assert TREASURE_NAME[Treasure.NAMED_UNIQUE_AMULET_POWER] == "Amulet of Power"
+    assert TREASURE_NAME[Treasure.NAMED_UNIQUE_SCEPTER_LIFE] == "Scepter of Life"
+    assert TREASURE_NAME[Treasure.NAMED_UNIQUE_MAP_MARAUDERS] == "Map of the Marauders"
 
 
 def test_named_uniques_have_no_pascal_obfuscation_and_no_treasab_label():
@@ -118,3 +120,48 @@ def test_named_uniques_have_no_pascal_obfuscation_and_no_treasab_label():
         Treasure.NAMED_UNIQUE_HAMMER_POWER,
     ):
         assert treasure not in TREASURE_LABEL
+
+
+# -- Phase 580: TREASURE.X2 full flavor text --
+
+
+def test_treasure_description_covers_all_99_real_ordinals():
+    covered = {t for t in Treasure if t.value <= 98}
+    assert set(TREASURE_DESCRIPTION.keys()) == covered
+    assert len(TREASURE_DESCRIPTION) == 99
+
+
+def test_treasure_description_verbatim_samples():
+    assert TREASURE_DESCRIPTION[Treasure.ABILITY_TACTICAL] == (
+        "The Standard of Command raises your Tactical ability by one level while "
+        "it is in your possession.  A skill level of 0 would rise to skill level 1."
+    )
+    assert TREASURE_DESCRIPTION[Treasure.NO_TREASURE] == "No treasure."
+
+
+def test_treasure_description_confirms_the_previously_disputed_ordinals():
+    # The three Phase-196/197/198 names (sourced from valhalla.py/the
+    # user, not TREASURE.X2 at the time) and the three previously-
+    # nameless named uniques are all present here now -- see module
+    # docstring's own Phase 580 correction.
+    assert "Feather of the Great Eagle" in TREASURE_DESCRIPTION[Treasure.MONSTER_AID_EAGLE]
+    assert "Horn of Neptune" in TREASURE_DESCRIPTION[Treasure.MONSTER_AID_WHALE]
+    assert "Hannibal's Grimoire" in TREASURE_DESCRIPTION[Treasure.BOOK_TACTICAL]
+    assert "Amulet of Power" in TREASURE_DESCRIPTION[Treasure.NAMED_UNIQUE_AMULET_POWER]
+    assert "Scepter of Life" in TREASURE_DESCRIPTION[Treasure.NAMED_UNIQUE_SCEPTER_LIFE]
+    assert "Map of the Marauders" in TREASURE_DESCRIPTION[Treasure.NAMED_UNIQUE_MAP_MARAUDERS]
+
+
+def test_treasure_description_preserves_the_sources_own_typos():
+    # Confirmed real in the byte-faithful source, matching TREASURE_NAME's
+    # own already-established "keep verbatim" convention.
+    assert "Seamansip" in TREASURE_DESCRIPTION[Treasure.ABILITY_NAVAL]
+    assert "GOds Quest" in TREASURE_DESCRIPTION[Treasure.QUEST_GODS_QUEST]
+
+
+def test_treasure_description_quest_and_hoard_items_say_not_a_magic_item():
+    # Real, specific per-ordinal text, not generic filler -- confirmed by
+    # its own alignment with TREASURE_NAME's already-established names
+    # for every one of these ordinals (gold hoards and quest items).
+    assert TREASURE_DESCRIPTION[Treasure.GOLD_HOARD_LARGE] == "the Hoard is not a magic item."
+    assert TREASURE_DESCRIPTION[Treasure.QUEST_SNOWBALL] == "The Snowball is not a magic item."

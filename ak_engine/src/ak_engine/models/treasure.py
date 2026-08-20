@@ -118,51 +118,45 @@ at every boundary** (``15+20+5+4+5+3+15+3+22+1+6+14 == 113``):
   exactly at ordinal 92's "no treasure".
 - ``TREASURE.X2`` gives a longer descriptive paragraph per ordinal,
   from which a real proper name was extracted (``TREASURE_NAME``
-  below) for ordinals 0-49, 53-93, and 97-98 (93 ordinals total, a
-  different 93 than ``TREASAB.X2``'s own coverage). **Confirmed real
-  gaps, not extraction errors**: comparing the file's own paragraph
-  content against the expected category at each position exposed two
-  places where ``TREASURE.X2`` genuinely skips entries the Pascal enum
-  and ``TREASAB.X2`` both still expect -- ordinals 50-52
-  (``make1``/``make2``/the Eagle- and Whale-aid items, and
-  ``BOOK_TACTICAL``) and 94-96 (``Amulet_Power``/``Scepter_Life``/
-  ``Map_Marauders``, three of the six named uniques). Both gaps were
-  found by the paragraph immediately after the gap explicitly naming a
-  *different* ability/item than positional counting predicted (e.g.
-  the paragraph right after ordinal 49's "Crown of Dragon Command"
-  jumps straight to "Manual of Speedy Marches" -- Force March, i.e.
-  ordinal 53 -- skipping the Eagle-aid, Whale-aid, and
-  ``BOOK_TACTICAL`` entries entirely), not assumed. Beyond ordinal 98
-  the file pads out with generic ``"it is not a magic item"`` filler
-  text (consistent with its own header line, ``"199 3"``, allocating
-  more template slots than the 113-member enum actually uses) -- none
-  of that filler is transcribed here. The file's own literal typos
-  (e.g. ``"Seamansip"`` for "Seamanship", ``"GOds Quest"``) are kept
+  below) for all 99 real ordinals (0-98). Beyond ordinal 98 the file
+  pads out with generic ``"it is not a magic item"`` filler text
+  (consistent with its own header line, ``"199 3"``, allocating more
+  template slots than the 113-member enum actually uses) -- none of
+  that filler is transcribed here. The file's own literal typos (e.g.
+  ``"Seamansip"`` for "Seamanship", ``"GOds Quest"``) are kept
   verbatim, not silently corrected.
-- **``MONSTER_AID_EAGLE``'s own gap is now filled (Phase 196)**: the
-  user's own VALHALLA hero roster (``models/valhalla.py``) names this
-  item directly -- two different heroes (Otto, Fafnir) each carry
-  "Feather of the Great Eagle" -- independently confirming both that
-  this ordinal is real and its proper name, from a source outside
-  ``TREASURE.X2``.
-- **``MONSTER_AID_WHALE``'s own gap is now filled too (Phase 197)**:
-  the user supplied its ``TREASURE.X2``-equivalent row directly --
-  "Horn of Neptune | Balene | Comando sulle Balene: la Tattica
-  determina la resa; 33% di probabilita' di diserzione" -- "Balene"
-  (Whales) and the "33% di diserzione" figure match
-  ``MONSTER_COMMAND_ITEM``'s own confirmed "33% defections" formula
-  exactly. Independently corroborated by ``models/valhalla.py``'s own
-  Gelenor (PAGAN), who carries this same item.
-- **``BOOK_TACTICAL``'s own gap is now filled too (Phase 198), closing
-  the last one below ordinal 93**: the user supplied its own
-  description directly -- "Hannibal's Grimoire se letto aumenta il
-  talento Tattica (TA) di un livello" ("if read, raises the Tactical
-  talent by one level") -- matching ``SKILL_BOOK``'s own confirmed
-  "one-shot +1 Ability when read" mechanic and ``TREASURE_LABEL``'s own
-  "+1 Tactical when read" line for this exact ordinal. Independently
-  corroborated by ``models/valhalla.py``'s own Xerxes (PAGAN), who
-  carries this same item -- the last of the 63 distinct VALHALLA item
-  names to resolve; none remain unmatched.
+- **Phase 77's own original pass believed ordinals 50-52 and 94-96 were
+  genuinely absent from ``TREASURE.X2``** ("confirmed real gaps"),
+  based on the raw copy of the file available at the time -- the
+  paragraph immediately after ordinal 49's "Crown of Dragon Command"
+  appeared to jump straight to ordinal 53's "Manual of Speedy Marches",
+  seemingly skipping three entries. Phases 196-198 filled those three
+  (``MONSTER_AID_EAGLE``/``MONSTER_AID_WHALE``/``BOOK_TACTICAL``) from
+  independent sources instead -- ``models/valhalla.py``'s own hero
+  roster and user-supplied text -- and the other three
+  (``NAMED_UNIQUE_AMULET_POWER``/``SCEPTER_LIFE``/``MAP_MARAUDERS``)
+  were left with no name at all.
+- **Phase 580 correction**: a byte-faithful, independent third-party
+  reconstruction of the full 162-file prose corpus
+  (``AKPROSE_reverse_engineering_report.md``, supplied directly by the
+  user) reproduces ``TREASURE.X2`` in full, and all six "missing"
+  ordinals are present in it, at exactly the positions the Pascal enum
+  predicts -- choice 51 ("The Feather of the Great Eagle gives the
+  bearer..."), 52 ("The Horn of Neptune gives the bearer..."), and 53
+  ("Hannibal's Grimoire raises...") independently confirm the exact
+  same three names Phases 196-198 had already sourced elsewhere; choice
+  95 ("The Amulet of Power will increase..."), 96 ("The Scepter of Life
+  adds..."), and 97 ("The Map of the Marauders adds...") fill the three
+  that had no name at all before. Every one of the file's other 93
+  already-extracted names was independently cross-checked against this
+  new reconstruction too, with zero further discrepancies found -- the
+  original "confirmed gap" conclusion is now understood to have been
+  drawn from an incomplete copy of the file, not a real property of
+  ``TREASURE.X2`` itself.
+- ``TREASURE_DESCRIPTION`` (Phase 580, below) is the full paragraph for
+  each of the same 99 ordinals, from the same corrected reconstruction
+  -- the "further, separate follow-up" Phase 77's own docstring had
+  originally deferred.
 - ``TREASURE_ABILITY_ITEM``/``TREASURE_WAND_SPELL``/
   ``TREASURE_BOOK_ABILITY`` expose the three confirmed 1:1 positional
   mappings above as real ``Ability``/``Spell`` lookups, derived
@@ -170,17 +164,14 @@ at every boundary** (``15+20+5+4+5+3+15+3+22+1+6+14 == 113``):
   hand-copied, so they can't drift out of sync with ``Ability``/
   ``Spell`` if either ever gains a member.
 
-**Explicitly out of scope**: full ``TREASURE.X2`` flavor-text
-transcription for every ordinal (only a name was extracted, not the
-complete mechanical description -- a further, separate follow-up);
-resolving a real item *instance* to its ``Treasure`` type (needs the
-still-missing item-instance-creation pipeline, see this module's own
-opening paragraph); wiring ``USE_MI_TARGET_CATEGORIES`` into
-``turn/use_mi_decode.py``/a future Use_MI execution resolver (not
-attempted this phase -- there is still no way to resolve a real
-``UseMIRequest.item_instance_id`` to a ``Treasure`` at all, per that
-module's own docstring, so a lookup table alone doesn't unblock
-execution).
+**Explicitly out of scope**: resolving a real item *instance* to its
+``Treasure`` type (needs the still-missing item-instance-creation
+pipeline, see this module's own opening paragraph); wiring
+``USE_MI_TARGET_CATEGORIES`` into ``turn/use_mi_decode.py``/a future
+Use_MI execution resolver (not attempted this phase -- there is still
+no way to resolve a real ``UseMIRequest.item_instance_id`` to a
+``Treasure`` at all, per that module's own docstring, so a lookup
+table alone doesn't unblock execution).
 """
 
 from __future__ import annotations
@@ -653,10 +644,10 @@ TREASURE_LABEL: dict[Treasure, str] = {
 }
 
 
-# HostAK/TP/PROSE/TREASURE.X2-derived proper names, ordinals 0-49, 53-93,
-# and 97-98 only (93 ordinals total -- see module docstring for the two
-# confirmed real gaps at 50-52 and 94-96, and why nothing past 98 is
-# transcribed). The file's own literal typos are kept verbatim.
+# HostAK/TP/PROSE/TREASURE.X2-derived proper names, all 99 real ordinals
+# (0-98) -- see module docstring's Phase 580 correction for why ordinals
+# 50-52/94-96 are no longer treated as gaps, and why nothing past 98 is
+# transcribed. The file's own literal typos are kept verbatim.
 TREASURE_NAME: dict[Treasure, str] = {
     Treasure.ABILITY_TACTICAL: "Standard of Command",
     Treasure.ABILITY_MARCH: "Magical Register of Marching Orders",
@@ -708,8 +699,12 @@ TREASURE_NAME: dict[Treasure, str] = {
     Treasure.AMULET_ANTI_PSYCHIC: "Helm of Psychic Dampening",
     Treasure.AMULET_ANTI_ILLUSION: "Crystal of True Seeing",
     Treasure.MONSTER_AID_DRAGON: "Crown of Dragon Command",
-    # Phase 196: sourced from models/valhalla.py's VALHALLA_ROSTER (Otto,
-    # Fafnir), not TREASURE.X2 -- see module docstring's own gap note above.
+    # Phase 196: originally sourced from models/valhalla.py's own
+    # VALHALLA_ROSTER (Otto, Fafnir), believed at the time to be this
+    # ordinal's only source since TREASURE.X2 itself was thought to skip
+    # it. Phase 580 found this to be wrong -- the file's own choice 51
+    # ("The Feather of the Great Eagle gives the bearer...") independently
+    # confirms the identical name; both sources now agree.
     Treasure.MONSTER_AID_EAGLE: "Feather of the Great Eagle",
     # Phase 197: user-supplied directly (Italian TREASURE.X2-equivalent
     # table row): "Horn of Neptune | Balene | Comando sulle Balene: la
@@ -717,14 +712,17 @@ TREASURE_NAME: dict[Treasure, str] = {
     # "Balene" = Whales, and "33% di diserzione" matches
     # MONSTER_COMMAND_ITEM's own confirmed "33% defections" formula
     # exactly. Independently corroborated by a VALHALLA hero (Gelenor,
-    # PAGAN) carrying this same item -- see models/valhalla.py.
+    # PAGAN) carrying this same item -- see models/valhalla.py. Phase 580
+    # found TREASURE.X2's own choice 52 agrees too (see Phase 196's own
+    # note above for the same correction, now a third confirmation).
     Treasure.MONSTER_AID_WHALE: "Horn of Neptune",
     # Phase 198: user-supplied directly -- "Hannibal's Grimoire se letto
     # aumenta il talento Tattica (TA) di un livello" ("if read, raises
     # Tactical by one level"), matching SKILL_BOOK's own "+1 Ability when
     # read" mechanic and TREASURE_LABEL's own "+1 Tactical when read" for
     # this exact ordinal. Corroborated by a VALHALLA hero (Xerxes, PAGAN)
-    # carrying this same item -- see models/valhalla.py.
+    # carrying this same item -- see models/valhalla.py. Phase 580 found
+    # TREASURE.X2's own choice 53 agrees too, same correction as above.
     Treasure.BOOK_TACTICAL: "Hannibal's Grimoire",
     Treasure.BOOK_MARCH: "Manual of Speedy Marches",
     Treasure.BOOK_NAVAL: "Ship's Log of Nautilus III",
@@ -767,7 +765,121 @@ TREASURE_NAME: dict[Treasure, str] = {
     Treasure.QUEST_CONTRACT_FULFILL: "Signed Contract",
     Treasure.NO_TREASURE: "No treasure",
     Treasure.NAMED_UNIQUE_CROWN_ROHAN: "Crown of Rohan",
-    # NAMED_UNIQUE_AMULET_POWER, NAMED_UNIQUE_SCEPTER_LIFE, NAMED_UNIQUE_MAP_MARAUDERS: no TREASURE.X2 entry (confirmed gap, see module docstring)
+    # Phase 580: previously believed to have no TREASURE.X2 entry at all
+    # ("confirmed gap") -- corrected once a byte-faithful, independent
+    # reconstruction of the full file (unavailable to the earlier phase)
+    # showed real, matching content at exactly these three ordinals. See
+    # module docstring's own Phase 580 addendum for the full account.
+    Treasure.NAMED_UNIQUE_AMULET_POWER: "Amulet of Power",
+    Treasure.NAMED_UNIQUE_SCEPTER_LIFE: "Scepter of Life",
+    Treasure.NAMED_UNIQUE_MAP_MARAUDERS: "Map of the Marauders",
     Treasure.NAMED_UNIQUE_FANG_VAMPIRE: "Fang of the Vampire Lord",
     Treasure.NAMED_UNIQUE_HAMMER_POWER: "Hammer of Power",
+}
+
+# HostAK/TP/PROSE/TREASURE.X2, verbatim, positional with Treasure's own
+# 99 real ordinals (0-98) -- module docstring's Phase 580 addendum.
+# Nothing beyond ordinal 98 is included (generic filler, see module
+# docstring). The file's own literal typos are kept verbatim, same
+# convention TREASURE_NAME already established.
+TREASURE_DESCRIPTION: dict[Treasure, str] = {
+    Treasure.ABILITY_TACTICAL: 'The Standard of Command raises your Tactical ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_MARCH: 'The Magical Register of Marching Orders raises your Force March ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_NAVAL: 'The Conch of Seamansip raises your Naval ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_ARCHERY: 'The Longbow of Accuracy raises your Archery ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.  You do not have to actually wield the Bow in combat to gain the benefit of its modifiers.',
+    Treasure.ABILITY_MELEE: 'The Bracelets of Swordsmanship raise your Melee ability by one level while they are in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_WHITE: 'The Holy Grail raises your White Magic ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_NECROMANCY: 'The Amulet of Orgoth raises your Necromantic ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_ELEMENTAL: 'The Crucible of Elements raises your Elemental Magic ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_PSYCHIC: 'The Helm of Psychic Projection raises your Psychic Magic ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_ILLUSION: 'The Spectral Crystal raises your Illusionist ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_DRUID: 'The Everlasting Mistletoe raises your Druidic ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_THIEF: 'The Cloak of Stealth raises your Thief ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_EXPLORER: 'The Crystal of Direction raises your Explorer ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_SPY: 'The X-Ray Spyglass raises your Spying ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.',
+    Treasure.ABILITY_SAGE: "The Portable Laboratory of Qua'al Naggoth raises your Sage ability by one level while it is in your possession.  A skill level of 0 would rise to skill level 1.",
+    Treasure.WAND_RESURRECTION: 'The Rod of Resurrection enables you to cast the Resurrection spell of the college of White Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_PART_SEA: 'The Staff of Sea Mastery enables you to cast the Part Sea spell of the college of White Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_BLESS: 'The Tome of Blessings enables you to cast the Bless spell of the college of White Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomesuseless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_HOLY_SYMBOL: 'The Golden Cross enables you to cast the Holy Symbol spell of the college of White Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_SKELETAL_ARMY: 'The Horn of Ghastly Revenge enables you to cast the Skeletal Army spell of the college of Necromancy.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_KILL_ENEMY: 'The Needles of the Black Mage enable you to cast the Kill Enemy spell of the college of Necromancy.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_PLAGUE: 'The Obsidian Vermin enable you to cast the Plague spell of the college of Necromancy.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_HAND_OF_DEATH: 'The Glove of Death enables you to cast the Hand of Death spell of the college of Necromancy.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_FLOOD: 'The Feathers of Rain-Dancing enable you to cast the Flood Province spell of the college of Elemental Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_TORNADO: 'The Bag of Dust-Devil Seeds enables you to cast the Tornado spell of the college of Elemental Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_EARTHQUAKE: 'The Stone of Shaking enables you to cast the Earthquake spell of the college of Elemental Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_FIREBALL: 'The Wand of Fire enables you to cast the Fireball spell of the college of Elemental Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_CHARM: 'The Cologne of Charming enables you to cast the Charm spell of the college of Psychic Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_ORATORY: 'The Silver Horn of Oratory enables you to cast the Oratory spell of the college of Psychic Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_CLAIRVOYANCE: 'The Crystal of Seeing enables you to cast the Clairvoyance spell of the college of Psychic Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_PSYCHIC_BLAST: 'The Antennae of Psychic Blasting enable you to cast the Psychic Blast spell of the college of Psychic Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_ILLUS_TERRAIN: 'The Projector of Scenic Illusions enables you to cast the Illusory Terrain spell of the college of Illusory Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_ILLUS_ARMIES: 'The Reflector of Armies enables you to cast the Phantasmal Armies spell of the college of Illusory Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_HIDE_FEATURE: 'The Dome of Opacity enables you to cast the Hide Feature spell of the college of Illusory Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WAND_INVISIBILITY: 'The Ring of Invisibility enables you to cast the Invisibility spell of the college of Illusory Magic.  There is a certain number of charges in this item, and each time you cast the spell you use up a charge.  When all charges are used up, the item becomes useless.  The spell normally will take effect as if a magician with a skill level of 2 had cast the spell.',
+    Treasure.WEAPON_1: 'The Holy Sword has a +20% chance to hit and does +3 damage against normal opponents, and +40%/+5 against undead creatures.  In addition, the sword confers the protection of the gods upon its wielder.  This protection operates automatically in all encounters.  The effect is the same as a Holy Symbol spell cast at skill level 4, except it causes no damage.',
+    Treasure.WEAPON_2: 'The Shadow Sword has a +15% chance to hit and does +1 damage.  In addition, it drains life from any victim it strikes and channels it into the life-energy of its wielder.  Half the hit points subtracted from the victim when the sword hits are used to restore lost hit points to the wielder.',
+    Treasure.WEAPON_3: 'The Flaming Scimitar has a +20% chance to hit and does +3 damage.  Each time it hits an opponent, there is a 5% chance that the tip of the sword will release a fireball which implodes in the innards of that opponent, resulting in instant death.',
+    Treasure.WEAPON_4: 'The Psychic Flail has a +20% chance to hit and does +3 damage.  Each time it hits, it has a 50% chance of stunning the opponent for one round.  If the opponent is already under the effects of the Psychic Blast spell, he is stunned for an additional round.',
+    Treasure.WEAPON_5: 'The Invisible Sword has a +10% chance to hit and does +2 damage.  It also confers invisibility on the wielder as if the Invisibility spell were cast on him at skill level 2.  This protection operates automatically in all encounters.',
+    Treasure.LEADERSHIP_HUMAN: 'Excalibur has a +25% chance to hit and does +4 damage.  In addition, it confers extraordinary powers of leadership over members of the human race:  any human army following a leader who wields Excalibur has its quality increased by 1 level.  Green armies become Average, Crack armies become Elite and so on.',
+    Treasure.LEADERSHIP_ELVEN: 'The Bow of the Elven Kings has a +25% chance to hit and does +2 damage.  In addition, it confers extraordinary powers of leadership over members of the elven race:  any elven army following a leader who wields this Bow has its quality increased by 1 level.  Green armies become Average, Crack armies become Elite and so on.',
+    Treasure.LEADERSHIP_DWARVEN: 'The Axe of the Dwarven Lords has a +20% chance to hit and does +3 damage.  In addition, it confers extraordinary powers of leadership over members of the dwarven race:  any dwarven army following a leader who wields this Axe has its quality increased by 1 level.  Green armies become Average, Crack armies become Elite and so on.',
+    Treasure.LEADERSHIP_ORCISH: 'The Scimitar of Orc Mastery has a +20% chance to hit and does +2 damage.  In addition, it confers extraordinary powers of leadership over members of the orcish race:  any orcish army following a leader who wields this Scimitar has its quality increased by 1 level.  Green armies become Average, Crack armies become Elite and so on.',
+    Treasure.AMULET_ANTI_WHITE: 'The Shrunken-Head Amulet protects its owner from the effects of White Magic spells.  It totally negates the Holy Symbol spell, and spells cast on provinces owned by the wearer will have half their normal chance of succeeding.  This protection operates automatically in all encounters.',
+    Treasure.AMULET_ANTI_NECROMANCY: 'The True Cross protects its owner from the effects of Necromancy spells.  It totally negates the Hand of Death and Kill Enemy spells, and spells cast against provinces owned by the bearer will have half their normal chance of succeeding.  This protection operates automatically in all encounters.',
+    Treasure.AMULET_ANTI_ELEMENTAL: 'The Golden Orb of Elemental Stability protects its owner from the effects of Elemental Magic spells.  It totally negates the Fireball spell, and spells cast against provinces owned by the bearer will have half their normal chance of succeeding.  This protection operates automatically in all encounters.',
+    Treasure.AMULET_ANTI_PSYCHIC: 'The Helm of Psychic Dampening protects its owner from the effects of Psychic Magic spells.  It totally negates the Charm spell and the Psychic Blast spell, and spells cast against provinces owned by the wearer of the Helm will have half their normal chance of succeeding.  This protection operates automatically in all encounters.',
+    Treasure.AMULET_ANTI_ILLUSION: 'The Crystal of True Seeing protects its owner from the effects of Illusory Magic spells.  The possessor of the Crystal is unaffected by the spells of Invisibility, Illusory Terrain and Hide Feature.  The Illusory Armies spell has only half its normal effect when the bearer of the Crystal is present at a battle on the opposite side.  This protection operates automatically in all encounters.',
+    Treasure.MONSTER_AID_DRAGON: 'The Crown of Dragon Command gives the bearer the power of command over dragons:  when encountering a dragon in its lair, the treasure is taken without a fight merely by using the TA-lk tactic.  When the bearer leads an army into battle, any unled dragons in adjacent provinces will fight on his side, and then fly home.  If he invades a dragon province, an average of 33% of the dragons will defect to his side.  This defection rate is halved against player-led dragons.',
+    Treasure.MONSTER_AID_EAGLE: 'The Feather of the Great Eagle gives the bearer the power of command over eagles:  when encountering a eagle in its lair, the treasure is taken without a fight merely by using the TA-lk tactic.  When the bearer leads an army into battle, any unled eagles in adjacent provinces will fight on his side, and then fly home.  If he invades a eagle province, an average of 33% of the eagles will defect to his side.  This defection rate is halved against player-led eagles.',
+    Treasure.MONSTER_AID_WHALE: 'The Horn of Neptune gives the bearer the power of command over whales:  when encountering a whale in its lair, the treasure is taken without a fight merely by using the TA-lk tactic.  When the bearer leads an army into battle, any unled whales in adjacent provinces will fight on his side, and then go home.  If he invades a whale province, an average of 33% of the whales will defect to his side.  This defection rate is halved against player-led whales.',
+    Treasure.BOOK_TACTICAL: 'Hannibal\'s Grimoire raises your Tactical ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it,and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_MARCH: 'The Manual of Speedy Marches raises your Forced March ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_NAVAL: 'The Ship\'s Log of Nautilus III raises your Naval ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_ARCHERY: 'The Manual of Archery raises your Archery ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_MELEE: 'The Handbook of Swordsmanship raises your Melee ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_WHITE: 'The Scriptures of Holy Thoughts raise your White Magic ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_NECROMANCY: 'The Necronomicon raises your Necromancy ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_ELEMENTAL: 'The Periodic Table of Elements raises your Elemental Magic ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_PSYCHIC: 'The Codex of Mental Prowess raises your Psychic Magic ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_ILLUSION: 'The Libram of Illusions raises your Illusory Magic ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_DRUID: 'The Book of Druidic Incantations raises your Druidic ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_THIEF: 'The Black Notebook of Thievery raises your Thief ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_EXPLORER: 'The Journal of Many Wanderings raises your Explorer ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_SPY: 'The Manual of Spying raises your Spying ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.BOOK_SAGE: 'The Library of Science raises your Sage ability by one level.  For example, a skill level of 0 would rise to skill level 1.  The reader of this strangely compelling work becomes completely engrossed with it, and after this book is perused, it crumbles to dust and merges with the sands of time.  Use the "Use Item" Action to invoke its powers.',
+    Treasure.GOLD_HOARD_LARGE: 'the Hoard is not a magic item.',
+    Treasure.GOLD_HOARD_HUGE: 'the Hoard is not a magic item.',
+    Treasure.GOLD_HOARD_FABULOUS: 'the Hoard is not a magic item.',
+    Treasure.QUEST_SNOW_QUEST: 'The Snowball Quest is not a magic item.',
+    Treasure.QUEST_SNOWBALL: 'The Snowball is not a magic item.',
+    Treasure.QUEST_SNOW_FULFILL: 'The Fulfilled Snowball Quest is not a magic item.',
+    Treasure.QUEST_SAPPH_RING: 'The Sapphire Ring is not a magic item.',
+    Treasure.QUEST_SAPPH_FULFILL: 'The Fulfilled Sapphire Quest is not a magic item.',
+    Treasure.QUEST_LUCKY_PENNY: 'The Lucky Penny is not a magic item.',
+    Treasure.QUEST_LUCK_FULFILL: 'The Fulfilled Penny Quest is not a magic item.',
+    Treasure.QUEST_GODS_QUEST: 'The GOds Quest is not a magic item.',
+    Treasure.QUEST_GODS_FULFILL: 'THe Fulffilled Gods Quest is not a magic item.',
+    Treasure.QUEST_MERMAID_AMULET: 'The Amulet is not a magic item.',
+    Treasure.QUEST_MERMAID_FULFILL: 'The Fulfilled Mermaid Quest is not a magic item.',
+    Treasure.QUEST_RA_RIDDLE: 'the Riddle is not a magic item.',
+    Treasure.QUEST_RA_COFFIN: 'the Riddle is not a magic item.',
+    Treasure.QUEST_RA_BRIDGE: 'the Riddle is not a magic item.',
+    Treasure.QUEST_RA_CANDLE: 'the Riddle is not a magic item.',
+    Treasure.QUEST_RA_SMOKE: 'the Riddle is not a magic item.',
+    Treasure.QUEST_RA_OWNER: 'the Riddle is not a magic item.',
+    Treasure.QUEST_RA_MAN: 'the Riddle is not a magic item.',
+    Treasure.QUEST_KILL_QUEST: 'The Kill Quest is not a magic item.',
+    Treasure.QUEST_KILL_FULFILL: 'The fulfilled Kill Quest is not a magic item.',
+    Treasure.QUEST_CONTRACT: 'The Contract is not a magic item.',
+    Treasure.QUEST_CONTRACT_FULFILL: 'The Signed Contract is not a magic item.',
+    Treasure.NO_TREASURE: 'No treasure.',
+    Treasure.NAMED_UNIQUE_CROWN_ROHAN: "The Crown of Rohan will increase March and Tactical abilities by one level for its holder.  If it is combined with the Amulet of Power in the personal possession of a King, one level is added to the Tactical ability of all the King's characters.  When combined with Scepter of Life in the personal possession of a King, it adds one additional point of Illusionist ability to all of the King's characters.",
+    Treasure.NAMED_UNIQUE_AMULET_POWER: "The Amulet of Power will increase the skill levels of the character who owns it by one point in White, Elemental and Psychic magic.  When combined with the Scepter of Life in the personal possession of a King, one level of Melee ability and 2 hit points are added to all the King's characters.  If it is combined with the Crown of Rohan personally possessed by a King, one level is added to the Tactical ability of all the King's characters.",
+    Treasure.NAMED_UNIQUE_SCEPTER_LIFE: "The Scepter of Life adds one skill level to the holder's Sage ability and 5 hit points in combat.  When combined with Crown of Rohan personally possessed by a King, it adds one additional point of Illusionist ability to all of the King's characters.  When combined with the Amulet of Power personally possessed by a King, one level of Melee ability and 2 hit points are added to all the King's characters.",
+    Treasure.NAMED_UNIQUE_MAP_MARAUDERS: 'The Map of the Marauders adds one Naval skill level to its possessor.  It also increases by one hex the distance in sea hexes a character can see when he moves.',
+    Treasure.NAMED_UNIQUE_FANG_VAMPIRE: 'The Fang of the Vampire Lord adds one level of Melee skill to its wielder.  For Undead characters, it also increases Necromantic ability by one level.',
+    Treasure.NAMED_UNIQUE_HAMMER_POWER: 'The Hammer of Power adds one level of Melee skill to its wielder.  For a dwarf, it also increases Druidic skill by one point.',
 }

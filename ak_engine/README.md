@@ -23864,7 +23864,7 @@ follow-up request after the original 431-435 plan shipped.
   `GANG_TEMPLATE`, mirroring `OFFICE_PERK_DESCRIPTION`'s own test suite.
   Ran again: 4899 passed (net +8).
 
-- **Phase 579 (current)**: transcribes a fresh catalog, `models/
+- **Phase 579**: transcribes a fresh catalog, `models/
   monster.py MONSTER_DESCRIPTION`, from `HostAK/TP/PROSE/MONSTERS.X2`
   (header `"60 1"`) -- the real prose behind this module's own already-
   quoted rulebook line, "Monsters are described when they are first
@@ -23884,6 +23884,40 @@ follow-up request after the original 431-435 plan shipped.
   Ran before writing tests: 4899 passed (non-breaking). Added tests:
   gapless coverage, `NOMONSTER` blank, verbatim samples, the source's
   own missing-space quirk. Ran again: 4903 passed (net +4).
+
+- **Phase 580 (current)**: transcribes `models/treasure.py TREASURE_
+  DESCRIPTION` from `HostAK/TP/PROSE/TREASURE.X2` (header `"199 3"`) --
+  the full flavor-text paragraph behind `TREASURE_NAME`'s own already-
+  extracted proper names, an "explicitly out of scope... a further,
+  separate follow-up" Phase 77 had deferred. **While extracting it, found
+  and corrected a real error in previously-committed work**: Phase 77
+  had concluded `TREASURE.X2` genuinely skipped 6 ordinals (`MONSTER_
+  AID_EAGLE`/`_WHALE`/`BOOK_TACTICAL` at 50-52, and the three unnamed
+  `NAMED_UNIQUE_AMULET_POWER`/`_SCEPTER_LIFE`/`_MAP_MARAUDERS` at
+  94-96), based on an incomplete copy of the file available at the
+  time -- three were later patched from other sources (Phases 196-198),
+  three were left with no name in `TREASURE_NAME` at all. The new byte-
+  faithful reconstruction (`AKPROSE_reverse_engineering_report.md`,
+  supplied directly by the user) has real content at exactly those six
+  positions, independently confirming the three names Phases 196-198
+  already had and supplying the three that were missing (`"Amulet of
+  Power"`, `"Scepter of Life"`, `"Map of the Marauders"`) -- every one
+  of the file's other 93 already-extracted names was cross-checked
+  against the same reconstruction too, with zero further discrepancies.
+  `TREASURE_NAME` now covers all 99 real ordinals (0-98) instead of 96 --
+  a real bug fix, not just a docs correction: every real consumer that
+  indexes `TREASURE_NAME[some_treasure]` (`report/turn_report.py`,
+  `turn/trade_execution.py`, ...) would have raised `KeyError` on the
+  three previously-nameless ordinals had a game scenario ever produced
+  one. Corrected the module docstring's own gap-analysis section and
+  every comment that referenced the old "confirmed gap" conclusion.
+  Ran before writing tests: 4903 passed (non-breaking). Added tests:
+  `TREASURE_DESCRIPTION` gapless coverage, verbatim samples, the six
+  previously-disputed ordinals, the source's own preserved typos, and
+  the quest/hoard items' real (not generic-filler) "not a magic item"
+  text; rewrote the now-obsolete "confirmed gaps" test into a gapless-
+  coverage test. Ran again: 4908 passed (net +5, since one existing test
+  was rewritten rather than added).
 
 ## Setup
 
