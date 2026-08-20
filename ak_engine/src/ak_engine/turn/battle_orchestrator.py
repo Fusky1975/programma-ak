@@ -755,14 +755,14 @@ def _clear_mystic_winds_before_battle(armies: list[ArmyState], state: GameState)
 
     Deliberately does **not** touch ``ArmyState.movement_points`` --
     "re-deriving each affected army's movement" (the Phase 204 addendum's
-    own words) has nothing to re-derive *to*: this project has no
-    per-``ArmyType`` base movement table anywhere (``GameState``'s own
-    module docstring already confirms ``ArmyState.movement_points`` has
-    no real consumer), so freshly recruited armies default it to 0, not
-    some army-type-specific normal value. Resetting it to any concrete
-    number here would be a guess, not a sourced fact -- the same
-    confirmed-absent boundary Part Sea's `terrain_override`/Bless's own
-    `tax_modifier_percent` already carry for their own unbuilt consumers.
+    own words) describes recomputing a movement *rate*, not resetting a
+    remaining-this-turn *pool*: Mystic Winds affects Illusory Fog's own
+    battle-strength penalty, not how far an army can still move this
+    turn, so there is nothing about that pool this function needs to
+    touch either way (unaffected by whether ``ArmyState.movement_points``
+    has a real per-``ArmyType`` base rate, which it now does -- Phase
+    573's own ``ARMY_TABLE[army_type].speed`` -- this paragraph predates
+    that fix and was about a different concern).
     """
 
     seen_leader_ids: set[int] = set()

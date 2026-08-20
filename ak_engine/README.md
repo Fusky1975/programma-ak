@@ -23754,7 +23754,7 @@ follow-up request after the original 431-435 plan shipped.
   parsing; `process_turn()` auto-filling a Kingdom with no submitted
   order file. Ran again: 4882 passed (net +2).
 
-- **Phase 575 (current)**: fixes `GameState.action_casts_used`, a fourth
+- **Phase 575**: fixes `GameState.action_casts_used`, a fourth
   real instance of the exact "never reset at a turn boundary -- caller's
   job" bug Phase 573 fixed for `ArmyState.movement_points`/`march_bonus_
   applied_this_turn`/`naval_bonus_applied_this_turn`/`unhireable_this_
@@ -23774,6 +23774,38 @@ follow-up request after the original 431-435 plan shipped.
   (non-breaking). Added tests: `_replenish_turn_scoped_state()` clearing
   it directly; `run_turn()` clearing it end-to-end. Ran again: 4884
   passed (net +2).
+
+- **Phase 576 (current)**: continuing the audit into every field still
+  carrying a "not auto-cleared -- caller's job" comment after Phase
+  573/575, found a fifth real instance -- `ProvinceState.illusory_fog_
+  active`. Illusory Fog's own quoted rule text (`turn/cast_execution.py`'s
+  Phase 207 addendum) is explicit that the spell "dissipates at the end
+  of the gameturn," and the flag it sets *does* already have a real, live
+  consumer (`turn/battle_orchestrator.py`/`turn/strength.py` halve every
+  air unit's strength in any battle fought in that province while it's
+  set) -- unlike `tax_modifier_percent`/`illusory_terrain`/`clairvoyance_
+  watchers`, which stay genuinely unconsumed and so were correctly left
+  alone. With no clearing site anywhere, a province hit by Illusory Fog
+  stayed permanently fogged for the rest of the game, directly
+  contradicting its own sourced one-turn duration. Fixed the same way as
+  the four fields before it: `_replenish_turn_scoped_state()` now also
+  clears it to `False`. Also corrected three stale doc comments this same
+  audit pass surfaced, left behind by Phase 573/575 fixing the field
+  itself without updating every place that described the old, broken
+  behavior (`LeaderState.oratory_boosted_this_turn`'s own Phase 59
+  paragraph, `clairvoyance_watchers`'s cross-reference to it, and two
+  stale `ArmyState.movement_points` "has no real consumer" claims in
+  `turn/move_execution.py`/`turn/battle_orchestrator.py`) -- comment-only,
+  no behavior change. Audited every other remaining "caller's job"
+  field and confirmed the rest are correctly left alone: `treat_
+  permissions`/`execute_scientific_treaties()`/`commit_office_holders()`
+  are a different category (no `turn_processor.py` wiring for an entire
+  step, not a reset gap, already documented as deliberate), and
+  `assassination_guild_failed_attempts`/`graveyard_death_counter` are
+  intentionally monotonic, non-turn-scoped counters. Ran before writing
+  tests: 4884 passed (non-breaking). Added tests: `_replenish_turn_
+  scoped_state()` clearing `illusory_fog_active` directly; `run_turn()`
+  clearing it end-to-end. Ran again: 4886 passed (net +2).
 
 ## Setup
 

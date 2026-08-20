@@ -1759,3 +1759,28 @@ def test_run_turn_clears_action_casts_used_at_the_end():
     run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
 
     assert state.action_casts_used == {}
+
+
+# -- Phase 576: illusory_fog_active, found the same way action_casts_used
+# was (re-auditing every remaining "not auto-cleared" field comment) --
+# the rulebook's own text says Illusory Fog "dissipates at the end of the
+# gameturn," but the flag it sets had no clearing site anywhere despite
+# already having a real battle-strength consumer.
+
+
+def test_replenish_turn_scoped_state_clears_illusory_fog_active():
+    state = _base_state()
+    state.provinces[ORIGIN].illusory_fog_active = True
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.provinces[ORIGIN].illusory_fog_active is False
+
+
+def test_run_turn_clears_illusory_fog_active_at_the_end():
+    state = _base_state()
+    state.provinces[ORIGIN].illusory_fog_active = True
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert state.provinces[ORIGIN].illusory_fog_active is False

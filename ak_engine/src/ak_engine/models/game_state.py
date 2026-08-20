@@ -102,8 +102,9 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   is already a first-class field every strength calculation reads. This
   flag exists purely so a second Oratory cast on the same leader the
   same turn is the required "not cumulative" no-op instead of bumping
-  rank twice; not auto-cleared at a turn boundary, same convention as
-  every other "caller's job to reset" field in this dataclass.
+  rank twice; cleared to ``False`` at the end of every ``run_turn()``
+  call (Phase 573's own ``_replenish_turn_scoped_state()``) -- this
+  paragraph is Phase 59-era and predates that fix.
 - ``LeaderState.clairvoyance_watchers`` (Clairvoyance [4.22.3], Phase
   193): the rulebook's own confirmed sentence ("for the rest of the
   turn, the caster knows everything that happens to the target",
@@ -118,8 +119,9 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   own ``kingdom_id`` here; nothing yet reads the set (same "spell
   writes real state, nothing reads it yet" situation as
   ``terrain_override``/``illusory_terrain`` above). Not auto-cleared at
-  a turn boundary, same "caller's job to reset" convention as
-  ``oratory_boosted_this_turn``.
+  a turn boundary -- unlike ``oratory_boosted_this_turn`` (fixed by
+  Phase 573), this field has no real reader (see the Phase 408 addendum
+  right below), so there is no live mechanic for a stale value to break.
   **Phase 408 addendum**: the real mechanism that would have surfaced
   this to the watcher was found and traced all the way down --
   ``RUMORS.PAS Set_Intel(x,y)``'s own Clairvoyance/``Counter_Science``
@@ -925,10 +927,14 @@ class ProvinceState:
     # ``illusory_terrain`` between turns.
     earthquake_flat_reduction: int = 0
     # Illusory Fog (Phase 207) -- see module docstring. Set by a
-    # successful cast (turn/cast_execution.py _execute_illus_fog); not
-    # auto-cleared at end of turn -- the same "spell writes real state,
-    # no consuming cleanup pass exists yet" convention already used by
-    # tax_modifier_percent/illusory_terrain above.
+    # successful cast (turn/cast_execution.py _execute_illus_fog).
+    # Cleared to False at the end of every run_turn() call (Phase 576) --
+    # the rulebook's own quoted text says the spell "dissipates at the
+    # end of the gameturn," and unlike tax_modifier_percent/illusory_
+    # terrain above, this one already has a real, live consumer (turn/
+    # battle_orchestrator.py/turn/strength.py halve air-unit strength
+    # while it's set), so leaving it uncleared was a real bug, not just
+    # unconsumed data.
     illusory_fog_active: bool = False
     # Real per-province tax value (Phase 222 `parser/gw_world.py`'s own
     # `GWProvinceRecord.tax` -- the real `ptax[px,py]` this project has

@@ -432,11 +432,8 @@ def execute_move(
     band. Rulebook [6.2] itself frames this as dynamic, not a pre-turn
     recompute: "The increased army-movement allowed by the March and
     Naval abilities is always calculated at the moment an army moves."
-    This project has never derived `ArmyState.movement_points` from a
-    base-rate formula (`ArmyState`'s own field comment: "Not auto-reset
-    at turn start and not derived from ARMY_TABLE speed + March/Naval
-    ability -- the caller sets it") -- rather than invent that missing
-    per-turn pipeline, this phase reads the sourced quote literally:
+    Rather than fold the bonus into a precomputed base rate, this phase
+    reads the sourced quote literally:
     `execute_move()` grants the bonus as a one-time addition to the
     army's own *current* pool, right before this move's own cost is
     deducted, gated on `ArmyState.march_bonus_applied_this_turn` so a

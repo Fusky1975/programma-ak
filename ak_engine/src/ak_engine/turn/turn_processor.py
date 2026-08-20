@@ -642,6 +642,18 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
       the identical "never reset, permanently blocks its own mechanic"
       bug already fixed for the fields above in Phase 573, just not
       audited yet at the time.
+    - ``ProvinceState.illusory_fog_active`` -> ``False`` (Phase 576) --
+      Illusory Fog's own quoted rule text is explicit that the spell
+      "dissipates at the end of the gameturn" (``turn/cast_execution.py``'s
+      own Phase 207 addendum), but the flag it sets is read by a real,
+      live consumer (``turn/battle_orchestrator.py``/``turn/strength.py``,
+      halving air-unit strength in every battle fought in that province)
+      and had no clearing site anywhere -- a province hit by Illusory Fog
+      stayed permanently fogged for the rest of the game, directly
+      contradicting the sourced one-turn duration. Found by re-auditing
+      every other "not auto-cleared -- caller's job" field this project's
+      own comments still flagged after Phase 573/575, the same way
+      ``action_casts_used`` itself was found.
 
     ``GameState.gate_angel_candidates_this_turn`` is deliberately NOT
     touched here despite its own name -- it's already self-resetting,
@@ -658,6 +670,7 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         army.unhireable_this_turn = False
     for province in state.provinces.values():
         province.recruited_this_turn = {}
+        province.illusory_fog_active = False
     for leader in state.leaders.values():
         leader.oratory_boosted_this_turn = False
     state.action_casts_used = {}
