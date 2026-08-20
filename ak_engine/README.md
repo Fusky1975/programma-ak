@@ -23383,7 +23383,7 @@ follow-up request after the original 431-435 plan shipped.
   `HUMANOID_RACES` province (`Mongu`) proving it's unaffected. Ran
   again: 4847 passed (net +3).
 
-- **Phase 566 (current)**: reverse-engineered and implemented the second,
+- **Phase 566**: reverse-engineered and implemented the second,
   denser ASCII-map cell layout (content width 13, stride 14) Phase 565
   had just confirmed exists (`SE3__T5.K2`'s own map, a later-turn
   report) but left unmodeled. Derived every rule this phase against 5
@@ -23435,6 +23435,45 @@ follow-up request after the original 431-435 plan shipped.
   case; `Tesawa`/`Marzuq` and `Shasta` cells byte-for-byte;
   `render_ascii_map_dense()`'s own `Orielle`/`Shasta` band byte-for-
   byte. Ran again: 4856 passed (net +9).
+
+- **Phase 567 (current, research-only, no code/test changes)**: closed
+  out the map-layout-trigger question Phase 566 left open, as far as it
+  can be closed from this project's own available evidence. Measured
+  the real cell stride directly (column delta between consecutive
+  `(dddd)` ID codes) across all 107 real `Desktop/SE3__T*.K*` samples
+  (turns 1-11, all 9 Kingdoms): **the wide/dense split already
+  implemented is only 2 of at least 6 real strides** (17, 14, 12, 10, 9,
+  8 -- 8 being a real floor several Kingdoms' own maps hit and never
+  narrow past, even at 100+ known provinces). Correlating stride
+  against the largest contiguous province cluster in each report's own
+  widest row (excluding far-flung outliers) confirmed every Kingdom's
+  own stride sequence across turns 1-11 is strictly non-increasing, and
+  nailed the two extremes cleanly (cluster <= 4 always -> stride 17;
+  cluster >= 10 always -> the stride-8 floor) -- but produced a genuine,
+  directly-verified counter-example ruling out every single-variable
+  formula tried for the middle bands: `SE3__T4.K3` (cluster 6, 26 known
+  provinces) uses stride 10, while `SE3__T4.K6` (cluster 7, 28-38 known
+  -- both metrics higher) uses stride 12, a **wider** layout despite
+  higher complexity by every content-visible measure. Checked the
+  Pascal source directly (`HostAK/TP/REPORTS.PAS` and the other 13
+  `.PAS` files in `Programma Pascal.zip`) per the project's own standing
+  practice -- confirmed this routine's own text genuinely isn't there
+  (only in the compiled `AK.EXE`/`AKGEN.EXE`), a real, checked absence,
+  not an assumption. Conclusion: some Kingdom-internal state not
+  printed anywhere in the report text drives the middle-band choice;
+  resolving it further would need disassembling the compiled binary,
+  well outside this project's own reverse-engineering approach.
+  Documented the full findings (including the `K3`/`K6` counter-
+  example) in `report/ascii_map.py`'s own module docstring; no
+  selection function was written, since it would not be sourced for the
+  middle bands. The user was consulted twice mid-investigation (via
+  `AskUserQuestion`) on whether to keep pushing the black-box analysis
+  or stop, and chose to keep going both times -- this is the point
+  where the analysis itself produced a hard contradiction rather than
+  just more noise, which is the actual stopping condition, not a time
+  limit. No code or test changes; ran the full suite before and after
+  purely to confirm the docstring-only edit didn't touch anything:
+  4856 passed both times.
 
 ## Setup
 

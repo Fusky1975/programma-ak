@@ -230,12 +230,53 @@ in `README.md` for the full account):
   wrap-and-drop behavior.
 - Multiple maps ("far side of the world") and region labels ("Ice
   cap") -- only a single, continuous map is rendered.
-- **The real trigger for which layout (wide or dense, see below) a given
-  report uses** -- `SE3__T1.K2` (early turn, few provinces known) uses
-  wide; `SE3__T5.K2` (later turn, more known) uses dense; not enough
-  samples across intermediate turns have been checked to state the
-  exact threshold. `describe_map_report()` always calls the wide
-  renderer; nothing currently picks the dense one automatically.
+- **The real trigger for which of the (at least) 6 distinct cell-width
+  layouts a given report uses.** Phase 567 surveyed every one of this
+  project's own 107 real `Desktop/SE3__T*.K*` samples (turns 1-11,
+  9 Kingdoms) by measuring each report's own real cell stride directly
+  (the column delta between consecutive `(dddd)` ID codes on the same
+  map line) rather than guessing: **the wide/dense split this module
+  implements is only 2 of at least 6 real strides actually observed**
+  -- 17 (wide, implemented), 14 (dense, implemented), 12, 10, 9, and 8
+  (a real floor: several Kingdoms' own maps stay at stride 8 for many
+  turns straight even as their own known-province count keeps growing
+  into the hundreds -- it never gets narrower than that). Correlating
+  each report's own stride against the largest *contiguous* cluster of
+  known provinces in its own widest single row (excluding isolated,
+  far-flung outliers like `Apurimac` above) narrows this down a lot:
+  every one of the 9 Kingdoms' own stride sequences across turns 1-11
+  is confirmed **strictly non-increasing** (a real map layout never
+  gets wider again once it has narrowed, even though a Kingdom's own
+  known-province count only ever grows) -- and the two extremes are
+  unambiguous (cluster size <= 4 always means stride 17; cluster size
+  >= 10 always means the stride-8 floor). **But the middle bands
+  (strides 9/10/12/14, cluster sizes 4-8) do not resolve to a single-
+  variable formula, and this was checked, not just left unresolved
+  from insufficient effort**: `SE3__T4.K3` at turn 4 (cluster size 6,
+  26 known provinces) uses stride 10, while `SE3__T4.K6` at turns 4-6
+  (cluster size 7 -- larger -- and 28-38 known provinces -- also
+  higher) uses stride 12 -- **wider**, not narrower, despite both of
+  its own comparison metrics being higher than `K3`'s own. A real
+  Kingdom-to-Kingdom counter-example, not sampling noise (re-verified
+  directly against the real files, and the clustering result is stable
+  across every gap-tolerance value tried from 1 to 5). This rules out
+  every content-visible metric tried (total known provinces, largest
+  contiguous cluster at any gap tolerance, average provinces per row,
+  max row span) as the sole driver -- some Kingdom-internal state not
+  printed anywhere in the report text itself must also be involved.
+  The Pascal source for this specific routine was checked directly in
+  `Programma Pascal.zip` (see `HostAK/TP/REPORTS.PAS` and the other 13
+  `.PAS` files there) and confirmed absent -- the routine's own intro
+  text ("Sire, our royal scribe...") only exists inside the compiled
+  `AK.EXE`/`AKGEN.EXE` binaries, not in any available source file, so
+  disassembly would be the only way to get a definitive answer, well
+  outside this project's own reverse-engineering approach.
+  `describe_map_report()` always calls the wide renderer; nothing
+  currently picks any of the narrower ones automatically, and the 4
+  narrower tiers this phase newly discovered (strides 12, 10, 9, 8)
+  remain entirely unimplemented -- their own row templates have not
+  been derived at all (only the wide and dense layouts' own templates
+  are confirmed).
 - The horizontal stagger/positioning formula below only covers `x >= 1`
   (every real sample cross-checked this phase happens to have its
   leftmost known province at `x >= 1`); `cell_pixel_column()` clamps
