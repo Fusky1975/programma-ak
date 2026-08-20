@@ -3,10 +3,11 @@ from __future__ import annotations
 import random
 
 from ak_engine.turn.battle_luck import (
-    BLUCK_ENTRIES,
+    BLUCK_TEMPLATE,
     CLUCK2_REVERSAL_PHRASE,
-    CLUCK_ENTRIES,
+    CLUCK2_TEMPLATE,
     CLUCK_REVERSAL_CHECK_PERCENT,
+    CLUCK_TEMPLATE,
     FIRST_TURN_LUCK_COEFFICIENT,
     LATER_TURN_LUCK_COEFFICIENT,
     bluck_event_index,
@@ -17,9 +18,12 @@ from ak_engine.turn.battle_luck import (
     draw_local_luck,
     luck_strength_multiplier,
     render_bluck_event,
+    render_cluck2_event,
     render_cluck_event,
     roll_cluck_reversal,
 )
+
+from _helpers import ScriptedRandom
 
 TRIALS = 5000
 TOLERANCE = 0.03  # +/- 3 percentage points on a 5000-trial sample
@@ -121,24 +125,39 @@ def test_break_bres_tie_terminates_even_when_the_coin_always_lands_the_same():
         break_bres_tie(rng)
 
 
-# -- Phase 388: BLUCK/CLUCK narration text + the CLUCK2 reversal ---------
+# -- Phase 388/584: BLUCK/CLUCK/CLUCK2 narration text --------------------
 
 
-def test_bluck_and_cluck_entries_catalogs_have_the_documented_lengths():
-    assert len(BLUCK_ENTRIES) == 17
-    assert len(CLUCK_ENTRIES) == 39
+def test_bluck_cluck_and_cluck2_templates_have_the_documented_lengths():
+    assert len(BLUCK_TEMPLATE) == 17
+    assert len(CLUCK_TEMPLATE) == 39
+    assert len(CLUCK2_TEMPLATE) == 39
 
 
-def test_render_bluck_event_returns_the_verbatim_akgen_text_at_each_bound():
-    assert render_bluck_event(1) == "disastrous rear/supply rumor"
-    assert render_bluck_event(9) == "no significant fortune"
-    assert render_bluck_event(17) == "enemy plans stolen"
+def test_render_bluck_event_renders_the_real_prose_at_each_bound():
+    rng = ScriptedRandom([0.1] * 20)
+    assert render_bluck_event(1, "Aldric", "Borin", rng) == (
+        "Aldric's luck was awful, for a nasty rumor that enemy forces "
+        "were approaching from the rear began to sweep through Aldric's "
+        "troops!This gave Borin's forces a huge advantage."
+    )
 
 
-def test_render_cluck_event_returns_the_verbatim_akgen_text_at_each_bound():
-    assert render_cluck_event(1) == "commander or standard falls"
-    assert render_cluck_event(20) == "no decisive local event"
-    assert render_cluck_event(39) == "omen makes every soldier fight as two"
+def test_render_cluck_event_renders_the_real_prose_at_each_bound():
+    rng = ScriptedRandom([0.1] * 20)
+    assert render_cluck_event(1, "144th Legion", rng) == (
+        "the commander of 144th Legion fell, a man who was loved by all."
+        "Their spirits sank, and they fought as if they were half-trained."
+    )
+
+
+def test_render_cluck2_event_renders_the_real_prose():
+    rng = ScriptedRandom([0.1] * 20)
+    result = render_cluck2_event(1, "144th Legion", rng)
+    assert result == (
+        "a mutiny broke out among 144th Legion when a false report spread "
+        "that they would not be paid this year, thus they were of little use."
+    )
 
 
 def test_column_narration_eligible_matches_the_confirmed_0_4_to_2_5_gate():

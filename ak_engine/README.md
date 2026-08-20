@@ -23983,7 +23983,7 @@ follow-up request after the original 431-435 plan shipped.
   the withdrawn-hypothesis regression check, a verbatim sample, and the
   preserved control-byte markers. Ran again: 4921 passed (net +6).
 
-- **Phase 583 (current)**: transcribes `report/turn_report.py ILLMOVE_
+- **Phase 583**: transcribes `report/turn_report.py ILLMOVE_
   TEMPLATE` from `ILLMOVE.X2`, closing the one remaining file-dispatch
   gap the Phase 127 illegal-move-narrative addendum had explicitly left
   open ("deliberately left for a future phase that extracts
@@ -24001,6 +24001,46 @@ follow-up request after the original 431-435 plan shipped.
   21-entry coverage, a verbatim sample, the placeholder/excluded-note
   distinction, and a `render()` round-trip. Ran again: 4926 passed
   (net +5).
+
+- **Phase 584 (current)**: a correctness fix, not just a new
+  transcription. While tracing `turn/battle_luck.py`'s own Phase 388
+  addendum -- which explicitly documented `CLUCK2.X2` as an "honest,
+  documented partial gap" -- found that its sibling constants `BLUCK_
+  ENTRIES`/`CLUCK_ENTRIES` were themselves mislabeled: despite being
+  called "verbatim AKGEN `BLUCK.X2`/`CLUCK.X2` catalog", they actually
+  held AKGEN's own short internal event *labels* ("mutiny", "commander
+  or standard falls"), never the real, renderable prose sentences
+  (AKGEN's own structured JSON export never carried that field).
+  `render_bluck_event()`/`render_cluck_event()` were therefore already
+  wired (Phase 370/388) to return a placeholder-quality label string
+  where a real report would show a full sentence -- caught before it
+  ever reached a live report composer, since neither function's own
+  `_narration` wrapper (`report/turn_report.py render_bluck_narration`/
+  `render_cluck_narration`) had a caller outside the test suite yet.
+  New `BLUCK_TEMPLATE`/`CLUCK_TEMPLATE`/`CLUCK2_TEMPLATE` (`dict[int,
+  str]`, real prose from the same byte-faithful 162-file reverse-
+  engineering pass as Phases 578-583) replace the mislabeled tuples;
+  `render_bluck_event()`/`render_cluck_event()` and the new `render_
+  cluck2_event()` now call `report/prose.py render()` properly (real
+  `/R`/`{...}` alternation plus King/army-name substitution) instead of
+  returning a bare string, closing the CLUCK2 gap for real with the
+  genuine 39-entry catalog instead of the single static `CLUCK2_
+  REVERSAL_PHRASE` fallback (kept only as a historical record, no
+  longer called). The one control-byte code either catalog uses
+  (`⟦CTRL-A⟧`, "a/an") maps directly onto `render()`'s own already-
+  implemented `^A` token, converted during transcription rather than
+  left as an unrendered placeholder. Threaded the new required
+  `attacker_name`/`defender_name`/`army_name`/`rng` parameters through
+  `render_bluck_narration()`/`render_cluck_narration()` and rewrote
+  every existing test that had asserted the old mislabeled short-label
+  output, verifying each new expected string against the real `render()`
+  call rather than re-guessing it. Ran before writing tests: 4926
+  passed (non-breaking, confirms the rewiring alone didn't break
+  anything using the old signatures). Rewrote the Phase 388-era tests
+  in place (`test_battle_luck.py`/`test_turn_report.py`) plus one new
+  `render_cluck2_event` test. Ran again: 4927 passed (net +1, since
+  most changes were in-place rewrites of already-existing tests, not
+  additions).
 
 ## Setup
 
