@@ -22,12 +22,15 @@ from ak_engine.report.ascii_map import (
     dense_cell_pixel_column,
     render_ascii_map,
     render_ascii_map_dense,
+    render_ascii_map_stride9,
     render_ascii_map_stride10,
     render_ascii_map_stride12,
     render_cell,
     render_cell_dense,
+    render_cell_stride9,
     render_cell_stride10,
     render_cell_stride12,
+    stride9_cell_pixel_column,
     stride10_cell_pixel_column,
     stride12_cell_pixel_column,
 )
@@ -609,4 +612,79 @@ def test_render_ascii_map_stride10_matches_starhavens_own_real_band():
         "+ Humans+",
         "+ Le,Ch +",
         "+++Rich++",
+    ]
+
+
+# -- Phase 571: the stride-9 layout (SE3__T4.K8) -- like stride 10,
+# name and id are always split; unlike stride 10, only 3 of up to 4
+# middle fields ever get a row at all (a 4th, status, is dropped
+# entirely, with no row-6-style merge); see module docstring's section.
+
+
+def test_render_cell_stride9_matches_katangas_own_real_cell():
+    # SE3__T4.K8 lines 552-556: Katanga, a real cell with all 4 middle
+    # fields present (no recruit-skip). Real corpus: only the first 3
+    # (ruler, race, recruit) get a row; status/Expl% are both dropped
+    # entirely. "Le,El" is the real recruit text -- ELEPHANTS'
+    # abbreviation was newly confirmed this phase (see
+    # `_CONFIRMED_RECRUIT_ABBREVIATION`'s own comment).
+    state = _state()
+    state.add_leader(LeaderState(8, 97, "Circe", HOME, is_king=True))
+    state.add_kingdom(KingdomState(97, "K97", Race.DWARVEN, None, HOME))
+    province = _province(4, 4, "Katanga", Terrain.JUNGLE, Race.DWARVEN, owner=97, tax=1, t1=ArmyType.LEGION, t2=ArmyType.ELEPHANTS, expl=1)
+    cell = render_cell_stride9(state, province, viewing_kingdom_id=2)
+    assert cell == [
+        "&Katanga",
+        "&(0404)&",
+        "Circe(8)",
+        "&Dwarves",
+        "&&Le,El&",
+    ]
+
+
+def test_render_cell_stride9_matches_shastas_own_real_cell():
+    # SE3__T4.K8 lines 552-556: Shasta, race Eagles (non-humanoid,
+    # recruit skipped -- Phase 565's own mechanic generalizes here too)
+    # -- status takes recruit's own normal slot instead.
+    state = _state()
+    province = _province(3, 4, "Shasta", Terrain.MTNS, Race.EAGLES, owner=None, tax=1, t1=None, t2=None, expl=1)
+    cell = render_cell_stride9(state, province, viewing_kingdom_id=2)
+    assert cell == [
+        "^Shasta^",
+        "^(0304)^",
+        "^Unowned",
+        "^Eagles^",
+        "^^Poor^^",
+    ]
+
+
+def test_stride9_cell_pixel_column_is_relative_to_x_min():
+    # This tier's own real reports need a non-obvious x_min (see the
+    # function's own docstring) -- test the RELATIVE shape instead
+    # (stride 9, half-cell even-row stagger), which is what every
+    # caller actually relies on.
+    assert stride9_cell_pixel_column(HexCoord(5, 5), x_min=5) == 0
+    assert stride9_cell_pixel_column(HexCoord(6, 5), x_min=5) == 9
+    assert stride9_cell_pixel_column(HexCoord(5, 4), x_min=5) == 4
+
+
+def test_render_ascii_map_stride9_matches_katangas_own_real_band():
+    # Same real cell, through the map-level renderer -- confirms the
+    # placement formula and the content renderer agree end to end.
+    state = _state()
+    state.add_leader(LeaderState(8, 97, "Circe", HOME, is_king=True))
+    state.add_kingdom(KingdomState(97, "K97", Race.DWARVEN, None, HOME))
+    state.add_province(_province(4, 4, "Katanga", Terrain.JUNGLE, Race.DWARVEN, owner=97, tax=1, t1=ArmyType.LEGION, t2=ArmyType.ELEPHANTS, expl=1))
+
+    lines = render_ascii_map_stride9(state, 2)
+
+    # 4 leading spaces: y=4 is even, so cell_pixel_column()'s own
+    # confirmed half-cell stagger applies even to a single province.
+    pad = "    "
+    assert lines == [
+        pad + "&Katanga",
+        pad + "&(0404)&",
+        pad + "Circe(8)",
+        pad + "&Dwarves",
+        pad + "&&Le,El&",
     ]

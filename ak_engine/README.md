@@ -23552,7 +23552,7 @@ follow-up request after the original 431-435 plan shipped.
   through the map-level renderer (`render_ascii_map_stride12()`). Ran
   again: 4860 passed (net +3).
 
-- **Phase 570 (current)**: implemented the fourth real map layout
+- **Phase 570**: implemented the fourth real map layout
   (content width 9, stride 10), sourced from `SE3__T4.K3`. This tier
   is qualitatively different from the 3 wider ones: **every single real
   cell wraps its own name onto row 1 with the id pushed to row 2** --
@@ -23590,6 +23590,47 @@ follow-up request after the original 431-435 plan shipped.
   byte-for-byte (4-field, no skip); `Sixth Sea`'s own real cell
   byte-for-byte (3-field, recruit-skip); the map-level renderer for
   `Starhaven`. Ran again: 4864 passed (net +4).
+
+- **Phase 571 (current)**: implemented the fifth real map layout
+  (content width 8, stride 9), sourced from `SE3__T4.K8`. Structurally
+  identical in kind to stride 10 (name/id always split), but with an
+  even tighter budget: only the first 3 of up to 4 middle fields ever
+  get a row at all -- a genuine 4th (status, present only when recruit
+  is shown) is dropped entirely, with no row-6-style merge to fall back
+  on (real cells here are exactly 5 lines, not 6). Confirmed via
+  `Katanga` (recruit shown, no status/Expl% at all) contrasted with
+  `Shasta` (recruit skipped, status takes recruit's own slot instead).
+  **The placement formula needed real re-derivation, not an assumed
+  fit**: this report's own true `x_min` sits a full 2 strides left of
+  its own visible minimum -- confirmed via ~25 independent `(x, y)`
+  measurements across 6 real bands, zero variance once solved
+  correctly -- a bigger version of the same unexplained-margin
+  phenomenon Phase 568 found for the dense layout (there, 1 stride).
+  `stride9_cell_pixel_column()` still exposes the same clean `x_min`-
+  relative shape, but callers shouldn't assume "smallest known x" is
+  the right `x_min` to pass, the way they reasonably can for the 3
+  already-fixed layouts. Row 4 (race) has tick columns `{0, 6, 7}`
+  (confirmed via `Moongard`'s real "Orcs"); row 5 (recruit-or-status)
+  is unusually tick-heavy, `{0, 1, 2, 5, 6, 7}` -- only 2 real columns
+  of flexible zone -- confirmed via `Balmwood`'s real 2-character "Bo"
+  independently uncovering all 6 as ticks, corroborated by `Shasta`'s
+  own shifted "Poor". **Found the same "both race and recruit skipped"
+  anomaly a third and fourth time** (`Terran Sea` and one other cell in
+  this same report), this time landing status at row 4 with Expl% at
+  row 5 -- the only known real case where this layout's Expl% appears
+  at all, still not modeled (matches Phase 570's own precedent).
+  **New, genuinely sourced Army Type abbreviation confirmed**:
+  `Katanga`'s own real recruit text "Le,El" confirms `ArmyType.
+  ELEPHANTS` abbreviates to `"El"` (not its own raw `.value`, `"EL"`),
+  added to `_CONFIRMED_RECRUIT_ABBREVIATION`. New `STRIDE9_CELL_WIDTH`/
+  `STRIDE9_CELL_STRIDE` constants, `stride9_cell_pixel_column()`,
+  `render_cell_stride9()`, `render_ascii_map_stride9()`. Stride 8
+  remains unimplemented. Ran before writing tests: 4864 passed
+  (non-breaking). Added tests: `Katanga`'s own real cell byte-for-byte
+  (4-field, no skip), both directly and through the map-level renderer;
+  `Shasta`'s own real cell byte-for-byte (3-field, recruit-skip); the
+  placement formula's own relative shape. Ran again: 4868 passed
+  (net +4).
 
 ## Setup
 
