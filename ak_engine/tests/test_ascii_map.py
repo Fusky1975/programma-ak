@@ -256,3 +256,32 @@ def test_render_cell_uses_the_provinces_own_terrain_symbol():
     assert all(TERRAIN_SYMBOL[Terrain.SEA] in line or line.strip(TERRAIN_SYMBOL[Terrain.SEA]) for line in cell)
     assert len(cell) == 6
     assert all(len(line) == 16 for line in cell)
+
+
+# -- Phase 564: long province names get cut to 8 chars, not wrapped --
+
+
+def test_render_cell_truncates_a_ten_character_name_to_its_first_eight():
+    # The user's own worked example.
+    state = _state()
+    province = _province(1, 4, "Marnus Sea", Terrain.SEA, Race.HUMAN, owner=None, tax=0, t1=None, t2=None, expl=1)
+    cell = render_cell(state, province, viewing_kingdom_id=2)
+    assert cell[0] == "~Marnus~S(0104)~"
+
+
+def test_render_cell_leaves_a_nine_character_name_whole():
+    # "Bam Yanga" (9 chars) is confirmed to render in full in the real,
+    # byte-for-byte-verified band (SE3__T1.K2 line 314) -- the trigger
+    # is 10 characters, not 9, precisely so this stays untruncated.
+    state = _state()
+    province = _province(1, 5, "Bam Yanga", Terrain.DESERT, Race.HUMAN, owner=None, tax=0, t1=None, t2=None, expl=1)
+    cell = render_cell(state, province, viewing_kingdom_id=2)
+    assert cell[0] == ".Bam.Yanga(0105)"
+
+
+def test_render_cell_truncates_a_twelve_character_name_too():
+    state = _state()
+    province = _province(2, 6, "Transylvania", Terrain.MTNS, Race.DWARVEN, owner=None, tax=0, t1=None, t2=None, expl=1)
+    cell = render_cell(state, province, viewing_kingdom_id=2)
+    assert "Transylv" in cell[0]
+    assert "Transylvania" not in cell[0]

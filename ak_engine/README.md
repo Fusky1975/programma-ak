@@ -23287,7 +23287,7 @@ follow-up request after the original 431-435 plan shipped.
   byte-for-byte checks) plus 3 wiring tests in `test_turn_report.py`.
   Ran again: 4839 passed (net +23).
 
-- **Phase 563 (current)**: closed one of Phase 562's own flagged gaps --
+- **Phase 563**: closed one of Phase 562's own flagged gaps --
   the third map status word, `Rich`, whose real tax threshold was
   unknown at the time. The user (project author) confirmed it directly:
   `Rich` covers tax 7-10, extending the already-confirmed `Poor` (0-2)/
@@ -23305,6 +23305,35 @@ follow-up request after the original 431-435 plan shipped.
   `_status_word()` boundary test (all three tiers, both edges) and a
   `render_ascii_map()`-level `Rich` case. Ran again: 4841 passed
   (net +2).
+
+- **Phase 564 (current)**: closed Phase 562's own last deliberately-
+  deferred gap -- the real name-too-long-wraps-onto-its-own-row
+  behavior -- but by the user's own explicit choice, *not* by
+  reproducing that real behavior: a province name longer than 9
+  characters is instead simply cut to its own first 8 raw characters
+  (before the space-replacement rule), keeping every cell at a uniform
+  6 lines with no row-budget juggling ("Marnus Sea" -> "Marnus S", the
+  user's own worked example). **Found and resolved a real conflict
+  with already-verified data while implementing this**: the user's own
+  first phrasing of the rule ("tronca se il nome supera 8 caratteri")
+  would have truncated `Bam Yanga` (9 characters), which is confirmed
+  to render in full, untruncated, in the same real, byte-for-byte-
+  verified band this module's own docstring already cites (`SE3__
+  T1.K2` line 314) -- flagged to the user rather than silently
+  overriding either side; the user confirmed the real trigger is 10
+  characters, not 9, resolving the conflict cleanly. New
+  `PROVINCE_NAME_TRUNCATION_TRIGGER` (9) and `MAX_PROVINCE_NAME_LENGTH`
+  (8) constants in `report/ascii_map.py`. Ran before writing tests:
+  4841 passed; 3 tests broke on the first (wrong, >8) threshold --
+  `test_ascii_map.py`'s own primary Bam Yanga band check, plus two
+  `test_turn_report.py` tests whose "Capital City" (12 chars) fixture
+  now correctly shows a full, untruncated `(0000)` id instead of the
+  old silent whole-string clip that used to cut the id itself mid-
+  digit -- all fixed once the threshold was corrected, not treated as
+  new failures. Added tests: the user's own "Marnus Sea" example; `Bam
+  Yanga`'s own 9-character boundary staying whole; a 12-character
+  name (`Transylvania`) also truncating. Ran again: 4844 passed
+  (net +3).
 
 ## Setup
 

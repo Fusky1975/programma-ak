@@ -98,14 +98,19 @@ in `README.md` for the full account):
   sometimes entirely absent too, with the status row (row 5) shifting
   up to fill it (`Shasta` again, `SE3__T1.K2`) -- this module always
   shows a recruit-type row regardless of ownership.
-- A province name too long to fit in 16 chars alongside its own ID
-  wraps onto its own second row, which then forces something else out
-  of the fixed 6-row budget (observed: the Expl%/status row gets
-  dropped entirely in favor of keeping the status word, `Transylvania`
-  in `SE3__T1.K2`) -- this module does not wrap; an overlong name/id
-  combination is centered and silently clipped to 16 chars instead
-  (`_pad_center()`'s own `[:width]` at the end), a known, documented
-  simplification, not a crash.
+- The real game wraps a too-long province name onto its own second row,
+  which then forces something else out of the fixed 6-row budget
+  (observed: the Expl%/status row gets dropped entirely in favor of
+  keeping the status word, `Transylvania` in `SE3__T1.K2`). **By the
+  user's own explicit choice (Phase 564), this module does not
+  reproduce that** -- a name longer than `PROVINCE_NAME_TRUNCATION_
+  TRIGGER` (9 -- `Bam Yanga`'s own real, verified 9 characters stay
+  whole) is cut to its own first `MAX_PROVINCE_NAME_LENGTH` (8) raw
+  characters instead (e.g. "Marnus Sea" -> "Marnus S", the user's own
+  worked example), keeping
+  every cell at a uniform 6 lines with no row-budget juggling. This is
+  a deliberate simplification, not an attempt to reproduce the real
+  wrap-and-drop behavior.
 - Multiple maps ("far side of the world") and region labels ("Ice
   cap") -- only a single, continuous map is rendered.
 - The horizontal stagger/positioning formula below only covers `x >= 1`
@@ -126,6 +131,21 @@ from ak_engine.models.race import RACE_NAME, Race
 
 CELL_WIDTH = 16
 CELL_STRIDE = CELL_WIDTH + 1  # one real-space column separates every cell
+
+# Phase 564: confirmed directly by the user (project author) -- a
+# province name longer than `PROVINCE_NAME_TRUNCATION_TRIGGER` is cut to
+# its own first `MAX_PROVINCE_NAME_LENGTH` raw characters (before the
+# space-replacement rule below), not wrapped onto its own second row the
+# way the real game itself does (see module docstring's own deferred-
+# gaps list for why that real behavior stays unmodeled). "Marnus Sea"
+# (10 chars) -> "Marnus S" is the user's own worked example. The trigger
+# is 10, not 8: "Bam Yanga" (9 chars) is confirmed to render in full,
+# untruncated, in the same real, byte-for-byte-verified band this
+# module's own docstring cites (`SE3__T1.K2` line 314) -- the user
+# confirmed 9-character names stay whole once this conflict with
+# already-verified data was flagged.
+PROVINCE_NAME_TRUNCATION_TRIGGER = 9
+MAX_PROVINCE_NAME_LENGTH = 8
 
 # `_` Plains, `+` Forest, `&` Jungle, `^` Mountain, `.` Desert, `~` Sea --
 # see this module's own docstring for the full sourcing. `NO_TERRAIN`
@@ -294,7 +314,10 @@ def render_cell(state: GameState, province: ProvinceState, *, viewing_kingdom_id
     symbol = TERRAIN_SYMBOL[province.effective_terrain()]
 
     id_text = f"{province_code(province.coord):04d}"
-    name = (province.name or "").replace(" ", symbol)
+    raw_name = province.name or ""
+    if len(raw_name) > PROVINCE_NAME_TRUNCATION_TRIGGER:
+        raw_name = raw_name[:MAX_PROVINCE_NAME_LENGTH]
+    name = raw_name.replace(" ", symbol)
     line1 = _pad_center(f"{name}({id_text})", CELL_WIDTH, symbol)
 
     if province.owner_kingdom_id is not None:
