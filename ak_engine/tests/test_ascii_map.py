@@ -15,11 +15,15 @@ from ak_engine.report.ascii_map import (
     TERRAIN_SYMBOL,
     _pad_center,
     _pad_framed,
+    _pad_overlay,
     _recruit_abbreviation,
     _race_name_plural,
     cell_pixel_column,
+    dense_cell_pixel_column,
     render_ascii_map,
+    render_ascii_map_dense,
     render_cell,
+    render_cell_dense,
 )
 
 HOME = HexCoord(0, 0)
@@ -331,3 +335,124 @@ def test_render_cell_humanoid_race_keeps_its_recruit_row():
     assert len(cell) == 6
     assert "Le" in cell[3]
     assert "Expl." in cell[5]
+
+
+# -- Phase 566: the dense layout (SE3__T5.K2) -- own formula, own tick
+# columns, own overlay algorithm; see module docstring's own section.
+
+
+def test_dense_cell_pixel_column_odd_row_no_stagger():
+    # SE3__T5.K2's own Jadegate/Kiska/Kaluga band (y=7, odd): x=1 -> 14,
+    # x=2 -> 28, x=3 -> 42, confirmed against the real file's own column
+    # positions.
+    assert dense_cell_pixel_column(HexCoord(1, 7)) == 14
+    assert dense_cell_pixel_column(HexCoord(3, 7)) == 42
+
+
+def test_dense_cell_pixel_column_even_row_staggers_by_half_a_cell():
+    # SE3__T5.K2's own Waterford Sea/Orielle/Shasta/Katanga band (y=4,
+    # even): x=1 -> 21, x=3 -> 49.
+    assert dense_cell_pixel_column(HexCoord(1, 4)) == 21
+    assert dense_cell_pixel_column(HexCoord(3, 4)) == 49
+
+
+def test_dense_cell_pixel_column_has_no_minus_one_unlike_the_wide_layout():
+    # The wide layout's own formula is (x - 1) * stride + stagger, so
+    # x=1 on an odd row lands at column 0. The dense layout's own real
+    # data rules that out: x=1 lands at column 14 (= 1 * stride), not 0.
+    assert dense_cell_pixel_column(HexCoord(1, 3)) == 14
+
+
+def test_pad_overlay_non_space_content_overwrites_a_tick():
+    # Macondo's own real "Tax: 4" (SE3__T5.K2): the 'x' of "Tax:" lands
+    # squarely on tick column 4 and overwrites it.
+    result = _pad_overlay("Tax: 4", tick_columns=frozenset({0, 4, 8, 12}), symbol="&")
+    assert result == "&   Tax:&4  &"
+
+
+def test_pad_overlay_space_content_is_transparent_over_a_tick():
+    # Same tick set, one character longer ("Tax: 10"): the content's own
+    # internal space now lands on a plain column, not a tick, and stays
+    # literal -- both confirmed directly against SE3__T5.K2's own Macondo
+    # (6-char content, tick shows through) and Mongu (7-char, literal
+    # space) cells in the very same band.
+    result = _pad_overlay("Tax: 10", tick_columns=frozenset({0, 4, 8, 12}), symbol="&")
+    assert result == "&  Tax: 10  &"
+
+
+def test_pad_overlay_short_content_reveals_the_tick_columns():
+    # "Le" (row 4, ROW24 ticks): confirmed against Tesawa's own real
+    # cell -- ticks at 0, 2, 10, 12 all show through since the 2-char
+    # content only reaches columns 6-7.
+    result = _pad_overlay("Le", tick_columns=frozenset({0, 2, 10, 12}), symbol="^")
+    assert result == "^ ^   Le  ^ ^"
+
+
+def test_render_cell_dense_matches_tesawa_and_marzuq_real_cells():
+    # SE3__T5.K2 lines 343-348, x=2 and x=3 at y=3: Tesawa (unowned) and
+    # Marzuq (owned by another Kingdom, ruled by Prometeo(5)) -- both
+    # clean, non-shifted cells, byte-for-byte.
+    state = _state()
+    state.add_leader(LeaderState(5, 97, "Prometeo", HOME, is_king=True))
+    state.add_kingdom(KingdomState(97, "K97", Race.HUMAN, None, HOME))
+
+    tesawa = _province(2, 3, "Tesawa", Terrain.MTNS, Race.HUMAN, owner=None, tax=1, t1=ArmyType.LEGION, t2=None, expl=1)
+    marzuq = _province(3, 3, "Marzuq", Terrain.DESERT, Race.HUMAN, owner=97, tax=1, t1=ArmyType.CAMEL_CORPS, t2=None, expl=1)
+
+    assert render_cell_dense(state, tesawa, viewing_kingdom_id=2) == [
+        "^Tesawa(0203)",
+        "^ ^Unowned^ ^",
+        "^   Humans  ^",
+        "^ ^   Le  ^ ^",
+        "^   ^Poor   ^",
+        "^^^1%^Expl.^^",
+    ]
+    assert render_cell_dense(state, marzuq, viewing_kingdom_id=2) == [
+        ".Marzuq(0303)",
+        ".Prometeo(5).",
+        ".   Humans  .",
+        ". .   CC  . .",
+        ".   .Poor   .",
+        "...1%.Expl...",
+    ]
+
+
+def test_render_cell_dense_matches_shastas_own_real_cell_with_no_recruit_row():
+    # SE3__T5.K2 line 349-354, x=3 at y=4: Shasta, race Eagles -- the
+    # recruit-skip mechanic (Phase 565) generalizes unchanged to the
+    # dense layout's own row templates.
+    state = _state()
+    shasta = _province(3, 4, "Shasta", Terrain.MTNS, Race.EAGLES, owner=None, tax=1, t1=ArmyType.EAGLE_WING, t2=None, expl=8)
+    assert render_cell_dense(state, shasta, viewing_kingdom_id=2) == [
+        "^Shasta(0304)",
+        "^ ^Unowned^ ^",
+        "^   Eagles  ^",
+        "^ ^  Poor ^ ^",
+        "^  8% Expl. ^",
+        "^^^^^^^^^^^^^",
+    ]
+
+
+def test_render_ascii_map_dense_matches_orielle_and_shasta_real_band():
+    # SE3__T5.K2 line 349-354, columns 35 onward: Orielle (this
+    # Kingdom's own, Tax: 10) and Shasta (unowned, recruit row skipped),
+    # byte-for-byte for every row this phase models.
+    state = _state()
+    state.add_leader(LeaderState(2, 2, "Bradipo I", HOME, is_king=True))
+
+    orielle = _province(2, 4, "Orielle", Terrain.PLAINS, Race.HUMAN, owner=2, tax=10, t1=ArmyType.LEGION, t2=ArmyType.CHARIOTS, expl=51)
+    shasta = _province(3, 4, "Shasta", Terrain.MTNS, Race.EAGLES, owner=None, tax=1, t1=ArmyType.EAGLE_WING, t2=None, expl=8)
+    state.add_province(orielle)
+    state.add_province(shasta)
+
+    lines = render_ascii_map_dense(state, 2)
+
+    pad = " " * 35
+    assert lines == [
+        pad + "Orielle(0204) ^Shasta(0304)",
+        pad + "_Bradipo I(2) ^ ^Unowned^ ^",
+        pad + "_   Humans  _ ^   Eagles  ^",
+        pad + "_ _ Le,Ch _ _ ^ ^  Poor ^ ^",
+        pad + "_  Tax: 10  _ ^  8% Expl. ^",
+        pad + "__51%_Expl.__ ^^^^^^^^^^^^^",
+    ]

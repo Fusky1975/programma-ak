@@ -94,6 +94,109 @@ match; `Orielle`/`Shasta`, lines 308-313 -- another Kingdom's own
 status word once Phase 563 closed its own threshold, for every row
 this phase actually models).
 
+**Phase 566: a second, denser layout** (content width 13, stride 14),
+confirmed real -- every band in `SE3__T5.K2`'s own map (a later-turn
+report, more provinces known) uses this instead of the wide layout
+above, matching the original AKGEN report's own claim of "a second,
+denser layout from the mid-game corpus onward" (previously unverified
+in this project). Reverse-engineered this phase against 5 clean bands
+in `SE3__T5.K2` (`Tesawa`/`Marzuq`/`Cantia` at `y=3`; `Waterford Sea`/
+`Orielle`/`Shasta`/`Katanga` at `y=4`; `Bam Yanga`/`Macondo`/`Mongu`/
+`Moongard` at `y=5`; `Jadegate`/`Kiska`/`Kaluga` at `y=7`; `Katmai`/
+`Khalturin` at `y=8`), using exact string-index anchors from each
+province's own ID code, not by-eye alignment (the very mistake that
+mis-cited `Tesawa`/`Marzuq` as ruler-skip examples earlier in this same
+module's own history -- see the Phase 565 note above). Cells whose own
+name (or ruler's own name) wraps onto a second row (`Bam Yanga`,
+`Waterford Sea`, `Moongard`, `Khalturin`, `Abu Matariq`, `Transylvania`)
+were excluded from sourcing the rules below, same reasoning as the wide
+layout's own `Transylvania` exclusion.
+
+- **Horizontal placement**: `dense_cell_pixel_column(coord) = coord.x *
+  DENSE_CELL_STRIDE + (DENSE_CELL_STRIDE // 2 if coord.y % 2 == 0 else
+  0)` -- confirmed via every cell in all 5 clean bands (multiple `x`
+  values per band, confirming the intra-row stride; multiple `y`
+  parities, confirming the stagger), zero contradictions. **Genuinely
+  different from the wide layout's own formula**: no `(x - 1)` term --
+  `x` multiplies the stride directly, not offset by one. One real cell
+  (`Apurimac(1806)` at `y=6`) does not fit this formula at all (its
+  own real ID implies `x=18`, far outside the row's other provinces at
+  `x=1-3`, yet it renders immediately adjacent to them with no gap) --
+  not modeled, most likely a second/distant-landmass province the
+  renderer packs into a partially-empty row rather than a placement-
+  formula exception; consistent with the already-deferred "multiple
+  maps" gap above, not independently investigated further this phase.
+- **Row 1 (name/id) and row 6 (border/Expl%, when nothing's skipped)**:
+  same full-fill, tie-left, symbol-pad rule as the wide layout's own
+  rows 1/6 (not independently re-confirmed against a short/padded dense
+  example -- every dense name+id in the clean corpus fills 11-14 of the
+  13 available characters, leaving no padding to inspect -- inferred by
+  consistency with the wide layout and the absence of any contradicting
+  data, same honesty level as the wide layout's own original row-2 tie
+  direction before it was independently confirmed).
+- **Rows 2 (ruler) and 4 (recruit) share one template; rows 3 (race) and
+  5 (status/Expl%) share another** -- a different pairing from the wide
+  layout (where every row had its own template). Both use the same
+  underlying algorithm, confirmed via `_pad_overlay()` below: content is
+  centered across the **full** 13-column cell (tie-left, no separate
+  "zone" -- confirmed unambiguously via `Bradipo I(2)`, a 12-character,
+  odd-padding case whose start position only matches a tie-left, not
+  tie-right, full-width centering); the cell starts from a background
+  canvas that is the terrain symbol at a fixed, row-dependent set of
+  "tick" columns and a real space everywhere else; each content
+  character then overlays that canvas at its own centered position --
+  a **non-space** character always overwrites the canvas (tick or
+  space, whichever's underneath), while a **space** character in the
+  content is transparent and leaves the canvas showing through. Rows
+  2/4's own tick columns are `{0, 2, 10, 12}` (confirmed via `Circe(8)`
+  and `Unowned` in row 2, `Le`/`Le,Ch` in row 4 -- both leave columns
+  3-9 as a clean 7-wide gap with no embedded tick); rows 3/5's own tick
+  columns are `{0, 4, 8, 12}` (confirmed via `Orcs` in row 3 leaving
+  column 4 visibly free; **directly confirmed at column 8 specifically
+  by a genuine anomaly**: `Macondo`'s own real status `Tax: 4` shows a
+  terrain-symbol tick, not a literal space, exactly where the content's
+  own internal word-gap falls -- because `Tax: 4` is one character
+  shorter than `Tax: 10`, its centered internal space lands squarely on
+  column 8's tick, letting it show through, whereas `Tax: 10`'s own
+  internal space lands one column earlier at a plain position and stays
+  literal; both `Shasta`/`Kiska`'s own real unmerged `8% Expl.` row 5
+  -- the shifted-Expl% case, see below -- independently corroborate the
+  same tick set, their own internal space always landing on a plain,
+  non-tick column). Confirmed tie-left (not tie-right, unlike the wide
+  layout's own rows 3-5) via three independent odd-padding examples:
+  `Bradipo I(2)` (row 2, 12 chars), `CC`/`Le` (row 4, 2 chars), `Orcs`
+  (row 3, 4 chars) -- every one lands exactly where tie-left predicts,
+  never tie-right.
+- **The physical-row-indexed field-shift architecture generalizes
+  unchanged**: `Cantia` (`y=3`) and `Katanga` (`y=4`) are two more
+  confirmed real ruler-row-skip cells (in addition to the wide layout's
+  own still-unexplained `Cantia`/`Tesawa` contrast) -- both show their
+  race directly at physical row 2 using row 2's own template, recruit
+  at physical row 3 using row 3's own template, status at physical row
+  4 using row 4's own template, and Expl% unmerged at physical row 5
+  using row 5's own template, byte-for-byte matching the same
+  "`_ROW_TEMPLATES` tied to the physical row" model already established
+  for the wide layout's own recruit-skip case -- reused verbatim here
+  (`_middle_fields()` is layout-agnostic). `Kiska` (`y=7`, race
+  `Eagles`) independently confirms the recruit-skip case (`HUMANOID_
+  RACES`) in this layout too, matching `Shasta`. The ruler-skip
+  trigger itself stays just as unimplemented here as in the wide layout
+  (no data-model distinction exists to explain it) -- this module
+  always prints "Unowned" for the dense layout too.
+- **Name truncation reuses the wide layout's own constants** (`PROVINCE_
+  NAME_TRUNCATION_TRIGGER`/`MAX_PROVINCE_NAME_LENGTH`, 9/8) rather than
+  a dense-specific pair -- no real dense-layout sample confirms an exact
+  "must stay whole" boundary the way `Bam Yanga` did for the wide
+  layout (every short dense name in the clean corpus is well under any
+  plausible threshold; every long one wraps), so there is no sourced
+  dense-specific number to derive. Reusing the same constants is a safe
+  simplification consistent with the user's own general preference
+  (simplicity over exact wrap fidelity, Phase 564) -- 8 raw characters
+  always fits comfortably within the dense cell's own 13-column width,
+  it just truncates somewhat more eagerly than dense's own real wrap
+  boundary (14 total, vs. wide's own higher real boundary) would
+  strictly require.
+
 **Explicitly NOT modeled this phase, confirmed real but not yet
 reconciled with enough samples to state a rule with the same
 confidence as the above** (see this module's own Phase 562 audit notes
@@ -127,16 +230,12 @@ in `README.md` for the full account):
   wrap-and-drop behavior.
 - Multiple maps ("far side of the world") and region labels ("Ice
   cap") -- only a single, continuous map is rendered.
-- A second, denser cell layout (content width 13, stride 14, vs. this
-  module's own wide 16/17) -- confirmed real: every band in `SE3__T5.
-  K2`'s own map (a later-turn report, more provinces known) uses this
-  dense layout instead of the wide one this module implements, matching
-  the original AKGEN report's own claim of "a second, denser layout
-  from the mid-game corpus onward" (previously unverified in this
-  project). The dense layout's own row templates (tick positions, tie
-  directions, overflow rule) have not yet been re-derived, nor has the
-  real trigger for which layout a given report uses -- this module
-  always renders the wide layout.
+- **The real trigger for which layout (wide or dense, see below) a given
+  report uses** -- `SE3__T1.K2` (early turn, few provinces known) uses
+  wide; `SE3__T5.K2` (later turn, more known) uses dense; not enough
+  samples across intermediate turns have been checked to state the
+  exact threshold. `describe_map_report()` always calls the wide
+  renderer; nothing currently picks the dense one automatically.
 - The horizontal stagger/positioning formula below only covers `x >= 1`
   (every real sample cross-checked this phase happens to have its
   leftmost known province at `x >= 1`); `cell_pixel_column()` clamps
@@ -155,6 +254,11 @@ from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
 
 CELL_WIDTH = 16
 CELL_STRIDE = CELL_WIDTH + 1  # one real-space column separates every cell
+
+# Phase 566: the second, denser layout used by later-turn reports (see
+# module docstring) -- narrower cells, one real-space column between them.
+DENSE_CELL_WIDTH = 13
+DENSE_CELL_STRIDE = DENSE_CELL_WIDTH + 1
 
 # Phase 564: confirmed directly by the user (project author) -- a
 # province name longer than `PROVINCE_NAME_TRUNCATION_TRIGGER` is cut to
@@ -241,6 +345,17 @@ def cell_pixel_column(coord: HexCoord) -> int:
     return max(0, coord.x - 1) * CELL_STRIDE + stagger
 
 
+def dense_cell_pixel_column(coord: HexCoord) -> int:
+    """The dense layout's own horizontal pixel column -- see module
+    docstring's own Phase 566 section. Confirmed against every cell in
+    5 independent `SE3__T5.K2` bands: unlike `cell_pixel_column()`
+    above, `x` multiplies the stride directly, with no `-1` offset.
+    """
+
+    stagger = DENSE_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
+    return coord.x * DENSE_CELL_STRIDE + stagger
+
+
 def _pad_center(content: str, width: int, pad: str) -> str:
     """Center `content` within `width` using `pad` as the fill character,
     the extra column (if the padding is odd) going to the left -- the
@@ -307,6 +422,36 @@ def _pad_framed(content: str, *, left_template: str, zone_width: int, right_temp
 _ROW2_LEFT, _ROW2_ZONE, _ROW2_RIGHT = "T T", 10, " TT"
 _ROW35_LEFT, _ROW35_ZONE, _ROW35_RIGHT = "T   T", 7, "T  T"
 _ROW4_LEFT, _ROW4_ZONE, _ROW4_RIGHT = "T T   T", 3, "T   TT"
+
+
+def _pad_overlay(content: str, *, tick_columns: frozenset[int], symbol: str, width: int = DENSE_CELL_WIDTH) -> str:
+    """Build one dense-layout inner row (rows 2-5) -- see module
+    docstring's own Phase 566 section. Unlike `_pad_framed()`'s flanking-
+    template model, the dense layout centers `content` across the
+    **full** cell width (tie-left, confirmed), starting from a
+    background canvas that is the terrain `symbol` at `tick_columns`
+    and a real space everywhere else; each content character then
+    overlays that canvas at its own centered position -- a non-space
+    character always overwrites the canvas, a space character is
+    transparent and leaves the canvas showing through (confirmed
+    directly via `Macondo`'s own real `Tax: 4`, whose internal space
+    lands on a tick and shows the terrain symbol, vs. `Tax: 10`'s own
+    internal space, which lands on a plain column and stays literal).
+    """
+
+    pad = max(0, width - len(content))
+    start = (pad + 1) // 2  # tie-left, confirmed (see module docstring)
+    canvas = [symbol if i in tick_columns else " " for i in range(width)]
+    for i, ch in enumerate(content):
+        if 0 <= start + i < width and ch != " ":
+            canvas[start + i] = ch
+    return "".join(canvas)
+
+
+# Confirmed dense-layout tick columns -- rows 2/4 share one set, rows
+# 3/5 share another (see module docstring's own Phase 566 section).
+_DENSE_ROW24_TICKS = frozenset({0, 2, 10, 12})
+_DENSE_ROW35_TICKS = frozenset({0, 4, 8, 12})
 
 
 def _king_name_and_id(state: GameState, kingdom_id: int) -> str | None:
@@ -423,6 +568,51 @@ def render_cell(state: GameState, province: ProvinceState, *, viewing_kingdom_id
     return [line1, *middle_lines, last_line]
 
 
+# Dense-layout analogue of `_ROW_TEMPLATES` -- rows 2/4 share
+# `_DENSE_ROW24_TICKS`, rows 3/5 share `_DENSE_ROW35_TICKS` (see module
+# docstring's own Phase 566 section). The physical-row-indexed shift
+# architecture is otherwise identical to the wide layout's own.
+_DENSE_ROW_TEMPLATES: list[frozenset[int]] = [
+    _DENSE_ROW24_TICKS,
+    _DENSE_ROW35_TICKS,
+    _DENSE_ROW24_TICKS,
+    _DENSE_ROW35_TICKS,
+]
+
+
+def render_cell_dense(state: GameState, province: ProvinceState, *, viewing_kingdom_id: int) -> list[str]:
+    """The dense layout's own 6 raw content lines (13 chars each, no
+    separator) for one province's own map cell -- see module docstring's
+    own Phase 566 section for the full, sourced derivation.
+    """
+
+    symbol = TERRAIN_SYMBOL[province.effective_terrain()]
+
+    id_text = f"{province_code(province.coord):04d}"
+    raw_name = province.name or ""
+    if len(raw_name) > PROVINCE_NAME_TRUNCATION_TRIGGER:
+        raw_name = raw_name[:MAX_PROVINCE_NAME_LENGTH]
+    name = raw_name.replace(" ", symbol)
+    line1 = _pad_center(f"{name}({id_text})", DENSE_CELL_WIDTH, symbol)
+
+    middle_fields = _middle_fields(state, province, viewing_kingdom_id=viewing_kingdom_id)
+    middle_lines = [
+        _pad_overlay(text, tick_columns=ticks, symbol=symbol)
+        for text, ticks in zip(middle_fields, _DENSE_ROW_TEMPLATES)
+    ]
+
+    if len(middle_lines) == len(_DENSE_ROW_TEMPLATES):
+        expl_text = f"{province.explored_percent}%{symbol}Expl."
+        last_line = _pad_center(expl_text, DENSE_CELL_WIDTH, symbol)
+    else:
+        expl_text = f"{province.explored_percent}% Expl."
+        ticks = _DENSE_ROW_TEMPLATES[len(middle_lines)]
+        middle_lines.append(_pad_overlay(expl_text, tick_columns=ticks, symbol=symbol))
+        last_line = symbol * DENSE_CELL_WIDTH
+
+    return [line1, *middle_lines, last_line]
+
+
 def render_ascii_map(state: GameState, kingdom_id: int) -> list[str]:
     """Renders every province this Kingdom's own report shows on the map --
     see module docstring for the exact scope this phase covers (a single,
@@ -459,6 +649,41 @@ def render_ascii_map(state: GameState, kingdom_id: int) -> list[str]:
                     # columns (shouldn't happen for real, non-adjacent
                     # x values) -- keep whichever was placed first rather
                     # than corrupting the line.
+                    continue
+                line += cell[band_row]
+            lines.append(line.rstrip())
+
+    return lines
+
+
+def render_ascii_map_dense(state: GameState, kingdom_id: int) -> list[str]:
+    """The dense layout's own analogue of `render_ascii_map()` -- see
+    module docstring's own Phase 566 section. Nothing currently calls
+    this: which layout a given report actually uses is still an open
+    question (see module docstring's own deferred-gaps list), so
+    `describe_map_report()` keeps calling the wide renderer above.
+    """
+
+    provinces = list(state.provinces.values())
+    if not provinces:
+        return []
+
+    rows_by_y: dict[int, list[ProvinceState]] = {}
+    for province in provinces:
+        rows_by_y.setdefault(province.coord.y, []).append(province)
+
+    lines: list[str] = []
+    for y in sorted(rows_by_y):
+        row_provinces = sorted(rows_by_y[y], key=lambda p: p.coord.x)
+        cells = [render_cell_dense(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
+        columns = [dense_cell_pixel_column(p.coord) for p in row_provinces]
+
+        for band_row in range(6):
+            line = ""
+            for cell, column in zip(cells, columns):
+                if column > len(line):
+                    line += " " * (column - len(line))
+                elif column < len(line):
                     continue
                 line += cell[band_row]
             lines.append(line.rstrip())

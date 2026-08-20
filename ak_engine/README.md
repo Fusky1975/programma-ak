@@ -23335,7 +23335,7 @@ follow-up request after the original 431-435 plan shipped.
   name (`Transylvania`) also truncating. Ran again: 4844 passed
   (net +3).
 
-- **Phase 565 (current)**: closed one of Phase 562's other two
+- **Phase 565**: closed one of Phase 562's other two
   deliberately-deferred gaps -- a province's own recruit-type row (row
   4) is entirely absent when its own race is not one of `models/race.py
   HUMANOID_RACES` (`Human`/`Elven`/`Dwarven`/`Orcish`), confirmed
@@ -23382,6 +23382,59 @@ follow-up request after the original 431-435 plan shipped.
   of the qualitative word when owned by the viewing Kingdom; a
   `HUMANOID_RACES` province (`Mongu`) proving it's unaffected. Ran
   again: 4847 passed (net +3).
+
+- **Phase 566 (current)**: reverse-engineered and implemented the second,
+  denser ASCII-map cell layout (content width 13, stride 14) Phase 565
+  had just confirmed exists (`SE3__T5.K2`'s own map, a later-turn
+  report) but left unmodeled. Derived every rule this phase against 5
+  clean bands in that same file (`Tesawa`/`Marzuq`/`Cantia`; `Waterford
+  Sea`/`Orielle`/`Shasta`/`Katanga`; `Bam Yanga`/`Macondo`/`Mongu`/
+  `Moongard`; `Jadegate`/`Kiska`/`Kaluga`; `Katmai`/`Khalturin`), using
+  exact string-index anchors from each province's own ID code rather
+  than by-eye alignment -- the same discipline that caught and fixed
+  Phase 565's own stale `Tesawa`/`Marzuq` mis-citation. Findings: (1)
+  the horizontal placement formula is genuinely different from the wide
+  layout's own -- `x * DENSE_CELL_STRIDE + stagger`, with no `(x - 1)`
+  term -- confirmed against every cell in all 5 bands with zero
+  contradictions; one real cell (`Apurimac(1806)` at `y=6`) doesn't fit
+  this formula at all and was left unmodeled, likely a second/distant-
+  landmass province the renderer packs into a partially-empty row
+  (consistent with the already-deferred "multiple maps" gap). (2) Rows
+  2/4 and rows 3/5 each share one template, a different pairing from
+  the wide layout (where every row had its own); both use a genuinely
+  different algorithm from the wide layout's flanking-template model --
+  content centers across the **full** 13-column cell (tie-left,
+  confirmed unambiguously via the 12-character `Bradipo I(2)`), starting
+  from a background canvas of the terrain symbol at a fixed, row-
+  dependent set of "tick" columns; a content character overwrites the
+  canvas unless it's a space, in which case the canvas (tick or plain)
+  shows through. Row 2/4's own ticks are `{0, 2, 10, 12}`; row 3/5's own
+  are `{0, 4, 8, 12}` -- the column-8 tick specifically confirmed by a
+  genuine anomaly: `Macondo`'s own real `Tax: 4` shows the terrain
+  symbol exactly where its internal word-gap falls (one column short of
+  `Tax: 10`'s own internal space, which lands on a plain column and
+  stays literal) -- a real discrepancy this phase chased down rather
+  than dismissing as a transcription slip. (3) The physical-row-indexed
+  field-shift architecture from Phase 565 generalizes unchanged: two
+  more real ruler-skip cells (`Cantia`, `Katanga`) and one more
+  recruit-skip cell (`Kiska`) all match it exactly, reusing `_middle_
+  fields()` verbatim. (4) Name truncation reuses the wide layout's own
+  `PROVINCE_NAME_TRUNCATION_TRIGGER`/`MAX_PROVINCE_NAME_LENGTH`
+  constants rather than a new dense-specific pair, since no real dense
+  sample confirms an exact "stays whole" boundary the way `Bam Yanga`
+  did for the wide layout. New `DENSE_CELL_WIDTH`/`DENSE_CELL_STRIDE`
+  constants, `dense_cell_pixel_column()`, `_pad_overlay()` (the new
+  overlay-based padding algorithm), `render_cell_dense()`, and
+  `render_ascii_map_dense()` in `report/ascii_map.py` -- none of this is
+  wired into `describe_map_report()` yet, since the real trigger for
+  which layout a given report uses is still unsourced (not enough
+  intermediate-turn samples checked); that stays explicitly deferred.
+  Ran before writing tests: 4847 passed (non-breaking). Added tests:
+  the placement formula (odd/even row, no-minus-one); `_pad_overlay()`
+  unit tests including the `Tax: 4`/`Tax: 10` tick-vs-literal-space
+  case; `Tesawa`/`Marzuq` and `Shasta` cells byte-for-byte;
+  `render_ascii_map_dense()`'s own `Orielle`/`Shasta` band byte-for-
+  byte. Ran again: 4856 passed (net +9).
 
 ## Setup
 
