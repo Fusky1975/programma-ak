@@ -155,6 +155,9 @@ from ak_engine.turn.encounter import (
     TALK_DRUIDIC_ATTACK_CHANCE,
     TALK_IGNORE_CHANCE,
     TALK_MONSTER_DRUID_LEVEL_REQUIRED,
+    MONSTER_TALK_ACCEPT_TEXT,
+    MONSTER_TALK_FULFILL_TEXT,
+    MONSTER_TALK_OFFER_TEXT,
     MONSTER_TALK_REPLY_FREQUENCY,
     MONSTER_TALK_REPLY_INTELLIGENCE,
     MONSTER_TALK_REPLY_INTELLIGENCE_VARIANCE,
@@ -2367,6 +2370,59 @@ def test_monster_talk_reply_outcome_categories_match_the_real_source():
 def test_monster_talk_reply_only_frevenge_and_prevenge_involve_a_character():
     involved = {reply for reply, flag in MONSTER_TALK_REPLY_INVOLVES_CHARACTER.items() if flag}
     assert involved == {MonsterTalkReply.R_FREVENGE, MonsterTalkReply.R_PREVENGE}
+
+
+# -- Phase 581: MTALK.X2/FULFILL.X2/MACCEPT.X2 -------------------------------
+
+
+def test_monster_talk_offer_text_covers_all_24_ids():
+    assert len(MONSTER_TALK_OFFER_TEXT) == 24
+
+
+def test_monster_talk_offer_text_has_real_content_even_for_ignore_and_attack():
+    # Unlike FULFILL/MACCEPT, MTALK is shown for every one of the 24
+    # replies -- even the Ignore/Attack ones have real source text here.
+    assert MONSTER_TALK_OFFER_TEXT[MonsterTalkReply.R_PUZZLED] != ""
+    assert MONSTER_TALK_OFFER_TEXT[MonsterTalkReply.R_CHARGE] != ""
+    assert MONSTER_TALK_OFFER_TEXT[MonsterTalkReply.R_WARN] != ""
+    assert MONSTER_TALK_OFFER_TEXT[MonsterTalkReply.R_MADVANCE] != ""
+
+
+def test_monster_talk_fulfill_and_accept_text_cover_all_24_ids():
+    assert len(MONSTER_TALK_FULFILL_TEXT) == 24
+    assert len(MONSTER_TALK_ACCEPT_TEXT) == 24
+
+
+def test_monster_talk_fulfill_and_accept_text_are_blank_for_non_quest_replies():
+    # The source's own literal "na" for these four -- they never reach a
+    # real quest to fulfill.
+    for reply in (MonsterTalkReply.R_PUZZLED, MonsterTalkReply.R_CHARGE, MonsterTalkReply.R_WARN, MonsterTalkReply.R_MADVANCE):
+        assert MONSTER_TALK_FULFILL_TEXT[reply] == ""
+        assert MONSTER_TALK_ACCEPT_TEXT[reply] == ""
+
+
+def test_monster_talk_fulfill_text_rwish_is_blank_not_na():
+    # Genuinely blank in the source (not "na") -- the hero's wish is
+    # spoken via a separate SAY order instead, per report/turn_report.py's
+    # own already-documented Phase 129 finding.
+    assert MONSTER_TALK_FULFILL_TEXT[MonsterTalkReply.R_WISH] == ""
+
+
+def test_monster_talk_text_verbatim_samples():
+    assert MONSTER_TALK_OFFER_TEXT[MonsterTalkReply.R_CHARGE] == "[1 attacked without warning."
+    assert MONSTER_TALK_FULFILL_TEXT[MonsterTalkReply.R_SLAVE] == (
+        "< visited [, bringing/Roffering food/Rprovisions, and {for ⟦CTRL-A:a/an⟧ time }cared "
+        "after [{, a fierce/Rstrong but waning/Raged creature/Rbeing}."
+    )
+    assert MONSTER_TALK_ACCEPT_TEXT[MonsterTalkReply.R_SELL].startswith('[1 held forth ] \\ and nodded.')
+
+
+def test_monster_talk_text_preserves_control_byte_and_pronoun_markers_literally():
+    # Not resolved -- this project's own pronoun-substitution system is
+    # explicitly out of scope, same posture OFFICE_TITLE_DESCRIPTION
+    # already took for its own </>/[/]  markers.
+    assert "⟦CTRL-T:treasure-2⟧" in MONSTER_TALK_OFFER_TEXT[MonsterTalkReply.R_REGAIN]
+    assert "[1" in MONSTER_TALK_ACCEPT_TEXT[MonsterTalkReply.R_REGAIN]
 
 
 def test_monster_talk_reply_eligible_roc_matches_the_real_view_and_intelligence_bands():

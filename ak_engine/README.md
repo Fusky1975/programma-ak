@@ -23885,7 +23885,7 @@ follow-up request after the original 431-435 plan shipped.
   gapless coverage, `NOMONSTER` blank, verbatim samples, the source's
   own missing-space quirk. Ran again: 4903 passed (net +4).
 
-- **Phase 580 (current)**: transcribes `models/treasure.py TREASURE_
+- **Phase 580**: transcribes `models/treasure.py TREASURE_
   DESCRIPTION` from `HostAK/TP/PROSE/TREASURE.X2` (header `"199 3"`) --
   the full flavor-text paragraph behind `TREASURE_NAME`'s own already-
   extracted proper names, an "explicitly out of scope... a further,
@@ -23918,6 +23918,42 @@ follow-up request after the original 431-435 plan shipped.
   text; rewrote the now-obsolete "confirmed gaps" test into a gapless-
   coverage test. Ran again: 4908 passed (net +5, since one existing test
   was rewritten rather than added).
+
+- **Phase 581 (current)**: transcribes `turn/encounter.py MONSTER_TALK_
+  OFFER_TEXT`/`_FULFILL_TEXT`/`_ACCEPT_TEXT` from `MTALK.X2`/`FULFILL.X2`/
+  `MACCEPT.X2` -- all three keyed by the already-existing 24-member
+  `MonsterTalkReply` enum (Phase 382), closing the exact gap `MONSTER_
+  TALK_REPLY_OUTCOME`'s own comment had flagged since then ("see
+  `agreements` in the source for each one's own request/reward text --
+  not transcribed here, out of scope for this vocabulary-level phase").
+  `MTALK.X2` is the monster's own initial quest offer (real text for
+  all 24 replies, even the non-quest Ignore/Attack ones); `FULFILL.X2`
+  is the hero's own line when returning to claim the reward; `MACCEPT.X2`
+  is the monster's own reply granting it -- the latter two are the
+  source's own literal `"na"` for the four non-quest replies (mapped to
+  `""`), and `FULFILL.X2`'s own `R_WISH` is genuinely blank rather than
+  `"na"` (independently corroborated by `report/turn_report.py`'s own
+  already-documented Phase 129 finding that the hero's wish is spoken
+  via a separate `SAY` order instead). Sourced from the same byte-
+  faithful 162-file reverse-engineering pass as Phases 578-580. Stored
+  as raw template text -- the `<`/`>`/`[`/`]`/`[1`/`\` pronoun markers
+  and CTRL-byte codes stay literal, unresolved, matching `models/
+  office.py OFFICE_TITLE_DESCRIPTION`'s own precedent. **Caught and
+  fixed a real extraction bug during this phase**: an early version of
+  the parsing script treated every line starting with a literal `[`
+  (the monster-reference pronoun marker, extremely common in this
+  dialogue-heavy content) as a stray choice-boundary marker and
+  silently dropped it -- would have truncated real content across
+  multiple entries (confirmed on `MonsterTalkReply.R_MADVANCE`'s own
+  `MTALK.X2` entry, which starts with `"[1 advanced..."`); fixed by
+  requiring the stricter `\[\d{4}\]` boundary-marker pattern before
+  re-extracting all three catalogs. Ran before writing tests: 4908
+  passed (non-breaking). Added tests: 24-id coverage for all three
+  dicts, the four non-quest replies' blank `FULFILL`/`ACCEPT` text
+  (contrasted with `MTALK`'s own real text at those same four ids),
+  `R_WISH`'s own blank-not-`"na"` distinction, verbatim samples, and
+  the preserved literal pronoun/CTRL-byte markers. Ran again: 4915
+  passed (net +7).
 
 ## Setup
 
