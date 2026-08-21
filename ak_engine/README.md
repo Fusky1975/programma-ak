@@ -24386,7 +24386,7 @@ follow-up request after the original 431-435 plan shipped.
   desertions()` wiring test (multiple deserters, and the empty case).
   Ran again: 5015 passed (net +5).
 
-- **Phase 600 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 600**: `report/turn_report.py` -- transcribes
   `LHAIL.X`/`LREBUFF.X`/`LTALKOK.X`, a Talk-to-character encounter
   cluster all three dispatched at the same `S_PCom` severity
   (`SAY.PAS:757/760/762`): the opening greeting, a refusal out of a
@@ -24403,6 +24403,28 @@ follow-up request after the original 431-435 plan shipped.
   writing tests: 5015 passed (non-breaking). Added tests: one verbatim
   sample per catalog plus optional-clause coverage. Ran again: 5021
   passed (net +6).
+
+- **Phase 601 (current)**: `report/turn_report.py` -- transcribes and
+  **wires** `PRACVAIN.X`, a normal failed Practice roll (`SAY.PAS:687
+  _LStudV: FD('pracvain',S_Priv,1)`). Closes a gap `describe_practice()`'s
+  own docstring already named explicitly: "a normal failed roll...
+  has no sourced narrative and renders nothing" -- now it does.
+  `describe_practice()` gains a third branch, careful to exclude two
+  look-alike cases that reach the same `skill_rose=False` state for a
+  different reason: an aptitude-only rise (`aptitude_rose=True` --
+  *something* was gained, so "practiced in vain" would misrepresent
+  it) and `not_implemented_for_ability` (an engineering gap, not an
+  in-game outcome). One pre-existing test (`test_describe_practice_
+  renders_nothing_for_a_normal_failed_roll`) asserted the now-outdated
+  "renders nothing" behavior for exactly this case -- updated (renamed
+  to `..._renders_pracvain_...`) to assert the real sourced sentence
+  instead, the correct fix now that a real template exists for it.
+  Sourced from the same byte-faithful 162-file pass as Phases 578-600,
+  cross-checked against `SAY.PAS` in `Programma Pascal.zip`. Ran before
+  writing tests: one known-outdated test failed as expected, fixed
+  immediately (see above). Added tests: one verbatim sample per variant
+  plus optional-clause coverage. Ran again: 5024 passed (net +3 over
+  the corrected 5021 baseline).
 
 ## Setup
 

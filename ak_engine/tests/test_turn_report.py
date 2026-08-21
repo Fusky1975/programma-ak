@@ -207,6 +207,7 @@ from ak_engine.report.turn_report import (
     render_hail_greeting,
     render_talk_rebuffed,
     render_talk_learned_hire_price,
+    render_practice_vain,
     describe_desertions,
     render_mercenary_army_wanders_away,
     render_mercenary_army_wanders_in,
@@ -3006,13 +3007,35 @@ def test_describe_practice_renders_nothing_for_a_solo_rise_with_no_teacher():
     assert line is None
 
 
-def test_describe_practice_renders_nothing_for_a_normal_failed_roll():
+# -- PRACVAIN.X (Phase 601) --
+
+
+def test_render_practice_vain_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_practice_vain("Aldric", "Tactics", rng)
+    assert result == "Aldric tried hard to improve Aldric's Tactics, but Aldric practiced in vain."
+
+
+def test_render_practice_vain_third_variant_includes_optional_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[2])
+    result = render_practice_vain("Aldric", "Tactics", rng)
+    assert result == "Aldric practiced Aldric's Tactics well, and even consulted an astrologer, but could not improve Aldric's skill in Tactics."
+
+
+def test_render_practice_vain_fourth_variant():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[3])
+    result = render_practice_vain("Aldric", "Tactics", rng)
+    assert result == "Aldric worked hard on Aldric's Tactics but was frustrated in Aldric's self-improvement efforts."
+
+
+def test_describe_practice_renders_pracvain_for_a_normal_failed_roll():
+    # Phase 601: PRACVAIN.X closes what used to be an unsourced gap.
     result = PracticeExecutionResult(ability=0, skill_rose=False, new_skill=3, new_aptitude=5)
-    rng = ScriptedRandom([])
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
 
     line = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
 
-    assert line is None
+    assert line == "Aldric tried hard to improve Aldric's Tactics, but Aldric practiced in vain."
 
 
 def test_describe_practice_renders_nothing_for_an_aptitude_only_rise():

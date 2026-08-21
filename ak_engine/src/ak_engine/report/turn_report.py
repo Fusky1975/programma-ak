@@ -5617,6 +5617,35 @@ def render_practice_already_maxed(character_name: str, ability_name: str, rng: r
     return render(PRACTICE_ALREADY_MAXED_TEMPLATE, values, rng=rng)
 
 
+# HostAK/TP/PROSE/PRACVAIN.X -- a normal failed Practice roll (Phase
+# 601). `SAY.PAS:687 _LStudV: FD('pracvain',S_Priv,1)`. Closes the exact
+# gap `describe_practice()`'s own docstring already named: "a normal
+# failed roll... has no sourced narrative and renders nothing" -- now it
+# does. ``^`` is the same ability-name marker ``render_practice_
+# tutored()``/``render_practice_already_maxed()`` already use.
+_PRACVAIN_TEMPLATES: list[str] = [
+    "< {really }tried hard to improve > ^, but < practiced in vain.",
+    "< practiced > ^ {diligently }for many_weeks/Rmonths, but could "
+    "make no {significant }headway/Rprogress.",
+    "< practiced > ^ well{, and even consulted "
+    "a_palm_reader/Ran_astrologer,} but could not improve > "
+    "{skill in }^.",
+    "< worked {hard }on > ^ but was thwarted/Rfrustrated in > "
+    "{self-improvement }efforts.",
+]
+
+
+def render_practice_vain(character_name: str, ability_name: str, rng: random.Random) -> str:
+    """Renders PRACVAIN.X's sentence for a normal failed Practice roll
+    (Phase 601) -- no skill rise, no aptitude rise, not an already-maxed
+    skill.
+    """
+
+    variant = pick_variant(_PRACVAIN_TEMPLATES, rng)
+    values = {"<": character_name, ">": f"{character_name}'s", "^": ability_name}
+    return render(variant, values, rng=rng)
+
+
 def describe_practice(
     result: PracticeExecutionResult,
     *,
@@ -5630,10 +5659,10 @@ def describe_practice(
     execute_practice()``/``execute_practice_group()``, Phase 44/46) --
     the same ``describe_give()``-style composer (Phase 142).
 
-    Only two of this project's Practice renderers are ever reachable,
-    and both need information ``PracticeExecutionResult`` alone doesn't
-    carry, matching ``describe_battle()``'s own caller-supplies-names
-    convention:
+    Three of this project's Practice renderers are reachable here, each
+    needing information ``PracticeExecutionResult`` alone doesn't
+    always carry, matching ``describe_battle()``'s own caller-supplies-
+    names convention:
 
     - ``render_practice_already_maxed`` (``_LAlrMax``) fires when the
       attempt started at ``MAX_SKILL_LEVEL`` (9, ``CTBOTH.PAS``'s own
@@ -5651,15 +5680,24 @@ def describe_practice(
       even record whether this was a solo or group attempt). Leave
       ``teacher_name`` unset for a solo rise: no sourced narrative
       template exists for solo success at all, so nothing is rendered.
-    - Every other case (a normal failed roll, an aptitude-only rise,
-      ``not_implemented_for_ability``) has no sourced narrative and
-      renders nothing.
+    - **Phase 601**: ``render_practice_vain`` (``_LStudV``) fires for a
+      genuine total failure -- not already-maxed, ``skill_rose`` False,
+      and (unlike the prior two cases above, which already exclude it)
+      also ``aptitude_rose`` False and ``not_implemented_for_ability``
+      False, since an aptitude-only rise did achieve *something* and an
+      implementation gap is an engineering limitation, not an in-game
+      "practiced in vain" outcome -- neither should be narrated as one.
+    - Every remaining case (an aptitude-only rise, a solo skill rise
+      with no ``teacher_name``, ``not_implemented_for_ability``) still
+      has no sourced narrative and renders nothing.
     """
 
     if result.new_skill == MAX_SKILL_LEVEL and not result.skill_rose:
         return render_practice_already_maxed(character_name, ability_name, rng)
     if result.skill_rose and teacher_name is not None:
         return render_practice_tutored(character_name, ability_name, teacher_name, rng)
+    if not result.skill_rose and not result.aptitude_rose and not result.not_implemented_for_ability:
+        return render_practice_vain(character_name, ability_name, rng)
     return None
 
 
