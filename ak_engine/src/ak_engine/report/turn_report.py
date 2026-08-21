@@ -4744,6 +4744,36 @@ def describe_encounter_combat(
     return lines
 
 
+# HostAK/TP/PROSE/ENCATT.X -- very likely Challenge's own opening
+# sentence, "searching for the target" before whatever encounter/combat
+# follows (Phase 597). `SAY.PAS:677 _LChall: FD('encatt',S_PCom,9)` sits
+# in the same personal-combat outcome cluster as `_LSwing`/`_LFlee`/
+# `_LCow`/etc. (most already wired in this project), and `describe_
+# challenge()`'s own combat narration below has no "opening" beat of its
+# own -- but unlike Phase 595's `HIREMERC.X` (confirmed a real sibling
+# via adjacent `RUMORS.PAS` constants *and* an already-tracked model
+# field), nothing in the available `.PAS` corpus confirms `_LChall`
+# fires unconditionally on every Challenge, so `describe_challenge()`
+# itself is left unmodified -- sourced and render-tested, not wired.
+_ENCATT_TEMPLATES: list[str] = [
+    "< searched {all }throughout @ for {some sign of }[.",
+    "< looked {around }for [ in @.",
+    "< searched/Rlooked for [ in the bars/Rtaverns and whorehouses/Rinns of @.",
+    "< scouted {around }for [ in {the province of }@.",
+]
+
+
+def render_challenge_search(searcher_name: str, target_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders ENCATT.X's sentence for searching a province for a
+    Challenge target (Phase 597) -- see the module comment above for why
+    it isn't wired into ``describe_challenge()``.
+    """
+
+    variant = pick_variant(_ENCATT_TEMPLATES, rng)
+    values = {"<": searcher_name, "[": target_name, "@": province_name}
+    return render(variant, values, rng=rng)
+
+
 def describe_challenge(
     result: ChallengeExecutionResult,
     *,

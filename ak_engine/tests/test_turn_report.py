@@ -200,6 +200,7 @@ from ak_engine.report.turn_report import (
     render_treasure_spoils_from_survivor,
     render_treasure_spoils_from_corpse,
     render_gold_spoils,
+    render_challenge_search,
     render_mercenary_army_wanders_away,
     render_mercenary_army_wanders_in,
     render_character_wanders_away,
@@ -2492,6 +2493,27 @@ def test_describe_encounter_combat_returns_empty_for_a_peaceful_accepted_plan():
     rng = ScriptedRandom([])
 
     assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
+
+
+# -- ENCATT.X (Phase 597) --
+
+
+def test_render_challenge_search_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_challenge_search("Aldric", "Borin", "Mongu", rng)
+    assert result == "Aldric searched throughout Mongu for Borin."
+
+
+def test_render_challenge_search_first_variant_includes_optional_clauses():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[0])
+    result = render_challenge_search("Aldric", "Borin", "Mongu", rng)
+    assert result == "Aldric searched all throughout Mongu for some sign of Borin."
+
+
+def test_render_challenge_search_third_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_challenge_search("Aldric", "Borin", "Mongu", rng)
+    assert result == "Aldric searched for Borin in the bars and whorehouses of Mongu."
 
 
 def test_describe_challenge_delegates_to_describe_encounter_combat():

@@ -24309,7 +24309,7 @@ follow-up request after the original 431-435 plan shipped.
   hired unit renders through `HIREMERC.X` instead of `RECRUIT.X`. Ran
   again: 4998 passed (net +5).
 
-- **Phase 596 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 596**: `report/turn_report.py` -- transcribes
   `LSPOILG.X`, the third leg of the defeated-leader-loot narrative
   Phase 590's own `G_*`/`T_*` cluster covers the other two of (item
   lists / a single named `Treasure`): a raw gold amount. `SAY.PAS:564
@@ -24327,6 +24327,23 @@ follow-up request after the original 431-435 plan shipped.
   Ran before writing tests: 4998 passed (non-breaking). Added tests:
   one verbatim sample per variant plus optional-clause coverage. Ran
   again: 5002 passed (net +4).
+
+- **Phase 597 (current)**: `report/turn_report.py` -- transcribes
+  `ENCATT.X`, very likely Challenge's own opening "searching for the
+  target" sentence, `SAY.PAS:677 _LChall: FD('encatt',S_PCom,9)`, sitting
+  in the same personal-combat outcome cluster as several already-wired
+  templates. `describe_challenge()`'s own combat narration has no
+  opening beat of its own today, but unlike Phase 595's `HIREMERC.X`
+  (confirmed via adjacent `RUMORS.PAS` constants *and* an already-tracked
+  model field), nothing in the available `.PAS` corpus confirms
+  `_LChall` fires unconditionally on every Challenge -- so, more
+  cautious than Phase 595, `describe_challenge()` itself is left
+  unmodified this phase; `render_challenge_search()` is sourced and
+  render-tested but not wired. Sourced from the same byte-faithful
+  162-file pass as Phases 578-596, cross-checked against `SAY.PAS` in
+  `Programma Pascal.zip`. Ran before writing tests: 5002 passed
+  (non-breaking). Added tests: one verbatim sample plus optional-clause
+  coverage. Ran again: 5005 passed (net +3).
 
 ## Setup
 
