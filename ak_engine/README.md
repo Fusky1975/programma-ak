@@ -24404,7 +24404,7 @@ follow-up request after the original 431-435 plan shipped.
   sample per catalog plus optional-clause coverage. Ran again: 5021
   passed (net +6).
 
-- **Phase 601 (current)**: `report/turn_report.py` -- transcribes and
+- **Phase 601**: `report/turn_report.py` -- transcribes and
   **wires** `PRACVAIN.X`, a normal failed Practice roll (`SAY.PAS:687
   _LStudV: FD('pracvain',S_Priv,1)`). Closes a gap `describe_practice()`'s
   own docstring already named explicitly: "a normal failed roll...
@@ -24425,6 +24425,26 @@ follow-up request after the original 431-435 plan shipped.
   immediately (see above). Added tests: one verbatim sample per variant
   plus optional-clause coverage. Ran again: 5024 passed (net +3 over
   the corrected 5021 baseline).
+
+- **Phase 602 (current)**: `report/turn_report.py` -- transcribes
+  `TGETAWAY.X`, a third Steal-failure flavor distinct from Phase 592's
+  own THATT.X/THFAIL.X ("found nothing at all"): the thief finds the
+  treasure but can't actually get away with it -- locked in a vault, an
+  unpickable lock, or (turns out, after already stealing it) a fake.
+  `SAY.PAS:658 _LGetAw: FD('tgetaway',S_PCom,6)` sits immediately after
+  the already-wired Ice-steal-block cluster and right before `_LSeen`
+  (`SNEAKUP.X`, caught mid-theft) -- squarely inside the same
+  Steal-tactic outcome sequence `describe_steal()`'s own docstring
+  already covers, but naming a distinct outcome ("inaccessible
+  treasure") that vocabulary doesn't have a value for. Same "sourced
+  but unwired" stance as Phase 590's own cluster: adding this would
+  need a new `steal_outcome` category in `turn/challenge_execution.py
+  _resolve_steal_tactic()` with a probabilistic trigger this project
+  has no source for. Sourced from the same byte-faithful 162-file pass
+  as Phases 578-601, cross-checked against `SAY.PAS` in `Programma
+  Pascal.zip`. Ran before writing tests: 5024 passed (non-breaking).
+  Added tests: one verbatim sample per variant plus optional-clause
+  coverage. Ran again: 5027 passed (net +3).
 
 ## Setup
 

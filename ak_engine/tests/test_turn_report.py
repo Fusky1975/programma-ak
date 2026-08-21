@@ -215,6 +215,7 @@ from ak_engine.report.turn_report import (
     render_character_wanders_in,
     render_thief_searches_treasure,
     render_thief_search_failed,
+    render_steal_treasure_inaccessible,
     render_battle_leader_intro,
     render_binoculars_preview,
     render_petrifying_gaze_missed,
@@ -2113,6 +2114,31 @@ def test_render_thief_search_failed_third_variant_is_two_sentences():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
     result = render_thief_search_failed("Aldric", rng)
     assert result == "Aldric had hopes of hauling away a hoard.But searching could not reveal treasure of any value."
+
+
+# -- TGETAWAY.X (Phase 602) --
+
+
+def test_render_steal_treasure_inaccessible_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_steal_treasure_inaccessible("Aldric", "Borin", rng)
+    assert result == "but the treasure of Borin was encased in thick steel, and Aldric could not find a way into the treasure."
+
+
+def test_render_steal_treasure_inaccessible_second_variant_includes_optional_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[1])
+    result = render_steal_treasure_inaccessible("Aldric", "Borin", rng)
+    assert result == "Aldric stole up to the treasure chest of Borin, but could not open the lock and had to leave without any treasure."
+
+
+def test_render_steal_treasure_inaccessible_third_variant_includes_optional_clauses():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[2])
+    result = render_steal_treasure_inaccessible("Aldric", "Borin", rng)
+    assert result == (
+        "Aldric found what seemed to be the treasure of Borin, but "
+        "after Aldric had taken it Aldric looked at it more carefully "
+        "and discovered to Aldric's dismay that it was just a cheap fake."
+    )
 
 
 # -- BATLDR.X (Phase 593) --

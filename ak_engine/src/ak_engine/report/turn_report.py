@@ -3727,6 +3727,49 @@ def render_thief_search_failed(searcher_name: str, rng: random.Random) -> str:
     return render(variant, values, rng=rng)
 
 
+# HostAK/TP/PROSE/TGETAWAY.X -- a third Steal-failure flavor, distinct
+# from THATT.X/THFAIL.X above (Phase 592, "found nothing at all"): the
+# thief finds the treasure but can't actually get away with it -- locked
+# in a vault, an unpickable lock, or (choice 3) turns out to be a fake
+# once already stolen (Phase 602). `SAY.PAS:658 _LGetAw: FD('tgetaway',
+# S_PCom,6)` sits immediately after the already-wired Ice-steal-block
+# cluster (`_LWMelt`/`_LSFroz`/``render_ice_steal_blocked``) and right
+# before `_LSeen` (``SNEAKUP.X``, caught mid-theft) -- squarely inside
+# the same Steal-tactic outcome sequence `describe_steal()`'s own
+# docstring already covers, but naming a distinct outcome ("inaccessible
+# treasure") that vocabulary doesn't have a value for. Same "sourced but
+# unwired" stance as Phase 590's own `*Steal`/`*Spoils` cluster: adding
+# this would need a new `steal_outcome` category in `turn/challenge_
+# execution.py _resolve_steal_tactic()` with a probabilistic trigger
+# this project has no source for, out of scope for a transcription
+# phase.
+_TGETAWAY_TEMPLATES: list[str] = [
+    "but the treasure/Rwealth of [ was encased/Rcontained in "
+    "thick steel/Rglass, and < could not find ^A way into the "
+    "treasure.",
+    "< slid/Rstole up to the treasure {chest }of [, but could "
+    "not pick/Ropen the lock and had to leave without any "
+    "treasure.",
+    "< found {what seemed to be }the treasure of [, but after < "
+    "had stolen/Rtaken it < examined/Rlooked_at it {more "
+    "carefully }and discovered {to > chagrin/Rdismay }that it "
+    "was just ^A cheap imitation/Rfake.",
+]
+
+
+def render_steal_treasure_inaccessible(character_name: str, victim_name: str, rng: random.Random) -> str:
+    """Renders TGETAWAY.X's sentence for a Steal attempt that finds the
+    treasure but can't actually make off with it (Phase 602). The first
+    variant's own leading lowercase "but" is verbatim from the real
+    source, the same convention ``render_thief_search_failed()``'s own
+    first variant already established.
+    """
+
+    variant = pick_variant(_TGETAWAY_TEMPLATES, rng)
+    values = {"<": character_name, ">": f"{character_name}'s", "[": victim_name}
+    return render(variant, values, rng=rng)
+
+
 # HostAK/TP/PROSE/BATLDR.X -- a King/Hero personally commanding a battle
 # column into the fray (Phase 593). `SAY.PAS:1038 _attl: IF lp <=
 # cdrdex[fn] THEN FD('batldr',S_Batt,2)` -- fires when the column's
