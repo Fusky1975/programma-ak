@@ -24069,7 +24069,7 @@ follow-up request after the original 431-435 plan shipped.
   game number) ever appears in the stored template. Ran again: 4930
   passed (net +3).
 
-- **Phase 586 (current)**: transcribes `models/game_type.py EARTH_
+- **Phase 586**: transcribes `models/game_type.py EARTH_
   EMPIRE_DESCRIPTION`/`EUROPE_KINGDOM_DESCRIPTION` from `EARTH.X2`
   (31 entries)/`EUROPE.X2` (12 entries) -- the real flavor text and
   starting-ability-bonus description for each historical starting
@@ -24094,6 +24094,26 @@ follow-up request after the original 431-435 plan shipped.
   each, the New-Atlantis/reserve-duplicate distinction, and the
   `GameType.EARTH`/`EUROPE` members themselves. Ran again: 4937 passed
   (net +7).
+
+- **Phase 587 (current)**: transcribes `turn/battle_luck.py LUCKINT_
+  TEMPLATE`/`LUCKINT2_TEMPLATE` (4 entries each) from `LUCKINT.X`/
+  `LUCKINT2.X` -- small connector/bridge phrases dispatched from the
+  exact same `_CLuck` handler CLUCK.X2/CLUCK2.X2 already are
+  (`SAY.PAS:1068`, immediately before the CLUCK.X2/CLUCK2.X2 dispatch
+  found in Phase 584). **First checked whether this was redundant with
+  already-sourced content, per the Phase 579 lesson**: found `models/
+  advanced_ability.py` already fully covers `SA.X2`/`SANAME.X2` (its
+  own `ADVANCED_ABILITY_DESCRIPTION`/`_TAGLINE` dicts match verbatim,
+  sourced independently from a richer rulebook excerpt) -- skipped
+  those, no duplicate work. `LUCKINT.X`/`LUCKINT2.X` had no existing
+  coverage. Kept as sourced-but-unwired data, not threaded into
+  `render_bluck_narration()`/`render_cluck_narration()`, since the
+  source citations confirm these two catalogs are real and dispatched
+  alongside BLUCK/CLUCK/CLUCK2 but don't pin down the exact join
+  order/spacing between them. Ran before writing tests: 4937 passed
+  (non-breaking). Added tests: entry counts, `render()` round-trips
+  (including the real `/R`/`{...}` alternation), and a ready-to-
+  concatenate trailing-space check. Ran again: 4941 passed (net +4).
 
 ## Setup
 

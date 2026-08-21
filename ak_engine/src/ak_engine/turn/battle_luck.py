@@ -237,6 +237,44 @@ CLUCK_REVERSAL_CHECK_PERCENT = 0.33
 # longer used by report/turn_report.py render_cluck_narration().
 CLUCK2_REVERSAL_PHRASE = "but then fortune reversed itself"
 
+# -- Phase 587: LUCKINT.X/LUCKINT2.X -- bridge phrases used alongside
+# BLUCK/CLUCK/CLUCK2, real prose from the same byte-faithful 162-file
+# reverse-engineering pass as Phases 578-586. Both are dispatched from
+# the exact same `_CLuck` handler CLUCK.X2/CLUCK2.X2 already are
+# (`SAY.PAS:1068 _CLuck FD('luckint',S_Batt,7)`, immediately before the
+# `SAY.PAS:1070-1071` CLUCK.X2/CLUCK2.X2 dispatch; `SAY.PAS:1081-1082
+# trint FD('luckint2',S_Batt,7)` alongside a separate `trint`-driven
+# CLUCK2.X2 call) -- both real, sourced connector phrases for that
+# narration, but the *exact* join order/spacing between them and
+# BLUCK_TEMPLATE/CLUCK_TEMPLATE/CLUCK2_TEMPLATE isn't confirmed from
+# the available source citations alone, so no `render_*()` wrapper
+# threads them into `render_bluck_narration()`/`render_cluck_narration()`
+# here -- kept as sourced, unwired data, the same posture `models/
+# office.py`/`turn/encounter.py`'s own Phase 578/581 additions took.
+# Each `dex=7` call (below 100) is dispatched via `FD`'s own normal
+# random-cycling branch, not a computed index -- these are genuinely
+# random flavor picks among their own small catalog, unlike `Rint`.
+# LUCKINT.X's own trailing `_` (space) leaves each entry ready for
+# direct concatenation with whatever sentence follows, the same bare-
+# precursor-clause shape `QUEST_BUT_THEN_TEMPLATE`/`DUEL_NO_EXCUSE_
+# TEMPLATE` (`report/turn_report.py`) already established.
+LUCKINT_TEMPLATE: dict[int, str] = {
+    1: "In this engagement/Rmatch,_",
+    2: "Here,_",
+    3: "On this field/Rbattleground,_",
+    4: "In this sector/Rarea,_",
+}
+
+LUCKINT2_TEMPLATE: dict[int, str] = {
+    1: "{But }then the tide {of battle }turned/Rreversed.",
+    2: "But the battle/Raffair was not yet over/Rdone.",
+    3: (
+        "But might/Rwould victory_yet_be_snatched_from_the_jaws_of_defeat/"
+        "Rdefeat_now_be_snatched_from_the_jaws_of_victory?"
+    ),
+    4: "The {ongoing }battle/Rstruggle went_on/Rblazed with a {terrible/Rmurderous }fury/Rfrenzy.",
+}
+
 
 def draw_global_luck(rng: random.Random) -> tuple[float, float]:
     """G1, G2: each side's own global luck draw, made once per battle."""

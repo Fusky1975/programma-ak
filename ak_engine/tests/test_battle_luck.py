@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 
+from ak_engine.report.prose import render
 from ak_engine.turn.battle_luck import (
     BLUCK_TEMPLATE,
     CLUCK2_REVERSAL_PHRASE,
@@ -10,6 +11,8 @@ from ak_engine.turn.battle_luck import (
     CLUCK_TEMPLATE,
     FIRST_TURN_LUCK_COEFFICIENT,
     LATER_TURN_LUCK_COEFFICIENT,
+    LUCKINT2_TEMPLATE,
+    LUCKINT_TEMPLATE,
     bluck_event_index,
     break_bres_tie,
     cluck_event_index,
@@ -211,3 +214,28 @@ def test_roll_cluck_reversal_matches_the_akgen_aggregate_percentages():
 def test_cluck2_reversal_phrase_is_a_non_empty_confirmed_string():
     assert isinstance(CLUCK2_REVERSAL_PHRASE, str)
     assert CLUCK2_REVERSAL_PHRASE
+
+
+# -- Phase 587: LUCKINT.X/LUCKINT2.X --------------------------------------
+
+
+def test_luckint_and_luckint2_templates_have_4_entries_each():
+    assert len(LUCKINT_TEMPLATE) == 4
+    assert len(LUCKINT2_TEMPLATE) == 4
+
+
+def test_luckint_template_renders_as_a_ready_to_concatenate_prefix():
+    rng = ScriptedRandom([0.1] * 10)
+    assert render(LUCKINT_TEMPLATE[2], {}, rng=rng) == "Here, "
+
+
+def test_luckint_template_renders_with_r_alternation():
+    rng = ScriptedRandom([0.1] * 10)
+    assert render(LUCKINT_TEMPLATE[1], {}, rng=rng) == "In this engagement, "
+
+
+def test_luckint2_template_verbatim_sample():
+    rng = ScriptedRandom([0.1] * 10)
+    assert render(LUCKINT2_TEMPLATE[1], {}, rng=rng) == "then the tide turned."
+    rng = ScriptedRandom([0.99] * 10)
+    assert render(LUCKINT2_TEMPLATE[1], {}, rng=rng) == "But then the tide of battle reversed."
