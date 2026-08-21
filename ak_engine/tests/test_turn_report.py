@@ -2598,11 +2598,17 @@ def test_describe_encounter_combat_narrates_the_mortal_wound_line_for_the_loser(
         loser_leader_id=2,
         loser_killed=True,
     )
-    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    # Phase 611: HORDEATH.X's own generic closing beat now follows the
+    # MORTWOUN.X sentence -- variant 0 of each (mortally-wounded has no
+    # further /R alternation of its own; HORDEATH's own "/R" is padded).
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
 
     lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
-    assert lines == ["Borin was mortally wounded."]
+    assert lines == [
+        "Borin was mortally wounded.",
+        "and so it was that Borin met Borin's unseemly end.",
+    ]
 
 
 def test_describe_encounter_combat_narrates_the_steal_line_first():
@@ -4551,13 +4557,15 @@ def test_describe_search_accepted_no_combat_renders_only_the_opening_line():
 
 def test_describe_search_leader_killed_appends_mortally_wounded():
     result = SearchExecutionResult(accepted=True, combat_resolved=True, winner="monster", leader_killed=True)
-    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+    # Phase 611: HORDEATH.X's own generic closing beat now follows.
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
 
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
         "Aldric was mortally wounded.",
+        "and so it was that Aldric met Aldric's unseemly end.",
     ]
 
 
@@ -4706,7 +4714,8 @@ def test_describe_search_shot_narration_appears_before_the_mortal_wound_line():
         fire_arrow_shots=(FireArrowShot(shooter="b", hit=True, damage=9),),
         guardian_monster=Monster.R_DRAGON,
     )
-    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+    # Phase 611: HORDEATH.X's own generic closing beat now follows.
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
 
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
 
@@ -4714,6 +4723,7 @@ def test_describe_search_shot_narration_appears_before_the_mortal_wound_line():
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
         "The Red Dragon breathes, and the impact deals 9 damage points.",
         "Aldric was mortally wounded.",
+        "and so it was that Aldric met Aldric's unseemly end.",
     ]
 
 
@@ -4747,7 +4757,8 @@ def test_describe_search_squeeze_hits_narrated_before_the_mortal_wound_line_for_
         leader_killed=True,
         squeeze_hits=(4,),
     )
-    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0])
+    # Phase 611: HORDEATH.X's own generic closing beat now follows.
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0])
 
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
 
@@ -4755,6 +4766,7 @@ def test_describe_search_squeeze_hits_narrated_before_the_mortal_wound_line_for_
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
         "guardian curled guardian's phantasmal hand around Aldric's heart and squeezed it and inflicted 4 damage points.",
         "Aldric was mortally wounded.",
+        "and so it was that Aldric met Aldric's unseemly end.",
     ]
 
 
@@ -4791,7 +4803,8 @@ def test_describe_search_melee_swings_narrated_before_the_mortal_wound_line_for_
         leader_killed=True,
         melee_swings=(MeleeSwing(attacker="b", hit=True, damage=6),),
     )
-    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 8, 0, 0])
+    # Phase 611: HORDEATH.X's own generic closing beat now follows.
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 8, 0, 0, 0])
 
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
 
@@ -4799,6 +4812,7 @@ def test_describe_search_melee_swings_narrated_before_the_mortal_wound_line_for_
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
         "guardian Attacked Aldric and inflicted 6 damage points.",
         "Aldric was mortally wounded.",
+        "and so it was that Aldric met Aldric's unseemly end.",
     ]
 
 

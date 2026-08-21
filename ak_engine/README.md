@@ -24673,7 +24673,7 @@ follow-up request after the original 431-435 plan shipped.
   `pytest` re-run only to confirm the doc-only nature: 5043 passed,
   unchanged from Phase 608's own count.
 
-- **Phase 610 (current)**: wires HostAK/TP/PROSE/DECQ.X/INCQ.X (Phase
+- **Phase 610**: wires HostAK/TP/PROSE/DECQ.X/INCQ.X (Phase
   598's own battle quality-change narration) into a real composer,
   closing the concrete data gap Phase 598's own docstring flagged:
   `turn/battle_orchestrator.py BattleReport.quality_changes` stored only
@@ -24703,6 +24703,45 @@ follow-up request after the original 431-435 plan shipped.
   skip rules, and `describe_battle()`'s own wiring. Ran before writing
   tests (non-breaking): 5043 passed. Ran again with new tests: 5047
   passed (net +4).
+
+- **Phase 611 (current)**: the transcription pass over the 162 real
+  `.X`/`.X2` prose catalogs closed at Phase 607 -- this phase wires
+  HostAK/TP/PROSE/HORDEATH.X (Phase 607's own generic character-death
+  closing beat, `render_character_death()`, sourced from `SAY.PAS:
+  429-432 _LDies` and never called from anywhere) into the two real
+  composers where this project's own `GameState.remove_leader()`
+  chokepoint is already reached from a live, working narration path:
+  `describe_encounter_combat()` (Challenge's and Pursue's shared duel
+  narration) and `describe_search()` (a guardian-monster win). Both
+  already appended `render_mortally_wounded()` (MORTWOUN.X) the moment
+  a death was confirmed; `render_character_death()` now follows
+  immediately after in each, matching `_LDies`'s own real dispatch
+  position right after the cause-specific sentence, the same
+  shared-trailer role `_LSucc` fills for succession. Three other real
+  `remove_leader()` call sites were investigated (an Explore agent
+  mapped all 6 across the codebase) and deliberately left alone this
+  phase: `turn/assassin_guild.py`'s Grandfather of Assassins resolver
+  isn't called from production code at all yet, and both Kill Enemy
+  Berserk-retaliation outcomes in `turn/cast_execution.py` are built
+  with `applied=False`, so `describe_cast()` returns `None` before ever
+  reaching them -- wiring any of those three needs building a new
+  narration path from scratch, a materially different (and larger, more
+  speculative) task than appending one already-sourced sentence to an
+  already-working composer, left for a future phase rather than
+  attempted here. 6 existing tests broke as expected (each script an
+  `rng` that ran out of `choice_indices` once the new sentence's own
+  `pick_variant()` draw was added) and were updated with the real
+  rendered HORDEATH.X text, not just re-padded blindly -- 3 in
+  `test_turn_report.py` covering `describe_search()`'s shot/squeeze/
+  melee-then-death ordering, 1 covering `describe_encounter_combat()`'s
+  own mortal-wound test, 1 in `test_describe_turn_results.py` covering
+  Pursue's own end-to-end combat rendering. Ran before fixing tests
+  (non-breaking check surfaced exactly these 6 failures, confirming no
+  other regression): 6 failed, 5041 passed. Ran again after fixing:
+  5047 passed, unchanged from Phase 610's own count (no new tests
+  added -- the 6 updated tests already assert the full wired output
+  end-to-end, and `render_character_death()`'s own template-variant
+  tests already existed from Phase 607).
 
 ## Setup
 

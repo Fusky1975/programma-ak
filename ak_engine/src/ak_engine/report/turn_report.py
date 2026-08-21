@@ -3078,9 +3078,22 @@ def render_mortally_wounded(defender_name: str, rng: random.Random, *, is_sea: b
 # argument has likewise never needed interpreting by this project's
 # `pick_variant()`-based rendering. Also confirmed aliased as `F9.X2`
 # (`RUMORS.PAS`'s own `F`+digit `Say` indirection, byte-identical
-# payload). No confirmed single call site in this project ties every
-# character death to one shared narration point, so this is sourced and
-# render-tested but not wired into any composer.
+# payload). Wired as of Phase 611 into the 3 real personal-combat-death
+# call sites this project's own `GameState.remove_leader()` chokepoint
+# reaches from a live composer -- `describe_encounter_combat()`
+# (Challenge/Pursue's shared duel narration) and `describe_search()`
+# (a guardian-monster win) -- each already appends `render_mortally_
+# wounded()` right where the death is confirmed, so this generic
+# trailer follows immediately after, matching `_LDies`'s own dispatch
+# position right after the cause-specific sentence. Three other real
+# `remove_leader()` call sites (`turn/assassin_guild.py`'s Grandfather
+# of Assassins resolver, and both Kill Enemy Berserk-retaliation
+# outcomes in `turn/cast_execution.py`) have **no composer at all**
+# reaching them yet -- `resolve_grandfather_of_assassins_attempt()`
+# isn't even called from production code, and `describe_cast()` short-
+# circuits before ever reaching `kill_enemy_berserk_winner` -- wiring
+# those needs building a new narration path from scratch, not just
+# appending this sentence, so they're left for a future phase.
 _HORDEATH_TEMPLATES: list[str] = [
     "and so it was/Rcame_to_pass that < met > unseemly/Rtragic end.",
     "thus did < {finally }die, ^A brave_end/Rdefiant_death by any standard.",
@@ -3089,8 +3102,9 @@ _HORDEATH_TEMPLATES: list[str] = [
 
 def render_character_death(character_name: str, rng: random.Random) -> str:
     """Renders HORDEATH.X's generic character-death closing sentence
-    (Phase 607) -- see the module comment above for why this isn't
-    wired into a live composer.
+    (Phase 607). Wired as of Phase 611 into ``describe_encounter_
+    combat()``/``describe_search()``, right after their own ``render_
+    mortally_wounded()`` call -- see the module comment above.
     """
 
     variant = pick_variant(_HORDEATH_TEMPLATES, rng)
@@ -5167,8 +5181,12 @@ def describe_encounter_combat(
     getting caught, chronologically -- then every Fire Arrow shot, then
     every Melee swing (both in `result` order, i.e. chronological), then
     `render_mortally_wounded()` if `result.loser_killed` (the same
-    MORTWOUN.X sentence every other personal-combat death already uses).
-    `a_leader_id` resolves which of `a_name`/`b_name` is the loser from
+    MORTWOUN.X sentence every other personal-combat death already uses),
+    then (Phase 611) `render_character_death()` -- HORDEATH.X's own
+    generic closing beat, sourced (`SAY.PAS:429-432 _LDies`) as firing
+    for *any* real leader death right after its own cause-specific
+    sentence, the same shared-trailer role `_LSucc` fills for
+    succession. `a_leader_id` resolves which of `a_name`/`b_name` is the loser from
     `result.loser_leader_id` -- `resolve_challenge_combat()`'s own "a" is
     always the challenger/pursuer, "b" always the target, so `a_name`/
     `b_name` here must be supplied in that same order.
@@ -5205,6 +5223,7 @@ def describe_encounter_combat(
     if result.loser_killed:
         loser_name = a_name if result.loser_leader_id == a_leader_id else b_name
         lines.append(render_mortally_wounded(loser_name, rng, is_sea=is_sea))
+        lines.append(render_character_death(loser_name, rng))
 
     return lines
 
@@ -7586,7 +7605,10 @@ def describe_search(
       already-sourced MORTWOUN.X sentence (Phase 112) every other
       personal-combat death already uses, since [5.0]'s generic
       "until one combatant is killed" rule applies here exactly as
-      ``turn/search_execution.py``'s own docstring already states.
+      ``turn/search_execution.py``'s own docstring already states --
+      then (Phase 611) ``render_character_death()``, HORDEATH.X's own
+      generic closing beat (see ``describe_encounter_combat()``'s own
+      Phase 611 note for the sourcing).
     - A win (``winner == "leader"``, ``feature_looted``) or an
       inconclusive fight (``winner is None``) append nothing further
       beyond any shot narration above: no sourced sentence for "you
@@ -7706,6 +7728,7 @@ def describe_search(
 
     if result.combat_resolved and result.winner == "monster" and result.leader_killed:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
+        lines.append(render_character_death(character_name, rng))
     return lines
 
 

@@ -445,12 +445,15 @@ def test_describe_turn_results_renders_pursue_combat_after_the_catch_up_sentence
         PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.PURSUE, result=result, error=None)
     ]
 
-    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[8, 0, 0]))
+    # Phase 611: HORDEATH.X's own generic closing beat now follows the
+    # mortal-wound sentence.
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[8, 0, 0, 0]))
 
     assert lines == [
         "Aldric caught up with Borin in Eldoria.",
         "Aldric Attacked Borin and inflicted 4 damage points.",
         "Borin was mortally wounded.",
+        "and so it was that Borin met Borin's unseemly end.",
     ]
 
 
