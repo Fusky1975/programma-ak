@@ -179,6 +179,7 @@ from ak_engine.report.turn_report import (
     render_march,
     render_pickup_unit,
     render_recruit_unit,
+    render_recruit_hired_mercenary,
     render_melee_attack,
     render_monster_offers_raid_truce,
     render_mortally_wounded,
@@ -884,6 +885,33 @@ def _recruit_state(*, province_race: Race = Race.HUMAN) -> GameState:
     return state
 
 
+# -- HIREMERC.X (Phase 595) --
+
+
+def test_render_recruit_hired_mercenary_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_recruit_hired_mercenary("Aldric", "Mongu", "144th Legion", rng)
+    assert result == "Aldric hired 144th Legion, a mercenary army which had made its way to Mongu."
+
+
+def test_render_recruit_hired_mercenary_first_variant_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_recruit_hired_mercenary("Aldric", "Mongu", "144th Legion", rng, is_sea=True)
+    assert result == "Aldric hired 144th Legion, a mercenary squadron which had made its way to Mongu."
+
+
+def test_render_recruit_hired_mercenary_second_variant_includes_optional_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[1])
+    result = render_recruit_hired_mercenary("Aldric", "Mongu", "144th Legion", rng)
+    assert result == "Aldric recruited a hard fighting force of mercenary soldiers in Mongu who are known as 144th Legion."
+
+
+def test_render_recruit_hired_mercenary_third_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_recruit_hired_mercenary("Aldric", "Mongu", "144th Legion", rng)
+    assert result == "Aldric negotiated with 144th Legion for their allegiance, and succeeded in contracting for their services."
+
+
 def test_describe_recruit_commanded_unit():
     state = _recruit_state()
     state.add_leader(LeaderState(2, 1, "Cedric", HexCoord(3, 9)))
@@ -928,6 +956,19 @@ def test_describe_recruit_unled_monstrous_province_uses_race_chieftain():
         "Arthur recruited Dragons from among the people of Numenor, to serve under "
         "the provincial Dragon chieftain."
     ]
+
+
+def test_describe_recruit_hired_unit_uses_hiremerc_not_recruit():
+    state = _recruit_state()
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=None))
+    result = RecruitExecutionResult(
+        request=None, recruited=[RecruitedUnit(army_id=100, army_type=ArmyType.BOWMEN, gold_paid=5, hired=True)]
+    )
+
+    rng = ScriptedRandom([0.1] * 5, choice_indices=[0])
+    lines = describe_recruit(result, state, recruiter_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert lines == ["Arthur hired Bowmen, a mercenary army which had made its way to Numenor."]
 
 
 def test_describe_recruit_multiple_units_render_one_line_each():

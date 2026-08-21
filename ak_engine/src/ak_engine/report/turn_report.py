@@ -3912,11 +3912,16 @@ def describe_fire(
 
 
 # HostAK/TP/PROSE/RECRUIT.X -- one sentence per unit actually recruited
-# (Phase 419). Style variants only -- nothing in the source ties a
-# specific variant to the hired-mercenary-vs-freshly-levied distinction
-# (``RecruitedUnit.hired``), so ``pick_variant()`` chooses among all 4
-# uniformly, the same "no source, no guess" stance already applied to
-# every other flavor-only template cluster in this module.
+# (Phase 419), covering the freshly-levied case. **Phase 595 update**:
+# the hired-mercenary-vs-freshly-levied distinction (``RecruitedUnit.
+# hired``) *does* have a real, dedicated sourced template after all --
+# ``HIREMERC.X`` below, dispatched by ``SAY.PAS:847 _AHired: FD(
+# 'hiremerc',S_AA,4)``, a direct sibling of ``_ARecr: FD('recruit',
+# S_AA,3)`` (``RUMORS.PAS``'s own constant block declares them
+# adjacently: ``_ARecr=4000; _AHired=4001``) -- so these 4 style
+# variants are used only for ``hired=False`` units; style still picked
+# uniformly among them since nothing further ties a *specific* one of
+# the 4 to any other distinction.
 RECRUIT_TEMPLATES: list[str] = [
     "< recruited/Rlevied = from among the people/Rpopulation of @, to serve under [.",
     "< levied/Renlisted = in @ to serve [.",
@@ -3956,6 +3961,43 @@ def render_recruit_unit(
     variant = pick_variant(RECRUIT_TEMPLATES, rng)
     values = {"<": recruiter_name, "@": province_name, "=": army_type_name, "[": commander_name}
     return render(variant, values, rng=rng)
+
+
+# HostAK/TP/PROSE/HIREMERC.X -- RECRUIT.X's own hired-mercenary sibling
+# (Phase 595, see the module comment above ``RECRUIT_TEMPLATES``). Uses
+# ``^L=`` (``⟦CTRL-L:list⟧=``) -- the exact canonical ``^L`` example this
+# project's own ``report/prose.py`` module docstring already quotes
+# verbatim ("^L=", where "=" means "army"). No ``[`` (served-under
+# leader) in any of the 3 variants -- confirmed not just from the text
+# itself but from ``SAY.PAS``: unlike ``_ARecr``, ``_AHired`` never sets
+# ``chief_on`` before its own ``FD`` call, the same signal ``describe_
+# recruit()``'s own Phase 419 docstring already reads for the opposite
+# case. One sentence per hired unit, each with a single-item list
+# (renders bare, no "and") -- matching ``RECRUIT.X``'s own established
+# one-sentence-per-unit call pattern rather than guessing at a
+# multi-unit merge this project has no other precedent for building.
+HIREMERC_TEMPLATES: list[str] = [
+    "< hired ^L=, ^A {redoubtable/Rwell-drilled }mercenary "
+    "army/Ssquadron which had made_its_way_to/Rarrived_in @.",
+    "< recruited ^A {rough/Rhard_fighting }band/Rforce of mercenary "
+    "soldiers/Sships in @ who call_themselves/Rare_known_as ^L=.",
+    "< negotiated_with/Rproposed_terms_to ^L= for their "
+    "allegiance/Rsupport, and succeeded in contracting_for/Rsecuring "
+    "their services/Renlistment.",
+]
+
+
+def render_recruit_hired_mercenary(
+    recruiter_name: str, province_name: str, army_type_name: str, rng: random.Random, *, is_sea: bool = False
+) -> str:
+    """Renders HIREMERC.X's sentence for hiring an existing mercenary
+    army rather than levying a fresh unit (Phase 595). ``is_sea`` (Phase
+    74) resolves each of the first two variants' own "/S" marker.
+    """
+
+    variant = pick_variant(HIREMERC_TEMPLATES, rng)
+    values = {"<": recruiter_name, "@": province_name}
+    return render(variant, values, rng=rng, is_sea=is_sea, lists={"=": [army_type_name]})
 
 
 def describe_recruit(
@@ -4001,17 +4043,30 @@ def describe_recruit(
     which unit (if any) paid an ally fee, or how much, only each
     ``RecruitedUnit.gold_paid``'s already-combined total (own cost +
     ally fee). Left for a future phase rather than guessed here.
+
+    **Phase 595**: ``unit.hired`` (``turn/recruit_execution.py``'s own
+    "an existing mercenary was hired, not freshly levied" flag) now
+    routes to ``render_recruit_hired_mercenary()`` (``HIREMERC.X``)
+    instead of ``render_recruit_unit()`` (``RECRUIT.X``) -- see that
+    function's own module comment for the ``SAY.PAS``/``RUMORS.PAS``
+    sourcing confirming these are real sibling outcomes of the same
+    dispatch, not a guessed split. No ``[`` marker in ``HIREMERC.X``, so
+    the commander-resolution logic above only runs for unhired units.
     """
 
     lines: list[str] = []
     province_name = _province_label(state, province.coord)
+    is_sea = province.effective_terrain() is Terrain.SEA
     for unit in result.recruited:
+        army_type_name = ARMY_TYPE_DESIGNATION[unit.army_type]
+        if unit.hired:
+            lines.append(render_recruit_hired_mercenary(recruiter_name, province_name, army_type_name, rng, is_sea=is_sea))
+            continue
         army = state.armies.get(unit.army_id)
         commander_id = army.commanded_by if army is not None else None
         commander_name = _leader_name(state, commander_id)
         if commander_name is None:
             commander_name = _unled_army_commander_name(province)
-        army_type_name = ARMY_TYPE_DESIGNATION[unit.army_type]
         lines.append(render_recruit_unit(recruiter_name, province_name, army_type_name, commander_name, rng))
     return lines
 

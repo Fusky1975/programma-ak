@@ -24257,7 +24257,7 @@ follow-up request after the original 431-435 plan shipped.
   sea-marker and optional-clause coverage. Ran again: 4989 passed
   (net +4).
 
-- **Phase 594 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 594**: `report/turn_report.py` -- transcribes
   `BINOCPR.X`, the Binoculars item's own scouting-preview sentence for a
   neighboring province (`SAY.PAS:739 _LBinoc: FD('binocpr',S_Red,5)`).
   Every marker resolves through an already-established project
@@ -24280,6 +24280,34 @@ follow-up request after the original 431-435 plan shipped.
   Pascal.zip`. Ran before writing tests: 4989 passed (non-breaking).
   Added tests: one verbatim sample plus sea-marker and direction-suffix
   coverage. Ran again: 4993 passed (net +4).
+
+- **Phase 595 (current)**: `report/turn_report.py` -- transcribes
+  `HIREMERC.X` and, unlike Phases 590-594's own "sourced but unwired"
+  additions, actually **wires** it: `RUMORS.PAS`'s own constant block
+  declares `_ARecr=4000; _AHired=4001` adjacently, and `SAY.PAS:847
+  _AHired: FD('hiremerc',S_AA,4)` sits right beside `_ARecr: FD(
+  'recruit',S_AA,3)` -- confirming `HIREMERC.X` is `RECRUIT.X`'s real
+  sibling template for the exact distinction `turn/recruit_execution.py
+  RecruitedUnit.hired` already tracks ("an existing mercenary was
+  hired, not freshly levied"), closing a gap `describe_recruit()`'s own
+  Phase 419 docstring had flagged as unsourced. `describe_recruit()` now
+  branches on `unit.hired` -- hired units render via the new `render_
+  recruit_hired_mercenary()` instead of `render_recruit_unit()`, and
+  skip the `[` commander-resolution logic entirely (confirmed correct:
+  unlike `_ARecr`, `_AHired` never sets `chief_on` in `SAY.PAS`, and no
+  `HIREMERC.X` variant contains a `[` marker). Uses `^L=`, the exact
+  canonical example `report/prose.py`'s own module docstring already
+  quotes verbatim ("^L=", where "=" means "army") -- one sentence per
+  hired unit with a single-item list, matching `RECRUIT.X`'s own
+  established one-sentence-per-unit pattern rather than guessing at a
+  multi-unit merge. Sourced from the same byte-faithful 162-file pass as
+  Phases 578-594, cross-checked against `SAY.PAS`/`RUMORS.PAS` in
+  `Programma Pascal.zip`. Ran before writing tests: 4993 passed
+  (non-breaking -- no existing test exercised the `hired=True` path).
+  Added tests: one verbatim sample per variant, sea-marker/optional-
+  clause coverage, plus a `describe_recruit()` wiring test confirming a
+  hired unit renders through `HIREMERC.X` instead of `RECRUIT.X`. Ran
+  again: 4998 passed (net +5).
 
 ## Setup
 
