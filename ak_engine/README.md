@@ -24575,7 +24575,7 @@ follow-up request after the original 431-435 plan shipped.
   passed (non-breaking). Added tests: one verbatim sample per variant
   plus optional-clause coverage. Ran again: 5042 passed (net +3).
 
-- **Phase 608 (current)**: `orchestrator.py`/`cli.py` -- reconnects the
+- **Phase 608**: `orchestrator.py`/`cli.py` -- reconnects the
   pipeline: `process_turn()` now produces one real, section-rich
   `compose_letter_report()` letter per Kingdom (`TurnOutcome.
   letter_reports: dict[int, list[str]]`), replacing the single combined
@@ -24625,6 +24625,54 @@ follow-up request after the original 431-435 plan shipped.
   (net +1 new test function, plus several existing tests strengthened
   in place).
 
+- **Phase 609 (current)**: documentation-only -- a systematic re-audit
+  of this README's own three trailer sections (`## Known-unresolved
+  semantics`, `## Not yet implemented`, `## What's excluded from this
+  phase`), covering the Phase 410-607 range the Phase 401-409 audit
+  never reached (nothing had touched these sections again since). Every
+  bullet not already struck through was re-verified directly against
+  the current code (not trusted from memory) before any edit. Ten items
+  turned out stale and were closed/reclassified with a citation each:
+  - `KingdomMoveHeader.raw_fields[1]`/`[2]` -- field *identities* closed
+    (Phase 464, `allreq`/`brreq`), semantic *values* still open.
+  - Which ability feeds `combat_ability_multiplier` -- confirmed a real
+    architecture note, not a live defect (`_combat_ability_for_
+    terrain()`, real since Phase 30).
+  - `exploration_advantage_multiplier` scaling -- closed (Phase 507,
+    the real `RUMORS.PAS:389-403` formula).
+  - `roll_quality_change`'s merit `score` input -- wired (Phase 423),
+    but only as a documented, unconfirmed interpretation of the
+    source's own `P` variable, not "no number at all."
+  - "What `fight_battle` leaves out" -- confirmed fully closed already
+    (every clause already had its own annotation; no new phase).
+  - `is_native_to_province` (the TODO-section duplicate copy) -- closed
+    (Phase 407, real `Mod_PAT` enforcement in `execute_recruit()`).
+  - `Maneuver.SQUEEZE` -- prose closed (Phases 413/414), the tactic
+    itself as a player-selectable option confirmed still unwired --
+    narrower than the old text implied, not fully closed.
+  - Clairvoyance's own event feed -- reclassified: **Phase 408** traced
+    the real mechanism (`RUMORS.PAS Set_Intel`) and found it's dead
+    code in the surviving archive, unreachable from every caller --
+    "permanently unrecoverable," not "not yet built."
+  - Independent lords/King companions -- closed (Phase 426).
+  - The richer `S_Army`-tagged per-battle narrative cluster -- **not a
+    remaining gap, a closed question** (Phases 61/63/410: confirmed
+    against real fixture text that it never appears in a real GIR
+    paragraph). Scar Terrain's bystander notice -- reclassified
+    (Phase 411: permanently unreachable, blocked on a missing tax
+    system this project has no other reason to build). Most
+    non-province-effect spell notices stay genuinely open, unchanged.
+  - The GW3 province-header 3rd-token bitmask -- closed (Phase 556,
+    `termod`/`effects_bitmask` fully decoded to 9 named bit fields).
+
+  Research delegated to an Explore agent (read both full sections
+  linearly, cross-checked every bullet against current code/`git log`,
+  reported classifications with evidence); every edit above was
+  independently re-verified against the cited source file before being
+  written, not applied on the agent's word alone. No code changed --
+  `pytest` re-run only to confirm the doc-only nature: 5043 passed,
+  unchanged from Phase 608's own count.
+
 ## Setup
 
 ```
@@ -24641,8 +24689,17 @@ than guessed, to avoid silently encoding a wrong interpretation. Each will
 need cross-referencing against `HostAK/TP/DEF2.PAS` (`Read_Moves`) and the
 rulebook before being turned into named, typed fields:
 
-- `KingdomMoveHeader.raw_fields[1]` and `[2]` — vary between turns (0/1 and
-  0/8/1020 observed); meaning unknown.
+- ~~`KingdomMoveHeader.raw_fields[1]` and `[2]` — vary between turns (0/1
+  and 0/8/1020 observed); meaning unknown.~~ -- **half-stale as of a
+  Phase 410-607 re-audit (Phase 609)**: **Phase 464** gave every
+  `raw_fields` slot a named, sourced identity (`allreq`=`[1]`,
+  `brreq`=`[2]`, etc.), cross-confirmed against `DEF2.PAS Write_Moves`/
+  `Read_Moves`'s own field order two independent ways -- "which Pascal
+  field is this" is closed. **Genuinely still open**: the *semantic
+  value* those two fields hold is still unconfirmed -- `models/
+  kingdom.py`'s own current docstring: "not further decoded...
+  presumably an alliance-request value... but that reading is
+  unconfirmed."
 - `PlanSegment.sp` (the `SP:` field) — meaning unknown; always ends in the
   values seen in samples but not confirmed to always be a fixed shape.
 - The exact meaning of the 31 integers on the skill-values line — expected
@@ -24713,16 +24770,29 @@ rulebook before being turned into named, typed fields:
   itself was recovered too (Phase 388, from `AKGEN`'s own
   `battle_engine` catalogs). See `turn/battle_luck.py`'s own module
   docstring for the full derivation.
-- **`exploration_advantage_multiplier` scaling** (`turn/strength.py`) —
+- ~~**`exploration_advantage_multiplier` scaling** (`turn/strength.py`) —
   the rulebook's only concrete data point is the 100%-vs-0%-explored case
   giving exactly the max +25%. Scaled linearly by the exploration-percent
   gap in between; a documented interpolation, not a sourced formula (same
-  situation as `win_probability`'s curve).
+  situation as `win_probability`'s curve).~~ -- **closed as of Phase 507
+  (found stale in a Phase 410-607 re-audit, Phase 609)**: replaced by the
+  real formula (`RUMORS.PAS:389-403`, the user's third dossier Part IV
+  SS50.2): `1 + own_explored_percent * 0.0025`, applied to *each side
+  independently* off its own accumulated province knowledge, not a
+  relative gap between the two sides the way the interpolation this
+  bullet describes did. See `exploration_advantage_multiplier()`'s own
+  current docstring for the full derivation, including how Military
+  Maps' cap-raise to 200 (Phase 507) resolves what had looked like two
+  conflicting sourced maxima.
 - **Which ability feeds `combat_ability_multiplier`** (`turn/strength.py`)
   — the rulebook says Tactical Ability normally, Naval "in Sea
   provinces". The function itself is ability-agnostic (just applies
   +20%/level); the caller must pick which ability's level to pass based
-  on terrain.
+  on terrain. **Re-verified in a Phase 410-607 re-audit (Phase 609)**:
+  this is a real architecture note, not a live defect --
+  `battle_orchestrator.py _combat_ability_for_terrain()` (real since
+  Phase 30, `fight_battle()`'s own caller) already resolves Tactical-
+  vs-Naval by terrain correctly; nothing left to close here.
 - **Cavalry classification for pursuit** (`turn/pursuit.py`
   `CAVALRY_TYPES`) — the rulebook never lists which army types count as
   "cavalry" for the 75%-pursuit-rate rule. Interpreted as the table's
@@ -24755,11 +24825,22 @@ rulebook before being turned into named, typed fields:
   formation_divisor - 2)` -- verified against the source's own 4x6
   worked table. A losing front-line unit falls at exactly that rate
   (Depleted excluded); a winning unit rises at `base_percent *
-  merit_multiplier`. **Genuinely still open**: the gain side's own
+  merit_multiplier`. ~~**Genuinely still open**: the gain side's own
   per-unit "merit" score input has no already-computed real number in
   this project to source it from yet, so `roll_quality_change`'s new
   `score` parameter defaults to the formula's own documented neutral
-  case (no reduction) rather than a guess.
+  case (no reduction) rather than a guess.~~ -- **half-stale as of Phase
+  423 (found in a Phase 410-607 re-audit, Phase 609)**: `score` *is*
+  wired now -- `battle_orchestrator.py _column_bres_by_army_id()` feeds
+  each unit's own real `column_bres` in as `score` -- but explicitly
+  and only as a documented, unconfirmed interpretation of the source's
+  own `P` variable (`AKGEN_reverse_engineering_report.md`'s battle-
+  engine section describes `P`'s own threshold behavior in the exact
+  same `-5..+5` shape `MERIT_MULTIPLIER` already used, but never writes
+  "P = BRES" as an equation) -- see `turn/aftermath.py`'s own Phase 423
+  addendum for the full reasoning. The parameter still defaults to `0`
+  (the formula's own neutral case) only for a caller that doesn't pass
+  one at all.
 - **Conquest + sea-battle movement-cost stacking** (`turn/conquest.py`)
   — the rulebook states the conquest extra-point and the sea-battle
   extra-point as two independent rules with no stated interaction for
@@ -24787,7 +24868,10 @@ rulebook before being turned into named, typed fields:
   column's own signed `BRES`**, not by counting which side won more
   columns. See `turn/battle_resolution.py`'s own Phase 370 addendum for
   the full derivation.
-- **What `fight_battle` leaves out of the strength calculation**:
+- **What `fight_battle` leaves out of the strength calculation**
+  (**re-verified fully closed in a Phase 410-607 re-audit, Phase 609**
+  -- every clause below already carries its own "fixed"/"wired"
+  annotation; nothing left open in this bullet):
   ~~the exploration-advantage special factor, fanaticism, and the
   desert-without-camels penalty aren't wired in~~ **fanaticism (opt-in,
   see Phase 35 above) and desert-without-camels are wired in now**.
@@ -24855,7 +24939,15 @@ rulebook before being turned into named, typed fields:
   humanoid province, or an exact race match for monstrous types) --
   looser than the real rule, so the double-cost path may trigger less
   often than it should in-game. `PlanPhase.extra[0]` (always `0` in
-  every sample) is still unconfirmed and unused.
+  every sample) is still unconfirmed and unused. **Fully closed as of
+  Phase 407 (found stale in a Phase 410-607 re-audit, Phase 609)**:
+  `execute_recruit()` now reads `ProvinceState.recruit_type_1`/
+  `recruit_type_2` directly when a province was bridged from a real
+  `GW3` world file, falling back to the looser `is_army_type_
+  compatible_with_race()` reading only when that data isn't available
+  (e.g. a hand-built test fixture) -- see `turn/recruit_execution.py`'s
+  own Phase 407 addendum. The "never read by `execute_recruit()`"
+  claim above is stale; nothing left open in this bullet.
 
 ## Not yet implemented (by design, this phase)
 
@@ -25049,7 +25141,7 @@ rulebook before being turned into named, typed fields:
       sub-object stays an unresolved raw int, and only because Give
       itself is structurally inapplicable here, not from any missing
       table.
-    - **Genuinely still open, newly identified while re-verifying this
+    - ~~**Genuinely still open, newly identified while re-verifying this
       paragraph (not previously documented anywhere in this project)**:
       `Maneuver.SQUEEZE` (`CTBOTH.PAS`'s own `manab` abbreviation
       `'SQ'`) has a real, sourced prose dispatch in `SAY.PAS`
@@ -25058,7 +25150,24 @@ rulebook before being turned into named, typed fields:
       anywhere in this project -- not even in the "every other maneuver
       isn't wired" fallback comment in `search_execution.py`'s own
       tactic-walk loop, which explains Give's exclusion but is silent
-      on Squeeze entirely.
+      on Squeeze entirely.~~ -- **half-stale as of Phases 413/414 (found
+      in a Phase 410-607 re-audit, Phase 609)**: the real prose *is* now
+      recovered and wired -- `resolve_hand_of_death_channel()`'s own
+      `squeeze_hits` + `report/turn_report.py render_squeeze_attack()`
+      -- on the theory (the user's own direct play-experience
+      confirmation, not the Pascal source) that it's Hand of Death's own
+      per-round narration. **Phase 414 correction, still current**: a
+      direct source check found `_LSquee` formally declared as a
+      per-*weapon* damage-narration category (`CTME.PAS`'s `Death` enum,
+      `weapkill[Tentacles] = Squeeze`, owned by Giant Octopus, not a
+      spell) -- the real caller stays unrecoverable either way, so the
+      Phase 413 wiring is kept on the user's own explicit choice, not
+      settled by source. **Genuinely still open, narrower than before**:
+      `Maneuver.SQUEEZE` the enum value itself remains unwired as a
+      player-selectable tactic (`CTBOTH.PAS`'s own `maneuver` enum
+      confirms `CSqueeze` is a distinct value from `CCast`, favoring the
+      Giant-Octopus reading) -- see `search_execution.py`'s own current
+      docstring comment for the full citation.
   - ~~**Trade's remaining gap** (see Phase 20's note above): the whole
     module, not just execution -- `obj`/`extra`'s field meanings aren't
     confirmed, so there's nothing yet to safely execute even if a
@@ -25135,12 +25244,25 @@ rulebook before being turned into named, typed fields:
     (`turn/trade_decode.py rewrite_trade_as_secret_spell_cast()`, wired
     into `plan_dispatch.py`'s own `ActionCode.TRADE` branch -- see that
     module's docstring for the full decoded `DEF2.PAS` mechanic and its
-    honestly-scoped limits). **Genuinely still open**: Clairvoyance's
+    honestly-scoped limits). ~~**Genuinely still open**: Clairvoyance's
     own second half -- Phase 193 registers the watching kingdom
     (`LeaderState.clairvoyance_watchers`) but no per-character event
     feed exists anywhere in this project to actually surface "what the
     target did this turn" to that watcher; this is a real, separate,
-    larger piece (a turn-events log), not touched by Phase 397.
+    larger piece (a turn-events log), not touched by Phase 397.~~ --
+    **reclassified as of Phase 408 (found in a Phase 410-607 re-audit,
+    Phase 609)**: this isn't ordinary pending work anymore -- **Phase
+    408** traced the real mechanism that would have surfaced this
+    (`RUMORS.PAS Set_Intel(x,y)`'s own Clairvoyance/`Counter_Science`
+    block) and found it's **dead code in the surviving Pascal archive**:
+    its only call site sits inside a branch its own author marked "no
+    longer in use," gated behind a debug halt, unreachable from every
+    caller available. `LeaderState.clairvoyance_watchers` stays exactly
+    as Phase 193 left it, now with a confirmed reason no reader will
+    ever be built here -- not "not yet implemented," but "the sourced
+    mechanism is permanently unrecoverable from available material." See
+    `models/game_state.py`'s own Phase 408 addendum for the full
+    citation trail.
   - ~~**Use_MI's remaining gap** (see Phase 24's note above): deeper
     than Cast's -- there's no Pascal source for how item instances are
     even created, so `item_instance_id` can never be resolved to a
@@ -25339,11 +25461,20 @@ rulebook before being turned into named, typed fields:
   slots, King Home placement (owner/tax/race/location), initial armies,
   and features (monster/type/alignment/magic-item), each stage cited to
   a real sourced formula (Phases 354-364). **Genuinely still open**,
-  per that module's own "Deliberately NOT implemented" section:
-  independent lords/companions (no roster this project can draw an
-  "unused leader" from, and companions need a name generator not yet
-  integrated -- see the AKGEN name-catalog note below), ordinary
-  (non-Home, non-special-race) humanoid provinces' recruit slots/armies
+  per that module's own "Deliberately NOT implemented" section (further
+  narrowed by a Phase 410-607 re-audit, Phase 609): ~~independent
+  lords/companions (no roster this project can draw an "unused leader"
+  from, and companions need a name generator not yet integrated -- see
+  the AKGEN name-catalog note below)~~ -- **closed as of Phase 426**:
+  `worldgen/generate_new_game.py`'s own "Independent lords + King
+  companions" step now places both roles for real -- independent lords
+  take the free humanoid provinces via `independent_lord_effects()`,
+  each King gets `COMPANIONS_PER_KING=2` companions (own race + `draw_
+  second_companion_race()`) -- once `models/hero_roster.py` (Phase 366,
+  real `LNAMES.PAS` names) and `worldgen/hero_talent_generation.py`
+  (Phase 385) closed the two blockers this bullet originally cited.
+  Genuinely still open: ordinary (non-Home, non-special-race) humanoid
+  provinces' recruit slots/armies
   (unsourced infantry-weighting table), Trollish special-race armies (no
   budget formula survives), the `necromantic_home_exception` (source
   never states the qualifying condition), and the extra mercenary
@@ -25403,16 +25534,31 @@ rulebook before being turned into named, typed fields:
   world_events()` (Phase 232/235, five province-effect casts),
   `record_plague_spread_world_events()` (Phase 234), and `record_move_
   world_events()` (Phase 257) -- feeding `describe_general_
-  intelligence_report()`'s own cross-kingdom news feed. **Genuinely
-  still open**, per that composer's own current docstring: several
-  confirmed-real event types have no source yet (the much richer
-  `S_Army`-tagged per-battle narrative cluster, most non-province-effect
-  spell notices, Scar Terrain's bystander notice), and PROVINCES/
-  CHARACTERS/IMPERIAL OFFICE REPORT each still render only a real
-  subset of their own columns (see those composers' own docstrings,
-  cited from `compose_letter_report()`'s own "wired doesn't mean
-  complete" section). This is a narrower, still-real gap -- not the
-  "still entirely unbuilt" framing this bullet used before.
+  intelligence_report()`'s own cross-kingdom news feed (as of a Phase
+  410-607 re-audit, Phase 609: also `record_uncontested_conquest_
+  world_events()`, Phase 410, five real sources across seven call
+  sites total now). ~~**Genuinely still open**, per that composer's own
+  current docstring: several confirmed-real event types have no source
+  yet (the much richer `S_Army`-tagged per-battle narrative cluster,
+  most non-province-effect spell notices, Scar Terrain's bystander
+  notice)~~ -- **two of these three reclassified in the Phase 609
+  re-audit**: the richer `S_Army`-tagged per-battle narrative cluster
+  is **not a remaining gap, it's a closed question as of Phase 61/63/
+  410** -- `describe_general_intelligence_report()`'s own current
+  docstring confirms, against real fixture text (`SE3__T2.K2`), that
+  the richer per-column clash narrative genuinely never appears in a
+  real GIR paragraph, only the outer winner/conquest sentence does
+  (already ported, both battle and uncontested-conquest cases). Scar
+  Terrain's own bystander notice (`_STZero`/`_STFite`) is real, sourced
+  text, but **Phase 411** found it permanently unreachable from this
+  project's own state, not merely unwired: it only fires when `scar_
+  terrain_collapse()` runs, and that needs a real per-province tax base
+  this project has no tax/revenue-collection system to supply. **Still
+  genuinely open, unreclassified**: most non-province-effect spell
+  notices. PROVINCES/CHARACTERS/IMPERIAL OFFICE REPORT each still
+  render only a real subset of their own columns (see those composers'
+  own docstrings, cited from `compose_letter_report()`'s own "wired
+  doesn't mean complete" section).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
@@ -25475,14 +25621,21 @@ rulebook before being turned into named, typed fields:
     machine-parseable in the exact same grammar `parser/k1_moves.py`
     already uses. The world file's own 33-field header is fully decoded
     too (`parse_gw_header()`/`GWHeader`, Phase 342).
-  - **Genuinely still open**, per the module's own current docstring:
+  - ~~**Genuinely still open**, per the module's own current docstring:
     the province header's own 3rd token (a per-province bitmask,
     plausibly exploration-by-kingdom, exact meaning undeciphered,
-    Phase 340); resolving a `governor_leader_id`/Liege to its owning
-    kingdom id (deliberately left to a `GameState`-level lookup, not
-    this pure file parser); row-major province coordinate ordering
-    (a promising but unconfirmed lead); and a handful of named-but-
-    unconverted `GWLeaderRecord` fields (`birth_coord`'s own
-    out-of-range companion-slot values, `sex_raw`'s real default-by-id-
-    band rule, both confirmed real by the disassembly but not
-    independently decoded from real data yet).
+    Phase 340)~~ -- **closed as of Phase 556 (found stale in a Phase
+    410-607 re-audit, Phase 609)**: `termod`/`GWProvinceRecord.
+    effects_bitmask`'s own bit-level meaning is fully decoded --
+    `TERMOD_PART_EFF`/`_BLESS_EFF`/`_FLOOD_EFF`/`_QUAKE_EFF`/
+    `_PLAGUE_EFF_MASK`/`_ILLUS_EFF_MASK`/`_ILLUS_EXP`/`_FOG_EFF`/
+    `_RAID_EFF`, sourced to `AKGEN_reverse_engineering_report (5).md`
+    SS73.2 and described by `gw_world.py`'s own docstring as
+    "machine-verified." **Still genuinely open**: resolving a
+    `governor_leader_id`/Liege to its owning kingdom id (deliberately
+    left to a `GameState`-level lookup, not this pure file parser);
+    row-major province coordinate ordering (a promising but unconfirmed
+    lead); and a handful of named-but-unconverted `GWLeaderRecord`
+    fields (`birth_coord`'s own out-of-range companion-slot values,
+    `sex_raw`'s real default-by-id-band rule, both confirmed real by
+    the disassembly but not independently decoded from real data yet).
