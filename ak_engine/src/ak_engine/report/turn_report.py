@@ -3036,6 +3036,41 @@ def render_mortally_wounded(defender_name: str, rng: random.Random, *, is_sea: b
     return render(variant, values, rng=rng, is_sea=is_sea)
 
 
+# HostAK/TP/PROSE/HORDEATH.X -- a generic character-death closing
+# sentence (Phase 607), distinct from MORTWOUN.X above: `SAY.PAS:429-432
+# _LDies: BEGIN t:= Rint; FD('hordeath',Min(S_Comm,event_lev+1),6{1001+
+# Rint}); END` sits between `_LWDie`/`_LSick` (a near-death coma) and
+# `_LSucc` (succession), not inside the S_PCom personal-combat cluster
+# MORTWOUN.X/SWANGAT.X live in -- its own severity is computed from a
+# caller-supplied `event_lev`, suggesting it's the shared final beat for
+# *any* character death (combat, disease, assassination, etc.), not a
+# combat-specific one. `t:= Rint` and the third `FD` argument (a fixed
+# `6`, with `{1001+Rint}` a Pascal *comment* showing an alternate,
+# unused expression) don't affect which of this file's own 2 real
+# choices gets picked -- every other transcribed catalog's own such
+# argument has likewise never needed interpreting by this project's
+# `pick_variant()`-based rendering. Also confirmed aliased as `F9.X2`
+# (`RUMORS.PAS`'s own `F`+digit `Say` indirection, byte-identical
+# payload). No confirmed single call site in this project ties every
+# character death to one shared narration point, so this is sourced and
+# render-tested but not wired into any composer.
+_HORDEATH_TEMPLATES: list[str] = [
+    "and so it was/Rcame_to_pass that < met > unseemly/Rtragic end.",
+    "thus did < {finally }die, ^A brave_end/Rdefiant_death by any standard.",
+]
+
+
+def render_character_death(character_name: str, rng: random.Random) -> str:
+    """Renders HORDEATH.X's generic character-death closing sentence
+    (Phase 607) -- see the module comment above for why this isn't
+    wired into a live composer.
+    """
+
+    variant = pick_variant(_HORDEATH_TEMPLATES, rng)
+    values = {"<": character_name, ">": f"{character_name}'s"}
+    return render(variant, values, rng=rng)
+
+
 # HostAK/TP/PROSE/SWANGAT.X -- the Melee attack action itself, the
 # sibling to FARR.X's own Fire Arrow attack action. See module
 # docstring's Phase 113 addendum.

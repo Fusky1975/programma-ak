@@ -185,6 +185,7 @@ from ak_engine.report.turn_report import (
     render_melee_attack,
     render_monster_offers_raid_truce,
     render_mortally_wounded,
+    render_character_death,
     render_move_to_bow_range,
     render_move_to_melee_range,
     render_patrol_encounter,
@@ -1775,6 +1776,27 @@ def test_render_mortally_wounded_fourth_variant_describes_a_stun_not_death():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
     result = render_mortally_wounded("Borin", rng)
     assert result == "Borin staggered, stunned by the deadly blow."
+
+
+# -- HORDEATH.X (Phase 607) --
+
+
+def test_render_character_death_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_character_death("Aldric", rng)
+    assert result == "and so it was that Aldric met Aldric's unseemly end."
+
+
+def test_render_character_death_second_variant_excludes_optional_clause():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_character_death("Aldric", rng)
+    assert result == "thus did Aldric die, a brave end by any standard."
+
+
+def test_render_character_death_second_variant_includes_optional_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[1])
+    result = render_character_death("Aldric", rng)
+    assert result == "thus did Aldric finally die, a defiant death by any standard."
 
 
 def test_fire_arrow_attack_and_hit_concatenate_into_one_sentence():

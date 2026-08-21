@@ -24531,7 +24531,7 @@ follow-up request after the original 431-435 plan shipped.
   confirm each fix: 5034 passed (net -1 from 5035, from consolidating
   4 old tests into fewer, more accurate replacements).
 
-- **Phase 606 (current)**: `turn/valhalla_execution.py`/`report/
+- **Phase 606**: `turn/valhalla_execution.py`/`report/
   turn_report.py` -- transcribes `VALINT.X2`, the rulebook explanation
   of the Valhalla visiting-Hero mechanic (`SAY.PAS:1212 _LValHal:
   FD('valint.x2',S_Red,1)`), alongside Phase 585's own announcement
@@ -24556,6 +24556,24 @@ follow-up request after the original 431-435 plan shipped.
   line + possessive-marker coverage in `test_turn_report.py`, plus
   length/verbatim/anomaly-separation coverage in `test_valhalla_
   execution.py`. Ran again: 5039 passed (net +5).
+
+- **Phase 607 (current)**: `report/turn_report.py` -- transcribes
+  `HORDEATH.X`, a generic character-death closing sentence
+  (`SAY.PAS:429-432 _LDies`), confirmed distinct from `MORTWOUN.X`:
+  it sits between `_LWDie`/`_LSick` (a near-death coma) and `_LSucc`
+  (succession), not inside the `S_PCom` personal-combat cluster
+  `MORTWOUN.X`/`SWANGAT.X` live in, and its own severity comes from a
+  caller-supplied `event_lev` rather than a fixed combat context --
+  suggesting it's the shared final beat for *any* character death, not
+  a combat-specific one. Also confirmed aliased as `F9.X2`
+  (`RUMORS.PAS`'s own `F`+digit `Say` indirection, byte-identical
+  payload). No confirmed single call site in this project ties every
+  character death to one shared narration point, so sourced and
+  render-tested but not wired into any composer. Sourced from the same
+  byte-faithful 162-file pass as Phases 578-606, cross-checked against
+  `SAY.PAS` in `Programma Pascal.zip`. Ran before writing tests: 5039
+  passed (non-breaking). Added tests: one verbatim sample per variant
+  plus optional-clause coverage. Ran again: 5042 passed (net +3).
 
 ## Setup
 
