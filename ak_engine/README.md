@@ -24161,7 +24161,7 @@ follow-up request after the original 431-435 plan shipped.
   exclusion at both rng bounds, the advent template's Spring-only full
   sentence). Ran again: 4952 passed (net +4).
 
-- **Phase 590 (current)**: `report/turn_report.py` -- transcribes the
+- **Phase 590**: `report/turn_report.py` -- transcribes the
   personal-combat loot cluster `GLSTEAL.X`/`GMSTEAL.X`/`GLSPOILS.X`/
   `GMSPOILS.X`/`TLSTEAL.X`/`TMSTEAL.X`/`TLSPOILS.X`/`TMSPOILS.X`, all
   eight declared together in `RUMORS.PAS`'s own constant block (`T_
@@ -24194,6 +24194,27 @@ follow-up request after the original 431-435 plan shipped.
   (non-breaking). Added tests: one verbatim sample per catalog plus
   optional-clause/sea-marker/list-join/overflow-choice coverage. Ran
   again: 4968 passed (net +16).
+
+- **Phase 591 (current)**: `report/turn_report.py` -- transcribes
+  `AWANDFR.X`/`AWANDTO.X` (unemployed mercenary armies, `SAY.PAS:855-856`)
+  and `LWANDFR.X`/`LWANDTO.X` (unemployed Heroes, `SAY.PAS:719/721`), a
+  two-province ambient-relocation flavor cluster: a unit wanders away
+  from/into a province on its own initiative, unrelated to any player
+  order. Resolves `⟦CTRL-S:province-2⟧` (the real second-province CTRL
+  byte) as `^S` -- not a new marker, reusing the project's own
+  already-established convention already live in `render_defensive_
+  march()` (Phase 120) and the `render_illegal_move_*()` family (Phase
+  127). Direct reading of all 13 real choices across the four files
+  confirms one consistent internal grammar for this specific cluster:
+  `@` is always the province the unit *leaves*, `^S` always the one it's
+  *heading to/just arrived in* -- true in both the FR and TO files alike,
+  so the file-name split reflects which report section calls each one
+  (origin vs. destination), not which token means what. Sourced from the
+  same byte-faithful 162-file pass as Phases 578-590, cross-checked
+  against `SAY.PAS` in `Programma Pascal.zip`. Ran before writing tests:
+  4968 passed (non-breaking). Added tests: one verbatim sample per
+  catalog plus sea-marker/optional-clause/multi-sentence-variant
+  coverage. Ran again: 4979 passed (net +11).
 
 ## Setup
 

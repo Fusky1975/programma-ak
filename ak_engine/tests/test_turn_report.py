@@ -198,6 +198,10 @@ from ak_engine.report.turn_report import (
     render_treasure_theft_tense,
     render_treasure_spoils_from_survivor,
     render_treasure_spoils_from_corpse,
+    render_mercenary_army_wanders_away,
+    render_mercenary_army_wanders_in,
+    render_character_wanders_away,
+    render_character_wanders_in,
     render_petrifying_gaze_missed,
     render_homeland_defense_morale,
     render_oratory_speech,
@@ -1893,6 +1897,93 @@ def test_render_treasure_spoils_from_corpse_second_variant():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
     result = render_treasure_spoils_from_corpse("Aldric", "Borin", rng)
     assert result == "Aldric shifted Aldric's attention to the treasure of Borin."
+
+
+# -- AWANDFR.X/AWANDTO.X/LWANDFR.X/LWANDTO.X (Phase 591) --
+
+
+def test_render_mercenary_army_wanders_away_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_mercenary_army_wanders_away("144th Legion", "Ferrara", "Mongu", rng)
+    assert result == (
+        "144th Legion grew tired of the whores of Ferrara and moved on "
+        "off to Mongu where they hoped the pickings would be more to "
+        "their liking."
+    )
+
+
+def test_render_mercenary_army_wanders_away_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_mercenary_army_wanders_away("144th Legion", "Ferrara", "Mongu", rng, is_sea=True)
+    assert result == (
+        "144th Legion grew tired of the whores of Ferrara and sailed "
+        "off to Mongu where they hoped the pickings would be more to "
+        "their liking."
+    )
+
+
+def test_render_mercenary_army_wanders_away_third_variant_resolves_article():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_mercenary_army_wanders_away("144th Legion", "Ferrara", "Mongu", rng)
+    assert result == (
+        "the captain of 144th Legion felt a wanderlust stirring in his "
+        "breast, and speaking highly of Mongu, persuaded his men to "
+        "march with him to Mongu."
+    )
+
+
+def test_render_mercenary_army_wanders_in_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_mercenary_army_wanders_in("144th Legion", "Ferrara", "Mongu", rng)
+    assert result == "144th Legion has arrived in Mongu, having travelled from Ferrara."
+
+
+def test_render_mercenary_army_wanders_in_includes_optional_clauses():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[0])
+    result = render_mercenary_army_wanders_in("144th Legion", "Ferrara", "Mongu", rng)
+    assert result == (
+        "144th Legion has just recently arrived in Mongu, having come "
+        "from Ferrara in search of employment."
+    )
+
+
+def test_render_character_wanders_away_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_character_wanders_away("Aldric", "Ferrara", "Mongu", rng)
+    assert result == "Aldric grew bored with Ferrara and departed for Mongu."
+
+
+def test_render_character_wanders_away_sixth_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[5])
+    result = render_character_wanders_away("Aldric", "Ferrara", "Mongu", rng)
+    assert result == "Aldric left Ferrara to attend a reunion of Aldric's old regiment in Mongu."
+
+
+def test_render_character_wanders_away_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+    result = render_character_wanders_away("Aldric", "Ferrara", "Mongu", rng, is_sea=True)
+    assert result == "Aldric got into trouble with the law in Ferrara and escaped by sailing away to Mongu."
+
+
+def test_render_character_wanders_in_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_character_wanders_in("Aldric", "Ferrara", "Mongu", rng)
+    assert result == "Aldric just recently wandered into Mongu from Ferrara."
+
+
+def test_render_character_wanders_in_third_variant_is_two_sentences():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_character_wanders_in("Aldric", "Ferrara", "Mongu", rng)
+    assert result == (
+        "Aldric hiked into Mongu.Aldric had grown bored with Ferrara "
+        "and was attracted there by tales of its fine scotch."
+    )
+
+
+def test_render_character_wanders_in_fourth_variant_includes_optional_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[3])
+    result = render_character_wanders_in("Aldric", "Ferrara", "Mongu", rng)
+    assert result == "Aldric rode into Mongu in search of worthy employment, having found nothing much in Ferrara."
 
 
 # -- Phase 155: monster missile-attack flavor text + Troll regeneration --

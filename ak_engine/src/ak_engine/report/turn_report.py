@@ -3287,6 +3287,155 @@ def render_treasure_spoils_from_corpse(looter_name: str, victim_name: str, rng: 
     return render(variant, values, rng=rng)
 
 
+# HostAK/TP/PROSE/AWANDFR.X, AWANDTO.X, LWANDFR.X, LWANDTO.X -- unemployed
+# mercenary armies and Heroes randomly relocating between provinces on
+# their own initiative (Phase 591). `SAY.PAS:855-856 _AWandFr: FD('awandfr',
+# S_Red,7); _AWandTo: FD('awandto',S_Red,8);` (armies, `=` marker) and
+# `SAY.PAS:719/721 _LWandFr: FD('lwandfr',S_Red,3); _LWandTo: FD('lwandto',
+# S_Red,4);` (individual Heroes, `<` marker) -- both pairs share the same
+# "FR"/"TO" split and the same two-province grammar.
+#
+# `⟦CTRL-S:province-2⟧` resolves to `^S`, the already-established project
+# convention for the real `CTRL-S` binary field (a second province name)
+# -- not invented here, already in production use by `render_defensive_
+# march()` (Phase 120), `render_illegal_move_non_adjacent()` and its
+# siblings (Phase 127), and others. **Direct reading of all 13 real
+# choices across these four files (not assumed from another file's own
+# `@`/`^S` convention, which points the other way for e.g. `render_
+# defensive_march()`) confirms one consistent internal mapping for this
+# specific cluster**: `@` is always the province the unit is *leaving*,
+# `^S` always the province it's *heading to/just arrived in* -- true in
+# every choice of both AWANDFR (`"@ and moved on... to ^S"`) and AWANDTO
+# (`"arrived in ^S, having travelled from @"`), so the FR/TO file split
+# reflects which report section calls each one (the origin province's own
+# report vs. the destination's), not which token means what within the
+# sentence itself.
+_AWANDFR_TEMPLATES: list[str] = [
+    "= grew tired_of/Rbored_with the {wines and }whores/Rcourtesans of "
+    "@ and moved_on/Ssailed off to ^S where they hoped the "
+    "pickings/Rentertainment would be more to their liking/Rtastes.",
+    "= lost hope of finding employment/Radventure in @, {and }so they "
+    "mustered their strength and moved_on/Ssailed_away to ^S.",
+    "the captain of = felt ^A wanderlust/Rthirst_for_adventure "
+    "stirring/Rawakening in his breast/Rheart, and speaking "
+    "highly/Reloquently of{ the lands and princes of} ^S, "
+    "persuaded/Rconvinced his men to march/Ssail with him to ^S.",
+]
+
+
+def render_mercenary_army_wanders_away(
+    army_name: str, origin_province_name: str, destination_province_name: str, rng: random.Random, *, is_sea: bool = False
+) -> str:
+    """Renders AWANDFR.X's sentence for an unemployed mercenary army
+    leaving a province on its own initiative (Phase 591). ``is_sea``
+    (Phase 74) resolves each variant's own "/S" marker.
+    """
+
+    variant = pick_variant(_AWANDFR_TEMPLATES, rng)
+    values = {"=": army_name, "@": origin_province_name, "^S": destination_province_name}
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+_AWANDTO_TEMPLATES: list[str] = [
+    "= has {just recently }arrived in ^S, having travelled/Rcome from "
+    "@{ in search of employment}.",
+    "= has wandered/Ssailed into ^S from @.",
+    "newly come/Rarrived from @ is =, which army/Snavy is seeking "
+    "employment/Ra_liege in ^S.",
+]
+
+
+def render_mercenary_army_wanders_in(
+    army_name: str, origin_province_name: str, destination_province_name: str, rng: random.Random, *, is_sea: bool = False
+) -> str:
+    """Renders AWANDTO.X's sentence for an unemployed mercenary army
+    arriving in a province on its own initiative (Phase 591). ``is_sea``
+    (Phase 74) resolves each variant's own "/S" marker.
+    """
+
+    variant = pick_variant(_AWANDTO_TEMPLATES, rng)
+    values = {"=": army_name, "@": origin_province_name, "^S": destination_province_name}
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+_LWANDFR_TEMPLATES: list[str] = [
+    "< grew bored_with/Rtired_of {the scenery in }@ and departed/Rleft "
+    "for ^S.",
+    "< awoke/Rarose one morning/Rday with ^A desire/Rwhim to see ^S, "
+    "and so left {from }@ to travel/Rjourney to that province.",
+    "< heard that ^A old buddy/Rfriend was trapping_furs/Spearl-diving "
+    "in ^S and left @ to see > old acquaintance/Rfriend.",
+    "< got/Rfell into trouble with the_law/Ra_sheriff in @ and escaped "
+    "{imprisonment/Ra_posse }by riding/Ssailing away/Roff to ^S.",
+    "< heard stories/Rtales of excellent/Rfine hunting/Sfishing in ^S "
+    "and left @ to have_some_fun/Rtake_a_vacation there.",
+    "< left @ to attend/Rpreside_over ^A reunion of > old "
+    "regiment/Rbattalion in ^S.",
+]
+
+
+def render_character_wanders_away(
+    character_name: str,
+    origin_province_name: str,
+    destination_province_name: str,
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
+) -> str:
+    """Renders LWANDFR.X's sentence for an unemployed Hero leaving a
+    province on their own initiative -- the individual-character
+    sibling of ``render_mercenary_army_wanders_away()`` (Phase 591).
+    ``is_sea`` (Phase 74) resolves each variant's own "/S" marker.
+    """
+
+    variant = pick_variant(_LWANDFR_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        ">": f"{character_name}'s",
+        "@": origin_province_name,
+        "^S": destination_province_name,
+    }
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+_LWANDTO_TEMPLATES: list[str] = [
+    "< {has }just recently wandered into ^S from @.",
+    "< has arrived in ^S from @{, attracted/Rdrawn by the fine/Rgreat "
+    "(or infamous?/Rterrible?) reputation of its king}.",
+    "< hiked/Ssailed into ^S.< had grown bored/Rtired with @ and was "
+    "attracted/Rdrawn there by tales/Rrumors of its fine/Rwonderful "
+    "scotch/Rwines{ and even more_wonderful/Rfiner "
+    "courtesans/Rchampagnes}.",
+    "< rode/Scruised into ^S in search of {worthy }adventure/Remployment"
+    "{, having found none/Rnothing_much in @}.",
+]
+
+
+def render_character_wanders_in(
+    character_name: str,
+    origin_province_name: str,
+    destination_province_name: str,
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
+) -> str:
+    """Renders LWANDTO.X's sentence for an unemployed Hero arriving in a
+    province on their own initiative -- the individual-character sibling
+    of ``render_mercenary_army_wanders_in()`` (Phase 591). ``is_sea``
+    (Phase 74) resolves each variant's own "/S" marker. The third variant
+    is two sentences (the second has no marker of its own, following
+    directly after the first with no separator needed).
+    """
+
+    variant = pick_variant(_LWANDTO_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "@": origin_province_name,
+        "^S": destination_province_name,
+    }
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
 # Phase 415: describe_search()'s own default when narrating a
 # SearchExecutionResult.melee_swing -- this project has no per-character
 # weapon model (turn/encounter.py Combatant carries no weapon field), so
