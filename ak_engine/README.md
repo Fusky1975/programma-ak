@@ -24365,7 +24365,7 @@ follow-up request after the original 431-435 plan shipped.
   sample per template plus optional-clause/sea-marker/no-article
   coverage. Ran again: 5010 passed (net +5).
 
-- **Phase 599 (current)**: `report/turn_report.py` -- transcribes and
+- **Phase 599**: `report/turn_report.py` -- transcribes and
   **wires** `LDESERT.X`, a Hero quitting their King's service over
   unpaid wages (`SAY.PAS:791 _LDesert: FD('ldesert',S_PCom,0)`). All
   four real choices name "the lack of pay"/"no pay"/"back pay" as the
@@ -24385,6 +24385,24 @@ follow-up request after the original 431-435 plan shipped.
   variant, optional-clause/article coverage, plus a `describe_
   desertions()` wiring test (multiple deserters, and the empty case).
   Ran again: 5015 passed (net +5).
+
+- **Phase 600 (current)**: `report/turn_report.py` -- transcribes
+  `LHAIL.X`/`LREBUFF.X`/`LTALKOK.X`, a Talk-to-character encounter
+  cluster all three dispatched at the same `S_PCom` severity
+  (`SAY.PAS:757/760/762`): the opening greeting, a refusal out of a
+  grudge against this Kingdom's own King, and learning a wandering
+  Hero's own hiring price -- the natural next step after Phase 591's own
+  `LWANDFR`/`LWANDTO` flavor text. Not wired: `turn/hire_fire_decode.py`
+  models only hiring an already-known character by name, not a
+  price-discovery negotiation with an unemployed one. `^K` (king-title)
+  reuses the plain-`king_name`-string convention `render_hire_
+  accepted()` (`ACCHIRE.X`, Phase 114) already established. `LTALKOK.X`'s
+  own fourth variant keeps a real double space before "found", verbatim.
+  Sourced from the same byte-faithful 162-file pass as Phases 578-599,
+  cross-checked against `SAY.PAS` in `Programma Pascal.zip`. Ran before
+  writing tests: 5015 passed (non-breaking). Added tests: one verbatim
+  sample per catalog plus optional-clause coverage. Ran again: 5021
+  passed (net +6).
 
 ## Setup
 

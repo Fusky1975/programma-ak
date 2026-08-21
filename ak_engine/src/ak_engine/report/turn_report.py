@@ -3556,6 +3556,100 @@ def render_character_wanders_in(
     return render(variant, values, rng=rng, is_sea=is_sea)
 
 
+# HostAK/TP/PROSE/LHAIL.X, LREBUFF.X, LTALKOK.X -- a Talk-to-character
+# encounter cluster, all three dispatched at the same `S_PCom` severity
+# (Phase 600): `SAY.PAS:762 _LCTalk: FD('lhail',S_PCom,5)` (the opening
+# greeting), `SAY.PAS:760 _LRebuff: FD('lrebuff',S_PCom,9)` (the target
+# refuses out of a grudge against this Kingdom's own King), and
+# `SAY.PAS:757 _LInfo: ELSE FD('ltalkok',S_PCom,8)` (learning a
+# wandering Hero's own hiring price -- the natural next step after
+# LWANDFR/LWANDTO's own Phase 591 flavor text, though this project's
+# ``turn/hire_fire_decode.py`` models only hiring an already-known
+# character by name, not a price-discovery negotiation with an
+# unemployed one, so this cluster stays sourced but unwired). ``^K``
+# (king-title) reuses the same plain-``king_name``-string convention
+# already established elsewhere in this module (``render_hire_
+# accepted()``'s own ACCHIRE.X, Phase 114).
+_LHAIL_TEMPLATES: list[str] = [
+    "< {waved/Rheld_forth ^A white flag/Rhandkerchief and "
+    "}hailed/Rshouted_out_to [ with {friendly }words of greeting.",
+]
+
+
+def render_hail_greeting(character_name: str, target_name: str, rng: random.Random) -> str:
+    """Renders LHAIL.X's sentence for hailing a character to open a Talk
+    encounter (Phase 600).
+    """
+
+    variant = pick_variant(_LHAIL_TEMPLATES, rng)
+    values = {"<": character_name, "[": target_name}
+    return render(variant, values, rng=rng)
+
+
+_LREBUFF_TEMPLATES: list[str] = [
+    "< tried_talking/Rspoke to [, but {it seems that }] "
+    "family/Rclan holds ^A grudge against ^K{'s clan} and does "
+    "not want/Rwish to associate_with/Rserve him.",
+    "< spoke to [ with {hopes for }friendship {in > heart}.[1 "
+    "rebuffed > overtures/Rgreeting out of personal "
+    "dislike/Rdistaste for ^K.",
+    "< spoke kindly to [, but was {coldly/Rdisdainfully "
+    "}rebuffed because, said [1, \"you and your ilk/Rcronies are "
+    "^A gang/Rbunch of SNAKES/RROGUES!\"",
+]
+
+
+def render_talk_rebuffed(character_name: str, target_name: str, king_name: str, rng: random.Random) -> str:
+    """Renders LREBUFF.X's sentence for a Talk attempt rebuffed out of a
+    grudge against this Kingdom's own King (Phase 600).
+    """
+
+    variant = pick_variant(_LREBUFF_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "[": target_name,
+        "[1": target_name,
+        "]": f"{target_name}'s",
+        ">": f"{character_name}'s",
+        "^K": king_name,
+    }
+    return render(variant, values, rng=rng)
+
+
+_LTALKOK_TEMPLATES: list[str] = [
+    "< talked_to/Rspoke_with [ and learned/Rfound_out that [1 could "
+    "be hired/Rbought for # gold.",
+    "< spoke/Rconversed with [ for_some_time/Rat_length.< "
+    "learned/Rdiscovered that [1 was available {for hire }at ^A "
+    "price/Rcost of # gold.",
+    "< approached [ and asked/Rinquired if [1 was available.[1 "
+    "said/Rdeclared [1 would pledge/Rrent ] allegiance/Rservices "
+    "for # gold.",
+    "<  found [ {drinking ale/Rbeer }in ^A tavern/Rpub and had ^A "
+    "few beers/Rdrinks with [.[1 told/Rinformed <2 that it would "
+    "be ] honor/Rpleasure to serve/Rwork_for <2 at the "
+    "price/Rcost of # gold.",
+]
+
+
+def render_talk_learned_hire_price(character_name: str, target_name: str, gold_amount: int, rng: random.Random) -> str:
+    """Renders LTALKOK.X's sentence for learning a wandering Hero's own
+    hiring price via a Talk encounter (Phase 600). The fourth variant's
+    own real text has a double space before "found" -- kept verbatim.
+    """
+
+    variant = pick_variant(_LTALKOK_TEMPLATES, rng)
+    values = {
+        "<": character_name,
+        "<2": character_name,
+        "[": target_name,
+        "[1": target_name,
+        "]": f"{target_name}'s",
+        "#": str(gold_amount),
+    }
+    return render(variant, values, rng=rng)
+
+
 # HostAK/TP/PROSE/THATT.X, THFAIL.X -- the opening/failure bookends of
 # the same defeated-leader-treasure-search narrative Phase 590's own
 # G_*/T_* Steal/Spoils cluster already covers the success half of

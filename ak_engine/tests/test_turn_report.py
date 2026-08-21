@@ -204,6 +204,9 @@ from ak_engine.report.turn_report import (
     render_army_quality_decreased,
     render_army_quality_increased,
     render_hero_deserted,
+    render_hail_greeting,
+    render_talk_rebuffed,
+    render_talk_learned_hire_price,
     describe_desertions,
     render_mercenary_army_wanders_away,
     render_mercenary_army_wanders_in,
@@ -2603,6 +2606,49 @@ def test_describe_desertions_empty_when_no_desertions():
     lines = describe_desertions(result, state, king_name="Borin", rng=rng)
 
     assert lines == []
+
+
+# -- LHAIL.X/LREBUFF.X/LTALKOK.X (Phase 600) --
+
+
+def test_render_hail_greeting_low_rng_excludes_optional_clause():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_hail_greeting("Aldric", "Borin", rng)
+    assert result == "Aldric hailed Borin with words of greeting."
+
+
+def test_render_hail_greeting_high_rng_includes_optional_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[0])
+    result = render_hail_greeting("Aldric", "Borin", rng)
+    assert result == "Aldric held forth a white handkerchief and shouted out to Borin with friendly words of greeting."
+
+
+def test_render_talk_rebuffed_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_talk_rebuffed("Aldric", "Borin", "Cedric", rng)
+    assert result == "Aldric tried talking to Borin, but Borin's family holds a grudge against Cedric and does not want to associate with him."
+
+
+def test_render_talk_rebuffed_third_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_talk_rebuffed("Aldric", "Borin", "Cedric", rng)
+    assert result == 'Aldric spoke kindly to Borin, but was rebuffed because, said Borin, "you and your ilk are a gang of SNAKES!"'
+
+
+def test_render_talk_learned_hire_price_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_talk_learned_hire_price("Aldric", "Borin", 42, rng)
+    assert result == "Aldric talked to Borin and learned that Borin could be hired for 42 gold."
+
+
+def test_render_talk_learned_hire_price_fourth_variant_keeps_the_real_double_space():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+    result = render_talk_learned_hire_price("Aldric", "Borin", 42, rng)
+    assert result == (
+        "Aldric  found Borin in a tavern and had a few beers with Borin."
+        "Borin told Aldric that it would be Borin's honor to serve "
+        "Aldric at the price of 42 gold."
+    )
 
 
 def test_describe_challenge_delegates_to_describe_encounter_combat():
