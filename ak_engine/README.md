@@ -24557,7 +24557,7 @@ follow-up request after the original 431-435 plan shipped.
   length/verbatim/anomaly-separation coverage in `test_valhalla_
   execution.py`. Ran again: 5039 passed (net +5).
 
-- **Phase 607 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 607**: `report/turn_report.py` -- transcribes
   `HORDEATH.X`, a generic character-death closing sentence
   (`SAY.PAS:429-432 _LDies`), confirmed distinct from `MORTWOUN.X`:
   it sits between `_LWDie`/`_LSick` (a near-death coma) and `_LSucc`
@@ -24574,6 +24574,56 @@ follow-up request after the original 431-435 plan shipped.
   `SAY.PAS` in `Programma Pascal.zip`. Ran before writing tests: 5039
   passed (non-breaking). Added tests: one verbatim sample per variant
   plus optional-clause coverage. Ran again: 5042 passed (net +3).
+
+- **Phase 608 (current)**: `orchestrator.py`/`cli.py` -- reconnects the
+  pipeline: `process_turn()` now produces one real, section-rich
+  `compose_letter_report()` letter per Kingdom (`TurnOutcome.
+  letter_reports: dict[int, list[str]]`), replacing the single combined
+  `describe_turn_results()` narrative every King previously received
+  identically. `compose_letter_report()` itself (Phase 215/231/561) was
+  already a mature, 11-section, per-Kingdom-filtered assembler -- the
+  actual gap was that nothing had ever called it from the real turn
+  loop. Every real `record_*_world_events()` recorder (battle/spell/
+  plague-spread/move/uncontested-conquest, Phases 231-410) is now also
+  called exactly once per turn, in their own shared, explicit "call
+  once, before any letter" contract -- previously defined but never
+  invoked anywhere, so GENERAL INTELLIGENCE REPORT was silently empty
+  for every real turn run through `process_turn()` until now. Every
+  Kingdom in `state.kingdoms` gets a letter, including one that missed
+  the move-submission deadline (Phase 574's own auto-fill still
+  dispatches it a real `PhaseDispatchResult`). `cli.py`'s `run-turn`
+  `--report` argument now names a directory (one `kingdom_<id>.txt`
+  file per Kingdom, created via `mkdir(parents=True, exist_ok=True)`)
+  instead of a single combined report file -- matching how the real
+  game actually delivers one separate letter per King.
+
+  **What this still deliberately doesn't do** (see `orchestrator.py`'s
+  own updated module docstring): the real `^B`/`^E` King-exclusion
+  markers -- a finer-grained, per-*line* redaction system within an
+  already-shared section (e.g. hiding one specific sentence about a
+  rival's private affairs that would otherwise leak into a section a
+  King can see) -- remain unbuilt; that's a separate, deeper "narrator
+  perspective" system, distinct from the section-level per-Kingdom
+  split fixed here (which was already correct, just never reached from
+  the real turn loop).
+
+  One pre-existing test assertion (`test_process_turn_syncs_bridges_
+  dispatches_and_narrates`, `isinstance(outcome.report_lines, list)`)
+  broke as expected on the renamed field -- fixed to check `outcome.
+  letter_reports[1]` instead. Two more existing orchestrator tests
+  (already covering multi-Kingdom and missed-deadline scenarios) gained
+  new assertions proving each Kingdom gets its own distinct, real
+  letter rather than a shared one. `test_cli.py`'s two existing
+  `run-turn` tests were updated for the directory-based `--report`
+  semantics (a `Path.exists()` check on a bare path coincidentally kept
+  passing under the old assertion even after the directory change, so
+  both were tightened to check real per-Kingdom file content, not just
+  presence); a new third CLI test directly proves two Kingdoms produce
+  two distinct files. Ran before writing tests: one known-outdated
+  assertion failed as expected, fixed immediately. Added/updated tests
+  across `test_orchestrator.py`/`test_cli.py`. Ran again: 5043 passed
+  (net +1 new test function, plus several existing tests strengthened
+  in place).
 
 ## Setup
 

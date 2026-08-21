@@ -10,7 +10,9 @@ Two subcommands:
   and saves it.
 - ``run-turn``: loads a saved ``GameState``, processes one turn's worth
   of real ``.K1`` move-submission files (``orchestrator.process_turn()``),
-  writes the resulting narrative to a report file, and saves the
+  writes each Kingdom's own real letter report to its own file inside a
+  report directory (Phase 608 -- one real file per Kingdom, matching
+  ``TurnOutcome.letter_reports``, not one combined file), and saves the
   updated state -- the repeatable step for every subsequent turn.
 """
 
@@ -69,7 +71,14 @@ def _cmd_run_turn(args: argparse.Namespace) -> int:
 
     outcome = process_turn(state, order_paths, board_width=args.board_width, rng=rng)
 
-    Path(args.report).write_text("\n".join(outcome.report_lines), encoding="utf-8")
+    # Phase 608: one real letter file per Kingdom -- --report now names a
+    # directory, not a single combined file (see cli.py's own module
+    # docstring for why: TurnOutcome.letter_reports replaced the old
+    # single-blob report_lines).
+    report_dir = Path(args.report)
+    report_dir.mkdir(parents=True, exist_ok=True)
+    for kingdom_id, letter_lines in outcome.letter_reports.items():
+        (report_dir / f"kingdom_{kingdom_id}.txt").write_text("\n".join(letter_lines), encoding="utf-8")
 
     save_path = Path(args.save_as) if args.save_as else state_path
     save_game_state(state, save_path)
@@ -84,8 +93,8 @@ def _cmd_run_turn(args: argparse.Namespace) -> int:
         if bridge_report.king_not_identified:
             print(f"warning: kingdom {kingdom_id}'s King name didn't match any leader in its own file", file=sys.stderr)
 
-    print(f"Turn processed: {len(outcome.results)} phase results, {len(outcome.report_lines)} report lines.")
-    print(f"Report written to {args.report}. State saved to {save_path}.")
+    print(f"Turn processed: {len(outcome.results)} phase results, {len(outcome.letter_reports)} Kingdom letters.")
+    print(f"Kingdom letters written to {report_dir}/. State saved to {save_path}.")
     return 0
 
 
@@ -105,7 +114,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_turn.add_argument("--state", required=True, help="Path to a GameState previously saved by this CLI")
     run_turn.add_argument("--orders", required=True, nargs="+", help="One or more .K1 move-submission files")
     run_turn.add_argument("--board-width", type=int, required=True)
-    run_turn.add_argument("--report", required=True, help="Path to write the turn's narrative report")
+    run_turn.add_argument(
+        "--report", required=True, help="Directory to write one letter file per Kingdom (kingdom_<id>.txt)"
+    )
     run_turn.add_argument("--save-as", default=None, help="Where to save the updated state (default: overwrite --state)")
     run_turn.add_argument("--seed", type=int, default=None, help="random.Random seed (default: unseeded)")
     run_turn.set_defaults(func=_cmd_run_turn)

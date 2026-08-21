@@ -1,19 +1,37 @@
 """Ties parsing, dispatch, and reporting into one real "process a turn"
 pipeline (Phase 424) -- the piece this project never had, even though
 every individual stage (parser, ``turn_processor.run_turn()``,
-``report/turn_report.py describe_turn_results()``) was already real and
-tested.
+``report/turn_report.py describe_turn_results()``/``compose_letter_
+report()``) was already real and tested.
 
-**Scope, and what this deliberately does NOT do**: a real King's own
-letter is personalized -- ``report/turn_report.py``'s own Phase 96/108
-addenda already document real ``^B``/``^E`` King-exclusion markers this
-project elides rather than guesses at, because building the real
-per-recipient "narrator perspective" system (whose lines a given King
-does/doesn't see) is a separate, larger, unbuilt feature. So
-``process_turn()`` produces exactly one combined turn narrative (every
-line ``describe_turn_results()`` would produce for the whole turn), not
-one personalized letter per kingdom -- an honest simplification, not a
-silent one.
+**Phase 608 -- real per-King letters, at last.** Until this phase,
+``process_turn()`` called only ``describe_turn_results()`` once and
+produced a single combined turn narrative for the whole turn -- not
+because ``compose_letter_report()`` (the real, 11-section, per-King
+letter assembler, wired section-by-section since Phase 215/231/561)
+didn't exist, but because nothing had ever called it from here. That
+gap is closed: ``process_turn()`` now calls every ``record_*_world_
+events()`` recorder exactly once (their own shared, explicit "call once
+per turn, before any ``compose_letter_report()`` call" contract --
+``record_battle_world_events()``'s own docstring spells out why: world
+events are turn-global, calling per-King would duplicate every entry),
+then calls ``compose_letter_report()`` once per Kingdom in
+``state.kingdoms``, returning ``TurnOutcome.letter_reports: dict[int,
+list[str]]`` -- one real, section-rich letter per Kingdom, each showing
+that Kingdom's own FINANCES/PROVINCES/CHARACTERS/ARMIES/etc., instead of
+one undifferentiated blob every King previously received identically.
+
+**What this still deliberately does NOT do**: the real ``^B``/``^E``
+King-exclusion markers (``report/turn_report.py``'s own Phase 96/108
+addenda) are a *finer-grained*, still-unbuilt privacy layer -- redacting
+specific *lines* about another Kingdom's private affairs that leak into
+a section a King *can* otherwise see (e.g. a rival's exact temper
+reading inside a shared ASpy-adjacent narrative). That's a separate,
+deeper "narrator perspective" system this phase doesn't attempt --
+what's fixed here is the *section-level* per-Kingdom split
+(``compose_letter_report()`` already reads FINANCES/PROVINCES/etc.
+straight from ``state`` filtered to one ``kingdom_id``, which was
+already correct), not a per-line redaction system within a section.
 
 ``run_turn()`` itself expects every leader submitting orders *this
 turn*, across *every* kingdom, in one flat list -- it's the only place
@@ -33,7 +51,14 @@ from pathlib import Path
 from ak_engine.models.game_state import GameState
 from ak_engine.models.kingdom import KingdomMoveHeader
 from ak_engine.parser.k1_moves import parse_k1_moves_file
-from ak_engine.report.turn_report import describe_turn_results
+from ak_engine.report.turn_report import (
+    compose_letter_report,
+    record_battle_world_events,
+    record_move_world_events,
+    record_plague_spread_world_events,
+    record_spell_world_events,
+    record_uncontested_conquest_world_events,
+)
 from ak_engine.turn.emperor_election import ElectionCallOutcome, ElectionResult, process_election_turn
 from ak_engine.turn.final_standings import FinalStandingsReport, compose_final_standings_report
 from ak_engine.turn.kingdom_bridge import KingdomBridgeReport, sync_leaders_from_kingdom
@@ -52,7 +77,12 @@ class TurnOutcome:
     """
 
     results: list[PhaseDispatchResult]
-    report_lines: list[str]
+    # Phase 608: one real, section-rich `compose_letter_report()` letter
+    # per Kingdom, keyed by `kingdom_id` -- replaces the old single
+    # `report_lines: list[str]` combined narrative (see module docstring's
+    # own Phase 608 addendum for why that was a documented simplification,
+    # not a silent one, and exactly what's still open beyond it).
+    letter_reports: dict[int, list[str]]
     bridge_reports: dict[int, KingdomBridgeReport] = field(default_factory=dict)  # kingdom_id -> report
     # Phase 466: whichever of the two `turn/emperor_election.py
     # process_election_turn()` shapes this turn produced -- an
@@ -119,6 +149,15 @@ def process_turn(
     ``turn/turn_processor.py build_missed_deadline_turn_leaders()``)
     merged into the same ``run_turn()`` dispatch, instead of being
     silently absent from the turn.
+
+    **Phase 608**: after the election/final-standings step, every real
+    ``record_*_world_events()`` recorder runs exactly once, in the same
+    order each was introduced (battle, spell, plague-spread, move,
+    uncontested-conquest -- their own docstrings confirm order doesn't
+    matter for correctness, only that each runs once, turn-globally,
+    before any letter is composed). ``compose_letter_report()`` is then
+    called once per ``state.kingdoms`` entry, producing ``TurnOutcome.
+    letter_reports`` -- see module docstring's own Phase 608 addendum.
     """
 
     if rng is None:
@@ -159,11 +198,25 @@ def process_turn(
     results = run_turn(turn_leaders, state, board_width=board_width, rng=rng)
     election_outcome = process_election_turn(state, kingdom_headers, state.turn_number)
     final_standings_report = compose_final_standings_report(state)
-    report_lines = describe_turn_results(results, state, rng, board_width=board_width)
+
+    # Phase 608: each recorder is turn-global (see record_battle_world_
+    # events()'s own docstring) -- called exactly once here, never once
+    # per Kingdom, or GENERAL INTELLIGENCE REPORT would show every event
+    # duplicated once per Kingdom in the loop below.
+    record_battle_world_events(state, results, rng)
+    record_spell_world_events(state, results, rng, board_width=board_width)
+    record_plague_spread_world_events(state, results, rng)
+    record_move_world_events(state, results, rng)
+    record_uncontested_conquest_world_events(state, results, rng)
+
+    letter_reports = {
+        kingdom_id: compose_letter_report(results, state, kingdom_id, rng, board_width=board_width)
+        for kingdom_id in state.kingdoms
+    }
 
     return TurnOutcome(
         results=results,
-        report_lines=report_lines,
+        letter_reports=letter_reports,
         bridge_reports=bridge_reports,
         election_outcome=election_outcome,
         final_standings=final_standings_report,

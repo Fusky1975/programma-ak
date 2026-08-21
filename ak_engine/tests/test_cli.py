@@ -69,7 +69,7 @@ def _saved_state_with_a_king(tmp_path: Path) -> Path:
 
 def test_run_turn_writes_a_report_and_saves_the_updated_state(tmp_path: Path):
     state_path = _saved_state_with_a_king(tmp_path)
-    report_path = tmp_path / "report.txt"
+    report_dir = tmp_path / "reports"
 
     with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=_fake_kingdom()):
         exit_code = main(
@@ -78,12 +78,15 @@ def test_run_turn_writes_a_report_and_saves_the_updated_state(tmp_path: Path):
                 "--state", str(state_path),
                 "--orders", "fake.K1",
                 "--board-width", str(BOARD_WIDTH),
-                "--report", str(report_path),
+                "--report", str(report_dir),
             ]
         )
 
     assert exit_code == 0
-    assert report_path.exists()  # empty is fine for a WAIT-only turn; existing is what matters here
+    # Phase 608: one real letter file per Kingdom, not one combined file.
+    kingdom_1_report = report_dir / "kingdom_1.txt"
+    assert kingdom_1_report.exists()
+    assert "STATE OF THE NATION:" in kingdom_1_report.read_text(encoding="utf-8")
     updated = load_game_state(state_path)
     assert updated.leaders[1].kingdom_id == 1
 
@@ -92,7 +95,7 @@ def test_run_turn_save_as_writes_to_a_different_path_leaving_the_original_untouc
     state_path = _saved_state_with_a_king(tmp_path)
     original_bytes = state_path.read_bytes()
     save_as_path = tmp_path / "next_turn.pkl"
-    report_path = tmp_path / "report.txt"
+    report_dir = tmp_path / "reports"
 
     with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=_fake_kingdom()):
         exit_code = main(
@@ -101,7 +104,7 @@ def test_run_turn_save_as_writes_to_a_different_path_leaving_the_original_untouc
                 "--state", str(state_path),
                 "--orders", "fake.K1",
                 "--board-width", str(BOARD_WIDTH),
-                "--report", str(report_path),
+                "--report", str(report_dir),
                 "--save-as", str(save_as_path),
             ]
         )
@@ -109,3 +112,44 @@ def test_run_turn_save_as_writes_to_a_different_path_leaving_the_original_untouc
     assert exit_code == 0
     assert save_as_path.exists()
     assert state_path.read_bytes() == original_bytes
+
+
+def test_run_turn_writes_one_letter_file_per_kingdom(tmp_path: Path):
+    # Phase 608: two real Kingdoms -> two distinct letter files, not one
+    # combined report file.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Arthur", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Arthur", location=HexCoord(0, 0), is_king=True))
+    state.add_kingdom(KingdomState(2, "Baldric", Race.ELVEN, Alignment.NEUTRAL, HexCoord(5, 5)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Baldric", location=HexCoord(5, 5), is_king=True))
+    state_path = tmp_path / "state.pkl"
+    save_game_state(state, state_path)
+
+    kingdom_a = _fake_kingdom()
+    kingdom_b = Kingdom(
+        source_filename="fake.K2",
+        king_name="Baldric",
+        king_title=None,
+        header=KingdomMoveHeader(raw_fields=[2, 1, 0, 101, 1, 15, 1]),
+        skills=SkillTable(raw_values=[0] * 31),
+        leaders=[_wait_leader(2, "Baldric")],
+    )
+    report_dir = tmp_path / "reports"
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", side_effect=[kingdom_a, kingdom_b]):
+        exit_code = main(
+            [
+                "run-turn",
+                "--state", str(state_path),
+                "--orders", "fake.K1", "fake.K2",
+                "--board-width", str(BOARD_WIDTH),
+                "--report", str(report_dir),
+            ]
+        )
+
+    assert exit_code == 0
+    assert (report_dir / "kingdom_1.txt").exists()
+    assert (report_dir / "kingdom_2.txt").exists()
+    assert (report_dir / "kingdom_1.txt").read_text(encoding="utf-8") != (report_dir / "kingdom_2.txt").read_text(
+        encoding="utf-8"
+    )

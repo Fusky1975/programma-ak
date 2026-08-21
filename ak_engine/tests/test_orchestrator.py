@@ -78,7 +78,7 @@ def test_process_turn_syncs_bridges_dispatches_and_narrates():
     assert state.leaders[20].is_king is False
 
     assert {r.leader_id for r in outcome.results} == {10, 20}
-    assert isinstance(outcome.report_lines, list)
+    assert isinstance(outcome.letter_reports[1], list)
     assert outcome.bridge_reports[1].not_found_leader_ids == []
 
 
@@ -113,6 +113,16 @@ def test_process_turn_combines_multiple_kingdoms_orders_into_one_run_turn_call()
 
     assert {r.leader_id for r in outcome.results} == {10, 20, 30}
     assert set(outcome.bridge_reports) == {1, 2}
+    # Phase 608: every real Kingdom in state.kingdoms gets its own real
+    # letter_reports entry, not one combined narrative -- and each is a
+    # distinct list object, not the same one duplicated.
+    assert set(outcome.letter_reports) == {1, 2}
+    assert outcome.letter_reports[1] is not outcome.letter_reports[2]
+    # STATE OF THE NATION is always present (describe_state_of_the_nation_
+    # report()'s own docstring), unlike ACTION REPORT which is empty here
+    # since WAIT produces no narratable content.
+    assert "STATE OF THE NATION:" in outcome.letter_reports[1]
+    assert "STATE OF THE NATION:" in outcome.letter_reports[2]
 
 
 def test_process_turn_auto_fills_a_missed_deadline_kingdom_with_the_real_defend_wait_plan():
@@ -137,6 +147,10 @@ def test_process_turn_auto_fills_a_missed_deadline_kingdom_with_the_real_defend_
     # bridge sync -- unchanged, pre-existing behavior this phase doesn't
     # touch.
     assert 2 not in outcome.bridge_reports
+    # Phase 608: kingdom 2 still gets its own real letter, though -- every
+    # Kingdom in state.kingdoms does, missed deadline or not, since it
+    # still has a real LeaderState/PhaseDispatchResult after the auto-fill.
+    assert set(outcome.letter_reports) == {1, 2}
 
 
 def test_process_turn_wires_the_emperor_election_evaluation():
