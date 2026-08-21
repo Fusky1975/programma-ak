@@ -24426,7 +24426,7 @@ follow-up request after the original 431-435 plan shipped.
   plus optional-clause coverage. Ran again: 5024 passed (net +3 over
   the corrected 5021 baseline).
 
-- **Phase 602 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 602**: `report/turn_report.py` -- transcribes
   `TGETAWAY.X`, a third Steal-failure flavor distinct from Phase 592's
   own THATT.X/THFAIL.X ("found nothing at all"): the thief finds the
   treasure but can't actually get away with it -- locked in a vault, an
@@ -24445,6 +24445,26 @@ follow-up request after the original 431-435 plan shipped.
   Pascal.zip`. Ran before writing tests: 5024 passed (non-breaking).
   Added tests: one verbatim sample per variant plus optional-clause
   coverage. Ran again: 5027 passed (net +3).
+
+- **Phase 603 (current)**: `report/turn_report.py` -- transcribes
+  `SFAIL.X`/`SBUNGLE.X`, a Cast that just fizzles with no validity
+  reason involved -- `SFAIL.X` (`SAY.PAS:895 _SFail`) the ordinary Cast
+  Spell action's own sibling, `SBUNGLE.X` (`SAY.PAS:674 _LBung`) the
+  personal-combat Cast tactic's own sibling (Phase 588's `CCAST.X`
+  family). **Corrects a docstring overclaim**: `describe_cast()` used
+  to say "there is no real SAY.PAS narrative" for a fizzled Cast roll --
+  false on its own terms, since `SFAIL.X` is exactly that. The real
+  reason it stays unwired: every `reason=` string `turn/cast_
+  execution.py` ever sets is a deterministic validity check (bad
+  target, wrong terrain, not co-located) -- grepped exhaustively, no
+  call site models a probabilistic fizzle roll at all, so there's no
+  game-state condition to gate either renderer on without inventing an
+  unsourced mechanic. `~` reuses the already-established spell-name
+  marker from Phase 588. Sourced from the same byte-faithful 162-file
+  pass as Phases 578-602, cross-checked against `SAY.PAS` in `Programma
+  Pascal.zip`. Ran before writing tests: 5027 passed (non-breaking).
+  Added tests: one verbatim sample per catalog plus optional-clause
+  coverage. Ran again: 5031 passed (net +4).
 
 ## Setup
 

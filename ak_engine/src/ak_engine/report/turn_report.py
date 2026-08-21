@@ -2458,15 +2458,25 @@ def describe_cast(
     real Pascal order, using caller-supplied display names/context (this
     project has no name-synthesis system anywhere).
 
-    Returns ``None`` when ``result.applied`` is ``False`` -- a fizzled
-    roll, an invalid target, or (``result.reason == "spell effect not
-    modeled"``) one of the 10 unexecuted spells -- there is no real
-    ``SAY.PAS`` narrative for a Cast order that never took effect,
-    mirroring ``describe_practice()``'s own "no narratable outcome"
-    stance for a solo, un-tutored practice attempt. See
-    ``render_cast_announcement()`` for which of ``target_name``/
-    ``province_name``/``terrain_name``/``army_names``/``feature_name``
-    a given spell actually needs.
+    Returns ``None`` when ``result.applied`` is ``False`` -- an invalid
+    target, an unsuitable province, or (``result.reason == "spell
+    effect not modeled"``) one of the 10 unexecuted spells all have no
+    sourced narrative and are correctly silent, mirroring ``describe_
+    practice()``'s own "no narratable outcome" stance. **Correction
+    (Phase 603)**: this used to also claim "a fizzled roll" belongs in
+    that same silent bucket -- ``SFAIL.X`` (``render_spell_cast_
+    failed()`` below) is real, sourced text for exactly that scenario,
+    so the claim was wrong on its own terms. It stays unwired here for
+    a different, concrete reason: every ``reason=`` string this
+    module's own ``turn/cast_execution.py`` ever sets is a deterministic
+    validity check (bad target, wrong terrain, not co-located, etc.) --
+    grepped exhaustively, not a single call site models a probabilistic
+    "the cast itself just failed" roll ``SFAIL.X``'s own text describes,
+    so there is no game-state condition to gate this renderer on without
+    inventing an unsourced fizzle-chance mechanic. See ``render_cast_
+    announcement()`` for which of ``target_name``/``province_name``/
+    ``terrain_name``/``army_names``/``feature_name`` a given spell
+    actually needs.
     """
 
     if not result.applied:
@@ -2482,6 +2492,65 @@ def describe_cast(
         army_names=army_names,
         feature_name=feature_name,
     )
+
+
+# HostAK/TP/PROSE/SFAIL.X, SBUNGLE.X -- a Cast that just fizzles, no
+# validity reason involved (Phase 603). `SAY.PAS:895 _SFail: FD('sfail',
+# S_Priv,0)` is the ordinary Cast Spell action's own sibling ("S" =
+# Spell -- `S_Priv` severity, the same context ``describe_cast()``
+# itself operates in); `SAY.PAS:674 _LBung: FD('sbungle',S_PCom,8)` is
+# the personal-combat Cast tactic's own sibling (`S_PCom`, the same
+# family Phase 588's `CCAST.X`/`FLAMEREL.X`/`SHADTR.X` cluster lives
+# in). Neither is wired -- see ``describe_cast()``'s own Phase 603
+# correction above for why ``SFAIL.X`` stays unwired despite being real,
+# sourced text; ``SBUNGLE.X`` has the identical problem one level down,
+# since this project's combat resolution has no probabilistic
+# spell-fizzle roll of its own either. ``~`` is the already-established
+# spell-name marker (``render_cast_no_treasure()``, Phase 588).
+_SBUNGLE_TEMPLATES: list[str] = [
+    "< attempted to bolster/Rhelp > fortunes/Rcause with ^A ~ "
+    "spell, but it fizzled/Rsputtered at the last moment/Rsecond.",
+    "< thought to attempt/Rcast ^A ~ spell, but "
+    "dropped/Rcouldn't_find ^A crucial/Rneeded material component "
+    "before < could make > spellcast/Rattempt.",
+    "< waved/Rraised > arms/Rhands{ and gestured "
+    "mightily/Rrhythmically}, intending/Rmeaning to cast ^A ~ "
+    "spell, but it backfired/Rwent_awry and ^A rabbit/Rdove "
+    "popped/Rtumbled out of > sleeve/Rhat instead.",
+    "< incanted/Rchanted the magic word{s} for ^A ~ spell, but "
+    "bit > lip/Rtongue {on the last utterance/Rsyllable }and "
+    "flubbed/Rbotched the spell.",
+]
+
+
+def render_spell_fizzled_in_combat(character_name: str, spell_name: str, rng: random.Random) -> str:
+    """Renders SBUNGLE.X's sentence for a personal-combat Cast that just
+    fizzles, no validity reason involved (Phase 603).
+    """
+
+    variant = pick_variant(_SBUNGLE_TEMPLATES, rng)
+    values = {"<": character_name, ">": f"{character_name}'s", "~": spell_name}
+    return render(variant, values, rng=rng)
+
+
+_SFAIL_TEMPLATES: list[str] = [
+    "< attempted/Rtried ^A ~ spell, but bungled/Rbotched it.",
+    "< failed in > {ineffectual }attempt to cast ^A ~ spell.",
+    "<'s attempted cast of the ~ spell was_unsuccessful/Rdidn't_work.",
+    "<'s ~ spell backfired/Rfizzled and < wound_up/Rwas_left "
+    "{with > face }covered with psycho-kinetic slime/Rgoo.",
+]
+
+
+def render_spell_cast_failed(character_name: str, spell_name: str, rng: random.Random) -> str:
+    """Renders SFAIL.X's sentence for an ordinary Cast Spell action that
+    just fizzles, no validity reason involved (Phase 603) -- the
+    non-combat sibling of ``render_spell_fizzled_in_combat()``.
+    """
+
+    variant = pick_variant(_SFAIL_TEMPLATES, rng)
+    values = {"<": character_name, ">": f"{character_name}'s", "~": spell_name}
+    return render(variant, values, rng=rng)
 
 
 # **Project-original, not sourced from SAY.PAS/RUMORS.PAS** (Phase 148):

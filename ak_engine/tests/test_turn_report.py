@@ -171,6 +171,8 @@ from ak_engine.report.turn_report import (
     render_item_give,
     render_magic_feature_discovery,
     render_cast_no_treasure,
+    render_spell_fizzled_in_combat,
+    render_spell_cast_failed,
     render_defend,
     render_defend_reinforcement,
     render_disband_unit,
@@ -4024,6 +4026,37 @@ def test_describe_cast_renders_nothing_when_not_applied():
     line = describe_cast(result, caster_name="Aldric", rng=rng, target_name="Borin")
 
     assert line is None
+
+
+# -- SBUNGLE.X/SFAIL.X (Phase 603) --
+
+
+def test_render_spell_fizzled_in_combat_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_spell_fizzled_in_combat("Aldric", "Fireball", rng)
+    assert result == "Aldric attempted to bolster Aldric's fortunes with a Fireball spell, but it fizzled at the last moment."
+
+
+def test_render_spell_fizzled_in_combat_third_variant_includes_optional_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[2])
+    result = render_spell_fizzled_in_combat("Aldric", "Fireball", rng)
+    assert result == (
+        "Aldric raised Aldric's hands and gestured rhythmically, "
+        "meaning to cast a Fireball spell, but it went awry and a "
+        "dove tumbled out of Aldric's hat instead."
+    )
+
+
+def test_render_spell_cast_failed_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_spell_cast_failed("Aldric", "Fireball", rng)
+    assert result == "Aldric attempted a Fireball spell, but bungled it."
+
+
+def test_render_spell_cast_failed_fourth_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+    result = render_spell_cast_failed("Aldric", "Fireball", rng)
+    assert result == "Aldric's Fireball spell backfired and Aldric wound up covered with psycho-kinetic slime."
 
 
 # -- describe_use_mi (Phase 146) --
