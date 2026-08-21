@@ -24466,7 +24466,7 @@ follow-up request after the original 431-435 plan shipped.
   Added tests: one verbatim sample per catalog plus optional-clause
   coverage. Ran again: 5031 passed (net +4).
 
-- **Phase 604 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 604**: `report/turn_report.py` -- transcribes
   `MCOME.X`/`MFIGHT.X`, a Feature's own guardian monster joining a
   battle to help its Druidic-aligned side, then how much it helped.
   `SAY.PAS:1086-1091 _BMonst` fires both back to back for the same
@@ -24481,6 +24481,55 @@ follow-up request after the original 431-435 plan shipped.
   cross-checked against `SAY.PAS` in `Programma Pascal.zip`. Ran before
   writing tests: 5031 passed (non-breaking). Added tests: one verbatim
   sample per catalog. Ran again: 5035 passed (net +4).
+
+- **Phase 605 (current)**: `turn/battle_luck.py`/`report/turn_report.py`
+  -- while about to transcribe `BLUCK2.X2` (`BLUCK.X2`'s still-missing
+  sibling), direct reading of `SAY.PAS`'s real `_BLuck`/`_CLuck`
+  dispatch code revealed that Phase 584's own "CLUCK2 fortune reverses"
+  account (a 33% reversal roll on indices `[13, 27]`, appending a CLUCK2
+  sentence after CLUCK's own) -- built from an AKGEN aggregate JSON
+  statistic, not a direct `SAY.PAS` citation -- described the wrong
+  mechanism. The real code:
+
+      _BLuck: BEGIN
+        batluck:= Rint;
+        IF Odd(_px+_py+_attl+_defl+_rphase) THEN
+            FD('bluck.x2',S_Batt,1000+batluck)
+          ELSE FD('bluck2.x2',S_Batt,1000+batluck);
+       END;
+      _CLuck: BEGIN
+        FD('luckint',S_Batt,7);
+        IF Odd(_px+_py+_attl+_defl+_rphase) THEN
+            FD('cluck.x2',S_Batt,1000+Rint)
+          ELSE FD('cluck2.x2',S_Batt,1000+Rint);
+       END;
+
+  `BLUCK2.X2`/`CLUCK2.X2` are **mutually exclusive alternate catalogs**
+  for the same event, selected by one shared deterministic parity check
+  (province x, province y, attacker leader id, defender leader id,
+  game phase) -- not a base sentence plus a sometimes-appended
+  follow-up. Flagged to the user mid-phase; user chose to correct now.
+  Transcribes the real 17-entry `BLUCK2_TEMPLATE`; adds `bluck_cluck_
+  uses_secondary_catalog()` implementing the real `Odd(...)` check;
+  `render_bluck_event()`/`render_cluck_event()` gain a `secondary`
+  keyword driven by it; `render_bluck_narration()`/`render_cluck_
+  narration()` now require the formula's five real inputs. Removes
+  `render_cluck2_event()` (folded into `render_cluck_event(...,
+  secondary=True)`), `roll_cluck_reversal()`, `CLUCK_REVERSAL_INDEX_
+  LOW`/`_HIGH`/`CLUCK_REVERSAL_CHECK_PERCENT`/`CLUCK2_REVERSAL_PHRASE`
+  outright -- unlike Phase 388's own approximation, this wasn't a
+  placeholder for missing text, it was a wrong model of a now-directly-
+  confirmed real mechanism, not worth keeping as a "historical record".
+  Fixed 5 pre-existing tests that exercised the old reversal-roll
+  behavior (`test_battle_luck.py`'s own 3 `roll_cluck_reversal` tests
+  and 1 `CLUCK2_REVERSAL_PHRASE` test removed/replaced; `test_turn_
+  report.py`'s own 4 `render_cluck_narration` tests rewritten around
+  the real parity selector) -- these were the only callers affected;
+  neither function was wired into any larger composer yet. Added
+  tests: `BLUCK2_TEMPLATE` verbatim samples, `bluck_cluck_uses_
+  secondary_catalog()` parity coverage. Ran full suite throughout to
+  confirm each fix: 5034 passed (net -1 from 5035, from consolidating
+  4 old tests into fewer, more accurate replacements).
 
 ## Setup
 

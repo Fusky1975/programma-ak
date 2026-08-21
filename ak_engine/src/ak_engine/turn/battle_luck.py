@@ -62,16 +62,6 @@ this module didn't have yet:
   `1/0.4 == 2.5`) falls in `[0.4, 2.5]`. Outside that gate local luck
   still affects the column's own combat outcome (`R_s` above is applied
   unconditionally, every column, per Phase 370), it just goes unnarrated.
-- **The CLUCK2 "fortune reverses" rewrite**: when the raw CLUCK index
-  falls in `[13, 27]`, a further 33% check can rewrite the narration
-  into two opposed sentences -- first CLUCK's own text, then a CLUCK2
-  follow-up -- without drawing any new strength factor. Verified against
-  the source's own stated aggregate ("a competitive column shows the
-  second event 30.9375% of the time on turn 1, 20.109375% on turn 2+")
-  by summing `local_column_event.probability_percent_turn_1`/
-  `_turn_2_plus` over indices 13-27 and multiplying by 33% -- both
-  reproduce the JSON's own stated figures exactly (93.75%*33% =
-  30.9375%, 60.9375%*33% = 20.109375%).
 
 **Phase 388 correction (Phase 584).** The `BLUCK_ENTRIES`/`CLUCK_ENTRIES`
 tuples this addendum originally added were mislabeled: despite being
@@ -81,25 +71,66 @@ actually AKGEN's own short internal *event labels* ("mutiny",
 sentences, which AKGEN's own structured JSON export never carried. A
 byte-faithful third-party reconstruction of the full 162-file prose
 corpus (`AKPROSE_reverse_engineering_report.md`, supplied directly by
-the user) now supplies the real text for all three catalogs --
+the user) now supplies the real text for these catalogs --
 `BLUCK_TEMPLATE`/`CLUCK_TEMPLATE`/`CLUCK2_TEMPLATE` below replace the
-mislabeled tuples, and `render_bluck_event()`/`render_cluck_event()`/
-the new `render_cluck2_event()` now call `report/prose.py render()`
-properly (`/R`/`{...}`/`/S` alternation, plus real King/army-name
-substitution) instead of returning the bare label string. This also
-resolves the "chosen with further residues modulo 3" gap the source's
-own report separately flagged, by supplying **the real 39-entry
-`CLUCK2.X2` catalog itself** -- `render_cluck_narration()`
-(`report/turn_report.py`) now looks up the same `cluck_index` in
-`CLUCK2_TEMPLATE` instead of appending the single static `CLUCK2_
-REVERSAL_PHRASE` fallback; the *exact* mod-3 sub-selection rule (if the
-real engine ever needed one beyond reusing the same index) remains
-unconfirmed and is not guessed at, but the fallback's own single-phrase
-approximation is no longer needed now that real per-index text exists.
-`CLUCK2_REVERSAL_PHRASE` is kept only as a historical record of the
-Phase 388 approximation, no longer used by `render_cluck_narration()`.
+mislabeled tuples, and `render_bluck_event()`/`render_cluck_event()`
+now call `report/prose.py render()` properly (`/R`/`{...}`/`/S`
+alternation, plus real King/army-name substitution) instead of
+returning the bare label string.
 
-The one control-byte code either catalog uses, `⟦CTRL-A⟧` ("a/an"),
+**Phase 605 correction -- the real BLUCK2/CLUCK2 trigger.** Phase 584's
+own "CLUCK2 fortune reverses" account above (a 33% reversal check on
+indices `[13, 27]`, appending a CLUCK2 sentence after CLUCK's own) was
+built from AKGEN's own aggregate JSON statistics, not a direct
+`SAY.PAS` citation -- and turned out to describe the wrong mechanism.
+Direct reading of `SAY.PAS`'s real dispatch code (`_BLuck`/`_CLuck`,
+~line 1052-1071) shows both events share one identical selector:
+
+    _BLuck: BEGIN
+      batluck:= Rint;
+      IF Odd(_px+_py+_attl+_defl+_rphase) THEN
+          FD('bluck.x2',S_Batt,1000+batluck)
+        ELSE FD('bluck2.x2',S_Batt,1000+batluck);
+     END;
+    _CLuck: BEGIN
+      FD('luckint',S_Batt,7);
+      IF Odd(_px+_py+_attl+_defl+_rphase) THEN
+          FD('cluck.x2',S_Batt,1000+Rint)
+        ELSE FD('cluck2.x2',S_Batt,1000+Rint);
+     END;
+
+`BLUCK2.X2`/`CLUCK2.X2` are not a "fortune reverses" follow-up drawn
+*in addition to* `BLUCK.X2`/`CLUCK.X2` -- they are the **mutually
+exclusive alternate catalog**, selected by the identical parity check
+on `_px+_py+_attl+_defl+_rphase` (province x, province y, attacker
+leader id, defender leader id, current game phase), for the same
+narration index. The `_CLuck2` Pascal case label a few lines below is
+an unrelated inline `Say()` two-way branch on `trint > 20` -- it only
+*shares a name* with the `cluck2.x2` file `_CLuck` itself already
+dispatches to; it never appends anything to `_CLuck`'s own output.
+
+`bluck_cluck_uses_secondary_catalog()` below implements the real
+`Odd(...)` parity check (inverted: it returns `True` -- "use the
+secondary catalog" -- exactly when the sum is *even*, matching
+Pascal's `ELSE` branch). `render_bluck_event()`/`render_cluck_event()`
+both gained a `secondary` keyword driven by it; `render_bluck_
+narration()`/`render_cluck_narration()` (`report/turn_report.py`) now
+require the five real inputs the formula needs and compute it there.
+`render_cluck2_event()` is removed (folded into `render_cluck_
+event(..., secondary=True)`), and so is `roll_cluck_reversal()` along
+with `CLUCK_REVERSAL_INDEX_LOW`/`_HIGH`/`CLUCK_REVERSAL_CHECK_PERCENT`/
+`CLUCK2_REVERSAL_PHRASE` -- all four existed only to support the now-
+disproven reversal mechanism, so nothing is left as "historical record"
+this time (unlike Phase 388's own approximation, this wasn't a
+placeholder for missing text -- it was a wrong model of a real,
+now-directly-confirmed mechanism, not worth preserving as dead code).
+
+`BLUCK2_TEMPLATE` (Phase 605, from the same byte-faithful reconstruction
+as `BLUCK_TEMPLATE`/`CLUCK_TEMPLATE`/`CLUCK2_TEMPLATE`) supplies the
+real 17-entry secondary catalog, matching `BLUCK_TEMPLATE`'s own index
+range exactly (both keyed 1..17 from the identical `bluck_event_index`).
+
+The one control-byte code these catalogs use, `⟦CTRL-A⟧` ("a/an"),
 maps directly onto `report/prose.py render()`'s own already-implemented
 `^A` token (`PROSE.TXT`'s own documented marker) -- converted during
 transcription, not left as an unrendered placeholder.
@@ -181,9 +212,10 @@ CLUCK_TEMPLATE: dict[int, str] = {
     39: '^A wonderful/Rawe-inspiring omen appeared/Rmanifested_itself to = in the form of a rainbow/Rfalcon, alighting/Rdescending upon their battle-standard/Rcaptain.Each/REvery man {took heart, and }seemed/Rwas_inspired to fight as_two/Rlike_a_giant!',
 }
 
-# -- Phase 584: CLUCK2.X2 -- the real "fortune reversed itself" follow-up
-# text, keyed by the same cluck_index (see module docstring's own Phase
-# 584 correction for why this replaces CLUCK2_REVERSAL_PHRASE).
+# -- Phase 584: CLUCK2.X2 -- real text, keyed by the same cluck_index.
+# **Not** a "fortune reversed itself" follow-up to CLUCK.X2 -- see
+# module docstring's own Phase 605 correction: this is the real,
+# mutually exclusive secondary catalog for the same event.
 CLUCK2_TEMPLATE: dict[int, str] = {
     1: 'a mutiny/Rrevolt broke_out_among/Rconvulsed = when a false_report/Rrumor spread/Rwas_circulated that they would_not_be_paid_this_year/Rwere_to_be_used_as_cannon_fodder, thus/Rso they were of_little/Rnot_of_much use.',
     2: "='s luck turned ugly/Rhorrible!a stray_tornado/Rmeteor crashed_into/Rfell_upon = and crushed/Rkilled many of_them/Rsoldiers.",
@@ -226,16 +258,88 @@ CLUCK2_TEMPLATE: dict[int, str] = {
     39: '= was struck/Rdusted by a {cosmic }storm/Rshower of magic{al} {star}dust{ from a disintegrating/Rfalling meteor/Rcomet made of/Rfrom luckstone/Rmithril,} and = fought/Rshone with enchanted_fury/Rmagical_elan{ for the entire/Rrest_of_the battle}!',
 }
 
+# -- Phase 605: BLUCK2.X2 -- the real mutually-exclusive secondary
+# whole-battle catalog (see module docstring's own Phase 605 correction
+# for why this replaces BLUCK.X2 only sometimes, not "on top of" it),
+# keyed by the same bluck_event_index's own 1..17 index.
+BLUCK2_TEMPLATE: dict[int, str] = {
+    1: "the fortunes/Rtides of war took ^A terrible/Rawful turn {for the "
+    "worse }against <2 when > forces were trapped/Rcaught in ^A "
+    "{narrow }canyon/Schannel and had to fight/Sram their_way_past/"
+    "Rthrough prepared/Rhastily-constructed defenses/Robstacles.",
+    2: "<'s luck was awful/Rterrible!a thundercloud_formed/Rstorm_"
+    "passed overhead and > vanguard/Sflag_squadron was struck_by_a_"
+    "lightning_bolt/Rdrenched_by_a_dark_thundershower.This bad/"
+    "Rterrible omen completely disheartened/Rdemoralized > forces/Rmen.",
+    3: "< was out_of_luck/Runfortunate{ this time}, for/Rbecause ^A "
+    "giant_worm/Sgiant_sea_monster {suddenly/Rabruptly "
+    "}{rose/Rbroke_the_surface and viciously }attacked from below/"
+    "Sthe_deep, and < {thus }had to fight on_two_fronts/Rtwo_"
+    "battles{, not one}.",
+    4: "< seemed lucky, for < was able to convince ^A native_tribe/"
+    "Rancient_sphinx to aid/Rfight_for > cause.But > luck turned "
+    "sour/Rbad when [ bribed <'s {new }recruit/Rally to switch_"
+    "sides/Rturn_traitor{, giving/Rwhich_gave [ a clear/Rgreat "
+    "advantage}.",
+    5: "^A bad/Runfavorable omen appeared/Rmanifested_itself, which{ "
+    "of course} dealt a severe/Rtelling blow to <'s fortunes/"
+    "Rhopes.{it seems that }<'s mount was shot down/Rand_killed "
+    "from_under_<2/Rwhile_<_was_giving_a_speech.",
+    6: "< was unlucky/Rrunning_low_on_luck, for < had_been_unable_to/"
+    "Rcouldn't find/Rlocate ^A suitable/Rprotected encampment/"
+    "Sharbor to weather_a_storm/Rrest_>_troops{ the previous day}, "
+    "thus > men/Sships were in poor/Rdismal shape/Rcondition.",
+    7: "< was unlucky this day/Rtime, for/Rbecause {> }{food "
+    "}supplies/Rrations were running_low/Rdwindling and {some of }> "
+    "men/Rtroops had/Rwere_forced to fight_on_empty_stomachs/Rgo_"
+    "hungry.",
+    8: "< had used/Rconducted ^A night/Rlong_flanking march/"
+    "Smaneuver to try to suprise_[/Rcatch_[_off_guard.but the "
+    "gambit/Rruse was_detected/Rfailed, and its only effect was to "
+    "tire/Rdemoralize <'s troops/Rsolders{ considerably/"
+    "Ralarmingly}.",
+    9: "{the battle/Rcontest was ^A fair/Reven fight, as }no luck "
+    "{or misfortune }of {any }great/Rnoteworthy significance/"
+    "Rimportance altered/Raffected the {general course of the "
+    "}battle/Rengagement.",
+    10: "the two/Ropposing armies/Sforces raced/Rstrived_mightily "
+    "for_the_high_ground/Sto_be_upwind, and < obtained an_advantage/"
+    "Rthe_edge by getting/Rarriving there first/Rbefore_the_enemy.",
+    11: "as_luck_would_have_it/Rluckily_for_<2, some/Ra_force_of "
+    "{mischievous/Ropportunistic }bandits/Spirates ambushed/Rraided "
+    "['s rearguard/Rsupply_elements, giving_<2/Rso_<_had the_edge/"
+    "Ra_clear_advantage{ over > opponent}.",
+    12: "[ and < had both persuaded/Rbribed some {primitive/"
+    "Rfeuding }native{ tribe}s to fight_for/Raid them, but "
+    "fortunately/Rluckily for <2, > allies/Rrecruits were better/"
+    "Rmore_adequately trained/Rarmed{ for their skirmishing/"
+    "Rguerilla duties/Rrole}.",
+    13: "< allowed a prisoner to overhear/Rbelieve that "
+    "reinforcements/Rallies would soon come to double/Raugment > "
+    "forces, then gave him a chance to escape.The prisoner reported "
+    "the grim news to [, and [1 deployed ] forces with excessive/"
+    "Rtoo_much caution.",
+    14: "in this battle, < had stolen_a_march/Rconducted_a_swift_"
+    "night_attack on [ and was {quite }lucky/Rfortunate to catch_"
+    "the_defenders_napping/Rgain_a_positional_advantage.",
+    15: "< approached the doddering/Rgullible local commander under "
+    "a flag of truce and glibly told him that the war was over, and "
+    "under the treaty's terms, a large bridge/Sharbor was to be "
+    "turned_over/Rleft_unguarded, thus capturing this crucial "
+    "bridge/Sharbor.",
+    16: "< gambled/Rtook_a_chance on infiltrating/Rsending {some "
+    "}scouts/Sfrogmen behind enemy/Rthe lines to set_fire_to/"
+    "Rsabotage their supply/Rarmament wagons/Sships, and the "
+    "{brash/Rdaring }scheme/Rplan succeeded brilliantly/Rcompletely.",
+    17: "< was upslope/Supwind of/Rfrom [.Finding/RHappening_to_"
+    "have some/Ra_few rusty_wagons/Sold_ships, < ladened/Rloaded "
+    "them with flaming pitch/Roil and sent them rolling/Sdrifting "
+    "towards [, whose forces were totally_disrupted/Rlargely_"
+    "scattered.",
+}
+
 CLUCK_NARRATION_GATE_LOW = 0.4
 CLUCK_NARRATION_GATE_HIGH = 2.5
-CLUCK_REVERSAL_INDEX_LOW = 13
-CLUCK_REVERSAL_INDEX_HIGH = 27
-CLUCK_REVERSAL_CHECK_PERCENT = 0.33
-
-# Phase 388's own approximation, before CLUCK2_TEMPLATE's real
-# per-index text was available -- kept only as a historical record, no
-# longer used by report/turn_report.py render_cluck_narration().
-CLUCK2_REVERSAL_PHRASE = "but then fortune reversed itself"
 
 # -- Phase 587: LUCKINT.X/LUCKINT2.X -- bridge phrases used alongside
 # BLUCK/CLUCK/CLUCK2, real prose from the same byte-faithful 162-file
@@ -334,12 +438,31 @@ def break_bres_tie(rng: random.Random) -> Literal["side1", "side2"]:
             return "side1" if side1_heads else "side2"
 
 
-def render_bluck_event(index: int, attacker_name: str, defender_name: str, rng: random.Random) -> str:
+def bluck_cluck_uses_secondary_catalog(
+    province_x: int, province_y: int, attacker_leader_id: int, defender_leader_id: int, phase: int
+) -> bool:
+    """The real, shared BLUCK/CLUCK catalog-pair selector (Phase 605
+    correction -- see module docstring). `SAY.PAS`'s `_BLuck`/`_CLuck`
+    both gate on the identical `Odd(_px+_py+_attl+_defl+_rphase)`
+    expression: the odd-sum case draws from the primary catalog
+    (`BLUCK.X2`/`CLUCK.X2`), the even-sum case from the secondary one
+    (`BLUCK2.X2`/`CLUCK2.X2`). Returns ``True`` for the secondary
+    (even-sum) case, i.e. the logical inverse of Pascal's own `Odd(...)`.
+    """
+
+    return (province_x + province_y + attacker_leader_id + defender_leader_id + phase) % 2 == 0
+
+
+def render_bluck_event(
+    index: int, attacker_name: str, defender_name: str, rng: random.Random, *, secondary: bool = False
+) -> str:
     """The whole-battle BLUCK narration sentence for `bluck_event_index`'s
     own 1..17 index (real `BLUCK.X2` prose, Phase 584). `<`/`<2` are the
     attacker (side 1, the one whose own luck is being narrated), `[`/`[1`
     the defender (side 2) -- the same convention `report/turn_report.py
     render_battle_winner()` already uses for `_WINNER_TEMPLATES`.
+    `secondary` (Phase 605) picks `BLUCK2_TEMPLATE` instead -- see
+    `bluck_cluck_uses_secondary_catalog()`.
     """
 
     values = {
@@ -350,28 +473,22 @@ def render_bluck_event(index: int, attacker_name: str, defender_name: str, rng: 
         "[1": defender_name,
         "]": f"{defender_name}'s",
     }
-    return render(BLUCK_TEMPLATE[index], values, rng=rng)
+    template = BLUCK2_TEMPLATE if secondary else BLUCK_TEMPLATE
+    return render(template[index], values, rng=rng)
 
 
-def render_cluck_event(index: int, army_name: str, rng: random.Random) -> str:
+def render_cluck_event(index: int, army_name: str, rng: random.Random, *, secondary: bool = False) -> str:
     """One column's own local CLUCK narration sentence for
     `cluck_event_index`'s own 1..39 index (real `CLUCK.X2` prose, Phase
     584). `=` is the affected army, the same marker `report/
     turn_report.py render_battle_column()` already uses for the margin
-    templates.
+    templates. `secondary` (Phase 605) picks `CLUCK2_TEMPLATE` instead
+    -- see `bluck_cluck_uses_secondary_catalog()`; this replaces the
+    former separate `render_cluck2_event()`.
     """
 
-    return render(CLUCK_TEMPLATE[index], {"=": army_name}, rng=rng)
-
-
-def render_cluck2_event(index: int, army_name: str, rng: random.Random) -> str:
-    """The CLUCK2 "fortune reversed itself" follow-up sentence for the
-    same `cluck_index` `render_cluck_event()` used (real `CLUCK2.X2`
-    prose, Phase 584) -- see module docstring's own Phase 584 correction
-    for why this replaces `CLUCK2_REVERSAL_PHRASE`.
-    """
-
-    return render(CLUCK2_TEMPLATE[index], {"=": army_name}, rng=rng)
+    template = CLUCK2_TEMPLATE if secondary else CLUCK_TEMPLATE
+    return render(template[index], {"=": army_name}, rng=rng)
 
 
 def column_narration_eligible(attacker_strength: float, defender_strength: float) -> bool:
@@ -386,20 +503,3 @@ def column_narration_eligible(attacker_strength: float, defender_strength: float
         return False
     ratio = attacker_strength / defender_strength
     return CLUCK_NARRATION_GATE_LOW <= ratio <= CLUCK_NARRATION_GATE_HIGH
-
-
-def roll_cluck_reversal(index: int, rng: random.Random) -> bool:
-    """AKGEN's own confirmed CLUCK2 "fortune reverses" check (Phase 388):
-    only rolled when the raw CLUCK index falls in `[13, 27]`; a further
-    33% chance rewrites the narration into CLUCK then CLUCK2 -- no new
-    strength factor is drawn, this is narration-only. Verified against
-    the source's own stated aggregate ("a competitive column shows the
-    second event 30.9375% of the time on turn 1, 20.109375% on turn 2+")
-    by summing `local_column_event.probability_percent_turn_1`/
-    `_turn_2_plus` over indices 13-27 and multiplying by 33% -- both
-    reproduce the JSON's own stated figures exactly.
-    """
-
-    if not (CLUCK_REVERSAL_INDEX_LOW <= index <= CLUCK_REVERSAL_INDEX_HIGH):
-        return False
-    return rng.random() < CLUCK_REVERSAL_CHECK_PERCENT

@@ -1216,11 +1216,10 @@ from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.battle_luck import (
+    bluck_cluck_uses_secondary_catalog,
     column_narration_eligible,
     render_bluck_event,
-    render_cluck2_event,
     render_cluck_event,
-    roll_cluck_reversal,
 )
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult, is_unfinalized_royal_heir
@@ -1743,46 +1742,76 @@ def render_column_clash(
 
 
 def render_bluck_narration(
-    battle_result: BattleResult, attacker_name: str, defender_name: str, rng: random.Random
+    battle_result: BattleResult,
+    attacker_name: str,
+    defender_name: str,
+    rng: random.Random,
+    *,
+    province_coord: HexCoord,
+    attacker_leader_id: int,
+    defender_leader_id: int,
+    phase: int,
 ) -> str:
     """Renders the whole-battle BLUCK luck-narration sentence -- real
-    `BLUCK.X2` prose (Phase 584), keyed by `BattleResult.bluck_index`
-    (drawn once per battle, Phase 370). `attacker_name`/`defender_name`
-    are the two Kings, the same naming `render_battle_winner()` already
-    uses; ``rng`` now resolves the real template's own `/R` alternation.
+    `BLUCK.X2`/`BLUCK2.X2` prose (Phase 584/605), keyed by `BattleResult.
+    bluck_index` (drawn once per battle, Phase 370). `attacker_name`/
+    `defender_name` are the two Kings, the same naming `render_battle_
+    winner()` already uses; ``rng`` resolves the real template's own
+    `/R` alternation.
+
+    **Phase 605**: which of the two mutually-exclusive catalogs is used
+    is not random -- `SAY.PAS`'s own real `_BLuck` dispatch (see `turn/
+    battle_luck.py` module docstring) is a deterministic parity check
+    over the province coordinate, the two combatant leader ids, and the
+    current game phase, all four now required keyword arguments.
     """
 
-    return render_bluck_event(battle_result.bluck_index, attacker_name, defender_name, rng)
+    secondary = bluck_cluck_uses_secondary_catalog(
+        province_coord.x, province_coord.y, attacker_leader_id, defender_leader_id, phase
+    )
+    return render_bluck_event(battle_result.bluck_index, attacker_name, defender_name, rng, secondary=secondary)
 
 
-def render_cluck_narration(column: BattleColumnResult, army_name: str, rng: random.Random) -> str | None:
-    """Renders one column's local CLUCK luck-narration sentence, plus its
-    CLUCK2 "fortune reversed itself" follow-up when AKGEN's own confirmed
-    reversal check fires (Phase 388, real CLUCK2 text as of Phase 584).
-    Returns ``None`` when the column isn't "competitive" enough to be
-    narrated at all -- AKGEN's own confirmed `[0.4, 2.5]` pre-luck
-    strength-ratio gate (`turn/battle_luck.py column_narration_eligible`);
-    local luck still affects the column's own combat outcome even when
-    it goes unnarrated. ``army_name`` is the column's own affected army
-    (`=` in the source template) -- which side that is isn't resolved
-    here, the same "caller already knows" posture `render_battle_column()`
-    already takes for its own `attacker_army_name`/`defender_army_name`.
+def render_cluck_narration(
+    column: BattleColumnResult,
+    army_name: str,
+    rng: random.Random,
+    *,
+    province_coord: HexCoord,
+    attacker_leader_id: int,
+    defender_leader_id: int,
+    phase: int,
+) -> str | None:
+    """Renders one column's local CLUCK luck-narration sentence -- real
+    `CLUCK.X2`/`CLUCK2.X2` prose (Phase 584/605). Returns ``None`` when
+    the column isn't "competitive" enough to be narrated at all --
+    AKGEN's own confirmed `[0.4, 2.5]` pre-luck strength-ratio gate
+    (`turn/battle_luck.py column_narration_eligible`); local luck still
+    affects the column's own combat outcome even when it goes
+    unnarrated. ``army_name`` is the column's own affected army (`=` in
+    the source template) -- which side that is isn't resolved here, the
+    same "caller already knows" posture `render_battle_column()` already
+    takes for its own `attacker_army_name`/`defender_army_name`.
 
-    The `", "` join between CLUCK's own sentence and CLUCK2's own
-    follow-up is inherited from Phase 388's own choice (when the CLUCK2
-    half was still the fixed bridge phrase `CLUCK2_REVERSAL_PHRASE`, a
-    lowercase continuation clause that made a comma-join read naturally)
-    -- kept as-is now that real, independently-capitalized CLUCK2.X2
-    sentences fill that slot instead, since no source confirms exactly
-    how the two `Say()` calls concatenate; not re-guessed at here.
+    **Phase 605 correction**: this used to append a CLUCK2 "fortune
+    reversed itself" follow-up sentence after a 33% roll on indices
+    `[13, 27]` -- that mechanism was built from an aggregate JSON
+    statistic, not a direct `SAY.PAS` citation, and turned out to
+    describe the wrong thing. `SAY.PAS`'s own real `_CLuck` dispatch
+    shares `_BLuck`'s identical parity-check selector (see `turn/
+    battle_luck.py` module docstring): `CLUCK.X2`/`CLUCK2.X2` are two
+    mutually exclusive catalogs for the same event, not a base sentence
+    plus a sometimes-appended follow-up. The four new keyword arguments
+    are that formula's real inputs, the same ones `render_bluck_
+    narration()` now requires.
     """
 
     if not column_narration_eligible(column.attacker_strength, column.defender_strength):
         return None
-    text = render_cluck_event(column.cluck_index, army_name, rng)
-    if roll_cluck_reversal(column.cluck_index, rng):
-        return f"{text}, {render_cluck2_event(column.cluck_index, army_name, rng)}"
-    return text
+    secondary = bluck_cluck_uses_secondary_catalog(
+        province_coord.x, province_coord.y, attacker_leader_id, defender_leader_id, phase
+    )
+    return render_cluck_event(column.cluck_index, army_name, rng, secondary=secondary)
 
 
 def render_battle_winner(

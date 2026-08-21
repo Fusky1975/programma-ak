@@ -4,15 +4,15 @@ import random
 
 from ak_engine.report.prose import render
 from ak_engine.turn.battle_luck import (
+    BLUCK2_TEMPLATE,
     BLUCK_TEMPLATE,
-    CLUCK2_REVERSAL_PHRASE,
     CLUCK2_TEMPLATE,
-    CLUCK_REVERSAL_CHECK_PERCENT,
     CLUCK_TEMPLATE,
     FIRST_TURN_LUCK_COEFFICIENT,
     LATER_TURN_LUCK_COEFFICIENT,
     LUCKINT2_TEMPLATE,
     LUCKINT_TEMPLATE,
+    bluck_cluck_uses_secondary_catalog,
     bluck_event_index,
     break_bres_tie,
     cluck_event_index,
@@ -21,9 +21,7 @@ from ak_engine.turn.battle_luck import (
     draw_local_luck,
     luck_strength_multiplier,
     render_bluck_event,
-    render_cluck2_event,
     render_cluck_event,
-    roll_cluck_reversal,
 )
 
 from _helpers import ScriptedRandom
@@ -131,8 +129,9 @@ def test_break_bres_tie_terminates_even_when_the_coin_always_lands_the_same():
 # -- Phase 388/584: BLUCK/CLUCK/CLUCK2 narration text --------------------
 
 
-def test_bluck_cluck_and_cluck2_templates_have_the_documented_lengths():
+def test_bluck_bluck2_cluck_and_cluck2_templates_have_the_documented_lengths():
     assert len(BLUCK_TEMPLATE) == 17
+    assert len(BLUCK2_TEMPLATE) == 17
     assert len(CLUCK_TEMPLATE) == 39
     assert len(CLUCK2_TEMPLATE) == 39
 
@@ -146,6 +145,18 @@ def test_render_bluck_event_renders_the_real_prose_at_each_bound():
     )
 
 
+def test_render_bluck_event_secondary_renders_the_real_bluck2_prose():
+    # Phase 605: BLUCK2.X2 is a mutually exclusive alternate catalog,
+    # not a "fortune reverses" follow-up.
+    rng = ScriptedRandom([0.1] * 20)
+    result = render_bluck_event(1, "Aldric", "Borin", rng, secondary=True)
+    assert result == (
+        "the fortunes of war took a terrible turn against Aldric when "
+        "Aldric's forces were trapped in a canyon and had to fight "
+        "their way past prepared defenses."
+    )
+
+
 def test_render_cluck_event_renders_the_real_prose_at_each_bound():
     rng = ScriptedRandom([0.1] * 20)
     assert render_cluck_event(1, "144th Legion", rng) == (
@@ -154,9 +165,12 @@ def test_render_cluck_event_renders_the_real_prose_at_each_bound():
     )
 
 
-def test_render_cluck2_event_renders_the_real_prose():
+def test_render_cluck_event_secondary_renders_the_real_cluck2_prose():
+    # Phase 605: CLUCK2.X2 is likewise a mutually exclusive alternate
+    # catalog for the same event -- render_cluck2_event() is gone,
+    # folded into this same function's own secondary=True branch.
     rng = ScriptedRandom([0.1] * 20)
-    result = render_cluck2_event(1, "144th Legion", rng)
+    result = render_cluck_event(1, "144th Legion", rng, secondary=True)
     assert result == (
         "a mutiny broke out among 144th Legion when a false report spread "
         "that they would not be paid this year, thus they were of little use."
@@ -177,43 +191,21 @@ def test_column_narration_eligible_rejects_a_non_positive_strength():
     assert column_narration_eligible(-1, 10) is False
 
 
-def test_roll_cluck_reversal_never_fires_outside_the_documented_13_to_27_range():
-    rng = random.Random(388)
-    for index in (1, 12, 28, 39):
-        assert roll_cluck_reversal(index, rng) is False
+# -- Phase 605: the real BLUCK/BLUCK2/CLUCK/CLUCK2 catalog selector ------
 
 
-def test_roll_cluck_reversal_can_fire_inside_the_documented_13_to_27_range():
-    # A low draw always beats the 33% threshold; a high draw never does.
-    always_low = random.Random()
-    always_low.random = lambda: 0.0  # type: ignore[method-assign]
-    always_high = random.Random()
-    always_high.random = lambda: 0.99  # type: ignore[method-assign]
-    for index in (13, 20, 27):
-        assert roll_cluck_reversal(index, always_low) is True
-        assert roll_cluck_reversal(index, always_high) is False
+def test_bluck_cluck_uses_secondary_catalog_matches_say_pas_odd_check():
+    # SAY.PAS: Odd(_px+_py+_attl+_defl+_rphase) -> primary catalog;
+    # even -> secondary. Sum here is 3+5+1+2+1 = 12, even.
+    assert bluck_cluck_uses_secondary_catalog(3, 5, 1, 2, 1) is True
+    # Sum here is 3+5+1+2+2 = 13, odd -> primary (not secondary).
+    assert bluck_cluck_uses_secondary_catalog(3, 5, 1, 2, 2) is False
 
 
-def test_roll_cluck_reversal_matches_the_akgen_aggregate_percentages():
-    # Source: "a competitive column shows the second event 30.9375% of
-    # the time on turn 1, 20.109375% on turn 2+" -- derived here as
-    # P(index in [13,27]) * 33%, cross-checked against the source's own
-    # local_column_event.probability_percent tables by Monte Carlo over
-    # cluck_event_index's own real distribution rather than a uniform
-    # index draw.
-    rng = random.Random(3880)
-    n = 200_000
-    reversals = sum(1 for _ in range(n) if roll_cluck_reversal(cluck_event_index(*draw_local_luck(rng)), rng))
-    # Local luck values are U[0,1) with no turn-1/turn-2+ distinction of
-    # their own (that's on luck_strength_multiplier, not cluck_event_index),
-    # so this reproduces the turn-2+ figure -- CLUCK_REVERSAL_CHECK_PERCENT
-    # applied to indices in range averages out close to 60.9375%*33%.
-    assert abs(reversals / n * 100 - 60.9375 * CLUCK_REVERSAL_CHECK_PERCENT) < 1.0
-
-
-def test_cluck2_reversal_phrase_is_a_non_empty_confirmed_string():
-    assert isinstance(CLUCK2_REVERSAL_PHRASE, str)
-    assert CLUCK2_REVERSAL_PHRASE
+def test_bluck_cluck_uses_secondary_catalog_is_a_pure_parity_check():
+    # Flipping any single one of the five inputs by 1 flips the result.
+    assert bluck_cluck_uses_secondary_catalog(0, 0, 0, 0, 0) is True
+    assert bluck_cluck_uses_secondary_catalog(1, 0, 0, 0, 0) is False
 
 
 # -- Phase 587: LUCKINT.X/LUCKINT2.X --------------------------------------
