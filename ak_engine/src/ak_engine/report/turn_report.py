@@ -3550,6 +3550,88 @@ def render_battle_leader_intro(commander_name: str, rng: random.Random, *, is_se
     return render(variant, values, rng=rng, is_sea=is_sea)
 
 
+# HostAK/TP/PROSE/BINOCPR.X -- the Binoculars item's own scouting-preview
+# sentence, describing a neighboring province seen from a distance
+# (Phase 594). `SAY.PAS:739 _LBinoc: FD('binocpr',S_Red,5)`.
+#
+# Every marker resolves through an already-established project
+# convention, not a new one invented for this phase: `*` (direction) is
+# `PROSE.TXT`'s own documented symbol (module docstring line 32), simply
+# never wired into a live `values` dict before now; `` ` `` (terrain,
+# already live at line 8843's `describe_rumor()`); `@` (province name);
+# `^A` (article, `render()`'s own Phase 584 mechanism); `^P` (province
+# number, the same `str(encode_hex_number(...))` convention `render_
+# march()`/`describe_rumor()` already established, Phase 104/247 --
+# *not* `models/map.py province_code()`, a different scheme reserved for
+# the still-unimplemented ASCII-map work); `^R` (race name, already live
+# at line 5983); `[3` (a King/ruler reference, the same convention
+# `render_ally_proposed()` already uses). Only `$W` ("ricchezza"/wealth,
+# a raw `$`-prefixed CTRL macro) has no resolved game-mechanic precedent
+# anywhere in this project -- this module doesn't invent a wealth-tier
+# system for it, matching its own docstring's stance ("does not know
+# anything about `GameState` or what a report should say"); `wealth_
+# descriptor` is a plain caller-supplied string, the same pattern `$S`
+# (`attack_method`) and `$o` (`alignment_name`) already established for
+# other `$`-family markers.
+#
+# The fifth variant's own real text is `*ern horizon` -- `*` substitutes
+# a bare compass word (`DIRECTION_NAME`'s own "east"/"northeast"/etc.),
+# and `-ern` is real, verbatim source text immediately following it, not
+# something this phase adds (confirmed correct for all six `Direction`
+# values: "eastern", "northeastern", "southeastern", "southwestern",
+# "western", "northwestern").
+_BINOCPR_TEMPLATES: list[str] = [
+    "to the * lies ^A $W ` province/Rarea called/Rnamed @ ^P, "
+    "populated by ^R.It is ruled by [3.",
+    "looking/Rturning to the *, one can_see/Respies ^A $W ` area, "
+    "which is known as @ ^P.It is populated by ^R and [3 rules "
+    "there.",
+    "* of here is @ ^P, ^A $W ` province/Rarea owned/Rruled by [3, "
+    "where ^R dwell.",
+    "to the * there lies/Ris ^A ` province known as @ ^P, ^A $W "
+    "land/Sarea of ^R where [3 rules/Rreigns.",
+    "viewing the *ern horizon, a_man/Rone can see ^A $W ` province "
+    "called/Rknown_as @ ^P.It is said that [3 reigns/Ris_the_ruler "
+    "there.It is known to be occupied/Rpopulated by ^R.",
+    "* of here lies the $W province of @ ^P, ruled by [3.It is "
+    "said/Rknown to be ^A ` province inhabited/Roccupied by ^R.",
+]
+
+
+def render_binoculars_preview(
+    direction: str,
+    wealth_descriptor: str,
+    terrain_name: str,
+    province_name: str,
+    province_number: str,
+    race_name: str,
+    ruler_name: str,
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
+) -> str:
+    """Renders BINOCPR.X's sentence for the Binoculars item's own
+    scouting preview of a neighboring province (Phase 594). Every
+    parameter is an already-resolved display string or the exact
+    already-established substitution this module's other renderers use
+    for the same marker -- see the module comment above for each one's
+    own precedent citation. ``is_sea`` (Phase 74) resolves the fourth
+    variant's own "/S" marker.
+    """
+
+    variant = pick_variant(_BINOCPR_TEMPLATES, rng)
+    values = {
+        "*": direction,
+        "$W": wealth_descriptor,
+        "`": terrain_name,
+        "@": province_name,
+        "^P": province_number,
+        "^R": race_name,
+        "[3": ruler_name,
+    }
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
 # Phase 415: describe_search()'s own default when narrating a
 # SearchExecutionResult.melee_swing -- this project has no per-character
 # weapon model (turn/encounter.py Combatant carries no weapon field), so

@@ -24238,7 +24238,7 @@ follow-up request after the original 431-435 plan shipped.
   multi-sentence-variant and optional-clause coverage. Ran again: 4985
   passed (net +6).
 
-- **Phase 593 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 593**: `report/turn_report.py` -- transcribes
   `BATLDR.X`, a King/Hero personally commanding a battle column into the
   fray. `SAY.PAS:1038 _attl: IF lp <= cdrdex[fn] THEN FD('batldr',
   S_Batt,2)` fires when the column's front-line position falls within
@@ -24256,6 +24256,30 @@ follow-up request after the original 431-435 plan shipped.
   4985 passed (non-breaking). Added tests: one verbatim sample plus
   sea-marker and optional-clause coverage. Ran again: 4989 passed
   (net +4).
+
+- **Phase 594 (current)**: `report/turn_report.py` -- transcribes
+  `BINOCPR.X`, the Binoculars item's own scouting-preview sentence for a
+  neighboring province (`SAY.PAS:739 _LBinoc: FD('binocpr',S_Red,5)`).
+  Every marker resolves through an already-established project
+  convention rather than a new one: `*` (direction, `PROSE.TXT`'s own
+  documented symbol, simply never wired into a live `values` dict
+  before now), `` ` `` (terrain), `@` (province name), `^A` (article),
+  `^P` (province number -- the same `str(encode_hex_number(...))`
+  convention `render_march()`/`describe_rumor()` already use, Phase
+  104/247, deliberately *not* `models/map.py province_code()`, a
+  different scheme reserved for the still-unimplemented ASCII-map
+  work), `^R` (race name), `[3` (King/ruler reference). Only `$W`
+  ("ricchezza"/wealth) has no resolved game-mechanic precedent anywhere
+  in the project -- `wealth_descriptor` stays a plain caller-supplied
+  string, the same pattern `$S`/`$o` already established for other
+  `$`-family markers, rather than this module inventing a wealth-tier
+  system. The fifth variant's own real text is `*ern horizon`, verified
+  correct for all six `Direction` values ("eastern" through
+  "northwestern"). Sourced from the same byte-faithful 162-file pass as
+  Phases 578-593, cross-checked against `SAY.PAS` in `Programma
+  Pascal.zip`. Ran before writing tests: 4989 passed (non-breaking).
+  Added tests: one verbatim sample plus sea-marker and direction-suffix
+  coverage. Ran again: 4993 passed (net +4).
 
 ## Setup
 

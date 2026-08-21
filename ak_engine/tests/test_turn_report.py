@@ -205,6 +205,7 @@ from ak_engine.report.turn_report import (
     render_thief_searches_treasure,
     render_thief_search_failed,
     render_battle_leader_intro,
+    render_binoculars_preview,
     render_petrifying_gaze_missed,
     render_homeland_defense_morale,
     render_oratory_speech,
@@ -2060,6 +2061,48 @@ def test_render_battle_leader_intro_fourth_variant_puts_commander_name_last():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
     result = render_battle_leader_intro("Aldric", rng, is_sea=True)
     assert result == "standing at the ready with Aldric's ships was Aldric."
+
+
+# -- BINOCPR.X (Phase 594) --
+
+_BINOCPR_KWARGS = dict(
+    direction="east",
+    wealth_descriptor="poor",
+    terrain_name="Plains",
+    province_name="Mongu",
+    province_number="305",
+    race_name="Elves",
+    ruler_name="Aldric",
+)
+
+
+def test_render_binoculars_preview_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_binoculars_preview(**_BINOCPR_KWARGS, rng=rng)
+    assert result == "to the east lies a poor Plains province called Mongu 305, populated by Elves.It is ruled by Aldric."
+
+
+def test_render_binoculars_preview_fourth_variant_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+    result = render_binoculars_preview(**_BINOCPR_KWARGS, rng=rng, is_sea=True)
+    assert result == "to the east there lies a Plains province known as Mongu 305, a poor area of Elves where Aldric rules."
+
+
+def test_render_binoculars_preview_fifth_variant_appends_ern_suffix_to_direction():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[4])
+    kwargs = dict(_BINOCPR_KWARGS, direction="northeast")
+    result = render_binoculars_preview(**kwargs, rng=rng)
+    assert result == (
+        "viewing the northeastern horizon, a man can see a poor Plains "
+        "province called Mongu 305.It is said that Aldric reigns "
+        "there.It is known to be occupied by Elves."
+    )
+
+
+def test_render_binoculars_preview_sixth_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[5])
+    result = render_binoculars_preview(**_BINOCPR_KWARGS, rng=rng)
+    assert result == "east of here lies the poor province of Mongu 305, ruled by Aldric.It is said to be a Plains province inhabited by Elves."
 
 
 # -- Phase 155: monster missile-attack flavor text + Troll regeneration --
