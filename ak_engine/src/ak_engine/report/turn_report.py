@@ -3436,6 +3436,83 @@ def render_character_wanders_in(
     return render(variant, values, rng=rng, is_sea=is_sea)
 
 
+# HostAK/TP/PROSE/THATT.X, THFAIL.X -- the opening/failure bookends of
+# the same defeated-leader-treasure-search narrative Phase 590's own
+# G_*/T_* Steal/Spoils cluster already covers the success half of
+# (Phase 592). `SAY.PAS:834 _LThAtt: FD('thatt',S_PCom,2)` (the search
+# opens) and `SAY.PAS:582 _ThFail: FD('thfail',S_PCom,4)` (the search
+# comes up empty) sit right alongside that same cluster's own dispatch
+# block in `RUMORS.PAS` (`_ThFail=3016` two entries before `T_Conf=3200`'s
+# own neighbors start; `_LThAtt=3054`) and share its `S_PCom` context --
+# strong circumstantial evidence they're the same narrative sequence's
+# open/fail bookends, though (same caveat as Phase 590/591) no call site
+# anywhere in the available `.PAS` corpus writes either name outside its
+# own declaration/dispatch line, so the exact trigger connecting THATT ->
+# {THFAIL | a Steal/Spoils success} can't be traced further. Sourced but
+# unwired, matching that same precedent.
+_THATT_TEMPLATES: list[str] = [
+    "< {stealthily }crept_up_on/Rstole_towards ['s treasure, "
+    "hoping/Rwishing to steal ^A great treasure.",
+    "< {furtively }stole/Rmoved towards ['s treasure, visions of "
+    "wealth/Rgreat_treasure dancing before > eyes.",
+    "< searched {soundlessly }for ] treasure.> greedy/Rnervous "
+    "fingers twitched in anticipation when < saw the chest/Rvault.",
+    "the eyes of < brightened {greedily }when they alighted_on/Rsaw "
+    "the treasure trove/Rchest of [.",
+    "< {quietly }searched for the treasure of [.Finally < "
+    "espied/Rfound ^A hidden/Rconcealed bag/Rchest, and ^A {black "
+    "}tide of greed/Ravarice welled/Rgushed up out of > "
+    "soul/Rheart{ and filled > dry throat}.",
+    "< crept/Rglided {stealthily }into {what I thought was }the "
+    "treasure room of [, hands tingling/Rtwitching with "
+    "anticipation/Rexcitement.",
+]
+
+
+def render_thief_searches_treasure(searcher_name: str, victim_name: str, rng: random.Random) -> str:
+    """Renders THATT.X's sentence for a character beginning to search a
+    defeated leader's belongings for treasure (Phase 592) -- precedes
+    either ``render_thief_search_failed()`` below or one of Phase 590's
+    ``render_*_spoils_from_corpse()``/``render_*_theft_*()`` renderers.
+    """
+
+    variant = pick_variant(_THATT_TEMPLATES, rng)
+    values = {
+        "<": searcher_name,
+        ">": f"{searcher_name}'s",
+        "[": victim_name,
+        "]": f"{victim_name}'s",
+    }
+    return render(variant, values, rng=rng)
+
+
+_THFAIL_TEMPLATES: list[str] = [
+    "but after searching {fruitlessly }for {half }an hour, < failed "
+    "to find any treasure{ of significant/Rhigh value}.",
+    "< {patiently/Rcarefully }searched the {entire }area, but {< "
+    "}could not find any {valuable }treasure and departed/Rleft in "
+    "{total }frustration.",
+    "< had {high }hopes of hauling/Rcarting away ^A "
+    "{great/Rvaluable }hoard/Rtreasure.But {any amount of "
+    "}searching could not reveal/Runcover treasure of any "
+    "{measureable/Rappreciable }value/Rworth.",
+]
+
+
+def render_thief_search_failed(searcher_name: str, rng: random.Random) -> str:
+    """Renders THFAIL.X's sentence for a treasure search coming up
+    empty (Phase 592) -- the failure sibling of ``render_thief_
+    searches_treasure()``. No victim reference of its own. The first
+    variant's own leading lowercase "but" is verbatim from the real
+    source, meant to continue directly after THATT.X's own sentence
+    rather than start a fresh one.
+    """
+
+    variant = pick_variant(_THFAIL_TEMPLATES, rng)
+    values = {"<": searcher_name}
+    return render(variant, values, rng=rng)
+
+
 # Phase 415: describe_search()'s own default when narrating a
 # SearchExecutionResult.melee_swing -- this project has no per-character
 # weapon model (turn/encounter.py Combatant carries no weapon field), so

@@ -24195,7 +24195,7 @@ follow-up request after the original 431-435 plan shipped.
   optional-clause/sea-marker/list-join/overflow-choice coverage. Ran
   again: 4968 passed (net +16).
 
-- **Phase 591 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 591**: `report/turn_report.py` -- transcribes
   `AWANDFR.X`/`AWANDTO.X` (unemployed mercenary armies, `SAY.PAS:855-856`)
   and `LWANDFR.X`/`LWANDTO.X` (unemployed Heroes, `SAY.PAS:719/721`), a
   two-province ambient-relocation flavor cluster: a unit wanders away
@@ -24215,6 +24215,28 @@ follow-up request after the original 431-435 plan shipped.
   4968 passed (non-breaking). Added tests: one verbatim sample per
   catalog plus sea-marker/optional-clause/multi-sentence-variant
   coverage. Ran again: 4979 passed (net +11).
+
+- **Phase 592 (current)**: `report/turn_report.py` -- transcribes
+  `THATT.X`/`THFAIL.X`, the opening/failure bookends of the same
+  defeated-leader-treasure-search narrative Phase 590's own `G_*`/`T_*`
+  Steal/Spoils cluster already covers the success half of. `SAY.PAS:834
+  _LThAtt: FD('thatt',S_PCom,2)` opens the search; `SAY.PAS:582 _ThFail:
+  FD('thfail',S_PCom,4)` is the empty-handed outcome -- both share the
+  same `S_PCom` context and sit in `RUMORS.PAS`'s own constant block
+  right alongside Phase 590's cluster, strong circumstantial evidence
+  they're the same sequence's open/fail bookends. Same caveat as Phase
+  590/591: no call site anywhere in the available `.PAS` corpus writes
+  either name outside its own declaration/dispatch line, so the exact
+  THATT -> {THFAIL | a Steal/Spoils success} trigger can't be traced
+  further -- sourced but unwired, matching that precedent. `THFAIL.X`'s
+  own first variant keeps its real leading lowercase "but" verbatim,
+  meant to continue directly after a THATT.X sentence rather than start
+  a fresh one. Sourced from the same byte-faithful 162-file pass as
+  Phases 578-591, cross-checked against `SAY.PAS`/`RUMORS.PAS` in
+  `Programma Pascal.zip`. Ran before writing tests: 4979 passed
+  (non-breaking). Added tests: one verbatim sample per catalog plus
+  multi-sentence-variant and optional-clause coverage. Ran again: 4985
+  passed (net +6).
 
 ## Setup
 

@@ -202,6 +202,8 @@ from ak_engine.report.turn_report import (
     render_mercenary_army_wanders_in,
     render_character_wanders_away,
     render_character_wanders_in,
+    render_thief_searches_treasure,
+    render_thief_search_failed,
     render_petrifying_gaze_missed,
     render_homeland_defense_morale,
     render_oratory_speech,
@@ -1984,6 +1986,52 @@ def test_render_character_wanders_in_fourth_variant_includes_optional_clause():
     rng = ScriptedRandom([0.99] * 10, choice_indices=[3])
     result = render_character_wanders_in("Aldric", "Ferrara", "Mongu", rng)
     assert result == "Aldric rode into Mongu in search of worthy employment, having found nothing much in Ferrara."
+
+
+# -- THATT.X/THFAIL.X (Phase 592) --
+
+
+def test_render_thief_searches_treasure_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_thief_searches_treasure("Aldric", "Borin", rng)
+    assert result == "Aldric crept up on Borin's treasure, hoping to steal a great treasure."
+
+
+def test_render_thief_searches_treasure_third_variant_is_two_sentences():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_thief_searches_treasure("Aldric", "Borin", rng)
+    assert result == (
+        "Aldric searched for Borin's treasure.Aldric's greedy fingers "
+        "twitched in anticipation when Aldric saw the chest."
+    )
+
+
+def test_render_thief_searches_treasure_fifth_variant_includes_optional_clauses():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[4])
+    result = render_thief_searches_treasure("Aldric", "Borin", rng)
+    assert result == (
+        "Aldric quietly searched for the treasure of Borin.Finally "
+        "Aldric found a concealed chest, and a black tide of avarice "
+        "gushed up out of Aldric's heart and filled Aldric's dry throat."
+    )
+
+
+def test_render_thief_search_failed_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_thief_search_failed("Aldric", rng)
+    assert result == "but after searching for an hour, Aldric failed to find any treasure."
+
+
+def test_render_thief_search_failed_second_variant_excludes_redundant_repeat():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_thief_search_failed("Aldric", rng)
+    assert result == "Aldric searched the area, but could not find any treasure and departed in frustration."
+
+
+def test_render_thief_search_failed_third_variant_is_two_sentences():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_thief_search_failed("Aldric", rng)
+    assert result == "Aldric had hopes of hauling away a hoard.But searching could not reveal treasure of any value."
 
 
 # -- Phase 155: monster missile-attack flavor text + Troll regeneration --
