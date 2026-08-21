@@ -8086,6 +8086,70 @@ SEASON_NAME: dict[int, str] = {
 }
 
 
+# HostAK/TP/PROSE/SPRING.X/ESUMMER.X/LSUMMER.X/FALL.X/EWINTER.X (each
+# header "3 1", `SAY.PAS:342-346 firstp`: `-1,0: FD('spring',S_Red,10)`
+# / `1: FD('esummer',...)` / `2: FD('lsummer',...)` / `3: FD('fall',...)`
+# / `4: FD('ewinter',...)`) -- the real full-sentence/prefix templates
+# for the same 5 seasons `SEASON_NAME` above already names (Phase 257),
+# keyed by the identical 0-4 ordinal. Phase 589. Sourced from a byte-
+# faithful third-party reverse-engineering pass over the full 162-file
+# prose corpus (`AKPROSE_reverse_engineering_report.md`, supplied
+# directly by the user). Each catalog has 3 real choices with genuinely
+# different shapes, kept as 3 parallel dicts rather than forced into one
+# uniform structure:
+#
+# - choice 1 (`SEASON_TRANSITION_TEMPLATE`): a full "season X turned
+#   into season Y" sentence. Only `SPRING.X`'s own choice 1 carries an
+#   optional `<`/`>` clause ("...and < prepared to carry out > orders")
+#   -- the other 4 describe the pure season transition with no
+#   character subject at all, a real, confirmed asymmetry (Spring is
+#   the year's first season, `firstp` -1/0, matching `YAK.PAS`'s own
+#   real "start of game/year" framing already cited for `SEASON_NAME`).
+# - choice 2 (`SEASON_PREFIX_TEMPLATE`): a bare "in/during <season>,_"
+#   connector clause (trailing `_` = space, ready for direct
+#   concatenation) -- this is the real source behind `YAK.PAS`'s own
+#   already-cited `Concat('In ', seasname[...], ', ')` call site,
+#   confirming `_season_phrase_for_phase_label()` below is a real but
+#   simplified approximation of this real, `/R`-varied template (not
+#   rewired to use it here -- that function is already tested/wired
+#   into a live report path, out of scope for this phase's own sourced-
+#   but-unwired-data addition).
+# - choice 3 (`SEASON_ADVENT_TEMPLATE`): "with the advent of the
+#   <season> season{,}_" -- again a bare connector for 4 of the 5
+#   seasons, but `SPRING.X`'s own choice 3 is a full sentence with its
+#   own `<`/`>` clause, the same Spring-only asymmetry as choice 1.
+SEASON_TRANSITION_TEMPLATE: dict[int, str] = {
+    0: "{stormy/Rfrigid }winter gave_way_to/Rmelted_into {sweet/Rfragrant "
+    "}spring{, and < prepared/Rmade_ready to carry out > "
+    "urgent/Rimperial orders/Rassignments}.",
+    1: "windy/Rthe_wet spring blossomed_into/Rwas_followed_by "
+    "{a_sultry/Ra_fragrant }early summer.",
+    2: "midsummer's day/Rnight passed/Rcame_and_went and {a_hot/Ra_pleasant "
+    "}late summer came/Rarrived.",
+    3: "the {sultry/Rhot days of }summer surrendered_to/Rmellowed_into "
+    "{a_colorful/Rthe }fall.",
+    4: "the fall {season }cooled_into/Rdarkened_into {a_frigid/Rthe_stillness_of "
+    "}early winter.",
+}
+
+SEASON_PREFIX_TEMPLATE: dict[int, str] = {
+    0: "in spring,_",
+    1: "in/Rduring early summer,_",
+    2: "in late summer,_",
+    3: "in/Rduring fall,_",
+    4: "in/Rduring early winter,_",
+}
+
+SEASON_ADVENT_TEMPLATE: dict[int, str] = {
+    0: "with the advent/Rcoming of the spring season{,} < prepared/Rset_out "
+    "to quench > thirst for adventure/Rglory.",
+    1: "with the advent/Rcoming of the early summer season{,}_",
+    2: "with the advent/Rcoming of the late summer season{,}_",
+    3: "with the advent/Rcoming of the fall season{,}_",
+    4: "with the advent/Rcoming of the early winter season{,}_",
+}
+
+
 def _season_phrase_for_phase_label(phase_label: str) -> str:
     """"In <season>, " prefix for one GENERAL INTELLIGENCE REPORT line,
     keyed off the originating ``PhaseDispatchResult.phase_label``

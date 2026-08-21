@@ -47,7 +47,10 @@ from ak_engine.report.turn_report import (
     QUEST_VISIT_FULFILLED_TEXT,
     QUEST_VISIT_TEXT,
     RECRUIT_TEMPLATES,
+    SEASON_ADVENT_TEMPLATE,
     SEASON_NAME,
+    SEASON_PREFIX_TEMPLATE,
+    SEASON_TRANSITION_TEMPLATE,
     SEARCH_FEATURE_ALREADY_SACKED_TEMPLATE,
     SNEAKUP_RANGE_BOW,
     SNEAKUP_RANGE_MELEE,
@@ -7031,6 +7034,52 @@ def test_season_name_covers_all_five_real_phase_indices():
         3: "fall",
         4: "early winter",
     }
+
+
+# -- Phase 589: SPRING.X/ESUMMER.X/LSUMMER.X/FALL.X/EWINTER.X --
+
+
+def test_season_transition_prefix_advent_templates_cover_all_five_seasons():
+    assert set(SEASON_TRANSITION_TEMPLATE.keys()) == set(SEASON_NAME.keys())
+    assert set(SEASON_PREFIX_TEMPLATE.keys()) == set(SEASON_NAME.keys())
+    assert set(SEASON_ADVENT_TEMPLATE.keys()) == set(SEASON_NAME.keys())
+
+
+def test_season_prefix_template_matches_yak_pas_own_confirmed_call_site():
+    # SEASON_NAME's own docstring already cites YAK.PAS's real
+    # `Concat('In ', seasname[...], ', ')` call site -- this is the
+    # real source template behind that simplified approximation.
+    from ak_engine.report.prose import render
+
+    rng = ScriptedRandom([0.1] * 10)
+    assert render(SEASON_PREFIX_TEMPLATE[0], {}, rng=rng) == "in spring, "
+
+
+def test_season_transition_template_only_spring_has_the_optional_character_clause():
+    from ak_engine.report.prose import render
+
+    rng = ScriptedRandom([0.99] * 10)
+    for season in (1, 2, 3, 4):
+        assert "<" not in SEASON_TRANSITION_TEMPLATE[season]
+        assert ">" not in SEASON_TRANSITION_TEMPLATE[season]
+    result = render(
+        SEASON_TRANSITION_TEMPLATE[0], {"<": "Aldric", ">": "Aldric's"}, rng=rng
+    )
+    assert result == (
+        "frigid winter melted into fragrant spring, and Aldric made "
+        "ready to carry out Aldric's imperial assignments."
+    )
+
+
+def test_season_advent_template_only_spring_is_a_full_sentence():
+    from ak_engine.report.prose import render
+
+    for season in (1, 2, 3, 4):
+        assert SEASON_ADVENT_TEMPLATE[season].endswith("_")
+        assert "<" not in SEASON_ADVENT_TEMPLATE[season]
+    rng = ScriptedRandom([0.1] * 10)
+    result = render(SEASON_ADVENT_TEMPLATE[0], {"<": "Aldric", ">": "Aldric's"}, rng=rng)
+    assert result == "with the advent of the spring season Aldric prepared to quench Aldric's thirst for adventure."
 
 
 def test_record_battle_world_events_prefixes_the_season_for_a_real_phase_label():

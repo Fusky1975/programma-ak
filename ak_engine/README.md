@@ -24115,7 +24115,7 @@ follow-up request after the original 431-435 plan shipped.
   (including the real `/R`/`{...}` alternation), and a ready-to-
   concatenate trailing-space check. Ran again: 4941 passed (net +4).
 
-- **Phase 588 (current)**: transcribes the remaining 5 unwired
+- **Phase 588**: transcribes the remaining 5 unwired
   personal-combat catalogs into `report/turn_report.py`, following the
   exact `_TEMPLATES` + `render_*()` pattern Phases 111-113 already
   established for `GOBOW.X`/`GOMEL.X`/`ANDMISS.X`/`ANDINFL.X`/
@@ -24135,6 +24135,31 @@ follow-up request after the original 431-435 plan shipped.
   4941 passed (non-breaking). Added tests: one verbatim sample per
   catalog plus the `/S` sea-marker resolution for the two variants that
   carry one (`CCAST.X`, `STUN.X`). Ran again: 4948 passed (net +7).
+
+- **Phase 589 (current)**: `report/turn_report.py` -- transcribes
+  `SPRING.X`/`ESUMMER.X`/`LSUMMER.X`/`FALL.X`/`EWINTER.X` into
+  `SEASON_TRANSITION_TEMPLATE`/`SEASON_PREFIX_TEMPLATE`/
+  `SEASON_ADVENT_TEMPLATE: dict[int, str]`, keyed 0-4 to match the
+  pre-existing `SEASON_NAME` dict (Phase 257). `SAY.PAS:342-346`'s own
+  `firstp` dispatch (`-1,0`->spring, `1`->esummer, `2`->lsummer,
+  `3`->fall, `4`->ewinter) confirms the ordinal mapping. Reveals a real
+  asymmetry: only Spring's choice 1 (`SEASON_TRANSITION_TEMPLATE[0]`)
+  and choice 3 (`SEASON_ADVENT_TEMPLATE[0]`) carry an optional `<`/`>`
+  character clause, since Spring alone is the year's first season
+  (`firstp` -1/0); the other four seasons have no character subject in
+  choice 1 and a bare `_`-terminated connector in choice 3. Choice 2
+  across all five is the real source behind `SEASON_NAME`'s own
+  already-cited `YAK.PAS Concat('In ', seasname[...], ', ')` call site.
+  `turn_report.py`'s own `_season_phrase_for_phase_label()` is confirmed
+  to be a real but simplified approximation of these full templates --
+  deliberately left un-rewired, out of scope for this phase since that
+  function is already tested and wired into a live report path. Sourced
+  from the same byte-faithful 162-file reverse-engineering pass as
+  Phases 578-588. Ran before writing tests: 4948 passed (non-breaking).
+  Added tests: dict coverage plus three `render()`-verified samples
+  (the prefix's plain `/R`, the transition's optional-clause inclusion/
+  exclusion at both rng bounds, the advent template's Spring-only full
+  sentence). Ran again: 4952 passed (net +4).
 
 ## Setup
 
