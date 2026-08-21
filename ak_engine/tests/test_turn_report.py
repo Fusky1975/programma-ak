@@ -204,6 +204,7 @@ from ak_engine.report.turn_report import (
     render_character_wanders_in,
     render_thief_searches_treasure,
     render_thief_search_failed,
+    render_battle_leader_intro,
     render_petrifying_gaze_missed,
     render_homeland_defense_morale,
     render_oratory_speech,
@@ -2032,6 +2033,33 @@ def test_render_thief_search_failed_third_variant_is_two_sentences():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
     result = render_thief_search_failed("Aldric", rng)
     assert result == "Aldric had hopes of hauling away a hoard.But searching could not reveal treasure of any value."
+
+
+# -- BATLDR.X (Phase 593) --
+
+
+def test_render_battle_leader_intro_first_variant_land():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_battle_leader_intro("Aldric", rng)
+    assert result == "Aldric led Aldric's armies into the battle."
+
+
+def test_render_battle_leader_intro_first_variant_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_battle_leader_intro("Aldric", rng, is_sea=True)
+    assert result == "Aldric led Aldric's navies into the battle."
+
+
+def test_render_battle_leader_intro_third_variant_includes_optional_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[2])
+    result = render_battle_leader_intro("Aldric", rng)
+    assert result == "Aldric led a host of loyal soldiers into the battle."
+
+
+def test_render_battle_leader_intro_fourth_variant_puts_commander_name_last():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+    result = render_battle_leader_intro("Aldric", rng, is_sea=True)
+    assert result == "standing at the ready with Aldric's ships was Aldric."
 
 
 # -- Phase 155: monster missile-attack flavor text + Troll regeneration --

@@ -3513,6 +3513,43 @@ def render_thief_search_failed(searcher_name: str, rng: random.Random) -> str:
     return render(variant, values, rng=rng)
 
 
+# HostAK/TP/PROSE/BATLDR.X -- a King/Hero personally commanding a battle
+# column into the fray (Phase 593). `SAY.PAS:1038 _attl: IF lp <=
+# cdrdex[fn] THEN FD('batldr',S_Batt,2)` -- fires when the column's
+# front-line position (`lp`) falls within the commander-index bound
+# (`cdrdex[fn]`), i.e. when a leader is actually standing at the head of
+# that column. This project's own ``turn/battle_resolution.py
+# BattleColumnResult`` has no per-column "commanding leader" field to
+# drive that condition from, so (same pattern as Phase 590/591/592)
+# this is transcribed and render-tested but not wired into any battle
+# composer -- a model gap, not a missing call site this time, but the
+# same honest "sourced, not yet reachable from live game state" stance.
+# ``<3`` is documented (module docstring's own Phase 131-era note above)
+# as just another person/tense variant of the character reference,
+# substituted with the same literal commander name as ``<``/``<2``.
+_BATLDR_TEMPLATES: list[str] = [
+    "<3 led > armies/Snavies {boldly/Rcourageously }into the "
+    "battle/Rfray.",
+    "<3 stood ready/Rdeterminedly at the head of > thousands/Sships.",
+    "<3 commanded/Rled a_host/San_armada of loyal_soldiers/Sfighting_"
+    "sail{ into the battle}.",
+    "standing at_the_ready/Rtall with > warriors/Sships was <3.",
+    "<3 marched/Ssailed with > loyal troops/Ssquadrons, "
+    "eyes/Rjaws set in grim/Rterrible determination/Rresolution.",
+]
+
+
+def render_battle_leader_intro(commander_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+    """Renders BATLDR.X's sentence for a King/Hero personally commanding
+    a battle column (Phase 593). ``is_sea`` (Phase 74) resolves each
+    variant's own "/S" marker -- every one of the five carries one.
+    """
+
+    variant = pick_variant(_BATLDR_TEMPLATES, rng)
+    values = {"<3": commander_name, ">": f"{commander_name}'s"}
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
 # Phase 415: describe_search()'s own default when narrating a
 # SearchExecutionResult.melee_swing -- this project has no per-character
 # weapon model (turn/encounter.py Combatant carries no weapon field), so

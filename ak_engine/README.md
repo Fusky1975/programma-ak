@@ -24216,7 +24216,7 @@ follow-up request after the original 431-435 plan shipped.
   catalog plus sea-marker/optional-clause/multi-sentence-variant
   coverage. Ran again: 4979 passed (net +11).
 
-- **Phase 592 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 592**: `report/turn_report.py` -- transcribes
   `THATT.X`/`THFAIL.X`, the opening/failure bookends of the same
   defeated-leader-treasure-search narrative Phase 590's own `G_*`/`T_*`
   Steal/Spoils cluster already covers the success half of. `SAY.PAS:834
@@ -24237,6 +24237,25 @@ follow-up request after the original 431-435 plan shipped.
   (non-breaking). Added tests: one verbatim sample per catalog plus
   multi-sentence-variant and optional-clause coverage. Ran again: 4985
   passed (net +6).
+
+- **Phase 593 (current)**: `report/turn_report.py` -- transcribes
+  `BATLDR.X`, a King/Hero personally commanding a battle column into the
+  fray. `SAY.PAS:1038 _attl: IF lp <= cdrdex[fn] THEN FD('batldr',
+  S_Batt,2)` fires when the column's front-line position falls within
+  the commander-index bound -- but `turn/battle_resolution.py
+  BattleColumnResult` has no per-column "commanding leader" field to
+  drive that condition from, so this is a genuine model gap (not a
+  missing call site this time) -- sourced and render-tested, but not
+  wired into any battle composer, the same honest stance Phase
+  590/591/592 already took for their own unwired gaps. `<3` (already
+  documented in this module's own Phase 131-era docstring note) is just
+  another person/tense variant of the character reference, substituted
+  with the same literal commander name as `<`/`<2`. Sourced from the
+  same byte-faithful 162-file pass as Phases 578-592, cross-checked
+  against `SAY.PAS` in `Programma Pascal.zip`. Ran before writing tests:
+  4985 passed (non-breaking). Added tests: one verbatim sample plus
+  sea-marker and optional-clause coverage. Ran again: 4989 passed
+  (net +4).
 
 ## Setup
 
