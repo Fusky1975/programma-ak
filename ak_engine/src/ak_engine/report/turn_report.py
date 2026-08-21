@@ -1381,6 +1381,93 @@ _PURSUIT_TEMPLATES: list[str] = [
     "= chased after the enemy and",
 ]
 
+# HostAK/TP/PROSE/DECQ.X, INCQ.X -- a battle-triggered army quality-level
+# change (Phase 598). `SAY.PAS:871 _ADecQ: FD('decq',S_Red,10)` and
+# `SAY.PAS:870 _AIncQ: FD('incq',S_Red,9)`. `turn/battle_orchestrator.py
+# BattleReport.quality_changes: dict[int, Quality]` (Phase 423/513's own
+# `roll_quality_change()` output) already computes exactly the game-state
+# fact these two templates narrate, and has never been rendered anywhere
+# in this module -- a real, previously-unnarrated gap, the same shape as
+# Phase 590's `looted_item_ids`. **Not wired**, though, for a concrete
+# data reason (not merely an untraced call site): ``quality_changes``
+# stores only the army's *new* ``Quality`` after the roll, by which
+# point ``army.quality`` has already been overwritten in place
+# (``battle_orchestrator.py``'s own ``army.quality = roll_quality_
+# change(...)`` assignment) -- so there is no surviving "old quality" to
+# diff against and pick DECQ (a drop) vs. INCQ (a rise) from without a
+# `battle_orchestrator.py` change of its own to preserve the pre-roll
+# value, out of scope for a report-transcription phase. `⟦CTRL-Q:
+# quality⟧` resolves to `^Q`, its first live use in this module (the
+# same never-wired-before pattern `*`/direction hit in Phase 594) --
+# ``quality_name`` is a plain caller-supplied string, matching this
+# project's own already-established ``QUALITY_NAME[Quality]`` display
+# convention (``turn/combat.py``, Phase 86) rather than this function
+# reaching into ``GameState`` itself.
+_DECQ_TEMPLATES: list[str] = [
+    "= was severely/Rbadly shaken during/Rin the battle and we must "
+    "now rate/Rclassify it as ^A ^Q unit.",
+    "= took ^A thorough/Rsevere pounding/Rbeating and lost some key "
+    "people/Rofficers.It should be considered/Rrated ^A ^Q unit now.",
+    "= was unlucky/Runfortunate enough to lose some of its most "
+    "able/Rpromising officers{ in personal combat}, and we now "
+    "rate/Rrank it ^A ^Q unit.",
+    "= had its morale/Rconfidence shaken/Rbattered by ^A bad/Revil "
+    "omen which manifested_itself/Rreared_its_ugly_head "
+    "during/Rbefore the battle.= has dropped_off/Rslipped in "
+    "quality and now it's ^A ^Q unit.",
+    "the long{, hard/Rdifficult} campaign caused/Rforced = to lose "
+    "some of its battle-lust/Rzeal, and now it can only {be "
+    "counted_on/Rtrusted to }fight as ^A ^Q unit.",
+    "= was {severely }mauled/Rmangled in/Rduring the battle/Rfight "
+    "and has fallen in stature/Rquality to ^Q condition.",
+]
+
+
+def render_army_quality_decreased(army_name: str, quality_name: str, rng: random.Random) -> str:
+    """Renders DECQ.X's sentence for an army's quality dropping after a
+    battle (Phase 598) -- see the module comment above for why this
+    isn't wired into a live composer.
+    """
+
+    variant = pick_variant(_DECQ_TEMPLATES, rng)
+    values = {"=": army_name, "^Q": quality_name}
+    return render(variant, values, rng=rng)
+
+
+_INCQ_TEMPLATES: list[str] = [
+    "= proved its mettle/Rvalor in/Rduring the battle/Rfight and we "
+    "now rate/Rrank it ^A ^Q unit.",
+    "= was greatly buoyed/Rinspired by the victory/Rexciting_battle."
+    "We now rate/Rdesignate it ^A {proud }^Q unit.",
+    "= was_tested/Rfought_determinedly during the battle and came "
+    "through with flying_colors/Ra_good_effort.We can now "
+    "call/Rrank it ^A ^Q unit.",
+    "we could not have been more_pleased/Rbetter_satisfied with the "
+    "elan/Rfighting_spirit of =, and we have elevated/Rraised its "
+    "rating/Rranking to ^Q.",
+    "the fun_head-bashing/Rmayhem_wreaked by = in/Rduring the "
+    "battle has raised/Relevated the spirits/Rmorale of its "
+    "warriors/Ssailors, and {all agree that }it has "
+    "achieved/Rrisen_to ^Q status/Rquality.",
+    "we can {now }raise the rating/Rranking of = to ^Q, its "
+    "officers/Rmen having displayed {especially }great/Radmirable "
+    "elan/Rcourage.",
+]
+
+
+def render_army_quality_increased(army_name: str, quality_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+    """Renders INCQ.X's sentence for an army's quality rising after a
+    battle (Phase 598) -- the improvement sibling of ``render_army_
+    quality_decreased()``. ``is_sea`` (Phase 74) resolves the fifth
+    variant's own "/S" marker -- the only one of the twelve DECQ/INCQ
+    variants combined that carries one.
+    """
+
+    variant = pick_variant(_INCQ_TEMPLATES, rng)
+    values = {"=": army_name, "^Q": quality_name}
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
 # HostAK/TP/PROSE/CONQ.X -- Move conquering an undefended province. All 4
 # real variants, transcribed verbatim from the raw file bytes (plain
 # ASCII text there, unlike RETREAT.X/WINNER.X's compiled control-byte

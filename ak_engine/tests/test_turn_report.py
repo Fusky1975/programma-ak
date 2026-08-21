@@ -201,6 +201,8 @@ from ak_engine.report.turn_report import (
     render_treasure_spoils_from_corpse,
     render_gold_spoils,
     render_challenge_search,
+    render_army_quality_decreased,
+    render_army_quality_increased,
     render_mercenary_army_wanders_away,
     render_mercenary_army_wanders_in,
     render_character_wanders_away,
@@ -2514,6 +2516,42 @@ def test_render_challenge_search_third_variant():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
     result = render_challenge_search("Aldric", "Borin", "Mongu", rng)
     assert result == "Aldric searched for Borin in the bars and whorehouses of Mongu."
+
+
+# -- DECQ.X/INCQ.X (Phase 598) --
+
+
+def test_render_army_quality_decreased_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_army_quality_decreased("144th Legion", "Green", rng)
+    assert result == "144th Legion was severely shaken during the battle and we must now rate it as a Green unit."
+
+
+def test_render_army_quality_decreased_sixth_variant_has_no_article():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[5])
+    result = render_army_quality_decreased("144th Legion", "Green", rng)
+    assert result == "144th Legion was mauled in the battle and has fallen in stature to Green condition."
+
+
+def test_render_army_quality_increased_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_army_quality_increased("144th Legion", "Elite", rng)
+    assert result == "144th Legion proved its mettle in the battle and we now rate it an Elite unit."
+
+
+def test_render_army_quality_increased_second_variant_includes_optional_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[1])
+    result = render_army_quality_increased("144th Legion", "Elite", rng)
+    assert result == "144th Legion was greatly inspired by the exciting battle.We now designate it a proud Elite unit."
+
+
+def test_render_army_quality_increased_fifth_variant_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[4])
+    result = render_army_quality_increased("144th Legion", "Elite", rng, is_sea=True)
+    assert result == (
+        "the fun head-bashing by 144th Legion in the battle has raised "
+        "the spirits of its sailors, and it has achieved Elite status."
+    )
 
 
 def test_describe_challenge_delegates_to_describe_encounter_combat():

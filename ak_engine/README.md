@@ -24328,7 +24328,7 @@ follow-up request after the original 431-435 plan shipped.
   one verbatim sample per variant plus optional-clause coverage. Ran
   again: 5002 passed (net +4).
 
-- **Phase 597 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 597**: `report/turn_report.py` -- transcribes
   `ENCATT.X`, very likely Challenge's own opening "searching for the
   target" sentence, `SAY.PAS:677 _LChall: FD('encatt',S_PCom,9)`, sitting
   in the same personal-combat outcome cluster as several already-wired
@@ -24344,6 +24344,26 @@ follow-up request after the original 431-435 plan shipped.
   `Programma Pascal.zip`. Ran before writing tests: 5002 passed
   (non-breaking). Added tests: one verbatim sample plus optional-clause
   coverage. Ran again: 5005 passed (net +3).
+
+- **Phase 598 (current)**: `report/turn_report.py` -- transcribes
+  `DECQ.X`/`INCQ.X`, a battle-triggered army quality-level change
+  (`SAY.PAS:871 _ADecQ`/`SAY.PAS:870 _AIncQ`). `turn/battle_
+  orchestrator.py BattleReport.quality_changes: dict[int, Quality]`
+  (Phase 423/513's own `roll_quality_change()` output) already computes
+  exactly this fact and has never been rendered anywhere -- the same
+  shape as Phase 590's `looted_item_ids` gap. Not wired this phase for a
+  concrete data reason rather than an untraced call site: `quality_
+  changes` stores only the army's *new* quality, and `army.quality` is
+  already overwritten in place by the time it's set, so there's no
+  surviving "old quality" to diff and pick DECQ (drop) vs. INCQ (rise)
+  from without a `battle_orchestrator.py` change of its own. First live
+  use of `^Q` (quality) in this module, paired with the already-
+  established `QUALITY_NAME[Quality]` display convention (Phase 86).
+  Sourced from the same byte-faithful 162-file pass as Phases 578-597,
+  cross-checked against `SAY.PAS` in `Programma Pascal.zip`. Ran before
+  writing tests: 5005 passed (non-breaking). Added tests: one verbatim
+  sample per template plus optional-clause/sea-marker/no-article
+  coverage. Ran again: 5010 passed (net +5).
 
 ## Setup
 
