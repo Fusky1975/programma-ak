@@ -2899,6 +2899,144 @@ def render_melee_attack(
     return render(variant, values, rng=rng)
 
 
+# HostAK/TP/PROSE/CCAST.X -- the personal-combat Cast action's own
+# flavor variant when no wand item is involved (`SAY.PAS:604 _LCast: IF
+# _treas = notreasure THEN FD2('ccast',S_PCom,2)`). Phase 588. `~` is
+# `PROSE.TXT`'s own confirmed spell-name marker (`models/power.py`'s
+# own precedent).
+_CCAST_TEMPLATES: list[str] = [
+    "weaving/RChanting > silver/Rartful words of magic into ^A "
+    "mighty/Rgreat ~ spell, < waved/Rgestured_with > hands/Rarms",
+    "< incanted/Rchanted > mysterious/Rstrange words of magic and cast ^A ~ spell",
+    "gesturing_with/Rwaving > hands/Rarms, < orchestrated/Rjuxtaposed "
+    "supernatural/Rotherworldly forces of magic, casting ^A ~ spell",
+    "raising/Rlifting > hands high in the air/Swaves, < cast ^A ~ spell",
+    "chanting/RUttering > words/Rsyllables of magic with "
+    "breathless/Rtrained precision, < let go/Rfly ^A ~ spell",
+    "incanting/RCasting ^A ~ spell, < directed/Rchannelled "
+    "glowing/Rscintillating, interlacing/Rwrithing strands of magic",
+]
+
+
+def render_cast_no_treasure(character_name: str, spell_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+    """Renders CCAST.X's sentence for a personal-combat Cast action that
+    isn't wand-triggered (Phase 588). No trailing punctuation -- ``$S``/
+    weapon-style fixed-verb sentences elsewhere in this cluster all
+    lack one too, meant to be followed by the spell's own outcome.
+    ``is_sea`` (Phase 74) resolves the "/S" marker one variant carries.
+    """
+
+    variant = pick_variant(_CCAST_TEMPLATES, rng)
+    values = {"<": character_name, ">": f"{character_name}'s", "~": spell_name}
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/PROSE/FLAMEREL.X -- the Flaming Scimitar's own 5%
+# instant-death fireball proc (`models/treasure.py TREASURE_DESCRIPTION
+# [Treasure.WEAPON_3]`'s own confirmed mechanic). `SAY.PAS:428 _TrImpl:
+# FD2('flamerel',S_PCom,5)`. Phase 588.
+_FLAMEREL_TEMPLATES: list[str] = [
+    "the Flaming Scimitar released/Rburped ^A fireball which imploded "
+    "inside [{, bursting ] body into shreds}.",
+    "the magic of the Flaming Scimitar was triggered/Ractivated by the "
+    "impact/Rblow and ^A {mighty }fireball imploded inside {the stomach "
+    "of }[, blowing [ to bits.",
+    "the Flaming Scimitar ignited/Rcombusted ^A imploding fireball in "
+    "the innards/Rbelly of [, splattering/Rshowering ] "
+    "guts/Rintestines all over in ^A sordid/Rhorrible puke-fest/Rscene.",
+]
+
+
+def render_flaming_scimitar_proc(defender_name: str, rng: random.Random) -> str:
+    """Renders FLAMEREL.X's sentence for the Flaming Scimitar's own
+    instant-death fireball proc (Phase 588).
+    """
+
+    variant = pick_variant(_FLAMEREL_TEMPLATES, rng)
+    values = {"[": defender_name, "]": f"{defender_name}'s"}
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/PROSE/SHADTR.X -- the Shadow Sword's own life-drain-heal
+# proc (`models/treasure.py TREASURE_DESCRIPTION[Treasure.WEAPON_2]`'s
+# own confirmed mechanic). `SAY.PAS:427 _TrShad: FD2('shadtr',S_PCom,
+# 4)`. Phase 588. `#` is `PROSE.TXT`'s own confirmed contextual-number
+# marker -- the wielder's own new hit-point total after the drain.
+_SHADTR_TEMPLATES: list[str] = [
+    "the Shadow Sword transferred/Rconducted the {lost }life "
+    "energy/Ressence to <2 and > hit points rose/Rjumped {back up }to #.",
+    "the Shadow Sword sucked_in/Rdrained_away the life energy/Ressence "
+    "lost by [ and > hit points rose/Rjumped {back up }to #.",
+    "the Shadow Sword {gleefully/Rgreedily }inhaled/Rsucked_in ['s life "
+    "energy/Ressence and imbued/Rinfused <2 with enough/Rsufficient "
+    "energy/Rwarmth to raise > hit points to #.",
+]
+
+
+def render_shadow_sword_drain(wielder_name: str, opponent_name: str, new_hit_points: int, rng: random.Random) -> str:
+    """Renders SHADTR.X's sentence for the Shadow Sword's own
+    life-drain-heal proc (Phase 588). ``<2`` is the wielder (this
+    catalog never uses a bare ``<``); ``[``/``]`` the opponent whose
+    life energy was drained.
+    """
+
+    variant = pick_variant(_SHADTR_TEMPLATES, rng)
+    values = {
+        "<2": wielder_name,
+        ">": f"{wielder_name}'s",
+        "[": opponent_name,
+        "]": f"{opponent_name}'s",
+        "#": str(new_hit_points),
+    }
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/PROSE/RECSTUN.X -- recovering from a stunned state (the
+# Psychic Flail's own `models/treasure.py TREASURE_DESCRIPTION[Treasure.
+# WEAPON_4]`-confirmed mechanic, and the Psychic Blast spell's own
+# stun effect). `SAY.PAS:625 _LRecov: FD2('recstun',S_PCom,1)`. Phase
+# 588.
+_RECSTUN_TEMPLATES: list[str] = [
+    "< shook/Rcleared > head and recovered from > stunned state/Rcondition.",
+    "<'s head {finally }cleared and < {once again }prepared/Rreadied for combat/Rbattle.",
+    "{now }the {effects of the }stun {finally }wore off and < prepared to {renew > }attack.",
+]
+
+
+def render_stun_recovery(character_name: str, rng: random.Random) -> str:
+    """Renders RECSTUN.X's sentence for recovering from a stunned state
+    (Phase 588).
+    """
+
+    variant = pick_variant(_RECSTUN_TEMPLATES, rng)
+    values = {"<": character_name, ">": f"{character_name}'s"}
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/PROSE/STUN.X -- being in a stunned state, the sibling of
+# RECSTUN.X above. `SAY.PAS:626 _LStun: FD2('stun',S_PCom,4)`. Phase 588.
+_STUN_TEMPLATES: list[str] = [
+    "< stood/Sstayed stunned, unable to regain > senses/Rbalance.",
+    "stunned, < could only shake > head in bewilderment/Rperplexity.",
+    "< was stunned and staggered/Sflopped around at_random/Runsteadily.",
+    "< stood dazed{ and bewildered/Rperplexed}, stunned out of > wits/Rmind.",
+    "< could do nothing {but stand/Shover and stare }in > stunned state.",
+    "in > {pathetic }stunned state, < could not decide/Rdetermine what to "
+    "do{ about > predicament}.",
+]
+
+
+def render_stunned(character_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+    """Renders STUN.X's sentence for being in a stunned state (Phase
+    588). ``is_sea`` (Phase 74) resolves the "/S" marker three variants
+    carry.
+    """
+
+    variant = pick_variant(_STUN_TEMPLATES, rng)
+    values = {"<": character_name, ">": f"{character_name}'s"}
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
 # Phase 415: describe_search()'s own default when narrating a
 # SearchExecutionResult.melee_swing -- this project has no per-character
 # weapon model (turn/encounter.py Combatant carries no weapon field), so

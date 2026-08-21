@@ -167,9 +167,11 @@ from ak_engine.report.turn_report import (
     render_insufficient_gold,
     render_item_give,
     render_magic_feature_discovery,
+    render_cast_no_treasure,
     render_defend,
     render_defend_reinforcement,
     render_disband_unit,
+    render_flaming_scimitar_proc,
     render_leave_unit,
     render_march,
     render_pickup_unit,
@@ -182,6 +184,9 @@ from ak_engine.report.turn_report import (
     render_patrol_encounter,
     render_patrol_release,
     render_petrifying_gaze_hit,
+    render_shadow_sword_drain,
+    render_stun_recovery,
+    render_stunned,
     render_petrifying_gaze_missed,
     render_homeland_defense_morale,
     render_oratory_speech,
@@ -1718,6 +1723,54 @@ def test_render_melee_attack_ninth_variant_has_no_trailing_punctuation():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[8])
     result = render_melee_attack("Aldric", "Borin", "Slashed", rng)
     assert result == "Aldric Slashed Borin"
+
+
+# -- CCAST.X/FLAMEREL.X/SHADTR.X/RECSTUN.X/STUN.X (Phase 588) --
+
+
+def test_render_cast_no_treasure_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_cast_no_treasure("Aldric", "Fireball", rng)
+    assert result == (
+        "weaving Aldric's silver words of magic into a mighty Fireball "
+        "spell, Aldric waved Aldric's hands"
+    )
+
+
+def test_render_cast_no_treasure_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+    result = render_cast_no_treasure("Aldric", "Fireball", rng, is_sea=True)
+    assert result == "raising Aldric's hands high in the waves, Aldric cast a Fireball spell"
+
+
+def test_render_flaming_scimitar_proc_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_flaming_scimitar_proc("Borin", rng)
+    assert result == "the Flaming Scimitar released a fireball which imploded inside Borin."
+
+
+def test_render_shadow_sword_drain_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_shadow_sword_drain("Aldric", "Borin", 42, rng)
+    assert result == "the Shadow Sword transferred the life energy to Aldric and Aldric's hit points rose to 42."
+
+
+def test_render_stun_recovery_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_stun_recovery("Aldric", rng)
+    assert result == "Aldric shook Aldric's head and recovered from Aldric's stunned state."
+
+
+def test_render_stunned_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_stunned("Aldric", rng)
+    assert result == "Aldric stood stunned, unable to regain Aldric's senses."
+
+
+def test_render_stunned_resolves_sea_marker():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_stunned("Aldric", rng, is_sea=True)
+    assert result == "Aldric stayed stunned, unable to regain Aldric's senses."
 
 
 # -- Phase 155: monster missile-attack flavor text + Troll regeneration --

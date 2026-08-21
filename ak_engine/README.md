@@ -24095,7 +24095,7 @@ follow-up request after the original 431-435 plan shipped.
   `GameType.EARTH`/`EUROPE` members themselves. Ran again: 4937 passed
   (net +7).
 
-- **Phase 587 (current)**: transcribes `turn/battle_luck.py LUCKINT_
+- **Phase 587**: transcribes `turn/battle_luck.py LUCKINT_
   TEMPLATE`/`LUCKINT2_TEMPLATE` (4 entries each) from `LUCKINT.X`/
   `LUCKINT2.X` -- small connector/bridge phrases dispatched from the
   exact same `_CLuck` handler CLUCK.X2/CLUCK2.X2 already are
@@ -24114,6 +24114,27 @@ follow-up request after the original 431-435 plan shipped.
   (non-breaking). Added tests: entry counts, `render()` round-trips
   (including the real `/R`/`{...}` alternation), and a ready-to-
   concatenate trailing-space check. Ran again: 4941 passed (net +4).
+
+- **Phase 588 (current)**: transcribes the remaining 5 unwired
+  personal-combat catalogs into `report/turn_report.py`, following the
+  exact `_TEMPLATES` + `render_*()` pattern Phases 111-113 already
+  established for `GOBOW.X`/`GOMEL.X`/`ANDMISS.X`/`ANDINFL.X`/
+  `MORTWOUN.X`/`SWANGAT.X` -- `CCAST.X` (the Cast action's own flavor
+  variant when no wand item is involved, `render_cast_no_treasure()`),
+  `FLAMEREL.X` (the Flaming Scimitar's own 5% instant-death fireball
+  proc, `render_flaming_scimitar_proc()` -- ties directly to `models/
+  treasure.py TREASURE_DESCRIPTION[Treasure.WEAPON_3]`'s own confirmed
+  mechanic from Phase 580), `SHADTR.X` (the Shadow Sword's own
+  life-drain-heal proc, `render_shadow_sword_drain()` -- ties to
+  `TREASURE_DESCRIPTION[Treasure.WEAPON_2]`), and the `STUN.X`/
+  `RECSTUN.X` pair (being stunned / recovering from it, `render_
+  stunned()`/`render_stun_recovery()` -- ties to the Psychic Flail's
+  own `TREASURE_DESCRIPTION[Treasure.WEAPON_4]` stun mechanic and the
+  Psychic Blast spell). Sourced from the same byte-faithful 162-file
+  reverse-engineering pass as Phases 578-587. Ran before writing tests:
+  4941 passed (non-breaking). Added tests: one verbatim sample per
+  catalog plus the `/S` sea-marker resolution for the two variants that
+  carry one (`CCAST.X`, `STUN.X`). Ran again: 4948 passed (net +7).
 
 ## Setup
 
