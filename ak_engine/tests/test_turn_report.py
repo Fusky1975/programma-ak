@@ -203,6 +203,8 @@ from ak_engine.report.turn_report import (
     render_challenge_search,
     render_army_quality_decreased,
     render_army_quality_increased,
+    render_hero_deserted,
+    describe_desertions,
     render_mercenary_army_wanders_away,
     render_mercenary_army_wanders_in,
     render_character_wanders_away,
@@ -290,6 +292,7 @@ from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.encounter import CombatRange, FireArrowShot, MeleeSwing
+from ak_engine.turn.expenses import MaintenanceResult
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
@@ -2552,6 +2555,54 @@ def test_render_army_quality_increased_fifth_variant_resolves_sea_marker():
         "the fun head-bashing by 144th Legion in the battle has raised "
         "the spirits of its sailors, and it has achieved Elite status."
     )
+
+
+# -- LDESERT.X (Phase 599) --
+
+
+def test_render_hero_deserted_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_hero_deserted("Aldric", "Borin", rng)
+    assert result == "Aldric quit the service of Borin, grumbling about the lack of pay."
+
+
+def test_render_hero_deserted_second_variant_includes_optional_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[1])
+    result = render_hero_deserted("Aldric", "Borin", rng)
+    assert result == "Aldric grew tired of fighting for Borin for no pay and submitted Aldric's resignation."
+
+
+def test_render_hero_deserted_third_variant_resolves_article():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_hero_deserted("Aldric", "Borin", rng)
+    assert result == "Aldric left Borin to find employment elsewhere, hoping to find a more consistent source of income."
+
+
+def test_describe_desertions_one_line_per_deserted_leader():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Borin", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(2, 1, "Aldric", HexCoord(0, 0)))
+    state.add_leader(LeaderState(3, 1, "Cedric", HexCoord(0, 0)))
+    result = MaintenanceResult(debited=0, deserted_leader_ids=[2, 3])
+
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+    lines = describe_desertions(result, state, king_name="Borin", rng=rng)
+
+    assert lines == [
+        "Aldric quit the service of Borin, grumbling about the lack of pay.",
+        "Cedric quit the service of Borin, grumbling about the lack of pay.",
+    ]
+
+
+def test_describe_desertions_empty_when_no_desertions():
+    state = GameState()
+    result = MaintenanceResult(debited=0)
+    rng = ScriptedRandom([])
+
+    lines = describe_desertions(result, state, king_name="Borin", rng=rng)
+
+    assert lines == []
 
 
 def test_describe_challenge_delegates_to_describe_encounter_combat():

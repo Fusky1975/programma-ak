@@ -1234,7 +1234,7 @@ from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.discovery_effects import effective_skill_level, emperor_holds_arcanes_valor_unification
-from ak_engine.turn.expenses import compute_expected_expenses, leader_pay
+from ak_engine.turn.expenses import MaintenanceResult, compute_expected_expenses, leader_pay
 from ak_engine.turn.office_holder import (
     ALL_OFFICES,
     OfficeHolder,
@@ -6097,6 +6097,57 @@ def render_finance_unpaid_armies(percent: int, rng: random.Random) -> str:
 
     values = {"#": str(percent)}
     return render(FINANCE_UNPAID_ARMIES_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/PROSE/LDESERT.X -- a Hero quitting their King's service over
+# unpaid wages (Phase 599). `SAY.PAS:791 _LDesert: FD('ldesert',S_PCom,
+# 0)`. Unlike Phase 598's own model gap, ``turn/expenses.py
+# apply_turn_maintenance()``'s own ``MaintenanceResult.deserted_
+# leader_ids`` (Phase 527, ``AKGEN_reverse_engineering_report (3).md``
+# SS28.1's real compiled desertion roll) is an exact match for this
+# template's own real content -- all four choices name "the lack of
+# pay"/"no pay"/"back pay" as the reason, the identical mechanic
+# ``deserted_leader_ids`` already computes. ``describe_desertions()``
+# below wires it in directly, the same shape ``describe_recruit()``
+# already established for a per-unit result list.
+_LDESERT_TEMPLATES: list[str] = [
+    "< quit/Rretired_from the service of [, grumbling/Rcarping about "
+    "the lack of pay.",
+    "< {grew }tired of working/Rfighting for [ with/Rfor no pay and "
+    "handed_in/Rsubmitted > resignation.",
+    "< left [ to find employment/Radventure elsewhere, hoping to "
+    "find ^A more_consistent/Rbetter source of income.",
+    "< could not {be persuaded to }stay {in the service of [ "
+    "}without {getting > back }pay, {and }so < left [ to answer "
+    "the {high }call of adventure.",
+]
+
+
+def render_hero_deserted(character_name: str, king_name: str, rng: random.Random) -> str:
+    """Renders LDESERT.X's sentence for a Hero deserting their King's
+    service over unpaid wages (Phase 599).
+    """
+
+    variant = pick_variant(_LDESERT_TEMPLATES, rng)
+    values = {"<": character_name, "[": king_name, ">": f"{character_name}'s"}
+    return render(variant, values, rng=rng)
+
+
+def describe_desertions(result: MaintenanceResult, state: GameState, *, king_name: str, rng: random.Random) -> list[str]:
+    """Assembles one LDESERT.X sentence per Hero who deserted this turn
+    (Phase 599) -- ``result.deserted_leader_ids``, from ``turn/
+    expenses.py apply_turn_maintenance()``. A deserted leader stays in
+    ``state.leaders`` (only ``kingdom_id`` is cleared), so ``_leader_
+    name()`` still resolves their name at narration time.
+    """
+
+    lines: list[str] = []
+    for leader_id in result.deserted_leader_ids:
+        character_name = _leader_name(state, leader_id)
+        if character_name is None:
+            continue
+        lines.append(render_hero_deserted(character_name, king_name, rng))
+    return lines
 
 
 # HostAK/TP/SAY.PAS _LACosts -- a single, real, hardcoded template (no

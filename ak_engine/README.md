@@ -24345,7 +24345,7 @@ follow-up request after the original 431-435 plan shipped.
   (non-breaking). Added tests: one verbatim sample plus optional-clause
   coverage. Ran again: 5005 passed (net +3).
 
-- **Phase 598 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 598**: `report/turn_report.py` -- transcribes
   `DECQ.X`/`INCQ.X`, a battle-triggered army quality-level change
   (`SAY.PAS:871 _ADecQ`/`SAY.PAS:870 _AIncQ`). `turn/battle_
   orchestrator.py BattleReport.quality_changes: dict[int, Quality]`
@@ -24364,6 +24364,27 @@ follow-up request after the original 431-435 plan shipped.
   writing tests: 5005 passed (non-breaking). Added tests: one verbatim
   sample per template plus optional-clause/sea-marker/no-article
   coverage. Ran again: 5010 passed (net +5).
+
+- **Phase 599 (current)**: `report/turn_report.py` -- transcribes and
+  **wires** `LDESERT.X`, a Hero quitting their King's service over
+  unpaid wages (`SAY.PAS:791 _LDesert: FD('ldesert',S_PCom,0)`). All
+  four real choices name "the lack of pay"/"no pay"/"back pay" as the
+  cause -- an exact match for `turn/expenses.py apply_turn_maintenance()`
+  's own `MaintenanceResult.deserted_leader_ids` (Phase 527, the real
+  compiled desertion roll from `AKGEN_reverse_engineering_report
+  (3).md` SS28.1), never narrated anywhere before this phase. New
+  `describe_desertions(result, state, *, king_name, rng)` composer
+  renders one `LDESERT.X` sentence per deserted leader, the same shape
+  `describe_recruit()` already established for a per-unit result list --
+  a deserted leader stays in `state.leaders` (only `kingdom_id` is
+  cleared), so name resolution still works at narration time. Sourced
+  from the same byte-faithful 162-file pass as Phases 578-598,
+  cross-checked against `SAY.PAS` in `Programma Pascal.zip`. Ran before
+  writing tests: 5010 passed (non-breaking -- purely additive, no
+  existing caller touched). Added tests: one verbatim sample per
+  variant, optional-clause/article coverage, plus a `describe_
+  desertions()` wiring test (multiple deserters, and the empty case).
+  Ran again: 5015 passed (net +5).
 
 ## Setup
 
