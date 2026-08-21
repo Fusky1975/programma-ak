@@ -1213,7 +1213,7 @@ from ak_engine.report.prose import render
 from ak_engine.turn.army_quality import compute_army_modified_quality
 from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.aspy_execution import SpyReport
-from ak_engine.turn.battle_orchestrator import BattleReport
+from ak_engine.turn.battle_orchestrator import BattleReport, QualityChange
 from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.battle_luck import (
     bluck_cluck_uses_secondary_catalog,
@@ -1384,25 +1384,20 @@ _PURSUIT_TEMPLATES: list[str] = [
 # HostAK/TP/PROSE/DECQ.X, INCQ.X -- a battle-triggered army quality-level
 # change (Phase 598). `SAY.PAS:871 _ADecQ: FD('decq',S_Red,10)` and
 # `SAY.PAS:870 _AIncQ: FD('incq',S_Red,9)`. `turn/battle_orchestrator.py
-# BattleReport.quality_changes: dict[int, Quality]` (Phase 423/513's own
-# `roll_quality_change()` output) already computes exactly the game-state
-# fact these two templates narrate, and has never been rendered anywhere
-# in this module -- a real, previously-unnarrated gap, the same shape as
-# Phase 590's `looted_item_ids`. **Not wired**, though, for a concrete
-# data reason (not merely an untraced call site): ``quality_changes``
-# stores only the army's *new* ``Quality`` after the roll, by which
-# point ``army.quality`` has already been overwritten in place
-# (``battle_orchestrator.py``'s own ``army.quality = roll_quality_
-# change(...)`` assignment) -- so there is no surviving "old quality" to
-# diff against and pick DECQ (a drop) vs. INCQ (a rise) from without a
-# `battle_orchestrator.py` change of its own to preserve the pre-roll
-# value, out of scope for a report-transcription phase. `⟦CTRL-Q:
-# quality⟧` resolves to `^Q`, its first live use in this module (the
-# same never-wired-before pattern `*`/direction hit in Phase 594) --
-# ``quality_name`` is a plain caller-supplied string, matching this
-# project's own already-established ``QUALITY_NAME[Quality]`` display
-# convention (``turn/combat.py``, Phase 86) rather than this function
-# reaching into ``GameState`` itself.
+# BattleReport.quality_changes: dict[int, QualityChange]` (Phase 423/513's
+# own `roll_quality_change()` output, `old`/`new` shape added Phase 610)
+# already computes exactly the game-state fact these two templates
+# narrate. Wired as of Phase 610 via `describe_quality_changes()` below,
+# called from `describe_battle()` -- see that function for the
+# DECQ-vs-INCQ dispatch (`new` worse/better than `old`; `new == old`
+# entries, i.e. a roll that lands back on the same `Quality`, are
+# skipped, since neither template has a real "no change" variant to
+# reach for). `⟦CTRL-Q: quality⟧` resolves to `^Q`, its first live use
+# in this module (the same never-wired-before pattern `*`/direction hit
+# in Phase 594) -- ``quality_name`` is a plain caller-supplied string,
+# matching this project's own already-established ``QUALITY_NAME
+# [Quality]`` display convention (``turn/combat.py``, Phase 86) rather
+# than this function reaching into ``GameState`` itself.
 _DECQ_TEMPLATES: list[str] = [
     "= was severely/Rbadly shaken during/Rin the battle and we must "
     "now rate/Rclassify it as ^A ^Q unit.",
@@ -1425,8 +1420,8 @@ _DECQ_TEMPLATES: list[str] = [
 
 def render_army_quality_decreased(army_name: str, quality_name: str, rng: random.Random) -> str:
     """Renders DECQ.X's sentence for an army's quality dropping after a
-    battle (Phase 598) -- see the module comment above for why this
-    isn't wired into a live composer.
+    battle (Phase 598). Wired into ``describe_battle()`` via ``describe_
+    quality_changes()`` as of Phase 610 -- see the module comment above.
     """
 
     variant = pick_variant(_DECQ_TEMPLATES, rng)
@@ -1466,6 +1461,35 @@ def render_army_quality_increased(army_name: str, quality_name: str, rng: random
     variant = pick_variant(_INCQ_TEMPLATES, rng)
     values = {"=": army_name, "^Q": quality_name}
     return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+def describe_quality_changes(
+    battle_report: BattleReport, army_names: dict[int, str], rng: random.Random, *, is_sea: bool = False
+) -> list[str]:
+    """Assembles DECQ.X/INCQ.X sentences for every army whose ``Quality``
+    genuinely moved during this battle (Phase 610) -- see the module
+    comment above ``_DECQ_TEMPLATES`` for the ``BattleReport.quality_
+    changes: dict[int, QualityChange]`` shape this reads from.
+    ``army_names`` is the same ``build_battle_army_names(state,
+    battle_report)`` map ``describe_battle()`` already builds for its
+    own per-column/destroyed/retreat sentences -- an army absent from it
+    (a sourceless column front unit, see that function's own docstring)
+    is skipped here too. An army whose roll landed back on the same
+    ``Quality`` (``new == old``) is also skipped, since neither DECQ.X
+    nor INCQ.X has a real "no change" variant to reach for.
+    """
+
+    lines: list[str] = []
+    for army_id, change in battle_report.quality_changes.items():
+        name = army_names.get(army_id)
+        if name is None or change.new == change.old:
+            continue
+        quality_name = QUALITY_NAME[change.new]
+        if change.new < change.old:
+            lines.append(render_army_quality_decreased(name, quality_name, rng))
+        else:
+            lines.append(render_army_quality_increased(name, quality_name, rng, is_sea=is_sea))
+    return lines
 
 
 # HostAK/TP/PROSE/CONQ.X -- Move conquering an undefended province. All 4
@@ -2246,8 +2270,9 @@ def describe_battle(
     """Assembles the full battle-outcome narrative from an already-computed
     ``BattleReport`` (``turn/battle_orchestrator.py fight_battle()``), in
     the same order the original dispatch table produces them: per-column
-    clashes, the winner sentence, destroyed armies, pursuit kills, then
-    retreats.
+    clashes, the winner sentence, destroyed armies, pursuit kills,
+    retreats, then (Phase 610) each surviving army's DECQ.X/INCQ.X
+    quality-change sentence, via ``describe_quality_changes()``.
 
     ``army_names`` (Phase 236) is synthesized internally via
     ``build_battle_army_names(state, battle_report)`` -- see that
@@ -2304,6 +2329,8 @@ def describe_battle(
         destination = destination_names.get(army_id)
         if name is not None and destination is not None:
             lines.append(render_retreat(name, destination, rng, is_sea=is_sea))
+
+    lines.extend(describe_quality_changes(battle_report, army_names, rng, is_sea=is_sea))
 
     return lines
 

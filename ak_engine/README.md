@@ -24625,7 +24625,7 @@ follow-up request after the original 431-435 plan shipped.
   (net +1 new test function, plus several existing tests strengthened
   in place).
 
-- **Phase 609 (current)**: documentation-only -- a systematic re-audit
+- **Phase 609**: documentation-only -- a systematic re-audit
   of this README's own three trailer sections (`## Known-unresolved
   semantics`, `## Not yet implemented`, `## What's excluded from this
   phase`), covering the Phase 410-607 range the Phase 401-409 audit
@@ -24672,6 +24672,37 @@ follow-up request after the original 431-435 plan shipped.
   written, not applied on the agent's word alone. No code changed --
   `pytest` re-run only to confirm the doc-only nature: 5043 passed,
   unchanged from Phase 608's own count.
+
+- **Phase 610 (current)**: wires HostAK/TP/PROSE/DECQ.X/INCQ.X (Phase
+  598's own battle quality-change narration) into a real composer,
+  closing the concrete data gap Phase 598's own docstring flagged:
+  `turn/battle_orchestrator.py BattleReport.quality_changes` stored only
+  the army's *post*-roll `Quality`, by which point `army.quality =
+  roll_quality_change(...)` had already overwritten the pre-roll value
+  in place, leaving no way to tell a DECQ (drop) from an INCQ (rise).
+  Fixed at the root: a new frozen `QualityChange(old: Quality, new:
+  Quality)` dataclass replaces the dict's bare `Quality` value
+  (`quality_changes: dict[int, QualityChange]`); all 8 real write sites
+  (`_retreat_or_disband()`'s own 2, plus 6 across the attacker/defender
+  per-army loops -- winner-improve/loser-decline/fleet-avoids-
+  elimination for each side) now capture `old_quality = army.quality`
+  immediately before the mutation. New `report/turn_report.py
+  describe_quality_changes()` walks the dict, resolves each army's
+  display name via the same `build_battle_army_names()` map `describe_
+  battle()` already builds, and dispatches to the already-built (Phase
+  598) `render_army_quality_decreased()`/`render_army_quality_
+  increased()` by comparing `new`/`old` as `Quality`'s own `IntEnum`
+  ordinals (`DEPLETED=0` .. `ELITE=5`) -- an unchanged roll (`new ==
+  old`) is skipped, since neither template has a real "no change"
+  variant. Wired into `describe_battle()` as its own final section,
+  after clashes/winner/destroyed/pursuit/retreats. One existing test
+  (`test_battle_orchestrator.py`'s `test_defender_fleet_on_land_reduced_
+  to_depleted_instead_of_destroyed`) updated for the new `QualityChange`
+  shape; new tests added for the dataclass's `old`-survives-mutation
+  guarantee, `describe_quality_changes()`'s DECQ/INCQ dispatch and
+  skip rules, and `describe_battle()`'s own wiring. Ran before writing
+  tests (non-breaking): 5043 passed. Ran again with new tests: 5047
+  passed (net +4).
 
 ## Setup
 

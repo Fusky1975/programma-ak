@@ -76,6 +76,7 @@ from ak_engine.report.turn_report import (
     describe_provinces_report,
     describe_aspy,
     describe_battle,
+    describe_quality_changes,
     describe_cast,
     describe_challenge,
     describe_encounter_combat,
@@ -297,7 +298,7 @@ from ak_engine.models.weapon import Weapon
 from ak_engine.turn.aspy_execution import SpottedCharacter, SpyReport
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.battle_orchestrator import BattleReport
+from ak_engine.turn.battle_orchestrator import BattleReport, QualityChange
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
@@ -648,6 +649,37 @@ def test_describe_battle_skips_unnamed_armies_and_ties_without_erroring():
         rng=rng,
     )
     assert lines == []
+
+
+def test_describe_battle_appends_quality_change_sentences_after_retreats():
+    # Phase 610: quality_changes narration is the final section describe_
+    # battle() appends, after clashes/winner/destroyed/pursuit/retreats.
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    battle_result = BattleResult(winner="attacker", columns=[column])
+    report = BattleReport(
+        battle_result=battle_result,
+        conquered=True,
+        quality_changes={10: QualityChange(old=Quality.VETERAN, new=Quality.CRACK)},
+    )
+
+    # clash opening (2 draws) + bucket-3 variant 0's own "{almost }" (1 draw)
+    # + winner-attacker variant 0 (2 draws) + INCQ variant 0's own "/R"
+    # alternations -- generously padded rather than counted exactly.
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=rng,
+    )
+    assert lines == [
+        "10th Garrison fought 20th Legion and advanced at will.",
+        "the forces of Attackia broke through and were victorious.",
+        "10th Garrison proved its mettle in the battle and we now rate it a Crack unit.",
+    ]
 
 
 # -- build_battle_army_names (Phase 236) --------------------------------------
@@ -2652,6 +2684,43 @@ def test_render_army_quality_increased_fifth_variant_resolves_sea_marker():
         "the fun head-bashing by 144th Legion in the battle has raised "
         "the spirits of its sailors, and it has achieved Elite status."
     )
+
+
+def test_describe_quality_changes_dispatches_decq_and_incq_by_comparing_old_and_new():
+    # Phase 610: describe_quality_changes() is the composer that finally
+    # wires QualityChange.old/.new into render_army_quality_decreased()/
+    # _increased() -- army 10 dropped (ELITE -> VETERAN, DECQ.X), army 20
+    # rose (GREEN -> AVERAGE, INCQ.X).
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker", columns=[]),
+        conquered=False,
+        quality_changes={
+            10: QualityChange(old=Quality.ELITE, new=Quality.VETERAN),
+            20: QualityChange(old=Quality.GREEN, new=Quality.AVERAGE),
+        },
+    )
+    army_names = {10: "144th Legion", 20: "Guerin's Guard"}
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+
+    lines = describe_quality_changes(report, army_names, rng)
+
+    assert lines == [
+        "144th Legion was severely shaken during the battle and we must now rate it as a Veteran unit.",
+        "Guerin's Guard proved its mettle in the battle and we now rate it an Average unit.",
+    ]
+
+
+def test_describe_quality_changes_skips_unchanged_rolls_and_unnamed_armies():
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker", columns=[]),
+        conquered=False,
+        quality_changes={
+            10: QualityChange(old=Quality.VETERAN, new=Quality.VETERAN),  # rolled back to the same Quality
+            99: QualityChange(old=Quality.GREEN, new=Quality.AVERAGE),  # no entry in army_names
+        },
+    )
+    lines = describe_quality_changes(report, {10: "144th Legion"}, ScriptedRandom([]))
+    assert lines == []
 
 
 # -- LDESERT.X (Phase 599) --

@@ -25,6 +25,7 @@ from ak_engine.turn.battle_orchestrator import (
     MONSTER_SUMMONING_INVASION_DEFECTION_CHANCE,
     MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE,
     MultiAttackerParty,
+    QualityChange,
     _apply_monster_summoning_aid,
     _apply_werebeast_bites,
     _apply_wingman_merit,
@@ -364,7 +365,7 @@ def test_defender_fleet_on_land_reduced_to_depleted_instead_of_destroyed():
     assert 201 not in report.destroyed_army_ids
     assert 201 in state.armies
     assert state.armies[201].quality == Quality.DEPLETED
-    assert report.quality_changes[201] == Quality.DEPLETED
+    assert report.quality_changes[201] == QualityChange(old=Quality.AVERAGE, new=Quality.DEPLETED)
 
 
 def test_defender_fleet_on_land_reduced_to_depleted_instead_of_disbanding():
@@ -3280,6 +3281,25 @@ def test_fight_battle_falls_back_to_quality_change_when_direct_destruction_misse
     assert 101 not in report.destroyed_army_ids
     assert 101 in state.armies
     assert 101 in report.quality_changes
+
+
+def test_quality_changes_records_the_pre_battle_quality_alongside_the_post_battle_one():
+    # Phase 610: `QualityChange.old` must survive the in-place `army.
+    # quality = roll_quality_change(...)` mutation -- army 101 starts at
+    # `Quality.ELITE` (see `build_state()`), so `old` must still read
+    # `ELITE` even though `army.quality`/`.new` has since moved.
+    state = build_state()
+    column = _direct_destruction_column(-1, ArmyType.HVY_CAVALRY, ArmyType.GARRISON)
+    battle_result = BattleResult(
+        columns=[column], winner="defender", total_bres=-1, attacker_columns_won=1, defender_columns_won=1
+    )
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result):
+        report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    change = report.quality_changes[101]
+    assert change.old == Quality.ELITE
+    assert change.new == state.armies[101].quality
 
 
 # -- Phase 372: real, confirmed post-battle quality-change formula wired
