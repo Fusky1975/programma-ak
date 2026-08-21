@@ -24136,7 +24136,7 @@ follow-up request after the original 431-435 plan shipped.
   catalog plus the `/S` sea-marker resolution for the two variants that
   carry one (`CCAST.X`, `STUN.X`). Ran again: 4948 passed (net +7).
 
-- **Phase 589 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 589**: `report/turn_report.py` -- transcribes
   `SPRING.X`/`ESUMMER.X`/`LSUMMER.X`/`FALL.X`/`EWINTER.X` into
   `SEASON_TRANSITION_TEMPLATE`/`SEASON_PREFIX_TEMPLATE`/
   `SEASON_ADVENT_TEMPLATE: dict[int, str]`, keyed 0-4 to match the
@@ -24160,6 +24160,40 @@ follow-up request after the original 431-435 plan shipped.
   (the prefix's plain `/R`, the transition's optional-clause inclusion/
   exclusion at both rng bounds, the advent template's Spring-only full
   sentence). Ran again: 4952 passed (net +4).
+
+- **Phase 590 (current)**: `report/turn_report.py` -- transcribes the
+  personal-combat loot cluster `GLSTEAL.X`/`GMSTEAL.X`/`GLSPOILS.X`/
+  `GMSPOILS.X`/`TLSTEAL.X`/`TMSTEAL.X`/`TLSPOILS.X`/`TMSPOILS.X`, all
+  eight declared together in `RUMORS.PAS`'s own constant block (`T_
+  LSteal=3201`..`G_MSpoils=3214`) and dispatched via `SAY.PAS:558-561`/
+  `576-579`. Closes two real, previously-unnarrated gaps this project's
+  own code already had data for but no prose: `describe_steal()`'s own
+  docstring said "a clean gold or item theft was never given prose in
+  any available source" for a successful, uncaught Steal -- the `*Steal`
+  half is that prose. Separately, `looted_item_ids` (Phase 313, set
+  whenever `loser_killed` is True) had never been narrated anywhere --
+  `GMSPOILS.X`'s own real overflow text ("took the list from the corpse
+  of [") confirms the `*Spoils` half narrates a dead opponent's
+  belongings. `G_*`/`T_*` reuse `render()`'s own Phase 118 `^L\` list
+  mechanism (`G_*` lists an arbitrary number of ordinary items; `T_*`
+  spells out the plain word "treasure" for a single named `Treasure`).
+  `GMSPOILS.X` itself is a confirmed real anomaly (AKPROSE's own SS5:
+  its header declares 1 choice but the payload has 2 more complete,
+  unreachable alternatives in the original engine) -- all 3 real choices
+  kept, matching the Phase 580/584 precedent of preserving every real
+  byte found. **Honestly left unresolved**: despite all eight being real
+  (non-compiled-unit) Pascal constants, no call site anywhere in the
+  available `.PAS` corpus ever writes any of their names outside their
+  own declaration/dispatch blocks, so the exact `L`/`M` selection rule
+  can't be traced further -- following the same "sourced but unwired"
+  precedent Phase 587 set for `LUCKINT`/`LUCKINT2`, none of the eight
+  new `render_*()` functions are wired into `describe_steal()` or any
+  other composer. Sourced from the same byte-faithful 162-file pass as
+  Phases 578-589, cross-checked directly against `RUMORS.PAS`/`SAY.PAS`
+  in `Programma Pascal.zip`. Ran before writing tests: 4952 passed
+  (non-breaking). Added tests: one verbatim sample per catalog plus
+  optional-clause/sea-marker/list-join/overflow-choice coverage. Ran
+  again: 4968 passed (net +16).
 
 ## Setup
 

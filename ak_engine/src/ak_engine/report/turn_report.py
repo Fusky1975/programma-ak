@@ -1174,6 +1174,7 @@ directly callable by anyone who still has the original
 from __future__ import annotations
 
 import random
+from typing import Sequence
 
 from ak_engine.models.enums import (
     ActionCode,
@@ -3035,6 +3036,255 @@ def render_stunned(character_name: str, rng: random.Random, *, is_sea: bool = Fa
     variant = pick_variant(_STUN_TEMPLATES, rng)
     values = {"<": character_name, ">": f"{character_name}'s"}
     return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/PROSE/GLSTEAL.X, GMSTEAL.X, GLSPOILS.X, GMSPOILS.X, TLSTEAL.X,
+# TMSTEAL.X, TLSPOILS.X, TMSPOILS.X -- the personal-combat loot cluster
+# (Phase 590). `RUMORS.PAS` defines all eight as one small constant block
+# (~line 142-145): `T_Conf=3200; T_LSteal=3201; T_MSteal=3202;
+# T_LSpoils=3203; T_MSpoils=3204; T_ISpoils=3207; G_Conf=3210;
+# G_LSteal=3211; G_MSteal=3212; G_LSpoils=3213; G_MSpoils=3214;
+# G_Inher=3215; _MGain=3216; G_ISpoils=3217`, and `SAY.PAS` dispatches
+# each through `FD()` (SAY.PAS:558-561, 576-579) exactly like every
+# other already-transcribed catalog. The `Steal`/`Spoils` split lines up
+# with two real, currently-unnarrated gaps this project's own code
+# already has data for: `describe_steal()`'s own docstring (above)
+# explicitly says "a clean gold or item theft was never given prose in
+# any available source" for `steal_outcome in ("success", "evaded",
+# "executed", "unresolved")` -- the `*Steal` half is that prose, now
+# found. Separately, `turn/challenge_execution.py`/`turn/pursue_
+# execution.py`'s own `looted_item_ids` field (Phase 313, set whenever
+# `loser_killed` is True) has never been narrated anywhere in this
+# module -- the `*Spoils` half (`GMSPOILS.X`'s own real overflow text,
+# "took the list from the corpse of [", confirms Spoils narrates a
+# *dead* opponent's belongings) is that prose too.
+#
+# The `G_`/`T_` prefix pair reuses `render()`'s own Phase 118 `^L`
+# list-insertion mechanism exactly as its own docstring already
+# describes (`"^L\\"` = a Magic Item list, this module's confirmed
+# example) -- `G_*` templates contain `^L\` and narrate a *list* of
+# looted items via `lists={"\\": [...]}`; `T_*` templates never contain
+# `\` or `^L` at all and instead spell out the plain word "treasure" --
+# read here as the `T_*` half firing when there's exactly one named
+# `Treasure`-type item involved (no list needed) and `G_*` firing for
+# an arbitrary-length list of ordinary items, matching this project's
+# own `Treasure` vs. plain `Item` model distinction, though no direct
+# Pascal citation confirms that specific selection rule (see below).
+#
+# **What is NOT resolved, honestly documented rather than guessed**:
+# despite these being real, non-compiled-unit Pascal constants (unlike
+# an earlier phase's assumption that this kind of dispatch always hides
+# in `DEFINES.TPU`), no call site anywhere in the available `.PAS`
+# corpus (`CTBOTH.PAS`, `REPORTS.PAS`, `CTME.PAS`, `SAY.PAS`,
+# `RUMORS.PAS`, `YAK.PAS`, `AKT.PAS`, `COMPANY.PAS`, `DEF2.PAS`,
+# `TRANS.PAS`, `LNAMES.PAS`, `PRNAMES.PAS`, `SAGACHAR.PAS`) ever writes
+# any of these eight constant names outside their own two declaration/
+# dispatch blocks -- `CTBOTH.PAS:120`'s own `CSteal` (a *different*,
+# `story`-vector event-code enum member, not one of these eight) is
+# likewise declared but never referenced by name, meaning the
+# controlling `CASE` that actually selects between `L`/`M` (and decides
+# `G_`/`T_` beyond the list/no-list heuristic above) assigns these
+# constants to a variable somewhere rather than writing their names
+# literally, which this project's available source can't trace further.
+# Following the same "sourced but unwired" precedent Phase 587 already
+# set for `LUCKINT_TEMPLATE`/`LUCKINT2_TEMPLATE`: all eight templates
+# below are real, byte-faithful, and render-tested, but none is wired
+# into `describe_steal()` or any other composer, and the exact `L`
+# (mnemonic unconfirmed) vs. `M` (mnemonic unconfirmed) selection rule
+# is left an open, flagged gap rather than guessed.
+_GLSTEAL_TEMPLATES: list[str] = [
+    "< {expertly }pickpocketed/Rrobbed_him_of ] ^L\\.",
+    "< {skillfully }stole the ^L\\ belonging_to/Rowned_by [.",
+    "< {greedily }pilfered ] ^L\\.",
+    "[1 lost ] ^L\\ to > stealthy/Rdexterous fingers.",
+]
+
+
+def render_group_theft_from_survivor(
+    thief_name: str, victim_name: str, looted_items: Sequence[str], rng: random.Random
+) -> str:
+    """Renders GLSTEAL.X's sentence for a successful, uncaught Steal
+    against a still-living victim, narrating an arbitrary-length list of
+    ordinary looted items via ``^L\\`` (Phase 590). ``looted_items`` are
+    already-formatted display strings (e.g. ``"a sword"``), matching
+    ``^L``'s own Phase 118 calling convention.
+    """
+
+    variant = pick_variant(_GLSTEAL_TEMPLATES, rng)
+    values = {
+        "<": thief_name,
+        ">": f"{thief_name}'s",
+        "[": victim_name,
+        "[1": victim_name,
+        "]": f"{victim_name}'s",
+    }
+    return render(variant, values, rng=rng, lists={"\\": list(looted_items)})
+
+
+_GMSTEAL_TEMPLATES: list[str] = [
+    "with hands/Rfingers as soft {and quiet/Rsilent }as ^A "
+    "zephyr/Rfeather, < carefully/Rsoundlessly pilfered/Rfingered the "
+    "^L\\.",
+    "breathless/RHeart_racing with nervousness/Rexcitement, < reached "
+    "in and stole/Rsecured the ^L\\.",
+    "like walking on ^A razor's_edge/Rtightrope, < {carefully/Rslowly "
+    "}curled/Rslipped > fingers around the ^L\\.",
+    "< grabbed/Rgrasped the ^L\\, > {> narrow }eyes glittering/Rshining "
+    "with {uncontrolled/Rnaked }avarice/Rgreed.",
+]
+
+
+def render_group_theft_tense(thief_name: str, looted_items: Sequence[str], rng: random.Random) -> str:
+    """Renders GMSTEAL.X's sentence for a successful, uncaught Steal --
+    the tenser sibling of ``render_group_theft_from_survivor()``, with
+    no victim reference of its own (Phase 590).
+    """
+
+    variant = pick_variant(_GMSTEAL_TEMPLATES, rng)
+    values = {"<": thief_name, ">": f"{thief_name}'s"}
+    return render(variant, values, rng=rng, lists={"\\": list(looted_items)})
+
+
+_GLSPOILS_TEMPLATES: list[str] = [
+    "< grabbed/Rtook the ^L\\{ from ] hoard/Rtreasure}.",
+    "< discovered/Rfound the ^L\\.",
+    "< rummaged/Rsearched through ['s belongings/Rpossessions and "
+    "took/Rfound the ^L\\.",
+]
+
+
+def render_group_spoils_from_survivor(
+    looter_name: str, victim_name: str, looted_items: Sequence[str], rng: random.Random
+) -> str:
+    """Renders GLSPOILS.X's sentence for looting a list of ordinary
+    items from a victim's own hoard (Phase 590).
+    """
+
+    variant = pick_variant(_GLSPOILS_TEMPLATES, rng)
+    values = {"<": looter_name, "[": victim_name, "]": f"{victim_name}'s"}
+    return render(variant, values, rng=rng, lists={"\\": list(looted_items)})
+
+
+# GMSPOILS.X's own physical file declares a `1 1` header (one choice)
+# but the real payload has two more complete alternatives past it --
+# AKPROSE's own SS5 anomaly section (confirmed independently, not
+# guessed by this project) states plainly: "GMSPOILS.X dichiara `1 1`,
+# ma contiene altre due alternative complete. La scelta casuale vede
+# soltanto la prima: le altre due non sono mai selezionate." -- i.e. a
+# real, confirmed historical dead-code anomaly in the original engine
+# itself (AKGEN's own header-bound `pick_variant` equivalent could never
+# reach choices 2/3), the same category of finding as Phase 580's
+# `TREASURE_NAME` gap and Phase 584's BLUCK/CLUCK mislabeling. All three
+# real choices are kept here (matching that precedent of preserving
+# every real byte found rather than truncating to the declared header),
+# with this comment as the honest record of why `pick_variant()` below
+# can reach lines the original game engine itself never could.
+_GMSPOILS_TEMPLATES: list[str] = [
+    "< {walked/Sswam over to ^A pile/Rmound of treasure and "
+    "}bagged/Rsecured the ^L\\.",
+    "< took/Rstripped the ^L\\ from the corpse/Rremains of [.",
+    "the ^L\\ lay nearby, and < picked_up/Rretrieved the treasure.",
+]
+
+
+def render_group_spoils_from_corpse(
+    looter_name: str, victim_name: str, looted_items: Sequence[str], rng: random.Random, *, is_sea: bool = False
+) -> str:
+    """Renders GMSPOILS.X's sentence for looting a list of ordinary
+    items from a dead opponent's remains (Phase 590) -- the ``loser_
+    killed``/``looted_item_ids`` gap this cluster's own module comment
+    describes. ``is_sea`` (Phase 74) resolves the "/S" marker the first
+    variant carries.
+    """
+
+    variant = pick_variant(_GMSPOILS_TEMPLATES, rng)
+    values = {"<": looter_name, "[": victim_name}
+    return render(variant, values, rng=rng, is_sea=is_sea, lists={"\\": list(looted_items)})
+
+
+_TLSTEAL_TEMPLATES: list[str] = [
+    "< cautiously/Rcarefully laid_hands_on/Rreached for the treasure.",
+    "< slid/Rslipped > hands cautiously/Rfondly over the treasure.",
+    "< succeeded in laying > {greedy }hands/Rfingers on the treasure.",
+    "the treasure seemed {almost }to call out to <2.< "
+    "carefully/Rcautiously reached out for it.",
+]
+
+
+def render_treasure_theft_from_survivor(thief_name: str, rng: random.Random) -> str:
+    """Renders TLSTEAL.X's sentence for a successful, uncaught Steal of
+    a single named ``Treasure`` -- no victim reference of its own, and
+    ``<2`` (the same alternate-attacker-reference convention Phase 588's
+    SHADTR already established) stands in for a repeated ``<`` within
+    one variant (Phase 590).
+    """
+
+    variant = pick_variant(_TLSTEAL_TEMPLATES, rng)
+    values = {"<": thief_name, ">": f"{thief_name}'s", "<2": thief_name}
+    return render(variant, values, rng=rng)
+
+
+_TMSTEAL_TEMPLATES: list[str] = [
+    "< caressed/Rlifted the treasure fondly/Rlovingly.",
+    "< {then }beheld the treasure, which lay there just for the taking.",
+    "< succeeded in laying > {greedy }hands/Rfingers on the {valuable "
+    "}treasure.",
+    "< could see the glittering/Rgleaming{, shiny/Rglowing} treasure "
+    "which seemed to {seductively }beckon/Rcall_out to > "
+    "greedy/Rtrembling fingers.",
+]
+
+
+def render_treasure_theft_tense(thief_name: str, rng: random.Random) -> str:
+    """Renders TMSTEAL.X's sentence for a successful, uncaught Steal of
+    a single named ``Treasure`` -- the tenser sibling of ``render_
+    treasure_theft_from_survivor()`` (Phase 590).
+    """
+
+    variant = pick_variant(_TMSTEAL_TEMPLATES, rng)
+    values = {"<": thief_name, ">": f"{thief_name}'s"}
+    return render(variant, values, rng=rng)
+
+
+_TLSPOILS_TEMPLATES: list[str] = [
+    "< stooped/Rkneeled to recover/Rcollect the {personal }belongings "
+    "of [.",
+    "< took the bag/Rpack [1 had been_carrying/Rborne.",
+    "< retrieved/Rtook the treasure [1 was carrying/Rbearing.",
+    "< stripped/Rrelieved [ of {all of }] treasure.",
+]
+
+
+def render_treasure_spoils_from_survivor(looter_name: str, victim_name: str, rng: random.Random) -> str:
+    """Renders TLSPOILS.X's sentence for looting a single named
+    ``Treasure`` from a victim who's still alive (Phase 590).
+    """
+
+    variant = pick_variant(_TLSPOILS_TEMPLATES, rng)
+    values = {"<": looter_name, "[": victim_name, "[1": victim_name, "]": f"{victim_name}'s"}
+    return render(variant, values, rng=rng)
+
+
+_TMSPOILS_TEMPLATES: list[str] = [
+    "< looked {down }with satisfaction/Rpride at the remains/Rcorpse "
+    "of [.",
+    "< shifted/Rturned > attention to the treasure/Rhoard of [.",
+    "< sacked/Rcleared_out the treasure {chest/Rroom }of [.",
+    "< took/Rappropriated the treasure {chest/Rtrove }that once "
+    "belonged to [.",
+]
+
+
+def render_treasure_spoils_from_corpse(looter_name: str, victim_name: str, rng: random.Random) -> str:
+    """Renders TMSPOILS.X's sentence for looting a single named
+    ``Treasure`` from a dead opponent's remains (Phase 590) -- the
+    ``loser_killed``/``looted_item_ids`` gap this cluster's own module
+    comment describes.
+    """
+
+    variant = pick_variant(_TMSPOILS_TEMPLATES, rng)
+    values = {"<": looter_name, ">": f"{looter_name}'s", "[": victim_name}
+    return render(variant, values, rng=rng)
 
 
 # Phase 415: describe_search()'s own default when narrating a

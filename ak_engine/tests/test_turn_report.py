@@ -190,6 +190,14 @@ from ak_engine.report.turn_report import (
     render_shadow_sword_drain,
     render_stun_recovery,
     render_stunned,
+    render_group_theft_from_survivor,
+    render_group_theft_tense,
+    render_group_spoils_from_survivor,
+    render_group_spoils_from_corpse,
+    render_treasure_theft_from_survivor,
+    render_treasure_theft_tense,
+    render_treasure_spoils_from_survivor,
+    render_treasure_spoils_from_corpse,
     render_petrifying_gaze_missed,
     render_homeland_defense_morale,
     render_oratory_speech,
@@ -1774,6 +1782,117 @@ def test_render_stunned_resolves_sea_marker():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
     result = render_stunned("Aldric", rng, is_sea=True)
     assert result == "Aldric stayed stunned, unable to regain Aldric's senses."
+
+
+# -- GLSTEAL.X/GMSTEAL.X/GLSPOILS.X/GMSPOILS.X/TLSTEAL.X/TMSTEAL.X/
+# -- TLSPOILS.X/TMSPOILS.X (Phase 590) -- sourced, render-tested, but
+# -- not wired into any composer (see module docstring's own Phase 590
+# -- addendum for why).
+
+
+def test_render_group_theft_from_survivor_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_group_theft_from_survivor("Aldric", "Borin", ["a sword", "a shield"], rng)
+    assert result == "Aldric pickpocketed Borin's a sword and a shield."
+
+
+def test_render_group_theft_from_survivor_single_item_has_no_conjunction():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[1])
+    result = render_group_theft_from_survivor("Aldric", "Borin", ["a ring"], rng)
+    assert result == "Aldric skillfully stole the a ring owned by Borin."
+
+
+def test_render_group_theft_tense_joins_three_items():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+    result = render_group_theft_tense("Aldric", ["a ring", "a wand", "a helm"], rng)
+    assert result == "Aldric grabbed the a ring, a wand and a helm, Aldric's eyes glittering with avarice."
+
+
+def test_render_group_spoils_from_survivor_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_group_spoils_from_survivor("Aldric", "Borin", ["a wand"], rng)
+    assert result == "Aldric grabbed the a wand."
+
+
+def test_render_group_spoils_from_survivor_includes_optional_hoard_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[0])
+    result = render_group_spoils_from_survivor("Aldric", "Borin", ["a wand"], rng)
+    assert result == "Aldric took the a wand from Borin's treasure."
+
+
+def test_render_group_spoils_from_corpse_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_group_spoils_from_corpse("Aldric", "Borin", ["a helm"], rng)
+    assert result == "Aldric bagged the a helm."
+
+
+def test_render_group_spoils_from_corpse_resolves_sea_marker():
+    # The /S marker sits inside an optional `{...}` clause -- only
+    # visible at rng >= 0.5 (clause included); a low rng excludes the
+    # whole clause and the /S choice never gets a chance to differ.
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[0])
+    result = render_group_spoils_from_corpse("Aldric", "Borin", ["a helm"], rng, is_sea=True)
+    assert result == "Aldric swam over to a mound of treasure and secured the a helm."
+
+
+def test_render_group_spoils_from_corpse_third_variant_is_the_real_unreachable_overflow():
+    # GMSPOILS.X's own header declares only 1 choice -- choices 2/3 were
+    # never reachable in the original engine (see module docstring's own
+    # Phase 590 addendum), but the real bytes are preserved here anyway.
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_group_spoils_from_corpse("Aldric", "Borin", ["a helm"], rng)
+    assert result == "the a helm lay nearby, and Aldric picked up the treasure."
+
+
+def test_render_treasure_theft_from_survivor_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_treasure_theft_from_survivor("Aldric", rng)
+    assert result == "Aldric cautiously laid hands on for the treasure."
+
+
+def test_render_treasure_theft_from_survivor_resolves_greedy_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[2])
+    result = render_treasure_theft_from_survivor("Aldric", rng)
+    assert result == "Aldric succeeded in laying Aldric's greedy fingers on the treasure."
+
+
+def test_render_treasure_theft_tense_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_treasure_theft_tense("Aldric", rng)
+    assert result == "Aldric caressed the treasure fondly."
+
+
+def test_render_treasure_theft_tense_fourth_variant():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[3])
+    result = render_treasure_theft_tense("Aldric", rng)
+    assert result == (
+        "Aldric could see the gleaming, glowing treasure which seemed to "
+        "seductively call out to Aldric's trembling fingers."
+    )
+
+
+def test_render_treasure_spoils_from_survivor_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_treasure_spoils_from_survivor("Aldric", "Borin", rng)
+    assert result == "Aldric stooped to recover the belongings of Borin."
+
+
+def test_render_treasure_spoils_from_survivor_fourth_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
+    result = render_treasure_spoils_from_survivor("Aldric", "Borin", rng)
+    assert result == "Aldric stripped Borin of Borin's treasure."
+
+
+def test_render_treasure_spoils_from_corpse_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_treasure_spoils_from_corpse("Aldric", "Borin", rng)
+    assert result == "Aldric looked with satisfaction at the remains of Borin."
+
+
+def test_render_treasure_spoils_from_corpse_second_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_treasure_spoils_from_corpse("Aldric", "Borin", rng)
+    assert result == "Aldric shifted Aldric's attention to the treasure of Borin."
 
 
 # -- Phase 155: monster missile-attack flavor text + Troll regeneration --
