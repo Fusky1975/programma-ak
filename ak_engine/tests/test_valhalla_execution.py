@@ -12,7 +12,12 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID, ValhallaHero
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.valhalla_execution import _select_visitor_template, finalize_gate_angel_visit, process_valhalla_departure
+from ak_engine.turn.valhalla_execution import (
+    VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE,
+    _select_visitor_template,
+    finalize_gate_angel_visit,
+    process_valhalla_departure,
+)
 
 from _helpers import ScriptedRandom
 
@@ -366,3 +371,27 @@ def test_finalize_processes_a_stale_occupants_departure_before_overwriting():
     assert new_visitor is not None
     assert new_visitor.name != "Stale Visitor"
     assert state.items[stale_item.item_id].owner_leader_id == 1  # handed off to the King, not lost
+
+
+# -- Phase 585: VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE --
+
+
+def test_valhalla_visit_announcement_template_has_the_real_markers():
+    assert "<" in VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE
+    assert "=" in VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE
+    assert "#" in VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE
+
+
+def test_valhalla_visit_announcement_template_verbatim():
+    assert VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE == (
+        '< was visited by a hero from Valhalla, named =!The characteristics '
+        'for this great King from Game # are given in your "CHARACTERS" report.'
+    )
+
+
+def test_valhalla_visit_announcement_template_carries_no_real_historical_names():
+    # Deliberately redacted -- see module docstring's own Phase 585
+    # addendum. Real names ("Santa", "SWK", "Balin") and game numbers
+    # never appear here, only the reusable marker skeleton.
+    assert "Game #" in VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE
+    assert not any(char.isdigit() for char in VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE)

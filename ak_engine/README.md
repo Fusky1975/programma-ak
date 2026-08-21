@@ -24002,7 +24002,7 @@ follow-up request after the original 431-435 plan shipped.
   distinction, and a `render()` round-trip. Ran again: 4926 passed
   (net +5).
 
-- **Phase 584 (current)**: a correctness fix, not just a new
+- **Phase 584**: a correctness fix, not just a new
   transcription. While tracing `turn/battle_luck.py`'s own Phase 388
   addendum -- which explicitly documented `CLUCK2.X2` as an "honest,
   documented partial gap" -- found that its sibling constants `BLUCK_
@@ -24041,6 +24041,33 @@ follow-up request after the original 431-435 plan shipped.
   `render_cluck2_event` test. Ran again: 4927 passed (net +1, since
   most changes were in-place rewrites of already-existing tests, not
   additions).
+
+- **Phase 585 (current)**: while surveying the remaining catalogs, found
+  that `GOOD.X2`/`EVIL.X2`/`NEUTRAL.X2`/`PAGAN.X2`/`DRUIDIC.X2` (paired
+  with a `...2.X2` data half each) are **not fictional game-design
+  content at all** -- `AKPROSE_reverse_engineering_report.md`'s own
+  §7.8 and the content itself confirm these are a persistent,
+  append-only database (`REPORTS.PAS Write_VF`) that the real game grew
+  by one genuine record every time an actual historical game crowned a
+  Valhalla-worthy winner: every entry names a real player's own
+  nickname ("Santa", "SWK", "Balin", "Baron Shadowrunner") and a real
+  past game number ("Game 52", "from game 165", "from game 8001225").
+  This is personal history belonging to real people, not reusable
+  content -- flagged to the user before touching it further, who asked
+  for the reusable template skeleton only, with every real name/game
+  number redacted. New `turn/valhalla_execution.py VALHALLA_VISIT_
+  ANNOUNCEMENT_TEMPLATE`: the one clean sentence confirmed to repeat
+  identically (modulo per-hero substitution) across every alignment
+  pool checked -- `<` the visited King, `=` the hero's own name
+  (`models/valhalla.py`'s own separate, genuinely fictional, user-
+  supplied 137-hero roster), `#` the real historical game number, kept
+  as a literal unresolved marker since this project's own single-game
+  `GameState` has no such concept to fill it with. No `render_*()`
+  wrapper built, for the same reason. Ran before writing tests: 4927
+  passed (non-breaking). Added tests: the three real markers are
+  present, a verbatim sample, and a check that no digit (i.e. no real
+  game number) ever appears in the stored template. Ran again: 4930
+  passed (net +3).
 
 ## Setup
 

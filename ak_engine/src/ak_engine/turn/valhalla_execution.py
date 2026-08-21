@@ -68,6 +68,46 @@ deadline.py``'s own module docstring -- it's an external, caller-level
 fact nothing in ``GameState`` tracks), so there's no hook to attach
 this rule to without inventing an external contract this project
 doesn't otherwise have.
+
+**`VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE` (Phase 585)**: this project
+never had the real narration text for a Valhalla visit at all --
+`SAY.PAS:46-52 Get_VFN` dispatches each of the 5 alignment-pool
+catalogs (`GOOD.X2`/`EVIL.X2`/`NEUTRAL.X2`/`PAGAN.X2`/`DRUIDIC.X2`,
+paired with a `...2.X2` data half each), and a byte-faithful third-
+party reverse-engineering pass over the full 162-file prose corpus
+(`AKPROSE_reverse_engineering_report.md`, supplied directly by the
+user) reconstructs their real content. **These catalogs are not
+reusable game design content, though** -- confirmed by
+`AKPROSE_reverse_engineering_report.md`'s own §7.8 ("I dieci cataloghi
+Valhalla sono un database mutabile a coppie") and directly by the
+content itself: every real entry names a specific historical hero by
+its own real player-chosen nickname ("Santa", "SWK", "Balin", "Baron
+Shadowrunner") and a specific real past game number ("Game 52", "from
+game 165", "from game 8001225") -- `REPORTS.PAS Write_VF` (~lines
+1358-1410) confirms these files are genuinely persistent and
+append-only, growing by one real record every time an actual historical
+game crowned a winner. This is personal history belonging to real
+people who played this game over the years, not fictional in-universe
+content -- **deliberately not transcribed here**, matching every other
+real name/game-number instance found while surveying the corpus.
+
+What *is* transcribed is the one clean, reusable template sentence
+confirmed to repeat identically (modulo the per-hero substitution)
+across every alignment pool checked (`GOOD.X2`/`EVIL.X2`, at minimum):
+"`< was visited by a hero from Valhalla, named =!The characteristics
+for this great King from Game # are given in your "CHARACTERS"
+report.`" -- `<` is the visited King (already-established convention),
+`=` the hero's own name (`ValhallaHero.name`, matching `models/
+valhalla.py`'s own already-transcribed 137-hero roster -- a completely
+separate, user-supplied, genuinely fictional source, not these
+catalogs). `#` is the specific historical game number each real record
+carries -- this project's own single-simulation-instance `GameState`
+has no such concept and never will (there is no "which numbered game is
+this" field to fill it with), so it's kept as the literal, unresolved
+`#` marker rather than invented or dropped. No render wrapper is built
+here (unlike this module's own other confirmed mechanics) precisely
+because of that missing field -- a future phase that decides what (if
+anything) `#` should render as can build one.
 """
 
 from __future__ import annotations
@@ -84,6 +124,16 @@ from ak_engine.models.valhalla import (
     _valhalla_stay_phase_count,
 )
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
+
+# HostAK/TP/PROSE/GOOD.X2 (and identically, EVIL.X2) choice 1's own real
+# template sentence, redacted of every real historical name/game number
+# -- see module docstring's own Phase 585 addendum for why. `<` the
+# visited King, `=` the hero's own name, `#` the historical game number
+# (no consumer in this project -- kept literal, not resolved).
+VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE = (
+    '< was visited by a hero from Valhalla, named =!The characteristics '
+    'for this great King from Game # are given in your "CHARACTERS" report.'
+)
 
 
 def _select_visitor_template(
