@@ -219,6 +219,8 @@ from ak_engine.report.turn_report import (
     render_thief_search_failed,
     render_steal_treasure_inaccessible,
     render_battle_leader_intro,
+    render_monster_reinforcement_arrives,
+    render_monster_reinforcement_helped,
     render_binoculars_preview,
     render_petrifying_gaze_missed,
     render_homeland_defense_morale,
@@ -2168,6 +2170,37 @@ def test_render_battle_leader_intro_fourth_variant_puts_commander_name_last():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
     result = render_battle_leader_intro("Aldric", rng, is_sea=True)
     assert result == "standing at the ready with Aldric's ships was Aldric."
+
+
+# -- MCOME.X/MFIGHT.X (Phase 604) --
+
+
+def test_render_monster_reinforcement_arrives_first_variant_ignores_province():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_monster_reinforcement_arrives("the Forest Guardian", "144th Legion", "Mongu", rng)
+    assert result == "the Forest Guardian, hearing of the peril of the Druidic king, arrived at the battle to fight with 144th Legion."
+
+
+def test_render_monster_reinforcement_arrives_second_variant_uses_province():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_monster_reinforcement_arrives("the Forest Guardian", "144th Legion", "Mongu", rng)
+    assert result == (
+        "word of the impending battle had spread throughout Mongu, so "
+        "that even the Forest Guardian heard of it and made an "
+        "appearance, where the Forest Guardian fought alongside 144th Legion."
+    )
+
+
+def test_render_monster_reinforcement_helped_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_monster_reinforcement_helped("the Forest Guardian", "144th Legion", rng)
+    assert result == "the Forest Guardian was of some slight help in the battle."
+
+
+def test_render_monster_reinforcement_helped_fifth_variant():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[4])
+    result = render_monster_reinforcement_helped("the Forest Guardian", "144th Legion", rng)
+    assert result == "the Forest Guardian almost tripled the strength of 144th Legion!"
 
 
 # -- BINOCPR.X (Phase 594) --

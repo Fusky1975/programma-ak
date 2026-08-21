@@ -24446,7 +24446,7 @@ follow-up request after the original 431-435 plan shipped.
   Added tests: one verbatim sample per variant plus optional-clause
   coverage. Ran again: 5027 passed (net +3).
 
-- **Phase 603 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 603**: `report/turn_report.py` -- transcribes
   `SFAIL.X`/`SBUNGLE.X`, a Cast that just fizzles with no validity
   reason involved -- `SFAIL.X` (`SAY.PAS:895 _SFail`) the ordinary Cast
   Spell action's own sibling, `SBUNGLE.X` (`SAY.PAS:674 _LBung`) the
@@ -24465,6 +24465,22 @@ follow-up request after the original 431-435 plan shipped.
   Pascal.zip`. Ran before writing tests: 5027 passed (non-breaking).
   Added tests: one verbatim sample per catalog plus optional-clause
   coverage. Ran again: 5031 passed (net +4).
+
+- **Phase 604 (current)**: `report/turn_report.py` -- transcribes
+  `MCOME.X`/`MFIGHT.X`, a Feature's own guardian monster joining a
+  battle to help its Druidic-aligned side, then how much it helped.
+  `SAY.PAS:1086-1091 _BMonst` fires both back to back for the same
+  event. `turn/druidic_monster_aid.py find_druidic_monster_assistance()`
+  (Phase 453, wired into `turn/battle_orchestrator.py`'s own battle
+  setup) already computes exactly this fact -- `{column: strength_
+  bonus}` -- but it's consumed straight into `resolve_battle()`'s own
+  combat math and never retained anywhere afterward, so there's no way
+  to narrate it with real names without a `battle_orchestrator.py`
+  change of its own. Same model-gap shape as Phase 593's `BATLDR.X`.
+  Sourced from the same byte-faithful 162-file pass as Phases 578-603,
+  cross-checked against `SAY.PAS` in `Programma Pascal.zip`. Ran before
+  writing tests: 5031 passed (non-breaking). Added tests: one verbatim
+  sample per catalog. Ran again: 5035 passed (net +4).
 
 ## Setup
 

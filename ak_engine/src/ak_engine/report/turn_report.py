@@ -3876,6 +3876,70 @@ def render_battle_leader_intro(commander_name: str, rng: random.Random, *, is_se
     return render(variant, values, rng=rng, is_sea=is_sea)
 
 
+# HostAK/TP/PROSE/MCOME.X, MFIGHT.X -- a Feature's own guardian monster
+# joining a battle to help its Druidic-aligned side (Phase 604), then
+# how much it helped. `SAY.PAS:1086-1091 _BMonst: BEGIN chief_on:=
+# false; FD('mcome',S_Batt,0); FD('mfight',S_Batt,1001+Rint); chief_on:=
+# true; END` -- the two fire back to back for the same event. `turn/
+# druidic_monster_aid.py find_druidic_monster_assistance()` (Phase 453,
+# wired into `turn/battle_orchestrator.py`'s own battle setup) computes
+# exactly this real game-state fact -- `{column: strength_bonus}`, one
+# entry per monster that rolled successfully and claimed a column -- but
+# it's consumed straight into `resolve_battle()`'s own combat math and
+# never retained anywhere afterward (no ``BattleReport`` field records
+# which column got help, or which ``Feature``/monster it came from), so
+# there's no way to narrate this with real names after the fact without
+# a `battle_orchestrator.py` change of its own. Sourced and
+# render-tested, not wired -- the same model-gap shape as Phase 593's
+# own `BATLDR.X`.
+_MCOME_TEMPLATES: list[str] = [
+    "[, hearing/Rlearning of the peril/Rjust_cause of the Druidic "
+    "king/Rmonarch, arrived_at/Rrushed_to the battle{field} to "
+    "fight/Rjoin_forces with =.",
+    "word/Rnews of the impending/Rperilous battle had spread {far "
+    "and wide }throughout/Rwithin @, so_that/Rand even [ "
+    "heard/Rgot_wind of it and made_an_appearance/Rarrived_for_the_"
+    "show, where [ fought/Rparticipated alongside/Rwith =.",
+    "fighting_with/Rhelping = in the_battle/Rthis_contest was [, "
+    "who_had_come/Rcoming to the aid/Rdefense of ] friend/Rally, "
+    "the Druidic King/Rruler.",
+]
+
+
+def render_monster_reinforcement_arrives(monster_name: str, army_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders MCOME.X's sentence for a Feature's own guardian monster
+    arriving to join a battle (Phase 604). Only the second variant uses
+    ``province_name`` -- the other two don't reference the province at
+    all.
+    """
+
+    variant = pick_variant(_MCOME_TEMPLATES, rng)
+    values = {"[": monster_name, "=": army_name, "@": province_name, "]": f"{monster_name}'s"}
+    return render(variant, values, rng=rng)
+
+
+_MFIGHT_TEMPLATES: list[str] = [
+    "[ was of some slight help/Rassistance in the battle/Rcontest.",
+    "[ increased/Raugmented the strength of = considerably/Rsignificantly.",
+    "It is_safe_to_say/Rappeared that [ greatly/Rpowerfully "
+    "magnified/Renhanced the efforts/Rpower of =.",
+    "the presence/Raid of [ was almost/Rjust like having another army!",
+    "[ more_than_doubled/Ralmost_tripled the strength of =!",
+]
+
+
+def render_monster_reinforcement_helped(monster_name: str, army_name: str, rng: random.Random) -> str:
+    """Renders MFIGHT.X's sentence for how much a guardian monster's aid
+    helped a battle (Phase 604) -- meant to follow directly after
+    ``render_monster_reinforcement_arrives()``, the same real
+    back-to-back dispatch ``SAY.PAS``'s own `_BMonst` uses.
+    """
+
+    variant = pick_variant(_MFIGHT_TEMPLATES, rng)
+    values = {"[": monster_name, "=": army_name}
+    return render(variant, values, rng=rng)
+
+
 # HostAK/TP/PROSE/BINOCPR.X -- the Binoculars item's own scouting-preview
 # sentence, describing a neighboring province seen from a distance
 # (Phase 594). `SAY.PAS:739 _LBinoc: FD('binocpr',S_Red,5)`.
