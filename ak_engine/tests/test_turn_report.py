@@ -199,6 +199,7 @@ from ak_engine.report.turn_report import (
     render_treasure_theft_tense,
     render_treasure_spoils_from_survivor,
     render_treasure_spoils_from_corpse,
+    render_gold_spoils,
     render_mercenary_army_wanders_away,
     render_mercenary_army_wanders_in,
     render_character_wanders_away,
@@ -1942,6 +1943,33 @@ def test_render_treasure_spoils_from_corpse_second_variant():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
     result = render_treasure_spoils_from_corpse("Aldric", "Borin", rng)
     assert result == "Aldric shifted Aldric's attention to the treasure of Borin."
+
+
+# -- LSPOILG.X (Phase 596) --
+
+
+def test_render_gold_spoils_first_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_gold_spoils("Aldric", "Borin", 42, rng)
+    assert result == "Aldric took 42 gold from the treasure of Borin."
+
+
+def test_render_gold_spoils_second_variant_has_no_victim_reference():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[1])
+    result = render_gold_spoils("Aldric", "Borin", 42, rng)
+    assert result == "Aldric found a treasure of 42 gold."
+
+
+def test_render_gold_spoils_second_variant_includes_optional_clause():
+    rng = ScriptedRandom([0.99] * 10, choice_indices=[1])
+    result = render_gold_spoils("Aldric", "Borin", 42, rng)
+    assert result == "Aldric located a treasure of 42 gold and snarfed it up."
+
+
+def test_render_gold_spoils_third_variant():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[2])
+    result = render_gold_spoils("Aldric", "Borin", 42, rng)
+    assert result == "Aldric found 42 gold in the treasure of Borin."
 
 
 # -- AWANDFR.X/AWANDTO.X/LWANDFR.X/LWANDTO.X (Phase 591) --

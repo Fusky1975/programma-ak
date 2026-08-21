@@ -24281,7 +24281,7 @@ follow-up request after the original 431-435 plan shipped.
   Added tests: one verbatim sample plus sea-marker and direction-suffix
   coverage. Ran again: 4993 passed (net +4).
 
-- **Phase 595 (current)**: `report/turn_report.py` -- transcribes
+- **Phase 595**: `report/turn_report.py` -- transcribes
   `HIREMERC.X` and, unlike Phases 590-594's own "sourced but unwired"
   additions, actually **wires** it: `RUMORS.PAS`'s own constant block
   declares `_ARecr=4000; _AHired=4001` adjacently, and `SAY.PAS:847
@@ -24308,6 +24308,25 @@ follow-up request after the original 431-435 plan shipped.
   clause coverage, plus a `describe_recruit()` wiring test confirming a
   hired unit renders through `HIREMERC.X` instead of `RECRUIT.X`. Ran
   again: 4998 passed (net +5).
+
+- **Phase 596 (current)**: `report/turn_report.py` -- transcribes
+  `LSPOILG.X`, the third leg of the defeated-leader-loot narrative
+  Phase 590's own `G_*`/`T_*` cluster covers the other two of (item
+  lists / a single named `Treasure`): a raw gold amount. `SAY.PAS:564
+  _LSpoilG: FD('lspoilg',S_PCom,5)` sits in the exact same dispatch
+  block as Phase 590's own cluster, reinforcing it's the same sequence's
+  gold-specific sibling. Same honest stance as `BATLDR.X` (Phase 593):
+  a genuine model gap, not a missing call site -- this project's own
+  `loot_defeated_leader()` (`turn/encounter.py`) only transfers
+  `ItemInstance`s, and no leader holds personal gold in this project's
+  model at all (gold lives at the Kingdom-treasury level, a different
+  real template entirely), so there's no `looted_gold` value to drive
+  this from yet. Sourced and render-tested, not wired into any
+  composer. Sourced from the same byte-faithful 162-file pass as Phases
+  578-595, cross-checked against `SAY.PAS` in `Programma Pascal.zip`.
+  Ran before writing tests: 4998 passed (non-breaking). Added tests:
+  one verbatim sample per variant plus optional-clause coverage. Ran
+  again: 5002 passed (net +4).
 
 ## Setup
 

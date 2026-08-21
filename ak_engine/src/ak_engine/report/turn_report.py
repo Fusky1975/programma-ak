@@ -3287,6 +3287,39 @@ def render_treasure_spoils_from_corpse(looter_name: str, victim_name: str, rng: 
     return render(variant, values, rng=rng)
 
 
+# HostAK/TP/PROSE/LSPOILG.X -- the third leg of the defeated-leader-loot
+# stool Phase 590 (item lists via `G_*`) and Phase 590's own `T_*`
+# (a single named `Treasure`) cover the other two of: a raw gold amount.
+# `SAY.PAS:564 _LSpoilG: FD('lspoilg',S_PCom,5)` sits right in the same
+# dispatch block as Phase 590's own `G_*`/`T_*` cluster (`T_LSpoils`
+# .. `_LSpoilG` .. `G_LSteal`), reinforcing that this is the same
+# narrative sequence's gold-specific sibling (Phase 596). Like `BATLDR.X`
+# (Phase 593), this is a genuine model gap rather than a missing call
+# site: this project's own ``loot_defeated_leader()`` (``turn/
+# encounter.py``) only transfers ``ItemInstance``s -- no leader ever
+# holds personal gold in this project's model (gold lives at the
+# Kingdom-treasury level, `` _LTreas: Say('< was left with # gold in the
+# treasury.',...) ``, a different real template entirely), so there is
+# no `looted_gold` value to drive this from. Sourced and render-tested,
+# not wired into any composer.
+_LSPOILG_TEMPLATES: list[str] = [
+    "< took/Rlooted # gold from the treasure {trove }of [.",
+    "< found/Rlocated ^A treasure of # gold{ and bagged_it/Rsnarfed_it_up}.",
+    "< found # gold in the treasure/Rhoard of [.",
+]
+
+
+def render_gold_spoils(looter_name: str, victim_name: str, gold_amount: int, rng: random.Random) -> str:
+    """Renders LSPOILG.X's sentence for looting a raw gold amount from a
+    defeated leader's treasure (Phase 596). The second variant has no
+    victim reference of its own.
+    """
+
+    variant = pick_variant(_LSPOILG_TEMPLATES, rng)
+    values = {"<": looter_name, "[": victim_name, "#": str(gold_amount)}
+    return render(variant, values, rng=rng)
+
+
 # HostAK/TP/PROSE/AWANDFR.X, AWANDTO.X, LWANDFR.X, LWANDTO.X -- unemployed
 # mercenary armies and Heroes randomly relocating between provinces on
 # their own initiative (Phase 591). `SAY.PAS:855-856 _AWandFr: FD('awandfr',
