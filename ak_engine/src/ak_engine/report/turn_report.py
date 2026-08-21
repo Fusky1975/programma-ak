@@ -1234,6 +1234,7 @@ from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.discovery_effects import effective_skill_level, emperor_holds_arcanes_valor_unification
 from ak_engine.turn.expenses import MaintenanceResult, compute_expected_expenses, leader_pay
+from ak_engine.turn.valhalla_execution import VALHALLA_VISITOR_RULES_TEMPLATE
 from ak_engine.turn.office_holder import (
     ALL_OFFICES,
     OfficeHolder,
@@ -3746,6 +3747,22 @@ def render_talk_learned_hire_price(character_name: str, target_name: str, gold_a
         "#": str(gold_amount),
     }
     return render(variant, values, rng=rng)
+
+
+def render_valhalla_visitor_rules(visitor_name: str, rng: random.Random) -> list[str]:
+    """Renders VALINT.X2's rulebook explanation of the Valhalla
+    visiting-Hero mechanic (Phase 606) -- one already-``render()``-ed
+    line per real, reachable entry in ``turn/valhalla_execution.py
+    VALHALLA_VISITOR_RULES_TEMPLATE`` (see that constant's own comment
+    for why the file's real 10th line is deliberately excluded: a
+    confirmed header-limit anomaly, never actually printed by the
+    original engine). No `/R`/`{...}` in any line, so ``rng`` is unused
+    in practice -- kept for signature consistency with every other
+    ``render_*()`` composer in this module.
+    """
+
+    values = {"[": visitor_name, "[1": visitor_name, "]": f"{visitor_name}'s"}
+    return [render(line, values, rng=rng) for line in VALHALLA_VISITOR_RULES_TEMPLATE]
 
 
 # HostAK/TP/PROSE/THATT.X, THFAIL.X -- the opening/failure bookends of

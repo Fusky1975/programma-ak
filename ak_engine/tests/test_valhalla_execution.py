@@ -14,6 +14,8 @@ from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_I
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.valhalla_execution import (
     VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE,
+    VALHALLA_VISITOR_RULES_TEMPLATE,
+    VALHALLA_VISITOR_RULES_UNREACHABLE_DEADLINE_LINE,
     _select_visitor_template,
     finalize_gate_angel_visit,
     process_valhalla_departure,
@@ -395,3 +397,30 @@ def test_valhalla_visit_announcement_template_carries_no_real_historical_names()
     # never appear here, only the reusable marker skeleton.
     assert "Game #" in VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE
     assert not any(char.isdigit() for char in VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE)
+
+
+# -- Phase 606: VALHALLA_VISITOR_RULES_TEMPLATE --
+
+
+def test_valhalla_visitor_rules_template_has_nine_real_reachable_lines():
+    # VALINT.X2's own header declares "1 9" -- the file's real 10th line
+    # is a confirmed, never-printed anomaly, kept separately below.
+    assert len(VALHALLA_VISITOR_RULES_TEMPLATE) == 9
+
+
+def test_valhalla_visitor_rules_template_first_and_last_lines_verbatim():
+    assert VALHALLA_VISITOR_RULES_TEMPLATE[0] == (
+        "If [1 searches a feature, any monetary treasure [1 captures will be given to you."
+    )
+    assert VALHALLA_VISITOR_RULES_TEMPLATE[-1] == "If no leader is available, the armies will be disbanded."
+
+
+def test_valhalla_visitor_rules_unreachable_deadline_line_is_kept_but_separate():
+    # Real content, but the original engine's own 9-line header limit
+    # means it was never actually printed -- see this module's own
+    # pre-existing "Turn-deadline voiding stays confirmed out of scope"
+    # note for the independent confirmation.
+    assert VALHALLA_VISITOR_RULES_UNREACHABLE_DEADLINE_LINE == (
+        "If you miss the turn deadline, [1 will disappear and your orders for [ will be voided."
+    )
+    assert VALHALLA_VISITOR_RULES_UNREACHABLE_DEADLINE_LINE not in VALHALLA_VISITOR_RULES_TEMPLATE

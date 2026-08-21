@@ -209,6 +209,7 @@ from ak_engine.report.turn_report import (
     render_hail_greeting,
     render_talk_rebuffed,
     render_talk_learned_hire_price,
+    render_valhalla_visitor_rules,
     render_practice_vain,
     describe_desertions,
     render_mercenary_army_wanders_away,
@@ -2719,6 +2720,26 @@ def test_render_talk_learned_hire_price_fourth_variant_keeps_the_real_double_spa
         "Aldric  found Borin in a tavern and had a few beers with Borin."
         "Borin told Aldric that it would be Borin's honor to serve "
         "Aldric at the price of 42 gold."
+    )
+
+
+# -- VALINT.X2 (Phase 606) --
+
+
+def test_render_valhalla_visitor_rules_returns_the_nine_real_reachable_lines():
+    rng = ScriptedRandom([])
+    lines = render_valhalla_visitor_rules("Aldric", rng)
+    assert len(lines) == 9
+    assert lines[0] == "If Aldric searches a feature, any monetary treasure Aldric captures will be given to you."
+    assert lines[-1] == "If no leader is available, the armies will be disbanded."
+
+
+def test_render_valhalla_visitor_rules_resolves_possessive_marker():
+    rng = ScriptedRandom([])
+    lines = render_valhalla_visitor_rules("Aldric", rng)
+    assert lines[2] == (
+        "You can do anything you want with the magic item Aldric came "
+        "with, but the item will leave at the end of Aldric's stay with you."
     )
 
 

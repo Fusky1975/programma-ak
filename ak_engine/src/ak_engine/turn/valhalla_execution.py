@@ -135,6 +135,52 @@ VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE = (
     'for this great King from Game # are given in your "CHARACTERS" report.'
 )
 
+# HostAK/TP/PROSE/VALINT.X2 -- the rulebook explanation of the Valhalla
+# visiting-Hero mechanic, shown alongside the announcement above
+# (Phase 606). `SAY.PAS:1212 _LValHal: FD('valint.x2',S_Red,1)`. Plain
+# `[`/`[1`/`]` pronoun markers throughout, no `/R`/`{...}`/`^A` at all
+# ("nessun token speciale rilevato").
+#
+# **A real, confirmed anomaly, not a transcription choice**: the file's
+# own header declares `1 9` (one choice, 9 lines), but the real payload
+# has 10 real lines plus a trailing blank one -- `FD()` only ever reads
+# the header's own declared 9, so the 10th line below was **never
+# actually printed by the original engine**, confirmed independently by
+# this module's own pre-existing Phase 527-era docstring note above
+# ("Turn-deadline voiding stays confirmed out of scope entirely...no
+# hook to attach this rule to"). Kept here anyway, clearly separated and
+# labeled, matching this project's own established precedent of
+# preserving every real byte found (Phase 580's `TREASURE_NAME` gap,
+# Phase 590's `GMSPOILS.X` overflow) rather than silently truncating to
+# the declared header.
+VALHALLA_VISITOR_RULES_TEMPLATE: tuple[str, ...] = (
+    "If [1 searches a feature, any monetary treasure [1 captures will be given to you.",
+    "If [1 captures a magic treasure, [1 will give it to your King when he departs "
+    "for Valhalla, or you can order [ to Give it to one of your characters.",
+    "You can do anything you want with the magic item [1 came with, but the item "
+    "will leave at the end of ] stay with you.",
+    "Except for the rules given in this paragraph, [1 can generally be treated just "
+    "like your other Heroes, and can be affected by any spell except Resurrection.",
+    "The main limitation in using [ is that [1 has only enough patience to practice "
+    "with you for one of the phase(s) [1 is with you.",
+    "[1 will leave at the end of the last phase [1 is scheduled to serve you, after "
+    "all battles have been fought.",
+    "[1 can lead armies, but when [1 returns to Valhalla, the armies will normally "
+    "be left leaderless in the province they are in.",
+    "If [1 has the armies in a province you don't own, they will be transferred to "
+    "your lowest-numbered leader in the same province, or at last resort, the "
+    "garrison commander in an adjacent province owned by you.",
+    "If no leader is available, the armies will be disbanded.",
+)
+
+# The file's real, 10th physical line -- confirmed never printed by the
+# original engine's own 9-line header limit (see the comment above).
+# Kept as a separate, clearly-unreachable constant rather than appended
+# to `VALHALLA_VISITOR_RULES_TEMPLATE`, so nothing renders it by accident.
+VALHALLA_VISITOR_RULES_UNREACHABLE_DEADLINE_LINE = (
+    "If you miss the turn deadline, [1 will disappear and your orders for [ will be voided."
+)
+
 
 def _select_visitor_template(
     state: GameState, alignment: Alignment, roster: tuple[ValhallaHero, ...], rng: random.Random

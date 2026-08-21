@@ -24482,7 +24482,7 @@ follow-up request after the original 431-435 plan shipped.
   writing tests: 5031 passed (non-breaking). Added tests: one verbatim
   sample per catalog. Ran again: 5035 passed (net +4).
 
-- **Phase 605 (current)**: `turn/battle_luck.py`/`report/turn_report.py`
+- **Phase 605**: `turn/battle_luck.py`/`report/turn_report.py`
   -- while about to transcribe `BLUCK2.X2` (`BLUCK.X2`'s still-missing
   sibling), direct reading of `SAY.PAS`'s real `_BLuck`/`_CLuck`
   dispatch code revealed that Phase 584's own "CLUCK2 fortune reverses"
@@ -24530,6 +24530,32 @@ follow-up request after the original 431-435 plan shipped.
   secondary_catalog()` parity coverage. Ran full suite throughout to
   confirm each fix: 5034 passed (net -1 from 5035, from consolidating
   4 old tests into fewer, more accurate replacements).
+
+- **Phase 606 (current)**: `turn/valhalla_execution.py`/`report/
+  turn_report.py` -- transcribes `VALINT.X2`, the rulebook explanation
+  of the Valhalla visiting-Hero mechanic (`SAY.PAS:1212 _LValHal:
+  FD('valint.x2',S_Red,1)`), alongside Phase 585's own announcement
+  sentence. Plain `[`/`[1`/`]` pronoun text throughout, no `/R`/`{...}`
+  at all. **A real, confirmed anomaly, not a transcription choice**:
+  the file's own header declares `1 9` but the real payload has 10
+  lines -- `FD()` only ever reads the declared 9, so the 10th line (the
+  "if you miss the turn deadline" warning) was never actually printed
+  by the original engine, independently confirmed by this module's own
+  pre-existing Phase 527-era docstring note that "Turn-deadline voiding
+  stays confirmed out of scope entirely" (no in-engine deadline
+  detector exists to hook it to anyway). Kept as a separate, clearly-
+  labeled constant (`VALHALLA_VISITOR_RULES_UNREACHABLE_DEADLINE_LINE`)
+  rather than folded into the 9 real reachable lines, matching this
+  project's own precedent (Phase 580/590) of preserving every real byte
+  found without rendering what the original engine itself never could.
+  New `render_valhalla_visitor_rules()` (`report/turn_report.py`)
+  renders the 9 reachable lines as a list of strings. Sourced from the
+  same byte-faithful 162-file pass as Phases 578-605, cross-checked
+  against `SAY.PAS` in `Programma Pascal.zip`. Ran before writing
+  tests: 5034 passed (non-breaking). Added tests: verbatim first/last
+  line + possessive-marker coverage in `test_turn_report.py`, plus
+  length/verbatim/anomaly-separation coverage in `test_valhalla_
+  execution.py`. Ran again: 5039 passed (net +5).
 
 ## Setup
 
