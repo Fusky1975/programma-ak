@@ -24042,7 +24042,7 @@ follow-up request after the original 431-435 plan shipped.
   most changes were in-place rewrites of already-existing tests, not
   additions).
 
-- **Phase 585 (current)**: while surveying the remaining catalogs, found
+- **Phase 585**: while surveying the remaining catalogs, found
   that `GOOD.X2`/`EVIL.X2`/`NEUTRAL.X2`/`PAGAN.X2`/`DRUIDIC.X2` (paired
   with a `...2.X2` data half each) are **not fictional game-design
   content at all** -- `AKPROSE_reverse_engineering_report.md`'s own
@@ -24068,6 +24068,32 @@ follow-up request after the original 431-435 plan shipped.
   present, a verbatim sample, and a check that no digit (i.e. no real
   game number) ever appears in the stored template. Ran again: 4930
   passed (net +3).
+
+- **Phase 586 (current)**: transcribes `models/game_type.py EARTH_
+  EMPIRE_DESCRIPTION`/`EUROPE_KINGDOM_DESCRIPTION` from `EARTH.X2`
+  (31 entries)/`EUROPE.X2` (12 entries) -- the real flavor text and
+  starting-ability-bonus description for each historical starting
+  empire/kingdom in the `GameType.EARTH`/`GameType.EUROPE` scenario
+  variants (both already confirmed real enum members since Phase 342,
+  direct `AKGEN.EXE` reverse engineering, but with zero content until
+  now). Unlike the Valhalla catalogs (Phase 585), this family is
+  genuine public-domain historical/mythological content (Rome,
+  Carthage, Persia, the Aztecs, Atlantis, 11th-century European
+  kingdoms) -- confirmed safe to transcribe in full, no redaction
+  needed. `AKMAN.TXT`'s own confirmed 22-28 King range for a real Earth
+  Variant setup means only ordinals 0-27 (choices 1-28) are ever
+  reachable; choices 29-31 are a real but unreachable reserve, each a
+  literal duplicate of choice 22's own "Lost Empire of Atlantis" text
+  (kept verbatim, not deduplicated, so every ordinal key is present).
+  Keyed by raw file position (`dict[int, str]`, `_ldr1+1`), the same
+  "no dedicated enum invented" posture `NEMESIS_TEMPLATE`/`TACTICS.X2`/
+  `ILLMOVE_TEMPLATE` already established, since nothing in this project
+  resolves a real Kingdom to its own `_ldr1` yet. Ran before writing
+  tests: 4930 passed (non-breaking). Added tests (new `test_game_
+  type.py`): full ordinal coverage for both dicts, a verbatim sample
+  each, the New-Atlantis/reserve-duplicate distinction, and the
+  `GameType.EARTH`/`EUROPE` members themselves. Ran again: 4937 passed
+  (net +7).
 
 ## Setup
 
