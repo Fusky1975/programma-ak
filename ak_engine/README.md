@@ -24843,7 +24843,7 @@ follow-up request after the original 431-435 plan shipped.
   3 failed, 5050 passed. Ran again after fixing and with new tests: 5055
   passed (net +2).
 
-- **Phase 614 (current)**: wires the Grandfather of Assassins title
+- **Phase 614**: wires the Grandfather of Assassins title
   (`Office.ASSASSIN`) into production for the first time -- Phase 612's
   own blocker (no real sample data confirming `FI-re(character)`'s
   actual player-order shape) is resolved by a user-supplied, direct
@@ -24931,6 +24931,67 @@ follow-up request after the original 431-435 plan shipped.
   Ran before this phase's own fixes (non-breaking baseline): 5055
   passed. Ran again after every fix, the full mechanic, and all new
   tests: 5073 passed (net +18).
+
+- **Phase 615 (current)**: wires `render_bluck_narration()`/`render_
+  cluck_narration()` (Phase 584/605's own byte-faithful `BLUCK.X2`/
+  `BLUCK2.X2`/`CLUCK.X2`/`CLUCK2.X2` luck narration, fully sourced and
+  render-tested, never called) into `describe_battle()` -- the whole-
+  battle BLUCK sentence as the composer's own new first line, and each
+  eligible column's own local CLUCK sentence appended right after that
+  column's clash sentence. Picked after two rejected candidates this
+  same phase (`render_challenge_search()`/ENCATT.X -- confirmed via a
+  direct `SAY.PAS` unzip that no file in the available Pascal archive
+  contains the actual dispatch logic deciding when it fires, same
+  unconfirmable shape as the already-rejected Assassin Guild candidate)
+  and one re-investigated-and-upgraded candidate not yet attempted
+  (`render_battle_leader_intro()`/BATLDR.X -- a fresh direct read of
+  `SAY.PAS:1028-1042` found the real condition is "commands >= 1 army
+  in the battle" via `cdrdex`/`ldrtent`, not a column-position check as
+  an earlier phase's own docstring paraphrase had it, and that condition
+  maps onto data this project already computes -- confirmed tractable,
+  left for a future phase rather than bundled into this one).
+
+  **Real, sourced ordering, not assumed**: `SAY.PAS:1028-1071`, read
+  directly, confirms `_BLList` (leader roster/BATLDR.X) is immediately
+  followed by `_BLuck` (whole-battle), then `_BTac` (tactics, not
+  modeled), then `_CLuck` (per-column) -- BLUCK is real battle-opening
+  narration, not a closing remark, matching this phase's own placement
+  as `describe_battle()`'s new first line. Both are gated behind a new
+  optional `phase: int | None = None` keyword-only parameter (`SAY.PAS`'s
+  own `_rphase`, already established 1:1 with `turn/turn_processor.py
+  PHASE_LABELS`'s 0-4 indexing elsewhere in this same file) -- `None`
+  by default so every one of `describe_battle()`'s existing callers/
+  tests keeps producing byte-identical output unless they opt in, the
+  same "caller supplies what it can't determine" convention this module
+  already uses throughout. Also skipped when `BattleReport.province_
+  coord` is unset, or when neither side resolves a real leader id: new
+  `_bluck_cluck_leader_id()` prefers the battle's own commander
+  (`attacker_commander_leader_id`/`defender_commander_leader_id`,
+  already stored on `BattleReport` since Phase 231) and falls back to
+  that side's Kingdom's own King -- `SAY.PAS:1043`'s own `_attl:=
+  powner[_px,_py]` fallback, the exact neighboring dispatch block's own
+  "no generals were present" case.
+
+  A genuinely larger, separate finding surfaced while researching this:
+  `describe_battle()` itself has **no caller anywhere in production** --
+  every one of Phase 610/611/612's own additions to it (DECQ/INCQ,
+  HORDEATH, quality changes) matches this same established scope
+  precedent (wire the renderer *into* `describe_battle()`, treat
+  `describe_battle()`'s own production wiring as a separate, later
+  concern), so this phase follows suit rather than expanding scope --
+  noted here for a future phase, not silently worked around.
+
+  `BattleColumnResult.cluck_index`/`BattleResult.bluck_index`'s own
+  docstrings (`turn/battle_resolution.py`) updated from "not consumed
+  by any report renderer yet" to cite this phase. New tests: the full
+  wiring (BLUCK + interleaved CLUCK), the `phase`-unset skip (byte-
+  identical to pre-Phase-615 output), the King-fallback case, the
+  no-leader-id-resolves skip, the per-column CLUCK-ineligibility case
+  (BLUCK still appears, that column's own CLUCK doesn't), and 3 direct
+  `_bluck_cluck_leader_id()` unit tests. Ran before writing tests
+  (non-breaking check): 5073 passed, confirming the new optional
+  parameter breaks nothing by default. Ran again with all new tests:
+  5081 passed (net +8).
 
 ## Setup
 

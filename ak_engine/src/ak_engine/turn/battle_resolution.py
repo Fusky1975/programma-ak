@@ -110,8 +110,9 @@ class BattleColumnResult:
     attacker_won: bool  # bres > 0 -- False for both a defender win and a per-column tie
     # This column's own local CLUCK narration index (Phase 370), from
     # the attacker's own L1/L2 perspective -- see
-    # ``turn/battle_luck.py cluck_event_index``'s own docstring. Not
-    # consumed by any report renderer yet.
+    # ``turn/battle_luck.py cluck_event_index``'s own docstring. Wired
+    # as of Phase 615 into ``report/turn_report.py describe_battle()``
+    # via ``render_cluck_narration()``.
     cluck_index: int
     attacker_units: Column = field(default_factory=list)
     defender_units: Column = field(default_factory=list)
@@ -123,8 +124,9 @@ class BattleColumnResult:
 class BattleResult:
     columns: list[BattleColumnResult] = field(default_factory=list)
     # The whole-battle BLUCK narration index (Phase 370) -- see
-    # ``turn/battle_luck.py bluck_event_index``'s own docstring. Not
-    # consumed by any report renderer yet. Default 9 (the formula's own
+    # ``turn/battle_luck.py bluck_event_index``'s own docstring. Wired
+    # as of Phase 615 into ``report/turn_report.py describe_battle()``
+    # via ``render_bluck_narration()``. Default 9 (the formula's own
     # "neutral" value) for manually-constructed instances.
     bluck_index: int = 9
     # The real decision quantity (Phase 370): sum of every column's

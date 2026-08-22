@@ -1222,7 +1222,7 @@ from ak_engine.turn.assassin_guild import GuildAssassinationOutcome
 from ak_engine.turn.army_quality import compute_army_modified_quality
 from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.aspy_execution import SpyReport
-from ak_engine.turn.battle_orchestrator import BattleReport, QualityChange
+from ak_engine.turn.battle_orchestrator import BattleReport, QualityChange, find_king_of_kingdom
 from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.battle_luck import (
     bluck_cluck_uses_secondary_catalog,
@@ -2265,6 +2265,24 @@ def build_battle_army_names(state: GameState, battle_report: BattleReport) -> di
     return names
 
 
+def _bluck_cluck_leader_id(commander_leader_id: int | None, kingdom_id: int | None, state: GameState) -> int | None:
+    """Resolves the leader id BLUCK/CLUCK's own selector formula needs for
+    one side of a battle (Phase 615) -- the battle's own commander if it
+    has one, else that side's Kingdom's own King, the same fallback
+    `SAY.PAS:1043 _attl:= powner[_px,_py]` uses right next to `_BLuck`'s
+    own dispatch for the "no generals were present" case (`_BLList`).
+    `None` if neither resolves (an unowned/kingdom-less side) -- `describe_
+    battle()` skips BLUCK/CLUCK entirely rather than guessing a leader id.
+    """
+
+    if commander_leader_id is not None:
+        return commander_leader_id
+    if kingdom_id is None:
+        return None
+    king = find_king_of_kingdom(state, kingdom_id)
+    return king.leader_id if king is not None else None
+
+
 def describe_battle(
     battle_report: BattleReport,
     *,
@@ -2275,11 +2293,14 @@ def describe_battle(
     destination_names: dict[int, str],
     rng: random.Random,
     is_sea: bool = False,
+    phase: int | None = None,
 ) -> list[str]:
     """Assembles the full battle-outcome narrative from an already-computed
     ``BattleReport`` (``turn/battle_orchestrator.py fight_battle()``), in
-    the same order the original dispatch table produces them: per-column
-    clashes, the winner sentence, destroyed armies, pursuit kills,
+    the same order the original dispatch table produces them: the
+    whole-battle BLUCK luck sentence (Phase 615), per-column clashes each
+    followed by that column's own CLUCK luck sentence (Phase 615) when
+    eligible, the winner sentence, destroyed armies, pursuit kills,
     retreats, then (Phase 610) each surviving army's DECQ.X/INCQ.X
     quality-change sentence, via ``describe_quality_changes()``.
 
@@ -2297,10 +2318,55 @@ def describe_battle(
     A battle column whose front unit(s) have no ``source_id`` at all (a
     pure combat calculation with no backing ``ArmyState``) is skipped for
     the per-column clash sentence -- not guessed.
+
+    **Phase 615 -- BLUCK/CLUCK wiring.** `render_bluck_narration()`/
+    `render_cluck_narration()` (Phase 584/605) were sourced, fully
+    render-tested, and never called from anywhere until now. `SAY.PAS:
+    1028-1071` -- read directly, not assumed -- confirms the real dispatch
+    order this mirrors: `_BLList` (leader roster, BATLDR.X -- a separate,
+    still-unwired candidate, not attempted this phase) is immediately
+    followed by `_BLuck` (the whole-battle event, this function's own new
+    first line), which is itself immediately followed by `_BTac`
+    (tactics narration, not modeled) and then `_CLuck` (the per-column
+    event) -- i.e. BLUCK is real battle-opening narration, not a closing
+    remark, and CLUCK is real per-column color commentary. `phase`
+    (`SAY.PAS`'s own `_rphase`) has no source for how a caller not
+    already inside a phase-indexed dispatch loop would supply it, so it's
+    an optional keyword-only fact (`None` default, matching `turn/
+    turn_processor.py PHASE_LABELS`'s own already-established 0-4
+    indexing) -- BLUCK/CLUCK are both skipped entirely (not guessed) when
+    `phase` is unset, or when `battle_report.province_coord` is unset, or
+    when neither a real commander nor a real King resolves for either
+    side (`_bluck_cluck_leader_id()` above).
     """
 
     army_names = build_battle_army_names(state, battle_report)
     lines: list[str] = []
+
+    luck_leader_ids: tuple[int, int] | None = None
+    if phase is not None and battle_report.province_coord is not None:
+        attacker_leader_id = _bluck_cluck_leader_id(
+            battle_report.attacker_commander_leader_id, battle_report.attacker_kingdom_id, state
+        )
+        defender_leader_id = _bluck_cluck_leader_id(
+            battle_report.defender_commander_leader_id, battle_report.defender_kingdom_id, state
+        )
+        if attacker_leader_id is not None and defender_leader_id is not None:
+            luck_leader_ids = (attacker_leader_id, defender_leader_id)
+
+    if luck_leader_ids is not None:
+        lines.append(
+            render_bluck_narration(
+                battle_report.battle_result,
+                attacker_name,
+                defender_name,
+                rng,
+                province_coord=battle_report.province_coord,
+                attacker_leader_id=luck_leader_ids[0],
+                defender_leader_id=luck_leader_ids[1],
+                phase=phase,
+            )
+        )
 
     for column in battle_report.battle_result.columns:
         if not column.attacker_units or not column.defender_units:
@@ -2310,6 +2376,18 @@ def describe_battle(
         if attacker_army_name is None or defender_army_name is None:
             continue
         lines.append(render_column_clash(column, attacker_army_name, defender_army_name, rng, is_sea=is_sea))
+        if luck_leader_ids is not None:
+            cluck_line = render_cluck_narration(
+                column,
+                attacker_army_name,
+                rng,
+                province_coord=battle_report.province_coord,
+                attacker_leader_id=luck_leader_ids[0],
+                defender_leader_id=luck_leader_ids[1],
+                phase=phase,
+            )
+            if cluck_line is not None:
+                lines.append(cluck_line)
 
     winner_sentence = render_battle_winner(
         battle_report.battle_result, attacker_name, defender_name, province_name, rng, is_sea=is_sea

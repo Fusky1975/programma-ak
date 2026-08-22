@@ -75,6 +75,7 @@ from ak_engine.report.turn_report import (
     describe_letter_reports,
     describe_provinces_report,
     describe_aspy,
+    _bluck_cluck_leader_id,
     describe_battle,
     describe_quality_changes,
     describe_cast,
@@ -685,6 +686,194 @@ def test_describe_battle_appends_quality_change_sentences_after_retreats():
         "the forces of Attackia broke through and were victorious.",
         "10th Garrison proved its mettle in the battle and we now rate it a Crack unit.",
     ]
+
+
+# -- BLUCK/CLUCK luck narration wiring (Phase 615) ---------------------------
+
+
+def test_describe_battle_prepends_bluck_and_interleaves_cluck_when_phase_is_supplied():
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    battle_result = BattleResult(winner="attacker", columns=[column], bluck_index=9)
+    report = BattleReport(
+        battle_result=battle_result,
+        conquered=True,
+        province_coord=HexCoord(3, 5),
+        attacker_kingdom_id=1,
+        defender_kingdom_id=2,
+        attacker_commander_leader_id=100,
+        defender_commander_leader_id=200,
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0])
+
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=rng,
+        phase=0,
+    )
+
+    assert lines == [
+        "no luck of great significance altered the battle.",
+        "10th Garrison fought 20th Legion and advanced at will.",
+        "10th Garrison expected to have the upper hand because they had constructed prepared "
+        "defenses, but were suprised to discover that their opponents had done the same.",
+        "the forces of Attackia broke through and were victorious.",
+    ]
+
+
+def test_describe_battle_skips_bluck_and_cluck_when_phase_is_not_supplied():
+    # The pre-Phase-615 default -- every caller/test that doesn't know
+    # its own phase keeps producing exactly the same output as before.
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    battle_result = BattleResult(winner="attacker", columns=[column], bluck_index=9)
+    report = BattleReport(
+        battle_result=battle_result,
+        conquered=True,
+        province_coord=HexCoord(3, 5),
+        attacker_kingdom_id=1,
+        defender_kingdom_id=2,
+        attacker_commander_leader_id=100,
+        defender_commander_leader_id=200,
+    )
+    rng = ScriptedRandom([0.1, 0.1, 0.1, 0.1, 0.1], choice_indices=[0, 0, 0])
+
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=rng,
+    )
+
+    assert lines == [
+        "10th Garrison fought 20th Legion and advanced at will.",
+        "the forces of Attackia broke through and were victorious.",
+    ]
+
+
+def test_describe_battle_falls_back_to_each_sides_own_king_when_unled():
+    # SAY.PAS:1043's own "_attl:= powner[_px,_py]" fallback -- no
+    # commander_leader_id on either side, but a real King exists for
+    # each Kingdom.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 1, "King Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(2, 2, "King Borin", HexCoord(1, 1), is_king=True))
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    battle_result = BattleResult(winner="attacker", columns=[column], bluck_index=9)
+    report = BattleReport(
+        battle_result=battle_result, conquered=True, province_coord=HexCoord(3, 5), attacker_kingdom_id=1, defender_kingdom_id=2
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0])
+
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=rng,
+        phase=0,
+    )
+
+    assert lines == [
+        "no luck of great significance seemed to affect the overall battle before it commenced.",
+        "10th Garrison fought 20th Legion and advanced at will.",
+        "the contest was a slugfest decided by the courage of the men in hand-to-hand combat.",
+        "the forces of Attackia broke through and were victorious.",
+    ]
+
+
+def test_describe_battle_skips_bluck_and_cluck_when_no_leader_id_resolves_for_either_side():
+    # No commander_leader_id, and an empty state (no King to fall back
+    # to either) -- BLUCK/CLUCK skipped, not guessed.
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    battle_result = BattleResult(winner="attacker", columns=[column], bluck_index=9)
+    report = BattleReport(
+        battle_result=battle_result, conquered=True, province_coord=HexCoord(3, 5), attacker_kingdom_id=1, defender_kingdom_id=2
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0])
+
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=rng,
+        phase=0,
+    )
+
+    assert lines == [
+        "10th Garrison fought 20th Legion and advanced at will.",
+        "the forces of Attackia broke through and were victorious.",
+    ]
+
+
+def test_describe_battle_bluck_appears_without_cluck_for_an_ineligible_column():
+    # column_narration_eligible()'s own [0.4, 2.5] strength-ratio gate --
+    # BLUCK (whole-battle) still appears, CLUCK (this one column) doesn't.
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    column.attacker_strength = 100.0
+    column.defender_strength = 1.0
+    battle_result = BattleResult(winner="attacker", columns=[column], bluck_index=9)
+    report = BattleReport(
+        battle_result=battle_result,
+        conquered=True,
+        province_coord=HexCoord(3, 5),
+        attacker_kingdom_id=1,
+        defender_kingdom_id=2,
+        attacker_commander_leader_id=100,
+        defender_commander_leader_id=200,
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0])
+
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=rng,
+        phase=0,
+    )
+
+    assert lines == [
+        "no luck of great significance altered the battle.",
+        "10th Garrison fought 20th Legion and advanced at will.",
+        "the forces of Attackia broke through and were victorious.",
+    ]
+
+
+def test_bluck_cluck_leader_id_prefers_the_commander_over_the_king():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "King Aldric", HexCoord(0, 0), is_king=True))
+
+    assert _bluck_cluck_leader_id(42, 1, state) == 42
+
+
+def test_bluck_cluck_leader_id_falls_back_to_the_king_when_unled():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "King Aldric", HexCoord(0, 0), is_king=True))
+
+    assert _bluck_cluck_leader_id(None, 1, state) == 1
+
+
+def test_bluck_cluck_leader_id_returns_none_when_nothing_resolves():
+    assert _bluck_cluck_leader_id(None, None, GameState()) is None
+    assert _bluck_cluck_leader_id(None, 1, GameState()) is None
 
 
 # -- build_battle_army_names (Phase 236) --------------------------------------
