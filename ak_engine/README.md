@@ -25692,7 +25692,7 @@ follow-up request after the original 431-435 plan shipped.
   This closes the Feature -> Power [5.8] subsystem for real -- every
   real `Power` is now wired, nothing deliberately dropped anymore.
 
-- **Phase 624 (current)**: solves the ASCII map's own "far side of the
+- **Phase 624**: solves the ASCII map's own "far side of the
   world" second-map trigger (`report/ascii_map.py`, deferred since
   Phase 567/572) -- a pure print-width overflow, not distance or
   connectivity. Re-investigated directly against the real `Desktop/
@@ -25777,6 +25777,58 @@ follow-up request after the original 431-435 plan shipped.
   don't). Ran before writing new tests (non-breaking check): 5238
   passed, unchanged from Phase 623's own count. Ran again with all new
   tests: 5250 passed (net +12).
+
+- **Phase 625 (current)**: closes a real, stale-claim gap in the
+  CHARACTERS report -- the `sk_mod` Discovery-based skill-modifier row
+  (`^`/`^^` markers above the ability columns, `REPORTS.PAS` ~lines
+  823-834). This project's own docstring had called it "confirmed
+  absent... no per-kingdom Discovery-tracking field exists anywhere in
+  this project," a claim that was already stale when written (Phase
+  432): `KingdomState.discoveries` has existed since Phase 266, and
+  `describe_finances_report()`'s own Discoveries list has read it
+  directly since Phase 268 -- neither fact was re-checked before being
+  repeated here. (Investigated after the user asked to complete
+  "incomplete PROVINCES/CHARACTERS/IMPERIAL OFFICE columns" -- PROVINCES
+  and IMPERIAL OFFICE REPORT turned out to already be essentially
+  complete on a full re-read, each omission already documented as a
+  deliberate, sourced scope decision; this was the one real, closable
+  item found.)
+
+  New `report/turn_report.py _discovery_skill_modifier_row(kingdom)`:
+  for each of the 5 Combat abilities (Tactical..Melee) and 5 "Other"
+  abilities (Druid..Sage), counts how many of that ability's own 2
+  linked Discoveries (`discovery(2*sk)`/`discovery(2*sk+1)` for Combat,
+  `discovery(2*sk-10)`/`discovery(2*sk-9)` for Other -- `models/
+  discovery.py Discovery`'s own enum is already positional with the
+  Pascal source's own ordinals, so these translate directly to
+  `Discovery(2 * ability.value)` etc.) the Kingdom knows, rendering
+  `'  '`/`'^ '`/`'^^'` accordingly; the 5 Magical abilities (White..
+  Illusion) never get a marker (`sk_mod:= 0` unconditionally in the
+  source for that group). Verified byte-for-byte against a real sample
+  (`Desktop/PROGRAMMA AK/SE3__T5.K1` line 811): a single `'^'` at
+  column 53, exactly matching Melee's own `sk_mod=1` case computed from
+  this Kingdom's own real Discoveries. The row's own 45-char leading
+  blank (counted directly from `REPORTS.PAS`'s own literal `WRITE`
+  string) is one character wider than the per-leader data row's own
+  44-char prefix -- a real, confirmed quirk of the original report (the
+  header and data rows don't perfectly column-align even in a genuine
+  sample), not a bug to fix. Wired into `describe_characters_report()`
+  as one new line right after the existing column header, printed once
+  per report (matching the real source's own "print this whole header
+  block exactly once" structure), not per leader.
+
+  Tests: `tests/test_turn_report.py` gained 4 -- the real-sample byte
+  check above, a double-marker (`'^^'`) case, an "Other" group case
+  (Druid), and a case confirming the 5 Magical abilities never get a
+  marker even when every Discovery is known. 15 pre-existing
+  `describe_characters_report()`/`compose_letter_report()` tests needed
+  updating for the new row's own line-index shift (the large majority
+  via one shared `_CHARACTERS_HEADER_LINES` test constant, gaining the
+  new blank-row case; a handful of hardcoded `lines[N]` indices and 2
+  fully-inlined `compose_letter_report()` expected-output lists updated
+  directly). Ran before writing new tests (non-breaking check, after
+  fixing the 15 pre-existing tests): 5250 passed, unchanged from Phase
+  624's own count. Ran again with all new tests: 5254 passed (net +4).
 
 ## Setup
 

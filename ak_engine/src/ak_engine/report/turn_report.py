@@ -9064,6 +9064,51 @@ def _total_skill(state: GameState, leader: LeaderState) -> int:
     return sum(effective_skill_level(state, leader, ability) for ability in Ability)
 
 
+def _discovery_skill_modifier_row(kingdom: KingdomState) -> str:
+    """CHARACTERS' own Discovery-based skill-modifier row (`sk_mod`,
+    `REPORTS.PAS` ~lines 823-834), printed once, right above the first
+    leader's own skill row (Phase 625). Marks each of the 5 Combat
+    abilities (Tactical..Melee) and 5 "Other" abilities (Druid..Sage)
+    with `'^ '` if this Kingdom knows exactly one of that ability's own
+    2 linked Discoveries, `'^^'` if it knows both, `'  '` if neither --
+    the 5 Magical abilities (White..Illusion) never get a marker at all
+    (`sk_mod:= 0` unconditionally in the source for that group).
+
+    `discovery(2*sk)`/`discovery(2*sk+1)` for the Combat group and
+    `discovery(2*sk-10)`/`discovery(2*sk-9)` for the Other group --
+    `models/discovery.py Discovery`'s own enum is already positional
+    with the Pascal source's own `discovery` ordinals (module
+    docstring), so these translate directly to `Discovery(2 * ability.
+    value)` etc., no remapping needed. Verified against `Desktop/
+    PROGRAMMA AK/SE3__T5.K1` line 811's own real single-`'^'` marker
+    (column 53, i.e. relative offset 8 within this row's own 45-char-
+    prefixed marker sequence -- Melee's own first marker character,
+    `sk_mod=1`) -- confirmed byte-for-byte, not just formula-shape.
+
+    The 45-char leading blank (`REPORTS.PAS`'s own literal `WRITE`
+    string immediately before the `FOR sk` loop, counted directly from
+    source) is one character wider than the per-leader row's own
+    44-char prefix (`{name:<14}{loc:>4}{align:>6}{temp:>6}   {race:>7}
+    {pay:>3} `) -- a real, confirmed quirk of the original report (the
+    two rows don't perfectly column-align even in a genuine sample),
+    not a bug to "fix" here.
+    """
+
+    parts = [" " * 45]
+    for ability in Ability:
+        if ability.value <= Ability.MELEE.value:
+            d1, d2 = Discovery(2 * ability.value), Discovery(2 * ability.value + 1)
+        elif ability.value >= Ability.DRUID.value:
+            d1, d2 = Discovery(2 * ability.value - 10), Discovery(2 * ability.value - 9)
+        else:
+            d1 = d2 = None
+        sk_mod = 0 if d1 is None else int(d1 in kingdom.discoveries) + int(d2 in kingdom.discoveries)
+        parts.append("  " if sk_mod == 0 else "^ " if sk_mod == 1 else "^^")
+        if ability in (Ability.MELEE, Ability.ILLUSION):
+            parts.append(" ")
+    return "".join(parts)
+
+
 def _skill_row_with_item_ticks(state: GameState, leader: LeaderState) -> str:
     """CHARACTERS line 1's own skill row, interleaved with the real
     magic-item-ownership tick marks (`REPORTS.PAS` ~lines 863-870, Phase
@@ -9204,13 +9249,23 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     Tactical) and (ord(sk) MOD 5 = 0))` -- the exclusion is explicit in
     the real source).
 
+    **The Discovery-based skill-modifier row** (`sk_mod`'s own `^`/`^^`
+    markers above each ability column, `_discovery_skill_modifier_
+    row()`, Phase 625) -- this docstring previously called it confirmed
+    absent "for the same reason `describe_finances_report()`'s own
+    Discoveries list always renders empty: no per-kingdom Discovery-
+    tracking field exists anywhere in this project," which was stale
+    even at the time it was written here (Phase 432): `KingdomState.
+    discoveries` has existed since Phase 266, and `describe_finances_
+    report()`'s own Discoveries list has read it directly since Phase
+    268 -- neither claim was re-checked before repeating it. The real
+    `REPORTS.PAS` formula (`sk_mod`, `discovery(2*sk)`/`discovery(2*sk
+    +1)` for Combat abilities, `discovery(2*sk-10)`/`discovery(2*sk-9)`
+    for the "Other" group, always 0 for the 5 Magical abilities) is
+    fully sourced and now implemented -- see that function's own
+    docstring for the full derivation and the real-sample byte check.
+
     **What this deliberately does NOT reproduce, and why**:
-    - **The Discovery-based skill-modifier row** (`sk_mod`'s own `^`/
-      `^^` markers above each ability column, driven by `dknow[kng,
-      discovery]`) is confirmed absent for the same reason
-      `describe_finances_report()`'s own Discoveries list always
-      renders empty: no per-kingdom Discovery-tracking field exists
-      anywhere in this project.
     - **The per-leader treasure list** (`List_Treas(ldr,false)`'s own
       item-name interleaving, which is *where* the real `Desc_Apt` call
       itself lives) is still rendered separately (Phase 287's own
@@ -9231,6 +9286,7 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         _CHARACTERS_CAPTION_LINE_1,
         _CHARACTERS_CAPTION_LINE_2,
         _CHARACTERS_COLUMN_HEADER,
+        _discovery_skill_modifier_row(kingdom),
     ]
 
     owned = [leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id]

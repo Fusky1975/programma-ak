@@ -6554,6 +6554,11 @@ _CHARACTERS_OPENING = (
 _CHARACTERS_CAPTION_LINE_1 = "                                         Pay Modified Skills/Aptitudes:"
 _CHARACTERS_CAPTION_LINE_2 = "             Province                     /  Combat     Magical    Other"
 _CHARACTERS_COLUMN_HEADER = "Character      Loc Align  Temp M/F  Race Ini TaMaNaArMe WhNeElPsIl DrThExSpSa"
+# Phase 625: `_discovery_skill_modifier_row()`'s own all-blank case (no
+# Kingdom Discoveries known) -- 45-char prefix + 2 chars/ability * 15 +
+# 2 extra group-separator spaces (after Melee, after Illusion) = 77
+# spaces total.
+_CHARACTERS_NO_DISCOVERY_MODIFIERS_LINE = " " * 77
 _CHARACTERS_HEADER_LINES = [
     "CHARACTERS",
     _CHARACTERS_OPENING,
@@ -6561,6 +6566,7 @@ _CHARACTERS_HEADER_LINES = [
     _CHARACTERS_CAPTION_LINE_1,
     _CHARACTERS_CAPTION_LINE_2,
     _CHARACTERS_COLUMN_HEADER,
+    _CHARACTERS_NO_DISCOVERY_MODIFIERS_LINE,
 ]
 
 # The real skill row (`_ability_value_row(..., tactical_widens=True)`) and
@@ -6568,6 +6574,76 @@ _CHARACTERS_HEADER_LINES = [
 # the Total_Skill+March*2 leading value) for 15 all-zero `Ability` values.
 _NO_SKILLS_LINE = "  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0"
 _NO_APTITUDE_LINE = " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0"
+
+
+# -- Phase 625: _discovery_skill_modifier_row() -- the sk_mod `^`/`^^`
+# markers above the ability columns.
+
+
+def test_discovery_skill_modifier_row_matches_a_real_sample_byte_for_byte():
+    # Desktop/PROGRAMMA AK/SE3__T5.K1 line 811, verbatim -- this Kingdom
+    # knows exactly one of Melee's own two linked Discoveries (fix8,
+    # STRENGTH_ELIXIR), producing a single '^' at column 53.
+    state = GameState()
+    kingdom = KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0))
+    kingdom.discoveries = {Discovery.STRENGTH_ELIXIR}
+    state.add_kingdom(kingdom)
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+
+    lines = describe_characters_report(state, 1)
+
+    marker_row = lines[6]
+    assert marker_row == "                                                     ^                       "
+    assert marker_row.index("^") == 53
+
+
+def test_discovery_skill_modifier_row_double_marker_when_both_discoveries_known():
+    state = GameState()
+    kingdom = KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0))
+    kingdom.discoveries = {Discovery.STRENGTH_ELIXIR, Discovery.MITHRIL_CHAINMAIL}
+    state.add_kingdom(kingdom)
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[6][53:55] == "^^"
+
+
+def test_discovery_skill_modifier_row_marks_the_other_group_too():
+    # Druid (the "Other" group, sk >= Druid) -- MEDITATION_INCENSE is
+    # its own first linked Discovery, confirming the second branch of
+    # the formula (not just the Combat-group branch the real sample
+    # above exercises).
+    state = GameState()
+    kingdom = KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0))
+    kingdom.discoveries = {Discovery.MEDITATION_INCENSE}
+    state.add_kingdom(kingdom)
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[6][67] == "^"
+
+
+def test_discovery_skill_modifier_row_never_marks_magical_abilities():
+    # White..Illusion (sk_mod always 0 in the source, unconditionally)
+    # -- a Discovery that happens to share an ordinal with that range
+    # (there are none linked to it at all, by construction) can't move
+    # this row; simplest direct check is that a Kingdom knowing every
+    # single Discovery still leaves the magical-ability band blank.
+    state = GameState()
+    kingdom = KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0))
+    kingdom.discoveries = set(Discovery)
+    state.add_kingdom(kingdom)
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+
+    lines = describe_characters_report(state, 1)
+
+    # Magical group is abilities 5-9 (White..Illusion): relative offsets
+    # 22-32 within the marker row (after Tactical..Melee's 5*2=10 chars
+    # + 1 group-separator space = offset 11, then 5*2=10 more chars).
+    magical_band = lines[6][45 + 11 : 45 + 11 + 10]
+    assert magical_band == " " * 10
 
 
 def test_describe_characters_report_renders_own_leader_with_no_recorded_data():
@@ -6612,7 +6688,7 @@ def test_describe_characters_report_falls_back_to_province_code_when_unnamed_pro
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[6] == f"Aldric         203  Unkn  Unkn     Human  1 {_NO_SKILLS_LINE}"
+    assert lines[7] == f"Aldric         203  Unkn  Unkn     Human  1 {_NO_SKILLS_LINE}"
 
 
 def test_describe_characters_report_uses_recorded_alignment_temper_and_race():
@@ -6626,7 +6702,7 @@ def test_describe_characters_report_uses_recorded_alignment_temper_and_race():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[6] == f"Aldric           0  Good Brave       Elf  1 {_NO_SKILLS_LINE}"
+    assert lines[7] == f"Aldric           0  Good Brave       Elf  1 {_NO_SKILLS_LINE}"
 
 
 def test_describe_characters_report_renders_recorded_skill_levels():
@@ -6642,8 +6718,8 @@ def test_describe_characters_report_renders_recorded_skill_levels():
     # capped at MAX_SKILL_LEVEL=9); aptitude row uses the raw stored
     # aptitude (uncapped) prefixed by Total_Skill(leader) +
     # effective_skill_level(leader, MARCH)*2 == 110 + 2*2 == 114.
-    assert lines[6] == "Aldric           0  Unkn  Unkn     Human  1   0 2 4 6 8  9 9 9 9 9  9 9 9 9 9"
-    assert lines[7] == "114   1 3 5 7 9 1113151719 2123252729"
+    assert lines[7] == "Aldric           0  Unkn  Unkn     Human  1   0 2 4 6 8  9 9 9 9 9  9 9 9 9 9"
+    assert lines[8] == "114   1 3 5 7 9 1113151719 2123252729"
 
 
 def test_describe_characters_report_sorts_by_leader_id():
@@ -6654,8 +6730,8 @@ def test_describe_characters_report_sorts_by_leader_id():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[6].startswith("Aldric")
-    assert lines[8].startswith("Elena")
+    assert lines[7].startswith("Aldric")
+    assert lines[9].startswith("Elena")
 
 
 def test_describe_characters_report_pay_matches_the_real_lcost_formula():
@@ -6674,9 +6750,9 @@ def test_describe_characters_report_pay_matches_the_real_lcost_formula():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[6] == f"Bradipo I        0  Good  Caut     Human  0 {_NO_SKILLS_LINE}"
-    assert lines[8] == f"Adele            0  Good Brave     Human  1 {_NO_SKILLS_LINE}"
-    assert lines[10] == f"Indra            0  Good  Caut     Human  2 {_NO_SKILLS_LINE}"
+    assert lines[7] == f"Bradipo I        0  Good  Caut     Human  0 {_NO_SKILLS_LINE}"
+    assert lines[9] == f"Adele            0  Good Brave     Human  1 {_NO_SKILLS_LINE}"
+    assert lines[11] == f"Indra            0  Good  Caut     Human  2 {_NO_SKILLS_LINE}"
 
 
 def test_describe_characters_report_hero_pay_reflects_alignment_distance():
@@ -6692,7 +6768,7 @@ def test_describe_characters_report_hero_pay_reflects_alignment_distance():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[8] == f"Hero             0  Good  Caut     Human  1 {_NO_SKILLS_LINE}"
+    assert lines[9] == f"Hero             0  Good  Caut     Human  1 {_NO_SKILLS_LINE}"
 
 
 def test_describe_characters_report_lists_held_items():
@@ -6705,7 +6781,7 @@ def test_describe_characters_report_lists_held_items():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[8] == f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}, {TREASURE_NAME[Treasure.WAND_FIREBALL]}"
+    assert lines[9] == f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}, {TREASURE_NAME[Treasure.WAND_FIREBALL]}"
 
 
 def test_describe_characters_report_skill_row_shows_magic_item_ownership_tick_marks():
@@ -6732,7 +6808,7 @@ def test_describe_characters_report_skill_row_shows_magic_item_ownership_tick_ma
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[6] == "Aldric           0  Unkn  Unkn     Human  1   0 0 1'0 2\" 0 0 0 0 0  0 0 0 0 0"
+    assert lines[7] == "Aldric           0  Unkn  Unkn     Human  1   0 0 1'0 2\" 0 0 0 0 0  0 0 0 0 0"
 
 
 def test_describe_characters_report_omits_items_line_when_leader_holds_nothing():
@@ -6742,7 +6818,7 @@ def test_describe_characters_report_omits_items_line_when_leader_holds_nothing()
 
     lines = describe_characters_report(state, 1)
 
-    assert len(lines) == 8  # 6 header lines, name line, aptitude line -- no Items line
+    assert len(lines) == 9  # 7 header lines, name line, aptitude line -- no Items line
     assert not any(line.startswith("Items:") for line in lines)
 
 
@@ -6775,8 +6851,8 @@ def test_describe_characters_report_shows_royal_heir_for_an_unfinalized_heir():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[6].startswith("Royal Heir    ")
-    assert "Aldric" not in lines[6]
+    assert lines[7].startswith("Royal Heir    ")
+    assert "Aldric" not in lines[7]
 
 
 def test_describe_characters_report_shows_the_real_name_once_finalized():
@@ -6786,7 +6862,7 @@ def test_describe_characters_report_shows_the_real_name_once_finalized():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[6].startswith("Aldric II     ")
+    assert lines[7].startswith("Aldric II     ")
 
 
 def test_describe_characters_report_shows_the_real_name_once_past_the_skill_threshold():
@@ -6803,7 +6879,7 @@ def test_describe_characters_report_shows_the_real_name_once_past_the_skill_thre
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[6].startswith("Aldric        ")
+    assert lines[7].startswith("Aldric        ")
 
 
 def test_describe_characters_report_non_king_leader_never_shows_royal_heir():
@@ -6817,7 +6893,7 @@ def test_describe_characters_report_non_king_leader_never_shows_royal_heir():
 
     lines = describe_characters_report(state, 1)
 
-    assert lines[6].startswith("Kwoth         ")
+    assert lines[7].startswith("Kwoth         ")
 
 
 # -- Phase 216: describe_adventure_report() -- the "ADVENTURE" section --
@@ -7168,6 +7244,7 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "                                         Pay Modified Skills/Aptitudes:",
         "             Province                     /  Combat     Magical    Other",
         "Character      Loc Align  Temp M/F  Race Ini TaMaNaArMe WhNeElPsIl DrThExSpSa",
+        " " * 77,
         "Aldric           0  Unkn  Unkn     Human  0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         "Borin            0  Unkn  Unkn     Human  2   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
@@ -7410,6 +7487,7 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "                                         Pay Modified Skills/Aptitudes:",
         "             Province                     /  Combat     Magical    Other",
         "Character      Loc Align  Temp M/F  Race Ini TaMaNaArMe WhNeElPsIl DrThExSpSa",
+        " " * 77,
         "None at present",
         "",
         "",
