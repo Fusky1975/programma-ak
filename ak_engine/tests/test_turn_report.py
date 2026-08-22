@@ -78,6 +78,7 @@ from ak_engine.report.turn_report import (
     describe_battle,
     describe_quality_changes,
     describe_cast,
+    describe_kill_enemy_berserk_retaliation,
     describe_challenge,
     describe_encounter_combat,
     describe_fire,
@@ -230,6 +231,7 @@ from ak_engine.report.turn_report import (
     render_oratory_speech,
     render_monster_threat_death,
     render_cast_announcement,
+    render_kill_enemy_berserk_onset,
     render_practice_already_maxed,
     render_practice_tutored,
     render_sage_discovery,
@@ -4186,6 +4188,71 @@ def test_describe_cast_renders_nothing_when_not_applied():
     line = describe_cast(result, caster_name="Aldric", rng=rng, target_name="Borin")
 
     assert line is None
+
+
+# -- SAY.PAS _LTrack / Kill Enemy Berserk retaliation (Phase 612) ------------
+
+
+def test_render_kill_enemy_berserk_onset():
+    # No rng draws -- the real text has no /R or {} choice markers.
+    result = render_kill_enemy_berserk_onset("Borin")
+
+    assert result == (
+        "Borin went berserk over the Kill-Enemy attempt."
+        "Guided by eerily accurate psychotic visions, "
+    )
+
+
+def test_describe_kill_enemy_berserk_retaliation_returns_nothing_for_an_ordinary_cast():
+    result = CastExecutionResult(request=CastRequest(spell=Spell.KILL_ENEMY, target=2), applied=True)
+
+    lines = describe_kill_enemy_berserk_retaliation(result, caster_name="Aldric", target_name="Borin", rng=ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_kill_enemy_berserk_retaliation_narrates_the_caster_winning():
+    # The onset fragment (ending ", ") concatenates directly onto the
+    # first swing's own sentence, no separator -- the same "Say() calls
+    # concatenate with no space" precedent render_cast_announcement()
+    # already established.
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.KILL_ENEMY, target=2),
+        applied=False,
+        reason="spell failed",
+        kill_enemy_berserk_winner="a",
+        melee_swings=(MeleeSwing(attacker="a", hit=True, damage=5),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0])
+
+    lines = describe_kill_enemy_berserk_retaliation(result, caster_name="Aldric", target_name="Borin", rng=rng)
+
+    assert lines == [
+        "Borin went berserk over the Kill-Enemy attempt.Guided by eerily accurate psychotic visions, "
+        "Aldric assailed Borin and inflicted 5 damage points.",
+        "Borin was mortally wounded.",
+        "and so it was that Borin met Borin's unseemly end.",
+    ]
+
+
+def test_describe_kill_enemy_berserk_retaliation_narrates_the_target_winning():
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.KILL_ENEMY, target=2),
+        applied=False,
+        reason="spell failed",
+        kill_enemy_berserk_winner="b",
+        melee_swings=(MeleeSwing(attacker="b", hit=False, damage=0),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0])
+
+    lines = describe_kill_enemy_berserk_retaliation(result, caster_name="Aldric", target_name="Borin", rng=rng)
+
+    assert lines == [
+        "Borin went berserk over the Kill-Enemy attempt.Guided by eerily accurate psychotic visions, "
+        "Borin assailed Aldric and missed.",
+        "Aldric was mortally wounded.",
+        "and so it was that Aldric met Aldric's unseemly end.",
+    ]
 
 
 # -- SBUNGLE.X/SFAIL.X (Phase 603) --

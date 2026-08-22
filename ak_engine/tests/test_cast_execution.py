@@ -873,6 +873,8 @@ def test_kill_enemy_berserk_counterattack_kills_the_caster_on_a_failed_cast():
     assert state.items[item.item_id].owner_leader_id == 78
     # Phase 447: a failed cast (Berserk counterattack) never credits Assassin merit.
     assert state.dead_leaders[CASTER_ID].merit_tally.successful_assassinations == 0
+    # Phase 612: the duel's own per-round detail survives for narration.
+    assert len(result.melee_swings) > 0
 
 
 def test_kill_enemy_berserk_counterattack_caster_survives_and_kills_the_retaliator():
@@ -901,6 +903,8 @@ def test_kill_enemy_berserk_counterattack_caster_survives_and_kills_the_retaliat
     assert state.items[item.item_id].owner_leader_id == CASTER_ID
     # Phase 447: a failed cast (Berserk counterattack) never credits Assassin merit.
     assert state.leaders[CASTER_ID].merit_tally.successful_assassinations == 0
+    # Phase 612: the duel's own per-round detail survives for narration.
+    assert len(result.melee_swings) > 0
 
 
 def test_charm_succeeds_on_a_real_roll_under_the_casters_chance():

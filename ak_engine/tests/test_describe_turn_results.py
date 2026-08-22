@@ -113,6 +113,38 @@ def test_describe_turn_results_skips_cast_for_province_targeted_spell():
     assert lines == []
 
 
+def test_describe_turn_results_narrates_kill_enemy_berserk_retaliation_even_when_the_caster_dies():
+    # Phase 612: describe_cast() itself returns None for every branch of
+    # this outcome (applied stays False), and -- before this same
+    # phase's _leader_name() fix -- the caster's own death (state.
+    # remove_leader() already ran by the time this composer runs) made
+    # caster_name resolve to None too, silently dropping the WHOLE
+    # entry. Both are exercised together here: state.remove_leader(1)
+    # simulates exactly what execute_cast() already did to state by the
+    # time a real turn report gets composed.
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(2, "Borin"))
+    state.remove_leader(1)
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.KILL_ENEMY, target=2),
+        applied=False,
+        reason="spell failed",
+        kill_enemy_berserk_winner="b",
+        melee_swings=(MeleeSwing(attacker="b", hit=False, damage=0),),
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0]))
+
+    assert lines == [
+        "Borin went berserk over the Kill-Enemy attempt.Guided by eerily accurate psychotic visions, "
+        "Borin assailed Aldric and missed.",
+        "Aldric was mortally wounded.",
+        "and so it was that Aldric met Aldric's unseemly end.",
+    ]
+
+
 def test_describe_turn_results_renders_use_mi_wand_target_spell():
     state = _state_with_leaders(_leader(1, "Aldric"), _leader(2, "Borin"))
     cast_result = CastExecutionResult(request=CastRequest(spell=Spell.KILL_ENEMY, target=2), applied=True)
@@ -472,6 +504,39 @@ def test_describe_turn_results_renders_challenge_combat():
     lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0, 0]))
 
     assert lines == ["Aldric Fired an arrow at Borin and inflicted 5 damage points."]
+
+
+def test_describe_turn_results_narrates_challenge_even_when_the_challenger_dies_in_it():
+    # Phase 612: before the _leader_name()/_leader_location() dead-
+    # leaders fallback, a challenger who lost and died in their own
+    # Challenge got ZERO narration -- caster_name resolved to None at
+    # the very top of the loop (entry.leader_id already popped from
+    # state.leaders by state.remove_leader(), same timing as a real
+    # end-to-end run: run_turn() fully mutates state before any
+    # narration composer runs), so this whole entry was silently
+    # skipped, even the real swings that happened before the death.
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(2, "Borin"))
+    state.remove_leader(1)
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        winner_leader_id=2,
+        loser_leader_id=1,
+        loser_killed=True,
+        melee_swings=(MeleeSwing(attacker="b", hit=True, damage=6),),
+        request=ChallengeRequest(target_character_id=2, unconfirmed_extra0=0),
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CHALLENGE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0]))
+
+    assert lines == [
+        "Borin assailed Aldric and inflicted 6 damage points.",
+        "Aldric was mortally wounded.",
+        "and so it was that Aldric met Aldric's unseemly end.",
+    ]
 
 
 def test_describe_turn_results_skips_challenge_without_a_request():

@@ -2551,6 +2551,125 @@ def describe_cast(
     )
 
 
+# HostAK/TP/PROSE/SAY.PAS `_LTrack` (no standalone .X/.X2 file of its own
+# -- transcribed directly from the Pascal source, Phase 612) -- Kill
+# Enemy's own Berserk-retaliation duel (`_execute_kill_enemy()`'s own
+# Phase 310/612 addendum), the one real event `describe_cast()` above
+# can never reach (`applied=False` on every branch of this outcome, so
+# its own early return fires first -- see ``describe_kill_enemy_
+# berserk_retaliation()`` below for the actual composer). `SAY.PAS:
+# 631-632 _LTrack: Say('< went berserk over the Kill-Enemy
+# attempt.Guided by eerily accurate psychotic visions, ',S_PCom);` --
+# `<` is the *target* (the one whose life was attempted, who retaliates
+# in a berserk rage), confirmed by `_execute_kill_enemy()`'s own
+# ``_kill_enemy_combatant(state, target, temper=Temper.BERSERK)`` call,
+# not the caster. The missing space after "attempt." is a real,
+# verbatim quirk (the same "ago.It"-style run-on this project already
+# knows to preserve, not a transcription error).
+#
+# The neighboring `_LBers`/`_LKillE` constants (`SAY.PAS:629-630`) are
+# deliberately NOT used here: `_LKillE` ("< cast a ~ spell and , and
+# destroyed/slew [ with > powerful/dark magic") reads as the tail of
+# `_LCast1`'s *successful*-cast opening ("< cast a ~ spell and "), i.e.
+# a different, unrelated dispatch chain for an instant-kill outcome
+# this project doesn't model (Kill_Enemy's own success is coma, per
+# `_execute_kill_enemy()`'s own Phase 310 docstring point 3) -- not
+# part of the failed-roll Berserk branch at all. `_LBers` ("[ flew into
+# a berserk rage and fought with increased strength.") sits right next
+# to `_LTrack` and plausibly continues its own dangling ", " -- but
+# without the original dispatch/calling code (not preserved in this
+# project's own Pascal archive, only `SAY.PAS`/`RUMORS.PAS` survive),
+# there's no way to confirm that chain rather than guess it, so this
+# project transcribes only `_LTrack` itself and does not use `_LBers`.
+_KILL_ENEMY_BERSERK_ONSET_TEMPLATE = (
+    "< went berserk over the Kill-Enemy attempt.Guided by eerily accurate psychotic visions, "
+)
+
+
+def render_kill_enemy_berserk_onset(target_name: str) -> str:
+    """Renders `_LTrack`'s own opening fragment for the Berserk-
+    retaliation duel (Phase 612) -- see the module comment above for
+    the sourcing and why `_LBers`/`_LKillE` aren't used. No `rng`
+    parameter: the real text has no `/R`/`{}` choice markers of its
+    own, the same "nothing to vary" shape ``render_magic_feature_
+    discovery()`` already established.
+
+    Deliberately NOT terminated with a period -- the real source ends
+    on a dangling ", " (mid-sentence, meant to concatenate directly
+    into whatever `Say()` call follows in the original engine).
+    ``describe_kill_enemy_berserk_retaliation()`` concatenates this
+    string directly onto its own first rendered swing sentence, the
+    same "`Say()` calls write sequentially with no separator, even
+    when that reads awkwardly" precedent ``render_cast_announcement()``
+    already established (and already preserves, e.g. `CONTROL_UNDEAD`'s
+    mid-word truncation) rather than smoothing the join over.
+    """
+
+    return render(_KILL_ENEMY_BERSERK_ONSET_TEMPLATE, {"<": target_name})
+
+
+def describe_kill_enemy_berserk_retaliation(
+    result: CastExecutionResult, *, caster_name: str, target_name: str, rng: random.Random
+) -> list[str]:
+    """Assembles the Berserk-retaliation duel's own narration (Phase
+    612) from an already-computed ``CastExecutionResult`` -- the
+    ``result.applied is False`` outcome ``describe_cast()`` above can
+    never narrate on its own, so ``describe_turn_results()``'s own
+    ``ActionCode.CAST`` branch calls this as a second, independent
+    composer on the very same result, mirroring how its own
+    ``ActionCode.PURSUE`` branch already calls ``describe_pursue()``
+    (one line) then extends with ``describe_encounter_combat()`` (a
+    list) from the same underlying result.
+
+    Returns ``[]`` when ``result.kill_enemy_berserk_winner is None`` --
+    covers every ordinary Cast outcome (no Berserk duel at all) *and*
+    the vanishingly rare ``max_rounds``-exhausted draw, which has no
+    sourced sentence of its own either way.
+
+    Order: `_LTrack`'s own opening fragment, concatenated directly
+    (no space) onto the first ``result.melee_swings`` entry's own
+    rendered sentence -- see ``render_kill_enemy_berserk_onset()``'s
+    own docstring for why. Every further swing (``render_melee_
+    attack()``/``render_attack_hit()``/``render_attack_missed()``, the
+    same triplet ``describe_encounter_combat()``/``describe_search()``
+    already use) follows as its own line, in chronological
+    (``result.melee_swings``) order, then ``render_mortally_wounded()``
+    (MORTWOUN.X) and ``render_character_death()`` (HORDEATH.X, Phase
+    611) for whichever side lost. ``"a"`` = the caster, ``"b"`` = the
+    target, matching ``CastExecutionResult.melee_swings``'s own Phase
+    612 docstring.
+    """
+
+    if result.kill_enemy_berserk_winner is None:
+        return []
+
+    onset = render_kill_enemy_berserk_onset(target_name)
+    swing_lines: list[str] = []
+    for swing in result.melee_swings:
+        attacker_name, defender_name = (caster_name, target_name) if swing.attacker == "a" else (target_name, caster_name)
+        attack_line = render_melee_attack(attacker_name, defender_name, _MELEE_ATTACK_METHOD, rng)
+        attack_line += (
+            render_attack_hit(defender_name, swing.damage, rng)
+            if swing.hit
+            else render_attack_missed(attacker_name, defender_name, "blade", rng)
+        )
+        swing_lines.append(attack_line)
+
+    lines: list[str] = []
+    if swing_lines:
+        swing_lines[0] = onset + swing_lines[0]
+        lines.extend(swing_lines)
+    else:
+        # Defensive only -- resolve_melee_duel() always produces at
+        # least one swing before a duel can have a real winner.
+        lines.append(onset)
+
+    loser_name = target_name if result.kill_enemy_berserk_winner == "a" else caster_name
+    lines.append(render_mortally_wounded(loser_name, rng))
+    lines.append(render_character_death(loser_name, rng))
+    return lines
+
+
 # HostAK/TP/PROSE/SFAIL.X, SBUNGLE.X -- a Cast that just fizzles, no
 # validity reason involved (Phase 603). `SAY.PAS:895 _SFail: FD('sfail',
 # S_Priv,0)` is the ordinary Cast Spell action's own sibling ("S" =
@@ -3085,15 +3204,20 @@ def render_mortally_wounded(defender_name: str, rng: random.Random, *, is_sea: b
 # (a guardian-monster win) -- each already appends `render_mortally_
 # wounded()` right where the death is confirmed, so this generic
 # trailer follows immediately after, matching `_LDies`'s own dispatch
-# position right after the cause-specific sentence. Three other real
-# `remove_leader()` call sites (`turn/assassin_guild.py`'s Grandfather
-# of Assassins resolver, and both Kill Enemy Berserk-retaliation
-# outcomes in `turn/cast_execution.py`) have **no composer at all**
-# reaching them yet -- `resolve_grandfather_of_assassins_attempt()`
-# isn't even called from production code, and `describe_cast()` short-
-# circuits before ever reaching `kill_enemy_berserk_winner` -- wiring
-# those needs building a new narration path from scratch, not just
-# appending this sentence, so they're left for a future phase.
+# position right after the cause-specific sentence. **Phase 612**: also
+# wired into the new `describe_kill_enemy_berserk_retaliation()`
+# (Kill Enemy's own Berserk-retaliation duel, `turn/cast_execution.py`)
+# -- `describe_cast()` itself still can't reach this outcome
+# (`applied` stays False on every branch), but `describe_turn_
+# results()`'s own `ActionCode.CAST` branch now calls the new composer
+# as a second, independent pass over the same result, the same "two
+# composers, one result" shape Pursue's own `describe_pursue()` +
+# `describe_encounter_combat()` pairing already established. One real
+# `remove_leader()` call site remains genuinely unreached by any
+# composer: `turn/assassin_guild.py`'s Grandfather of Assassins
+# resolver isn't called from production code at all yet -- wiring it
+# needs building a new narration path from scratch once (if ever) the
+# resolver itself gets a real caller, left for a future phase.
 _HORDEATH_TEMPLATES: list[str] = [
     "and so it was/Rcame_to_pass that < met > unseemly/Rtragic end.",
     "thus did < {finally }die, ^A brave_end/Rdefiant_death by any standard.",
@@ -5523,10 +5647,53 @@ _AUTO_RESOLVABLE_CAST_TARGET_SPELLS = frozenset(
 
 
 def _leader_name(state: GameState, leader_id: int | None) -> str | None:
+    """Resolves a leader's display name for narration, whether they're
+    still alive or died earlier in the same turn (Phase 612 fix).
+
+    `describe_turn_results()` composes every action's narration only
+    after `run_turn()` has fully mutated `state` -- including every
+    `GameState.remove_leader()` call for that turn's own deaths -- so an
+    acting leader (or their target) who died as a *result* of their own
+    action is already gone from `state.leaders` by the time this runs.
+    Before this fix, that made the whole entry's `caster_name`/
+    `target_name` lookup silently return `None`, which every calling
+    branch's own early-return guard then read as "can't narrate this,"
+    dropping the ENTIRE action's narration -- not just the death, but
+    every real, already-happened sentence before it too (confirmed via
+    a direct reproduction: a Challenger who loses and dies got zero
+    turn-report lines at all). `remove_leader()` archives the exact same
+    `LeaderState` object into `state.dead_leaders` (Phase 59, kept there
+    so a later Resurrection has something to revive) -- its `.name`
+    field is never touched by death, so falling back to that archive
+    here recovers the real name with no invented text, the same "the
+    fact already exists in state, just check the right dict" fix shape
+    as every other real gap this project closes.
+    """
+
     if leader_id is None:
         return None
-    leader = state.leaders.get(leader_id)
+    leader = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
     return leader.name if leader is not None else None
+
+
+def _leader_location(state: GameState, leader_id: int) -> HexCoord | None:
+    """Same alive-or-dead fallback as ``_leader_name()`` (Phase 612), for
+    the 3 branches below (Pursue/Challenge/Trail) that need the acting
+    leader's own province for ``is_sea``/`describe_pursue()`/`describe_
+    trail()`'s own ``province_name``. `remove_leader()` never touches
+    `.location` -- a dead leader keeps the province they died in, which
+    is exactly the right value for narrating combat that happened
+    there. Without this, a raw ``state.leaders[entry.leader_id]``
+    subscript (the pre-Phase-612 code at all 3 sites) raised a bare
+    ``KeyError`` the instant `_leader_name()`'s own fallback let
+    execution reach this far for an acting leader who died in their own
+    action -- previously unreachable in practice only because `_leader_
+    name()` itself returned `None` first and the caller already
+    `continue`d before ever getting here.
+    """
+
+    leader = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
+    return leader.location if leader is not None else None
 
 
 def describe_turn_results(
@@ -5674,6 +5841,18 @@ def describe_turn_results(
             if target_name is None:
                 continue
             line = describe_cast(entry.result, caster_name=caster_name, rng=rng, target_name=target_name)
+            if line is not None:
+                lines.append(line)
+            # Phase 612: the Berserk-retaliation duel `describe_cast()`
+            # itself can never reach (`applied` stays False on every
+            # branch of that outcome) -- a no-op `[]` for every other
+            # Cast result.
+            lines.extend(
+                describe_kill_enemy_berserk_retaliation(
+                    entry.result, caster_name=caster_name, target_name=target_name, rng=rng
+                )
+            )
+            continue
         elif entry.action is ActionCode.USE_MI and isinstance(entry.result, UseMIExecutionResult):
             cast_result = entry.result.cast_result
             if cast_result is None:
@@ -5708,7 +5887,7 @@ def describe_turn_results(
             target_name = _leader_name(state, request.target_character_id)
             if target_name is None:
                 continue
-            leader_location = state.leaders[entry.leader_id].location
+            leader_location = _leader_location(state, entry.leader_id)
             province_name = _province_label(state, leader_location)
             catch_up_line = describe_pursue(
                 entry.result, pursuer_name=caster_name, target_name=target_name, province_name=province_name, rng=rng
@@ -5739,7 +5918,7 @@ def describe_turn_results(
             target_name = _leader_name(state, request.target_character_id)
             if target_name is None:
                 continue
-            province = state.provinces.get(state.leaders[entry.leader_id].location)
+            province = state.provinces.get(_leader_location(state, entry.leader_id))
             is_sea = province is not None and province.effective_terrain() is Terrain.SEA
             lines.extend(
                 describe_challenge(
@@ -5759,7 +5938,7 @@ def describe_turn_results(
             target_name = _leader_name(state, request.target_character_id)
             if target_name is None:
                 continue
-            province_name = _province_label(state, state.leaders[entry.leader_id].location)
+            province_name = _province_label(state, _leader_location(state, entry.leader_id))
             catch_up_line = describe_trail(
                 entry.result, trailer_name=caster_name, target_name=target_name, province_name=province_name, rng=rng
             )

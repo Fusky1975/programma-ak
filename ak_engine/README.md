@@ -24704,7 +24704,7 @@ follow-up request after the original 431-435 plan shipped.
   tests (non-breaking): 5043 passed. Ran again with new tests: 5047
   passed (net +4).
 
-- **Phase 611 (current)**: the transcription pass over the 162 real
+- **Phase 611**: the transcription pass over the 162 real
   `.X`/`.X2` prose catalogs closed at Phase 607 -- this phase wires
   HostAK/TP/PROSE/HORDEATH.X (Phase 607's own generic character-death
   closing beat, `render_character_death()`, sourced from `SAY.PAS:
@@ -24742,6 +24742,66 @@ follow-up request after the original 431-435 plan shipped.
   added -- the 6 updated tests already assert the full wired output
   end-to-end, and `render_character_death()`'s own template-variant
   tests already existed from Phase 607).
+
+- **Phase 612 (current)**: wires the last of Phase 611's own three
+  deferred `GameState.remove_leader()` call sites that a live composer
+  can actually reach -- Kill Enemy's own Berserk-retaliation duel
+  (`turn/cast_execution.py _execute_kill_enemy()`'s Phase 310 branch,
+  every outcome of which is built with `applied=False`, so `describe_
+  cast()` itself can never narrate it). Transcribed directly from
+  `Programma Pascal.zip HostAK/TP/SAY.PAS:631-632 _LTrack` (no
+  standalone `.X`/`.X2` file of its own) -- the retaliating target's
+  own "went berserk over the Kill-Enemy attempt" opening, confirmed
+  distinct from the neighboring `_LKillE`/`_LBers` constants (the
+  former belongs to the *successful*-cast dispatch chain, unrelated;
+  the latter's exact continuation can't be confirmed without the
+  original dispatch code, so it's deliberately not used, documented as
+  an open question rather than guessed). New `describe_kill_enemy_
+  berserk_retaliation()` (`report/turn_report.py`) is a second,
+  independent composer over the same `CastExecutionResult` --
+  `describe_turn_results()`'s own `ActionCode.CAST` branch now calls it
+  alongside `describe_cast()`, mirroring the existing `describe_
+  pursue()` + `describe_encounter_combat()` pairing. Needed a new
+  `CastExecutionResult.melee_swings` field (mirroring `ChallengeExecutionResult`/
+  `PursueExecutionResult`'s own) since `resolve_melee_duel()`'s own
+  per-round detail was being computed and discarded.
+
+  **A real, larger, pre-existing bug was found and fixed along the
+  way, with the user's explicit sign-off after a direct reproduction**:
+  `describe_turn_results()` composes every action's narration only
+  after `run_turn()` has fully mutated `state`, so an acting leader (or
+  their target) who died as a *result* of their own action was already
+  popped from `state.leaders` by the time narration ran. `_leader_
+  name()` only checked `state.leaders`, so it silently returned `None`
+  for that leader -- and every calling branch's own early-return guard
+  then dropped the ENTIRE action's narration, not just the death, but
+  every real sentence before it too. Confirmed with a direct
+  reproduction (a Challenger who loses and dies got zero turn-report
+  lines) before touching any code, then fixed at the root: `_leader_
+  name()` now falls back to `state.dead_leaders` (Phase 59's own
+  graveyard, the same `LeaderState` object, `.name` untouched by
+  death) rather than inventing anything. Fixing this then exposed a
+  second, related bug the first one had been silently masking: 3 raw
+  `state.leaders[entry.leader_id].location` subscripts (Pursue/
+  Challenge/Trail, resolving the *acting* leader's own province for
+  `is_sea`/`province_name`) raised a bare `KeyError` the instant
+  execution could reach that far for a dead actor -- fixed with a new
+  `_leader_location()` helper, the same alive-or-dead fallback.
+
+  New tests: `melee_swings` assertions added to the two existing
+  Kill-Enemy-Berserk tests in `test_cast_execution.py`;
+  `test_render_kill_enemy_berserk_onset`,
+  `test_describe_kill_enemy_berserk_retaliation_returns_nothing_for_an_ordinary_cast`,
+  and both winner-direction tests in `test_turn_report.py`;
+  `test_describe_turn_results_narrates_kill_enemy_berserk_retaliation_even_when_the_caster_dies`
+  and `test_describe_turn_results_narrates_challenge_even_when_the_challenger_dies_in_it`
+  in `test_describe_turn_results.py` -- both real regression tests for
+  the dead-actor bug, with every expected string computed by actually
+  running the real renderers first, not guessed. Ran before the
+  `_leader_name()` fix (non-breaking check): 5047 passed, confirming no
+  existing test exercised the dead-actor path. Ran again with the fix
+  and the new Kill Enemy wiring plus all new tests: 5053 passed (net
+  +6).
 
 ## Setup
 

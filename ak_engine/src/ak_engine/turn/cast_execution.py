@@ -689,6 +689,7 @@ from ak_engine.turn.discovery_effects import effective_skill_level, holder_is_im
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     Combatant,
+    MeleeSwing,
     archery_free_attack_bonus,
     loot_defeated_leader,
     melee_mastery_damage_bonus,
@@ -884,6 +885,15 @@ class CastExecutionResult:
     # Empty unless `kill_enemy_berserk_winner` is set and the loser owned
     # something.
     looted_item_ids: list[int] = field(default_factory=list)
+    # Phase 612: every Melee swing of the Berserk-retaliation duel itself
+    # (`resolve_melee_duel()`'s own `EncounterCombatResult.melee_swings`,
+    # discarded before this phase), for narrating each individually --
+    # the same `ChallengeExecutionResult`/`PursueExecutionResult` field
+    # `report/turn_report.py describe_kill_enemy_berserk_retaliation()`
+    # now reads. `"a"` = the caster, `"b"` = the target (the same order
+    # `resolve_melee_duel(caster_combatant, target_combatant, rng)` is
+    # called in below). Empty unless `kill_enemy_berserk_winner` is set.
+    melee_swings: tuple[MeleeSwing, ...] = ()
     # Phase 492: High Chancellor's own Crystal Ball addendum -- "It will
     # also list all offices and titles held by the kingdom of the
     # spied-upon character." Set only by a Chancellor-cast Clairvoyance
@@ -1529,8 +1539,10 @@ def _execute_kill_enemy(
        personal-combat winner/loser this project already has
        (``turn/challenge_execution.py``). ``kill_enemy_berserk_winner``
        records which side won ("a" caster / "b" target / ``None`` for
-       the vanishingly rare ``max_rounds``-exhausted draw), for a
-       caller that wants to narrate it.
+       the vanishingly rare ``max_rounds``-exhausted draw); ``melee_
+       swings`` (Phase 612) carries the duel's own per-round detail
+       through too, both now consumed by ``report/turn_report.py
+       describe_kill_enemy_berserk_retaliation()``.
 
     **Hidden Tattoos** (Discovery.txt, Phase 270): "neutralize the Kill
     Enemy spell of Necromancers... All characters of the Kingdom are
@@ -1573,6 +1585,7 @@ def _execute_kill_enemy(
                 reason=reason,
                 kill_enemy_berserk_winner="a",
                 looted_item_ids=[item.item_id for item in looted_items],
+                melee_swings=combat_result.melee_swings,
             )
         if combat_result.winner == "b":  # the retaliating target killed the caster
             state.remove_leader(leader_id)
@@ -1583,6 +1596,7 @@ def _execute_kill_enemy(
                 reason=reason,
                 kill_enemy_berserk_winner="b",
                 looted_item_ids=[item.item_id for item in looted_items],
+                melee_swings=combat_result.melee_swings,
             )
         return CastExecutionResult(request, applied=False, reason=reason)
 
