@@ -711,9 +711,12 @@ def test_describe_turn_results_renders_explore_discovered_features():
 
     lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
 
-    assert len(lines) == 1
+    # Phase 613: MONSTERS.X2's own flavor text for the guardian now
+    # follows FINDFEAT.X's own discovery sentence as its own line.
+    assert len(lines) == 2
     assert "Aldric" in lines[0]
     assert "(3, 4)" in lines[0]
+    assert "Gargoyle" in lines[1]
 
 
 def test_describe_turn_results_omits_rumors_without_board_width():

@@ -232,6 +232,7 @@ from ak_engine.report.turn_report import (
     render_monster_threat_death,
     render_cast_announcement,
     render_kill_enemy_berserk_onset,
+    render_monster_description,
     render_practice_already_maxed,
     render_practice_tutored,
     render_sage_discovery,
@@ -3345,6 +3346,24 @@ def test_describe_rumor_picks_the_selected_variant():
     assert line == "Aldric heard a rumor telling of  feature in  $0,  Dungeon inhabited by Renegade Archer."
 
 
+# -- MONSTERS.X2 flavor text (Phase 613) -------------------------------------
+
+
+def test_render_monster_description_returns_the_real_flavor_text_verbatim():
+    assert render_monster_description(Monster.ROC) == (
+        "The Roc is reputed to be a huge, powerful bird, many times the size of an elephant, "
+        "which the Roc often feeds upon."
+    )
+
+
+def test_render_monster_description_second_species():
+    # Confirms this is a plain per-species lookup, not a first-variant-only
+    # bug -- Gargoyle's own real entry, distinct from Roc's.
+    assert render_monster_description(Monster.GARGOYLE) == (
+        "The Gargoyle is an ugly and evil winged humanoid monster.It is extremely vicious and cruel."
+    )
+
+
 # -- FINDFEAT.X in-person discovery narrative (Phase 245) -------------------
 
 
@@ -3352,18 +3371,28 @@ def test_describe_feature_discovery_first_variant():
     feature = Feature(feature_id=1, coord=HexCoord(0, 0), kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
 
-    line = describe_feature_discovery(feature, "Aldric", "Ancient Valley", rng)
+    lines = describe_feature_discovery(feature, "Aldric", "Ancient Valley", rng)
 
-    assert line == "Aldric discovered a feature in Ancient Valley:  Dungeon  inhabited by Renegade Archer."
+    # Phase 613: MONSTERS.X2's own flavor text now follows FINDFEAT.X's
+    # own discovery sentence, as its own separate line.
+    assert lines == [
+        "Aldric discovered a feature in Ancient Valley:  Dungeon  inhabited by Renegade Archer.",
+        "Rangers describe the Renegade Archer as an accomplished archer who has taken to the "
+        "wilderness in protest against the injustices of the world.",
+    ]
 
 
 def test_describe_feature_discovery_picks_the_selected_variant():
     feature = Feature(feature_id=1, coord=HexCoord(0, 0), kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
     rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
 
-    line = describe_feature_discovery(feature, "Aldric", "Ancient Valley", rng)
+    lines = describe_feature_discovery(feature, "Aldric", "Ancient Valley", rng)
 
-    assert line == "Aldric found  Dungeon  in Ancient Valley, occupied by Renegade Archer."
+    assert lines == [
+        "Aldric found  Dungeon  in Ancient Valley, occupied by Renegade Archer.",
+        "Rangers describe the Renegade Archer as an accomplished archer who has taken to the "
+        "wilderness in protest against the injustices of the world.",
+    ]
 
 
 # -- duel demoralization narrative (Phase 121) -------------------------------

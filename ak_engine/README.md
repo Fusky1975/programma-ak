@@ -24743,7 +24743,7 @@ follow-up request after the original 431-435 plan shipped.
   end-to-end, and `render_character_death()`'s own template-variant
   tests already existed from Phase 607).
 
-- **Phase 612 (current)**: wires the last of Phase 611's own three
+- **Phase 612**: wires the last of Phase 611's own three
   deferred `GameState.remove_leader()` call sites that a live composer
   can actually reach -- Kill Enemy's own Berserk-retaliation duel
   (`turn/cast_execution.py _execute_kill_enemy()`'s Phase 310 branch,
@@ -24802,6 +24802,46 @@ follow-up request after the original 431-435 plan shipped.
   existing test exercised the dead-actor path. Ran again with the fix
   and the new Kill Enemy wiring plus all new tests: 5053 passed (net
   +6).
+
+- **Phase 613 (current)**: wires `models/monster.py MONSTER_DESCRIPTION`
+  (Phase 579's own byte-faithful `HostAK/TP/PROSE/MONSTERS.X2`
+  transcription, real flavor text for all 60 monster species, never
+  called from anywhere) into `describe_feature_discovery()` -- rulebook
+  [3.2]'s own line, "Monsters are described when they are first
+  discovered" (`SAY.PAS:790 _LMDesc`), read as firing at the exact same
+  in-person discovery moment `describe_feature_discovery()` (FINDFEAT.X)
+  already narrates, since no per-Kingdom "has this species been seen
+  before" tracking exists anywhere in this project to gate a stricter
+  "first ever" reading on, and inventing one would be an unsourced
+  state-tracking mechanism this project's own discipline avoids --
+  flagged clearly in the new `render_monster_description()`'s own
+  docstring as the one open judgment call, revisit if a real source
+  ever surfaces. Picked after ruling out two bigger candidates this same
+  phase: the Grandfather of Assassins resolver (`turn/assassin_guild.py`
+  -- mechanically sourced, but no real sample data confirms the actual
+  player-order shape that triggers it, so wiring it would mean inventing
+  an order-decode rule) and the Feature-to-Power "special function or
+  event" system (`models/power.py`/`models/magic_feature.py` -- the
+  Feature-to-Power *link* itself is populated since Phase 365, closing
+  an older docstring's stale claim, but per-feature target data -- which
+  Ability/Race/Temper/PowerCondition applies to which specific Feature
+  -- is modeled nowhere at all; a whole subsystem, not a single phase).
+  Both ruled out only after direct verification (reading the real code,
+  not trusting a research pass's first framing), confirmed with the
+  user before moving on to this smaller candidate.
+
+  `describe_feature_discovery()` itself changes shape (`str` ->
+  `list[str]`, two separate `SAY.PAS` dispatch calls -- `_LFind`/
+  `_LMDesc` -- narrated as two separate lines, not one concatenated
+  fragment, unlike Phase 612's `_LTrack`); its own one caller
+  (`describe_turn_results()`'s `ActionCode.EXPLORE` branch) updated from
+  `lines.append(...)` to `lines.extend(...)`. 3 existing tests updated
+  for the new two-line shape (both `describe_feature_discovery()` unit
+  tests, one `describe_turn_results()` EXPLORE wiring test); 2 new tests
+  for `render_monster_description()` itself. Ran before writing tests
+  (non-breaking check, confirming exactly these 3 and no others broke):
+  3 failed, 5050 passed. Ran again after fixing and with new tests: 5055
+  passed (net +2).
 
 ## Setup
 

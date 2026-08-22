@@ -1199,7 +1199,7 @@ from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
-from ak_engine.models.monster import MONSTER_NAMES, Monster
+from ak_engine.models.monster import MONSTER_DESCRIPTION, MONSTER_NAMES, Monster
 from ak_engine.models.office import OFFICE_MIN_POINTS, OFFICE_NAME, Office
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
@@ -5988,7 +5988,7 @@ def describe_turn_results(
         elif entry.action is ActionCode.EXPLORE and isinstance(entry.result, ExploreResult):
             for feature in entry.result.discovered_features:
                 province_name = _province_label(state, feature.coord)
-                lines.append(describe_feature_discovery(feature, caster_name, province_name, rng))
+                lines.extend(describe_feature_discovery(feature, caster_name, province_name, rng))
             continue
         elif entry.action is ActionCode.RECRUIT and isinstance(entry.result, RecruitExecutionResult):
             leader = state.leaders.get(entry.leader_id)
@@ -7666,7 +7666,33 @@ _FINDFEAT_TEMPLATES: list[str] = [
 ]
 
 
-def describe_feature_discovery(feature: Feature, character_name: str, province_name: str, rng: random.Random) -> str:
+def render_monster_description(monster: Monster) -> str:
+    """Renders MONSTERS.X2's own flavor-text sentence(s) for ``monster``
+    (Phase 613) -- rulebook [3.2]'s own line, "Monsters are described
+    when they are first discovered" (``SAY.PAS:790 _LMDesc``). Plain
+    verbatim text, no ``render()`` needed: not one of ``MONSTER_
+    DESCRIPTION``'s own 60 real entries carries a ``/R``/``{}`` choice
+    marker (confirmed by grep), so there's nothing to vary and no
+    ``rng`` parameter, the same "nothing to vary" shape ``render_magic_
+    feature_discovery()`` already established.
+
+    "First discovered" is read here as *this in-person discovery
+    event* (the same moment ``describe_feature_discovery()`` itself
+    fires from, immediately below) rather than "the first time this
+    Kingdom has ever seen this monster species" -- the rulebook gives
+    no threshold, and this project has no per-Kingdom "monster species
+    already seen" tracking anywhere to gate a stricter reading on
+    (confirmed absent by grep) -- inventing one would be exactly the
+    kind of unsourced state-tracking mechanism this project's own "no
+    source, no guess" discipline avoids. If a real source ever
+    surfaces confirming the stricter "once per species" reading, this
+    is the one place to revisit.
+    """
+
+    return MONSTER_DESCRIPTION[monster]
+
+
+def describe_feature_discovery(feature: Feature, character_name: str, province_name: str, rng: random.Random) -> list[str]:
     """Renders FINDFEAT.X's sentence for a feature just found in person --
     ``turn/exploration.py discover_features()`` (Phase 242), now surfaced
     to a caller via ``turn/move_execution.py KingdomExplorationResult``/
@@ -7680,13 +7706,20 @@ def describe_feature_discovery(feature: Feature, character_name: str, province_n
     real template never has a treasure-only branch to fall back to
     (unlike FRUMOR.X's own rumor sentence, Phase 244) -- a feature built
     by a test or caller with no guardian isn't a valid input here.
+
+    Returns two lines as of Phase 613: FINDFEAT.X's own discovery
+    sentence, then ``render_monster_description()``'s own MONSTERS.X2
+    flavor text for the guardian -- two separate ``SAY.PAS`` dispatch
+    calls (``_LFind``/``_LMDesc``), not one concatenated fragment (see
+    that function's own docstring for the "which discovery event"
+    judgment call this rests on).
     """
 
     feature_name = FEATURE_TYPE_NAMES[feature.kind]
     monster_name = MONSTER_NAMES[feature.guardian_monster]
     values = {"<": character_name, "@": province_name, "&": feature_name, "+": monster_name}
     variant = pick_variant(_FINDFEAT_TEMPLATES, rng)
-    return render(variant, values, rng=rng)
+    return [render(variant, values, rng=rng), render_monster_description(feature.guardian_monster)]
 
 
 # HostAK/TP/PROSE/FSEARCH.X -- the Search-attempt opening sentence. See
