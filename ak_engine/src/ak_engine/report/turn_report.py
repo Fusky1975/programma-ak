@@ -1219,7 +1219,14 @@ from ak_engine.models.sex import Sex
 from ak_engine.models.temper import TEMPER_ABBREVIATION, TEMPER_NAME
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_CATEGORY, TREASURE_LABEL, TREASURE_NAME, Treasure, TreasureCategory
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
-from ak_engine.report.ascii_map import MAP_REGION_LABEL_RULE, map_region_label, render_ascii_map
+from ak_engine.report.ascii_map import (
+    CELL_STRIDE,
+    MAP_REGION_LABEL_RULE,
+    map_region_label,
+    max_columns_per_page,
+    paginate_known_columns,
+    render_ascii_map,
+)
 from ak_engine.report.prose import render
 from ak_engine.turn.assassin_guild import GuildAssassinationOutcome
 from ak_engine.turn.army_quality import compute_army_modified_quality
@@ -8911,6 +8918,12 @@ _MAP_KEY_LINE = "Key:   _ Plains   + Forest   & Jungle   ^ Mountain   . Desert  
 _MAP_CAPTION_LINE_1 = "    In each province, the name and I.D. number of the province"
 _MAP_CAPTION_LINE_2 = "  are listed above the ruler I.D and name."
 
+# Phase 624: the real intro for every map page after the first, verbatim
+# from real samples (e.g. `SE3__T5.K1`/`SE3__T10.K1`) -- see `report/
+# ascii_map.py`'s own module docstring Phase 624 addendum for the full
+# "far side of the world" pagination trigger this feeds.
+_MAP_FAR_SIDE_INTRO = "We also drew up this map of lands on the far side of the world:"
+
 
 def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
     """The real ASCII map (Phase 562) -- see `report/ascii_map.py`'s own
@@ -8918,39 +8931,59 @@ def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
     exactly which real cases this phase does and doesn't reproduce.
 
     Returns an empty list when there are no provinces to render at all
-    (`render_ascii_map()` itself already handles the "nothing known yet"
-    case) -- matching every other section composer's own "nothing to
-    say, omit the section" convention, even though the real map has no
+    -- matching every other section composer's own "nothing to say,
+    omit the section" convention, even though the real map has no
     header of its own for `compose_letter_report()` to conditionally
     skip the way it does for headered sections.
 
     Phase 577: `map_region_label()` -- "Ice cap" plus its own 78-dash
-    rule, both real, sourced lines -- is inserted right after the intro
-    sentence's blank-line gap, before the grid itself, exactly matching
-    every real sample that shows it; omitted entirely (no gap left
-    behind) for the majority of reports whose map doesn't reach the
-    world's own northern edge.
+    rule, both real, sourced lines -- is inserted right after each
+    page's own intro sentence's blank-line gap, before that page's own
+    grid, exactly matching every real sample that shows it; omitted
+    entirely (no gap left behind) for a page whose own topmost row
+    doesn't reach the world's own northern edge.
+
+    Phase 624: when the Kingdom's own known provinces span more columns
+    than one page can print, the report splits into a "far side of the
+    world" second (and further) page -- `report/ascii_map.py paginate_
+    known_columns()`'s own home-anchored windowing decides which
+    columns land on which page; see that function's own docstring and
+    the module's Phase 624 addendum for the full sourcing. Still only
+    ever uses the wide-tier renderer (`render_ascii_map()`) -- which of
+    the 6 real layout tiers a report should use is a separate, still-
+    unsolved question this phase doesn't touch.
     """
 
-    grid_lines = render_ascii_map(state, kingdom_id)
-    if not grid_lines:
+    known_columns = {p.coord.x for p in state.provinces.values()}
+    if not known_columns:
         return []
 
-    region_label = map_region_label(state)
-    region_lines = [region_label, MAP_REGION_LABEL_RULE] if region_label else []
+    kingdom = state.kingdoms.get(kingdom_id)
+    home_x = kingdom.home_province.x if kingdom is not None else min(known_columns)
 
-    return [
-        "",
-        "",
-        f"  {_MAP_REPORT_INTRO} ",
-        "",
-        *region_lines,
-        *grid_lines,
-        "",
-        _MAP_KEY_LINE,
-        _MAP_CAPTION_LINE_1,
-        _MAP_CAPTION_LINE_2,
-    ]
+    pages = paginate_known_columns(known_columns, home_x, max_columns_per_page(CELL_STRIDE))
+
+    lines: list[str] = ["", "", f"  {_MAP_REPORT_INTRO} ", ""]
+    for page_index, page_columns in enumerate(pages):
+        columns = set(page_columns)
+        grid_lines = render_ascii_map(state, kingdom_id, columns=columns)
+        region_label = map_region_label(state, columns=columns)
+        region_lines = [region_label, MAP_REGION_LABEL_RULE] if region_label else []
+
+        if page_index > 0:
+            lines.extend([f"  {_MAP_FAR_SIDE_INTRO} ", ""])
+        lines.extend(region_lines)
+        lines.extend(grid_lines)
+
+    lines.extend(
+        [
+            "",
+            _MAP_KEY_LINE,
+            _MAP_CAPTION_LINE_1,
+            _MAP_CAPTION_LINE_2,
+        ]
+    )
+    return lines
 
 
 # HostAK/TP/REPORTS.PAS Rep_Leaders (~lines 658-855) -- the real

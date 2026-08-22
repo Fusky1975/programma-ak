@@ -25600,7 +25600,7 @@ follow-up request after the original 431-435 plan shipped.
   `MAP_PROV` (needs a per-Kingdom "known provinces" tracking concept
   that doesn't exist in `GameState`, Phase 616's own scope decision).
 
-- **Phase 623 (current)**: implements "known provinces" (the user's
+- **Phase 623**: implements "known provinces" (the user's
   own direct spec, not from a reverse-engineering source this time) and
   wires `Power.MAP_PROV` with it -- closing the Feature -> Power [5.8]
   subsystem's true last gap. A province is known to a Kingdom once that
@@ -25691,6 +25691,92 @@ follow-up request after the original 431-435 plan shipped.
 
   This closes the Feature -> Power [5.8] subsystem for real -- every
   real `Power` is now wired, nothing deliberately dropped anymore.
+
+- **Phase 624 (current)**: solves the ASCII map's own "far side of the
+  world" second-map trigger (`report/ascii_map.py`, deferred since
+  Phase 567/572) -- a pure print-width overflow, not distance or
+  connectivity. Re-investigated directly against the real `Desktop/
+  PROGRAMMA AK/SE3__T*.K*` corpus (27 real samples with a second map):
+  `max_columns_per_page = 78 // cell_stride` (the same 78-char budget
+  Phase 577's own Ice-cap dash rule already uses) predicted every one
+  of the 27 samples' own real main-map column count exactly, zero
+  exceptions -- independently cross-confirmed by the 6 measured strides
+  landing exactly on this module's own pre-existing `CELL_STRIDE`
+  constants (wide/dense/stride12/10/9/8 -> 4/5/6/7/8/9 columns/page),
+  and the wide-tier value (4) matching Phase 567's own separate,
+  unrelated correlation finding ("cluster <= 4 always means stride
+  17"). Also confirms the board is cylindrical (column 18 borders
+  column 1) -- direct visual proof, not inference: `SE3__T10.K1`'s own
+  far-side map prints columns 15-18 then 01-05 as one seamless row with
+  its own "Ice cap" header, no seam at the wrap -- matching `worldgen/
+  place_map.py DEFAULT_WIDTH = 18` exactly. This also explains the
+  earlier "falsified" connected-components hypothesis: known, ordinary
+  hex-adjacent provinces (`SE3__T4.K6`'s x=17/x=18) can still land on
+  different pages, because the split is purely about which page's own
+  column budget they fall into, not adjacency.
+
+  New `report/ascii_map.py` pure helpers: `PAGE_WIDTH = 78`; `max_
+  columns_per_page(cell_stride)`; `_cylindrical_distance()`; `_
+  contiguous_run_through()` (walks outward from an anchor column while
+  the next cylindrical column stays known); `paginate_known_columns
+  (known_columns, home_x, max_cols, board_width=DEFAULT_WIDTH)` --
+  page 1 anchors on the known column closest to the Kingdom's own
+  `KingdomState.home_province.x`; each later page anchors on the
+  smallest not-yet-placed column (arbitrary but deterministic -- no
+  real 3+-page sample exists to confirm this specific tie-break
+  against). When a page's own contiguous run exceeds `max_cols`, only
+  the columns closest to that page's own anchor are kept. Checked
+  against the 2 clean real single-overflow corpus cases found
+  (`SE3__T4-9.K6`: home x=14, kept 12-17, dropped the 2 columns
+  farthest from home, 18 and 1; `SE3__T9-11.K9`: home x=18, kept
+  13-18,1,2, dropped the 1 column farthest from home, 12) -- zero
+  exceptions, though a naive "always trim the same end" rule would
+  have contradicted itself between the two cases; **shipped as a
+  documented, user-approved interpretation** for the home-anchoring
+  detail specifically (the width-cap formula itself is fully proven).
+  `render_ascii_map()` (the sole tier `describe_map_report()` actually
+  calls) and `map_region_label()` both gained an optional `columns:
+  set[int] | None = None` parameter restricting rendering/the Ice-cap
+  check to one page's own columns -- `None` preserves every existing
+  caller's exact prior behavior.
+
+  `report/turn_report.py describe_map_report()` rewritten to loop over
+  `paginate_known_columns()`'s own pages: page 1 keeps the existing
+  intro/spacing exactly; page 2+ uses the real, sourced far-side intro
+  sentence ("We also drew up this map of lands on the far side of the
+  world:", verbatim from real samples) with no leading blank line
+  (confirmed from real samples: it directly follows the previous
+  page's last grid row); the `Key:`/caption lines render once, after
+  every page, matching real samples exactly.
+
+  **Deliberately out of scope, not touched this phase**: the layout-
+  *tier* selection trigger (`describe_map_report()` still only ever
+  calls the wide-tier renderer -- a separate, still-unsolved question;
+  finding #3 above is a promising new lead, not chased down here) and
+  per-kingdom province visibility filtering (`render_ascii_map()` and
+  its 5 siblings still render every province in `state.provinces`
+  unfiltered by kingdom knowledge -- a real, separate, pre-existing gap
+  found while investigating this, deliberately not retrofitted with
+  `ProvinceState.known_to_kingdom()`, Phase 623, since that would
+  require rewriting every fixture in `tests/test_ascii_map.py`'s own
+  large suite for no benefit to the pagination trigger itself, which
+  only cares which x columns are present).
+
+  Tests: `tests/test_ascii_map.py` gained 11 -- `max_columns_per_page()`
+  against all 6 real tiers, `_cylindrical_distance()`/`_contiguous_
+  run_through()` unit cases including a wrap-crossing run,
+  `paginate_known_columns()` against both real corpus cases plus a
+  single-page case, a 3+-page synthetic termination/coverage case, and
+  a home-not-known fallback case, and the new `columns` parameter on
+  both `render_ascii_map()` and `map_region_label()`.
+  `tests/test_turn_report.py` gained 1 -- a full `describe_map_report()`
+  case with 5 known columns spanning the wrap (exceeding the wide
+  tier's own 4-column cap), confirming the far-side intro, a `Key:`
+  line appearing exactly once, and each page's own independent Ice-cap
+  check (page 1's own provinces at y=1 show it, page 2's own at y=5
+  don't). Ran before writing new tests (non-breaking check): 5238
+  passed, unchanged from Phase 623's own count. Ran again with all new
+  tests: 5250 passed (net +12).
 
 ## Setup
 

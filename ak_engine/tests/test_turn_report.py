@@ -6498,6 +6498,35 @@ def test_describe_map_report_omits_ice_cap_label_when_topmost_row_is_below_y_1()
     assert "Ice cap" not in lines
 
 
+def test_describe_map_report_splits_into_a_far_side_page_when_too_wide():
+    # Phase 624: wide tier fits 4 columns/page (78 // CELL_STRIDE). 5
+    # known columns spanning the wrap (17,18,1,2,3), home at x=18 --
+    # matches the real SE3__T9-11.K9-shaped corpus case: page 1 keeps
+    # the 4 columns closest to home (1,2,17,18), page 2 gets the 1
+    # column farthest away (3). Page 1's own provinces sit at y=1 (Ice
+    # cap trigger); page 2's own sits at y=5 (no trigger) -- proving the
+    # Ice-cap check runs independently per page, not once globally.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(18, 1)))
+    for x in (17, 18, 1, 2):
+        state.add_province(ProvinceState(HexCoord(x, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name=f"P{x}"))
+    state.add_province(ProvinceState(HexCoord(3, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Farland"))
+
+    lines = describe_map_report(state, 1)
+    text = "\n".join(lines)
+
+    assert "Sire, our royal scribe has drawn up a map of all neighboring lands:" in text
+    assert "We also drew up this map of lands on the far side of the world:" in text
+    assert lines.count("Ice cap") == 1
+    assert lines.count("Key:   _ Plains   + Forest   & Jungle   ^ Mountain   . Desert     Sea") == 1
+    for name in ("P17", "P18", "P1", "P2", "Farland"):
+        assert name in text
+    # The far-side page's own intro directly follows the previous
+    # page's last grid row -- no blank line in between.
+    far_index = lines.index("  We also drew up this map of lands on the far side of the world: ")
+    assert lines[far_index - 1].strip() != ""
+
+
 def test_compose_letter_report_places_the_map_between_provinces_and_characters():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))

@@ -12,7 +12,15 @@ from ak_engine.models.game_state import GameState, KingdomState, LeaderState, Pr
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.report.ascii_map import (
+    CELL_STRIDE,
+    DENSE_CELL_STRIDE,
+    STRIDE8_CELL_STRIDE,
+    STRIDE9_CELL_STRIDE,
+    STRIDE10_CELL_STRIDE,
+    STRIDE12_CELL_STRIDE,
     TERRAIN_SYMBOL,
+    _contiguous_run_through,
+    _cylindrical_distance,
     _pad_center,
     _pad_framed,
     _pad_overlay,
@@ -21,6 +29,8 @@ from ak_engine.report.ascii_map import (
     cell_pixel_column,
     dense_cell_pixel_column,
     map_region_label,
+    max_columns_per_page,
+    paginate_known_columns,
     render_ascii_map,
     render_ascii_map_dense,
     render_ascii_map_stride8,
@@ -793,3 +803,105 @@ def test_map_region_label_is_none_with_no_provinces():
     state = _state()
 
     assert map_region_label(state) is None
+
+
+# -- Phase 624: "far side of the world" pagination -- see module
+# docstring's own Phase 624 addendum for the full sourcing.
+
+
+def test_max_columns_per_page_matches_the_6_real_tiers():
+    assert max_columns_per_page(CELL_STRIDE) == 4
+    assert max_columns_per_page(DENSE_CELL_STRIDE) == 5
+    assert max_columns_per_page(STRIDE12_CELL_STRIDE) == 6
+    assert max_columns_per_page(STRIDE10_CELL_STRIDE) == 7
+    assert max_columns_per_page(STRIDE9_CELL_STRIDE) == 8
+    assert max_columns_per_page(STRIDE8_CELL_STRIDE) == 9
+
+
+def test_cylindrical_distance_wraps_at_board_width():
+    assert _cylindrical_distance(17, 18, board_width=18) == 1
+    assert _cylindrical_distance(18, 1, board_width=18) == 1
+    assert _cylindrical_distance(1, 18, board_width=18) == 1
+    assert _cylindrical_distance(5, 5, board_width=18) == 0
+    assert _cylindrical_distance(1, 10, board_width=18) == 9
+
+
+def test_contiguous_run_through_crosses_the_wrap():
+    known = {16, 17, 18, 1, 2, 3}
+    assert _contiguous_run_through(18, known, board_width=18) == [16, 17, 18, 1, 2, 3]
+
+
+def test_contiguous_run_through_stops_at_a_gap():
+    known = {5, 6, 7, 12, 13}
+    assert _contiguous_run_through(6, known, board_width=18) == [5, 6, 7]
+    assert _contiguous_run_through(12, known, board_width=18) == [12, 13]
+
+
+def test_paginate_known_columns_k6_shaped_case():
+    # Real corpus case (SE3__T4-9.K6): home x=14, full known run
+    # 12-18,1 (8 cols) exceeds this tier's own 6-column cap -- the 2
+    # columns farthest from home (18, 1) are dropped to page 2.
+    known = set(range(12, 19)) | {1}
+    pages = paginate_known_columns(known, home_x=14, max_cols=6, board_width=18)
+    assert pages == [[12, 13, 14, 15, 16, 17], [1, 18]]
+
+
+def test_paginate_known_columns_k9_shaped_case():
+    # Real corpus case (SE3__T9-11.K9): home x=18, full known run
+    # 12-18,1,2 (9 cols) exceeds this tier's own 8-column cap -- the 1
+    # column farthest from home (12) is dropped to page 2.
+    known = set(range(12, 19)) | {1, 2}
+    pages = paginate_known_columns(known, home_x=18, max_cols=8, board_width=18)
+    assert pages == [[1, 2, 13, 14, 15, 16, 17, 18], [12]]
+
+
+def test_paginate_known_columns_fits_on_one_page_when_narrow_enough():
+    known = {6, 7, 8, 9}
+    pages = paginate_known_columns(known, home_x=7, max_cols=9, board_width=18)
+    assert pages == [[6, 7, 8, 9]]
+
+
+def test_paginate_known_columns_more_than_two_pages_terminates_and_covers_everything():
+    # Synthetic: a known run wider than 2 pages' worth still terminates,
+    # covers every column exactly once with no overlap, and never
+    # exceeds max_cols per page -- page-2+ anchoring/tie-breaking is
+    # documented as arbitrary (no real 3+-page sample exists), so this
+    # doesn't assert an exact page count or shape, only the invariants
+    # that must hold regardless.
+    known = set(range(1, 19))  # the whole board, one contiguous run
+    pages = paginate_known_columns(known, home_x=9, max_cols=6, board_width=18)
+    assert len(pages) > 2
+    covered = sorted(c for page in pages for c in page)
+    assert covered == list(range(1, 19))
+    assert all(len(page) <= 6 for page in pages)
+
+
+def test_paginate_known_columns_home_not_known_falls_back_to_closest():
+    # home_x itself has no known province -- page 1 anchors on the
+    # closest known column instead of raising or picking arbitrarily.
+    known = {10, 11, 12}
+    pages = paginate_known_columns(known, home_x=9, max_cols=6, board_width=18)
+    assert pages == [[10, 11, 12]]
+
+
+def test_render_ascii_map_columns_filters_to_the_given_page():
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    full = render_ascii_map(state, 2)
+    restricted = render_ascii_map(state, 2, columns={1})
+
+    assert full != restricted
+    assert "Alderwood" in "".join(restricted)
+    assert "Farland" not in "".join(restricted)
+
+
+def test_map_region_label_columns_checks_only_that_pages_own_rows():
+    state = _state()
+    # y=1 (Ice cap trigger) only on column 9; column 1 alone stays y=5.
+    state.add_province(_province(1, 5, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    assert map_region_label(state, columns={1}) is None
+    assert map_region_label(state, columns={9}) == "Ice cap"

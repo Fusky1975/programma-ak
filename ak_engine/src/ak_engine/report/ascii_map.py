@@ -530,6 +530,38 @@ in `README.md` for the full account):
   stride-selection trigger. `dense_cell_pixel_column()` is left
   unchanged (still only verified correct for `x_min == 1` maps) rather
   than "fixed" with an unverified guess in either direction.
+
+**Phase 624 -- "far side of the world" pagination, solved.** The real
+trigger for the dual map is a pure print-width overflow, not distance
+or connectivity: `max_columns_per_page(cell_stride) = 78 //
+cell_stride` (the same 78-char budget `MAP_REGION_LABEL_RULE` already
+uses), verified 27/27 against every real `Desktop/PROGRAMMA AK/
+SE3__T*.K*` sample with a second map. The board is confirmed
+cylindrical (column 18 borders column 1 in that historical corpus,
+matching `worldgen/place_map.py DEFAULT_WIDTH = 18` exactly) -- direct
+visual proof, not inference: `SE3__T10.K1`'s own far-side map prints
+columns 15-18 then 01-05 as one seamless row with its own "Ice cap"
+header, no seam at the wrap. This also explains the earlier
+"falsified" connected-components finding (module docstring's own
+"Explicitly deferred" section below, kept for history): known,
+ordinary hex-adjacent provinces (`SE3__T4.K6`'s x=17/x=18) can still
+land on different pages, because the split is purely about which
+page's own column budget they fall into, nothing about adjacency.
+`paginate_known_columns()`'s own home-anchored windowing (which
+*specific* columns land on page 1) is a documented, user-approved
+interpretation checked against the 2 clean real cases found, not fully
+provable without real per-turn discovery-order data this project
+doesn't have -- see that function's own docstring. **Deliberately not
+touched this phase**: the layout-tier *selection* trigger (`describe_
+map_report()` still only ever calls the wide-tier renderer -- this
+phase adds pagination within whichever tier is wired in, not tier
+choice itself) and per-kingdom province visibility (`render_ascii_
+map()` and its 5 siblings still render every province in `state.
+provinces` unfiltered by kingdom knowledge, despite this function's own
+docstring claiming an "any record of it" convention -- a real,
+separate, pre-existing gap noticed while investigating this, deferred
+rather than retrofitted into a large pre-existing test suite that
+doesn't set `ProvinceState.explored_percent_by_kingdom` anywhere).
 """
 
 from __future__ import annotations
@@ -538,6 +570,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain, province_code
 from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
+from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 
 CELL_WIDTH = 16
 CELL_STRIDE = CELL_WIDTH + 1  # one real-space column separates every cell
@@ -1115,7 +1148,110 @@ def render_cell_dense(state: GameState, province: ProvinceState, *, viewing_king
     return [line1, *middle_lines, last_line]
 
 
-def render_ascii_map(state: GameState, kingdom_id: int) -> list[str]:
+# -- Phase 624: "far side of the world" pagination -- `Desktop/PROGRAMMA
+# AK/SE3__T*.K*`'s own real second map (27 real samples cross-checked,
+# zero exceptions), see this module's own Phase 624 addendum in the
+# module docstring for the full derivation.
+
+# The same 78-char page-width budget `MAP_REGION_LABEL_RULE`'s own
+# 78-dash rule (Phase 577) already established -- confirmed to also be
+# the real cap on how many province columns fit on one map page.
+PAGE_WIDTH = 78
+
+
+def max_columns_per_page(cell_stride: int) -> int:
+    """How many province columns fit on one printed map page at a given
+    tier's own real `CELL_STRIDE` -- `PAGE_WIDTH // cell_stride`.
+    Verified 27/27 against real samples for all 6 of this module's own
+    tiers (wide/dense/stride12/10/9/8 -> 4/5/6/7/8/9 columns) -- see
+    module docstring's own Phase 624 addendum.
+    """
+
+    return PAGE_WIDTH // cell_stride
+
+
+def _cylindrical_distance(a: int, b: int, board_width: int) -> int:
+    """The shorter of the two directions around the wrap between columns
+    `a` and `b` on a `board_width`-wide cylindrical board (column
+    `board_width` borders column 1 -- confirmed real, see module
+    docstring's own Phase 624 addendum).
+    """
+
+    diff = abs(a - b) % board_width
+    return min(diff, board_width - diff)
+
+
+def _contiguous_run_through(anchor: int, known_columns: set[int], board_width: int) -> list[int]:
+    """The maximal cylindrically-contiguous run of `known_columns`
+    containing `anchor` -- walks outward from `anchor` in both
+    directions while the next column (wrapping at `board_width`) is
+    still in `known_columns`. Returns the run in ascending walk order
+    starting from its own lower end (not necessarily `anchor` itself).
+    """
+
+    def _wrap(x: int) -> int:
+        return ((x - 1) % board_width) + 1
+
+    ordered = [anchor]
+    cursor = anchor
+    while True:
+        candidate = _wrap(cursor + 1)
+        if candidate in known_columns and candidate not in ordered:
+            cursor = candidate
+            ordered.append(cursor)
+        else:
+            break
+    cursor = anchor
+    while True:
+        candidate = _wrap(cursor - 1)
+        if candidate in known_columns and candidate not in ordered:
+            cursor = candidate
+            ordered.insert(0, cursor)
+        else:
+            break
+    return ordered
+
+
+def paginate_known_columns(
+    known_columns: set[int], home_x: int, max_cols: int, board_width: int = DEFAULT_WIDTH
+) -> list[list[int]]:
+    """Splits `known_columns` into pages of at most `max_cols` columns
+    each, matching the real "far side of the world" second (and
+    further) map -- see module docstring's own Phase 624 addendum for
+    the full sourcing and the two real corpus cases this was checked
+    against.
+
+    Page 1 anchors on whichever known column is closest to `home_x`
+    (`KingdomState.home_province.x` -- falls back cleanly if `home_x`
+    itself isn't known, e.g. no record of the Kingdom's own home in
+    this `GameState`). Each later page anchors on the smallest not-yet-
+    placed column -- arbitrary but deterministic; no real 3-page sample
+    exists in the corpus to confirm this tie-break against, unlike page
+    1's own home-anchored rule (checked against 2 real cases, zero
+    exceptions). When a page's own run is longer than `max_cols`, only
+    the `max_cols` columns closest to that page's own anchor (by
+    run-order cylindrical distance, ties toward the smaller column) are
+    kept -- the rest stay unplaced for a later page.
+    """
+
+    remaining = set(known_columns)
+    pages: list[list[int]] = []
+    first_page = True
+    while remaining:
+        if first_page:
+            anchor = min(remaining, key=lambda c: (_cylindrical_distance(c, home_x, board_width), c))
+        else:
+            anchor = min(remaining)
+        run = _contiguous_run_through(anchor, remaining, board_width)
+        if len(run) > max_cols:
+            run = sorted(run, key=lambda c: (_cylindrical_distance(c, anchor, board_width), c))[:max_cols]
+        pages.append(sorted(run))
+        remaining -= set(run)
+        first_page = False
+    return pages
+
+
+def render_ascii_map(state: GameState, kingdom_id: int, *, columns: set[int] | None = None) -> list[str]:
     """Renders every province this Kingdom's own report shows on the map --
     see module docstring for the exact scope this phase covers (a single,
     continuous map; no name-wrap; "Unowned" always shown, never skipped).
@@ -1125,9 +1261,17 @@ def render_ascii_map(state: GameState, kingdom_id: int) -> list[str]:
     (`state.provinces`, unfiltered by exploration tier -- the same
     "known enough to be worth listing" bar this project's own PROVINCES
     table already uses).
+
+    `columns` (Phase 624, default `None`): when given, only provinces
+    whose `coord.x` is in this set are rendered -- one page of a multi-
+    page "far side of the world" report (`describe_map_report()`'s own
+    Phase 624 addendum). `None` renders everything, exactly this
+    function's own pre-Phase-624 behavior.
     """
 
     provinces = list(state.provinces.values())
+    if columns is not None:
+        provinces = [p for p in provinces if p.coord.x in columns]
     if not provinces:
         return []
 
@@ -1177,14 +1321,22 @@ def render_ascii_map(state: GameState, kingdom_id: int) -> list[str]:
 MAP_REGION_LABEL_RULE = "-" * 78
 
 
-def map_region_label(state: GameState) -> str | None:
+def map_region_label(state: GameState, *, columns: set[int] | None = None) -> str | None:
     """Returns ``"Ice cap"`` when this report's own map (see
     ``render_ascii_map()``, whose province set this reuses exactly) has
     a topmost row at ``y == 1``, else ``None`` -- see the module-level
     comment above ``MAP_REGION_LABEL_RULE`` for the sourced derivation.
+
+    `columns` (Phase 624, default `None`): same restriction as
+    `render_ascii_map()`'s own `columns` parameter -- the Ice-cap check
+    runs per page (confirmed real: a "far side of the world" page can
+    carry its own independent "Ice cap" header, see module docstring's
+    own Phase 624 addendum), not once for the whole known set.
     """
 
     provinces = list(state.provinces.values())
+    if columns is not None:
+        provinces = [p for p in provinces if p.coord.x in columns]
     if not provinces:
         return None
     if min(p.coord.y for p in provinces) == 1:
