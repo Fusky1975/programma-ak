@@ -25830,7 +25830,7 @@ follow-up request after the original 431-435 plan shipped.
   fixing the 15 pre-existing tests): 5250 passed, unchanged from Phase
   624's own count. Ran again with all new tests: 5254 passed (net +4).
 
-- **Phase 626 (current)**: docstring-only fix -- `parser/gw_world.py`'s
+- **Phase 626**: docstring-only fix -- `parser/gw_world.py`'s
   own "Known gaps, deliberately not attempted here" section named two
   items as unresolved (province coordinate assignment/ordering, and
   `governor_leader_id` -> owning-kingdom resolution) that turned out to
@@ -25849,6 +25849,76 @@ follow-up request after the original 431-435 plan shipped.
   now pointing at the real, already-existing resolution.) Zero test
   impact (docstring-only): 5254 passed, unchanged from Phase 625's own
   count, both before and after.
+
+- **Phase 627 (current)**: wires the ASCII map's own layout-*tier*
+  selection trigger (`describe_map_report()`, deferred since Phase 567
+  -- `report/ascii_map.py`'s 6 real cell-width renderers all existed
+  and were tested, but nothing ever picked among them) -- shipped as a
+  labeled, **82% (81/99) accurate** best-effort approximation, not a
+  solved formula, per the user's own explicit "attempt it anyway even
+  if imperfect" direction after two rounds of investigation.
+
+  **The investigation, honestly, including a real methodological
+  correction made mid-session**: an early result (a "main-page-only
+  column count" measure matching 97/99 real reports) turned out to be
+  circular once actually tested against the shipped implementation --
+  that measure is *itself* capped by the very pagination formula
+  (Phase 624) it was being compared against, so a near-perfect match
+  was closer to a restated tautology than an independent discovery.
+  Re-tested honestly with a real independent measure (the Kingdom's own
+  full, *uncapped* home-anchored cylindrical column cluster -- no
+  circular dependency on which tier ends up chosen): **82% (81/99)**.
+  Tracing individual Kingdoms turn-by-turn across all 11 real
+  `Desktop/PROGRAMMA AK/SE3__T*.K*` samples shows why the remaining 18%
+  resists a purely geometric explanation: the real "main page" region
+  is a *historical* artifact that grows via genuine, ongoing
+  exploration (its own `Expl%` climbs well past the initial reveal),
+  then stops for many turns even while a *separate*, equally actively-
+  explored "far side of the world" region keeps growing right
+  alongside it -- sometimes geometrically *adjacent* to the primary
+  region. A single end-of-turn snapshot can measure geometry, not
+  history, so it can never fully separate "historically primary" from
+  "merely touches the primary region now." Also tried and ruled out:
+  total known-column count (same adjacency-conflation problem), widest
+  single print row (worse, ~65%), and per-province `Expl%` as a
+  "genuinely explored vs. merely revealed" discriminator (directly
+  refuted -- far-side provinces show real, substantial `Expl%` growth
+  too, not a flat one-time-reveal value).
+
+  New `report/ascii_map.py select_layout_tier(known_columns, home_x,
+  board_width=DEFAULT_WIDTH) -> int`: finds the known column closest to
+  `home_x` (`KingdomState.home_province.x`, same fallback convention as
+  `paginate_known_columns()`), takes its own *uncapped* `_contiguous_
+  run_through()` (reused directly, Phase 624), and returns the least-
+  dense tier's own `CELL_STRIDE` whose `max_columns_per_page()` covers
+  that cluster -- falls back to the `stride8` floor if none does. New
+  `LAYOUT_TIERS` registry (least-dense to most-dense, `(CELL_STRIDE,
+  render_ascii_map)` through `(STRIDE8_CELL_STRIDE, render_ascii_map_
+  stride8)`) shared by `select_layout_tier()` and `describe_map_
+  report()`. The 5 previously-unwired renderers (`render_ascii_map_
+  dense`/`_stride12`/`_stride10`/`_stride9`/`_stride8`) each gained the
+  same `columns: set[int] | None = None` parameter Phase 624 already
+  added to the wide-tier renderer, since they're now actually reachable
+  in production. `describe_map_report()` calls `select_layout_tier()`
+  once per report and uses the chosen renderer/tier for every page
+  (matches every real sample: a report never switches tiers mid-report).
+
+  Tests: `tests/test_ascii_map.py` gained 11 -- `select_layout_tier()`
+  against a small cluster (stays wide), an exact-fit case per tier, the
+  floor-tier fallback, the home-not-known fallback, a real `SE3__T*.K8`
+  -shaped primary-cluster-alone case (correct), and a matching case
+  demonstrating the function's own documented limitation (a
+  geometrically-adjacent-but-historically-separate far cluster still
+  widens the predicted tier) -- plus a `columns`-parameter test for
+  each of the 5 newly-wired renderers. `tests/test_turn_report.py`'s
+  own Phase 624 multi-page test needed updating: its original 5-column
+  fixture now correctly fits on a single, denser (`dense`-tier) page
+  once tier selection is live, so it no longer exercises pagination --
+  widened to 10 columns (exceeding even the `stride8` floor's own
+  9-column cap) to keep genuinely testing the far-side split. Ran
+  before writing new tests (non-breaking check, after that one fixture
+  fix): 5254 passed, unchanged from Phase 626's own count. Ran again
+  with all new tests: 5265 passed (net +11).
 
 ## Setup
 

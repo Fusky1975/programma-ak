@@ -6499,18 +6499,21 @@ def test_describe_map_report_omits_ice_cap_label_when_topmost_row_is_below_y_1()
 
 
 def test_describe_map_report_splits_into_a_far_side_page_when_too_wide():
-    # Phase 624: wide tier fits 4 columns/page (78 // CELL_STRIDE). 5
-    # known columns spanning the wrap (17,18,1,2,3), home at x=18 --
-    # matches the real SE3__T9-11.K9-shaped corpus case: page 1 keeps
-    # the 4 columns closest to home (1,2,17,18), page 2 gets the 1
-    # column farthest away (3). Page 1's own provinces sit at y=1 (Ice
-    # cap trigger); page 2's own sits at y=5 (no trigger) -- proving the
-    # Ice-cap check runs independently per page, not once globally.
+    # Phase 627: with tier auto-selection, even the densest real tier
+    # (stride8) only fits 9 columns/page -- 10 known columns spanning
+    # the wrap (13-18,1-4), home at x=18, guarantees a far-side page
+    # regardless of which tier gets picked. `select_layout_tier()`
+    # picks stride8 here (cluster of 10 exceeds every tier's own cap,
+    # floor tier used); `paginate_known_columns()` then keeps the 9
+    # columns closest to home on page 1, pushing the 1 farthest (13)
+    # to page 2. Page 1's own provinces sit at y=1 (Ice cap trigger);
+    # page 2's own sits at y=5 (no trigger) -- proving the Ice-cap
+    # check runs independently per page, not once globally.
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(18, 1)))
-    for x in (17, 18, 1, 2):
+    for x in (14, 15, 16, 17, 18, 1, 2, 3, 4):
         state.add_province(ProvinceState(HexCoord(x, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name=f"P{x}"))
-    state.add_province(ProvinceState(HexCoord(3, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Farland"))
+    state.add_province(ProvinceState(HexCoord(13, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Farland"))
 
     lines = describe_map_report(state, 1)
     text = "\n".join(lines)
@@ -6519,7 +6522,7 @@ def test_describe_map_report_splits_into_a_far_side_page_when_too_wide():
     assert "We also drew up this map of lands on the far side of the world:" in text
     assert lines.count("Ice cap") == 1
     assert lines.count("Key:   _ Plains   + Forest   & Jungle   ^ Mountain   . Desert     Sea") == 1
-    for name in ("P17", "P18", "P1", "P2", "Farland"):
+    for name in ("P14", "P15", "P16", "P17", "P18", "P1", "P2", "P3", "P4", "Farland"):
         assert name in text
     # The far-side page's own intro directly follows the previous
     # page's last grid row -- no blank line in between.

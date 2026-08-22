@@ -1220,12 +1220,12 @@ from ak_engine.models.temper import TEMPER_ABBREVIATION, TEMPER_NAME
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_CATEGORY, TREASURE_LABEL, TREASURE_NAME, Treasure, TreasureCategory
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
 from ak_engine.report.ascii_map import (
-    CELL_STRIDE,
+    LAYOUT_TIERS,
     MAP_REGION_LABEL_RULE,
     map_region_label,
     max_columns_per_page,
     paginate_known_columns,
-    render_ascii_map,
+    select_layout_tier,
 )
 from ak_engine.report.prose import render
 from ak_engine.turn.assassin_guild import GuildAssassinationOutcome
@@ -8948,10 +8948,15 @@ def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
     world" second (and further) page -- `report/ascii_map.py paginate_
     known_columns()`'s own home-anchored windowing decides which
     columns land on which page; see that function's own docstring and
-    the module's Phase 624 addendum for the full sourcing. Still only
-    ever uses the wide-tier renderer (`render_ascii_map()`) -- which of
-    the 6 real layout tiers a report should use is a separate, still-
-    unsolved question this phase doesn't touch.
+    the module's Phase 624 addendum for the full sourcing.
+
+    Phase 627: which of the 6 real layout tiers to use is now chosen by
+    `select_layout_tier()` -- a labeled, 82%-accurate best-effort
+    approximation, not a solved formula (see that function's own
+    docstring for why the remaining gap needs real per-turn history
+    this project can't recover from report snapshots). Every page of a
+    given report uses the same chosen tier, matching every real sample
+    (a report's own far-side page never switches tiers mid-report).
     """
 
     known_columns = {p.coord.x for p in state.provinces.values()}
@@ -8961,12 +8966,14 @@ def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
     kingdom = state.kingdoms.get(kingdom_id)
     home_x = kingdom.home_province.x if kingdom is not None else min(known_columns)
 
-    pages = paginate_known_columns(known_columns, home_x, max_columns_per_page(CELL_STRIDE))
+    chosen_stride = select_layout_tier(known_columns, home_x)
+    renderer = next(render for stride, render in LAYOUT_TIERS if stride == chosen_stride)
+    pages = paginate_known_columns(known_columns, home_x, max_columns_per_page(chosen_stride))
 
     lines: list[str] = ["", "", f"  {_MAP_REPORT_INTRO} ", ""]
     for page_index, page_columns in enumerate(pages):
         columns = set(page_columns)
-        grid_lines = render_ascii_map(state, kingdom_id, columns=columns)
+        grid_lines = renderer(state, kingdom_id, columns=columns)
         region_label = map_region_label(state, columns=columns)
         region_lines = [region_label, MAP_REGION_LABEL_RULE] if region_label else []
 

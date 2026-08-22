@@ -562,9 +562,35 @@ docstring claiming an "any record of it" convention -- a real,
 separate, pre-existing gap noticed while investigating this, deferred
 rather than retrofitted into a large pre-existing test suite that
 doesn't set `ProvinceState.explored_percent_by_kingdom` anywhere).
+
+**Phase 627 -- the layout-tier selection trigger, a best-effort
+approximation, not solved.** `select_layout_tier()` picks the least-
+dense tier whose own `max_columns_per_page()` covers the Kingdom's
+uncapped, home-anchored cylindrical column cluster -- **82% accurate
+against the real corpus (81/99), the ceiling for what a single-
+snapshot geometric analysis can achieve, not a discovered formula**.
+Tracing individual Kingdoms turn-by-turn shows the real "main page"
+region is a *historical* artifact -- it grows via real, ongoing
+exploration (its own `Expl%` climbs well past the initial reveal, not
+a flat one-time value) for a while, then stops for many turns even as
+a *separate*, equally actively-explored "far side of the world"
+region keeps growing right alongside it -- sometimes geometrically
+*adjacent* to the primary region. A snapshot can measure geometry, not
+history, so a purely geometric trigger can never fully separate "part
+of the historically-primary region" from "happens to touch it now."
+Several other candidates were tried and ruled out first: total known-
+column count (fails for the same adjacency-conflation reason), widest
+single print row (worse, ~65%), and per-province `Expl%` as a
+"genuinely explored vs. merely revealed" discriminator (directly
+refuted -- far-side provinces show real, substantial `Expl%` growth
+too). Shipped anyway, at the user's own explicit request, as the best
+available approximation -- see `select_layout_tier()`'s own docstring
+for the full account.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.game_state import GameState, ProvinceState
@@ -1390,15 +1416,19 @@ def render_cell_stride12(state: GameState, province: ProvinceState, *, viewing_k
     return [line1, *middle_lines, last_line]
 
 
-def render_ascii_map_stride12(state: GameState, kingdom_id: int) -> list[str]:
+def render_ascii_map_stride12(state: GameState, kingdom_id: int, *, columns: set[int] | None = None) -> list[str]:
     """The stride-12 layout's own analogue of `render_ascii_map()` -- see
-    module docstring's own Phase 569 section. Nothing currently calls
-    this: which layout a given report actually uses is still an open
-    question (see module docstring's own deferred-gaps list), so
-    `describe_map_report()` keeps calling the wide renderer above.
+    module docstring's own Phase 569 section. Wired into `describe_map_
+    report()` since Phase 627 -- `report/ascii_map.py select_layout_
+    tier()` picks which of the 6 real layouts a given report uses.
+
+    `columns` (Phase 627): same as `render_ascii_map()`'s own parameter
+    of the same name -- restricts rendering to one page's own columns.
     """
 
     provinces = list(state.provinces.values())
+    if columns is not None:
+        provinces = [p for p in provinces if p.coord.x in columns]
     if not provinces:
         return []
 
@@ -1486,15 +1516,19 @@ def render_cell_stride10(state: GameState, province: ProvinceState, *, viewing_k
     return lines
 
 
-def render_ascii_map_stride10(state: GameState, kingdom_id: int) -> list[str]:
+def render_ascii_map_stride10(state: GameState, kingdom_id: int, *, columns: set[int] | None = None) -> list[str]:
     """The stride-10 layout's own analogue of `render_ascii_map()` -- see
-    module docstring's own Phase 570 section. Nothing currently calls
-    this: which layout a given report actually uses is still an open
-    question (see module docstring's own deferred-gaps list), so
-    `describe_map_report()` keeps calling the wide renderer above.
+    module docstring's own Phase 570 section. Wired into `describe_map_
+    report()` since Phase 627 -- `report/ascii_map.py select_layout_
+    tier()` picks which of the 6 real layouts a given report uses.
+
+    `columns` (Phase 627): same as `render_ascii_map()`'s own parameter
+    of the same name -- restricts rendering to one page's own columns.
     """
 
     provinces = list(state.provinces.values())
+    if columns is not None:
+        provinces = [p for p in provinces if p.coord.x in columns]
     if not provinces:
         return []
 
@@ -1572,15 +1606,19 @@ def render_cell_stride9(state: GameState, province: ProvinceState, *, viewing_ki
     return lines
 
 
-def render_ascii_map_stride9(state: GameState, kingdom_id: int) -> list[str]:
+def render_ascii_map_stride9(state: GameState, kingdom_id: int, *, columns: set[int] | None = None) -> list[str]:
     """The stride-9 layout's own analogue of `render_ascii_map()` -- see
-    module docstring's own Phase 571 section. Nothing currently calls
-    this: which layout a given report actually uses is still an open
-    question (see module docstring's own deferred-gaps list), so
-    `describe_map_report()` keeps calling the wide renderer above.
+    module docstring's own Phase 571 section. Wired into `describe_map_
+    report()` since Phase 627 -- `report/ascii_map.py select_layout_
+    tier()` picks which of the 6 real layouts a given report uses.
+
+    `columns` (Phase 627): same as `render_ascii_map()`'s own parameter
+    of the same name -- restricts rendering to one page's own columns.
     """
 
     provinces = list(state.provinces.values())
+    if columns is not None:
+        provinces = [p for p in provinces if p.coord.x in columns]
     if not provinces:
         return []
 
@@ -1641,15 +1679,19 @@ def render_cell_stride8(state: GameState, province: ProvinceState, *, viewing_ki
     return [line1, line2, line3, line4]
 
 
-def render_ascii_map_stride8(state: GameState, kingdom_id: int) -> list[str]:
+def render_ascii_map_stride8(state: GameState, kingdom_id: int, *, columns: set[int] | None = None) -> list[str]:
     """The stride-8 layout's own analogue of `render_ascii_map()` -- see
-    module docstring's own Phase 572 section. Nothing currently calls
-    this: which layout a given report actually uses is still an open
-    question (see module docstring's own deferred-gaps list), so
-    `describe_map_report()` keeps calling the wide renderer above.
+    module docstring's own Phase 572 section. Wired into `describe_map_
+    report()` since Phase 627 -- `report/ascii_map.py select_layout_
+    tier()` picks which of the 6 real layouts a given report uses.
+
+    `columns` (Phase 627): same as `render_ascii_map()`'s own parameter
+    of the same name -- restricts rendering to one page's own columns.
     """
 
     provinces = list(state.provinces.values())
+    if columns is not None:
+        provinces = [p for p in provinces if p.coord.x in columns]
     if not provinces:
         return []
 
@@ -1678,15 +1720,19 @@ def render_ascii_map_stride8(state: GameState, kingdom_id: int) -> list[str]:
     return lines
 
 
-def render_ascii_map_dense(state: GameState, kingdom_id: int) -> list[str]:
+def render_ascii_map_dense(state: GameState, kingdom_id: int, *, columns: set[int] | None = None) -> list[str]:
     """The dense layout's own analogue of `render_ascii_map()` -- see
-    module docstring's own Phase 566 section. Nothing currently calls
-    this: which layout a given report actually uses is still an open
-    question (see module docstring's own deferred-gaps list), so
-    `describe_map_report()` keeps calling the wide renderer above.
+    module docstring's own Phase 566 section. Wired into `describe_map_
+    report()` since Phase 627 -- `report/ascii_map.py select_layout_
+    tier()` picks which of the 6 real layouts a given report uses.
+
+    `columns` (Phase 627): same as `render_ascii_map()`'s own parameter
+    of the same name -- restricts rendering to one page's own columns.
     """
 
     provinces = list(state.provinces.values())
+    if columns is not None:
+        provinces = [p for p in provinces if p.coord.x in columns]
     if not provinces:
         return []
 
@@ -1711,3 +1757,77 @@ def render_ascii_map_dense(state: GameState, kingdom_id: int) -> list[str]:
             lines.append(line.rstrip())
 
     return lines
+
+
+# -- Phase 627: layout-tier selection trigger -- see module docstring's
+# own Phase 627 addendum for the full sourcing (82% real-corpus match --
+# the best achievable from a single-snapshot analysis, see `select_
+# layout_tier()`'s own docstring for why the remaining gap needs real
+# per-turn history this project doesn't have; shipped anyway as a
+# labeled best-effort approximation, not claimed as solved).
+
+# Least-dense first (fewest columns/page, biggest cells) to most-dense
+# last (the stride8 floor) -- both `select_layout_tier()` and
+# `describe_map_report()` share this one registry, defined here (after
+# every renderer above) since `render_ascii_map_dense` is defined last
+# in this file despite being the *second*-least-dense tier.
+LAYOUT_TIERS: tuple[tuple[int, Callable[..., list[str]]], ...] = (
+    (CELL_STRIDE, render_ascii_map),
+    (DENSE_CELL_STRIDE, render_ascii_map_dense),
+    (STRIDE12_CELL_STRIDE, render_ascii_map_stride12),
+    (STRIDE10_CELL_STRIDE, render_ascii_map_stride10),
+    (STRIDE9_CELL_STRIDE, render_ascii_map_stride9),
+    (STRIDE8_CELL_STRIDE, render_ascii_map_stride8),
+)
+
+
+def select_layout_tier(known_columns: set[int], home_x: int, board_width: int = DEFAULT_WIDTH) -> int:
+    """Picks which of the 6 real layout tiers a report should use --
+    returns that tier's own `CELL_STRIDE` (look it up in `_LAYOUT_
+    TIERS` for the matching renderer).
+
+    The tier is the least-dense one whose own `max_columns_per_page()`
+    exactly accommodates the Kingdom's own *uncapped* home-anchored
+    cylindrical column cluster -- computed by finding whichever known
+    column is closest to `home_x` (`KingdomState.home_province.x`,
+    same fallback as `paginate_known_columns()`'s own page-1 anchor
+    when `home_x` itself isn't known) and taking `_contiguous_run_
+    through()` from there, with **no** page-size cap. Falls back to
+    the floor tier (`stride8`) when even that can't hold the whole
+    cluster.
+
+    **82% accurate against the real corpus (81/99), not more -- this is
+    a genuine, labeled approximation, not a solved formula.** Directly
+    tracing individual Kingdoms turn-by-turn across all 11 real
+    `Desktop/PROGRAMMA AK/SE3__T*.K*` samples shows the real "main
+    page" region grows incrementally over many turns via real, ongoing
+    exploration (its own per-province `Expl%` climbs well past the 1%
+    floor over time, same as the main map), then *stops* growing for a
+    stretch of turns even while a *separate* "far side of the world"
+    region keeps actively growing right alongside it -- including
+    cases where that separate region is geometrically *adjacent* to
+    the primary one (e.g. one real Kingdom's own primary cluster ends
+    at column 6 while its own actively-explored far-side region starts
+    at column 7, immediately next to it). A geometric snapshot
+    analysis -- this function included -- can't distinguish "belongs
+    to the primary region" from "geometrically touches the primary
+    region," because the real distinction is historical: *which*
+    region was first established as primary, not *where* it currently
+    sits on the map. That needs real per-turn state (when a region was
+    first fixed, and by what rule) this project has no way to recover
+    from end-of-turn report snapshots alone -- tried and ruled out:
+    total known-column count, widest single print row, and per-
+    province `Expl%` as a "genuinely explored vs. merely revealed"
+    discriminator (refuted directly: far-side provinces show real,
+    substantial `Expl%` growth too, not a flat one-time reveal).
+    """
+
+    if known_columns:
+        anchor = min(known_columns, key=lambda c: (_cylindrical_distance(c, home_x, board_width), c))
+    else:
+        anchor = home_x
+    cluster_size = len(_contiguous_run_through(anchor, known_columns, board_width))
+    for cell_stride, _renderer in LAYOUT_TIERS:
+        if cluster_size <= max_columns_per_page(cell_stride):
+            return cell_stride
+    return LAYOUT_TIERS[-1][0]

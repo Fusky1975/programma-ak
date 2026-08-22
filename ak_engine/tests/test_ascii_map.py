@@ -43,6 +43,7 @@ from ak_engine.report.ascii_map import (
     render_cell_stride9,
     render_cell_stride10,
     render_cell_stride12,
+    select_layout_tier,
     stride8_cell_pixel_column,
     stride9_cell_pixel_column,
     stride10_cell_pixel_column,
@@ -905,3 +906,118 @@ def test_map_region_label_columns_checks_only_that_pages_own_rows():
 
     assert map_region_label(state, columns={1}) is None
     assert map_region_label(state, columns={9}) == "Ice cap"
+
+
+# -- Phase 627: select_layout_tier() -- a labeled, 82%-accurate (81/99
+# real corpus) best-effort approximation, not a solved formula; see
+# that function's own docstring for the full account of why.
+
+
+def test_select_layout_tier_small_cluster_stays_wide():
+    assert select_layout_tier({6, 7, 8, 9}, home_x=7) == CELL_STRIDE
+
+
+def test_select_layout_tier_picks_the_exact_fitting_tier():
+    assert select_layout_tier({6, 7, 8, 9, 10}, home_x=8) == DENSE_CELL_STRIDE
+    assert select_layout_tier({6, 7, 8, 9, 10, 11}, home_x=8) == STRIDE12_CELL_STRIDE
+    assert select_layout_tier(set(range(6, 13)), home_x=9) == STRIDE10_CELL_STRIDE
+    assert select_layout_tier(set(range(6, 14)), home_x=9) == STRIDE9_CELL_STRIDE
+    assert select_layout_tier(set(range(6, 15)), home_x=9) == STRIDE8_CELL_STRIDE
+
+
+def test_select_layout_tier_falls_back_to_the_floor_when_no_tier_fits():
+    # 10 columns exceeds every real tier's own cap (stride8's own 9).
+    assert select_layout_tier(set(range(1, 11)), home_x=5) == STRIDE8_CELL_STRIDE
+
+
+def test_select_layout_tier_home_not_known_falls_back_to_closest():
+    assert select_layout_tier({10, 11, 12}, home_x=9) == CELL_STRIDE
+
+
+def test_select_layout_tier_picks_the_right_tier_for_a_real_primary_cluster_alone():
+    # Real SE3__T*.K8-shaped primary cluster (1-6,17,18 -- 8 columns,
+    # home x=5) in isolation resolves to stride9 (cap 8), matching that
+    # real report's own actual tier.
+    primary = {1, 2, 3, 4, 5, 6, 17, 18}
+    assert select_layout_tier(primary, home_x=5) == STRIDE9_CELL_STRIDE
+
+
+def test_select_layout_tier_known_limitation_a_geometrically_adjacent_far_cluster_still_widens_it():
+    # Documented limitation (see the function's own docstring): this is
+    # a purely geometric approximation, so a *further* cluster that's
+    # merely adjacent to the real primary one -- even if it was
+    # actually explored separately and belongs on a "far side" page in
+    # the real game -- still gets merged in, over-predicting density.
+    # The same SE3__T*.K8-shaped primary cluster (1-6,17,18) picks
+    # stride9 alone (previous test), but picks the denser stride8 once
+    # its own real, geometrically-touching far cluster (7,8,9) is
+    # included too, even though the real report stays on stride9.
+    primary_plus_adjacent_far = {1, 2, 3, 4, 5, 6, 17, 18, 7, 8, 9}
+    assert select_layout_tier(primary_plus_adjacent_far, home_x=5) == STRIDE8_CELL_STRIDE
+
+
+def test_render_ascii_map_dense_columns_filters_to_the_given_page():
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    full = render_ascii_map_dense(state, 2)
+    restricted = render_ascii_map_dense(state, 2, columns={1})
+
+    assert full != restricted
+    assert "Alderwood" in "".join(restricted)
+    assert "Farland" not in "".join(restricted)
+
+
+def test_render_ascii_map_stride12_columns_filters_to_the_given_page():
+    # Narrower tiers truncate a 9-char name like "Alderwood" -- check
+    # for the coordinate marker instead, which always survives.
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    full = render_ascii_map_stride12(state, 2)
+    restricted = render_ascii_map_stride12(state, 2, columns={1})
+
+    assert full != restricted
+    assert "0101" in "".join(restricted)
+    assert "0901" not in "".join(restricted)
+
+
+def test_render_ascii_map_stride10_columns_filters_to_the_given_page():
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    full = render_ascii_map_stride10(state, 2)
+    restricted = render_ascii_map_stride10(state, 2, columns={1})
+
+    assert full != restricted
+    assert "0101" in "".join(restricted)
+    assert "0901" not in "".join(restricted)
+
+
+def test_render_ascii_map_stride9_columns_filters_to_the_given_page():
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    full = render_ascii_map_stride9(state, 2)
+    restricted = render_ascii_map_stride9(state, 2, columns={1})
+
+    assert full != restricted
+    assert "0101" in "".join(restricted)
+    assert "0901" not in "".join(restricted)
+
+
+def test_render_ascii_map_stride8_columns_filters_to_the_given_page():
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    full = render_ascii_map_stride8(state, 2)
+    restricted = render_ascii_map_stride8(state, 2, columns={1})
+
+    assert full != restricted
+    assert "0101" in "".join(restricted)
+    assert "0901" not in "".join(restricted)
