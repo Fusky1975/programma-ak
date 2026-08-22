@@ -166,6 +166,19 @@ class Maneuver(IntEnum):
     SCOUT = 13
 
 
+# Phase 618: the Search Encounter Plan tactics followed by a sub-object
+# token in the real ``Tac_Bytes`` list (``HostAK/TP/DEF2.PAS`` ``W_List``/
+# ``R_List``) -- a spell/item/gift id for CAST/USE_MI/GIVE. ``SAY`` is
+# deliberately excluded: its own argument is free text on its own
+# line(s), not a token in this list at all (see ``turn/search_decode.py``
+# ``SearchTactic.say_text`` and ``parser/k1_moves.py``'s own Phase 618
+# addendum for how it's recovered instead). Defined here (not in
+# ``turn/search_decode.py``, its only consumer before this phase) so
+# ``parser/k1_moves.py`` -- a foundational file-format layer -- can share
+# it without depending on `turn/`, a higher business-logic layer.
+TACTICS_WITH_SUB_OBJECT = frozenset({Maneuver.CAST, Maneuver.USE_MI, Maneuver.GIVE})
+
+
 def maneuver_from_int(value: int) -> "Maneuver | int":
     """Map a raw maneuver int to ``Maneuver`` where valid, else keep it raw."""
 

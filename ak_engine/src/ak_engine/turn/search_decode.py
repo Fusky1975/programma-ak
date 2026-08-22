@@ -23,9 +23,34 @@ Sourced from ``HostAK/TP/DEF2.PAS``'s ``R_HPlan``/``W_HPlan``:
   always-``0`` ``extra[0]`` (see ``turn/recruit_decode.py``).
 - The remainder of ``extra`` is a ``-1``-terminated **tactic list**
   (``R_List(..., Tac_Bytes, ...)``): each entry is a ``Maneuver``
-  ordinal, and only ``CAST``, ``USE_MI``, and ``GIVE`` are followed by a
-  sub-object (a spell id, magic-item id, or gift-item id respectively --
-  ``CTBOTH.PAS``'s ``maneuver`` enum / ``W_List``'s ``Tac_Bytes`` mode).
+  ordinal, and ``CAST``, ``USE_MI``, and ``GIVE`` (``models.enums
+  TACTICS_WITH_SUB_OBJECT``) are followed by a sub-object (a spell id,
+  magic-item id, or gift-item id respectively -- ``CTBOTH.PAS``'s
+  ``maneuver`` enum / ``W_List``'s ``Tac_Bytes`` mode).
+
+- **Phase 618**: ``SAY`` (the real Pascal ``'SA'`` tactic) is followed
+  by something else entirely -- free text on its own line(s),
+  terminated by a blank line (``DEF2.PAS W_List``'s own ``CSay`` branch:
+  ``WrCr; WrS(tacptr^.sayeth^); WrCr; WrCr`` -- a forced newline, the
+  text, then a real blank-line terminator; ``R_List``'s own ``CSay``
+  branch reads it back the same way, ``REPEAT READLN(tmp) ... UNTIL
+  tmp=''``). Confirmed directly by the user: the text sits on its own
+  line, unquoted -- rulebook examples like ``"SA-y the character
+  number... e.g., 'SA Tell me about character 1.'"`` (``Special
+  Features.md`` section 5.4) and the user's own example plan (``CA-FI,
+  SA "Take that!", FI, ME, ME``, used to answer a riddle or reply to a
+  guardian, not only to feed the 5 Oracles/Recharge/Grant Wish/Gamble
+  their own numeric argument) describe the *mechanic*, not the literal
+  on-disk quoting. Since this doesn't fit a plain integer, ``parser/
+  k1_moves.py`` recovers it directly from the move file's own raw lines
+  (not from the generic flat-integer tokenizer every other action type
+  uses) and stores it as the one ``str`` element ``PlanPhase.extra`` is
+  ever allowed to contain, positioned exactly where ``SAY``'s own
+  ordinal appears -- see that module's own Phase 618 addendum for the
+  full recovery algorithm. No real sample ``AK3__T*.K1`` file contains
+  an actual ``SAY`` tactic (confirmed below), so this is built from the
+  Pascal source's own logic plus the user's direct confirmation, not a
+  real byte-level example.
 
 Validated against real data: all 12 real Search phases across the 10
 sample files decode to a clean, fully-consumed tactic list (no leftover
@@ -46,16 +71,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ak_engine.models.enums import Maneuver, maneuver_from_int
+from ak_engine.models.enums import TACTICS_WITH_SUB_OBJECT, Maneuver, maneuver_from_int
 from ak_engine.models.plan import PlanPhase
-
-_TACTICS_WITH_SUB_OBJECT = frozenset({Maneuver.CAST, Maneuver.USE_MI, Maneuver.GIVE})
 
 
 @dataclass(slots=True)
 class SearchTactic:
     maneuver: Maneuver | int
     sub_object: int | None = None  # spell/item id -- only set for CAST/USE_MI/GIVE
+    # Phase 618: SAY's own free-text argument (recovered from the raw
+    # move file's own lines by parser/k1_moves.py, not a plain int) --
+    # only set for SAY. A separate field rather than overloading
+    # sub_object with a different type/meaning, per this module's own
+    # docstring addendum above.
+    say_text: str | None = None
 
 
 @dataclass(slots=True)
@@ -81,9 +110,13 @@ def decode_search_phase(phase: PlanPhase) -> SearchRequest:
         maneuver = maneuver_from_int(tokens[i])
         i += 1
         sub_object = None
-        if maneuver in _TACTICS_WITH_SUB_OBJECT and i < len(tokens):
+        say_text = None
+        if maneuver is Maneuver.SAY and i < len(tokens):
+            say_text = str(tokens[i])
+            i += 1
+        elif maneuver in TACTICS_WITH_SUB_OBJECT and i < len(tokens):
             sub_object = tokens[i]
             i += 1
-        tactics.append(SearchTactic(maneuver=maneuver, sub_object=sub_object))
+        tactics.append(SearchTactic(maneuver=maneuver, sub_object=sub_object, say_text=say_text))
 
     return SearchRequest(feature_id=phase.obj, unconfirmed_extra0=extra0, tactics=tactics)

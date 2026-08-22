@@ -37,6 +37,88 @@ def test_skill_table_always_has_31_values(path: Path) -> None:
     assert len(kingdom.skills.raw_values) == 31
 
 
+# -- Phase 618: Search's own SAY tactic --
+#
+# No real AK3__T*.K1 sample contains an actual SAY tactic (confirmed by
+# turn/search_decode.py's own docstring), so these are explicitly
+# hand-built synthetic fixtures -- built from HostAK/TP/DEF2.PAS's own
+# W_List/R_List logic plus the user's direct confirmation of the on-disk
+# shape (free text on its own line(s), no quotes, terminated by a blank
+# line), not from a real byte-level example. The boilerplate/header
+# shape below mirrors AK3__T1.K1's own real structure exactly (see
+# test_ak3_t1_exact_values below) so only the Search phase itself is
+# novel.
+_SYNTHETIC_HEADER = """\
+    This moves file contains the moves of your King and his characters.
+ It is read in by the game moderator's computer.  Don't alter anything!
+ If you have any comments, write them at the very bottom of this file.
+
+ Moves for Testia's Kingdom (AK3__T1.K1):
+ M 27 1 0 101 1 15 1
+ 0 2 0 2 0 2 1 3 1 3 0 0 3 5 0 2 0 2 0 2 2 4 0 2 0 2 0 2 1 3 3
+ Testerman
+ Shaman
+ 1 -Testerman
+ AP: 0 4 SP: 10 -1 P0 : 12 6 0 P1 : 12 6 0
+ P2 : 12 6 0 P3 : 2 1 0 4\
+"""
+
+
+def test_search_phase_say_tactic_recovers_free_text_and_resyncs_to_next_phase(tmp_path: Path) -> None:
+    # Search feature 1, tactic list: SAY "Take that!", then the list's
+    # own -1 terminator on a fresh line -- proves both the text recovery
+    # itself and that the flat token index resumes exactly where P4
+    # (on the very next line) is expected next.
+    text = _SYNTHETIC_HEADER + "\nTake that!\n\n-1 P4 : 0 104 0 \n255\n"
+    path = tmp_path / "synthetic_say.K1"
+    path.write_text(text, encoding="utf-8")
+
+    kingdom = parse_k1_moves_file(path)
+
+    p3 = kingdom.leaders[0].plan.segments[0].phases["P3"]
+    assert p3.action == ActionCode.SEARCH
+    assert p3.obj == 1
+    assert p3.extra == [0, 4, "Take that!", -1]
+
+    p4 = kingdom.leaders[0].plan.segments[0].phases["P4"]
+    assert p4.action == ActionCode.LMOVE
+    assert p4.obj == 104
+
+
+def test_search_phase_say_tactic_multi_line_text_is_joined_with_spaces(tmp_path: Path) -> None:
+    text = _SYNTHETIC_HEADER + "\nFirst line\nSecond line\n\n-1 P4 : 0 104 0 \n255\n"
+    path = tmp_path / "synthetic_say_multiline.K1"
+    path.write_text(text, encoding="utf-8")
+
+    kingdom = parse_k1_moves_file(path)
+
+    p3 = kingdom.leaders[0].plan.segments[0].phases["P3"]
+    assert p3.extra == [0, 4, "First line Second line", -1]
+
+
+def test_search_phase_say_tactic_empty_text_is_a_real_edge_case_not_an_error(tmp_path: Path) -> None:
+    # A blank line immediately after the SAY ordinal's own line -- DEF2.PAS's
+    # own reader (`REPEAT READLN(tmp) UNTIL tmp=''`) handles this cleanly,
+    # exiting on the very first (blank) read with an empty sayeth.
+    text = _SYNTHETIC_HEADER + "\n\n-1 P4 : 0 104 0 \n255\n"
+    path = tmp_path / "synthetic_say_empty.K1"
+    path.write_text(text, encoding="utf-8")
+
+    kingdom = parse_k1_moves_file(path)
+
+    p3 = kingdom.leaders[0].plan.segments[0].phases["P3"]
+    assert p3.extra == [0, 4, "", -1]
+
+
+def test_search_phase_say_tactic_never_terminated_raises(tmp_path: Path) -> None:
+    text = _SYNTHETIC_HEADER + "\nTake that!\n255\n"
+    path = tmp_path / "synthetic_say_malformed.K1"
+    path.write_text(text, encoding="utf-8")
+
+    with pytest.raises(K1ParseError, match="never terminated by a blank line"):
+        parse_k1_moves_file(path)
+
+
 def test_ak3_t1_exact_values() -> None:
     kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T1.K1")
 

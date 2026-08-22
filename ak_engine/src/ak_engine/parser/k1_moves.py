@@ -3,6 +3,25 @@
 Not to be confused with the turn-report .K1 files produced by the original
 engine (e.g. SE3__T0.K1), which are unrelated narrative text and are not
 handled here.
+
+**Phase 618 -- Search's own ``SAY`` tactic**: every phase's ``action``/
+``obj``/``extra`` values are ordinarily read by ``consume_ints()`` off
+one flat, whitespace-tokenized stream (line boundaries and blank lines
+already discarded -- see ``parser/tokens.py flatten_tokens()``). A
+Search phase's own ``SAY`` Encounter Plan tactic breaks that model: its
+argument is free text on its own line(s), terminated by a blank line
+(``turn/search_decode.py``'s own module docstring has the full Pascal
+citation and the user's direct confirmation of the on-disk shape).
+``_build_leader()`` therefore also keeps ``flatten_tokens_with_lines()``'s
+own per-token line map (and the raw ``body_lines``) alongside the flat
+token stream, threaded down through every parsing function below, so
+that the moment a Search phase's own tactic-list walk (``_consume_
+search_extra()``) reaches a ``SAY`` ordinal, it can jump back to the
+original lines and recover the text directly (``_recover_say_text()``),
+then resynchronize the flat token index past whatever it consumed.
+Every other phase/action type is completely unaffected -- see
+``_parse_segment()``'s own Phase 618 addendum for exactly where the two
+paths split.
 """
 
 from __future__ import annotations
@@ -11,12 +30,19 @@ import re
 import warnings
 from pathlib import Path
 
-from ak_engine.models.enums import ActionCode, Spell, action_from_int
+from ak_engine.models.enums import (
+    TACTICS_WITH_SUB_OBJECT,
+    ActionCode,
+    Maneuver,
+    Spell,
+    action_from_int,
+    maneuver_from_int,
+)
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader, SkillTable
 from ak_engine.models.leader import Leader
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.parser.errors import K1ParseError
-from ak_engine.parser.tokens import consume_ints, flatten_tokens, match_leader_header
+from ak_engine.parser.tokens import consume_ints, flatten_tokens_with_lines, is_keyword, match_leader_header
 
 _MOVES_FOR_RE = re.compile(r"Moves for (.+)'s Kingdom \((.+)\):")
 _EXPECTED_SKILL_VALUES = 31  # observed across all AK3__T*.K1 samples; not yet 15 clean pairs
@@ -139,14 +165,23 @@ def _parse_leader_blocks(lines: list[str], start: int, path: Path) -> tuple[list
                 leaders.append(_build_leader(current_id, current_name, body_lines))
             current_id, current_name = header
             body_lines = []
-        elif stripped:
-            if current_id is None:
-                raise K1ParseError(
-                    "unexpected content before first leader block",
-                    line_number=i,
-                    line=line,
-                )
+        elif current_id is not None:
+            # Phase 618: blank lines *within* a leader block are kept too
+            # (previously dropped here, `elif stripped:`) -- a Search
+            # phase's own SAY tactic needs a real blank line to mark
+            # where its free text ends (see `_recover_say_text()`).
+            # Harmless for every other line: `flatten_tokens_with_lines()`
+            # already produces zero tokens for a blank line, so nothing
+            # about the flat token stream changes, only the line indices
+            # `token_line` reports (never observed outside this phase's
+            # own SAY recovery).
             body_lines.append(line)
+        elif stripped:
+            raise K1ParseError(
+                "unexpected content before first leader block",
+                line_number=i,
+                line=line,
+            )
         i += 1
 
     if sentinel_idx is None:
@@ -160,8 +195,10 @@ def _parse_leader_blocks(lines: list[str], start: int, path: Path) -> tuple[list
 
 
 def _build_leader(leader_id: int, name: str | None, body_lines: list[str]) -> Leader:
-    tokens = flatten_tokens(body_lines)
-    plan, i = _parse_action_plan(tokens, 0, leader_id, owner_desc=f"leader {leader_id}")
+    tokens, token_line = flatten_tokens_with_lines(body_lines)
+    plan, i = _parse_action_plan(
+        tokens, 0, leader_id, owner_desc=f"leader {leader_id}", token_line=token_line, lines=body_lines
+    )
     if i != len(tokens):
         raise K1ParseError(f"leader {leader_id}: unexpected trailing tokens after plan: {tokens[i:]!r}")
 
@@ -169,7 +206,7 @@ def _build_leader(leader_id: int, name: str | None, body_lines: list[str]) -> Le
 
 
 def _parse_action_plan(
-    tokens: list[str], i: int, leader_id: int | None, *, owner_desc: str
+    tokens: list[str], i: int, leader_id: int | None, *, owner_desc: str, token_line: list[int], lines: list[str]
 ) -> tuple[ActionPlan, int]:
     """Parse as many consecutive ``AP:`` segments as appear at ``i``.
 
@@ -177,16 +214,22 @@ def _parse_action_plan(
     nested Hire/Charm/Resurrection character's embedded plan (see
     ``models/plan.py``'s module docstring) -- the two are structurally
     identical, just entered from a different call site.
+
+    ``token_line``/``lines`` (Phase 618) are threaded through purely so a
+    nested plan can also decode a Search phase's own ``SAY`` tactic
+    correctly -- see this module's own docstring.
     """
 
     segments: list[PlanSegment] = []
     while i < len(tokens) and tokens[i] == "AP:":
-        segment, i = _parse_segment(tokens, i, owner_desc=owner_desc)
+        segment, i = _parse_segment(tokens, i, owner_desc=owner_desc, token_line=token_line, lines=lines)
         segments.append(segment)
     return ActionPlan(leader_id=leader_id, segments=segments), i
 
 
-def _parse_segment(tokens: list[str], i: int, *, owner_desc: str) -> tuple[PlanSegment, int]:
+def _parse_segment(
+    tokens: list[str], i: int, *, owner_desc: str, token_line: list[int], lines: list[str]
+) -> tuple[PlanSegment, int]:
     """Parse one ``AP: <start> <end> SP: ... P<start>..P<end>`` group.
 
     Phases are read for exactly the labels in ``range(plan_start,
@@ -214,20 +257,147 @@ def _parse_segment(tokens: list[str], i: int, *, owner_desc: str) -> tuple[PlanS
             found = repr(tokens[i]) if i < len(tokens) else "<end of tokens>"
             raise K1ParseError(f"{owner_desc}: expected phase {label!r} at this position, got {found}")
 
-        values, i = consume_ints(tokens, i + 1)
-        action_val = values[0] if values else 0
-        obj_val = values[1] if len(values) > 1 else 0
-        extra_val = values[2:] if len(values) > 2 else []
+        # Phase 618: peek (non-destructively) at what would be `action_val`
+        # to see whether this phase is a Search -- if so, its own `extra`
+        # needs the SAY-aware walk below instead of the generic
+        # `consume_ints()` sweep, which would crash the instant it hit a
+        # real SAY tactic's own free text. Every other phase (the
+        # overwhelming majority, and the fallback for anything this peek
+        # can't cleanly resolve) takes the *exact* pre-existing code path,
+        # unchanged -- this is what keeps every real AK3__T*.K1 sample
+        # byte-identical to before this phase.
+        phase_start = i + 1
+        while phase_start < len(tokens) and tokens[phase_start] == ":":
+            phase_start += 1  # consume_ints()'s own "P0 : 12 6 0" colon-skip, replicated for the peek below
+        is_search = False
+        if phase_start < len(tokens):
+            try:
+                is_search = action_from_int(int(tokens[phase_start])) is ActionCode.SEARCH
+            except ValueError:
+                is_search = False
+
+        if is_search:
+            action_val = int(tokens[phase_start])
+            obj_val = int(tokens[phase_start + 1]) if phase_start + 1 < len(tokens) else 0
+            extra_val, i = _consume_search_extra(tokens, token_line, lines, phase_start + 2)
+        else:
+            values, i = consume_ints(tokens, i + 1)
+            action_val = values[0] if values else 0
+            obj_val = values[1] if len(values) > 1 else 0
+            extra_val = values[2:] if len(values) > 2 else []
         phase = PlanPhase(label=label, action=action_from_int(action_val), obj=obj_val, extra=extra_val)
 
-        phase.nested_plan, i = _maybe_parse_nested_plan(tokens, i, phase, label_num, owner_desc=owner_desc)
+        phase.nested_plan, i = _maybe_parse_nested_plan(
+            tokens, i, phase, label_num, owner_desc=owner_desc, token_line=token_line, lines=lines
+        )
         segment.phases[label] = phase
 
     return segment, i
 
 
+def _consume_search_extra(
+    tokens: list[str], token_line: list[int], lines: list[str], i: int
+) -> tuple[list[int | str], int]:
+    """Like ``consume_ints()``, but Search-tactic-aware (Phase 618): walks
+    the phase's own ``Tac_Bytes`` tactic list one ``Maneuver`` ordinal at
+    a time, classifying each the same way ``turn/search_decode.py
+    decode_search_phase()`` does -- ``SAY`` recovers its own free text via
+    ``_recover_say_text()`` below instead of reading a plain int;
+    anything in ``TACTICS_WITH_SUB_OBJECT`` (``CAST``/``USE_MI``/
+    ``GIVE``) reads one more plain int as before; everything else (a bare
+    ``MELEE``/``FLEE``/``SCOUT``/``STEAL``/``SHOOT``, the list's own
+    ``-1`` terminator, or any other raw int) is kept as-is with no
+    special handling -- the same shape ``decode_search_phase()``'s own
+    walk already has, deliberately kept in sync (see that module's own
+    Phase 618 addendum).
+
+    ``extra[0]`` (``"tl"``, ``SearchRequest.unconfirmed_extra0`` -- always
+    ``0`` in every real sample, per ``turn/search_decode.py``'s own
+    docstring) is *not* itself a tactic ordinal -- read as one plain int
+    first, unconditionally, exactly like ``consume_ints()`` would, before
+    the maneuver-classified walk begins. Skipping this distinction would
+    misread ``tl``'s own ``0`` as a ``CAST`` ordinal and eat the *real*
+    first tactic's own ordinal as if it were ``CAST``'s sub-object.
+    """
+
+    values: list[int | str] = []
+    if i < len(tokens) and not is_keyword(tokens[i]):
+        try:
+            values.append(int(tokens[i]))
+        except ValueError as exc:
+            raise K1ParseError(f"expected an integer or keyword in a Search phase, got {tokens[i]!r}") from exc
+        i += 1
+
+    while i < len(tokens):
+        token = tokens[i]
+        if is_keyword(token):
+            break
+        try:
+            value = int(token)
+        except ValueError as exc:
+            raise K1ParseError(f"expected an integer or keyword in a Search tactic list, got {token!r}") from exc
+        values.append(value)
+        i += 1
+
+        maneuver = maneuver_from_int(value)
+        if maneuver is Maneuver.SAY:
+            text, i = _recover_say_text(token_line[i - 1], lines, token_line, i)
+            values.append(text)
+        elif maneuver in TACTICS_WITH_SUB_OBJECT and i < len(tokens):
+            values.append(int(tokens[i]))
+            i += 1
+    return values, i
+
+
+def _recover_say_text(
+    ordinal_line_index: int, lines: list[str], token_line: list[int], i: int
+) -> tuple[str, int]:
+    """Recovers a ``SAY`` tactic's own free-text argument directly from
+    the move file's raw lines (Phase 618) -- confirmed real shape (see
+    ``turn/search_decode.py``'s own module docstring): the text sits on
+    the line(s) immediately after the ``SAY`` ordinal's own line,
+    terminated by a blank line (a line that's empty or all-whitespace, a
+    small robustness generalization of the Pascal reader's own literal
+    ``(tmp = '') or (tmp = ' ')`` check).
+
+    Returns the recovered text (multiple lines joined with a single
+    space, mirroring ``Concat(sayeth, tmp, ' ')`` minus the Pascal
+    original's own trailing space -- cosmetic, not a meaning change) and
+    the flat token index to resume parsing at: every token whose own
+    ``token_line`` falls within the consumed text lines is skipped, since
+    those words were already split into ``tokens`` by the initial
+    tokenization pass just like any other line's words.
+    """
+
+    cursor = ordinal_line_index + 1
+    text_lines: list[str] = []
+    while True:
+        if cursor >= len(lines):
+            raise K1ParseError(
+                f"a SAY tactic's own free text (starting after line {ordinal_line_index}) "
+                "was never terminated by a blank line"
+            )
+        stripped = lines[cursor].strip()
+        if stripped == "":
+            break
+        text_lines.append(stripped)
+        cursor += 1
+
+    while i < len(token_line) and token_line[i] < cursor:
+        i += 1
+
+    return " ".join(text_lines), i
+
+
 def _maybe_parse_nested_plan(
-    tokens: list[str], i: int, phase: PlanPhase, label_num: int, *, owner_desc: str
+    tokens: list[str],
+    i: int,
+    phase: PlanPhase,
+    label_num: int,
+    *,
+    owner_desc: str,
+    token_line: list[int],
+    lines: list[str],
 ) -> tuple[ActionPlan | None, int]:
     """If ``phase`` triggers a nested plan, parse and return it; else ``(None, i)`` unchanged.
 
@@ -255,4 +425,6 @@ def _maybe_parse_nested_plan(
         nested_leader_id = phase.extra[0]
     else:
         nested_leader_id = None
-    return _parse_action_plan(tokens, i, nested_leader_id, owner_desc=f"{owner_desc} > nested plan")
+    return _parse_action_plan(
+        tokens, i, nested_leader_id, owner_desc=f"{owner_desc} > nested plan", token_line=token_line, lines=lines
+    )

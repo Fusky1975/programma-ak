@@ -25096,7 +25096,7 @@ follow-up request after the original 431-435 plan shipped.
   breaking check, after the polarity fix): 5083 passed. Ran again with
   all new tests: 5123 passed (net +40).
 
-- **Phase 617 (current)**: closes the second gap left open by Phase 616's
+- **Phase 617**: closes the second gap left open by Phase 616's
   own roadmap -- `Power.DAMP_COLLEGE`/`DAMP_MAGIC`/`WARP_SPACE`, the 3
   passive battle-field powers `Special Features.md` section 5.2 (user-
   supplied 2026-08-22) describes as "campi del luogo" (fields of the
@@ -25154,6 +25154,89 @@ follow-up request after the original 431-435 plan shipped.
   resolves `Power.PNONE` or a power outside this trio, so the new
   wiring is a no-op for all of them by default). Ran again with all
   new tests: 5132 passed (net +9).
+
+- **Phase 618 (current)**: fixes the real `Maneuver.SAY` decode gap
+  Phase 616's own context section flagged -- but the gap turned out to
+  be much deeper than "add `SAY` to a frozenset". Reading `HostAK/TP/
+  DEF2.PAS` directly (`W_List`/`R_List`) plus the user's own direct
+  confirmation established the real on-disk shape: a Search Encounter
+  Plan's `SAY` tactic (rulebook [5.4]-[5.8], e.g. "SA-y the character
+  number... 'SA Tell me about character 1.'", or the user's own combat
+  example `CA-FI, SA "Take that!", FI, ME, ME`) carries free text on its
+  own line(s), terminated by a blank line -- not a single following
+  integer like `CAST`/`USE_MI`/`GIVE`'s own sub-object. No real sample
+  `AK3__T*.K1` file contains an actual `SAY` tactic (already noted in
+  `turn/search_decode.py`'s own docstring), so this is built from the
+  Pascal source's own confirmed logic plus the user's direct
+  confirmation, tested with explicitly-labeled synthetic fixtures, not
+  a real byte-level example.
+
+  This isn't just a `turn/search_decode.py` fix: that module only ever
+  reads already-parsed `PlanPhase.extra: list[int]` -- pure integers.
+  The real gap was one layer down, in `parser/k1_moves.py`/`parser/
+  tokens.py`: `_build_leader()` whitespace-flattens a leader's entire
+  move block into one flat token stream, discarding line boundaries
+  and blank lines before any structural parsing happens -- exactly the
+  information needed to know where a `SAY` block's free text ends. A
+  real `SAY` tactic would have crashed the parser outright (`consume_
+  ints()` raises the instant it hits a non-numeric word), not just
+  decoded wrong.
+
+  New `parser/tokens.py flatten_tokens_with_lines()` (returns each
+  token's own origin line index alongside the flat stream; `flatten_
+  tokens()` is now a one-line wrapper over it, unchanged for its other
+  callers). `parser/k1_moves.py` threads this line map (and the raw
+  lines) through every phase-parsing function; `_parse_segment()`
+  peeks (non-destructively) whether a phase is a Search before choosing
+  between the *exact*, untouched `consume_ints()` path (every other
+  phase -- what keeps all 10 real `AK3__T*.K1` files byte-identical)
+  or a new `_consume_search_extra()`, which walks the tactic list
+  `Maneuver`-ordinal-aware and calls new `_recover_say_text()` the
+  moment it sees `SAY` -- reading raw lines directly, then resyncing
+  the flat token index past whatever it consumed. `_parse_leader_
+  blocks()` also had to stop silently dropping blank lines *within* a
+  leader block (previously harmless, since nothing needed them) -- now
+  kept, since `SAY`'s own blank-line terminator needs to survive into
+  `body_lines` at all.
+
+  **A real bug found and fixed while building this**: the first
+  version of `_consume_search_extra()` ran its `Maneuver`-ordinal
+  classification over *all* of `extra`, including `extra[0]` (`"tl"`,
+  always `0`) -- misreading it as a `CAST` ordinal (`0`) and eating the
+  tactic list's own real first ordinal as `CAST`'s "sub-object" instead.
+  A first synthetic test happened to pass anyway, purely by coincidence
+  (`tl=0` and a real leading `CAST=0` landed on the same value); a
+  second synthetic test (an *empty* `SAY`) caught it cleanly, since
+  there was no such coincidental value collision to hide it. Fixed by
+  reading `extra[0]` as one plain int unconditionally, before the
+  maneuver-classified walk begins.
+
+  `models/enums.py` gained a public `TACTICS_WITH_SUB_OBJECT` constant
+  (promoted from `search_decode.py`'s own private copy, now shared with
+  `parser/k1_moves.py` without a `parser/` -> `turn/` layering
+  inversion -- confirmed no circular-import risk either way).
+  `models/plan.py PlanPhase.extra` widened from `list[int]` to
+  `list[int | str]` -- confirmed safe, since every other action type's
+  own decoder only ever reads phases of its own action type. `turn/
+  search_decode.py SearchTactic` gained `say_text: str | None`
+  (a separate field from `sub_object`, not an overload of it).
+
+  **Scope: decode only.** `SearchTactic.say_text` is now correctly
+  recovered and available, but nothing yet *consumes* it -- the 5
+  Oracles/Recharge/Grant Wish/Gamble mechanics themselves (needing this
+  argument) remain a separate future phase.
+
+  Tests: `tests/test_k1_moves_parser.py` gained 4 synthetic-fixture
+  tests (explicitly labeled as such, no real sample exists) -- basic
+  recovery + resync to the next phase label, multi-line text joined
+  with spaces, the empty-text edge case, and the never-terminated
+  malformed case raising `K1ParseError`; `tests/test_search_decode.py`
+  gained 3 tests -- `SAY` alone, `SAY` between two other real tactics
+  (`Cast`/`Melee`), and `SAY` with nothing following. Ran before
+  writing new tests (non-breaking check): 5132 passed, unchanged from
+  Phase 617's own count (confirming every real `AK3__T*.K1` sample
+  still parses byte-identically). Ran again with all new tests: 5139
+  passed (net +7).
 
 ## Setup
 

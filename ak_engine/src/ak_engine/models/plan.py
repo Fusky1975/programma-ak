@@ -37,7 +37,14 @@ class PlanPhase:
     label: str
     action: ActionCode | int
     obj: int
-    extra: list[int] = field(default_factory=list)
+    # Phase 618: widened from `list[int]` -- a Search phase's own `SAY`
+    # tactic (`turn/search_decode.py`) carries a free-text argument, not
+    # a numeric one (see `parser/k1_moves.py`'s own Phase 618 addendum
+    # for how it's recovered). Every other action type still only ever
+    # produces `int` elements here; each `turn/*_decode.py` decoder only
+    # ever reads phases of its own action type, so this widening is safe
+    # for every existing consumer.
+    extra: list[int | str] = field(default_factory=list)
     # An embedded plan for a character who joined the kingdom this phase
     # (Hire, or a Charm/Resurrection Cast) -- see module docstring. None
     # for the overwhelming majority of phases, which don't trigger this.

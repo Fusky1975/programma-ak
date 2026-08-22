@@ -23,10 +23,29 @@ def is_keyword(token: str) -> bool:
 def flatten_tokens(lines: list[str]) -> list[str]:
     """Whitespace-split a block of lines into one flat token stream, skipping blanks."""
 
-    tokens: list[str] = []
-    for line in lines:
-        tokens.extend(line.split())
+    tokens, _ = flatten_tokens_with_lines(lines)
     return tokens
+
+
+def flatten_tokens_with_lines(lines: list[str]) -> tuple[list[str], list[int]]:
+    """Like ``flatten_tokens()``, but also returns each token's own origin
+    line index (``token_line``, same length as the returned token list).
+
+    Phase 618: needed only by ``parser/k1_moves.py``'s own Search-phase
+    ``SAY`` tactic recovery -- a ``SAY`` tactic's argument is free text on
+    its own line(s), not a token in the flat stream (see that module's
+    own docstring) -- so decoding it needs to map back from a flat token
+    index to where in the original ``lines`` that token came from. Every
+    other caller can keep using ``flatten_tokens()`` and ignore this.
+    """
+
+    tokens: list[str] = []
+    token_line: list[int] = []
+    for line_index, line in enumerate(lines):
+        words = line.split()
+        tokens.extend(words)
+        token_line.extend([line_index] * len(words))
+    return tokens, token_line
 
 
 def match_leader_header(line: str) -> tuple[int, str] | None:

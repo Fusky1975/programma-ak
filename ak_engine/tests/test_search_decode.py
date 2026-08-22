@@ -36,6 +36,40 @@ def test_decode_search_phase_only_cast_use_mi_give_take_a_sub_object():
     assert request.tactics == [SearchTactic(Maneuver.STEAL), SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.SCOUT)]
 
 
+def test_decode_search_phase_say_tactic_reads_free_text():
+    # Phase 618: SAY's own argument is a str (already recovered from the
+    # raw move file's own lines by parser/k1_moves.py), not an int.
+    phase = PlanPhase(label="P0", action=ActionCode.SEARCH, obj=1, extra=[0, 4, "Take that!", -1])
+
+    request = decode_search_phase(phase)
+
+    assert request.tactics == [SearchTactic(Maneuver.SAY, say_text="Take that!")]
+    assert request.tactics[0].sub_object is None
+
+
+def test_decode_search_phase_say_between_other_tactics():
+    # Cast(12), then Say("Take that!"), then Melee -- proves SAY's own
+    # str element doesn't throw off decoding what comes before or after.
+    phase = PlanPhase(label="P0", action=ActionCode.SEARCH, obj=1, extra=[0, 0, 12, 4, "Take that!", 9, -1])
+
+    request = decode_search_phase(phase)
+
+    assert request.tactics == [
+        SearchTactic(Maneuver.CAST, sub_object=12),
+        SearchTactic(Maneuver.SAY, say_text="Take that!"),
+        SearchTactic(Maneuver.MELEE),
+    ]
+
+
+def test_decode_search_phase_say_with_no_following_element_leaves_say_text_none():
+    phase = PlanPhase(label="P0", action=ActionCode.SEARCH, obj=1, extra=[0, 4])
+
+    request = decode_search_phase(phase)
+
+    assert request.tactics == [SearchTactic(Maneuver.SAY)]
+    assert request.tactics[0].say_text is None
+
+
 def test_decode_search_phase_handles_empty_extra():
     phase = PlanPhase(label="P0", action=ActionCode.SEARCH, obj=1, extra=[])
 
