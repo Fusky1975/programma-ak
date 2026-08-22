@@ -792,16 +792,23 @@ class LeaderState:
     # "Grandfather of Assassins" title-perk guard escalation -- "Ogni
     # fallimento raddoppia la guardia e dimezza la probabilità normale
     # del tentativo seguente" (every failure doubles the guard and
-    # halves the normal chance of the following attempt). Counts this
-    # leader's own consecutive failed Assassins Guild attempts against
-    # them specifically (not the titleholder's own tally, and unrelated
-    # to `MeritTally`'s own Assassin counter -- see `turn/assassin_
-    # guild.py`'s own module docstring for why a successful Guild kill
-    # never touches that counter either). Never reset by anything in
-    # this project -- no source names a condition that clears it, so it
-    # stays a strictly monotonic "this specific target has survived N
-    # attempts" record.
-    assassination_guild_failed_attempts: int = 0
+    # halves the normal chance of the following attempt). Counts every
+    # resolved Assassins Guild attempt against this specific leader (not
+    # the titleholder's own tally, and unrelated to `MeritTally`'s own
+    # Assassin counter -- see `turn/assassin_guild.py`'s own module
+    # docstring for why a successful Guild kill never touches that
+    # counter either). Never reset by anything in this project -- no
+    # source names a condition that clears it, so it stays a strictly
+    # monotonic "N attempts have been resolved against this specific
+    # target" record. **Phase 614 correction**: a direct disassembly
+    # reverse-engineering (`AK.EXE:0x18F0F-0x18F1D`, user-supplied
+    # 2026-08-22) confirmed the real byte increments after *every*
+    # resolved attempt, not only a failed one -- renamed from
+    # `assassination_guild_failed_attempts` accordingly (the old name
+    # was accurate before this correction, misleading after it; a
+    # successful attempt's own increment is normally invisible since the
+    # target dies, but matters if they're later resurrected).
+    assassination_guild_attempts: int = 0
     # Phase 456 (corrects Phase 449's own per-ability dict): the real
     # engine keeps **one shared byte per leader**, not one per ability --
     # AKGEN_reverse_engineering_report (2).md SS2.2's own words, "un
@@ -1256,6 +1263,23 @@ class GameState:
     # qualifies for a turn or two), the same "stale until overwritten"
     # convention as `discoveries_first_found_by`.
     office_holders: dict[Office, int] = field(default_factory=dict)
+    # Phase 614: the Grandfather of Assassins title's own free-attempt
+    # queue -- `turn/plan_dispatch.py _dispatch_fire()` sets this instead
+    # of running an ordinary Fire when the order-giver holds Office.
+    # ASSASSIN and the FI target is a non-King leader in a different
+    # Kingdom (a disassembly-confirmed reinterpretation of the FI order,
+    # `AK.EXE:0xCD0D-0xCD39`, user-supplied 2026-08-22). A single global
+    # slot, not a list -- the real engine keeps exactly one turn-scoped
+    # target (`AK.EXE:0x17851`'s own `mov word [EE30h],00FFh` reset), so
+    # a second real FI interception the same turn simply overwrites the
+    # first rather than queuing both ("l'ultimo bersaglio sovrascrive i
+    # precedenti", a confirmed real anomaly, not a bug to fix here).
+    # Read and always cleared back to `None` by `turn/assassin_guild.py
+    # resolve_pending_guild_assassination()`, called once per turn from
+    # `orchestrator.py process_turn()` right after `run_turn()` (battles
+    # for the turn are already resolved by then, matching the real "end
+    # of phase 5, after battles" resolution timing).
+    pending_guild_target: int | None = None
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
         self.kingdoms[kingdom.kingdom_id] = kingdom

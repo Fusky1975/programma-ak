@@ -1368,6 +1368,75 @@ def test_dispatch_fire_by_a_king_bypasses_colocation():
     assert state.leaders[32].kingdom_id is None
 
 
+# --- Grandfather of Assassins FI interception (Phase 614) -------------------
+
+
+def test_dispatch_fire_by_the_titleholder_against_a_foreign_hero_queues_a_guild_attempt():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.leaders[LEADER_ID].merit_tally.successful_assassinations = 2  # meets OFFICE_MIN_POINTS[Office.ASSASSIN]
+    state.add_kingdom(KingdomState(2, "Targetia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(32, 2, "Foreign Hero", HexCoord(9, 9)))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, FireExecutionResult)
+    assert result.fired is False
+    assert result.guild_assassination_queued is True
+    assert state.pending_guild_target == 32
+    # No ordinary Fire happened -- the target's own kingdom is untouched.
+    assert state.leaders[32].kingdom_id == 2
+
+
+def test_dispatch_fire_by_the_titleholder_against_own_kingdom_stays_an_ordinary_fire():
+    # The manual's own note: firing your own character keeps the two
+    # LKing()s equal, so no interception happens.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.leaders[LEADER_ID].merit_tally.successful_assassinations = 2
+    state.add_leader(LeaderState(32, 1, "Own Kingdom's Hero", HexCoord(3, 9)))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.guild_assassination_queued is False
+    assert result.fired is True
+    assert state.pending_guild_target is None
+    assert state.leaders[32].kingdom_id is None
+
+
+def test_dispatch_fire_by_the_titleholder_against_a_foreign_king_stays_an_ordinary_fire():
+    # A King is never a valid Guild target -- falls through to ordinary
+    # Fire's own co-location check, which fails here (not co-located,
+    # and the target isn't a King so LEADER_ID's own King status doesn't
+    # bypass it either -- wait, LEADER_ID is a King, so co-location is
+    # bypassed and the ordinary Fire still succeeds).
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.leaders[LEADER_ID].merit_tally.successful_assassinations = 2
+    state.add_kingdom(KingdomState(2, "Targetia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(32, 2, "Foreign King", HexCoord(9, 9), is_king=True))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.guild_assassination_queued is False
+    assert state.pending_guild_target is None
+
+
+def test_dispatch_fire_by_a_non_titleholder_against_a_foreign_hero_stays_an_ordinary_fire():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    # LEADER_ID never earned the title (successful_assassinations stays 0).
+    state.add_kingdom(KingdomState(2, "Targetia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(32, 2, "Foreign Hero", HexCoord(9, 9)))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.guild_assassination_queued is False
+    assert state.pending_guild_target is None
+    assert result.fired is True  # LEADER_ID is a King, bypasses co-location
+    assert state.leaders[32].kingdom_id is None
+
+
 def test_dispatch_hire_cannot_hire_a_king():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})

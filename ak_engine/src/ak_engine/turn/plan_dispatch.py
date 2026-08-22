@@ -357,6 +357,7 @@ from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
+from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
@@ -372,6 +373,7 @@ from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
 from ak_engine.turn.hire_pay import RARE_ALIGNMENT_EXCEPTION_PAY, required_pay, roll_rare_alignment_exception
 from ak_engine.turn.move_execution import execute_move, record_kingdom_exploration
+from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import PracticeExecutionResult, execute_practice
 from ak_engine.turn.pursue_execution import PursueExecutionResult, execute_pursue
@@ -455,6 +457,15 @@ class FireExecutionResult:
     request: FireRequest
     fired: bool
     reason: str | None = None  # set when fired is False
+    # Phase 614: set instead of an ordinary Fire when the order-giver
+    # holds Office.ASSASSIN and `request.hero_id` is a non-King leader
+    # in a different Kingdom -- see `_dispatch_fire()`'s own Phase 614
+    # addendum for the real, disassembly-confirmed interception this
+    # reuses the FIRE order's own decoded data for. `fired` stays
+    # `False` here (no ordinary Fire happened, the Hero's own
+    # `kingdom_id` is untouched) -- `guild_assassination_queued` is the
+    # real, distinct outcome a caller should check first.
+    guild_assassination_queued: bool = False
 
 
 @dataclass(slots=True)
@@ -988,6 +999,19 @@ def _dispatch_fire(phase: PlanPhase, state: GameState, leader_id: int) -> FireEx
     signal to build a report sentence from (``report/turn_report.py
     describe_fire()``), where before it had no way to tell whether the
     Fire actually happened at all.
+
+    **Phase 614**: before any of the ordinary Fire logic below runs,
+    checks a real, disassembly-confirmed reinterpretation of this same
+    order (`AK.EXE:0xCD0D-0xCD39`, user-supplied 2026-08-22): a FIRE
+    order becomes a free Grandfather of Assassins attempt instead of an
+    ordinary Fire when the order-giver currently holds ``Office.
+    ASSASSIN``, the target isn't a King, and the target belongs to a
+    different Kingdom than the order-giver's own (``LKing(target) <>
+    LKing(order_giver)`` -- "if the Grandfather Fires his own character,
+    the two ``LKing``s coincide and the order stays an ordinary Fire,"
+    per the manual's own note). See ``turn/assassin_guild.py``'s own
+    module docstring for the full mechanic this queues into ``state.
+    pending_guild_target`` for.
     """
 
     request = decode_fire_phase(phase)
@@ -996,6 +1020,13 @@ def _dispatch_fire(phase: PlanPhase, state: GameState, leader_id: int) -> FireEx
         return FireExecutionResult(request, fired=False, reason="hero not found")
 
     acting_leader = state.leaders.get(leader_id)
+
+    if not hero.is_king and acting_leader is not None and acting_leader.kingdom_id != hero.kingdom_id:
+        titleholder = resolve_office_holder(state, Office.ASSASSIN)
+        if titleholder is not None and titleholder.leader_id == leader_id:
+            state.pending_guild_target = request.hero_id
+            return FireExecutionResult(request, fired=False, guild_assassination_queued=True)
+
     # "Releases the Hero into private life... will wander around until
     # hired by another King." (rulebook [3.7]: "A King may Fire a Hero
     # at any time. A character can Fire a Hero only if he is in the

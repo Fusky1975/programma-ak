@@ -13,9 +13,12 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.assassin_guild import (
+    GuildAssassinationOutcome,
     grandfather_of_assassins_base_success_chance,
     resolve_grandfather_of_assassins_attempt,
+    resolve_pending_guild_assassination,
 )
 from ak_engine.turn.combat import Quality
 
@@ -83,6 +86,19 @@ def test_resolve_attempt_success_removes_the_target():
     assert 2 in state.dead_leaders
 
 
+def test_resolve_attempt_success_also_increments_the_guard_counter():
+    # Phase 614 correction: AK.EXE:0x18F0F-0x18F1D increments the guard
+    # byte after BOTH branches, not only a failed one -- normally
+    # invisible (the target is dead), but preserved on the archived
+    # LeaderState for a later Resurrection to see.
+    state = build_state()
+    result = resolve_grandfather_of_assassins_attempt(state, target_leader_id=2, rng=ScriptedRandom([0.49]))
+
+    assert result is not None
+    assert result.succeeded is True
+    assert state.dead_leaders[2].assassination_guild_attempts == 1
+
+
 def test_resolve_attempt_failure_increments_the_guard():
     state = build_state()
     # 0.50 fails (not < 0.50).
@@ -91,12 +107,12 @@ def test_resolve_attempt_failure_increments_the_guard():
     assert result is not None
     assert result.succeeded is False
     assert 2 in state.leaders
-    assert state.leaders[2].assassination_guild_failed_attempts == 1
+    assert state.leaders[2].assassination_guild_attempts == 1
 
 
 def test_resolve_attempt_guard_escalation_halves_the_chance():
     state = build_state()
-    state.leaders[2].assassination_guild_failed_attempts = 1  # one prior failure
+    state.leaders[2].assassination_guild_attempts = 1  # one prior attempt
 
     result = resolve_grandfather_of_assassins_attempt(state, target_leader_id=2, rng=ScriptedRandom([0.0]))
 
@@ -116,6 +132,22 @@ def test_resolve_attempt_accounts_for_armies_and_melee_skill():
     assert result.success_chance == pytest.approx(0.15)
 
 
+def test_resolve_attempt_uses_effective_melee_skill_not_raw():
+    # Phase 614 correction: the real M_Skill reads the *effective*
+    # (item-bonused) Melee skill, not the bare stored value --
+    # confirmed via effective_skill_level()'s own ability_bonus_from_
+    # items(). A raw skill of 1 plus one ABILITY_MELEE item -> M=2.
+    state = build_state()
+    state.leaders[2].skills = _skills_with(Ability.MELEE, 1)
+    state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=2)
+
+    result = resolve_grandfather_of_assassins_attempt(state, target_leader_id=2, rng=ScriptedRandom([0.0]))
+
+    # A=0, M=2 (effective) -> 0.50 - 0.20 = 0.30, not 0.40 (raw M=1).
+    assert result is not None
+    assert result.success_chance == pytest.approx(0.30)
+
+
 def test_resolve_attempt_never_touches_merit_tally_on_success():
     state = build_state()
     titleholder_tally_before = state.leaders[1].merit_tally.successful_assassinations
@@ -133,3 +165,53 @@ def test_resolve_attempt_never_touches_merit_tally_on_failure():
 
     assert state.leaders[1].merit_tally.successful_assassinations == titleholder_tally_before
     assert state.leaders[2].merit_tally.successful_assassinations == 0
+
+
+# -- resolve_pending_guild_assassination (Phase 614) -------------------------
+
+
+def test_resolve_pending_guild_assassination_returns_none_when_nothing_queued():
+    state = build_state()
+
+    assert resolve_pending_guild_assassination(state, rng=ScriptedRandom([])) is None
+
+
+def test_resolve_pending_guild_assassination_success():
+    state = build_state()
+    state.pending_guild_target = 2
+
+    outcome = resolve_pending_guild_assassination(state, rng=ScriptedRandom([0.49]))
+
+    assert outcome is not None
+    assert outcome.target_leader_id == 2
+    assert outcome.already_dead is False
+    assert outcome.attempt is not None
+    assert outcome.attempt.succeeded is True
+    assert 2 not in state.leaders
+    assert state.pending_guild_target is None  # always cleared
+
+
+def test_resolve_pending_guild_assassination_failure():
+    state = build_state()
+    state.pending_guild_target = 2
+
+    outcome = resolve_pending_guild_assassination(state, rng=ScriptedRandom([0.99]))
+
+    assert outcome is not None
+    assert outcome.already_dead is False
+    assert outcome.attempt is not None
+    assert outcome.attempt.succeeded is False
+    assert 2 in state.leaders
+    assert state.pending_guild_target is None
+
+
+def test_resolve_pending_guild_assassination_already_dead_skips_the_guard_increment():
+    state = build_state()
+    state.pending_guild_target = 2
+    state.remove_leader(2)  # died some other way earlier this same turn
+
+    outcome = resolve_pending_guild_assassination(state, rng=ScriptedRandom([]))
+
+    assert outcome == GuildAssassinationOutcome(target_leader_id=2, already_dead=True, attempt=None)
+    assert state.dead_leaders[2].assassination_guild_attempts == 0
+    assert state.pending_guild_target is None

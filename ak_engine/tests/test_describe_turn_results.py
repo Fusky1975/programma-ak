@@ -12,6 +12,7 @@ from ak_engine.models.race import Race
 from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.treasure import TREASURE_NAME, Treasure
 from ak_engine.report.turn_report import describe_turn_results
+from ak_engine.turn.assassin_guild import GrandfatherOfAssassinsAttemptResult, GuildAssassinationOutcome
 from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
@@ -73,6 +74,93 @@ def test_describe_turn_results_renders_fire():
 
     assert len(lines) == 1
     assert "Borin" in lines[0] and "Aldric" in lines[0]
+
+
+# -- Grandfather of Assassins (Phase 614) ------------------------------------
+
+
+def test_describe_turn_results_renders_fire_queued_as_guild_assassination_order():
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(32, "Borin"))
+    result = FireExecutionResult(FireRequest(hero_id=32), fired=False, guild_assassination_queued=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.FIRE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines == ["Aldric ordered the assassination of Borin."]
+
+
+def test_describe_turn_results_renders_guild_assassination_already_dead():
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(32, "Borin"))
+    outcome = GuildAssassinationOutcome(target_leader_id=32, already_dead=True, attempt=None)
+    results = [
+        PhaseDispatchResult(
+            leader_id=32, segment_index=-1, phase_label="guild-assassination", action=None, result=outcome, error=None
+        )
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([]))
+
+    assert lines == ["Borin could not be assassinated because Borin was dead and buried."]
+
+
+def test_describe_turn_results_renders_guild_assassination_success():
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(32, "Borin"))
+    attempt = GrandfatherOfAssassinsAttemptResult(
+        titleholder_leader_id=1, target_leader_id=32, success_chance=0.5, succeeded=True
+    )
+    outcome = GuildAssassinationOutcome(target_leader_id=32, already_dead=False, attempt=attempt)
+    results = [
+        PhaseDispatchResult(
+            leader_id=32, segment_index=-1, phase_label="guild-assassination", action=None, result=outcome, error=None
+        )
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0, 0]))
+
+    assert lines == [
+        "While Borin was out for a stroll, suddenly an assassin launched himself at Borin!",
+        "Borin was wounded by a poisoned dagger!Cursed be the Assassin's Guild and whoever heads it!",
+    ]
+
+
+def test_describe_turn_results_renders_guild_assassination_failure():
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(32, "Borin"))
+    attempt = GrandfatherOfAssassinsAttemptResult(
+        titleholder_leader_id=1, target_leader_id=32, success_chance=0.5, succeeded=False
+    )
+    outcome = GuildAssassinationOutcome(target_leader_id=32, already_dead=False, attempt=attempt)
+    results = [
+        PhaseDispatchResult(
+            leader_id=32, segment_index=-1, phase_label="guild-assassination", action=None, result=outcome, error=None
+        )
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0, 0]))
+
+    assert lines == [
+        "While Borin was out for a stroll, suddenly an assassin launched himself at Borin!",
+        "Fortunately, Borin survived the attempt and the assassin (apparently, a member of the "
+        "Assassin's Guild) was killed.Of course, the guard in Borin's kingdom was doubled.",
+    ]
+
+
+def test_describe_turn_results_renders_nothing_when_the_title_is_vacant_at_resolution():
+    # attempt is None only when Office.ASSASSIN itself became vacant
+    # between the FI interception and phase-5 resolution -- no sourced
+    # text covers it, so nothing is narrated (not a dangling _ASeek).
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(32, "Borin"))
+    outcome = GuildAssassinationOutcome(target_leader_id=32, already_dead=False, attempt=None)
+    results = [
+        PhaseDispatchResult(
+            leader_id=32, segment_index=-1, phase_label="guild-assassination", action=None, result=outcome, error=None
+        )
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([]))
+
+    assert lines == []
 
 
 def test_describe_turn_results_skips_hire_when_hireling_unknown():

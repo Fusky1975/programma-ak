@@ -803,11 +803,12 @@ same topical narrative (`SAY.PAS` line 958, immediately before
 `_ASeek`'s own block starts). Ties to `models/office.py`'s own
 `OFFICE_PERK_DESCRIPTION[Office.ASSASSIN] == "Free Assassination
 Attempt"` (Phase 103) -- the first narrative content confirming that
-perk's own real-game mechanic, even though no `turn/*.py` resolver
-executes an assassination attempt yet (the same narrative-precedes
--execution stance already taken for the Ice-Suspend cluster, Phase
-123, and the unexecuted personal-combat spells in
-`turn/cast_execution.py`).
+perk's own real-game mechanic. **Wired as of Phase 614** into
+`turn/assassin_guild.py resolve_pending_guild_assassination()` (via
+`describe_turn_results()`'s own `GuildAssassinationOutcome` branch
+below) -- see that module's own docstring for the disassembly source
+that finally confirmed the FI-order interception these four sentences
+narrate.
 
 - `_LOAss: Say('< ordered the assassination of [.',S_Priv)` -- the
   order/directive itself. `render_assassination_ordered()`.
@@ -826,9 +827,16 @@ executes an assassination attempt yet (the same narrative-precedes
   no separator, the same shape established throughout this module
   (Phase 107, 116, 119, 121). `render_assassination_failed()`.
 
-This project has no source for what determines success versus
-failure -- the caller decides, the same caller-supplied-fact pattern
-established throughout (`is_sea`, `weapon`, `_ADishK`/`_ADishF`).
+Success versus failure is now a real, sourced roll (Phase 614,
+`turn/assassin_guild.py grandfather_of_assassins_base_success_chance()`),
+not a caller-supplied fact -- superseding this paragraph's own
+pre-Phase-614 "no source" stance.
+
+**Phase 614 addendum -- the dead-and-buried case.** `ILLEG.X2` record
+91: `'[1 could not be assassinated because [1 was dead and buried.'` --
+the real message when the queued target already died some other way
+before phase-5 resolution (`AK.EXE:0x18D89`'s own `Alive(victim)`
+recheck). `render_could_not_be_assassinated()`.
 
 **Phase 126 addendum -- battle morale narrative + vampiric bite.**
 `RUMORS.PAS` groups `_BSpeech = 4046`, `_BHome = 4047`, `_BNoDru =
@@ -1210,6 +1218,7 @@ from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_CATEGORY
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
 from ak_engine.report.ascii_map import MAP_REGION_LABEL_RULE, map_region_label, render_ascii_map
 from ak_engine.report.prose import render
+from ak_engine.turn.assassin_guild import GuildAssassinationOutcome
 from ak_engine.turn.army_quality import compute_army_modified_quality
 from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.aspy_execution import SpyReport
@@ -5822,9 +5831,14 @@ def describe_turn_results(
             hireling_name = _leader_name(state, entry.result.request.hero_id)
             if hireling_name is None:
                 continue
-            line = describe_fire(
-                entry.result, character_name=caster_name, hireling_name=hireling_name, king_name=caster_name, rng=rng
-            )
+            if entry.result.guild_assassination_queued:
+                # Phase 614: _LOAss -- the order-giver's own private
+                # notice that this FIRE became a Guild attempt instead.
+                line = render_assassination_ordered(caster_name, hireling_name, rng)
+            else:
+                line = describe_fire(
+                    entry.result, character_name=caster_name, hireling_name=hireling_name, king_name=caster_name, rng=rng
+                )
         elif entry.action is ActionCode.PRACTICE and isinstance(entry.result, PracticeExecutionResult):
             ability = entry.result.ability
             ability_name = None
@@ -6038,6 +6052,25 @@ def describe_turn_results(
             # real originating PlanPhase this turn, same convention as the
             # "gate-angel-visit"/"forced-rebattle" sentinels.
             lines.append(describe_defend_reinforcement(entry.result, state, defender_name=caster_name, rng=rng))
+            continue
+        elif isinstance(entry.result, GuildAssassinationOutcome):
+            # Phase 614: another sentinel PhaseDispatchResult (leader_id
+            # keyed to the *victim*, so caster_name here is already the
+            # target's own name, alive-or-dead-aware since Phase 612).
+            if entry.result.already_dead:
+                lines.append(render_could_not_be_assassinated(caster_name))
+            elif entry.result.attempt is not None:
+                # attempt is None only if Office.ASSASSIN itself became
+                # vacant between the FI interception and phase-5
+                # resolution (e.g. the titleholder died in this same
+                # turn's battles) -- no sourced text covers that case,
+                # so nothing is narrated rather than a dangling _ASeek
+                # with no resolution.
+                lines.append(render_assassination_attempt(caster_name, rng))
+                if entry.result.attempt.succeeded:
+                    lines.append(render_assassination_success(caster_name, rng))
+                else:
+                    lines.append(render_assassination_failed(caster_name, rng))
             continue
         elif entry.action is ActionCode.LMOVE and isinstance(entry.result, MoveExecutionResult):
             if board_width is None:
@@ -6856,6 +6889,25 @@ def render_assassination_failed(target_name: str, rng: random.Random) -> str:
     first = render(_ASSASSINATION_FAILED_TEMPLATES[0], values, rng=rng)
     second = render(_ASSASSINATION_FAILED_TEMPLATES[1], values, rng=rng)
     return first + second
+
+
+# HostAK/TP/PROSE/ILLEG.X2, record 91 (Phase 614) -- see module
+# docstring's Phase 614 addendum above. A single, real, hardcoded
+# sentence, no `/R`/`{}` choice markers, so no `rng` parameter -- the
+# same "nothing to vary" shape `render_magic_feature_discovery()`
+# already established.
+COULD_NOT_BE_ASSASSINATED_TEMPLATE = "[1 could not be assassinated because [1 was dead and buried."
+
+
+def render_could_not_be_assassinated(target_name: str) -> str:
+    """Renders ``ILLEG.X2`` record 91: the Grandfather of Assassins'
+    queued target was already dead by phase-5 resolution time (Phase
+    614) -- see ``turn/assassin_guild.py GuildAssassinationOutcome``'s
+    own ``already_dead`` field.
+    """
+
+    values = {"[1": target_name}
+    return render(COULD_NOT_BE_ASSASSINATED_TEMPLATE, values)
 
 
 # HostAK/TP/SAY.PAS _BFun -- a single, real, hardcoded template (no
@@ -9386,10 +9438,19 @@ def describe_letter_reports(
     king_leader_id = _king_leader_id(state, kingdom_id)
     king_name = state.leaders[king_leader_id].name if king_leader_id is not None else None
 
+    # Phase 614: state.dead_leaders is included too -- otherwise a Hero
+    # who died from their own action this turn (e.g. losing a Challenge)
+    # never even enters other_leader_ids, silently dropping their whole
+    # letter -- the same shape as compose_letter_report()'s own Phase
+    # 614 fix, a distinct, separately-computed leader set this function
+    # never shared with that one. remove_leader() never touches
+    # .kingdom_id on the archived LeaderState.
     other_leader_ids = sorted(
-        leader.leader_id
-        for leader in state.leaders.values()
-        if leader.kingdom_id == kingdom_id and leader.leader_id != king_leader_id
+        {
+            leader.leader_id
+            for leader in (*state.leaders.values(), *state.dead_leaders.values())
+            if leader.kingdom_id == kingdom_id and leader.leader_id != king_leader_id
+        }
     )
 
     lines = ["LETTER REPORTS"]
@@ -9401,7 +9462,8 @@ def describe_letter_reports(
         )
         if not story_lines:
             continue
-        leader_name = state.leaders[leader_id].name
+        leader = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
+        leader_name = leader.name
         if not letter_lines:
             letter_lines.append(_LETTER_REPORTS_OPENING)
         letter_lines.append(f"From: {leader_name}")
@@ -10593,8 +10655,21 @@ def compose_letter_report(
         lines.append("")
         lines.extend(body)
 
+    # Phase 614: state.dead_leaders is included too -- state.leaders
+    # alone silently drops a leader who died from their own action this
+    # turn (run_turn() already mutated state, including every real
+    # remove_leader() call, before compose_letter_report() ever runs),
+    # dropping their entire ACTION REPORT/LETTER REPORTS entry, not just
+    # the death itself. remove_leader() never touches .kingdom_id on the
+    # archived LeaderState, so this is a free, non-inventive lookup, the
+    # same shape as _leader_name()'s own Phase 612 fallback -- which
+    # this bug had been silently masking downstream of, since that
+    # fix's own tests called describe_turn_results() directly, never
+    # through this earlier filtering step.
     kingdom_leader_ids = {
-        leader.leader_id for leader in state.leaders.values() if leader.kingdom_id == kingdom_id
+        leader.leader_id
+        for leader in (*state.leaders.values(), *state.dead_leaders.values())
+        if leader.kingdom_id == kingdom_id
     }
     kingdom_results = [entry for entry in results if entry.leader_id in kingdom_leader_ids]
 

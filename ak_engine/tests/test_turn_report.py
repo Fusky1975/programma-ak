@@ -118,6 +118,7 @@ from ak_engine.report.turn_report import (
     render_assassination_failed,
     render_assassination_ordered,
     render_assassination_success,
+    render_could_not_be_assassinated,
     render_attack_devastating_hit,
     render_attack_hit,
     render_attack_missed,
@@ -306,6 +307,7 @@ from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
+from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
 from ak_engine.turn.encounter import CombatRange, FireArrowShot, MeleeSwing
 from ak_engine.turn.expenses import MaintenanceResult
 from ak_engine.turn.exploration import ExploreResult
@@ -3611,6 +3613,12 @@ def test_render_assassination_failed_right_branch():
     )
 
 
+def test_render_could_not_be_assassinated():
+    # Phase 614: ILLEG.X2 record 91 -- no rng draws, no /R or {} markers.
+    result = render_could_not_be_assassinated("Bob")
+    assert result == "Bob could not be assassinated because Bob was dead and buried."
+
+
 # -- battle morale narrative + vampiric bite (Phase 126) --
 
 
@@ -6739,6 +6747,42 @@ def test_compose_letter_report_filters_results_to_only_this_kingdoms_own_leaders
 
     assert "ACTION REPORT" not in lines
     assert lines[0] == "LETTER REPORTS"
+
+
+def test_compose_letter_report_narrates_a_non_king_leader_who_dies_this_turn():
+    # Phase 614: before this fix, both compose_letter_report()'s own
+    # kingdom_leader_ids and describe_letter_reports()'s own separately-
+    # computed other_leader_ids only scanned state.leaders (live), so a
+    # Hero who died from their own action this turn (state.remove_leader()
+    # already ran, same timing as a real end-to-end run) was silently
+    # dropped from their own kingdom's letter entirely -- not just the
+    # death sentence, the whole letter.
+    state = GameState()
+    location = HexCoord(0, 0)
+    state.add_kingdom(KingdomState(1, "Kingdom A", Race.HUMAN, Alignment.NEUTRAL, location))
+    state.add_kingdom(KingdomState(2, "Kingdom B", Race.HUMAN, Alignment.NEUTRAL, location))
+    state.add_leader(LeaderState(1, 1, "TheKing", location, is_king=True))
+    state.add_leader(LeaderState(5, 1, "Guerin", location, is_king=False))
+    state.add_leader(LeaderState(2, 2, "Borin", location, is_king=True))
+    state.remove_leader(5)
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        winner_leader_id=2,
+        loser_leader_id=5,
+        loser_killed=True,
+        melee_swings=(MeleeSwing(attacker="b", hit=True, damage=6),),
+        request=ChallengeRequest(target_character_id=2, unconfirmed_extra0=0),
+    )
+    results = [
+        PhaseDispatchResult(leader_id=5, segment_index=0, phase_label="P0", action=ActionCode.CHALLENGE, result=result, error=None)
+    ]
+
+    lines = compose_letter_report(results, state, 1, ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0]))
+
+    assert "From: Guerin" in lines
+    assert "Borin assailed Guerin and inflicted 6 damage points." in lines
+    assert "and so it was that Guerin met Guerin's unseemly end." in lines
 
 
 def test_compose_letter_report_all_four_wired_sections_present_even_when_empty():

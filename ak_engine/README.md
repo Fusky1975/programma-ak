@@ -24803,7 +24803,7 @@ follow-up request after the original 431-435 plan shipped.
   and the new Kill Enemy wiring plus all new tests: 5053 passed (net
   +6).
 
-- **Phase 613 (current)**: wires `models/monster.py MONSTER_DESCRIPTION`
+- **Phase 613**: wires `models/monster.py MONSTER_DESCRIPTION`
   (Phase 579's own byte-faithful `HostAK/TP/PROSE/MONSTERS.X2`
   transcription, real flavor text for all 60 monster species, never
   called from anywhere) into `describe_feature_discovery()` -- rulebook
@@ -24842,6 +24842,95 @@ follow-up request after the original 431-435 plan shipped.
   (non-breaking check, confirming exactly these 3 and no others broke):
   3 failed, 5050 passed. Ran again after fixing and with new tests: 5055
   passed (net +2).
+
+- **Phase 614 (current)**: wires the Grandfather of Assassins title
+  (`Office.ASSASSIN`) into production for the first time -- Phase 612's
+  own blocker (no real sample data confirming `FI-re(character)`'s
+  actual player-order shape) is resolved by a user-supplied, direct
+  `AK.EXE`/`AK.OVR` disassembly reverse-engineering report (2026-08-22),
+  citing real byte offsets for every mechanic. Cross-checked directly
+  against the codebase before writing anything: the title's own
+  election (`turn/office_holder.py resolve_office_holder()` +
+  `turn/merit_points.py merit_point_tiebreak_key()`'s current-holder >
+  treasury > tax-base > lowest-id cascade) and the Kill-Enemy-only merit
+  crediting (Phase 447) already matched the new document's own findings
+  exactly, no changes needed there.
+
+  **Two real, now-confirmed bugs fixed in the existing (never-wired)
+  `turn/assassin_guild.py resolve_grandfather_of_assassins_attempt()`**:
+  the formula's own `M` read raw stored Melee skill instead of the real
+  `M_Skill` (effective/modified) the disassembly names -- fixed via
+  `turn/discovery_effects.py effective_skill_level()`, which already
+  existed (Phase 534) but wasn't used here; and the per-victim guard
+  counter only incremented on failure, when the disassembly confirms it
+  increments after every resolved attempt -- fixed, and renamed
+  `assassination_guild_failed_attempts` -> `assassination_guild_
+  attempts` accordingly (`models/game_state.py`).
+
+  **A real, larger, separate pre-existing bug found and fixed along the
+  way**: tracing how a resolution's own outcome would reach the
+  victim's kingdom letter surfaced that `report/turn_report.py
+  compose_letter_report()`'s `kingdom_leader_ids` *and*
+  `describe_letter_reports()`'s own separately-computed
+  `other_leader_ids` both only scanned live `state.leaders`, silently
+  dropping a non-King leader's *entire* letter (not just the death
+  sentence) the turn they died from their own action -- confirmed via a
+  direct `compose_letter_report()` reproduction before touching any
+  code. This is a gap Phase 612's own `_leader_name()`/
+  `_leader_location()` fix never closed, since that fix's own tests
+  called `describe_turn_results()` directly, bypassing these two
+  earlier, independent filtering steps. Both now fall back to
+  `state.dead_leaders`, the same shape as Phase 612's own fix.
+
+  **The mechanic itself**: `turn/plan_dispatch.py _dispatch_fire()` now
+  intercepts an ordinary `FIRE` order before its normal logic runs, when
+  the order-giver holds `Office.ASSASSIN`, the target isn't a King, and
+  the target belongs to a different Kingdom (`AK.EXE:0xCD0D-0xCD39`) --
+  queuing `GameState.pending_guild_target` (new field, a single global
+  slot, last-order-wins-the-same-turn, matching a confirmed real
+  anomaly) instead of running an ordinary Fire. New
+  `turn/assassin_guild.py resolve_pending_guild_assassination()` is
+  called exactly once per turn from `orchestrator.py process_turn()`,
+  right after `run_turn()` returns (battles for the turn are done,
+  matching "end of phase 5, after battles"), appending one synthetic
+  `PhaseDispatchResult` (the same `DefendReinforcement`/plague-spread
+  sentinel convention `turn_processor.py` already established) keyed to
+  the *victim's* own `leader_id` -- what makes the fixed per-Kingdom
+  routing above land the outcome in the right letter. `describe_turn_
+  results()` gained two new branches: the order-giver's own private
+  `_LOAss` notice (`render_assassination_ordered()`, already built,
+  Phase 125) on the `FIRE` branch when `guild_assassination_queued`,
+  and the real `_ASeek`/`_AKill`/`_AFail` sequence (also already built,
+  Phase 125, never called until now) or the new `ILLEG.X2`-record-91
+  `render_could_not_be_assassinated()` on the new
+  `GuildAssassinationOutcome` sentinel branch. A title vacant at
+  resolution time (`attempt is None`) narrates nothing -- no sourced
+  text covers it, so no dangling half-narrated `_ASeek` is emitted.
+
+  Explicitly out of scope, documented not silently worked around:
+  `turn/office_holder.py commit_office_holders()` has no caller
+  anywhere in production, so `state.office_holders`'s own "current
+  holder retains ties" stickiness is dead code today for every Office,
+  not just Assassin -- `resolve_office_holder()` is read live instead,
+  correct on its own terms but unable to prefer last turn's settled
+  titleholder until that separate gap closes. The x86 `SHR AX,CL`
+  CPU-dependent edge case (guard counter >= 16) is also not replicated
+  -- this project already uses float probabilities everywhere else
+  rather than bit-exact `IRand100` emulation.
+
+  New/updated tests across `test_assassin_guild.py` (renamed field,
+  unconditional increment, `effective_skill_level` fix, 4 new
+  `resolve_pending_guild_assassination()` cases), `test_plan_dispatch.py`
+  (4 new `_dispatch_fire()` interception cases), `test_turn_report.py`
+  (the new renderer, both new `describe_turn_results()` branches across
+  5 outcomes, the `compose_letter_report()` dead-leader regression),
+  `test_describe_turn_results.py` (the same 5 outcomes at the
+  `describe_turn_results()` level), and one new end-to-end
+  `test_orchestrator.py` case proving `process_turn()` itself calls the
+  new resolver and threads its outcome into the right Kingdom's letter.
+  Ran before this phase's own fixes (non-breaking baseline): 5055
+  passed. Ran again after every fix, the full mechanic, and all new
+  tests: 5073 passed (net +18).
 
 ## Setup
 

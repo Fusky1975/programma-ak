@@ -59,6 +59,7 @@ from ak_engine.report.turn_report import (
     record_spell_world_events,
     record_uncontested_conquest_world_events,
 )
+from ak_engine.turn.assassin_guild import resolve_pending_guild_assassination
 from ak_engine.turn.emperor_election import ElectionCallOutcome, ElectionResult, process_election_turn
 from ak_engine.turn.final_standings import FinalStandingsReport, compose_final_standings_report
 from ak_engine.turn.kingdom_bridge import KingdomBridgeReport, sync_leaders_from_kingdom
@@ -196,6 +197,31 @@ def process_turn(
             turn_leaders.extend(build_missed_deadline_turn_leaders(state, kingdom_id))
 
     results = run_turn(turn_leaders, state, board_width=board_width, rng=rng)
+
+    # Phase 614: the Grandfather of Assassins title's own free attempt,
+    # if a FI order queued one during this same run_turn() call
+    # (turn/plan_dispatch.py _dispatch_fire()'s own interception) --
+    # resolved exactly once here, right after battles for the turn are
+    # done, matching the real "end of phase 5, after battles" timing
+    # (see turn/assassin_guild.py resolve_pending_guild_assassination()'s
+    # own docstring). Wrapped into the same sentinel-PhaseDispatchResult
+    # convention turn_processor.py already established for plague-spread/
+    # forced-rebattle entries (leader_id keyed to the *victim*, not the
+    # titleholder, so compose_letter_report()'s own per-Kingdom filtering
+    # routes the outcome to the victim's own Kingdom letter).
+    guild_outcome = resolve_pending_guild_assassination(state, rng)
+    if guild_outcome is not None:
+        results.append(
+            PhaseDispatchResult(
+                leader_id=guild_outcome.target_leader_id,
+                segment_index=-1,
+                phase_label="guild-assassination",
+                action=None,
+                result=guild_outcome,
+                error=None,
+            )
+        )
+
     election_outcome = process_election_turn(state, kingdom_headers, state.turn_number)
     final_standings_report = compose_final_standings_report(state)
 

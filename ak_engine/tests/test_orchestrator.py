@@ -125,6 +125,32 @@ def test_process_turn_combines_multiple_kingdoms_orders_into_one_run_turn_call()
     assert "STATE OF THE NATION:" in outcome.letter_reports[2]
 
 
+def test_process_turn_resolves_a_queued_guild_assassination_after_battles():
+    # Phase 614: state.pending_guild_target set here stands in for a real
+    # turn/plan_dispatch.py _dispatch_fire() interception (covered in
+    # isolation in test_plan_dispatch.py) -- this test's own job is only
+    # to prove process_turn() actually calls resolve_pending_guild_
+    # assassination() once after run_turn() and threads its outcome into
+    # the right Kingdom's own letter_reports entry.
+    state = _base_state()
+    state.leaders[10].merit_tally.successful_assassinations = 2  # Arthur holds Office.ASSASSIN
+    state.pending_guild_target = 20  # Cedric queued
+    kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
+        outcome = process_turn(
+            state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0] * 20, choice_indices=[0] * 20)
+        )
+
+    assert state.pending_guild_target is None
+    guild_results = [r for r in outcome.results if r.phase_label == "guild-assassination"]
+    assert len(guild_results) == 1
+    assert guild_results[0].leader_id == 20
+    assert 20 not in state.leaders
+    letter = outcome.letter_reports[1]
+    assert any("stroll" in line or "assassin" in line for line in letter)
+
+
 def test_process_turn_auto_fills_a_missed_deadline_kingdom_with_the_real_defend_wait_plan():
     # Phase 574: Defendia (kingdom 2) submits no order file this turn --
     # process_turn() now merges turn/turn_processor.py
