@@ -145,7 +145,7 @@ from dataclasses import dataclass
 
 from ak_engine.models.army_type import SEA_ARMY_TYPES, is_land_army
 from ak_engine.models.feature import Feature
-from ak_engine.models.game_state import GameState, ProvinceState
+from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
@@ -394,6 +394,25 @@ def record_kingdom_exploration(
     return KingdomExplorationResult(result.new_percent, discovered)
 
 
+def reveal_adjacent_provinces(state: GameState, province: ProvinceState, kingdom_id: int, bounds: MapBounds) -> None:
+    """"Known provinces" (Phase 623, `models/game_state.py`'s own
+    module docstring addendum): entering `province` also reveals each
+    of its own real neighbors to `kingdom_id` at the flat `KNOWN_
+    PROVINCE_MIN_PERCENT` floor, if not already known -- the user's own
+    example, "passing by way of an adjacent province." Never *lowers* a
+    neighbor's own recorded percentage (`known_to_kingdom()` is already
+    `True` for anything at or above the floor, so this only ever writes
+    a neighbor that was still fully unknown). Called at every site that
+    already calls `record_kingdom_exploration()` for a real province
+    entry -- see this module's own Phase 623 addendum in each caller.
+    """
+
+    for neighbor in neighbors(province.coord, bounds):
+        neighbor_province = state.provinces.get(neighbor)
+        if neighbor_province is not None and not neighbor_province.known_to_kingdom(kingdom_id):
+            neighbor_province.explored_percent_by_kingdom[kingdom_id] = KNOWN_PROVINCE_MIN_PERCENT
+
+
 def execute_move(
     state: GameState,
     kingdom_id: int,
@@ -622,6 +641,7 @@ def execute_move(
         has_difficult_terrain=has_difficult_terrain,
         has_find_mines=has_find_mines,
     )
+    reveal_adjacent_provinces(state, target_province, kingdom_id, bounds)
 
     # Phase 541 -- Map of the Marauders "+1 hex to sea vision during
     # movement" (AKGEN_reverse_engineering_report (4).md SS11), a
@@ -657,6 +677,7 @@ def execute_move(
                         has_difficult_terrain=has_difficult_terrain,
                         has_find_mines=has_find_mines,
                     )
+                    reveal_adjacent_provinces(state, further_province, kingdom_id, bounds)
                     break
 
     battle_report = None

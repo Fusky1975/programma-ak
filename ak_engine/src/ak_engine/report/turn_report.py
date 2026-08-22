@@ -2515,6 +2515,7 @@ _POWMSG_DN_APT_SUCCESS = (
     "But I can help solve that!Henceforth, you shall have 1 less aptitude level in ^."
 )
 _POWMSG_MAP_FEAT_EXHAUSTED = "There are no more features to be told of in the provinces you have mapped."
+_POWMSG_MAP_PROV_EXHAUSTED = "No more provinces exist to be told of in this world."  # POWMSG.X2 line 21, Phase 623
 _POWMSG_SAGE_DISC_EXHAUSTED = "Science has come to an end!There are no more discoveries to be made in this universe."
 _POWMSG_NEW_SEX_TO_FEMALE = (
     "By the power of the $\\, I change you to a woman!"
@@ -2642,6 +2643,11 @@ def describe_feature_power_attempt(
     if outcome.power is Power.MAP_FEAT:
         if outcome.reason == "no more features to reveal":
             return render(_POWMSG_MAP_FEAT_EXHAUSTED, values, rng=rng)
+        return None  # a successful reveal has no recovered POWMSG id
+
+    if outcome.power is Power.MAP_PROV:
+        if outcome.reason == "no more provinces to reveal":
+            return render(_POWMSG_MAP_PROV_EXHAUSTED, values, rng=rng)
         return None  # a successful reveal has no recovered POWMSG id
 
     if outcome.power is Power.SAGE_DISC:

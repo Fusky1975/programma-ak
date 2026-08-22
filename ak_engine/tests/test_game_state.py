@@ -321,6 +321,36 @@ def test_effective_terrain_ignores_illusory_terrain():
     assert province.effective_terrain() is Terrain.PLAINS
 
 
+# -- Phase 623: ProvinceState.known_to_kingdom() -----------------------------
+
+
+def test_known_to_kingdom_false_with_no_recorded_exploration():
+    province = ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN)
+
+    assert province.known_to_kingdom(1) is False
+
+
+def test_known_to_kingdom_true_at_exactly_the_floor():
+    province = ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN)
+    province.explored_percent_by_kingdom[1] = 1
+
+    assert province.known_to_kingdom(1) is True
+
+
+def test_known_to_kingdom_true_above_the_floor():
+    province = ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN)
+    province.explored_percent_by_kingdom[1] = 50
+
+    assert province.known_to_kingdom(1) is True
+
+
+def test_known_to_kingdom_is_per_kingdom():
+    province = ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN)
+    province.explored_percent_by_kingdom[1] = 50
+
+    assert province.known_to_kingdom(2) is False
+
+
 # -- Phase 223: ProvinceState.tax -------------------------------------------
 
 

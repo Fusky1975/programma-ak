@@ -245,7 +245,7 @@ from ak_engine.turn.contested_province import (
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.plague_spread import resolve_plague_spread
 from ak_engine.turn.missed_deadline import build_missed_deadline_plan
-from ak_engine.turn.move_execution import MoveExecutionResult, record_kingdom_exploration
+from ak_engine.turn.move_execution import MoveExecutionResult, record_kingdom_exploration, reveal_adjacent_provinces
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 from ak_engine.turn.office_holder import apply_cravenest_temperament_escalation
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, run_leader_plan
@@ -1293,6 +1293,7 @@ def _dispatch_multi_attacker_lmove(
             # percentage here, unlike the single shared exploration_new_percent
             # scalar above (which only the last mover in this loop wins).
             record_kingdom_exploration(target_province, tl.kingdom_id, explorer_skill, partial=True, state=state, rng=rng)
+            reveal_adjacent_provinces(state, target_province, tl.kingdom_id, bounds)
         except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
             results.append(PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, None, exc))
             continue

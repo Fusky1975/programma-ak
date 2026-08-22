@@ -4977,6 +4977,17 @@ def test_describe_feature_power_attempt_map_feat_success_has_no_recovered_messag
     assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
 
 
+def test_describe_feature_power_attempt_map_prov_exhausted():
+    outcome = FeaturePowerAttemptResult(power=Power.MAP_PROV, applied=False, reason="no more provinces to reveal")
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line == "No more provinces exist to be told of in this world."
+
+
+def test_describe_feature_power_attempt_map_prov_success_has_no_recovered_message():
+    outcome = FeaturePowerAttemptResult(power=Power.MAP_PROV, applied=True, revealed_province_coords=(HexCoord(1, 1),))
+    assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
+
+
 def test_describe_feature_power_attempt_sage_disc_exhausted():
     outcome = FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=False, reason="no more discoveries to reveal")
     line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))

@@ -25504,7 +25504,7 @@ follow-up request after the original 431-435 plan shipped.
   resolvable) remains open in the whole Feature -> Power [5.8]
   subsystem.
 
-- **Phase 622 (current)**: closes `Power.CHANCE`'s own `gdday` gap --
+- **Phase 622**: closes `Power.CHANCE`'s own `gdday` gap --
   the last real gap in the Feature -> Power [5.8] subsystem. A third,
   independent user-supplied reverse-engineering report (`gdday.md`,
   2026-08-22) identifies `gdday`: a persistent 16-bit integer, the real
@@ -25599,6 +25599,98 @@ follow-up request after the original 431-435 plan shipped.
   every real `Power` is now wired except the deliberately-dropped
   `MAP_PROV` (needs a per-Kingdom "known provinces" tracking concept
   that doesn't exist in `GameState`, Phase 616's own scope decision).
+
+- **Phase 623 (current)**: implements "known provinces" (the user's
+  own direct spec, not from a reverse-engineering source this time) and
+  wires `Power.MAP_PROV` with it -- closing the Feature -> Power [5.8]
+  subsystem's true last gap. A province is known to a Kingdom once that
+  Kingdom has at least 1% recorded exploration of it; discovering a
+  province (the user's own example: passing by way of an adjacent
+  province during Move) acquires it starting at exactly that 1% floor.
+
+  Reuses an existing field rather than adding one: `ProvinceState.
+  explored_percent_by_kingdom` (Phase 69) already tracks exactly "how
+  much has *this* Kingdom explored this province" -- "known" is simply
+  `>= KNOWN_PROVINCE_MIN_PERCENT` (1, `models/game_state.py`, new
+  module-level constant). New `ProvinceState.known_to_kingdom(kingdom_
+  id)` method (matching this class's own existing `effective_terrain()`
+  convention). Confirmed a province an army actually *enters* was
+  already guaranteed far more than 1% by the pre-existing partial-
+  exploration formula (`turn/exploration.py resolve_explore(...,
+  partial=True)`'s smallest possible result, Jungle at skill 0, is 5)
+  -- the genuinely new mechanic is revealing a province's own
+  *neighbors*, which nobody entered.
+
+  New `turn/move_execution.py reveal_adjacent_provinces(state,
+  province, kingdom_id, bounds)`: for each real neighbor (`turn/
+  movement.py neighbors()`) of `province` not already known, sets it to
+  the 1% floor (never lowers an already-better-known neighbor). Called
+  at all 4 existing `record_kingdom_exploration()` call sites (Phase
+  69's own module docstring already lists them) -- `move_execution.py
+  execute_move()`'s main partial-exploration call and its Map of the
+  Marauders sea-vision-extension call, `turn/plan_dispatch.py`'s
+  `EXPLORE` branch, `turn/turn_processor.py`'s multi-attacker `LMOVE`
+  branch -- each site already had the relevant province/kingdom/bounds
+  in scope. Two pre-existing Map of the Marauders tests needed
+  updating: both asserted a real neighbor province stayed completely
+  unrecorded without the item/on land, which was true before this
+  phase but is no longer the right check -- updated to confirm the
+  *item's own extra* bonus doesn't apply while accepting the new
+  ordinary 1% adjacency floor now correctly does.
+
+  `turn/feature_power_execution.py`: `Power.MAP_PROV` added to
+  `TRACTABLE_POWERS`. New `_reveal_unknown_provinces()`, mirroring
+  `_reveal_unknown_feature()`/`_reveal_sage_discoveries()` exactly:
+  refuses on a kingdomless leader, refuses with `"no more provinces to
+  reveal"` when every real province is already known, else reveals
+  `min(len(unknown), 3 + IRand MOD 3)` (`Special Features.md`'s own
+  sourced formula for `MapProv`, 3-5 provinces) uniformly-randomly
+  chosen unknown provinces at the 1% floor. No Chancellor merit credit
+  -- `FPDESC.X2`'s own text never mentions one for this power, and no
+  `MeritTally` field exists for "provinces mapped." `MAP_PROV`'s own
+  condition/cost gate was already fully wired since Phase 616
+  (`POWER_CONDITION_PAIRS[Power.MAP_PROV] = (PAY_UP, SAME_ALIGN, 10)`)
+  -- only the effect itself was missing. `FeaturePowerAttemptResult`
+  gained `revealed_province_coords: tuple[HexCoord, ...]`.
+
+  Report layer: new `_POWMSG_MAP_PROV_EXHAUSTED` (`POWMSG.X2` line 21,
+  "No more provinces exist to be told of in this world.", unused until
+  now) and a matching `describe_feature_power_attempt()` branch -- a
+  successful reveal has no recovered POWMSG id, same convention as
+  `MAP_FEAT`/`SAGE_DISC`'s own successful cases.
+
+  `turn/search_execution.py`: no functional change (`_apply_scout()`'s
+  own `TRACTABLE_POWERS` check already reaches `MAP_PROV` once it
+  joined that set) -- updated a stale comment that still named
+  `MAP_PROV` as the one deliberately-unwired power. One pre-existing
+  test (`..._leaves_a_non_tractable_power_unapplied`) had used `MAP_
+  PROV` (F#171/Pyramid) as its own "still unwired" example after Phase
+  622 repointed it there from `Chance` -- since every real `Power` is
+  now wired, its whole premise no longer has a real example to use;
+  repointed to a genuinely powerless Feature instead (F#29/Pyramid ->
+  `Power.PNONE`, the ~55% of real Features with no power at all) and
+  renamed accordingly.
+
+  Tests: `tests/test_game_state.py` gained 4 -- `known_to_kingdom()` at
+  0%, at exactly the floor, above it, and confirming it's per-kingdom.
+  `tests/test_move_execution.py` gained 4 -- `reveal_adjacent_
+  provinces()` directly (sets an unknown neighbor, never lowers an
+  already-better-known one, skips a neighbor with no real province
+  data) plus a full `execute_move()` case confirming both the entered
+  province and a real never-entered neighbor end up known, for
+  different reasons. `tests/test_feature_power_execution.py` gained 5
+  -- `TRACTABLE_POWERS` membership, `_reveal_unknown_provinces()`'s own
+  no-Kingdom/exhausted/success/reveal-count-capped cases.
+  `tests/test_search_execution.py` gained 1 -- a full `_apply_scout()`
+  `MAP_PROV` success case (F#171/Pyramid) confirming 3-5 real provinces
+  end up known. `tests/test_turn_report.py` gained 2 for the new POWMSG
+  branch. Ran before writing new tests (non-breaking check, after
+  fixing the 2 stale Marauders tests and repointing the non-tractable-
+  power test): 5222 passed, unchanged from Phase 622's own count. Ran
+  again with all new tests: 5238 passed (net +16).
+
+  This closes the Feature -> Power [5.8] subsystem for real -- every
+  real `Power` is now wired, nothing deliberately dropped anymore.
 
 ## Setup
 

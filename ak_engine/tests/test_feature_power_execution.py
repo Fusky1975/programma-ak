@@ -896,3 +896,78 @@ def test_resolve_feature_power_attempt_chance_cast_spell():
     assert result.applied is True
     assert result.power is Power.CAST_SPELL
     assert result.cast_spell is Spell.TORNADO
+
+
+# -- Phase 623: Power.MAP_PROV, "known provinces" ----------------------------
+
+
+def test_map_prov_is_tractable():
+    assert Power.MAP_PROV in TRACTABLE_POWERS
+
+
+def _map_prov_event() -> FeaturePowerEvent:
+    return FeaturePowerEvent(power=Power.MAP_PROV, magic_feature=MagicFeature.CRYSTAL_BALL)
+
+
+def test_resolve_feature_power_attempt_map_prov_no_kingdom_refuses():
+    state = GameState()
+    state.add_leader(LeaderState(LEADER_ID, None, "Wanderer", LOCATION))
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _map_prov_event(), random.Random(0))
+
+    assert result.applied is False
+    assert result.reason == "no Kingdom to record this for"
+
+
+def test_resolve_feature_power_attempt_map_prov_exhausted_when_every_province_is_known():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+    only_province = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    only_province.explored_percent_by_kingdom[1] = 1
+    state.provinces[LOCATION] = only_province
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _map_prov_event(), random.Random(0))
+
+    assert result.applied is False
+    assert result.reason == "no more provinces to reveal"
+
+
+def test_resolve_feature_power_attempt_map_prov_reveals_three_to_five_unknown_provinces():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+    coords = [HexCoord(x, 0) for x in range(10)]
+    for coord in coords:
+        state.provinces[coord] = ProvinceState(coord=coord, terrain=Terrain.PLAINS, race=Race.HUMAN)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _map_prov_event(), random.Random(0))
+
+    assert result.applied is True
+    assert result.power is Power.MAP_PROV
+    assert 3 <= len(result.revealed_province_coords) <= 5
+    assert len(set(result.revealed_province_coords)) == len(result.revealed_province_coords)
+    for coord in result.revealed_province_coords:
+        assert state.provinces[coord].known_to_kingdom(1) is True
+
+
+def test_resolve_feature_power_attempt_map_prov_caps_reveal_count_when_few_provinces_are_unknown():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+    only_unknown = HexCoord(0, 0)
+    already_known = HexCoord(1, 0)
+    state.provinces[only_unknown] = ProvinceState(coord=only_unknown, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    known_province = ProvinceState(coord=already_known, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    known_province.explored_percent_by_kingdom[1] = 1
+    state.provinces[already_known] = known_province
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _map_prov_event(), random.Random(0))
+
+    assert result.applied is True
+    assert result.revealed_province_coords == (only_unknown,)

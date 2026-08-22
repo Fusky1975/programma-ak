@@ -264,6 +264,22 @@ Missing entries for *both* sides default to 0, which
 `exploration_advantage_multiplier(0, 0)` reads as no advantage either
 way -- a neutral, not a guessed, default.
 
+**"Known provinces" (Phase 623)**: the user specified this concept
+directly (not from a reverse-engineering source): a province is
+"known" to a Kingdom once that Kingdom has at least `KNOWN_PROVINCE_
+MIN_PERCENT` (1%) recorded exploration of it -- reusing `Province
+State.explored_percent_by_kingdom` (Phase 69, above) rather than a new
+field, since that field already tracks exactly the right per-kingdom
+quantity. `ProvinceState.known_to_kingdom()` is the query side.
+`turn/move_execution.py reveal_adjacent_provinces()` is the write
+side: entering a province reveals its own neighbors at exactly this
+1% floor (the province actually entered already gets far more than 1%
+from the pre-existing partial-exploration formula, confirmed by
+reading `turn/exploration.py resolve_explore()`'s own numbers -- the
+smallest possible partial result, Jungle at skill 0, is 5). This
+closes the tracking gap `Power.MAP_PROV`'s own Phase 616 addendum
+flagged as missing (`turn/feature_power_execution.py`).
+
 **`LeaderState.is_comatose` (Phase 310)**: Kill_Enemy's own [4.25.2]
 Action-cast alternative to killing the target outright -- see
 `turn/cast_execution.py _execute_kill_enemy()`'s own Phase 310
@@ -903,7 +919,9 @@ class ProvinceState:
     # Per-kingdom exploration progress (Phase 69) -- see module docstring.
     # Distinct from `explored_percent` above (a single shared scalar,
     # unable to answer "how much has *this* kingdom explored" for the
-    # rulebook [6.3] exploration-advantage strength bonus).
+    # rulebook [6.3] exploration-advantage strength bonus). Also the
+    # backing store for "known provinces" (Phase 623) -- see module
+    # docstring's own Phase 623 addendum and `known_to_kingdom()` below.
     explored_percent_by_kingdom: dict[int, int] = field(default_factory=dict)
     # Province display name (Phase 150) -- models DEF2.PAS's own
     # `pname^[x,y]` global array directly. Never synthesized: the real
@@ -1037,6 +1055,23 @@ class ProvinceState:
         """
 
         return self.terrain_override if self.terrain_override is not None else self.terrain
+
+    def known_to_kingdom(self, kingdom_id: int) -> bool:
+        """"Known provinces" (Phase 623, see module docstring's own
+        addendum): `kingdom_id` has at least `KNOWN_PROVINCE_MIN_
+        PERCENT` recorded exploration of this province -- reads
+        `explored_percent_by_kingdom` (Phase 69), no new field.
+        """
+
+        return self.explored_percent_by_kingdom.get(kingdom_id, 0) >= KNOWN_PROVINCE_MIN_PERCENT
+
+
+# "Known provinces" (Phase 623) -- the flat exploration-percent floor a
+# province is revealed at when a Kingdom merely learns it exists (e.g.
+# `turn/move_execution.py reveal_adjacent_provinces()`, `turn/feature_
+# power_execution.py _reveal_unknown_provinces()`), as opposed to the
+# much larger amounts real exploration (Move/Explore) actually grants.
+KNOWN_PROVINCE_MIN_PERCENT = 1
 
 
 @dataclass(slots=True)

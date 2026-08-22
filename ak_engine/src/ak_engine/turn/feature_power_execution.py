@@ -126,10 +126,24 @@ describe_feature_power_attempt()` already dispatches purely on
 `outcome.power`, so every existing POWMSG template (including the
 `CAST_SPELL` one, reused for `Chance`'s own `rspell`-table spell draw
 via `_resolve_terrain_spell()`) renders correctly with zero new
-report-layer code. This closes the last real gap in the Feature ->
-Power [5.8] subsystem -- every real `Power` is now wired except the
-deliberately-dropped `MAP_PROV` (see this module's own Phase 616
-addendum above).
+report-layer code. This closed every real gap in the Feature ->
+Power [5.8] subsystem except the deliberately-dropped `MAP_PROV` (see
+this module's own Phase 616 addendum above) -- closed next, below.
+
+**Phase 623 -- `MAP_PROV`, the true last gap**: the user specified the
+missing "known provinces" tracking concept directly: a province is
+known to a Kingdom once that Kingdom has at least 1% recorded
+exploration of it (`models/game_state.py ProvinceState.known_to_
+kingdom()`, reusing the existing `explored_percent_by_kingdom` field,
+Phase 69) -- and `turn/move_execution.py reveal_adjacent_provinces()`
+now grants that 1% floor to a province's own neighbors whenever a
+Kingdom's army/leader moves into it (the user's own example: "passing
+by way of an adjacent province"). `MAP_PROV`'s own reveal count is
+sourced (`Special Features.md`: `3 + (IRand MOD 3)`, i.e. 3-5
+provinces) and its condition/cost gate was already fully wired since
+Phase 616 (`POWER_CONDITION_PAIRS[Power.MAP_PROV] = (PAY_UP,
+SAME_ALIGN, 10)`) -- only the effect itself was missing. Every real
+`Power` is now wired.
 """
 
 from __future__ import annotations
@@ -142,8 +156,9 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import Feature
-from ak_engine.models.game_state import ArmyState, GameState, LeaderState
+from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, ArmyState, GameState, LeaderState
 from ak_engine.models.magic_feature import MagicFeature
+from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
 from ak_engine.models.power import Power, PowerCondition
 from ak_engine.models.race import Race
@@ -211,6 +226,10 @@ TRACTABLE_POWERS = frozenset(
         Power.DN_APT,
         Power.MAP_FEAT,
         Power.SAGE_DISC,
+        # Phase 623: now that "known provinces" exists (`models/game_
+        # state.py ProvinceState.known_to_kingdom()`), MAP_PROV is
+        # tractable too -- see this module's own Phase 623 addendum.
+        Power.MAP_PROV,
     }
 )
 
@@ -366,6 +385,8 @@ class FeaturePowerAttemptResult:
     new_sex: Sex | None = None
     revealed_feature_id: int | None = None
     revealed_discoveries: tuple[Discovery, ...] = ()
+    # Phase 623: MAP_PROV's own 3-5 newly-known provinces.
+    revealed_province_coords: tuple[HexCoord, ...] = ()
     # Phase 616: the Feature's own derived `MagicFeature` (``POWMSG.X2``'s
     # own ``$\`` marker, see ``report/turn_report.py describe_feature_
     # power_attempt()``) -- always populated by ``resolve_feature_power_
@@ -592,6 +613,9 @@ def _resolve_feature_power_attempt_effect(
     if power is Power.MAP_FEAT:
         return _reveal_unknown_feature(state, leader, rng)
 
+    if power is Power.MAP_PROV:
+        return _reveal_unknown_provinces(state, leader, rng)
+
     # Power.SAGE_DISC
     return _reveal_sage_discoveries(state, leader, rng)
 
@@ -636,6 +660,32 @@ def _reveal_sage_discoveries(state: GameState, leader: LeaderState, rng: random.
     revealed = tuple(unknown[:count])
     kingdom.discoveries.update(revealed)
     return FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=True, revealed_discoveries=revealed)
+
+
+def _reveal_unknown_provinces(state: GameState, leader: LeaderState, rng: random.Random) -> FeaturePowerAttemptResult:
+    """`MAP_PROV` (Phase 623, `Special Features.md`): "sceglie `3 +
+    (IRand MOD 3)`, quindi tenta di rivelare 3, 4 o 5 province" --
+    passed to `AK.OVR 0x12928-0x12947`, the real mapping routine.
+    "Known" is `ProvinceState.known_to_kingdom()` (Phase 623, `models/
+    game_state.py`) -- each revealed province is set to the same
+    `KNOWN_PROVINCE_MIN_PERCENT` floor `turn/move_execution.py
+    reveal_adjacent_provinces()` already uses for ordinary adjacency
+    discovery, not a separate, guessed magnitude. No Chancellor merit
+    credit -- `FPDESC.X2`'s own text never mentions one, and no
+    `MeritTally` field exists for "provinces mapped."
+    """
+
+    if leader.kingdom_id is None:
+        return FeaturePowerAttemptResult(power=Power.MAP_PROV, applied=False, reason="no Kingdom to record this for")
+    unknown = [coord for coord, province in state.provinces.items() if not province.known_to_kingdom(leader.kingdom_id)]
+    if not unknown:
+        return FeaturePowerAttemptResult(power=Power.MAP_PROV, applied=False, reason="no more provinces to reveal")
+    count = min(len(unknown), 3 + rng.randrange(3))
+    rng.shuffle(unknown)
+    revealed = tuple(unknown[:count])
+    for coord in revealed:
+        state.provinces[coord].explored_percent_by_kingdom[leader.kingdom_id] = KNOWN_PROVINCE_MIN_PERCENT
+    return FeaturePowerAttemptResult(power=Power.MAP_PROV, applied=True, revealed_province_coords=revealed)
 
 
 # -- Phase 619: the 8 SA-argument powers --

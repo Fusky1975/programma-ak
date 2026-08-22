@@ -18,7 +18,9 @@ from ak_engine.turn.move_execution import (
     march_movement_point_bonus,
     naval_movement_point_bonus,
     record_kingdom_exploration,
+    reveal_adjacent_provinces,
 )
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 
 from _helpers import ScriptedRandom
 
@@ -150,6 +152,11 @@ def test_execute_move_map_of_the_marauders_extends_partial_exploration_to_a_furt
 
 
 def test_execute_move_without_the_map_does_not_extend_vision():
+    # `further` is a real neighbor of TARGET, so Phase 623's own ordinary
+    # adjacency-reveal still applies to it (a flat 1%, `KNOWN_PROVINCE_
+    # MIN_PERCENT`) -- what this test actually checks is that the
+    # *Marauders-specific* bonus (a much larger partial-exploration
+    # percentage) doesn't also apply without the item.
     state = base_state()
     further = HexCoord(3, 1)
     state.provinces[TARGET].terrain_override = Terrain.SEA
@@ -158,11 +165,15 @@ def test_execute_move_without_the_map_does_not_extend_vision():
 
     execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, explorer_skill=1)
 
-    assert 1 not in state.provinces[further].explored_percent_by_kingdom
+    assert state.provinces[further].explored_percent_by_kingdom.get(1) == 1
 
 
 def test_execute_move_map_of_the_marauders_does_nothing_on_land():
     # The bonus is sea-specific -- TARGET here stays its default Plains.
+    # `further` still gets Phase 623's own ordinary adjacency-reveal
+    # (flat 1%) from merely being TARGET's own real neighbor -- what
+    # this test actually checks is that the item's own *extra* bonus
+    # doesn't also apply on land.
     state = base_state()
     further = HexCoord(3, 1)
     state.add_province(ProvinceState(further, Terrain.SEA, Race.HUMAN))
@@ -171,7 +182,7 @@ def test_execute_move_map_of_the_marauders_does_nothing_on_land():
 
     execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, explorer_skill=1)
 
-    assert 1 not in state.provinces[further].explored_percent_by_kingdom
+    assert state.provinces[further].explored_percent_by_kingdom.get(1) == 1
 
 
 def test_record_kingdom_exploration_seeds_from_that_kingdoms_own_prior_entry():
@@ -189,6 +200,51 @@ def test_record_kingdom_exploration_seeds_from_that_kingdoms_own_prior_entry():
     other = record_kingdom_exploration(province, kingdom_id=2, explorer_skill=1, partial=True)
     assert other.new_percent == 50
     assert province.explored_percent_by_kingdom == {1: 100, 2: 50}
+
+
+# -- Phase 623: reveal_adjacent_provinces() ("known provinces") -------------
+
+
+def test_reveal_adjacent_provinces_sets_a_previously_unknown_neighbor_to_the_floor():
+    state = base_state()
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+
+    reveal_adjacent_provinces(state, state.provinces[TARGET], kingdom_id=1, bounds=bounds)
+
+    assert state.provinces[DEFENDER_HOME].explored_percent_by_kingdom.get(1) == 1
+
+
+def test_reveal_adjacent_provinces_never_lowers_an_already_better_known_neighbor():
+    state = base_state()
+    state.provinces[DEFENDER_HOME].explored_percent_by_kingdom[1] = 50
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+
+    reveal_adjacent_provinces(state, state.provinces[TARGET], kingdom_id=1, bounds=bounds)
+
+    assert state.provinces[DEFENDER_HOME].explored_percent_by_kingdom[1] == 50
+
+
+def test_reveal_adjacent_provinces_skips_neighbors_with_no_real_province_data():
+    state = base_state()
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    # No error even though most of TARGET's own geometric neighbors have
+    # no ProvinceState entry at all in this small test world.
+
+    reveal_adjacent_provinces(state, state.provinces[TARGET], kingdom_id=1, bounds=bounds)
+
+
+def test_execute_move_reveals_a_real_neighbor_of_the_destination():
+    state = base_state()
+    state.add_leader(LeaderState(1, 1, "Scout", ORIGIN))
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, explorer_skill=1)
+
+    # The entered province itself is known via the pre-existing partial-
+    # exploration formula (always well above the floor for real terrain
+    # numbers), and DEFENDER_HOME -- never entered, only adjacent to
+    # TARGET -- is known too, via the new adjacency-reveal floor.
+    assert state.provinces[TARGET].explored_percent_by_kingdom[1] > 1
+    assert state.provinces[DEFENDER_HOME].explored_percent_by_kingdom.get(1) == 1
 
 
 def test_record_kingdom_exploration_without_state_skips_discovery():

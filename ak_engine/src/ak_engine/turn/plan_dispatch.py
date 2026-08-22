@@ -372,7 +372,8 @@ from ak_engine.turn.exploration import SOCIETY_MAPS_EXPLORE_COUNT_RANGE, receive
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
 from ak_engine.turn.hire_pay import RARE_ALIGNMENT_EXCEPTION_PAY, required_pay, roll_rare_alignment_exception
-from ak_engine.turn.move_execution import execute_move, record_kingdom_exploration
+from ak_engine.turn.move_execution import execute_move, record_kingdom_exploration, reveal_adjacent_provinces
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import PracticeExecutionResult, execute_practice
@@ -622,6 +623,7 @@ def dispatch_phase(
             has_difficult_terrain=has_difficult_terrain,
             has_find_mines=has_find_mines,
         )
+        reveal_adjacent_provinces(state, province, kingdom_id, MapBounds(*NORMAL_MAP_BOUNDS))
         result.discovered_features = exploration.discovered_features
         # Phase 256: Chancellor Merit Points ("+2 per Special Place
         # discovered first", turn/merit_points.py) -- a feature just

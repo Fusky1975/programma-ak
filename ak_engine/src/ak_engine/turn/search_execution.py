@@ -1020,13 +1020,11 @@ def _apply_scout(
     feature.discovered_by_kingdom[leader.kingdom_id] = new_level
 
     # Phase 616: a full discovery is real "special function or event"
-    # knowledge per the rulebook quote above -- resolve and (for this
-    # phase's own 9 tractable powers only) apply the Feature->Power
-    # outcome now. A non-tractable power (MAP_PROV -- the one real
-    # `Power` still deliberately unwired, see `feature_power_execution.
-    # py`'s own Phase 616 addendum) is deliberately left with no
-    # `feature_power_outcome` here -- a later phase's own scope, not
-    # silently guessed at.
+    # knowledge per the rulebook quote above -- resolve and apply the
+    # Feature->Power outcome now. Every real `Power` is tractable as of
+    # Phase 623 (`MAP_PROV`, the last one, closed then) -- only
+    # `Power.PNONE` (no power at all, the ~55% of real Features with
+    # none) reaches `derive_feature_event()` with nothing to resolve.
     if discovered:
         event = derive_feature_event(feature, state=state)
         if event.power in TRACTABLE_POWERS or event.power in TERRAIN_SPELL_POWERS or event.power is Power.CHANCE:
