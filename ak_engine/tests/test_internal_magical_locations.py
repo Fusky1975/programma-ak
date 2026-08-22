@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ak_engine.models.enums import Spell
+from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import FeatureType
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import Terrain
@@ -12,8 +12,9 @@ from ak_engine.worldgen.internal_magical_locations import (
     candidate_location,
     candidate_power,
     resolve_power,
-    resolve_terrain_spell_candidate,
+    resolve_spell_candidate,
     resolve_visible_location,
+    spell_college,
 )
 
 
@@ -137,44 +138,117 @@ def test_resolve_power_never_returns_a_power_outside_its_own_location_range():
                 assert first.value <= result.value <= last.value
 
 
-# -- Phase 620: resolve_terrain_spell_candidate() (Set_Spell) --
+# -- Phase 621: spell_college() (Set_Spell's own Spell_College) --
 
 
-def test_resolve_terrain_spell_candidate_part_sea_valid_off_mountains():
+def test_spell_college_matches_every_already_confirmed_ability_in_the_project():
+    # Cross-checked against turn/cast_execution.py _SPELL_ABILITY (19 of
+    # the 25) and turn/encounter.py PERSONAL_COMBAT_SPELL_ABILITY (the
+    # other 10) -- zero contradictions, see spell_college()'s own
+    # docstring. All 25 real ordinals (0-24) checked here.
+    expected = {
+        Spell.RESURRECTION: Ability.WHITE,
+        Spell.PART_SEA: Ability.WHITE,
+        Spell.BLESS: Ability.WHITE,
+        Spell.HOLY_SYMBOL: Ability.WHITE,
+        Spell.SKELETAL_ARMY: Ability.NECROMANCY,
+        Spell.KILL_ENEMY: Ability.NECROMANCY,
+        Spell.PLAGUE: Ability.NECROMANCY,
+        Spell.HAND_OF_DEATH: Ability.NECROMANCY,
+        Spell.FLOOD: Ability.ELEMENTAL,
+        Spell.TORNADO: Ability.ELEMENTAL,
+        Spell.EARTHQUAKE: Ability.ELEMENTAL,
+        Spell.FIREBALL: Ability.ELEMENTAL,
+        Spell.CHARM: Ability.PSYCHIC,
+        Spell.ORATORY: Ability.PSYCHIC,
+        Spell.CLAIRVOYANCE: Ability.PSYCHIC,
+        Spell.PSYCHIC_BLAST: Ability.PSYCHIC,
+        Spell.ILLUS_TERRAIN: Ability.ILLUSION,
+        Spell.ILLUS_ARMIES: Ability.ILLUSION,
+        Spell.HIDE_FEATURE: Ability.ILLUSION,
+        Spell.INVISIBILITY: Ability.ILLUSION,
+        Spell.SPIRITWRACK: Ability.WHITE,
+        Spell.CONTROL_UNDEAD: Ability.NECROMANCY,
+        Spell.ICE_SUSPEND: Ability.ELEMENTAL,
+        Spell.TELEK_STORM: Ability.PSYCHIC,
+        Spell.MIRROR_IMAGE: Ability.ILLUSION,
+    }
+    for spell, ability in expected.items():
+        assert spell_college(spell) is ability, spell
+
+
+# -- Phase 621: resolve_spell_candidate() (the full Set_Spell) --
+
+
+def test_resolve_spell_candidate_part_sea_valid_off_mountains():
     # PYRAMID's own ordinal is 0, so modval == feature_index directly:
     # fn=1 -> setval=1 == Spell.PART_SEA.
-    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 1, Terrain.SEA) is Spell.PART_SEA
-    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 1, Terrain.PLAINS) is Spell.PART_SEA
+    assert resolve_spell_candidate(FeatureType.PYRAMID, 1, Terrain.SEA, Power.CAST_SPELL, 2) is Spell.PART_SEA
+    assert resolve_spell_candidate(FeatureType.PYRAMID, 1, Terrain.PLAINS, Power.CAST_SPELL, 2) is Spell.PART_SEA
 
 
-def test_resolve_terrain_spell_candidate_part_sea_invalid_on_mountains():
-    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 1, Terrain.MTNS) is None
+def test_resolve_spell_candidate_falls_through_to_the_next_candidate_on_mountains():
+    # Part_Sea invalid on Mountains -- the loop advances (tries=1) to
+    # setval=2 == Bless, valid here since miscwrit's bit 2 is set.
+    assert resolve_spell_candidate(FeatureType.PYRAMID, 1, Terrain.MTNS, Power.CAST_SPELL, miscwrit=2) is Spell.BLESS
 
 
-def test_resolve_terrain_spell_candidate_flood_valid_off_mountains():
-    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 8, Terrain.SEA) is Spell.FLOOD
-    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 8, Terrain.MTNS) is None
+def test_resolve_spell_candidate_flood_valid_off_mountains_falls_through_on_mountains():
+    assert resolve_spell_candidate(FeatureType.PYRAMID, 8, Terrain.SEA, Power.CAST_SPELL, 2) is Spell.FLOOD
+    # Flood invalid on Mountains -- the loop advances (tries=1) to
+    # setval=9 == Tornado, valid here since miscwrit's bit 2 is set.
+    assert resolve_spell_candidate(FeatureType.PYRAMID, 8, Terrain.MTNS, Power.CAST_SPELL, 2) is Spell.TORNADO
 
 
-def test_resolve_terrain_spell_candidate_earthquake_valid_off_sea():
-    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 10, Terrain.PLAINS) is Spell.EARTHQUAKE
-    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 10, Terrain.MTNS) is Spell.EARTHQUAKE
+def test_resolve_spell_candidate_earthquake_valid_off_sea():
+    assert resolve_spell_candidate(FeatureType.PYRAMID, 10, Terrain.PLAINS, Power.CAST_SPELL, 2) is Spell.EARTHQUAKE
+    assert resolve_spell_candidate(FeatureType.PYRAMID, 10, Terrain.MTNS, Power.CAST_SPELL, 2) is Spell.EARTHQUAKE
 
 
-def test_resolve_terrain_spell_candidate_earthquake_invalid_on_sea():
-    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 10, Terrain.SEA) is None
+def test_resolve_spell_candidate_earthquake_invalid_on_sea_falls_through():
+    # Earthquake invalid on Sea -- the loop keeps advancing past every
+    # miscwrit-gated ordinal in between (all valid here) to Oratory.
+    assert resolve_spell_candidate(FeatureType.PYRAMID, 10, Terrain.SEA, Power.CAST_SPELL, 2) is Spell.ORATORY
 
 
-def test_resolve_terrain_spell_candidate_excludes_the_12_extra_spells():
-    # fn=0 -> setval=0 == Spell.RESURRECTION, one of the always-excluded
-    # "extra spells" -- None regardless of terrain.
-    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 0, Terrain.SEA) is None
-    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 0, Terrain.PLAINS) is None
+def test_resolve_spell_candidate_excludes_the_12_extra_spells():
+    # fn=0 -> setval=0 == Spell.RESURRECTION, always excluded regardless
+    # of terrain/miscwrit -- the loop advances to setval=1 == Part_Sea.
+    assert resolve_spell_candidate(FeatureType.PYRAMID, 0, Terrain.SEA, Power.CAST_SPELL, 2) is Spell.PART_SEA
 
 
-def test_resolve_terrain_spell_candidate_unresolved_without_miscwrit():
-    # fn=2 -> setval=2 == Spell.BLESS -- a real, non-excluded ordinal,
-    # but not one of the 3 territory-filtered spells, so it needs the
-    # unsourced miscwrit flag and stays unresolved.
-    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 2, Terrain.SEA) is None
-    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 2, Terrain.PLAINS) is None
+def test_resolve_spell_candidate_miscwrit_gates_the_ordinary_spells():
+    # fn=2 -> setval=2 == Spell.BLESS -- a real, non-excluded, non-
+    # territory-filtered ordinal: resolves with the bit set (Phase 621's
+    # own real, sourced default), stays unresolvable to Bless without it
+    # (the loop instead falls through to Flood, the next terrain-valid
+    # candidate) -- proving the old Phase 620 gap is real and still
+    # reproducible when the bit is deliberately cleared, not silently
+    # papered over now that the default has it set.
+    assert resolve_spell_candidate(FeatureType.PYRAMID, 2, Terrain.PLAINS, Power.CAST_SPELL, miscwrit=2) is Spell.BLESS
+    assert resolve_spell_candidate(FeatureType.PYRAMID, 2, Terrain.PLAINS, Power.CAST_SPELL, miscwrit=0) is Spell.FLOOD
+
+
+def test_resolve_spell_candidate_ans_prayer_terminates_and_returns_a_real_spell():
+    # AnsPrayer's own White-Magic-favoring inner loop is exercised here
+    # (not just CastSpell's simpler "every tries value is tested"
+    # path) -- the exact resulting spell isn't independently hand-
+    # verified (no real sample data for AnsPrayer's own candidate
+    # exists), so this only asserts it terminates with a real, non-
+    # excluded Spell rather than raising.
+    result = resolve_spell_candidate(FeatureType.CRYPT, 53, Terrain.PLAINS, Power.ANS_PRAYER, miscwrit=2)
+    assert isinstance(result, Spell)
+    assert result not in {
+        Spell.RESURRECTION,
+        Spell.HOLY_SYMBOL,
+        Spell.HAND_OF_DEATH,
+        Spell.FIREBALL,
+        Spell.CHARM,
+        Spell.PSYCHIC_BLAST,
+        Spell.INVISIBILITY,
+        Spell.SPIRITWRACK,
+        Spell.CONTROL_UNDEAD,
+        Spell.ICE_SUSPEND,
+        Spell.TELEK_STORM,
+        Spell.MIRROR_IMAGE,
+    }

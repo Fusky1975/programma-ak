@@ -71,16 +71,14 @@ reasonable interpretation of unsourced *parsing*, not a guess at the
 fully sourced).
 
 **Phase 620 -- `CAST_SPELL`/`ANS_PRAYER`'s Part_Sea/Flood/Earthquake
-subset**: `Set_Spell` (section 3.6) gives a real formula for which
-spell one of these two powers grants, but almost every real candidate
-needs `(miscwrit AND 2) = 2` -- `miscwrit`'s own value is confirmed
-nowhere in the surviving Pascal, the same "real mechanic, unsourced
+subset (superseded by Phase 621, kept for history)**: `Set_Spell`
+(section 3.6) gives a real formula for which spell one of these two
+powers grants, but almost every real candidate needed `(miscwrit AND
+2) = 2` -- `miscwrit`'s own value was confirmed nowhere in the
+surviving Pascal at the time, the same "real mechanic, unsourced
 magnitude" class of gap as `Chance`'s own `gdday`. Only `Part_Sea`/
-`Flood`/`Earthquake` are fully sourced end to end (a territory filter
-instead of `miscwrit`) -- `worldgen/internal_magical_locations.py
-resolve_terrain_spell_candidate()` derives exactly those three, `None`
-for everything else (an excluded "extra spell", or a real ordinal only
-`miscwrit` could resolve). The effect ("converge on `AK.OVR 0x11802-
+`Flood`/`Earthquake` were fully sourced end to end (a territory filter
+instead of `miscwrit`). The effect ("converge on `AK.OVR 0x11802-
 0x1193B`, which validates the eventual target and triggers the
 appropriate magical action; does not permanently modify the
 character's magic skill") is an automatic-success cast targeting the
@@ -88,6 +86,25 @@ Feature's own province -- `turn/cast_execution.py execute_cast()`'s
 own existing `wand_skill_level` path (rulebook [3.11]'s "a spell cast
 from a magic item is always successful"), reused verbatim rather than
 inventing a parallel no-skill-roll mechanism.
+
+**Phase 621 -- the full `Set_Spell`, all 13 real candidates**: a
+second, independent user-supplied reverse-engineering report
+(`miscwrit.md`, 2026-08-22) resolved `miscwrit` precisely: a persistent
+16-bit bitmask (`GameState.miscwrit`, `GW` header field #33), whose
+bit `0x0002` is confirmed **always set** in every real `GW3__T1`-`T12`
+file this project actually targets (`6`/`0x0006` and `14`/`0x000E`
+respectively). `worldgen/internal_magical_locations.py resolve_spell_
+candidate()` now implements `Set_Spell`'s own complete, literal
+`REPEAT...UNTIL found` loop (including `AnsPrayer`'s own White-Magic-
+favoring inner loop) rather than Phase 620's `tries = 0`-only
+approximation, and always returns a real `Spell` (proven to terminate
+-- see that function's own docstring) instead of sometimes `None`.
+Cross-checked against `execute_cast()`'s own dispatch: all 13 real
+candidates (`Part_Sea`, `Bless`, `Skeletal_Army`, `Kill_Enemy`,
+`Plague`, `Flood`, `Tornado`, `Earthquake`, `Oratory`, `Clairvoyance`,
+`Illus_Terrain`, `Illus_Armies`, `Hide_Feature`) are already fully-
+implemented castable spells in this project -- nothing new needed on
+the casting side, only the derivation.
 """
 
 from __future__ import annotations
@@ -108,7 +125,7 @@ from ak_engine.models.race import Race
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import TREASURE_WAND_SPELL, Treasure
-from ak_engine.turn.cast_decode import CastRequest
+from ak_engine.turn.cast_decode import CHARACTER_TARGET_SPELLS, NO_TARGET_SPELLS, CastRequest
 from ak_engine.turn.cast_execution import execute_cast
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS
@@ -123,7 +140,7 @@ from ak_engine.worldgen.internal_magical_locations import (
     resolve_power,
     resolve_power_condition,
     resolve_required_alignment,
-    resolve_terrain_spell_candidate,
+    resolve_spell_candidate,
     resolve_visible_location,
 )
 
@@ -260,8 +277,8 @@ def derive_feature_event(feature: Feature, state: GameState | None = None) -> Fe
     elif power in TERRAIN_SPELL_POWERS and state is not None:
         province = state.provinces.get(feature.coord)
         if province is not None:
-            spell_parameter = resolve_terrain_spell_candidate(
-                feature.kind, feature.feature_id, province.effective_terrain()
+            spell_parameter = resolve_spell_candidate(
+                feature.kind, feature.feature_id, province.effective_terrain(), power, state.miscwrit
             )
 
     condition = PowerCondition.PC_NONE
@@ -762,22 +779,47 @@ def _resolve_gamble(
 def _resolve_terrain_spell(
     state: GameState, leader_id: int, feature: Feature, power: Power, spell: Spell, rng: random.Random
 ) -> FeaturePowerAttemptResult:
-    """`CAST_SPELL`/`ANS_PRAYER`'s own Part_Sea/Flood/Earthquake effect
-    (section 3.6, Phase 620): an automatic-success cast (`turn/cast_
-    execution.py execute_cast()`'s own `wand_skill_level` path -- the
-    value itself is irrelevant beyond being non-`None`, since `_roll_
-    cast_success()` only checks that) targeting the Feature's own
-    province. `_execute_part_sea()`/`_execute_flood()`/`_execute_
-    earthquake()` (already built, untouched by this phase) then apply
-    their own real cast-time terrain precondition -- narrower than the
-    derivation-time filter (`resolve_terrain_spell_candidate()`'s own
-    "not Mountains"/"not Sea"), so a real `applied=False` here (e.g. a
-    derived Part_Sea candidate whose province isn't actually Sea) is a
-    genuine, sourced possibility, not a bug.
+    """`CAST_SPELL`/`ANS_PRAYER`'s own `Set_Spell` effect (section 3.6,
+    Phase 620/621): an automatic-success cast (`turn/cast_execution.py
+    execute_cast()`'s own `wand_skill_level` path -- the value itself
+    is irrelevant beyond being non-`None`, since `_roll_cast_success()`
+    only checks that). `_execute_part_sea()`/`_execute_flood()`/etc.
+    (already built, untouched by this phase) then apply their own real
+    cast-time precondition -- narrower than the derivation-time filter
+    (`resolve_spell_candidate()`'s own terrain check), so a real
+    `applied=False` here (e.g. a derived Part_Sea candidate whose
+    province isn't actually Sea) is a genuine, sourced possibility,
+    not a bug.
+
+    **Target resolution (Phase 621 -- not every one of the 13 real
+    candidates is province-targeted)**: `turn/cast_decode.py`'s own
+    already-confirmed `PROVINCE_TARGET_SPELLS`/`CHARACTER_TARGET_
+    SPELLS`/`NO_TARGET_SPELLS` classify all 13 real ones as 8
+    province-targeted (the Feature's own province), 4 character-
+    targeted (`Kill_Enemy`, `Oratory`, `Clairvoyance`, `Illus_Armies`),
+    and 1 no-target (`Skeletal_Army`, `target=0`). For the 3 self-
+    or-co-located-character spells (`Oratory`/`Clairvoyance`/
+    `Illus_Armies`), the scouting character is a real, rulebook-
+    sanctioned target ("cast on yourself or a co-located character")
+    -- no player chose it, but self *is* a valid target, not a guess.
+    `Kill_Enemy` has no such option (the rulebook requires the caster
+    to have "desired the death of" a specific, player-chosen
+    opponent) -- refused here honestly rather than self-targeting it
+    (which the rulebook never describes as a valid use) or inventing
+    an enemy to target.
     """
 
     leader = state.leaders[leader_id]
-    target = encode_hex_number(feature.coord, NORMAL_MAP_BOUNDS[0])
+    if spell is Spell.KILL_ENEMY:
+        return FeaturePowerAttemptResult(
+            power=power, applied=False, reason="no automatic target for Kill_Enemy", cast_spell=spell
+        )
+    if spell in NO_TARGET_SPELLS:
+        target = 0
+    elif spell in CHARACTER_TARGET_SPELLS:
+        target = leader_id
+    else:
+        target = encode_hex_number(feature.coord, NORMAL_MAP_BOUNDS[0])
     request = CastRequest(spell=spell, target=target)
     cast_result = execute_cast(
         state, leader.kingdom_id, leader_id, request, rng, board_width=NORMAL_MAP_BOUNDS[0], wand_skill_level=1

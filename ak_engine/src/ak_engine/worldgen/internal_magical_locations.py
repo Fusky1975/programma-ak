@@ -374,37 +374,103 @@ _SET_SPELL_EXCLUDED_EXTRAS = frozenset(
 )
 
 
-def resolve_terrain_spell_candidate(feature_type: FeatureType, feature_index: int, terrain: Terrain) -> Spell | None:
-    """`Set_Spell`'s own territory-filtered subset (section 3.6, Phase
-    620): ``setval := (modval + tries) MOD ord(Gate_Angel)`` at
-    ``tries = 0`` only (``Gate_Angel`` == ordinal 25, so ``MOD 25`` --
-    ``models/enums.py Spell.GATE_ANGEL == 25`` confirms this directly).
-    Returns `None` (deliberately unresolved, not a guess) for any of
-    the 12 always-excluded "extra spells", or for any other real spell
-    ordinal -- those need ``(miscwrit AND 2) = 2``, and `miscwrit`'s
-    own real value is confirmed nowhere in the surviving Pascal (see
-    ``turn/feature_power_execution.py``'s own Phase 620 addendum).
-    Only `Part_Sea`/`Flood` (valid when the Feature's own province
-    isn't Mountains) and `Earthquake` (valid when it isn't Sea) are
-    fully sourced end to end.
+# Phase 621: `Spell_College(spell, 0)`'s own real ordering -- `models/
+# enums.py Spell`'s own docstring, cross-checked against every one of
+# the 25 spells' already-confirmed `Ability` elsewhere in this project
+# (see `spell_college()`'s own docstring below).
+_SPELL_COLLEGE_ORDER = (Ability.WHITE, Ability.NECROMANCY, Ability.ELEMENTAL, Ability.PSYCHIC, Ability.ILLUSION)
 
-    `AnsPrayer`'s own extra "favor White Magic" retry loop (section
-    3.6: keeps trying while ``tries MOD 3 = 0`` or the school is White
-    or the power isn't `AnsPrayer`) has no stated bound or give-up
-    behavior anywhere in the source -- not implemented here. Both
-    `CastSpell` and `AnsPrayer` share this same ``tries = 0``-only
-    derivation; a deliberate, explicitly-flagged simplification for
-    `AnsPrayer` specifically, whose real candidate may differ once (if
-    ever) that loop's own bound is sourced.
+# Phase 621: a defensive safety net only -- `resolve_spell_candidate()`'s
+# own docstring proves the real loop always terminates within at most
+# 25 outer iterations (a few more for `AnsPrayer`'s own inner skip);
+# this is never actually reached.
+_SET_SPELL_MAX_TRIES = 200
+
+
+def spell_college(spell: Spell) -> Ability:
+    """`Spell_College(spell, 0)` (`Set_Spell`'s own `AnsPrayer` White-
+    Magic-favoring inner loop, Phase 621, `miscwrit.md` section 4.2) --
+    derived, not guessed, from `models/enums.py Spell`'s own docstring
+    ("25 base spells... four contiguous blocks (0-19, ability order
+    White/Necromancy/Elemental/Psychic/Illusionist)... followed by one
+    fifth-spell block (20-24, same order)"): ordinals 0-19 are 5 blocks
+    of 4 spells each (one ability per block, in that order); 20-24 are
+    each ability's own lone "fifth spell" (same order again). Cross-
+    checked against every one of the 25 spells' own already-confirmed
+    `Ability` elsewhere in this project (`turn/cast_execution.py
+    _SPELL_ABILITY` for 19 of them, `turn/encounter.py PERSONAL_COMBAT_
+    SPELL_ABILITY` for the other 10 secret/personal-combat-only ones)
+    -- zero contradictions across all 25 real spells, so this reuses
+    the project's own existing confirmed data rather than adding any.
+    """
+
+    index = spell.value // 4 if spell.value < 20 else spell.value - 20
+    return _SPELL_COLLEGE_ORDER[index]
+
+
+def resolve_spell_candidate(
+    feature_type: FeatureType, feature_index: int, terrain: Terrain, power: Power, miscwrit: int
+) -> Spell:
+    """The real, complete `Set_Spell` (Phase 621 -- `miscwrit.md`,
+    user-supplied 2026-08-22, section 4.2 quoting `YAK.PAS` verbatim):
+
+    ```pascal
+    REPEAT
+      REPEAT
+        setval:= (modval+tries) MOD ord(Gate_Angel);
+        Inc(tries);
+      UNTIL ((tries MOD 3 = 0) or
+             (Spell_College(spell(setval),0) = White) or
+             (fpower <> AnsPrayer));
+      CASE spell(setval) OF
+        Resurrection,Charm,Holy_Symbol,Hand_Of_Death,Fireball,
+          Psychic_Blast,Invisibility,Spiritwrack,Control_Undead,
+          Ice_Suspend,Telek_Storm,Mirror_Image: ;
+        Part_Sea,Flood: IF pterr[fx[fn],fy[fn]] <> MTNS THEN found:= true;
+        Earthquake: IF pterr[fx[fn],fy[fn]] <> SEA THEN found:= true;
+        ELSE IF miscwrit and 2 = 2 THEN found:= true;
+      END;
+    UNTIL found;
+    ```
+
+    Replaces Phase 620's own `resolve_terrain_spell_candidate()`, which
+    only implemented the ``tries = 0`` case because `miscwrit`'s own
+    real value was unconfirmed -- `miscwrit.md`'s own section 7 gives
+    the real observed values in this project's actual target data
+    (`GW3__T1` = 6, `GW3__T2`-`T12` = 14, both with bit `0x0002` set),
+    so the `ELSE` branch is now a real, resolvable case, not a guess.
+
+    **Always terminates, proven not assumed**: `setval` cycles through
+    all 25 residues as `tries` grows. For *any* terrain, at least one
+    of `{Part_Sea, Flood valid}` (terrain != Mountains) or `{Earthquake
+    valid}` (terrain != Sea) is always true -- a terrain can't be both
+    Mountains and Sea simultaneously -- so the outer `REPEAT...UNTIL
+    found` always finds a match within a bounded number of iterations
+    regardless of `miscwrit`. `_SET_SPELL_MAX_TRIES` is a defensive cap
+    only, never actually reached.
     """
 
     modval = feature_index + feature_type.value
-    setval = modval % Spell.GATE_ANGEL.value
-    spell = Spell(setval)
-    if spell in _SET_SPELL_EXCLUDED_EXTRAS:
-        return None
-    if spell in (Spell.PART_SEA, Spell.FLOOD):
-        return spell if terrain is not Terrain.MTNS else None
-    if spell is Spell.EARTHQUAKE:
-        return spell if terrain is not Terrain.SEA else None
-    return None  # every other real ordinal needs the unsourced miscwrit flag
+    modulus = Spell.GATE_ANGEL.value
+    tries = 0
+    for _outer_iteration in range(_SET_SPELL_MAX_TRIES):
+        while True:
+            setval = (modval + tries) % modulus
+            tries += 1
+            if tries % 3 == 0 or spell_college(Spell(setval)) is Ability.WHITE or power is not Power.ANS_PRAYER:
+                break
+        spell = Spell(setval)
+        if spell in _SET_SPELL_EXCLUDED_EXTRAS:
+            found = False
+        elif spell in (Spell.PART_SEA, Spell.FLOOD):
+            found = terrain is not Terrain.MTNS
+        elif spell is Spell.EARTHQUAKE:
+            found = terrain is not Terrain.SEA
+        else:
+            found = (miscwrit & 2) == 2
+        if found:
+            return spell
+    raise RuntimeError(
+        "Set_Spell's own REPEAT...UNTIL found didn't terminate within "
+        f"{_SET_SPELL_MAX_TRIES} outer iterations -- should be unreachable, see this function's own docstring proof"
+    )

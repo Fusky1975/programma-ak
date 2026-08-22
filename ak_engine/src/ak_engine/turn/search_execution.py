@@ -1022,16 +1022,19 @@ def _apply_scout(
     # Phase 616: a full discovery is real "special function or event"
     # knowledge per the rulebook quote above -- resolve and (for this
     # phase's own 9 tractable powers only) apply the Feature->Power
-    # outcome now. A non-tractable power (Cast Spell, Chance, ...) is
-    # deliberately left with no `feature_power_outcome` here -- a later
-    # phase's own scope, not silently guessed at.
+    # outcome now. A non-tractable power (Chance, ...) is deliberately
+    # left with no `feature_power_outcome` here -- a later phase's own
+    # scope, not silently guessed at.
     if discovered:
         event = derive_feature_event(feature, state=state)
         if event.power in TRACTABLE_POWERS or event.power in TERRAIN_SPELL_POWERS:
-            # Phase 620: CAST_SPELL/ANS_PRAYER land here too -- tractable
-            # only when `event.spell_parameter` resolved (Part_Sea/
-            # Flood/Earthquake); `resolve_feature_power_attempt()` itself
-            # refuses cleanly ("power not yet wired") when it didn't.
+            # Phase 620/621: CAST_SPELL/ANS_PRAYER land here too --
+            # tractable whenever `event.spell_parameter` resolved (all
+            # 13 real `Set_Spell` candidates as of Phase 621, not just
+            # Part_Sea/Flood/Earthquake); `resolve_feature_power_
+            # attempt()` itself refuses cleanly ("power not yet wired")
+            # on the one remaining honest gap -- an unknown province
+            # (`state.provinces` has no entry for the Feature's coord).
             result.feature_power_outcome = resolve_feature_power_attempt(state, leader_id, feature, event, rng)
         elif event.power in SA_ARGUMENT_POWERS:
             # Phase 619: the 5 Oracles/Recharge/Grant Wish/Gamble need

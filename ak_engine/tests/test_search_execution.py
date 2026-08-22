@@ -7,9 +7,10 @@ import pytest
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
@@ -20,6 +21,7 @@ from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_DAMAGE_RANGE,
@@ -3843,6 +3845,36 @@ def test_execute_search_scout_cast_spell_success_casts_flood_on_the_provinces_ow
     assert result.feature_power_outcome.applied is True
     assert result.feature_power_outcome.cast_spell is Spell.FLOOD
     assert state.provinces[LOCATION].effective_terrain() is Terrain.SEA
+
+
+def test_execute_search_scout_cast_spell_success_casts_oratory_on_the_scouting_leader():
+    # F#13: Pyramid at x=3 -> Cast Spell / Oratory (Phase 621 -- only
+    # resolvable now that `Set_Spell`'s full 13-candidate table is
+    # wired, gated on `GameState.miscwrit`'s own real default). Oratory
+    # is character-targeted, not province-targeted -- this proves the
+    # Phase 621 target-resolution fix reaches the scouting leader
+    # himself (rulebook [4.22.2]'s own "cast on yourself"), not the
+    # Feature's province.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION, treasury=100))
+    state.add_leader(LeaderState(LEADER_ID, 1, "Searcher", LOCATION))
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    state.add_army(
+        ArmyState(army_id=1, kingdom_id=1, army_type=ArmyType.BOWMEN, quality=Quality.AVERAGE, location=LOCATION, commanded_by=LEADER_ID)
+    )
+    state.add_feature(
+        Feature(feature_id=13, coord=LOCATION, kind=FeatureType.PYRAMID, guardian_monster=Monster.GARGOYLE)
+    )
+    request = _scout_request(13, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.feature_power_outcome is not None
+    assert result.feature_power_outcome.applied is True
+    assert result.feature_power_outcome.cast_spell is Spell.ORATORY
+    assert state.armies[1].quality is Quality.VETERAN
 
 
 # -- Phase 617: DAMP_COLLEGE/DAMP_MAGIC/WARP_SPACE, the 3 passive battle-

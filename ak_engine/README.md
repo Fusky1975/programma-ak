@@ -25315,7 +25315,7 @@ follow-up request after the original 431-435 plan shipped.
   tests (non-breaking check): 5139 passed, unchanged from Phase 618's
   own count. Ran again with all new tests: 5183 passed (net +44).
 
-- **Phase 620 (current)**: closes the user-confirmed-narrow subset of
+- **Phase 620**: closes the user-confirmed-narrow subset of
   `CAST_SPELL`/`ANS_PRAYER` -- `Set_Spell` (`Special Features.md`
   section 3.6) gives a real formula for which spell either power
   grants, but almost every candidate needs `(miscwrit AND 2) = 2`, and
@@ -25402,6 +25402,107 @@ follow-up request after the original 431-435 plan shipped.
   unchanged from Phase 619's own count. Ran again with all new tests
   (and the one pre-existing test updated for the new `CAST_SPELL`
   behavior): 5202 passed (net +19).
+
+- **Phase 621 (current)**: closes the `miscwrit` gap Phase 620 left
+  open. A second, independent reverse-engineering report
+  (`miscwrit.md`, user-supplied 2026-08-22) gives `miscwrit`'s real
+  shape: a persistent 16-bit bitmask, `GW` header field #33. Its own
+  section 7 gives real observed values from this project's own actual
+  target data -- `GW3__T1` = `6` (`0x0006`), `GW3__T2`-`T12` = `14`
+  (`0x000E`) -- both always with bit `0x0002` set, and `AKGEN.EXE`'s
+  own unconditional startup `miscwrit := miscwrit OR 2` (CERTO) gives
+  the correct sourced default for a freshly-generated world. Section
+  4.2 also supplies `Set_Spell`'s complete, literal `YAK.PAS` source --
+  the full outer `REPEAT...UNTIL found` loop and `AnsPrayer`'s own
+  "favor White Magic" inner loop, both fully specified now, no bound
+  left to guess. With bit `0x0002` confirmed always set in every real
+  world this project targets, all 13 of `Set_Spell`'s real candidates
+  become resolvable (not just the 3 territory-filtered ones Phase 620
+  shipped): `Part_Sea`, `Bless`, `Skeletal_Army`, `Kill_Enemy`,
+  `Plague`, `Flood`, `Tornado`, `Earthquake`, `Oratory`, `Clairvoyance`,
+  `Illus_Terrain`, `Illus_Armies`, `Hide_Feature` -- all already
+  fully-implemented castable spells in `turn/cast_execution.py
+  execute_cast()`'s own dispatch, nothing new needed on the casting
+  side, only the derivation.
+
+  `models/game_state.py`: `GameState` gained `miscwrit: int = 2`.
+  Bits `1`/`4`/`8` (legacy `totfees` fee-migration idempotency
+  markers, a diplomacy contact-distribution revision flag) are real
+  but belong to entirely unrelated subsystems -- not modeled here.
+
+  `worldgen/internal_magical_locations.py`: new `spell_college(spell)
+  -> Ability` (`Set_Spell`'s own `Spell_College(spell, 0)` --
+  `_SPELL_COLLEGE_ORDER[spell.value // 4]` for ordinals 0-19,
+  `_SPELL_COLLEGE_ORDER[spell.value - 20]` for 20-24 -- cross-checked
+  against all 25 spells' own already-confirmed `Ability` scattered
+  across `turn/cast_execution.py _SPELL_ABILITY` and `turn/
+  encounter.py PERSONAL_COMBAT_SPELL_ABILITY`, zero contradictions).
+  `resolve_terrain_spell_candidate()` (Phase 620) replaced by
+  `resolve_spell_candidate(feature_type, feature_index, terrain,
+  power, miscwrit) -> Spell`: a literal translation of `Set_Spell`'s
+  two nested loops -- the inner loop advances `tries` while `tries MOD
+  3 != 0` and the college isn't White and `power is ANS_PRAYER`; the
+  outer `CASE` dispatch rejects the 12 always-excluded extras, accepts
+  `Part_Sea`/`Flood` off Mountains, `Earthquake` off Sea, and every
+  other real ordinal on `(miscwrit AND 2) = 2`. Always returns a real
+  `Spell` (no longer `Spell | None`) -- proven to terminate, since for
+  any terrain at least one of {`Part_Sea`/`Flood` valid} or
+  {`Earthquake` valid} is always true (a terrain can't be both
+  Mountains and Sea), so the loop can't cycle through all 25 residues
+  without finding one; a `_SET_SPELL_MAX_TRIES = 200` defensive cap
+  exists purely as a safety net, documented as never actually reached.
+
+  `turn/feature_power_execution.py`: `derive_feature_event()`'s
+  `CAST_SPELL`/`ANS_PRAYER` branch now calls `resolve_spell_candidate
+  (..., power, state.miscwrit)`. A real, previously-unnoticed
+  correctness bug was found and fixed while writing this phase's own
+  new end-to-end tests: `_resolve_terrain_spell()` (Phase 620)
+  unconditionally targeted the Feature's own province, which is wrong
+  for 5 of the 13 real candidates -- `turn/cast_decode.py`'s own
+  pre-existing `CHARACTER_TARGET_SPELLS`/`NO_TARGET_SPELLS`
+  classification tables show 4 are character-targeted (`Kill_Enemy`,
+  `Oratory`, `Clairvoyance`, `Illus_Armies`) and 1 is no-target
+  (`Skeletal_Army`). Fixed: the 3 character-targeted spells whose own
+  rulebook text explicitly allows self-casting (`Oratory` [4.22.2]:
+  "cast on yourself or a co-located character"; `Illus_Armies`
+  [4.23.2] similarly; `Clairvoyance` [4.22.3] is inherently
+  self-affecting) now target the scouting leader himself;
+  `Skeletal_Army` now targets `0` (`cast_decode.py`'s own documented
+  "unused" convention); `Kill_Enemy` -- which per rulebook [4.25.2]
+  requires the caster to have "desired the death of" a specific,
+  player-chosen opponent, impossible in this automatic-cast-on-Scout
+  context, and whose rulebook text never describes self-targeting as
+  valid -- is refused cleanly with `reason="no automatic target for
+  Kill_Enemy"` at the execution layer, not silently miscast and not
+  excluded from the derivation formula itself (which stays a faithful
+  translation of the real algorithm regardless of what's reachable
+  downstream). Found this by trying to write a real end-to-end test
+  for a newly-tractable spell (`Oratory`, via a real F#13/Pyramid
+  candidate) and discovering `_execute_oratory()`'s own docstring
+  contradicted the unconditional province-targeting assumption.
+
+  Report layer: unchanged -- the existing POWMSG 42 template already
+  uses `SPELL_NAME[outcome.cast_spell]` generically for any spell.
+
+  Tests: `tests/test_internal_magical_locations.py` -- rewrote the
+  Phase 620 block for the new `resolve_spell_candidate()` signature
+  and added `spell_college()`'s own cross-validation against all 25
+  spells (23 tests total in this block, computed via a standalone
+  verification script run directly against the implementation, not
+  hand-traced). `tests/test_feature_power_execution.py` gained 4 --
+  a `derive_feature_event()` case resolving a non-territory spell
+  (`Oratory`) purely from the new default `miscwrit`, plus the 3 new
+  target-resolution cases (character-target self-cast, no-target,
+  `Kill_Enemy` refusal). `tests/test_search_execution.py` gained 1 --
+  a full `_apply_scout()` cast of `Oratory` onto the scouting leader's
+  own army, confirming the target-resolution fix end to end. Ran
+  before writing new tests (non-breaking check): 5204 passed
+  (Phase 620's own 5202 plus 2 more found from an interim git-log
+  check unrelated to this phase). Ran again with all new tests: 5209
+  passed (net +5). Only `Power.CHANCE`'s own `gdday` gap (a genuine
+  real-calendar dependency, unlike `miscwrit`, which turned out to be
+  resolvable) remains open in the whole Feature -> Power [5.8]
+  subsystem.
 
 ## Setup
 

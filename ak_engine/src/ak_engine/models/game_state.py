@@ -1098,6 +1098,21 @@ class GameState:
     # settable only via direct construction for now -- a real, narrower
     # scope than a full bridge, not a guessed pipeline.
     game_type: GameType | None = None
+    # Phase 621 -- the `GW` header's own field #33, a persistent 16-bit
+    # bitmask (`miscwrit`, user-supplied reverse-engineering report
+    # "miscwrit.md", 2026-08-22). Only bit `0x0002` has a live consumer
+    # in this project (`worldgen/internal_magical_locations.py
+    # resolve_spell_candidate()`'s own `Set_Spell` derivation for
+    # `Power.CAST_SPELL`/`ANS_PRAYER`) -- bits `0x0001`/`0x0004` (two
+    # legacy `totfees` migration markers) and `0x0008` (a diplomacy
+    # contact-distribution revision flag) are real but belong to
+    # entirely unrelated subsystems, not modeled here. Default `2`
+    # matches `AKGEN.EXE`'s own unconditional startup `miscwrit :=
+    # miscwrit OR 2` (CERTO in the report) -- the correct sourced value
+    # for a freshly-generated world, and also what every real observed
+    # `GW3__T1`-`T12` file already carries (`6`/`0x0006` and `14`/
+    # `0x000E` respectively, both with this same bit set).
+    miscwrit: int = 2
     kingdoms: dict[int, KingdomState] = field(default_factory=dict)
     provinces: dict[HexCoord, ProvinceState] = field(default_factory=dict)
     armies: dict[int, ArmyState] = field(default_factory=dict)

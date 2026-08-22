@@ -682,3 +682,72 @@ def test_terrain_spell_powers_set_membership():
     assert TERRAIN_SPELL_POWERS == {Power.CAST_SPELL, Power.ANS_PRAYER}
     assert TERRAIN_SPELL_POWERS.isdisjoint(TRACTABLE_POWERS)
     assert TERRAIN_SPELL_POWERS.isdisjoint(SA_ARGUMENT_POWERS)
+
+
+# -- Phase 621: CAST_SPELL/ANS_PRAYER's full Set_Spell (13 real
+# candidates, not just Part_Sea/Flood/Earthquake) -- and the target-
+# resolution fix (province- vs. character- vs. no-target spells), all
+# real `(feature_id, FeatureType)` combos confirmed via a standalone
+# script directly against `resolve_spell_candidate()` at province x=3
+# (matching this file's own `LOCATION`), not hand-traced.
+
+
+def test_derive_feature_event_default_miscwrit_resolves_a_non_territory_spell():
+    # F#13/PYRAMID at x=3 -> Oratory, only resolvable now that
+    # `GameState.miscwrit` defaults to its real sourced value (2).
+    feature = _feature(13, 309, FeatureType.PYRAMID)
+    state = GameState()
+    state.provinces[feature.coord] = ProvinceState(coord=feature.coord, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    event = derive_feature_event(feature, state=state)
+    assert event.power is Power.CAST_SPELL
+    assert event.spell_parameter is Spell.ORATORY
+
+
+def test_resolve_feature_power_attempt_character_target_spell_self_casts():
+    # Oratory is character-targeted (`cast_decode.py
+    # CHARACTER_TARGET_SPELLS`) -- the scouting leader is a real,
+    # rulebook-sanctioned target ("cast on yourself"), not a guess.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    feature = Feature(feature_id=13, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+    state.add_army(ArmyState(army_id=1, kingdom_id=1, army_type=ArmyType.BOWMEN, quality=Quality.AVERAGE, location=LOCATION, commanded_by=LEADER_ID))
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _terrain_spell_event(Spell.ORATORY), random.Random(0))
+
+    assert result.applied is True
+    assert result.cast_spell is Spell.ORATORY
+    assert state.armies[1].quality is Quality.VETERAN
+
+
+def test_resolve_feature_power_attempt_no_target_spell_uses_zero_target():
+    # Skeletal_Army is no-target (`cast_decode.py NO_TARGET_SPELLS`) --
+    # target=0, operates on the caster's own province. No graveyard
+    # entries here, so it fails on its own real precondition (not a
+    # targeting crash), proving target=0 reaches `execute_cast()`
+    # cleanly rather than being mistaken for a province/character id.
+    state = _state_with_leader()
+    feature = Feature(feature_id=3, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _terrain_spell_event(Spell.SKELETAL_ARMY), random.Random(0))
+
+    assert result.applied is False
+    assert result.reason == "no dead units in this province to raise"
+    assert result.cast_spell is Spell.SKELETAL_ARMY
+
+
+def test_resolve_feature_power_attempt_kill_enemy_refuses_cleanly():
+    # Kill_Enemy needs a specific, player-chosen enemy per rulebook
+    # [4.25.2] -- no sensible automatic target exists in this
+    # automatic-cast context, so it's refused honestly rather than
+    # self-targeting it (never a valid use) or inventing an enemy.
+    state = _state_with_leader()
+    feature = Feature(feature_id=5, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _terrain_spell_event(Spell.KILL_ENEMY), random.Random(0))
+
+    assert result.applied is False
+    assert result.reason == "no automatic target for Kill_Enemy"
+    assert result.cast_spell is Spell.KILL_ENEMY
