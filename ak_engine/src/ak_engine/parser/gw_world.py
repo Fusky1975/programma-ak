@@ -65,7 +65,13 @@ Macondo
   `GW3__T1` once owned (Macondo trails `255` in this specific pre-turn-1
   snapshot -- see the note on snapshot timing below). Resolving a
   `governor_leader_id` to its true owning kingdom needs `GameState.
-  leaders`/`LKing()`-equivalent lookup, not attempted by this parser.
+  leaders`/`LKing()`-equivalent lookup -- this pure file parser
+  deliberately doesn't perform it itself, but `parser/gw_world_bridge.
+  py resolve_province_owners()` (Phase 224) already does, given a
+  `GameState` whose `leaders` are populated -- see that function's own
+  docstring, not an unresolved gap (the "Known gaps" section below was
+  written before Phase 223/224 existed and was never updated once they
+  closed it in the sibling bridge module).
 
 **Recruiting Types (`Mod_PAT`), Phase 278.** `report/turn_report.py
 describe_provinces_report()`'s own "Recruiting Types" columns (Type 1 /
@@ -125,25 +131,30 @@ Cross-referencing the letter's own row layout (Bam Yanga/Macondo/Mongu/
 Moongard all share y=05, x=1..4 left to right) against `GW3__T1`'s own
 on-disk record order (those exact 4 provinces appear consecutive,
 followed immediately by the next row's Abu Matariq/Transylvania/Big Sky,
-y=06) strongly suggests the world file's own record order is row-major
-over (x, y) -- but this is only a promising lead, not independently
-confirmed or implemented here (see "Known gaps" below).
+y=06) strongly suggested the world file's own record order follows
+`(x, y)` -- **fully confirmed, not just a lead, since Phase 223**: see
+`parser/gw_world_bridge.py`'s own module docstring, which pinned the
+exact shape down precisely (column-major -- outer loop over all 18 `x`
+values, inner loop over all 9 `y` values, `HexCoord(record_index // 9,
+record_index % 9)` 0-indexed) against 63 real provinces across all 9 of
+game 3's own turn-1 letters, zero mismatches. Not consumed by *this*
+module deliberately (a pure file-format parser has no business owning
+`HexCoord` assignment or `GameState` construction) -- consumed by that
+sibling bridge module instead, not left undone.
 
 **Known gaps, deliberately not attempted here**:
-- **No coordinate field exists in a province's own 4-line record**, and
-  while the row-major ordering lead above is promising, it isn't
-  confirmed. This means `parse_gw_world()` returns records in the
-  file's own on-disk order, not keyed by `HexCoord` -- bridging a
-  `GWProvinceRecord` into `GameState.provinces` (a `dict[HexCoord,
-  ProvinceState]`) is deferred to a future phase.
+- **No coordinate field exists in a province's own 4-line record** --
+  `parse_gw_world()` itself still returns records in the file's own
+  on-disk order, not keyed by `HexCoord`, by design (see above: that's
+  `parser/gw_world_bridge.py bridge_gw_world_provinces()`'s own job,
+  already implemented and tested since Phase 223, not "deferred to a
+  future phase" the way this bullet used to read before that phase
+  landed and this note was never revisited).
 - Line 3's own two integers are unresolved (population? garrison
   strength? a resource id?) -- out of scope for this phase, which only
   needed `ptax`/terrain/race/`governor_leader_id`. **Resolved, Phase
   278** -- see the module's own "Recruiting Types" section below;
   this note is kept for its original historical context.
-- `governor_leader_id` isn't resolved to an owning kingdom id here (see
-  above) -- that needs a `GameState`-level leader/kingdom lookup this
-  pure file parser deliberately doesn't perform.
 - `GW3__T1` is a pre-turn-1 snapshot: some provinces the corresponding
   `SE3__T1.K*` letters show as already conquered/settled (e.g. Macondo,
   ruled by "Bradipo I(2)" per the letter) still read `255` (unowned)

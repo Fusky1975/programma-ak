@@ -25778,7 +25778,7 @@ follow-up request after the original 431-435 plan shipped.
   passed, unchanged from Phase 623's own count. Ran again with all new
   tests: 5250 passed (net +12).
 
-- **Phase 625 (current)**: closes a real, stale-claim gap in the
+- **Phase 625**: closes a real, stale-claim gap in the
   CHARACTERS report -- the `sk_mod` Discovery-based skill-modifier row
   (`^`/`^^` markers above the ability columns, `REPORTS.PAS` ~lines
   823-834). This project's own docstring had called it "confirmed
@@ -25829,6 +25829,26 @@ follow-up request after the original 431-435 plan shipped.
   directly). Ran before writing new tests (non-breaking check, after
   fixing the 15 pre-existing tests): 5250 passed, unchanged from Phase
   624's own count. Ran again with all new tests: 5254 passed (net +4).
+
+- **Phase 626 (current)**: docstring-only fix -- `parser/gw_world.py`'s
+  own "Known gaps, deliberately not attempted here" section named two
+  items as unresolved (province coordinate assignment/ordering, and
+  `governor_leader_id` -> owning-kingdom resolution) that turned out to
+  already be fully implemented and tested, since Phase 223/224, in the
+  sibling `parser/gw_world_bridge.py` module -- `bridge_gw_world_
+  provinces()` (column-major record order, `HexCoord(record_index //
+  9, record_index % 9)`, confirmed 63-for-63 against real letters) and
+  `resolve_province_owners()` (a `state.leaders` lookup) respectively.
+  Neither claim was ever revisited once the bridge module closed them,
+  the same "docstring never re-checked after a later phase closed the
+  gap it describes" pattern this session's own Phase 625 (CHARACTERS'
+  Discovery-modifier row) already found once. (Investigated after the
+  user asked to continue with `parser/gw_world.py`'s own remaining
+  gaps -- both turned out to be stale claims, not real gaps, so no
+  functional code changed this phase, only the module's own docstring,
+  now pointing at the real, already-existing resolution.) Zero test
+  impact (docstring-only): 5254 passed, unchanged from Phase 625's own
+  count, both before and after.
 
 ## Setup
 
