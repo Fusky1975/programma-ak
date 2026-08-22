@@ -38,13 +38,13 @@ def test_candidate_location_single_choice_range_is_constant():
         assert candidate_location(FeatureType.LOCH, feature_index) == MagicFeature.FOUNTAIN
 
 
-def test_resolve_visible_location_forces_none_on_even_parity():
-    assert resolve_visible_location(FeatureType.PYRAMID, 0, 0) == MagicFeature.NONE
-    assert resolve_visible_location(FeatureType.PYRAMID, 2, 4) == MagicFeature.NONE
+def test_resolve_visible_location_forces_none_on_odd_parity():
+    assert resolve_visible_location(FeatureType.PYRAMID, 0, 1) == MagicFeature.NONE
+    assert resolve_visible_location(FeatureType.PYRAMID, 2, 5) == MagicFeature.NONE
 
 
-def test_resolve_visible_location_shows_the_candidate_on_odd_parity():
-    assert resolve_visible_location(FeatureType.PYRAMID, 0, 1) == MagicFeature.CUP
+def test_resolve_visible_location_shows_the_candidate_on_even_parity():
+    assert resolve_visible_location(FeatureType.PYRAMID, 0, 0) == MagicFeature.CUP
 
 
 def test_resolve_visible_location_forces_none_for_gastrap_and_seal_candidates():
@@ -52,11 +52,49 @@ def test_resolve_visible_location_forces_none_for_gastrap_and_seal_candidates():
     # feature_index + 7 (DUNGEON ordinal) == 18 (mod 19) -> feature_index == 11.
     feature_index = 11
     assert candidate_location(FeatureType.DUNGEON, feature_index) == MagicFeature.SEALED_ENTRANCE
-    # Pick a feature_x whose sum with feature_index is odd, so the parity
+    # Pick a feature_x whose sum with feature_index is even, so the parity
     # gate alone wouldn't hide it.
-    feature_x = 0
-    assert (feature_index + feature_x) % 2 == 1
+    feature_x = 1
+    assert (feature_index + feature_x) % 2 == 0
     assert resolve_visible_location(FeatureType.DUNGEON, feature_index, feature_x) == MagicFeature.NONE
+
+
+def test_resolve_visible_location_matches_special_features_gw3_t1_catalog():
+    # ``Special Features.md`` section 8 (user-supplied 2026-08-22), real
+    # rows from the GW3__T1 world's 128 Features -- (feature_index,
+    # feature_x, feature_type) -> expected visible MagicFeature. Byte-
+    # for-byte oracle rows, not formula-shape tests; confirms both the
+    # parity polarity and the candidate_location table (including the
+    # exact alternate-form display names, "Prayer Rug"/"Director's
+    # Chair") with zero feature_index offset.
+    cases = [
+        (0, 12, FeatureType.TOMB, MagicFeature.ALTAR),  # "Prayer Rug"
+        (1, 10, FeatureType.ALTAR, MagicFeature.NONE),
+        (2, 3, FeatureType.CAVE, MagicFeature.NONE),
+        (5, 3, FeatureType.TEMPLE, MagicFeature.POOL),
+        (7, 17, FeatureType.PYRAMID, MagicFeature.PENTAGRAM),
+        (8, 2, FeatureType.SACRED_ROCK, MagicFeature.THRONE),  # "Director's Chair"
+        (9, 17, FeatureType.CATACOMBS, MagicFeature.ROULETTE_WHEEL),
+        (16, 10, FeatureType.HOLLOW_TREE, MagicFeature.PENTAGRAM),
+        (17, 3, FeatureType.CRYPT, MagicFeature.BOOK),
+    ]
+    for feature_index, feature_x, feature_type, expected in cases:
+        assert resolve_visible_location(feature_type, feature_index, feature_x) == expected
+
+
+def test_resolve_power_matches_special_features_gw3_t1_catalog():
+    # Same source and rows as above, carried through to the resulting Power.
+    cases = [
+        (MagicFeature.ALTAR, 0, FeatureType.TOMB, Power.WARP_SPACE),
+        (MagicFeature.POOL, 5, FeatureType.TEMPLE, Power.UP_SKILL),
+        (MagicFeature.PENTAGRAM, 7, FeatureType.PYRAMID, Power.UP_SKILL),
+        (MagicFeature.THRONE, 8, FeatureType.SACRED_ROCK, Power.ORAC_ALIGN),
+        (MagicFeature.ROULETTE_WHEEL, 9, FeatureType.CATACOMBS, Power.CHANCE),
+        (MagicFeature.PENTAGRAM, 16, FeatureType.HOLLOW_TREE, Power.UP_SKILL),
+        (MagicFeature.BOOK, 17, FeatureType.CRYPT, Power.CAST_SPELL),
+    ]
+    for location, feature_index, feature_type, expected in cases:
+        assert resolve_power(location, feature_index, feature_type.value) == expected
 
 
 def test_forced_none_candidates_are_exactly_gastrap_and_seal():

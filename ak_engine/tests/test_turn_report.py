@@ -17,10 +17,13 @@ from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.office import Office
+from ak_engine.models.power import Power
 from ak_engine.models.race import Race
 from ak_engine.models.rumor import Rumor, RumorContent
+from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import TREASURE_NAME, Treasure
+from ak_engine.turn.feature_power_execution import FeaturePowerAttemptResult
 from ak_engine.report.turn_report import (
     ALREADY_ALLIED_TEMPLATE,
     ATTACK_DEVASTATING_HIT_TEMPLATE,
@@ -95,6 +98,7 @@ from ak_engine.report.turn_report import (
     describe_pursue,
     describe_recruit,
     describe_rumor,
+    describe_feature_power_attempt,
     describe_search,
     describe_steal,
     describe_trail,
@@ -4875,6 +4879,151 @@ def test_describe_search_leader_won_renders_only_the_opening_line():
 
 def test_describe_search_inconclusive_combat_renders_only_the_opening_line():
     result = SearchExecutionResult(accepted=True, combat_resolved=True, winner=None)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+# -- Phase 616: describe_feature_power_attempt() (POWMSG.X2) --
+
+
+def test_describe_feature_power_attempt_new_temp_already_matched():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.NEW_TEMP, applied=True, already_matched=True, new_temper=Temper.BRAVE, magic_feature=MagicFeature.POOL
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line == "The Pool/FStream turns your temper to Brave.But your temper is already Brave, so you're fine already."
+
+
+def test_describe_feature_power_attempt_new_temp_changed():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.NEW_TEMP, applied=True, new_temper=Temper.BERSERK, magic_feature=MagicFeature.POOL
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert "Berserk temper" in line
+
+
+def test_describe_feature_power_attempt_new_race_changed():
+    outcome = FeaturePowerAttemptResult(power=Power.NEW_RACE, applied=True, new_race=Race.ELVEN, magic_feature=MagicFeature.ALTAR)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert "supreme Elf race" in line
+
+
+def test_describe_feature_power_attempt_up_skill_success():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.UP_SKILL, applied=True, ability=Ability.MELEE, new_skill_level=2, magic_feature=MagicFeature.PENTAGRAM
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line == "by the power of the Pentagram/FMagic_Circle, I increase your skill in Meleeing by 1 skill level!"
+
+
+def test_describe_feature_power_attempt_up_skill_at_limit():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.UP_SKILL, applied=True, at_limit=True, ability=Ability.MELEE, magic_feature=MagicFeature.PENTAGRAM
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert "already reached that limit" in line
+
+
+def test_describe_feature_power_attempt_up_skill_roll_failed():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.UP_SKILL, applied=False, reason="the roll failed", ability=Ability.MELEE, magic_feature=MagicFeature.PENTAGRAM
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert "aptitude is simply inadequate" in line
+
+
+def test_describe_feature_power_attempt_up_apt_success():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.UP_APT, applied=True, ability=Ability.SAGE, new_aptitude_level=3, magic_feature=MagicFeature.LAMP
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert "aptitude in Sageness" in line
+
+
+def test_describe_feature_power_attempt_up_apt_at_limit_has_no_recovered_message():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.UP_APT, applied=True, at_limit=True, ability=Ability.SAGE, magic_feature=MagicFeature.LAMP
+    )
+    assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
+
+
+def test_describe_feature_power_attempt_dn_skill_success():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.DN_SKILL, applied=True, ability=Ability.THIEF, new_skill_level=1, magic_feature=MagicFeature.BOOK
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert "1 less skill level in Thievery" in line
+
+
+def test_describe_feature_power_attempt_dn_apt_at_limit():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.DN_APT, applied=True, at_limit=True, ability=Ability.THIEF, magic_feature=MagicFeature.BOOK
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert "no aptitude for Thievery" in line
+
+
+def test_describe_feature_power_attempt_map_feat_exhausted():
+    outcome = FeaturePowerAttemptResult(power=Power.MAP_FEAT, applied=False, reason="no more features to reveal")
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line == "There are no more features to be told of in the provinces you have mapped."
+
+
+def test_describe_feature_power_attempt_map_feat_success_has_no_recovered_message():
+    outcome = FeaturePowerAttemptResult(power=Power.MAP_FEAT, applied=True, revealed_feature_id=42)
+    assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
+
+
+def test_describe_feature_power_attempt_sage_disc_exhausted():
+    outcome = FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=False, reason="no more discoveries to reveal")
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line == "Science has come to an end!There are no more discoveries to be made in this universe."
+
+
+def test_describe_feature_power_attempt_new_sex_to_female():
+    outcome = FeaturePowerAttemptResult(power=Power.NEW_SEX, applied=True, new_sex=Sex.FEMALE, magic_feature=MagicFeature.ALTAR)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert "I change you to a woman" in line
+
+
+def test_describe_feature_power_attempt_new_sex_to_male():
+    outcome = FeaturePowerAttemptResult(power=Power.NEW_SEX, applied=True, new_sex=Sex.MALE, magic_feature=MagicFeature.ALTAR)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert "I zap you from female to male" in line
+
+
+def test_describe_feature_power_attempt_condition_refusal_has_no_recovered_message():
+    # No POWMSG id recovered for _apply_condition_gate()'s own refusals
+    # (King-only/alignment/gameturn/gold/skill-drain) in this phase.
+    outcome = FeaturePowerAttemptResult(power=Power.NEW_TEMP, applied=False, reason="wrong alignment", magic_feature=MagicFeature.POOL)
+    assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
+
+
+def test_describe_feature_power_attempt_chance_has_no_recovered_message():
+    # CHANCE isn't one of this phase's own 9 TRACTABLE_POWERS at all.
+    outcome = FeaturePowerAttemptResult(power=Power.CHANCE, applied=False, reason="power not yet wired")
+    assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
+
+
+def test_describe_search_appends_the_feature_power_line_when_present():
+    outcome = FeaturePowerAttemptResult(power=Power.MAP_FEAT, applied=False, reason="no more features to reveal")
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, feature_power_outcome=outcome)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "There are no more features to be told of in the provinces you have mapped.",
+    ]
+
+
+def test_describe_search_omits_the_feature_power_line_when_none_recovered():
+    outcome = FeaturePowerAttemptResult(power=Power.CHANCE, applied=False, reason="power not yet wired")
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, feature_power_outcome=outcome)
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
 
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)

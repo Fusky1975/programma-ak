@@ -1186,6 +1186,7 @@ from typing import Sequence
 
 from ak_engine.models.enums import (
     ActionCode,
+    ABILITY_NAME,
     Ability,
     CAST_SPELL_OPENING_COMPLETE_SPELLS,
     CAST_SPELL_OPENING_COMPLETE_TEMPLATE,
@@ -1209,10 +1210,12 @@ from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 from ak_engine.models.monster import MONSTER_DESCRIPTION, MONSTER_NAMES, Monster
 from ak_engine.models.office import OFFICE_MIN_POINTS, OFFICE_NAME, Office
+from ak_engine.models.power import Power
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, describe_discovery_line, sorted_kingdom_discoveries
+from ak_engine.models.sex import Sex
 from ak_engine.models.temper import TEMPER_ABBREVIATION, TEMPER_NAME
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_CATEGORY, TREASURE_LABEL, TREASURE_NAME, Treasure, TreasureCategory
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
@@ -1262,6 +1265,7 @@ from ak_engine.turn.plan_dispatch import (
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
+from ak_engine.turn.feature_power_execution import FeaturePowerAttemptResult
 from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.tax_base import compute_invention_bonus_percent, compute_tax_base, province_tax_yield
 from ak_engine.turn.trade_execution import TradeExecutionResult
@@ -2455,6 +2459,147 @@ def render_magic_feature_discovery(
         return render(_MAGFEAT_ITSELF_TEMPLATE, values)
     values["$\\"] = MAGIC_FEATURE_NAME[magic_feature]
     return render(_MAGFEAT_FOUND_TEMPLATE, values)
+
+
+# Phase 616: POWMSG.X2's own real message text (`Special Features.md`
+# section 9.4, user-supplied 2026-08-22) for the outcomes this phase's 9
+# `TRACTABLE_POWERS` (`turn/feature_power_execution.py`) can actually
+# reach. The file declares 50 record slots but only 42 are concrete text
+# (the rest blank/REM) -- every id below is one of those 42, quoted
+# verbatim including its own `/R` alternate-choice and `{...}` optional
+# text, run through this module's own `render()` engine exactly like
+# `render_magic_feature_discovery()` above. IDs for UP_SKILL/UP_APT/
+# DN_SKILL/DN_APT are inferred from each message's own wording (matched
+# to which ability/skill/aptitude verb it names), not independently
+# confirmed against a real screenshot -- flagged here, not hidden, per
+# this project's own "no source, no guess" convention. No POWMSG id
+# recovered for UP_APT's own "already at the cap" case, or for MAP_FEAT/
+# SAGE_DISC's own success text (only their exhaustion messages, 18/20,
+# survive in the recovered 42) -- both render plain, unquoted factual
+# sentences below rather than inventing flavor text the source doesn't
+# supply.
+_POWMSG_NEW_TEMP_ALREADY = "The $\\ turns your temper to $T.But your temper is already $T, so you're fine already."
+_POWMSG_NEW_TEMP_CHANGED = (
+    "You do not have the proper temperament for my liking/Rtastes!"
+    "Since you have submitted to the power of the $\\, I decree that henceforth you shall be of $T temper!"
+)
+_POWMSG_NEW_RACE_ALREADY = "The $\\ changes characters to the $R race.But you're already $R, so you're fine already."
+_POWMSG_NEW_RACE_CHANGED = (
+    "You gravy-sucking/Rpathetic subhumanoid pig!"
+    "I take pity on you.I shall change you to the supreme $R race.NOW, begone!"
+)
+_POWMSG_UP_SKILL_AT_LIMIT = (
+    "The $\\ increases your skill in ^, if you have an unmodified skill less than 4."
+    "But I see you have already reached that limit, so go now in peace."
+)
+_POWMSG_UP_SKILL_SUCCESS = "by the power of the $\\, I increase your skill in ^ by 1 skill level!"
+_POWMSG_UP_SKILL_ROLL_FAILED = (
+    "The $\\ increases your skill in ^, if you have sufficient aptitude."
+    "But your aptitude is simply inadequate for now, so go in peace."
+)
+_POWMSG_UP_APT_SUCCESS = (
+    "{So }you need/Rwant more aptitude in ^?Very_well/RThen, I increase/Rimprove your aptitude in ^ by 1 level!"
+)
+_POWMSG_DN_SKILL_AT_LIMIT = "The $\\ drains your skill in ^, but I see you have no talent for ^, so go now in peace."
+_POWMSG_DN_SKILL_SUCCESS = (
+    "I see you are skilled in ^, that overrated/Robnoxious disability which has caused so many problems "
+    "in this_province/Rthese_parts.But I can help solve that!"
+    "By the power of the $\\, you shall have 1 less skill level in ^."
+)
+_POWMSG_DN_APT_AT_LIMIT = (
+    "The $\\ decreases your aptitude in ^, if you have an aptitude greater than 0."
+    "But I see you have no aptitude for ^, so go now in peace."
+)
+_POWMSG_DN_APT_SUCCESS = (
+    "I see you have some aptitude for ^, that overrated ability which has caused so many problems."
+    "But I can help solve that!Henceforth, you shall have 1 less aptitude level in ^."
+)
+_POWMSG_MAP_FEAT_EXHAUSTED = "There are no more features to be told of in the provinces you have mapped."
+_POWMSG_SAGE_DISC_EXHAUSTED = "Science has come to an end!There are no more discoveries to be made in this universe."
+_POWMSG_NEW_SEX_TO_FEMALE = (
+    "By the power of the $\\, I change you to a woman!"
+    "Hee_hee/Rho_ho, how do_you_like_THEM_apples/Rdoes_your_armor_fit_you_NOW!"
+)
+_POWMSG_NEW_SEX_TO_MALE = (
+    "By the power of the $\\, I zap you from female to male!How do you like the_improvement/Ryour_new_organs?"
+    "Har {de }har har!!!"
+)
+
+
+def describe_feature_power_attempt(outcome: FeaturePowerAttemptResult, rng: random.Random) -> str | None:
+    """Renders the one POWMSG.X2 sentence for a Scout's own Feature ->
+    Power [5.8] outcome, wired into `describe_search()` right after the
+    Scout discovery narration. Returns `None` whenever this phase has no
+    recovered POWMSG id for the specific outcome that occurred -- every
+    `_apply_condition_gate()` refusal (King/alignment/gameturn/gold/
+    skill-drain), UP_APT/MAP_FEAT/SAGE_DISC's own successful cases, and
+    "no skill data recorded" all fall through to `None` deliberately (see
+    each branch below and the module comment above these templates) --
+    not a bug, `describe_search()`'s own caller already treats `None` as
+    "nothing to add".
+    """
+
+    values: dict[str, str] = {}
+    if outcome.magic_feature is not None:
+        values["$\\"] = MAGIC_FEATURE_NAME[outcome.magic_feature]
+    if outcome.ability is not None:
+        values["^"] = ABILITY_NAME[outcome.ability]
+
+    if outcome.power is Power.NEW_TEMP:
+        if not outcome.applied or outcome.new_temper is None:
+            return None  # refused by the condition gate -- no recovered POWMSG id for that case
+        values["$T"] = TEMPER_NAME[outcome.new_temper]
+        template = _POWMSG_NEW_TEMP_ALREADY if outcome.already_matched else _POWMSG_NEW_TEMP_CHANGED
+        return render(template, values, rng=rng)
+
+    if outcome.power is Power.NEW_RACE:
+        if not outcome.applied or outcome.new_race is None:
+            return None  # refused by the condition gate -- no recovered POWMSG id for that case
+        values["$R"] = RACE_NAME[outcome.new_race]
+        template = _POWMSG_NEW_RACE_ALREADY if outcome.already_matched else _POWMSG_NEW_RACE_CHANGED
+        return render(template, values, rng=rng)
+
+    # UP_SKILL/UP_APT/DN_SKILL/DN_APT's own `ability` is only ever set by
+    # the real effect branch (at-limit, success, or UP_SKILL's own failed
+    # roll) -- never by `_apply_condition_gate()`'s own refusals (King/
+    # alignment/gameturn/gold/skill-drain) or "no skill data recorded",
+    # neither of which has a recovered POWMSG id here. Checking `ability`
+    # instead of `applied` alone is what tells the two kinds apart.
+    if outcome.power is Power.UP_SKILL and outcome.ability is not None:
+        if outcome.at_limit:
+            return render(_POWMSG_UP_SKILL_AT_LIMIT, values, rng=rng)
+        if outcome.applied:
+            return render(_POWMSG_UP_SKILL_SUCCESS, values, rng=rng)
+        return render(_POWMSG_UP_SKILL_ROLL_FAILED, values, rng=rng)
+
+    if outcome.power is Power.UP_APT and outcome.ability is not None:
+        if outcome.applied and not outcome.at_limit:
+            return render(_POWMSG_UP_APT_SUCCESS, values, rng=rng)
+        return None  # no recovered POWMSG id for UP_APT's own at-limit case
+
+    if outcome.power is Power.DN_SKILL and outcome.ability is not None:
+        template = _POWMSG_DN_SKILL_AT_LIMIT if outcome.at_limit else _POWMSG_DN_SKILL_SUCCESS
+        return render(template, values, rng=rng)
+
+    if outcome.power is Power.DN_APT and outcome.ability is not None:
+        template = _POWMSG_DN_APT_AT_LIMIT if outcome.at_limit else _POWMSG_DN_APT_SUCCESS
+        return render(template, values, rng=rng)
+
+    if outcome.power is Power.MAP_FEAT:
+        if outcome.reason == "no more features to reveal":
+            return render(_POWMSG_MAP_FEAT_EXHAUSTED, values, rng=rng)
+        return None  # a successful reveal has no recovered POWMSG id
+
+    if outcome.power is Power.SAGE_DISC:
+        if outcome.reason == "no more discoveries to reveal":
+            return render(_POWMSG_SAGE_DISC_EXHAUSTED, values, rng=rng)
+        return None  # a successful reveal has no recovered POWMSG id
+
+    if outcome.power is Power.NEW_SEX and outcome.applied and outcome.new_sex is not None:
+        template = _POWMSG_NEW_SEX_TO_FEMALE if outcome.new_sex is Sex.FEMALE else _POWMSG_NEW_SEX_TO_MALE
+        return render(template, values, rng=rng)
+
+    return None
 
 
 # The 15 Spell members SPELL_CAST_ANNOUNCEMENT markers, per SPNOTE.X2's own
@@ -8071,6 +8216,18 @@ def describe_search(
     if result.combat_resolved and result.winner == "monster" and result.leader_killed:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
         lines.append(render_character_death(character_name, rng))
+
+    # Phase 616: Scout's own Feature -> Power [5.8] outcome, narrated last
+    # -- matches the rulebook's own "the computer will simply do your
+    # Scout tactic after all other encounter tactics are completed"
+    # (quoted in full in `_apply_scout()`'s own docstring). `None` covers
+    # every outcome this phase has no recovered POWMSG.X2 id for (see
+    # `describe_feature_power_attempt()`'s own docstring) as well as "no
+    # Scout discovery this Search happened at all".
+    if result.feature_power_outcome is not None:
+        power_line = describe_feature_power_attempt(result.feature_power_outcome, rng)
+        if power_line is not None:
+            lines.append(power_line)
     return lines
 
 

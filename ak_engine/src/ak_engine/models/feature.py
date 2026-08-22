@@ -292,6 +292,13 @@ class Feature:
     # ``treasure``/``guardian_alignment`` above already use.
     magic_location: MagicFeature | None = None
     magic_power: Power | None = None
+    # Phase 616: PowerCondition.G_TURN's own "one activation per
+    # gameturn" scope -- per-Feature, not per-Kingdom (`Special
+    # Features.md` section 4.2, user-supplied 2026-08-22). The turn
+    # number this Feature's own power was last successfully used on;
+    # `None` means never used. Set by `turn/feature_power_execution.py
+    # resolve_feature_power_attempt()`.
+    power_used_turn: int | None = None
 
     def discovery_level(self, kingdom_id: int) -> int:
         return self.discovered_by_kingdom.get(kingdom_id, 0)

@@ -24932,7 +24932,7 @@ follow-up request after the original 431-435 plan shipped.
   passed. Ran again after every fix, the full mechanic, and all new
   tests: 5073 passed (net +18).
 
-- **Phase 615 (current)**: wires `render_bluck_narration()`/`render_
+- **Phase 615**: wires `render_bluck_narration()`/`render_
   cluck_narration()` (Phase 584/605's own byte-faithful `BLUCK.X2`/
   `BLUCK2.X2`/`CLUCK.X2`/`CLUCK2.X2` luck narration, fully sourced and
   render-tested, never called) into `describe_battle()` -- the whole-
@@ -24992,6 +24992,109 @@ follow-up request after the original 431-435 plan shipped.
   (non-breaking check): 5073 passed, confirming the new optional
   parameter breaks nothing by default. Ran again with all new tests:
   5081 passed (net +8).
+
+- **Phase 616 (current)**: closes the Feature -> Power [5.8] "special
+  function or event" gap Phase 613 identified but couldn't wire (no
+  per-Feature target data existed anywhere in this project). A second,
+  independent user-supplied disassembly reverse-engineering report
+  (`Special Features.md`, 2026-08-22) resolved it: nothing is stored
+  per-Feature at all -- `magfeat`/`power`/its ability-or-race-or-temper
+  parameter/its `PowerCondition`/its cost are all a pure deterministic
+  function of `(feature_index, feature_type, feature_x, feature_y)`,
+  recomputed fresh every time, matching `worldgen/internal_magical_
+  locations.py`'s own pre-existing Phase 361/365 formulas exactly when
+  cross-checked directly.
+
+  **A real, pre-existing bug found and fixed while verifying the new
+  document against real data**: `resolve_visible_location()`'s own
+  odd/even visibility-gate polarity was backwards (`== 0` forced
+  `NONE` on an *even* `feature_index + feature_x` sum; the real engine
+  shows the candidate on even and forces `NONE` on odd). Found by
+  cross-checking the derivation end-to-end against `Special Features.
+  md`'s own section 8 catalog -- the real 128 Features of the `GW3__
+  T1` world, precisely re-read via the Read tool after an earlier
+  round of hand-transcribed test data produced a spurious "needs a
+  feature_id offset" contradiction (isolated sub-formula checks each
+  seemed to need a different, mutually-inconsistent offset; the real
+  cause was this one inverted comparison, not an indexing problem --
+  fixed, `feature_id` needs zero offset anywhere). 12 rows matched
+  exactly after the fix, including the exact alternate-form display
+  names (F#0 Tomb -> Altar/"Prayer Rug", F#8 Sacred Rock -> Throne/
+  "Director's Chair"); the full pipeline (power + condition + cost)
+  matched a further 7 rows exactly, including the `Set_FCon` con2
+  branch specifically. This bug predates this phase (Phase 361/365)
+  and affects existing world generation, not just this phase's own new
+  code -- the full suite still passed unchanged after the fix (no
+  existing test happened to depend on the old, wrong polarity).
+
+  **Scope: 9 of the 25 real `Power`s, not the 10 originally planned**
+  -- every `Power` whose real effect is a direct, already-modeled
+  `LeaderState` mutation or a discovery-reveal with no player-supplied
+  argument: `NEW_SEX`, `NEW_TEMP`, `NEW_RACE`, `UP_SKILL`, `UP_APT`,
+  `DN_SKILL`, `DN_APT`, `MAP_FEAT`, `SAGE_DISC`. `MAP_PROV` was
+  dropped from the original plan mid-implementation: its real effect
+  needs a per-Kingdom "which provinces are known" tracking concept
+  confirmed absent anywhere in `GameState` (`kingdoms_met` tracks
+  diplomatic contact only, `ProvinceState.owner_kingdom_id` is
+  ownership not visibility) -- left for a later phase rather than
+  inventing that concept here. `SAGE_DISC`'s own "favor the lowest
+  observed difficulty" tie-break has no real `Discovery` difficulty
+  table anywhere in this project (confirmed absent), so it selects
+  uniformly at random among not-yet-known Discoveries instead -- a
+  documented substitute for one detail, not a guess at the whole
+  mechanic. The full `PowerCondition`/cost/consent gating (all 7
+  conditions) is built completely, since every later phase needs it.
+
+  New `worldgen/internal_magical_locations.py` functions:
+  `power_ability_parameter()`/`damp_college_ability_parameter()`/
+  `power_temper_parameter()`/`power_race_parameter()` (`Set_Abil`'s own
+  three formulas plus `DampCollege`'s school-restricted variant),
+  `POWER_CONDITION_PAIRS`/`resolve_power_condition()`/`power_condition_
+  cost()` (`Set_FCon`, section 4.1-4.2), `resolve_required_alignment()`
+  (`SameAlign`). New `turn/feature_power_execution.py`:
+  `derive_feature_event()` (the full `Set_Event` derivation, always
+  recomputed from a `Feature`'s own `feature_id`/`kind`/`coord.x`,
+  never its Phase 365 cached `magic_location`/`magic_power`),
+  `resolve_feature_power_attempt()` (the gate-then-apply engine for
+  the 9 tractable powers), `TRACTABLE_POWERS`. New `Feature.power_
+  used_turn: int | None` field for `G_TURN`'s own per-Feature (not
+  per-Kingdom) "once per gameturn" scope.
+
+  Wired into `turn/search_execution.py _apply_scout()`: a full (level
+  3) Scout discovery now derives and (for the 9 tractable powers only)
+  applies the Feature's own power, recorded on a new `SearchExecution
+  Result.feature_power_outcome` field -- a non-tractable power (an
+  Oracle, Cast Spell, Chance, ...) is left `None` here, not silently
+  guessed at, explicitly deferred to a later phase. Report layer: new
+  `report/turn_report.py describe_feature_power_attempt()`, transcribing
+  16 of `POWMSG.X2`'s own 42 recovered real messages (section 9.4) --
+  IDs 4-15/18/20/39/40, run through this module's own `render()` prose
+  engine exactly like `render_magic_feature_discovery()`'s own
+  precedent; UP_SKILL/UP_APT/DN_SKILL/DN_APT's own id mapping is
+  inferred from each message's own wording (not independently confirmed
+  against a real screenshot -- noted in the composer's own docstring),
+  and no POWMSG id survives in the recovered 42 for UP_APT's own
+  at-cap case or for MAP_FEAT/SAGE_DISC's own success text -- both
+  correctly render nothing rather than invented flavor text. Wired into
+  `describe_search()` as the composer's own last line, matching the
+  rulebook's "Scout resolves after every other tactic" ordering already
+  documented there.
+
+  Tests: `tests/test_internal_magical_locations.py` gained the
+  corrected-polarity oracle rows plus the full `resolve_power()` cross-
+  check (both against real `Special Features.md` section 8 data);
+  `tests/test_feature_power_execution.py` (new) covers `derive_feature_
+  event()` against 13 real catalog rows byte-for-byte (power, condition,
+  and exact cost), the alternate-form location names, required-alignment
+  resolution, `resolve_feature_power_attempt()`'s own gating (King-only,
+  same-turn reuse, PAY_UP/DRAIN_COURAGE gating, insufficient gold/
+  courage), and each of the 9 real effects; `tests/test_search_
+  execution.py` gained the `_apply_scout()` wiring (a tractable-power
+  success case and a non-tractable no-op case); `tests/test_turn_
+  report.py` gained 19 tests for `describe_feature_power_attempt()` and
+  its `describe_search()` wiring. Ran before writing new tests (non-
+  breaking check, after the polarity fix): 5083 passed. Ran again with
+  all new tests: 5123 passed (net +40).
 
 ## Setup
 

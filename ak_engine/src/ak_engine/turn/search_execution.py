@@ -590,6 +590,12 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_WAND_SPELL, Treasure, TreasureCategory
 from ak_engine.turn.experience import add_experience
+from ak_engine.turn.feature_power_execution import (
+    TRACTABLE_POWERS,
+    FeaturePowerAttemptResult,
+    derive_feature_event,
+    resolve_feature_power_attempt,
+)
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 
@@ -795,6 +801,14 @@ class SearchExecutionResult:
     # Medium``) alike -- neither has any observable trace, matching this
     # project's own pre-existing ``TalkReplyOutcome.IGNORE`` convention.
     talk_language_failure: bool = False
+    # Phase 616: the Feature->Power [5.8] outcome from a full ("fully
+    # known", level 3) Scout discovery, when the Feature's own derived
+    # power is one of this phase's 9 `TRACTABLE_POWERS`. `None` covers
+    # "no Scout discovery this Search", "the Feature has no power at
+    # all" (`Power.PNONE`), and "the power exists but isn't wired yet"
+    # (e.g. the 5 Oracles, Cast Spell -- a later phase's own scope)
+    # alike -- see `_apply_scout()`'s own Phase 616 addendum below.
+    feature_power_outcome: FeaturePowerAttemptResult | None = None
 
 
 def execute_search(
@@ -997,6 +1011,17 @@ def _apply_scout(
     current_level = feature.discovery_level(leader.kingdom_id)
     new_level = SCOUT_FULL_DISCOVERY_LEVEL if discovered else max(current_level, SCOUT_PARTIAL_DISCOVERY_LEVEL)
     feature.discovered_by_kingdom[leader.kingdom_id] = new_level
+
+    # Phase 616: a full discovery is real "special function or event"
+    # knowledge per the rulebook quote above -- resolve and (for this
+    # phase's own 9 tractable powers only) apply the Feature->Power
+    # outcome now. A non-tractable power (an Oracle, Cast Spell, ...) is
+    # deliberately left with no `feature_power_outcome` here -- a later
+    # phase's own scope, not silently guessed at.
+    if discovered:
+        event = derive_feature_event(feature)
+        if event.power in TRACTABLE_POWERS:
+            result.feature_power_outcome = resolve_feature_power_attempt(state, leader_id, feature, event, rng)
 
 
 def _apply_monster_duel_merit(

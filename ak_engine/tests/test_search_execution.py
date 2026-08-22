@@ -15,6 +15,7 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
 from ak_engine.models.office import Office
+from ak_engine.models.power import Power
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
@@ -3758,6 +3759,47 @@ def test_execute_search_scout_kingdomless_leader_is_a_no_effect():
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
 
     assert result.scout_orders_given == 1
+
+
+# -- Phase 616: Feature -> Power [5.8] wired into a full Scout discovery --
+
+
+def test_execute_search_scout_full_discovery_applies_a_tractable_feature_power():
+    # F#5 (`Special Features.md` section 8, user-supplied 2026-08-22):
+    # province 301 (x=3,...), Temple -> Up Skill/ME, Drain Courage. Only
+    # `coord.x` feeds the derivation (see `derive_feature_event()`), so
+    # `y` is set to `LOCATION`'s own 9 to satisfy this project's
+    # co-location requirement without changing which power derives.
+    state = _state_with_leader(skills=SkillTable(raw_values=[0] * 30), temper=Temper.BRAVE)
+    state.add_feature(
+        Feature(feature_id=5, coord=LOCATION, kind=FeatureType.TEMPLE, guardian_monster=Monster.GARGOYLE)
+    )
+    request = _scout_request(5, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert state.features[5].discovery_level(1) == 3
+    assert result.feature_power_outcome is not None
+    assert result.feature_power_outcome.power is Power.UP_SKILL
+
+
+def test_execute_search_scout_full_discovery_leaves_a_non_tractable_power_unapplied():
+    # F#17: province 305 (x=3,...), Crypt -> Cast Spell -- outside this
+    # phase's own 9 TRACTABLE_POWERS, so no outcome is recorded here.
+    state = _state_with_leader()
+    state.add_feature(
+        Feature(feature_id=17, coord=LOCATION, kind=FeatureType.CRYPT, guardian_monster=Monster.GARGOYLE)
+    )
+    request = _scout_request(17, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert state.features[17].discovery_level(1) == 3
+    assert result.feature_power_outcome is None
 
 
 # -- Phase 293: bidirectional round-per-round engine ---------------------
