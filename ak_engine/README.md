@@ -25155,7 +25155,7 @@ follow-up request after the original 431-435 plan shipped.
   wiring is a no-op for all of them by default). Ran again with all
   new tests: 5132 passed (net +9).
 
-- **Phase 618 (current)**: fixes the real `Maneuver.SAY` decode gap
+- **Phase 618**: fixes the real `Maneuver.SAY` decode gap
   Phase 616's own context section flagged -- but the gap turned out to
   be much deeper than "add `SAY` to a frozenset". Reading `HostAK/TP/
   DEF2.PAS` directly (`W_List`/`R_List`) plus the user's own direct
@@ -25237,6 +25237,83 @@ follow-up request after the original 431-435 plan shipped.
   Phase 617's own count (confirming every real `AK3__T*.K1` sample
   still parses byte-identically). Ran again with all new tests: 5139
   passed (net +7).
+
+- **Phase 619 (current)**: implements the 8 SA-argument powers this
+  project's own roadmap left for last -- the 5 Oracles (`ORAC_ALIGN`/
+  `ORAC_POWER`/`ORAC_OFFICE`/`ORAC_GOLD`/`ORAC_TREAS`), `RECHARGE`,
+  `GRANT_WISH`, `GAMBLE`. Phase 618 already made `SearchTactic.say_text`
+  decodable; Phase 616 already built every one of these 8 powers' own
+  `PowerCondition`/cost/consent gate. This phase is the real *effect*
+  of each, sourced from `Special Features.md` sections 5.4-5.8/9.1/9.4
+  (user-supplied 2026-08-22).
+
+  New `turn/feature_power_execution.py parse_sa_argument(say_text) ->
+  int | None`: tries the whole text as a bare integer first, else the
+  first run of digits anywhere in it -- the document gives example
+  phrases ("SA Tell me about character 1.") but never states the real
+  engine's own text-parsing algorithm, so this is a labeled,
+  reasonable interpretation of unsourced *parsing*, not a guess at the
+  *mechanic* (which number, and what it does with it, are both fully
+  sourced). New `SA_ARGUMENT_POWERS` frozenset, checked by
+  `_apply_scout()` (`turn/search_execution.py`) alongside the existing
+  `TRACTABLE_POWERS` -- on a full Scout discovery, finds the first
+  `SAY` tactic in the plan, parses its argument, and calls `resolve_
+  feature_power_attempt(..., sa_argument=...)`.
+
+  Each power reuses an already-built lookup rather than inventing new
+  state: `ORAC_ALIGN`/`ORAC_POWER` target a leader id directly (`state.
+  leaders`), `ORAC_POWER` reveals `GameState.armies_commanded_by()`'s
+  own result verbatim (number + type, not location -- an empty tuple
+  is a real "leads no armies" answer, not a failure); `ORAC_OFFICE`
+  targets an office ordinal 0-7 (confirmed identical to `Office.
+  EMPEROR`..`Office.MAGE`) via the existing `turn/office_holder.py
+  resolve_office_holder()` (a vacant office is likewise a real answer,
+  not a failure); `ORAC_GOLD` reveals a King's own `KingdomState.
+  treasury` -- reconciled a real tension between `FPDESC.X2`'s own
+  summary ("Kingdom number") and `POWMSG.X2`'s own operational text
+  (which names a character, Hero-vs-King) by reading the argument as a
+  leader id whose own Kingdom gets revealed only if they're really a
+  King; `ORAC_TREAS` reveals `Feature.treasure` for a target feature id
+  (`None` is a real, treasure-less answer with no separate POWMSG id,
+  same "no recovered id, narrate nothing" stance as a few Phase
+  616/617 outcomes); `RECHARGE` validates ownership and `item.treasure
+  in TREASURE_WAND_SPELL` (already exactly the document's own
+  "spell-casting item ordinals 15-34") before `+1` charge; `GRANT_WISH`
+  applies section 5.6's own deterministic `skill < min(4, aptitude) ->
+  skill+1` (distinct from `UP_SKILL`'s probabilistic roll); `GAMBLE`
+  rolls two 2d6 totals, a **strictly greater** character roll wins the
+  stake, a tie or loss subtracts it (`FPDESC.X2`'s own confirmed
+  "tie goes to the house" reading).
+
+  Report layer: 16 new `POWMSG.X2` templates (ids 21-37, transcribed
+  verbatim from section 9.4) in `report/turn_report.py`, wired into the
+  same `describe_feature_power_attempt()` composer Phase 616/617 built
+  -- which now also takes `state`/`character_name` (both optional,
+  default `None`, so every earlier caller/test is unaffected) to
+  resolve other leaders'/kingdoms' own names via `state.leaders`/
+  `state.kingdoms`, the same pattern several other composers in this
+  file already use (`describe_rumor()`, `describe_defend()`, ...).
+  `describe_search()` gained the same optional `state` parameter,
+  threaded through from its own real caller (`describe_turn_results()`,
+  which already has `state` in scope). `ORAC_POWER`'s own "has armies"
+  case and `MAP_FEAT`'s own reveal-a-feature case share the same "no
+  recovered POWMSG id, narrate the fact plainly" precedent (`POWMSG`
+  id 16 for `ORAC_POWER` points at a separate "General Intelligence
+  Report" section this project has no composer for).
+
+  Tests: `tests/test_feature_power_execution.py` gained 27 tests --
+  `parse_sa_argument()` (bare number, full sentence, no digits),
+  success/failure pairs for all 8 powers (invalid target, wrong owner,
+  non-spell-casting item, insufficient treasury, skill-at-aptitude, a
+  Gamble tie forced across a seed sweep and confirmed a loss, no SA
+  argument given at all); `tests/test_search_execution.py` gained 2 --
+  `_apply_scout()` finding and parsing a real `SAY` tactic's own
+  argument end to end, and refusing cleanly when no `SAY` tactic was
+  given; `tests/test_turn_report.py` gained 18 -- one (or a refusal
+  case) per new outcome, plus confirming every Phase 619 branch
+  renders nothing when `state` isn't supplied. Ran before writing new
+  tests (non-breaking check): 5139 passed, unchanged from Phase 618's
+  own count. Ran again with all new tests: 5183 passed (net +44).
 
 ## Setup
 

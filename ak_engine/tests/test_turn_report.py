@@ -5008,6 +5008,163 @@ def test_describe_feature_power_attempt_chance_has_no_recovered_message():
     assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
 
 
+# -- Phase 619: the 8 SA-argument powers --
+
+
+def _sa_state():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0), treasury=100))
+    state.add_leader(LeaderState(1, 1, "King Testerman", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(2, 1, "Sir Roland", HexCoord(1, 1), alignment=Alignment.GOOD))
+    return state
+
+
+def test_describe_feature_power_attempt_orac_align():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.ORAC_ALIGN, applied=True, oracle_target_leader_id=2, oracle_alignment=Alignment.GOOD
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert line == "Sir Roland is a Good character."
+
+
+def test_describe_feature_power_attempt_orac_power_with_armies():
+    state = _sa_state()
+    state.add_army(
+        ArmyState(army_id=1, kingdom_id=1, army_type=ArmyType.BOWMEN, quality=Quality.AVERAGE, location=HexCoord(1, 1), commanded_by=2)
+    )
+    outcome = FeaturePowerAttemptResult(power=Power.ORAC_POWER, applied=True, oracle_target_leader_id=2, oracle_armies=tuple(state.armies.values()))
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=state, character_name="King Testerman")
+    assert line == "Sir Roland commands 1 army: Bowmen."
+
+
+def test_describe_feature_power_attempt_orac_power_no_armies():
+    outcome = FeaturePowerAttemptResult(power=Power.ORAC_POWER, applied=True, oracle_target_leader_id=2, oracle_armies=())
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 10), state=_sa_state(), character_name="King Testerman")
+    assert "no armies" in line or "no soldiers" in line
+
+
+def test_describe_feature_power_attempt_orac_office_vacant():
+    outcome = FeaturePowerAttemptResult(power=Power.ORAC_OFFICE, applied=True, oracle_office=Office.EMPEROR, oracle_office_holder_leader_id=None)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert line == "No one has accomplished anything in the race for this office."
+
+
+def test_describe_feature_power_attempt_orac_office_holder():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.ORAC_OFFICE,
+        applied=True,
+        oracle_office=Office.EMPEROR,
+        oracle_office_holder_leader_id=1,
+        oracle_office_holder_merit_points=5,
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert "King Testerman" in line
+    assert "Testia" in line
+
+
+def test_describe_feature_power_attempt_orac_gold_success():
+    outcome = FeaturePowerAttemptResult(power=Power.ORAC_GOLD, applied=True, oracle_target_leader_id=1, oracle_treasury=100)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert line == "King Testerman has a treasury of 100 gold."
+
+
+def test_describe_feature_power_attempt_orac_gold_not_a_king():
+    outcome = FeaturePowerAttemptResult(power=Power.ORAC_GOLD, applied=False, reason="not a King", oracle_target_leader_id=2)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert line == "Sir Roland is not a King but a Hero, and has little gold to speak of."
+
+
+def test_describe_feature_power_attempt_orac_treas():
+    state = _sa_state()
+    state.features[42] = Feature(feature_id=42, coord=HexCoord(5, 5), kind=FeatureType.PYRAMID, treasure=Treasure.GOLD_HOARD_LARGE)
+    outcome = FeaturePowerAttemptResult(power=Power.ORAC_TREAS, applied=True, oracle_feature_id=42, oracle_treasure=Treasure.GOLD_HOARD_LARGE)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=state, character_name="King Testerman")
+    assert TREASURE_NAME[Treasure.GOLD_HOARD_LARGE] in line
+
+
+def test_describe_feature_power_attempt_recharge_success():
+    state = _sa_state()
+    item = state.add_item(Treasure.WAND_RESURRECTION, owner_leader_id=1, charges=3)
+    outcome = FeaturePowerAttemptResult(power=Power.RECHARGE, applied=True, recharged_item_id=item.item_id, magic_feature=MagicFeature.LAMP)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=state, character_name="King Testerman")
+    assert TREASURE_NAME[Treasure.WAND_RESURRECTION] in line
+
+
+def test_describe_feature_power_attempt_recharge_not_owned():
+    outcome = FeaturePowerAttemptResult(power=Power.RECHARGE, applied=False, reason="item not owned", recharged_item_id=999)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert line == "Treasure 999 could not be recharged because King Testerman didn't own it."
+
+
+def test_describe_feature_power_attempt_recharge_not_spell_casting():
+    state = _sa_state()
+    item = state.add_item(Treasure.GOLD_HOARD_LARGE, owner_leader_id=1, charges=0)
+    outcome = FeaturePowerAttemptResult(power=Power.RECHARGE, applied=False, reason="not a spell-casting item", recharged_item_id=item.item_id)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=state, character_name="King Testerman")
+    assert TREASURE_NAME[Treasure.GOLD_HOARD_LARGE] in line
+    assert "isn't a spell-casting item" in line
+
+
+def test_describe_feature_power_attempt_grant_wish_success():
+    outcome = FeaturePowerAttemptResult(power=Power.GRANT_WISH, applied=True, ability=Ability.MELEE, new_skill_level=2)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert "one point higher" in line
+
+
+def test_describe_feature_power_attempt_grant_wish_at_limit():
+    outcome = FeaturePowerAttemptResult(power=Power.GRANT_WISH, applied=True, at_limit=True, ability=Ability.MELEE)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert "cannot grant the wish" in line
+
+
+def test_describe_feature_power_attempt_grant_wish_drain_skill_refused():
+    outcome = FeaturePowerAttemptResult(power=Power.GRANT_WISH, applied=False, reason="insufficient skill levels", magic_feature=MagicFeature.LAMP)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert "thirst for wisdom" in line
+
+
+def test_describe_feature_power_attempt_gamble_won():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.GAMBLE,
+        applied=True,
+        gamble_amount=10,
+        gamble_character_roll=8,
+        gamble_house_roll=5,
+        gamble_won=True,
+        oracle_target_leader_id=1,
+        magic_feature=MagicFeature.LAMP,
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert "won 10 gold for Testia" in line
+    assert "a 8" in line and "a 5" in line
+
+
+def test_describe_feature_power_attempt_gamble_lost():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.GAMBLE,
+        applied=True,
+        gamble_amount=10,
+        gamble_character_roll=4,
+        gamble_house_roll=9,
+        gamble_won=False,
+        oracle_target_leader_id=1,
+        magic_feature=MagicFeature.LAMP,
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert "Testia lost 10 gold" in line
+
+
+def test_describe_feature_power_attempt_gamble_refused():
+    outcome = FeaturePowerAttemptResult(power=Power.GAMBLE, applied=False, reason="insufficient gold", gamble_amount=1000, oracle_target_leader_id=1)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert line == "Hah!The realm of Testia isn't that rich.Begone!"
+
+
+def test_describe_feature_power_attempt_sa_power_without_state_renders_nothing():
+    outcome = FeaturePowerAttemptResult(power=Power.ORAC_ALIGN, applied=True, oracle_target_leader_id=2, oracle_alignment=Alignment.GOOD)
+    assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
+
+
 def test_describe_search_appends_the_feature_power_line_when_present():
     outcome = FeaturePowerAttemptResult(power=Power.MAP_FEAT, applied=False, reason="no more features to reveal")
     result = SearchExecutionResult(accepted=True, combat_resolved=False, feature_power_outcome=outcome)

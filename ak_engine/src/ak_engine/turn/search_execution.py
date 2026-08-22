@@ -595,9 +595,11 @@ from ak_engine.turn.encounter import (
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_WAND_SPELL, Treasure, TreasureCategory
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.feature_power_execution import (
+    SA_ARGUMENT_POWERS,
     TRACTABLE_POWERS,
     FeaturePowerAttemptResult,
     derive_feature_event,
+    parse_sa_argument,
     resolve_feature_power_attempt,
 )
 from ak_engine.turn.office_holder import resolve_office_holder
@@ -1019,13 +1021,28 @@ def _apply_scout(
     # Phase 616: a full discovery is real "special function or event"
     # knowledge per the rulebook quote above -- resolve and (for this
     # phase's own 9 tractable powers only) apply the Feature->Power
-    # outcome now. A non-tractable power (an Oracle, Cast Spell, ...) is
+    # outcome now. A non-tractable power (Cast Spell, Chance, ...) is
     # deliberately left with no `feature_power_outcome` here -- a later
     # phase's own scope, not silently guessed at.
     if discovered:
         event = derive_feature_event(feature)
         if event.power in TRACTABLE_POWERS:
             result.feature_power_outcome = resolve_feature_power_attempt(state, leader_id, feature, event, rng)
+        elif event.power in SA_ARGUMENT_POWERS:
+            # Phase 619: the 5 Oracles/Recharge/Grant Wish/Gamble need
+            # the Encounter Plan's own SAY tactic argument -- "just
+            # SA-y the ... number" (Special Features.md sections
+            # 5.4-5.7). The *first* SAY tactic in the plan (real Search
+            # phases only ever carry one, same convention `scout_
+            # orders_given`'s own docstring already established for
+            # Scout); `None` when no SAY tactic was given at all, which
+            # `resolve_feature_power_attempt()` refuses cleanly on its
+            # own ("no SA argument given").
+            say_tactic = next((t for t in request.tactics if t.maneuver is Maneuver.SAY), None)
+            sa_argument = parse_sa_argument(say_tactic.say_text) if say_tactic is not None and say_tactic.say_text else None
+            result.feature_power_outcome = resolve_feature_power_attempt(
+                state, leader_id, feature, event, rng, sa_argument=sa_argument
+            )
 
 
 def _apply_monster_duel_merit(

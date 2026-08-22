@@ -2525,8 +2525,45 @@ _POWMSG_NEW_SEX_TO_MALE = (
     "Har {de }har har!!!"
 )
 
+# Phase 619: POWMSG.X2 ids 21-37, the 5 Oracles/Recharge/Grant Wish/
+# Gamble's own real message text (Special Features.md section 9.4,
+# user-supplied 2026-08-22) -- same quoted-verbatim/`render()` pattern
+# as every template above.
+_POWMSG_ORAC_OFFICE_VACANT = "No one has accomplished anything in the race for this office."
+_POWMSG_ORAC_GOLD_NOT_A_KING = "[ is not a King but a Hero, and has little gold to speak of."
+_POWMSG_ORAC_ALIGN_SUCCESS = "[ is ^A $o character."
+_POWMSG_ORAC_POWER_NO_ARMIES = (
+    "[ is {perhaps/RI_think }not a general/Rmilitary_man, for/Ras [ leads/Rcommands no armies/Rsoldiers."
+)
+_POWMSG_ORAC_GOLD_SUCCESS = "[ has a treasury of # gold."
+_POWMSG_ORAC_OFFICE_SUCCESS = "The current holder of the office of $O is [ (#), who is loyal to $K's kingdom."
+_POWMSG_ORAC_TREAS_SUCCESS = "The treasure in the & is the \\."
+_POWMSG_RECHARGE_SUCCESS = "The $\\ recharged the \\."
+_POWMSG_GRANT_WISH_AT_LIMIT = "The $\\ cannot grant the wish if the character's skill has already reached his aptitude level."
+_POWMSG_GRANT_WISH_SUCCESS = "There!<'s ^ ability is now one point higher than before!"
+_POWMSG_GAMBLE_REFUSED = "Hah!The realm of $K isn't that rich.Begone!"
+_POWMSG_GAMBLE_WON = (
+    "< blew_on_the_dice/Rshook_the_dice_well and threw... a #.Invisible hands picked up the dice, "
+    "spun/Rrolled them around the $\\ and they came up... a #!< won # gold for $K!"
+)
+_POWMSG_GAMBLE_LOST = (
+    "< blew_on_the_dice/Rshook_the_dice_well and threw... a #.Invisible hands picked up the dice, "
+    "spun/Rrolled them around the $\\ and they came up... a #.$K lost # gold."
+)
+_POWMSG_RECHARGE_NOT_OWNED = "Treasure # could not be recharged because < didn't own it."
+_POWMSG_RECHARGE_NOT_SPELL_CASTING = "The \\ could not be recharged because it isn't a spell-casting item."
+_POWMSG_DRAIN_SKILL_REFUSED = (
+    "The $\\ could not be used because < didn't have enough unmodified skill levels to satisfy its thirst for wisdom."
+)
 
-def describe_feature_power_attempt(outcome: FeaturePowerAttemptResult, rng: random.Random) -> str | None:
+
+def describe_feature_power_attempt(
+    outcome: FeaturePowerAttemptResult,
+    rng: random.Random,
+    *,
+    state: GameState | None = None,
+    character_name: str | None = None,
+) -> str | None:
     """Renders the one POWMSG.X2 sentence for a Scout's own Feature ->
     Power [5.8] outcome, wired into `describe_search()` right after the
     Scout discovery narration. Returns `None` whenever this phase has no
@@ -2537,6 +2574,14 @@ def describe_feature_power_attempt(outcome: FeaturePowerAttemptResult, rng: rand
     each branch below and the module comment above these templates) --
     not a bug, `describe_search()`'s own caller already treats `None` as
     "nothing to add".
+
+    Phase 619: the 8 SA-argument powers' own messages need to resolve
+    other leaders'/kingdoms' own names, so this composer now takes
+    `state`/`character_name` too (both optional, default `None`, so
+    every Phase 616/617 caller/test keeps working unchanged) -- `None`
+    for either makes every Phase 619 branch below render nothing rather
+    than guess at a name, the same "can't resolve it, don't narrate it"
+    stance as everywhere else in this composer.
     """
 
     values: dict[str, str] = {}
@@ -2544,6 +2589,8 @@ def describe_feature_power_attempt(outcome: FeaturePowerAttemptResult, rng: rand
         values["$\\"] = MAGIC_FEATURE_NAME[outcome.magic_feature]
     if outcome.ability is not None:
         values["^"] = ABILITY_NAME[outcome.ability]
+    if character_name is not None:
+        values["<"] = character_name
 
     if outcome.power is Power.NEW_TEMP:
         if not outcome.applied or outcome.new_temper is None:
@@ -2598,6 +2645,159 @@ def describe_feature_power_attempt(outcome: FeaturePowerAttemptResult, rng: rand
     if outcome.power is Power.NEW_SEX and outcome.applied and outcome.new_sex is not None:
         template = _POWMSG_NEW_SEX_TO_FEMALE if outcome.new_sex is Sex.FEMALE else _POWMSG_NEW_SEX_TO_MALE
         return render(template, values, rng=rng)
+
+    # Phase 619: the 8 SA-argument powers -- every branch below needs
+    # `state` to resolve another leader's/kingdom's own name; `None`
+    # renders nothing rather than guess at a name (same stance as every
+    # other "can't resolve it" case above).
+    if outcome.power is Power.ORAC_ALIGN:
+        if not outcome.applied or outcome.oracle_target_leader_id is None or outcome.oracle_alignment is None:
+            return None
+        if state is None:
+            return None
+        target = state.leaders.get(outcome.oracle_target_leader_id)
+        if target is None:
+            return None
+        values["["] = target.name
+        values["$o"] = ALIGNMENT_ABBREVIATION[outcome.oracle_alignment]
+        return render(_POWMSG_ORAC_ALIGN_SUCCESS, values, rng=rng)
+
+    if outcome.power is Power.ORAC_POWER:
+        if not outcome.applied or outcome.oracle_target_leader_id is None or outcome.oracle_armies is None:
+            return None
+        if state is None:
+            return None
+        target = state.leaders.get(outcome.oracle_target_leader_id)
+        if target is None:
+            return None
+        values["["] = target.name
+        if not outcome.oracle_armies:
+            return render(_POWMSG_ORAC_POWER_NO_ARMIES, values, rng=rng)
+        # No recovered POWMSG id for the has-armies case (id 16 points at
+        # a separate "General Intelligence Report" section this project
+        # has no composer for) -- a plain, project-original factual
+        # sentence instead of inventing that missing composer, same "no
+        # recovered id, narrate the fact plainly" stance as MAP_FEAT/
+        # SAGE_DISC's own successful reveals above.
+        army_types = ", ".join(ARMY_TYPE_NAME[army.army_type] for army in outcome.oracle_armies)
+        count = len(outcome.oracle_armies)
+        return f"{target.name} commands {count} arm{'y' if count == 1 else 'ies'}: {army_types}."
+
+    if outcome.power is Power.ORAC_OFFICE:
+        if not outcome.applied or outcome.oracle_office is None:
+            return None
+        if outcome.oracle_office_holder_leader_id is None:
+            return render(_POWMSG_ORAC_OFFICE_VACANT, values, rng=rng)
+        if state is None:
+            return None
+        holder = state.leaders.get(outcome.oracle_office_holder_leader_id)
+        if holder is None or holder.kingdom_id is None:
+            return None
+        kingdom = state.kingdoms.get(holder.kingdom_id)
+        if kingdom is None:
+            return None
+        values["$O"] = OFFICE_NAME[outcome.oracle_office]
+        values["["] = holder.name
+        values["#"] = str(round(outcome.oracle_office_holder_merit_points or 0))
+        values["$K"] = kingdom.name
+        return render(_POWMSG_ORAC_OFFICE_SUCCESS, values, rng=rng)
+
+    if outcome.power is Power.ORAC_GOLD:
+        if outcome.oracle_target_leader_id is None or state is None:
+            return None
+        target = state.leaders.get(outcome.oracle_target_leader_id)
+        if target is None:
+            return None
+        values["["] = target.name
+        if not outcome.applied:
+            return render(_POWMSG_ORAC_GOLD_NOT_A_KING, values, rng=rng)
+        if outcome.oracle_treasury is None:
+            return None
+        values["#"] = str(outcome.oracle_treasury)
+        return render(_POWMSG_ORAC_GOLD_SUCCESS, values, rng=rng)
+
+    if outcome.power is Power.ORAC_TREAS:
+        if not outcome.applied or outcome.oracle_feature_id is None or outcome.oracle_treasure is None:
+            return None  # a real, treasure-less Feature has no recovered POWMSG id either
+        if state is None:
+            return None
+        target_feature = state.features.get(outcome.oracle_feature_id)
+        if target_feature is None:
+            return None
+        values["&"] = _province_label(state, target_feature.coord)
+        values["\\"] = TREASURE_NAME[outcome.oracle_treasure]
+        return render(_POWMSG_ORAC_TREAS_SUCCESS, values, rng=rng)
+
+    if outcome.power is Power.RECHARGE:
+        if outcome.recharged_item_id is None:
+            return None
+        if outcome.reason == "item not owned":
+            values["#"] = str(outcome.recharged_item_id)
+            return render(_POWMSG_RECHARGE_NOT_OWNED, values, rng=rng)
+        if state is None:
+            return None
+        item = state.items.get(outcome.recharged_item_id)
+        if item is None:
+            return None
+        values["\\"] = TREASURE_NAME[item.treasure]
+        if outcome.reason == "not a spell-casting item":
+            return render(_POWMSG_RECHARGE_NOT_SPELL_CASTING, values, rng=rng)
+        if outcome.applied:
+            return render(_POWMSG_RECHARGE_SUCCESS, values, rng=rng)
+        return None
+
+    if outcome.power is Power.GRANT_WISH:
+        if outcome.reason == "insufficient skill levels":
+            return render(_POWMSG_DRAIN_SKILL_REFUSED, values, rng=rng)
+        if not outcome.applied or outcome.ability is None:
+            return None
+        if outcome.at_limit:
+            return render(_POWMSG_GRANT_WISH_AT_LIMIT, values, rng=rng)
+        return render(_POWMSG_GRANT_WISH_SUCCESS, values, rng=rng)
+
+    if outcome.power is Power.GAMBLE:
+        if not outcome.applied:
+            if outcome.reason != "insufficient gold" or state is None or outcome.oracle_target_leader_id is None:
+                return None
+            leader = state.leaders.get(outcome.oracle_target_leader_id)
+            if leader is None or leader.kingdom_id is None:
+                return None
+            kingdom = state.kingdoms.get(leader.kingdom_id)
+            if kingdom is None:
+                return None
+            values["$K"] = kingdom.name
+            return render(_POWMSG_GAMBLE_REFUSED, values, rng=rng)
+        if (
+            outcome.gamble_amount is None
+            or outcome.gamble_character_roll is None
+            or outcome.gamble_house_roll is None
+            or outcome.gamble_won is None
+            or outcome.oracle_target_leader_id is None
+            or state is None
+        ):
+            return None
+        leader = state.leaders.get(outcome.oracle_target_leader_id)
+        if leader is None or leader.kingdom_id is None:
+            return None
+        kingdom = state.kingdoms.get(leader.kingdom_id)
+        if kingdom is None:
+            return None
+        values["$K"] = kingdom.name
+        # The real template repeats "#" 2-3 times for 3 distinct numbers
+        # (character roll, house roll, stake) -- render()'s own `values`
+        # dict substitutes one string per literal marker everywhere it
+        # appears, so a positional post-pass fills each "#" left to
+        # right instead (no "#" is put in `values`, so render() leaves
+        # every one of them untouched -- "unrecognized symbols... are
+        # left untouched," per this module's own `render()` docstring).
+        template = _POWMSG_GAMBLE_WON if outcome.gamble_won else _POWMSG_GAMBLE_LOST
+        text = render(template, values, rng=rng)
+        text = text.replace("#", str(outcome.gamble_character_roll), 1)
+        text = text.replace("#", str(outcome.gamble_house_roll), 1)
+        text = text.replace("#", str(outcome.gamble_amount), 1)
+        if outcome.gamble_won:
+            text = text.replace("#", str(outcome.gamble_amount), 1)
+        return text
 
     return None
 
@@ -6198,7 +6398,9 @@ def describe_turn_results(
             province = state.provinces.get(feature.coord)
             is_sea = province is not None and province.effective_terrain() is Terrain.SEA
             lines.extend(
-                describe_search(entry.result, character_name=caster_name, feature_name=feature_name, rng=rng, is_sea=is_sea)
+                describe_search(
+                    entry.result, state=state, character_name=caster_name, feature_name=feature_name, rng=rng, is_sea=is_sea
+                )
             )
             continue
         elif entry.action is ActionCode.ASPY and isinstance(entry.result, SpyReport):
@@ -8043,6 +8245,7 @@ def render_search_feature_already_sacked(character_name: str, feature_name: str,
 def describe_search(
     result: SearchExecutionResult,
     *,
+    state: GameState | None = None,
     character_name: str,
     feature_name: str,
     rng: random.Random,
@@ -8225,7 +8428,9 @@ def describe_search(
     # `describe_feature_power_attempt()`'s own docstring) as well as "no
     # Scout discovery this Search happened at all".
     if result.feature_power_outcome is not None:
-        power_line = describe_feature_power_attempt(result.feature_power_outcome, rng)
+        power_line = describe_feature_power_attempt(
+            result.feature_power_outcome, rng, state=state, character_name=character_name
+        )
         if power_line is not None:
             lines.append(power_line)
     return lines

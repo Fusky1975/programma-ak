@@ -55,23 +55,41 @@ grant no Chancellor-office merit (`FPDESC.X2`'s own text, corroborated
 by section 5.3) -- this module never touches `MeritTally.features_
 discovered_first`/`.discoveries_found_first`, both scoped to Explore's
 own and Practice's own separate, already-wired mechanics.
+
+**Phase 619 -- the 8 SA-argument powers**: the 5 Oracles (`ORAC_ALIGN`/
+`ORAC_POWER`/`ORAC_OFFICE`/`ORAC_GOLD`/`ORAC_TREAS`), `RECHARGE`,
+`GRANT_WISH`, `GAMBLE` (`Special Features.md` sections 5.4-5.7, 9.1,
+9.4). Unlike the 9 `TRACTABLE_POWERS` above, each needs a player-
+supplied numeric argument -- the Search Encounter Plan's own `SAY`
+tactic ("SA-y the ... number"), only correctly decodable since Phase
+618 fixed `SearchTactic.say_text`'s own recovery. `parse_sa_argument()`
+below pulls the number back out of that free text: the document gives
+example phrases ("SA Tell me about character 1.") but never states the
+real engine's own text-parsing algorithm, so this is a labeled,
+reasonable interpretation of unsourced *parsing*, not a guess at the
+*mechanic* itself (which number, and what it does with it, are both
+fully sourced).
 """
 
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import dataclass, replace
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.feature import Feature
-from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.magic_feature import MagicFeature
+from ak_engine.models.office import Office
 from ak_engine.models.power import Power, PowerCondition
 from ak_engine.models.race import Race
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import TREASURE_WAND_SPELL, Treasure
+from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.worldgen.internal_magical_locations import (
     POWER_CONDITION_PAIRS,
     damp_college_ability_parameter,
@@ -84,6 +102,27 @@ from ak_engine.worldgen.internal_magical_locations import (
     resolve_required_alignment,
     resolve_visible_location,
 )
+
+_SA_ARGUMENT_RE = re.compile(r"\d+")
+
+
+def parse_sa_argument(say_text: str) -> int | None:
+    """Pulls the player's own numeric argument out of a `SAY` tactic's
+    free text (Phase 619) -- tries the whole (stripped) text as a bare
+    integer first (the simplest literal reading of "SA-y the number",
+    and what every test fixture uses), else the first run of digits
+    anywhere in the text (covers the document's own full-sentence
+    examples, e.g. "Tell me about character 1"). `None` if no digits
+    appear at all.
+    """
+
+    stripped = say_text.strip()
+    try:
+        return int(stripped)
+    except ValueError:
+        pass
+    match = _SA_ARGUMENT_RE.search(stripped)
+    return int(match.group()) if match is not None else None
 
 # FPDESC.X2's own "up to a maximum of 4" -- real for UP_SKILL, source-
 # confirmed stale for UP_APT (see power_condition_cost's own module).
@@ -106,6 +145,28 @@ TRACTABLE_POWERS = frozenset(
         Power.SAGE_DISC,
     }
 )
+
+# Phase 619: the 8 powers whose real effect needs the Search Encounter
+# Plan's own SAY tactic argument (see module docstring). `_apply_scout()`
+# (`turn/search_execution.py`) checks membership in this set the same
+# way it already checks `TRACTABLE_POWERS`.
+SA_ARGUMENT_POWERS = frozenset(
+    {
+        Power.ORAC_ALIGN,
+        Power.ORAC_POWER,
+        Power.ORAC_OFFICE,
+        Power.ORAC_GOLD,
+        Power.ORAC_TREAS,
+        Power.RECHARGE,
+        Power.GRANT_WISH,
+        Power.GAMBLE,
+    }
+)
+
+# Office.EMPEROR(0)..Office.MAGE(7) -- exactly `Special Features.md`
+# section 9.1's own "0-Emp, 1-Chanc, 2-Treas, 3-Marsh, 4-Adm, 5-Def,
+# 6-Priest, 7-Mage" table, confirmed identical ordinals, no remapping.
+_ORACLE_OFFICE_RANGE = range(0, 8)
 
 
 @dataclass(slots=True, frozen=True)
@@ -205,6 +266,25 @@ class FeaturePowerAttemptResult:
     # attempt()`` regardless of outcome, since every real POWMSG message
     # this project reaches names the magic object itself.
     magic_feature: MagicFeature | None = None
+    # Phase 619: the 5 Oracles/Recharge/Grant Wish/Gamble -- populated
+    # only for the specific power/outcome that occurred, same convention
+    # as every field above. `ability`/`new_skill_level` above are reused
+    # for GRANT_WISH (already exactly the right shape).
+    oracle_target_leader_id: int | None = None  # ORAC_ALIGN/ORAC_POWER's own "character number"
+    oracle_alignment: Alignment | None = None  # ORAC_ALIGN's own answer
+    oracle_armies: tuple[ArmyState, ...] | None = None  # ORAC_POWER's own answer
+    oracle_office: Office | None = None
+    oracle_office_holder_leader_id: int | None = None
+    oracle_office_holder_merit_points: int | float | None = None
+    oracle_kingdom_id: int | None = None
+    oracle_treasury: int | None = None  # ORAC_GOLD's own answer
+    oracle_feature_id: int | None = None
+    oracle_treasure: Treasure | None = None  # ORAC_TREAS's own answer
+    recharged_item_id: int | None = None
+    gamble_amount: int | None = None
+    gamble_character_roll: int | None = None
+    gamble_house_roll: int | None = None
+    gamble_won: bool | None = None
 
 
 def _apply_condition_gate(
@@ -254,15 +334,26 @@ def _apply_condition_gate(
 
 
 def resolve_feature_power_attempt(
-    state: GameState, leader_id: int, feature: Feature, event: FeaturePowerEvent, rng: random.Random
+    state: GameState,
+    leader_id: int,
+    feature: Feature,
+    event: FeaturePowerEvent,
+    rng: random.Random,
+    *,
+    sa_argument: int | None = None,
 ) -> FeaturePowerAttemptResult:
     """Applies `event`'s own real effect for `leader_id`, gating on
     `event.condition` first (`_apply_condition_gate()`). Only the 9
-    `TRACTABLE_POWERS` have a real effect branch below -- called by
-    `turn/search_execution.py _apply_scout()` only for those 9 (see
-    that module's own Phase 616 addendum); any other `Power` reaching
-    here (a future phase's own bug, not a real caller today) returns an
-    unapplied result rather than guessing an effect.
+    `TRACTABLE_POWERS` plus (Phase 619) the 8 `SA_ARGUMENT_POWERS` have
+    a real effect branch below -- called by `turn/search_execution.py
+    _apply_scout()` only for those 17 (see that module's own Phase
+    616/619 addenda); any other `Power` reaching here (a future phase's
+    own bug, not a real caller today) returns an unapplied result rather
+    than guessing an effect. `sa_argument` (Phase 619) is the Search
+    Encounter Plan's own `SAY` tactic argument, already recovered and
+    parsed by the caller (`parse_sa_argument()`) -- `None` for every
+    `TRACTABLE_POWERS` caller (unused) and for a `SA_ARGUMENT_POWERS`
+    call where no `SAY` tactic was given at all.
 
     Thin wrapper around `_resolve_feature_power_attempt_effect()`: stamps
     `event.magic_feature` onto every real outcome (POWMSG.X2's own
@@ -271,15 +362,20 @@ def resolve_feature_power_attempt(
     returns having to repeat it.
     """
 
-    result = _resolve_feature_power_attempt_effect(state, leader_id, feature, event, rng)
+    result = _resolve_feature_power_attempt_effect(state, leader_id, feature, event, rng, sa_argument)
     return replace(result, magic_feature=event.magic_feature)
 
 
 def _resolve_feature_power_attempt_effect(
-    state: GameState, leader_id: int, feature: Feature, event: FeaturePowerEvent, rng: random.Random
+    state: GameState,
+    leader_id: int,
+    feature: Feature,
+    event: FeaturePowerEvent,
+    rng: random.Random,
+    sa_argument: int | None,
 ) -> FeaturePowerAttemptResult:
     power = event.power
-    if power not in TRACTABLE_POWERS:
+    if power not in TRACTABLE_POWERS and power not in SA_ARGUMENT_POWERS:
         return FeaturePowerAttemptResult(power=power, applied=False, reason="power not yet wired")
 
     refusal = _apply_condition_gate(state, leader_id, feature, event, rng)
@@ -290,6 +386,26 @@ def _resolve_feature_power_attempt_effect(
         feature.power_used_turn = state.turn_number
 
     leader = state.leaders[leader_id]
+
+    if power in SA_ARGUMENT_POWERS:
+        if sa_argument is None:
+            return FeaturePowerAttemptResult(power=power, applied=False, reason="no SA argument given")
+        if power is Power.ORAC_ALIGN:
+            return _resolve_orac_align(state, sa_argument)
+        if power is Power.ORAC_POWER:
+            return _resolve_orac_power(state, sa_argument)
+        if power is Power.ORAC_OFFICE:
+            return _resolve_orac_office(state, sa_argument)
+        if power is Power.ORAC_GOLD:
+            return _resolve_orac_gold(state, sa_argument)
+        if power is Power.ORAC_TREAS:
+            return _resolve_orac_treas(state, sa_argument)
+        if power is Power.RECHARGE:
+            return _resolve_recharge(state, leader_id, sa_argument)
+        if power is Power.GRANT_WISH:
+            return _resolve_grant_wish(leader, sa_argument)
+        # Power.GAMBLE
+        return _resolve_gamble(state, leader, sa_argument, rng)
 
     if power is Power.NEW_SEX:
         # A leader whose sex was never recorded (`None`, e.g. most Heroes
@@ -397,3 +513,188 @@ def _reveal_sage_discoveries(state: GameState, leader: LeaderState, rng: random.
     revealed = tuple(unknown[:count])
     kingdom.discoveries.update(revealed)
     return FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=True, revealed_discoveries=revealed)
+
+
+# -- Phase 619: the 8 SA-argument powers --
+
+
+def _resolve_orac_align(state: GameState, target_leader_id: int) -> FeaturePowerAttemptResult:
+    """`ORAC_ALIGN` (section 5.4): "SA-y the character number... and the
+    character's alignment will become known to you." POWMSG 23: `"[ is
+    $o character."`
+    """
+
+    target = state.leaders.get(target_leader_id)
+    if target is None or target.alignment is None:
+        return FeaturePowerAttemptResult(power=Power.ORAC_ALIGN, applied=False, reason="invalid target")
+    return FeaturePowerAttemptResult(
+        power=Power.ORAC_ALIGN,
+        applied=True,
+        oracle_target_leader_id=target_leader_id,
+        oracle_alignment=target.alignment,
+    )
+
+
+def _resolve_orac_power(state: GameState, target_leader_id: int) -> FeaturePowerAttemptResult:
+    """`ORAC_POWER` (section 5.4): "SA-y the character number... and the
+    Oracle will tell you the number and type of all armies led by that
+    character (but not the location)." `GameState.armies_commanded_by()`
+    already gives exactly this; an empty tuple is a real "leads no
+    armies" answer (POWMSG 24), not a failure.
+    """
+
+    target = state.leaders.get(target_leader_id)
+    if target is None:
+        return FeaturePowerAttemptResult(power=Power.ORAC_POWER, applied=False, reason="invalid target")
+    armies = tuple(state.armies_commanded_by(target_leader_id))
+    return FeaturePowerAttemptResult(
+        power=Power.ORAC_POWER, applied=True, oracle_target_leader_id=target_leader_id, oracle_armies=armies
+    )
+
+
+def _resolve_orac_office(state: GameState, office_ordinal: int) -> FeaturePowerAttemptResult:
+    """`ORAC_OFFICE` (section 5.4): "SA-y the Office number (0-Emp,
+    1-Chanc, 2-Treas, 3-Marsh, 4-Adm, 5-Def, 6-Priest, 7-Mage)... and
+    the leader for that office will be pronounced." `turn/office_
+    holder.py resolve_office_holder()` already resolves this; a vacant
+    office (POWMSG 21, "No one has accomplished anything...") is a real
+    answer, not a failure.
+    """
+
+    if office_ordinal not in _ORACLE_OFFICE_RANGE:
+        return FeaturePowerAttemptResult(power=Power.ORAC_OFFICE, applied=False, reason="invalid target")
+    office = Office(office_ordinal)
+    holder = resolve_office_holder(state, office)
+    return FeaturePowerAttemptResult(
+        power=Power.ORAC_OFFICE,
+        applied=True,
+        oracle_office=office,
+        oracle_office_holder_leader_id=holder.leader_id if holder is not None else None,
+        oracle_office_holder_merit_points=holder.merit_points if holder is not None else None,
+    )
+
+
+def _resolve_orac_gold(state: GameState, target_leader_id: int) -> FeaturePowerAttemptResult:
+    """`ORAC_GOLD` (section 5.4/9.1): FPDESC.X2's own summary says
+    "SA-y the Kingdom number (not the King's name)," but POWMSG 22's
+    own real operational text -- `"[ is not a King but a Hero, and has
+    little gold to speak of"` -- names a *character*, not a bare
+    Kingdom index. Reconciled the same way this document's own prose
+    already reads a Kingdom externally through its King: the argument
+    is a leader id; a real King's own Kingdom treasury is revealed
+    (POWMSG 25), any other leader (a Hero, or no such leader at all)
+    refuses with POWMSG 22's own wording.
+    """
+
+    target = state.leaders.get(target_leader_id)
+    if target is None or not target.is_king or target.kingdom_id is None:
+        return FeaturePowerAttemptResult(
+            power=Power.ORAC_GOLD, applied=False, reason="not a King", oracle_target_leader_id=target_leader_id
+        )
+    kingdom = state.kingdoms.get(target.kingdom_id)
+    if kingdom is None:
+        return FeaturePowerAttemptResult(
+            power=Power.ORAC_GOLD, applied=False, reason="not a King", oracle_target_leader_id=target_leader_id
+        )
+    return FeaturePowerAttemptResult(
+        power=Power.ORAC_GOLD,
+        applied=True,
+        oracle_target_leader_id=target_leader_id,
+        oracle_kingdom_id=target.kingdom_id,
+        oracle_treasury=kingdom.treasury,
+    )
+
+
+def _resolve_orac_treas(state: GameState, target_feature_id: int) -> FeaturePowerAttemptResult:
+    """`ORAC_TREAS` (section 5.4): "SA-y a feature number... and the
+    Oracle will tell you what treasure is hidden there." POWMSG 27:
+    `"The treasure in the & is the \\."` `feature.treasure` may be
+    `None` (a real, treasure-less Feature) -- `applied` stays `True`
+    whenever the Feature itself is valid; the document gives no
+    separate "empty" case, so `report/turn_report.py`'s own composer
+    simply has no message for that specific sub-case (same "no
+    recovered id, narrate nothing" stance other outcomes already use).
+    """
+
+    target = state.features.get(target_feature_id)
+    if target is None:
+        return FeaturePowerAttemptResult(power=Power.ORAC_TREAS, applied=False, reason="invalid target")
+    return FeaturePowerAttemptResult(
+        power=Power.ORAC_TREAS, applied=True, oracle_feature_id=target_feature_id, oracle_treasure=target.treasure
+    )
+
+
+def _resolve_recharge(state: GameState, leader_id: int, item_id: int) -> FeaturePowerAttemptResult:
+    """`RECHARGE` (section 5.5): validates (1) a real item, (2) owned by
+    the scouting character, (3) `item.treasure in TREASURE_WAND_SPELL`
+    (the document's own "spell-casting item ordinals 15-34," already
+    exactly this set), then `+1` charge. POWMSG 35 ("didn't own it") is
+    reused for a nonexistent item id too -- from the player's own
+    perspective an unowned and a nonexistent item look identical (no
+    separate POWMSG id exists for "no such item"). POWMSG 36 ("not a
+    spell-casting item"), POWMSG 28 (success).
+    """
+
+    item = state.items.get(item_id)
+    if item is None or item.owner_leader_id != leader_id:
+        return FeaturePowerAttemptResult(power=Power.RECHARGE, applied=False, reason="item not owned", recharged_item_id=item_id)
+    if item.treasure not in TREASURE_WAND_SPELL:
+        return FeaturePowerAttemptResult(
+            power=Power.RECHARGE, applied=False, reason="not a spell-casting item", recharged_item_id=item_id
+        )
+    item.charges += 1
+    return FeaturePowerAttemptResult(power=Power.RECHARGE, applied=True, recharged_item_id=item_id)
+
+
+def _resolve_grant_wish(leader: LeaderState, ability_ordinal: int) -> FeaturePowerAttemptResult:
+    """`GRANT_WISH` (section 5.6): "SA-y the ability number... `skill <
+    min(4, aptitude)` -> skill+1", a deterministic grant distinct from
+    `UP_SKILL`'s own probabilistic roll. POWMSG 30 (can't grant, skill
+    already at the aptitude/4 ceiling -- `at_limit`, the same real
+    no-op shape `UP_SKILL`/`UP_APT` already use), POWMSG 31 (success).
+    """
+
+    if ability_ordinal not in range(15):
+        return FeaturePowerAttemptResult(power=Power.GRANT_WISH, applied=False, reason="invalid target")
+    ability = Ability(ability_ordinal)
+    if leader.skills is None:
+        return FeaturePowerAttemptResult(power=Power.GRANT_WISH, applied=False, reason="no skill data recorded")
+    skill, aptitude = leader.skills.pair_for_ability(ability)
+    if not (skill < min(MAX_SKILL_LEVEL, aptitude)):
+        return FeaturePowerAttemptResult(power=Power.GRANT_WISH, applied=True, at_limit=True, ability=ability)
+    leader.skills.set_pair_for_ability(ability, skill + 1, aptitude)
+    return FeaturePowerAttemptResult(power=Power.GRANT_WISH, applied=True, ability=ability, new_skill_level=skill + 1)
+
+
+def _resolve_gamble(
+    state: GameState, leader: LeaderState, amount: int, rng: random.Random
+) -> FeaturePowerAttemptResult:
+    """`GAMBLE` (section 5.7): "SA-y how much you wish to gamble... two
+    rolls as the sum of two dice calls. If the character's roll is
+    *strictly greater*, add the stake; otherwise subtract it" -- a tie
+    is a real loss (`FPDESC.X2`'s own confirmed reading). POWMSG 32
+    (insufficient treasury), 33 (win), 34 (loss, tie included).
+    """
+
+    kingdom = state.kingdoms.get(leader.kingdom_id) if leader.kingdom_id is not None else None
+    if kingdom is None or kingdom.treasury < amount:
+        return FeaturePowerAttemptResult(
+            power=Power.GAMBLE,
+            applied=False,
+            reason="insufficient gold",
+            gamble_amount=amount,
+            oracle_target_leader_id=leader.leader_id,  # reused: the scouting leader, for report-layer $K resolution
+        )
+    character_roll = rng.randint(1, 6) + rng.randint(1, 6)
+    house_roll = rng.randint(1, 6) + rng.randint(1, 6)
+    won = character_roll > house_roll
+    kingdom.treasury += amount if won else -amount
+    return FeaturePowerAttemptResult(
+        power=Power.GAMBLE,
+        applied=True,
+        gamble_amount=amount,
+        gamble_character_roll=character_roll,
+        gamble_house_roll=house_roll,
+        gamble_won=won,
+        oracle_target_leader_id=leader.leader_id,  # reused: the scouting leader, for report-layer $K resolution
+    )

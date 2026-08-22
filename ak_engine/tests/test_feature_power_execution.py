@@ -6,7 +6,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord
@@ -14,9 +14,16 @@ from ak_engine.models.power import Power, PowerCondition
 from ak_engine.models.race import Race
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
+from ak_engine.models.army_type import ArmyType
+from ak_engine.models.office import Office
+from ak_engine.models.treasure import Treasure
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.feature_power_execution import (
+    SA_ARGUMENT_POWERS,
     TRACTABLE_POWERS,
+    FeaturePowerEvent,
     derive_feature_event,
+    parse_sa_argument,
     resolve_feature_power_attempt,
 )
 
@@ -310,3 +317,288 @@ def test_sage_disc_refuses_when_all_discoveries_already_known():
     result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
     assert result.applied is False
     assert result.reason == "no more discoveries to reveal"
+
+
+# -- Phase 619: parse_sa_argument() --
+
+
+def test_parse_sa_argument_bare_number():
+    assert parse_sa_argument("1") == 1
+    assert parse_sa_argument("  42  ") == 42
+
+
+def test_parse_sa_argument_full_sentence():
+    assert parse_sa_argument("Tell me about character 1.") == 1
+    assert parse_sa_argument("SA Recharge item 12.") == 12
+
+
+def test_parse_sa_argument_no_digits_returns_none():
+    assert parse_sa_argument("Take that!") is None
+    assert parse_sa_argument("") is None
+
+
+# -- Phase 619: the 8 SA-argument powers --
+
+
+def _sa_event(power: Power) -> FeaturePowerEvent:
+    return FeaturePowerEvent(power=power, magic_feature=MagicFeature.LAMP, condition=PowerCondition.PC_NONE)
+
+
+def test_orac_align_success():
+    state = GameState()
+    state.add_leader(LeaderState(LEADER_ID, 1, "Searcher", LOCATION))
+    state.add_leader(LeaderState(2, 1, "Sir Roland", LOCATION, alignment=Alignment.GOOD))
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.ORAC_ALIGN), random.Random(0), sa_argument=2,
+    )
+    assert result.applied is True
+    assert result.oracle_target_leader_id == 2
+    assert result.oracle_alignment is Alignment.GOOD
+
+
+def test_orac_align_invalid_target():
+    state = _state_with_leader()
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.ORAC_ALIGN), random.Random(0), sa_argument=999,
+    )
+    assert result.applied is False
+    assert result.reason == "invalid target"
+
+
+def test_orac_power_reveals_commanded_armies():
+    state = GameState()
+    state.add_leader(LeaderState(LEADER_ID, 1, "Searcher", LOCATION))
+    state.add_leader(LeaderState(2, 1, "General", LOCATION))
+    state.add_army(
+        ArmyState(army_id=1, kingdom_id=1, army_type=ArmyType.BOWMEN, quality=Quality.AVERAGE, location=LOCATION, commanded_by=2)
+    )
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.ORAC_POWER), random.Random(0), sa_argument=2,
+    )
+    assert result.applied is True
+    assert len(result.oracle_armies) == 1
+    assert result.oracle_armies[0].army_type is ArmyType.BOWMEN
+
+
+def test_orac_power_no_armies_is_a_real_answer_not_a_failure():
+    state = _state_with_leader()
+    state.add_leader(LeaderState(2, 1, "Hermit", LOCATION))
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.ORAC_POWER), random.Random(0), sa_argument=2,
+    )
+    assert result.applied is True
+    assert result.oracle_armies == ()
+
+
+def test_orac_office_reveals_the_holder():
+    state = GameState()
+    state.add_leader(LeaderState(LEADER_ID, 1, "Searcher", LOCATION))
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    king = LeaderState(2, 1, "King Testerman", LOCATION, is_king=True)
+    state.add_leader(king)
+    state.emperor_kingdom_id = 1
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.ORAC_OFFICE), random.Random(0), sa_argument=Office.EMPEROR.value,
+    )
+    assert result.applied is True
+    assert result.oracle_office is Office.EMPEROR
+    assert result.oracle_office_holder_leader_id == 2
+
+
+def test_orac_office_vacant_is_a_real_answer_not_a_failure():
+    state = _state_with_leader()
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.ORAC_OFFICE), random.Random(0), sa_argument=Office.EMPEROR.value,
+    )
+    assert result.applied is True
+    assert result.oracle_office_holder_leader_id is None
+
+
+def test_orac_office_out_of_range_is_invalid():
+    state = _state_with_leader()
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.ORAC_OFFICE), random.Random(0), sa_argument=99,
+    )
+    assert result.applied is False
+    assert result.reason == "invalid target"
+
+
+def test_orac_gold_reveals_a_kings_treasury():
+    state = GameState()
+    state.add_leader(LeaderState(LEADER_ID, 1, "Searcher", LOCATION))
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION, treasury=250))
+    state.add_leader(LeaderState(2, 1, "King Testerman", LOCATION, is_king=True))
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.ORAC_GOLD), random.Random(0), sa_argument=2,
+    )
+    assert result.applied is True
+    assert result.oracle_treasury == 250
+
+
+def test_orac_gold_refuses_a_non_king_target():
+    state = _state_with_leader()
+    state.add_leader(LeaderState(2, 1, "Sir Roland", LOCATION))
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.ORAC_GOLD), random.Random(0), sa_argument=2,
+    )
+    assert result.applied is False
+    assert result.reason == "not a King"
+    assert result.oracle_target_leader_id == 2
+
+
+def test_orac_treas_reveals_the_hidden_treasure():
+    state = _state_with_leader()
+    target_feature = Feature(feature_id=42, coord=HexCoord(5, 5), kind=FeatureType.PYRAMID, treasure=Treasure.GOLD_HOARD_LARGE)
+    state.features[42] = target_feature
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.ORAC_TREAS), random.Random(0), sa_argument=42,
+    )
+    assert result.applied is True
+    assert result.oracle_treasure is Treasure.GOLD_HOARD_LARGE
+
+
+def test_orac_treas_invalid_feature():
+    state = _state_with_leader()
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.ORAC_TREAS), random.Random(0), sa_argument=999,
+    )
+    assert result.applied is False
+    assert result.reason == "invalid target"
+
+
+def test_recharge_success_increments_charges():
+    state = _state_with_leader()
+    item = state.add_item(Treasure.WAND_RESURRECTION, owner_leader_id=LEADER_ID, charges=2)
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.RECHARGE), random.Random(0), sa_argument=item.item_id,
+    )
+    assert result.applied is True
+    assert item.charges == 3
+    assert result.recharged_item_id == item.item_id
+
+
+def test_recharge_refuses_an_item_not_owned_by_the_scouting_character():
+    state = _state_with_leader()
+    item = state.add_item(Treasure.WAND_RESURRECTION, owner_leader_id=999, charges=2)
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.RECHARGE), random.Random(0), sa_argument=item.item_id,
+    )
+    assert result.applied is False
+    assert result.reason == "item not owned"
+    assert item.charges == 2
+
+
+def test_recharge_refuses_a_non_spell_casting_item():
+    state = _state_with_leader()
+    item = state.add_item(Treasure.GOLD_HOARD_LARGE, owner_leader_id=LEADER_ID, charges=0)
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.RECHARGE), random.Random(0), sa_argument=item.item_id,
+    )
+    assert result.applied is False
+    assert result.reason == "not a spell-casting item"
+
+
+def test_grant_wish_success_raises_skill_by_one():
+    state = GameState()
+    state.add_leader(_skilled_leader(Ability.MELEE, skill=1, aptitude=3))
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.GRANT_WISH), random.Random(0), sa_argument=Ability.MELEE.value,
+    )
+    assert result.applied is True
+    assert result.new_skill_level == 2
+    skill, _aptitude = state.leaders[LEADER_ID].skills.pair_for_ability(Ability.MELEE)
+    assert skill == 2
+
+
+def test_grant_wish_refuses_when_skill_already_at_aptitude():
+    state = GameState()
+    state.add_leader(_skilled_leader(Ability.MELEE, skill=3, aptitude=3))
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.GRANT_WISH), random.Random(0), sa_argument=Ability.MELEE.value,
+    )
+    assert result.applied is True
+    assert result.at_limit is True
+
+
+def test_gamble_win_or_loss_moves_the_treasury_consistently():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION, treasury=100))
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.GAMBLE), random.Random(1), sa_argument=10,
+    )
+    assert result.applied is True
+    assert result.gamble_amount == 10
+    if result.gamble_won:
+        assert state.kingdoms[1].treasury == 110
+    else:
+        assert state.kingdoms[1].treasury == 90
+
+
+def test_gamble_tie_is_a_loss():
+    # rng.randint(1,6) via ScriptedRandom-free direct seeding is awkward
+    # for forcing an exact tie, so this checks the documented rule
+    # directly instead: a tie must never be treated as a win.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION, treasury=100))
+    for seed in range(30):
+        result = resolve_feature_power_attempt(
+            state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+            _sa_event(Power.GAMBLE), random.Random(seed), sa_argument=1,
+        )
+        if result.gamble_character_roll == result.gamble_house_roll:
+            assert result.gamble_won is False
+            return
+    raise AssertionError("no tie rolled across 30 seeds -- widen the seed range")
+
+
+def test_gamble_refuses_on_insufficient_treasury():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION, treasury=5))
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.GAMBLE), random.Random(0), sa_argument=1000,
+    )
+    assert result.applied is False
+    assert result.reason == "insufficient gold"
+    assert state.kingdoms[1].treasury == 5
+
+
+def test_sa_argument_powers_refuse_cleanly_with_no_sa_argument_given():
+    state = _state_with_leader()
+    result = resolve_feature_power_attempt(
+        state, LEADER_ID, Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID),
+        _sa_event(Power.ORAC_ALIGN), random.Random(0), sa_argument=None,
+    )
+    assert result.applied is False
+    assert result.reason == "no SA argument given"
+
+
+def test_sa_argument_powers_set_membership():
+    assert SA_ARGUMENT_POWERS == {
+        Power.ORAC_ALIGN,
+        Power.ORAC_POWER,
+        Power.ORAC_OFFICE,
+        Power.ORAC_GOLD,
+        Power.ORAC_TREAS,
+        Power.RECHARGE,
+        Power.GRANT_WISH,
+        Power.GAMBLE,
+    }
+    assert SA_ARGUMENT_POWERS.isdisjoint(TRACTABLE_POWERS)

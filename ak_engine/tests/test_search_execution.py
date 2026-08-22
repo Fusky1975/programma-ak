@@ -3902,6 +3902,55 @@ def test_execute_search_damp_magic_halves_the_cast_success_chance():
     assert mock_cast_roll.call_args.kwargs["damp_magic"] is True
 
 
+# -- Phase 619: the 8 SA-argument powers -- _apply_scout() finds and
+# parses a real SAY tactic's own argument end to end.
+
+
+def test_execute_search_scout_finds_and_parses_the_say_tactics_own_argument():
+    # F#7: Dungeon at x=3 -> Gamble, PC_NONE condition (no extra gating
+    # to work around). SearchTactic(say_text=...) stands in directly for
+    # what turn/search_decode.py's own Phase 618 SAY recovery already
+    # produces from a real move file.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION, treasury=100))
+    state.add_leader(LeaderState(LEADER_ID, 1, "King Testerman", LOCATION, is_king=True))
+    state.add_feature(Feature(feature_id=7, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = SearchRequest(
+        feature_id=7,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(maneuver=Maneuver.MELEE),
+            SearchTactic(maneuver=Maneuver.SAY, say_text="10"),
+            SearchTactic(maneuver=Maneuver.SCOUT),
+        ],
+    )
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(1))
+
+    assert result.feature_power_outcome is not None
+    assert result.feature_power_outcome.power is Power.GAMBLE
+    assert result.feature_power_outcome.applied is True
+    assert result.feature_power_outcome.gamble_amount == 10
+
+
+def test_execute_search_scout_with_no_say_tactic_refuses_the_sa_argument_power():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION, treasury=100))
+    state.add_leader(LeaderState(LEADER_ID, 1, "King Testerman", LOCATION, is_king=True))
+    state.add_feature(Feature(feature_id=7, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(7, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(1))
+
+    assert result.feature_power_outcome is not None
+    assert result.feature_power_outcome.applied is False
+    assert result.feature_power_outcome.reason == "no SA argument given"
+
+
 # -- Phase 293: bidirectional round-per-round engine ---------------------
 
 
