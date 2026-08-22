@@ -11,6 +11,7 @@ from ak_engine.worldgen.internal_magical_locations import (
     POWER_RANGE,
     candidate_location,
     candidate_power,
+    derive_chance_sub_power,
     resolve_power,
     resolve_spell_candidate,
     resolve_visible_location,
@@ -252,3 +253,27 @@ def test_resolve_spell_candidate_ans_prayer_terminates_and_returns_a_real_spell(
         Spell.TELEK_STORM,
         Spell.MIRROR_IMAGE,
     }
+
+
+# -- Phase 622: derive_chance_sub_power() (Power.CHANCE's own selector,
+# "gdday.md", user-supplied 2026-08-22, section 11.3's own worked test-
+# vector table, cross-checked against the independent 8086 trace) --
+
+
+def test_derive_chance_sub_power_matches_the_reports_own_worked_vectors():
+    assert derive_chance_sub_power(gameturn=1, gdday=10) is Power.UP_SKILL
+    assert derive_chance_sub_power(gameturn=1, gdday=19) is Power.CAST_SPELL
+    assert derive_chance_sub_power(gameturn=6, gdday=27) is Power.NEW_TEMP
+    assert derive_chance_sub_power(gameturn=7, gdday=13) is Power.CAST_SPELL
+    assert derive_chance_sub_power(gameturn=12, gdday=25) is Power.CAST_SPELL
+    assert derive_chance_sub_power(gameturn=0, gdday=8) is Power.NEW_SEX
+    assert derive_chance_sub_power(gameturn=0, gdday=15) is Power.DN_SKILL
+
+
+def test_derive_chance_sub_power_covers_the_remaining_two_residues():
+    # Residues 2 and 6 aren't in the report's own worked-vector table
+    # (which happens to only exercise 3 via residue 4/5's own duplicate
+    # entries) -- these are directly computed from the sourced formula
+    # ((gameturn+gdday) AND 7), not transcribed from the report.
+    assert derive_chance_sub_power(gameturn=0, gdday=2) is Power.UP_SKILL  # residue 2
+    assert derive_chance_sub_power(gameturn=0, gdday=6) is Power.SAGE_DISC  # residue 6

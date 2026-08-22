@@ -1113,6 +1113,25 @@ class GameState:
     # `GW3__T1`-`T12` file already carries (`6`/`0x0006` and `14`/
     # `0x000E` respectively, both with this same bit set).
     miscwrit: int = 2
+    # Phase 622 -- the `GW` header's own field index 13 (zero-based),
+    # `due_day`: the real day-of-month of the turn's own "Due" date
+    # (user-supplied reverse-engineering report "gdday.md", 2026-08-22).
+    # Already parsed by `parser/gw_world.py GWHeader.due_day` (an
+    # earlier, independent "Phase 318/342 calendar finding"), but never
+    # loaded into `GameState` -- there is no "build a live `GameState`
+    # from a real `GWHeader`" bridge yet, the same status `miscwrit`
+    # (Phase 621) had before this field. Only consumer in this project:
+    # `worldgen/internal_magical_locations.py derive_chance_sub_power()`
+    # (`Power.CHANCE`'s own `(gameturn + gdday) AND 7` sub-power roll).
+    # `gdmonth`/`gdyear`/`gturnlen` are real (`GWHeader.due_month`/
+    # `.due_year`/`.turn_length_days`) but out of scope -- `Chance`
+    # "ignora completamente gdmonth e gdyear" (CERTO), and this project
+    # has no due-date report line or Quote-of-the-Week composer yet to
+    # consume them. Default `1` is a generic placeholder, the same class
+    # as `turn_number`/`game_number`'s own `1` defaults -- unlike
+    # `miscwrit`'s `OR 2`, real `gdday` is calendar data with no fixed
+    # "freshly-generated world" constant to source a better default from.
+    gdday: int = 1
     kingdoms: dict[int, KingdomState] = field(default_factory=dict)
     provinces: dict[HexCoord, ProvinceState] = field(default_factory=dict)
     armies: dict[int, ArmyState] = field(default_factory=dict)

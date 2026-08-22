@@ -751,3 +751,148 @@ def test_resolve_feature_power_attempt_kill_enemy_refuses_cleanly():
     assert result.applied is False
     assert result.reason == "no automatic target for Kill_Enemy"
     assert result.cast_spell is Spell.KILL_ENEMY
+
+
+# -- Phase 622: Power.CHANCE's own full sub-power resolution ("gdday.md",
+# user-supplied 2026-08-22). F#9/Catacombs is the same real Chance
+# Feature the byte-for-byte oracle test above already uses (province
+# 1708 -- see that test's own `Power.CHANCE`/`PC_NONE`/`0` row), also
+# independently confirmed by gdday.md section 9.3 as one of GW3__T1's
+# own 3 real Chance Features -- modval = 9 + FeatureType.CATACOMBS.value
+# (2) = 11, so UpSkill/DnSkill target Ability.THIEF (11 MOD 15) and
+# NewTemp targets Temper.BERSERK ((11 MOD 3)+1), both directly computed
+# from the already-confirmed power_ability_parameter()/power_temper_
+# parameter() formulas, not independently re-derived here.
+
+
+def test_derive_feature_event_chance_resolves_up_skill_parameters():
+    # gameturn=1, gdday=10 -> residue 3 -> UpSkill (gdday.md section 9.1).
+    feature = _feature(9, 1708, FeatureType.CATACOMBS)
+    state = GameState(turn_number=1, gdday=10)
+    event = derive_feature_event(feature, state=state)
+    assert event.power is Power.CHANCE
+    assert event.chance_sub_power is Power.UP_SKILL
+    assert event.ability_parameter is Ability.THIEF
+
+
+def test_derive_feature_event_chance_resolves_new_temp_parameters():
+    # gameturn=6, gdday=27 -> residue 1 -> NewTemp (gdday.md section 11.3).
+    feature = _feature(9, 1708, FeatureType.CATACOMBS)
+    state = GameState(turn_number=6, gdday=27)
+    event = derive_feature_event(feature, state=state)
+    assert event.chance_sub_power is Power.NEW_TEMP
+    assert event.temper_parameter is Temper.BERSERK
+
+
+def test_derive_feature_event_chance_without_state_leaves_chance_sub_power_none():
+    feature = _feature(9, 1708, FeatureType.CATACOMBS)
+    event = derive_feature_event(feature)
+    assert event.power is Power.CHANCE
+    assert event.chance_sub_power is None
+
+
+def _chance_event(sub_power: Power, **kwargs) -> FeaturePowerEvent:
+    return FeaturePowerEvent(
+        power=Power.CHANCE, magic_feature=MagicFeature.ROULETTE_WHEEL, chance_sub_power=sub_power, **kwargs
+    )
+
+
+def test_resolve_feature_power_attempt_chance_unresolved_is_power_not_wired():
+    state = _state_with_leader()
+    feature = Feature(feature_id=9, coord=LOCATION, kind=FeatureType.CATACOMBS)
+    state.add_feature(feature)
+    event = FeaturePowerEvent(power=Power.CHANCE, magic_feature=MagicFeature.ROULETTE_WHEEL, chance_sub_power=None)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+
+    assert result.applied is False
+    assert result.reason == "power not yet wired"
+
+
+def test_resolve_feature_power_attempt_chance_new_sex():
+    state = _state_with_leader(sex=Sex.MALE)
+    feature = Feature(feature_id=9, coord=LOCATION, kind=FeatureType.CATACOMBS)
+    state.add_feature(feature)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _chance_event(Power.NEW_SEX), random.Random(0))
+
+    assert result.applied is True
+    assert result.power is Power.NEW_SEX
+    assert state.leaders[LEADER_ID].sex is Sex.FEMALE
+
+
+def test_resolve_feature_power_attempt_chance_new_temp():
+    state = _state_with_leader(temper=Temper.COWARDLY)
+    feature = Feature(feature_id=9, coord=LOCATION, kind=FeatureType.CATACOMBS)
+    state.add_feature(feature)
+    event = _chance_event(Power.NEW_TEMP, temper_parameter=Temper.BERSERK)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+
+    assert result.applied is True
+    assert result.power is Power.NEW_TEMP
+    assert state.leaders[LEADER_ID].temper is Temper.BERSERK
+
+
+def test_resolve_feature_power_attempt_chance_up_skill():
+    ability = Ability.THIEF
+    state = GameState()
+    state.add_leader(_skilled_leader(ability, skill=0, aptitude=5))
+    feature = Feature(feature_id=9, coord=LOCATION, kind=FeatureType.CATACOMBS)
+    state.add_feature(feature)
+    event = _chance_event(Power.UP_SKILL, ability_parameter=ability)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+
+    assert result.applied is True
+    assert result.power is Power.UP_SKILL
+    skill, _aptitude = state.leaders[LEADER_ID].skills.pair_for_ability(ability)
+    assert skill == 1
+
+
+def test_resolve_feature_power_attempt_chance_dn_skill():
+    ability = Ability.THIEF
+    state = GameState()
+    state.add_leader(_skilled_leader(ability, skill=2, aptitude=2))
+    feature = Feature(feature_id=9, coord=LOCATION, kind=FeatureType.CATACOMBS)
+    state.add_feature(feature)
+    event = _chance_event(Power.DN_SKILL, ability_parameter=ability)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+
+    assert result.applied is True
+    assert result.power is Power.DN_SKILL
+    skill, _aptitude = state.leaders[LEADER_ID].skills.pair_for_ability(ability)
+    assert skill == 1
+
+
+def test_resolve_feature_power_attempt_chance_sage_disc():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    feature = Feature(feature_id=9, coord=LOCATION, kind=FeatureType.CATACOMBS)
+    state.add_feature(feature)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _chance_event(Power.SAGE_DISC), random.Random(0))
+
+    assert result.applied is True
+    assert result.power is Power.SAGE_DISC
+    assert len(result.revealed_discoveries) >= 1
+
+
+def test_resolve_feature_power_attempt_chance_cast_spell():
+    # random.Random(0)'s first randrange(8) call (no prior rng draws --
+    # Chance's own condition is always PC_NONE, so `_apply_condition_
+    # gate()` never touches `rng`) picks index 6 -> Spell.TORNADO,
+    # confirmed via a standalone script against `CHANCE_SPELL_TABLE`
+    # directly, not hand-traced.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION, treasury=100))
+    feature = Feature(feature_id=9, coord=LOCATION, kind=FeatureType.CATACOMBS)
+    state.add_feature(feature)
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _chance_event(Power.CAST_SPELL), random.Random(0))
+
+    assert result.applied is True
+    assert result.power is Power.CAST_SPELL
+    assert result.cast_spell is Spell.TORNADO

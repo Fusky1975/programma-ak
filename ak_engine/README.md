@@ -25403,7 +25403,7 @@ follow-up request after the original 431-435 plan shipped.
   (and the one pre-existing test updated for the new `CAST_SPELL`
   behavior): 5202 passed (net +19).
 
-- **Phase 621 (current)**: closes the `miscwrit` gap Phase 620 left
+- **Phase 621**: closes the `miscwrit` gap Phase 620 left
   open. A second, independent reverse-engineering report
   (`miscwrit.md`, user-supplied 2026-08-22) gives `miscwrit`'s real
   shape: a persistent 16-bit bitmask, `GW` header field #33. Its own
@@ -25503,6 +25503,102 @@ follow-up request after the original 431-435 plan shipped.
   real-calendar dependency, unlike `miscwrit`, which turned out to be
   resolvable) remains open in the whole Feature -> Power [5.8]
   subsystem.
+
+- **Phase 622 (current)**: closes `Power.CHANCE`'s own `gdday` gap --
+  the last real gap in the Feature -> Power [5.8] subsystem. A third,
+  independent user-supplied reverse-engineering report (`gdday.md`,
+  2026-08-22) identifies `gdday`: a persistent 16-bit integer, the real
+  day-of-month of the turn's own "Due" date, `GW` header field index 13
+  (zero-based). This project's own `parser/gw_world.py GWHeader` already
+  parses this exact field -- named `due_day` there, found independently
+  in an earlier "Phase 318/342 calendar finding" before this project
+  connected it to `Chance` -- confirming the new report's own
+  identification rather than trusting it blindly. `GWHeader.due_day` was
+  parsed but never loaded into `GameState` (there is no "build a live
+  `GameState` from a real `GWHeader`" bridge yet -- `GameState.miscwrit`,
+  Phase 621, had the exact same status before this field).
+
+  `models/game_state.py`: `GameState` gains `gdday: int = 1` -- a
+  generic placeholder default (same class as `turn_number`/`game_number`'s
+  own `1` defaults), since real `gdday` is calendar data with no fixed
+  "freshly-generated world" constant the way `miscwrit`'s `OR 2` had.
+  `gdmonth`/`gdyear`/`gturnlen` are real (`Chance` "ignora completamente
+  gdmonth e gdyear", CERTO) but out of scope -- this project has no
+  due-date report line or Quote-of-the-Week composer yet to consume them.
+
+  `worldgen/internal_magical_locations.py`: new `derive_chance_sub_
+  power(gameturn, gdday) -> Power`: `(gameturn + gdday) AND 7` indexes a
+  fixed 8-residue table (`YAK.PAS Set_Event`'s own `Chance` `CASE`
+  branch, quoted verbatim in the report and independently confirmed at
+  8086 level, `AKGEN.EXE 0x51E5D-0x51F17`) -- always one of 6 already-
+  implemented powers (`NEW_SEX`, `NEW_TEMP`, `UP_SKILL`, `DN_SKILL`,
+  `CAST_SPELL`, `SAGE_DISC`), deterministic and RNG-free (the real
+  randomness lives downstream, in each sub-power's own already-built
+  effect). New `CHANCE_SPELL_TABLE`, the literal `rspell` table (8
+  spells: `Oratory`, `Clairvoyance`, `Bless`, `Skeletal_Army`,
+  `Earthquake`, `Plague`, `Tornado`, `Illus_Armies`) -- all 8 already
+  real, fully-castable spells in this project (already part of Phase
+  621's own 13-candidate `Set_Spell` scope), critically none is
+  `Kill_Enemy`.
+
+  `turn/feature_power_execution.py`: `FeaturePowerEvent` gained `chance_
+  sub_power: Power | None`; `derive_feature_event()`'s new `Power.
+  CHANCE` branch (needs `state`, same convention as `CAST_SPELL`/
+  `ANS_PRAYER`) calls `derive_chance_sub_power()` and, reusing the
+  already-existing `power_ability_parameter()`/`power_temper_
+  parameter()` formulas (independently confirmed byte-identical to the
+  new report's own sections 6.2-6.4), populates `ability_parameter`/
+  `temper_parameter` when the sub-power is `UP_SKILL`/`DN_SKILL`/
+  `NEW_TEMP`. `Power.CHANCE` was never in `POWER_CONDITION_PAIRS`, so
+  `condition` stays `PC_NONE` automatically -- `Chance` never calls
+  `Set_FCon` (CERTO: no cost/alignment/gameturn/consent gate ever
+  applies to it), which falls out of the existing machinery for free.
+  New `_resolve_chance()`: switches on `chance_sub_power` and returns a
+  result stamped with that **sub**-power, not `Power.CHANCE` -- `NEW_
+  SEX`/`NEW_TEMP`/`UP_SKILL`/`DN_SKILL` duplicate a small, bounded
+  amount of logic from the existing top-level branches (a deliberate
+  choice over refactoring already-tested code into a shared helper);
+  `SAGE_DISC` reuses `_reveal_sage_discoveries()` verbatim; `CAST_SPELL`
+  draws `CHANCE_SPELL_TABLE[rng.randrange(8)]` (the `IRand AND 7` draw,
+  at resolution time, a fresh draw per evaluation) and reuses `_resolve_
+  terrain_spell()` verbatim for casting/targeting (Phase 621's own
+  province/character/no-target dispatch already handles all 8 possible
+  spells here correctly, since none is `Kill_Enemy`).
+
+  `turn/search_execution.py _apply_scout()`: the existing tractable-
+  power check gains `or event.power is Power.CHANCE`.
+
+  Report layer: unchanged -- `describe_feature_power_attempt()` already
+  dispatches purely on `outcome.power`, so every existing POWMSG
+  template (including 42, reused for `Chance`'s own `CastSpell` draw)
+  renders correctly with zero new report-layer code.
+
+  An existing test needed repointing: `test_execute_search_scout_full_
+  discovery_leaves_a_non_tractable_power_unapplied` used F#29/Pyramid
+  (`Chance`, now tractable) as its own "still entirely unhandled"
+  example -- repointed to F#171/Pyramid (`Power.MAP_PROV`, the one real
+  `Power` still deliberately unwired, Phase 616's own dropped-scope
+  note about a missing per-Kingdom "known provinces" tracking concept).
+
+  Tests: `tests/test_internal_magical_locations.py` gained 2 --
+  `derive_chance_sub_power()` against the report's own worked test-
+  vector table (section 11.3) plus 2 directly-computed cases for full
+  residue coverage. `tests/test_feature_power_execution.py` gained 9 --
+  `derive_feature_event()` for `Power.CHANCE` with/without `state`
+  (real F#9/Catacombs, independently confirmed by the report's own
+  section 9.3 as a real `GW3__T1` `Chance` Feature too), and `_resolve_
+  chance()` for each of the 6 sub-powers. `tests/test_search_
+  execution.py` gained 1 -- a full `_apply_scout()` resolution of
+  `Chance` landing on `NewSex`, confirming the outcome is stamped with
+  the sub-power, not `Power.CHANCE`. Ran before writing new tests
+  (non-breaking check, after repointing the one existing test above):
+  5209 passed, unchanged from Phase 621's own count. Ran again with all
+  new tests: 5222 passed (net +13).
+
+  This closes the Feature -> Power [5.8] subsystem's last real gap --
+  every real `Power` is now wired except the deliberately-dropped
+  `MAP_PROV` (needs a per-Kingdom "known provinces" tracking concept
+  that doesn't exist in `GameState`, Phase 616's own scope decision).
 
 ## Setup
 

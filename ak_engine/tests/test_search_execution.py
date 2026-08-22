@@ -18,6 +18,7 @@ from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
 from ak_engine.models.office import Office
 from ak_engine.models.power import Power
 from ak_engine.models.race import Race
+from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
@@ -3788,19 +3789,23 @@ def test_execute_search_scout_full_discovery_applies_a_tractable_feature_power()
 
 
 def test_execute_search_scout_full_discovery_leaves_a_non_tractable_power_unapplied():
-    # F#29: Pyramid at x=3 -> Chance -- still entirely unhandled (Phase
-    # 619's own deferred scope), so no outcome is recorded here.
+    # F#171: Pyramid at x=3 -> Map Province, the one real `Power` still
+    # deliberately unwired (Phase 616's own dropped-scope note: needs a
+    # per-Kingdom "known provinces" tracking concept that doesn't exist
+    # in `GameState`) -- so no outcome is recorded here. `Chance` (F#29
+    # at the same x=3) was this test's own example through Phase 621,
+    # but Phase 622 made it tractable too.
     state = _state_with_leader()
     state.add_feature(
-        Feature(feature_id=29, coord=LOCATION, kind=FeatureType.PYRAMID, guardian_monster=Monster.GARGOYLE)
+        Feature(feature_id=171, coord=LOCATION, kind=FeatureType.PYRAMID, guardian_monster=Monster.GARGOYLE)
     )
-    request = _scout_request(29, Maneuver.MELEE, Maneuver.SCOUT)
+    request = _scout_request(171, Maneuver.MELEE, Maneuver.SCOUT)
 
     with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
 
-    assert state.features[29].discovery_level(1) == 3
+    assert state.features[171].discovery_level(1) == 3
     assert result.feature_power_outcome is None
 
 
@@ -3875,6 +3880,30 @@ def test_execute_search_scout_cast_spell_success_casts_oratory_on_the_scouting_l
     assert result.feature_power_outcome.applied is True
     assert result.feature_power_outcome.cast_spell is Spell.ORATORY
     assert state.armies[1].quality is Quality.VETERAN
+
+
+def test_execute_search_scout_chance_resolves_and_applies_a_real_sub_power():
+    # F#29: Pyramid at x=3 -> Chance (Phase 622 -- previously this
+    # project's own "still entirely unhandled" example, see the
+    # repointed non-tractable-power test above). gameturn=1, gdday=7 ->
+    # (1+7) AND 7 = 0 -> NewSex, a deterministic sub-power (no success
+    # roll) that proves the outcome is stamped with the *sub*-power
+    # (Power.NEW_SEX), not Power.CHANCE.
+    state = GameState(turn_number=1, gdday=7)
+    state.add_leader(LeaderState(LEADER_ID, 1, "Searcher", LOCATION, sex=Sex.MALE))
+    state.add_feature(
+        Feature(feature_id=29, coord=LOCATION, kind=FeatureType.PYRAMID, guardian_monster=Monster.GARGOYLE)
+    )
+    request = _scout_request(29, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.feature_power_outcome is not None
+    assert result.feature_power_outcome.applied is True
+    assert result.feature_power_outcome.power is Power.NEW_SEX
+    assert state.leaders[LEADER_ID].sex is Sex.FEMALE
 
 
 # -- Phase 617: DAMP_COLLEGE/DAMP_MAGIC/WARP_SPACE, the 3 passive battle-

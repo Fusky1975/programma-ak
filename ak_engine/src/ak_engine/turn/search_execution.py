@@ -1022,12 +1022,14 @@ def _apply_scout(
     # Phase 616: a full discovery is real "special function or event"
     # knowledge per the rulebook quote above -- resolve and (for this
     # phase's own 9 tractable powers only) apply the Feature->Power
-    # outcome now. A non-tractable power (Chance, ...) is deliberately
-    # left with no `feature_power_outcome` here -- a later phase's own
-    # scope, not silently guessed at.
+    # outcome now. A non-tractable power (MAP_PROV -- the one real
+    # `Power` still deliberately unwired, see `feature_power_execution.
+    # py`'s own Phase 616 addendum) is deliberately left with no
+    # `feature_power_outcome` here -- a later phase's own scope, not
+    # silently guessed at.
     if discovered:
         event = derive_feature_event(feature, state=state)
-        if event.power in TRACTABLE_POWERS or event.power in TERRAIN_SPELL_POWERS:
+        if event.power in TRACTABLE_POWERS or event.power in TERRAIN_SPELL_POWERS or event.power is Power.CHANCE:
             # Phase 620/621: CAST_SPELL/ANS_PRAYER land here too --
             # tractable whenever `event.spell_parameter` resolved (all
             # 13 real `Set_Spell` candidates as of Phase 621, not just
@@ -1035,6 +1037,9 @@ def _apply_scout(
             # attempt()` itself refuses cleanly ("power not yet wired")
             # on the one remaining honest gap -- an unknown province
             # (`state.provinces` has no entry for the Feature's coord).
+            # Phase 622: CHANCE always resolves once `state` is given
+            # (`GameState.gdday` always has a real value, even if a
+            # placeholder default), so it needs no such fallback.
             result.feature_power_outcome = resolve_feature_power_attempt(state, leader_id, feature, event, rng)
         elif event.power in SA_ARGUMENT_POWERS:
             # Phase 619: the 5 Oracles/Recharge/Grant Wish/Gamble need

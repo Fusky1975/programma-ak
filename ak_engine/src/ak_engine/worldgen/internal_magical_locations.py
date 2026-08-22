@@ -474,3 +474,51 @@ def resolve_spell_candidate(
         "Set_Spell's own REPEAT...UNTIL found didn't terminate within "
         f"{_SET_SPELL_MAX_TRIES} outer iterations -- should be unreachable, see this function's own docstring proof"
     )
+
+
+# -- Phase 622: Power.CHANCE's own sub-power roll -- `gdday.md` (user-
+# supplied 2026-08-22), section 5.1 quoting YAK.PAS Set_Event's own
+# Chance CASE branch verbatim, independently confirmed at 8086 level
+# (section 5.2, AKGEN.EXE 0x51E5D-0x51F17): `(gameturn + gdday) AND 7`,
+# no RNG before the CASE, always one of 6 already-implemented powers.
+_CHANCE_SUB_POWER_BY_RESIDUE: dict[int, Power] = {
+    0: Power.NEW_SEX,
+    1: Power.NEW_TEMP,
+    2: Power.UP_SKILL,
+    3: Power.UP_SKILL,
+    4: Power.CAST_SPELL,
+    5: Power.CAST_SPELL,
+    6: Power.SAGE_DISC,
+    7: Power.DN_SKILL,
+}
+
+# `rspell` (section 5.1/6.5), indexed by `IRand AND 7` at resolution
+# time (a fresh draw per evaluation, not stored -- section 6.5/7.2).
+# All 8 are already real, fully-castable spells in this project (Phase
+# 621's own 13-candidate `Set_Spell` scope already includes every one
+# of them) -- 3 character-targeted, 1 no-target, 4 province-targeted,
+# and critically none is `Kill_Enemy`, so `turn/feature_power_
+# execution.py _resolve_terrain_spell()` (already handling exactly
+# this targeting dispatch) can cast any of them unmodified.
+CHANCE_SPELL_TABLE = (
+    Spell.ORATORY,
+    Spell.CLAIRVOYANCE,
+    Spell.BLESS,
+    Spell.SKELETAL_ARMY,
+    Spell.EARTHQUAKE,
+    Spell.PLAGUE,
+    Spell.TORNADO,
+    Spell.ILLUS_ARMIES,
+)
+
+
+def derive_chance_sub_power(gameturn: int, gdday: int) -> Power:
+    """`Power.CHANCE`'s own sub-power selector: `(gameturn + gdday) AND
+    7` indexes a fixed 8-residue table, deterministic and RNG-free (the
+    real randomness -- which ability, which spell -- lives downstream,
+    in each sub-power's own already-implemented effect). See this
+    module's own Phase 622 addendum above for sourcing.
+    """
+
+    residue = (gameturn + gdday) & 7
+    return _CHANCE_SUB_POWER_BY_RESIDUE[residue]

@@ -105,6 +105,31 @@ candidates (`Part_Sea`, `Bless`, `Skeletal_Army`, `Kill_Enemy`,
 `Illus_Terrain`, `Illus_Armies`, `Hide_Feature`) are already fully-
 implemented castable spells in this project -- nothing new needed on
 the casting side, only the derivation.
+
+**Phase 622 -- `Power.CHANCE`, the last real gap in this subsystem**:
+a third, independent user-supplied reverse-engineering report
+(`gdday.md`, 2026-08-22) resolved `gdday` (`Chance`'s own sub-power
+roll needs `(gameturn + gdday) AND 7`): a persistent 16-bit integer,
+the real day-of-month of the turn's own "Due" date (`GameState.gdday`,
+`GW` header field index 13). `worldgen/internal_magical_locations.py
+derive_chance_sub_power()` implements the selector -- always one of 6
+already-implemented powers (`NEW_SEX`, `NEW_TEMP`, `UP_SKILL`,
+`DN_SKILL`, `CAST_SPELL`, `SAGE_DISC`), deterministic and RNG-free
+(the real randomness lives downstream, in each sub-power's own already-
+built effect). `Chance` never calls `Set_FCon` (CERTO) -- no cost,
+alignment, gameturn, or consent gate ever applies, which falls out of
+the existing machinery for free since `Power.CHANCE` was never in
+`POWER_CONDITION_PAIRS` to begin with (`condition` stays `PC_NONE`).
+`_resolve_chance()` below returns a result stamped with the resolved
+**sub**-power, not `Power.CHANCE` itself -- `report/turn_report.py
+describe_feature_power_attempt()` already dispatches purely on
+`outcome.power`, so every existing POWMSG template (including the
+`CAST_SPELL` one, reused for `Chance`'s own `rspell`-table spell draw
+via `_resolve_terrain_spell()`) renders correctly with zero new
+report-layer code. This closes the last real gap in the Feature ->
+Power [5.8] subsystem -- every real `Power` is now wired except the
+deliberately-dropped `MAP_PROV` (see this module's own Phase 616
+addendum above).
 """
 
 from __future__ import annotations
@@ -131,8 +156,10 @@ from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.worldgen.internal_magical_locations import (
+    CHANCE_SPELL_TABLE,
     POWER_CONDITION_PAIRS,
     damp_college_ability_parameter,
+    derive_chance_sub_power,
     power_ability_parameter,
     power_condition_cost,
     power_race_parameter,
@@ -239,6 +266,10 @@ class FeaturePowerEvent:
     # resolved to one of the 3 territory-filtered candidates -- see
     # TERRAIN_SPELL_POWERS and this module's own Phase 620 addendum.
     spell_parameter: Spell | None = None
+    # Phase 622: Power.CHANCE's own resolved sub-power (one of NEW_SEX/
+    # NEW_TEMP/UP_SKILL/DN_SKILL/CAST_SPELL/SAGE_DISC), only when `state`
+    # was given -- see this module's own Phase 622 addendum.
+    chance_sub_power: Power | None = None
 
 
 def derive_feature_event(feature: Feature, state: GameState | None = None) -> FeaturePowerEvent:
@@ -256,7 +287,9 @@ def derive_feature_event(feature: Feature, state: GameState | None = None) -> Fe
     test) is only ever consulted for `CAST_SPELL`/`ANS_PRAYER`'s own
     territory-filtered spell derivation, which needs the Feature's own
     province terrain -- omitted or an unknown province leaves `spell_
-    parameter` `None` (unresolved), not a guess.
+    parameter` `None` (unresolved), not a guess. `Power.CHANCE`'s own
+    sub-power (Phase 622) also needs `state` (for `turn_number`/`gdday`)
+    -- omitted leaves `chance_sub_power` `None` too, same convention.
     """
 
     location = resolve_visible_location(feature.kind, feature.feature_id, feature.coord.x)
@@ -266,6 +299,7 @@ def derive_feature_event(feature: Feature, state: GameState | None = None) -> Fe
     race_parameter: Race | None = None
     temper_parameter: Temper | None = None
     spell_parameter: Spell | None = None
+    chance_sub_power: Power | None = None
     if power in (Power.UP_SKILL, Power.UP_APT, Power.DN_SKILL, Power.DN_APT):
         ability_parameter = power_ability_parameter(feature.kind, feature.feature_id)
     elif power is Power.DAMP_COLLEGE:
@@ -280,6 +314,12 @@ def derive_feature_event(feature: Feature, state: GameState | None = None) -> Fe
             spell_parameter = resolve_spell_candidate(
                 feature.kind, feature.feature_id, province.effective_terrain(), power, state.miscwrit
             )
+    elif power is Power.CHANCE and state is not None:
+        chance_sub_power = derive_chance_sub_power(state.turn_number, state.gdday)
+        if chance_sub_power in (Power.UP_SKILL, Power.DN_SKILL):
+            ability_parameter = power_ability_parameter(feature.kind, feature.feature_id)
+        elif chance_sub_power is Power.NEW_TEMP:
+            temper_parameter = power_temper_parameter(feature.kind, feature.feature_id)
 
     condition = PowerCondition.PC_NONE
     cost = 0
@@ -301,6 +341,7 @@ def derive_feature_event(feature: Feature, state: GameState | None = None) -> Fe
         cost=cost,
         required_alignment=required_alignment,
         spell_parameter=spell_parameter,
+        chance_sub_power=chance_sub_power,
     )
 
 
@@ -448,6 +489,9 @@ def _resolve_feature_power_attempt_effect(
     if power in TERRAIN_SPELL_POWERS:
         if event.spell_parameter is None:
             return FeaturePowerAttemptResult(power=power, applied=False, reason="power not yet wired")
+    elif power is Power.CHANCE:
+        if event.chance_sub_power is None:
+            return FeaturePowerAttemptResult(power=power, applied=False, reason="power not yet wired")
     elif power not in TRACTABLE_POWERS and power not in SA_ARGUMENT_POWERS:
         return FeaturePowerAttemptResult(power=power, applied=False, reason="power not yet wired")
 
@@ -462,6 +506,9 @@ def _resolve_feature_power_attempt_effect(
 
     if power in TERRAIN_SPELL_POWERS:
         return _resolve_terrain_spell(state, leader_id, feature, power, event.spell_parameter, rng)
+
+    if power is Power.CHANCE:
+        return _resolve_chance(state, leader_id, feature, event, rng)
 
     if power in SA_ARGUMENT_POWERS:
         if sa_argument is None:
@@ -807,6 +854,11 @@ def _resolve_terrain_spell(
     opponent) -- refused here honestly rather than self-targeting it
     (which the rulebook never describes as a valid use) or inventing
     an enemy to target.
+
+    Also called from `_resolve_chance()` (Phase 622) for `Power.
+    CHANCE`'s own `CastSpell` sub-branch -- same targeting logic
+    applies unchanged, since none of that branch's own `rspell` table
+    spells is `Kill_Enemy` either.
     """
 
     leader = state.leaders[leader_id]
@@ -830,3 +882,76 @@ def _resolve_terrain_spell(
         reason=cast_result.reason,
         cast_spell=spell,
     )
+
+
+def _resolve_chance(
+    state: GameState, leader_id: int, feature: Feature, event: FeaturePowerEvent, rng: random.Random
+) -> FeaturePowerAttemptResult:
+    """`Power.CHANCE`'s own real effect (Phase 622, `gdday.md` sections
+    5-6): applies `event.chance_sub_power`'s own already-implemented
+    effect and returns a result stamped with that **sub**-power (not
+    `Power.CHANCE`) -- `report/turn_report.py describe_feature_power_
+    attempt()` dispatches purely on `outcome.power`, so this renders
+    exactly like a real top-level occurrence of that power with no new
+    report-layer code. `Chance` never calls `Set_FCon` (CERTO) -- the
+    caller's own `_apply_condition_gate()` already never fires here
+    (`Power.CHANCE` isn't in `POWER_CONDITION_PAIRS`, so `event.
+    condition` is always `PC_NONE`), so no cost/alignment/gameturn/
+    consent check applies, matching the source exactly.
+
+    Duplicates a small, bounded amount of logic from the top-level
+    `NEW_SEX`/`NEW_TEMP`/`UP_SKILL`/`DN_SKILL` branches above rather
+    than sharing a parameterized helper -- each branch is a few lines,
+    and keeping the well-tested top-level dispatch untouched outweighs
+    the modest duplication.
+    """
+
+    leader = state.leaders[leader_id]
+    sub_power = event.chance_sub_power
+    assert sub_power is not None
+
+    if sub_power is Power.NEW_SEX:
+        leader.sex = Sex.FEMALE if leader.sex is Sex.MALE else Sex.MALE
+        return FeaturePowerAttemptResult(power=sub_power, applied=True, new_sex=leader.sex)
+
+    if sub_power is Power.NEW_TEMP:
+        if leader.temper is event.temper_parameter:
+            return FeaturePowerAttemptResult(
+                power=sub_power, applied=True, already_matched=True, new_temper=event.temper_parameter
+            )
+        leader.temper = event.temper_parameter
+        return FeaturePowerAttemptResult(power=sub_power, applied=True, new_temper=event.temper_parameter)
+
+    if sub_power in (Power.UP_SKILL, Power.DN_SKILL):
+        ability = event.ability_parameter
+        assert ability is not None
+        if leader.skills is None:
+            return FeaturePowerAttemptResult(power=sub_power, applied=False, reason="no skill data recorded")
+        skill, aptitude = leader.skills.pair_for_ability(ability)
+
+        if sub_power is Power.UP_SKILL:
+            if skill >= MAX_SKILL_LEVEL:
+                return FeaturePowerAttemptResult(power=sub_power, applied=True, at_limit=True, ability=ability)
+            deficiency = max(0, skill - aptitude + 1)
+            if rng.random() >= (0.5**deficiency):
+                return FeaturePowerAttemptResult(
+                    power=sub_power, applied=False, reason="the roll failed", ability=ability
+                )
+            leader.skills.set_pair_for_ability(ability, skill + 1, aptitude)
+            return FeaturePowerAttemptResult(power=sub_power, applied=True, ability=ability, new_skill_level=skill + 1)
+
+        # Power.DN_SKILL
+        if skill <= 0:
+            return FeaturePowerAttemptResult(power=sub_power, applied=True, at_limit=True, ability=ability)
+        leader.skills.set_pair_for_ability(ability, skill - 1, aptitude)
+        return FeaturePowerAttemptResult(power=sub_power, applied=True, ability=ability, new_skill_level=skill - 1)
+
+    if sub_power is Power.SAGE_DISC:
+        return _reveal_sage_discoveries(state, leader, rng)
+
+    # Power.CAST_SPELL: `rspell[IRand AND 7]`, a fresh draw per
+    # evaluation (section 6.5/7.2) -- reuses `_resolve_terrain_spell()`
+    # verbatim, since none of `CHANCE_SPELL_TABLE`'s 8 spells is
+    # `Kill_Enemy` (see this module's own Phase 622 addendum).
+    spell = CHANCE_SPELL_TABLE[rng.randrange(len(CHANCE_SPELL_TABLE))]
+    return _resolve_terrain_spell(state, leader_id, feature, Power.CAST_SPELL, spell, rng)
