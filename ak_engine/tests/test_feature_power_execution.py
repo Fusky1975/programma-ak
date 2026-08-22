@@ -4,12 +4,12 @@ import random
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
-from ak_engine.models.enums import Ability
+from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MagicFeature
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.power import Power, PowerCondition
 from ak_engine.models.race import Race
 from ak_engine.models.sex import Sex
@@ -20,6 +20,7 @@ from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.feature_power_execution import (
     SA_ARGUMENT_POWERS,
+    TERRAIN_SPELL_POWERS,
     TRACTABLE_POWERS,
     FeaturePowerEvent,
     derive_feature_event,
@@ -602,3 +603,82 @@ def test_sa_argument_powers_set_membership():
         Power.GAMBLE,
     }
     assert SA_ARGUMENT_POWERS.isdisjoint(TRACTABLE_POWERS)
+
+
+# -- Phase 620: CAST_SPELL/ANS_PRAYER's Part_Sea/Flood/Earthquake subset --
+
+
+def test_derive_feature_event_cast_spell_without_state_leaves_spell_parameter_none():
+    # F#7 Tomb at x=3 -> Cast Spell / Flood, but no `state` means the
+    # terrain can't be resolved at all.
+    feature = _feature(7, 307, FeatureType.TOMB)
+    event = derive_feature_event(feature)
+    assert event.power is Power.CAST_SPELL
+    assert event.spell_parameter is None
+
+
+def test_derive_feature_event_cast_spell_with_unknown_province_leaves_spell_parameter_none():
+    feature = _feature(7, 307, FeatureType.TOMB)
+    state = GameState()
+    event = derive_feature_event(feature, state=state)
+    assert event.spell_parameter is None
+
+
+def test_derive_feature_event_cast_spell_resolves_the_terrain_spell_with_state():
+    feature = _feature(7, 307, FeatureType.TOMB)
+    state = GameState()
+    state.provinces[feature.coord] = ProvinceState(coord=feature.coord, terrain=Terrain.SEA, race=Race.HUMAN)
+    event = derive_feature_event(feature, state=state)
+    assert event.spell_parameter is Spell.FLOOD
+
+
+def _terrain_spell_event(spell: Spell) -> FeaturePowerEvent:
+    return FeaturePowerEvent(
+        power=Power.CAST_SPELL, magic_feature=MagicFeature.CRYSTAL_BALL, condition=PowerCondition.PC_NONE, spell_parameter=spell
+    )
+
+
+def test_resolve_feature_power_attempt_terrain_spell_success():
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.SEA, race=Race.HUMAN)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _terrain_spell_event(Spell.PART_SEA), random.Random(0))
+
+    assert result.applied is True
+    assert result.cast_spell is Spell.PART_SEA
+    assert state.provinces[LOCATION].effective_terrain() is Terrain.PLAINS
+
+
+def test_resolve_feature_power_attempt_terrain_spell_cast_time_mismatch_fails():
+    # Part_Sea passes the derivation-time "not Mountains" filter on
+    # Plains, but its own real cast-time precondition needs Sea
+    # specifically -- a real, sourced applied=False, not a bug.
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _terrain_spell_event(Spell.PART_SEA), random.Random(0))
+
+    assert result.applied is False
+    assert state.provinces[LOCATION].effective_terrain() is Terrain.PLAINS
+
+
+def test_resolve_feature_power_attempt_terrain_spell_unresolved_is_power_not_wired():
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+    event = FeaturePowerEvent(power=Power.CAST_SPELL, magic_feature=MagicFeature.CRYSTAL_BALL, spell_parameter=None)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+
+    assert result.applied is False
+    assert result.reason == "power not yet wired"
+
+
+def test_terrain_spell_powers_set_membership():
+    assert TERRAIN_SPELL_POWERS == {Power.CAST_SPELL, Power.ANS_PRAYER}
+    assert TERRAIN_SPELL_POWERS.isdisjoint(TRACTABLE_POWERS)
+    assert TERRAIN_SPELL_POWERS.isdisjoint(SA_ARGUMENT_POWERS)

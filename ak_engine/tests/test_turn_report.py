@@ -302,7 +302,7 @@ from ak_engine.report.turn_report import (
     missile_attack_flavor,
     tactical_margin_bucket,
 )
-from ak_engine.models.enums import Ability, ActionCode, Spell
+from ak_engine.models.enums import SPELL_NAME, Ability, ActionCode, Spell
 from ak_engine.models.weapon import Weapon
 from ak_engine.turn.aspy_execution import SpottedCharacter, SpyReport
 from ak_engine.turn.battle_line import BattleUnit
@@ -5162,6 +5162,26 @@ def test_describe_feature_power_attempt_gamble_refused():
 
 def test_describe_feature_power_attempt_sa_power_without_state_renders_nothing():
     outcome = FeaturePowerAttemptResult(power=Power.ORAC_ALIGN, applied=True, oracle_target_leader_id=2, oracle_alignment=Alignment.GOOD)
+    assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
+
+
+# -- Phase 620: CAST_SPELL/ANS_PRAYER's Part_Sea/Flood/Earthquake subset --
+
+
+def test_describe_feature_power_attempt_cast_spell_success():
+    outcome = FeaturePowerAttemptResult(power=Power.CAST_SPELL, applied=True, cast_spell=Spell.FLOOD)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line == f"I give you the power to cast a {SPELL_NAME[Spell.FLOOD]} spell!"
+
+
+def test_describe_feature_power_attempt_ans_prayer_success_reuses_the_same_message():
+    outcome = FeaturePowerAttemptResult(power=Power.ANS_PRAYER, applied=True, cast_spell=Spell.EARTHQUAKE)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line == f"I give you the power to cast a {SPELL_NAME[Spell.EARTHQUAKE]} spell!"
+
+
+def test_describe_feature_power_attempt_cast_spell_failure_has_no_recovered_message():
+    outcome = FeaturePowerAttemptResult(power=Power.CAST_SPELL, applied=False, reason="target province is not Sea", cast_spell=Spell.PART_SEA)
     assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
 
 

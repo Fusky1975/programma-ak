@@ -67,9 +67,10 @@ from __future__ import annotations
 import math
 
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
-from ak_engine.models.enums import Ability
+from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import FeatureType
 from ak_engine.models.magic_feature import MagicFeature
+from ak_engine.models.map import Terrain
 from ak_engine.models.power import Power, PowerCondition
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
@@ -348,3 +349,62 @@ def resolve_required_alignment(feature_type: FeatureType, feature_index: int, fe
         tries += 1
         if candidate is not Alignment.ANTI_HOLY:
             return candidate
+
+
+# Phase 620: `Set_Spell`'s own 12 "plus extra spells" (section 3.6),
+# always excluded from `CastSpell`/`AnsPrayer`'s own candidate pool --
+# `Resurrection, Charm, Holy_Symbol, Hand_of_Death, Fireball, Psychic_
+# Blast, Invisibility, Spiritwrack, Control_Undead, Ice_Suspend, Telek_
+# Storm, Mirror_Image`.
+_SET_SPELL_EXCLUDED_EXTRAS = frozenset(
+    {
+        Spell.RESURRECTION,
+        Spell.HOLY_SYMBOL,
+        Spell.HAND_OF_DEATH,
+        Spell.FIREBALL,
+        Spell.CHARM,
+        Spell.PSYCHIC_BLAST,
+        Spell.INVISIBILITY,
+        Spell.SPIRITWRACK,
+        Spell.CONTROL_UNDEAD,
+        Spell.ICE_SUSPEND,
+        Spell.TELEK_STORM,
+        Spell.MIRROR_IMAGE,
+    }
+)
+
+
+def resolve_terrain_spell_candidate(feature_type: FeatureType, feature_index: int, terrain: Terrain) -> Spell | None:
+    """`Set_Spell`'s own territory-filtered subset (section 3.6, Phase
+    620): ``setval := (modval + tries) MOD ord(Gate_Angel)`` at
+    ``tries = 0`` only (``Gate_Angel`` == ordinal 25, so ``MOD 25`` --
+    ``models/enums.py Spell.GATE_ANGEL == 25`` confirms this directly).
+    Returns `None` (deliberately unresolved, not a guess) for any of
+    the 12 always-excluded "extra spells", or for any other real spell
+    ordinal -- those need ``(miscwrit AND 2) = 2``, and `miscwrit`'s
+    own real value is confirmed nowhere in the surviving Pascal (see
+    ``turn/feature_power_execution.py``'s own Phase 620 addendum).
+    Only `Part_Sea`/`Flood` (valid when the Feature's own province
+    isn't Mountains) and `Earthquake` (valid when it isn't Sea) are
+    fully sourced end to end.
+
+    `AnsPrayer`'s own extra "favor White Magic" retry loop (section
+    3.6: keeps trying while ``tries MOD 3 = 0`` or the school is White
+    or the power isn't `AnsPrayer`) has no stated bound or give-up
+    behavior anywhere in the source -- not implemented here. Both
+    `CastSpell` and `AnsPrayer` share this same ``tries = 0``-only
+    derivation; a deliberate, explicitly-flagged simplification for
+    `AnsPrayer` specifically, whose real candidate may differ once (if
+    ever) that loop's own bound is sourced.
+    """
+
+    modval = feature_index + feature_type.value
+    setval = modval % Spell.GATE_ANGEL.value
+    spell = Spell(setval)
+    if spell in _SET_SPELL_EXCLUDED_EXTRAS:
+        return None
+    if spell in (Spell.PART_SEA, Spell.FLOOD):
+        return spell if terrain is not Terrain.MTNS else None
+    if spell is Spell.EARTHQUAKE:
+        return spell if terrain is not Terrain.SEA else None
+    return None  # every other real ordinal needs the unsourced miscwrit flag

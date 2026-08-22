@@ -25238,7 +25238,7 @@ follow-up request after the original 431-435 plan shipped.
   still parses byte-identically). Ran again with all new tests: 5139
   passed (net +7).
 
-- **Phase 619 (current)**: implements the 8 SA-argument powers this
+- **Phase 619**: implements the 8 SA-argument powers this
   project's own roadmap left for last -- the 5 Oracles (`ORAC_ALIGN`/
   `ORAC_POWER`/`ORAC_OFFICE`/`ORAC_GOLD`/`ORAC_TREAS`), `RECHARGE`,
   `GRANT_WISH`, `GAMBLE`. Phase 618 already made `SearchTactic.say_text`
@@ -25314,6 +25314,94 @@ follow-up request after the original 431-435 plan shipped.
   renders nothing when `state` isn't supplied. Ran before writing new
   tests (non-breaking check): 5139 passed, unchanged from Phase 618's
   own count. Ran again with all new tests: 5183 passed (net +44).
+
+- **Phase 620 (current)**: closes the user-confirmed-narrow subset of
+  `CAST_SPELL`/`ANS_PRAYER` -- `Set_Spell` (`Special Features.md`
+  section 3.6) gives a real formula for which spell either power
+  grants, but almost every candidate needs `(miscwrit AND 2) = 2`, and
+  `miscwrit`'s own value is confirmed nowhere in the surviving Pascal
+  (the same "real mechanic, unsourced magnitude" class of gap as
+  `Chance`'s own `gdday`). Only 3 territory-filtered spells -- `Part_
+  Sea`/`Flood` (valid off Mountains) and `Earthquake` (valid off Sea)
+  -- are fully sourced end to end, so this phase implements exactly
+  those three; every other candidate stays an honest, explicit
+  "unresolved," the same stance `MAP_PROV`/`Chance`'s own sub-power
+  already use. `AnsPrayer`'s own extra "favor White Magic" retry loop
+  has no stated bound or give-up behavior anywhere in the source, so
+  it isn't implemented -- both `CAST_SPELL` and `ANS_PRAYER` share the
+  same `tries=0`-only derivation, a documented simplification for
+  `ANS_PRAYER` specifically.
+
+  New `worldgen/internal_magical_locations.py resolve_terrain_spell_
+  candidate(feature_type, feature_index, terrain) -> Spell | None`:
+  `setval = (feature_index + feature_type.value) % 25` (`25` =
+  `ord(Gate_Angel)`, confirmed `Spell.GATE_ANGEL == 25`), excludes the
+  12 real "extra spells" always, then the territory filter above for
+  the 3 tractable spells -- every other real ordinal returns `None`.
+
+  The effect (section 3.6: "validates the eventual target and triggers
+  the appropriate magical action; does not permanently modify the
+  character's magic skill" -- `FPDESC.X2` id 11: "gives you the magic
+  power to cast ~ spell") is an automatic-success cast targeting the
+  Feature's own province, reusing `turn/cast_execution.py execute_
+  cast()`'s own existing `wand_skill_level` path verbatim (rulebook
+  [3.11]'s "a spell cast from a magic item is always successful" --
+  the same no-real-skill-roll mechanism this project already uses for
+  every other automatic cast, not a parallel one invented for this
+  phase). `_execute_part_sea()`/`_execute_flood()`/`_execute_
+  earthquake()` (already fully built, untouched by this phase) then
+  apply their own real, narrower cast-time terrain precondition --
+  finding that a derivation-time candidate can still genuinely fail at
+  cast time (e.g. a derived `Part_Sea` on Plains, valid at derivation
+  since Plains isn't Mountains, but `_execute_part_sea()` specifically
+  needs Sea) is a real, sourced possibility this phase surfaces
+  honestly as `applied=False`, not something to special-case away.
+
+  `turn/feature_power_execution.py`: `FeaturePowerEvent` gained `spell_
+  parameter: Spell | None`; `derive_feature_event()` gained an optional
+  `state: GameState | None = None` parameter (every pre-Phase-620
+  caller/test omits it, unaffected) needed only to look up the
+  Feature's own province terrain; new `TERRAIN_SPELL_POWERS =
+  {CAST_SPELL, ANS_PRAYER}`, tractable only when `spell_parameter`
+  resolved; `FeaturePowerAttemptResult` gained `cast_spell: Spell |
+  None`; new `_resolve_terrain_spell()` builds a `turn/cast_decode.py
+  CastRequest` (`turn/hex_numbering.py encode_hex_number()` for the
+  target -- the Feature's own province is always the caster's, since
+  Search requires co-location, so no adjacency math is needed) and
+  folds `execute_cast()`'s own result straight through. `turn/search_
+  execution.py _apply_scout()` now passes `state=state` into `derive_
+  feature_event()` and routes `TERRAIN_SPELL_POWERS` through the same
+  `resolve_feature_power_attempt()` call as `TRACTABLE_POWERS`.
+
+  Report layer: one new `POWMSG.X2` template (id 42, "I give you the
+  power to cast a ~ spell!"), reused for both powers (`FPDESC.X2`
+  frames both the same way; no separate `AnsPrayer`-only success id
+  survives in the recovered 42). A failed cast has no recovered id --
+  renders nothing, same stance as every other "no id for this specific
+  failure" case in this composer.
+
+  A pre-existing Phase 616 test (`...leaves_a_non_tractable_power_
+  unapplied`) used `CAST_SPELL` as its own "fully untouched" example --
+  updated to use `CHANCE` instead (still fully untouched after this
+  phase), since `CAST_SPELL` now genuinely resolves to a real (if
+  often unapplied) outcome rather than `None`.
+
+  Tests: `tests/test_internal_magical_locations.py` gained 7 --
+  `resolve_terrain_spell_candidate()`'s own 3 tractable spells (each
+  both valid and invalid terrain), an excluded-extra-spell case, and a
+  generic miscwrit-blocked case; `tests/test_feature_power_execution.py`
+  gained 7 -- `derive_feature_event()` with/without `state` and with an
+  unknown province, `resolve_feature_power_attempt()`'s own success,
+  cast-time-terrain-mismatch failure, and unresolved-`power-not-yet-
+  wired` cases; `tests/test_search_execution.py` gained 1 (plus the
+  updated `CHANCE` test and one confirming an unresolved `CAST_SPELL`
+  is a real, non-`None` outcome) -- a full `_apply_scout()` cast of
+  `Flood`, confirmed by the province's own terrain actually changing;
+  `tests/test_turn_report.py` gained 3 for the new POWMSG 42 template.
+  Ran before writing new tests (non-breaking check): 5183 passed,
+  unchanged from Phase 619's own count. Ran again with all new tests
+  (and the one pre-existing test updated for the new `CAST_SPELL`
+  behavior): 5202 passed (net +19).
 
 ## Setup
 

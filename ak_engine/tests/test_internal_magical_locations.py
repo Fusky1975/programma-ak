@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from ak_engine.models.enums import Spell
 from ak_engine.models.feature import FeatureType
 from ak_engine.models.magic_feature import MagicFeature
+from ak_engine.models.map import Terrain
 from ak_engine.models.power import Power
 from ak_engine.worldgen.internal_magical_locations import (
     FORCED_NONE_CANDIDATES,
@@ -10,6 +12,7 @@ from ak_engine.worldgen.internal_magical_locations import (
     candidate_location,
     candidate_power,
     resolve_power,
+    resolve_terrain_spell_candidate,
     resolve_visible_location,
 )
 
@@ -132,3 +135,46 @@ def test_resolve_power_never_returns_a_power_outside_its_own_location_range():
             for feature_type in range(5):
                 result = resolve_power(location, feature_index, feature_type)
                 assert first.value <= result.value <= last.value
+
+
+# -- Phase 620: resolve_terrain_spell_candidate() (Set_Spell) --
+
+
+def test_resolve_terrain_spell_candidate_part_sea_valid_off_mountains():
+    # PYRAMID's own ordinal is 0, so modval == feature_index directly:
+    # fn=1 -> setval=1 == Spell.PART_SEA.
+    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 1, Terrain.SEA) is Spell.PART_SEA
+    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 1, Terrain.PLAINS) is Spell.PART_SEA
+
+
+def test_resolve_terrain_spell_candidate_part_sea_invalid_on_mountains():
+    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 1, Terrain.MTNS) is None
+
+
+def test_resolve_terrain_spell_candidate_flood_valid_off_mountains():
+    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 8, Terrain.SEA) is Spell.FLOOD
+    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 8, Terrain.MTNS) is None
+
+
+def test_resolve_terrain_spell_candidate_earthquake_valid_off_sea():
+    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 10, Terrain.PLAINS) is Spell.EARTHQUAKE
+    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 10, Terrain.MTNS) is Spell.EARTHQUAKE
+
+
+def test_resolve_terrain_spell_candidate_earthquake_invalid_on_sea():
+    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 10, Terrain.SEA) is None
+
+
+def test_resolve_terrain_spell_candidate_excludes_the_12_extra_spells():
+    # fn=0 -> setval=0 == Spell.RESURRECTION, one of the always-excluded
+    # "extra spells" -- None regardless of terrain.
+    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 0, Terrain.SEA) is None
+    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 0, Terrain.PLAINS) is None
+
+
+def test_resolve_terrain_spell_candidate_unresolved_without_miscwrit():
+    # fn=2 -> setval=2 == Spell.BLESS -- a real, non-excluded ordinal,
+    # but not one of the 3 territory-filtered spells, so it needs the
+    # unsourced miscwrit flag and stays unresolved.
+    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 2, Terrain.SEA) is None
+    assert resolve_terrain_spell_candidate(FeatureType.PYRAMID, 2, Terrain.PLAINS) is None

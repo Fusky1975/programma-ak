@@ -596,6 +596,7 @@ from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_WAND_SPELL, Tr
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.feature_power_execution import (
     SA_ARGUMENT_POWERS,
+    TERRAIN_SPELL_POWERS,
     TRACTABLE_POWERS,
     FeaturePowerAttemptResult,
     derive_feature_event,
@@ -1025,8 +1026,12 @@ def _apply_scout(
     # deliberately left with no `feature_power_outcome` here -- a later
     # phase's own scope, not silently guessed at.
     if discovered:
-        event = derive_feature_event(feature)
-        if event.power in TRACTABLE_POWERS:
+        event = derive_feature_event(feature, state=state)
+        if event.power in TRACTABLE_POWERS or event.power in TERRAIN_SPELL_POWERS:
+            # Phase 620: CAST_SPELL/ANS_PRAYER land here too -- tractable
+            # only when `event.spell_parameter` resolved (Part_Sea/
+            # Flood/Earthquake); `resolve_feature_power_attempt()` itself
+            # refuses cleanly ("power not yet wired") when it didn't.
             result.feature_power_outcome = resolve_feature_power_attempt(state, leader_id, feature, event, rng)
         elif event.power in SA_ARGUMENT_POWERS:
             # Phase 619: the 5 Oracles/Recharge/Grant Wish/Gamble need

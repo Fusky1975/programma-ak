@@ -9,10 +9,10 @@ from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
 from ak_engine.models.office import Office
 from ak_engine.models.power import Power
@@ -3786,8 +3786,27 @@ def test_execute_search_scout_full_discovery_applies_a_tractable_feature_power()
 
 
 def test_execute_search_scout_full_discovery_leaves_a_non_tractable_power_unapplied():
-    # F#17: province 305 (x=3,...), Crypt -> Cast Spell -- outside this
-    # phase's own 9 TRACTABLE_POWERS, so no outcome is recorded here.
+    # F#29: Pyramid at x=3 -> Chance -- still entirely unhandled (Phase
+    # 619's own deferred scope), so no outcome is recorded here.
+    state = _state_with_leader()
+    state.add_feature(
+        Feature(feature_id=29, coord=LOCATION, kind=FeatureType.PYRAMID, guardian_monster=Monster.GARGOYLE)
+    )
+    request = _scout_request(29, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert state.features[29].discovery_level(1) == 3
+    assert result.feature_power_outcome is None
+
+
+def test_execute_search_scout_cast_spell_unresolved_terrain_is_a_real_not_none_outcome():
+    # F#17: Crypt at x=3 -> Cast Spell (Phase 620), but its own province
+    # is unknown to `state.provinces` here, so `spell_parameter` can't
+    # be resolved -- a real "power not yet wired" outcome, not silently
+    # dropped like a fully-untouched power (see the CHANCE test above).
     state = _state_with_leader()
     state.add_feature(
         Feature(feature_id=17, coord=LOCATION, kind=FeatureType.CRYPT, guardian_monster=Monster.GARGOYLE)
@@ -3798,8 +3817,32 @@ def test_execute_search_scout_full_discovery_leaves_a_non_tractable_power_unappl
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
 
-    assert state.features[17].discovery_level(1) == 3
-    assert result.feature_power_outcome is None
+    assert result.feature_power_outcome is not None
+    assert result.feature_power_outcome.power is Power.CAST_SPELL
+    assert result.feature_power_outcome.applied is False
+
+
+def test_execute_search_scout_cast_spell_success_casts_flood_on_the_provinces_own_terrain():
+    # F#7: Tomb at x=3 -> Cast Spell / Flood (Phase 620). Plains is a
+    # real Flood-eligible terrain, so the automatic-success cast really
+    # turns it into Sea.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION, treasury=100))
+    state.add_leader(LeaderState(LEADER_ID, 1, "Searcher", LOCATION))
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    state.add_feature(
+        Feature(feature_id=7, coord=LOCATION, kind=FeatureType.TOMB, guardian_monster=Monster.GARGOYLE)
+    )
+    request = _scout_request(7, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.feature_power_outcome is not None
+    assert result.feature_power_outcome.applied is True
+    assert result.feature_power_outcome.cast_spell is Spell.FLOOD
+    assert state.provinces[LOCATION].effective_terrain() is Terrain.SEA
 
 
 # -- Phase 617: DAMP_COLLEGE/DAMP_MAGIC/WARP_SPACE, the 3 passive battle-

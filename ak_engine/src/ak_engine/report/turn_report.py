@@ -2556,6 +2556,13 @@ _POWMSG_DRAIN_SKILL_REFUSED = (
     "The $\\ could not be used because < didn't have enough unmodified skill levels to satisfy its thirst for wisdom."
 )
 
+# Phase 620: POWMSG.X2 id 42 -- CAST_SPELL/ANS_PRAYER's own successful
+# cast (Special Features.md section 9.4, user-supplied 2026-08-22).
+# FPDESC.X2 frames both powers as "grants the power to cast ~", so this
+# one message is reused for both -- no separate ANS_PRAYER-only success
+# id survives in the recovered 42.
+_POWMSG_CAST_SPELL_SUCCESS = "I give you the power to cast a ~ spell!"
+
 
 def describe_feature_power_attempt(
     outcome: FeaturePowerAttemptResult,
@@ -2798,6 +2805,12 @@ def describe_feature_power_attempt(
         if outcome.gamble_won:
             text = text.replace("#", str(outcome.gamble_amount), 1)
         return text
+
+    if outcome.power in (Power.CAST_SPELL, Power.ANS_PRAYER):
+        if not outcome.applied or outcome.cast_spell is None:
+            return None  # a failed cast (wrong terrain, ...) has no recovered POWMSG id
+        values["~"] = SPELL_NAME[outcome.cast_spell]
+        return render(_POWMSG_CAST_SPELL_SUCCESS, values, rng=rng)
 
     return None
 

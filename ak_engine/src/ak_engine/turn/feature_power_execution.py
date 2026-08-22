@@ -69,6 +69,25 @@ real engine's own text-parsing algorithm, so this is a labeled,
 reasonable interpretation of unsourced *parsing*, not a guess at the
 *mechanic* itself (which number, and what it does with it, are both
 fully sourced).
+
+**Phase 620 -- `CAST_SPELL`/`ANS_PRAYER`'s Part_Sea/Flood/Earthquake
+subset**: `Set_Spell` (section 3.6) gives a real formula for which
+spell one of these two powers grants, but almost every real candidate
+needs `(miscwrit AND 2) = 2` -- `miscwrit`'s own value is confirmed
+nowhere in the surviving Pascal, the same "real mechanic, unsourced
+magnitude" class of gap as `Chance`'s own `gdday`. Only `Part_Sea`/
+`Flood`/`Earthquake` are fully sourced end to end (a territory filter
+instead of `miscwrit`) -- `worldgen/internal_magical_locations.py
+resolve_terrain_spell_candidate()` derives exactly those three, `None`
+for everything else (an excluded "extra spell", or a real ordinal only
+`miscwrit` could resolve). The effect ("converge on `AK.OVR 0x11802-
+0x1193B`, which validates the eventual target and triggers the
+appropriate magical action; does not permanently modify the
+character's magic skill") is an automatic-success cast targeting the
+Feature's own province -- `turn/cast_execution.py execute_cast()`'s
+own existing `wand_skill_level` path (rulebook [3.11]'s "a spell cast
+from a magic item is always successful"), reused verbatim rather than
+inventing a parallel no-skill-roll mechanism.
 """
 
 from __future__ import annotations
@@ -79,7 +98,7 @@ from dataclasses import dataclass, replace
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
-from ak_engine.models.enums import Ability
+from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.magic_feature import MagicFeature
@@ -89,6 +108,10 @@ from ak_engine.models.race import Race
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import TREASURE_WAND_SPELL, Treasure
+from ak_engine.turn.cast_decode import CastRequest
+from ak_engine.turn.cast_execution import execute_cast
+from ak_engine.turn.hex_numbering import encode_hex_number
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.worldgen.internal_magical_locations import (
     POWER_CONDITION_PAIRS,
@@ -100,6 +123,7 @@ from ak_engine.worldgen.internal_magical_locations import (
     resolve_power,
     resolve_power_condition,
     resolve_required_alignment,
+    resolve_terrain_spell_candidate,
     resolve_visible_location,
 )
 
@@ -168,6 +192,12 @@ SA_ARGUMENT_POWERS = frozenset(
 # 6-Priest, 7-Mage" table, confirmed identical ordinals, no remapping.
 _ORACLE_OFFICE_RANGE = range(0, 8)
 
+# Phase 620: CAST_SPELL/ANS_PRAYER are tractable only when `FeaturePower
+# Event.spell_parameter` resolved to one of Part_Sea/Flood/Earthquake
+# (see module docstring) -- checked by `_apply_scout()` alongside
+# `TRACTABLE_POWERS`/`SA_ARGUMENT_POWERS`.
+TERRAIN_SPELL_POWERS = frozenset({Power.CAST_SPELL, Power.ANS_PRAYER})
+
 
 @dataclass(slots=True, frozen=True)
 class FeaturePowerEvent:
@@ -188,9 +218,13 @@ class FeaturePowerEvent:
     condition: PowerCondition = PowerCondition.PC_NONE
     cost: int = 0
     required_alignment: Alignment | None = None
+    # Phase 620: CAST_SPELL/ANS_PRAYER's own derived spell, only when it
+    # resolved to one of the 3 territory-filtered candidates -- see
+    # TERRAIN_SPELL_POWERS and this module's own Phase 620 addendum.
+    spell_parameter: Spell | None = None
 
 
-def derive_feature_event(feature: Feature) -> FeaturePowerEvent:
+def derive_feature_event(feature: Feature, state: GameState | None = None) -> FeaturePowerEvent:
     """The real `Set_Event` derivation, recomputed fresh from `feature`'s
     own immutable identity (`feature_id`, `kind`, `coord.x`) every call
     -- deliberately never reads `feature.magic_location`/`.magic_power`
@@ -200,6 +234,12 @@ def derive_feature_event(feature: Feature) -> FeaturePowerEvent:
     checked directly against 6 of `Special Features.md`'s own section 8
     real-`GW3__T1` rows (F#5/7/16/27/42/51/62/85/91/113 across multiple
     powers) -- see `tests/test_feature_power_execution.py`.
+
+    `state` (Phase 620, optional, `None` for every pre-Phase-620 caller/
+    test) is only ever consulted for `CAST_SPELL`/`ANS_PRAYER`'s own
+    territory-filtered spell derivation, which needs the Feature's own
+    province terrain -- omitted or an unknown province leaves `spell_
+    parameter` `None` (unresolved), not a guess.
     """
 
     location = resolve_visible_location(feature.kind, feature.feature_id, feature.coord.x)
@@ -208,6 +248,7 @@ def derive_feature_event(feature: Feature) -> FeaturePowerEvent:
     ability_parameter: Ability | None = None
     race_parameter: Race | None = None
     temper_parameter: Temper | None = None
+    spell_parameter: Spell | None = None
     if power in (Power.UP_SKILL, Power.UP_APT, Power.DN_SKILL, Power.DN_APT):
         ability_parameter = power_ability_parameter(feature.kind, feature.feature_id)
     elif power is Power.DAMP_COLLEGE:
@@ -216,6 +257,12 @@ def derive_feature_event(feature: Feature) -> FeaturePowerEvent:
         temper_parameter = power_temper_parameter(feature.kind, feature.feature_id)
     elif power is Power.NEW_RACE:
         race_parameter = power_race_parameter(feature.kind, feature.feature_id)
+    elif power in TERRAIN_SPELL_POWERS and state is not None:
+        province = state.provinces.get(feature.coord)
+        if province is not None:
+            spell_parameter = resolve_terrain_spell_candidate(
+                feature.kind, feature.feature_id, province.effective_terrain()
+            )
 
     condition = PowerCondition.PC_NONE
     cost = 0
@@ -236,6 +283,7 @@ def derive_feature_event(feature: Feature) -> FeaturePowerEvent:
         condition=condition,
         cost=cost,
         required_alignment=required_alignment,
+        spell_parameter=spell_parameter,
     )
 
 
@@ -285,6 +333,11 @@ class FeaturePowerAttemptResult:
     gamble_character_roll: int | None = None
     gamble_house_roll: int | None = None
     gamble_won: bool | None = None
+    # Phase 620: CAST_SPELL/ANS_PRAYER's own derived spell -- set
+    # whenever an attempt was made (regardless of whether the cast
+    # itself ultimately succeeded), for report/turn_report.py's own
+    # ``~`` marker.
+    cast_spell: Spell | None = None
 
 
 def _apply_condition_gate(
@@ -375,7 +428,10 @@ def _resolve_feature_power_attempt_effect(
     sa_argument: int | None,
 ) -> FeaturePowerAttemptResult:
     power = event.power
-    if power not in TRACTABLE_POWERS and power not in SA_ARGUMENT_POWERS:
+    if power in TERRAIN_SPELL_POWERS:
+        if event.spell_parameter is None:
+            return FeaturePowerAttemptResult(power=power, applied=False, reason="power not yet wired")
+    elif power not in TRACTABLE_POWERS and power not in SA_ARGUMENT_POWERS:
         return FeaturePowerAttemptResult(power=power, applied=False, reason="power not yet wired")
 
     refusal = _apply_condition_gate(state, leader_id, feature, event, rng)
@@ -386,6 +442,9 @@ def _resolve_feature_power_attempt_effect(
         feature.power_used_turn = state.turn_number
 
     leader = state.leaders[leader_id]
+
+    if power in TERRAIN_SPELL_POWERS:
+        return _resolve_terrain_spell(state, leader_id, feature, power, event.spell_parameter, rng)
 
     if power in SA_ARGUMENT_POWERS:
         if sa_argument is None:
@@ -697,4 +756,35 @@ def _resolve_gamble(
         gamble_house_roll=house_roll,
         gamble_won=won,
         oracle_target_leader_id=leader.leader_id,  # reused: the scouting leader, for report-layer $K resolution
+    )
+
+
+def _resolve_terrain_spell(
+    state: GameState, leader_id: int, feature: Feature, power: Power, spell: Spell, rng: random.Random
+) -> FeaturePowerAttemptResult:
+    """`CAST_SPELL`/`ANS_PRAYER`'s own Part_Sea/Flood/Earthquake effect
+    (section 3.6, Phase 620): an automatic-success cast (`turn/cast_
+    execution.py execute_cast()`'s own `wand_skill_level` path -- the
+    value itself is irrelevant beyond being non-`None`, since `_roll_
+    cast_success()` only checks that) targeting the Feature's own
+    province. `_execute_part_sea()`/`_execute_flood()`/`_execute_
+    earthquake()` (already built, untouched by this phase) then apply
+    their own real cast-time terrain precondition -- narrower than the
+    derivation-time filter (`resolve_terrain_spell_candidate()`'s own
+    "not Mountains"/"not Sea"), so a real `applied=False` here (e.g. a
+    derived Part_Sea candidate whose province isn't actually Sea) is a
+    genuine, sourced possibility, not a bug.
+    """
+
+    leader = state.leaders[leader_id]
+    target = encode_hex_number(feature.coord, NORMAL_MAP_BOUNDS[0])
+    request = CastRequest(spell=spell, target=target)
+    cast_result = execute_cast(
+        state, leader.kingdom_id, leader_id, request, rng, board_width=NORMAL_MAP_BOUNDS[0], wand_skill_level=1
+    )
+    return FeaturePowerAttemptResult(
+        power=power,
+        applied=cast_result.applied,
+        reason=cast_result.reason,
+        cast_spell=spell,
     )
