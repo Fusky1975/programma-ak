@@ -7,6 +7,7 @@ import pytest
 from ak_engine.turn.encounter import (
     ARCHERY_FREE_ATTACK_BONUS,
     CHARACTER_HIT_POINTS,
+    DAMP_MAGIC_CAST_CHANCE_MULTIPLIER,
     FIRE_ARROW_BASE_HIT_CHANCE,
     FIRE_ARROW_HIT_CHANCE_PER_LEVEL,
     HOLY_SYMBOL_HIT_CHANCE_REDUCTION_PER_LEVEL,
@@ -190,6 +191,8 @@ from ak_engine.turn.encounter import (
     MELEE_TRUE_MASTERY_DAMAGE_BONUS,
     MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS,
     MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS,
+    WARP_SPACE_ARCHERY_HIT_CHANCE_MULTIPLIER,
+    WARP_SPACE_MELEE_HIT_CHANCE_MULTIPLIER,
     apply_temper_melee_setup,
     archery_free_attack_bonus,
     berserk_fury_bonus_hit_points,
@@ -1364,6 +1367,31 @@ def test_resolve_personal_combat_spell_cast_succeeds_under_the_chance():
 def test_resolve_personal_combat_spell_cast_fails_over_the_chance():
     rng = ScriptedRandom([0.99])
     assert resolve_personal_combat_spell_cast(1, rng) is False
+
+
+# -- Phase 617: Power.DAMP_MAGIC halves every spell's own cast chance --
+
+
+def test_personal_combat_spell_cast_chance_damp_magic_halves_the_result():
+    assert personal_combat_spell_cast_chance(1, damp_magic=True) == pytest.approx(0.225)  # 0.45 * 0.5
+
+
+def test_personal_combat_spell_cast_chance_damp_magic_applies_after_the_cap():
+    # Level 5, Pagan: capped at 100%, then halved by Damp Magic -> 50%.
+    assert personal_combat_spell_cast_chance(5, caster_is_pagan=True, damp_magic=True) == pytest.approx(0.50)
+
+
+def test_resolve_personal_combat_spell_cast_damp_magic_fails_a_roll_the_undamped_chance_would_pass():
+    # Level 1 -> 45% undamped, 22.5% damped -- 0.3 clears the damped
+    # threshold's failure but would have succeeded undamped.
+    rng = ScriptedRandom([0.3])
+    assert resolve_personal_combat_spell_cast(1, rng, damp_magic=True) is False
+
+
+def test_damp_magic_and_warp_space_constants():
+    assert DAMP_MAGIC_CAST_CHANCE_MULTIPLIER == 0.5
+    assert WARP_SPACE_ARCHERY_HIT_CHANCE_MULTIPLIER == 0.25
+    assert WARP_SPACE_MELEE_HIT_CHANCE_MULTIPLIER == 0.5
 
 
 # -- Phase 200: Words of Healing [WH] --

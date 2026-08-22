@@ -2292,8 +2292,28 @@ PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP = 1.00
 # caster's own kingdom.
 PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS = 0.10
 
+# Phase 617: Power.DAMP_MAGIC (Special Features.md section 5.2,
+# user-supplied 2026-08-22): "dimezza la probabilità di lancio di ogni
+# incantesimo" -- halves the cast success chance of every spell,
+# location-wide, no skill-level scaling stated (same "flat, no
+# scaling" shape as INVISIBILITY_HIT_CHANCE_MULTIPLIER below).
+DAMP_MAGIC_CAST_CHANCE_MULTIPLIER = 0.5
 
-def personal_combat_spell_cast_chance(skill_level: int, *, caster_is_pagan: bool = False) -> float:
+# Phase 617: Power.WARP_SPACE (same source, same section, POWMSG.X2 id
+# 10 quoted in full in turn_report.py's own Phase 617 addendum): "75%
+# of all arrows to miss their mark, as well as 50% of all swings in
+# Melee." Read as a flat hit-chance multiplier (0.25 for archery, 0.5
+# for melee) applied to *both* combatants at a Warp-Space Feature via
+# their own offensive_hit_multiplier/archery_hit_multiplier fields --
+# the identical mechanism and "halved, no skill scaling" phrasing
+# INVISIBILITY_HIT_CHANCE_MULTIPLIER already established for this same
+# style of rulebook wording, rather than a brand-new "flat override"
+# mechanic found nowhere else in this project.
+WARP_SPACE_ARCHERY_HIT_CHANCE_MULTIPLIER = 0.25
+WARP_SPACE_MELEE_HIT_CHANCE_MULTIPLIER = 0.5
+
+
+def personal_combat_spell_cast_chance(skill_level: int, *, caster_is_pagan: bool = False, damp_magic: bool = False) -> float:
     """"Gli Incantesimi di Combattimento Individuale hanno una
     probabilità di riuscita del 30% più 15% per livello," capped at
     ``PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP`` -- **100%, corrected at
@@ -2303,15 +2323,28 @@ def personal_combat_spell_cast_chance(skill_level: int, *, caster_is_pagan: bool
     ``PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS`` when ``caster_is_pagan``
     -- the caller must already have excluded White Magic spells from
     setting this flag (see module docstring's Phase 192 addendum).
+
+    Phase 617: ``damp_magic`` (``Power.DAMP_MAGIC``, ``Special
+    Features.md`` section 5.2, user-supplied 2026-08-22: "dimezza la
+    probabilità di lancio di ogni incantesimo" -- halves the cast
+    probability of every spell) is applied last, after the pagan bonus
+    and the cap, matching this project's own ``_roll_cast_success()``
+    (``turn/cast_execution.py``) precedent for a late-applied
+    probability multiplier.
     """
 
     chance = PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE + PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL * skill_level
     if caster_is_pagan:
         chance += PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS
-    return min(chance, PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP)
+    chance = min(chance, PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP)
+    if damp_magic:
+        chance *= DAMP_MAGIC_CAST_CHANCE_MULTIPLIER
+    return chance
 
 
-def resolve_personal_combat_spell_cast(skill_level: int, rng: random.Random, *, caster_is_pagan: bool = False) -> bool:
+def resolve_personal_combat_spell_cast(
+    skill_level: int, rng: random.Random, *, caster_is_pagan: bool = False, damp_magic: bool = False
+) -> bool:
     """Rolls whether a Personal-Combat spell attempt succeeds, using
     ``personal_combat_spell_cast_chance()``'s own formula. Governs all
     ten Personal-Combat spells above uniformly -- this is the missing
@@ -2319,7 +2352,7 @@ def resolve_personal_combat_spell_cast(skill_level: int, rng: random.Random, *, 
     to invent, now supplied generically rather than per-spell.
     """
 
-    return rng.random() < personal_combat_spell_cast_chance(skill_level, caster_is_pagan=caster_is_pagan)
+    return rng.random() < personal_combat_spell_cast_chance(skill_level, caster_is_pagan=caster_is_pagan, damp_magic=damp_magic)
 
 
 # Phase 209 -- the Spell -> Ability mapping for the ten Personal-Combat-only

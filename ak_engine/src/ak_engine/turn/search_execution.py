@@ -509,6 +509,7 @@ from ak_engine.models.monster import (
 )
 from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
 from ak_engine.models.office import Office
+from ak_engine.models.power import Power
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
@@ -523,6 +524,7 @@ from ak_engine.turn.discovery_effects import (
 from ak_engine.turn.encounter import (
     BEG_MERCY_CHANCE,
     CHARACTER_HIT_POINTS,
+    DAMP_MAGIC_CAST_CHANCE_MULTIPLIER,
     FIRE_ARROW_DAMAGE_RANGE,
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
     MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT,
@@ -530,6 +532,8 @@ from ak_engine.turn.encounter import (
     STEAL_THIEF_MASTERY_ABILITIES,
     PERSONAL_COMBAT_SPELL_ABILITY,
     PERSONAL_COMBAT_SPELL_SELF_ONLY,
+    WARP_SPACE_ARCHERY_HIT_CHANCE_MULTIPLIER,
+    WARP_SPACE_MELEE_HIT_CHANCE_MULTIPLIER,
     Combatant,
     CombatRange,
     EncounterCombatResult,
@@ -1156,6 +1160,26 @@ def _resolve_search_encounter(
         missile_damage_range=stats.missile_damage if stats.missile_damage is not None else FIRE_ARROW_DAMAGE_RANGE,
         regenerates_hp=TROLL_REGENERATION_PER_COMBAT_ROUND if feature.guardian_monster is Monster.TROLL else 0,
     )
+
+    # Phase 617: this Feature's own passive battle field, if any --
+    # Power.DAMP_COLLEGE/DAMP_MAGIC/WARP_SPACE ("Special Features.md"
+    # section 5.2, user-supplied 2026-08-22: "questi poteri... sono
+    # campi del luogo... l'effetto deve essere consultato durante
+    # magia/combattimento nel Feature", i.e. always live for whoever
+    # fights here, independent of whether Scout has ever revealed it --
+    # unlike Phase 616's own 9 TRACTABLE_POWERS, which are a Scout-
+    # granted *reveal*, these three are never gated on discovery at
+    # all). Computed once per encounter and closed over by
+    # `_resolve_cast_tactic()` below for DAMP_COLLEGE/DAMP_MAGIC;
+    # WARP_SPACE is applied immediately here since it's a static
+    # per-combatant multiplier, not a per-roll check.
+    feature_power_event = derive_feature_event(feature)
+    if feature_power_event.power is Power.WARP_SPACE:
+        leader_combatant.archery_hit_multiplier *= WARP_SPACE_ARCHERY_HIT_CHANCE_MULTIPLIER
+        leader_combatant.offensive_hit_multiplier *= WARP_SPACE_MELEE_HIT_CHANCE_MULTIPLIER
+        monster_combatant.archery_hit_multiplier *= WARP_SPACE_ARCHERY_HIT_CHANCE_MULTIPLIER
+        monster_combatant.offensive_hit_multiplier *= WARP_SPACE_MELEE_HIT_CHANCE_MULTIPLIER
+
     # Phase 255: the Defender Merit Point formula ([TABELLA DELLE CARICHE
     # IMPERIALI], `turn/merit_points.py defender_merit_points()`) credits
     # "il totale Punti Ferita del mostro" -- the monster's own *starting*
@@ -1349,6 +1373,19 @@ def _resolve_search_encounter(
         else:
             return None  # not modeled (any spell outside the 16 Personal-Combat spells this function covers)
 
+        # Phase 617: Power.DAMP_COLLEGE ("Special Features.md" section
+        # 5.2/3.2: "impedisce di lanciare incantesimi della scuola _abil
+        # selezionata" -- prevents casting any spell of the selected
+        # school outright). An absolute local ban, not a probability
+        # reduction, so it's checked before even a wand's own automatic-
+        # success rule (`forced_level is not None` below) -- a wand
+        # can't cast a spell school the location itself blocks. No roll,
+        # no `cast_attempt_applied`, same "ineligible means nothing
+        # happened" shape as `caster.blocked_from_cast_and_archery`
+        # above.
+        if feature_power_event.power is Power.DAMP_COLLEGE and ability is feature_power_event.ability_parameter:
+            return None
+
         # Control Undead's own eligibility precondition -- checked before
         # any roll, same as every other spell's `target_is_immune` guard,
         # except here an ineligible target means no roll at all rather
@@ -1405,7 +1442,8 @@ def _resolve_search_encounter(
         if forced_level is not None:
             succeeded = True  # [3.11]/[5.1]: "a spell cast from a magic item is automatically successful"
         else:
-            succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan)
+            damp_magic = feature_power_event.power is Power.DAMP_MAGIC
+            succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan, damp_magic=damp_magic)
 
         # Phase 531: AKGEN_reverse_engineering_report (4).md SS8 -- only
         # reachable here when the *leader* is the one being cast at (a

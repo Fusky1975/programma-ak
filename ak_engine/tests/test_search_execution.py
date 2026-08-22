@@ -3802,6 +3802,106 @@ def test_execute_search_scout_full_discovery_leaves_a_non_tractable_power_unappl
     assert result.feature_power_outcome is None
 
 
+# -- Phase 617: DAMP_COLLEGE/DAMP_MAGIC/WARP_SPACE, the 3 passive battle-
+# field powers -- always live for whoever fights at that Feature,
+# independent of Scout (unlike Phase 616's own TRACTABLE_POWERS).
+
+
+def test_execute_search_warp_space_halves_the_melee_hit_chance_for_both_sides():
+    # F#57 (real formula output, `derive_feature_event()`): Dungeon at
+    # x=3 (matching LOCATION) -> Warp Space.
+    state = _state_with_leader()
+    state.add_feature(
+        Feature(feature_id=57, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    )
+    request = _melee_request(57)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    leader_combatant, monster_combatant = mock_melee.call_args[0][0], mock_melee.call_args[0][1]
+    assert leader_combatant.offensive_hit_multiplier == 0.5
+    assert monster_combatant.offensive_hit_multiplier == 0.5
+    assert leader_combatant.archery_hit_multiplier == 0.25
+    assert monster_combatant.archery_hit_multiplier == 0.25
+
+
+def test_execute_search_no_warp_space_leaves_hit_multipliers_untouched():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    leader_combatant = mock_melee.call_args[0][0]
+    assert leader_combatant.offensive_hit_multiplier == 1.0
+    assert leader_combatant.archery_hit_multiplier == 1.0
+
+
+def test_execute_search_damp_college_blocks_casting_the_matching_school():
+    # F#137: Dungeon at x=3 -> Damp College / Illusion. Invisibility is
+    # an Illusion spell (PERSONAL_COMBAT_SPELL_ABILITY) -- should be
+    # blocked outright, never reaching the cast-success roll.
+    leader = _skilled_leader(Ability.ILLUSION, 5)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(
+        Feature(feature_id=137, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    )
+    request = _cast_request(137, Spell.INVISIBILITY, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_cast_roll, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_cast_roll.called
+    assert mock_melee.called  # the blocked Cast falls through, Melee still resolves
+
+
+def test_execute_search_damp_college_does_not_block_a_different_school():
+    # Same Feature as above (Illusion blocked), but casting a White
+    # Magic spell (Holy Symbol) should reach the roll normally.
+    leader = _skilled_leader(Ability.WHITE, 5)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(
+        Feature(feature_id=137, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    )
+    request = _cast_request(137, Spell.HOLY_SYMBOL, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast_roll, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    mock_cast_roll.assert_called_once()
+    assert mock_cast_roll.call_args.kwargs["damp_magic"] is False
+
+
+def test_execute_search_damp_magic_halves_the_cast_success_chance():
+    # F#51: Tomb at x=3 -> Damp Magic (halves every spell's own chance).
+    leader = _skilled_leader(Ability.WHITE, 5)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=51, coord=LOCATION, kind=FeatureType.TOMB, guardian_monster=Monster.GARGOYLE))
+    request = _cast_request(51, Spell.HOLY_SYMBOL, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast_roll, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    mock_cast_roll.assert_called_once()
+    assert mock_cast_roll.call_args.kwargs["damp_magic"] is True
+
+
 # -- Phase 293: bidirectional round-per-round engine ---------------------
 
 

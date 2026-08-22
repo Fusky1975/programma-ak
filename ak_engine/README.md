@@ -24993,7 +24993,7 @@ follow-up request after the original 431-435 plan shipped.
   parameter breaks nothing by default. Ran again with all new tests:
   5081 passed (net +8).
 
-- **Phase 616 (current)**: closes the Feature -> Power [5.8] "special
+- **Phase 616**: closes the Feature -> Power [5.8] "special
   function or event" gap Phase 613 identified but couldn't wire (no
   per-Feature target data existed anywhere in this project). A second,
   independent user-supplied disassembly reverse-engineering report
@@ -25095,6 +25095,65 @@ follow-up request after the original 431-435 plan shipped.
   its `describe_search()` wiring. Ran before writing new tests (non-
   breaking check, after the polarity fix): 5083 passed. Ran again with
   all new tests: 5123 passed (net +40).
+
+- **Phase 617 (current)**: closes the second gap left open by Phase 616's
+  own roadmap -- `Power.DAMP_COLLEGE`/`DAMP_MAGIC`/`WARP_SPACE`, the 3
+  passive battle-field powers `Special Features.md` section 5.2 (user-
+  supplied 2026-08-22) describes as "campi del luogo" (fields of the
+  place): "questi poteri non devono essere implementati come bonus
+  permanente sul personaggio... l'effetto deve essere consultato
+  durante magia/combattimento nel Feature" -- always live for whoever
+  fights at that Feature, independent of Scout (unlike Phase 616's own
+  9 `TRACTABLE_POWERS`, which are a Scout-granted *reveal*). None of
+  the three call `Set_FCon` (confirmed, section 4.2's own closing
+  line), so no `PowerCondition`/cost/consent applies to any of them.
+
+  `turn/search_execution.py _resolve_search_encounter()` now calls
+  `derive_feature_event(feature)` once per Search encounter (a pure
+  function, no Scout gate) and closes over the result:
+
+  - **`WARP_SPACE`** ("75% of all arrows to miss their mark, as well as
+    50% of all swings in Melee" -- `POWMSG.X2` id 10, quoted in full in
+    `report/turn_report.py`'s own module comment): read as a flat hit-
+    chance multiplier (new `WARP_SPACE_ARCHERY_HIT_CHANCE_MULTIPLIER =
+    0.25`, `WARP_SPACE_MELEE_HIT_CHANCE_MULTIPLIER = 0.5`, `turn/
+    encounter.py`), applied to *both* combatants' existing `archery_
+    hit_multiplier`/`offensive_hit_multiplier` fields (Phase 209/284's
+    own attacker-side accuracy multipliers) right after they're built --
+    the identical mechanism and "halved, no skill scaling" phrasing
+    `INVISIBILITY_HIT_CHANCE_MULTIPLIER` already established for this
+    exact rulebook wording style, not a new "flat override" mechanic.
+  - **`DAMP_COLLEGE`** ("impedisce di lanciare incantesimi della scuola
+    `_abil` selezionata" -- prevents casting any spell of the selected
+    school outright): `_resolve_cast_tactic()` now returns `None`
+    (unattempted, no roll, same shape as `blocked_from_cast_and_
+    archery`) the instant a spell's own `Ability` matches the Feature's
+    `damp_college_ability_parameter()` (already computed by Phase 616's
+    own `derive_feature_event()`) -- checked *before* the wand-cast
+    automatic-success rule too, since a location-wide ban on a school
+    reads as absolute, not merely skill-roll interference.
+  - **`DAMP_MAGIC`** ("dimezza la probabilità di lancio di ogni
+    incantesimo"): new `damp_magic: bool = False` parameter on `turn/
+    encounter.py personal_combat_spell_cast_chance()`/`resolve_
+    personal_combat_spell_cast()`, multiplying the chance by new
+    `DAMP_MAGIC_CAST_CHANCE_MULTIPLIER = 0.5` as the last step (after
+    the Pagan bonus and the 100% cap) -- mirrors `turn/cast_execution.py
+    _roll_cast_success()`'s own existing late-applied-multiplier
+    convention. `_resolve_cast_tactic()`'s own roll call now passes
+    `damp_magic=(feature_power_event.power is Power.DAMP_MAGIC)`.
+
+  Tests: `tests/test_encounter.py` gained direct unit tests for the new
+  `damp_magic` parameter (post-cap application, a roll the undamped
+  chance would have passed) and the 3 new constants; `tests/test_
+  search_execution.py` gained 5 tests -- Warp Space's own multiplier
+  applied to both sides (and left untouched on an ordinary Feature),
+  Damp College blocking its own school while leaving another school
+  unaffected, and Damp Magic's `damp_magic=True` reaching the roll.
+  Ran before writing new tests (non-breaking check): 5123 passed,
+  unchanged from Phase 616's own count (every existing test's Feature
+  resolves `Power.PNONE` or a power outside this trio, so the new
+  wiring is a no-op for all of them by default). Ran again with all
+  new tests: 5132 passed (net +9).
 
 ## Setup
 
